@@ -518,7 +518,11 @@ sequenceDiagram
   rebuilt against a bootstrap carrying it, once per create. A source the
   sandbox fails to clone `sourceFailureLimit` times, or has not begun after
   `sourceWaitingTimeout`, fails the create with what the sandbox said; the
-  agent keeps retrying regardless. An agent that cannot report its sources at
+  agent keeps retrying regardless. A source `waiting` with `waitingOn:
+  sandbox` is waiting on the sandbox, not its origin (a box still installing a
+  git that takes the origin's bearer token), and is waited on for as long as
+  the create is; a create that runs out names the reason the sandbox gave. An
+  agent that cannot report its sources at
   all (404 or 503: an image from before the route) fails the create at once
   with `ErrSourceStatesUnsupported`.
 - **A pushed source parks.** Until the client's push lands in its bare origin

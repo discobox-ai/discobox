@@ -42,8 +42,8 @@ import (
 type State string
 
 const (
-	// StateWaiting is a source with nothing to clone yet: no origin, or an
-	// origin the client has not pushed anything into.
+	// StateWaiting is a source not cloned yet, for the reason its WaitingOn
+	// gives.
 	StateWaiting State = "waiting"
 	// StateCloning is a source being materialized now.
 	StateCloning State = "cloning"
@@ -53,13 +53,30 @@ const (
 	StateFailed State = "failed"
 )
 
+// WaitingOn is what a waiting source waits for.
+type WaitingOn string
+
+const (
+	// WaitingOnOrigin is a source with nothing to clone yet: no origin, or an
+	// origin the client has not pushed anything into.
+	WaitingOnOrigin WaitingOn = "origin"
+	// WaitingOnSandbox is a source whose origin this sandbox cannot clone
+	// yet: its git cannot take the origin's bearer token, and the core
+	// feature is still installing one that can. Error says so.
+	WaitingOnSandbox WaitingOn = "sandbox"
+)
+
 // SourceState is one source's convergence, as the status poll reports it.
 type SourceState struct {
 	Slug  string
 	State State
 	// Commit is the commit checked out, once materialized.
 	Commit string
-	// Error is why the last attempt failed.
+	// WaitingOn is what a waiting source waits for, and empty in any other
+	// state.
+	WaitingOn WaitingOn
+	// Error is why the last attempt failed, or why the sandbox is not ready to
+	// clone a source waiting on it.
 	Error string
 	// Progress is how far the clone has got while State is cloning, nil
 	// until git has said.
@@ -209,7 +226,7 @@ func (c *Converger) States() []SourceState {
 			out = append(out, state)
 			continue
 		}
-		out = append(out, SourceState{Slug: source.Slug, State: StateWaiting, Revision: c.desired.Revision, UpdatedAt: c.received})
+		out = append(out, SourceState{Slug: source.Slug, State: StateWaiting, WaitingOn: WaitingOnOrigin, Revision: c.desired.Revision, UpdatedAt: c.received})
 	}
 	return out
 }
@@ -251,7 +268,7 @@ func (c *Converger) setState(state SourceState) SourceState {
 func (c *Converger) converge(ctx context.Context, revision int64, source sandboxconfig.RuntimeSource, home bool) SourceState {
 	state := SourceState{Slug: source.Slug, Revision: revision}
 	if source.OriginURL == "" {
-		state.State = StateWaiting
+		state.State, state.WaitingOn = StateWaiting, WaitingOnOrigin
 		return c.setState(state)
 	}
 	ctx, cancel := context.WithTimeout(ctx, sourceTimeout)
@@ -301,6 +318,18 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 		state.State, state.Commit = StateMaterialized, commit
 		return c.setState(state)
 	}
+	// Only the clone sends the token: a checkout already in place has its
+	// remote asserted above, which is configuration alone. A git that cannot
+	// take a bearer credential is one the box is still replacing (the core
+	// feature installs one in the background), so the source waits on the
+	// box, saying so, rather than failing an attempt the origin would refuse
+	// for want of a token it was never sent.
+	if helper != "" {
+		if err := repo.takesBearer(ctx); err != nil {
+			state.State, state.WaitingOn, state.Error = StateWaiting, WaitingOnSandbox, err.Error()
+			return c.setState(state)
+		}
+	}
 	state.State = StateCloning
 	cloning := c.setState(state)
 	cloned, err := repo.prepare(ctx, source, c.manifest[source.Slug], helper, func(progress gitprogress.Progress) {
@@ -310,7 +339,7 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 		return c.failed(state, err)
 	}
 	if !cloned {
-		state.State = StateWaiting
+		state.State, state.WaitingOn = StateWaiting, WaitingOnOrigin
 		return c.setState(state)
 	}
 	// Marking it materialized is once-only, so it is done only for the source

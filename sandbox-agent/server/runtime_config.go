@@ -134,6 +134,9 @@ func sandboxAgentSourceStates(states []sourceconverge.SourceState) []sandboxapi.
 		if state.Commit != "" {
 			wire.Commit = sandboxapi.NewOptString(state.Commit)
 		}
+		if state.WaitingOn != "" {
+			wire.WaitingOn = sandboxapi.NewOptSandboxAgentSourceStateWaitingOn(sandboxapi.SandboxAgentSourceStateWaitingOn(state.WaitingOn))
+		}
 		if state.Error != "" {
 			wire.Error = sandboxapi.NewOptString(state.Error)
 		}

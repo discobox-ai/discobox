@@ -2424,7 +2424,7 @@ components:
                 slug:
                     type: string
                 state:
-                    description: waiting - nothing to clone yet (no origin, or an origin with no commits); cloning - being materialized now; materialized - cloned, checked out and its workspace restored, once; failed - the last attempt failed, see error, and it is retried.
+                    description: waiting - not cloned yet, for the reason waitingOn gives; cloning - being materialized now; materialized - cloned, checked out and its workspace restored, once; failed - the last attempt failed, see error, and it is retried.
                     enum:
                         - waiting
                         - cloning
@@ -2434,8 +2434,14 @@ components:
                 commit:
                     description: The commit the source was materialized at, as its materialized marker records it - not where the sandbox has moved it since. Absent for a source a pool materialized, whose marker records none.
                     type: string
+                waitingOn:
+                    description: 'What a waiting source waits for. Present only when state is waiting; absent from an agent that predates it, which means origin. origin - nothing to clone yet (no origin, or an origin with no commits); sandbox - the sandbox cannot clone its origin yet (its git cannot take the origin''s bearer token while a newer one installs), see error.'
+                    enum:
+                        - origin
+                        - sandbox
+                    type: string
                 error:
-                    description: Why the last attempt failed. Present only when state is failed.
+                    description: Why the last attempt failed, or, for a source waiting on the sandbox, why the sandbox cannot clone it yet. Present only when state is failed, or waiting on the sandbox.
                     type: string
                 revision:
                     description: The runtime-config revision this state was reached under.

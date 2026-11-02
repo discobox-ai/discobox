@@ -5906,6 +5906,24 @@ func (s *SandboxAgentSourceState) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.WaitingOn.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "waitingOn",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Progress.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -5938,6 +5956,17 @@ func (s SandboxAgentSourceStateState) Validate() error {
 	case "materialized":
 		return nil
 	case "failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SandboxAgentSourceStateWaitingOn) Validate() error {
+	switch s {
+	case "origin":
+		return nil
+	case "sandbox":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

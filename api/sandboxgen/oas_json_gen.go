@@ -4049,6 +4049,39 @@ func (s *OptSandboxAgentResourceUsage) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxAgentSourceStateWaitingOn as json.
+func (o OptSandboxAgentSourceStateWaitingOn) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SandboxAgentSourceStateWaitingOn from json.
+func (o *OptSandboxAgentSourceStateWaitingOn) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxAgentSourceStateWaitingOn to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxAgentSourceStateWaitingOn) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxAgentSourceStateWaitingOn) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxExecEnv as json.
 func (o OptSandboxExecEnv) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -8110,9 +8143,15 @@ func (s *SandboxAgentSourceState) encodeFields(e *jx.Encoder) {
 		e.FieldStart("updatedAt")
 		json.EncodeDateTime(e, s.UpdatedAt)
 	}
+	{
+		if s.WaitingOn.Set {
+			e.FieldStart("waitingOn")
+			s.WaitingOn.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxAgentSourceState = [7]string{
+var jsonFieldsNameOfSandboxAgentSourceState = [8]string{
 	0: "commit",
 	1: "error",
 	2: "progress",
@@ -8120,6 +8159,7 @@ var jsonFieldsNameOfSandboxAgentSourceState = [7]string{
 	4: "slug",
 	5: "state",
 	6: "updatedAt",
+	7: "waitingOn",
 }
 
 // Decode decodes SandboxAgentSourceState from json.
@@ -8206,6 +8246,16 @@ func (s *SandboxAgentSourceState) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
+			}
+		case "waitingOn":
+			if err := func() error {
+				s.WaitingOn.Reset()
+				if err := s.WaitingOn.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"waitingOn\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -8303,6 +8353,46 @@ func (s SandboxAgentSourceStateState) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxAgentSourceStateState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxAgentSourceStateWaitingOn as json.
+func (s SandboxAgentSourceStateWaitingOn) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxAgentSourceStateWaitingOn from json.
+func (s *SandboxAgentSourceStateWaitingOn) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxAgentSourceStateWaitingOn to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxAgentSourceStateWaitingOn(v) {
+	case SandboxAgentSourceStateWaitingOnOrigin:
+		*s = SandboxAgentSourceStateWaitingOnOrigin
+	case SandboxAgentSourceStateWaitingOnSandbox:
+		*s = SandboxAgentSourceStateWaitingOnSandbox
+	default:
+		*s = SandboxAgentSourceStateWaitingOn(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxAgentSourceStateWaitingOn) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxAgentSourceStateWaitingOn) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

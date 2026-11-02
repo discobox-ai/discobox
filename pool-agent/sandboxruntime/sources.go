@@ -80,12 +80,19 @@ const (
 	sourceStateCloning      = "cloning"
 	sourceStateMaterialized = "materialized"
 	sourceStateFailed       = "failed"
+
+	// sourceWaitingOnSandbox is a waiting source the sandbox itself is not
+	// ready to clone (its git cannot take the origin's token yet), rather
+	// than one whose origin has nothing in it. An agent that reports no
+	// waitingOn predates it, and means the origin.
+	sourceWaitingOnSandbox = "sandbox"
 )
 
 // sourceState is one source's convergence as the sandbox reports it.
 type sourceState struct {
 	Slug      string               `json:"slug"`
 	State     string               `json:"state"`
+	WaitingOn string               `json:"waitingOn,omitempty"`
 	Commit    string               `json:"commit,omitempty"`
 	Error     string               `json:"error,omitempty"`
 	Progress  *sourceCloneProgress `json:"progress,omitempty"`
@@ -466,6 +473,9 @@ func (r *sandboxCore) awaitSourcesMaterialized(ctx context.Context, dial Dialer,
 	// only a failure reported later counts, and only a run of them.
 	firstSeen := map[string]sourceState{}
 	failures := map[string]int{}
+	// Why the sandbox last said it could not clone a source yet, for a wait
+	// that ends on its deadline to give.
+	var notReady string
 	for {
 		states, err := r.readSourceStates(ctx, dial, sandboxID)
 		if errors.Is(err, ErrSourceStatesUnsupported) {
@@ -475,6 +485,7 @@ func (r *sandboxCore) awaitSourcesMaterialized(ctx context.Context, dial Dialer,
 			slog.WarnContext(ctx, "read sandbox source states", "sandboxId", sandboxID, "error", err)
 		}
 		pending := 0
+		notReady = ""
 		for _, source := range sources {
 			state, ok := states[source.Slug]
 			if ok && state.State == sourceStateMaterialized {
@@ -499,6 +510,11 @@ func (r *sandboxCore) awaitSourcesMaterialized(ctx context.Context, dial Dialer,
 				if failures[source.Slug] >= sourceFailureLimit {
 					return fmt.Errorf("materialize source %q: %s", source.Slug, state.Error)
 				}
+			// A source waiting on the sandbox itself (a git it is still
+			// installing), not on an origin with nothing in it, is waited on
+			// for as long as the create is.
+			case state.State == sourceStateWaiting && state.WaitingOn == sourceWaitingOnSandbox:
+				notReady = fmt.Sprintf("source %q: %s", source.Slug, state.Error)
 			case state.State == sourceStateWaiting && time.Since(start) > sourceWaitingTimeout:
 				return fmt.Errorf("materialize source %q: its origin %s has nothing to clone", source.Slug, source.OriginURL)
 			}
@@ -508,6 +524,9 @@ func (r *sandboxCore) awaitSourcesMaterialized(ctx context.Context, dial Dialer,
 		}
 		select {
 		case <-ctx.Done():
+			if notReady != "" {
+				return fmt.Errorf("wait for the sandbox to materialize its sources (%s): %w", notReady, ctx.Err())
+			}
 			return fmt.Errorf("wait for the sandbox to materialize its sources: %w", ctx.Err())
 		case <-time.After(sourceStatePollInterval):
 		}

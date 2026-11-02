@@ -93,6 +93,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxTool.layer":                    "the sandbox's two declaration directories, owned by the root tools package; no model stores it (ADR 0125)",
 	"SandboxExec.status":                   "exec lifecycle is owned by the sandbox-agent",
 	"SandboxAgentSourceState.state":        "the sandbox-agent's convergence of a source onto its target (ADR 0126 §4), relayed on its status for the pool; no model stores it",
+	"SandboxAgentSourceState.waitingOn":    "what a waiting source of the sandbox-agent's waits for, read by the pool to bound its wait; no model stores it",
 	"SandboxAgentResourceUsage.source":     "the sandbox-agent's own reporting vocabulary: where it read its totals from (its cgroup, or a procfs rollup when that was unreadable). Relayed telemetry, never stored on a model field",
 	"SandboxService.status":                "service state is derived by the sandbox-agent from the exec running a repository-declared service (ADR 0070); the server stores nothing about services",
 	"SandboxAgentListeningPort.protocol":   "what a listening port speaks is established by sandbox-agent probing it (ADR 0046); the server stores AgentStatus as opaque JSON",

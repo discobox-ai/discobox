@@ -302,6 +302,21 @@ func TestAwaitSourcesMaterializedGivesUpOnASourceThatKeepsFailing(t *testing.T) 
 	}
 }
 
+// A source waiting on the sandbox itself (a git that cannot take the origin's
+// token yet) is waited on for as long as the create is, and a create that runs
+// out says why the sandbox could not clone it rather than only that it ran out.
+func TestAwaitSourcesMaterializedNamesWhyTheSandboxCouldNotCloneYet(t *testing.T) {
+	r := runtimeConfigTestRuntime(t)
+	waiting := []sourceState{{Slug: "primary", State: "waiting", WaitingOn: sourceWaitingOnSandbox, Error: "waiting for a git that takes a bearer credential (2.46 or later): this box's is 2.43", UpdatedAt: time.Now()}}
+	_, dial := newFakeSourcesAgent(t, r, "", waiting)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*sourceStatePollInterval)
+	defer cancel()
+	err := r.awaitSourcesMaterialized(ctx, dial, "sbx_1", []sandboxconfig.RuntimeSource{{Slug: "primary"}}, nil)
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "this box's is 2.43") {
+		t.Fatalf("await = %v, want the deadline with the sandbox's reason", err)
+	}
+}
+
 // Settling reads the primary source's project layer from the sandbox and asks
 // for a rebuild only when it is not the layer the container was built with,
 // recording it for that rebuild.

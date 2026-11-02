@@ -2553,6 +2553,52 @@ func (o OptSandboxAgentResourceUsage) Or(d SandboxAgentResourceUsage) SandboxAge
 	return d
 }
 
+// NewOptSandboxAgentSourceStateWaitingOn returns new OptSandboxAgentSourceStateWaitingOn with value set to v.
+func NewOptSandboxAgentSourceStateWaitingOn(v SandboxAgentSourceStateWaitingOn) OptSandboxAgentSourceStateWaitingOn {
+	return OptSandboxAgentSourceStateWaitingOn{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentSourceStateWaitingOn is optional SandboxAgentSourceStateWaitingOn.
+type OptSandboxAgentSourceStateWaitingOn struct {
+	Value SandboxAgentSourceStateWaitingOn
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentSourceStateWaitingOn was set.
+func (o OptSandboxAgentSourceStateWaitingOn) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentSourceStateWaitingOn) Reset() {
+	var v SandboxAgentSourceStateWaitingOn
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentSourceStateWaitingOn) SetTo(v SandboxAgentSourceStateWaitingOn) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentSourceStateWaitingOn) Get() (v SandboxAgentSourceStateWaitingOn, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentSourceStateWaitingOn) Or(d SandboxAgentSourceStateWaitingOn) SandboxAgentSourceStateWaitingOn {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxExecEnv returns new OptSandboxExecEnv with value set to v.
 func NewOptSandboxExecEnv(v SandboxExecEnv) OptSandboxExecEnv {
 	return OptSandboxExecEnv{
@@ -5071,7 +5117,8 @@ type SandboxAgentSourceState struct {
 	// The commit the source was materialized at, as its materialized marker records it - not where the
 	// sandbox has moved it since. Absent for a source a pool materialized, whose marker records none.
 	Commit OptString `json:"commit"`
-	// Why the last attempt failed. Present only when state is failed.
+	// Why the last attempt failed, or, for a source waiting on the sandbox, why the sandbox cannot clone
+	// it yet. Present only when state is failed, or waiting on the sandbox.
 	Error OptString `json:"error"`
 	// How far the clone has got, as git reports it. Present only while state is cloning and git has said
 	// something; a source resuming from a clone already in place fetches with no progress to report.
@@ -5079,11 +5126,16 @@ type SandboxAgentSourceState struct {
 	// The runtime-config revision this state was reached under.
 	Revision int64  `json:"revision"`
 	Slug     string `json:"slug"`
-	// Waiting - nothing to clone yet (no origin, or an origin with no commits); cloning - being
-	// materialized now; materialized - cloned, checked out and its workspace restored, once; failed -
-	// the last attempt failed, see error, and it is retried.
+	// Waiting - not cloned yet, for the reason waitingOn gives; cloning - being materialized now;
+	// materialized - cloned, checked out and its workspace restored, once; failed - the last attempt
+	// failed, see error, and it is retried.
 	State     SandboxAgentSourceStateState `json:"state"`
 	UpdatedAt time.Time                    `json:"updatedAt"`
+	// What a waiting source waits for. Present only when state is waiting; absent from an agent that
+	// predates it, which means origin. origin - nothing to clone yet (no origin, or an origin with no
+	// commits); sandbox - the sandbox cannot clone its origin yet (its git cannot take the origin's
+	// bearer token while a newer one installs), see error.
+	WaitingOn OptSandboxAgentSourceStateWaitingOn `json:"waitingOn"`
 }
 
 // GetCommit returns the value of Commit.
@@ -5121,6 +5173,11 @@ func (s *SandboxAgentSourceState) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
+// GetWaitingOn returns the value of WaitingOn.
+func (s *SandboxAgentSourceState) GetWaitingOn() OptSandboxAgentSourceStateWaitingOn {
+	return s.WaitingOn
+}
+
 // SetCommit sets the value of Commit.
 func (s *SandboxAgentSourceState) SetCommit(val OptString) {
 	s.Commit = val
@@ -5156,9 +5213,14 @@ func (s *SandboxAgentSourceState) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-// Waiting - nothing to clone yet (no origin, or an origin with no commits); cloning - being
-// materialized now; materialized - cloned, checked out and its workspace restored, once; failed -
-// the last attempt failed, see error, and it is retried.
+// SetWaitingOn sets the value of WaitingOn.
+func (s *SandboxAgentSourceState) SetWaitingOn(val OptSandboxAgentSourceStateWaitingOn) {
+	s.WaitingOn = val
+}
+
+// Waiting - not cloned yet, for the reason waitingOn gives; cloning - being materialized now;
+// materialized - cloned, checked out and its workspace restored, once; failed - the last attempt
+// failed, see error, and it is retried.
 type SandboxAgentSourceStateState string
 
 const (
@@ -5208,6 +5270,51 @@ func (s *SandboxAgentSourceStateState) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxAgentSourceStateStateFailed:
 		*s = SandboxAgentSourceStateStateFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What a waiting source waits for. Present only when state is waiting; absent from an agent that
+// predates it, which means origin. origin - nothing to clone yet (no origin, or an origin with no
+// commits); sandbox - the sandbox cannot clone its origin yet (its git cannot take the origin's
+// bearer token while a newer one installs), see error.
+type SandboxAgentSourceStateWaitingOn string
+
+const (
+	SandboxAgentSourceStateWaitingOnOrigin  SandboxAgentSourceStateWaitingOn = "origin"
+	SandboxAgentSourceStateWaitingOnSandbox SandboxAgentSourceStateWaitingOn = "sandbox"
+)
+
+// AllValues returns all SandboxAgentSourceStateWaitingOn values.
+func (SandboxAgentSourceStateWaitingOn) AllValues() []SandboxAgentSourceStateWaitingOn {
+	return []SandboxAgentSourceStateWaitingOn{
+		SandboxAgentSourceStateWaitingOnOrigin,
+		SandboxAgentSourceStateWaitingOnSandbox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentSourceStateWaitingOn) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentSourceStateWaitingOnOrigin:
+		return []byte(s), nil
+	case SandboxAgentSourceStateWaitingOnSandbox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentSourceStateWaitingOn) UnmarshalText(data []byte) error {
+	switch SandboxAgentSourceStateWaitingOn(data) {
+	case SandboxAgentSourceStateWaitingOnOrigin:
+		*s = SandboxAgentSourceStateWaitingOnOrigin
+		return nil
+	case SandboxAgentSourceStateWaitingOnSandbox:
+		*s = SandboxAgentSourceStateWaitingOnSandbox
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
