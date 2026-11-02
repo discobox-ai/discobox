@@ -2,6 +2,11 @@
 # link-command [--check] TARGET [NAME] — put a command a feature installed on
 # every user's PATH: /usr/local/bin/NAME (TARGET's own name by default), a
 # link to TARGET.
+# link-command --aside NAME — take a name off every user's PATH: what the box
+# has at /usr/local/bin/NAME is moved aside, and nothing is linked there. For
+# a name that belongs with a copy a feature refused and has no counterpart in
+# the feature's own: the refused Node's corepack, beside an installed Node
+# that ships none.
 #
 # A feature installs into a prefix of its own (/usr/local/lib/discobox/<tool>)
 # and links from there, never into a tool's default prefix and never through
@@ -22,20 +27,57 @@
 # directories, for tests.
 set -eu
 
+bin=${DISCOBOX_BIN_DIR:-/usr/local/bin}
+own=${DISCOBOX_OWN_DIR:-/usr/local/lib/discobox}
+displaced=${DISCOBOX_DISPLACED_DIR:-$own/displaced}
+
+# displace LINK WHY moves what is at LINK aside, saying WHY; a link of
+# Discobox's own is only removed.
+displace() {
+  if [ -L "$1" ]; then
+    case $(readlink "$1") in
+    "$own"/*)
+      rm -f "$1"
+      return
+      ;;
+    esac
+  fi
+  [ -e "$1" ] || [ -L "$1" ] || return 0
+  aside=$displaced$1
+  n=0
+  while [ -e "$aside" ] || [ -L "$aside" ]; do
+    n=$((n + 1))
+    aside=$displaced$1.$n
+  done
+  mkdir -p "${aside%/*}"
+  what=$1
+  if [ -L "$1" ]; then
+    what="$1 (a link to $(readlink "$1"))"
+  fi
+  mv "$1" "$aside"
+  echo "link-command: moved the box's $what aside to $aside: $2" >&2
+}
+
+if [ "${1-}" = --aside ]; then
+  if [ $# -ne 2 ]; then
+    echo "usage: link-command --aside NAME" >&2
+    exit 2
+  fi
+  displace "$bin/$2" "$2 is not on every user's PATH"
+  exit 0
+fi
+
 check=
 if [ "${1-}" = --check ]; then
   check=1
   shift
 fi
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-  echo "usage: link-command [--check] TARGET [NAME]" >&2
+  echo "usage: link-command [--check] TARGET [NAME] | --aside NAME" >&2
   exit 2
 fi
 target=$1
 name=${2:-${target##*/}}
-bin=${DISCOBOX_BIN_DIR:-/usr/local/bin}
-own=${DISCOBOX_OWN_DIR:-/usr/local/lib/discobox}
-displaced=${DISCOBOX_DISPLACED_DIR:-$own/displaced}
 link=$bin/$name
 
 case $target in
@@ -64,25 +106,6 @@ if [ ! -x "$target" ]; then
   exit 1
 fi
 
-if [ -L "$link" ]; then
-  case $(readlink "$link") in
-  "$own"/*) rm -f "$link" ;;
-  esac
-fi
-if [ -e "$link" ] || [ -L "$link" ]; then
-  aside=$displaced$link
-  n=0
-  while [ -e "$aside" ] || [ -L "$aside" ]; do
-    n=$((n + 1))
-    aside=$displaced$link.$n
-  done
-  mkdir -p "${aside%/*}"
-  what=$link
-  if [ -L "$link" ]; then
-    what="$link (a link to $(readlink "$link"))"
-  fi
-  mv "$link" "$aside"
-  echo "link-command: moved the box's $what aside to $aside: $name is $target" >&2
-fi
+displace "$link" "$name is $target"
 mkdir -p "$bin"
 ln -s "$target" "$link"
