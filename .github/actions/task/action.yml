@@ -23,7 +23,7 @@ runs:
   using: composite
   steps:
     - name: Install Nix
-      if: runner.os != 'Windows'
+      if: runner.os == 'Linux'
       uses: cachix/install-nix-action@v31.11.1
       with:
         extra_nix_config: |
@@ -34,7 +34,7 @@ runs:
     # it does in the devShell. Its own cache stays off: the step below is the
     # one cache, for every runner, beside Depot Cache.
     - name: Install Go
-      if: runner.os == 'Windows'
+      if: runner.os != 'Linux'
       uses: actions/setup-go@v7.0.0
       with:
         go-version-file: go.mod
@@ -106,7 +106,7 @@ runs:
       env:
         SHARED: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) }}
       run: |
-        if [ "$RUNNER_OS" = Windows ]; then go=go; else go='nix develop -c go'; fi
+        if [ "$RUNNER_OS" != Linux ]; then go=go; else go='nix develop -c go'; fi
         if [ "$SHARED" != true ]; then
           echo "GOCACHEPROG=" >> "$GITHUB_ENV"
           # Go reads an empty variable as unset and falls back to its go.env
@@ -130,12 +130,12 @@ runs:
         fi
 
     - name: go tool task ${{ inputs.target }}
-      if: runner.os != 'Windows'
+      if: runner.os == 'Linux'
       shell: bash
       run: nix develop -c go tool task ${{ inputs.target }}
 
     - name: go tool task ${{ inputs.target }}
-      if: runner.os == 'Windows'
+      if: runner.os != 'Linux'
       shell: bash
       run: go tool task ${{ inputs.target }}
 
