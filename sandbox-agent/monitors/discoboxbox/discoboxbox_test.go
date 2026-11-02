@@ -48,6 +48,9 @@ type fakeAPI struct {
 	// cut ends each stream once it has sent what there is, rather than
 	// holding it open until the client leaves.
 	cut bool
+	// cutReplay ends a replay before the ID-only event that ends it, as a
+	// connection dropped part way through one would.
+	cutReplay bool
 	// raw, when set, is sent as one event's data in place of the log's.
 	raw     string
 	calls   []string
@@ -80,7 +83,7 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		cursor := r.Header.Get("Last-Event-ID")
 		f.cursors = append(f.cursors, cursor)
 		frames := f.framesAfter(cursor)
-		cut := f.cut
+		cut := f.cut || f.cutReplay
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, "retry: 2000\n\n"+frames)
@@ -139,7 +142,11 @@ func (f *fakeAPI) framesAfter(cursor string) string {
 	for _, id := range ids {
 		write(id)
 	}
-	fmt.Fprintf(&b, "id: %d\n\n", len(f.events))
+	// A replay always ends with where the stream stands, even where that is
+	// its last event's ID.
+	if !f.cutReplay {
+		fmt.Fprintf(&b, "id: %d\n\n", len(f.events))
+	}
 	return b.String()
 }
 
@@ -158,7 +165,7 @@ func (f *fakeAPI) record(typ, id string) {
 func (f *fakeAPI) create(id, name, program string, tags map[string]string, createdBy string) {
 	box := map[string]any{
 		"projectId": "proj_1", "sandboxId": id, "name": name,
-		"desiredState": "present", "state": "ready", "runtimeState": "running",
+		"desiredState": "present", "state": "ready", "runtimeState": "running", "displayState": "running",
 	}
 	if program != "" {
 		box["program"] = map[string]any{"state": program, "app": "claude-code"}
@@ -180,7 +187,7 @@ func (f *fakeAPI) update(id string, change func(box map[string]any)) {
 
 func (f *fakeAPI) power(id, state string) {
 	f.update(id, func(box map[string]any) {
-		box["runtimeState"] = state
+		box["runtimeState"], box["displayState"] = state, state
 		if state != "running" {
 			delete(box, "program")
 		}
@@ -594,17 +601,21 @@ func TestAResetReportsWhatChangedAndWhatWentWhileEventsWereMissed(t *testing.T) 
 	f.at(30 * time.Second)
 	f.power("sbx_a", "stopped")
 	f.remove("sbx_b")
+	// A worker made in the gap, whose latest event is an update: it is new
+	// all the same, since every box the project had is held.
+	f.create("sbx_e", "issue-5", "working", worker, "sbx_lead")
+	f.program("sbx_e", "idle", "")
 	f.pruned = len(f.events)
 
-	// A run cut short before its replay is known to be whole concludes
-	// nothing, and keeps the cursor the reset found, so the next is reset
-	// again.
-	f.cut = true
+	// A replay cut off before the ID-only event that ends it concludes
+	// nothing, and keeps the cursor the reset found, so the next run is
+	// reset again.
+	f.cutReplay = true
 	got := in.poll()
-	if !slices.Equal(titles(got), []string{"issue-1 is stopped"}) {
+	if !slices.Equal(titles(got), []string{"issue-1 is stopped", "issue-5 was created: running"}) {
 		t.Fatalf("cut short: events = %+v", got)
 	}
-	f.cut = false
+	f.cutReplay = false
 	got = in.poll()
 	if !slices.Equal(titles(got), []string{"issue-2 is gone"}) {
 		t.Fatalf("after the whole replay: events = %+v", got)
@@ -618,6 +629,69 @@ func TestAResetReportsWhatChangedAndWhatWentWhileEventsWereMissed(t *testing.T) 
 	}
 	if last := f.cursors[len(f.cursors)-1]; last != strconv.Itoa(len(f.events)) {
 		t.Fatalf("cursor = %q, want the head %d", last, len(f.events))
+	}
+}
+
+func TestRequestsAreStillListedWhileTheStreamFails(t *testing.T) {
+	f := newFake(t)
+	workers(f)
+	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
+	in.poll()
+	// The stream breaks for a reason of its own; a request waiting on
+	// someone is reported all the same, and the run still fails.
+	f.at(30 * time.Second)
+	f.power("sbx_a", "stopped")
+	f.raw = `{"sandboxId":"sbx_a","tags":["not","a","map"]}`
+	f.requests = []map[string]any{request("r1", "sbx_b", "pending", "github", t0.Add(40*time.Second))}
+	got, err := in.try()
+	if err == nil || !strings.Contains(err.Error(), "event 4") {
+		t.Fatalf("err = %v, want the stream's", err)
+	}
+	if !slices.Equal(titles(got), []string{"issue-2 asks for github"}) {
+		t.Fatalf("events = %+v", got)
+	}
+}
+
+func TestAFirstReplayCutShortSavesNoCursor(t *testing.T) {
+	// The first run's replay is cut off before the event that ends it: the
+	// next run starts from the current state again, rather than from part
+	// way through, and holds every box.
+	f := newFake(t)
+	workers(f)
+	f.cutReplay = true
+	in := newInstance(t, f, map[string]string{"id": "sbx_a,sbx_c"})
+	if got := in.poll(); len(got) != 0 {
+		t.Fatalf("cut short: events = %+v", got)
+	}
+	f.cutReplay = false
+	if got := in.poll(); len(got) != 0 {
+		t.Fatalf("the second run reported %+v", got)
+	}
+	if !slices.Equal(f.cursors, []string{"", ""}) {
+		t.Fatalf("cursors = %q, want none twice", f.cursors)
+	}
+	var st state
+	if _, err := in.env.ReadState(stateFile, &st); err != nil || st.Cursor != "3" || len(st.Boxes) != 3 {
+		t.Fatalf("state = %+v, %v; want every box held, at cursor 3", st, err)
+	}
+}
+
+func TestABoxDeletedAfterACutFirstReplayIsGone(t *testing.T) {
+	// The first replay is cut off before its end, holding the boxes it got;
+	// one of them is deleted before the next run, whose replay from scratch
+	// leaves it out. It is gone, and the instance watching only it ends;
+	// the boxes the cut replay held and the next one shows are not new.
+	f := newFake(t)
+	workers(f)
+	f.cutReplay = true
+	in := newInstance(t, f, map[string]string{"id": "sbx_a"})
+	in.poll()
+	f.cutReplay = false
+	f.at(30 * time.Second)
+	f.remove("sbx_a")
+	got := in.poll()
+	if !slices.Equal(kinds(got), []string{"box.gone", "discobox.finished"}) {
+		t.Fatalf("events = %+v", got)
 	}
 }
 

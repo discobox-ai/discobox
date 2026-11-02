@@ -43,6 +43,12 @@ const stateFile = "discobox-box.json"
 // no interval: the declaration's.
 const defaultHold = 30 * time.Second
 
+// maxHold is the longest a run follows the stream, whatever its interval: the
+// pool's gate ends a call to the API after two minutes, body and all
+// (proxyagent.gateHTTPTimeout). A longer interval waits out the rest before
+// the next run, which resumes from the cursor and misses nothing.
+const maxHold = 90 * time.Second
+
 // requestTimeout bounds a run's listing of secret requests.
 const requestTimeout = 30 * time.Second
 
@@ -108,6 +114,7 @@ func run(ctx context.Context, env builtin.Env, d deps) error {
 	if hold <= 0 {
 		hold = defaultHold
 	}
+	hold = min(hold, maxHold)
 	f := &follower{cfg: cfg, c: &client{base: base, project: project, http: d.http}, env: env, st: &st}
 	runErr := f.run(ctx, d.now, hold)
 	if err := env.WriteState(stateFile, &st); err != nil {
@@ -197,6 +204,10 @@ type follower struct {
 	// cursor is the last ID the stream gave this run, which st.Cursor takes
 	// whenever it is safe to resume from.
 	cursor string
+	// replaying is set while the stream sends the project's current state —
+	// from a first connection with no cursor, or a reset — until the ID-only
+	// event that ends it (ADR 26-11-01-560 §3); replayed once one has ended.
+	replaying, replayed bool
 }
 
 func (f *follower) run(ctx context.Context, now func() time.Time, hold time.Duration) error {
@@ -205,6 +216,15 @@ func (f *follower) run(ctx context.Context, now func() time.Time, hold time.Dura
 		f.st.Baseline = now()
 	}
 	f.cursor = f.st.Cursor
+	resumed := f.st.Cursor != "" && !f.st.Resetting
+	f.replaying = f.st.Cursor == ""
+	if f.replaying && !f.st.Resetting {
+		// A replay from scratch over boxes already held — a first one cut
+		// off before its end — confirms them as a reset's does: one deleted
+		// meanwhile is not in it. Unlike a reset's, it marks no box new: what
+		// is not held may be what the cut replay never reached.
+		f.st.Unconfirmed = f.st.boxIDs()
+	}
 	// Options changed in place select boxes anew before any event does.
 	for _, id := range f.st.boxIDs() {
 		if err := f.reselect(id); err != nil {
@@ -213,28 +233,19 @@ func (f *follower) run(ctx context.Context, now func() time.Time, hold time.Dura
 	}
 	streamCtx, cancel := context.WithTimeout(ctx, hold)
 	defer cancel()
-	opened, err := f.c.stream(streamCtx, f.st.Cursor, f.handle)
+	streamErr := f.c.stream(streamCtx, f.st.Cursor, f.handle)
 	if ctx.Err() != nil {
 		// Stopped from outside: what was handled is saved, and nothing is
 		// concluded from a stream cut short.
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	// The stream was followed for the whole hold only when it opened and its
-	// deadline ended it; a stream that ended sooner may have stopped part way
-	// through a replay, and nothing is concluded from what it did not say.
-	whole := opened && streamCtx.Err() != nil
-	if whole && f.st.Resetting {
-		if err := f.confirmReset(); err != nil {
-			return err
-		}
-	}
-	if !f.st.Resetting {
+	if !f.replaying {
 		f.st.Cursor = f.cursor
 	}
-	if whole && !f.st.Resetting {
+	// The project's state is whole once a replay has ended, or when the run
+	// went on from a cursor with every box already held; only then does a
+	// named box that is not there not exist.
+	if streamErr == nil && !f.st.Resetting && (resumed || f.replayed) {
 		for _, id := range f.cfg.IDs {
 			// A box named at the baseline, or named since by options changed
 			// in place, has to exist; one that was there and went is gone.
@@ -243,16 +254,24 @@ func (f *follower) run(ctx context.Context, now func() time.Time, hold time.Dura
 			}
 		}
 	}
-	if f.cfg.Watch[watchRequests] {
+	// Requests are not on the stream. They are listed at the run's end, once
+	// the boxes they come from are known, and also when the stream failed for
+	// its own reason, so a stream that keeps failing does not hide them; not
+	// when the API refused this box, which it would again.
+	var refused *apiError
+	if f.cfg.Watch[watchRequests] && !errors.As(streamErr, &refused) {
 		listCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 		requests, err := f.c.listRequests(listCtx)
 		cancel()
 		if err != nil {
-			return err
+			return errors.Join(streamErr, err)
 		}
 		if err := f.observeRequests(requests, first); err != nil {
-			return err
+			return errors.Join(streamErr, err)
 		}
+	}
+	if streamErr != nil {
+		return streamErr
 	}
 	return f.finishIfGone()
 }
@@ -261,20 +280,28 @@ func (f *follower) run(ctx context.Context, now func() time.Time, hold time.Dura
 func (f *follower) handle(ev streamEvent) error {
 	if ev.id != "" {
 		f.cursor = ev.id
-		if !f.st.Resetting {
+		// Not part way through a replay, a first one or a reset's: a cursor
+		// saved there would skip the rest of it.
+		if !f.replaying {
 			f.st.Cursor = ev.id
 		}
 	}
 	switch ev.typ {
 	case "":
-		// Only the cursor moved.
-		return nil
+		// Only the cursor moved. After a replay it says where the stream
+		// stands, which ends it: the project's current state has all arrived.
+		if !f.replaying {
+			return nil
+		}
+		f.replaying, f.replayed = false, true
+		return f.confirmReplay()
 	case eventReset:
 		// Events were missed. The replay that follows is the truth: each box
 		// in it is compared with what is held, and the boxes it leaves out
-		// are gone once it is known to be whole.
+		// are gone once the ID-only event that ends it arrives.
 		f.st.Resetting = true
 		f.st.Unconfirmed = f.st.boxIDs()
+		f.replaying = true
 		return nil
 	case eventDeleted:
 		return f.deleted(ev.data.SandboxID)
@@ -294,7 +321,7 @@ func (f *follower) observe(typ string, data boxEvent) error {
 	prev := f.st.Boxes[id]
 	cur := &boxState{
 		Name:      data.name(),
-		State:     data.displayState(),
+		State:     data.DisplayState,
 		Tags:      maps.Clone(data.Tags),
 		CreatedBy: data.CreatedBySandboxID,
 	}
@@ -302,7 +329,10 @@ func (f *follower) observe(typ string, data boxEvent) error {
 		cur.Program, cur.Kind = data.Program.State, data.Program.Kind
 	}
 	if prev == nil {
-		cur.New = typ == eventCreated && data.At.After(f.st.Baseline)
+		// Every box in the project is held, so one first seen in a reset's
+		// replay was created while events were missed, whatever its latest
+		// event is; otherwise its creation is.
+		cur.New = f.st.Resetting || (typ == eventCreated && data.At.After(f.st.Baseline))
 	} else {
 		cur.New, cur.Watched = prev.New, prev.Watched
 	}
@@ -387,11 +417,13 @@ func (f *follower) deleted(id string) error {
 	})
 }
 
-// confirmReset ends a reset whose replay is whole: the boxes it left out were
-// deleted while events were being missed.
-func (f *follower) confirmReset() error {
+// confirmReplay ends a replay that has arrived whole: the boxes held before
+// it that it left out were deleted meanwhile, a reset ends, and the cursor
+// may move past it.
+func (f *follower) confirmReplay() error {
 	missing := f.st.Unconfirmed
 	f.st.Unconfirmed, f.st.Resetting = nil, false
+	f.st.Cursor = f.cursor
 	for _, id := range missing {
 		if err := f.deleted(id); err != nil {
 			return err

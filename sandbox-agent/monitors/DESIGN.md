@@ -182,5 +182,5 @@ flowchart LR
   `github-repo`.
 - [`discoboxbox`](discoboxbox/DESIGN.md) is the image's `discobox-box`:
   other boxes, by following the discobox API's sandbox event stream. A run
-  holds the stream for its interval, so a built-in following a stream is
-  still a polling one.
+  holds the stream for its interval, at most 90s under the pool gate's
+  timeout, so a built-in following a stream is still a polling one.

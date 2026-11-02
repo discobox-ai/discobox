@@ -9,7 +9,7 @@
 # - {name: tag, description: "watch the boxes whose tags match: key or key=value, space-separated, every one matching"}
 # - {name: created-by, description: "watch the boxes this box created (me) or another box created (its id)"}
 # - {name: watch, description: "state, terminal, requests, comma-separated; all three when omitted"}
-# - {name: interval, description: "how long each run follows the event stream before the next reconnects, and how often requests are listed; 30s when omitted, at least 10s"}
+# - {name: interval, description: "how often a run starts: each follows the event stream for this long, at most 90s, and then lists requests; 30s when omitted, at least 10s"}
 #---
 # The image's discobox-box monitor (ADR 26-11-01-560), written in Go and run
 # by the agent (sandbox-agent/monitors/discoboxbox). It follows the
