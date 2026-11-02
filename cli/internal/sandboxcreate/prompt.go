@@ -191,12 +191,30 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		}
 	}
 	sourceArg := opts.Source
+	skillsRepos := append(slices.Clone(opts.ProjectSkills), skillsArgs.Repositories...)
+	// Every remote this create names outright is looked up at once, while
+	// the primary source is being resolved; the ones its settings declare
+	// join them as soon as they are read, before any --include is resolved
+	// (setSourceCodeReferences). The lookups end with the request built.
+	lookupCtx, endLookups := context.WithCancel(ctx)
+	defer endLookups()
+	remote := newRemoteRefs(lookupCtx)
+	if !opts.NoSource {
+		remote.prefetch(sourceArg)
+	}
+	for _, arg := range opts.Include {
+		remote.prefetch(arg)
+	}
+	for _, repo := range skillsRepos {
+		remote.prefetch(repo.Source.String())
+	}
 	sourceOptions := runSourceOptions{
 		Platform:      opts.Platform,
 		IncludeDirty:  opts.IncludeDirty,
 		ConfirmCopy:   opts.ConfirmCopyDirectory,
 		CopyDirectory: opts.CopyDirectory,
 		Warn:          opts.Warn,
+		Remote:        remote,
 	}
 	local := &LocalSources{}
 	// A sandbox with no source has no primary source to resolve, and the zero
@@ -217,7 +235,6 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if source.resolved() {
 		local.add("", source)
 	}
-	skillsRepos := append(slices.Clone(opts.ProjectSkills), skillsArgs.Repositories...)
 	if err := setSourceCodeReferences(ctx, body, local, opts, &source, sourceOptions, skillsRepos); err != nil {
 		local.Close()
 		return nil, nil, err
@@ -289,6 +306,18 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 	if len(opts.Include) == 0 && len(declared) == 0 && len(skillsRepos) == 0 {
 		return nil
 	}
+	// Where each declared source comes from is settled as soon as the
+	// settings are read, before the --include sources are walked, so the
+	// remote ones are being looked up while every reference ahead of them is
+	// resolved in order.
+	primaryRoot := primary.LocalDirectory
+	names := declaredSourceNames(declared)
+	args := make([]string, len(names))
+	reports := make([]DeclaredSource, len(names))
+	for i, name := range names {
+		args[i], reports[i] = resolveDeclaredSourceArg(ctx, primaryRoot, name, declared[name])
+		sourceOptions.Remote.prefetch(args[i])
+	}
 	references := make(apiclientgen.SandboxCreateConfigSourceCodeReferences, len(opts.Include)+len(declared))
 	// The server names the primary source "primary", so no reference may take
 	// that name either.
@@ -323,13 +352,12 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 	// source keeps its own path, and differ on Windows, where it is mirrored
 	// under /mnt, and whenever the sandbox is not Linux, where it is placed by
 	// name.
-	primaryRoot := primary.LocalDirectory
 	sandboxRoot := ""
 	if primary.Destination.Directory != "" {
 		sandboxRoot = sandboxpath.For(opts.Platform).Dir(primary.Destination.Directory)
 	}
-	for _, name := range declaredSourceNames(declared) {
-		arg, report := resolveDeclaredSourceArg(ctx, primaryRoot, name, declared[name])
+	for i, name := range names {
+		arg, report := args[i], reports[i]
 		placement := referencePlacement{Name: name, Root: sandboxRoot}
 		reference, err := resolveNamedReference(ctx, arg, placement, sourceOptions, used)
 		if err != nil {

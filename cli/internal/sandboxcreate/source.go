@@ -94,6 +94,9 @@ type runSourceOptions struct {
 	// Warn is told about uncommitted work left out, which would otherwise
 	// vanish without a word. Nil says nothing.
 	Warn func(string)
+	// Remote holds the create's remote ref lookups, started ahead of the
+	// sources that need them (remoteRefs). Nil looks each one up in its turn.
+	Remote *remoteRefs
 }
 
 type resolvedRunSource struct {
@@ -219,7 +222,7 @@ func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptio
 	if source.Kind == sourceref.Git {
 		// A remote repository has no working tree, so it has no uncommitted
 		// work for --include-dirty to decide about, whatever its value.
-		resolved, err := resolveRemoteRunSource(ctx, source.Location, source.Ref, explicitRef, opts.Platform)
+		resolved, err := resolveRemoteRunSource(ctx, source.Location, source.Ref, explicitRef, opts)
 		if err != nil || source.Path == "" {
 			return resolved, err
 		}
@@ -767,11 +770,8 @@ func directoryRunSource(ctx context.Context, dir, repoRoot string, sandbox platf
 	return resolved, nil
 }
 
-func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef bool, sandbox platform.Platform) (resolvedRunSource, error) {
-	if !explicitRef {
-		ref = defaultRemoteBranch
-	}
-	commit, refName, refType, err := resolveRemoteGitRef(ctx, source, ref, explicitRef)
+func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef bool, opts runSourceOptions) (resolvedRunSource, error) {
+	pinned, err := opts.Remote.resolve(ctx, source, ref, explicitRef)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
@@ -779,14 +779,14 @@ func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef
 		Kind: runSourceKindGit,
 		URL:  source,
 		Checkout: resolvedRunSourceCheckout{
-			Commit:  commit,
-			RefName: refName,
-			RefType: refType,
+			Commit:  pinned.commit,
+			RefName: pinned.name,
+			RefType: pinned.refType,
 		},
 		Workspace: resolvedRunSourceWorkspace{
 			Mode: runWorkspaceModeClean,
 		},
-		Destination: remoteRunDestination(sandbox, source),
+		Destination: remoteRunDestination(opts.Platform, source),
 	}, nil
 }
 
@@ -926,32 +926,35 @@ func networkRemoteURL(value string) string {
 	return value
 }
 
-func resolveRemoteGitRef(ctx context.Context, source, ref string, explicitRef bool) (string, string, string, error) {
+// resolveRemoteGitRef pins ref of the remote source to a commit, with one
+// ls-remote run with env added to git's environment. ref is the remote's
+// default branch (defaultRemoteBranch) when the source named none.
+func resolveRemoteGitRef(ctx context.Context, source, ref string, explicitRef bool, env map[string]string) (remoteRef, error) {
 	refs := []string{ref}
 	if explicitRef {
 		refs = append(refs, "refs/heads/"+ref, "refs/tags/"+ref)
 	}
-	out, err := gitutil.Output(ctx, "", nil, nil, append([]string{"ls-remote", "--symref", "--", source}, refs...)...)
+	out, err := gitutil.Output(ctx, "", nil, env, append([]string{"ls-remote", "--symref", "--", source}, refs...)...)
 	if err != nil {
-		return "", "", "", fmt.Errorf("resolve remote git ref %q: %w", ref, err)
+		return remoteRef{}, fmt.Errorf("resolve remote git ref %q: %w", ref, err)
 	}
 	commit, symbolicRef, err := parseRemoteRefOutput(out, ref)
 	if err != nil {
-		return "", "", "", err
+		return remoteRef{}, err
 	}
 	if symbolicRef != "" {
-		return commit, strings.TrimPrefix(symbolicRef, "refs/heads/"), runSourceRefTypeBranch, nil
+		return remoteRef{commit: commit, name: strings.TrimPrefix(symbolicRef, "refs/heads/"), refType: runSourceRefTypeBranch}, nil
 	}
 	if !explicitRef {
-		return commit, "", runSourceRefTypeCommit, nil
+		return remoteRef{commit: commit, refType: runSourceRefTypeCommit}, nil
 	}
 	switch {
 	case remoteOutputHasRef(out, "refs/heads/"+ref):
-		return commit, ref, runSourceRefTypeBranch, nil
+		return remoteRef{commit: commit, name: ref, refType: runSourceRefTypeBranch}, nil
 	case remoteOutputHasRef(out, "refs/tags/"+ref):
-		return commit, ref, runSourceRefTypeTag, nil
+		return remoteRef{commit: commit, name: ref, refType: runSourceRefTypeTag}, nil
 	default:
-		return commit, "", runSourceRefTypeCommit, nil
+		return remoteRef{commit: commit, refType: runSourceRefTypeCommit}, nil
 	}
 }
 

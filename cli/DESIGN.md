@@ -435,7 +435,9 @@ sandbox role reads it — and `sandboxcreate.PromptOptions.ProjectSkills` puts
 them ahead of the `--skills` (or `run.skills`) repositories, so a person's own
 win on a skill's name. `--no-project-skills`, the `--from-json` field
 `noProjectSkills`, and the create card's Project skills row leave them out, and
-the list is then not read. A server that predates the route is a project with
+the list is then not read. A prompt create (`discobox run`, the console's)
+reads it at the same time as its placement (`App.newSandboxSettings`): both
+stand between Enter and the create, and neither waits on the other. A server that predates the route is a project with
 none: it answers a person with net/http's plain 404 and a discobox with its
 sandbox role's refusal. A repository the project names at one ref and a
 `--skills` at another is refused as two `--skills` are, naming

@@ -235,7 +235,13 @@ func AddSkillsSources(ctx context.Context, config *apimodel.SandboxCreateConfig,
 	}
 	local := &LocalSources{}
 	defer local.Close()
-	return setSkillsSources(ctx, config, references, local, repos, runSourceOptions{}, used, func(key string) bool {
+	lookupCtx, endLookups := context.WithCancel(ctx)
+	defer endLookups()
+	remote := newRemoteRefs(lookupCtx)
+	for _, repo := range repos {
+		remote.prefetch(repo.Source.String())
+	}
+	return setSkillsSources(ctx, config, references, local, repos, runSourceOptions{Remote: remote}, used, func(key string) bool {
 		_, ok := references[key]
 		return ok || key == primaryDirectory
 	})
