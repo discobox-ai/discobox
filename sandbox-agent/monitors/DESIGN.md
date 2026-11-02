@@ -115,6 +115,10 @@ flowchart LR
 - **`Since` reaches only a `test`'s first run**, as `DISCOBOX_MONITOR_SINCE`,
   and only for a declaration with `since: true`; `test` refuses `--since`
   for one without. An enabled instance always starts at now.
+- **A polling run is told its interval**, as `DISCOBOX_MONITOR_INTERVAL`
+  (`Definition.IntervalFor`, so the instance's own when it gives one): a run
+  that holds something open, such as `discobox-box`'s stream, holds it that
+  long. A streaming run has none.
 - **A new instance starts with empty state.** `Enable` clears the state
   directory a previous instance with that name left, and the monitor's own
   directory is keyed by the instance's ID as well, so a runner of the old
@@ -169,11 +173,14 @@ flowchart LR
 
 - [`builtin`](builtin) is the seam: `Monitor` is one run of a built-in,
   given `Env` (the instance's name, state directory and options, a test's
-  `Since`, its environment, `Emit`, and JSON state files written whole). A returned error
+  `Since`, its interval, its environment, `Emit`, and JSON state files
+  written whole). A returned error
   is the failure, and its text is what `monitor.failed` carries.
 - The registry is `builtinMonitors` in `cmd/discobox-sandbox-agent`. A new
   built-in adds a package, an entry there, and a script in the image.
 - [`githubrepo`](githubrepo/DESIGN.md) is the first built-in: the image's
   `github-repo`.
 - [`discoboxbox`](discoboxbox/DESIGN.md) is the image's `discobox-box`:
-  other boxes, through the discobox API.
+  other boxes, by following the discobox API's sandbox event stream. A run
+  holds the stream for its interval, so a built-in following a stream is
+  still a polling one.

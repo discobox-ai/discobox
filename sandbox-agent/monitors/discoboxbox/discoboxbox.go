@@ -3,15 +3,17 @@
 // discobox API — a box's state changing, its primary terminal going busy or
 // idle, and a secret request from it pending and being answered.
 //
-// Each run lists the project's boxes (`list-sandboxes`) and, when requests are
-// watched, the secret requests this box may read (`list-secret-requests`),
-// and reports what differs from the last run. See DESIGN.md.
+// Each run follows the project's sandbox event stream from the cursor the
+// last one saved, for its interval, and reports what each event changes for
+// the boxes it watches; when requests are watched, it then lists the secret
+// requests this box may read (ADR 26-11-01-560). See DESIGN.md.
 package discoboxbox
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	agentconfig "github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors/builtin"
 )
@@ -36,15 +39,53 @@ const (
 // stateFile is the instance's whole memory, in its state directory.
 const stateFile = "discobox-box.json"
 
+// defaultHold is how long a run follows the stream when the runner gave it
+// no interval: the declaration's.
+const defaultHold = 30 * time.Second
+
+// requestTimeout bounds a run's listing of secret requests.
+const requestTimeout = 30 * time.Second
+
+// createdByMe is the created-by value naming this box.
+const createdByMe = "me"
+
 // Run is one run of the monitor.
 func Run(ctx context.Context, env builtin.Env) error {
-	return run(ctx, env, &http.Client{Timeout: 30 * time.Second}, time.Now)
+	return run(ctx, env, deps{
+		http: &http.Client{},
+		now:  time.Now,
+		self: func() (string, error) {
+			cfg, err := agentconfig.Load(agentconfig.DefaultPath)
+			if err != nil {
+				return "", err
+			}
+			return cfg.Identity.SandboxID, nil
+		},
+	})
 }
 
-func run(ctx context.Context, env builtin.Env, hc *http.Client, now func() time.Time) error {
+// deps are what a run reaches outside itself.
+type deps struct {
+	http *http.Client
+	now  func() time.Time
+	// self is this box's sandbox ID, for created-by=me.
+	self func() (string, error)
+}
+
+func run(ctx context.Context, env builtin.Env, d deps) error {
 	cfg, err := parseConfig(env.Options)
 	if err != nil {
 		return err
+	}
+	if cfg.CreatedBy == createdByMe {
+		id, err := d.self()
+		if err != nil {
+			return fmt.Errorf("option created-by: this box's own ID is unknown: %w", err)
+		}
+		if strings.TrimSpace(id) == "" {
+			return errors.New("option created-by: this box's own ID is unknown: its sandbox config names none")
+		}
+		cfg.CreatedBy = id
 	}
 	base := strings.TrimSpace(env.Getenv(envAPIURL))
 	if base == "" {
@@ -63,19 +104,25 @@ func run(ctx context.Context, env builtin.Env, hc *http.Client, now func() time.
 		return err
 	}
 	st.init()
-	p := &poller{cfg: cfg, c: &client{base: base, project: project, http: hc}, env: env, st: &st, now: now}
-	if err := p.poll(ctx); err != nil {
-		return err
+	hold := env.Interval
+	if hold <= 0 {
+		hold = defaultHold
 	}
-	return env.WriteState(stateFile, &st)
+	f := &follower{cfg: cfg, c: &client{base: base, project: project, http: d.http}, env: env, st: &st}
+	runErr := f.run(ctx, d.now, hold)
+	if err := env.WriteState(stateFile, &st); err != nil {
+		return errors.Join(runErr, err)
+	}
+	return runErr
 }
 
 // config is an instance's options.
 type config struct {
-	IDs      []string
-	Tags     []string
-	Watch    map[string]bool
-	selected []sandboxmeta.Selector
+	IDs       []string
+	Tags      []string
+	CreatedBy string
+	Watch     map[string]bool
+	selected  []sandboxmeta.Selector
 }
 
 // The kinds of change an instance may watch.
@@ -100,8 +147,12 @@ func parseConfig(opts map[string]string) (config, error) {
 		return config{}, fmt.Errorf("option tag: %w", err)
 	}
 	cfg.selected = selected
-	if len(cfg.IDs) == 0 && len(cfg.Tags) == 0 {
-		return config{}, errors.New("name the boxes to watch: -o id=sbx_…,sbx_… or -o tag=key=value (selectors separated by spaces, every one matching)")
+	cfg.CreatedBy = strings.TrimSpace(opts["created-by"])
+	if strings.ContainsAny(cfg.CreatedBy, ", ") {
+		return config{}, fmt.Errorf("option created-by: one box ID, or %s; %q is not", createdByMe, cfg.CreatedBy)
+	}
+	if len(cfg.IDs) == 0 && len(cfg.Tags) == 0 && cfg.CreatedBy == "" {
+		return config{}, errors.New("name the boxes to watch: -o id=sbx_…,sbx_…, -o tag=key=value (selectors separated by spaces, every one matching), or -o created-by=me")
 	}
 	cfg.Watch = map[string]bool{}
 	raw := strings.TrimSpace(opts["watch"])
@@ -119,128 +170,170 @@ func parseConfig(opts map[string]string) (config, error) {
 	return cfg, nil
 }
 
-// selects reports whether the options select b: named by id, or matching
-// every tag selector.
-func (c config) selects(b box) bool {
-	if slices.Contains(c.IDs, b.ID) {
+// selects reports whether the options select the box: named by id, or
+// matching every tag selector and its creator, those that are given.
+func (c config) selects(id string, b *boxState) bool {
+	if slices.Contains(c.IDs, id) {
 		return true
 	}
-	return len(c.selected) > 0 && sandboxmeta.MatchesAll(b.Meta.Tags, c.selected)
+	if len(c.selected) == 0 && c.CreatedBy == "" {
+		return false
+	}
+	if c.CreatedBy != "" && b.CreatedBy != c.CreatedBy {
+		return false
+	}
+	return sandboxmeta.MatchesAll(b.Tags, c.selected)
 }
 
 // onlyIDs reports an instance that names its boxes and selects none: it ends
 // once every one of them is gone.
-func (c config) onlyIDs() bool { return len(c.IDs) > 0 && len(c.Tags) == 0 }
+func (c config) onlyIDs() bool { return len(c.IDs) > 0 && len(c.Tags) == 0 && c.CreatedBy == "" }
 
-type poller struct {
+type follower struct {
 	cfg config
 	c   *client
 	env builtin.Env
 	st  *state
-	now func() time.Time
+	// cursor is the last ID the stream gave this run, which st.Cursor takes
+	// whenever it is safe to resume from.
+	cursor string
 }
 
-func (p *poller) poll(ctx context.Context) error {
-	// Tags alone are filtered by the server; with ids, a box named by id
-	// need not match them, so the list is the project's.
-	var filter []string
-	if len(p.cfg.IDs) == 0 {
-		filter = p.cfg.Tags
+func (f *follower) run(ctx context.Context, now func() time.Time, hold time.Duration) error {
+	first := f.st.Baseline.IsZero()
+	if first {
+		f.st.Baseline = now()
 	}
-	boxes, err := p.c.listBoxes(ctx, filter)
+	f.cursor = f.st.Cursor
+	// Options changed in place select boxes anew before any event does.
+	for _, id := range f.st.boxIDs() {
+		if err := f.reselect(id); err != nil {
+			return err
+		}
+	}
+	streamCtx, cancel := context.WithTimeout(ctx, hold)
+	defer cancel()
+	opened, err := f.c.stream(streamCtx, f.st.Cursor, f.handle)
+	if ctx.Err() != nil {
+		// Stopped from outside: what was handled is saved, and nothing is
+		// concluded from a stream cut short.
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	watched := map[string]box{}
-	for _, b := range boxes {
-		if p.cfg.selects(b) {
-			watched[b.ID] = b
-		}
-	}
-	var requests []secretRequest
-	if p.cfg.Watch[watchRequests] {
-		if requests, err = p.c.listRequests(ctx); err != nil {
+	// The stream was followed for the whole hold only when it opened and its
+	// deadline ended it; a stream that ended sooner may have stopped part way
+	// through a replay, and nothing is concluded from what it did not say.
+	whole := opened && streamCtx.Err() != nil
+	if whole && f.st.Resetting {
+		if err := f.confirmReset(); err != nil {
 			return err
 		}
 	}
-	first := p.st.Baseline.IsZero()
-	for _, id := range p.cfg.IDs {
-		// A box named at the baseline, or named since by options changed in
-		// place, has to exist; one that was there and went is gone.
-		_, known := p.st.Boxes[id]
-		if _, ok := watched[id]; !ok && !known && !slices.Contains(p.st.Gone, id) {
-			return fmt.Errorf("option id: no box %s in this project", id)
+	if !f.st.Resetting {
+		f.st.Cursor = f.cursor
+	}
+	if whole && !f.st.Resetting {
+		for _, id := range f.cfg.IDs {
+			// A box named at the baseline, or named since by options changed
+			// in place, has to exist; one that was there and went is gone.
+			if _, known := f.st.Boxes[id]; !known && !slices.Contains(f.st.Gone, id) {
+				return fmt.Errorf("option id: no box %s in this project", id)
+			}
 		}
 	}
-	if first {
-		p.st.Baseline = p.now()
-	}
-
-	ids := make([]string, 0, len(watched))
-	for id := range watched {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	for _, id := range ids {
-		if err := p.observe(watched[id], first); err != nil {
+	if f.cfg.Watch[watchRequests] {
+		listCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+		requests, err := f.c.listRequests(listCtx)
+		cancel()
+		if err != nil {
+			return err
+		}
+		if err := f.observeRequests(requests, first); err != nil {
 			return err
 		}
 	}
-	if err := p.observeRequests(watched, requests, first); err != nil {
-		return err
-	}
-	if err := p.letGo(watched); err != nil {
-		return err
-	}
-	return p.finishIfGone()
+	return f.finishIfGone()
 }
 
-// observe records one box's state and terminal, and reports what changed.
-// A box seen for the first time is recorded, not reported, when it already
-// existed at the baseline: it is newly selected, by a tag or options changed
-// in place. One created after the baseline is news whenever it is first seen
-// — a worker usually tags itself only once it runs — and reported created.
-func (p *poller) observe(b box, first bool) error {
-	prev := p.st.Boxes[b.ID]
-	cur := &boxState{Name: b.name(), State: b.displayState()}
-	if status, ok := posted(b); ok && cur.State == "running" {
-		cur.Program, cur.Kind, cur.Msg = string(status.State), string(status.Kind), status.Msg
-	}
-	created := prev == nil && !first && b.CreatedAt.After(p.st.Baseline)
-	p.st.Boxes[b.ID] = cur
-	switch {
-	case first, prev == nil && !created:
-		return nil
-	case prev == nil:
-		if !p.cfg.Watch[watchState] {
-			return nil
+// handle takes one event off the stream.
+func (f *follower) handle(ev streamEvent) error {
+	if ev.id != "" {
+		f.cursor = ev.id
+		if !f.st.Resetting {
+			f.st.Cursor = ev.id
 		}
-		return p.emit(monitors.Event{
-			Kind:  "box.created",
-			Key:   "box-" + b.ID + "-state",
-			Title: fmt.Sprintf("%s was created: %s", cur.Name, cur.State),
-		})
 	}
-	if p.cfg.Watch[watchState] && cur.State != prev.State {
-		if err := p.emit(monitors.Event{
+	switch ev.typ {
+	case "":
+		// Only the cursor moved.
+		return nil
+	case eventReset:
+		// Events were missed. The replay that follows is the truth: each box
+		// in it is compared with what is held, and the boxes it leaves out
+		// are gone once it is known to be whole.
+		f.st.Resetting = true
+		f.st.Unconfirmed = f.st.boxIDs()
+		return nil
+	case eventDeleted:
+		return f.deleted(ev.data.SandboxID)
+	case eventCreated, eventUpdated:
+		return f.observe(ev.typ, ev.data)
+	}
+	return nil
+}
+
+// observe records one box's state, and reports what changed for a watched
+// box. A box seen for the first time is recorded, not reported, unless it
+// was created after the baseline; then it is news whenever it is first
+// watched, since a worker usually tags itself only once it runs.
+func (f *follower) observe(typ string, data boxEvent) error {
+	id := data.SandboxID
+	f.st.Unconfirmed = slices.DeleteFunc(f.st.Unconfirmed, func(held string) bool { return held == id })
+	prev := f.st.Boxes[id]
+	cur := &boxState{
+		Name:      data.name(),
+		State:     data.displayState(),
+		Tags:      maps.Clone(data.Tags),
+		CreatedBy: data.CreatedBySandboxID,
+	}
+	if data.Program != nil && cur.State == "running" {
+		cur.Program, cur.Kind = data.Program.State, data.Program.Kind
+	}
+	if prev == nil {
+		cur.New = typ == eventCreated && data.At.After(f.st.Baseline)
+	} else {
+		cur.New, cur.Watched = prev.New, prev.Watched
+	}
+	f.st.Boxes[id] = cur
+	if prev == nil || !prev.Watched {
+		return f.reselect(id)
+	}
+	if !f.cfg.selects(id, cur) {
+		// No longer selected: it lost its tag, or its options changed.
+		cur.Watched = false
+		return nil
+	}
+	if f.cfg.Watch[watchState] && cur.State != prev.State {
+		if err := f.emit(monitors.Event{
 			Kind:    "box.state",
-			Key:     "box-" + b.ID + "-state",
+			Key:     "box-" + id + "-state",
 			Title:   fmt.Sprintf("%s is %s", cur.Name, cur.State),
 			Summary: "was " + prev.State,
 		}); err != nil {
 			return err
 		}
 	}
-	if p.cfg.Watch[watchTerminal] && cur.Program != "" && (cur.Program != prev.Program || cur.Kind != prev.Kind) {
+	if f.cfg.Watch[watchTerminal] && cur.Program != "" && (cur.Program != prev.Program || cur.Kind != prev.Kind) {
 		kind := "box.idle"
 		if cur.Program == string(programstatus.Working) {
 			kind = "box.busy"
 		}
-		if err := p.emit(monitors.Event{
+		if err := f.emit(monitors.Event{
 			Kind:  kind,
-			Key:   "box-" + b.ID + "-terminal",
+			Key:   "box-" + id + "-terminal",
 			Title: cur.Name + " " + terminalPhrase(cur),
-			Body:  cur.Msg,
 		}); err != nil {
 			return err
 		}
@@ -248,13 +341,63 @@ func (p *poller) observe(b box, first bool) error {
 	return nil
 }
 
-// posted is what the program in a box's primary terminal last reported of
-// itself (ADR 26-10-16-424), as `discobox ls` reads it.
-func posted(b box) (programstatus.Status, bool) {
-	if b.Runtime == nil || b.Runtime.AgentStatus == nil || len(b.Runtime.AgentStatus.Sessions) == 0 {
-		return programstatus.Status{}, false
+// reselect matches a held box against the options, and reports one newly
+// watched that was created since the baseline. One that was already there
+// is where things stood, and is recorded quietly.
+func (f *follower) reselect(id string) error {
+	b := f.st.Boxes[id]
+	selected := f.cfg.selects(id, b)
+	if selected == b.Watched {
+		return nil
 	}
-	return programstatus.PrimaryPosted(b.Runtime.AgentStatus.Sessions)
+	b.Watched = selected
+	if !selected || !b.New {
+		return nil
+	}
+	b.New = false
+	if !f.cfg.Watch[watchState] {
+		return nil
+	}
+	return f.emit(monitors.Event{
+		Kind:  "box.created",
+		Key:   "box-" + id + "-state",
+		Title: fmt.Sprintf("%s was created: %s", b.Name, b.State),
+	})
+}
+
+// deleted forgets a box, and reports one that was watched.
+func (f *follower) deleted(id string) error {
+	f.st.Unconfirmed = slices.DeleteFunc(f.st.Unconfirmed, func(held string) bool { return held == id })
+	prev := f.st.Boxes[id]
+	if prev == nil {
+		return nil
+	}
+	delete(f.st.Boxes, id)
+	if slices.Contains(f.cfg.IDs, id) && !slices.Contains(f.st.Gone, id) {
+		f.st.Gone = append(f.st.Gone, id)
+	}
+	if !prev.Watched || !f.cfg.Watch[watchState] {
+		return nil
+	}
+	return f.emit(monitors.Event{
+		Kind:    "box.gone",
+		Key:     "box-" + id + "-state",
+		Title:   prev.Name + " is gone",
+		Summary: "was " + prev.State,
+	})
+}
+
+// confirmReset ends a reset whose replay is whole: the boxes it left out were
+// deleted while events were being missed.
+func (f *follower) confirmReset() error {
+	missing := f.st.Unconfirmed
+	f.st.Unconfirmed, f.st.Resetting = nil, false
+	for _, id := range missing {
+		if err := f.deleted(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // terminalPhrase says what a box's primary terminal is doing.
@@ -278,48 +421,43 @@ func terminalPhrase(s *boxState) string {
 // observeRequests reports a watched box's secret request pending, and
 // answered. Only the requests of boxes this box created can be read; others'
 // never appear.
-func (p *poller) observeRequests(watched map[string]box, requests []secretRequest, first bool) error {
-	if !p.cfg.Watch[watchRequests] {
-		return nil
-	}
+func (f *follower) observeRequests(requests []secretRequest, first bool) error {
 	seen := map[string]bool{}
 	for _, r := range requests {
-		b, ok := watched[r.SandboxID]
-		if !ok {
+		b := f.st.Boxes[r.SandboxID]
+		if b == nil || !b.Watched {
 			continue
 		}
 		seen[r.ID] = true
-		prev, known := p.st.Requests[r.ID]
-		p.st.Requests[r.ID] = r.Status
+		prev, known := f.st.Requests[r.ID]
+		f.st.Requests[r.ID] = r.Status
 		// One made before the baseline is where things stood, not news;
 		// one made since is, from whichever box, however late its box
 		// came to be watched: a request waits on someone.
-		if first || (!known && !r.CreatedAt.After(p.st.Baseline)) || prev == r.Status {
+		if first || (!known && !r.CreatedAt.After(f.st.Baseline)) || prev == r.Status {
 			continue
 		}
-		name := b.name()
 		switch {
 		case r.Status == "pending":
 			routes := make([]string, 0, len(r.Routes))
 			for _, rt := range r.Routes {
 				routes = append(routes, rt.String())
 			}
-			body := strings.Join(routes, "\n")
-			if err := p.emit(monitors.Event{
+			if err := f.emit(monitors.Event{
 				Kind:    "box.request",
 				Key:     "request-" + r.ID,
-				Title:   fmt.Sprintf("%s asks for %s", name, r.what()),
+				Title:   fmt.Sprintf("%s asks for %s", b.Name, r.what()),
 				Summary: firstLine(r.Justification, 200),
-				Body:    body,
+				Body:    strings.Join(routes, "\n"),
 			}); err != nil {
 				return err
 			}
 		case known && prev == "pending":
-			title := fmt.Sprintf("%s's request for %s was %s", name, r.what(), r.Status)
+			title := fmt.Sprintf("%s's request for %s was %s", b.Name, r.what(), r.Status)
 			if r.DecidedBy != "" {
 				title += " by " + r.DecidedBy
 			}
-			if err := p.emit(monitors.Event{
+			if err := f.emit(monitors.Event{
 				Kind:  "box.request.answered",
 				Key:   "request-" + r.ID,
 				Title: title,
@@ -328,44 +466,9 @@ func (p *poller) observeRequests(watched map[string]box, requests []secretReques
 			}
 		}
 	}
-	for id := range p.st.Requests {
+	for id := range f.st.Requests {
 		if !seen[id] {
-			delete(p.st.Requests, id)
-		}
-	}
-	return nil
-}
-
-// letGo forgets a box no longer selected, and reports one gone from the
-// project.
-func (p *poller) letGo(watched map[string]box) error {
-	ids := make([]string, 0, len(p.st.Boxes))
-	for id := range p.st.Boxes {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	for _, id := range ids {
-		if _, ok := watched[id]; ok {
-			continue
-		}
-		prev := p.st.Boxes[id]
-		delete(p.st.Boxes, id)
-		// Named by id and missing is gone; a box only selected may simply
-		// have lost its tag, or the options changed in place.
-		if !slices.Contains(p.cfg.IDs, id) {
-			continue
-		}
-		p.st.Gone = append(p.st.Gone, id)
-		if !p.cfg.Watch[watchState] {
-			continue
-		}
-		if err := p.emit(monitors.Event{
-			Kind:    "box.gone",
-			Key:     "box-" + id + "-state",
-			Title:   prev.Name + " is gone",
-			Summary: "was " + prev.State,
-		}); err != nil {
-			return err
+			delete(f.st.Requests, id)
 		}
 	}
 	return nil
@@ -373,23 +476,30 @@ func (p *poller) letGo(watched map[string]box) error {
 
 // finishIfGone ends an instance watching only named boxes once every one of
 // them is gone.
-func (p *poller) finishIfGone() error {
-	if !p.cfg.onlyIDs() {
+func (f *follower) finishIfGone() error {
+	if !f.cfg.onlyIDs() {
 		return nil
 	}
-	for _, id := range p.cfg.IDs {
-		if !slices.Contains(p.st.Gone, id) {
+	for _, id := range f.cfg.IDs {
+		if !slices.Contains(f.st.Gone, id) {
 			return nil
 		}
 	}
-	return p.emit(monitors.Event{
+	return f.emit(monitors.Event{
 		Kind:  "discobox.finished",
 		Title: "every box this watches is gone",
 		Final: true,
 	})
 }
 
-func (p *poller) emit(ev monitors.Event) error { return p.env.Emit(ev) }
+// emit prints one event, and saves the state behind it: a run ended after
+// this goes on from here rather than reporting it again.
+func (f *follower) emit(ev monitors.Event) error {
+	if err := f.env.Emit(ev); err != nil {
+		return err
+	}
+	return f.env.WriteState(stateFile, f.st)
+}
 
 // firstLine is text's first non-blank line, cut to at most n runes.
 func firstLine(text string, n int) string {

@@ -3,41 +3,65 @@ package discoboxbox
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors/builtin"
 )
 
 var t0 = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
+// hold is how long a test's run follows the stream.
+const hold = 150 * time.Millisecond
+
 // fakeAPI is the discobox API as a box with discoboxApi sees it: the
-// project's boxes, and the secret requests of the boxes it created.
+// project's sandbox event stream (ADR 26-10-29-316 §4), and the secret
+// requests of the boxes it created.
 type fakeAPI struct {
-	mu    sync.Mutex
-	boxes []box
+	mu sync.Mutex
+	// boxes are each live box's data, as the server writes it.
+	boxes map[string]map[string]any
+	// events is the log, oldest first; events[i] has ID i+1.
+	events []fakeEvent
+	// pruned is the highest ID retention has removed: a cursor before it is
+	// reset.
+	pruned int
+	// now is when a change made now is recorded.
+	now time.Time
 	// requests are served as the API writes them, not as the monitor's
 	// struct would encode: a field read as the wrong type fails here too.
 	requests []map[string]any
 	// refuse, when set, is the status and text every call is answered with.
 	refuse     int
 	refuseText string
-	calls      []string
-	srv        *httptest.Server
+	// cut ends each stream once it has sent what there is, rather than
+	// holding it open until the client leaves.
+	cut bool
+	// raw, when set, is sent as one event's data in place of the log's.
+	raw     string
+	calls   []string
+	cursors []string
+	srv     *httptest.Server
+}
+
+type fakeEvent struct {
+	typ  string
+	data map[string]any
 }
 
 func newFake(t *testing.T) *fakeAPI {
-	f := &fakeAPI{}
+	f := &fakeAPI{boxes: map[string]map[string]any{}, now: t0.Add(-time.Hour)}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -45,54 +69,147 @@ func newFake(t *testing.T) *fakeAPI {
 
 func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, r.URL.RequestURI())
 	if f.refuse != 0 {
+		f.mu.Unlock()
 		http.Error(w, f.refuseText, f.refuse)
 		return
 	}
 	switch r.URL.Path {
-	case "/projects/default/sandboxes":
-		selectors, err := sandboxmeta.ParseSelectors(r.URL.Query()["tag"])
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		out := []map[string]any{}
-		for _, b := range f.boxes {
-			if sandboxmeta.MatchesAll(b.Meta.Tags, selectors) {
-				out = append(out, apiBox(b))
-			}
-		}
-		if err := json.NewEncoder(w).Encode(map[string]any{"sandboxes": out}); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+	case "/api/projects/default/events":
+		cursor := r.Header.Get("Last-Event-ID")
+		f.cursors = append(f.cursors, cursor)
+		frames := f.framesAfter(cursor)
+		cut := f.cut
+		f.mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "retry: 2000\n\n"+frames)
+		w.(http.Flusher).Flush()
+		if !cut {
+			<-r.Context().Done()
 		}
 	case "/projects/default/secret-requests":
+		defer f.mu.Unlock()
 		if err := json.NewEncoder(w).Encode(map[string]any{"secretRequests": f.requests}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	default:
+		f.mu.Unlock()
 		http.NotFound(w, r)
 	}
 }
 
-// apiBox is a Sandbox as the API serves it, written out by hand rather than
-// encoded from the monitor's struct, with fields the monitor does not read.
-func apiBox(b box) map[string]any {
-	out := map[string]any{
-		"id": b.ID, "projectId": "default", "poolId": "pool_1", "createdAt": b.CreatedAt, "updatedAt": b.CreatedAt,
-		"discoboxApi": false, "displayName": b.ID + ": on it",
-		"config": map[string]any{"name": b.Config.Name, "bundleDigest": "sha256:0"},
-		"meta":   map[string]any{"name": b.Meta.Name, "tags": b.Meta.Tags},
-	}
-	if b.Runtime != nil {
-		runtime := map[string]any{"displayState": b.Runtime.DisplayState, "state": "ready", "desiredState": "present"}
-		if b.Runtime.AgentStatus != nil {
-			runtime["agentStatus"] = map[string]any{"sessions": b.Runtime.AgentStatus.Sessions, "git": map[string]any{}}
+// framesAfter is what the stream sends a client at cursor: every event after
+// it, or with no cursor the latest event of each live box and then where the
+// stream stands; a cursor retention has passed is a reset and then the same.
+func (f *fakeAPI) framesAfter(cursor string) string {
+	var b strings.Builder
+	write := func(id int) {
+		ev := f.events[id-1]
+		data, err := json.Marshal(ev.data)
+		if err != nil {
+			panic(err)
 		}
-		out["runtime"] = runtime
+		if f.raw != "" {
+			data = []byte(f.raw)
+		}
+		fmt.Fprintf(&b, "id: %d\nevent: %s\ndata: %s\n\n", id, ev.typ, data)
 	}
-	return out
+	from, _ := strconv.Atoi(cursor)
+	if cursor != "" && from >= f.pruned {
+		for id := from + 1; id <= len(f.events); id++ {
+			write(id)
+		}
+		return b.String()
+	}
+	if cursor != "" {
+		b.WriteString("event: reset\ndata: {}\n\n")
+	}
+	latest := map[string]int{}
+	for i, ev := range f.events {
+		latest[ev.data["sandboxId"].(string)] = i + 1
+	}
+	var ids []int
+	for sandboxID, id := range latest {
+		if _, live := f.boxes[sandboxID]; live {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		write(id)
+	}
+	fmt.Fprintf(&b, "id: %d\n\n", len(f.events))
+	return b.String()
+}
+
+// record appends an event with the box's state now.
+func (f *fakeAPI) record(typ, id string) {
+	data := map[string]any{}
+	for k, v := range f.boxes[id] {
+		data[k] = v
+	}
+	data["at"] = f.now
+	f.events = append(f.events, fakeEvent{typ: typ, data: data})
+}
+
+// create adds a running box, its primary terminal's program reporting
+// program ("" for none).
+func (f *fakeAPI) create(id, name, program string, tags map[string]string, createdBy string) {
+	box := map[string]any{
+		"projectId": "proj_1", "sandboxId": id, "name": name,
+		"desiredState": "present", "state": "ready", "runtimeState": "running",
+	}
+	if program != "" {
+		box["program"] = map[string]any{"state": program, "app": "claude-code"}
+	}
+	if len(tags) > 0 {
+		box["tags"] = tags
+	}
+	if createdBy != "" {
+		box["createdBySandboxId"] = createdBy
+	}
+	f.boxes[id] = box
+	f.record("sandbox.created", id)
+}
+
+func (f *fakeAPI) update(id string, change func(box map[string]any)) {
+	change(f.boxes[id])
+	f.record("sandbox.updated", id)
+}
+
+func (f *fakeAPI) power(id, state string) {
+	f.update(id, func(box map[string]any) {
+		box["runtimeState"] = state
+		if state != "running" {
+			delete(box, "program")
+		}
+	})
+}
+
+func (f *fakeAPI) program(id, state, kind string) {
+	f.update(id, func(box map[string]any) {
+		program := map[string]any{"state": state, "app": "claude-code"}
+		if kind != "" {
+			program["kind"] = kind
+		}
+		box["program"] = program
+	})
+}
+
+func (f *fakeAPI) tag(id string, tags map[string]string) {
+	f.update(id, func(box map[string]any) {
+		if len(tags) == 0 {
+			delete(box, "tags")
+			return
+		}
+		box["tags"] = tags
+	})
+}
+
+func (f *fakeAPI) remove(id string) {
+	f.record("sandbox.deleted", id)
+	delete(f.boxes, id)
 }
 
 // request is a SecretRequest as the API serves it.
@@ -104,68 +221,22 @@ func request(id, sandbox, status, name string, created time.Time) map[string]any
 	}
 }
 
-func (f *fakeAPI) box(id string) *box {
-	for i := range f.boxes {
-		if f.boxes[i].ID == id {
-			return &f.boxes[i]
-		}
-	}
-	panic("no box " + id)
-}
-
-func (f *fakeAPI) remove(id string) {
-	f.boxes = slices.DeleteFunc(f.boxes, func(b box) bool { return b.ID == id })
-}
-
-// newBox is a running box named name with tags, its primary terminal's
-// program reporting program ("" for none).
-func newBox(id, name string, created time.Time, program string, tags map[string]string) box {
-	var b box
-	b.ID, b.CreatedAt, b.Meta.Name, b.Meta.Tags = id, created, name, tags
-	setState(&b, "running")
-	setProgram(&b, program, "")
-	return b
-}
-
-func setState(b *box, state string) {
-	if b.Runtime == nil {
-		b.Runtime = &struct {
-			DisplayState string `json:"displayState"`
-			AgentStatus  *struct {
-				Sessions json.RawMessage `json:"sessions"`
-			} `json:"agentStatus"`
-		}{}
-	}
-	b.Runtime.DisplayState = state
-}
-
-func setProgram(b *box, state, kind string) {
-	b.Runtime.AgentStatus = &struct {
-		Sessions json.RawMessage `json:"sessions"`
-	}{}
-	if state == "" {
-		b.Runtime.AgentStatus.Sessions = json.RawMessage(`[]`)
-		return
-	}
-	b.Runtime.AgentStatus.Sessions = json.RawMessage(fmt.Sprintf(
-		`[{"primary":true,"startedAt":"2026-11-01T11:00:00Z","programStatus":{"state":%q,"kind":%q,"msg":"on it"}}]`, state, kind))
-}
-
 type instance struct {
 	t      *testing.T
 	f      *fakeAPI
 	env    builtin.Env
 	vars   map[string]string
-	clock  time.Time
+	self   string
 	events []monitors.Event
 }
 
 func newInstance(t *testing.T, f *fakeAPI, opts map[string]string) *instance {
-	in := &instance{t: t, f: f, clock: t0, vars: map[string]string{envAPIURL: f.srv.URL}}
+	in := &instance{t: t, f: f, vars: map[string]string{envAPIURL: f.srv.URL}, self: "sbx_lead"}
 	in.env = builtin.Env{
 		Instance: "test",
 		State:    t.TempDir(),
 		Options:  opts,
+		Interval: hold,
 		Getenv:   func(name string) string { return in.vars[name] },
 		Emit: func(ev monitors.Event) error {
 			in.events = append(in.events, ev)
@@ -176,7 +247,8 @@ func newInstance(t *testing.T, f *fakeAPI, opts map[string]string) *instance {
 	return in
 }
 
-// poll is one run, a minute after the last, returning what it printed.
+// poll is one run at t0, or a minute after the change that preceded it,
+// returning what it printed.
 func (in *instance) poll() []monitors.Event {
 	in.t.Helper()
 	events, err := in.try()
@@ -188,9 +260,30 @@ func (in *instance) poll() []monitors.Event {
 
 func (in *instance) try() ([]monitors.Event, error) {
 	before := len(in.events)
-	err := run(context.Background(), in.env, in.f.srv.Client(), func() time.Time { return in.clock })
-	in.clock = in.clock.Add(time.Minute)
+	in.f.mu.Lock()
+	clock := in.f.now.Add(time.Minute)
+	if clock.Before(t0) {
+		clock = t0
+	}
+	in.f.mu.Unlock()
+	err := run(context.Background(), in.env, deps{
+		http: in.f.srv.Client(),
+		now:  func() time.Time { return clock },
+		self: func() (string, error) {
+			if in.self == "" {
+				return "", errors.New("no sandbox config")
+			}
+			return in.self, nil
+		},
+	})
 	return in.events[before:], err
+}
+
+// at sets when the fake's next changes are recorded.
+func (f *fakeAPI) at(d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.now = t0.Add(d)
 }
 
 func kinds(events []monitors.Event) []string {
@@ -209,35 +302,34 @@ func titles(events []monitors.Event) []string {
 	return out
 }
 
+var worker = map[string]string{"role": "worker"}
+
 func workers(f *fakeAPI) {
-	worker := map[string]string{"role": "worker"}
-	f.boxes = []box{
-		newBox("sbx_a", "issue-1", t0.Add(-time.Hour), "working", worker),
-		newBox("sbx_b", "issue-2", t0.Add(-time.Hour), "idle", worker),
-		newBox("sbx_c", "someone-else", t0.Add(-time.Hour), "working", nil),
-	}
+	f.create("sbx_a", "issue-1", "working", worker, "sbx_lead")
+	f.create("sbx_b", "issue-2", "idle", worker, "sbx_lead")
+	f.create("sbx_c", "someone-else", "working", nil, "")
 }
 
 func TestTheBaselineReportsNothingAndThenEachChange(t *testing.T) {
 	f := newFake(t)
 	workers(f)
-	f.requests = []map[string]any{request("r0", "sbx_a", "pending", "github", t0.Add(-time.Minute))}
 	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
 	if got := in.poll(); len(got) != 0 {
 		t.Fatalf("baseline reported %+v", got)
 	}
-	// Tags alone are the server's filter.
-	if !slices.Contains(f.calls, "/projects/default/sandboxes?tag=role%3Dworker") {
-		t.Fatalf("calls = %v", f.calls)
-	}
 
-	setState(f.box("sbx_a"), "stopped")
-	setProgram(f.box("sbx_b"), "working", "")
-	setProgram(f.box("sbx_c"), "idle", "")
+	f.at(30 * time.Second)
+	f.power("sbx_a", "stopped")
+	f.program("sbx_b", "working", "")
+	f.program("sbx_c", "idle", "")
 	got := in.poll()
 	if !slices.Equal(kinds(got), []string{"box.state", "box.busy"}) ||
 		!slices.Equal(titles(got), []string{"issue-1 is stopped", "issue-2 is working"}) || got[0].Summary != "was running" {
 		t.Fatalf("events = %+v", got)
+	}
+	// Each run goes on from where the last left off.
+	if !slices.Equal(f.cursors, []string{"", "3"}) {
+		t.Fatalf("cursors = %q, want none and then where the replay stood", f.cursors)
 	}
 	if got := in.poll(); len(got) != 0 {
 		t.Fatalf("repeated %+v", got)
@@ -245,10 +337,11 @@ func TestTheBaselineReportsNothingAndThenEachChange(t *testing.T) {
 
 	// The terminal's status, not its screen: blocked on a permission is
 	// idle, with why.
-	setProgram(f.box("sbx_b"), "blocked", "permission")
+	f.at(2 * time.Minute)
+	f.program("sbx_b", "blocked", "permission")
 	got = in.poll()
 	if !slices.Equal(kinds(got), []string{"box.idle"}) || got[0].Title != "issue-2 is waiting on a permission" ||
-		got[0].Key != "box-sbx_b-terminal" || got[0].Body != "on it" {
+		got[0].Key != "box-sbx_b-terminal" {
 		t.Fatalf("events = %+v", got)
 	}
 }
@@ -315,7 +408,8 @@ func TestABoxCreatedSinceTheBaselineIsNews(t *testing.T) {
 	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
 	in.poll()
 
-	f.boxes = append(f.boxes, newBox("sbx_d", "issue-3", t0.Add(30*time.Second), "working", map[string]string{"role": "worker"}))
+	f.at(30 * time.Second)
+	f.create("sbx_d", "issue-3", "working", worker, "sbx_lead")
 	f.requests = []map[string]any{request("r1", "sbx_d", "pending", "github", t0.Add(40*time.Second))}
 	got := in.poll()
 	if !slices.Equal(titles(got), []string{"issue-3 was created: running", "issue-3 asks for github"}) {
@@ -325,18 +419,20 @@ func TestABoxCreatedSinceTheBaselineIsNews(t *testing.T) {
 
 func TestAWorkerThatTagsItselfLateIsStillNews(t *testing.T) {
 	// A worker is created, asks for a credential, and only then tags
-	// itself: created after the baseline, it is news when it is first seen,
-	// and so is its request.
+	// itself: created after the baseline, it is news when it is first
+	// watched, and so is its request.
 	f := newFake(t)
 	workers(f)
 	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
 	in.poll()
-	f.boxes = append(f.boxes, newBox("sbx_d", "issue-3", t0.Add(10*time.Second), "working", nil))
+	f.at(10 * time.Second)
+	f.create("sbx_d", "issue-3", "working", nil, "sbx_lead")
 	f.requests = []map[string]any{request("r1", "sbx_d", "pending", "github", t0.Add(20*time.Second))}
 	if got := in.poll(); len(got) != 0 {
 		t.Fatalf("an unselected box reported %+v", got)
 	}
-	f.box("sbx_d").Meta.Tags = map[string]string{"role": "worker"}
+	f.at(2 * time.Minute)
+	f.tag("sbx_d", worker)
 	if got := in.poll(); !slices.Equal(titles(got), []string{"issue-3 was created: running", "issue-3 asks for github"}) {
 		t.Fatalf("events = %+v", got)
 	}
@@ -348,28 +444,54 @@ func TestABoxSelectedLateThatWasThereAtTheBaselineIsQuiet(t *testing.T) {
 	f.requests = []map[string]any{request("r0", "sbx_c", "pending", "github", t0.Add(-time.Minute))}
 	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
 	in.poll()
-	f.box("sbx_c").Meta.Tags = map[string]string{"role": "worker"}
+	f.at(30 * time.Second)
+	f.tag("sbx_c", worker)
 	if got := in.poll(); len(got) != 0 {
+		t.Fatalf("events = %+v", got)
+	}
+	// Watched now, its changes are news.
+	f.at(2 * time.Minute)
+	f.power("sbx_c", "stopped")
+	if got := in.poll(); !slices.Equal(titles(got), []string{"someone-else is stopped"}) {
 		t.Fatalf("events = %+v", got)
 	}
 }
 
-func TestABoxIsCalledWhatEveryClientCallsIt(t *testing.T) {
-	// No name in its meta: its terminal's title, never the msg beside it;
-	// with no title either, its configured name.
+func TestCreatedBySelectsTheBoxesABoxCreated(t *testing.T) {
 	f := newFake(t)
-	b := newBox("sbx_a", "", t0.Add(-time.Hour), "", map[string]string{"role": "worker"})
-	b.Config.Name = "optimistic_mcclintock"
-	f.boxes = []box{b}
-	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
+	workers(f)
+	in := newInstance(t, f, map[string]string{"created-by": "me", "watch": "terminal"})
 	in.poll()
-	setState(f.box("sbx_a"), "stopped")
-	if got := in.poll(); !slices.Equal(titles(got), []string{"optimistic_mcclintock is stopped"}) {
+	f.at(30 * time.Second)
+	f.program("sbx_a", "idle", "")
+	f.program("sbx_c", "idle", "")
+	if got := in.poll(); !slices.Equal(titles(got), []string{"issue-1 is idle"}) {
 		t.Fatalf("events = %+v", got)
 	}
-	f.box("sbx_a").Runtime.AgentStatus.Sessions = json.RawMessage(`[{"primary":true,"startedAt":"2026-11-01T11:00:00Z","title":"Fix the build","programStatus":{"state":"working","msg":"on it"}}]`)
-	setState(f.box("sbx_a"), "running")
-	if got := in.poll(); !slices.Equal(titles(got), []string{"Fix the build is running", "Fix the build is working"}) {
+	// With a tag too, both must match.
+	in.env.Options = map[string]string{"created-by": "sbx_lead", "tag": "role=lead"}
+	f.at(2 * time.Minute)
+	f.program("sbx_a", "working", "")
+	if got := in.poll(); len(got) != 0 {
+		t.Fatalf("events = %+v", got)
+	}
+	// This box's own ID unknown, created-by=me cannot be resolved.
+	in.env.Options, in.self = map[string]string{"created-by": "me"}, ""
+	if _, err := in.try(); err == nil || !strings.Contains(err.Error(), "this box's own ID is unknown") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestABoxIsCalledByItsConfiguredName(t *testing.T) {
+	f := newFake(t)
+	f.create("sbx_a", "optimistic_mcclintock", "", worker, "")
+	f.create("sbx_b", "", "", worker, "")
+	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
+	in.poll()
+	f.at(30 * time.Second)
+	f.power("sbx_a", "stopped")
+	f.power("sbx_b", "stopped")
+	if got := in.poll(); !slices.Equal(titles(got), []string{"optimistic_mcclintock is stopped", "sbx_b is stopped"}) {
 		t.Fatalf("events = %+v", got)
 	}
 }
@@ -387,15 +509,12 @@ func TestABoxNamedSinceTheBaselineStartsAsItsOwnBaseline(t *testing.T) {
 	if got := in.poll(); len(got) != 0 {
 		t.Fatalf("a newly named box reported its standing state: %+v", got)
 	}
-	setProgram(f.box("sbx_c"), "idle", "")
+	f.at(2 * time.Minute)
+	f.program("sbx_c", "idle", "")
 	f.requests[0]["status"] = "denied"
 	got := in.poll()
 	if !slices.Equal(kinds(got), []string{"box.idle", "box.request.answered"}) {
 		t.Fatalf("events = %+v", got)
-	}
-	// Named by id, it need not match a tag: the list is the project's.
-	if strings.Contains(f.calls[len(f.calls)-2], "tag=") {
-		t.Fatalf("calls = %v", f.calls)
 	}
 }
 
@@ -405,11 +524,13 @@ func TestAnInstanceWatchingOnlyIdsEndsWhenEveryBoxIsGone(t *testing.T) {
 	in := newInstance(t, f, map[string]string{"id": "sbx_a, sbx_b"})
 	in.poll()
 
+	f.at(30 * time.Second)
 	f.remove("sbx_a")
 	got := in.poll()
 	if !slices.Equal(titles(got), []string{"issue-1 is gone"}) || got[0].Final {
 		t.Fatalf("events = %+v", got)
 	}
+	f.at(2 * time.Minute)
 	f.remove("sbx_b")
 	got = in.poll()
 	if !slices.Equal(kinds(got), []string{"box.gone", "discobox.finished"}) || !got[1].Final {
@@ -422,8 +543,25 @@ func TestANamedBoxGoneIsKeptGoneWhenStateIsNotWatched(t *testing.T) {
 	workers(f)
 	in := newInstance(t, f, map[string]string{"id": "sbx_a", "watch": "terminal,requests"})
 	in.poll()
+	f.at(30 * time.Second)
 	f.remove("sbx_a")
 	if got := in.poll(); !slices.Equal(kinds(got), []string{"discobox.finished"}) {
+		t.Fatalf("events = %+v", got)
+	}
+}
+
+func TestABoxSelectedByTagThatIsDeletedIsGone(t *testing.T) {
+	// The stream says a box was deleted, so a box watched by its tag is
+	// reported gone as a named one is; the instance goes on.
+	f := newFake(t)
+	workers(f)
+	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
+	in.poll()
+	f.at(30 * time.Second)
+	f.remove("sbx_a")
+	f.remove("sbx_c")
+	got := in.poll()
+	if !slices.Equal(titles(got), []string{"issue-1 is gone"}) || got[0].Final {
 		t.Fatalf("events = %+v", got)
 	}
 }
@@ -433,13 +571,53 @@ func TestABoxThatLosesItsTagIsLetGoQuietly(t *testing.T) {
 	workers(f)
 	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
 	in.poll()
-	f.box("sbx_a").Meta.Tags = nil
+	f.at(30 * time.Second)
+	f.tag("sbx_a", nil)
+	f.power("sbx_a", "stopped")
 	if got := in.poll(); len(got) != 0 {
 		t.Fatalf("events = %+v", got)
 	}
 	var st state
-	if _, err := in.env.ReadState(stateFile, &st); err != nil || st.Boxes["sbx_a"] != nil {
-		t.Fatalf("state = %+v, %v", st, err)
+	if _, err := in.env.ReadState(stateFile, &st); err != nil || st.Boxes["sbx_a"] == nil || st.Boxes["sbx_a"].Watched {
+		t.Fatalf("state = %+v, %v; want sbx_a held and not watched", st, err)
+	}
+}
+
+func TestAResetReportsWhatChangedAndWhatWentWhileEventsWereMissed(t *testing.T) {
+	f := newFake(t)
+	workers(f)
+	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
+	in.poll()
+
+	// Events are missed: retention passes the cursor while sbx_a stops and
+	// sbx_b is deleted.
+	f.at(30 * time.Second)
+	f.power("sbx_a", "stopped")
+	f.remove("sbx_b")
+	f.pruned = len(f.events)
+
+	// A run cut short before its replay is known to be whole concludes
+	// nothing, and keeps the cursor the reset found, so the next is reset
+	// again.
+	f.cut = true
+	got := in.poll()
+	if !slices.Equal(titles(got), []string{"issue-1 is stopped"}) {
+		t.Fatalf("cut short: events = %+v", got)
+	}
+	f.cut = false
+	got = in.poll()
+	if !slices.Equal(titles(got), []string{"issue-2 is gone"}) {
+		t.Fatalf("after the whole replay: events = %+v", got)
+	}
+	if n := len(f.cursors); f.cursors[n-1] != f.cursors[n-2] || f.cursors[n-1] != "3" {
+		t.Fatalf("cursors = %q, want the pre-reset cursor twice", f.cursors)
+	}
+	// Then it goes on from where the replay stood.
+	if got := in.poll(); len(got) != 0 {
+		t.Fatalf("repeated %+v", got)
+	}
+	if last := f.cursors[len(f.cursors)-1]; last != strconv.Itoa(len(f.events)) {
+		t.Fatalf("cursor = %q, want the head %d", last, len(f.events))
 	}
 }
 
@@ -463,8 +641,18 @@ func TestWithoutTheDiscoboxAPITheFailureSaysWhy(t *testing.T) {
 	in.vars[envAPIURL] = f.srv.URL
 	f.refuse, f.refuseText = http.StatusForbidden, "this discobox may not call the discobox API; a person allows it by setting discoboxApi on it\n"
 	_, err := in.try()
-	if err == nil || err.Error() != "the discobox API refused listing boxes (403): this discobox may not call the discobox API; a person allows it by setting discoboxApi on it" {
+	if err == nil || err.Error() != "the discobox API refused reading events (403): this discobox may not call the discobox API; a person allows it by setting discoboxApi on it" {
 		t.Fatalf("refused: err = %v", err)
+	}
+}
+
+func TestAnEventItCannotReadFailsTheRun(t *testing.T) {
+	f := newFake(t)
+	workers(f)
+	f.raw = `{"sandboxId":"sbx_a","tags":["not","a","map"]}`
+	in := newInstance(t, f, map[string]string{"tag": "role=worker"})
+	if _, err := in.try(); err == nil || !strings.Contains(err.Error(), "event 1") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -476,6 +664,7 @@ func TestOptions(t *testing.T) {
 		{map[string]string{}, "name the boxes to watch"},
 		{map[string]string{"tag": "role=worker", "watch": "logs"}, `"logs" is not state`},
 		{map[string]string{"tag": "=worker"}, "option tag"},
+		{map[string]string{"created-by": "sbx_a,sbx_b"}, "option created-by"},
 	} {
 		if _, err := parseConfig(tc.opts); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: err = %v, want %q", tc.opts, err, tc.want)
@@ -484,6 +673,9 @@ func TestOptions(t *testing.T) {
 	cfg, err := parseConfig(map[string]string{"id": "sbx_a,sbx_b sbx_a", "tag": "issue role=worker", "watch": "state,terminal"})
 	if err != nil || !slices.Equal(cfg.IDs, []string{"sbx_a", "sbx_b"}) || !slices.Equal(cfg.Tags, []string{"issue", "role=worker"}) ||
 		!cfg.Watch[watchState] || !cfg.Watch[watchTerminal] || cfg.Watch[watchRequests] {
+		t.Fatalf("cfg = %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig(map[string]string{"created-by": " me "}); err != nil || cfg.CreatedBy != "me" || cfg.onlyIDs() {
 		t.Fatalf("cfg = %+v, %v", cfg, err)
 	}
 }
@@ -497,10 +689,10 @@ func TestTheImageDeclaresThisMonitor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if def.ID != Name || def.Problem != "" || def.Interval != 30*time.Second || def.MinInterval != 10*time.Second {
+	if def.ID != Name || def.Problem != "" || def.Interval != defaultHold || def.MinInterval != 10*time.Second {
 		t.Fatalf("declaration = %+v", def)
 	}
-	known := []string{"id", "tag", "watch", "interval"}
+	known := []string{"id", "tag", "created-by", "watch", "interval"}
 	for _, opt := range def.Options {
 		if !slices.Contains(known, opt.Name) {
 			t.Errorf("declares %q, which the monitor does not read", opt.Name)
