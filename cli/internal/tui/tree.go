@@ -103,8 +103,7 @@ func (m *Model) openNew() {
 	m.closePages()
 	m.newOpen = true
 	m.listFront, m.treeExpanded = false, false
-	m.focus = focusPrompt
-	m.prompt.Focus()
+	m.backToPrompt()
 	m.layout()
 }
 
@@ -320,8 +319,7 @@ func (m *Model) backToPanes() {
 	// is something to go back to: the keys are the leader's until its pane
 	// arrives (openWorkspace).
 	if m.newOpen || (!m.hasWorkspace() && !m.wsOpening && !m.pageOpen()) {
-		m.focus = focusPrompt
-		m.prompt.Focus()
+		m.backToPrompt()
 	}
 	m.syncListCursor()
 	m.layout()
