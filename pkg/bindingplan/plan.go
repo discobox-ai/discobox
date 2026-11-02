@@ -110,7 +110,18 @@ func Delegate(standing []Binding) Plan {
 
 func oldestFirst(standing []Binding) []Binding {
 	out := append([]Binding(nil), standing...)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created) })
+	// Compared at whole seconds, ties broken by ID. The server plans from
+	// the stored time; the CLI and console plan from the API's createdAt,
+	// which carries whole seconds (RFC 3339). Ordered at any finer
+	// precision, two bindings made within one second would be kept one way
+	// by the server and previewed the other.
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i].Created.Truncate(time.Second), out[j].Created.Truncate(time.Second)
+		if !a.Equal(b) {
+			return a.Before(b)
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 

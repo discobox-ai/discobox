@@ -84,6 +84,12 @@ Global review expectations:
   a page's oldest record skips the rest of that second; a lower bound truncated
   below a page's newest re-reads the page, and when one second holds more than
   a page the reader never gets past it (the audit lists' `until` and `since`).
+- An ordering a client recomputes from what the API returns uses only the
+  precision the API carries. A `date-time` in a body is whole seconds (ogen's
+  RFC 3339); `pkg/bindingplan` once ordered bindings by the stored
+  nanoseconds on the server and by those whole seconds in the CLI's preview,
+  so two bindings made within one second were kept one way and previewed the
+  other.
 - A binary embedded from a gitignored `artifacts/` directory (the server's
   guest relay, the Linux CLI's clipboard helper) builds without it by design,
   so a fresh checkout compiles. That makes a release without it silent:
