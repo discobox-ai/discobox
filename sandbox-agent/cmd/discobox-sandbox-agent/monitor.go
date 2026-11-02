@@ -38,12 +38,13 @@ const monitorUsage = `usage:
                         [--url URL] [--body-file FILE|-] [--name NAME]
   discobox-monitor test MONITOR [-o KEY=VALUE]... [--for DUR] [--since DUR]
 
-Enabling a monitor watches; only a running 'pop --wait' wakes you. Events wait
-until you pop them, and 'read ID' shows one whole. A monitor is a script in the
-repository's .discobox/monitors or the image's, named by its id, or anywhere,
-named by its path (a skill's own: enable ./monitors/watch.sh). 'test' runs one
-without enabling it, and 'test --since 2h' starts it two hours back, for a
-monitor that can.
+Enabling a monitor watches; only a running pop ('pop --follow', or 'pop
+--wait') wakes you, and one is enough: each event goes to the pop that takes
+it. Events wait until you pop them, and 'read ID' shows one whole. A monitor
+is a script in the repository's .discobox/monitors or the image's, named by
+its id, or anywhere, named by its path (a skill's own: enable
+./monitors/watch.sh). 'test' runs one without enabling it, and 'test --since
+2h' starts it two hours back, for a monitor that can.
 
 'enable --update' gives an enabled instance new options in place, keeping what
 it already watched; the options given replace its options whole.
@@ -504,7 +505,7 @@ func monitorEnable(env monitorEnv, args []string, out io.Writer) error {
 		return nil
 	}
 	fmt.Fprintf(out, "enabled %s: %s, %s\n", inst.Name, oneLine(inst.Describe()), mode(def, options))
-	fmt.Fprintln(out, "Its events wait for 'discobox-monitor pop'. To be woken by one, keep 'discobox-monitor pop --wait' running.")
+	fmt.Fprintln(out, "Its events wait for 'discobox-monitor pop'. A pop already running delivers them too; with none, keep one running to be woken ('pop --follow', or 'pop --wait').")
 	return nil
 }
 

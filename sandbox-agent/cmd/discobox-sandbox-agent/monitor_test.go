@@ -78,7 +78,7 @@ func TestMonitorEnableRecordsTheInstanceAndRefusesWhatItCannotRun(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "enabled pr-412") || !strings.Contains(out, "pop --wait") {
+	if !strings.Contains(out, "enabled pr-412") || !strings.Contains(out, "A pop already running delivers them") {
 		t.Fatalf("enable said:\n%s", out)
 	}
 	inst, err := monitors.ReadInstance(env.dirs, "pr-412")
