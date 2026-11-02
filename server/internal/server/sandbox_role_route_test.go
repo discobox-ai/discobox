@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // A sandbox's own calls, as its pool forwards them from the reserved host
@@ -78,9 +81,9 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 		// It reaches only the discoboxes it created, and is not its own creator.
 		{http.MethodGet, project + "/sandboxes/" + routeTestSandboxID, http.StatusForbidden},
 		{http.MethodGet, project + "/pools", http.StatusForbidden},
-		// The event stream is every sandbox in the project, not only the ones
-		// it created (ADR 26-10-29-316).
-		{http.MethodGet, "/api" + project + "/events", http.StatusForbidden},
+		// The event stream is served, whole (TestASandboxReadsItsProjectsEventStream);
+		// another project's is not.
+		{http.MethodGet, "/api/projects/another-project/events", http.StatusForbidden},
 		{http.MethodGet, "/projects/another-project/sandboxes", http.StatusForbidden},
 		{http.MethodGet, "/projects", http.StatusForbidden},
 		{http.MethodGet, "/peers", http.StatusForbidden},
@@ -90,6 +93,57 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 			if resp.Code != tc.want {
 				t.Fatalf("status = %d, want %d; body = %s", resp.Code, tc.want, resp.Body.String())
 			}
+		})
+	}
+}
+
+// A discobox with the API reads its whole project's event stream through its
+// pool, by the project's ID or as default, as it lists the project's
+// sandboxes (ADR 26-11-01-560 §1): the stream opens with every sandbox's
+// current state, its own included, though it created none of them.
+func TestASandboxReadsItsProjectsEventStream(t *testing.T) {
+	skipWithoutDocker(t)
+	ctx := context.Background()
+	db := newAppTestDB(ctx, t)
+	router := newTestApp(ctx, t, db)
+	projectID, key := seedCredentialRoutePool(ctx, t, db.Write, router)
+	allowDiscoboxAPI(ctx, t, db.Write, routeTestSandboxID)
+	// The seed writes its sandbox's row directly, as a sandbox from before
+	// events was; the backfill a start runs gives it its event.
+	if err := store.BackfillSandboxEvents(db.Write); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(router)
+	defer srv.Close()
+
+	for _, project := range []string{projectID, "default"} {
+		t.Run(project, func(t *testing.T) {
+			token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
+			streamCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, srv.URL+"/api/projects/"+project+"/events", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set(poolauth.ForwardingPoolHeader, routeTestPoolID)
+			req.Header.Set(poolauth.ForwardedSandboxHeader, routeTestSandboxID)
+			resp, err := srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("status = %d, want 200; body = %s", resp.StatusCode, body)
+			}
+			scanner := bufio.NewScanner(resp.Body)
+			for scanner.Scan() {
+				if strings.HasPrefix(scanner.Text(), "data: ") && strings.Contains(scanner.Text(), `"sandboxId":"`+routeTestSandboxID+`"`) {
+					return
+				}
+			}
+			t.Fatalf("the stream ended (%v) without the sandbox's state", scanner.Err())
 		})
 	}
 }

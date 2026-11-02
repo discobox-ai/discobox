@@ -140,6 +140,10 @@ const (
 var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodGet, path: "sandboxes"},
 	{method: http.MethodPost, path: "sandboxes"},
+	// The project's sandbox event stream, whole, as the listing above is:
+	// an event carries nothing the listing does not, and a box narrows the
+	// stream to the boxes it watches itself (ADR 26-11-01-560 §1).
+	{method: http.MethodGet, path: "events"},
 	{method: http.MethodGet, path: "sandboxes/*", names: createdDiscobox},
 	// Delivering a source into a discobox: the push into its origin, and the
 	// report that ends its wait (ADR 26-09-24-630 §2). Fetching from an origin

@@ -305,3 +305,15 @@ func TestSandboxRoleActsOnlyOnDiscoboxesWithinItsEgress(t *testing.T) {
 		{"read the screen of one with passthrough", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-unread/execs/primary/screen", http.StatusOK},
 	})
 }
+
+// A discobox reads its whole project's event stream, as it lists its
+// sandboxes, and narrows it itself; another project's stays refused (ADR
+// 26-11-01-560 §1).
+func TestSandboxRoleReadsItsProjectsEventStream(t *testing.T) {
+	checkRole(t, []roleCase{
+		{"read the project's events", roleLead, http.MethodGet, "/api/projects/default/events", http.StatusOK},
+		{"read them by the project's ID", roleWorker, http.MethodGet, "/api/projects/proj-1/events", http.StatusOK},
+		{"read another project's events", roleLead, http.MethodGet, "/api/projects/proj-2/events", http.StatusForbidden},
+		{"write to the stream", roleLead, http.MethodPost, "/api/projects/default/events", http.StatusForbidden},
+	})
+}

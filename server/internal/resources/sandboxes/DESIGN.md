@@ -574,9 +574,13 @@ An event's data is the projection of the sandbox, and nothing else:
 stops reporting on an archived sandbox, so until its next complete sync puts
 it down the row's last value is from before it), and the primary session's program state (`state`, `kind`, `app`),
 while the sandbox is running, chosen by the
-rule `discobox ls` uses (`programstatus.PrimaryPosted`). The name is the
-configured handle, not the display name, which moves with the program's
-title. What is in it is
+rule `discobox ls` uses (`programstatus.PrimaryPosted`), its `tags`, and
+`createdBySandboxId`
+([ADR 26-11-01-560](../../../../docs/adr/26-11-01-560-discobox-box-watches-other-boxes-through-the-sandbox-event-stream.md)
+§2). The name is the configured handle, not the display name, which moves
+with the program's title. A box with the discobox API reads the whole
+project's stream, as it lists the project's sandboxes, and narrows it
+itself (§1). What is in it is
 the contract, `SandboxEventData` in `server.yaml`. A new field changes what
 every write is compared on, so it is an ADR's decision, not a convenience.
 

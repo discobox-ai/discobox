@@ -602,10 +602,6 @@ func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandbox
 // Like UpdateSandboxAgentStatus it is an observation, so it neither goes
 // through the generation contract nor stamps updated_at.
 func (s *Store) UpdateSandboxMeta(ctx context.Context, projectID, sandboxID string, meta sandboxmeta.Meta, observedAt time.Time) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
 	tags := meta.Tags
 	if tags == nil {
 		tags = map[string]string{}
@@ -624,15 +620,27 @@ func (s *Store) UpdateSandboxMeta(ctx context.Context, projectID, sandboxID stri
 		description = meta.Description
 	}
 	observedAt = observedAt.UTC()
-	return write.WithContext(ctx).Model(&model.Sandbox{}).
-		Where("project_id = ? AND id = ?", projectID, sandboxID).
-		Where("meta_observed_at IS NULL OR meta_observed_at < ?", observedAt).
-		UpdateColumns(map[string]any{
-			"meta_name":        name,
-			"description":      description,
-			"tags":             string(encoded),
-			"meta_observed_at": observedAt,
-		}).Error
+	// The tags are an event's (ADR 26-11-01-560 §2): a write that changes
+	// them records one, and the batch's comparison makes a report that
+	// changes nothing record nothing.
+	return s.inSandboxTx(ctx, func(txStore *Store, tx *gorm.DB) error {
+		result := tx.Model(&model.Sandbox{}).
+			Where("project_id = ? AND id = ?", projectID, sandboxID).
+			Where("meta_observed_at IS NULL OR meta_observed_at < ?", observedAt).
+			UpdateColumns(map[string]any{
+				"meta_name":        name,
+				"description":      description,
+				"tags":             string(encoded),
+				"meta_observed_at": observedAt,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			txStore.sandboxChanged(sandboxID)
+		}
+		return nil
+	})
 }
 
 // UpdateSandboxResources writes only the two resource columns, pushed

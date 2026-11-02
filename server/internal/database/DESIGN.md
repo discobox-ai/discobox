@@ -126,9 +126,11 @@ by what it is looking for and is idempotent:
    sandbox state split (ADR 0034), denying the open requests of a sandbox that
    no longer exists (`denyOrphanedSecretRequests`), re-keying every sandbox
    origin to where its source came from (`rekeySandboxOrigins`, ADR 0111 §4),
-   and, last, a `sandbox.updated` event for every sandbox that has none
-   (`store.BackfillSandboxEvents`, ADR 26-10-29-316), so the event stream's
-   current state covers sandboxes from before it. The projection is the
+   and, last, a `sandbox.updated` event for every sandbox that has none or
+   whose latest event differs from the store's projection
+   (`store.BackfillSandboxEvents`, ADR 26-10-29-316, 26-11-01-560 §2), so the
+   event stream's current state covers sandboxes from before it, and fields
+   added to the event since. The projection is the
    store's, so the step calls it rather than writing rows of its own.
 
 The platform columns (ADR 0145 §1) are added by `AutoMigrate` and deliberately

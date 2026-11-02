@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -468,5 +469,101 @@ func TestSandboxEventLogIsReadOnTheWriteHandle(t *testing.T) {
 	}
 	if events, err := s.ListLatestSandboxEvents(ctx, "project-1", 0); err != nil || len(events) == 0 {
 		t.Fatalf("latest events = %d, %v; want the primary's", len(events), err)
+	}
+}
+
+// An event carries the sandbox's tags and the sandbox that created it, and
+// the meta write records one when the tags change, and only then (ADR
+// 26-11-01-560 §2).
+func TestSandboxEventsCarryTagsAndCreator(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	lead := "sandbox-lead"
+	sandbox := &model.Sandbox{ID: "sandbox-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "alpha", CreatedBySandboxID: &lead}
+	sandbox.DesiredState = model.DesiredStatePresent
+	sandbox.State = "pending"
+	if err := s.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	events := sandboxEvents(t, s, 0)
+	if len(events) != 1 {
+		t.Fatalf("after create: %+v", events)
+	}
+	if data := eventData(t, events[0]); data.CreatedBySandboxID != lead || data.Tags != nil {
+		t.Fatalf("created data = %+v, want creator %s and no tags", data, lead)
+	}
+	cursor := events[0].Seq
+
+	at := time.Now().UTC()
+	if err := s.UpdateSandboxMeta(ctx, "project-1", sandbox.ID, sandboxmeta.Meta{Name: "worker", Tags: map[string]string{"issue": "427"}}, at); err != nil {
+		t.Fatalf("meta: %v", err)
+	}
+	events = sandboxEvents(t, s, cursor)
+	if len(events) != 1 || events[0].Type != model.SandboxEventUpdated {
+		t.Fatalf("after tagging: %+v, want one sandbox.updated", events)
+	}
+	if data := eventData(t, events[0]); data.Tags["issue"] != "427" || data.CreatedBySandboxID != lead {
+		t.Fatalf("tagged data = %+v", data)
+	}
+	cursor = events[0].Seq
+
+	// A name and a description are not an event's; a report that changes
+	// only them, or nothing, records nothing.
+	at = at.Add(time.Second)
+	if err := s.UpdateSandboxMeta(ctx, "project-1", sandbox.ID, sandboxmeta.Meta{Name: "renamed", Description: "d", Tags: map[string]string{"issue": "427"}}, at); err != nil {
+		t.Fatalf("meta: %v", err)
+	}
+	if got := sandboxEvents(t, s, cursor); len(got) != 0 {
+		t.Fatalf("a rename recorded %+v", got)
+	}
+	// An older report loses, and records nothing.
+	if err := s.UpdateSandboxMeta(ctx, "project-1", sandbox.ID, sandboxmeta.Meta{}, at.Add(-time.Minute)); err != nil {
+		t.Fatalf("meta: %v", err)
+	}
+	if got := sandboxEvents(t, s, cursor); len(got) != 0 {
+		t.Fatalf("a stale report recorded %+v", got)
+	}
+	// Clearing the tags is a change.
+	if err := s.UpdateSandboxMeta(ctx, "project-1", sandbox.ID, sandboxmeta.Meta{}, at.Add(time.Second)); err != nil {
+		t.Fatalf("meta: %v", err)
+	}
+	events = sandboxEvents(t, s, cursor)
+	if len(events) != 1 || eventData(t, events[0]).Tags != nil {
+		t.Fatalf("after clearing tags: %+v, want one event with no tags", events)
+	}
+}
+
+// A latest event written before the projection gained a field is brought up
+// to date by the backfill, once; one that matches is left alone.
+func TestBackfillSandboxEventsUpdatesAStaleLatestEvent(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, nil)
+	createTestPool(t, s, "project-1", "pool-1")
+	for _, id := range []string{"sandbox-tagged", "sandbox-plain"} {
+		sandbox := &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: id}
+		sandbox.DesiredState = model.DesiredStatePresent
+		sandbox.State = model.SandboxStateReady
+		if err := s.CreateSandbox(ctx, sandbox); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	}
+	// Tags written as an older server wrote them, with no event.
+	if err := db.Write.Model(&model.Sandbox{}).Where("id = ?", "sandbox-tagged").
+		UpdateColumn("tags", `{"role":"worker"}`).Error; err != nil {
+		t.Fatalf("raw tags: %v", err)
+	}
+	cursor := sandboxEvents(t, s, 0)[1].Seq
+	for range 2 {
+		if err := store.BackfillSandboxEvents(db.Write); err != nil {
+			t.Fatalf("backfill: %v", err)
+		}
+	}
+	events := sandboxEvents(t, s, cursor)
+	if len(events) != 1 || events[0].SandboxID != "sandbox-tagged" || events[0].Type != model.SandboxEventUpdated {
+		t.Fatalf("backfilled %+v, want one sandbox.updated for sandbox-tagged", events)
+	}
+	if data := eventData(t, events[0]); data.Tags["role"] != "worker" {
+		t.Fatalf("backfilled data = %+v, want its tags", data)
 	}
 }
