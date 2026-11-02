@@ -1234,9 +1234,11 @@ flowchart TD
   `proxy.PoolClientHeader`. That listener (`NewOriginRouter`) serves the
   `git-origins` route alone, to the pool's sandbox token alone, and only when
   the token's sandbox, the path's and the proxy's are one.
-- **The record.** Every create that builds volumes rewrites
-  `sandboxes/{sandbox}/source-caches.json`: each cache-delivered source's
-  cache key, by slug, from the create request (`writeSourceCaches`). It is
+- **The record.** Every create rewrites
+  `sandboxes/{sandbox}/source-caches.json` as it stages the sandbox
+  (`prepareSourceOrigins`, from `stageSandbox`, whichever runtime boots it):
+  each cache-delivered source's cache key, by slug, from the create request
+  (`writeSourceCaches`). It is
   pool-private, beside the volumes rather than in one. `GitOriginPath` reads
   it to serve the sandbox, and an export reads it to find the namespaces.
 - **What a sandbox is served** (`githttp.ServeBackend`, `FetchOnly`). Project

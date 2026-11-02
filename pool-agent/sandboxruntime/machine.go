@@ -565,7 +565,7 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		return nil, false, err
 	}
 	r.publishSandboxPhase(ctx, sandboxID, PhasePreparingVolumes)
-	proxyEnv, err := r.stageSandbox(sandboxID, req)
+	proxyEnv, err := r.stageSandbox(ctx, sandboxID, req)
 	if err != nil {
 		return nil, false, err
 	}

@@ -751,7 +751,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	if err := r.writeProjectLayerRecord(sandboxID, project); err != nil {
 		return nil, false, err
 	}
-	proxyEnv, err := r.stageSandbox(sandboxID, req)
+	proxyEnv, err := r.stageSandbox(ctx, sandboxID, req)
 	if err != nil {
 		return nil, false, err
 	}
@@ -845,7 +845,13 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 // runtime-config document's secrets and sources, delivered once its agent
 // answers (finishBoot). It returns the proxy environment the sandbox's
 // bootstrap carries.
-func (r *sandboxCore) stageSandbox(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (map[string]string, error) {
+func (r *sandboxCore) stageSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (map[string]string, error) {
+	// The origins its runtime-config document names, before the box exists,
+	// whatever runtime boots it: the sandbox fetches every source from this
+	// pool's git-origins route, which serves what is set up here.
+	if err := r.prepareSourceOrigins(ctx, sandboxID, req); err != nil {
+		return nil, err
+	}
 	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)
 	if err != nil {
 		return nil, err
@@ -1096,14 +1102,6 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	sources := sandboxSources(r.paths, req)
 	_, hasPrimary := req.Config.Source.Get()
 	for _, source := range sources {
-		// A source delivered before the pool cached Git has a bare repository
-		// of its own, which has to exist before the container does: the
-		// client pushes into it while the sandbox parks (ADR 0058 §1).
-		if gitSourceHasOwnOrigin(source.git) {
-			if err := r.initGitOrigin(ctx, r.sandboxOriginPath(sandboxID, source.slug), gitSourceInitialBranch(source.git), user); err != nil {
-				return nil, fmt.Errorf("prepare source origin %q: %w", source.slug, err)
-			}
-		}
 		// The directory boot binds onto the source's target, which it gives to
 		// the sandbox user. It exists from the start, even for a source still
 		// on its way, because the resume that fills it does not rebuild the
@@ -1119,12 +1117,6 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 				return nil, fmt.Errorf("prepare source data %q: %w", source.slug, err)
 			}
 		}
-	}
-	if err := r.adoptImportedOrigins(ctx, sandboxID, sources); err != nil {
-		return nil, fmt.Errorf("read imported origins: %w", err)
-	}
-	if err := r.writeSourceCaches(sandboxID, sources); err != nil {
-		return nil, fmt.Errorf("record source caches: %w", err)
 	}
 	// These sources are resolved by the Docker daemon, so they are the only
 	// place a container path has to become a daemon path.
