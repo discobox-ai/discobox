@@ -50,6 +50,18 @@ Global review expectations:
   not public control-plane API DTOs and may be used where pool-agent HTTP API
   calls or pool-local runtime contracts are the package responsibility.
 - Prefer short-lived tokens and explicit key ownership for auth flows.
+- A CI job that builds what a tag publishes never reads a build cache that a
+  pull request can write. Go trusts what `GOCACHEPROG` returns for a key, and a
+  pull request's test code runs with that cache's credentials, so it can plant
+  compiled packages a release would link. `.github/actions/task` keeps Depot
+  Cache only for `pull_request` events and pushes to a branch, by event rather
+  than by ref, since a dispatched release runs off a branch; a release path
+  that skips that action has to turn it off itself.
+- No `go` command runs in `.github/actions/task` before the module cache is
+  restored. `GOTOOLCHAIN=auto` makes the first one download the toolchain into
+  `~/go/pkg/mod` as read-only files, the restore then fails to extract over
+  them, and `actions/cache` reports that as a miss: a reporting step put first
+  silently lost the module and lint caches on every Linux and macOS job.
 - A constructor that starts a goroutine reading into an object takes its own
   claim on that object first. `wstunnel.Client.DialNew` started a tunnel's
   reader before claiming its stream, so a server closing at once left nothing

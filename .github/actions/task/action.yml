@@ -9,9 +9,10 @@ description: Run one Taskfile target in the repository's Nix devShell (plain Go 
 # repository: a local composite action is only resolvable once the repository is
 # already on disk, so every job runs actions/checkout first. A job that needs a
 # second target adds a plain `run: nix develop -c go tool task <target>` step —
-# Nix is already installed by then, though not on Windows. The caches are saved
-# by this action's last step, not when the job ends, so what such a step builds
-# is not kept for the next run.
+# Nix is already installed by then, though not on Windows. What such a step
+# compiles reaches Depot Cache like the rest, but the module and lint caches are
+# saved by this action's last step, not when the job ends, so what it downloads
+# or lints is not kept for the next run.
 
 inputs:
   target:
@@ -38,24 +39,6 @@ runs:
       with:
         go-version-file: go.mod
         cache: false
-
-    # Go's build and test cache is not here: Depot's runners start every job
-    # with GOCACHEPROG set to Depot Cache, which Go asks for each compiled
-    # package or test result as it needs it and writes new ones to as it makes
-    # them. Nothing is downloaded before the target or uploaded after it, and a
-    # pull request's results are shared like main's. Nix keeps the environment,
-    # so the devShell's go sees it too. This step shows it in the log, and warns
-    # on a runner that did not set it, where every build starts cold.
-    - name: Report the Go build cache
-      shell: bash
-      run: |
-        if [ "$RUNNER_OS" = Windows ]; then go=go; else go='nix develop -c go'; fi
-        prog=$($go env GOCACHEPROG)
-        if [ -n "$prog" ]; then
-          echo "GOCACHEPROG=$prog"
-        else
-          echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
-        fi
 
     # The devShell itself comes from cache.nixos.org. What Depot Cache does not
     # cover is kept here: the module cache, and golangci-lint's analysis cache,
@@ -85,6 +68,49 @@ runs:
         restore-keys: |
           go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
           go-${{ runner.os }}-${{ runner.arch }}-
+
+    # Go's build and test cache is not here: Depot's runners start every job
+    # with GOCACHEPROG set to Depot Cache, which Go asks for each compiled
+    # package or test result as it needs it and writes new ones to as it makes
+    # them. Nothing is downloaded before the target or uploaded after it, and a
+    # pull request's results are shared like main's. Nix keeps the environment,
+    # so the devShell's go sees it too. This step shows it in the log, and warns
+    # on a runner that did not set it, where every build starts cold.
+    #
+    # Only for a pull request or a push to a branch. Go trusts whatever the
+    # cache returns for a key, and a pull request's code can write that cache,
+    # so every other run turns it off for the rest of the job and compiles from
+    # scratch: a tag's release binaries, images, VM guest and kernel, and a
+    # release dispatched by hand, which runs off a branch. Choosing by event,
+    # not by which job publishes, keeps a trigger added later off it too.
+    #
+    # After the restore, not before: the devShell's go is a bootstrap with
+    # GOTOOLCHAIN=auto, so the first go command downloads the toolchain into the
+    # module cache, read-only, and the restore then cannot extract over it.
+    - name: Choose the Go build cache
+      shell: bash
+      env:
+        SHARED: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) }}
+      run: |
+        if [ "$RUNNER_OS" = Windows ]; then go=go; else go='nix develop -c go'; fi
+        if [ "$SHARED" != true ]; then
+          echo "GOCACHEPROG=" >> "$GITHUB_ENV"
+          # Go reads an empty variable as unset and falls back to its go.env
+          # settings, so check what Go itself now sees rather than trust it.
+          if [ -n "$(GOCACHEPROG= $go env GOCACHEPROG)" ]; then
+            echo "::error title=Shared Go cache::GOCACHEPROG is still set from Go's settings file; this run must not read a cache pull requests write."
+            exit 1
+          fi
+          echo "A $GITHUB_EVENT_NAME run of $GITHUB_REF: Depot Cache is off, Go builds from a cold local cache."
+          exit 0
+        fi
+        prog=$($go env GOCACHEPROG)
+        if [ -n "$prog" ]; then
+          # Its first word only: the rest is the runner's, and could carry a credential.
+          echo "Go's build cache is GOCACHEPROG, running ${prog%% *}."
+        else
+          echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
+        fi
 
     - name: go tool task ${{ inputs.target }}
       if: runner.os != 'Windows'
