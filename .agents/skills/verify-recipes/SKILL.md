@@ -867,6 +867,20 @@ d admin pool create krunpool --provider <prov_id>
   `go tool task build:vm-guest` stages it where the provider prefers it, then
   delete and recreate the pool. (`d admin pool build-guest` builds on the
   pool's own Docker, which cannot reach a registry from inside a discobox.)
+- What a machine pool's agent does at start, before its first call out (the
+  state trees `PreparePoolTrees` makes, the proxy environment, the CA), runs
+  with no boxd: `CGO_ENABLED=0 go build` `./cmd/discobox-pool-agent` (from
+  `pool-agent/`), and run it as root in a throwaway container of the sandbox
+  base image (`docker run --rm --user 0 -v $S:/v:ro --entrypoint /bin/sh
+  discobox-sandbox-base:dev-… /v/run.sh`). The script installs a `0600`
+  bootstrap file and runs the binary with `DISCOBOX_POOL_BOOTSTRAP_FILE`. A
+  machine bootstrap needs `runtime: machine`, a `driver`, a `machineProject`
+  and `publicUrl`/`privateUrl`; `machineProject` and the URLs are file-only,
+  while `runtime` and `driver` may also come from `DISCOBOX_POOL_RUNTIME` and
+  `DISCOBOX_POOL_DRIVER`, which override the file.
+  The agent stops at `pool identity key … is not there`, since nothing
+  enrolled one, after everything before it has run: `stat` the trees then.
+
 - `d admin pool rm` of a failed libkrun pool can leave it listed, and the
   provider then refuses deletion (`provider instance has pools`).
 

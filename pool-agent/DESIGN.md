@@ -119,6 +119,15 @@ runs as root on the same paths. `layout` also offers `Host()`, the per-OS root
 agent's `/etc/discobox`, `/run/discobox`), `MountRoots` and `HostMapping` panic
 on one.
 
+A pool container's trees are made by its driver and a pool VM's by its storage
+unit, before the agent starts. A pool machine has neither, so its agent makes
+them first thing, at every start (`Root.PreparePoolTrees`): the state root and
+the trees down to the pool's sandboxes `0755` — a sandbox's origin is served
+from its tree as the sandbox's user — and `identity/` `0700`. Each is put at
+its mode whether it existed or not, so no other writer that runs first
+(a key's private directory, the git cache, the orphan sweep) decides a shared
+parent's mode, and a machine provisioned before this is corrected.
+
 Tests use `layout.ContainerAt(dir)`, the container's whole filesystem relocated
 under a temporary directory. With no `HostStateRoot`, `daemonPath` hands the
 daemon the paths the agent itself uses, so a fake daemon sharing the test's

@@ -64,6 +64,15 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// the same paths, so its state is the container's (ADR 0144 §1, ADR
 	// 26-10-23-551 §1).
 	root := layout.Container()
+	// A pool container's state trees are made by its driver, a pool VM's by
+	// its storage unit; a pool machine's by nothing else, so they are made
+	// here, at their modes, before any writer below can make one of them
+	// first at its own.
+	if runtimeKind == RuntimeMachine {
+		if err := root.PreparePoolTrees(bootstrap.ProjectID, bootstrap.PoolID); err != nil {
+			return err
+		}
+	}
 	// Publish the host-mount prefix for the proxy systemd unit, then prepare the
 	// proxy certificate bundle before the proxy unit starts so it and the
 	// per-sandbox client certificates share a consistent CA without racing on
