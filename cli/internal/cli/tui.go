@@ -1256,13 +1256,8 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 		return tui.Sandbox{}, err
 	}
 	opts.DiscoboxAPI = req.DiscoboxAPI
-	if opts.PoolID, opts.Platform, err = d.app.newSandboxPlacement(ctx, d.client, d.projectID, req.Pool); err != nil {
+	if err := d.app.newSandboxSettings(ctx, d.client, d.projectID, req.Pool, !req.NoProjectSkills, &opts); err != nil {
 		return tui.Sandbox{}, err
-	}
-	if !req.NoProjectSkills {
-		if opts.ProjectSkills, err = projectSkills(ctx, d.client, d.projectID); err != nil {
-			return tui.Sandbox{}, err
-		}
 	}
 
 	step := func(step sandboxcreate.Step) {

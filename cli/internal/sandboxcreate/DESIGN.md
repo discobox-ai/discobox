@@ -130,6 +130,17 @@ sandbox create requests.
   `.discobox/settings.json`, the checkout beside the primary source — takes the
   first, while destinations and reference keys take the second.
 
+- Sources resolve in order — the order decides which wins a name or a
+  directory, and a local one may ask the person something — but each remote's
+  `ls-remote` is started ahead of its turn (`remoteRefs`): the primary,
+  `-i` and skills sources' when the build starts, the declared ones' once the
+  settings are read, before any `-i` resolves. A create waits about as long as
+  its slowest lookup, not their sum. A prefetch asks nobody: only a remote
+  git reaches, `insteadOf` rewrites applied, over https, http, git:// or
+  file:// is started early, with git's asking off (`sandboxgit.NoPromptEnv`);
+  ssh asks on the terminal itself and is looked up in its turn. One that failed only because it could not ask is
+  looked up again in its turn, so a credential is still asked for, alone; any
+  other failure is the answer.
 - Every source argument — `run`'s SOURCE, `-i`, `--skills`, a `.discobox/settings.json`
   `sources` entry — is `LOCATION[@REF][//PATH]`, read by `sourceref` and settled here
   (`ParseSource`; ADR 26-10-15-664). A GitHub repository may be named short —

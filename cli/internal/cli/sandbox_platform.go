@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+	"sync"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
@@ -66,6 +68,31 @@ func (a *App) newSandboxPlacement(ctx context.Context, client *apiclientgen.Clie
 		return "", undeclaredPlatform, nil
 	}
 	return poolID, p, err
+}
+
+// newSandboxSettings is what a prompt create reads from the server before it
+// can be built: where it is placed and the platform there
+// (newSandboxPlacement), and the project's skills sources (projectSkills)
+// unless it leaves them out. Neither read waits on the other, and both stand
+// between Enter and the create, so they are made at once. A failed placement
+// is the error reported when both fail, as it was when they ran in turn.
+func (a *App) newSandboxSettings(ctx context.Context, client *apiclientgen.Client, projectID, pool string, withProjectSkills bool, opts *sandboxcreate.PromptOptions) error {
+	var skills []sandboxcreate.SkillsRepository
+	var skillsErr error
+	var wg sync.WaitGroup
+	if withProjectSkills {
+		wg.Go(func() { skills, skillsErr = projectSkills(ctx, client, projectID) })
+	}
+	poolID, p, err := a.newSandboxPlacement(ctx, client, projectID, pool)
+	wg.Wait()
+	if err != nil {
+		return err
+	}
+	if skillsErr != nil {
+		return skillsErr
+	}
+	opts.PoolID, opts.Platform, opts.ProjectSkills = poolID, p, skills
+	return nil
 }
 
 func (a *App) readNewSandboxPlacement(ctx context.Context, client *apiclientgen.Client, projectID, pool string) (string, platform.Platform, error) {

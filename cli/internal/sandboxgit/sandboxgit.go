@@ -94,16 +94,24 @@ func PushArgs(token string, args []string) []string {
 	return AuthArgs(token, append(append([]string{}, StallArgs...), args...))
 }
 
-// NoPromptEnv makes git fail rather than ask, for every push this client makes
-// to the control plane's proxy.
+// NoPromptEnv makes git fail rather than ask on a terminal: for every push this
+// client makes to the control plane's proxy, and for the lookups a create
+// makes of a person's own remotes.
 //
-// The transport is authenticated by a bearer token (AuthArgs), so there is no
-// credential a person could usefully type — but git's own prompt and every
-// credential helper open /dev/tty directly rather than stdin, and that terminal
-// belongs to whatever the caller is doing: a create narrating its steps, an
-// attach that has just handed the terminal back. Output is captured either way,
-// so a prompt is a hang with nothing on screen to explain it.
-var NoPromptEnv = map[string]string{"GIT_TERMINAL_PROMPT": "0"}
+// The proxy's transport is authenticated by a bearer token (AuthArgs), so
+// there is no credential a person could usefully type — but git's own prompt
+// and every credential helper open /dev/tty directly rather than stdin, and
+// that terminal belongs to whatever the caller is doing: a create narrating
+// its steps, an attach that has just handed the terminal back. Output is
+// captured either way, so a prompt is a hang with nothing on screen to
+// explain it. Git Credential Manager asks in windows of its own, which git's
+// prompt setting does not reach, so it is told not to; it still hands over
+// what it has stored.
+//
+// An askpass program is left alone: for a person's own remote it is often how
+// the credential arrives (an IDE's terminal hands git its signed-in token
+// through one), not a question.
+var NoPromptEnv = map[string]string{"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
 
 // StallArgs make git give up on a transfer that has stopped moving, and only
 // on one that has stopped moving.

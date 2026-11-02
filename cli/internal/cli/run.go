@@ -423,13 +423,8 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	}
 	parsedOpts.Bindings = opts.bindings
 	parsedOpts.DiscoboxAPI = opts.discoboxAPI
-	if parsedOpts.PoolID, parsedOpts.Platform, err = a.newSandboxPlacement(cmd.Context(), client, projectID, opts.pool); err != nil {
+	if err := a.newSandboxSettings(cmd.Context(), client, projectID, opts.pool, !opts.noProjectSkills, &parsedOpts); err != nil {
 		return err
-	}
-	if !opts.noProjectSkills {
-		if parsedOpts.ProjectSkills, err = projectSkills(cmd.Context(), client, projectID); err != nil {
-			return err
-		}
 	}
 	report := func(step sandboxcreate.Step) { status.set(string(step)) }
 	sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
