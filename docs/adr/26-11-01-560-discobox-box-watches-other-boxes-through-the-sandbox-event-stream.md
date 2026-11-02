@@ -6,7 +6,8 @@
   - [26-10-31-073](26-10-31-073-a-box-runs-the-monitors-its-agent-enables-and-queues-their-events-until-it-pops-them.md)
     §9, the image's built-in monitors, by one.
   - [26-10-29-316](26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md)
-    §1's fields, by `tags` and `createdBySandboxId`, and its refusal of the
+    §1's fields, by `tags`, `createdBySandboxId` and `displayState`; §4's
+    ID-only event, which now always ends a replay; and its refusal of the
     stream to a sandbox principal (Consequences).
 - **Relates to**: [26-11-01-477](26-11-01-477-github-repo-is-a-go-built-in-that-probes-before-it-reads-and-an-instance-may-choose-its-interval.md)
   §1, the built-in seam it runs on, and its rejection of a streaming
@@ -51,7 +52,7 @@ that listing, so the stream shows a box nothing it cannot already read. A
 consumer narrows it to the boxes it cares about on its own side. The route
 has no filter, and a box gets none.
 
-### 2. An event carries the box's tags and its creator
+### 2. An event carries the box's tags, its creator and its display state
 
 `SandboxEventData` gains:
 
@@ -60,8 +61,13 @@ has no filter, and a box gets none.
   unlike the title and msg 316 §1 leaves out.
 - `createdBySandboxId`: the box that created it, when one did. It never
   changes, so it adds no events.
+- `displayState`: the box's display state as a listing serves it, its
+  existence and power combined by the server's one rule (ADR 0034 §5). A
+  client of the stream never combines them itself. It changes where the axes
+  do not, on an error or a repair, and that is an event.
 
-The store's meta write records an event when the tags it writes differ. On
+The store's meta write records an event when the tags it writes differ, and
+the projection reads the error and generations the display state does. On
 start, the backfill that wrote each sandbox's first event also appends an
 update for every sandbox whose latest event differs from what the store now
 projects, so a stream opened with no cursor shows every box's tags from the
@@ -70,22 +76,30 @@ upgrade on.
 ### 3. Each run reads the stream from its cursor, for its interval
 
 A run connects with the last event ID it saved, reports what each event
-changes, saves the ID after each one, and ends once its interval has passed.
-The runner starts the next run straight away, so changes are reported as
-they happen, and the instance keeps a polling monitor's failure and recovery
-(477 rejected a built-in that streams forever because a runner sees neither
-until it exits). The interval is 30s by default and no less than 10s (477
-§2's `interval` option).
+changes, saves the ID after each one, and ends once its interval has passed,
+or 90s, whichever is sooner: the pool's gate ends any call to the API at two
+minutes, body included. The runner starts the next run when the interval is
+up, so changes are reported as they happen, and the instance keeps a polling
+monitor's failure and recovery (477 rejected a built-in that streams forever
+because a runner sees neither until it exits). The interval is 30s by
+default and no less than 10s (477 §2's `interval` option).
 
 - **The stream is followed, not compared.** Each event is a box's whole
   state; the monitor keeps the last state of every box in the project, and
   reports what differs for the boxes it watches.
+- **A replay ends with where the stream stands.** The server ends every
+  replay with an ID-only event, even where it equals the replay's last
+  event's ID, so a client knows the current state has all arrived. 316 §4
+  sent one only when the head had moved past the replay.
 - **A `reset`** marks every box held unconfirmed. The replay that follows
-  confirms the ones that still exist, and at the run's end any left
-  unconfirmed are taken as deleted. A box the reset found changed is
-  reported as changed.
+  confirms the ones that still exist, and at the ID-only event that ends it
+  any left unconfirmed are taken as deleted. Until then the cursor stays
+  where the reset found it, so a run cut off part way is reset again. A box
+  the reset found changed is reported as changed.
 - **Secret requests are not on the stream.** When requests are watched, each
-  run lists them once, at its start.
+  run lists them once, at its end, once the boxes they come from are known;
+  also after a stream that failed for its own reason, so a failing stream
+  hides no request.
 
 ### 4. What it watches and reports
 
@@ -111,7 +125,9 @@ until it exits). The interval is 30s by default and no less than 10s (477
 The first run's replay of the project is recorded and reports nothing. A box
 that existed at the baseline and is selected later, by its tag or by options
 changed in place, is recorded quietly. A box created after the baseline is
-news whenever it is first selected, since a worker tags itself once it runs.
+news whenever it is first selected, since a worker tags itself once it runs;
+so is a box first seen in a reset's replay, since every box the project had
+is held.
 A request made after the baseline is news from any watched box; one made
 before it is where things stood. An instance watching only ids ends once
 every one is gone.
@@ -162,3 +178,11 @@ stream because a box was refused it and its events carried no tags. It now
 opens the stream to a box (§1), adds tags and the creator to the event (§2),
 and reads the stream (§3). `created-by` is new, and a watched box selected
 by tag is reported gone when deleted, since the stream says so.
+
+Amended again from its review, before anything shipped: the event carries
+`displayState` (§2), where the monitor had copied the server's rule and the
+copy had drifted; a replay ends with an ID-only event, and a reset is
+confirmed by it rather than by a run lasting its whole interval, which a
+stream the gate cut at two minutes never did (§3); a run holds the stream at
+most 90s (§3); requests are listed at the run's end (§3); and a box first
+seen in a reset's replay is new (§5).
