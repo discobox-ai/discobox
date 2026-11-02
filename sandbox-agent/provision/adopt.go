@@ -32,40 +32,49 @@ const versionTimeout = 10 * time.Second
 var versionNumber = regexp.MustCompile(`[0-9]+(\.[0-9]+)+|[0-9]+`)
 
 // usable reports whether the box's own copy of what the feature installs is
-// usable, and the version its floor read; the error says why it is not.
-func (r *Runner) usable(ctx context.Context, feature provisionspec.Feature) (string, error) {
+// usable, the version its floor read, and where on the box each of its
+// commands was found; the error says why it is not.
+func (r *Runner) usable(ctx context.Context, feature provisionspec.Feature) (string, map[string]string, error) {
 	adopt := feature.Spec.Adopt
+	commands := map[string]string{}
 	for _, command := range adopt.Commands {
-		if _, err := r.systemCommand(command); err != nil {
-			return "", err
+		path, err := r.systemCommand(command)
+		if err != nil {
+			return "", nil, err
 		}
+		commands[command] = r.boxPath(path)
 	}
 	for _, path := range adopt.Writable {
 		if err := writable(r.path(path)); err != nil {
-			return "", fmt.Errorf("%s is not writable: %w", path, err)
+			return "", nil, fmt.Errorf("%s is not writable: %w", path, err)
 		}
 	}
 	if adopt.Version == nil {
-		return "", nil
+		return "", commands, nil
 	}
 	path, err := r.systemCommand(adopt.Version.Command)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
 	defer cancel()
 	var out bytes.Buffer
 	if err := r.command(ctx, &out, "/", nil, path, adopt.Version.VersionArgs()...); err != nil {
-		return "", fmt.Errorf("%s: %w", adopt.Version.Command, err)
+		return "", nil, fmt.Errorf("%s: %w", adopt.Version.Command, err)
 	}
 	version := versionNumber.FindString(out.String())
 	if version == "" {
-		return "", fmt.Errorf("%s printed no version", adopt.Version.Command)
+		return "", nil, fmt.Errorf("%s printed no version", adopt.Version.Command)
 	}
 	if compareVersions(version, adopt.Version.Minimum) < 0 {
-		return version, fmt.Errorf("%s is %s, older than %s", adopt.Version.Command, version, adopt.Version.Minimum)
+		return version, nil, fmt.Errorf("%s is %s, older than %s", adopt.Version.Command, version, adopt.Version.Minimum)
 	}
-	return version, nil
+	return version, commands, nil
+}
+
+// boxPath is a path under the runner's root as the box spells it.
+func (r *Runner) boxPath(path string) string {
+	return "/" + filepath.ToSlash(mustRel(filepath.Clean(r.root()), path))
 }
 
 // systemCommand finds command on the system PATH, as every user reaches it,
@@ -109,10 +118,10 @@ func (r *Runner) reachable(resolved string) error {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("%s is outside the box", resolved)
 	}
-	boxPath := "/" + filepath.ToSlash(rel)
+	inBox := "/" + filepath.ToSlash(rel)
 	for _, home := range userHomes {
-		if boxPath == home || strings.HasPrefix(boxPath, home+"/") {
-			return fmt.Errorf("it is %s, in a user's home", boxPath)
+		if inBox == home || strings.HasPrefix(inBox, home+"/") {
+			return fmt.Errorf("it is %s, in a user's home", inBox)
 		}
 	}
 	info, err := os.Stat(resolved)
@@ -120,7 +129,7 @@ func (r *Runner) reachable(resolved string) error {
 		return err
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o001 == 0 {
-		return fmt.Errorf("%s cannot be run by every user", boxPath)
+		return fmt.Errorf("%s cannot be run by every user", inBox)
 	}
 	for dir := filepath.Dir(resolved); len(dir) > len(root); dir = filepath.Dir(dir) {
 		info, err := os.Stat(dir)

@@ -98,6 +98,19 @@
   reaches login shells only, a variable a non-login exec needs still belongs
   in the manifest's env.
 
+- **No bundle script runs a feature's tool by PATH lookup, or installs into
+  a tool's default global prefix.** On a box whose image links one user's
+  nvm into `/usr/local/bin`, `npm install -g` as root ran that user's npm and
+  installed the harness CLI into their home, where the sandbox user could
+  not run it, while the node feature had installed a usable Node beside it.
+  npm goes through `npm-global` (the node feature's recorded npm, into
+  `/usr/local/lib/discobox/npm`); anything else installs into
+  `/usr/local/lib/discobox/<tool>` and links its commands with core's
+  `link-command`; a guard asks whether the tool is installed by its path in
+  that prefix, never `command -v` (rustup's guard took one user's rustup for
+  installed). The step gets a `check` that fails when the command left the
+  prefix or is shadowed again. See
+  [`provision`](provision/DESIGN.md#where-a-feature-installs).
 - **A runtime integration reads `provision.json`, never the box.** Whether a
   feature is there is decided once, by provisioning (ADR 26-10-16-423 §4); a
   boot step or service that wires one checks `provisionspec.FeatureOff` (or

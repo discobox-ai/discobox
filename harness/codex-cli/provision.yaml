@@ -12,6 +12,7 @@ steps:
   - name: capture-licenses
     file: {path: /usr/local/libexec/discobox/harness-capture/settings-LICENSE.txt, source: harness-capture/settings-LICENSE.txt}
   - name: cli
+    check: check-cli.sh
     run: install-cli.sh
   # Codex's system config layer: below the user's ~/.codex/config.toml, so these
   # are defaults a user (or a saved harness change's settings) can

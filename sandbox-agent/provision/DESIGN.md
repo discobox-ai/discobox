@@ -103,8 +103,13 @@ flowchart TD
 - **Adopted.** `adopt` is checked by the agent, not a script: each command on
   `SystemPath`, run by every user, never in a home directory, never the
   agent's own personality or a placeholder; the version floor; the writable
-  paths. Adopted skips the `install: true` steps and applies the rest. A
-  feature with a record of an install step is ours and is never adopted.
+  paths. Adopted skips the `install: true` steps and applies the rest, and
+  each of its scripts, checks included, is told where the check found each
+  command (`AdoptedEnv`: `DISCOBOX_PROVISION_ADOPTED_<COMMAND>`), so it wires
+  that copy rather than whatever PATH finds first — which may be one the
+  check refused. An installed feature's scripts are told nothing: they know
+  where they installed. A feature with a record of an install step is ours
+  and is never adopted.
 - **How.** Ready is `adopted`, `installed` when this run applied a step, else
   `snapshot`.
 - **Blocking.** Every feature that is not `async` — core, a harness's
@@ -124,9 +129,50 @@ flowchart TD
   `file` step with `merge: json` takes another across its read and its write,
   so features merging into one file in parallel keep each other's keys.
 
-Npm install scripts use a private temporary cache and remove only that cache.
-They run while a box provisions, at its boot or as a snapshot is taken, when the user's npm cache can be
+## Where a feature installs
+
+A box's image may have put anything at a command's name: a link into one
+user's nvm (boxd links `/usr/local/bin/{node,npm,claude}` into `/home/boxd`,
+closed to every other user), a dangling link, an older copy. So which copy
+*runs* and where Discobox *installs* are separate decisions:
+
+- **Which runs is the adopt check's** — the box's own when it passes, the
+  feature's own otherwise — and the feature records it rather than leaving
+  later steps to find it on PATH again (ADR 26-10-16-423 §4). The node
+  feature's `select` step writes `/usr/local/lib/discobox/node.env`
+  (`DISCOBOX_NODE`, `DISCOBOX_NPM`, `DISCOBOX_NPM_PREFIX`) from what it was
+  told it adopted, or `/usr/bin`'s NodeSource copy it installed; npm-global,
+  the agent store and the harnesses' install steps read that.
+- **Where it installs is always a prefix Discobox owns**,
+  `/usr/local/lib/discobox/<tool>`, never a tool's default prefix and never
+  through what the box has at the name: npm packages (harness CLIs, pnpm)
+  into `/usr/local/lib/discobox/npm` with the recorded npm, by the node
+  feature's `npm-global`; rustup with `CARGO_HOME` at
+  `/usr/local/lib/discobox/rust` (each user's toolchains, registry and
+  `cargo install` stay in their own `~/.rustup` and `~/.cargo`); uv into
+  `/usr/local/lib/discobox/uv`; the downloads `shells-editors` unpacks.
+- **What it installs wins on PATH.** Each command is linked into
+  `/usr/local/bin` by core's `link-command`
+  (`/usr/local/libexec/discobox/link-command`, so a feature using it requires
+  core); the chosen Node's `node`, `npm`, `npx` and `corepack` too, adopted
+  or installed, so a bare `node` in a launcher or capture script runs it.
+  **The policy:** a name Discobox links is Discobox's. Whatever the box had
+  there — a file, a link anywhere, dangling or not — is moved, never deleted,
+  to `/usr/local/lib/discobox/displaced/` under its own path
+  (`…/displaced/usr/local/bin/node`, a later one `.1`, `.2`), and the move is
+  said in the feature's log; a link already into `/usr/local/lib/discobox/`
+  is one a step laid, and is replaced in place. Putting a box's copy back is
+  moving it back from there.
+- **Each such step has a `check`** (`link-command --check`, `npm-global
+  check`, the select step's `check-node.sh`) that fails when the command left
+  the prefix or the link was shadowed again, so the step is applied again at
+  the box's next boot; a box provisioned by the old scripts, whose CLIs went
+  to npm's default prefix, is repaired that way.
+
+npm-global installs with a private temporary cache and removes only that cache.
+It runs while a box provisions, at its boot or as a snapshot is taken, when the user's npm cache can be
 a mounted, pool-shared volume; provisioning must not clear or remove it.
+`sandbox-agent/featurescripts` runs these scripts against a fake box.
 
 The Go installer retries download and validation up to three times within its
 install step. Each attempt extracts into a private sibling of `/usr/local/go`

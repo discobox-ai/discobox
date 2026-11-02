@@ -2,6 +2,8 @@
 # box already has one (the Docker driver's sandbox base image does).
 apiVersion: discobox.ai/provision/v1
 async: true
+# For link-command.
+requires: [core]
 commands: [uv, uvx]
 adopt:
   commands: [uv, uvx]
@@ -12,4 +14,5 @@ steps:
       debian: [python-is-python3, python3, python3-pip, python3-requests, python3-venv]
   - name: uv
     install: true
+    check: check-uv.sh
     run: install-uv.sh

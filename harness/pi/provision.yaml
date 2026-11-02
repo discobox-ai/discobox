@@ -18,6 +18,7 @@ steps:
     packages:
       debian: [fd-find]
   - name: cli
+    check: check-cli.sh
     run: install-cli.sh
   # pi's lifecycle reaches JavaScript and never a command, so this extension
   # is what the other harnesses declare as command hooks. pi has no system
