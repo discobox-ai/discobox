@@ -1,7 +1,10 @@
 # 26-11-03-982 — A host tool is handed the CLI, server and project to set the discobox up
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-03
+
+  Accepted by the owner by merging #496, 2026-11-03.
+
 - **Extends**: [0125](0125-tools-are-declared-in-files-the-way-services-are.md)
   §4, whose table of what a host tool is handed gains three rows; the rest of
   0125, and 0142, stand.
