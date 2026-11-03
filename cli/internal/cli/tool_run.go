@@ -201,11 +201,28 @@ func (l hostToolLaunch) sshTargets(ctx context.Context, notes noteFunc) ([]sshTa
 // run execs the tool with the discobox handed to it, wired to the given
 // streams. expanded is the tool's declared args with remote already
 // substituted into them.
-func (l hostToolLaunch) run(ctx context.Context, remote tools.Remote, expanded, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+//
+// A tool that may run the CLI against the discobox's server starts from
+// cliEnv, the environment a CLI needs to reach this App's server
+// (App.childCLIEnv), which carries no token, so one inherited for the primary
+// never reaches another server (Definition.RunsTheCLI). A script is also handed the
+// discobox in its environment (ADR 0125 §4). A .yaml tool has its
+// placeholders instead: it is usually an editor, every terminal in it
+// inherits what it was started with, and DISCOBOX_SERVER and DISCOBOX_PROJECT
+// there would aim every `discobox` run in it at this one discobox's server and
+// project for the life of the window.
+func (l hostToolLaunch) run(ctx context.Context, cliEnv []string, remote tools.Remote, expanded, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	full := append(append(append([]string{}, l.prefix...), expanded...), args...)
 	//nolint:gosec // G204: a tool declared by this CLI or by the user, with the user's own arguments.
 	session := exec.CommandContext(ctx, l.program, full...)
-	session.Env = append(append(os.Environ(), remote.Environ()...), l.def.Env...)
+	env := os.Environ()
+	if l.def.RunsTheCLI() {
+		env = cliEnv
+	}
+	if l.def.Script {
+		env = append(env, remote.Environ()...)
+	}
+	session.Env = append(env, l.def.Env...)
 	session.Stdin, session.Stdout, session.Stderr = stdin, stdout, stderr
 	if err := session.Run(); err != nil {
 		var exitErr *exec.ExitError
@@ -233,7 +250,24 @@ func (a *App) runHostTool(ctx context.Context, def tools.Definition, target tool
 	if err != nil {
 		return err
 	}
-	handed := tools.Remote{SandboxID: target.sandboxID, Host: remote.host, Workdir: remote.folder, WorkingRoot: remote.workingRoot}
+	// The tool is also handed this binary, the server and the project, so a
+	// script can drive the discobox with the CLI itself (ADR 26-11-03-982).
+	// serverURL is an address by now, never a registered name: the root
+	// command settled it (resolveServerName), and an App aimed at another
+	// server is built from that server's address (forServer).
+	cli, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find this discobox binary to hand %s: %w", launch.def.Label(), err)
+	}
+	handed := tools.Remote{
+		SandboxID:   target.sandboxID,
+		Host:        remote.host,
+		Workdir:     remote.folder,
+		WorkingRoot: remote.workingRoot,
+		ProjectID:   remote.projectID,
+		Server:      target.app.serverURL,
+		CLI:         cli,
+	}
 	// Expanded before anything is said about opening: a tool that asked for
 	// something this discobox cannot give it never opens.
 	expanded, err := handed.Expand(launch.def.Args)
@@ -241,7 +275,9 @@ func (a *App) runHostTool(ctx context.Context, def tools.Definition, target tool
 		return err
 	}
 	fmt.Fprintf(stderr, "opening %s in %s\n", remote.describe(), launch.program)
-	return launch.run(ctx, handed, expanded, args, stdin, stdout, stderr)
+	// No token: the CLI a tool runs is authorized by its transport, and
+	// clearing an inherited one keeps the primary's off another server.
+	return launch.run(ctx, target.app.childCLIEnv(""), handed, expanded, args, stdin, stdout, stderr)
 }
 
 // toolTarget is the discobox a tool was pointed at, on the server it is on.

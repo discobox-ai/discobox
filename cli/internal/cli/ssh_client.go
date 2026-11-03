@@ -78,7 +78,7 @@ func (a *App) startSSHClientSession(cmd *cobra.Command, client *apiclientgen.Cli
 	}
 	return &sshClientSession{
 		options: sshClientOptions(identityFile, knownHosts, hostKeyAlias, proxyCommand),
-		env:     a.sshProxyEnv(),
+		env:     a.childCLIEnv(a.token),
 		cleanup: cleanup,
 	}, nil
 }
@@ -121,14 +121,20 @@ func sshClientHost(sandboxID string) string {
 	return sandboxID + hostAliasSuffix
 }
 
-// sshProxyEnv is the environment the ProxyCommand runs with. Its command line
-// names the server and nothing else, since ssh's argv is readable by every
-// process on the machine; the token and the iroh settings this App dials with
-// travel here, set outright so that what an App aimed at a registered server
-// dropped (forServer) is not put back by what this process inherited.
-func (a *App) sshProxyEnv() []string {
+// childCLIEnv is the environment of a process this CLI starts that runs the
+// CLI against this App's server: the ssh ProxyCommand, harness configure in a
+// local pty, and a host tool that runs the CLI (ADR 26-11-03-982). The
+// ProxyCommand's command line names the server and nothing else, since ssh's
+// argv is readable by every process on the machine; the iroh settings this App
+// dials with travel here, and so does DISCOBOX_TOKEN, set outright to token:
+// never left to what this process inherited, which was given for the primary
+// and would reach whatever server the child is aimed at (forServer drops it
+// for a registered server). The ProxyCommand and harness configure hand on the
+// App's own token; a host tool is handed none, since a CLI is authorized by
+// its transport and the user's own program has no use for the bearer token.
+func (a *App) childCLIEnv(token string) []string {
 	return append(os.Environ(),
-		"DISCOBOX_TOKEN="+a.token,
+		"DISCOBOX_TOKEN="+token,
 		"DISCOBOX_IROH_RELAY_URLS="+a.irohRelayURLs,
 		endpoint.IrohLogEnv+"="+a.irohLogLevel,
 	)
