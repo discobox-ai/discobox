@@ -188,6 +188,17 @@
   rows as though it were the window's own, and nothing may leave the status
   line standing under a prompt for a secret.
 
+## The list
+
+- **A change to the list's rows reads the cursor's box before it changes
+  anything** (`sandboxList.keepingCursor`). The cursor is a row number, kept
+  on its box by finding the box again after the change; a change made in
+  place first — rows of `l.all` given a new state, as an archive's marks do —
+  makes the box that was under the cursor one that is already gone, and the
+  cursor lands on whichever box slid into its row. The first cut of the
+  archive marks did that, and broke the tree's move to the next box after an
+  archive.
+
 ## Saved state
 
 - **The window's memory is one per machine, shared by every window open at

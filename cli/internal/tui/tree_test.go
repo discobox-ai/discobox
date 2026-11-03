@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -315,15 +316,27 @@ func TestArchivingBesideTheTreeGoesOnToTheNextBox(t *testing.T) {
 // does not take the window to the box the archive picked.
 func TestACursorMovedDuringTheArchiveKeepsItsRow(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
+	// A third box in the folder, so there is a row to move to once the
+	// archived one has left the list.
+	boxes := testSandboxes()
+	third := boxes[1]
+	third.ID, third.Name, third.TerminalTitle = "sbx_five", "another in the folder", "another in the folder"
+	third.Created = third.Created.Add(-time.Minute)
+	ds := newFakeSource(append(boxes[:2:2], append([]Sandbox{third}, boxes[2:]...)...)...)
 	ds.doGate = make(chan struct{})
 	d, m, _ := openWorkspace(t, ds, "enter")
 
 	d.leader("x")
 	d.wait("the archive asked", func() bool { return m.busy == "archive…" })
-	d.key("up")
-	if got := m.list.current(); got == nil || got.ID != "sbx_one" {
-		t.Fatalf("the cursor is on %v, want it moved up onto sbx_one", got)
+	if got := m.list.current(); got == nil || got.ID != "sbx_two" {
+		t.Fatalf("the cursor is on %v as the archive goes out, want the box it picked, sbx_two", got)
+	}
+	// The archived box has left the list already, so the move is off the
+	// box the archive picked onto the one after it.
+	d.key("down")
+	moved := m.list.current()
+	if moved == nil || moved.ID != "sbx_five" {
+		t.Fatalf("the cursor is on %v, want it moved down onto sbx_five", moved)
 	}
 	close(ds.doGate)
 	d.wait("the archive", func() bool { return m.busy == "" })
@@ -332,8 +345,8 @@ func TestACursorMovedDuringTheArchiveKeepsItsRow(t *testing.T) {
 	if m.hasWorkspace() || m.wsOpening || primaryOpens(ds, "sbx_two") != 0 {
 		t.Fatalf("workspace %v, opening %v; want nothing opened once the cursor moved", m.hasWorkspace(), m.wsOpening)
 	}
-	if got := m.list.current(); got == nil || got.ID != "sbx_one" {
-		t.Fatalf("the cursor is on %v, want it left where it was moved", got)
+	if got := m.list.current(); got == nil || got.ID != moved.ID {
+		t.Fatalf("the cursor is on %v, want it left where it was moved, on %s", got, moved.ID)
 	}
 }
 

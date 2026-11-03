@@ -1048,6 +1048,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case listLoadedMsg:
 		m.list.slow = false
+		// When this listing was asked for, which says whether it knows of an
+		// archive answered here (sandboxList.settleArchives). One listing is
+		// out at a time, so the poll's is this one's.
+		asked := m.listPoll.since
 		// Whatever was asked for while this was out is asked for now, on an
 		// answer that is known to be older than the asking.
 		var again tea.Cmd
@@ -1057,6 +1061,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.err != nil {
 			return tea.Batch(again, m.report(true, "cannot list discoboxes: %v", msg.err))
 		}
+		m.list.settleArchives(asked)
 		m.list.setAll(msg.listing.Sandboxes)
 		// Before the layout below: a dismissal whose occurrence the listing
 		// shows is over goes, and its band — if it has happened again — is
@@ -2642,10 +2647,18 @@ var interactions = map[string]Interaction{
 // runVerb applies a lifecycle verb to every target, in one command: the window
 // reports once, on the whole batch, rather than flickering a line per sandbox.
 //
+// An archive takes its boxes off the list as it is sent, as archived boxes
+// are (sandboxList.markArchiving): the server takes it at once, but the list
+// would otherwise say so only once it had answered and been read again,
+// seconds in which the row looks untouched.
+//
 // then is what the answer does beyond being reported (verbThen).
 func (m *Model) runVerb(verb Verb, ids []string, then verbThen) tea.Cmd {
 	feed, next := m.narrate()
 	m.busy = string(verb) + "…"
+	if verb == VerbArchive {
+		m.list.markArchiving(ids)
+	}
 	run := func() tea.Msg {
 		defer feed.close()
 		errs := make([]error, len(ids))
@@ -2742,6 +2755,20 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 	done := len(msg.ids) - failed
 	if done > 0 {
 		m.list.clearSelection()
+	}
+	// Before anything puts the cursor back on a box whose archive failed:
+	// its row is listed again first.
+	if msg.verb == VerbArchive {
+		var answered, refused []string
+		for i, id := range msg.ids {
+			if msg.errs[i] != nil {
+				refused = append(refused, id)
+			} else {
+				answered = append(answered, id)
+			}
+		}
+		m.list.answeredArchives(answered, m.now())
+		m.list.unmarkArchiving(refused)
 	}
 	// The archive that left a one-command window's workspace was waiting for
 	// this answer to close the window, with the failure if there was one —
