@@ -632,6 +632,21 @@ is an error rather than a lost convenience.
   server at once, so an ID copied from `ls` works whichever server listed it.
   The picker lists every server; a registered server's rows say `on <name>`
   and are keyed `<name>/<id>`, which is how the pick says where to go.
+- **`discobox:///<discobox>` is the primary's**
+  ([ADR 26-11-03-113](../docs/adr/26-11-03-113-a-discobox-uri-names-a-box-and-the-console-opens-one-clicked-in-a-pane.md)
+  §§1–2). An empty authority names no server, so the reader supplies its
+  own, and for a command that is the primary: `selectAddressedSandbox` and
+  `resolveCPTarget` put `serverURL` in its place before anything is
+  compared or dialed. It is looked for there alone, never on the
+  registered servers, which is what keeps it an address and not a bare ID,
+  and it registers nothing, since the primary needs no registering. In a box
+  the primary is the box's own server, through its pool, so a tool there
+  writes `discobox:///<id>` for a box beside it without knowing its server's
+  peer ID. `ParseSandboxAddress` takes the bare `discobox` scheme only (a
+  named transport needs a host) and nothing after the discobox: no second
+  segment, no query, and on any address no fragment. The console reads it
+  on the server of the pane it was printed in (`cli/internal/tui/DESIGN.md`,
+  "A box link in a pane focuses the box").
 - **A name follows the same rule.** `selectSandbox`, every DISCOBOX's resolver,
   matches a name against what `ls` lists across every server and routes it to
   the row's server (`matchServerSandboxName`, the same `matchSandboxName` one

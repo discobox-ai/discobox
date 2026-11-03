@@ -260,8 +260,45 @@ func TestParseSandboxAddress(t *testing.T) {
 	for _, raw := range []string{
 		"discobox://box.example.com",
 		"discobox://box.example.com/a/b",
-		"discobox:///sbx_0123",
+		"discobox://box.example.com/sbx_0123#top",
 		"discobox://d1-typo/sbx_0123",
+	} {
+		if _, ok, err := ParseSandboxAddress(raw); !ok || err == nil {
+			t.Fatalf("ParseSandboxAddress(%q) = %v, %v, want an error", raw, ok, err)
+		}
+	}
+}
+
+// discobox:///<discobox> names the discobox on the reader's server: no server
+// at all, which the reader fills in (ADR 26-11-03-113 §§1-2).
+func TestParseSandboxAddressOnTheReadersServer(t *testing.T) {
+	for _, raw := range []string{"discobox:///sbx_0123", "discobox:///sbx_0123/", "DISCOBOX:///sbx_0123", " discobox:///sbx_0123 "} {
+		got, ok, err := ParseSandboxAddress(raw)
+		if err != nil || !ok {
+			t.Fatalf("ParseSandboxAddress(%q) = %v, %v", raw, ok, err)
+		}
+		if !got.Local() || got.Server != "" || got.Sandbox != "sbx_0123" {
+			t.Fatalf("ParseSandboxAddress(%q) = %+v, want sbx_0123 on the reader's server", raw, got)
+		}
+		if got.String() != "discobox:///sbx_0123" {
+			t.Fatalf("%+v is written %q, want discobox:///sbx_0123", got, got.String())
+		}
+	}
+	if full, _, _ := ParseSandboxAddress("discobox://box.example.com/sbx_0123"); full.Local() {
+		t.Fatalf("%+v names a server, and is not the reader's", full)
+	}
+
+	// Nothing after the discobox, no transport with no host, and a discobox
+	// named at all.
+	for _, raw := range []string{
+		"discobox:///",
+		"discobox://",
+		"discobox:///a/b",
+		"discobox:///sbx_0123?addr=10.0.0.5:4433",
+		"discobox:///sbx_0123?",
+		"discobox:///sbx_0123#top",
+		"discobox+http:///sbx_0123",
+		"discobox+https:///sbx_0123",
 	} {
 		if _, ok, err := ParseSandboxAddress(raw); !ok || err == nil {
 			t.Fatalf("ParseSandboxAddress(%q) = %v, %v, want an error", raw, ok, err)
