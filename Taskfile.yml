@@ -1054,17 +1054,7 @@ tasks:
     # harness config directly (ADR 0066 §7's stated end state), so this is
     # test:all and runs identically on Linux, macOS, and Windows.
     cmds:
-      # TEMPORARY probe for #508, reverted before merge: the browser tests two
-      # hundred times on the Linux runner, beside the suite's own load.
-      - cmd: |
-          go tool task test:all & suite=$!
-          go test -count=200 -run 'TestTheCapturesABrowserDrawsAreTheBytesTheStoreKeeps|TestThePageBootsInABrowser' ./sandbox-agent/desktop; probe=$?
-          wait $suite; rc=$?
-          echo "probe exit $probe, suite exit $rc"
-          [ $probe -eq 0 ] && [ $rc -eq 0 ]
-        platforms: [linux]
-      - cmd: go tool task test:all
-        platforms: [darwin, windows]
+      - task: test:all
 
   check:darwin:
     desc: Lint the packages darwin builds from other files than Linux, and type-check the whole tree for darwin
