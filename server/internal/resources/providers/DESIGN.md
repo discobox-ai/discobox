@@ -87,6 +87,12 @@ flowchart LR
   server cannot serve the API that would disable or delete it. Its pools are
   marked dirty instead, so their reconciles retry the resolve with the
   engine's backoff and carry the error. Only a store error fails the start.
+- So a resolve, and `Initialize` with it, may run inside one of the
+  instance's pools' own reconciles: that retry, or the first resolve after an
+  update (which does not re-resolve). `Initialize` skips the mark the engine
+  refuses there (`reconcile.ErrSelfMark`; that pool is already reconciling)
+  and marks the rest, joining any other error. Failing on it leaves the
+  provider uncached, so every later pass rebuilds it and fails the same way.
 - `EnqueueProviderPools` marks every pool bound to one instance dirty through
   `pools.ControlPlane.SchedulePoolReconciliation`.
 - Provider status reports availability only (`sandbox.ProviderStatus`:
