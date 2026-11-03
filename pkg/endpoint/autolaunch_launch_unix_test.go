@@ -285,7 +285,10 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 				}
 				shutdownAsked.Store(true)
 				w.WriteHeader(http.StatusAccepted)
-				go func() { _ = oldServer.Close() }()
+				// Shutdown, as the real server does: Close can cut this
+				// connection before the buffered 202 is flushed, and the
+				// client reads EOF.
+				go func() { _ = oldServer.Shutdown(context.Background()) }()
 			default:
 				http.NotFound(w, r)
 			}
@@ -379,7 +382,9 @@ func TestAutolaunchReplacementHelper(t *testing.T) {
 			case "/shutdown":
 				w.WriteHeader(http.StatusAccepted)
 				go func() {
-					_ = server.Close()
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					_ = server.Shutdown(ctx)
 					close(done)
 				}()
 			default:
