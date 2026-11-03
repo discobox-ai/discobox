@@ -33,7 +33,10 @@ func (m *Model) viewBare() string {
 	m.tabSpans, m.buttonSpans = m.tabSpans[:0], m.buttonSpans[:0]
 	m.banner = bannerSpan{}
 
-	lines := m.terminals.visible().term.View()
+	p := m.terminals.visible()
+	lines := p.term.View()
+	x, y := m.paneOrigin(p)
+	m.markBoxLinks(p, lines, x, y)
 	rows := make([]string, 0, m.height)
 	for i := 0; i < m.height-1; i++ {
 		line := ""

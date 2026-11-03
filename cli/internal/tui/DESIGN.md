@@ -1137,6 +1137,59 @@ Otherwise a standing refusal would be a permanent red status line with a
 rejected transfer behind it every five seconds.
 What went is one status line; nothing to send says nothing at all.
 
+## A box link in a pane focuses the box
+
+A `discobox://` URI in a pane's output, whether bare text or the target of an
+OSC 8 link the program emitted, is a link the window answers itself
+([ADR 26-11-03-113](../../../docs/adr/26-11-03-113-a-discobox-uri-names-a-box-and-the-console-opens-one-clicked-in-a-pane.md),
+`boxlinks.go`). Tools that list boxes (the manager's mod, its `sbx_…` workers)
+print `discobox:///<id>`, and a click jumps to the box.
+
+- **The pane claims the schemes** (`termpane.WithClaimedLinks`, in
+  `paneOptions`): every `discobox`, `discobox+http` and `discobox+https`
+  link is drawn with **no OSC 8**, and reported with its cells by
+  `termpane.Model.Links`. An OSC 8 left on it would make the outer
+  terminal's Ctrl-click hand the URI to an OS that cannot open it, while the
+  window heard nothing.
+- **Marked and lit from the walk that draws the grid** (`markBoxLinks`, in
+  `viewPaneBox` and `viewBare`, at `paneOrigin`): a `hitBoxLink` per link,
+  lit with the hover style under the pointer (`litCells`). With the mouse
+  seized (leader m) they are neither, and a press on one is a selection, so
+  the text can still be copied.
+- **A press is the window's before it is the program's** (`routeMouse`):
+  plain or with Ctrl held, and even while the program asked for the mouse.
+  The program hears neither the press nor its release (`boxLinkPress`). The
+  press is counted by the window's own `countClick`, and a second one on the
+  same cell within `clickRun` is the rest of a double click and is swallowed
+  too (`boxLinkEcho`), since the first press already switched the screen
+  under it.
+- **Which server.** `discobox:///<id>` is on the server of the pane's box
+  (`paneServer`), where the program that printed it runs; a pane that is no
+  box's reads it on the primary. A link naming a server asks
+  `DataSource.AddressedServer`, which matches it against the listed servers by
+  endpoint and by peer ID, since a box's own address names its server by
+  peer ID while the window usually knows it by a socket or a URL. The peer
+  ID is the registered one, or the one an address names, or asked of the
+  server once and kept. Only listed servers are asked, all at once, so one
+  that is slow costs the press its bound and nothing more; one that did not
+  answer is named in the reply, since the link may be its, and the window
+  says that rather than that the server is unknown. An answer that lands
+  after the person moved to another box is dropped (`boxLinkServerMsg.from`).
+- **What a press does** (`focusAddressed`): the box with that ID, or the one
+  box whose ID it prefixes, on that server, from the last listing, is
+  `landOn`'d: a live or parked box is switched to, and any other is pointed
+  at on the list with its reason ("enter starts it"). A click on text a
+  program printed must not start a box. A window that is one command's own
+  (`oneShot`, a `discobox attach`) never switches box or shows the list, so
+  there it says which box the link is and `discobox attach <id>` to open it.
+  Otherwise the status line says why:
+  no such box on the server, the prefix names several, the server is not
+  answering, or the server is not one the window lists, with `discobox
+  attach <uri>` as the way to reach it. A click never dials or registers a
+  server: the text was written by whatever runs in the box. For the same
+  reason every value from the link is quoted into those messages (`say`):
+  the status line is outside the pane's emulator.
+
 ## Many servers
 
 The window reads every server the CLI knows (ADR 0116 §4) and otherwise knows
@@ -3429,6 +3482,7 @@ the newest one where the busy line goes.
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
 | `tree.go` | the workspace tree: the list beside the workspace, parking and switching, the pages right of it, the new discobox card, the box menu |
 | `bare.go` | a bare attach: the primary terminal alone with one status line under it |
+| `boxlinks.go` | a `discobox://` link in a pane: marking and lighting it, and a press on it focusing the box it names |
 | `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |
 | `tools.go` | the tools: the catalog, the picker, the tool window and its `[-]`/`[x]` |
 | `issue.go` | the issue tab: a GitHub issue or pull request as a pane of the shells column, its keys, the comment field, closing and reopening, and how the page is laid out as lines |

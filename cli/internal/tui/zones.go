@@ -115,6 +115,11 @@ const (
 	// hitTree is one of the workspace tree's own controls: its [+]/[-] and
 	// [x], and the keys on its last row. idx is the treeAction. See tree.go.
 	hitTree
+
+	// hitBoxLink is a discobox:// URI in a pane (url): a link only the window
+	// can open, drawn with no OSC 8, so a press on it, plain or with Ctrl
+	// held, focuses the box it names. See boxlinks.go.
+	hitBoxLink
 )
 
 // hit is what one rectangle of cells means.
@@ -131,6 +136,9 @@ type hit struct {
 	// url is what a link opens.
 	url string
 }
+
+// boxLinkHit is a discobox:// URI in a pane, made pressable.
+func boxLinkHit(uri string) hit { return hit{kind: hitBoxLink, url: uri} }
 
 // urlHit is a link made pressable, opening the URL its text already carries.
 func urlHit(url string) hit { return hit{kind: hitURL, url: url} }

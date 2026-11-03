@@ -574,6 +574,9 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		// A URL printed in here was printed on the other side of the forward,
 		// where the port it names is the sandbox's own. See forwardedURL.
 		termpane.WithLinkRewrite(m.forwardedURL),
+		// A discobox's address names a box only the window can open; see
+		// boxlinks.go.
+		termpane.WithClaimedLinks(boxLinkSchemes...),
 		termpane.WithKeys(paneKeymap),
 	}
 	if readOnly {
@@ -1251,6 +1254,20 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 	if m.chromeCapture {
 		return m.windowMouse(msg)
 	}
+	// So does one that began on a box link: the press was the window's, and
+	// the program never saw it go down.
+	if m.boxLinkPress {
+		switch ev := msg.(type) {
+		case tea.MouseReleaseMsg:
+			if ev.Button == tea.MouseLeft {
+				m.boxLinkPress = false
+			}
+			return nil
+		case tea.MouseMotionMsg:
+			return nil
+		}
+		m.boxLinkPress = false
+	}
 	var x, y int
 	p := m.paneByID(m.mouseCapture)
 	if p != nil {
@@ -1297,6 +1314,19 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 			}
 		}
 		return m.windowMouse(msg)
+	}
+	if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
+		// A box link is the window's to answer, with Ctrl or without, even
+		// while the program has the mouse: nothing else can open it
+		// (ADR 26-11-03-113 §3).
+		if m.boxLinkEcho(click.X, click.Y) {
+			m.boxLinkPress = true
+			return nil
+		}
+		if where, ok := m.zones.at(click.X, click.Y); ok && where.what.kind == hitBoxLink {
+			m.focusPane(p)
+			return m.pressBoxLink(p, where.what.url, click.X, click.Y)
+		}
 	}
 	switch ev := msg.(type) {
 	case tea.MouseClickMsg:
@@ -2321,6 +2351,12 @@ func (m *Model) viewPaneBox(p *pane, top string, edge lipgloss.Style, width int)
 
 	rows := []string{top}
 	lines := p.term.View()
+	if p.issue == nil {
+		// Marked from the lines as drawn, at the origin the grid is drawn at
+		// (REVIEW.md).
+		x, y := m.paneOrigin(p)
+		m.markBoxLinks(p, lines, x, y)
+	}
 	if p.issue != nil {
 		// The links the issue draws are controls (REVIEW.md), marked from the
 		// lines as drawn, at the origin the grid is drawn at.

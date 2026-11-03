@@ -1784,3 +1784,62 @@ func TestSelectSandboxRefusesAnIDShapedNameWhileAServerIsSilent(t *testing.T) {
 	}
 }
 
+// A box link names its server however the window knows it: the same endpoint
+// spelled another way, or the peer ID a listed server answers with — the form
+// a box's own address takes — and a server the window does not list is not
+// one it knows (ADR 26-11-03-113 §4).
+func TestAddressedServerMatchesByEndpointAndPeerID(t *testing.T) {
+	useTempServersFile(t)
+	t.Chdir(t.TempDir())
+	peer := testPeerID(t)
+	primary := fakeServer(t, "alpha", sandboxA)
+	other := httptest.NewServer(fakePeerServerHandler("beta", peer.String(), sandboxB))
+	t.Cleanup(other.Close)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
+
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+	client, err := app.apiClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds, err := newAPIDataSource(context.Background(), app, client, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		address, name string
+		known         bool
+	}{
+		{"discobox+http://" + strings.TrimPrefix(other.URL, "http://"), "beta", true},
+		{"discobox://" + peer.String(), "beta", true},
+		{"discobox://" + testPeerID(t).String(), "", false},
+		{"discobox://elsewhere.example.com", "", false},
+	} {
+		if name, known, err := ds.AddressedServer(context.Background(), tc.address); name != tc.name || known != tc.known || err != nil {
+			t.Errorf("AddressedServer(%s) = %q, %v, %v, want %q, %v", tc.address, name, known, err, tc.name, tc.known)
+		}
+	}
+
+	// A listed server that does not answer may be the one named, and the
+	// answer says so rather than that the server is unknown.
+	registerForTest(t, registeredServer{Name: "gamma", Address: deadServer(t)})
+	app = &App{serverURL: primary.URL, projectID: "project-1"}
+	ds, err = newAPIDataSource(context.Background(), app, client, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, known, err := ds.AddressedServer(context.Background(), "discobox://"+testPeerID(t).String()); known || err == nil || !strings.Contains(err.Error(), "gamma") {
+		t.Errorf("AddressedServer(a peer nobody answered as) = %v, %v, want it unknown, naming gamma as not having said", known, err)
+	}
+
+	// A window with one server names none on its rows.
+	solo := &App{serverURL: primary.URL, projectID: "project-1"}
+	useTempServersFile(t)
+	ds, err = newAPIDataSource(context.Background(), solo, client, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name, known, _ := ds.AddressedServer(context.Background(), "discobox+http://"+strings.TrimPrefix(primary.URL, "http://")); name != "" || !known {
+		t.Errorf("AddressedServer(the only server) = %q, %v, want it known and unnamed", name, known)
+	}
+}
