@@ -232,3 +232,10 @@
   line that shows both says it twice, once from a poll that lags the stream.
   Name a box without its program's words where the msg goes beside it
   (`recordTitle`).
+- **What the approval card says a binding becomes follows the server's rule,
+  fate by fate.** The routes a replaced binding gains are shown on whichever
+  binding `bindingplan` keeps (`plan.Keep`: an `Updated` one, or the
+  delegation of a `Split`), never on one fate alone, and "the same routes" is
+  said only when the two lists are equal. A summary narrower than the rule
+  tells the approver a widening is nothing — a first draft of `routeDiff`
+  hid a split delegation's new routes that way.
