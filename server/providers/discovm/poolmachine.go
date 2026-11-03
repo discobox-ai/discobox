@@ -630,7 +630,9 @@ func terminalSize(n int) uint16 {
 // guestProcess is a process in a machine, read as one stream: a TTY carries
 // stderr in its output anyway, and a log command explains itself on stderr,
 // which is part of what the operator asked to read. Closing it kills the
-// process, which is the only way a followed log ends.
+// process, which is the only way a followed log ends. The output passes through
+// an unbuffered pipe, so Wait returns only once the stream has been read to its
+// end (or closed): read it out, as the console handler does, before waiting.
 type guestProcess struct {
 	process machine.Process
 	reader  *io.PipeReader
