@@ -1,7 +1,6 @@
 package discovm
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -162,7 +161,9 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	if _, err := io.WriteString(console, "echo console-$((40+2)); exit 3\n"); err != nil {
 		t.Fatal(err)
 	}
-	waitForOutput(t, console, "console-42")
+	if text := readToEnd(t, console); !strings.Contains(text, "console-42") {
+		t.Fatalf("console printed %q, want console-42", text)
+	}
 	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if code, err := console.Wait(waitCtx); err != nil || code != 3 {
@@ -465,32 +466,23 @@ func TestFactoryProviderOnALocalDriverRefusesAConsole(t *testing.T) {
 	}
 }
 
-// waitForOutput reads a console until it has printed want.
-func waitForOutput(t *testing.T, r io.Reader, want string) {
+// readToEnd reads a console until its shell ends, as the server's console
+// handler does before it asks for the exit code. A guest process hands its
+// output over an unbuffered pipe and records its exit only once all of it is
+// read, so a reader that stopped at the first match and then waited would
+// hang whenever the shell's last output came in a later write.
+func readToEnd(t *testing.T, r io.Reader) string {
 	t.Helper()
-	found := make(chan error, 1)
+	read := make(chan string, 1)
 	go func() {
-		reader := bufio.NewReader(r)
-		var seen strings.Builder
-		for {
-			b, err := reader.ReadByte()
-			if err != nil {
-				found <- errors.New("console ended before printing " + want + ": " + seen.String())
-				return
-			}
-			seen.WriteByte(b)
-			if strings.Contains(seen.String(), want) {
-				found <- nil
-				return
-			}
-		}
+		text, _ := io.ReadAll(r)
+		read <- string(text)
 	}()
 	select {
-	case err := <-found:
-		if err != nil {
-			t.Fatal(err)
-		}
+	case text := <-read:
+		return text
 	case <-time.After(30 * time.Second):
-		t.Fatalf("console did not print %q", want)
+		t.Fatal("console did not end")
+		return ""
 	}
 }
