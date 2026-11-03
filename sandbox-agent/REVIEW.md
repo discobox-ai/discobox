@@ -264,6 +264,17 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   action's `Ack`, so a test that stops reading at that output and then polls
   can wait forever for an `Ack` sitting unread (#417).
 
+## Testing a program's signals
+
+- **A test program that must see every signal, or the last of a burst, is not
+  a shell trap.** Use the test binary itself, as a `TestMain` mode
+  (`runSizeRecorder` in `execs/sizerecorder_test.go`). Under `nix develop`,
+  which is how CI runs tests, `sh` is bash, and bash drops a signal that
+  arrives while it is still running the trap for the same signal. A trap's
+  output is on disk before the trap returns, so a test that answers each
+  record with its next resize sends that resize into the dropped window. The
+  repaint's shrink-and-restore nudge is such a burst (#468).
+
 ## Processes
 
 - Credentials must set supplementary groups explicitly. `NoSetGroups` leaves the

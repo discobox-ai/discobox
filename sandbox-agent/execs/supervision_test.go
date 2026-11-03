@@ -23,10 +23,14 @@ import (
 // TestMain lets this test binary be its own exec shim. Both unit managers
 // start a shim by running the agent's own executable with "exec-shim", and
 // under `go test` that executable is this binary — so the contract below runs
-// real shims, in processes of their own, exactly as a sandbox does.
+// real shims, in processes of their own, exactly as a sandbox does. It is also
+// the program the repaint test runs on a PTY: see runSizeRecorder.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "exec-shim" {
 		os.Exit(runTestShim(os.Args[2:]))
+	}
+	if len(os.Args) == 3 && os.Args[1] == sizeRecorderCommand {
+		os.Exit(runSizeRecorder(os.Args[2]))
 	}
 	os.Exit(m.Run())
 }
