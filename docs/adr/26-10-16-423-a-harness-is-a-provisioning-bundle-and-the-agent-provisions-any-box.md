@@ -39,6 +39,9 @@
 - **§7 narrowed, for a remote driver, by**: [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
   — the pool agent, not the provider, places a machine's agent
   layer and runs its one command
+- **§8 superseded in part by**: [26-11-03-986](26-11-03-986-a-machine-pool-snapshots-a-plan-by-committing-a-vm-it-provisioned-and-shut-down.md)
+  — the build that powers itself off and leaves its result in
+  `SnapshotDir`; the taker runs the build as an exec and commits it
 - **Date**: 2026-10-16
 - **Relates to**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md),
   [0012](0012-sandbox-config-is-three-attribute-owned-layers.md),
