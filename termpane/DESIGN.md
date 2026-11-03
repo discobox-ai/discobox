@@ -342,6 +342,25 @@ half survived; truncation keeps escape sequences, so the link opened around it
 survives the cut. Detection is scheme-led and stops at the row: a URL wrapped
 across the right edge is not one.
 
+**A link only the host can open is the host's** (`WithClaimedLinks`,
+`claim.go`). Some URIs name something inside the host itself: a pane that
+prints `discobox:///sbx_…` names another of the console's boxes. Nothing
+outside the host can open one, so passing it on as OSC 8 would be worse than
+no link: the outer terminal's Ctrl-click hands it to an OS with nowhere to send
+it, and the host never hears of the press. The host names the schemes it
+answers; a link to one of them, whether emitted or found in plain text by the
+same scheme-led, row-bounded detection as above, is drawn with no OSC 8 and
+its text untouched, and `Links` reports it with the view row and cells the
+last `View` drew it at, cut at the grid's edge. Marking it, lighting it and
+answering a press are the host's, which already owns the hit map. The pane
+knows no scheme of its own, and what a claimed URI means is for the host to
+decide when it is pressed. It runs after the rewrite and before `idLink`, on
+the same rendered row. Both detections share one run of URL characters
+(`urlChars`) and one rule for where a scheme starts (`startsScheme`): a
+scheme that follows a scheme character is the tail of a longer one, so the
+`http://` in `discobox+http://localhost:8080/…` is never a web URL for the
+rewrite to move out from under the host's claim.
+
 **Every link is named by an OSC 8 id of the pane's own** (`idLink`). Every row
 is rendered on its own and opens its links afresh, and to a terminal an id-less
 link is the cells one OSC 8 opened — so a URL wrapped across rows is a link per
