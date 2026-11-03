@@ -27,8 +27,9 @@ func TestSizeForPrefersPoolThenProviderThenHost(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			driver := &Driver{size: tc.provider}
-			if got := driver.sizeFor(tc.spec); got != tc.want {
-				t.Fatalf("sizeFor = %+v, want %+v", got, tc.want)
+			want := vzvm.ClampSize(tc.want).Size()
+			if got := driver.sizeFor(tc.spec); got != want {
+				t.Fatalf("sizeFor = %+v, want %+v", got, want)
 			}
 		})
 	}

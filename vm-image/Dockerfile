@@ -189,7 +189,9 @@ RUN mkdir -p \
         systemd-networkd-wait-online.service \
         systemd-resolved.service
 
-FROM public.ecr.aws/docker/library/debian:13-slim AS assemble
+# Assembly only manipulates files and ext4 metadata. Run its tools natively;
+# emulating mke2fs can lose xattr syscall support and cannot improve the output.
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/debian:13-slim AS assemble
 ARG TARGETARCH
 ARG ROOT_SLACK_MIB=32
 

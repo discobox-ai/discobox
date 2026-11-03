@@ -15,6 +15,12 @@ by `server/providers/guestimage`.
 | `Dockerfile` | `vmlinux` (arm64 only), `initrd.img`, `root.ext4` | `vm/v*` → `discobox-vm`, `linux/arm64` + `linux/amd64` | `vz` (arm64), `libkrun` (amd64) |
 | `kernel/Dockerfile` | `vmlinux`, `kernel.config` | `vm-kernel/v*` → `discobox-vm-kernel`, `linux/amd64` | `libkrun` |
 
+Filesystem assembly runs in a native build-platform container, consuming the
+chosen target rootfs. It executes no guest binaries: decompression, ext4
+population, and xattr preservation are architecture-independent. This keeps
+foreign-architecture builds from depending on QEMU's filesystem syscall coverage
+while preserving assembly inside the build, without host tools or loop devices.
+
 Two builds, two workflows (`.github/workflows/vm-image.yml`, `vm-kernel.yml`).
 The split is not bookkeeping: the kernel build compiles Linux, so a guest change
 must not trigger it, and `vm-image.yml` excludes `vm-image/kernel/**` from its

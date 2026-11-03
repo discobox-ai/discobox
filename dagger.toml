@@ -1,0 +1,14 @@
+# Portable CI/release graph; native Actions jobs run repository commands.
+[modules.pipeline]
+source = ".dagger/modules/pipeline"
+main = true
+
+[modules.go-sdk]
+source = "github.com/dagger/go-sdk@v1.1.0"
+
+[sdks.go]
+module = "go-sdk"
+
+[sdks.go.scopes.".dagger/modules/pipeline"]
+is-module = true
+name = "pipeline"
