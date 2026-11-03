@@ -27,6 +27,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/vmtest"
 
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -77,6 +78,8 @@ func newMachineFixture(t *testing.T) *machineFixture {
 		IdentityKey: identity,
 		Platform:    platform.Current(),
 		AgentLayers: &fakeAgentLayers{digest: "sha256:" + strings.Repeat("c", 64), layer: gzippedAgentLayer(t, "agent-v1")},
+		// Where a snapshot build reaches the pool, which its plan names.
+		PoolEndpoints: proxyagent.PoolEndpoints(""),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -127,8 +130,8 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the sandbox's machine, by its name: %v", err)
 	}
-	if inst.Base == nil || inst.Base.ID != vmtest.Base {
-		t.Fatalf("machine %+v, want one of the driver's base", inst)
+	if inst.From != "" {
+		t.Fatalf("machine %+v, want one made fresh from the driver's base", inst)
 	}
 	// The credentials broker is told the sandbox's variables from the pool's
 	// own record of its file secrets, as for a container.
@@ -236,7 +239,7 @@ func TestMachineCreateFindsALostCreatesMachineByName(t *testing.T) {
 	f := newMachineFixture(t)
 	ctx := context.Background()
 	e := &engine.Engine{Driver: f.owner, Project: machineTestProject}
-	lost, err := e.Create(ctx, vmtest.Base, engine.CreateOptions{Name: "sbx-2"})
+	lost, err := e.Create(ctx, engine.CreateOptions{Name: "sbx-2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,10 +467,18 @@ type agentMachine struct {
 }
 
 func (m *agentMachine) Exec(ctx context.Context, req machine.ExecRequest) (machine.Process, error) {
+	if slices.Equal(req.Argv, snapshotCommand) {
+		return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", m.driver.agents.snapshotScript()}})
+	}
 	if !slices.Equal(req.Argv, []string{agentlayer.AgentPath, "provision", "apply"}) {
 		return m.Machine.Exec(ctx, req)
 	}
 	check := `root="$DISCO_VM_GUEST_ROOT"; test -x "$root` + agentlayer.AgentPath + `" && test -f "$root/etc/discobox/sandbox.json" && cat "$root/etc/discobox/sandbox.json"`
+	if m.driver.agents.sealedNeverAnswers() {
+		// An agent that never comes up in a box made from a snapshot: apply
+		// succeeds, and nothing answers.
+		check = `if test -e "$DISCO_VM_GUEST_ROOT` + agentlayer.SealedFile + `"; then exit 0; fi; ` + check
+	}
 	process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", check}})
 	if err != nil {
 		return nil, err
@@ -498,6 +509,10 @@ func (p *applyProcess) Wait(_, stderr io.Writer) (int, error) {
 	if err != nil || code != 0 {
 		return code, err
 	}
+	if bootstrap.Len() == 0 {
+		// Applied, and no agent comes up (sealedBroken).
+		return 0, nil
+	}
 	var cfg sandboxconfig.Config
 	if err := json.Unmarshal([]byte(bootstrap.String()), &cfg); err != nil {
 		return 1, err
@@ -512,7 +527,11 @@ type fakeMachineAgents struct {
 	t       *testing.T
 	poolKey ed25519.PublicKey
 	mu      sync.Mutex
-	servers map[string]*fakeMachineAgent
+	// snapshotFails makes the snapshot command fail, saying why on stderr;
+	// sealedBroken makes an agent never come up in a box made from a
+	// snapshot.
+	snapshotFails, sealedBroken bool
+	servers                     map[string]*fakeMachineAgent
 	// last is each sandbox's agent that ran last, kept after its machine
 	// stops, so a test reads what it was told.
 	last map[string]*fakeMachineAgent
@@ -537,6 +556,27 @@ func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config) {
 		a.last = map[string]*fakeMachineAgent{}
 	}
 	a.last[cfg.SandboxID] = agent
+}
+
+// snapshotScript stands in for the agent's snapshot command in a fake guest:
+// it needs the agent placed and the plan, with its client key, on its
+// standard input, then provisions (a file at the guest's root says so),
+// empties /etc/discobox and seals the box.
+func (a *fakeMachineAgents) snapshotScript() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.snapshotFails {
+		return `echo "the docker feature failed to provision: exit status 1" >&2; exit 1`
+	}
+	return `root="$DISCO_VM_GUEST_ROOT"; test -x "$root` + agentlayer.AgentPath + `" || exit 3
+plan=$(cat); case "$plan" in *'"runtimeConfig"'*PRIVATE\ KEY*) ;; *) echo "no plan on stdin" >&2; exit 4;; esac
+echo provisioned > "$root/provisioned" && rm -rf "$root` + agentlayer.SnapshotDir + `"/* && : > "$root` + agentlayer.SealedFile + `"`
+}
+
+func (a *fakeMachineAgents) sealedNeverAnswers() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.sealedBroken
 }
 
 func (a *fakeMachineAgents) stop(name string) {
@@ -661,7 +701,7 @@ func TestMachineOrphansAreRemovedAfterRetention(t *testing.T) {
 	}
 	e := &engine.Engine{Driver: f.owner, Project: machineTestProject}
 	for _, name := range []string{"sbx-orphan", "sbx-held", "pool-own-machine"} {
-		if _, err := e.Create(ctx, vmtest.Base, engine.CreateOptions{Name: name}); err != nil {
+		if _, err := e.Create(ctx, engine.CreateOptions{Name: name}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -756,7 +796,7 @@ type fencingDriver struct {
 
 func (d *fencingDriver) Capabilities() machine.Capabilities {
 	caps := d.Driver.Capabilities()
-	caps.Egress = true
+	caps.Egress = []machine.EgressFence{machine.EgressNone, machine.EgressAllow}
 	return caps
 }
 
@@ -805,25 +845,21 @@ func TestMachineCreateFencesTheMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inst, err := r.ensureInstance(ctx, "sbx_fenced")
+	inst, _, err := r.ensureInstance(ctx, "sbx_fenced", nil)
 	if err != nil {
 		t.Fatalf("ensure a fenced machine: %v", err)
 	}
 	if got := driver.fences[inst.Name]; got == nil || len(got.Allow) != 0 {
 		t.Fatalf("the machine was made with fence %+v, want one that reaches nothing beyond its network", got)
 	}
-	if _, err := r.ensureInstance(ctx, "sbx_fenced"); err != nil {
+	if _, _, err := r.ensureInstance(ctx, "sbx_fenced", nil); err != nil {
 		t.Fatalf("find the fenced machine again: %v", err)
 	}
 
-	base, err := r.baseRef(ctx)
-	if err != nil {
+	if _, err := e.Create(ctx, engine.CreateOptions{Name: "sbx-open"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Create(ctx, base, engine.CreateOptions{Name: "sbx-open"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.ensureInstance(ctx, "sbx_open"); err == nil || !strings.Contains(err.Error(), "not fenced") {
+	if _, _, err := r.ensureInstance(ctx, "sbx_open", nil); err == nil || !strings.Contains(err.Error(), "not fenced") {
 		t.Fatalf("ensure a machine made without the fence = %v, want it refused", err)
 	}
 }

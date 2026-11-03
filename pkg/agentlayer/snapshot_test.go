@@ -34,3 +34,19 @@ func TestASnapshotPlanIsRefusedAnythingOfASandbox(t *testing.T) {
 		}
 	}
 }
+
+// The agent's start unit is pulled in by a link a snapshot removes, so a box
+// made from one starts its agent when its maker says (ADR 26-11-03-986 §3).
+func TestTheAgentStartUnitHasALinkToDisarm(t *testing.T) {
+	for _, unit := range Units {
+		if unit.Name != AgentStartUnit {
+			continue
+		}
+		link, ok := unit.Link()
+		if !ok || link != "/etc/systemd/system/paths.target.wants/"+AgentStartUnit {
+			t.Fatalf("the agent start unit's link = %q, %v", link, ok)
+		}
+		return
+	}
+	t.Fatalf("no unit %s among the agent's units", AgentStartUnit)
+}

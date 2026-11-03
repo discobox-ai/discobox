@@ -82,6 +82,9 @@ type sandboxCore struct {
 	// with comes from, and agents its extractions (see agentlayer.go).
 	agentLayers AgentLayers
 	agents      agentExtract
+	// snapshots is the snapshot builds under way, and the creates holding a
+	// snapshot (snapshot.go).
+	snapshots snapshotBuilds
 }
 
 // boxes is what sandboxCore asks of the runtime it is the shared half of:

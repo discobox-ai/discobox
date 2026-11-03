@@ -601,15 +601,11 @@ func TestFakePoolMachineReplacedOffThePoolsNetworkIsRefused(t *testing.T) {
 	if err := r.engine.Remove(ctx, inst, true); err != nil {
 		t.Fatal(err)
 	}
-	base, err := host.baseRef(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
 	project, err := poolProject(pool.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.engine.Create(ctx, base, engine.CreateOptions{Name: project, Networks: []string{"someone-else"}}); err != nil {
+	if _, err := r.engine.Create(ctx, engine.CreateOptions{Name: project, Networks: []string{"someone-else"}}); err != nil {
 		t.Fatal(err)
 	}
 	keys := issuedKeys(t, r, pool)

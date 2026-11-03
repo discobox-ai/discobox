@@ -23,6 +23,19 @@ type Unit struct {
 	required bool
 }
 
+// Link is where the link that pulls the unit in is, and false for a unit
+// something else starts.
+func (u Unit) Link() (string, bool) {
+	if u.target == "" {
+		return "", false
+	}
+	return u.linkDir() + "/" + u.Name, true
+}
+
+// AgentStartUnit is the unit that starts the agent once its bootstrap is in
+// place.
+const AgentStartUnit = "discobox-sandbox-agent.path"
+
 func (u Unit) linkDir() string {
 	kind := ".wants"
 	if u.required {
@@ -40,7 +53,6 @@ var Units = []Unit{
 	{Name: "discobox-sandbox-agent.path", Path: "/etc/systemd/system/discobox-sandbox-agent.path", target: "paths.target"},
 	{Name: "discobox-proxy-bridge.service", Path: "/etc/systemd/system/discobox-proxy-bridge.service", target: "multi-user.target"},
 	{Name: "discobox-trust-ca.service", Path: "/etc/systemd/system/discobox-trust-ca.service", target: "sysinit.target"},
-	{Name: "discobox-snapshot.service", Path: "/etc/systemd/system/discobox-snapshot.service", target: "multi-user.target"},
 	{Name: "discobox-render-proxy-env.service", Path: "/etc/systemd/system/discobox-render-proxy-env.service", target: "sysinit.target"},
 	{Name: "journald-console.conf", Path: "/etc/systemd/journald.conf.d/discobox-console.conf"},
 }

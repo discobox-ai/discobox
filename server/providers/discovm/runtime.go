@@ -73,7 +73,7 @@ var _ poolruntime.RuntimeProvider = (*Runtime)(nil)
 
 // newRuntime opens the engine for the provider instance providerID.
 func newRuntime(cfg Config, providerID string) (*Runtime, error) {
-	driver, project, err := openDriver(cfg.Driver, providerID, providerKeys(cfg))
+	driver, project, err := openDriver(cfg.Driver, providerID, strings.TrimSpace(cfg.Base), providerKeys(cfg))
 	if err != nil {
 		return nil, err
 	}
@@ -102,15 +102,18 @@ func providerKeys(cfg Config) machine.KeySource {
 
 // openDriver makes the named driver in the disco-vm project (disco-vm ADR
 // 0004) of the provider instance providerID's engine, calling a remote
-// driver's service with keys.
+// driver's service with keys and making a fresh VM from base, its
+// configuration's (disco-vm ADR 26-11-03-606): a remote driver's pool
+// machine and its sandboxes' machines are made from it, and a local driver,
+// whose pool agent runs on this host, makes none.
 //
 // The project is the driver's configuration, but which one follows from what
 // the driver is: a local driver's is localProject, any other's is the
 // provider's own (remoteProject). So the driver is made in localProject first,
 // which construction alone cannot get wrong, and made again in the provider's
 // project when it is not local. Construction touches no hypervisor or service.
-func openDriver(name, providerID string, keys machine.KeySource) (machine.Driver, string, error) {
-	driver, err := newDriver(name, localProject, nil)
+func openDriver(name, providerID, base string, keys machine.KeySource) (machine.Driver, string, error) {
+	driver, err := newDriver(name, localProject, base, nil)
 	if err != nil || isLocal(driver) {
 		return driver, localProject, err
 	}
@@ -118,15 +121,15 @@ func openDriver(name, providerID string, keys machine.KeySource) (machine.Driver
 	if err != nil {
 		return nil, "", err
 	}
-	driver, err = newDriver(name, project, keys)
+	driver, err = newDriver(name, project, base, keys)
 	return driver, project, err
 }
 
 // newDriver constructs the named disco-vm driver for project, calling with
-// keys. The name is disco-vm's, and so is the registry it is looked up in:
+// keys, its fresh VMs made from base (empty is the driver's default). The name is disco-vm's, and so is the registry it is looked up in:
 // this package knows no driver by name. Construction touches no hypervisor, so
 // validation may call it too.
-func newDriver(name, project string, keys machine.KeySource) (machine.Driver, error) {
+func newDriver(name, project, base string, keys machine.KeySource) (machine.Driver, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("%s driver is required (one of %s)", ProviderType, strings.Join(machine.Names(), ", "))
@@ -135,6 +138,7 @@ func newDriver(name, project string, keys machine.KeySource) (machine.Driver, er
 	if err != nil {
 		return nil, err
 	}
+	cfg.Base = base
 	driver, err := machine.New(name, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("%s driver %q is not available in this build (have %s)", ProviderType, name, strings.Join(machine.Names(), ", "))

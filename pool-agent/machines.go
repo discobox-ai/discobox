@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
@@ -24,6 +25,7 @@ import (
 func openMachineEngine(root layout.Root, bootstrap Bootstrap, keyFile string) (*engine.Engine, error) {
 	driver, err := machine.New(bootstrap.Driver, machine.Config{
 		Project: bootstrap.MachineProject,
+		Base:    bootstrap.MachineBase,
 		Dir:     root.PoolMachines(bootstrap.ProjectID, bootstrap.PoolID),
 		Keys:    provisioningKeys(keyFile, bootstrap.Driver),
 	})
@@ -104,7 +106,12 @@ func machinePoolStatus(driver string, caps machine.Capabilities, hop string) poo
 			"hop":        hop,
 			"maxRunning": caps.MaxRunning,
 			"isolation":  caps.Isolation,
-			"egress":     caps.Egress,
+			// Whether it fences a machine to a list of hosts, as the pool
+			// fences its sandboxes' (requireMachineFence).
+			"egress": slices.Contains(caps.Egress, machine.EgressAllow),
+			// Whether it commits, so the pool snapshots its plans (ADR
+			// 26-11-03-986 §2).
+			"commit": caps.Commit,
 		},
 	}
 }

@@ -34,7 +34,7 @@ func fakeMachine(t *testing.T) machine.Guest {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	inst, err := e.Create(ctx, vmtest.Base, engine.CreateOptions{Name: "sandbox"})
+	inst, err := e.Create(ctx, engine.CreateOptions{Name: "sandbox"})
 	if err != nil {
 		t.Fatal(err)
 	}

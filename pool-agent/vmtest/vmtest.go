@@ -7,7 +7,6 @@ package vmtest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,7 +16,7 @@ import (
 
 	"github.com/discobox-ai/vm/pkg/guest"
 	"github.com/discobox-ai/vm/pkg/machine"
-	"github.com/discobox-ai/vm/pkg/machine/fake"
+	_ "github.com/discobox-ai/vm/pkg/machine/fake" // registers the driver FakeDriver makes by name
 	"github.com/discobox-ai/vm/pkg/machine/local"
 )
 
@@ -89,20 +88,16 @@ func runShim(args []string) error {
 }
 
 // FakeDriver is disco-vm's fake driver for project, keeping its machines in
-// dir, calling with keys (nil is as the directory's owner), and offering one
-// base of this host's OS, named and IDed base: a test boots a machine from it
-// as a sandbox's or a pool's machine boots a driver's base. Its machines' shims
-// are this test binary, whose TestMain calls RunFakeGuestIfInvoked.
+// dir and calling with keys (nil is as the directory's owner), whose base is
+// Base: a test makes a fresh machine from it as a sandbox's or a pool's
+// machine is made from a driver's base. It commits, unless the test set
+// fake.NoCommitEnv before calling it. Its machines' shims are this test
+// binary, whose TestMain calls RunFakeGuestIfInvoked.
 func FakeDriver(t testing.TB, dir, project string, keys machine.KeySource) machine.Driver {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("disco-vm's fake guests run POSIX processes here")
 	}
-	bases, err := json.Marshal([]machine.Base{{Name: Base, ID: Base, GuestOS: machine.OS(runtime.GOOS)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(fake.BasesEnv, string(bases))
 	driver, err := newFakeDriver(dir, project, keys)
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +105,7 @@ func FakeDriver(t testing.TB, dir, project string, keys machine.KeySource) machi
 	return driver
 }
 
-// Base is the name and ID of FakeDriver's one base.
+// Base is FakeDriver's base.
 const Base = "base"
 
 func newFakeDriver(dir, project string, keys machine.KeySource) (machine.Driver, error) {
@@ -121,6 +116,7 @@ func newFakeDriver(dir, project string, keys machine.KeySource) (machine.Driver,
 	return machine.New("fake", machine.Config{
 		Project:     project,
 		Dir:         dir,
+		Base:        Base,
 		ShimCommand: []string{exe, shimSubcommand, dir, project},
 		Keys:        keys,
 	})

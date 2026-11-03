@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/activation"
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/agenttls"
@@ -119,8 +120,8 @@ func run(name string, args []string) int {
 		}
 		return 0
 	}
-	// discobox-snapshot.service: provisions a snapshot (ADR 26-10-16-423 §8).
-	if len(args) > 0 && args[0] == "snapshot" {
+	// The taker's exec: provisions a snapshot (ADR 26-11-03-986 §1).
+	if len(args) > 0 && args[0] == agentlayer.SnapshotCommand {
 		return runSnapshot(args[1:])
 	}
 	if len(args) > 0 && args[0] == "export" {
@@ -148,6 +149,12 @@ func run(name string, args []string) int {
 			return 0
 		}
 		slog.Error("wait for the sandbox bootstrap", "path", configPath, "error", err)
+		return 1
+	}
+	// A box made from a snapshot takes an identity of its own before anything
+	// else reads one (ADR 26-11-03-986 §3).
+	if err := takeIdentity(ctx); err != nil {
+		slog.Error("give the box an identity of its own", "error", err)
 		return 1
 	}
 	// Where nothing was wired, the provisioning happens here, before anything

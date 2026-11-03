@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 
 	"github.com/discobox-ai/vm/pkg/machine"
 
@@ -95,7 +96,8 @@ func requireMachineFence(driver string, caps machine.Capabilities) error {
 	if !caps.Isolation {
 		missing = append(missing, errors.New("cannot isolate a sandbox's machine from the rest of its provider's account"))
 	}
-	if !caps.Egress {
+	// The pool fences a machine to a list: the host its hop is reached at.
+	if !slices.Contains(caps.Egress, machine.EgressAllow) {
 		missing = append(missing, errors.New("cannot fence a sandbox's machine's egress to its pool"))
 	}
 	if len(missing) > 0 {
