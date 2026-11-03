@@ -68,6 +68,18 @@
   whose terminals inherit its environment for the life of the window, so
   `Remote.Environ` is a script's alone (ADR 0125 §4); a `.yaml` tool takes the
   values as placeholders in its own args.
+- **A file this CLI puts into a pool-shared volume, or tells anyone to fetch
+  into one, is checked before it runs.** `~/.cache` is shared by every box in
+  the pool that runs as the same sandbox uid (ADR 0094 §2 keys it on the uid
+  alone, so on a shared pool that can be another person's box), so any of them
+  can plant an executable there first. Code here that would run a file from it
+  delivers it elsewhere instead (`deliverToolScript`), and help, docs or a skill
+  that tell someone to download into it pin the file's sha256, check it, and run
+  a checked copy in the box's own home, never the cached file or a link to it;
+  an `-x` test proves nothing. The first `tools --help` worked example missed
+  this (#513). It governs what this package delivers and recommends; the
+  image's own cache volumes that hold programs (`~/.vscode-server`,
+  `~/.rustup`, ...) are the image's decision, not this rule's.
 - **The console runs a host tool with no terminal.**
   `apiDataSource.RunHostTool` gives it empty stdin and discards its output, so
   anything that documents a host tool's console key (`tools --help`, a skill)
