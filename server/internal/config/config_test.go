@@ -123,8 +123,8 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.SandboxReconcileJobConcurrency != 9 {
 		t.Fatalf("SandboxReconcileJobConcurrency = %d, want 9", cfg.SandboxReconcileJobConcurrency)
 	}
-	if cfg.EncryptionKey != "key" {
-		t.Fatalf("EncryptionKey = %q, want key", cfg.EncryptionKey)
+	if cfg.Encryption.Provider != EncryptionLocal || cfg.Encryption.Local.Key != "key" || cfg.EncryptionKey != "" {
+		t.Fatalf("encryptionKey became provider %q, local key %q, left %q; want local, key, nothing", cfg.Encryption.Provider, cfg.Encryption.Local.Key, cfg.EncryptionKey)
 	}
 	if !cfg.OTelMetricsEnabled {
 		t.Fatalf("OTelMetricsEnabled = false, want true")
@@ -341,6 +341,23 @@ func clearConfigEnv(t *testing.T) {
 		devimage.SyncEnv,
 		devimage.ManifestEnv,
 		"DISCOBOX_ENCRYPTION_KEY",
+		"DISCOBOX_ENCRYPTION_PROVIDER",
+		"DISCOBOX_ENCRYPTION_PREVIOUS",
+		"DISCOBOX_ENCRYPTION_CACHE_TTL",
+		"DISCOBOX_ENCRYPTION_LOCAL_KEY",
+		"DISCOBOX_ENCRYPTION_LOCAL_RETIRED_KEYS",
+		"DISCOBOX_ENCRYPTION_AWSKMS_KEY",
+		"DISCOBOX_ENCRYPTION_AWSKMS_REGION",
+		"DISCOBOX_ENCRYPTION_GCPKMS_KEY",
+		"DISCOBOX_ENCRYPTION_AZUREKEYVAULT_VAULT_URL",
+		"DISCOBOX_ENCRYPTION_AZUREKEYVAULT_KEY",
+		"DISCOBOX_ENCRYPTION_VAULTTRANSIT_ADDRESS",
+		"DISCOBOX_ENCRYPTION_VAULTTRANSIT_NAMESPACE",
+		"DISCOBOX_ENCRYPTION_VAULTTRANSIT_MOUNT",
+		"DISCOBOX_ENCRYPTION_VAULTTRANSIT_KEY",
+		"DISCOBOX_ENCRYPTION_VAULTTRANSIT_AUTH",
+		"DISCOBOX_ENCRYPTION_VAULTTRANSIT_TOKEN",
+		"DISCOBOX_ENCRYPTION_VAULTTRANSIT_ROLE",
 		"OTEL_METRICS_EXPORTER",
 		"OTEL_METRIC_EXPORT_INTERVAL",
 		"DISCOBOX_ARCHIVE_RETENTION",

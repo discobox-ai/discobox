@@ -258,7 +258,7 @@ func TestListLatestSandboxEvents(t *testing.T) {
 // what it removes.
 func TestPruneSandboxEvents(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	for _, id := range []string{"sandbox-a", "sandbox-b"} {
 		if err := s.CreateSandbox(ctx, &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: id}); err != nil {
@@ -309,7 +309,7 @@ func TestPruneSandboxEvents(t *testing.T) {
 
 // A sandbox from before events gets one, as an update, and only once.
 func TestBackfillSandboxEvents(t *testing.T) {
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	old := &model.Sandbox{ID: "sandbox-old", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "old"}
 	old.State = model.SandboxStateReady
@@ -413,7 +413,7 @@ func TestSandboxEventsReportNoPowerForAnArchivedSandbox(t *testing.T) {
 // opposite of, and its own read calls that no change.
 func TestStateReportAnnouncesWhatItWritesBackOverARecordedState(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	if err := s.CreateSandbox(ctx, &model.Sandbox{ID: "sandbox-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "alpha"}); err != nil {
 		t.Fatalf("create: %v", err)
@@ -452,12 +452,12 @@ func TestStateReportAnnouncesWhatItWritesBackOverARecordedState(t *testing.T) {
 // streams them.
 func TestSandboxEventLogIsReadOnTheWriteHandle(t *testing.T) {
 	ctx := context.Background()
-	primary, db := newTestStoreWithDB(t, nil)
+	primary, db := newTestStoreWithDB(t, false)
 	createTestPool(t, primary, "project-1", "pool-1")
 	if err := primary.CreateSandbox(ctx, &model.Sandbox{ID: "sandbox-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "alpha"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	_, replica := newTestStoreWithDB(t, nil)
+	_, replica := newTestStoreWithDB(t, false)
 	s := store.New(db.Write, replica.Write)
 
 	position, err := s.GetSandboxEventPosition(ctx)
@@ -566,7 +566,7 @@ func TestSandboxEventsCarryTheDisplayState(t *testing.T) {
 // to date by the backfill, once; one that matches is left alone.
 func TestBackfillSandboxEventsUpdatesAStaleLatestEvent(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	for _, id := range []string{"sandbox-tagged", "sandbox-plain"} {
 		sandbox := &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: id}

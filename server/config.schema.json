@@ -174,8 +174,249 @@
         "null"
       ]
     },
+    "encryption": {
+      "additionalProperties": false,
+      "description": "How stored secrets are sealed: each project's with its own data key, wrapped by the configured provider.",
+      "properties": {
+        "awskms": {
+          "additionalProperties": false,
+          "description": "The AWS KMS provider. Credentials come from the AWS SDK's default chain: IRSA or EKS Pod Identity, an instance profile, or AWS_* variables.",
+          "properties": {
+            "key": {
+              "description": "The symmetric KMS key: a key ARN, an alias ARN, a key ID, or alias/\u003cname\u003e. Environment: DISCOBOX_ENCRYPTION_AWSKMS_KEY (takes precedence over this file).",
+              "examples": [
+                "arn:aws:kms:us-east-1:111122223333:alias/discobox"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "region": {
+              "description": "The key's region. Taken from an ARN; otherwise from the AWS SDK's own configuration (AWS_REGION) when unset. Environment: DISCOBOX_ENCRYPTION_AWSKMS_REGION (takes precedence over this file).",
+              "examples": [
+                "us-east-1"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "azurekeyvault": {
+          "additionalProperties": false,
+          "description": "The Azure Key Vault provider. Credentials come from DefaultAzureCredential: AKS Workload Identity, a managed identity, or AZURE_* variables.",
+          "properties": {
+            "key": {
+              "description": "The name of the RSA or oct-HSM key, permitted wrapKey and unwrapKey. Its newest version wraps. Environment: DISCOBOX_ENCRYPTION_AZUREKEYVAULT_KEY (takes precedence over this file).",
+              "examples": [
+                "discobox"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "vaultURL": {
+              "description": "The vault's URL. Environment: DISCOBOX_ENCRYPTION_AZUREKEYVAULT_VAULT_URL (takes precedence over this file).",
+              "examples": [
+                "https://example.vault.azure.net"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "cacheTTL": {
+          "default": "5m",
+          "description": "How long a project's unwrapped data key is kept in memory, and so how long a project stays readable here after its key is destroyed or the provider stops unwrapping it. Negative keeps none, and every read calls the provider. Environment: DISCOBOX_ENCRYPTION_CACHE_TTL (takes precedence over this file).",
+          "pattern": "^\\d+(\\.\\d+)?(ns|us|ms|s|m|h)([0-9.]+(ns|us|ms|s|m|h))*$",
+          "type": "string"
+        },
+        "gcpkms": {
+          "additionalProperties": false,
+          "description": "The Google Cloud KMS provider. Credentials come from Application Default Credentials: GKE Workload Identity, the metadata server, or GOOGLE_APPLICATION_CREDENTIALS.",
+          "properties": {
+            "key": {
+              "description": "The ENCRYPT_DECRYPT crypto key's resource name. Environment: DISCOBOX_ENCRYPTION_GCPKMS_KEY (takes precedence over this file).",
+              "examples": [
+                "projects/my-project/locations/global/keyRings/discobox/cryptoKeys/discobox"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "local": {
+          "additionalProperties": false,
+          "description": "The local provider: a key held in this configuration.",
+          "properties": {
+            "key": {
+              "description": "Base64 of the 32-byte key that wraps each project's data key; generate one with: openssl rand -base64 32. file:\u003cpath\u003e reads it from a file. Keep it: nothing sealed under it can be read without it. It also opens values an earlier release sealed with encryptionKey. Environment: DISCOBOX_ENCRYPTION_LOCAL_KEY (takes precedence over this file).",
+              "examples": [
+                "file:/run/secrets/discobox-key"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "retiredKeys": {
+              "description": "Earlier local keys, each base64 or file:\u003cpath\u003e. They unwrap but never wrap, and startup rewraps what they wrapped with key. Environment: DISCOBOX_ENCRYPTION_LOCAL_RETIRED_KEYS (takes precedence over this file).",
+              "examples": [
+                [
+                  "file:/run/secrets/discobox-key-2025"
+                ]
+              ],
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "previous": {
+          "description": "The provider being moved away from. It unwraps data keys but never wraps one, and startup rewraps every data key it wrapped with provider. Remove it once the log says no key is left on it. Its own settings stay configured until then. Environment: DISCOBOX_ENCRYPTION_PREVIOUS (takes precedence over this file).",
+          "enum": [
+            "local",
+            "awskms",
+            "gcpkms",
+            "azurekeyvault",
+            "vaulttransit",
+            null
+          ],
+          "examples": [
+            "local"
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "description": "What wraps each project's data key: local (a key in this configuration), awskms, gcpkms, azurekeyvault, or vaulttransit (Vault or OpenBao). Unset, stored secrets are not sealed. Environment: DISCOBOX_ENCRYPTION_PROVIDER (takes precedence over this file).",
+          "enum": [
+            "local",
+            "awskms",
+            "gcpkms",
+            "azurekeyvault",
+            "vaulttransit",
+            null
+          ],
+          "examples": [
+            "awskms"
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vaulttransit": {
+          "additionalProperties": false,
+          "description": "The Vault or OpenBao transit provider.",
+          "properties": {
+            "address": {
+              "description": "The server's address. Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_ADDRESS (takes precedence over this file).",
+              "examples": [
+                "https://vault.internal:8200"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "auth": {
+              "default": "token",
+              "description": "How the server logs in: token uses token; kubernetes logs in at auth/kubernetes with this pod's service-account token as role, and renews what it is given. Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_AUTH (takes precedence over this file).",
+              "enum": [
+                "token",
+                "kubernetes"
+              ],
+              "type": "string"
+            },
+            "key": {
+              "description": "The transit key: aes256-gcm96, aes128-gcm96 or chacha20-poly1305, and not derived. Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_KEY (takes precedence over this file).",
+              "examples": [
+                "discobox"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mount": {
+              "default": "transit",
+              "description": "Where the transit secrets engine is mounted. Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_MOUNT (takes precedence over this file).",
+              "type": "string"
+            },
+            "namespace": {
+              "description": "The Vault Enterprise or OpenBao namespace, if any. Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_NAMESPACE (takes precedence over this file).",
+              "examples": [
+                "discobox"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role": {
+              "description": "The role to log in as, for auth: kubernetes. Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_ROLE (takes precedence over this file).",
+              "examples": [
+                "discobox"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "token": {
+              "description": "The token, for auth: token. file:\u003cpath\u003e reads it from a file. Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_TOKEN (takes precedence over this file).",
+              "examples": [
+                "file:/run/secrets/vault-token"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "encryptionKey": {
-      "description": "Base64 of the 32-byte AES key that seals stored secrets; generate one with: openssl rand -base64 32. Secrets are stored unsealed when empty. Keep it: secrets sealed with a key cannot be read without it. Environment: DISCOBOX_ENCRYPTION_KEY (takes precedence over this file).",
+      "description": "Retired: use encryption.local.key with encryption.provider: local. Read for now as if it were those, with a warning. Setting both is an error. Environment: DISCOBOX_ENCRYPTION_KEY (takes precedence over this file).",
       "type": [
         "string",
         "null"

@@ -13,14 +13,13 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 const (
 	StateKey = "worker_agent_request_issuer"
-	purpose  = "worker_agent_request_issuer.private_key"
 
 	Audience             = "pool-agent"
 	SandboxAgentAudience = "sandbox-agent"
@@ -69,11 +68,12 @@ const (
 type Store interface {
 	GetServerState(ctx context.Context, key string) (*model.ServerState, error)
 	CreateServerState(ctx context.Context, state *model.ServerState) error
+	UpdateServerState(ctx context.Context, state *model.ServerState) error
 }
 
 type Manager struct {
-	store  Store
-	sealer secrets.Sealer
+	store   Store
+	keyring *encryption.Keyring
 }
 
 type TokenClaims struct {
@@ -93,8 +93,44 @@ type issuerState struct {
 	KeyType             string `json:"keyType"`
 }
 
-func NewManager(store Store, sealer secrets.Sealer) *Manager {
-	return &Manager{store: store, sealer: sealer}
+// NewManager returns a manager whose issuer key keyring seals, in the server
+// scope. With no keyring the key is stored unsealed.
+func NewManager(store Store, keyring *encryption.Keyring) *Manager {
+	return &Manager{store: store, keyring: keyring}
+}
+
+// Reseal seals the issuer key again in the current format if an earlier
+// release sealed it, or it was stored unsealed and a provider is now
+// configured (ADR 26-11-02-902 §4). The server calls it at startup.
+func (m *Manager) Reseal(ctx context.Context) error {
+	state, err := m.store.GetServerState(ctx, StateKey)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	issuer, err := decodeIssuer(state.Value)
+	if err != nil {
+		return err
+	}
+	value := issuer.EncryptedPrivateKey
+	if m.keyring == nil {
+		if encryption.Sealed(value) || encryption.Legacy(value) {
+			return errors.New("the pool-agent issuer key is sealed, and encryption.provider is not set")
+		}
+		return nil
+	}
+	if encryption.Sealed(value) {
+		return nil
+	}
+	if issuer.EncryptedPrivateKey, err = m.keyring.SealForWrite(ctx, encryption.PoolAgentIssuerKey(StateKey), value); err != nil {
+		return fmt.Errorf("re-seal the pool-agent issuer key: %w", err)
+	}
+	if state.Value, err = json.Marshal(issuer); err != nil {
+		return err
+	}
+	return m.store.UpdateServerState(ctx, state)
 }
 
 func (m *Manager) EnsureTrustKey(ctx context.Context) (string, error) {
@@ -109,7 +145,7 @@ func (m *Manager) EnsureTrustKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	encryptedPrivateKey, err := secrets.SealIfUnsealed(ctx, m.sealer, purpose, StateKey, []byte(privateKey))
+	encryptedPrivateKey, err := m.keyring.Seal(ctx, encryption.PoolAgentIssuerKey(StateKey), []byte(privateKey))
 	if err != nil {
 		return "", err
 	}
@@ -168,7 +204,7 @@ func (m *Manager) IssuerKey(ctx context.Context) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	privateKeyText, err := secrets.Open(ctx, m.sealer, purpose, StateKey, issuer.EncryptedPrivateKey)
+	privateKeyText, err := m.keyring.Open(ctx, encryption.PoolAgentIssuerKey(StateKey), issuer.EncryptedPrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -183,8 +219,12 @@ func (m *Manager) loadIssuer(ctx context.Context) (issuerState, error) {
 	if err != nil {
 		return issuerState{}, err
 	}
+	return decodeIssuer(state.Value)
+}
+
+func decodeIssuer(value []byte) (issuerState, error) {
 	var issuer issuerState
-	if err := json.Unmarshal(state.Value, &issuer); err != nil {
+	if err := json.Unmarshal(value, &issuer); err != nil {
 		return issuerState{}, fmt.Errorf("decode pool-agent token issuer: %w", err)
 	}
 	if issuer.PublicKey == "" || len(issuer.EncryptedPrivateKey) == 0 {

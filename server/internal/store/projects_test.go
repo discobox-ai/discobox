@@ -11,7 +11,7 @@ import (
 
 func TestSoftDeletedProjectMemberExcludesProjectForUser(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 
 	project := &model.Project{
 		ID:          "project-1",
@@ -51,5 +51,29 @@ func TestSoftDeletedProjectMemberExcludesProjectForUser(t *testing.T) {
 	}
 	if _, err := s.GetDefaultProjectForUser(ctx, "user-1"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("default project after delete error = %v, want ErrNotFound", err)
+	}
+}
+
+// A project whose data key cannot be made is not left behind half made: its
+// row goes again, and the create fails (ADR 26-11-02-902 §2).
+func TestCreateProjectWithoutItsKeyLeavesNoProject(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, true)
+	if err := db.Write.Exec("DROP TABLE encryption_keys").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.CreateProject(ctx, &model.Project{ID: "project-2", OwnerUserID: "user-1", Name: "Second"})
+	if err == nil {
+		t.Fatal("CreateProject succeeded with no place to store the data key")
+	}
+	if _, err := s.GetProject(ctx, "project-2"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetProject after the failed create = %v, want ErrNotFound", err)
+	}
+	if _, err := s.CreateProjectIfNotExists(ctx, &model.Project{ID: "project-3", OwnerUserID: "user-1", Name: "Third"}); err == nil {
+		t.Fatal("CreateProjectIfNotExists succeeded with no place to store the data key")
+	}
+	if _, err := s.GetProject(ctx, "project-3"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetProject after the failed create-if-not-exists = %v, want ErrNotFound", err)
 	}
 }

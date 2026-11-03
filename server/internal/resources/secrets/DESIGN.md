@@ -492,7 +492,7 @@ keep a band nobody can dismiss.
 Replacing a value clears the rejections on it in `store.UpdateSecret`, which is
 the one point every writer passes through — the secrets service and the harness
 configure flow's update-in-place both — and the test is against what is stored
-rather than the shape of what arrived, so it holds with a sealer and without
+rather than the shape of what arrived, so it holds with an encryption provider and without
 one. The harness that owns a credential is derived at read time from
 `ConfiguredSecretIDs` and the config's bindings rather than stored, because
 every path that would have to clear a stored copy belongs to the secret.

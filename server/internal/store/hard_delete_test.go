@@ -16,7 +16,7 @@ import (
 
 func TestDeletedSecretFreesItsUniqueSlot(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 
 	// A secret's name is unique in its project — the slot a tombstone would
 	// block.
@@ -41,7 +41,7 @@ func TestDeletedSecretFreesItsUniqueSlot(t *testing.T) {
 
 func TestDeletedPoolFreesItsName(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 
 	if err := s.DeletePool(ctx, "project-1", "pool-1"); err != nil {
@@ -55,7 +55,7 @@ func TestDeletedPoolFreesItsName(t *testing.T) {
 
 func TestDeletedHarnessConfigBindingFreesItsEnvName(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 
 	config := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
@@ -114,7 +114,7 @@ func TestDeletedHarnessConfigBindingFreesItsEnvName(t *testing.T) {
 // binding stays raw rather than reverting to a sentinel.
 func TestRebindingTheSameSecretKeepsItsRawDelivery(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 	config := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)

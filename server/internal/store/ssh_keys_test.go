@@ -11,7 +11,7 @@ import (
 
 func TestSSHKeyCreateGetListDelete(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 
 	if err := db.Write.WithContext(ctx).Create(&model.Project{
 		ID: "project-2", OwnerUserID: "user-1", Name: "Project 2",
@@ -84,7 +84,7 @@ func TestSSHKeyCreateGetListDelete(t *testing.T) {
 
 func TestSSHKeyDuplicateFingerprintWithinProjectConflicts(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 
 	first := &model.SSHKey{ProjectID: "project-1", PublicKey: "ssh-ed25519 AAAA", Fingerprint: "SHA256:dup"}
 	if err := s.CreateSSHKey(ctx, first); err != nil {
@@ -98,7 +98,7 @@ func TestSSHKeyDuplicateFingerprintWithinProjectConflicts(t *testing.T) {
 
 func TestSSHKeyDeleteNotFound(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 
 	if err := s.DeleteSSHKey(ctx, "project-1", "sshkey_missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)

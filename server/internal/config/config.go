@@ -115,8 +115,10 @@ type Config struct {
 	DatabaseReadDSN string        `yaml:"databaseReadDsn" env:"DATABASE_READ_DSN" doc:"Optional separate DSN for reads, for a deployment with a read replica. Same forms as databaseDsn." example:"postgres://discobox:password@db-replica.internal:5432/discobox?sslmode=require"`
 	DatabaseDriver  gormdb.Driver `yaml:"databaseDriver" env:"DATABASE_DRIVER" enum:"sqlite,postgres" doc:"Database driver. Detected from databaseDsn when unset." example:"postgres"`
 
-	// Secret encryption settings.
-	EncryptionKey string `yaml:"encryptionKey" env:"DISCOBOX_ENCRYPTION_KEY" doc:"Base64 of the 32-byte AES key that seals stored secrets; generate one with: openssl rand -base64 32. Secrets are stored unsealed when empty. Keep it: secrets sealed with a key cannot be read without it." example:"-"`
+	// Secret encryption settings (ADR 26-11-02-902).
+	Encryption EncryptionSettings `yaml:"encryption" doc:"How stored secrets are sealed: each project's with its own data key, wrapped by the configured provider."`
+	// EncryptionKey is retired into Encryption.Local.Key, where Load moves it.
+	EncryptionKey string `yaml:"encryptionKey" env:"DISCOBOX_ENCRYPTION_KEY" doc:"Retired: use encryption.local.key with encryption.provider: local. Read for now as if it were those, with a warning. Setting both is an error." example:"-"`
 
 	// discobot, the team-facing control plane in front of this server (ADR
 	// 26-10-07-005).
@@ -341,6 +343,9 @@ func Load() (*Config, error) {
 	}
 	configured := func(path string) bool { return fromFile[path] || fromEnv[path] }
 	cfg.Warnings = retiredKeyWarnings(fromFile)
+	if err := cfg.applyLegacyEncryptionKey(configured); err != nil {
+		return nil, err
+	}
 
 	// Defaults that are computed rather than literal, applied only where
 	// nothing claimed the field.
@@ -545,7 +550,7 @@ func (c *Config) validate(configured func(string) bool) error {
 	if _, _, err := c.GatewayRoutes(); err != nil {
 		return err
 	}
-	return nil
+	return c.Encryption.validate()
 }
 
 func defaultDatabaseDSN(dataDir string) string {

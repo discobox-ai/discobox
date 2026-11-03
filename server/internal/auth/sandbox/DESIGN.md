@@ -66,16 +66,16 @@ this package's `UserStore` interface refers to it by its alias
 
 Current details:
 
-- The manager is wired only when the server has a secret sealer. Without a
-  store or sealer, `EnsureTrustKey` and `CreateToken` return an empty string
+- The manager is wired only when the server has an encryption provider. Without a
+  store or keyring, `EnsureTrustKey` and `CreateToken` return an empty string
   and no error, and no `DISCOBOX_TRUST_KEY` is injected.
 - Token TTL is 12 hours (`TokenTTL`).
 - Signing key type is Ed25519 / PASETO v4 public.
 - `iat` and `nbf` are both backdated one minute (`clockSkew`) for pool VM
   clock drift; each token carries a random `jti`.
 - Key scope is `(projectID, userID)`, not individual sandbox.
-- The sealer purpose is `sandbox_access_issuer_keys.private_key`, and the
-  resource ID `projectID/userID` binds the ciphertext to that identity.
+- The private key is sealed with the project's data key, bound to
+  `encryption.SandboxAccessIssuerKey(projectID, userID)`.
 - Tokens carry `project_id` and `user_id` claims, and `sandbox_id` when set.
 - A key row missing its public or sealed private key is an error, never
   regenerated. The row's `rotated_at` and `revoked_at` columns are not read.
@@ -127,8 +127,9 @@ separate server-owned issuer key managed by `poolagentauth.Manager`. The public
 key is delivered to the pool host in bootstrap metadata as
 `DISCOBOX_CONTROL_PLANE_PUBLIC_KEY`, and the pool agent passes it on to the
 sandbox agents it runs. The private key remains on the control plane in
-`server_state` under `worker_agent_request_issuer`. It is sealed at rest when a
-sealer is configured and stored in plaintext otherwise.
+`server_state` under `worker_agent_request_issuer`. It is sealed at rest, in the
+keyring's `server` scope, when an encryption provider is configured and stored
+in plaintext otherwise; `Reseal` brings an older one up to date at startup.
 
 `server/providers/poolruntime` mints short-lived PASETO v4.public bearer tokens
 through an auth token provider on each pool-agent client lease. Tokens are:

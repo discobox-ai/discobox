@@ -94,9 +94,128 @@
 # Environment: DATABASE_DRIVER
 #databaseDriver:
 
-# Base64 of the 32-byte AES key that seals stored secrets; generate one
-# with: openssl rand -base64 32. Secrets are stored unsealed when empty.
-# Keep it: secrets sealed with a key cannot be read without it.
+# How stored secrets are sealed: each project's with its own data key,
+# wrapped by the configured provider.
+#encryption:
+  # What wraps each project's data key: local (a key in this
+  # configuration), awskms, gcpkms, azurekeyvault, or vaulttransit (Vault
+  # or OpenBao). Unset, stored secrets are not sealed.
+  # Example: provider: awskms
+  # Environment: DISCOBOX_ENCRYPTION_PROVIDER
+  #provider:
+
+  # The provider being moved away from. It unwraps data keys but never
+  # wraps one, and startup rewraps every data key it wrapped with
+  # provider. Remove it once the log says no key is left on it. Its own
+  # settings stay configured until then.
+  # Example: previous: local
+  # Environment: DISCOBOX_ENCRYPTION_PREVIOUS
+  #previous:
+
+  # How long a project's unwrapped data key is kept in memory, and so how
+  # long a project stays readable here after its key is destroyed or the
+  # provider stops unwrapping it. Negative keeps none, and every read
+  # calls the provider.
+  # Environment: DISCOBOX_ENCRYPTION_CACHE_TTL
+  #cacheTTL: 5m
+
+  # The local provider: a key held in this configuration.
+  #local:
+    # Base64 of the 32-byte key that wraps each project's data key;
+    # generate one with: openssl rand -base64 32. file:<path> reads it
+    # from a file. Keep it: nothing sealed under it can be read without
+    # it. It also opens values an earlier release sealed with
+    # encryptionKey.
+    # Example: key: file:/run/secrets/discobox-key
+    # Environment: DISCOBOX_ENCRYPTION_LOCAL_KEY
+    #key:
+
+    # Earlier local keys, each base64 or file:<path>. They unwrap but
+    # never wrap, and startup rewraps what they wrapped with key.
+    # Example: retiredKeys: [file:/run/secrets/discobox-key-2025]
+    # Environment: DISCOBOX_ENCRYPTION_LOCAL_RETIRED_KEYS
+    #retiredKeys:
+
+  # The AWS KMS provider. Credentials come from the AWS SDK's default
+  # chain: IRSA or EKS Pod Identity, an instance profile, or AWS_*
+  # variables.
+  #awskms:
+    # The symmetric KMS key: a key ARN, an alias ARN, a key ID, or
+    # alias/<name>.
+    # Example: key: arn:aws:kms:us-east-1:111122223333:alias/discobox
+    # Environment: DISCOBOX_ENCRYPTION_AWSKMS_KEY
+    #key:
+
+    # The key's region. Taken from an ARN; otherwise from the AWS SDK's
+    # own configuration (AWS_REGION) when unset.
+    # Example: region: us-east-1
+    # Environment: DISCOBOX_ENCRYPTION_AWSKMS_REGION
+    #region:
+
+  # The Google Cloud KMS provider. Credentials come from Application
+  # Default Credentials: GKE Workload Identity, the metadata server, or
+  # GOOGLE_APPLICATION_CREDENTIALS.
+  #gcpkms:
+    # The ENCRYPT_DECRYPT crypto key's resource name.
+    # Example: key: projects/my-project/locations/global/keyRings/discobox/cryptoKeys/discobox
+    # Environment: DISCOBOX_ENCRYPTION_GCPKMS_KEY
+    #key:
+
+  # The Azure Key Vault provider. Credentials come from
+  # DefaultAzureCredential: AKS Workload Identity, a managed identity, or
+  # AZURE_* variables.
+  #azurekeyvault:
+    # The vault's URL.
+    # Example: vaultURL: https://example.vault.azure.net
+    # Environment: DISCOBOX_ENCRYPTION_AZUREKEYVAULT_VAULT_URL
+    #vaultURL:
+
+    # The name of the RSA or oct-HSM key, permitted wrapKey and
+    # unwrapKey. Its newest version wraps.
+    # Example: key: discobox
+    # Environment: DISCOBOX_ENCRYPTION_AZUREKEYVAULT_KEY
+    #key:
+
+  # The Vault or OpenBao transit provider.
+  #vaulttransit:
+    # The server's address.
+    # Example: address: https://vault.internal:8200
+    # Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_ADDRESS
+    #address:
+
+    # The Vault Enterprise or OpenBao namespace, if any.
+    # Example: namespace: discobox
+    # Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_NAMESPACE
+    #namespace:
+
+    # Where the transit secrets engine is mounted.
+    # Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_MOUNT
+    #mount: "transit"
+
+    # The transit key: aes256-gcm96, aes128-gcm96 or chacha20-poly1305,
+    # and not derived.
+    # Example: key: discobox
+    # Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_KEY
+    #key:
+
+    # How the server logs in: token uses token; kubernetes logs in at
+    # auth/kubernetes with this pod's service-account token as role, and
+    # renews what it is given.
+    # Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_AUTH
+    #auth: "token"
+
+    # The token, for auth: token. file:<path> reads it from a file.
+    # Example: token: file:/run/secrets/vault-token
+    # Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_TOKEN
+    #token:
+
+    # The role to log in as, for auth: kubernetes.
+    # Example: role: discobox
+    # Environment: DISCOBOX_ENCRYPTION_VAULTTRANSIT_ROLE
+    #role:
+
+# Retired: use encryption.local.key with encryption.provider: local. Read
+# for now as if it were those, with a warning. Setting both is an error.
 # Environment: DISCOBOX_ENCRYPTION_KEY
 #encryptionKey:
 

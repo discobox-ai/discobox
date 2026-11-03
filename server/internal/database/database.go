@@ -27,7 +27,8 @@ type DB struct {
 	Write *gorm.DB
 	Read  *gorm.DB
 
-	pools *gormdb.Pools
+	pools   *gormdb.Pools
+	replica bool
 }
 
 // Config controls New.
@@ -53,7 +54,24 @@ func New(cfg Config) (*DB, error) {
 		Write: pools.Write,
 		Read:  pools.Read,
 		pools: pools,
+		// Only Postgres reads a separate database for a read DSN. SQLite
+		// ignores it, and synced Turso opens it as a second connection to
+		// the same local file, which sees every commit.
+		replica: pools.Driver == gormdb.DriverPostgres && cfg.ReadDSN != "",
 	}, nil
+}
+
+// CurrentRead is a read handle that sees every committed write: the read
+// pool when it reads the primary database itself (SQLite and Turso, or
+// Postgres with no read DSN), and the write handle when it is a Postgres
+// replica that may lag. It is for a read that decides a
+// write but must not queue behind write transactions, as SQLite's single
+// write connection would make it.
+func (db *DB) CurrentRead() *gorm.DB {
+	if db.replica {
+		return db.Write
+	}
+	return db.Read
 }
 
 // Migrate runs all current application migrations.

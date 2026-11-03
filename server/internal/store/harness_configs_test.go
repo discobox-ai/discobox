@@ -9,7 +9,7 @@ import (
 
 func TestGetHarnessConfigBySlug(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 
 	config := &model.HarnessConfig{
 		ProjectID: "project-1",
@@ -38,7 +38,7 @@ func TestGetHarnessConfigBySlug(t *testing.T) {
 
 func TestHarnessConfigFilesRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 
 	config := &model.HarnessConfig{
 		ProjectID:  "project-1",
@@ -63,7 +63,7 @@ func TestHarnessConfigFilesRoundTrip(t *testing.T) {
 
 func TestDeleteHarnessConfigClearsProjectDefault(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 
 	project := &model.Project{
 		ID:          "project-1",
@@ -121,7 +121,7 @@ func TestDeleteHarnessConfigClearsProjectDefault(t *testing.T) {
 
 func TestDeleteHarnessConfigHardDeletes(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 
 	config := &model.HarnessConfig{
 		ProjectID:  "project-1",

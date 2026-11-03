@@ -1724,3 +1724,21 @@ func TestMigrateKeepsExistingPoolsOnPlainAgentEndpoints(t *testing.T) {
 		t.Error("a pool made since the setting is on plain HTTP; want TLS by default")
 	}
 }
+
+// A read DSN is a lagging replica only for Postgres: SQLite ignores it, so
+// CurrentRead stays on the read pool there rather than queueing on the one
+// write connection.
+func TestCurrentReadIsTheReadPoolWithoutAReplica(t *testing.T) {
+	for _, readDSN := range []string{"", "sqlite3://" + filepath.Join(t.TempDir(), "other.db")} {
+		db, err := database.New(database.Config{DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"), ReadDSN: readDSN})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if db.CurrentRead() != db.Read {
+			t.Errorf("read DSN %q: CurrentRead is not the read pool", readDSN)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

@@ -12,8 +12,8 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -40,16 +40,18 @@ type UserStore interface {
 }
 
 type Manager struct {
-	store  UserStore
-	sealer secrets.Sealer
+	store   UserStore
+	keyring *encryption.Keyring
 }
 
-func NewManager(store UserStore, sealer secrets.Sealer) *Manager {
-	return &Manager{store: store, sealer: sealer}
+// NewManager returns a manager whose issuer keys keyring seals. With no
+// keyring there are no issuer keys, and no sandbox access tokens.
+func NewManager(store UserStore, keyring *encryption.Keyring) *Manager {
+	return &Manager{store: store, keyring: keyring}
 }
 
 func (m *Manager) EnsureTrustKey(ctx context.Context, projectID, userID string) (string, error) {
-	if m == nil || m.store == nil || m.sealer == nil || projectID == "" || userID == "" {
+	if m == nil || m.store == nil || m.keyring == nil || projectID == "" || userID == "" {
 		return "", nil
 	}
 	key, err := m.store.GetProjectUserKey(ctx, projectID, userID)
@@ -66,8 +68,7 @@ func (m *Manager) EnsureTrustKey(ctx context.Context, projectID, userID string) 
 	if err != nil {
 		return "", err
 	}
-	resourceID := keyResourceID(projectID, userID)
-	encryptedPrivateKey, err := m.sealer.Seal(ctx, "sandbox_access_issuer_keys.private_key", resourceID, []byte(privateKey))
+	encryptedPrivateKey, err := m.keyring.Seal(ctx, encryption.SandboxAccessIssuerKey(projectID, userID), []byte(privateKey))
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +96,7 @@ func (m *Manager) EnsureTrustKey(ctx context.Context, projectID, userID string) 
 }
 
 func (m *Manager) CreateToken(ctx context.Context, claims TokenClaims) (string, error) {
-	if m == nil || m.store == nil || m.sealer == nil || claims.ProjectID == "" || claims.UserID == "" {
+	if m == nil || m.store == nil || m.keyring == nil || claims.ProjectID == "" || claims.UserID == "" {
 		return "", nil
 	}
 	key, err := m.store.GetProjectUserKey(ctx, claims.ProjectID, claims.UserID)
@@ -108,7 +109,7 @@ func (m *Manager) CreateToken(ctx context.Context, claims TokenClaims) (string, 
 	if len(key.EncryptedPrivateKey) == 0 {
 		return "", nil
 	}
-	privateKeyText, err := m.sealer.Open(ctx, "sandbox_access_issuer_keys.private_key", keyResourceID(claims.ProjectID, claims.UserID), key.EncryptedPrivateKey)
+	privateKeyText, err := m.keyring.Open(ctx, encryption.SandboxAccessIssuerKey(claims.ProjectID, claims.UserID), key.EncryptedPrivateKey)
 	if err != nil {
 		return "", err
 	}
@@ -166,8 +167,4 @@ func CreateToken(privateKey ed25519.PrivateKey, claims TokenClaims, ttl time.Dur
 
 func encode(value []byte) string {
 	return base64.StdEncoding.EncodeToString(value)
-}
-
-func keyResourceID(projectID, userID string) string {
-	return projectID + "/" + userID
 }

@@ -1808,6 +1808,8 @@ func TestServerShutdownFallsBackToDefaultHTTPWhenSocketMissing(t *testing.T) {
 func TestLocalServerEnvIncludesSupportedServerConfig(t *testing.T) {
 	t.Setenv("DISCOBOX_DATA_DIR", "/tmp/discobox-data")
 	t.Setenv("DISCOBOX_TOKEN", "client-token")
+	t.Setenv("DISCOBOX_ENCRYPTION_PREVIOUS", "local")
+	t.Setenv("DISCOBOX_ENCRYPTION_VAULTTRANSIT_ADDRESS", "https://vault.example")
 
 	env := localServerEnv("unix:///tmp/discobox/server.sock")
 	joined := "\n" + strings.Join(env, "\n") + "\n"
@@ -1815,6 +1817,8 @@ func TestLocalServerEnvIncludesSupportedServerConfig(t *testing.T) {
 		"\nDISCOBOX_SERVER_LISTEN=unix:///tmp/discobox/server.sock\n",
 		"\nDISCOBOX_SERVER=unix:///tmp/discobox/server.sock\n",
 		"\nDISCOBOX_DATA_DIR=/tmp/discobox-data\n",
+		"\nDISCOBOX_ENCRYPTION_PREVIOUS=local\n",
+		"\nDISCOBOX_ENCRYPTION_VAULTTRANSIT_ADDRESS=https://vault.example\n",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("localServerEnv() missing %q in %q", want, joined)

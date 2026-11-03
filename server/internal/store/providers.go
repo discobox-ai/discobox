@@ -11,17 +11,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 )
-
-// providerSecretsPurpose names the sealed half of a provider instance's
-// config (ADR 26-10-31-694 §1): the fields its definition types secret.
-const providerSecretsPurpose = "sandbox_provider_instances.encrypted_config"
-
-func providerSecretsResourceID(provider *model.SandboxProviderInstance) string {
-	return provider.ProjectID + "/" + provider.ID
-}
 
 func (s *Store) ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
 	read, err := s.getRead(ctx)
@@ -122,15 +114,11 @@ func (s *Store) OpenSandboxProviderSecrets(ctx context.Context, provider *model.
 	if provider == nil || len(provider.EncryptedConfig) == 0 {
 		return nil, nil
 	}
-	plaintext := provider.EncryptedConfig
-	// A server with no sealer keeps them as it keeps a secret's value: in the
-	// clear.
-	if s.sealer != nil && secrets.IsSealed(provider.EncryptedConfig) {
-		opened, err := secrets.Open(ctx, s.sealer, providerSecretsPurpose, providerSecretsResourceID(provider), provider.EncryptedConfig)
-		if err != nil {
-			return nil, fmt.Errorf("decrypt provider %s secret fields: %w", provider.ID, err)
-		}
-		plaintext = opened
+	// A server with no provider keeps them as it keeps a secret's value: in
+	// the clear.
+	plaintext, err := s.keyring.Open(s.keyContext(ctx), encryption.SandboxProviderSecrets(provider.ProjectID, provider.ID), provider.EncryptedConfig)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt provider %s secret fields: %w", provider.ID, err)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(plaintext, &fields); err != nil {
@@ -140,7 +128,7 @@ func (s *Store) OpenSandboxProviderSecrets(ctx context.Context, provider *model.
 }
 
 func (s *Store) sealProviderSecrets(ctx context.Context, provider *model.SandboxProviderInstance) error {
-	sealed, err := secrets.SealIfUnsealed(ctx, s.sealer, providerSecretsPurpose, providerSecretsResourceID(provider), provider.EncryptedConfig)
+	sealed, err := s.keyring.SealForWrite(s.keyContext(ctx), encryption.SandboxProviderSecrets(provider.ProjectID, provider.ID), provider.EncryptedConfig)
 	if err != nil {
 		return fmt.Errorf("encrypt provider %s secret fields: %w", provider.ID, err)
 	}

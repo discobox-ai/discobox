@@ -781,6 +781,14 @@ func localServerEnv(endpoint string) []string {
 		}
 		env = append(env, key+"="+value)
 	}
+	// Every encryption setting, so a server configured by the environment
+	// is configured the same autolaunched: a provider, the one it moves away
+	// from, and their keys (ADR 26-11-02-902 §3).
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "DISCOBOX_ENCRYPTION_") && !strings.HasPrefix(kv, "DISCOBOX_ENCRYPTION_KEY=") {
+			env = append(env, kv)
+		}
+	}
 	return env
 }
 

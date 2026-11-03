@@ -448,7 +448,8 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   `DISCOBOX_CONFIG_DIR`; none there means defaults plus your env. Name one of
   your own with `DISCOBOX_CONFIG_FILE=<file>` in its env; a file that fails
   to load exits 1 before anything is created.
-- With `DISCOBOX_ENCRYPTION_KEY` unset, secret values are stored unsealed.
+- With no `encryption.provider` (`DISCOBOX_ENCRYPTION_PROVIDER`) and no
+  `DISCOBOX_ENCRYPTION_KEY`, secret values are stored unsealed.
 - Its pool is provisioned from the released pool bundle
   (`ghcr.io/discobox-ai/discobox-pool-agent-bundle:latest`), not your
   checkout's, so anything the pool agent gained since the last release is
@@ -602,6 +603,26 @@ every call is a `403` saying this discobox may not call the discobox API.
   takes the workers' bindings with it. Full-precision expiries are in the
   isolated server's `data/discobox.db` (`secret_bindings.expires_at`); the API
   prints whole seconds, and `d admin binding events` the history.
+
+# Verifying stored-secret encryption (`internal/encryption`, `store.PrepareEncryption`)
+
+Provider setup, the startup rewrap and the re-seal all run in `NewApp`, before
+the harness check, so the isolated server above shows them in its log even
+when it then exits with `has no harness to run` (no network, no bundles).
+
+- Older-format rows: build the release before in `git archive <rev> | tar -x
+  -C $S/old`, and put a `cmd/seed/main.go` there that writes rows with that
+  tree's own store and sealer; `go run` it against `sqlite3://$S/data/discobox.db`.
+- Look at the result with `sqlite3`: `substr(col,1,12)` is `envelope:v1:`,
+  `discobox:v1:`, or plaintext; `encryption_keys` shows each scope's
+  provider and `provider_key_id`. Read a value back with
+  `discobox-secret-dump <id>` under the same configuration.
+- A KMS-like provider is OpenBao transit: `bao` is in the envelope repo's
+  flake (`cd ../envelope && nix develop -c bao server -dev
+  -dev-root-token-id=root -dev-listen-address=127.0.0.1:18200`), then
+  `bao secrets enable transit` and `bao write -f transit/keys/discobox`.
+  Stop it by pid: `pkill -f` with the pattern in your own command line kills
+  your shell.
 
 # Verifying the iroh transport (`pkg/endpoint`: admission, peer certificates)
 

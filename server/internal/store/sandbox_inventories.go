@@ -9,11 +9,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 )
-
-const sandboxInventorySealPurpose = "sandbox_inventories.document"
 
 // PutSandboxInventory records the inventory a sandbox on poolID posted,
 // replacing the one held (ADR 26-10-11-657 §3). Like the agent status it is
@@ -25,12 +23,9 @@ const sandboxInventorySealPurpose = "sandbox_inventories.document"
 // delete must not leave terminal content behind under a sandbox that is gone,
 // where nothing would ever remove it.
 func (s *Store) PutSandboxInventory(ctx context.Context, projectID, poolID, sandboxID, digest string, document []byte, observedAt time.Time) error {
-	sealed := document
-	if s.sealer != nil {
-		var err error
-		if sealed, err = s.sealer.Seal(ctx, sandboxInventorySealPurpose, projectID+"/"+sandboxID, document); err != nil {
-			return fmt.Errorf("encrypt sandbox inventory: %w", err)
-		}
+	sealed, err := s.keyring.Seal(s.keyContext(ctx), encryption.SandboxInventory(projectID, sandboxID), document)
+	if err != nil {
+		return fmt.Errorf("encrypt sandbox inventory: %w", err)
 	}
 	row := model.SandboxInventory{SandboxID: sandboxID, ProjectID: projectID, Digest: digest, Document: sealed, ObservedAt: observedAt}
 	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
@@ -83,12 +78,10 @@ func (s *Store) GetSandboxInventory(ctx context.Context, projectID, sandboxID st
 		}
 		return nil, err
 	}
-	if s.sealer != nil && secrets.IsSealed(row.Document) {
-		document, err := secrets.Open(ctx, s.sealer, sandboxInventorySealPurpose, projectID+"/"+sandboxID, row.Document)
-		if err != nil {
-			return nil, fmt.Errorf("decrypt sandbox inventory: %w", err)
-		}
-		row.Document = document
+	document, err := s.keyring.Open(s.keyContext(ctx), encryption.SandboxInventory(projectID, sandboxID), row.Document)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt sandbox inventory: %w", err)
 	}
+	row.Document = document
 	return &row, nil
 }

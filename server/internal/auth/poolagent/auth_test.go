@@ -9,6 +9,10 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
+	"github.com/discobox-ai/envelope/pkg/envelopetest"
+
+	"github.com/discobox-ai/discobox/server/internal/config"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -115,4 +119,64 @@ func (s *memoryStore) CreateServerState(_ context.Context, state *model.ServerSt
 	copied.Value = append(model.RawJSON(nil), state.Value...)
 	s.state[state.Key] = &copied
 	return nil
+}
+
+func (s *memoryStore) UpdateServerState(_ context.Context, state *model.ServerState) error {
+	if s.state[state.Key] == nil {
+		return store.ErrNotFound
+	}
+	copied := *state
+	copied.Value = append(model.RawJSON(nil), state.Value...)
+	s.state[state.Key] = &copied
+	return nil
+}
+
+// An issuer key stored unsealed, before a provider was configured, is sealed
+// in the server scope at startup, and is still the same key.
+func TestResealSealsAnUnsealedIssuerKey(t *testing.T) {
+	ctx := context.Background()
+	states := newMemoryStore()
+	unsealed := NewManager(states, nil)
+	if _, err := unsealed.EnsureTrustKey(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before, err := unsealed.IssuerKey(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	key, err := encryption.GenerateLocalKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyring, err := encryption.New(ctx, config.EncryptionSettings{
+		Provider: config.EncryptionLocal,
+		Local:    config.LocalEncryptionSettings{Key: key},
+	}, &envelopetest.MemoryStore{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed := NewManager(states, keyring)
+	for range 2 {
+		if err := sealed.Reseal(ctx); err != nil {
+			t.Fatalf("Reseal: %v", err)
+		}
+	}
+	issuer, err := sealed.loadIssuer(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !encryption.Sealed(issuer.EncryptedPrivateKey) {
+		t.Fatalf("issuer key is still %q", issuer.EncryptedPrivateKey[:12])
+	}
+	after, err := sealed.IssuerKey(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.Equal(after) {
+		t.Fatal("the re-sealed issuer key is another key")
+	}
+	if err := unsealed.Reseal(ctx); err == nil {
+		t.Fatal("Reseal without a keyring accepted a sealed issuer key")
+	}
 }
