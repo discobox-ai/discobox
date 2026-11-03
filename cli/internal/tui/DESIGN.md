@@ -3461,6 +3461,18 @@ fires a timer or runs a listener. The driver, which stands in for the runtime, f
 and runs listeners as the runtime would. The cursor's blink, the one timer a
 widget sets itself, is named in `libraryTimers`.
 
+**A driven window runs on the test's clock** (`testing/synctest`). Every test
+that makes a `driver` runs inside `synctest.Test`, and `newDriver` fails one
+that does not. In the bubble, time moves only once every goroutine in it is
+blocked, so the work a test set off has always finished before a timer is
+due: the window's timers (a status's hold, the workspace poll, the refresh)
+fire in the order their durations say however slow the machine is, and the
+driver's own bounds — `settle`'s pause, `wait`'s `commandWait` — measure the
+test's time, not the machine's. A goroutine blocked on real I/O (a pty, a
+pipe, a process) is not idle and holds the clock still, which is why a test
+of a real terminal or process makes no driver. When the test ends the
+driver closes the workspace on screen and every parked one, since the bubble
+ends only once every goroutine in it has.
 
 Credential consent during source delivery uses the operation's narration feed:
 a question waits for the dialog's answer, and Git's credential process runs via

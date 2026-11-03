@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
@@ -127,28 +128,30 @@ func TestADismissalIsForOneDiscobox(t *testing.T) {
 // the band still does what the band says.
 func TestTheBandsCloseButtonDismissesIt(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{waitingRequest()}
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the banner drawn", func() bool { return m.banner.live })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.requests = []CredentialRequest{waitingRequest()}
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the banner drawn", func() bool { return m.banner.live })
 
-	top := windowLines(m)[m.banner.rows[0]]
-	if !strings.Contains(ansi.Strip(top), "✕") {
-		t.Fatalf("band = %q, want a dismiss button on it", ansi.Strip(top))
-	}
-	x, y := m.banner.closeStart+1, m.banner.rows[0]
-	// The hit test is where the glyph was drawn, not where it ought to be.
-	if got := ansi.Strip(ansi.Cut(top, x, x+1)); got != "✕" {
-		t.Fatalf("cell %d of the band is %q, want the dismiss button", x, got)
-	}
-	if !m.bannerCloseAt(x, y) || m.bannerCloseAt(m.banner.start+1, y) {
-		t.Fatal("the dismiss button's hit test is not the button")
-	}
-	clickWindow(d, x, y)
-	d.wait("the band gone", func() bool { return m.bannerShowing() == bannerNone })
-	if m.dialog != nil {
-		t.Fatalf("dialog = %s, want the dismiss to open nothing", describe(m.dialog))
-	}
+		top := windowLines(m)[m.banner.rows[0]]
+		if !strings.Contains(ansi.Strip(top), "✕") {
+			t.Fatalf("band = %q, want a dismiss button on it", ansi.Strip(top))
+		}
+		x, y := m.banner.closeStart+1, m.banner.rows[0]
+		// The hit test is where the glyph was drawn, not where it ought to be.
+		if got := ansi.Strip(ansi.Cut(top, x, x+1)); got != "✕" {
+			t.Fatalf("cell %d of the band is %q, want the dismiss button", x, got)
+		}
+		if !m.bannerCloseAt(x, y) || m.bannerCloseAt(m.banner.start+1, y) {
+			t.Fatal("the dismiss button's hit test is not the button")
+		}
+		clickWindow(d, x, y)
+		d.wait("the band gone", func() bool { return m.bannerShowing() == bannerNone })
+		if m.dialog != nil {
+			t.Fatalf("dialog = %s, want the dismiss to open nothing", describe(m.dialog))
+		}
+	})
 }
 
 // The leader key is the button from the keyboard.
@@ -235,16 +238,18 @@ func TestTheRefusalIsChosenAndDrawnFromTheSameRow(t *testing.T) {
 // band are the band, as they were before there was a button.
 func TestTheDismissButtonIsOnlyItsCells(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{waitingRequest()}
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the banner drawn", func() bool { return m.banner.live })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.requests = []CredentialRequest{waitingRequest()}
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the banner drawn", func() bool { return m.banner.live })
 
-	y := m.banner.rows[0]
-	if m.banner.closeEnd >= m.banner.end {
-		t.Fatalf("button ends at %d, the band at %d: want padding right of the button", m.banner.closeEnd, m.banner.end)
-	}
-	if m.bannerCloseAt(m.banner.closeEnd+1, y) || !m.bannerAt(m.banner.closeEnd+1, y) {
-		t.Fatal("the cell right of the button should press the band, not dismiss it")
-	}
+		y := m.banner.rows[0]
+		if m.banner.closeEnd >= m.banner.end {
+			t.Fatalf("button ends at %d, the band at %d: want padding right of the button", m.banner.closeEnd, m.banner.end)
+		}
+		if m.bannerCloseAt(m.banner.closeEnd+1, y) || !m.bannerAt(m.banner.closeEnd+1, y) {
+			t.Fatal("the cell right of the button should press the band, not dismiss it")
+		}
+	})
 }

@@ -226,6 +226,12 @@
 - **A driver test waits for what it asserts.** A fake records a call from the
   command's goroutine, before the window has the answer: wait on the window's
   state, not on the fake's.
+- **A driver test runs in `synctest.Test`.** Build the model, its fakes and
+  their channels inside the bubble: one made outside it is not the bubble's,
+  and a goroutine blocked on it holds the clock still. Inside, `time` is the
+  test's clock, which moves only when the window is idle, so a wait, a settle
+  or a sleep is exact on any machine. A goroutine a test leaves running fails
+  it when the bubble ends; close what was opened rather than leaving it.
 
 ## The files changed
 

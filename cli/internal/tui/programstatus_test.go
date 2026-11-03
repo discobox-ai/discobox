@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -141,47 +142,51 @@ func TestTheWindowClearsWhatItSentOnItsWayOut(t *testing.T) {
 // of its title.
 func TestATerminalThatDoesNotKnowTheProtocolGetsTheStatusInItsTitle(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, term := openWorkspace(t, ds, "enter")
-	term.send("\x1b]2;Claude Code\x07")
-	d.wait("the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, term := openWorkspace(t, ds, "enter")
+		term.send("\x1b]2;Claude Code\x07")
+		d.wait("the title", func() bool { return m.View().WindowTitle == "Claude Code" })
 
-	if _, cmd := m.Update(uv.PrimaryDeviceAttributesEvent{62, 22}); rawSent(t, cmd) != "" {
-		t.Fatal("sent a record to a terminal that does not know the protocol")
-	}
-	if got := rawSent(t, m.syncProgramStatus()); got != "" {
-		t.Fatalf("sent %q to a terminal that does not know the protocol", got)
-	}
-	if m.statusTerminal != statusTitled {
-		t.Fatalf("support = %v after attributes with no answer, want titled", m.statusTerminal)
-	}
-	term.send("\x1b]7501;state=blocked:kind=permission\x1b\\")
-	d.wait("the status in the title", func() bool { return m.View().WindowTitle == "◆ Claude Code" })
-	term.send("\x1b]7501;state=working\x1b\\")
-	d.wait("the new status in the title", func() bool { return m.View().WindowTitle == "▶ Claude Code" })
-	term.send("\x1b]7501;state=clear\x1b\\")
-	d.wait("the status gone from the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+		if _, cmd := m.Update(uv.PrimaryDeviceAttributesEvent{62, 22}); rawSent(t, cmd) != "" {
+			t.Fatal("sent a record to a terminal that does not know the protocol")
+		}
+		if got := rawSent(t, m.syncProgramStatus()); got != "" {
+			t.Fatalf("sent %q to a terminal that does not know the protocol", got)
+		}
+		if m.statusTerminal != statusTitled {
+			t.Fatalf("support = %v after attributes with no answer, want titled", m.statusTerminal)
+		}
+		term.send("\x1b]7501;state=blocked:kind=permission\x1b\\")
+		d.wait("the status in the title", func() bool { return m.View().WindowTitle == "◆ Claude Code" })
+		term.send("\x1b]7501;state=working\x1b\\")
+		d.wait("the new status in the title", func() bool { return m.View().WindowTitle == "▶ Claude Code" })
+		term.send("\x1b]7501;state=clear\x1b\\")
+		d.wait("the status gone from the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+	})
 }
 
 // A terminal that knows the protocol shows the status its own way: the
 // attributes after its answer change nothing, and the title carries no glyph.
 func TestATerminalThatKnowsTheProtocolKeepsItsTitlePlain(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, term := openWorkspace(t, ds, "enter")
-	d.dispatch(uv.UnknownOscEvent("\x1b]7501;?\x1b\\"))
-	d.dispatch(uv.PrimaryDeviceAttributesEvent{62, 22})
-	if m.statusTerminal != statusSpoken {
-		t.Fatalf("support = %v, want spoken", m.statusTerminal)
-	}
-	term.send("\x1b]2;Claude Code\x1b\\\x1b]7501;state=working\x1b\\")
-	d.wait("the title", func() bool { return m.View().WindowTitle == "Claude Code" })
-	if rec, ok := m.focusedProgramStatus(); !ok || rec.State != programstatus.Working {
-		t.Fatalf("status = %+v, %v; want working heard", rec, ok)
-	}
-	if got := m.View().WindowTitle; got != "Claude Code" {
-		t.Fatalf("title = %q, want no glyph", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, term := openWorkspace(t, ds, "enter")
+		d.dispatch(uv.UnknownOscEvent("\x1b]7501;?\x1b\\"))
+		d.dispatch(uv.PrimaryDeviceAttributesEvent{62, 22})
+		if m.statusTerminal != statusSpoken {
+			t.Fatalf("support = %v, want spoken", m.statusTerminal)
+		}
+		term.send("\x1b]2;Claude Code\x1b\\\x1b]7501;state=working\x1b\\")
+		d.wait("the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+		if rec, ok := m.focusedProgramStatus(); !ok || rec.State != programstatus.Working {
+			t.Fatalf("status = %+v, %v; want working heard", rec, ok)
+		}
+		if got := m.View().WindowTitle; got != "Claude Code" {
+			t.Fatalf("title = %q, want no glyph", got)
+		}
+	})
 }
 
 // The record names the box without its program's words: the listing's name
@@ -210,17 +215,19 @@ func TestTheRecordsTitleIsNotTheMsgAgain(t *testing.T) {
 // (sandboxmeta.Title): the msg never stands in for what the box is called.
 func TestAnUntitledPrimaryIsCalledByItsConfiguredName(t *testing.T) {
 	t.Parallel()
-	boxes := testSandboxes()
-	boxes[0].TerminalTitle, boxes[0].ConfigName = "", "brave-otter"
-	ds := newFakeSource(boxes...)
-	d, m, term := openWorkspace(t, ds, "enter")
-	d.wait("the configured name", func() bool { return m.View().WindowTitle == "brave-otter" })
+	synctest.Test(t, func(t *testing.T) {
+		boxes := testSandboxes()
+		boxes[0].TerminalTitle, boxes[0].ConfigName = "", "brave-otter"
+		ds := newFakeSource(boxes...)
+		d, m, term := openWorkspace(t, ds, "enter")
+		d.wait("the configured name", func() bool { return m.View().WindowTitle == "brave-otter" })
 
-	msg := base64.RawStdEncoding.EncodeToString([]byte("Fix the reaper race"))
-	term.send("\x1b]7501;state=working:app=claude-code:msg=" + msg + "\x1b\\")
-	d.wait("the configured name and the msg", func() bool { return m.View().WindowTitle == "brave-otter: Fix the reaper race" })
+		msg := base64.RawStdEncoding.EncodeToString([]byte("Fix the reaper race"))
+		term.send("\x1b]7501;state=working:app=claude-code:msg=" + msg + "\x1b\\")
+		d.wait("the configured name and the msg", func() bool { return m.View().WindowTitle == "brave-otter: Fix the reaper race" })
 
-	// A title the pane draws takes the configured name's place.
-	term.send("\x1b]2;Reaper cleanup\x07")
-	d.wait("the title and the msg", func() bool { return m.View().WindowTitle == "Reaper cleanup: Fix the reaper race" })
+		// A title the pane draws takes the configured name's place.
+		term.send("\x1b]2;Reaper cleanup\x07")
+		d.wait("the title and the msg", func() bool { return m.View().WindowTitle == "Reaper cleanup: Fix the reaper race" })
+	})
 }

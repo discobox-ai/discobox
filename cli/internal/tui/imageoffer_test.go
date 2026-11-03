@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 )
 
 // imageGoneSandboxes is the fixture with its first box failed on an image its
@@ -89,24 +90,26 @@ func TestAFailedAttachOffersTheUpgradeFromItsOwnListing(t *testing.T) {
 // without the attach being pressed again.
 func TestAnAttachThatFailsOnAMissingImageEndsInTheOffer(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := New(t.Context(), ds)
-	m.logo = logo{}
-	d := newDriver(t, m)
-	d.start()
-	// The window opens on the first discobox once the listing is in.
-	d.wait("the list", func() bool { return m.focus == focusList })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		m := New(t.Context(), ds)
+		m.logo = logo{}
+		d := newDriver(t, m)
+		d.start()
+		// The window opens on the first discobox once the listing is in.
+		d.wait("the list", func() bool { return m.focus == focusList })
 
-	ds.mu.Lock()
-	ds.openExecErr = errors.New("sandbox failed")
-	ds.failedExecSandboxes = imageGoneSandboxes(true)
-	ds.mu.Unlock()
-	d.key("a")
+		ds.mu.Lock()
+		ds.openExecErr = errors.New("sandbox failed")
+		ds.failedExecSandboxes = imageGoneSandboxes(true)
+		ds.mu.Unlock()
+		d.key("a")
 
-	d.wait("the upgrade offer", func() bool { return m.dialog != nil && m.dialog.title == "Upgrade" })
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	if len(ds.execOpens) == 0 {
-		t.Fatal("the offer came from the row rather than from the failed attach this is about")
-	}
+		d.wait("the upgrade offer", func() bool { return m.dialog != nil && m.dialog.title == "Upgrade" })
+		ds.mu.Lock()
+		defer ds.mu.Unlock()
+		if len(ds.execOpens) == 0 {
+			t.Fatal("the offer came from the row rather than from the failed attach this is about")
+		}
+	})
 }

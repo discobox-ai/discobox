@@ -107,7 +107,11 @@ func TestWindowLearnsASizeChangedWhileOpening(t *testing.T) {
 	}}
 	p := tea.NewProgram(model,
 		tea.WithContext(t.Context()),
-		tea.WithInput(tty),
+		// No input: what is tested is the size, which is read off the output.
+		// Reading the pty as well would have the runtime close it, on the way
+		// out, under a read it gave only half a second of the wall clock to
+		// end — a data race on any machine slow enough to miss that.
+		tea.WithInput(nil),
 		tea.WithOutput(tty),
 		tea.WithColorProfile(colorprofile.ANSI256),
 		tea.WithEnvironment([]string{"TERM=xterm-256color"}),

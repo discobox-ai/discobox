@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -11,26 +12,28 @@ import (
 // not only once the server has answered and the list has been read again.
 func TestArchivingFromTheListShowsAtOnce(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.doGate = make(chan struct{})
-	m := newTestModel(t, ds)
-	d := newDriver(t, m)
-	d.start()
-	d.key("tab")
-	box := m.list.current()
-	if box == nil {
-		t.Fatal("no row under the cursor")
-	}
-	d.key("x")
-	d.wait("the archive asked", func() bool { return m.busy == "archive…" })
-
-	for _, row := range m.list.rows() {
-		if row.ID == box.ID && row.State != StateArchived {
-			t.Errorf("row %s still listed as %q while its archive is out; want it gone or marked archiving at once", box.ID, row.State)
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.doGate = make(chan struct{})
+		m := newTestModel(t, ds)
+		d := newDriver(t, m)
+		d.start()
+		d.key("tab")
+		box := m.list.current()
+		if box == nil {
+			t.Fatal("no row under the cursor")
 		}
-	}
-	close(ds.doGate)
-	d.wait("the archive", func() bool { return m.busy == "" })
+		d.key("x")
+		d.wait("the archive asked", func() bool { return m.busy == "archive…" })
+
+		for _, row := range m.list.rows() {
+			if row.ID == box.ID && row.State != StateArchived {
+				t.Errorf("row %s still listed as %q while its archive is out; want it gone or marked archiving at once", box.ID, row.State)
+			}
+		}
+		close(ds.doGate)
+		d.wait("the archive", func() bool { return m.busy == "" })
+	})
 }
 
 // archiveSent has the window send an archive for one box, with the cursor on

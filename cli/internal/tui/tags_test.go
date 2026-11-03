@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -199,64 +200,66 @@ func githubTaggedSandboxes() []Sandbox {
 // terminal's own Ctrl-click follows.
 func TestClickingAnIssueTagOnTheListOpensTheIssue(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(githubTaggedSandboxes()...)
-	d, m := openList(t, ds)
-	// Wide enough for the tags beside the name: they give way before it does.
-	d.dispatch(tea.WindowSizeMsg{Width: 180, Height: 40})
-	d.wait("the tags", func() bool { return strings.Contains(plainFrame(m), "#issue=4 #pr=9 #wip") })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(githubTaggedSandboxes()...)
+		d, m := openList(t, ds)
+		// Wide enough for the tags beside the name: they give way before it does.
+		d.dispatch(tea.WindowSizeMsg{Width: 180, Height: 40})
+		d.wait("the tags", func() bool { return strings.Contains(plainFrame(m), "#issue=4 #pr=9 #wip") })
 
-	opened := make(chan string, 4)
-	m.openOS = func(url string) error { opened <- url; return nil }
+		opened := make(chan string, 4)
+		m.openOS = func(url string) error { opened <- url; return nil }
 
-	if frame := rawFrame(m); !strings.Contains(frame, "https://github.com/acme/foo/issues/4") ||
-		!strings.Contains(frame, "https://github.com/acme/foo/pull/9") {
-		t.Fatalf("the issue and pull request tags are not links:\n%q", frame)
-	}
+		if frame := rawFrame(m); !strings.Contains(frame, "https://github.com/acme/foo/issues/4") ||
+			!strings.Contains(frame, "https://github.com/acme/foo/pull/9") {
+			t.Fatalf("the issue and pull request tags are not links:\n%q", frame)
+		}
 
-	x, y := at(t, m, "#issue=4")
-	tap(t, m, x, y)
-	if got := <-opened; got != "https://github.com/acme/foo/issues/4" {
-		t.Errorf("clicking #issue=4 opened %q, want the issue", got)
-	}
-	x, y = at(t, m, "#pr=9")
-	slowClock(m)
-	tap(t, m, x, y)
-	if got := <-opened; got != "https://github.com/acme/foo/pull/9" {
-		t.Errorf("clicking #pr=9 opened %q, want the pull request", got)
-	}
+		x, y := at(t, m, "#issue=4")
+		tap(t, m, x, y)
+		if got := <-opened; got != "https://github.com/acme/foo/issues/4" {
+			t.Errorf("clicking #issue=4 opened %q, want the issue", got)
+		}
+		x, y = at(t, m, "#pr=9")
+		slowClock(m)
+		tap(t, m, x, y)
+		if got := <-opened; got != "https://github.com/acme/foo/pull/9" {
+			t.Errorf("clicking #pr=9 opened %q, want the pull request", got)
+		}
 
-	// A tag that numbers nothing is the row, as it was.
-	x, y = at(t, m, "#wip")
-	tap(t, m, x, y)
-	select {
-	case got := <-opened:
-		t.Errorf("clicking #wip opened %q, want nothing opened", got)
-	default:
-	}
-	// Nor has the wheel: over a linked tag it scrolls the list, as it does
-	// anywhere else on the row, and opens nothing.
-	m.list.cursor = 0
-	x, y = at(t, m, "#issue=4")
-	send(t, m, tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown})
-	if m.list.cursor == 0 {
-		t.Errorf("the wheel over #issue=4 did not move the list on")
-	}
-	select {
-	case got := <-opened:
-		t.Errorf("the wheel over #issue=4 opened %q, want nothing opened", got)
-	default:
-	}
+		// A tag that numbers nothing is the row, as it was.
+		x, y = at(t, m, "#wip")
+		tap(t, m, x, y)
+		select {
+		case got := <-opened:
+			t.Errorf("clicking #wip opened %q, want nothing opened", got)
+		default:
+		}
+		// Nor has the wheel: over a linked tag it scrolls the list, as it does
+		// anywhere else on the row, and opens nothing.
+		m.list.cursor = 0
+		x, y = at(t, m, "#issue=4")
+		send(t, m, tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown})
+		if m.list.cursor == 0 {
+			t.Errorf("the wheel over #issue=4 did not move the list on")
+		}
+		select {
+		case got := <-opened:
+			t.Errorf("the wheel over #issue=4 opened %q, want nothing opened", got)
+		default:
+		}
 
-	// The right button has nothing to do with a link, so it is the row's menu
-	// there as anywhere else on the row.
-	x, y = at(t, m, "#issue=4")
-	send(t, m,
-		tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseRight},
-		tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseRight},
-	)
-	if m.dialog == nil {
-		t.Errorf("right-clicking #issue=4 opened no menu, want the row's actions")
-	}
+		// The right button has nothing to do with a link, so it is the row's menu
+		// there as anywhere else on the row.
+		x, y = at(t, m, "#issue=4")
+		send(t, m,
+			tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseRight},
+			tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseRight},
+		)
+		if m.dialog == nil {
+			t.Errorf("right-clicking #issue=4 opened no menu, want the row's actions")
+		}
+	})
 }
 
 // The workspace says which issue and pull request it is working on at the top,
@@ -265,22 +268,24 @@ func TestClickingAnIssueTagOnTheListOpensTheIssue(t *testing.T) {
 // follows.
 func TestTheWorkspaceHeaderLinksTheIssueAndPullRequest(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(githubTaggedSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the header", func() bool { return strings.Contains(plainFrame(m), "issue #4 · PR #9") })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(githubTaggedSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the header", func() bool { return strings.Contains(plainFrame(m), "issue #4 · PR #9") })
 
-	if _, y := at(t, m, "issue #4"); y != 0 {
-		t.Fatalf("issue #4 is drawn on row %d, want the header", y)
-	}
-	if frame := rawFrame(m); !strings.Contains(frame, "https://github.com/acme/foo/issues/4") {
-		t.Errorf("issue #4 is not a link:\n%q", frame)
-	}
-	if _, y := at(t, m, "PR #9"); y != 0 {
-		t.Fatalf("PR #9 is drawn on row %d, want the header", y)
-	}
-	if frame := rawFrame(m); !strings.Contains(frame, "https://github.com/acme/foo/pull/9") {
-		t.Errorf("PR #9 is not a link:\n%q", frame)
-	}
+		if _, y := at(t, m, "issue #4"); y != 0 {
+			t.Fatalf("issue #4 is drawn on row %d, want the header", y)
+		}
+		if frame := rawFrame(m); !strings.Contains(frame, "https://github.com/acme/foo/issues/4") {
+			t.Errorf("issue #4 is not a link:\n%q", frame)
+		}
+		if _, y := at(t, m, "PR #9"); y != 0 {
+			t.Fatalf("PR #9 is drawn on row %d, want the header", y)
+		}
+		if frame := rawFrame(m); !strings.Contains(frame, "https://github.com/acme/foo/pull/9") {
+			t.Errorf("PR #9 is not a link:\n%q", frame)
+		}
+	})
 }
 
 // Without a GitHub repository, `issue=4` is only a tag: nothing in the
