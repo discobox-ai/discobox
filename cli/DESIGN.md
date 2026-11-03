@@ -1089,7 +1089,7 @@ nothing and only names the discobox in ssh's messages. `startSSHClientSession`
 assembles those for `tools ssh` and `discobox cp` alike, which differ only in
 how the client names the user. The proxy's command line carries only
 `--server`; the token and iroh settings the App dials with reach it through
-the environment (`sshProxyEnv`), set outright so an App aimed at a registered
+the environment (`childCLIEnv`), set outright so an App aimed at a registered
 server — which carries no `--token` — does not hand it one inherited for the
 primary. `-F none` keeps the user's own `ssh_config` out of it, since a
 `Host *` block there could otherwise override the identity, user or proxy just
@@ -1208,8 +1208,24 @@ flowchart LR
   Then `App.sandboxSSHRemote` refreshes the managed config — the same write
   `admin ssh-config --write` does — and yields the alias and working tree, which
   `tools.Remote` expands into `{ssh.host}`, `{ssh.url}`, `{git.url}`,
-  `{workdir}`, `{workdir.urlpath}`, `{discobox.id}` and exports as
-  `DISCOBOX_*`. A box with no source has no working tree: `{workdir}` is the
+  `{workdir}`, `{workdir.urlpath}`, `{discobox.id}`, `{discobox.cli}`,
+  `{discobox.server}`, `{discobox.project}` for a `.yaml` tool and exports
+  as `DISCOBOX_*` to a script only (ADR 0125 §4): an editor's terminals inherit
+  its environment, and `DISCOBOX_SERVER` there would aim every `discobox` in
+  them at one box's server. A tool that runs the CLI (`RunsTheCLI`: a script,
+  or a `.yaml` whose args name `{discobox.cli}` or `{discobox.server}`) starts
+  from `childCLIEnv`, the ProxyCommand's, with the App's iroh settings and
+  `DISCOBOX_TOKEN` set empty: the CLI it runs is authorized by its transport,
+  and an inherited token, given for the primary, never reaches a box on a
+  registered server. The last three values let a script drive the box with the
+  CLI itself (ADR 26-11-03-982):
+  the running binary (`os.Executable`), the App's `serverURL` (an address by
+  then, never a registered name), and the project ID `concreteProjectID`
+  resolved, never the `default` alias. `DISCOBOX_SERVER` and
+  `DISCOBOX_PROJECT` are the variables the CLI reads, so
+  `"$DISCOBOX_CLI" shell "$DISCOBOX_ID"` needs no flags. `discobox tools
+  --help` is the reference for writing one; `TestToolsHelpNamesWhatAHostToolIsHanded`
+  holds it to `Remote.Environ`. A box with no source has no working tree: `{workdir}` is the
   sandbox's working root, by its platform (`sandboxpath.Paths.WorkingRoot`), and `{git.url}` an
   error (ADR 0141). The args are expanded before "opening" is printed, so a
   tool that asked for what the box cannot give never claims to open. Nothing is
