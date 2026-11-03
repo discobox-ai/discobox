@@ -548,6 +548,12 @@ you were given to delegate. Nothing else: the user's other commands above need
 their machine or reach further than a box may, and are refused. A box you create is
 the user's, and gets API access from you only if you have it yourself.
 
+To point the user at a box on this box's server, write `discobox:///<id>`. It
+names that box on whichever server the reader is on, and a click on it in this
+box's terminal, in the user's console, opens it. `$DISCOBOX_ADDRESS` is this
+box's own address in the full form, with its server, for a link that leaves
+the server.
+
 Launch a box with no credentials and a prompt that states its task and nothing
 else, then approve only what it asks for. The `discobox-access` skill's
 "Launching other discoboxes" section says how, including the delegation to ask
