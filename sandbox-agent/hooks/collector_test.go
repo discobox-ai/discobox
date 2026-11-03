@@ -1,9 +1,11 @@
 package hooks
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -49,6 +51,75 @@ func TestPublishRecordsHarnessHook(t *testing.T) {
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("serve: %v", err)
 	}
+}
+
+// The reply is the line the collector writes, not everything up to its close:
+// on Windows a read pending while its peer closes a Unix socket can stall
+// instead of returning EOF (go.dev/issue/49352), which timed Publish out with
+// "ok" already sent (#475). A collector that answers and holds the connection
+// open makes that reliance fail on every platform.
+func TestPublishReadsTheReplyLineWithoutWaitingForClose(t *testing.T) {
+	socketPath := filepath.Join(shorttmp.Dir(t), "hooks.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	release := make(chan struct{})
+	served := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			served <- err
+			return
+		}
+		defer conn.Close()
+		if _, err := bufio.NewReader(conn).ReadString('\n'); err != nil {
+			served <- err
+			return
+		}
+		_, err = io.WriteString(conn, replyOK+"\n")
+		served <- err
+		<-release
+	}()
+	defer close(release)
+
+	start := time.Now()
+	if err := Publish(context.Background(), socketPath, Message{Provider: "codex", Event: "Stop"}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("publish took %s: it waited for the collector to close", elapsed)
+	}
+	if err := <-served; err != nil {
+		t.Fatalf("collector: %v", err)
+	}
+}
+
+func TestPublishReturnsTheCollectorsWholeError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	socketPath := filepath.Join(shorttmp.Dir(t), "hooks.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Serve(ctx, socketPath, failingRecorder{err: errors.New("store closed\nretry later")})
+	}()
+	waitForSocket(t, socketPath)
+
+	err := Publish(context.Background(), socketPath, Message{Provider: "codex", Event: "Stop"})
+	if err == nil || err.Error() != "publish hook: store closed retry later" {
+		t.Fatalf("publish error = %v, want the recorder's error on one line", err)
+	}
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("serve: %v", err)
+	}
+}
+
+type failingRecorder struct{ err error }
+
+func (r failingRecorder) RecordHarnessHook(context.Context, store.HarnessHookRecord) (store.HarnessHookRecord, error) {
+	return store.HarnessHookRecord{}, r.err
 }
 
 func TestSocketPathUsesDedicatedPublisherDirectory(t *testing.T) {

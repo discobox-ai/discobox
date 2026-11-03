@@ -22,6 +22,7 @@ const (
 	SocketEnv     = "DISCOBOX_HOOK_SOCKET"
 	socketDirMode = 0o711
 	socketMode    = 0o666
+	replyOK       = "ok"
 )
 
 type Recorder interface {
@@ -103,14 +104,24 @@ func Publish(ctx context.Context, socketPath string, message Message) error {
 		return fmt.Errorf("write hook message: %w", err)
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	reply, err := io.ReadAll(conn)
+	// The reply is one line, read up to its newline and never to EOF: on
+	// Windows a read pending on a Unix socket while its peer closes it can
+	// stall instead of returning EOF (go.dev/issue/49352), which timed this
+	// out with the reply already sent (#475).
+	reply, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
 		return fmt.Errorf("read hook reply: %w", err)
 	}
-	if strings.TrimSpace(string(reply)) != "ok" {
-		return fmt.Errorf("publish hook: %s", strings.TrimSpace(string(reply)))
+	if reply = strings.TrimSpace(reply); reply != replyOK {
+		return fmt.Errorf("publish hook: %s", reply)
 	}
 	return nil
+}
+
+// writeReply answers a publisher with one line, the protocol's whole reply, so a
+// newline inside an error cannot end it early.
+func writeReply(conn net.Conn, text string) {
+	_, _ = io.WriteString(conn, strings.ReplaceAll(text, "\n", " ")+"\n")
 }
 
 func handleConn(ctx context.Context, conn net.Conn, recorder Recorder) {
@@ -118,12 +129,12 @@ func handleConn(ctx context.Context, conn net.Conn, recorder Recorder) {
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	if !scanner.Scan() {
-		_, _ = io.WriteString(conn, "empty hook message")
+		writeReply(conn, "empty hook message")
 		return
 	}
 	var message Message
 	if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
-		_, _ = io.WriteString(conn, "invalid hook message: "+err.Error())
+		writeReply(conn, "invalid hook message: "+err.Error())
 		return
 	}
 	payload := message.Payload
@@ -140,8 +151,8 @@ func handleConn(ctx context.Context, conn net.Conn, recorder Recorder) {
 		Event:      message.Event,
 		Payload:    payload,
 	}); err != nil {
-		_, _ = io.WriteString(conn, err.Error())
+		writeReply(conn, err.Error())
 		return
 	}
-	_, _ = io.WriteString(conn, "ok")
+	writeReply(conn, replyOK)
 }
