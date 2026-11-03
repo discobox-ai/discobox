@@ -17,6 +17,8 @@ import (
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
@@ -50,6 +52,12 @@ type poolTestDriver struct {
 	issueErr error
 	// applyFails makes apply exit non-zero.
 	applyFails bool
+	// lookupErr, when set, is what Instance and Instances answer: the
+	// driver's service not answering.
+	lookupErr error
+	// attachErrs, while any are left, is what each Attach answers in turn,
+	// a nil passing it on: the driver's service failing one call of several.
+	attachErrs []error
 	// fences is each machine's isolation and networks, by ID, as Create was
 	// asked for them: the fake driver under this one keeps neither.
 	fences map[string]machine.InstanceSpec
@@ -92,6 +100,9 @@ func (d *poolTestDriver) fenced(inst machine.Instance) machine.Instance {
 }
 
 func (d *poolTestDriver) Instance(ctx context.Context, ref string) (machine.Instance, error) {
+	if err := d.lookup(); err != nil {
+		return machine.Instance{}, err
+	}
 	inst, err := d.Driver.Instance(ctx, ref)
 	if err != nil {
 		return inst, err
@@ -99,7 +110,16 @@ func (d *poolTestDriver) Instance(ctx context.Context, ref string) (machine.Inst
 	return d.fenced(inst), nil
 }
 
+func (d *poolTestDriver) lookup() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.lookupErr
+}
+
 func (d *poolTestDriver) Instances(ctx context.Context) ([]machine.Instance, error) {
+	if err := d.lookup(); err != nil {
+		return nil, err
+	}
 	all, err := d.Driver.Instances(ctx)
 	for i := range all {
 		all[i] = d.fenced(all[i])
@@ -126,6 +146,15 @@ func (d *poolTestDriver) Start(ctx context.Context, inst machine.Instance, opts 
 }
 
 func (d *poolTestDriver) Attach(ctx context.Context, inst machine.Instance) (machine.Machine, error) {
+	d.mu.Lock()
+	var next error
+	if len(d.attachErrs) > 0 {
+		next, d.attachErrs = d.attachErrs[0], d.attachErrs[1:]
+	}
+	d.mu.Unlock()
+	if next != nil {
+		return nil, next
+	}
 	m, err := d.Driver.Attach(ctx, inst)
 	if err != nil {
 		return nil, err
@@ -905,5 +934,69 @@ func TestDecodeRuntimeStateReadsAPlacementKeptBesideTheBox(t *testing.T) {
 	pool.RuntimeState = []byte(`{"instance":"i-1","box":{"placement":"fingerprint-2"},"placement":"fingerprint-1"}`)
 	if state := decodeRuntimeState(pool); state.Box.Placement != "fingerprint-2" {
 		t.Fatalf("placement = %q, want the box's own over the one beside it", state.Box.Placement)
+	}
+}
+
+// A remote driver's service that does not answer when the pool's machine is
+// looked up is a host not reachable yet, as it is when the machine's URL or
+// state is asked for: the pool reconciler waits on it rather than recording a
+// failure and repairing a pool for a network fault, and a create waiting for
+// the pool's agent keeps waiting.
+func TestFakePoolMachineLookupWhileTheServiceDoesNotAnswer(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
+	t.Cleanup(func() {
+		driver.mu.Lock()
+		driver.lookupErr = nil
+		driver.mu.Unlock()
+		_ = r.RemovePool(context.Background(), nil, nil, pool)
+	})
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatalf("EnsurePool() error = %v", err)
+	}
+
+	driver.mu.Lock()
+	driver.lookupErr = status.Error(codes.Unavailable, "connection error: desc = \"error reading from server: unexpected EOF\"")
+	driver.mu.Unlock()
+
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Errorf("EnsurePool() while the service does not answer = %v, want ErrPoolNotReachable", err)
+	}
+	if err := r.RepairPool(ctx, nil, nil, pool, newTestMaker(), "test", nil); !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Errorf("RepairPool() while the service does not answer = %v, want ErrPoolNotReachable", err)
+	}
+	if _, err := r.AcquirePoolAgentClient(ctx, pool); !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Errorf("AcquirePoolAgentClient() while the service does not answer = %v, want ErrPoolNotReachable", err)
+	}
+}
+
+// A running pool whose driver's service answers the state check and drops on
+// the next call, for its guest, is a host not reachable for a moment, as one
+// that drops at the lookup is: one call to the service left unmapped would
+// fail the reconcile and repair a pool with sandboxes.
+func TestFakePoolMachineGuestWhileTheServiceDrops(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
+	t.Cleanup(func() {
+		driver.mu.Lock()
+		driver.attachErrs = nil
+		driver.mu.Unlock()
+		_ = r.RemovePool(context.Background(), nil, nil, pool)
+	})
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatalf("EnsurePool() error = %v", err)
+	}
+
+	driver.mu.Lock()
+	driver.attachErrs = []error{nil, status.Error(codes.Unavailable, "connection error: desc = \"error reading from server: unexpected EOF\"")}
+	driver.mu.Unlock()
+
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Errorf("EnsurePool() while the service drops at the guest = %v, want ErrPoolNotReachable", err)
+	}
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Errorf("EnsurePool() once the service is back = %v, want nil", err)
 	}
 }

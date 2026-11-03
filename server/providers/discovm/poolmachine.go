@@ -150,17 +150,26 @@ func poolMachineName(poolID string) (string, error) { return poolProject(poolID)
 // errNoPoolMachine is a pool whose machine was never created, or was removed.
 var errNoPoolMachine = errors.New("the pool has no machine")
 
-// instance finds the pool's machine, or reports errNoPoolMachine.
+// instance finds the pool's machine, or reports errNoPoolMachine. A remote
+// driver's service that does not answer the lookup is
+// sandbox.ErrPoolNotReachable (notReachable), as the other calls that ask the
+// service about the machine are: a pool reconcile waits on it rather than
+// recording a failure and repairing the pool for a network fault, and so does
+// a create waiting for the pool's agent.
 func (h *poolMachine) instance(ctx context.Context, pool *model.Pool) (engine.Instance, error) {
 	name, err := poolMachineName(pool.ID)
 	if err != nil {
 		return engine.Instance{}, err
 	}
 	inst, err := h.engine.Get(ctx, name)
-	if errors.Is(err, engine.ErrNotFound) {
+	switch {
+	case err == nil:
+		return inst, nil
+	case errors.Is(err, engine.ErrNotFound):
 		return engine.Instance{}, fmt.Errorf("pool %s: %w: it is created when the pool reconciles", pool.ID, errNoPoolMachine)
+	default:
+		return engine.Instance{}, fmt.Errorf("pool %s's machine cannot be looked up: %w", pool.ID, notReachable(err))
 	}
-	return inst, err
 }
 
 // onceBegin calls begin the first time it is called, and nothing after: a
@@ -290,7 +299,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	}
 	guest, err := h.engine.Guest(ctx, inst)
 	if err != nil {
-		return fmt.Errorf("reach pool %s's machine: %w", pool.ID, err)
+		return fmt.Errorf("reach pool %s's machine: %w", pool.ID, notReachable(err))
 	}
 	// The key is placed before anything the agent runs on, and recorded the
 	// moment it is: an issued key whose record is lost would be one nobody
@@ -356,7 +365,7 @@ func (h *poolMachine) create(ctx context.Context, pool *model.Pool, project stri
 	}
 	inst, err := h.engine.Create(ctx, base, engine.CreateOptions{Name: project, Networks: []string{project}})
 	if err != nil {
-		return engine.Instance{}, fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, base, err)
+		return engine.Instance{}, fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, base, notReachable(err))
 	}
 	return inst, nil
 }
@@ -388,10 +397,10 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	// and their fence (ADR 26-10-29-481 §§1–2). A driver with no path between
 	// its machines has no private URL, and carries no pool.
 	if bootstrap.PublicURL, err = h.engine.URL(ctx, inst); err != nil {
-		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's public URL: %w", pool.ID, err)
+		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's public URL: %w", pool.ID, notReachable(err))
 	}
 	if bootstrap.PrivateURL, err = h.engine.PrivateURL(ctx, inst); err != nil {
-		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's private URL: %w", pool.ID, err)
+		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's private URL: %w", pool.ID, notReachable(err))
 	}
 	if err := bootstrap.Validate(); err != nil {
 		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's bootstrap: %w", pool.ID, err)
@@ -414,7 +423,7 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 func (h *poolMachine) agentListenURL(ctx context.Context, inst engine.Instance) (string, error) {
 	service, err := h.engine.Driver.Service(ctx, inst)
 	if err != nil {
-		return "", fmt.Errorf("the %s driver's service of machine %s: %w", h.engine.Driver.Name(), inst.Name, err)
+		return "", fmt.Errorf("the %s driver's service of machine %s: %w", h.engine.Driver.Name(), inst.Name, notReachable(err))
 	}
 	address, ok := strings.CutPrefix(service.Listen, "tcp:")
 	if !ok || address == "" {
@@ -434,10 +443,7 @@ func (h *poolMachine) acquireAgentClient(ctx context.Context, pool *model.Pool) 
 	}
 	url, err := h.engine.URL(ctx, inst)
 	if err != nil {
-		if unreachable(err) {
-			return nil, fmt.Errorf("pool %s's machine: %w: %w", pool.ID, err, sandbox.ErrPoolNotReachable)
-		}
-		return nil, fmt.Errorf("pool %s's machine: %w", pool.ID, err)
+		return nil, fmt.Errorf("pool %s's machine: %w", pool.ID, notReachable(err))
 	}
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, strings.TrimRight(url, "/"), nil), nil
 }
@@ -449,7 +455,7 @@ func (h *poolMachine) baseRef(ctx context.Context) (string, error) {
 	name := h.engine.Driver.Name()
 	bases, err := h.engine.Driver.Bases(ctx)
 	if err != nil {
-		return "", fmt.Errorf("list the %s driver's bases: %w", name, err)
+		return "", fmt.Errorf("list the %s driver's bases: %w", name, notReachable(err))
 	}
 	if h.base == "" {
 		if len(bases) == 0 {
@@ -533,11 +539,20 @@ func (h *poolMachine) state(ctx context.Context, pool *model.Pool, inst engine.I
 		return engine.Running, nil
 	case errors.Is(err, machine.ErrNotRunning):
 		return engine.Stopped, nil
-	case unreachable(err):
-		return state, fmt.Errorf("pool %s's machine cannot be asked for its state: %w: %w", pool.ID, err, sandbox.ErrPoolNotReachable)
 	default:
-		return state, fmt.Errorf("pool %s's machine cannot be asked for its state: %w", pool.ID, err)
+		return state, fmt.Errorf("pool %s's machine cannot be asked for its state: %w", pool.ID, notReachable(err))
 	}
+}
+
+// notReachable is err marked sandbox.ErrPoolNotReachable when it is a remote
+// driver's service not answering (unreachable), and err as it is otherwise.
+// Every call that asks the driver's service about the pool's machine, or for
+// its keys, reads its error through it (REVIEW.md).
+func notReachable(err error) error {
+	if unreachable(err) {
+		return fmt.Errorf("%w: %w", err, sandbox.ErrPoolNotReachable)
+	}
+	return err
 }
 
 // unreachable reports whether err is a remote driver's service not answering,
