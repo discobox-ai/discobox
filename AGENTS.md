@@ -57,7 +57,7 @@
   (`commit`, `develop`, `deliver-issue`, `triage-issue`, `orchestrate-issues`,
   `verify`, `test-fix`, `open-pr`, `push-main`) are not here: they live in
   `discobox-ai/skills` and are changed there. A repository cannot add a skills
-  source itself (ADR 26-10-14-294): the project adds it once with `discobox
+  source itself (ADR 26-10-14-294): the project adds it once with `discobox admin
   skills add https://github.com/discobox-ai/skills`, or one box gets it with
   `discobox run --skills https://github.com/discobox-ai/skills`. A discobox made
   without it has none of these skills.

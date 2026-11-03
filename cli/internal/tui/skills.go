@@ -16,7 +16,7 @@ import (
 // goes into every discobox created from here.
 //
 // It is the secrets screen's shape: a list on a function key, one letter per
-// action, and every action the call `discobox skills` makes. What a value is
+// action, and every action the call `discobox admin skills` makes. What a value is
 // decides where it goes, read the way --skills reads it, so there is one thing
 // to type rather than a choice of list to put it in.
 
@@ -246,7 +246,7 @@ func (m *Model) updateSkills(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// addSkillsForm asks for one value and files it by what it is, as `discobox
+// addSkillsForm asks for one value and files it by what it is, as `discobox admin
 // skills add` does.
 func (m *Model) addSkillsForm() tea.Cmd {
 	server := m.configServer()

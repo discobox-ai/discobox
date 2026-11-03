@@ -92,7 +92,7 @@ func TestSkillsRemoveTakesClientEntriesFromTheFile(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "skills", "rm", "acme/tools//skills", "skills_shared"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "skills", "rm", "acme/tools//skills", "skills_shared"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("rm: %v\n%s", err, errOut.String())
 	}
@@ -102,7 +102,7 @@ func TestSkillsRemoveTakesClientEntriesFromTheFile(t *testing.T) {
 	}
 }
 
-// `discobox skills add` files a Git URL with the project and a directory in
+// `discobox admin skills add` files a Git URL with the project and a directory in
 // client.yaml; `ls` lists both, and `rm` takes each out of where it is.
 func TestSkillsCommandFilesEachValueByWhatItIs(t *testing.T) {
 	home := t.TempDir()
@@ -142,7 +142,7 @@ func TestSkillsCommandFilesEachValueByWhatItIs(t *testing.T) {
 		cmd := NewRootCommand()
 		cmd.SetOut(&out)
 		cmd.SetErr(&errOut)
-		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "skills"}, args...))
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "admin", "skills"}, args...))
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("skills %v: %v\n%s", args, err, errOut.String())
 		}

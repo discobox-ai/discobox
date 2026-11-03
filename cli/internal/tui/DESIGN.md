@@ -238,7 +238,7 @@ window no longer one command's own.
 (ADR 26-10-14-894). The project's skills sources on the header's server come
 first, in the order a create adds them, then client.yaml's `run.skills`, which
 are this machine's whichever server the header is on. Each row says where it
-is kept. It is `discobox skills` folded into the window, and the secrets
+is kept. It is `discobox admin skills` folded into the window, and the secrets
 screen's shape: `n` asks for one value and `DataSource.AddSkills` files it by
 what it is, read as `--skills` reads it — a repository, a Git URL or GitHub
 `owner/repo` with `[@REF][//PATH]`, with the project, a directory in

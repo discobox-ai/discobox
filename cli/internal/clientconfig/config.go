@@ -52,7 +52,7 @@ type Config struct {
 
 // Run is what a create takes by default.
 type Run struct {
-	Skills     []string `yaml:"skills" doc:"Skills to install in every new discobox, as --skills reads them: a directory whose subdirectories holding a SKILL.md are each a skill, or a Git URL[@REF][//PATH] whose skills are linked from a checkout of it. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it. The project's skills repositories (discobox skills) are added ahead of these either way. discobox skills add DIR and rm DIR edit this list in place." example:"[\"~/team-skills\"]"`
+	Skills     []string `yaml:"skills" doc:"Skills to install in every new discobox, as --skills reads them: a directory whose subdirectories holding a SKILL.md are each a skill, or a Git URL[@REF][//PATH] whose skills are linked from a checkout of it. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it. The project's skills repositories (discobox admin skills) are added ahead of these either way. discobox admin skills add DIR and rm DIR edit this list in place." example:"[\"~/team-skills\"]"`
 	UserSkills bool     `yaml:"userSkills" doc:"Install your own skills from ~/.claude/skills and ~/.agents/skills in every new discobox, as --user-skills does. --user-skills=false on the command line turns it off for one discobox."`
 }
 
