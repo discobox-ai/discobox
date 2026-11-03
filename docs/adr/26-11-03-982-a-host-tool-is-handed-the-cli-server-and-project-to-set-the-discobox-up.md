@@ -49,6 +49,22 @@ boxes in the pool, ADR 0094, so a version downloads once), and linked into
 `~/.local/bin`. This is guidance, which `discobox tools --help` gives with a
 worked example. The CLI enforces nothing.
 
+A host tool never names a path in the box from this machine, so it is handed
+no home directory and no bin path. It relies on three things the discobox
+already guarantees:
+
+- **What runs in the box resolves the box's own paths.** The install step is a
+  script sent with `"$DISCOBOX_CLI" shell "$DISCOBOX_ID" -- sh -s`, and its
+  `$HOME`, `uname -m` and `~/.cache` are the box's, expanded there.
+- **`~/.local/bin` is on the box's PATH.** The platform's manifest layer
+  declares `%HOME%/.local/bin` in PATH (`sandbox-agent/image.json`), and a
+  `discobox shell` command runs with it. So the tool opens the program by
+  name: `"$DISCOBOX_CLI" shell "$DISCOBOX_ID" -- tuicr`.
+- **`discobox cp` resolves a relative path in a box from its user's home,** not
+  from a source's working tree, while `discobox shell` starts in the working
+  tree. So `"$DISCOBOX_CLI" cp -r ~/.config/tuicr "$DISCOBOX_ID:.config/tuicr"`
+  lands in the box's `~/.config` whatever that home is called.
+
 ### 3. The help is the reference
 
 `discobox tools --help` documents:
@@ -76,6 +92,13 @@ user-side skill (#493) builds on it.
   registered name, or the `default` alias, can resolve differently for the
   child CLI than it did for the parent. Then the script is aimed at another
   box than the one the tool was opened on.
+- **Handing the tool the box's home directory, or a bin path
+  (`DISCOBOX_HOME`, `DISCOBOX_BIN`).** The host has no use for either. Every
+  path in the box is either expanded by a command that runs there, or relative
+  to the home that `cp` already resolves from. A value the host would splice
+  into a remote command is one more thing to quote, and it can only drift from
+  what the box itself says. If a tool ever needs one, `"$DISCOBOX_CLI" shell
+  "$DISCOBOX_ID" -- sh -c 'echo $HOME'` asks the box.
 - **A sandbox-side helper that installs from a tool's `files:`.** `files:`
   is for configuration a sandbox tool carries in. A host tool can already run
   anything in the box through the CLI, and putting the install there keeps
