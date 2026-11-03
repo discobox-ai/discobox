@@ -50,14 +50,7 @@ runs:
     # them. Nothing is downloaded before the target or uploaded after it, and a
     # pull request's results are shared like main's. Nix keeps the environment,
     # so the devShell's go sees it too. This step shows it in the log, and
-    # warns on a Linux or macOS runner without it, where every build starts
-    # cold.
-    #
-    # Windows builds cold. Depot's Windows runner sets no GOCACHEPROG, and
-    # setting `depot gocache` ourselves (CLI 2.102.25) failed about one run in
-    # eight: it renames each object over its final path even when the object
-    # is already there, and Windows refuses that while vet has the file open
-    # ("Access is denied"). Reported to Depot; set it here again once fixed.
+    # warns on a runner without it, where every build starts cold.
     #
     # Only for a pull request or a push to a branch. Go trusts whatever the
     # cache returns for a key, and a pull request's code can write that cache,
@@ -101,8 +94,6 @@ runs:
           else
             echo "golangci-lint's cache is local to this job."
           fi
-        elif [ "$RUNNER_OS" = Windows ]; then
-          echo "Windows builds from a cold local cache: depot gocache races on Windows file renames (see the comment above this step)."
         else
           echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
         fi
