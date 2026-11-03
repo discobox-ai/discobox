@@ -13,6 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
@@ -518,9 +519,15 @@ func bindingSection(a approval) section {
 			fields = append(fields, field{label: kind.name + " part", value: "denied — what the discobox holds of it stays as it is", tone: toneDim})
 			continue
 		}
-		if replaced := replacedText(a.standing, kind.delegate, a.req.EnvVar, a.use == PartApprove); replaced != "" {
-			fields = append(fields, field{label: "replaces", value: replaced, tone: toneAlert})
+		part := a.req.Use
+		if kind.delegate {
+			part = a.req.Delegate
 		}
+		var asked []secretroute.Route
+		if part != nil {
+			asked = part.Routes
+		}
+		fields = append(fields, replacedFields(a.standing, kind.delegate, a.req.EnvVar, a.use == PartApprove, asked, a.secret.Routes)...)
 	}
 	return section{label: "the binding", fields: fields}
 }
@@ -534,7 +541,7 @@ func partsPurpose(req CredentialRequest) string {
 	return delegationPurpose
 }
 
-// replacedText is what an approved part would do to the asking discobox's
+// replacedFields is what an approved part would do to the asking discobox's
 // own bindings of the chosen secret (ADR 26-11-02-022 §5): which is kept and
 // takes the approval, which go, which lose their use or are split, and
 // whether a new one is made. bindingplan decides it, by the rule the server
@@ -542,7 +549,16 @@ func partsPurpose(req CredentialRequest) string {
 // found after it. envVar is the variable the use part asks for; useApproved
 // is whether the use part is approved too, since a delegate part is applied
 // to what the use part leaves (bindingplan.Answer).
-func replacedText(standing []SecretBinding, delegate bool, envVar string, useApproved bool) string {
+//
+// Each binding is a heading row and, under it, a diff of its routes against
+// asked, the routes the part approves: the routes it loses, and — on the one
+// kept, which takes asked in place (bindingplan.Updated, and the delegation
+// of a bindingplan.Split) — the routes it gains, with the ones both name
+// counted rather than listed, since the card lists them already under "may be
+// sent to". secretRoutes stand in for either side that names none. A diff
+// is what a person approving is checking for; two long lists side by side
+// leave them to find the difference themselves.
+func replacedFields(standing []SecretBinding, delegate bool, envVar string, useApproved bool, asked, secretRoutes []secretroute.Route) []field {
 	held := map[string]SecretBinding{}
 	var mine []bindingplan.Binding
 	for _, b := range standing {
@@ -554,7 +570,14 @@ func replacedText(standing []SecretBinding, delegate bool, envVar string, useApp
 	if delegate {
 		plan = delegatePlan
 	}
-	var rows []string
+	var fields []field
+	add := func(value string, t tone) {
+		label := ""
+		if len(fields) == 0 {
+			label = "replaces"
+		}
+		fields = append(fields, field{label: label, value: value, tone: t})
+	}
 	for _, step := range plan.Steps {
 		// Said as the binding stands when this part is applied: a delegate
 		// part after a use part reads what the use part left.
@@ -562,10 +585,6 @@ func replacedText(standing []SecretBinding, delegate bool, envVar string, useApp
 		what := "the delegation"
 		if step.Binding.Use {
 			what = "the one in " + step.Binding.EnvName
-		}
-		where := "the secret's routes"
-		if len(b.Routes) > 0 {
-			where = routesText(b.Routes)
 		}
 		var fate string
 		switch step.Fate {
@@ -578,12 +597,72 @@ func replacedText(standing []SecretBinding, delegate bool, envVar string, useApp
 		case bindingplan.Split:
 			fate = "stays the delegation; its use moves to a binding of its own in " + b.EnvVar
 		}
-		rows = append(rows, what+", sent to "+where+" — "+fate)
+		// A binding or a part with no routes of its own is sent to the
+		// secret's, so the secret's are what it is set against.
+		was, now := b.Routes, asked
+		if len(was) == 0 {
+			was = secretRoutes
+		}
+		if len(now) == 0 {
+			now = secretRoutes
+		}
+		if len(was) == 0 || len(now) == 0 {
+			add(what+", sent to the secret's routes — "+fate, toneAlert)
+			continue
+		}
+		add(what+" — "+fate, toneAlert)
+		for _, row := range routeDiff(was, now, step.Binding.ID == plan.Keep) {
+			add(row.text, row.tone)
+		}
 	}
-	if len(rows) > 0 && plan.Keep == "" {
-		rows = append(rows, "and a new binding is made")
+	if len(fields) > 0 && plan.Keep == "" {
+		add("and a new binding is made", toneAlert)
 	}
-	return strings.Join(rows, "\n")
+	return fields
+}
+
+// routeDiff is was set against now as diff rows: "- " for each route of was
+// that now does not name, then, for the binding kept, "+ " for each of now
+// that was does not, and before them one row counting the routes both name.
+// Only the binding kept takes now, so only it gains, and only it can say its
+// routes are the same: one that goes, or loses its use, says how many of its
+// routes this approval carries on. Routes are compared as secretroute.Format
+// writes them, the way a person reads them.
+func routeDiff(was, now []secretroute.Route, kept bool) []line {
+	wasText, nowText := formatRoutes(was), formatRoutes(now)
+	var removed, added []line
+	same := 0
+	for _, r := range wasText {
+		if slices.Contains(nowText, r) {
+			same++
+			continue
+		}
+		removed = append(removed, line{text: "- " + r, tone: toneAlert})
+	}
+	if kept {
+		for _, r := range nowText {
+			if !slices.Contains(wasText, r) {
+				added = append(added, line{text: "+ " + r, tone: toneOK})
+			}
+		}
+	}
+	var count string
+	switch {
+	case same == 0:
+	case kept && len(removed) == 0 && len(added) == 0:
+		count = "the same routes"
+	case kept:
+		count = plural(same, "route", "routes") + " unchanged"
+	case len(removed) == 0:
+		count = "every route also in this approval"
+	default:
+		count = plural(same, "route", "routes") + " also in this approval"
+	}
+	var rows []line
+	if count != "" {
+		rows = append(rows, line{text: "  " + count, tone: toneDim})
+	}
+	return append(append(rows, removed...), added...)
 }
 
 // delegationPurpose is what a binding to delegate is for, said the same way on

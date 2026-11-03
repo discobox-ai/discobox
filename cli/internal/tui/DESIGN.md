@@ -575,7 +575,11 @@ beside it what its routes grant (`requestrole.Summary`), never the label
 alone. Choosing a secret reads what the asking discobox already holds of it
 (`standingLoadedMsg`), so the cards that follow say what an approved part
 does to each of those bindings — kept, gone, losing its use, split — by
-`pkg/bindingplan`, the rule the server applies (`replacedText`). A request asking both to use and to delegate gets a step of its own
+`pkg/bindingplan`, the rule the server applies (`replacedFields`). Each
+binding's routes are shown as a diff against the part's (`routeDiff`): `- ` for
+each it loses, `+ ` for each the binding kept gains, and the routes both name
+counted rather than listed again, since the card lists them under "may be sent
+to"; a side with no routes of its own is the secret's. A request asking both to use and to delegate gets a step of its own
 after the lifetime (`askParts`): approve both, or one with the other denied —
 there is no row that approves one and leaves the other unsaid. The answer is
 one `Approval` naming a decision for every part (`Approval.Use`,
