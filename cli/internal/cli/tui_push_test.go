@@ -48,6 +48,11 @@ func pushDeliveredSandbox() apimodel.Sandbox {
 // The row fact the window's automatic push reads: what it is true of, and every
 // reason it is not (ADR 26-09-05-008 §2 on automatic push).
 func TestPushableIsThisMachinesPushDeliveredDiscoboxes(t *testing.T) {
+	// A discobox still owed its delivery takes no automatic push
+	// (ADR 26-11-03-618 §1); one that is running has been delivered.
+	pushed := pushDeliveredSandbox()
+	pushed.Runtime.SourceDeliveredAt = apiclientgen.NewOptDateTime(time.Now())
+
 	remote := pushDeliveredSandbox()
 	remoteSource, _ := remote.Config.Source.Get()
 	remoteSource.Delivery.Reset()
@@ -63,6 +68,7 @@ func TestPushableIsThisMachinesPushDeliveredDiscoboxes(t *testing.T) {
 	cachedSource, _ := cached.Config.Source.Get()
 	cachedSource.Delivery = apiclientgen.NewOptGitSourceDelivery(apiclientgen.GitSourceDeliveryCache)
 	cached.Config.SetSource(apiclientgen.NewOptGitSource(cachedSource))
+	cached.Runtime.SourceDeliveredAt = pushed.Runtime.SourceDeliveredAt
 
 	archived := pushDeliveredSandbox()
 	archived.Runtime.DisplayState = apiclientgen.NewOptSandboxRuntimeDisplayState("archived")
@@ -101,7 +107,8 @@ func TestPushableIsThisMachinesPushDeliveredDiscoboxes(t *testing.T) {
 		hostID  string
 		want    bool
 	}{
-		{"pushed from here", pushDeliveredSandbox(), thisHost, true},
+		{"pushed from here", pushed, thisHost, true},
+		{"pushed from here, still owed its delivery", pushDeliveredSandbox(), thisHost, false},
 		{"delivered into its pool's cache from here", cached, thisHost, true},
 		{"cloned from a remote", remote, thisHost, false},
 		{"once read live off the directory", bound, thisHost, true},
@@ -142,6 +149,7 @@ func TestPushableFollowsASecondSource(t *testing.T) {
 	}
 	sandbox.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxConfigSourceCodeReferences(
 		apiclientgen.SandboxConfigSourceCodeReferences{"docs": reference}))
+	sandbox.Runtime.SourceDeliveredAt = apiclientgen.NewOptDateTime(time.Now())
 	if !pushable(sandbox, thisHost) {
 		t.Fatal("a push-delivered reference is something to push")
 	}
@@ -229,7 +237,8 @@ func pushDataSource(t *testing.T, dir string) (*apiDataSource, *pathLog) {
 		`"config":{"name":"box","image":"","source":{"kind":"git","slug":"primary","delivery":"push",` +
 		`"localDirectory":` + string(dirJSON) + `,"checkout":{"refName":"main","refType":"branch"}}},` +
 		`"origin":{"hostId":"` + thisHost + `"},` +
-		`"runtime":{"state":"ready","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},` +
+		`"runtime":{"state":"ready","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1,` +
+		`"sourceDeliveredAt":"2026-01-01T00:00:00Z"},` +
 		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		paths.add(r.URL.Path)

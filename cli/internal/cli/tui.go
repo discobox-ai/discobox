@@ -1334,75 +1334,81 @@ func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, rep
 // Do runs a lifecycle verb against one sandbox. These go straight to the API
 // rather than through their Cobra commands: the commands print a sandbox table
 // on success, and the window reports on its own status line instead.
-func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string, credentials tui.CredentialUI) error {
+func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string, credentials tui.CredentialUI) (string, error) {
 	d = d.at(sandboxID)
 	switch verb {
 	case tui.VerbStart:
+		delivered, err := d.app.deliverInsteadOfStart(ctx, d.client, d.projectID, sandboxID, nil, sandboxcreate.DeliveryOptions{ConfirmCredential: credentials.Confirm, RunCredential: credentials.Run})
+		if err != nil || delivered {
+			return "", err
+		}
 		res, err := d.client.StartSandbox(ctx, &apimodel.StartSandboxBody{},
 			apiclientgen.StartSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
-			return err
+			return "", err
 		}
-		record, err := expectResponse[apimodel.Sandbox](res)
-		if err != nil {
-			return err
-		}
-		if !record.Runtime.SourceDeliveredAt.IsSet() && len(sandboxcreate.PendingSourcePushes(record)) > 0 {
-			return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, nil, sandboxcreate.DeliveryOptions{ConfirmCredential: credentials.Confirm, RunCredential: credentials.Run})
-		}
-		return nil
+		_, err = expectResponse[apimodel.Sandbox](res)
+		return "", err
 
 	case tui.VerbStop:
 		res, err := d.client.StopSandbox(ctx, &apimodel.StopSandboxBody{},
 			apiclientgen.StopSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
-			return err
+			return "", err
 		}
 		_, err = expectResponse[apimodel.Sandbox](res)
-		return err
+		return "", err
 
 	case tui.VerbUpgrade:
 		res, err := d.client.UpgradeSandbox(ctx, &apimodel.UpgradeSandboxBody{},
 			apiclientgen.UpgradeSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
-			return err
+			return "", err
 		}
 		_, err = expectResponse[apimodel.Sandbox](res)
-		return err
+		return "", err
 
 	case tui.VerbRepair:
 		// Repair converges in the request (ADR 0035), so this call is as long
 		// as the rebuild is — the window shows its busy line meanwhile.
 		res, err := d.client.RepairSandbox(ctx, apiclientgen.RepairSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
-			return err
+			return "", err
 		}
-		_, err = expectResponse[apimodel.Sandbox](res)
-		return err
+		record, err := expectResponse[apimodel.Sandbox](res)
+		if err != nil {
+			return "", err
+		}
+		// A discobox still owed its delivery is rebuilt parked, not started
+		// (ADR 26-11-03-618 §2): opening it from here delivers it.
+		if sandboxOwedSource(*record) {
+			return "waiting for its source", nil
+		}
+		return "", nil
 
 	case tui.VerbArchive:
 		res, err := d.client.DeleteSandbox(ctx, apiclientgen.DeleteSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
-			return err
+			return "", err
 		}
-		return expectNoContent[apiclientgen.DeleteSandboxAccepted](res)
+		return "", expectNoContent[apiclientgen.DeleteSandboxAccepted](res)
 
 	case tui.VerbUnarchive:
 		res, err := d.client.UnarchiveSandbox(ctx, apiclientgen.UnarchiveSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
-			return err
+			return "", err
 		}
-		return expectNoContent[apiclientgen.UnarchiveSandboxAccepted](res)
+		return "", expectNoContent[apiclientgen.UnarchiveSandboxAccepted](res)
 
 	case tui.VerbPurge:
 		res, err := d.client.PurgeSandbox(ctx, apiclientgen.PurgeSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
-			return err
+			return "", err
 		}
-		return expectNoContent[apiclientgen.PurgeSandboxNoContent](res)
+		return "", expectNoContent[apiclientgen.PurgeSandboxNoContent](res)
 
 	default:
-		return fmt.Errorf("unknown action %q", verb)
+		return "", fmt.Errorf("unknown action %q", verb)
 	}
 }
 

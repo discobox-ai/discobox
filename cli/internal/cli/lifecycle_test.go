@@ -26,6 +26,13 @@ func lifecycleTestServer(t *testing.T, posted *[]string) *httptest.Server {
 			*posted = append(*posted, "list")
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_, _ = w.Write([]byte(`{"sandboxes":[` + listing + `]}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, collection+"/"):
+			// A start reads the discobox first, to deliver one still owed
+			// its source in place of the start (deliverInsteadOfStart). It
+			// is a read, not a call this records.
+			sandboxID := strings.TrimPrefix(r.URL.Path, collection+"/")
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write([]byte(namedSandboxJSON(sandboxID, "docs", "docs", "present")))
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, collection+"/"):
 			sandboxID, verb, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, collection+"/"), "/")
 			*posted = append(*posted, verb+" "+sandboxID)

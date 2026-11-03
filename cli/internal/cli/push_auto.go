@@ -66,12 +66,17 @@ func pushableSource(sb apimodel.Sandbox, hostID string) bool {
 // pushableNow is the half that changes while the discobox runs, and so is the
 // half nothing may cache.
 //
-// Awaiting its source is refused rather than merely unsupported. A push to a
-// parked discobox is its create's delivery, which starts it, and that is the
-// attach's to make before it dials (deliverBeforeAttach, ADR 26-09-24-005), not a
-// beat's.
+// A discobox owed its delivery is refused rather than merely unsupported,
+// whatever its state: parked, failed by the source-await timeout, or being
+// repaired. Until the delivery is reported only the delivery writes into its
+// origin, and that is the attach's to make before it dials
+// (deliverBeforeAttach, ADR 26-09-24-005, ADR 26-11-03-618 §1), not a beat's.
+// A push of later commits there moves the branch the delivery has to land on.
+//
+// Parked is refused too after the delivery is reported, until the reconciler
+// has acted on the report and the discobox has started on it.
 func pushableNow(sb apimodel.Sandbox) bool {
-	if sandboxAwaitingSource(sb) {
+	if sandboxOwedSource(sb) || sandboxAwaitingSource(sb) {
 		return false
 	}
 	switch sandboxDisplayState(sb) {

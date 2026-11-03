@@ -1690,3 +1690,18 @@ func TestARestoredDraftStillOpensOnTheList(t *testing.T) {
 		t.Fatalf("prompt = %q, want the draft", got)
 	}
 }
+
+// A repair that leaves the discobox parked for its source, because it is
+// still owed its delivery, says so: it is not started, and opening it from
+// here delivers it (ADR 26-11-03-618 §2).
+func TestARepairThatLeavesTheBoxWaitingForItsSourceSaysSo(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(wedgedSandbox())
+	ds.doNotes = map[string]string{"sbx_wedged": "waiting for its source"}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("R"))
+
+	if want := "repair: 1 box, waiting for its source"; m.status != want {
+		t.Fatalf("status = %q, want %q", m.status, want)
+	}
+}

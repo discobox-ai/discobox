@@ -317,10 +317,11 @@ type fakeSource struct {
 	// every server, folder and tag rather than on its own folder.
 	nothingSaved bool
 	runs         []RunRequest
-	did          []string      // "verb id"
-	doErr        error         // what every lifecycle verb answers
-	doGate       chan struct{} // when set, every lifecycle verb waits for it to close
-	renames      []string      // "id name"
+	did          []string          // "verb id"
+	doErr        error             // what every lifecycle verb answers
+	doNotes      map[string]string // what a verb's answer notes, by sandbox
+	doGate       chan struct{}     // when set, every lifecycle verb waits for it to close
+	renames      []string          // "id name"
 	// settings is what BoxSettings answers per box, and updates every
 	// UpdateBox it was sent.
 	settings    map[string]BoxSettings
@@ -660,14 +661,14 @@ func (f *fakeSource) stoppedCount() int {
 	return f.stopped
 }
 
-func (f *fakeSource) Do(_ context.Context, verb Verb, id string, _ CredentialUI) error {
+func (f *fakeSource) Do(_ context.Context, verb Verb, id string, _ CredentialUI) (string, error) {
 	if f.doGate != nil {
 		<-f.doGate
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.did = append(f.did, string(verb)+" "+id)
-	return f.doErr
+	return f.doNotes[id], f.doErr
 }
 
 type boxUpdate struct {

@@ -239,7 +239,8 @@ sandbox create requests.
   Source Delivery".
 - Delivery is also reachable from outside a create: `PendingSourcePushes`,
   `NewLocalSources`, and `CheckDeliverable` let `discobox push` hand a discobox
-  parked in `awaiting_source` the source its create never delivered, out of the
+  still owed its delivery — parked, or failed and repaired first — the source
+  its create never delivered, out of the
   repositories still on the client — or, for a source that is a remote URL
   (`PendingSourcePush.Remote`), from that remote, by any client that can read
   it. The push and the completion call are the

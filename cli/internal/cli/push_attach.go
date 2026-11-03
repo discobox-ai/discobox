@@ -21,14 +21,18 @@ import (
 // nothing it watches moves while this client pushes, so a large first push run
 // alongside it would fail the very attach it was rescuing.
 
-// deliverableHere reports that the discobox is parked with a delivery still
-// owed that this machine can make: it has push-delivered sources, nobody has
-// reported them delivered, and this machine is the one it was created on.
+// deliverableHere reports that the discobox is owed a delivery this machine
+// can make: it has push-delivered sources, nobody has reported them delivered,
+// it is parked for them or has failed waiting (ADR 26-11-03-618 §3), and this
+// machine is the one it was created on.
 //
 // Parked is not enough on its own. A discobox stays in awaiting_source after
 // its delivery is reported, until the reconciler acts on the report — which is
 // exactly the discobox `discobox run --raw` attaches to the moment its own
-// delivery returns. A discobox created elsewhere is left to its own machine,
+// delivery returns. Nor is it required: the source-await timeout fails a
+// discobox nobody delivered, and the delivery repairs it first
+// (deliverParkedSource). One still being created is its create's to deliver.
+// A discobox created elsewhere is left to its own machine,
 // which may be delivering it right now and is the only one its recorded
 // directories describe.
 //
@@ -41,7 +45,7 @@ import (
 // and what lands in it can be read by the sandbox that created it. That
 // sandbox delivers it, held to what it can reach itself (§7).
 func deliverableHere(sb apimodel.Sandbox, hostID string) bool {
-	if !sandboxAwaitingSource(sb) || sb.Runtime.SourceDeliveredAt.IsSet() {
+	if !sandboxOwedSource(sb) || (!sandboxAwaitingSource(sb) && !sandboxFailed(sb)) {
 		return false
 	}
 	if sb.CreatedBySandboxId.Or("") != "" {
@@ -108,6 +112,27 @@ func (a *App) deliverBeforeAttach(ctx context.Context, client *apiclientgen.Clie
 	a.pushMu.Unlock()
 	close(running.done)
 	return running.err
+}
+
+// deliverInsteadOfStart delivers a discobox that is owed its delivery and
+// this machine's to deliver, in place of a start, and reports whether it did.
+//
+// A start is refused for a discobox owed its source, parked or failed (ADR
+// 26-11-03-618 §2): its delivery is what starts it, and that is what a person
+// starting it from its origin host is asking for. So `discobox start` and the
+// console's start deliver first, repairing a failed one, and only a discobox
+// that is not owed — or one this machine cannot deliver, which the server's
+// refusal then explains — is sent the start.
+func (a *App) deliverInsteadOfStart(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, report func(string), options sandboxcreate.DeliveryOptions) (bool, error) {
+	sandbox, err := getSandbox(ctx, client, projectID, sandboxID)
+	if err != nil {
+		return false, err
+	}
+	hostID, _ := hostid.Get()
+	if !sandboxOwedSource(*sandbox) || !deliverableHere(*sandbox, hostID) {
+		return false, nil
+	}
+	return true, a.deliverBeforeAttach(ctx, client, projectID, sandboxID, report, options)
 }
 
 // deliverOwedSource is one attach's delivery, once it is this attach's to make.
