@@ -167,7 +167,7 @@ func (k poolKeys) ensure(ctx context.Context, pool *model.Pool, guest machine.Gu
 		key = k.own
 		record = poolKeyRecord{Issued: false, IssuedAt: now, Fingerprint: fingerprint(k.own)}
 	default:
-		return keep(fmt.Errorf("issue pool %s's provisioning key: %w", pool.ID, err))
+		return keep(fmt.Errorf("issue pool %s's provisioning key: %w", pool.ID, notReachable(err)))
 	}
 	data, err := json.Marshal(key) //nolint:gosec // G117: the key file the pool's engine reads, placed root's alone
 	if err != nil {
@@ -235,13 +235,13 @@ func (k poolKeys) revokeAll(ctx context.Context, pool *model.Pool, recorded *poo
 		if refused && (recorded == nil || !recorded.Issued) {
 			return nil
 		}
-		return fmt.Errorf("list pool %s's keys to revoke them: %w", pool.ID, err)
+		return fmt.Errorf("list pool %s's keys to revoke them: %w", pool.ID, notReachable(err))
 	}
 	var errs []error
 	for _, key := range keys {
 		if strings.HasPrefix(key.Name, prefix) {
 			if err := k.driver.RevokeKey(ctx, key); err != nil {
-				errs = append(errs, fmt.Errorf("revoke pool %s's key %s: %w", pool.ID, key.ID, err))
+				errs = append(errs, fmt.Errorf("revoke pool %s's key %s: %w", pool.ID, key.ID, notReachable(err)))
 			}
 		}
 	}

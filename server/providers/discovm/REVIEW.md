@@ -32,6 +32,17 @@
   added to it in the same change that links the driver. Why: the reconciler
   waits on `ErrPoolNotReachable` forever, so a server started without its key
   would leave every pool waiting with the cause hidden.
+- Every call that asks a remote driver's service about the pool's machine or
+  its keys — `engine.Get`, `Guest`, `URL`, `Create`, `Bases`, a key's issue,
+  list or revoke, and any new one — wraps its error with `notReachable`, not
+  only the call the last incident hit. Why: one left plain fails a running
+  pool's reconcile on a moment's network fault, which repairs a pool with
+  sandboxes and ends a create waiting for its agent (#454: the lookup was
+  left plain after `state` and `URL` were mapped). Never `Start` or `Stop`:
+  their errors carry the boot's or shutdown's own deadline, which
+  `unreachable` reads as a fault, so a guest that never boots would be
+  waited on forever. Nor an exec or file placement in the guest: its error
+  is the guest's.
 - A base, or anything else the provider boots from a driver's account, is
   named by the driver's ID for it, never by a name. Why: a name can be given to
   another base after an operator chose it (a boxd snapshot's), and the next

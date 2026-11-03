@@ -131,7 +131,18 @@ as ADR 26-10-09-106 §1 places it:
   `DeadlineExceeded`) answers `sandbox.ErrPoolNotReachable`, which the
   reconciler waits on, rather than booting a second time or stopping a
   healthy pool for a network fault; any other error, such as a missing,
-  refused or too narrow key, is the pool's.
+  refused or too narrow key, is the pool's. Every other call that asks the
+  driver's service about the machine — the lookup in front of every operation
+  (`instance`), its guest, URLs, create, bases, keys — reads its error the
+  same way (`notReachable`), so a service that drops for a moment during a
+  running pool's reconcile records no failure on the pool and does not end a
+  create waiting for its agent. Not mapped: a start or stop, whose own
+  deadline is the guest's boot or shutdown, and what runs inside the guest
+  (placing files, provisioning, restarting units), whose errors are the
+  guest's; a drop during those still fails the pass, which matters only to a
+  pool being made or moved. The reconciler's repair passes (a registration
+  that timed out, a failed reconcile of a pool with sandboxes) record a
+  failure either way: they do not requeue on `ErrPoolNotReachable`.
 - Tests host pools in machines of the `fake` driver booted from its bases
   (`fake.BasesEnv`; a local driver, so they build that `poolMachine`
   themselves), which runs the engine, its shim, and the guest operations as a
