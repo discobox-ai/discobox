@@ -19,3 +19,13 @@
   ADR's Consequences, a `!` commit). `configured` on the harness config was
   removed with configure, and the first draft claimed only configure's own
   routes broke.
+- A test that drives a streaming handler without a server (a recorder over
+  `io.Pipe`, as under `testing/synctest`) gives back what the server did: the
+  recorder hands bytes to the reader on `Flush`, and when the handler returns
+  it hands over what is still pending and closes the pipe's writer, and the
+  request keeps a deadline. Why: without those, a handler that stops flushing
+  still passes, a response written and never flushed (an error before the
+  stream starts) reads as empty, and one that ends early or never reaches the
+  expected line deadlocks or spins on the fake clock instead of printing what
+  it read (`TestSandboxEventsStreamsServerSentEvents` lost all of it when it
+  moved into a bubble).
