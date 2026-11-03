@@ -3,6 +3,7 @@ package sandboxes
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync/atomic"
 	"testing"
 
@@ -62,5 +63,35 @@ func removeOnFirstReadAfterCommit(ctx context.Context, t *testing.T, db *databas
 		if err := conn.Callback().Query().Before("gorm:query").Register("test:remove_sandbox_first", remove); err != nil {
 			t.Fatalf("register query callback: %v", err)
 		}
+	}
+}
+
+// An archive does not take back a delete still converging — a purge that
+// failed and retries, or the retention's — whoever asks for it: it is accepted
+// and records nothing, so a discobox archiving one it created may not keep a
+// sandbox past a person's purge (ADR 26-11-03-724 §1). Any other intent over
+// the delete is refused.
+func TestNoIntentTakesBackASandboxBeingDeleted(t *testing.T) {
+	ctx, svc, st, _ := createIntentFixture(t)
+	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1", PoolID: "pool-1"}
+	sandbox.DesiredState = model.DesiredStateDeleted
+	if err := st.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	if err := svc.DeleteSandbox(ctx, sandbox.ProjectID, sandbox.ID); err != nil {
+		t.Fatalf("archive of a sandbox being deleted = %v, want it accepted", err)
+	}
+	_, err := svc.recordSandboxIntent(ctx, sandbox.ProjectID, sandbox.ID, model.DesiredStatePresent)
+	var status interface{ StatusCode() int }
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict {
+		t.Fatalf("present over a sandbox being deleted = %v, want 409", err)
+	}
+	stored, err := st.GetSandbox(ctx, sandbox.ProjectID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if stored.DesiredState != model.DesiredStateDeleted || stored.Generation != sandbox.Generation {
+		t.Fatalf("desired state = %s at generation %d, want the delete left as it was at %d", stored.DesiredState, stored.Generation, sandbox.Generation)
 	}
 }

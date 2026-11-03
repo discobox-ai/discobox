@@ -773,9 +773,15 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 // runs out (ADR 0022 §2). Getting a sandbox out of the way is the common
 // request and the recoverable one, so it is what the unqualified verb does.
 //
-// Destroying the data is PurgeSandbox, which has to be asked for.
+// Destroying the data is PurgeSandbox, which has to be asked for. A sandbox
+// already being deleted is left to its delete, which gets it out of the way
+// further than an archive would: the archive is accepted and records nothing,
+// since recorded over the delete it would take it back (recordSandboxIntent).
 func (s *Service) DeleteSandbox(ctx context.Context, projectID, sandboxID string) error {
 	_, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateArchived)
+	if errors.Is(err, errSandboxBeingDeleted) {
+		return nil
+	}
 	if err != nil {
 		return apperrors.NotFound(err, "sandbox not found")
 	}
@@ -1060,10 +1066,18 @@ func (s *Service) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provi
 // re-reads it anyway when it runs, and an expected-digest parameter would turn
 // a continuously rebuilt dev image into a retry loop against a target that was
 // never wrong.
+//
+// Like repair, it is refused on an archived sandbox: its intent is present,
+// and recorded over an archive it would be an unarchive, which the discoboxes
+// that may upgrade the ones they created may not ask for (ADR 26-11-03-724
+// §4). One being deleted, recordSandboxIntent refuses.
 func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID string, _ services.UpgradeSandboxBody) (*model.Sandbox, error) {
 	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "sandbox not found")
+	}
+	if existing.DesiredState == model.DesiredStateArchived {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived; unarchive it first")
 	}
 	repin, err := s.currentRepin(ctx, existing)
 	if err != nil {

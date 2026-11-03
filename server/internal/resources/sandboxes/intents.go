@@ -3,6 +3,9 @@ package sandboxes
 import (
 	"context"
 	"errors"
+	"net/http"
+
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
@@ -74,6 +77,10 @@ func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbo
 	return created, nil
 }
 
+// errSandboxBeingDeleted is recordSandboxIntent's refusal of an intent over a
+// delete still converging, which DeleteSandbox takes as done.
+var errSandboxBeingDeleted = errors.New("sandbox is being deleted")
+
 // recordSandboxIntent records intent on an existing sandbox (generation bump +
 // desired state) and marks it dirty, atomically. A spec edit passes the desired
 // state it already has: the generation is what versions the whole spec, so a
@@ -87,6 +94,15 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 		sandbox, err := txStore.GetSandbox(ctx, projectID, sandboxID)
 		if err != nil {
 			return err
+		}
+		// A delete still converging — a purge that failed and retries, or the
+		// retention's — is taken back by nothing but its own completion: any
+		// other intent recorded over it would cancel the purge, whoever asked
+		// for it, and a discobox may ask of the discoboxes it created
+		// (ADR 26-11-03-724 §2). Read here, under the write, so no purge
+		// recorded since a caller's own read is overwritten.
+		if sandbox.DesiredState == model.DesiredStateDeleted && desiredState != model.DesiredStateDeleted {
+			return apperrors.StatusError{Status: http.StatusConflict, Message: errSandboxBeingDeleted.Error(), Cause: errSandboxBeingDeleted}
 		}
 		previousGeneration := sandbox.Generation
 		sandbox.IncrementGeneration()

@@ -84,6 +84,17 @@
 - Keep pending target references protected from deletion, and publish an archive
   marker before clearing a pool fence. Either gap can strand an accepted switch
   or let an old runtime start after a failed archive.
+- Record nothing but `deleted` over a sandbox whose desired state is
+  `deleted`. A purge or a retention expiry that failed is still retrying in
+  the background, and any intent recorded over it — an archive, an upgrade's
+  or a source push's `present` — cancels the purge. Discoboxes reach those
+  routes for the boxes they created (ADR 26-11-03-724), so the delete undone
+  can be a person's. `recordSandboxIntent` refuses it (409) reading the row
+  under its write, and `DeleteSandbox` takes the refusal as done; a write
+  that records intent on its own (`UpdateSandbox`'s harness change, the
+  automatic repair) does so only over a row it read as `present`, under that
+  read's generation. A check in the caller before either races a purge
+  recorded after its read.
 - Read a program's reported status off `agent_status` only for a running
   sandbox. A stopped sandbox's row keeps the last report its agent posted and
   is never rewritten, so a msg or state read from it describes nothing that is

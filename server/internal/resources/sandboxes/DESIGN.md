@@ -364,8 +364,14 @@ container (ADR 0022 §1). See [ADR 0022](../../../../docs/adr/0022-sandbox-delet
 | an action on a failed sandbox with no container | `present` | the same repair intent, recorded once and waited for by the action ([above](#an-action-starts-the-sandbox-and-repairs-it-once)) |
 
 Delete archives, because getting a sandbox out of the way is the common request
-and the recoverable one. `archive.go` holds the archive branch and retention;
-`reconciler.go` holds the rest.
+and the recoverable one. `recordSandboxIntent` records no intent but a delete
+on a sandbox already being deleted, so no archive, upgrade or other `present`
+takes back a purge or a retention expiry still converging: an archive of one is
+accepted and records nothing, and the rest are refused (409); discoboxes
+reach those routes for the discoboxes they created
+([ADR 26-11-03-724](../../../../docs/adr/26-11-03-724-a-discobox-archives-the-discoboxes-it-created.md)
+§2). `archive.go` holds the archive branch and retention; `reconciler.go` holds
+the rest.
 
 Purge is the one existence change that is not fire-and-forget. Its whole content
 is a destructive side effect on a machine the control plane does not own, and a

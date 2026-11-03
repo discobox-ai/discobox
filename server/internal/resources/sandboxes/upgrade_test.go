@@ -2,7 +2,9 @@ package sandboxes
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -338,4 +340,36 @@ func newUpgradeEngineFixture(t *testing.T) (*Service, *store.Store) {
 	}
 	st := store.New(db.Write, db.Read)
 	return NewService(st, nil, "user-1", engine), st
+}
+
+// An upgrade's intent is present, so recorded over an archive it would be an
+// unarchive, and over a delete still converging it would take the purge back.
+// Both are refused with a newer bundle on offer, and the intent is left as it
+// was (ADR 26-11-03-724 §§2, 4).
+func TestUpgradeSandboxRefusedOnAnArchivedOrDeletingSandbox(t *testing.T) {
+	for _, desired := range []string{model.DesiredStateArchived, model.DesiredStateDeleted} {
+		t.Run(desired, func(t *testing.T) {
+			ctx := context.Background()
+			svc, st := newUpgradeEngineFixture(t)
+			config := bundledConfig(t, st, codexBundle, codexBundleV2)
+			sb := presentSandbox(t, st, config.ID, codexBundle, codexBundleV1)
+			sb.DesiredState = desired
+			if err := st.UpdateSandbox(ctx, sb); err != nil {
+				t.Fatalf("set desired state: %v", err)
+			}
+
+			_, err := svc.UpgradeSandbox(ctx, "project-1", sb.ID, services.UpgradeSandboxBody{})
+			var status interface{ StatusCode() int }
+			if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict {
+				t.Fatalf("upgrade = %v, want 409", err)
+			}
+			stored, err := st.GetSandbox(ctx, "project-1", sb.ID)
+			if err != nil {
+				t.Fatalf("get sandbox: %v", err)
+			}
+			if stored.DesiredState != desired || stored.BundleDigest != codexBundleV1 {
+				t.Fatalf("desired state %s at %s, want %s left at %s", stored.DesiredState, stored.BundleDigest, desired, codexBundleV1)
+			}
+		})
+	}
 }
