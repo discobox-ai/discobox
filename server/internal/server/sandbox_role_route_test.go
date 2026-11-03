@@ -190,6 +190,77 @@ func TestASandboxPowersTheDiscoboxesItCreated(t *testing.T) {
 	}
 }
 
+// A discobox archives the discoboxes it created, through the role, the handler
+// and the sandbox service, which records the archive as a person's is; one
+// already being deleted is left to its delete, not taken back to an archive. A person's
+// discobox is refused before the service is asked, and purge is refused on
+// every discobox (ADR 26-11-03-724 §§1, 2).
+func TestASandboxArchivesTheDiscoboxesItCreated(t *testing.T) {
+	skipWithoutDocker(t)
+	ctx := context.Background()
+	db := newAppTestDB(ctx, t)
+	router := newTestApp(ctx, t, db)
+	projectID, key := seedCredentialRoutePool(ctx, t, db.Write, router)
+	allowDiscoboxAPI(ctx, t, db.Write, routeTestSandboxID)
+	token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
+	lead := routeTestSandboxID
+	deleting := model.ResourceLifecycle{DesiredState: model.DesiredStateDeleted}
+	for _, sandbox := range []*model.Sandbox{
+		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead},
+		{ID: "sbx-purging", Name: "purging", CreatedBySandboxID: &lead, ResourceLifecycle: deleting},
+		{ID: "sbx-persons", Name: "persons"},
+	} {
+		sandbox.ProjectID, sandbox.PoolID = projectID, routeTestPoolID
+		if err := db.Write.WithContext(ctx).Create(sandbox).Error; err != nil {
+			t.Fatalf("create sandbox %s: %v", sandbox.ID, err)
+		}
+	}
+	desired := func(t *testing.T, id string) string {
+		t.Helper()
+		var sandbox model.Sandbox
+		if err := db.Read.WithContext(ctx).First(&sandbox, "id = ?", id).Error; err != nil {
+			t.Fatalf("read sandbox %s: %v", id, err)
+		}
+		return sandbox.DesiredState
+	}
+
+	t.Run("archive its worker", func(t *testing.T) {
+		resp := forwardRoute(t, router, http.MethodDelete, "/projects/default/sandboxes/sbx-worker", "", token, routeTestPoolID, lead)
+		if resp.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202; body = %s", resp.Code, resp.Body.String())
+		}
+		if got := desired(t, "sbx-worker"); got != model.DesiredStateArchived {
+			t.Fatalf("desired state = %q, want archived", got)
+		}
+	})
+	t.Run("archive its worker being deleted", func(t *testing.T) {
+		resp := forwardRoute(t, router, http.MethodDelete, "/projects/default/sandboxes/sbx-purging", "", token, routeTestPoolID, lead)
+		if resp.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202; body = %s", resp.Code, resp.Body.String())
+		}
+		if got := desired(t, "sbx-purging"); got != model.DesiredStateDeleted {
+			t.Fatalf("desired state = %q, want the delete left as it was", got)
+		}
+	})
+	t.Run("archive a person's discobox", func(t *testing.T) {
+		resp := forwardRoute(t, router, http.MethodDelete, "/projects/default/sandboxes/sbx-persons", "", token, routeTestPoolID, lead)
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403; body = %s", resp.Code, resp.Body.String())
+		}
+		if got := desired(t, "sbx-persons"); got != model.DesiredStatePresent && got != "" {
+			t.Fatalf("desired state = %q, want it untouched", got)
+		}
+	})
+	for _, id := range []string{"sbx-worker", "sbx-persons"} {
+		t.Run("purge "+id, func(t *testing.T) {
+			resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/"+id+"/purge", "", token, routeTestPoolID, lead)
+			if resp.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403; body = %s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
 // A discobox changes the meta of the discoboxes it created, and the call gets
 // past the role and the handler into the sandbox service: neither refuses a
 // sandbox caller (ADR 26-10-08-447 §1). The change both sets and removes one

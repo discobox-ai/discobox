@@ -533,14 +533,19 @@ ls`, `admin box get`). On the discoboxes **you created**, and no others, you
 may read and type into their terminals and read their logs (`admin terminal
 screen`, `input`, `wait`, `logs`); start, stop, and restart them (`discobox
 start`, `stop`, `restart`); repair and upgrade them (`admin box repair`,
-`upgrade`); list, start, stop, and restart their services and read their logs
+`upgrade`); archive them once their work is done (`discobox rm`), which keeps
+their data for the project's retention so a person can still bring one back;
+list, start, stop, and restart their services and read their logs
 (`admin service`); reach their ports over HTTP, at
 `https://api.discobox.internal/projects/default/sandboxes/<id>/http/<port>/`;
-and tag and name them (`discobox tag`, `discobox rename`). You list and answer
-the credential requests only of the boxes you created (`discobox secret
-request ls`, `approve`, `deny`), and approve only under a credential you were
-given to delegate. Nothing else: the user's other commands above need their
-machine or reach further than a box may, and are refused. A box you create is
+and tag and name them (`discobox tag`, `discobox rename`). Purging a box
+(`admin box purge`) and unarchiving one are the user's, on any box, and a box
+the user brought back after you archived it is theirs to keep: do not archive
+it again. You list
+and answer the credential requests only of the boxes you created (`discobox
+secret request ls`, `approve`, `deny`), and approve only under a credential
+you were given to delegate. Nothing else: the user's other commands above need
+their machine or reach further than a box may, and are refused. A box you create is
 the user's, and gets API access from you only if you have it yourself.
 
 Launch a box with no credentials and a prompt that states its task and nothing

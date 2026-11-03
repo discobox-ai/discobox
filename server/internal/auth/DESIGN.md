@@ -157,6 +157,9 @@ Current authorizers:
     ([ADR 26-10-01-397](../../../docs/adr/26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md));
     its power — `start`, `stop`, `restart`, `repair`, and `upgrade`
     ([ADR 26-10-02-478](../../../docs/adr/26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md));
+    its archive — `DELETE sandboxes/{id}`, which keeps its data for the
+    project's retention
+    ([ADR 26-11-03-724](../../../docs/adr/26-11-03-724-a-discobox-archives-the-discoboxes-it-created.md));
     its meta — `PATCH .../meta`
     ([ADR 26-10-08-447](../../../docs/adr/26-10-08-447-a-discobox-tags-the-discoboxes-it-creates.md));
     its update, for its passthrough alone (ADR 26-10-31-819 §5);
@@ -169,17 +172,17 @@ Current authorizers:
 
   A route naming a discobox (`createdDiscobox`) takes only one the caller
   created (`Sandbox.CreatedBySandboxID`, ADR 26-10-27-880 §9); a discobox is
-  not its own creator, so it never acts on itself. Not in the
-  role: archive, purge, unarchive, `attach`, creating, starting, or ending an
-  exec, TCP and UDP tunnels, and fetching an origin or what a pool's cache
-  remembers of a remote (`git-caches`)
+  not its own creator, so it never acts on itself. Not in the role: purge
+  and unarchive, on any discobox (ADR 26-11-03-724 §§2, 4), `attach`,
+  creating, starting, or ending an exec, TCP and UDP tunnels, and fetching an
+  origin or what a pool's cache remembers of a remote (`git-caches`)
   ([ADR 26-10-10-545](../../../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
   §7). No role path matches a segment that is empty, `.`, or `..`, so a path
   under `http/{port}` names where it goes.
 
   A route that writes to a discobox or sends into it (`withinCaller`) — source
-  delivery, terminal `input`, power, meta, a service's `start`, `stop` or
-  `restart`, and HTTP to a port — is also held to egress: the target's
+  delivery, terminal `input`, power, archive, meta, a service's `start`,
+  `stop` or `restart`, and HTTP to a port — is also held to egress: the target's
   effective egress policy must be covered by the caller's
   (`store.EffectiveSandboxEgress`, `egress.Covers`;
   [ADR 26-10-01-032](../../../docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)
