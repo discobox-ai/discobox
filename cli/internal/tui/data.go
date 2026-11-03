@@ -1033,16 +1033,16 @@ const (
 	standingBlocked
 )
 
-// standing is blocked when the discobox's pull request is (Sandbox.prStatus),
-// when a credential request on it is waiting on a person — an agent asking
-// for a credential is as stuck as a pull request waiting on somebody — or
-// when its agent reports it is blocked on one, and ready when its pull
-// request is ready for a human merge.
+// standing is blocked when the discobox is tagged blocked or needs-input
+// (Sandbox.status), when a credential request on it is waiting on a person —
+// an agent asking for a credential is as stuck as a pull request waiting on
+// somebody — or when its agent reports it is blocked on one, and ready when
+// its pull request is ready for a human merge.
 func (s Sandbox) standing() standing {
 	switch {
-	case s.PendingRequests > 0 || s.prStatus() == prBlocked || s.Agent.State == programstatus.Blocked:
+	case s.PendingRequests > 0 || s.status() == statusBlocked || s.status() == statusNeedsInput || s.Agent.State == programstatus.Blocked:
 		return standingBlocked
-	case s.prStatus() == prReady:
+	case s.status() == statusReady:
 		return standingReady
 	default:
 		return standingNone

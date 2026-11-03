@@ -116,21 +116,35 @@ func tagsLabel(tags []string) string {
 	return strings.Join(labels, " ")
 }
 
-// Where a discobox's pull request stands, as the delivering skills tag it
-// (deliver-issue and develop, "Ready, blocked, merged"): ready for a human
-// merge, or blocked on somebody. They are the tags somebody scans a list of
-// boxes for, so they are drawn bold in color rather than dim, and first among a
-// row's tags so they are the last to give way (sandboxList.row). `merged`, the
-// third, is not among them: the work is done and asks nothing of anyone.
+// A discobox's status tags say where it stands with a person, as the worker
+// skills tag it (worker, "Tags"): blocked on somebody, waiting for the owner to
+// answer a question on its screen, or ready for a human to merge its pull
+// request. They are the tags somebody scans a list of boxes for, so they are
+// drawn bold in color rather than dim — red for the two waiting on a person,
+// green for ready — and first among a row's tags so they are the last to give
+// way (sandboxList.row). `merged` is not among them: the work is done and asks
+// nothing of anyone.
 const (
-	prReady   = "ready"
-	prBlocked = "blocked"
+	statusBlocked    = "blocked"
+	statusNeedsInput = "needs-input"
+	statusReady      = "ready"
 )
 
-// prStatus is the pull request status a discobox carries, blocked before ready
-// since it is the one waiting on somebody, and empty for none.
-func (s Sandbox) prStatus() string {
-	for _, v := range []string{prBlocked, prReady} {
+// statusTags are the status tag keys in the order a row draws them: the two
+// waiting on a person first, blocked ahead of a question since it is not on
+// the screen to be seen, then ready.
+var statusTags = []string{statusBlocked, statusNeedsInput, statusReady}
+
+// specialTags are the tag keys a row draws after its status and before the
+// rest, in this order: the pull request and the issue, which link to GitHub
+// (githubTagPaths) and say what the box is for, the pull request first since
+// it is the one most worth opening.
+var specialTags = []string{"pr", "issue"}
+
+// status is the status a discobox carries, the first of statusTags it is
+// tagged with, and empty for none.
+func (s Sandbox) status() string {
+	for _, v := range statusTags {
 		if slices.ContainsFunc(s.Tags, func(tag string) bool { return tagKey(tag) == v }) {
 			return v
 		}
@@ -138,17 +152,29 @@ func (s Sandbox) prStatus() string {
 	return ""
 }
 
-// rowTags are the tags in the order a row draws them: its pull request status
-// first, then the rest as they are kept.
+// rowTags are the tags in the order a row draws them: its status tags
+// (statusTags), then its special ones (specialTags), each group in its own
+// fixed order, then the rest as they are kept.
 func (s Sandbox) rowTags() []string {
-	status := slices.DeleteFunc(slices.Clone(s.Tags), func(tag string) bool { return !isPRStatus(tag) })
-	return append(status, slices.DeleteFunc(slices.Clone(s.Tags), isPRStatus)...)
+	out := make([]string, 0, len(s.Tags))
+	for _, key := range slices.Concat(statusTags, specialTags) {
+		for _, tag := range s.Tags {
+			if tagKey(tag) == key {
+				out = append(out, tag)
+			}
+		}
+	}
+	for _, tag := range s.Tags {
+		if !isStatusTag(tag) && !slices.Contains(specialTags, tagKey(tag)) {
+			out = append(out, tag)
+		}
+	}
+	return out
 }
 
-// isPRStatus reports whether a tag is a pull request status.
-func isPRStatus(tag string) bool {
-	key := tagKey(tag)
-	return key == prReady || key == prBlocked
+// isStatusTag reports whether a tag is a status tag.
+func isStatusTag(tag string) bool {
+	return slices.Contains(statusTags, tagKey(tag))
 }
 
 // githubTagPaths are the tag keys that number something in the discobox's

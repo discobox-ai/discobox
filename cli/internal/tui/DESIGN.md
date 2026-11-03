@@ -779,7 +779,7 @@ get what the name has past its floor, and the tail columns take that first,
 so in the tree a tag never fit. There a tagged row draws its tags on a second
 line under it (`sandboxList.inTree`, `tagLine`), from under the name, with
 the tree's rule carried down past them — drawn as beside the name
-(`tagSpans`): the pull request status first in its color, an issue or pull
+(`tagSpans`): the status tags first in their color, an issue or pull
 request a link, the rest dim, and `+N` for what does not fit. The line is
 part of the row: a press on it points at the row, its links open, and the
 cursor's window counts it (`lineSpan`, `drawn.rows`). The wide list keeps one
@@ -793,7 +793,7 @@ to the next column that fits.
 
 The workspace header carries the box's other tags too (`tagsField`), dim,
 last among its fields and the first given up: not the issue and pull request
-`workField` links, nor a pull request status, which the header says through
+`workField` links, nor a status tag, which the header says through
 the git word on terms of its own (below).
 
 ## An issue or pull request tag is a link
@@ -814,19 +814,32 @@ repository the tag is plain: `issue=4` alone does not say whose issue 4.
   is for. A plain click on either opens it as a tab, below, rather than the
   browser (`hitIssue`, `hitPull`); Ctrl-click still follows the link.
 
-## A pull request's status is a colored tag
+## A box's status is a colored tag, and drawn first
 
-A discobox tagged `ready` or `blocked` — where its pull request stands, as the
-delivering skills tag it (`deliver-issue` and `develop`, "Ready, blocked,
-merged"): ready for a human merge, or waiting on somebody — draws that tag bold,
-green or red, where the row's other tags are dim. This `ready` is the pull
-request's, not the work's `ready` state that the header and list already
-spell out. The row itself is not painted: a list of boxes banded green and red
-is too busy to read, and the cursor and selection are the only bands a row
-carries. The status is drawn first among the row's tags (`Sandbox.rowTags`), so
-it is the last a long name pushes off. `blocked` wins over `ready`: it is the
-one waiting on a person. `merged`, the third of the set, is not colored: the
-work is done and asks nothing of anyone.
+A discobox tagged `blocked`, `needs-input` or `ready` — where it stands with a
+person, as the worker skills tag it (`worker`, "Tags"): blocked on somebody,
+waiting for the owner to answer a question on its screen, or its pull request
+ready for a human merge — draws that tag bold, red for the two waiting on a
+person and green for ready, where the row's other tags are dim. This `ready`
+is the pull request's, not the work's `ready` state that the header and list
+already spell out. The row itself is not painted: a list of boxes banded green
+and red is too busy to read, and the cursor and selection are the only bands a
+row carries. `merged` is not colored: the work is done and asks nothing of
+anyone.
+
+A row draws its tags in three groups (`Sandbox.rowTags`), so the ones worth
+scanning for are the last a long name pushes off or `+N` hides:
+
+1. **Status** (`statusTags`): `blocked`, `needs-input`, `ready`. The first a
+   box carries is its status (`Sandbox.status`); `blocked` and `needs-input`
+   make the box blocked (`Sandbox.standing`).
+2. **Special** (`specialTags`): `pr`, then `issue` — what the box is for,
+   and links to GitHub where its source is there (below); the pull request
+   first as the one most worth opening.
+3. **The rest**, in the order they are kept. `repo` and `job` are among them.
+
+The filter's tag choices are sorted by name (`tagChoices`), not in a row's
+order.
 
 A credential request waiting on a person, or an agent that reports it is
 `blocked` (below), makes the box blocked too (`Sandbox.standing`), tag or no
@@ -879,8 +892,8 @@ window clears it once the program has ended (`clearProgramStatus`, from
 clears it after a crash.
 
 The workspace header says it in the same colors (`paneHeaderFields`).
-`blocked` — the tag, a request waiting, or an agent reporting it is blocked
-(`Sandbox.standing`) — takes the git word's place, in
+`blocked` — the `blocked` or `needs-input` tag, a request waiting, or an
+agent reporting it is blocked (`Sandbox.standing`) — takes the git word's place, in
 red, whatever git says, since waiting on a person outranks the work's state. It
 is a field of its own ahead of the git summary rather than the word itself: a
 narrowing header gives the word up early, because its mark is on the git

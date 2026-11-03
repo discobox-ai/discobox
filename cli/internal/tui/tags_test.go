@@ -205,7 +205,7 @@ func TestClickingAnIssueTagOnTheListOpensTheIssue(t *testing.T) {
 		d, m := openList(t, ds)
 		// Wide enough for the tags beside the name: they give way before it does.
 		d.dispatch(tea.WindowSizeMsg{Width: 180, Height: 40})
-		d.wait("the tags", func() bool { return strings.Contains(plainFrame(m), "#issue=4 #pr=9 #wip") })
+		d.wait("the tags", func() bool { return strings.Contains(plainFrame(m), "#pr=9 #issue=4 #wip") })
 
 		opened := make(chan string, 4)
 		m.openOS = func(url string) error { opened <- url; return nil }
@@ -300,8 +300,7 @@ func TestTheWorkspaceHeaderLeavesAnUnnumberedIssueOut(t *testing.T) {
 }
 
 // treeTagBoxes are three discoboxes for the tree's tag lines: one with more
-// tags than its line holds, one with none, and one a pull request is blocked
-// on.
+// tags than its line holds, one with none, and one tagged blocked.
 func treeTagBoxes() []Sandbox {
 	return []Sandbox{
 		{ID: "sbx_a", Name: "fix the reaper", State: StateRunning, Harness: "claude", Repository: "https://github.com/acme/disco",
@@ -313,8 +312,8 @@ func treeTagBoxes() []Sandbox {
 }
 
 // In the workspace tree a tagged row has its tags on a line of its own under
-// it, drawn as the row draws them beside the name — the pull request status
-// first and in its color, an issue or pull request a link, the rest dim — with
+// it, drawn as the row draws them beside the name — the status tags first
+// and in their color, an issue or pull request a link, the rest dim — with
 // how many did not fit, and an untagged row has no such line. The name gets
 // the row's width rather than sharing it, with the harness column too.
 func TestTheTreeDrawsATaggedRowsTagsUnderIt(t *testing.T) {
@@ -393,8 +392,8 @@ func TestTheTreeScrollsByTheLinesItsTagsTake(t *testing.T) {
 }
 
 // The workspace header carries the box's tags it does not say otherwise, dim:
-// not the issue and pull request it links, nor a pull request status, which
-// it says through the git word.
+// not the issue and pull request it links, nor a status tag, which it says
+// through the git word.
 func TestTheWorkspaceHeaderCarriesTheBoxsOtherTags(t *testing.T) {
 	t.Parallel()
 	st := newStyles(true)
@@ -411,5 +410,42 @@ func TestTheWorkspaceHeaderCarriesTheBoxsOtherTags(t *testing.T) {
 	m.paneBox.Tags = []string{"issue=4"}
 	if got := m.paneHeaderFields(); len(got) != 2 {
 		t.Fatalf("header = %q, want the id and the issue and no tags field for a box with none left to say", got.text())
+	}
+}
+
+// A row draws its status tags first, blocked, then needs-input, then ready;
+// then the pull request ahead of the issue; then the rest in the order they
+// are kept, wherever each was added. A box waiting for the owner's answer
+// stands blocked, and draws its tag red the way blocked is drawn.
+func TestARowDrawsStatusThenPullRequestThenIssueThenTheRest(t *testing.T) {
+	for _, tc := range []struct {
+		tags, want []string
+	}{
+		{
+			tags: []string{"repo=acme/disco", "issue=460", "job=adr", "pr=463"},
+			want: []string{"pr=463", "issue=460", "repo=acme/disco", "job=adr"},
+		},
+		{
+			tags: []string{"repo=acme/disco", "issue=460", "ready", "job=adr", "needs-input", "pr=463", "blocked", "wip"},
+			want: []string{"blocked", "needs-input", "ready", "pr=463", "issue=460", "repo=acme/disco", "job=adr", "wip"},
+		},
+		{
+			tags: []string{"wip", "ticket=ENG-12"},
+			want: []string{"wip", "ticket=ENG-12"},
+		},
+	} {
+		if got := (Sandbox{Tags: tc.tags}).rowTags(); !slices.Equal(got, tc.want) {
+			t.Errorf("rowTags(%q) = %q, want %q", tc.tags, got, tc.want)
+		}
+	}
+
+	box := Sandbox{Tags: []string{"needs-input", "ready"}}
+	if box.status() != statusNeedsInput || box.standing() != standingBlocked {
+		t.Fatalf("a box waiting on its owner has status %q, standing %v; want needs-input, blocked", box.status(), box.standing())
+	}
+	st := newStyles(true)
+	spans, _ := listForTest(Session{}, nil).tagSpans(st, &zones{}, box, box.rowTags(), 0, 0)
+	if !strings.Contains(spans, st.blockedText.Render("#needs-input")) {
+		t.Fatalf("needs-input is not drawn as blocked is: %q", spans)
 	}
 }

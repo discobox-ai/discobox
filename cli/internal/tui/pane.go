@@ -2119,7 +2119,7 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	// not open the diff the summary opens.
 	blocked := box.standing() == standingBlocked
 	if blocked {
-		fields = append(fields, textField(m.st.blockedText.Render(prBlocked)))
+		fields = append(fields, textField(m.st.blockedText.Render(statusBlocked)))
 	}
 	if base := box.base(); base != "" {
 		fields = append(fields, gitField(git.Render(base)))

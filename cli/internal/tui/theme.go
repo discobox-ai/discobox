@@ -153,8 +153,9 @@ type styles struct {
 	chip    lipgloss.Style
 	chipOn  lipgloss.Style
 	command lipgloss.Style
-	// Ready and blocked as words: a pull request status tag on a row, bold in
-	// green or red where the row's other tags are dim, and the workspace
+	// Ready and blocked as words: a status tag on a row (statusTags), bold in
+	// green, or red for blocked and needs-input, where the row's other tags
+	// are dim, and the workspace
 	// header's word for the same (Sandbox.standing). Without color they are
 	// plain, like every other style.
 	readyText   lipgloss.Style
