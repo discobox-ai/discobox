@@ -876,6 +876,61 @@ func TestAHeldCtrlAfterThePrefixIsTolerated(t *testing.T) {
 	}
 }
 
+// An Alt prefix tolerates a held Alt the way a Ctrl one tolerates Ctrl: the
+// modifier forgiven after the prefix is whichever one the prefix is held with,
+// and only that one.
+func TestAHeldAltAfterAnAltPrefixIsTolerated(t *testing.T) {
+	type toggle struct{}
+	type moved struct{}
+	altG := tea.KeyPressMsg{Code: 'g', Mod: tea.ModAlt}
+	newPane := func() (*Model, *fakeStream) {
+		m, stream, _ := attach(t, 40, 5,
+			WithPrefix("alt+g", ""),
+			WithPrefixBinding("m", toggle{}),
+			WithRepeatingPrefixBinding("l", moved{}))
+		return m, stream
+	}
+	for _, second := range []string{"m", "alt+m"} {
+		m, _ := newPane()
+		m.Update(altG)
+		_, cmd := m.Update(keyNamed(second))
+		if cmd == nil {
+			t.Fatalf("%q after the prefix should have been bound", second)
+		}
+		if _, ok := cmd().(toggle); !ok {
+			t.Fatalf("%q: got %T, want the bound message", second, cmd())
+		}
+	}
+
+	// Ctrl is not the prefix's modifier here, so Ctrl-M after it is a key
+	// like any other and is delivered along with the prefix.
+	m, stream := newPane()
+	m.Update(altG)
+	if _, cmd := m.Update(keyNamed("ctrl+m")); cmd != nil {
+		t.Fatal("ctrl+m after an alt prefix should not be bound")
+	}
+	if got := stream.sent(t, "\r"); !strings.Contains(got, "\x1bg") {
+		t.Fatalf("sent %q, want the prefix delivered with the key", got)
+	}
+
+	// The prefix twice is one literal Alt-G.
+	m, stream = newPane()
+	m.Update(altG)
+	m.Update(altG)
+	if got := stream.sent(t, "\x1bg"); !strings.Contains(got, "\x1bg") {
+		t.Fatalf("sent %q, want a literal Alt-G", got)
+	}
+
+	// A run holds while Alt is held.
+	m, _ = newPane()
+	m.Update(altG)
+	for i := range 3 {
+		if _, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModAlt}); cmd == nil {
+			t.Fatalf("alt-held press %d did not fire", i+1)
+		}
+	}
+}
+
 // The tolerance stops at the prefix: a bare letter typed on its own is the
 // application's, and only the detach key exactly as configured detaches.
 func TestToleranceDoesNotLeakOutsideThePrefix(t *testing.T) {
@@ -894,6 +949,9 @@ func TestToleranceDoesNotLeakOutsideThePrefix(t *testing.T) {
 func keyNamed(name string) tea.KeyPressMsg {
 	if rest, ok := strings.CutPrefix(name, "ctrl+"); ok {
 		return tea.KeyPressMsg{Code: rune(rest[0]), Mod: tea.ModCtrl}
+	}
+	if rest, ok := strings.CutPrefix(name, "alt+"); ok {
+		return tea.KeyPressMsg{Code: rune(rest[0]), Mod: tea.ModAlt}
 	}
 	return key(name)
 }
