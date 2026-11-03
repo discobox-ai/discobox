@@ -236,6 +236,9 @@
   `reviewWindow.end`, counted in `reviewEnds`, and `Run` waits for them
   (`EndReviews`): an end started from a goroutine on the way out is lost when
   the process exits first — `TestQuittingTheConsoleEndsTheFilesChanged`.
+- **A files changed window is let go only through `closeReview`.** It ends
+  the session and closes the window's pane; a bare `v.review = nil` leaves
+  the pane's input goroutines running for as long as the console does.
 - **A files changed window with no session to send to has its own keys.**
   While it starts, and once it ended on its own, every key would go to a
   terminal with no stream and be dropped, the way back included; `reviewKey`

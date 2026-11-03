@@ -124,10 +124,12 @@ func (m *Model) openReview(p *pane) tea.Cmd {
 	))
 }
 
-// closeReview ends the window, if there is one.
+// closeReview ends the window, if there is one, and lets go of its pane: a
+// pane left attached keeps the goroutines forwarding its input running.
 func (v *issuePane) closeReview() {
 	if v.review != nil {
 		v.review.end()
+		_ = v.review.term.Close()
 		v.review = nil
 	}
 }
@@ -201,7 +203,8 @@ func (m *Model) updateReview(msg reviewMsg) tea.Cmd {
 	switch msg := msg.msg.(type) {
 	case reviewStartedMsg:
 		if msg.err != nil {
-			v.files, v.review = false, nil
+			v.files = false
+			v.closeReview()
 			return m.report(true, "cannot show the files changed: %v", msg.err)
 		}
 		w.stream, w.execID = msg.stream, msg.exec.ID
@@ -218,7 +221,8 @@ func (m *Model) updateReview(msg reviewMsg) tea.Cmd {
 		switch {
 		case msg.Err != nil:
 			// A stream that broke is the console's to report.
-			v.files, v.review = false, nil
+			v.files = false
+			v.closeReview()
 			return m.report(true, "files changed: %v", msg.Err)
 		case !w.typed:
 			// It ended on its own, and what it said is on its last screen.
@@ -227,7 +231,8 @@ func (m *Model) updateReview(msg reviewMsg) tea.Cmd {
 		}
 		// Quitting discobox-review is how you say you are done with it, as
 		// it is for the diff tool.
-		v.files, v.review = false, nil
+		v.files = false
+		v.closeReview()
 		return nil
 	case termpane.CopyMsg:
 		// Only from the screen: a box switched away from does not get to
