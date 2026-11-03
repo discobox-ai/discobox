@@ -120,3 +120,14 @@
   raw, stayed in the sandbox; a variable turned raw kept its old sentinel,
   which is the pool's handle for the value and shadowed an `env` delivery of
   it (ADR 26-10-27-840 §3).
+
+## A sandbox owed its delivery
+
+- **Every path that has the pool run a sandbox checks `awaitingSourcePush`
+  first, parked included** — a `sandboxStart` or `sandboxRestart`
+  instruction, `EnsureRunning`, and a repair's start. A sandbox owed its
+  client's delivery has no source in its workspace, and only that delivery
+  may start it (ADR 26-11-03-618 §2). Twice a path got this wrong: repair
+  re-parked such a sandbox and started it anyway (#70), and a start
+  instruction let a parked one through on the theory that a wait held it,
+  which only an action has.

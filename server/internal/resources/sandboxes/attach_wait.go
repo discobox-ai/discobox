@@ -92,7 +92,7 @@ func (s *Service) acquireForAction(ctx context.Context, projectID, sandboxID str
 				Message: fmt.Sprintf("sandbox is still being provisioned: state=%s", sandboxModel.State),
 				Cause:   ErrSandboxProvisioning,
 			}
-		} else {
+		} else if err = owedSourceRefusal(sandboxModel); err == nil {
 			err = s.ensureRunning(ctx, sandboxModel)
 		}
 		if err != nil {

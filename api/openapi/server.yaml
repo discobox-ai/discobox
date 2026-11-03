@@ -10931,6 +10931,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/restart:
         post:
             operationId: restart-sandbox
+            description: Restart the sandbox. Conflicts if it is archived, or if it is still owed its client's source delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
             parameters:
                 - description: Project ID
                   in: path
@@ -10972,7 +10973,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/repair:
         post:
             operationId: repair-sandbox
-            description: Rebuild the sandbox in place, on its harness config's current image, and start it. The container and disposable runtime state are torn down, the container is recreated against the durable data that was kept, and a start is issued - one operation for the archive-unarchive-start sequence. The rebuild always lands on the image the harness config resolves to now, so a repair is an upgrade as well; unlike upgrade, having nothing newer to move to is not an error here. Recording the repair intent also clears a settled failure, so this is the way out of an error state. The rebuild is driven in the request; a request that dies leaves the intent recorded and the rebuild converging in the background, stopped, starting on first use. Conflicts if the sandbox is archived or being deleted.
+            description: Rebuild the sandbox in place, on its harness config's current image, and start it. The container and disposable runtime state are torn down, the container is recreated against the durable data that was kept, and a start is issued - one operation for the archive-unarchive-start sequence. The rebuild always lands on the image the harness config resolves to now, so a repair is an upgrade as well; unlike upgrade, having nothing newer to move to is not an error here. Recording the repair intent also clears a settled failure, so this is the way out of an error state. The rebuild is driven in the request; a request that dies leaves the intent recorded and the rebuild converging in the background, stopped, starting on first use. A sandbox still owed its client's source delivery is rebuilt but not started - it is left in awaiting_source, and its delivery starts it. Conflicts if the sandbox is archived or being deleted.
             parameters:
                 - description: Project ID
                   in: path
@@ -11084,6 +11085,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/start:
         post:
             operationId: start-sandbox
+            description: Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
             parameters:
                 - description: Project ID
                   in: path

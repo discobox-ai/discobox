@@ -347,6 +347,36 @@ func awaitingSourcePush(sb *model.Sandbox) bool {
 	return sb.SourceDeliveredAt == nil
 }
 
+// owedSourceRefusal refuses to run a sandbox that is owed its client's
+// delivery (ADR 26-11-03-618 §2). No path in the server asks a pool to run
+// one: its workspace is missing the source, so a start would run the harness
+// on a workspace the server says is not there, and the row would read
+// `starting` for good.
+//
+// It answers whatever the sandbox's state. An action asks only once the wait
+// has let it through (acquireForAction holds a parked or converging one); a
+// start or restart instruction waits for nothing and asks at once, parked
+// included. A failed one is not repaired on use either: a repair only parks it
+// again, and nothing but its delivery then starts it. So the refusal names the
+// delivery as the way out.
+func owedSourceRefusal(sb *model.Sandbox) error {
+	if !awaitingSourcePush(sb) {
+		return nil
+	}
+	var reason string
+	switch {
+	case sb.State == model.SandboxStateAwaitingSource:
+		reason = "is waiting for its source"
+	case sb.ErrorMessage != nil:
+		reason = fmt.Sprintf("is still owed its source and has never run (%s)", *sb.ErrorMessage)
+	default:
+		reason = "is still owed its source and has never run"
+	}
+	return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+		"discobox %s %s; it starts once its source is delivered, by an attach or `discobox push %s` from where it was created, which repairs it first if it failed",
+		sb.ID, reason, sb.ID))
+}
+
 // clientDeliveredSources is every source of a sandbox a client delivers,
 // primary first: one delivered into a pool cache, and one pushed into the
 // repository an earlier pool made for its sandbox (ADR 0058). A sandbox with

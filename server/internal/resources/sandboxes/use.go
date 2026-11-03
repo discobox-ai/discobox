@@ -106,6 +106,11 @@ func (s *Service) rebuildOnUse(ctx context.Context, sb *model.Sandbox, use servi
 	case !sb.Converged():
 		return true, nil
 	case sb.State == model.SandboxStateFailed || sb.ErrorMessage != nil:
+		// Owed its delivery: a repair would only park it again, and the
+		// action's wait would run out on a delivery nobody is making.
+		if err := owedSourceRefusal(sb); err != nil {
+			return false, err
+		}
 		if sb.AutomaticRepairSpent() {
 			return false, automaticRepairFailed(sb)
 		}
