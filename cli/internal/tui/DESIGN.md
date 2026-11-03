@@ -1368,7 +1368,7 @@ on to the next box (see the workspace tree). An archive takes its rows off
 the list as it is sent, not once it is answered and the list read again
 (`sandboxList.markArchiving`): they are listed as archived from the press, a
 listing asked for before the answer cannot put them back
-(`settleArchives`, by when `listPoll` sent it), and a refused archive puts them
+(`settleArchives`, by the count of reads `listPoll` has sent), and a refused archive puts them
 back at once. An `Interaction` is drawn in
 the window (`pane.go`/`workspace.go`, over the `termpane` module): attach and
 shell open the workspace screen onto the discobox's own terminals. Every interaction takes exactly one
