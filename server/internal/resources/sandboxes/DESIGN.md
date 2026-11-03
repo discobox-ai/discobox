@@ -276,6 +276,16 @@ from attach to every action).
   complete-source-push in which the reconciler materializes what was pushed.
   The push itself goes to the source's origin, which is a read and does *not*
   wait, so the delivery a wait is waiting on can never be blocked by it.
+- **A sandbox owed its delivery and not parked for it** — failed, by the
+  source-await timeout or a create that failed after it parked — **is refused,
+  never started** (`owedSourceRefusal`, ADR 26-11-03-618 §2). A 409 names the
+  way out: an attach from its origin host, or `discobox push` there, which
+  repairs it and delivers. It is refused before the ensure, and before
+  `rebuildOnUse` would repair it automatically, since a repair only parks it
+  again and nothing but that delivery would then start it. An action reaches
+  the refusal only once the wait above has let it through, so a parked or
+  converging one is waited on. A start or restart instruction waits for
+  nothing and is refused for any owed sandbox, parked included.
 - A caller's deadline also ends the wait, and is answered like the stall
   budget and the host ceiling: with the last refusal, which names what never
   became true. A cancel is the caller leaving, and gets the context's error.
@@ -320,7 +330,9 @@ flowchart TD
     conv -- no --> wait[a rebuild is in flight: wait]
     conv -- yes --> failed{failed?}
     failed -- "no, ready" --> dirty[mark dirty] --> wait
-    failed -- yes --> auto{the failure an automatic repair's own?}
+    failed -- yes --> owed{owed its delivery?}
+    owed -- yes --> owedRefuse[refuse: attach or push delivers it]
+    owed -- no --> auto{the failure an automatic repair's own?}
     auto -- no --> record[record automatic repair intent] --> wait
     auto -- "yes, and it did not land" --> both[refuse with both failures and the repair command]
 ```
@@ -360,7 +372,7 @@ container (ADR 0022 §1). See [ADR 0022](../../../../docs/adr/0022-sandbox-delet
 | `DELETE /sandboxes/{id}` | `archived` | orchestrated, 202 |
 | `POST .../unarchive` | `present` | orchestrated, 202 |
 | `POST .../purge` | `deleted` | **converges in the request**, 204 |
-| `POST .../repair` | `present` | **converges in the request**, 200 + start instruction |
+| `POST .../repair` | `present` | **converges in the request**, 200 + start instruction — none for a sandbox the rebuild leaves owed its delivery, which stays parked (ADR 26-11-03-618 §2) |
 | an action on a failed sandbox with no container | `present` | the same repair intent, recorded once and waited for by the action ([above](#an-action-starts-the-sandbox-and-repairs-it-once)) |
 
 Delete archives, because getting a sandbox out of the way is the common request
@@ -399,7 +411,10 @@ generation would otherwise re-archive a healthy sandbox on every attach, and
 leave it settled as archived while its row still read `ready`. Like purge, the request
 drives the reconcile inline so the caller gets the verdict; unlike everything
 else here, a clean converge is followed by the same start instruction an
-explicit start sends — still an instruction, never stored intent.
+explicit start sends — still an instruction, never stored intent. The one
+exception is a sandbox the rebuild leaves owed its client's delivery: it is
+parked again at `awaiting_source`, with a fresh deadline, and no start is sent,
+since only its delivery may start it (ADR 26-11-03-618 §2).
 
 That same intent carries the re-pin an upgrade would (ADR 0064): repair always
 rebuilds on the harness config's current bundle. `currentRepin` is the one

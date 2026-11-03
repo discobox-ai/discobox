@@ -1274,8 +1274,9 @@ func (UnimplementedHandler) RemoveSandboxFile(ctx context.Context, req *SandboxF
 // well; unlike upgrade, having nothing newer to move to is not an error here. Recording the repair
 // intent also clears a settled failure, so this is the way out of an error state. The rebuild is
 // driven in the request; a request that dies leaves the intent recorded and the rebuild converging
-// in the background, stopped, starting on first use. Conflicts if the sandbox is archived or being
-// deleted.
+// in the background, stopped, starting on first use. A sandbox still owed its client's source
+// delivery is rebuilt but not started - it is left in awaiting_source, and its delivery starts it.
+// Conflicts if the sandbox is archived or being deleted.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/repair
 func (UnimplementedHandler) RepairSandbox(ctx context.Context, params RepairSandboxParams) (r RepairSandboxRes, _ error) {
@@ -1373,7 +1374,8 @@ func (UnimplementedHandler) ResolveSandboxSecret(ctx context.Context, req *Resol
 
 // RestartSandbox implements restart-sandbox operation.
 //
-// Restart a sandbox.
+// Restart the sandbox. Conflicts if it is archived, or if it is still owed its client's source
+// delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/restart
 func (UnimplementedHandler) RestartSandbox(ctx context.Context, req *RestartSandboxBody, params RestartSandboxParams) (r RestartSandboxRes, _ error) {
@@ -1452,7 +1454,8 @@ func (UnimplementedHandler) SetDefaultProject(ctx context.Context, params SetDef
 
 // StartSandbox implements start-sandbox operation.
 //
-// Start a sandbox.
+// Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source
+// delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/start
 func (UnimplementedHandler) StartSandbox(ctx context.Context, req *StartSandboxBody, params StartSandboxParams) (r StartSandboxRes, _ error) {

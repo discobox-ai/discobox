@@ -19481,8 +19481,9 @@ func (s *Server) handleRemoveSandboxFileRequest(args [2]string, argsEscaped bool
 // well; unlike upgrade, having nothing newer to move to is not an error here. Recording the repair
 // intent also clears a settled failure, so this is the way out of an error state. The rebuild is
 // driven in the request; a request that dies leaves the intent recorded and the rebuild converging
-// in the background, stopped, starting on first use. Conflicts if the sandbox is archived or being
-// deleted.
+// in the background, stopped, starting on first use. A sandbox still owed its client's source
+// delivery is rebuilt but not started - it is left in awaiting_source, and its delivery starts it.
+// Conflicts if the sandbox is archived or being deleted.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/repair
 func (s *Server) handleRepairSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -21048,7 +21049,8 @@ func (s *Server) handleResolveSandboxSecretRequest(args [1]string, argsEscaped b
 
 // handleRestartSandboxRequest handles restart-sandbox operation.
 //
-// Restart a sandbox.
+// Restart the sandbox. Conflicts if it is archived, or if it is still owed its client's source
+// delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/restart
 func (s *Server) handleRestartSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -22284,7 +22286,8 @@ func (s *Server) handleSetDefaultProjectRequest(args [1]string, argsEscaped bool
 
 // handleStartSandboxRequest handles start-sandbox operation.
 //
-// Start a sandbox.
+// Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source
+// delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/start
 func (s *Server) handleStartSandboxRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {

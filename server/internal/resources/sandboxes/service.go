@@ -872,7 +872,8 @@ func (s *Service) SuspendSandbox(ctx context.Context, projectID, sandboxID strin
 }
 
 // RepairSandbox rebuilds the sandbox in place, on its harness config's current
-// image, and starts it (ADR 0035, ADR 0064).
+// image, and starts it (ADR 0035, ADR 0064) — unless the rebuild leaves it
+// owed its client's delivery, when it stays parked (ADR 26-11-03-618 §2).
 //
 // It is one existence intent, not a workflow: the recorded generation carries
 // RepairGeneration, which makes the reconciler's ensure tear the runtime down
@@ -932,6 +933,14 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("sandbox repair failed: %s", *sandbox.ErrorMessage))
 	}
+	// A sandbox still owed its client's delivery is parked again by the
+	// rebuild, with a fresh deadline, and stays parked: starting it would run
+	// the harness on a workspace missing its source (ADR 26-11-03-618 §2).
+	// The delivery starts it — an attach from its origin host, or `discobox
+	// push` there.
+	if awaitingSourcePush(sandbox) {
+		return sandbox, nil
+	}
 	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStart)
 }
 
@@ -972,6 +981,11 @@ func (s *Service) instructSandboxOnce(ctx context.Context, projectID, sandboxID 
 	}
 	if sandbox.DesiredState == model.DesiredStateArchived {
 		return sandbox, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived; unarchive it first")
+	}
+	if instruction == sandboxStart || instruction == sandboxRestart {
+		if err := owedSourceRefusal(sandbox); err != nil {
+			return sandbox, err
+		}
 	}
 	provider, err := s.resolveProvider(ctx, sandbox)
 	if err != nil {
