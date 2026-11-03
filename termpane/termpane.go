@@ -31,6 +31,7 @@ package termpane
 import (
 	"image/color"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,6 +115,8 @@ type Model struct {
 
 	// linkPrefix begins the id of every link this pane names; see idLink.
 	linkPrefix string
+	// links are the host's own links the last View drew; see Links.
+	links []Link
 
 	// Written by the emulator's callbacks, which run on whichever goroutine is
 	// feeding it, and read when a frame is drawn.
@@ -146,6 +149,10 @@ type options struct {
 	wheelLines int
 	// linkRewrite is where a link in the pane points; see WithLinkRewrite.
 	linkRewrite func(string) string
+	// claimed are the link schemes the host answers itself, and claimPattern
+	// finds them in plain text; see WithClaimedLinks.
+	claimed      []string
+	claimPattern *regexp.Regexp
 	// wordChars is nil for the selection package's default; see WithWordChars.
 	wordChars *string
 	// listen wraps the command that waits for output; see WithListen.
@@ -1021,6 +1028,7 @@ func (m *Model) View() []string {
 		lines = strings.Split(m.emu.Render(), "\n")
 	}
 	selected := m.emu != nil && m.sel != nil && m.sel.Active()
+	m.links = m.links[:0]
 	for i := range out {
 		row := m.lineAt(i-m.scroll, lines)
 		if selected {
@@ -1034,7 +1042,8 @@ func (m *Model) View() []string {
 		// URL the truncation cuts in half would otherwise be read as whatever
 		// half survived. Truncation keeps the sequences and drops only cells,
 		// so the link opened around it survives the cut.
-		out[i] = fitCells(m.idLink(rewriteLinks(row, m.opts.linkRewrite)), m.cols)
+		row = m.claimLinks(i, rewriteLinks(row, m.opts.linkRewrite))
+		out[i] = fitCells(m.idLink(row), m.cols)
 	}
 	return out
 }

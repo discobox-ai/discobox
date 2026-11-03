@@ -49,7 +49,27 @@ const oscHyperlink = "\x1b]8;"
 // running to the first character no URL contains. Brackets are in, so an IPv6
 // authority survives; angle brackets and quotes are out, so a URL wearing them
 // does not eat its own delimiter.
-var urlPattern = regexp.MustCompile("https?://[^\\s\"'`<>\\\\^{}|\\x00-\\x20]+")
+var urlPattern = regexp.MustCompile("https?://" + urlChars)
+
+// urlChars is the run of characters a URL detected in text is made of, after
+// its scheme: urlPattern's, and WithClaimedLinks' for the host's own schemes.
+const urlChars = "[^\\s\"'`<>\\\\^{}|\\x00-\\x20]+"
+
+// startsScheme reports whether a scheme matched at start in text begins
+// there, rather than being the tail of a longer one: `http://` in
+// `discobox+http://` is not a URL of its own. A scheme is letters, digits,
+// `+`, `-` and `.` (RFC 3986 §3.1), so one that follows any of those is
+// part of it.
+func startsScheme(text string, start int) bool {
+	if start == 0 {
+		return true
+	}
+	switch c := text[start-1]; {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '+', c == '-', c == '.':
+		return false
+	}
+	return true
+}
 
 // rewriteLinks is WithLinkRewrite applied to one rendered row: the targets of
 // the links it carries, and a link around each URL in its text the host moves.
@@ -83,6 +103,9 @@ func rewriteLinks(row string, rewrite func(string) string) string {
 
 	opens, closes := map[int]string{}, map[int]bool{}
 	for _, match := range urlPattern.FindAllStringIndex(text, -1) {
+		if !startsScheme(text, match[0]) {
+			continue
+		}
 		start, end := match[0], match[0]+len(trimURL(text[match[0]:match[1]]))
 		first, last := tokenAt(offsets, start), tokenBefore(offsets, end)
 		if first < 0 || last < first || linkedBetween(tokens, first, last) {
@@ -120,6 +143,8 @@ type rowToken struct {
 	s      string
 	text   bool
 	linked bool
+	// width is the cells a printable token takes; zero for a sequence.
+	width int
 }
 
 // textAt is where a printable token sits in the row's plain text, and which
@@ -152,7 +177,7 @@ func scanRow(row string) (tokens []rowToken, text string, offsets []textAt) {
 		if width > 0 {
 			offsets = append(offsets, textAt{offset: plain.Len(), token: len(tokens)})
 			plain.WriteString(seq)
-			tokens = append(tokens, rowToken{s: seq, text: true, linked: linked})
+			tokens = append(tokens, rowToken{s: seq, text: true, linked: linked, width: width})
 			continue
 		}
 		tokens = append(tokens, rowToken{s: seq})
