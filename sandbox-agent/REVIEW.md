@@ -614,8 +614,14 @@ user waits on every single start.
   (ADR 26-10-16-420 §4).
 - **Reading is never activity.** A status poll, a listing, a title re-sent
   unchanged: none of them may move the idle clock. The pool agent polls every
-  sandbox's status every 15 seconds, so anything a read counts as activity
+  sandbox's status every 15 seconds and holds a wait on its ports open
+  around the clock (ADR 26-11-03-815), so anything a read counts as activity
   keeps every sandbox up forever.
+- **The port wait holds only on the current version.** `GET .../status/wait`
+  answers at once unless the caller named the version the snapshot has now;
+  the hold is the agent's (`waitHold`), never a parameter. A snapshot change
+  must move the version, and a tick that changed nothing must not, or the
+  pool re-pushes the same ports twice a second.
 - **Output is not activity; a changed screen is.** `screenBuffer.sumText`
   hashes cell content only. Adding styles, the cursor, the scrollback (filled
   on every `CSI 2J`), or raw byte counts to it makes a self-drawn blinking

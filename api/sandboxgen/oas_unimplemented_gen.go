@@ -481,6 +481,19 @@ func (UnimplementedHandler) UpdateSandboxAgentMeta(ctx context.Context, req *Upd
 	return r, ht.ErrNotImplemented
 }
 
+// WaitSandboxAgentStatus implements wait-sandbox-agent-status operation.
+//
+// Answers with the version of the sandbox's listening ports. A call without `after`, or with an
+// `after` that is not the current version, is answered at once; a call naming the current version is
+// held until the ports change or the agent's hold (25 seconds) passes, and then answered with the
+// version as it is. The pool waits here so a newly bound port is reported at once rather than at the
+// next status poll (ADR 26-11-03-815).
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
+func (UnimplementedHandler) WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (r *SandboxAgentStatusWaitResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // WaitSandboxExec implements wait-sandbox-exec operation.
 //
 // Blocks until one of the given conditions holds — a named harness hook event from this terminal,

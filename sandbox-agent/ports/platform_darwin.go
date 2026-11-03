@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -16,6 +17,10 @@ import (
 func platformScanner() Scanner {
 	return lsofScanner{run: runLsof, ephemeral: sysctlEphemeralRange}
 }
+
+// platformInterval is five seconds: each scan runs lsof, a process, which is
+// not something to start twice a second (ADR 26-11-03-815 §1).
+const platformInterval = 5 * time.Second
 
 // lsofPath is where macOS ships lsof, named absolutely so a sandbox user's PATH
 // cannot put another program in its place.

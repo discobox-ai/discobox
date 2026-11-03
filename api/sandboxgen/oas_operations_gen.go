@@ -51,6 +51,7 @@ const (
 	StopSandboxServiceOperation                 OperationName = "StopSandboxService"
 	StreamSandboxExecResourcesOperation         OperationName = "StreamSandboxExecResources"
 	UpdateSandboxAgentMetaOperation             OperationName = "UpdateSandboxAgentMeta"
+	WaitSandboxAgentStatusOperation             OperationName = "WaitSandboxAgentStatus"
 	WaitSandboxExecOperation                    OperationName = "WaitSandboxExec"
 	WriteSandboxFileOperation                   OperationName = "WriteSandboxFile"
 )

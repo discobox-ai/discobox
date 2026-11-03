@@ -517,3 +517,14 @@ answer is seen): after that its disk is the sandbox's work.
   Upgrade, so through any HTTPS front that offers h2 a transport that
   negotiated it would never open the channel, and a test against plain
   `httptest` would not notice (`TestTheChannelOpensThroughAnHTTP2Front`).
+
+## The status loop is the only thing that pushes status
+
+- **A port waiter only wakes the loop** (`statuswait.go`, ADR 26-11-03-815).
+  It never polls the status or pushes a report itself: the control plane
+  keeps the last status written, not the newest, so a second pusher would let
+  an older report land after a newer one.
+- **A waiter must not spin.** Every way a wait can come back without holding —
+  a failure, a 404, no version, the named version answered at once — is
+  followed by a pause, or one sandbox with an older or broken agent costs a
+  connection per millisecond.

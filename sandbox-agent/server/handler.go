@@ -538,6 +538,14 @@ func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHa
 	return &response, nil
 }
 
+// WaitSandboxAgentStatus answers with the ports version, holding a caller that
+// names the current one until it changes (ADR 26-11-03-815 §2). The hold is
+// the watcher's to bound, and the request's context ends it early when the pool
+// hangs up.
+func (h *handler) WaitSandboxAgentStatus(ctx context.Context, params sandboxapi.WaitSandboxAgentStatusParams) (*sandboxapi.SandboxAgentStatusWaitResponse, error) {
+	return &sandboxapi.SandboxAgentStatusWaitResponse{PortsVersion: h.ports.Wait(ctx, params.After.Or(""))}, nil
+}
+
 // GetSandboxAgentStatus computes git/session/connection status fresh on every
 // call: sandbox-agent never caches or pushes this on its own initiative, it
 // only ever answers inbound authenticated requests (see ADR 0030). Listening

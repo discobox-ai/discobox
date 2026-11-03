@@ -299,6 +299,7 @@ any other port of a machine is `ErrUnsupported`, answered 501
 ```mermaid
 flowchart LR
     poll["status poll<br/>statuspoll.go"] --> dialer
+    wait["port wait<br/>statuswait.go"] --> dialer
     proxy["sandbox-agent and port proxies<br/>server/sandbox_proxy.go"] --> dialer
     health["boot health wait<br/>waitForSandboxAgent"] --> dialer
     deliver["runtime-config delivery<br/>runtimeconfig.go"] --> dialer
@@ -894,6 +895,21 @@ no key sandbox-agent trusts on its own, so this indirection is what lets the
 poll loop reach sandbox-agent's authenticated status route without discobox-
 server ever originating a request into a sandbox itself. See
 [ADR 0030](../docs/adr/0030-pool-agent-polls-and-pushes-sandbox-agent-status.md).
+
+Between ticks the poller **waits on each running sandbox's ports**
+(`statuswait.go`, [ADR 26-11-03-815](../docs/adr/26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md)):
+one held `GET .../status/wait` per sandbox, with the same token. A waiter is
+started the moment the state watch reports a sandbox running (and stopped when
+it leaves running), and the tick starts and prunes them as a backstop. The
+first call names no version and is answered at once; each after names the
+last one seen and is held by the agent until the ports change or its 25s hold
+is up. A changed version — the first answer included, since a port may have
+been bound before the waiter connected — wakes the loop, which polls and
+pushes that sandbox's status then, on the same loop as the tick so reports
+stay ordered; queued wakes are drained into one batch. A waiter never pushes
+anything itself. An agent answering 404 or no version predates the route and
+is asked again every five minutes; a failed wait retries after 2s, and a
+quick answer with the version named backs off rather than spin.
 
 The standing tick also reads each sandbox's **inventory** (`inventorypoll.go`,
 [ADR 26-10-11-657](../docs/adr/26-10-11-657-a-stopped-discobox-is-read-from-what-it-last-posted.md) §2) — what its exec, service and tool lists and its terminals' screens

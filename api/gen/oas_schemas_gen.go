@@ -2683,6 +2683,7 @@ func (*ErrorResponseStatusCode) stopSandboxServiceRes()                 {}
 func (*ErrorResponseStatusCode) streamSandboxEventsRes()                {}
 func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()         {}
 func (*ErrorResponseStatusCode) updateSandboxAgentMetaRes()             {}
+func (*ErrorResponseStatusCode) waitSandboxAgentStatusRes()             {}
 func (*ErrorResponseStatusCode) waitSandboxExecRes()                    {}
 func (*ErrorResponseStatusCode) writeSandboxFileRes()                   {}
 
@@ -23677,6 +23678,25 @@ func (s *SandboxAgentStatusToken) SetSandboxId(val string) {
 func (s *SandboxAgentStatusToken) SetToken(val string) {
 	s.Token = val
 }
+
+// Ref: #/components/schemas/SandboxAgentStatusWaitResponse
+type SandboxAgentStatusWaitResponse struct {
+	// Opaque; changes whenever the sandbox's listening ports do, and is never the same across a restart
+	// of its agent.
+	PortsVersion string `json:"portsVersion"`
+}
+
+// GetPortsVersion returns the value of PortsVersion.
+func (s *SandboxAgentStatusWaitResponse) GetPortsVersion() string {
+	return s.PortsVersion
+}
+
+// SetPortsVersion sets the value of PortsVersion.
+func (s *SandboxAgentStatusWaitResponse) SetPortsVersion(val string) {
+	s.PortsVersion = val
+}
+
+func (*SandboxAgentStatusWaitResponse) waitSandboxAgentStatusRes() {}
 
 // The last repair recorded for this sandbox without anybody asking for one: an
 // action found it failed with no container on its pool, and it was rebuilt once.

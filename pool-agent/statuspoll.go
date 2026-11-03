@@ -52,9 +52,13 @@ func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, boo
 		tokens:      map[string]cachedSandboxAgentToken{},
 		samples:     map[string]sandboxResourceSample{},
 		inventories: map[string]string{},
+		wake:        make(chan string, sandboxAgentStatusWakeQueue),
+		waiters:     map[string]context.CancelFunc{},
 	}
 	// One loop, so each sandbox's reports come in the order they were observed
-	// (the control plane keeps the last status written, not the newest).
+	// (the control plane keeps the last status written, not the newest). A
+	// sandbox whose ports changed is checked in on it too, between ticks, for
+	// the same reason (ADR 26-11-03-815 §3).
 	go func() {
 		ticker := time.NewTicker(sandboxAgentStatusPollInterval)
 		defer ticker.Stop()
@@ -64,6 +68,8 @@ func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, boo
 				return
 			case <-ticker.C:
 				poller.tick(ctx)
+			case sandboxID := <-poller.wake:
+				poller.pollAndReport(ctx, poller.drainWakes(sandboxID))
 			}
 		}
 	}()
@@ -94,6 +100,12 @@ type sandboxAgentStatusPoller struct {
 	// converging holds the sandboxes a runtime-config delivery is under way
 	// for (convergeRuntimeConfig).
 	converging sync.Map
+	// wake carries a sandbox whose ports changed to the loop, which checks it
+	// in at once (statuswait.go).
+	wake chan string
+	// waiters cancels the wait held on each running sandbox's ports, by
+	// sandbox ID; guarded by mu.
+	waiters map[string]context.CancelFunc
 }
 
 // ResourceSamples is the newest counters this poller has seen, by sandbox ID.
@@ -123,6 +135,7 @@ func (p *sandboxAgentStatusPoller) tick(ctx context.Context) {
 			running = append(running, sb.SandboxID)
 		}
 	}
+	p.waitOn(ctx, running)
 	p.pollAndReport(ctx, running)
 	p.reportInventories(ctx, running)
 }

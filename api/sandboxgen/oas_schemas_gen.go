@@ -5559,6 +5559,23 @@ func (s *SandboxAgentStatusResponse) SetSources(val []SandboxAgentGitSourceStatu
 	s.Sources = val
 }
 
+// Ref: #/components/schemas/SandboxAgentStatusWaitResponse
+type SandboxAgentStatusWaitResponse struct {
+	// Opaque; changes whenever the sandbox's listening ports do, and is never the same across a restart
+	// of its agent.
+	PortsVersion string `json:"portsVersion"`
+}
+
+// GetPortsVersion returns the value of PortsVersion.
+func (s *SandboxAgentStatusWaitResponse) GetPortsVersion() string {
+	return s.PortsVersion
+}
+
+// SetPortsVersion sets the value of PortsVersion.
+func (s *SandboxAgentStatusWaitResponse) SetPortsVersion(val string) {
+	s.PortsVersion = val
+}
+
 // Which power-down the pool is about to carry out, for the sandbox to confirm against what it sees
 // now.
 // Ref: #/components/schemas/SandboxAutostopConfirmRequest

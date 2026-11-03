@@ -172,6 +172,7 @@ const (
 	UpdateSecretOperation                          OperationName = "UpdateSecret"
 	UpdateSecretBindingOperation                   OperationName = "UpdateSecretBinding"
 	UpgradeSandboxOperation                        OperationName = "UpgradeSandbox"
+	WaitSandboxAgentStatusOperation                OperationName = "WaitSandboxAgentStatus"
 	WaitSandboxExecOperation                       OperationName = "WaitSandboxExec"
 	WriteSandboxFileOperation                      OperationName = "WriteSandboxFile"
 )

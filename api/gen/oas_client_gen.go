@@ -1161,6 +1161,16 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade
 	UpgradeSandbox(ctx context.Context, request *UpgradeSandboxBody, params UpgradeSandboxParams) (UpgradeSandboxRes, error)
+	// WaitSandboxAgentStatus invokes wait-sandbox-agent-status operation.
+	//
+	// Answers with the version of the sandbox's listening ports. A call without `after`, or with an
+	// `after` that is not the current version, is answered at once; a call naming the current version is
+	// held until the ports change or the agent's hold (25 seconds) passes, and then answered with the
+	// version as it is. The pool waits here so a newly bound port is reported at once rather than at the
+	// next status poll (ADR 26-11-03-815).
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
+	WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (WaitSandboxAgentStatusRes, error)
 	// WaitSandboxExec invokes wait-sandbox-exec operation.
 	//
 	// Blocks until one of the given conditions holds — a named harness hook event from this terminal,
@@ -20701,6 +20711,143 @@ func (c *Client) sendUpgradeSandbox(ctx context.Context, request *UpgradeSandbox
 
 	stage = "DecodeResponse"
 	result, err := decodeUpgradeSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// WaitSandboxAgentStatus invokes wait-sandbox-agent-status operation.
+//
+// Answers with the version of the sandbox's listening ports. A call without `after`, or with an
+// `after` that is not the current version, is answered at once; a call naming the current version is
+// held until the ports change or the agent's hold (25 seconds) passes, and then answered with the
+// version as it is. The pool waits here so a newly bound port is reported at once rather than at the
+// next status poll (ADR 26-11-03-815).
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
+func (c *Client) WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (WaitSandboxAgentStatusRes, error) {
+	res, err := c.sendWaitSandboxAgentStatus(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendWaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (res WaitSandboxAgentStatusRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("wait-sandbox-agent-status"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/status/wait"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, WaitSandboxAgentStatusOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/status/wait"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "after" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "after",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.After.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeWaitSandboxAgentStatusResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -443,9 +443,23 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		// overwrite a newer complete sync (ADR 0017 §10).
 		bootID := id.NewString(id.PrefixPoolAgentBoot)
 		var sequence atomic.Int64
+		// reporter's concrete client (HTTPClient in production) also implements
+		// SandboxAgentStatusClient; test doubles that only implement
+		// SandboxStateClient simply skip starting the poller.
+		var poller *sandboxAgentStatusPoller
+		if statusClient, ok := reporter.(SandboxAgentStatusClient); ok {
+			poller = startSandboxAgentStatusPoller(ctx, logger, bootstrap, identity, runtime, statusClient)
+		}
 		go runtime.WatchSandboxStates(ctx, logger, func(reportCtx context.Context, batch sandboxruntime.SandboxStateBatch) error {
 			states := make([]SandboxState, 0, len(batch.States))
 			for _, observed := range batch.States {
+				// A sandbox seen starting or stopping has its ports waited on
+				// from that moment, not from the next status tick
+				// (ADR 26-11-03-815 §3). A complete sync only restates what
+				// the deltas said, and the tick already prunes against it.
+				if !batch.Complete {
+					poller.sandboxStateChanged(ctx, observed.SandboxID, observed.State)
+				}
 				states = append(states, SandboxState{
 					SandboxID: observed.SandboxID,
 					State:     observed.State,
@@ -517,15 +531,11 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 				PrivateKey:      identity.PrivateKey,
 			})
 		})
-		// reporter's concrete client (HTTPClient in production) also implements
-		// SandboxAgentStatusClient; test doubles that only implement
-		// SandboxStateClient simply skip starting the poller.
-		if statusClient, ok := reporter.(SandboxAgentStatusClient); ok {
-			poller := startSandboxAgentStatusPoller(ctx, logger, bootstrap, identity, runtime, statusClient)
+		if poller != nil {
 			// The resource reporter reads the counters that poll already
 			// collected rather than polling every sandbox a second time, so it
 			// only runs where the poller does (ADR 0071 resource accounting §2).
-			if resourceClient, ok := reporter.(PoolResourceClient); ok && poller != nil {
+			if resourceClient, ok := reporter.(PoolResourceClient); ok {
 				startPoolResourceReporter(ctx, logger, root, bootstrap, identity, runtime, poller, resourceClient)
 			}
 		}
