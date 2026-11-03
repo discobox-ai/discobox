@@ -48,6 +48,12 @@ func (h *Handler) GetSandboxAgentStatus(context.Context, serverapi.GetSandboxAge
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// WaitSandboxAgentStatus is left unproxied like the status it belongs to: only
+// the pool waits on it (ADR 26-11-03-815 §3).
+func (h *Handler) WaitSandboxAgentStatus(context.Context, serverapi.WaitSandboxAgentStatusParams) (serverapi.WaitSandboxAgentStatusRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 // GetSandboxAgentInventory is left unproxied like the status: the inventory
 // is read only by the pool agent's poll (ADR 26-10-11-657 §1), and what a
 // client reads of it comes back through the list routes it answers.

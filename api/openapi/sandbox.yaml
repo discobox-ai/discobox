@@ -1042,6 +1042,15 @@ components:
                 - ports
                 - observedAt
             type: object
+        SandboxAgentStatusWaitResponse:
+            additionalProperties: false
+            properties:
+                portsVersion:
+                    description: Opaque; changes whenever the sandbox's listening ports do, and is never the same across a restart of its agent.
+                    type: string
+            required:
+                - portsVersion
+            type: object
         SandboxAutostopConfirmRequest:
             additionalProperties: false
             description: Which power-down the pool is about to carry out, for the sandbox to confirm against what it sees now.
@@ -3882,6 +3891,44 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: Get sandbox-agent-reported status (git status, harness session state, active connections).
+            tags:
+                - Sandbox Status
+    /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait:
+        get:
+            description: Answers with the version of the sandbox's listening ports. A call without `after`, or with an `after` that is not the current version, is answered at once; a call naming the current version is held until the ports change or the agent's hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a newly bound port is reported at once rather than at the next status poll (ADR 26-11-03-815).
+            operationId: wait-sandbox-agent-status
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The ports version the caller already has. Naming the current one asks to be held until it changes; omitted, the call is answered at once.
+                  in: query
+                  name: after
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentStatusWaitResponse'
+                    description: The current ports version.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Wait for the sandbox's listening ports to change.
             tags:
                 - Sandbox Status
     /api/projects/{projectId}/sandboxes/{sandboxId}/tools:

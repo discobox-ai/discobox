@@ -32,8 +32,11 @@ package ports
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"net/netip"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,13 +44,19 @@ import (
 	"time"
 )
 
-// DefaultInterval is how often the watcher rescans the socket table. Only newly
-// appeared sockets cost anything beyond the scan itself — a few procfs reads on
-// Linux, one lsof run on darwin — so this is set by how quickly a port should
-// show up rather than by scan cost — well inside the 15s cadence
-// pool-agent polls status on (ADR 0030), so a port is rarely more than one
-// control-plane poll old.
-const DefaultInterval = 5 * time.Second
+// DefaultInterval is how often the watcher rescans the socket table: this
+// platform's platformInterval. Only newly appeared sockets cost anything beyond
+// the scan itself, so it is set by how quickly a port should show up rather
+// than by scan cost. On Linux that is half a second: a sign-in's callback port
+// has to reach the person's machine before their browser is sent to it, and the
+// pool waits on the snapshot rather than polling it (ADR 26-11-03-815).
+const DefaultInterval = platformInterval
+
+// waitHold is how long Wait holds a caller naming the current version before
+// answering with it unchanged. It is the agent's bound, never the caller's, and
+// is under the idle timeout of a proxy in front of a machine reached at its
+// public URL (ADR 26-11-03-815 §2).
+const waitHold = 25 * time.Second
 
 // probeConcurrency bounds how many listeners are probed at once. A sandbox that
 // just started a compose stack can bring up a dozen ports in one tick, and each
@@ -206,6 +215,14 @@ type Watcher struct {
 	mu       sync.Mutex
 	state    map[endpoint]*portState
 	snapshot []Port
+	// epoch and generation make the snapshot's version: the generation counts
+	// changes to it, and the epoch, drawn when the watcher is made, keeps a
+	// restarted agent's count from being mistaken for an unchanged one.
+	epoch      string
+	generation uint64
+	// changed is closed and replaced whenever the snapshot changes, waking
+	// every Wait held on the version before it.
+	changed chan struct{}
 }
 
 // portState is what the watcher remembers about one port between ticks. The
@@ -258,7 +275,16 @@ func New(cfg Config) *Watcher {
 		probe:    cfg.Probe,
 		logger:   cfg.Logger,
 		state:    map[endpoint]*portState{},
+		epoch:    newEpoch(),
+		changed:  make(chan struct{}),
 	}
+}
+
+// newEpoch is a token no earlier run of the agent drew.
+func newEpoch() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // Run scans immediately and then on the configured interval until ctx is done.
@@ -278,6 +304,50 @@ func (w *Watcher) Run(ctx context.Context) {
 			w.tick(ctx)
 		}
 	}
+}
+
+// Version names the current snapshot: it changes whenever the snapshot does,
+// and is opaque to everyone but Wait.
+func (w *Watcher) Version() string {
+	if w == nil {
+		return ""
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.versionLocked()
+}
+
+func (w *Watcher) versionLocked() string {
+	return w.epoch + "-" + strconv.FormatUint(w.generation, 10)
+}
+
+// Wait answers with the current version, at once unless after is that
+// version: then it holds until the snapshot changes, waitHold passes or ctx
+// ends, and answers with whatever the version is then. Waiting is the caller's
+// to ask for by naming the version it has; one that names none, or an old
+// one, is answered straight away (ADR 26-11-03-815 §2).
+func (w *Watcher) Wait(ctx context.Context, after string) string {
+	if w == nil {
+		return ""
+	}
+	return w.wait(ctx, after, waitHold)
+}
+
+func (w *Watcher) wait(ctx context.Context, after string, hold time.Duration) string {
+	w.mu.Lock()
+	current, changed := w.versionLocked(), w.changed
+	w.mu.Unlock()
+	if after != current {
+		return current
+	}
+	timer := time.NewTimer(hold)
+	defer timer.Stop()
+	select {
+	case <-changed:
+	case <-timer.C:
+	case <-ctx.Done():
+	}
+	return w.Version()
 }
 
 // Snapshot is the most recent observation, ordered by port, with a number's
@@ -513,7 +583,23 @@ func (w *Watcher) publish() {
 			FirstSeenAt: state.firstSeenAt,
 		})
 	}
+	// A tick that found what the last one did is no change: waking a waiter
+	// for it would have the pool push the same ports again twice a second.
+	if slices.EqualFunc(snapshot, w.snapshot, Port.equal) {
+		return
+	}
 	w.snapshot = snapshot
+	w.generation++
+	close(w.changed)
+	w.changed = make(chan struct{})
+}
+
+// equal is whether two observations of a port say the same thing.
+func (p Port) equal(other Port) bool {
+	return p.Port == other.Port &&
+		slices.Equal(p.Addresses, other.Addresses) && p.Protocol == other.Protocol &&
+		p.Declared == other.Declared && p.ServiceID == other.ServiceID &&
+		p.ServiceName == other.ServiceName && p.FirstSeenAt.Equal(other.FirstSeenAt)
 }
 
 // socketKey identifies the set of sockets currently behind a port. A port bound

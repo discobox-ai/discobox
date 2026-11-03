@@ -665,6 +665,10 @@ type UpgradeSandboxRes interface {
 	upgradeSandboxRes()
 }
 
+type WaitSandboxAgentStatusRes interface {
+	waitSandboxAgentStatusRes()
+}
+
 type WaitSandboxExecRes interface {
 	waitSandboxExecRes()
 }

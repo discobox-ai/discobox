@@ -374,7 +374,9 @@ func requiredRequestScope(r *http.Request) string {
 	}
 	// The status route reports git/session/connection telemetry and nothing
 	// else, so it is gated on its own narrow scope rather than exec:read.
-	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status") {
+	// The wait on its ports belongs to it and is read with the same scope
+	// (ADR 26-11-03-815 §2).
+	if r.Method == http.MethodGet && (strings.HasSuffix(r.URL.Path, "/status") || strings.HasSuffix(r.URL.Path, "/status/wait")) {
 		return ScopeStatusRead
 	}
 	// The inventory is told by its whole route, never by a suffix: it is read

@@ -168,6 +168,7 @@ type SandboxAgentSourceState = apigen.SandboxAgentSourceState
 type SandboxAgentStatusEntry = apigen.SandboxAgentStatusEntry
 type SandboxAgentStatusResponse = apigen.SandboxAgentStatusResponse
 type SandboxAgentStatusToken = apigen.SandboxAgentStatusToken
+type SandboxAgentStatusWaitResponse = apigen.SandboxAgentStatusWaitResponse
 type SandboxAutomaticRepair = apigen.SandboxAutomaticRepair
 type SandboxAutostopConfirmRequest = apigen.SandboxAutostopConfirmRequest
 type SandboxAutostopConfirmation = apigen.SandboxAutostopConfirmation
