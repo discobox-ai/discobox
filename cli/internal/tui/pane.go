@@ -584,8 +584,9 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	}
 	opts = append(opts,
 		// Moving between the terminal and the tabs is something you do in
-		// runs, so it holds the leader open while Ctrl is down: leader, then
-		// Ctrl-← Ctrl-← walks across without pressing the leader again. The
+		// runs, so it holds the leader open while its modifier is down:
+		// leader, then Ctrl-← Ctrl-← (Alt-← under an Alt leader) walks across
+		// without pressing the leader again. The
 		// arrows and the letters are the same binding, so neither has to be
 		// learned.
 		termpane.WithRepeatingPrefixBinding(paneLeftKey, movePaneMsg{delta: -1}),
@@ -845,7 +846,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			return m.underScreen(p)
 		}
 		// A run of these is one chord: the pane it fired in is left armed while
-		// Ctrl is down, and moving focus has to carry that to the pane it moved
+		// the leader's modifier is down, and moving focus has to carry that to the pane it moved
 		// to, or the sequence would end on its own first step.
 		armed := p.term.PrefixArmed()
 		p.term.SetPrefixArmed(false)

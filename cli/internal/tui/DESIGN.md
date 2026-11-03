@@ -2218,9 +2218,12 @@ meanings depending on what is in the pane is worse than the keystroke it saved.
 The window's own Ctrl-C-quits is therefore suppressed for the whole workspace
 screen rather than for the panes that took the key. Either way the leader plus
 `m` takes the mouse from a box that is using it and gives it back, and the
-second key of a leader pair matches with or without Ctrl held. Typing the
-leader itself takes it twice in full: its bare letter is `a` under the default
-Ctrl-A, and that is attach.
+second key of a leader pair matches with or without the leader's own modifier
+held — Ctrl under a Ctrl leader, Alt under an Alt one, and only that one — in
+a pane (`termpane.afterPrefix`) and on the window's own screens (`updateKey`)
+alike. Typing the leader itself takes it twice in full: its bare letter is `a`
+under the default Ctrl-A, and that is attach. A leader on an image key
+(`ctrl+v`, `alt+v`) is the leader in a harness terminal, not a paste.
 
 **Ctrl-L repaints and re-reads, and is not consumed doing it** (`repaintKey`,
 the `tea.KeyPressMsg` case in `update`). The redraw is `tea.ClearScreen`: Bubble
@@ -2243,7 +2246,8 @@ meant for somebody else's window, and it has no way to know that happened. So
 the repaint re-asserts this pane's size before it asks — the size is what makes
 the program lay out again, and the ask is what makes the answer arrive without
 waiting for the program to say something next. Not while the leader is pending:
-there Ctrl-L is the second half of `leader l`, which moves the pane. One press,
+under a Ctrl leader Ctrl-L is then the second half of `leader l`, which moves
+the pane. One press,
 three repaints where they are all available: the window's own, the sandbox's
 picture of the screen, and the program's own redraw behind it.
 

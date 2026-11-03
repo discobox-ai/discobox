@@ -441,12 +441,13 @@ func (m *Model) syncWidth() bool {
 }
 
 // boxStep is how far along the tree the leader plus a key moves: ↑ and ↓, k
-// and j, and each with Ctrl held so a walk need not press the leader again.
+// and j. The key is as the window's leader matching leaves it, with the
+// leader's own modifier already forgiven (updateKey).
 func boxStep(key string) (int, bool) {
 	switch key {
-	case "up", "k", "ctrl+up", "ctrl+k":
+	case "up", "k":
 		return -1, true
-	case "down", "j", "ctrl+down", "ctrl+j":
+	case "down", "j":
 		return 1, true
 	}
 	return 0, false

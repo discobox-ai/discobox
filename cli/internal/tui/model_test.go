@@ -1205,6 +1205,66 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 	}
 }
 
+// An Alt leader is a leader like a Ctrl one: the pane reserves it, the key
+// lists name it, and a second key typed with Alt still held means what it means
+// without — in a pane, and on the window's own screens.
+func TestAnAltLeaderReachesThePaneAndTheWindow(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	m := New(t.Context(), ds, WithLeader("alt+g"))
+	m.logo = logo{}
+	d := newDriver(t, m)
+	d.start()
+	d.wait("the list", func() bool { return m.focus == focusList })
+
+	d.key("enter")
+	d.wait("the pane", func() bool { return m.focus == focusPane })
+	if !strings.Contains(hintLine(m.headerHints()), "alt+g q quit") {
+		t.Errorf("the header should name the leader: %q", hintLine(m.headerHints()))
+	}
+
+	// The default leader is the sandbox's now.
+	term := ds.terminals[0]
+	d.key("ctrl+a")
+	if got := term.typed("\x01"); !strings.Contains(got, "\x01") {
+		t.Fatalf("typed %q, want ctrl+a to reach the sandbox", got)
+	}
+	d.key("alt+g")
+	d.key("alt+q")
+	if !m.quit {
+		t.Fatal("alt+g alt+q should quit the window from a pane")
+	}
+
+	// On the list, where the window matches the leader itself, the same.
+	m = New(t.Context(), newFakeSource(testSandboxes()...), WithLeader("alt+g"))
+	m.logo = logo{}
+	d = newDriver(t, m)
+	d.start()
+	d.wait("the list", func() bool { return m.focus == focusList })
+	d.key("alt+g")
+	if !m.leaderArmed {
+		t.Fatal("alt+g did not arm the leader on the list")
+	}
+	d.key("alt+q")
+	if !m.quit {
+		t.Fatal("alt+g alt+q should quit the window from the list")
+	}
+
+	// The leader twice is matched in full before its modifier is forgiven,
+	// as termpane matches it: under alt+q, Alt-Q twice is not q, and does
+	// not quit.
+	m = New(t.Context(), newFakeSource(testSandboxes()...), WithLeader("alt+q"))
+	m.logo = logo{}
+	d = newDriver(t, m)
+	d.start()
+	d.wait("the list", func() bool { return m.focus == focusList })
+	d.key("alt+q")
+	d.key("alt+q")
+	if m.quit {
+		t.Fatal("the leader twice ran its bare letter's command")
+	}
+}
+
 // Tab goes round the window in the order it is drawn, bottom to top: the
 // prompt, the discoboxes, the filter over them, and back. Esc is the way
 // straight out from anywhere.

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -428,22 +429,87 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	return err
 }
 
+// escapeTime is how long a raw attach holds back the start of an Alt leader —
+// an Escape — waiting for the letter that would make it the leader, before
+// sending it on as the Escape key it then was.
+//
+// The terminal sends Alt-G as Escape and g in one write, and they nearly always
+// arrive in one read; this is for the time they do not, over a slow link. It
+// is short because a lone Escape is a key people press constantly — vim's way
+// out of insert mode — and it waits this long before reaching the program.
+// Fifty milliseconds is Neovim's own ttimeoutlen, the same wait on the same
+// question one step further in. Only an Escape that ends a read waits at all,
+// and only under an Alt leader: an arrow key's Escape arrives with the rest of
+// its sequence and is sent on at once.
+const escapeTime = 50 * time.Millisecond
+
 func copyTerminalInput(ctx context.Context, s *client.Session, chord *detachFilter) error {
+	// A leader's first byte that ends a read is held until either the next
+	// read says what it was or escapeTime does. mu orders the timer's flush
+	// against the next read, so a keystroke is never sent ahead of one typed
+	// before it; generation tells a timer a read has already decided for it.
+	var (
+		mu         sync.Mutex
+		timer      *time.Timer
+		generation int
+		flushErr   error
+	)
+	defer func() {
+		mu.Lock()
+		defer mu.Unlock()
+		generation++
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 	buf := make([]byte, 32*1024)
 	stdin := s.Stdin()
 	for {
 		n, err := stdin.Read(buf)
+		mu.Lock()
+		generation++
+		if timer != nil {
+			timer.Stop()
+			timer = nil
+		}
+		if flushErr != nil {
+			mu.Unlock()
+			return flushErr
+		}
+		var payload []byte
+		detach := false
 		if n > 0 {
-			payload, detach := chord.filter(buf[:n])
-			if len(payload) > 0 {
-				if writeErr := s.WriteFrame(frame.Input, payload); writeErr != nil {
-					return writeErr
-				}
-			}
-			if detach {
-				return errTerminalDetached
+			payload, detach = chord.filter(buf[:n])
+		}
+		if err != nil && !detach {
+			// No more input is coming to finish what the filter holds, so
+			// it was keystrokes like any others.
+			payload = append(payload, chord.flush()...)
+		}
+		if len(payload) > 0 {
+			if writeErr := s.WriteFrame(frame.Input, payload); writeErr != nil {
+				mu.Unlock()
+				return writeErr
 			}
 		}
+		if detach {
+			mu.Unlock()
+			return errTerminalDetached
+		}
+		if chord.undecided() {
+			armed := generation
+			timer = time.AfterFunc(escapeTime, func() {
+				mu.Lock()
+				defer mu.Unlock()
+				if generation != armed {
+					return
+				}
+				if held := chord.flush(); len(held) > 0 {
+					flushErr = s.WriteFrame(frame.Input, held)
+				}
+			})
+		}
+		mu.Unlock()
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -458,18 +524,11 @@ func copyTerminalInput(ctx context.Context, s *client.Session, chord *detachFilt
 	}
 }
 
-const (
-	// detachKey is the second key of the detach chord: the leader, then d, the
-	// key screen and tmux both detach on. The launcher's pane uses q instead
-	// only because its leader also carries the list's own keys, and d among
-	// them is diff.
-	detachKey = 'd'
-	// detachCtrlKey is the same key with Ctrl still held. Letting go precisely
-	// between the two keystrokes of a chord is a skill nobody should have to
-	// acquire, so both forms detach — screen has bound its commands both ways
-	// for decades, and the launcher's panes match the same way.
-	detachCtrlKey = detachKey - 'a' + 1
-)
+// detachKey is the second key of the detach chord: the leader, then d, the key
+// screen and tmux both detach on. The launcher's pane uses q instead only
+// because its leader also carries the list's own keys, and d among them is
+// diff.
+const detachKey = "d"
 
 // detachFilter watches the bytes on their way to a terminal for the detach
 // chord, and passes everything else through untouched.
@@ -480,51 +539,139 @@ const (
 // sends one literal leader, which is how you type the key the chord took. This
 // is what screen and tmux do, and what the launcher's panes do, so the same
 // keystrokes mean the same thing in a pane and in a plain attach.
+//
+// A key here is a byte sequence, not a byte: an Alt leader is Escape then its
+// letter, and nothing says the two arrive in one read. So the filter holds the
+// bytes that could still become a key it is waiting for, and lets go of them
+// the moment they cannot — an arrow key's Escape [ is sent on as soon as the [
+// arrives. What it is still holding when a read ends is [detachFilter.undecided],
+// and [detachFilter.flush] is the caller deciding, once [escapeTime] is up,
+// that no more of it is coming.
 type detachFilter struct {
-	// leader is the prefix key as the terminal sends it: Ctrl-A is 0x01.
-	leader byte
+	// leader is the prefix key as the terminal sends it: Ctrl-A is 0x01, Alt-G
+	// is Escape g.
+	leader []byte
+	// detach are the second keys that complete the chord: d, and d with the
+	// leader's modifier still held — letting go precisely between the two
+	// keystrokes of a chord is a skill nobody should have to acquire, so both
+	// forms detach, as screen has bound its commands both ways for decades and
+	// the launcher's panes match.
+	detach [][]byte
 	// armed is set between the leader and the key it qualifies.
 	armed bool
+	// held are the bytes read so far of a key that is not yet decided: a
+	// prefix of the leader, or once armed, of a key that follows it.
+	held []byte
 }
 
 // newDetachFilter builds the filter for a leader key name, as the keys package
 // normalizes it.
 func newDetachFilter(leaderKey string) *detachFilter {
-	leader := keys.ControlByte(leaderKey)
-	if leader == 0 {
-		leader = keys.ControlByte(keys.DefaultLeader)
+	if keys.Sequence(leaderKey) == nil {
+		leaderKey = keys.DefaultLeader
 	}
-	return &detachFilter{leader: leader}
+	return &detachFilter{
+		leader: keys.Sequence(leaderKey),
+		detach: [][]byte{
+			keys.Sequence(detachKey),
+			keys.Sequence(keys.Modifier(leaderKey) + detachKey),
+		},
+	}
 }
 
 // filter returns the bytes to forward, and whether the chord completed. The
 // rest of a read that completed it is dropped: the attach is over, and those
 // keystrokes belong to whatever the caller returns to.
 func (f *detachFilter) filter(in []byte) ([]byte, bool) {
-	out := bytes.NewBuffer(make([]byte, 0, len(in)))
+	out := bytes.NewBuffer(make([]byte, 0, len(in)+len(f.leader)))
 	for _, b := range in {
-		if f.armed {
-			f.armed = false
-			switch b {
-			case detachKey, detachCtrlKey:
-				return out.Bytes(), true
-			case f.leader:
-				out.WriteByte(f.leader)
-				continue
-			}
-			out.WriteByte(f.leader)
+		f.held = append(f.held, b)
+		if f.resolve(out) {
+			return out.Bytes(), true
 		}
-		if b == f.leader {
-			f.armed = true
-			continue
-		}
-		out.WriteByte(b)
 	}
 	return out.Bytes(), false
+}
+
+// resolve decides what it can of the held bytes, writing what it lets go of to
+// out, and reports whether they completed the chord.
+func (f *detachFilter) resolve(out *bytes.Buffer) bool {
+	for len(f.held) > 0 {
+		if !f.armed {
+			switch {
+			case bytes.Equal(f.held, f.leader):
+				f.armed, f.held = true, nil
+			case bytes.HasPrefix(f.leader, f.held):
+				// Could still be the leader: wait for the rest.
+				return false
+			default:
+				// Its first byte begins no leader, so it is the program's;
+				// what came after it may begin one.
+				out.WriteByte(f.held[0])
+				f.held = f.held[1:]
+			}
+			continue
+		}
+		for _, key := range f.detach {
+			if bytes.Equal(f.held, key) {
+				f.armed, f.held = false, nil
+				return true
+			}
+		}
+		if bytes.Equal(f.held, f.leader) {
+			// The leader twice is how you type one.
+			out.Write(f.leader)
+			f.armed, f.held = false, nil
+			return false
+		}
+		if f.prefixOfArmedKey() {
+			return false
+		}
+		// A leader that qualified nothing is delivered along with the key
+		// that followed it, which is read again unarmed: it may be the
+		// leader itself, or begin it.
+		out.Write(f.leader)
+		f.armed = false
+	}
+	return false
+}
+
+// prefixOfArmedKey reports whether the held bytes could still become a key
+// the armed leader is waiting for.
+func (f *detachFilter) prefixOfArmedKey() bool {
+	for _, key := range append([][]byte{f.leader}, f.detach...) {
+		if len(f.held) < len(key) && bytes.HasPrefix(key, f.held) {
+			return true
+		}
+	}
+	return false
+}
+
+// undecided reports whether the filter is holding the start of a key it
+// cannot decide on without more input. The armed leader alone is not that: it
+// waits for its next key however long that takes, as screen's and tmux's do.
+func (f *detachFilter) undecided() bool { return len(f.held) > 0 }
+
+// flush gives up waiting for the rest of the held key, returning the bytes to
+// forward: what was held was what it looked like, an Escape and nothing more.
+// An armed leader followed by it is delivered along with it, as a leader that
+// qualified nothing always is.
+func (f *detachFilter) flush() []byte {
+	if len(f.held) == 0 {
+		return nil
+	}
+	var out []byte
+	if f.armed {
+		out = append(out, f.leader...)
+		f.armed = false
+	}
+	out = append(out, f.held...)
+	f.held = nil
+	return out
 }
 
 // detachHint is how to get out of an attach, as the messages that mention it
 // spell the keys.
 func (a *App) detachHint() string {
-	return keys.Describe(a.leader()) + " " + string(rune(detachKey))
+	return keys.Describe(a.leader()) + " " + detachKey
 }
