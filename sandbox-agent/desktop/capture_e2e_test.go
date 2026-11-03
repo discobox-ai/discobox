@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -11,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -103,17 +106,12 @@ func TestTheCapturesABrowserDrawsAreTheBytesTheStoreKeeps(t *testing.T) {
 	})
 	mux.Handle("/", server)
 
-	origin := httptest.NewServer(mux)
+	origin := httptest.NewServer(browser.serve(mux))
 	defer origin.Close()
 
-	runBrowser(t, browser, origin.URL+"/__harness/")
+	browser.open(t, origin.URL+"/__harness/")
 
-	var report harnessReport
-	select {
-	case report = <-reports:
-	case <-time.After(browserBudget):
-		t.Fatal("the harness page never reported; the browser did not run it")
-	}
+	report := await(t, browser, reports, "the harness page never reported")
 	t.Logf("the harness reported %+v", report)
 	if report.Error != "" {
 		t.Fatalf("the harness failed: %s", report.Error)
@@ -216,21 +214,79 @@ func readShot(t *testing.T, storeDir, rel string) image.Image {
 	return img
 }
 
-func findBrowser(t *testing.T) string {
+func findBrowser(t *testing.T) *browserRun {
 	t.Helper()
 	if named := os.Getenv("DISCOBOX_TEST_BROWSER"); named != "" {
-		return named
+		return &browserRun{path: named, exited: make(chan struct{})}
 	}
 	for _, name := range []string{"chromium", "chromium-browser", "google-chrome", "google-chrome-stable"} {
 		if path, err := exec.LookPath(name); err == nil {
-			return path
+			return &browserRun{path: path, exited: make(chan struct{})}
 		}
 	}
 	t.Skip("no Chromium on PATH; set DISCOBOX_TEST_BROWSER to run this")
-	return ""
+	return nil
 }
 
-func runBrowser(t *testing.T, browser, url string) {
+// browserRun is one headless browser, watched: what it said, the requests it
+// made, and whether it is still running. A test waits on it with await, which
+// fails with all three rather than with a bare timeout, so a failure in CI names
+// the stage the page got to and the browser's own account of why it stopped.
+type browserRun struct {
+	path   string
+	exited chan struct{}
+	err    error // the browser's exit, once exited is closed
+
+	mu       sync.Mutex
+	log      bytes.Buffer
+	requests []string
+}
+
+func (b *browserRun) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.log.Write(p)
+}
+
+// serve wraps the origin the browser loads, recording each request it makes.
+func (b *browserRun) serve(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b.mu.Lock()
+		b.requests = append(b.requests, r.Method+" "+r.URL.Path)
+		b.mu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// await waits for the first value on ch, failing at once if the browser exits
+// first and after browserBudget otherwise, with what the browser did on the way.
+func await[T any](t *testing.T, b *browserRun, ch <-chan T, what string) T {
+	t.Helper()
+	timer := time.NewTimer(browserBudget)
+	defer timer.Stop()
+	select {
+	case v := <-ch:
+		return v
+	case <-b.exited:
+		t.Fatalf("%s: the browser exited first (%v)\n%s", what, b.err, b.report())
+	case <-timer.C:
+		t.Fatalf("%s: nothing after %s\n%s", what, browserBudget, b.report())
+	}
+	panic("unreachable")
+}
+
+func (b *browserRun) report() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	requests := "none"
+	if len(b.requests) > 0 {
+		requests = strings.Join(b.requests, ", ")
+	}
+	return fmt.Sprintf("browser: %s\nrequests it made: %s\nits log:\n%s", b.path, requests, b.log.String())
+}
+
+// open starts the browser on url, killing it when the test ends.
+func (b *browserRun) open(t *testing.T, url string) {
 	t.Helper()
 	// Not t.TempDir: the browser goes on writing into its profile while it
 	// shuts down, so the framework's cleanup races it and fails the test on a
@@ -241,7 +297,7 @@ func runBrowser(t *testing.T, browser, url string) {
 		t.Fatalf("browser profile: %v", err)
 	}
 	//nolint:gosec // G204: the browser is one this test found on PATH or the developer named, and the URL is this test's own server.
-	cmd := exec.CommandContext(t.Context(), browser,
+	cmd := exec.CommandContext(t.Context(), b.path,
 		"--headless",
 		// The test may run in a container without user namespaces, and the page
 		// is one this test wrote and serves to itself.
@@ -249,15 +305,23 @@ func runBrowser(t *testing.T, browser, url string) {
 		"--disable-gpu",
 		"--disable-dev-shm-usage",
 		"--no-first-run",
+		// The browser's errors and the page's console, for report.
+		"--enable-logging=stderr",
 		"--user-data-dir="+profile,
 		url,
 	)
+	cmd.Stdout = b
+	cmd.Stderr = b
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("start %s: %v", browser, err)
+		t.Fatalf("start %s: %v", b.path, err)
 	}
+	go func() {
+		b.err = cmd.Wait()
+		close(b.exited)
+	}()
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		<-b.exited
 		_ = os.RemoveAll(profile)
 	})
 }
@@ -272,9 +336,18 @@ const harnessPage = `<!doctype html>
 <script type="module">
 import { crop, screenWithRegion } from '/capture.js';
 
-const report = (body) => navigator.sendBeacon('/__harness/report', new Blob(
-  [JSON.stringify(body)], { type: 'application/json' },
-));
+// Each step is logged to the console, which the test keeps from the browser's
+// log, so a harness that stalls says where.
+const step = (what) => console.log('capture harness: ' + what);
+const report = (body) => {
+  step('reporting ' + JSON.stringify(body));
+  fetch('/__harness/report', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch((err) => console.error('capture harness: the report failed: ' + err));
+};
+step('capture.js imported');
 
 try {
   const region = { x: %[3]d, y: %[4]d, w: %[5]d, h: %[6]d, frameWidth: %[1]d, frameHeight: %[2]d };
@@ -288,10 +361,12 @@ try {
   ctx.fillStyle = 'rgb(0, 255, 0)';
   ctx.fillRect(region.x, region.y, region.w, region.h);
 
+  step('framebuffer drawn');
   const screenshot = crop(frame, region);
   const screen = screenWithRegion(frame, region);
   if (!screenshot || !screen) throw new Error('the capture functions returned nothing');
 
+  step('captured; posting the note');
   const response = await fetch('/api/feedback', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -349,7 +424,7 @@ func TestThePageBootsInABrowser(t *testing.T) {
 	}
 
 	booted := make(chan struct{}, 1)
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := httptest.NewServer(browser.serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/session" {
 			select {
 			case booted <- struct{}{}:
@@ -357,14 +432,10 @@ func TestThePageBootsInABrowser(t *testing.T) {
 			}
 		}
 		server.ServeHTTP(w, r)
-	}))
+	})))
 	defer origin.Close()
 
-	runBrowser(t, browser, origin.URL+"/")
+	browser.open(t, origin.URL+"/")
 
-	select {
-	case <-booted:
-	case <-time.After(browserBudget):
-		t.Fatal("the page never asked for /api/session; its modules did not load or it threw on the way up")
-	}
+	await(t, browser, booted, "the page never asked for /api/session; its modules did not load or it threw on the way up")
 }
