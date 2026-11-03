@@ -674,9 +674,8 @@ is an error rather than a lost convenience.
   each other rather than replacing one another; a registered server that
   cannot be reached is a note, and the rest are still written. Printing
   without `--write` stays the primary's, since that output is one block to
-  paste — `--server` picks another. Two servers holding a discobox of the same
-  *name* both offer that alias, and ssh takes the first `Include` that matches;
-  the ID alias is unambiguous either way.
+  paste — `--server` picks another. A stanza is keyed by the discobox's ID,
+  which no other discobox on any server shares.
 - **An address is taken everywhere a discobox is named; a name is not.**
   Every DISCOBOX resolves one through `selectSandbox` (ADR 0116 §6).
   `cp` takes one too: the `discobox://` prefix is what
@@ -2103,26 +2102,23 @@ level or layering on the attach transports above.
   not pile up duplicates. The private key is written in OpenSSH's own format,
   not the PKCS#8 PEM the server uses for its host key, because this file is
   read by the `ssh` binary rather than by `x/crypto/ssh`.
-- Each stanza carries six `Host` patterns: the sandbox name, the sandbox ID,
-  and the ID's hyphenated spelling (`sbx-…`, the discobox's own hostname, via
-  `id.Hostname`), each bare and suffixed with `.discobox.internal`. The bare name is what
-  anyone actually types; the suffixed form is the unambiguous spelling to fall
-  back on, and is the reason dropping the suffix from the primary alias is
-  affordable — a bare pattern lives in the same namespace as the user's real
-  hosts, and the qualified one does not.
-- The name is cosmetic — `User` carries the ID, which is what `ResolveUsername`
-  routes on — but an alias must still mean exactly one sandbox, because `ssh`
-  applies the *first* matching block and would otherwise silently reach the
-  wrong one. Patterns are counted across the whole emitted config and any
-  claimed twice is dropped from every stanza that wanted it. Server-side name
-  uniqueness (`idx_sandbox_project_name`) means this does not fire for
-  name-versus-name; what it still catches is a name that spells another
-  sandbox's ID, which claims both that sandbox's ID patterns at once. Names
-  with whitespace or glob metacharacters never become patterns at all
-  (`Host *` would capture every host).
-- A sandbox whose every pattern is contested is emitted as a comment rather
-  than a stanza: `Host` with no patterns is a syntax error that would break the
-  whole file.
+- Each stanza carries four `Host` patterns, all from the sandbox ID: the ID
+  and its hyphenated spelling (`sbx-…`, the discobox's own hostname, via
+  `id.Hostname`), each bare and suffixed with `.discobox.internal`. The bare
+  ID is the host handed to every tool (`{ssh.host}`, the VS Code window's
+  machine) and printed by the console; the suffixed form is the spelling to
+  fall back on should a bare one collide with a real host.
+- **The sandbox's name is never a pattern.** A generated name is neither
+  stable nor unique the way an ID is — a renamed discobox, a name that spells
+  another's ID, two servers' discoboxes of one name — and ssh applies the
+  *first* matching block, so a name would silently reach the wrong one. With
+  every pattern derived from an ID none can be contested, so no stanza is ever
+  dropped. `User` carries the ID too, which is what `ResolveUsername` routes
+  on. A write rewrites its own project's file wholesale, and re-keys every
+  other project's managed file under the same target by the `User` each
+  stanza carries (`rekeyManagedSSHConfigs`), since that project may never be
+  written again: after any one write, no name an older CLI keyed a stanza by
+  is left in any of them.
 - `--write` writes the stanzas and the server's host key to two files under the
   CLI state directory, beside the generated key, and adds one `Include` line to
   `~/.ssh/config`. It also normalizes the `Include` lines it owns

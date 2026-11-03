@@ -155,7 +155,7 @@ func TestAHostScriptIsHandedTheDiscoboxInItsEnvironment(t *testing.T) {
 		t.Fatalf("tools gitk: %v\n%s", err, stderr)
 	}
 	got := strings.Split(readFile(t, record), "\n")
-	want := []string{"devbox", "ssh://devbox/home/agent/repo", "/home/agent/repo", "--all"}
+	want := []string{"sbx_devbox00000001", "ssh://sbx_devbox00000001/home/agent/repo", "/home/agent/repo", "--all"}
 	if strings.Join(got[:4], "\n") != strings.Join(want, "\n") {
 		t.Fatalf("the script saw %q, want %q", got[:4], want)
 	}

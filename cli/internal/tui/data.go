@@ -1167,13 +1167,11 @@ type Tool struct {
 //
 // They are strings to show and copy rather than parts to assemble, because
 // what makes them worth printing is that they are already the whole thing —
-// the point of `ssh mybox` is that there is no address, port, user or key to
-// go and find. Both are empty when there is nothing to print, which is not an
-// error: a discobox whose every host pattern was claimed by another one has no
-// unambiguous name to be reached by, and one whose source never landed has no
-// directory to clone from.
+// the point of `ssh sbx_…` is that there is no address, port, user or key to
+// go and find. Either is empty when there is nothing to print, which is not an
+// error: a discobox whose source never landed has no directory to clone from.
 type Addresses struct {
-	// SSH is the whole command, `ssh <name>`, rather than the host on its own.
+	// SSH is the whole command, `ssh <id>`, rather than the host on its own.
 	// It is what someone reads to learn that reaching a discobox is one word
 	// in a shell, and pasting it into that shell should be all of it.
 	SSH string

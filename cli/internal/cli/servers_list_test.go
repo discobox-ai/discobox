@@ -30,10 +30,8 @@ const (
 
 // listedSandboxJSON is one discobox the way a server lists it.
 func listedSandboxJSON(id, created string) string {
-	// Named after its ID's last character rather than after the ID itself: a
-	// discobox whose name is its own ID claims the ID's own patterns twice, so
-	// every one of them is dropped as ambiguous (sshConfigHostPatterns) and it
-	// gets no ssh alias at all.
+	// Named after its ID's last character, so a test can tell the name from
+	// the ID.
 	name := "box-" + id[len(id)-1:]
 	return fmt.Sprintf(`{"id":%q,"projectId":"project-1","createdByUserId":"user-1","displayName":%q,`+
 		`"config":{"name":%q,"image":""},"runtime":{"state":"ready","runtimeState":"running","displayState":"running",`+

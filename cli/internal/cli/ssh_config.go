@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -14,6 +15,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/internal/filelock"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -184,7 +186,7 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 	if targets.windowsErr != nil {
 		notes(windowsSSHConfigSkipped, targets.windowsErr)
 	}
-	_, err = a.writeManagedSSHConfigs(ctx, managedSSHConfigRequest{
+	err = a.writeManagedSSHConfigs(ctx, managedSSHConfigRequest{
 		client:            client,
 		projectID:         projectID,
 		resolvedProjectID: resolvedProjectID,
@@ -237,13 +239,8 @@ type managedSSHConfigRequest struct {
 }
 
 // managedSSHConfig is a project's emitted ssh_config: the stanzas, the name the
-// host key is verified under, the key itself, and the Host pattern each sandbox
-// answers to.
-//
-// The aliases are what a caller handing a host to another program needs — a
-// host tool is given one as {ssh.host} (ADR 0125 §4) — and they cannot be
-// guessed from outside, since a contested pattern is dropped from every stanza
-// that wanted it.
+// host key is verified under, and the key itself. The host each sandbox answers
+// to needs no lookup in it: it is the sandbox's ID (sshConfigHostPatterns).
 type managedSSHConfig struct {
 	// target is the ssh installation this rendering is for: where its files
 	// go, how their paths are spelled, and what its ProxyCommand runs.
@@ -251,7 +248,6 @@ type managedSSHConfig struct {
 	stanzas      string
 	hostKeyAlias string
 	hostKey      string
-	aliases      map[string]string
 }
 
 // buildManagedSSHConfig resolves the key, lists the project's sandboxes, and
@@ -276,18 +272,6 @@ func (a *App) buildManagedSSHConfig(ctx context.Context, req managedSSHConfigReq
 		return nil, err
 	}
 	sandboxes := sandboxesBody.GetSandboxes()
-
-	// The first surviving pattern is the alias to hand out: they are emitted
-	// friendliest-first, so this is the sandbox's name where the name is
-	// unambiguous and its ID where it is not. It is the same alias whichever
-	// ssh reads the stanza.
-	patterns := sshConfigHostPatterns(sandboxes)
-	aliases := make(map[string]string, len(sandboxes))
-	for i, sandbox := range sandboxes {
-		if len(patterns[i]) > 0 {
-			aliases[sandbox.ID] = patterns[i][0]
-		}
-	}
 
 	buildTarget := func(target sshTarget) (managedSSHConfig, error) {
 		proxyCommand, err := target.proxyCommandLine(a.serverURL)
@@ -318,7 +302,6 @@ func (a *App) buildManagedSSHConfig(ctx context.Context, req managedSSHConfigReq
 			stanzas:      renderSSHConfig(render),
 			hostKeyAlias: render.hostKeyAlias,
 			hostKey:      req.hostKey,
-			aliases:      aliases,
 		}, nil
 	}
 
@@ -349,27 +332,51 @@ const windowsSSHConfigSkipped = "not writing the Windows ssh_config: %v"
 // as against `admin ssh-config` with no --write, which renders one target and
 // prints it.
 //
-// A target that may fail and does is reported and dropped rather than failing
-// the caller: what comes back is the targets that were written, this machine's
-// own first. See sshTarget.optional.
-func (a *App) writeManagedSSHConfigs(ctx context.Context, req managedSSHConfigRequest, targets []sshTarget) ([]managedSSHConfig, error) {
+// A target that may fail and does is reported and passed over rather than
+// failing the caller. See sshTarget.optional.
+//
+// The writes are made under sshConfigLockName. Each write also re-keys every
+// other project's file (rekeyManagedSSHConfigs), a read-modify-write of a file
+// another command may be writing that moment: without the lock a re-key that
+// read the old file could put it back over the stanzas that command just
+// wrote, a discobox it created among them.
+func (a *App) writeManagedSSHConfigs(ctx context.Context, req managedSSHConfigRequest, targets []sshTarget) error {
 	built, err := a.buildManagedSSHConfig(ctx, req, targets)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	written := make([]managedSSHConfig, 0, len(built))
+	dir := filepath.Join(cliStateDir(), "ssh")
+	if err := ensureStateDir(dir); err != nil {
+		return err
+	}
+	lock, err := acquireFileLock(filepath.Join(dir, sshConfigLockName), sshConfigLockWait)
+	if errors.Is(err, filelock.ErrBusy) {
+		return errors.New("another discobox command is still writing the SSH config; try again")
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Release() }()
 	for _, config := range built {
 		if err := writeManagedSSHConfig(ctx, config, req.resolvedProjectID, req.notes); err != nil {
 			if !config.target.optional {
-				return nil, err
+				return err
 			}
 			req.notes(windowsSSHConfigSkipped, err)
-			continue
 		}
-		written = append(written, config)
 	}
-	return written, nil
+	return nil
 }
+
+// sshConfigLockName is held across writing the managed ssh_config files, in
+// this machine's own state directory whichever ssh reads them: every command
+// writing them, for either side of a WSL machine, runs here.
+const sshConfigLockName = "config.lock"
+
+// sshConfigLockWait is how long one write waits for another. A write across
+// the WSL boundary restricts its files through Windows tools, which takes
+// seconds rather than milliseconds.
+const sshConfigLockWait = 30 * time.Second
 
 // sshHostKey is the server's host public key, which every emitted stanza pins
 // and nothing else in the document needs.
@@ -406,77 +413,28 @@ func sshHostKeyAlias(projectID string) string {
 
 // hostAliasSuffix qualifies each pattern into an obviously discobox-owned
 // namespace. Every sandbox gets both the bare form and the qualified one: the
-// bare name is what anyone actually types, and the qualified alias is the
-// unambiguous spelling to fall back on when a bare name collides with a real
-// host elsewhere in the user's ssh_config — which is the cost of the bare form
-// and the reason the qualified one is still emitted.
+// bare ID is what anyone pastes after `ssh`, and the qualified alias is the
+// spelling to fall back on should a bare one collide with a real host elsewhere
+// in the user's ssh_config.
 const hostAliasSuffix = ".discobox.internal"
 
-// sshConfigHostPatterns returns each sandbox's Host patterns, aligned with
-// sandboxes: its name and ID, each bare and suffixed. The ID comes in both
-// spellings — "sbx_…" as the CLI prints it and "sbx-…" as the discobox's own
-// hostname does (id.Hostname) — so either one pasted after `ssh` connects.
+// sshConfigHostPatterns returns a sandbox's Host patterns: its ID, each bare
+// and suffixed. The ID comes in both spellings — "sbx_…" as the CLI prints it
+// and "sbx-…" as the discobox's own hostname does (id.Hostname) — so either one
+// pasted after `ssh` connects.
 //
-// The name is only an alias — `User` carries the sandbox ID, which is what
-// actually routes (server/internal/sshd's ResolveUsername), and `HostName` is
-// what ssh resolves — so the pattern is free to be friendly. It is not free to
-// be ambiguous: ssh silently applies the *first* matching Host block, so a
-// pattern claimed by two sandboxes would quietly send you to the wrong one.
-// Patterns are therefore counted across the whole emitted config and any that
-// is not unique is dropped from every stanza that wanted it.
-//
-// The server enforces unique names within a project
-// (idx_sandbox_project_name), so name-versus-name collisions do not happen;
-// what this still catches is a name that spells another sandbox's pattern, such
-// as one named exactly "<other id>.discobox.internal".
-func sshConfigHostPatterns(sandboxes []apimodel.Sandbox) [][]string {
-	candidates := make([][]string, len(sandboxes))
-	claims := map[string]int{}
-	for i, sandbox := range sandboxes {
-		var patterns []string
-		if name := sandbox.Config.Name; safeHostAlias(name) {
-			patterns = append(patterns, name, name+hostAliasSuffix)
-		}
-		patterns = append(patterns, sandbox.ID, sandbox.ID+hostAliasSuffix)
-		if hostname := idpkg.Hostname(sandbox.ID); hostname != sandbox.ID {
-			patterns = append(patterns, hostname, hostname+hostAliasSuffix)
-		}
-		candidates[i] = patterns
-		for _, pattern := range patterns {
-			claims[pattern]++
-		}
+// The sandbox's name is never a pattern. A generated name is neither stable nor
+// unique the way an ID is: a renamed discobox would keep its old host until the
+// next sync, a name can spell another discobox's ID, and two servers' discoboxes
+// can share one. Every spelling here derives from the ID alone, so no two
+// sandboxes can claim the same pattern and the first one is always the host to
+// hand out: the ID, as the rest of discobox names the discobox.
+func sshConfigHostPatterns(sandboxID string) []string {
+	patterns := []string{sandboxID, sandboxID + hostAliasSuffix}
+	if hostname := idpkg.Hostname(sandboxID); hostname != sandboxID {
+		patterns = append(patterns, hostname, hostname+hostAliasSuffix)
 	}
-
-	unique := make([][]string, len(sandboxes))
-	for i, patterns := range candidates {
-		for _, pattern := range patterns {
-			if claims[pattern] == 1 {
-				unique[i] = append(unique[i], pattern)
-			}
-		}
-	}
-	return unique
-}
-
-// safeHostAlias reports whether a sandbox name can be used as an ssh_config
-// Host pattern. Names are free text up to 200 characters, and a Host line is
-// whitespace-separated patterns with glob metacharacters: a name containing a
-// space would silently become two patterns, and one containing `*` or `?`
-// would match hosts it has no business matching — `Host *.discobox.internal`
-// from a sandbox literally named `*` would capture every other sandbox.
-func safeHostAlias(name string) bool {
-	if name == "" || len(name) > 64 {
-		return false
-	}
-	for i, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case (r == '_' || r == '-' || r == '.') && i > 0:
-		default:
-			return false
-		}
-	}
-	return true
+	return patterns
 }
 
 // resolveSSHIdentity returns the private key path the emitted config should
@@ -629,7 +587,7 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 	if err != nil {
 		return sandboxSSHRemote{}, err
 	}
-	built, err := a.writeManagedSSHConfigs(ctx, managedSSHConfigRequest{
+	err = a.writeManagedSSHConfigs(ctx, managedSSHConfigRequest{
 		client:            client,
 		projectID:         projectID,
 		resolvedProjectID: resolvedProjectID,
@@ -641,13 +599,6 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 		return sandboxSSHRemote{}, err
 	}
 
-	host, ok := built[0].aliases[sandboxID]
-	if !ok {
-		// Every spelling of this sandbox was claimed by another one, so the
-		// config carries no stanza it could be reached by. See
-		// sshConfigHostPatterns.
-		return sandboxSSHRemote{}, fmt.Errorf("discobox %s has no unambiguous SSH host alias; rename it or the discobox whose name spells its ID", sandboxID)
-	}
 	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {
 		return sandboxSSHRemote{}, err
@@ -660,7 +611,10 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 	if err != nil {
 		return sandboxSSHRemote{}, err
 	}
-	return sandboxSSHRemote{host: host, folder: folder, workingRoot: sandboxPaths(sandbox).WorkingRoot(), projectID: resolvedProjectID}, nil
+	// The host is the ID, whichever ssh reads the stanza: the first of the
+	// patterns every stanza carries (sshConfigHostPatterns), and the name the
+	// editor shows the machine by.
+	return sandboxSSHRemote{host: sshConfigHostPatterns(sandbox.ID)[0], folder: folder, workingRoot: sandboxPaths(sandbox).WorkingRoot(), projectID: resolvedProjectID}, nil
 }
 
 // sandboxSSHFolder is the directory in the sandbox an ssh-driven program is

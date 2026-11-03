@@ -115,7 +115,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read automatically synchronized SSH config: %v", err)
 	}
-	if config := string(configBytes); !strings.Contains(config, "Host run-test") || !strings.Contains(config, "User "+sandboxID) {
+	if config := string(configBytes); !strings.Contains(config, "Host "+sandboxID+" ") || !strings.Contains(config, "User "+sandboxID) || strings.Contains(config, "run-test") {
 		t.Fatalf("automatically synchronized SSH config does not contain the created sandbox:\n%s", config)
 	}
 }

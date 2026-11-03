@@ -107,8 +107,8 @@ func TestEditorsOpenDefaultPrimarySourceDirectory(t *testing.T) {
 		fake func(*testing.T) string
 		want []string
 	}{
-		{"vscode", fakeVSCode, []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/workspace"}},
-		{"zed", fakeZed, []string{"--new", "ssh://devbox/workspace"}},
+		{"vscode", fakeVSCode, []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+sbx_devbox00000001/workspace"}},
+		{"zed", fakeZed, []string{"--new", "ssh://sbx_devbox00000001/workspace"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			record := tc.fake(t)
@@ -139,7 +139,7 @@ func TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 
 	configPath, _ := managedPaths(state)
 	config := readFile(t, configPath)
-	if !strings.Contains(config, "Host devbox ") {
+	if !strings.Contains(config, "Host sbx_devbox00000001 ") {
 		t.Fatalf("the editor's host is not in the config ssh reads:\n%s", config)
 	}
 	if !strings.Contains(config, " admin ssh-proxy\n") {
@@ -148,7 +148,7 @@ func TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 
 	// A folder URI rather than --remote and a path: a path argument is what
 	// the Windows launcher rewrites into a window on the local WSL directory.
-	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/home/agent/repo"}
+	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+sbx_devbox00000001/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -180,7 +180,7 @@ args: [--reuse-window, --folder-uri, "vscode-remote://ssh-remote+{ssh.host}{work
 	if _, _, _, err := runToolsCmd(t, vscodeFakeServer(), home, "vscode", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
-	want := []string{"--reuse-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/home/agent/repo"}
+	want := []string{"--reuse-window", "--folder-uri", "vscode-remote://ssh-remote+sbx_devbox00000001/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -210,7 +210,7 @@ func TestToolsVSCodeOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 	if _, _, _, err := runToolsVSCodeCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
-	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/workspace"}
+	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+sbx_devbox00000001/workspace"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}

@@ -117,9 +117,9 @@ flowchart LR
   (ADR 26-10-24-953 §1, as amended).
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
-  label: `discobox admin ssh-config` emits it as an `ssh_config` `Host` alias, and
-  ssh applies the first matching block, so a second sandbox answering to the
-  same name would silently take the first one's connections. `CreateSandbox`
+  label: the CLI takes it wherever it takes a discobox, so a second sandbox
+  answering to the same name would make that name mean either. (It is not an
+  `ssh_config` `Host` alias: stanzas are keyed by the ID.) `CreateSandbox`
   checks the name and returns 409 so the common case is a readable error; the
   index is the authority that closes the race between two concurrent creates.
   Names free up on delete, since deletes are hard deletes (ADR 0010).
