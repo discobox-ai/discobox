@@ -1054,6 +1054,10 @@ tasks:
     # harness config directly (ADR 0066 §7's stated end state), so this is
     # test:all and runs identically on Linux, macOS, and Windows.
     cmds:
+      # TEMPORARY probe for #475, reverted before merge: the flake's package
+      # fifty times on the Windows runner.
+      - cmd: go test -count=50 ./sandbox-agent/hooks
+        platforms: [windows]
       - task: test:all
 
   check:darwin:
