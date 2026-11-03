@@ -1,6 +1,10 @@
 # 26-10-12-711 — Using a failed discobox with no container repairs it once, and the server decides what a request starts
 
 - **Status**: Accepted (§7's keeping of the repair operation out of the sandbox role superseded by [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md))
+- **Amended by**: [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) — a sandbox owed its client's delivery is
+  never run: an action on a failed one, and a start or restart on any one,
+  parked included, is refused before the pool is asked, and none is repaired
+  automatically (§§1–3)
 - **Date**: 2026-10-12
 - **Supersedes**: where [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md)
   §12 places the *decision* to start a sandbox on use (the pool agent's

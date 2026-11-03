@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **§2's origin-host rule, for a remote-URL source, superseded by**: [26-10-10-545](26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
+- **§1's "parked in `awaiting_source`" and §2's "parked **and** has none", as the condition for delivering on attach, superseded by**: [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) — the condition is *owed*, and a failed, owed discobox is repaired first
 - **Date**: 2026-09-24
 - **§§2–3 amended**: 2026-09-24, before anything shipped against it. An attach
   delivers only a discobox with no delivery reported (`sourceDeliveredAt`),
