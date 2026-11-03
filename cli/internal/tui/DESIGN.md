@@ -1364,7 +1364,12 @@ reclaims no rows before `tea.Exec`.
 stays up and reports on its status line. Archive invoked from a workspace is the
 exception: putting that discobox away also detaches its local streams and
 returns to the list, where the result is reported — or, beside the tree, goes
-on to the next box (see the workspace tree). An `Interaction` is drawn in
+on to the next box (see the workspace tree). An archive takes its rows off
+the list as it is sent, not once it is answered and the list read again
+(`sandboxList.markArchiving`): they are listed as archived from the press, a
+listing asked for before the answer cannot put them back
+(`settleArchives`, by when `listPoll` sent it), and a refused archive puts them
+back at once. An `Interaction` is drawn in
 the window (`pane.go`/`workspace.go`, over the `termpane` module): attach and
 shell open the workspace screen onto the discobox's own terminals. Every interaction takes exactly one
 discobox, which is what a pane shows, and says so on the menu with the reason
