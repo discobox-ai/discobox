@@ -1,6 +1,6 @@
 # 26-11-02-902 — A project's secrets are sealed with its own data key, wrapped by the configured provider
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-02
 
 ## Context
