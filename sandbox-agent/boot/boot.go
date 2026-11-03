@@ -1,12 +1,16 @@
 package boot
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
+	"path"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -34,6 +38,15 @@ func Wire(logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if !dirExists(configMountPath) {
+		// A machine with a data volume of its own: its mounts are made again
+		// at every boot, here before anything uses them. A failure is not
+		// the unit's: the agent's start wires again, and fails if it cannot.
+		if err := newBooter().wireMachineBoot(logger, path.Join(etcDiscobox, manifestName)); err != nil {
+			logger.Warn("wire a machine's data volume at boot; the agent's start tries again", "error", err)
+		}
+		return nil
+	}
 	// Both volumes and sources come from this one read of the config volume's
 	// copy, before it is bound onto /etc/discobox (ADR 0012 §6).
 	bootstrap, err := loadEffectiveConfig(manifestPath)
@@ -45,7 +58,7 @@ func Wire(logger *slog.Logger) error {
 		return err
 	}
 	b := newBooter()
-	if err := b.provision(logger, id, &bootstrap, true); err != nil {
+	if err := b.provision(logger, id, &bootstrap, wireContainer); err != nil {
 		return err
 	}
 	if err := wireSecrets(); err != nil {
@@ -59,9 +72,13 @@ func Wire(logger *slog.Logger) error {
 // started once the bootstrap at path has been placed through the running guest
 // (ADR 26-10-09-143 §1). It sets up what applies outside a container -- the
 // sandbox user and its groups, the working root, the home skeleton,
-// ~/.gitconfig, direnv config and the units bound to the sandbox user -- and
-// wires nothing: there are no declared volumes (ADR 0126 §2), and sources
-// arrive through the intake.
+// ~/.gitconfig, direnv config and the units bound to the sandbox user. A
+// machine with no data volume wires nothing, and its sources arrive through
+// the intake onto its disk. A machine with one (machineDataVolume) keeps its
+// declared volumes and its sources on it, as a container keeps them on its
+// primary volumes (ADR 0126 §2: its PID-1 flow wires them in that same
+// environment), so a new root keeps them (disco-vm ADR 26-11-03-782); those
+// mounts are made at every boot (wireMachineBoot).
 //
 // Where Wire ran, it has already done all of this, and Provision does nothing.
 // The config volume is what says so: only a pool's container has one, and Wire
@@ -125,7 +142,7 @@ func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
 	}
 	records := provision.Records{Dir: recordsDir}
 	if records.Sandbox() == bootstrap.SandboxID {
-		return nil
+		return b.wireMachineBoot(logger, path)
 	}
 	// A disk provisioned before the records were kept says so with the
 	// marker that preceded them; it is carried into the records once.
@@ -133,14 +150,26 @@ func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
 		if err := records.RecordSandbox(bootstrap.SandboxID); err != nil {
 			return err
 		}
-		return removeLegacyMarker(legacyProvisionedPath)
+		if err := removeLegacyMarker(legacyProvisionedPath); err != nil {
+			return err
+		}
+		return b.wireMachineBoot(logger, path)
 	}
 	id, err := bootstrapIdentity(bootstrap)
 	if err != nil {
 		return err
 	}
-	if err := b.provision(logger, id, &bootstrap, false); err != nil {
+	mode := wireNone
+	if machineDataVolume() {
+		mode = wireMachine
+	}
+	if err := b.provision(logger, id, &bootstrap, mode); err != nil {
 		return err
+	}
+	if mode == wireMachine {
+		if err := markMachineWired(bootstrap.SandboxID); err != nil {
+			return err
+		}
 	}
 	// The agent's start is long after boot, unlike Wire's: the session bus's
 	// socket has been listening since then, owned by root, so it is recreated
@@ -254,10 +283,11 @@ func (b *booter) reloadUserUnits(logger *slog.Logger, id identity) error {
 
 // provision does the user setup and what the bootstrap declares for the user:
 // groups, the working root, ~/.gitconfig, direnv config and desktop
-// launchers. wire says the pool agent mounted the primary volumes (Wire, in a
-// pool's container), and only then are the config volume, the declared volumes
-// and the sources wired from them.
-func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxconfig.Config, wire bool) error {
+// launchers. mode says what the declared volumes and the sources are wired
+// from: nothing (a machine with no data volume), the primary volumes the pool
+// agent mounted (a pool's container, which also binds its config volume), or
+// a machine's own data and cache volumes.
+func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxconfig.Config, mode wireMode) error {
 	// A skills source's target may be home-relative (ADR 26-11-01-692 §3):
 	// expanded here against the home boot resolved, so the direnv whitelist
 	// and the wiring below see the place it is mounted.
@@ -275,7 +305,7 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	if err := b.ensureAdditionalGroups(id, bootstrap.SandboxGroups()); err != nil {
 		return fmt.Errorf("ensure additional groups: %w", err)
 	}
-	if wire {
+	if mode == wireContainer {
 		if err := b.wireConfig(); err != nil {
 			return fmt.Errorf("wire config: %w", err)
 		}
@@ -285,7 +315,7 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 	if err := b.seedWorkingRoot(bootstrap.WorkingRoot(sandboxPaths), id); err != nil {
 		return fmt.Errorf("seed working root: %w", err)
 	}
-	if wire {
+	if mode != wireNone {
 		volumes, err := loadResolvedVolumes(id, bootstrap.Volumes)
 		if err != nil {
 			return fmt.Errorf("resolve volumes: %w", err)
@@ -320,14 +350,114 @@ func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxc
 			return fmt.Errorf("seed desktop launchers: %w", err)
 		}
 	}
-	if !wire {
+	switch mode {
+	case wireNone:
 		return nil
-	}
-	if err := b.wireSources(bootstrap.Sources, id); err != nil {
-		return err
+	case wireMachine:
+		if err := b.wireMachineSources(bootstrap.Sources, id); err != nil {
+			return err
+		}
+	default:
+		if err := b.wireSources(bootstrap.Sources, id); err != nil {
+			return err
+		}
 	}
 	if len(bootstrap.Sources) > 0 {
 		logger.Info("wired sandbox sources", "count", len(bootstrap.Sources))
 	}
 	return nil
+}
+
+// wireMode is what provision wires the declared volumes and the sources from.
+type wireMode int
+
+const (
+	// wireNone wires nothing: a machine with no data volume, whose disk is
+	// all it has.
+	wireNone wireMode = iota
+	// wireContainer wires from the primary volumes the pool agent mounted
+	// into its container (Wire).
+	wireContainer
+	// wireMachine wires from the machine's own data and cache volumes
+	// (machineDataVolume).
+	wireMachine
+)
+
+// machineWiredPath marks that a machine's data volume is wired for this start
+// (sandboxconfig.MachineWiredFile): /run is a tmpfs, so every start begins
+// without it, and a second wiring in one start would stack its mounts. A
+// variable so a test does not write the machine's own.
+var machineWiredPath = sandboxconfig.MachineWiredFile
+
+// machineDataVolume reports whether this box is a machine whose driver
+// mounted a data volume of its own at /.discobox/data (disco-vm ADR
+// 26-11-03-782): a pool's container has a config volume, and a machine without
+// a data volume has nothing mounted there. A variable so a test says which.
+var machineDataVolume = func() bool {
+	if dirExists(configMountPath) || runtime.GOOS != "linux" {
+		return false
+	}
+	mounts, err := mountPoints(mountInfoPath)
+	return err == nil && slices.Contains(mounts, dataMountPath)
+}
+
+// markMachineWired records that this start wired the machine's data volume:
+// a random token in /run (sandboxconfig.MachineWiredFile), which a second
+// wiring in the same start reads as done, and on the volume that the
+// sandbox's data is kept there, naming the token
+// (sandboxconfig.MachineDataWiredFile), which the pool reads before it gives
+// the machine a new root.
+func markMachineWired(sandboxID string) error {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return err
+	}
+	token := hex.EncodeToString(raw[:])
+	if err := os.WriteFile(machineDataWiredFile, []byte(sandboxID+" "+token+"\n"), 0o644); err != nil { //nolint:gosec // G306: the pool reads it; it holds only the sandbox's ID and a token
+		return err
+	}
+	if err := os.MkdirAll(path.Dir(machineWiredPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(machineWiredPath, []byte(token+"\n"), 0o644) //nolint:gosec // G306: the pool reads it; a token of this start
+}
+
+// machineDataWiredFile is sandboxconfig.MachineDataWiredFile. A variable so a
+// test does not write the machine's own.
+var machineDataWiredFile = sandboxconfig.MachineDataWiredFile
+
+// wireMachineBoot makes a machine's mounts onto its own data and cache
+// volumes again, once per boot: its declared volumes and its sources, as the
+// first provisioning of this disk made them (provision, wireMachine). A
+// machine with no data volume, one wired already this boot, and a disk not
+// yet provisioned for the bootstrap at manifest (whose provisioning wires it) are
+// left alone.
+func (b *booter) wireMachineBoot(logger *slog.Logger, manifest string) error {
+	if !machineDataVolume() || fileExists(machineWiredPath) {
+		return nil
+	}
+	bootstrap, err := loadEffectiveConfig(manifest)
+	if err != nil {
+		return err
+	}
+	if bootstrap.SandboxID == "" || (provision.Records{Dir: recordsDir}).Sandbox() != bootstrap.SandboxID {
+		return nil
+	}
+	id, err := bootstrapIdentity(bootstrap)
+	if err != nil {
+		return err
+	}
+	expanded := bootstrap.ExpandHome(sandboxPaths, id.home)
+	volumes, err := loadResolvedVolumes(id, expanded.Volumes)
+	if err != nil {
+		return fmt.Errorf("resolve volumes: %w", err)
+	}
+	if err := b.wireVolumes(volumes, id); err != nil {
+		return err
+	}
+	if err := b.wireMachineSources(expanded.Sources, id); err != nil {
+		return err
+	}
+	logger.Info("wired a machine's data volume", "volumes", len(volumes), "sources", len(expanded.Sources))
+	return markMachineWired(bootstrap.SandboxID)
 }

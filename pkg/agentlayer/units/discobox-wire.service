@@ -10,9 +10,13 @@
 # it, and after systemd-sysusers.service, so the sandbox user is added to the
 # account files after systemd's own and never alongside them.
 #
-# Only a pool's container has the config volume. A machine, or a container run
-# without its volumes, skips this unit -- a skipped unit is not a failed one --
-# and its agent provisions from its own start instead (ADR 26-10-09-143 §1).
+# Only a pool's container has the config volume. A machine with a data volume
+# of its own mounted at /.discobox/data runs it too, to make its mounts onto
+# that volume again before anything uses them; it never fails the unit there,
+# since the agent's start wires again and fails if it cannot. A machine with
+# no data volume, or a container run without its volumes, skips this unit -- a
+# skipped unit is not a failed one -- and its agent provisions from its own
+# start instead (ADR 26-10-09-143 §1).
 #
 # A failure ends the container: sysinit.target requires this unit, so nothing
 # behind it starts, and the manager exits with a non-zero status. A sandbox
@@ -26,7 +30,8 @@ Documentation=https://github.com/discobox-ai/discobox
 DefaultDependencies=no
 After=systemd-journald.socket tmp.mount systemd-sysusers.service
 Before=local-fs.target sysinit.target systemd-tmpfiles-setup.service
-ConditionPathExists=/.discobox/config/sandbox.json
+ConditionPathExists=|/.discobox/config/sandbox.json
+ConditionPathIsMountPoint=|/.discobox/data
 FailureAction=exit-force
 FailureActionExitStatus=1
 

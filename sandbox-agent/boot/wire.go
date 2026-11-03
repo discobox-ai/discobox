@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -236,6 +237,38 @@ func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error 
 		}
 	}
 	return nil
+}
+
+// wireMachineSources bind-mounts each source's target from the machine's own
+// data volume, where its tree is kept as the volume keeps a declared path's
+// (machineSourceDir), owned as wireSources owns a container's. The sandbox
+// clones into it through the intake, as it would onto its disk, and a new
+// root keeps it.
+func (b *booter) wireMachineSources(sources []sandboxconfig.Source, id identity) error {
+	for _, s := range sources {
+		uid, gid := sourceOwner(s, id)
+		src := machineSourceDir(s.Target)
+		if err := mkdirAllOwned(src, dataMountPath, uid, gid); err != nil {
+			return fmt.Errorf("create source %s on the data volume: %w", s.Slug, err)
+		}
+		if err := mkdirAllOwned(s.Target, "/", uid, gid); err != nil {
+			return fmt.Errorf("create source target %s: %w", s.Target, err)
+		}
+		if err := bindMount(src, s.Target, false); err != nil {
+			return fmt.Errorf("wire source %s: %w", s.Slug, err)
+		}
+		if err := os.Chown(s.Target, uid, gid); err != nil {
+			return fmt.Errorf("chown source %s: %w", s.Target, err)
+		}
+	}
+	return nil
+}
+
+// machineSourceDir is where a machine's data volume keeps the source whose
+// target is target: at the target's own path under the volume, as the volume
+// keeps a declared data path (volumeDir).
+func machineSourceDir(target string) string {
+	return path.Join(dataMountPath, strings.TrimPrefix(path.Clean(target), "/"))
 }
 
 // loadEffectiveConfig reads the sandbox's effective config from the bootstrap
