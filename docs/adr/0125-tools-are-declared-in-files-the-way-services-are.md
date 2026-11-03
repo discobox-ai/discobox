@@ -3,6 +3,8 @@
 - **Status**: Accepted (§4's `/` for `{workdir}` with no working tree, and the
   consequence that such a VS Code window opens `/`, superseded by
   [0142](0142-a-host-tool-with-no-working-tree-opens-the-working-root.md);
+  §4's table of what a host tool is handed extended by
+  [26-11-03-982](26-11-03-982-a-host-tool-is-handed-the-cli-server-and-project-to-set-the-discobox-up.md);
   everything else stands)
 - **Date**: 2026-09-16
 - **Supersedes**: [26-08-27-302](26-08-27-302-a-tool-session-is-an-exec-the-launcher-labeled.md)
