@@ -1,6 +1,6 @@
 # 26-11-03-982 — A host tool is handed the CLI, server and project to set the discobox up
 
-- **Status**: Accepted
+- **Status**: Accepted (§1 amended before implementation landed: a host tool is handed no token, and the environment is a script's alone)
 - **Date**: 2026-11-03
 
   Accepted by the owner by merging #496, 2026-11-03.
@@ -42,6 +42,24 @@ A host tool is also handed:
 reads as the defaults of `--server` and `--project`. So
 `"$DISCOBOX_CLI" shell|cp "$DISCOBOX_ID" …` from the script reaches the
 same box with no flags, and nothing new is invented for a script to parse.
+
+*(Amended before implementation landed.)* A host tool is handed **no
+token**. The CLI it runs is authorized by its connection to the server, as
+any CLI is, and the user's own program has no use for a bearer token.
+`DISCOBOX_TOKEN` is set empty rather than inherited: one this process
+inherited was given for the primary server, and beside a `DISCOBOX_SERVER`
+naming a registered server it would reach that server. The iroh relay
+settings the CLI dials with are handed on, since they are how the server is
+reached, not a credential. "No flags" therefore holds wherever the connection
+authorizes the CLI; a server reached only with `--token` refuses the script's
+CLI. This covers a script, and a `.yaml` tool whose args name
+`{discobox.cli}` or `{discobox.server}`, since both run the CLI.
+
+The environment is a script's alone, as 0125 §4's table says. A `.yaml` tool
+takes the three values as placeholders. It is usually an editor, whose
+terminals inherit its environment for the life of the window, and
+`DISCOBOX_SERVER` there would aim every `discobox` in them at one box's
+server.
 
 ### 2. Config is carried; programs are fetched by the box
 
@@ -88,6 +106,11 @@ user-side skill (#493) builds on it.
   directory, against one box (0125 §5's trust rule holds unchanged). It lacked
   only these three values. Running one automatically at create time is a
   separate question, which this does not decide.
+- **Handing the tool the CLI's own token for the box's server**, as the ssh
+  ProxyCommand's environment does. *(Added with §1's amendment.)* It would
+  make a `--token` given to the parent reach the script's CLI, but it puts a
+  bearer token in a program the CLI does not control, for no need: the CLI is
+  authorized by its connection.
 - **Copying the host's binaries into the box.** Wrong OS or architecture
   whenever the user's machine is not a Linux box like the sandbox. It also
   redoes a large copy on every box, where the cache keeps one download.
