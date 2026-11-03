@@ -1,7 +1,7 @@
 # 0030 — Pool-agent polls sandbox-agent status and pushes it to the control plane
 
 - **Status**: Accepted (§3's "exactly `status:read`" superseded by
-  [ADR 26-10-11-657](26-10-11-657-a-stopped-discobox-is-read-from-what-it-last-posted.md) §1)
+  [ADR 26-10-11-657](26-10-11-657-a-stopped-discobox-is-read-from-what-it-last-posted.md) §1; §1's standing poll as the only path narrowed by [26-11-03-815](26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md), where the pool also waits on a sandbox's ports)
 - **Date**: 2026-07-24
 - **Relates to**: [ADR 0017](0017-resource-state-is-desired-and-observed-with-no-operations.md)
   §10, a separate pool-agent → control-plane reporting channel for observed
