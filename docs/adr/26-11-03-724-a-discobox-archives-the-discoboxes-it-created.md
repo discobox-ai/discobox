@@ -1,6 +1,6 @@
 # 26-11-03-724 — A discobox archives the discoboxes it created
 
-- **Status**: Accepted
+- **Status**: Accepted (§1 amended before implementation landed: no intent is recorded over a delete still converging)
 - **Date**: 2026-11-03
 
   Accepted by the owner by merging #463, 2026-11-03.
@@ -70,9 +70,19 @@ caller's reach. It sends nothing into the target, so this costs nothing in
 practice except that a worker a person widened after creating it is the
 person's to remove.
 
-The route is an instruction recorded as intent, as a person's archive is. The
-sandbox service needs no change: it records `archived` and the reconciler
-converges it.
+The route is an instruction recorded as intent, as a person's archive is: the
+sandbox service records `archived` and the reconciler converges it.
+
+The service records no intent but a delete over a delete still converging,
+whoever asks. A purge that failed, or the retention's, keeps retrying in the
+background, and an archive recorded over it would cancel it; so would the
+`present` of an upgrade or a source push, routes the role already holds.
+Without this a lead could take back a person's purge of its worker. An archive
+of such a discobox is accepted and records nothing, since the delete already
+gets it out of the way further; any other intent is refused (`409`). The
+state is read under the intent's own write. An upgrade is also refused on an
+archived discobox, where its `present` would be the unarchive §4 keeps out. *(Amended before implementation landed: as proposed, this said the
+sandbox service needed no change.)*
 
 ### 2. Purge stays refused, for every discobox
 
@@ -141,6 +151,9 @@ archive and purge). Each is archived on its own.
 
 ## Consequences
 
+- `discobox rm` of a discobox whose purge has not yet completed is accepted
+  and leaves the purge to finish; an upgrade, a source push or another intent
+  on it answers `409 sandbox is being deleted`.
 - `discobox rm <worker>` from a lead archives a worker it created. The
   manager can remove finished workers itself rather than tagging them
   `to-delete` for a person.
