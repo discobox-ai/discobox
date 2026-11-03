@@ -45,7 +45,7 @@ func (d *apiDataSource) openLocalCommand(ctx context.Context, action tui.Interac
 
 	args := d.app.globalFlags()
 	args = append(args, string(action), sandboxID)
-	env := append(os.Environ(), "DISCOBOX_TOKEN="+d.app.token)
+	env := d.app.childCLIEnv(d.app.token)
 	var reportPath string
 	if action == tui.InteractApply {
 		report, err := os.CreateTemp("", "discobox-apply-report-*.json")

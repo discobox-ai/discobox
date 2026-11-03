@@ -108,8 +108,8 @@ once:
   exec "$DISCOBOX_CLI" shell "$DISCOBOX_ID" -- tuicr "$@"
 
 A script that runs here must be executable (chmod +x); it is run by its
-shebang, and the arguments after DISCOBOX are its "$@". Everything after
-"shell DISCOBOX --" runs in the discobox, in the working tree, with
+shebang, and the arguments after DISCOBOX_ID are its "$@". Everything after
+"shell DISCOBOX_ID --" runs in the discobox, in the working tree, with
 ~/.local/bin on its PATH, and with a terminal when this one is; a ~ or $HOME
 there is expanded here, by this script's shell, so quote it into an "sh -c"
 when it means the discobox's. Paths "discobox cp" is given in a discobox are

@@ -54,8 +54,9 @@
   section as covering them.
 - **A child process that names a server sets `DISCOBOX_TOKEN` outright.**
   Start its environment from `App.childCLIEnv`, never bare `os.Environ()`, and
-  say which token it carries: the App's own for the ProxyCommand and harness
-  configure, none for a host tool, whose CLI is authorized by its transport.
+  say which token it carries: the App's own for the ProxyCommand, harness
+  configure and the console's own commands (`openLocalCommand`), none for a
+  host tool, whose CLI is authorized by its transport.
   An App aimed at a registered server carries no token (`forServer`), so an
   inherited `DISCOBOX_TOKEN` was given for the primary, and beside a
   `DISCOBOX_SERVER` naming another server it sends the primary's bearer token
@@ -72,3 +73,9 @@
   anything that documents a host tool's console key (`tools --help`, a skill)
   says it suits a tool that opens its own window; a terminal program runs
   through `discobox tools <id>`.
+- **A backport rechecks the CLI it describes against its own line.** Help
+  text, docs and tests cherry-picked from main name main's command shapes
+  (`tools TOOL [DISCOBOX]`, `admin harness`), and a call site main deleted is
+  one the cherry-pick never touches: 0.18's `openLocalCommand` kept a bare
+  `os.Environ()` after #505's `childCLIEnv` change. Read every usage string
+  and every sibling of a changed call against the release branch.
