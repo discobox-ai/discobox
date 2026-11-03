@@ -28,6 +28,7 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
 	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
+	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
 )
@@ -1772,12 +1773,22 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// is simply not what the window advertises.
 	if m.leaderArmed {
 		m.leaderArmed = false
-		if keyName(msg) == paneQuitKey {
+		// The leader's modifier still held on the second key is tolerated,
+		// and only that one, as termpane.afterPrefix tolerates it in a pane:
+		// letting go precisely between the two keystrokes is not something
+		// to have to learn. The leader itself is matched in full first, as
+		// termpane matches it, so the leader twice is not its bare letter's
+		// command: it falls through below as a mistyped leader.
+		key := keyName(msg)
+		if key != m.leader() {
+			key = strings.TrimPrefix(key, keys.Modifier(m.leader()))
+		}
+		if key == paneQuitKey {
 			return m.closeWindow()
 		}
 		// The tree's entries — the new card and the pages — open behind the
 		// leader from every screen beside the tree, as they do from a pane.
-		if a, ok := treePageFor(keyName(msg)); ok {
+		if a, ok := treePageFor(key); ok {
 			if cmd, taken := m.treeEntry(a); taken {
 				return cmd
 			}
@@ -1785,8 +1796,8 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// The list in the tree has the keys: the leader's l goes back to the
 		// panes, and z swaps it for the whole home screen and back.
 		if m.listFront {
-			switch keyName(msg) {
-			case paneRightKey, "right", "ctrl+l", "ctrl+right":
+			switch key {
+			case paneRightKey, "right":
 				m.backToPanes()
 				return nil
 			case paneZoomKey:
@@ -1795,18 +1806,18 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			// A walk the leader's ↑↓ stopped on a stopped box (switchBox)
 			// carries on from it.
-			if delta, ok := boxStep(keyName(msg)); ok && !m.treeExpanded {
+			if delta, ok := boxStep(key); ok && !m.treeExpanded {
 				return m.switchBox(delta)
 			}
 		}
 		// A page right of the tree has no pane to own the leader either: h is
 		// the way to the tree, and ↑↓ switch boxes, as they do from a pane.
 		if m.pageUp() && !m.listFront && m.treeShown() {
-			if delta, ok := boxStep(keyName(msg)); ok {
+			if delta, ok := boxStep(key); ok {
 				return m.switchBox(delta)
 			}
-			switch keyName(msg) {
-			case paneLeftKey, "left", "ctrl+h", "ctrl+left":
+			switch key {
+			case paneLeftKey, "left":
 				m.focusTree()
 				return nil
 			case boxMenuKey:
@@ -1818,11 +1829,11 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// A workspace on its way up has no pane to own the leader, so the
 		// tree's keys are answered here until it does.
 		if m.wsOpening {
-			if delta, ok := boxStep(keyName(msg)); ok {
+			if delta, ok := boxStep(key); ok {
 				return m.switchBox(delta)
 			}
-			switch keyName(msg) {
-			case paneLeftKey, "left", "ctrl+h", "ctrl+left":
+			switch key {
+			case paneLeftKey, "left":
 				if m.treeShown() {
 					m.focusTree()
 					return nil
@@ -1841,7 +1852,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// the panes the screen covers, or the band would be a sentence rather
 		// than a button and its key would move the list instead.
 		if m.audit != nil && m.inPanes() {
-			switch keyName(msg) {
+			switch key {
 			case credentialsLeaderKey:
 				return m.openCredentialDialog(m.paneBox.ID)
 			case rejectedKey:

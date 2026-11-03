@@ -35,7 +35,8 @@ terminal, the shells and services running beside it, its forwarded ports, and
 the same keys that screen has in "discobox console". The leader key then d — Ctrl-A
 d by default, and Ctrl-A Ctrl-D works too — leaves it, which detaches and exits;
 every session keeps running. Set DISCOBOX_LEADER to change the Ctrl-A when it
-collides with what you run.
+collides with what you run: another Ctrl letter, or an Alt one such as alt+g
+("discobox console --help" says what an Alt leader needs of your terminal).
 
 --raw attaches this terminal to the primary terminal directly, with no window
 around it. Stdin is always attached, and a PTY is allocated the same way the
