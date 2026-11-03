@@ -282,10 +282,10 @@ flowchart TD
   build and test cache is Depot Cache, which Depot's Linux and macOS runners
   set as `GOCACHEPROG` and every run, pull requests included, reads and writes
   per object; a runner without it builds cold. Windows builds cold: its
-  runner sets none, and `depot gocache` set by hand races on Windows file
-  renames. Any run but a pull request or a branch push turns Depot Cache off
-  (a tag's release, a dispatched one), since a pull request can write what it
-  would read.
+  runner sets `depot gocache` too, whose renames Windows refuses while
+  `go vet` holds the file open, so the action turns it off there. Any run but
+  a pull request or a branch push turns Depot Cache off (a tag's release, a
+  dispatched one), since a pull request can write what it would read.
   golangci-lint's analysis cache is Depot Cache too, through the
   `GOLANGCI_LINT_CACHEPROG` Depot's Linux runner sets. Nothing else is cached:
   modules come from the module proxy each run, which measured no slower than

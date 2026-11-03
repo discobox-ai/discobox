@@ -53,11 +53,14 @@ runs:
     # warns on a Linux or macOS runner without it, where every build starts
     # cold.
     #
-    # Windows builds cold. Depot's Windows runner sets no GOCACHEPROG, and
-    # setting `depot gocache` ourselves (CLI 2.102.25) failed about one run in
-    # eight: it renames each object over its final path even when the object
-    # is already there, and Windows refuses that while vet has the file open
-    # ("Access is denied"). Reported to Depot; set it here again once fixed.
+    # Windows builds cold: this step turns Depot Cache off there. Depot's
+    # Windows runner sets GOCACHEPROG to `depot gocache` too, and that fails
+    # about one run in eight: it renames each object over its final path even
+    # when the object is already there, and Windows refuses that while vet has
+    # the file open, so vet reports it "can't import facts" from a
+    # go-build\xx\depot-<hash>-d file "being used by another process". Seen
+    # with Depot CLI 2.102.25 set by hand (#443) and with the runner's own
+    # setting (#537). Reported to Depot; stop turning it off once fixed.
     #
     # Only for a pull request or a push to a branch. Go trusts whatever the
     # cache returns for a key, and a pull request's code can write that cache,
@@ -74,6 +77,26 @@ runs:
         SHARED: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) }}
       run: |
         if [ "$RUNNER_OS" != Linux ]; then go=go; else go='nix develop -c go'; fi
+        if [ "$SHARED" = true ] && [ "$RUNNER_OS" = Windows ]; then
+          # Only Go's: golangci-lint does not run on Windows, and nothing
+          # about its cache is known to race.
+          echo "GOCACHEPROG=" >> "$GITHUB_ENV"
+          # Go falls back to its settings file when the variable is empty, so
+          # if the runner wrote it there (go env -w), take it out of the file
+          # too. Unlike a release run, a Windows run may change that file: the
+          # cache it would read is only unsafe here, not untrusted.
+          seen=$(GOCACHEPROG= $go env GOCACHEPROG | tail -n 1)
+          if [ -n "$seen" ]; then
+            GOCACHEPROG= $go env -u GOCACHEPROG
+            seen=$(GOCACHEPROG= $go env GOCACHEPROG | tail -n 1)
+          fi
+          if [ -n "$seen" ]; then
+            echo "::error title=Depot Cache on Windows::GOCACHEPROG is still set after clearing it; depot gocache races with vet on Windows (#537)."
+            exit 1
+          fi
+          echo "Windows builds from a cold local cache: depot gocache races on Windows file renames (see the comment above this step)."
+          exit 0
+        fi
         if [ "$SHARED" != true ]; then
           # golangci-lint's cache too: no release job lints today, but one that
           # did would read results a pull request wrote.
@@ -101,8 +124,6 @@ runs:
           else
             echo "golangci-lint's cache is local to this job."
           fi
-        elif [ "$RUNNER_OS" = Windows ]; then
-          echo "Windows builds from a cold local cache: depot gocache races on Windows file renames (see the comment above this step)."
         else
           echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
         fi

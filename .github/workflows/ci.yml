@@ -7,11 +7,11 @@ name: CI
 # -8 or -16 to trade money for wall-clock. Windows is -8, chosen while it still
 # had Depot Cache: warm, -8 cut its work from 223s on -4 to 165s and -16 was no
 # faster. It now builds cold, unmeasured on -8; compiling from scratch gains
-# from more cores, so -8 stands until measured otherwise. Depot's Linux and
-# macOS runners also start every job with GOCACHEPROG pointing Go's build and
-# test cache at Depot Cache, which is fetched object by object rather than
-# restored and saved whole. Windows builds cold; see .github/actions/task for
-# why, and that it caches nothing else.
+# from more cores, so -8 stands until measured otherwise. Depot's runners
+# also start every job with GOCACHEPROG pointing Go's build and test cache at
+# Depot Cache, which is fetched object by object rather than restored and saved
+# whole. Windows builds cold all the same: .github/actions/task turns it off
+# there, says why, and that it caches nothing else.
 
 on:
   pull_request:
