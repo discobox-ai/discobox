@@ -4,14 +4,12 @@ name: CI
 
 # Runners are Depot's. The sizes below match what the GitHub-hosted equivalents
 # gave us (4 CPU / 16 GB) rather than Depot's 2-CPU default; raise the suffix to
-# -8 or -16 to trade money for wall-clock. Windows is -8, chosen while it still
-# had Depot Cache: warm, -8 cut its work from 223s on -4 to 165s and -16 was no
-# faster. It now builds cold, unmeasured on -8; compiling from scratch gains
-# from more cores, so -8 stands until measured otherwise. Depot's Linux and
-# macOS runners also start every job with GOCACHEPROG pointing Go's build and
-# test cache at Depot Cache, which is fetched object by object rather than
-# restored and saved whole. Windows builds cold; see .github/actions/task for
-# why, and that it caches nothing else.
+# -8 or -16 to trade money for wall-clock. Windows is -8: with Depot Cache warm,
+# -8 cut its work from 223s on -4 to 165s and -16 was no faster. Depot's
+# runners also start every job with GOCACHEPROG pointing Go's build and test
+# cache at Depot Cache, which is fetched object by object rather than restored
+# and saved whole; see .github/actions/task for when it is turned off, and that
+# it caches nothing else.
 
 on:
   pull_request:
