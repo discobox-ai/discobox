@@ -729,6 +729,11 @@ type poll struct {
 	// again records a read asked for while one was out. The answer in flight
 	// was taken before the asking, so it does not answer it.
 	again bool
+	// sent counts the reads sent, so the one out is read number sent. It is
+	// what says whether a read went out before or after something happened
+	// here: a count, never a clock, whose ticks two moments a few
+	// milliseconds apart can share.
+	sent uint64
 }
 
 // start reports whether to send a request now, recording that another was
@@ -739,6 +744,7 @@ func (p *poll) start(now time.Time) bool {
 		return false
 	}
 	p.since, p.again = now, false
+	p.sent++
 	return true
 }
 
@@ -1048,10 +1054,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case listLoadedMsg:
 		m.list.slow = false
-		// When this listing was asked for, which says whether it knows of an
+		// Which read this listing is, which says whether it knows of an
 		// archive answered here (sandboxList.settleArchives). One listing is
-		// out at a time, so the poll's is this one's.
-		asked := m.listPoll.since
+		// out at a time, so the poll's last is this one.
+		asked := m.listPoll.sent
 		// Whatever was asked for while this was out is asked for now, on an
 		// answer that is known to be older than the asking.
 		var again tea.Cmd
@@ -2767,7 +2773,7 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 				answered = append(answered, id)
 			}
 		}
-		m.list.answeredArchives(answered, m.now())
+		m.list.answeredArchives(answered, m.listPoll.sent)
 		m.list.unmarkArchiving(refused)
 	}
 	// The archive that left a one-command window's workspace was waiting for
