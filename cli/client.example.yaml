@@ -30,8 +30,8 @@
   # it. A relative path is relative to this file's directory, and ~ is
   # your home directory. --skills on the command line replaces this list
   # rather than adding to it. The project's skills repositories (discobox
-  # skills) are added ahead of these either way. discobox skills add DIR
-  # and rm DIR edit this list in place.
+  # admin skills) are added ahead of these either way. discobox admin
+  # skills add DIR and rm DIR edit this list in place.
   # Example: skills: ["~/team-skills"]
   #skills:
 

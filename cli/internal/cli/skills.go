@@ -55,7 +55,7 @@ func projectSkills(ctx context.Context, client *apiclientgen.Client, projectID s
 	for _, source := range sources {
 		repo, err := projectSkillsRepository(source)
 		if err != nil {
-			return nil, fmt.Errorf("%w; remove it with discobox skills rm %s, or leave the project's out with --no-project-skills", err, source.ID)
+			return nil, fmt.Errorf("%w; remove it with discobox admin skills rm %s, or leave the project's out with --no-project-skills", err, source.ID)
 		}
 		out = append(out, repo)
 	}
@@ -121,7 +121,7 @@ func (a *App) newSkillsCommand() *cobra.Command {
 	return cmd
 }
 
-// skillsListing is `discobox skills ls --output json`.
+// skillsListing is `discobox admin skills ls --output json`.
 type skillsListing struct {
 	Project []apimodel.ProjectSkillsSource `json:"project"`
 	Client  clientSkills                   `json:"client"`
