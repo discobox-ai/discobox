@@ -249,11 +249,16 @@ func (b *browserRun) Write(p []byte) (int, error) {
 }
 
 // serve wraps the origin the browser loads, recording each request it makes.
+// Inside a sandbox the sandbox-agent's port probe reaches it too, and is no
+// request of the browser's (REVIEW.md): left in, it would stand where "none"
+// says the browser never reached the server at all.
 func (b *browserRun) serve(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b.mu.Lock()
-		b.requests = append(b.requests, r.Method+" "+r.URL.Path)
-		b.mu.Unlock()
+		if r.Header.Get("User-Agent") != "discobox-sandbox-agent (port probe)" {
+			b.mu.Lock()
+			b.requests = append(b.requests, r.Method+" "+r.URL.Path)
+			b.mu.Unlock()
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -312,6 +317,11 @@ func (b *browserRun) open(t *testing.T, url string) {
 	)
 	cmd.Stdout = b
 	cmd.Stderr = b
+	// The browser's children share its output, so Wait would also wait for
+	// every renderer to close it: one that outlives the browser, stuck, would
+	// hold the exit await fails on, and the cleanup below, until go test's own
+	// timeout. WaitDelay bounds that wait once the browser itself has gone.
+	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start %s: %v", b.path, err)
 	}
