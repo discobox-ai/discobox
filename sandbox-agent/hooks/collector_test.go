@@ -60,7 +60,7 @@ func TestPublishRecordsHarnessHook(t *testing.T) {
 // open makes that reliance fail on every platform.
 func TestPublishReadsTheReplyLineWithoutWaitingForClose(t *testing.T) {
 	socketPath := filepath.Join(shorttmp.Dir(t), "hooks.sock")
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socketPath)
 	if err != nil {
 		t.Fatal(err)
 	}
