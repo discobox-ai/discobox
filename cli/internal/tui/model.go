@@ -618,21 +618,8 @@ func (m *Model) made() *Sandbox {
 // on their own, so a slow server delays the rows rather than the window. The
 // harnesses are read here rather than when their screen is opened because the
 // run options offer them as the harness to run.
-//
-// The terminal's size is asked for again here because the one the runtime
-// started with can already be wrong. Bubble Tea reads it, draws the first frame,
-// and only then starts listening for SIGWINCH, so a terminal that is still
-// settling as the window opens resizes into that gap unheard. The renderer then
-// draws a full-screen frame for rows that are not there: the alternate screen
-// scrolls, everything it draws in place afterwards lands that many rows off,
-// and only the cells that change get repainted. The composer's placeholder
-// glint was the visible casualty, left two rows under the prompt. The size is
-// read again from the event loop, which starts after the listener's goroutine
-// does, so all but a vanishing gap is covered: a size that changes after this
-// is heard the usual way. Closing that last gap is Bubble Tea's to do, by
-// listening before it first reads the size.
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestWindowSize, textarea.Blink, probeProgramStatus(), m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.loadPools(), m.tick(), m.startShimmer()}
+	cmds := []tea.Cmd{textarea.Blink, probeProgramStatus(), m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.loadPools(), m.tick(), m.startShimmer()}
 	// An attach opens on its workspace rather than on the prompt, from the row
 	// the command already has: waiting for the listing to come back would hold
 	// the attach behind a request it does not need. The listing is still read,
@@ -996,6 +983,27 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
+		// A size that changes the window's is read again, because the one
+		// the runtime opened with can be wrong twice over. Bubble Tea reads
+		// it, draws the first frame, and only then starts listening for
+		// SIGWINCH, so a terminal still settling as the window opens resizes
+		// into that gap unheard. And it hands that first size over from a
+		// goroutine of its own, so on a loaded machine it can arrive after a
+		// size read later and put the stale one back. Either way the renderer
+		// draws a full-screen frame for rows that are not there: the
+		// alternate screen scrolls, everything drawn in place afterwards
+		// lands that many rows off, and the composer's glint was left two
+		// rows under the prompt. The read is answered from the event loop,
+		// after the listener has started, and a late stale size is itself a
+		// change, so it is read past too. A read that finds the size the
+		// window has asks nothing further, so this ends as soon as the
+		// terminal holds still. Closing the gap is Bubble Tea's to do, by
+		// listening before it first reads the size and sending that size in
+		// order.
+		var reread tea.Cmd
+		if msg.Width != m.screenWidth || msg.Height != m.height {
+			reread = tea.RequestWindowSize
+		}
 		m.width, m.height = msg.Width, msg.Height
 		m.screenWidth = msg.Width
 		m.syncWidth()
@@ -1003,7 +1011,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// Columns mean nothing across a resize; see the panes' own clearing.
 		m.chromeSel.Clear()
 		m.layout()
-		return nil
+		return reread
 
 	case sessionLoadedMsg:
 		if msg.err != nil {

@@ -1723,12 +1723,14 @@ func commandName(cmd tea.Cmd) string {
 	return "an unnamed command"
 }
 
-// repaints reports whether a command carries Bubble Tea's whole-screen redraw.
+// carries reports whether a command, or any command it batches, produces want.
 //
-// The message is unexported, so it is matched against the one tea.ClearScreen
-// itself produces rather than by name; both are empty structs, and comparing
-// them is the only handle a test has on it.
-func repaints(t *testing.T, cmd tea.Cmd) bool {
+// Bubble Tea's own requests (a whole-screen redraw, a size query) are unexported
+// messages, so they are matched against the one the exported command itself
+// produces (tea.ClearScreen(), tea.RequestWindowSize()) rather than by name;
+// both are empty structs, and comparing them is the only handle a test has on
+// them.
+func carries(t *testing.T, cmd tea.Cmd, want tea.Msg) bool {
 	t.Helper()
 	if cmd == nil {
 		return false
@@ -1739,13 +1741,13 @@ func repaints(t *testing.T, cmd tea.Cmd) bool {
 	}
 	if batch, ok := msg.(tea.BatchMsg); ok {
 		for _, sub := range batch {
-			if repaints(t, sub) {
+			if carries(t, sub, want) {
 				return true
 			}
 		}
 		return false
 	}
-	return msg == tea.ClearScreen()
+	return msg == want
 }
 
 func typeString(s string) []tea.Msg {
