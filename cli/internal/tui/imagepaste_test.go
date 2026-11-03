@@ -311,26 +311,28 @@ func TestCtrlVWithAnImageOnAWatchedClipboardCarriesItIn(t *testing.T) {
 // matters most.
 func TestALeaderOnAnImageKeyIsTheLeader(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := New(t.Context(), ds, WithLeader("alt+v"))
-	m.logo = logo{}
-	var asked atomic.Int32
-	m.readClipboard = func(context.Context) ([]clipimage.Image, error) {
-		asked.Add(1)
-		return []clipimage.Image{{Name: "clipboard.png", Data: []byte("pixels")}}, nil
-	}
-	d := newDriver(t, m)
-	d.start()
-	d.wait("the list", func() bool { return m.focus == focusList })
-	d.key("enter")
-	d.wait("the pane", func() bool { return m.focus == focusPane })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		m := New(t.Context(), ds, WithLeader("alt+v"))
+		m.logo = logo{}
+		var asked atomic.Int32
+		m.readClipboard = func(context.Context) ([]clipimage.Image, error) {
+			asked.Add(1)
+			return []clipimage.Image{{Name: "clipboard.png", Data: []byte("pixels")}}, nil
+		}
+		d := newDriver(t, m)
+		d.start()
+		d.wait("the list", func() bool { return m.focus == focusList })
+		d.key("enter")
+		d.wait("the pane", func() bool { return m.focus == focusPane })
 
-	d.key("alt+v")
-	d.key("q")
-	if !m.quit {
-		t.Fatal("alt+v q should quit the window under an alt+v leader")
-	}
-	if asked.Load() != 0 {
-		t.Fatal("the leader was taken as an image paste")
-	}
+		d.key("alt+v")
+		d.key("q")
+		if !m.quit {
+			t.Fatal("alt+v q should quit the window under an alt+v leader")
+		}
+		if asked.Load() != 0 {
+			t.Fatal("the leader was taken as an image paste")
+		}
+	})
 }
