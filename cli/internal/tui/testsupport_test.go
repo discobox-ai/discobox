@@ -93,8 +93,14 @@ type fakeSource struct {
 	// from, the way a window listing more than one server does.
 	unreachable []string
 	// listed is when the listing says each server last answered.
-	listed    map[string]time.Time
-	workspace SourceWorkspace
+	listed map[string]time.Time
+	// servers is which listed server each address's server half names, for
+	// AddressedServer: absent is a server the window does not list.
+	servers map[string]string
+	// unsureServers is what AddressedServer says about the servers that did
+	// not say who they are, for an address it matched to none.
+	unsureServers error
+	workspace     SourceWorkspace
 	// resolved records every source handed to ResolveSource, and sourceErr is
 	// what it answers with — a directory that is not on this machine.
 	resolved  []string
@@ -812,6 +818,16 @@ func (f *fakeSource) RunHostTool(_ context.Context, id, toolID string) error {
 	defer f.mu.Unlock()
 	f.editors = append(f.editors, editorOpen{id: id, tool: toolID})
 	return f.hostToolErr
+}
+
+func (f *fakeSource) AddressedServer(_ context.Context, server string) (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	name, ok := f.servers[server]
+	if !ok && f.unsureServers != nil {
+		return "", false, f.unsureServers
+	}
+	return name, ok, nil
 }
 
 func (f *fakeSource) Addresses(_ context.Context, id string) (Addresses, error) {

@@ -2420,6 +2420,18 @@ type DataSource interface {
 	// suspends it.
 	EditToolFile(ctx context.Context, file ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
 
+	// AddressedServer is which of the servers the window lists a discobox
+	// address's server half names (endpoint.SandboxAddress.Server), by the
+	// name its rows carry in Sandbox.Server: empty when the window lists one.
+	// A server is matched however it was written, by its endpoint and by its
+	// peer ID (ADR 26-11-03-113 §4), since a box's own address names its
+	// server by peer ID and the window usually knows the server some other
+	// way. known is false for a server the window does not list. It is never
+	// dialed to find out, and never registered. err, when known is false,
+	// names the listed servers whose peer ID could not be learned in time:
+	// the address may be one of theirs.
+	AddressedServer(ctx context.Context, server string) (name string, known bool, err error)
+
 	// Addresses is how to reach one discobox from a shell on this machine.
 	//
 	// Resolving them refreshes the project's managed ssh_config, the same file

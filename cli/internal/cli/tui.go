@@ -1428,6 +1428,85 @@ func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) erro
 	return err
 }
 
+// AddressedServer matches an address's server half against the servers the
+// window lists: by endpoint first, the way serverKey makes one server of two
+// spellings, and then by the peer ID the address names, against each
+// server's — recorded, or asked of it once (ADR 26-11-03-113 §4). Only the
+// servers already listed are asked, all at once, so one that is slow costs
+// the press its bound rather than every server after it its turn.
+func (d *apiDataSource) AddressedServer(ctx context.Context, address string) (string, bool, error) {
+	set, err := d.app.servers()
+	if err != nil {
+		return "", false, err
+	}
+	named := func(s *server) (string, bool, error) {
+		// A window with one server names none on its rows.
+		if len(set) == 1 {
+			return "", true, nil
+		}
+		return s.name, true, nil
+	}
+	key := serverKey(address)
+	for _, s := range set {
+		if serverKey(s.address) == key {
+			return named(s)
+		}
+	}
+	peer := addressPeerID(address)
+	if peer == "" {
+		return "", false, nil
+	}
+	ids := make([]string, len(set))
+	answered := make([]bool, len(set))
+	var wg sync.WaitGroup
+	for i, s := range set {
+		wg.Go(func() { ids[i], answered[i] = d.serverPeerID(ctx, s) })
+	}
+	wg.Wait()
+	var silent []string
+	for i, s := range set {
+		if samePeer(peer, ids[i]) {
+			return named(s)
+		}
+		if !answered[i] {
+			silent = append(silent, s.name)
+		}
+	}
+	if len(silent) > 0 {
+		return "", false, fmt.Errorf("%s did not say what peer ID it has", strings.Join(silent, ", "))
+	}
+	return "", false, nil
+}
+
+// serverPeerID is a listed server's peer ID: the one it was registered with,
+// or the one its address names, or else what it says when asked, kept for the
+// next time. answered is false only for a server that could not be asked in
+// time; one that answered that it has none (a server from before ADR 0117)
+// answered, with an empty ID.
+func (d *apiDataSource) serverPeerID(ctx context.Context, s *server) (id string, answered bool) {
+	d.mu.Lock()
+	id = s.id
+	d.mu.Unlock()
+	if id != "" {
+		return id, true
+	}
+	if id = addressPeerID(s.address); id == "" {
+		ctx, cancel := context.WithTimeout(ctx, serverInfoTimeout)
+		defer cancel()
+		identity := s.app.serverIdentity(ctx)
+		if identity.Failed {
+			return "", false
+		}
+		id = identity.PeerID
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if s.id == "" {
+		s.id = id
+	}
+	return s.id, true
+}
+
 // Addresses is how to reach one discobox from a shell on this machine: the ssh
 // command that opens a session in it, and the git URL of its primary source.
 //

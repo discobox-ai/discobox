@@ -156,6 +156,21 @@
   run stopped for, and answering a question put up over the wait, were missed
   the same way. This is the third time: check every path a new modal or
   overlay closes by — key, click, detach, failure — for what it uncovers.
+  A box link pressed in a bare attach was the fourth: `landOn` would have
+  parked the attached box and opened another, while `m.attach` and `made()`
+  went on naming the first. A path reachable inside such a window that
+  would switch to a *different* box decides what the window does instead
+  (`focusAddressed` says how to open it); opening the window's own box, as
+  a run does with the box it made, is what the window is for.
+
+- **Text the window builds from a pane's output is box-written.** A link
+  in a pane, and everything parsed out of one, was printed by the program
+  in the box, and the status line is drawn outside every pane's emulator.
+  This package has no escaping helper of its own (`terminalSafe` is
+  `internal/cli`'s, cli/REVIEW.md), so such a value goes into a message with
+  `%q`, never `%s` or `+` (`say` in `boxlinks.go`). Parsing makes it worse,
+  not better: `ParseSandboxAddress` percent-decodes the path, so a link that
+  is plain printable text turns into an ID carrying a real ESC.
 
 ## The workspace tree
 

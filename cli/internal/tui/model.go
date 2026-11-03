@@ -268,6 +268,14 @@ type Model struct {
 	// their kind, when you would rather copy a stack trace than click on it.
 	mouseSeized bool
 
+	// boxLinkPress is whether the left button went down on a box link in a
+	// pane: the press was the window's, so its drag and release are too, and
+	// the program in the pane hears of none of it. boxLinkClicked is whether
+	// the last press counted (countClick) was one, which is how the second
+	// press of a double click is told apart (boxLinkEcho). See boxlinks.go.
+	boxLinkPress   bool
+	boxLinkClicked bool
+
 	// mouseCapture is the pane a left-button gesture started in, which owns
 	// every mouse event until the button is released: a drag that crosses a
 	// border must not change hands mid-gesture. Zero when no gesture is open.
@@ -1217,6 +1225,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case narrationMsg:
 		return m.narrated(msg)
+
+	case boxLinkServerMsg:
+		return m.boxLinkServer(msg)
 
 	case statusMsg:
 		// A message is an answer to the last key, so it goes when the next
