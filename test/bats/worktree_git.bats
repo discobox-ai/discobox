@@ -3,9 +3,8 @@
 #
 # The worktree Git route end to end (ADR 0126 §4): a discobox's own repository
 # is served by the sandbox agent inside it, and the control plane and the pool
-# agent only forward to it. a Git client fetches through it, and a client
-# clones, pushes and fetches through it with plain git, against a real Docker
-# pool and a real sandbox.
+# agent only forward to it. A client clones, pushes and fetches through it with
+# plain git, against a real Docker pool and a real sandbox.
 #
 # Like docker_cli.bats it drives the development stack that is already running
 # (`task dev`) and owns only what it creates: one discobox, purged by its
@@ -39,7 +38,8 @@ setup_file() {
   # The developer's repository the discobox is cut from.
   export DISCOBOX_BATS_LOCAL="$BATS_SUITE_TMPDIR/local"
   git init -q -b main "$DISCOBOX_BATS_LOCAL"
-  # apply cherry-picks here, and the global configuration is switched off.
+  # The identity `run` gives the discobox, read from here: the global
+  # configuration is switched off.
   git -C "$DISCOBOX_BATS_LOCAL" config user.name Bats
   git -C "$DISCOBOX_BATS_LOCAL" config user.email bats@example.com
   echo one >"$DISCOBOX_BATS_LOCAL/README.md"
@@ -60,6 +60,15 @@ setup_file() {
   DISCOBOX_BATS_PROJECT_ID="$(printf '%s' "$box" | jq -r .projectId)"
   DISCOBOX_BATS_POOL_ID="$(printf '%s' "$box" | jq -r .poolId)"
   export DISCOBOX_BATS_PROJECT_ID DISCOBOX_BATS_POOL_ID
+  # The agent serves TLS alone unless its pool turns that off (ADR
+  # 26-10-29-481 §3).
+  local pool
+  pool="$(cli admin pool get "$DISCOBOX_BATS_POOL_ID" -o json)"
+  DISCOBOX_BATS_AGENT_SCHEME=https
+  if printf '%s' "$pool" | jq -e .disableAgentEndpointTls >/dev/null; then
+    DISCOBOX_BATS_AGENT_SCHEME=http
+  fi
+  export DISCOBOX_BATS_AGENT_SCHEME
   export DISCOBOX_BATS_URL="$DISCOBOX_BATS_SERVER/projects/$DISCOBOX_BATS_PROJECT_ID/sandboxes/$DISCOBOX_BATS_SANDBOX_ID/git-repositories/primary.git"
 }
 
@@ -99,7 +108,6 @@ wait_for_ready() {
 sandbox_container() {
   echo "discobox-sandbox-$DISCOBOX_BATS_POOL_ID-$DISCOBOX_BATS_SANDBOX_ID"
 }
-
 
 @test "the worktree route clones, takes a push into the checkout, and fetches" {
   local clone="$BATS_TEST_TMPDIR/clone"
@@ -145,13 +153,15 @@ sandbox_container() {
 # The sandbox agent authorizes the route on its own (ADR 0126 §5): reaching
 # it inside the discobox, past the control plane and the pool, gets nothing
 # without a token it accepts. Which scope reads and which pushes is covered
-# with signed tokens at each hop by the Go tests.
+# with signed tokens at each hop by the Go tests. The discobox holds no copy of
+# its pool's CA, and what this checks is the token, not who answered, so curl
+# does not verify the agent's certificate.
 @test "the sandbox agent refuses the route without a token it accepts" {
-  local base="http://127.0.0.1:3003/api/projects/$DISCOBOX_BATS_PROJECT_ID/sandboxes/$DISCOBOX_BATS_SANDBOX_ID/git-repositories/primary.git"
-  run docker exec "$(sandbox_container)" curl -s -o /dev/null -w '%{http_code}' "$base/info/refs?service=git-upload-pack"
+  local base="$DISCOBOX_BATS_AGENT_SCHEME://127.0.0.1:3003/api/projects/$DISCOBOX_BATS_PROJECT_ID/sandboxes/$DISCOBOX_BATS_SANDBOX_ID/git-repositories/primary.git"
+  run docker exec "$(sandbox_container)" curl -sk -o /dev/null -w '%{http_code}' "$base/info/refs?service=git-upload-pack"
   [ "$status" -eq 0 ]
   [ "$output" = 401 ]
-  run docker exec "$(sandbox_container)" curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer not-a-token' -X POST "$base/git-receive-pack"
+  run docker exec "$(sandbox_container)" curl -sk -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer not-a-token' -X POST "$base/git-receive-pack"
   [ "$status" -eq 0 ]
   [ "$output" = 401 ]
 }
