@@ -192,12 +192,21 @@ func runOnTerminal(t *testing.T, helper, dir, until string) (string, string) {
 		}
 	}
 
-	after, err := unix.IoctlGetTermios(int(tty.Fd()), unix.TCGETS)
-	if err != nil {
-		t.Fatal(err)
+	// The guard is a process of its own, not waited for above, and it restores
+	// the mode only after its message is written: the message arriving says the
+	// restore is about to happen, not that it has. So the mode is polled until
+	// it is the one from before, and only a mode still changed at the deadline
+	// is one the guard left behind.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		after, err := unix.IoctlGetTermios(int(tty.Fd()), unix.TCGETS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.Lflag == before.Lflag && after.Iflag == before.Iflag && after.Oflag == before.Oflag {
+			return got, ""
+		}
+		if time.Now().After(deadline) {
+			return got, fmt.Sprintf("the terminal was left in another mode: lflag %#x -> %#x", before.Lflag, after.Lflag)
+		}
 	}
-	if after.Lflag != before.Lflag || after.Iflag != before.Iflag || after.Oflag != before.Oflag {
-		return got, fmt.Sprintf("the terminal was left in another mode: lflag %#x -> %#x", before.Lflag, after.Lflag)
-	}
-	return got, ""
 }
