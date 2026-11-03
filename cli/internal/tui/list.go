@@ -55,6 +55,16 @@ type sandboxList struct {
 	// way until then.
 	showArchived bool
 
+	// archiving is the discoboxes an archive was asked for here, listed as
+	// archived from the press on rather than once the server has answered and
+	// the list has been read again: the row leaves the list at once, as an
+	// archived box does (markArchiving). The time is when the archive was
+	// answered, zero while it is out. A listing asked for before then may
+	// still say the box is running, so the mark holds until one asked for
+	// after it lands (settleArchives). A failed archive drops it at once
+	// (unmarkArchiving).
+	archiving map[string]archiveMark
+
 	// inTree is the list drawn as the workspace tree's narrow column. A
 	// row's tags go on a line of their own under it rather than beside the
 	// name: a column that narrow gives the name all of its width and the tags
@@ -130,19 +140,37 @@ func newSandboxList(session Session) *sandboxList {
 // setAll takes a refreshed listing, keeping the cursor on the sandbox it was
 // on rather than on the row number it was at: a list that reorders under you
 // while something starts up would otherwise move the cursor onto a different
-// sandbox between the key press and the action.
+// sandbox between the key press and the action. A box whose archive is out
+// is listed as archived however the listing has it (archiving).
 func (l *sandboxList) setAll(all []Sandbox) {
 	l.loaded = true
+	l.keepingCursor(func() {
+		for i := range all {
+			if mark, ok := l.archiving[all[i].ID]; ok && all[i].State != StateArchived {
+				mark.was = all[i].State
+				l.archiving[all[i].ID] = mark
+				all[i].State = StateArchived
+			}
+		}
+		l.all = all
+		l.index = make(map[boxRef]int, len(all))
+		for i, s := range all {
+			l.index[boxRef{s.Server, s.ID}] = i
+		}
+	})
+}
+
+// keepingCursor makes a change to the rows and puts the cursor back on the box
+// it was on. The box is read before the change: the rows may be changed in
+// place (markArchiving), and read after, a box that has left the list is one
+// the cursor was never on. A cursor whose box has left stays at its row
+// number, on the row that takes its place.
+func (l *sandboxList) keepingCursor(change func()) {
 	var on boxRef
 	if s := l.current(); s != nil {
 		on = boxRef{s.Server, s.ID}
 	}
-	l.all = all
-	l.index = make(map[boxRef]int, len(all))
-	for i, s := range all {
-		l.index[boxRef{s.Server, s.ID}] = i
-	}
-
+	change()
 	if on.id != "" {
 		for i, s := range l.rows() {
 			if (boxRef{s.Server, s.ID}) == on {
@@ -154,7 +182,70 @@ func (l *sandboxList) setAll(all []Sandbox) {
 	l.clamp()
 }
 
-// rows is what is actually displayed, after the two filters.
+// archiveMark is one discobox's archive that is out or not yet settled
+// (sandboxList.archiving).
+type archiveMark struct {
+	// answered is when the archive was answered, zero while it is out.
+	answered time.Time
+	// was is the state the latest listing gave the box, which is what a
+	// failed archive puts back.
+	was State
+}
+
+// markArchiving lists the discoboxes an archive is going out for as archived
+// (archiving). The cursor stays on the box it was on; one on an archived box
+// goes to the row that takes its place, as neighbor says.
+func (l *sandboxList) markArchiving(ids []string) {
+	if l.archiving == nil {
+		l.archiving = map[string]archiveMark{}
+	}
+	for _, id := range ids {
+		l.archiving[id] = archiveMark{}
+	}
+	l.setAll(l.all)
+}
+
+// answeredArchives records that the archives for ids were answered at, so
+// that the first listing asked for after it is the one that settles them.
+func (l *sandboxList) answeredArchives(ids []string, at time.Time) {
+	for _, id := range ids {
+		if mark, ok := l.archiving[id]; ok {
+			mark.answered = at
+			l.archiving[id] = mark
+		}
+	}
+}
+
+// unmarkArchiving drops the marks of archives that failed, putting the rows
+// back in the state the latest listing gave them: the box is where it was.
+func (l *sandboxList) unmarkArchiving(ids []string) {
+	l.keepingCursor(func() {
+		for _, id := range ids {
+			mark, ok := l.archiving[id]
+			if !ok {
+				continue
+			}
+			delete(l.archiving, id)
+			for i := range l.all {
+				if l.all[i].ID == id && mark.was != "" {
+					l.all[i].State = mark.was
+				}
+			}
+		}
+	})
+}
+
+// settleArchives drops the marks of archives answered before a listing was
+// asked for: that listing has the server's word on them, and an answered
+// archive is listed as archiving, which the window lists as archived.
+func (l *sandboxList) settleArchives(asked time.Time) {
+	for id, mark := range l.archiving {
+		if !mark.answered.IsZero() && !asked.Before(mark.answered) {
+			delete(l.archiving, id)
+		}
+	}
+}
+
 // setPending stamps each row with how many credential requests are waiting on
 // it. The count lives on the row rather than being looked up while drawing, so
 // the draw stays a pure function of what the list holds.
@@ -164,6 +255,7 @@ func (l *sandboxList) setPending(byBox map[string][]CredentialRequest) {
 	}
 }
 
+// rows is what is actually displayed, after the two filters.
 func (l *sandboxList) rows() []Sandbox {
 	out := l.nest()
 	// Grouped by section, and newest-first inside one as everywhere else: the
