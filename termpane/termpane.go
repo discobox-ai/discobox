@@ -232,12 +232,12 @@ func WithReadOnly() Option {
 //   - prefix then any key → the prefix and then that key, so a mistyped prefix
 //     costs nothing
 //
-// A key typed after the prefix matches whether or not Ctrl was still held — see
-// [afterPrefix].
+// A key typed after the prefix matches whether or not the prefix's modifier
+// was still held — see [Model.afterPrefix].
 //
 // A detach key the application would otherwise want — Ctrl-C is the obvious one
 // — is exactly why the prefix is there. Both are Bubble Tea key names, as
-// [tea.KeyPressMsg.String] reports them: "ctrl+a", "ctrl+c", "d".
+// [tea.KeyPressMsg.String] reports them: "ctrl+a", "alt+g", "ctrl+c", "d".
 func WithPrefix(prefix, detach string) Option {
 	return func(o *options) { o.prefix, o.detach = prefix, detach }
 }
@@ -306,18 +306,19 @@ func WithPrefixBinding(key string, msg tea.Msg) Option {
 	return bindPrefix(key, prefixBinding{msg: msg})
 }
 
-// WithRepeatingPrefixBinding is a binding that holds the prefix open while Ctrl
-// is held, so the prefix followed by Ctrl-<key> Ctrl-<key> keeps firing without
-// pressing the prefix again.
+// WithRepeatingPrefixBinding is a binding that holds the prefix open while the
+// prefix's modifier is held — Ctrl for a Ctrl prefix, Alt for an Alt one — so
+// the prefix followed by Ctrl-<key> Ctrl-<key> keeps firing without pressing
+// the prefix again.
 //
 // It is for the bindings you use in runs — moving between panes, resizing them —
-// where letting go of Ctrl is what says you are done. tmux spells this as a
+// where letting go of the modifier is what says you are done. tmux spells this as a
 // repeat flag on a timer; keying it to the modifier instead means a sequence
 // ends when you stop holding it rather than when a clock runs out, which is
 // both quicker and never ambiguous.
 //
-// While the run is open, only the repeating keys — still under Ctrl — are
-// taken. Any other key ends the run and goes to the application, bound letters
+// While the run is open, only the repeating keys — still under the modifier —
+// are taken. Any other key ends the run and goes to the application, bound letters
 // included: the prefix was held open for the run, not re-pressed, so the key
 // after it is the first keystroke of whatever you type next rather than a
 // second command.
@@ -749,10 +750,10 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	if lead := m.chordLead; lead != "" {
 		// The lead consumed the prefix, so what arrives now is the second half
 		// of one command. It is matched the same way the first half was, held
-		// Ctrl and all.
+		// modifier and all.
 		m.chordLead = ""
 		for key, bound := range m.opts.bindings[lead].chord {
-			if afterPrefix(name, key) {
+			if m.afterPrefix(name, key) {
 				return func() tea.Msg { return bound }
 			}
 		}
@@ -768,12 +769,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.prefixArmed, m.prefixRepeat = false, false
 		if inRun {
 			// Mid-run the prefix is open only as a courtesy to the run: the
-			// repeating keys, still under Ctrl, continue it. Anything else —
-			// a bound letter included — ends the run and belongs to the
-			// application, or a run of moves followed by a word would fire a
-			// binding per letter.
+			// repeating keys, still under the prefix's modifier, continue
+			// it. Anything else — a bound letter included — ends the run and
+			// belongs to the application, or a run of moves followed by a
+			// word would fire a binding per letter.
 			for key, bound := range m.opts.bindings {
-				if bound.repeat && msg.Mod&tea.ModCtrl != 0 && afterPrefix(name, key) {
+				if bound.repeat && msg.Mod&m.prefixMod() != 0 && m.afterPrefix(name, key) {
 					m.prefixArmed, m.prefixRepeat = true, true
 					return func() tea.Msg { return bound.msg }
 				}
@@ -789,7 +790,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			// leader like Ctrl-A that letter is one a host will want.
 			m.sendEncoded(prefixKey(m.opts.prefix))
 			return nil
-		case afterPrefix(name, m.opts.detach):
+		case m.afterPrefix(name, m.opts.detach):
 			// The detach key typed after the prefix is that key, sent on: it is
 			// how the application gets the one keystroke the pane has taken —
 			// its own interrupt, most of the time.
@@ -797,7 +798,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		for key, bound := range m.opts.bindings {
-			if !afterPrefix(name, key) {
+			if !m.afterPrefix(name, key) {
 				continue
 			}
 			if bound.chord != nil {
@@ -806,9 +807,9 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 				m.chordLead = key
 				return nil
 			}
-			// A repeating binding leaves the prefix armed while Ctrl is still
-			// down, so a run of them is one chord rather than one per step.
-			if bound.repeat && msg.Mod&tea.ModCtrl != 0 {
+			// A repeating binding leaves the prefix armed while its modifier
+			// is still down, so a run of them is one chord rather than one per step.
+			if bound.repeat && msg.Mod&m.prefixMod() != 0 {
 				m.prefixArmed, m.prefixRepeat = true, true
 			}
 			return func() tea.Msg { return bound.msg }
@@ -831,28 +832,47 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// afterPrefix matches a key typed after the prefix, ignoring whether Ctrl was
-// still held.
+// afterPrefix matches a key typed after the prefix, ignoring whether the
+// prefix's own modifier — Ctrl for ctrl+a, Alt for alt+g — was still held.
 //
-// Holding Ctrl through the pair is what everyone does — the prefix is a Ctrl
-// chord, and letting go precisely between the two keystrokes is a skill nobody
-// should have to acquire. GNU screen has bound both forms of most of its
-// commands for decades for exactly this reason; tmux binds only the bare form
-// and the control variant silently does nothing.
+// Holding it through the pair is what everyone does — the prefix is a chord,
+// and letting go precisely between the two keystrokes is a skill nobody should
+// have to acquire. GNU screen has bound both forms of most of its commands for
+// decades for exactly this reason; tmux binds only the bare form and the
+// control variant silently does nothing.
 //
 // It applies only after the prefix. The detach key on its own is matched
 // exactly, because there the bare letter is one you type constantly.
 //
-// The cost is that the un-controlled forms of the reserved keys are spoken for:
-// with Ctrl-C as detach, prefix then "c" sends an interrupt rather than the
-// letter. That is screen's bargain too, and prefix-then-a-plain-letter is not
-// something anyone types on purpose.
-func afterPrefix(name, want string) bool {
+// The cost is that the unmodified forms of the reserved keys are spoken for:
+// with a Ctrl prefix and Ctrl-C as detach, prefix then "c" sends an interrupt
+// rather than the letter. That is screen's bargain too, and
+// prefix-then-a-plain-letter is not something anyone types on purpose.
+func (m *Model) afterPrefix(name, want string) bool {
 	if want == "" {
 		return false
 	}
-	return name == want ||
-		strings.TrimPrefix(name, "ctrl+") == strings.TrimPrefix(want, "ctrl+")
+	mod := m.prefixMod()
+	return name == want || withoutMod(name, mod) == withoutMod(want, mod)
+}
+
+// prefixMod is the modifier the prefix is held with, the one a key after it
+// may still carry: see [Model.afterPrefix].
+func (m *Model) prefixMod() tea.KeyMod {
+	_, mod, _ := parseKeyName(m.opts.prefix)
+	return mod
+}
+
+// withoutMod drops the modifiers in mod from a key name, in the order
+// [tea.KeyPressMsg.String] spells them.
+func withoutMod(name string, mod tea.KeyMod) string {
+	if mod&tea.ModCtrl != 0 {
+		name = strings.TrimPrefix(name, "ctrl+")
+	}
+	if mod&tea.ModAlt != 0 {
+		name = strings.TrimPrefix(name, "alt+")
+	}
+	return name
 }
 
 // prefixKey rebuilds a reserved key as a key press, for the cases where it has
@@ -901,8 +921,8 @@ func parseKeyName(name string) (rune, tea.KeyMod, bool) {
 func (m *Model) PrefixArmed() bool { return m.prefixArmed }
 
 // SetPrefixArmed opens or closes the prefix sequence. Opening it opens the
-// run form — only the repeating keys, still under Ctrl, are taken; anything
-// else goes to the application — because carrying a mid-run sequence to the
+// run form — only the repeating keys, still under the prefix's modifier, are
+// taken; anything else goes to the application — because carrying a mid-run sequence to the
 // pane focus moved to is what the setter exists for, and a run must mean the
 // same thing on the pane it lands on as on the one it left.
 func (m *Model) SetPrefixArmed(armed bool) {
