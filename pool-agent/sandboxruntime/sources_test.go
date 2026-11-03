@@ -127,15 +127,23 @@ func (r *DockerSandboxRuntime) readRuntimeConfigRecord(t *testing.T) (sandboxcon
 
 // fakeSourcesAgent is the sandbox agent's two source routes: it checks the
 // pool-signed token the way the agent does, and answers with the states it is
-// told to, in order, and with a project layer.
+// told to, in order, and with a project layer. Reads from holdFrom on, when
+// it is set, are held unanswered until the caller gives up on them.
 type fakeSourcesAgent struct {
-	t     *testing.T
-	key   ed25519.PublicKey
-	layer string
+	t        *testing.T
+	key      ed25519.PublicKey
+	layer    string
+	holdFrom int
 
 	mu     sync.Mutex
 	states [][]sourceState
 	reads  int
+}
+
+func (f *fakeSourcesAgent) readCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.reads
 }
 
 func (f *fakeSourcesAgent) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -163,9 +171,17 @@ func (f *fakeSourcesAgent) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	switch req.URL.Path {
 	case "/api/projects/proj_a/sandboxes/sbx_1/sources":
 		f.mu.Lock()
-		states := f.states[min(f.reads, len(f.states)-1)]
+		read := f.reads
+		states := f.states[min(read, len(f.states)-1)]
 		f.reads++
 		f.mu.Unlock()
+		if f.holdFrom > 0 && read >= f.holdFrom {
+			select {
+			case <-req.Context().Done():
+			case <-f.t.Context().Done():
+			}
+			return
+		}
 		if err := json.NewEncoder(w).Encode(struct {
 			Sources []sourceState `json:"sources"`
 		}{states}); err != nil {
@@ -304,16 +320,39 @@ func TestAwaitSourcesMaterializedGivesUpOnASourceThatKeepsFailing(t *testing.T) 
 
 // A source waiting on the sandbox itself (a git that cannot take the origin's
 // token yet) is waited on for as long as the create is, and a create that runs
-// out says why the sandbox could not clone it rather than only that it ran out.
+// out says why the sandbox could not clone it rather than only that it ran out
+// — whether the deadline passes between reads or while one is in flight, which
+// fails and says nothing new (#464).
 func TestAwaitSourcesMaterializedNamesWhyTheSandboxCouldNotCloneYet(t *testing.T) {
-	r := runtimeConfigTestRuntime(t)
 	waiting := []sourceState{{Slug: "primary", State: "waiting", WaitingOn: sourceWaitingOnSandbox, Error: "waiting for a git that takes a bearer credential (2.46 or later): this box's is 2.43", UpdatedAt: time.Now()}}
-	_, dial := newFakeSourcesAgent(t, r, "", waiting)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*sourceStatePollInterval)
-	defer cancel()
-	err := r.awaitSourcesMaterialized(ctx, dial, "sbx_1", []sandboxconfig.RuntimeSource{{Slug: "primary"}}, nil)
-	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "this box's is 2.43") {
-		t.Fatalf("await = %v, want the deadline with the sandbox's reason", err)
+	cases := []struct {
+		name string
+		// holdFrom is the first read the sandbox never answers, 0 for none.
+		holdFrom int
+		timeout  time.Duration
+		reads    int
+	}{
+		// The one read answers, and the deadline falls well inside the poll
+		// that follows it.
+		{"between reads", 0, sourceStatePollInterval / 2, 1},
+		// The second read is still in flight when the deadline passes.
+		{"during a read", 1, 3 * sourceStatePollInterval / 2, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := runtimeConfigTestRuntime(t)
+			agent, dial := newFakeSourcesAgent(t, r, "", waiting)
+			agent.holdFrom = tc.holdFrom
+			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
+			defer cancel()
+			err := r.awaitSourcesMaterialized(ctx, dial, "sbx_1", []sandboxconfig.RuntimeSource{{Slug: "primary"}}, nil)
+			if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "this box's is 2.43") {
+				t.Fatalf("await = %v, want the deadline with the sandbox's reason", err)
+			}
+			if reads := agent.readCount(); reads != tc.reads {
+				t.Fatalf("the sandbox was asked %d times, want %d", reads, tc.reads)
+			}
+		})
 	}
 }
 
