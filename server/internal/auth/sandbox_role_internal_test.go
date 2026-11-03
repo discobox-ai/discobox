@@ -162,7 +162,7 @@ func TestSandboxRoleDrivesTheTerminalsOfTheDiscoboxesItCreated(t *testing.T) {
 }
 
 // A discobox starts, stops, restarts, repairs and upgrades the discoboxes it
-// created; archiving and purging stay out (ADR 26-10-02-478).
+// created (ADR 26-10-02-478).
 func TestSandboxRolePowersTheDiscoboxesItCreated(t *testing.T) {
 	checkRole(t, []roleCase{
 		{"start its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/start", http.StatusOK},
@@ -175,8 +175,33 @@ func TestSandboxRolePowersTheDiscoboxesItCreated(t *testing.T) {
 		{"stop itself", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-worker/stop", http.StatusForbidden},
 		{"start nothing", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-none/start", http.StatusNotFound},
 		{"start its worker in another project", roleLead, http.MethodPost, "/projects/proj-2/sandboxes/sbx-worker/start", http.StatusForbidden},
-		{"archive its worker", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-worker", http.StatusForbidden},
+	})
+}
+
+// A discobox archives the discoboxes it created, and only those within its
+// egress; purge and unarchive stay a person's, for every discobox
+// (ADR 26-11-03-724).
+func TestSandboxRoleArchivesTheDiscoboxesItCreated(t *testing.T) {
+	github := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-github", ProjectID: "proj-1", UserID: "user-1"}
+	sealed := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-sealed", ProjectID: "proj-1", UserID: "user-1"}
+	noAPI := Principal{Type: PrincipalTypeSandbox, SandboxID: "sbx-noapi", ProjectID: "proj-1", UserID: "user-1"}
+	checkRole(t, []roleCase{
+		{"archive its worker", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-worker", http.StatusOK},
+		{"archive its worker by its project", roleLead, http.MethodDelete, "/api/projects/proj-1/sandboxes/sbx-worker", http.StatusOK},
+		{"archive a narrower one it created", github, http.MethodDelete, "/projects/default/sandboxes/sbx-github-api", http.StatusOK},
+		{"archive a person's discobox", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-persons", http.StatusForbidden},
+		{"archive one its worker created", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-github-api", http.StatusForbidden},
+		{"archive its creator", roleWorker, http.MethodDelete, "/projects/default/sandboxes/sbx-lead", http.StatusForbidden},
+		{"archive itself", roleWorker, http.MethodDelete, "/projects/default/sandboxes/sbx-worker", http.StatusForbidden},
+		{"archive a wider one it created", sealed, http.MethodDelete, "/projects/default/sandboxes/sbx-sealed-wider", http.StatusForbidden},
+		{"archive one it created without the API", noAPI, http.MethodDelete, "/projects/default/sandboxes/sbx-noapi-child", http.StatusForbidden},
+		{"archive nothing", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-none", http.StatusNotFound},
+		{"archive its worker in another project", roleLead, http.MethodDelete, "/projects/proj-2/sandboxes/sbx-worker", http.StatusForbidden},
 		{"purge its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/purge", http.StatusForbidden},
+		{"purge by its project", roleLead, http.MethodPost, "/api/projects/proj-1/sandboxes/sbx-worker/purge", http.StatusForbidden},
+		{"purge a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/purge", http.StatusForbidden},
+		{"purge itself", roleWorker, http.MethodPost, "/projects/default/sandboxes/sbx-worker/purge", http.StatusForbidden},
+		{"unarchive its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/unarchive", http.StatusForbidden},
 	})
 }
 

@@ -121,12 +121,14 @@ const (
 	ownedRequest
 	// withinCaller: the path names a discobox the caller created, as
 	// createdDiscobox does, that reaches nothing the caller cannot
-	// (ADR 26-10-01-032 §4). It marks
-	// every route that writes to a discobox or sends into it — typing into its
-	// terminals, HTTP to its ports, powering it, running its services, writing
-	// its meta, delivering its source — since each would let a restricted
-	// discobox reach the world through a wider one. A read brings data to the
-	// caller, never out of it, and stays createdDiscobox.
+	// (ADR 26-10-01-032 §4). It marks every route that writes to a discobox or
+	// sends into it — typing into its terminals, HTTP to its ports, powering
+	// it, running its services, writing its meta, delivering its source —
+	// since each would let a restricted discobox reach the world through a
+	// wider one; and archiving it, which sends nothing in but is a write, held
+	// to the caller's reach as every other write is (ADR 26-11-03-724 §1). A
+	// read brings data to the caller, never out of it, and stays
+	// createdDiscobox.
 	withinCaller
 )
 
@@ -167,13 +169,17 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPost, path: "sandboxes/*/execs/*/wait", names: createdDiscobox},
 	{method: http.MethodPost, path: "sandboxes/*/execs/*/input", names: withinCaller},
 	// Starting, stopping, and restarting a discobox (ADR 26-10-02-478 §1), and
-	// repairing or upgrading it onto the image its harness config resolves to. Archive and purge change what exists, not whether
-	// it runs, and are not here.
+	// repairing or upgrading it onto the image its harness config resolves to.
 	{method: http.MethodPost, path: "sandboxes/*/start", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/stop", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/restart", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/repair", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/upgrade", names: withinCaller},
+	// Archiving a discobox, which keeps its data for the project's retention
+	// (ADR 26-11-03-724 §1). Purge, which destroys the data at once, and
+	// unarchive, how a person takes an archive back, stay a person's and are
+	// not here (§§2, 4).
+	{method: http.MethodDelete, path: "sandboxes/*", names: withinCaller},
 	// Changing a discobox's name, description and tags (ADR 26-10-08-447 §1).
 	{method: http.MethodPatch, path: "sandboxes/*/meta", names: withinCaller},
 	// Setting a discobox's passthrough within the caller's own (ADR
