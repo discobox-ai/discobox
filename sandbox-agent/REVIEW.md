@@ -271,6 +271,12 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   job until go test's 10-minute timeout (#473). The skip says the path is
   untested there, not out of scope: a Windows Supervisor runs the same shim on
   a Unix socket.
+- **A Unix-socket protocol frames its reply; a client never reads it to EOF.**
+  The same Windows stall (go.dev/issue/49352) hits a read pending when the
+  peer closes, so `io.ReadAll` of a reply the server ends by closing times out
+  with the reply already sent (#475, `hooks.Publish`). End the reply with a
+  newline (or a self-delimiting encoding such as one JSON value) and read
+  exactly that.
 
 ## Testing a program's signals
 
