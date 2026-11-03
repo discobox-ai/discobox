@@ -1,6 +1,6 @@
 # 26-11-02-022 — A credential request names its policies, and asks to use and to delegate at once
 
-- **Status**: Accepted (§3 amended before implementation landed: the summary is computed by whatever shows the role, from the routes the server resolved it to and the request carries)
+- **Status**: Accepted (§3 amended before implementation landed: the summary is computed by whatever shows the role, from the routes the server resolved it to and the request carries; §5 amended for a use part approved to add by [26-11-03-329](26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md))
 - **Date**: 2026-11-02
 - **Amends**:
   - [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md):

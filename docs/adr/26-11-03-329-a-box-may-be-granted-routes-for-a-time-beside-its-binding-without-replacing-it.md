@@ -1,9 +1,12 @@
 # 26-11-03-329 — A box may be granted routes for a time beside its binding, without replacing it
 
-- **Status**: Proposed
+- **Status**: Accepted (amended before implementation landed: Leaves standing names §4, not §3, as what adds to 022 §4)
 - **Date**: 2026-11-03
+
+  Accepted by the owner by merging #502, 2026-11-03.
+
 - **Issue**: [#501](https://github.com/discobox-ai/discobox/issues/501)
-- **Would amend**:
+- **Amends**:
   - [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
     §2's "per env name, the narrowest binding applies … bindings do not
     stack". An addition (§1) stacks on the binding that applies, and is the
@@ -14,7 +17,7 @@
     nothing.
 - **Leaves standing**: 880 §3's delegation, 880 §4's routes and how one list
   decides, 26-10-27-840's raw delivery, and 022 §§1–4 and 6 except where
-  §3 below adds to them.
+  §4 below adds to them.
 
 ## Context
 
