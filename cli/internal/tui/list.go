@@ -1323,9 +1323,9 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// Its tags follow, dim, for the same reason and on the same terms as the
 	// qualifier above: they say which box this is, so they sit by the name,
 	// and they give way before the name does — as many as fit, and none when
-	// even one would squeeze the name (ADR 0136). A pull request status comes
-	// first, so it is the last to give way: the tag is the only place the row
-	// says it.
+	// even one would squeeze the name (ADR 0136). A status tag comes first,
+	// so it is the last to give way: the tag is the only place the row says
+	// it. The pull request and the issue follow it, ahead of the rest.
 	var shown []string
 	taggedW := 0
 	if len(s.Tags) > 0 && !l.inTree {
@@ -1466,8 +1466,8 @@ type rowLink struct {
 }
 
 // tagSpans draws the tags a row has room for, dim, from cell x of line y. A
-// pull request status (Sandbox.prStatus) is drawn bold, green for ready and
-// red for blocked, instead. A tag that numbers an issue or a pull request in the discobox's
+// status tag (statusTags) is drawn bold, green for ready and red for the two
+// waiting on a person, instead. A tag that numbers an issue or a pull request in the discobox's
 // GitHub repository (Sandbox.tagURL) is a link to it instead, in the color the
 // header's links are drawn in, and lit when the pointer is on it — the same
 // terms the header's links are drawn on, since a click on one opens it.
@@ -1480,9 +1480,9 @@ func (l *sandboxList) tagSpans(st *styles, z *zones, s Sandbox, tags []string, x
 		x++
 		width := lipgloss.Width(label)
 		switch url := s.tagURL(tag); {
-		case tagKey(tag) == prBlocked:
+		case tagKey(tag) == statusBlocked || tagKey(tag) == statusNeedsInput:
 			out.WriteString(st.blockedText.Render(label))
-		case tagKey(tag) == prReady:
+		case tagKey(tag) == statusReady:
 			out.WriteString(st.readyText.Render(label))
 		case url == "":
 			out.WriteString(st.dimText.Render(label))
@@ -1660,13 +1660,13 @@ func workField(st *styles, s Sandbox) paneHeaderField {
 
 // tagsField is the discobox's tags the header says nothing of otherwise, dim
 // and in the order they are kept. The ones it says already are left out: an
-// issue or pull request workField links, and a pull request status, which the
+// issue or pull request workField links, and a status tag, which the
 // header says through the git word (paneHeaderFields), on terms of its own
 // that a tag drawn beside it would contradict. Empty when that leaves none.
 func tagsField(st *styles, s Sandbox) paneHeaderField {
 	var labels []string
 	for _, tag := range s.Tags {
-		if s.tagURL(tag) == "" && !isPRStatus(tag) {
+		if s.tagURL(tag) == "" && !isStatusTag(tag) {
 			labels = append(labels, tagLabel(tag))
 		}
 	}

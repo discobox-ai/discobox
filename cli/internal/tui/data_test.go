@@ -194,10 +194,10 @@ func TestARowShowsTheTagsItHasRoomFor(t *testing.T) {
 	}
 }
 
-// A row tagged with its pull request's status draws the tag in the status's
-// color, blocked over ready, and leaves the row itself unpainted — as it does
+// A row tagged with a status draws the tag in the status's color, blocked
+// over ready, and leaves the row itself unpainted — as it does
 // a row waiting on a credential request, which says so with its red `!`.
-func TestAPullRequestStatusColorsItsTagNotItsRow(t *testing.T) {
+func TestAStatusTagColorsItsTagNotItsRow(t *testing.T) {
 	t.Parallel()
 	st := newStyles(true)
 	for _, tc := range []struct {
