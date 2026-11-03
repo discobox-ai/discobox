@@ -20,22 +20,24 @@ import (
 // host.Stream, the screen emulator, the PTY, and a program answering SIGWINCH.
 //
 // The program records the size it is told about on every SIGWINCH, so the file
-// it writes is the record of which client's window it was laying out for.
+// it writes is the record of which client's window it was laying out for. It is
+// this test binary (runSizeRecorder), not a shell trap, which can lose a signal.
 func TestRunShimRepaintPutsTheAskingClientsSizeBack(t *testing.T) {
 	dir := shimDir(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("find the test binary: %v", err)
+	}
 	sizePath := filepath.Join(dir, "sizes")
 	socketPath := filepath.Join(dir, "shim.sock")
 	shimErr := make(chan error, 1)
 	go func() {
 		shimErr <- RunShim(ctx, ShimConfig{
-			ExecID: "exec_repaint",
-			Command: []string{
-				"sh", "-c",
-				`trap 'stty size >> ` + sizePath + `' WINCH; printf hello; while :; do sleep 0.05; done`,
-			},
+			ExecID:      "exec_repaint",
+			Command:     []string{self, sizeRecorderCommand, sizePath},
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
@@ -94,6 +96,10 @@ func TestRunShimRepaintPutsTheAskingClientsSizeBack(t *testing.T) {
 	cancel()
 	<-shimErr
 }
+
+// sizeRecorderCommand is the argument that makes this test binary the
+// repaint test's program; see TestMain.
+const sizeRecorderCommand = "size-recorder"
 
 // shimReader is one attached client, drained continuously: the shim writes to
 // every attacher, so a client that is not reading holds up the process.
