@@ -8,9 +8,9 @@
 # sandboxes, this drives what a person sees of that — the checkout reads as a
 # clone of the source's remote, with the pool as its `discobox` remote; a
 # commit made after the create shows up only once `discobox push` sends it;
-# another discobox's commit in the same cache is not fetchable; `discobox
-# apply` works; a linked worktree, a submodule and a remote URL are delivered
-# the same way; and a rebuild does not clone over the work in the checkout.
+# another discobox's commit in the same cache is not fetchable; a linked
+# worktree, a submodule and a remote URL are delivered the same way; and a
+# rebuild does not clone over the work in the checkout.
 #
 # Like worktree_git.bats it drives the development stack that is already
 # running (`task dev`) and owns only what it creates, purged by recorded ID.
@@ -225,7 +225,6 @@ pool_route() {
   echo "$output"
   [ "$status" -ne 0 ]
 }
-
 
 @test "a rebuild does not clone over the work in the checkout" {
   run in_box 'echo kept >uncommitted.txt && cat .git/discobox-materialized && git rev-parse HEAD'
