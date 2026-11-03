@@ -1330,11 +1330,42 @@ func TestRepaintWorksOffThePanes(t *testing.T) {
 	send(t, m, typeString("fix the reaper")...)
 
 	_, cmd := m.Update(keyPress("ctrl+l"))
-	if !repaints(t, cmd) {
+	if !carries(t, cmd, tea.ClearScreen()) {
 		t.Fatal("ctrl+l in the prompt should redraw the window")
 	}
 	if got := m.prompt.Value(); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the repaint to leave it alone", got)
+	}
+}
+
+// Bubble Tea hands the window the size it opened with from a goroutine of its
+// own, so on a loaded machine that size can arrive after a fresher one and
+// put the stale size back, with nothing more to come: no SIGWINCH is due
+// (#182). Every size that changes the window's is read again from the
+// terminal, so the stale one is corrected, and a read that finds the size the
+// window already has asks nothing further.
+func TestWindowRereadsASizeThatChangesIt(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource())
+	reread := tea.RequestWindowSize()
+
+	for _, step := range []struct {
+		size tea.WindowSizeMsg
+		ask  bool
+	}{
+		{sizeMsg(120, 38), true},  // the window's own read, past a resize it did not hear
+		{sizeMsg(120, 40), true},  // the opening size, arriving late
+		{sizeMsg(120, 38), true},  // what reading again finds
+		{sizeMsg(120, 38), false}, // and again: the terminal has held still
+		{sizeMsg(100, 38), true},  // a width is a change too
+	} {
+		_, cmd := m.Update(step.size)
+		if got := carries(t, cmd, reread); got != step.ask {
+			t.Fatalf("at %dx%d: asked for the size again = %v, want %v", step.size.Width, step.size.Height, got, step.ask)
+		}
+		if m.screenWidth != step.size.Width || m.height != step.size.Height {
+			t.Fatalf("window is %dx%d, want %dx%d", m.screenWidth, m.height, step.size.Width, step.size.Height)
+		}
 	}
 }
 

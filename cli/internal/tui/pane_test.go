@@ -2161,7 +2161,7 @@ func TestRepaintRedrawsTheWindowAndReachesTheBox(t *testing.T) {
 	cols, rows := m.focusedPane().term.Size()
 
 	_, cmd := m.Update(keyPress("ctrl+l"))
-	if !repaints(t, cmd) {
+	if !carries(t, cmd, tea.ClearScreen()) {
 		t.Fatal("ctrl+l in a pane should redraw the window")
 	}
 	asked, size := term.asked()

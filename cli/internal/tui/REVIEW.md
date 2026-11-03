@@ -106,6 +106,15 @@
 
 ## The screen
 
+- **Bubble Tea's own messages arrive in no order.** The size it opened with,
+  the color profile, the environment and every answer to `RequestWindowSize`
+  are each sent from a goroutine of their own, so one asked for later is not
+  newer. Never treat the last one to arrive as current because of when it was
+  asked for. The window's size is re-read on every change instead
+  (`WindowSizeMsg` in `update`): the opening size arriving after the
+  window's own re-read left it drawing for 40 rows on a 38-row terminal
+  (#182).
+
 - **A frame the window holds only briefly is a frame that may never be drawn.**
   The renderer keeps the latest frame and writes whichever is current when its
   own clock fires, so anything a frame is meant to *do* cannot be timed out
