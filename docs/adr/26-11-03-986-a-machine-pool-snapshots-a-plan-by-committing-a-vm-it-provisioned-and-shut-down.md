@@ -1,6 +1,6 @@
 # 26-11-03-986 — A machine pool snapshots a plan by committing a VM it provisioned and shut down
 
-Status: Accepted (supersedes in part [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §8's build that powers itself off and leaves its result in `SnapshotDir` for the taker; builds on disco-vm ADRs 26-11-03-606 and 26-11-03-868, see [What it needs of disco-vm](#what-it-needs-of-disco-vm))
+Status: Accepted (supersedes in part [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §8's build that powers itself off and leaves its result in `SnapshotDir` for the taker; builds on disco-vm ADRs 26-11-03-606 and 26-11-03-868, see [What it needs of disco-vm](#what-it-needs-of-disco-vm); §§1, 3, 4, 6, What it needs and Consequences amended before implementation landed: the plan on the command's stdin and `SnapshotDir` off the committed disk, the systemd wait and whole-provisioning check, the seal's path and the agent's start disarmed, no committed mark read, only an agent that never answers blames a snapshot, and the provider's base kept as the driver's configuration)
 Date: 2026-11-03
 
 ## Context
@@ -41,18 +41,29 @@ disco-vm cannot promise a commit that crashed partway reads as not committed.
 The guest has one way to become an image on every runtime. The taker:
 
 1. starts a box from the base;
-2. places the agent layer, units, pins and `SnapshotPlan` at `SnapshotPlanFile`;
-3. runs `discobox-sandbox-agent snapshot` as one blocking exec;
+2. places the agent layer, units and pins;
+3. runs `discobox-sandbox-agent snapshot` as one blocking exec, with the
+   `SnapshotPlan` on its standard input;
 4. stops the box in order and commits it.
 
 The command:
 
-- applies the plan's proxy material;
+- waits for systemd to finish booting and has it read the units placed, since
+  a VM's are placed in a box already running;
+- puts `SnapshotDir` on a tmpfs unless it is a mount already (a container's
+  is the taker's bind), then applies the plan's proxy material there. The
+  plan holds the build's proxy client key, so neither it nor the material is
+  ever written to a disk a snapshot commits: a file deleted there leaves its
+  bytes in free blocks every copy carries, and the build's identity has no
+  egress policy once the build is done;
 - fetches and provisions the pinned bundles, every step blocking;
+- refuses a box with any feature not done, or failed, as `discobox-provision
+  wait` reads its status: no snapshot is committed that is not provisioned
+  whole;
 - cleans the box of what is one machine's: empties `/etc/machine-id`, removes
   SSH host keys, untrusts the build's proxy CA;
-- removes everything the build put under `SnapshotDir`, since on a VM that
-  directory is on the disk being committed;
+- removes everything the build put under `SnapshotDir`;
+- removes the link that starts the agent when a bootstrap appears (§3);
 - writes the **sealed marker** (§3);
 - reports its result on the exec's output and exit status.
 
@@ -87,7 +98,9 @@ disco-vm does not promise that the disk a copy boots is the one the pool shut
 down: boxd's commit boot and restore both run the guest. So the clean in §1 is
 not relied on alone.
 
-When `sandbox.json` arrives at a box carrying the sealed marker, the agent first
+When `sandbox.json` arrives at a box carrying the sealed marker
+(`/etc/discobox-sealed`, in `/etc` since no sandbox volume is mounted there to
+hide it), the agent first
 gives the box an identity of its own, before anything else:
 
 - a new `/etc/machine-id`, then `systemctl daemon-reexec` and a journald
@@ -96,6 +109,12 @@ gives the box an identity of its own, before anything else:
 
 Then it removes the marker and boots the sandbox as now. A box with no marker
 (fresh from the base) skips this step. The same step runs on Docker.
+
+The re-execution must not run under its maker's own systemctl calls, so a box
+made from a snapshot starts its agent as a fresh one does: the snapshot has the
+agent's start link removed (§1), and the maker arms it — a VM's by
+`discobox-provision apply`, which reloads systemd and starts the path unit, a
+container's by placing the link again before its start.
 
 ### 4. The pool's done record publishes a snapshot
 
@@ -106,10 +125,12 @@ durable **done record** is what makes a snapshot one.
   name-length limit.
 - **The record** lives in the pool's tree, written by rename and synced. It
   holds the instance ID `Commit` returned.
-- **A create uses `snap-<key>` only if all three hold:**
+- **A create uses `snap-<key>` only if both hold:**
   - the record exists;
-  - the VM exists and is committed;
-  - its ID matches the record.
+  - the VM of the name exists, with the ID the record holds.
+
+  disco-vm leaves the committed mark to its caller (ADR 26-11-03-606), and the
+  record is that mark.
 
   Otherwise the create makes the machine fresh and asks for a build.
 
@@ -160,23 +181,29 @@ needs no memory of its own:
 
 ### 6. A snapshot that proves bad is dropped, and the sandbox is made again fresh
 
-A sandbox machine made from a snapshot can fail in two ways that blame the
-snapshot:
+A snapshot is provisioned whole when it is built (§1), so its platform and
+harness steps are known good before any sandbox is made from it. What can still
+blame it is a sandbox machine made from it whose agent never answers, its
+machine stopping first or the wait running out, on the machine's first start
+and before its agent has answered once.
+Then, in that same start, the pool drops the snapshot (§4), the plan waits as a
+failed build's does, and the machine is destroyed and made again fresh. The
+machine never ran its agent for the sandbox, so nothing of the sandbox's is
+lost. Nothing else of a start blames the snapshot: a placement that fails can be
+the pool's or a passing moment of the box's.
 
-- its agent never answers;
-- its platform or harness steps fail.
-
-Then the pool drops the snapshot (§4), destroys that machine, and makes it again
-fresh. A failure in the sandbox's own phase (its sources, its secrets) is not
-the snapshot's, since it would fail the same from scratch.
+A step that fails later, after the create has returned and the sandbox is in
+use, is not taken back: it is reported as any failed step is. A failure in the
+sandbox's own phase (its sources, its secrets) is not the snapshot's, since it
+would fail the same from scratch.
 
 ## What it needs of disco-vm
 
 All of this is on disco-vm `main`. The pool's disco-vm pin moves to it.
 
 - **Only VMs (ADR 26-11-03-606, `247f378`).** The pool uses
-  `InstanceSpec.From`, `Instance.Committed` and `Commit(ctx, inst)`. It does not
-  use images, tags or a base the caller names.
+  `CreateOptions.From` and `Commit(ctx, inst)`. It does not use images, tags or
+  a base the caller names.
 - **`Capabilities.Commit` (ADR 26-11-03-868, `e33a525`,
   [discobox-ai/vm#33](https://github.com/discobox-ai/vm/issues/33)).** §2
   decides from it, never from a failed attempt.
@@ -231,8 +258,11 @@ a VM.
     the `SnapshotDir` cleanup and the sealed marker;
   - the bootstrap path gains §3;
   - `discobox-snapshot.service` leaves `agentlayer.Units`.
-- The discovm provider's `base` option, and `MachineSandboxRuntime`'s `baseRef`,
-  go with ADR 26-11-03-606: a fresh VM's base is the driver's configuration.
+- With ADR 26-11-03-606 a fresh VM's base is the driver's configuration
+  (`machine.Config.Base`). The discovm provider's `base` option becomes that
+  configuration, for the server's driver and the pool agent's alike, rather
+  than an ID matched against what the driver lists; `MachineSandboxRuntime`'s
+  `baseRef` goes. The base is part of a machine pool's snapshot key.
 - On a driver without `Commit` nothing changes, beyond those disco-vm calls.
 - `pool-agent/DESIGN.md`'s Snapshots and Machine Sandboxes sections, and the
   sandbox agent's design notes, follow when the work lands.
