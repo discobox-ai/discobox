@@ -33,6 +33,10 @@ pool only when a read DSN is set. The server passes the opened handles to
 `internal/store`. `cmd/discobox-secret-dump` opens the same database the same
 way, for reading.
 
+`CurrentRead` is the read handle for a read that decides a write but must not
+queue on SQLite's one write connection (the store's encryption keys): the read
+pool, unless it is a Postgres replica, which may lag, and then the write pool.
+
 ## Migration Scope
 
 `DB.Migrate(ctx)` is the only migration entry point and migrates every

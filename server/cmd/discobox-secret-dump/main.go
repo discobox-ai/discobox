@@ -1,9 +1,9 @@
 // Command discobox-secret-dump is a development tool that prints a stored
 // secret's plaintext value. It exists to inspect secret material that the API
 // deliberately never returns, so it must only ever be run by an operator with
-// direct access to the database and encryption key.
+// direct access to the database and the encryption provider.
 //
-// It resolves the database DSN and DISCOBOX_ENCRYPTION_KEY exactly as
+// It resolves the database DSN and the encryption settings exactly as
 // discobox-server does (including a local .discobox-server.env file), opens
 // the database read-only without migrating it, looks the secret up by ID, and
 // decrypts it through the same store logic the server uses.
@@ -24,8 +24,8 @@ import (
 
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -41,8 +41,8 @@ func run(ctx context.Context) error {
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [--json] <secret-id>\n\n", os.Args[0])
 		fmt.Fprintln(flag.CommandLine.Output(),
-			"Prints a stored secret's decrypted value. Reads DATABASE_DSN /\n"+
-				"DISCOBOX_ENCRYPTION_KEY (and "+config.EnvFile+") the same way\n"+
+			"Prints a stored secret's decrypted value. Reads DATABASE_DSN and\n"+
+				"the encryption settings (and "+config.EnvFile+") the same way\n"+
 				"discobox-server does.\n"+
 				"The secret ID may be a full ID or a unique prefix.")
 		flag.PrintDefaults()
@@ -80,24 +80,21 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	var sealer secrets.Sealer
-	if cfg.EncryptionKey != "" {
-		sealer, err = secrets.NewAESGCMSealerFromBase64Key(cfg.EncryptionKey)
-		if err != nil {
-			return fmt.Errorf("initialize encryption: %w", err)
-		}
+	// The same keyring the server builds from the same configuration
+	// (ADR 26-11-02-902 §6). It only reads: a project without a data key has
+	// nothing sealed to open.
+	keyring, err := encryption.New(ctx, cfg.Encryption, store.NewEncryptionKeys(db.Write, db.CurrentRead()))
+	if err != nil {
+		return fmt.Errorf("initialize encryption: %w", err)
 	}
+	defer keyring.Close()
 
-	// Reuse the server's own decrypt-and-deserialize path so the purpose and
-	// resource-ID binding stay in sync with how the value was sealed. A nil
-	// sealer transparently handles plaintext rows written before encryption was
-	// enabled (or when DISCOBOX_ENCRYPTION_KEY is unset).
-	appStore := store.New(db.Write, db.Read, store.WithSealer(sealer))
+	// Reuse the server's own decrypt-and-deserialize path so the field a
+	// value is bound to stays in sync with how it was sealed. Open reads a
+	// value stored unsealed, or by an earlier release, too.
+	appStore := store.New(db.Write, db.Read, store.WithKeyring(keyring))
 	value, err := appStore.OpenSecretValue(ctx, secret)
 	if err != nil {
-		if sealer == nil && secrets.IsSealed(secret.EncryptedValue) {
-			return fmt.Errorf("secret %s is encrypted but DISCOBOX_ENCRYPTION_KEY is not set: %w", secret.ID, err)
-		}
 		return fmt.Errorf("decrypt secret %s: %w", secret.ID, err)
 	}
 	if value == nil {

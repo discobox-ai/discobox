@@ -304,6 +304,21 @@ type ProjectMember struct {
 
 func (ProjectMember) TableName() string { return "project_members" }
 
+// EncryptionKey is one of a scope's data keys, stored only wrapped by the
+// provider that wrapped it (ADR 26-11-02-902 §2). A scope is a project ID, or
+// "server" for what belongs to the server. Without its provider a row opens
+// nothing.
+type EncryptionKey struct {
+	Scope         string    `gorm:"column:scope;primaryKey;type:text" json:"-"`
+	ID            string    `gorm:"column:id;primaryKey;type:text" json:"-"`
+	Provider      string    `gorm:"column:provider;not null;type:text" json:"-"`
+	ProviderKeyID string    `gorm:"column:provider_key_id;not null;type:text" json:"-"`
+	Wrapped       []byte    `gorm:"column:wrapped;not null" json:"-"`
+	CreatedAt     time.Time `gorm:"column:created_at;not null" json:"-"`
+}
+
+func (EncryptionKey) TableName() string { return "encryption_keys" }
+
 // ServerState stores generic server settings and one-time state flags. Delete a
 // row to allow its associated initialization to run again.
 type ServerState struct {
@@ -2150,6 +2165,7 @@ func AllModels() []any {
 		&Project{},
 		&ProjectMember{},
 		&ServerState{},
+		&EncryptionKey{},
 		&SandboxAccessIssuerKey{},
 		&HarnessConfig{},
 		&HarnessCaptureReceipt{},

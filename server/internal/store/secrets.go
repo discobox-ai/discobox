@@ -12,15 +12,9 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/pkg/secretformat"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 )
-
-const secretValuePurpose = "secrets.value"
-
-func secretResourceID(secret *model.Secret) string {
-	return secret.ProjectID + "/" + secret.ID
-}
 
 func (s *Store) sealSecretForWrite(ctx context.Context, secret *model.Secret) (*model.Secret, error) {
 	if secret.ID == "" {
@@ -42,7 +36,7 @@ func (s *Store) sealSecretForWrite(ctx context.Context, secret *model.Secret) (*
 	if !secret.FormatSet {
 		persisted.Format = s.valueFormat(ctx, secret, secret.Format)
 	}
-	ciphertext, err := secrets.SealIfUnsealed(ctx, s.sealer, secretValuePurpose, secretResourceID(secret), secret.EncryptedValue)
+	ciphertext, err := s.keyring.SealForWrite(s.keyContext(ctx), encryption.SecretValue(secret.ProjectID, secret.ID), secret.EncryptedValue)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt secret value: %w", err)
 	}
@@ -55,16 +49,8 @@ func (s *Store) OpenSecretValue(ctx context.Context, secret *model.Secret) (*mod
 	if secret == nil || len(secret.EncryptedValue) == 0 {
 		return nil, nil
 	}
-	// Pass through plaintext rows (written before encryption was enabled) unchanged,
-	// matching the guard in OpenSandboxSecretState.
-	if s.sealer == nil || !secrets.IsSealed(secret.EncryptedValue) {
-		var val model.SecretValue
-		if err := json.Unmarshal(secret.EncryptedValue, &val); err != nil {
-			return nil, fmt.Errorf("unmarshal secret value: %w", err)
-		}
-		return &val, nil
-	}
-	plaintext, err := secrets.Open(ctx, s.sealer, secretValuePurpose, secretResourceID(secret), secret.EncryptedValue)
+	// Open reads a row written unsealed, or by an earlier release, too.
+	plaintext, err := s.keyring.Open(s.keyContext(ctx), encryption.SecretValue(secret.ProjectID, secret.ID), secret.EncryptedValue)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt secret value: %w", err)
 	}

@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 )
 
 var (
@@ -26,7 +26,8 @@ type Store struct {
 	txWrite *gorm.DB
 	txRead  *gorm.DB
 
-	sealer secrets.Sealer
+	// keyring seals what the store keeps encrypted. Nil stores it unsealed.
+	keyring *encryption.Keyring
 
 	// sandboxEvents is set on a store bound to a transaction: the sandboxes
 	// it changed, whose events it records before it commits.
@@ -35,9 +36,11 @@ type Store struct {
 
 type Option func(*Store)
 
-func WithSealer(sealer secrets.Sealer) Option {
+// WithKeyring seals what the store keeps encrypted with keyring, built over
+// this store's EncryptionKeys (ADR 26-11-02-902).
+func WithKeyring(keyring *encryption.Keyring) Option {
 	return func(s *Store) {
-		s.sealer = sealer
+		s.keyring = keyring
 	}
 }
 
@@ -99,7 +102,7 @@ func (s *Store) withTx(write, read *gorm.DB) *Store {
 		read:    s.read,
 		txWrite: write,
 		txRead:  read,
-		sealer:  s.sealer,
+		keyring: s.keyring,
 	}
 }
 

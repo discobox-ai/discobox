@@ -8,7 +8,6 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -19,15 +18,7 @@ import (
 // Claude Code takes it for something else.
 func TestValueWriteRecordsTheSentinelFormat(t *testing.T) {
 	ctx := context.Background()
-	key, err := secrets.GenerateBase64Key()
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	sealer, err := secrets.NewAESGCMSealerFromBase64Key(key)
-	if err != nil {
-		t.Fatalf("new sealer: %v", err)
-	}
-	s, _ := newTestStoreWithDB(t, sealer)
+	s, _ := newTestStoreWithDB(t, true)
 
 	oauth := &model.Secret{
 		ID: "sec-oauth", ProjectID: "project-1", Name: "claude", Type: model.SecretTypeOAuth,
@@ -92,7 +83,7 @@ func TestValueWriteRecordsTheSentinelFormat(t *testing.T) {
 // sentinel shaped like its value, on every path that asks the store.
 func TestSentinelFormatReadsARowWithoutOne(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createSecret(t, s, "sec-legacy", "legacy")
 	if err := db.Write.WithContext(ctx).Model(&model.Secret{}).Where("id = ?", "sec-legacy").
 		Updates(map[string]any{"format": "", "encrypted_value": []byte(`{"token":"sk-ant-oat01-` + strings.Repeat("c", 95) + `"}`)}).Error; err != nil {
@@ -122,7 +113,7 @@ func TestSentinelFormatReadsARowWithoutOne(t *testing.T) {
 // refresh uses as its generation guard.
 func TestRefreshSecretFormatsBringsStoredShapesUpToDate(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createSecret(t, s, "sec-old", "old")
 	createSecret(t, s, "sec-set", "set")
 	apiKey := `{"token":"sk-ant-api03-` + strings.Repeat("a", 95) + `"}`
@@ -156,7 +147,7 @@ func TestRefreshSecretFormatsBringsStoredShapesUpToDate(t *testing.T) {
 // it rather than being left to whatever an older write stored.
 func TestAnOAuthRefreshWritesTheFormat(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createSecret(t, s, "sec-oauth", "claude")
 	if err := db.Write.WithContext(ctx).Model(&model.Secret{}).Where("id = ?", "sec-oauth").
 		Updates(map[string]any{"type": model.SecretTypeOAuth, "format": ""}).Error; err != nil {

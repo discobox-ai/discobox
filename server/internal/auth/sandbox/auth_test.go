@@ -11,24 +11,30 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
+	"github.com/discobox-ai/envelope/pkg/envelopetest"
+
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/config"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 func TestManagerEnsuresTrustKeyOnceAndCreatesVerifiableToken(t *testing.T) {
 	ctx := context.Background()
 	userStore := newMemoryUserStore()
-	key, err := secrets.GenerateBase64Key()
+	key, err := encryption.GenerateLocalKey()
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
-	sealer, err := secrets.NewAESGCMSealerFromBase64Key(key)
+	keyring, err := encryption.New(ctx, config.EncryptionSettings{
+		Provider: config.EncryptionLocal,
+		Local:    config.LocalEncryptionSettings{Key: key},
+	}, &envelopetest.MemoryStore{})
 	if err != nil {
-		t.Fatalf("new sealer: %v", err)
+		t.Fatalf("new keyring: %v", err)
 	}
-	manager := sandboxauth.NewManager(userStore, sealer)
+	manager := sandboxauth.NewManager(userStore, keyring)
 
 	trustKey, err := manager.EnsureTrustKey(ctx, "project-1", "user-1")
 	if err != nil {

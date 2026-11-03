@@ -10,9 +10,10 @@ import (
 
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -256,15 +257,7 @@ func TestGetResourcesByShortIDPrefix(t *testing.T) {
 
 func TestSandboxSecretStateEncryptedAtRest(t *testing.T) {
 	ctx := context.Background()
-	key, err := secrets.GenerateBase64Key()
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	sealer, err := secrets.NewAESGCMSealerFromBase64Key(key)
-	if err != nil {
-		t.Fatalf("new sealer: %v", err)
-	}
-	s, db := newTestStoreWithDB(t, sealer)
+	s, db := newTestStoreWithDB(t, true)
 	createTestPool(t, s, "project-1", "pool-1")
 	plaintext := []byte("provider secret state")
 	sandbox := &model.Sandbox{
@@ -300,7 +293,7 @@ func TestSandboxSecretStateEncryptedAtRest(t *testing.T) {
 	if bytes.Equal(got.SecretState, plaintext) {
 		t.Fatalf("loaded secret state equals plaintext")
 	}
-	if !secrets.IsSealed(got.SecretState) {
+	if !encryption.Sealed(got.SecretState) {
 		t.Fatalf("loaded secret state is not sealed")
 	}
 	opened, err := s.OpenSandboxSecretState(ctx, got)
@@ -419,11 +412,13 @@ func TestUpdateSandboxAgentStatusComposesWithConcurrentFieldUpdates(t *testing.T
 }
 
 func newTestStore(t *testing.T) *store.Store {
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 	return s
 }
 
-func newTestStoreWithDB(t *testing.T, sealer secrets.Sealer) (*store.Store, *database.DB) {
+// newTestStoreWithDB is a store over a fresh database, sealing with a local
+// key when sealed is set.
+func newTestStoreWithDB(t *testing.T, sealed bool) (*store.Store, *database.DB) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -449,7 +444,26 @@ func newTestStoreWithDB(t *testing.T, sealer secrets.Sealer) (*store.Store, *dat
 		t.Fatalf("create project: %v", err)
 	}
 
-	return store.New(db.Write, db.Read, store.WithSealer(sealer)), db
+	if !sealed {
+		return store.New(db.Write, db.Read), db
+	}
+	return store.New(db.Write, db.Read, store.WithKeyring(newTestKeyring(t, db))), db
+}
+
+func newTestKeyring(t *testing.T, db *database.DB) *encryption.Keyring {
+	t.Helper()
+	key, err := encryption.GenerateLocalKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyring, err := encryption.New(context.Background(), config.EncryptionSettings{
+		Provider: config.EncryptionLocal,
+		Local:    config.LocalEncryptionSettings{Key: key},
+	}, store.NewEncryptionKeys(db.Write, db.CurrentRead()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return keyring
 }
 
 // The reported access time only ever moves LastActiveAt forward: a late or

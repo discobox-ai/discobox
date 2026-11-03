@@ -26,6 +26,22 @@ func (s *Store) CreateServerState(ctx context.Context, state *model.ServerState)
 	return write.Create(state).Error
 }
 
+// UpdateServerState replaces the value stored under state's key.
+func (s *Store) UpdateServerState(ctx context.Context, state *model.ServerState) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.Model(&model.ServerState{}).Where("key = ?", state.Key).Update("value", state.Value)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) DeleteServerState(ctx context.Context, key string) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {

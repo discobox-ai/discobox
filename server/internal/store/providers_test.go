@@ -7,23 +7,10 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
-
-func newSealer(t *testing.T) secrets.Sealer {
-	t.Helper()
-	key, err := secrets.GenerateBase64Key()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sealer, err := secrets.NewAESGCMSealerFromBase64Key(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sealer
-}
 
 // rawProviderRow writes a provider instance row as a server from before ADR
 // 26-10-31-694 did: its config as given, with nothing sealed.
@@ -76,7 +63,7 @@ func configFields(t *testing.T, row model.SandboxProviderInstance) map[string]an
 // keeps its ID and the rest of its config (ADR 26-10-31-694 §4).
 func TestSealProviderCredentialsMovesStoredKeysIntoTheSealedColumn(t *testing.T) {
 	ctx := context.Background()
-	st, db := newTestStoreWithDB(t, newSealer(t))
+	st, db := newTestStoreWithDB(t, true)
 	const pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"
 	rawProviderRow(t, db, "prov-vm", "vm", `{"driver":"boxd","apiKey":"bxd_key","deliverProviderKey":true}`)
 	rawProviderRow(t, db, "prov-do", "digitalocean", `{"tokenEnv":"DO_TOKEN_FOR_TEST","sshPrivateKey":`+string(mustJSON(t, pem))+`,"region":"sfo3"}`)
@@ -94,7 +81,7 @@ func TestSealProviderCredentialsMovesStoredKeysIntoTheSealedColumn(t *testing.T)
 	if got := configFields(t, vm); got["apiKey"] != nil || got["driver"] != "boxd" || got["deliverProviderKey"] != true {
 		t.Errorf("vm config = %v, want the key gone and the rest kept", got)
 	}
-	if !secrets.IsSealed(vm.EncryptedConfig) || bytes.Contains(vm.EncryptedConfig, []byte("bxd_key")) {
+	if !encryption.Sealed(vm.EncryptedConfig) || bytes.Contains(vm.EncryptedConfig, []byte("bxd_key")) {
 		t.Errorf("vm encrypted_config is not sealed: %q", vm.EncryptedConfig)
 	}
 	if got := openedSecrets(t, st, vm); got["apiKey"] != "bxd_key" {
@@ -140,7 +127,7 @@ func TestSealProviderCredentialsMovesStoredKeysIntoTheSealedColumn(t *testing.T)
 // replaces it: it is the newer of the two.
 func TestSealProviderCredentialsMergesOverWhatIsSealed(t *testing.T) {
 	ctx := context.Background()
-	st, db := newTestStoreWithDB(t, newSealer(t))
+	st, db := newTestStoreWithDB(t, true)
 	instance := &model.SandboxProviderInstance{ProjectID: "project-1", Type: "digitalocean", Name: "do", Config: model.RawJSON(`{"region":"sfo3"}`)}
 	if err := store.SetSandboxProviderSecrets(instance, map[string]json.RawMessage{"token": mustJSON(t, "old"), "sshPrivateKey": mustJSON(t, "key")}); err != nil {
 		t.Fatal(err)
@@ -163,11 +150,11 @@ func TestSealProviderCredentialsMergesOverWhatIsSealed(t *testing.T) {
 	}
 }
 
-// With no sealer configured, the secret fields are kept as a secret's value
+// With no encryption provider configured, the secret fields are kept as a secret's value
 // is: in the clear, and opened all the same.
-func TestProviderSecretsWithoutASealerAreKeptInTheClear(t *testing.T) {
+func TestProviderSecretsWithoutAProviderAreKeptInTheClear(t *testing.T) {
 	ctx := context.Background()
-	st, db := newTestStoreWithDB(t, nil)
+	st, db := newTestStoreWithDB(t, false)
 	instance := &model.SandboxProviderInstance{ProjectID: "project-1", Type: "vm", Name: "vm"}
 	if err := store.SetSandboxProviderSecrets(instance, map[string]json.RawMessage{"apiKey": mustJSON(t, "k")}); err != nil {
 		t.Fatal(err)
@@ -176,8 +163,8 @@ func TestProviderSecretsWithoutASealerAreKeptInTheClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := providerRow(t, db, instance.ID)
-	if secrets.IsSealed(row.EncryptedConfig) {
-		t.Error("sealed with no sealer")
+	if encryption.Sealed(row.EncryptedConfig) {
+		t.Error("sealed with no encryption provider")
 	}
 	if got := openedSecrets(t, st, row); got["apiKey"] != "k" {
 		t.Errorf("opened %v, want apiKey k", got)

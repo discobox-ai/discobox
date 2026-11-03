@@ -13,8 +13,8 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 )
 
 type SandboxGetOption func(*sandboxGetOptions)
@@ -764,7 +764,7 @@ func (s *Store) sealSandboxForWrite(ctx context.Context, sandbox *model.Sandbox)
 		}
 	}
 	persisted := *sandbox
-	ciphertext, err := secrets.SealIfUnsealed(ctx, s.sealer, "sandboxes.secret_state", sandboxSecretResourceID(sandbox), sandbox.SecretState)
+	ciphertext, err := s.keyring.SealForWrite(s.keyContext(ctx), encryption.SandboxSecretState(sandbox.ProjectID, sandbox.ID), sandbox.SecretState)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt sandbox secret state: %w", err)
 	}
@@ -778,18 +778,11 @@ func (s *Store) OpenSandboxSecretState(ctx context.Context, sandbox *model.Sandb
 	if sandbox == nil || len(sandbox.SecretState) == 0 {
 		return nil, nil
 	}
-	if s.sealer == nil || !secrets.IsSealed(sandbox.SecretState) {
-		return append([]byte(nil), sandbox.SecretState...), nil
-	}
-	plaintext, err := secrets.Open(ctx, s.sealer, "sandboxes.secret_state", sandboxSecretResourceID(sandbox), sandbox.SecretState)
+	plaintext, err := s.keyring.Open(s.keyContext(ctx), encryption.SandboxSecretState(sandbox.ProjectID, sandbox.ID), sandbox.SecretState)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt sandbox secret state: %w", err)
 	}
 	return plaintext, nil
-}
-
-func sandboxSecretResourceID(sandbox *model.Sandbox) string {
-	return sandbox.ProjectID + "/" + sandbox.ID
 }
 
 // GetSandboxByName reads a project's sandbox by its name, which is unique in

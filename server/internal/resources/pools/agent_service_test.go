@@ -17,9 +17,10 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -37,15 +38,18 @@ func newAgentServiceTestFixture(t *testing.T) (*Service, *poolagentauth.Manager)
 	}
 	appStore := store.New(db.Write, db.Read)
 
-	key, err := secrets.GenerateBase64Key()
+	key, err := encryption.GenerateLocalKey()
 	if err != nil {
-		t.Fatalf("generate sealer key: %v", err)
+		t.Fatalf("generate key: %v", err)
 	}
-	sealer, err := secrets.NewAESGCMSealerFromBase64Key(key)
+	keyring, err := encryption.New(ctx, config.EncryptionSettings{
+		Provider: config.EncryptionLocal,
+		Local:    config.LocalEncryptionSettings{Key: key},
+	}, store.NewEncryptionKeys(db.Write, db.CurrentRead()))
 	if err != nil {
-		t.Fatalf("new sealer: %v", err)
+		t.Fatalf("new keyring: %v", err)
 	}
-	agentAuth := poolagentauth.NewManager(appStore, sealer)
+	agentAuth := poolagentauth.NewManager(appStore, keyring)
 
 	controlPlane := NewControlPlane(appStore, nil)
 	controlPlane.SetAgentAuthManager(agentAuth)

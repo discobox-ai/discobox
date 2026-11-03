@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 
@@ -14,7 +15,27 @@ func (s *Store) CreateProject(ctx context.Context, project *model.Project) error
 	if err != nil {
 		return err
 	}
-	return write.Create(project).Error
+	if err := write.Create(project).Error; err != nil {
+		return err
+	}
+	return s.ensureProjectKey(ctx, write, project)
+}
+
+// ensureProjectKey gives a new project its data key now, outside the
+// transactions its first sealed values may be written in (EncryptionKeys).
+// A project whose key cannot be made (its provider unreachable) is deleted
+// again, so no project is left half made, without its key or the seeding
+// that follows its create.
+func (s *Store) ensureProjectKey(ctx context.Context, write *gorm.DB, project *model.Project) error {
+	err := s.keyring.Ensure(s.keyContext(ctx), project.ID)
+	if err == nil {
+		return nil
+	}
+	err = fmt.Errorf("make the data key of project %s: %w", project.ID, err)
+	if delErr := write.Delete(project).Error; delErr != nil {
+		return errors.Join(err, fmt.Errorf("delete the project again: %w", delErr))
+	}
+	return err
 }
 
 // UpsertProject saves the project's row, all but its egress level, which only
@@ -39,6 +60,9 @@ func (s *Store) CreateProjectIfNotExists(ctx context.Context, project *model.Pro
 		return nil, err
 	}
 	if err := write.Create(project).Error; err != nil {
+		return nil, err
+	}
+	if err := s.ensureProjectKey(ctx, write, project); err != nil {
 		return nil, err
 	}
 	return project, nil
@@ -184,7 +208,7 @@ func (s *Store) countForProject(ctx context.Context, projectID string, resource 
 // those own hosts and containers that must be torn down through their own
 // reconcilers first.
 func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
-	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+	return s.Transaction(ctx, func(txStore *Store, tx *gorm.DB) error {
 		project, err := firstByID[model.Project](tx, "id", projectID)
 		if err != nil {
 			return err
@@ -211,6 +235,15 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			if err := tx.Where("project_id = ?", projectID).Delete(scoped).Error; err != nil {
 				return err
 			}
+		}
+		// The project's data keys go with it, so the copies of its rows that
+		// outlive this delete, in a replica, open nothing (ADR 26-11-02-902
+		// §2). A backup taken before it still holds the wrapped keys.
+		if err := txStore.keyring.Destroy(txStore.keyContext(ctx), projectID); err != nil {
+			return err
+		}
+		if err := tx.Where("scope = ?", projectID).Delete(&model.EncryptionKey{}).Error; err != nil {
+			return err
 		}
 		return tx.Delete(project).Error
 	})

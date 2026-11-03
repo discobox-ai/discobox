@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
@@ -16,11 +17,11 @@ import (
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/config"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/handlers"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -70,7 +71,9 @@ type AppOptions struct {
 	// opposed to who it is. Nil on a server with no iroh endpoint.
 	IrohListener services.IrohListenerService
 
-	SecretSealer secrets.Sealer
+	// Keyring seals what the server stores encrypted, over the store's
+	// EncryptionKeys. Nil stores it unsealed.
+	Keyring *encryption.Keyring
 
 	// DispatcherPollInterval is how often the reconcile engine looks for
 	// claimable dirty rows beyond in-process wakeups.
@@ -170,7 +173,18 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if opts.UserID == "" {
 		opts.UserID = service.DefaultUserID
 	}
-	appStore := store.New(writeDB, readDB, store.WithSealer(opts.SecretSealer))
+	appStore := store.New(writeDB, readDB, store.WithKeyring(opts.Keyring))
+	// Before anything reads a sealed value: every stored one is brought up to
+	// the configured provider (ADR 26-11-02-902 §§4, 5).
+	report, err := appStore.PrepareEncryption(ctx)
+	if err != nil {
+		return nil, services.Services{}, nil, nil, fmt.Errorf("prepare encryption: %w", err)
+	}
+	logEncryption(opts.Keyring, report)
+	poolAgentAuth := poolagentauth.NewManager(appStore, opts.Keyring)
+	if err := poolAgentAuth.Reseal(ctx); err != nil {
+		return nil, services.Services{}, nil, nil, fmt.Errorf("prepare encryption: %w", err)
+	}
 	reconcileEngine, err := reconcile.New(writeDB, reconcile.Options{
 		// This deployment is single-process; the engine also supports
 		// lease-based multi-node claiming — flip this when scaling out.
@@ -213,10 +227,10 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		WSLCCommand:                    opts.WSLCCommand,
 		AssetDir:                       opts.AssetDir,
 	})
-	if opts.SecretSealer != nil {
-		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
+	if opts.Keyring != nil {
+		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.Keyring))
 	}
-	appServices.SetWorkerAgentAuthManager(poolagentauth.NewManager(appStore, opts.SecretSealer))
+	appServices.SetWorkerAgentAuthManager(poolAgentAuth)
 	if _, err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
 		return nil, services.Services{}, nil, nil, err
 	}
@@ -287,4 +301,22 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	}
 	router.Mount("/", boundInventoryReports(generated))
 	return router, svc, appStore, appServices.Stop, nil
+}
+
+// logEncryption says what PrepareEncryption did, and how values are sealed.
+func logEncryption(keyring *encryption.Keyring, report store.EncryptionReport) {
+	if keyring == nil {
+		if report.Unsealed > 0 {
+			log.Printf("encryption: no encryption.provider is set; %d stored secret values are not sealed", report.Unsealed)
+		}
+		return
+	}
+	provider, keyID := keyring.Provider()
+	log.Printf("encryption: sealing with %s key %s", provider, keyID)
+	if report.Rewrapped > 0 {
+		log.Printf("encryption: rewrapped %d data keys with %s; once no key is left on it, remove encryption.previous and any retired key", report.Rewrapped, provider)
+	}
+	if report.Resealed > 0 {
+		log.Printf("encryption: sealed %d stored values again with their project's data key; nothing is left in an earlier format", report.Resealed)
+	}
 }

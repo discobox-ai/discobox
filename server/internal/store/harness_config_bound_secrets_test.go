@@ -14,7 +14,7 @@ import (
 // a harness with credentials has none.
 func TestEveryHarnessConfigReadCountsItsBindings(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 
 	bound := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}

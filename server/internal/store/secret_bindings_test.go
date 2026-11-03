@@ -18,7 +18,7 @@ import (
 func bindingFixture(t *testing.T) (*store.Store, *model.Sandbox, *model.Sandbox, *model.Secret) {
 	t.Helper()
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	config := &model.HarnessConfig{ID: "hc-1", ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
@@ -232,7 +232,7 @@ func TestBindingEventsNameTheSecret(t *testing.T) {
 // between them, as Windows' coarse clock often does not.
 func TestBindingEventsKeepTheirOrderWithinOneClockTick(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createSecret(t, s, "sec-tick", "tick")
 	binding := &model.SecretBinding{ProjectID: "project-1", SecretID: "sec-tick", TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "TICK"}
 	if err := s.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {

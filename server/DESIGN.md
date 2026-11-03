@@ -994,7 +994,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/devbundles` | A development server's bundles (ADR 26-10-16-423 §13): the watcher's exported OCI layouts, and in build-mode the bundles a pool's daemon builds, saved as layouts here. Harness seeding reads their labels and the asset API serves their blobs from them; a saved one re-seeds the built-ins and resolves the platform again. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods and resource transactions. |
-| `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
+| `internal/encryption` | The keyring that seals stored secrets with each project's own data key, wrapped by the configured provider (ADR 26-11-02-902), and the fields it seals. |
 | `internal/registryauth` | The keychain for the server's direct registry reads: Docker's credentials, degraded to anonymous when the credential store cannot be read, so a broken helper cannot stop a public image from being pulled. |
 | `internal/config` | Server configuration loading: defaults, `server.yaml`, environment. |
 | `internal/config/genschema` | Generates `config.schema.json` and `server.example.yaml` from `config.Config`'s struct tags. |

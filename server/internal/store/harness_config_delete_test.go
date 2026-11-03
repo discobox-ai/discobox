@@ -11,7 +11,7 @@ import (
 
 func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 
 	newConfig := func(slug string) *model.HarnessConfig {

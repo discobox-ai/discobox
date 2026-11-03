@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -75,15 +75,7 @@ func TestSandboxInventoryIsReplacedAndConfirmedByDigest(t *testing.T) {
 // (ADR 26-10-11-657 §3), bound to its sandbox.
 func TestSandboxInventoryIsSealedAtRest(t *testing.T) {
 	ctx := context.Background()
-	key, err := secrets.GenerateBase64Key()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sealer, err := secrets.NewAESGCMSealerFromBase64Key(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, db := newTestStoreWithDB(t, sealer)
+	s, db := newTestStoreWithDB(t, true)
 	createTestPool(t, s, "project-1", "pool-1")
 	inventoryTestSandbox(t, s, "sandbox-1")
 	inventoryTestSandbox(t, s, "sandbox-2")
@@ -96,7 +88,7 @@ func TestSandboxInventoryIsSealedAtRest(t *testing.T) {
 	if err := db.Read.WithContext(ctx).Where("sandbox_id = ?", "sandbox-1").First(&row).Error; err != nil {
 		t.Fatalf("read row: %v", err)
 	}
-	if !secrets.IsSealed(row.Document) || bytes.Contains(row.Document, []byte("hunter2")) {
+	if !encryption.Sealed(row.Document) || bytes.Contains(row.Document, []byte("hunter2")) {
 		t.Fatalf("stored document is not sealed: %q", row.Document)
 	}
 	got, err := s.GetSandboxInventory(ctx, "project-1", "sandbox-1")
@@ -118,7 +110,7 @@ func TestSandboxInventoryIsSealedAtRest(t *testing.T) {
 // outlive the sandbox it came from.
 func TestDeletingASandboxDeletesItsInventory(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	inventoryTestSandbox(t, s, "sandbox-1")
 	inventoryTestSandbox(t, s, "sandbox-2")
@@ -143,7 +135,7 @@ func TestDeletingASandboxDeletesItsInventory(t *testing.T) {
 // where it is written: a report that races a delete leaves nothing behind.
 func TestSandboxInventoryIsNotWrittenForASandboxThePoolDoesNotHost(t *testing.T) {
 	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	inventoryTestSandbox(t, s, "sandbox-1")
 	at := time.Now().UTC()

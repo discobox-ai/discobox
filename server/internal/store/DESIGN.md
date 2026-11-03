@@ -20,10 +20,11 @@ flowchart LR
     services[internal/services] --> store
     auth["internal/auth, auth/sandbox, auth/poolagent"] --> store
     sshd[internal/sshd] --> store
-    router[internal/server] -. "store.New(write, read, WithSealer)" .-> store
+    router[internal/server] -. "store.New(write, read, WithKeyring)" .-> store
     store --> db[(GORM write/read handles)]
     store --> model[internal/model]
-    store --> secrets[internal/secrets Sealer]
+    store --> encryption[internal/encryption Keyring]
+    encryption -- "data keys (EncryptionKeys)" --> store
     store -- "binding expiry mark (MarkAtTx)" --> reconcile[internal/reconcile]
 ```
 
@@ -208,13 +209,27 @@ IDs already carried by persisted rows.
 
 ## Secret Sealing
 
-With `WithSealer`, the store encrypts secret material on write and decrypts it
-only on request: `secrets.encrypted_value` (`OpenSecretValue`),
-`sandboxes.secret_state` (`OpenSandboxSecretState`), and
-`sandbox_provider_instances.encrypted_config` (`OpenSandboxProviderSecrets`).
-Plaintext rows pass through unchanged. Deleting secrets (directly, with an
-anonymous sandbox assignment, or with the project) nulls `encrypted_value`
-before removing the row.
+With `WithKeyring`, the store seals secret material on write with the
+project's own data key (ADR 26-11-02-902) and opens it only on request:
+`secrets.encrypted_value` (`OpenSecretValue`), `sandboxes.secret_state`
+(`OpenSandboxSecretState`), `sandbox_inventories.document` and
+`sandbox_provider_instances.encrypted_config` (`OpenSandboxProviderSecrets`). Each value is
+bound to its `encryption.Field`. Reads also accept a value stored unsealed or
+sealed by an earlier release; a write seals it again. Deleting secrets
+(directly, with an anonymous sandbox assignment, or with the project) nulls
+`encrypted_value` before removing the row.
+
+- Data keys live in `encryption_keys`, through `EncryptionKeys`, the
+  keyring's key store. A transaction-bound store hands the keyring its
+  transaction in the context (`keyContext`): SQLite has one write connection,
+  and a key read outside the transaction that seals would wait on it forever.
+- A project gets its data key when it is made (`CreateProject`), outside any
+  transaction, so no key is lost to a rollback while the keyring has it
+  cached. `DeleteProject` destroys the project's keys with it.
+- `PrepareEncryption` runs at startup, before anything is served: it rewraps
+  data keys left on a previous provider or retired key, gives every project
+  and the `server` scope its key, and re-seals in batches every value not
+  sealed in the current format. A value it cannot open stops the start.
 
 A provider instance's `encrypted_config` is a JSON object of the fields its
 definition types `secret` (ADR 26-10-31-694). The caller puts them there in the
@@ -243,7 +258,8 @@ Keep files split by resource area:
 
 | File area | Responsibility |
 | --- | --- |
-| `store.go` | `Store`, `New`, `WithSealer`, handle resolution, error aliases. |
+| `store.go` | `Store`, `New`, `WithKeyring`, handle resolution, error aliases. |
+| `encryption.go`, `encryption_keys.go` | `PrepareEncryption`, the startup rewrap and re-seal; `EncryptionKeys`, the keyring's store of wrapped data keys. |
 | `transactions.go` | `Store.Transaction`. |
 | `id_lookup.go` | `firstByID`: exact or unique-prefix ID lookup. |
 | `projects.go`, `users.go` | Projects, members, per-user defaults, users, project user keys. |

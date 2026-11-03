@@ -43,7 +43,7 @@ func TestListSecretRequestsStatusFilter(t *testing.T) {
 // open.
 func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, _ := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	for _, id := range []string{"sb-1", "sb-2"} {
 		if err := s.CreateSandbox(ctx, &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: id}); err != nil {

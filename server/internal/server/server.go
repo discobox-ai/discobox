@@ -22,11 +22,12 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
-	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/sshd"
+	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
@@ -160,13 +161,14 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("migrate database: %w", err)
 	}
 
-	var sealer secrets.Sealer
-	if cfg.EncryptionKey != "" {
-		sealer, err = secrets.NewAESGCMSealerFromBase64Key(cfg.EncryptionKey)
-		if err != nil {
-			return fmt.Errorf("initialize encryption: %w", err)
-		}
+	// A provider that cannot reach its key, or whose key cannot wrap, fails
+	// here, before anything is served (ADR 26-11-02-902 §3).
+	startup.setPhase("connecting to the encryption provider")
+	keyring, err := encryption.New(ctx, cfg.Encryption, store.NewEncryptionKeys(db.Write, db.CurrentRead()))
+	if err != nil {
+		return fmt.Errorf("initialize encryption: %w", err)
 	}
+	defer keyring.Close()
 
 	// Nil, not a nil *irohd.Admission, when there is no iroh listener: an
 	// interface holding a nil pointer is not nil.
@@ -211,7 +213,7 @@ func Run(ctx context.Context) error {
 		DiscobotPublicKey:              discobotKey,
 		AuthRequired:                   cfg.AuthRequired,
 		IrohAdmission:                  irohGate,
-		SecretSealer:                   sealer,
+		Keyring:                        keyring,
 		DispatcherPollInterval:         cfg.DispatcherPollInterval,
 		SandboxReconcileJobConcurrency: cfg.SandboxReconcileJobConcurrency,
 		DevelopmentImages:              cfg.DevelopmentImages,
@@ -449,15 +451,16 @@ func reportConfigFile(cfg *config.Config) {
 	case cfg.ConfigFileRead:
 		log.Printf("configuration: read %s", cfg.ConfigFile)
 	default:
-		example, err := config.RefreshExample(cfg.ConfigFile)
-		if err != nil {
+		if example, err := config.RefreshExample(cfg.ConfigFile); err != nil {
 			log.Printf("configuration: no file at %s, and its reference could not be written: %v", cfg.ConfigFile, err)
-			return
+		} else {
+			log.Printf("configuration: no file at %s; every setting is listed in %s", cfg.ConfigFile, example)
 		}
-		log.Printf("configuration: no file at %s; every setting is listed in %s", cfg.ConfigFile, example)
 	}
+	// A warning is not labeled with the file: a retired encryptionKey warns
+	// from the environment as well as from it.
 	for _, warning := range cfg.Warnings {
-		log.Printf("configuration: %s: %s", cfg.ConfigFile, warning)
+		log.Printf("configuration: %s", warning)
 	}
 }
 
