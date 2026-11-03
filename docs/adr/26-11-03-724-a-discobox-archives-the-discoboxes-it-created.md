@@ -1,8 +1,10 @@
 # 26-11-03-724 — A discobox archives the discoboxes it created
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-03
-- **Would supersede**, for the discoboxes the caller created and only for
+
+  Accepted by the owner by merging #463, 2026-11-03.
+- **Supersedes**, for the discoboxes the caller created and only for
   archive (`DELETE sandboxes/{id}`):
   - [26-10-02-478](26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md)
     §2's keeping of archive out of the sandbox role. Its keeping of purge and
