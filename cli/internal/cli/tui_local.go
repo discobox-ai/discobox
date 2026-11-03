@@ -22,7 +22,7 @@ func (d *apiDataSource) openLocalHarnessConfigure(ctx context.Context, harnessID
 		return nil, fmt.Errorf("find this program: %w", err)
 	}
 	args := append(d.app.globalFlags(), "admin", "harness", "configure", harnessID)
-	pty, err := localpty.Start(ctx, localpty.Command{Path: self, Args: args, Env: append(os.Environ(), "DISCOBOX_TOKEN="+d.app.token)}, cols, rows)
+	pty, err := localpty.Start(ctx, localpty.Command{Path: self, Args: args, Env: d.app.childCLIEnv(d.app.token)}, cols, rows)
 	if err != nil {
 		return nil, fmt.Errorf("start harness configure: %w", err)
 	}

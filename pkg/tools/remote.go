@@ -18,6 +18,18 @@ type Remote struct {
 	// WorkingRoot is the discobox's working root, which its platform decides
 	// (sandboxpath.Paths.WorkingRoot).
 	WorkingRoot string
+
+	// ProjectID is the discobox's project, resolved: an ID, never an alias
+	// such as `default`.
+	ProjectID string
+	// Server is the address of the server the discobox is on, as `--server`
+	// takes it.
+	Server string
+	// CLI is the discobox binary handing the tool the discobox. With Server
+	// and ProjectID, which a CLI reads from DISCOBOX_SERVER and
+	// DISCOBOX_PROJECT, it is how a host script reaches the same discobox
+	// again: `"$DISCOBOX_CLI" shell "$DISCOBOX_ID" ...` (ADR 26-11-03-982).
+	CLI string
 }
 
 // workdir is the directory a tool opens: the working tree, or the sandbox's
@@ -83,9 +95,36 @@ func (r Remote) Expand(args []string) ([]string, error) {
 			"{workdir.urlpath}", r.workdirURLPath(),
 			"{workdir}", r.workdir(),
 			"{discobox.id}", r.SandboxID,
+			"{discobox.project}", r.ProjectID,
+			"{discobox.server}", r.Server,
+			"{discobox.cli}", r.CLI,
 		).Replace(arg))
 	}
 	return out, nil
+}
+
+// cliPlaceholders are the placeholders that aim a program at the discobox's
+// server: a tool that names one runs the CLI there (ADR 26-11-03-982 §1).
+var cliPlaceholders = []string{"{discobox.cli}", "{discobox.server}"}
+
+// RunsTheCLI reports whether the tool may run the CLI against the discobox's
+// server, and so must be started with the token and transport settings the CLI
+// dials that server with, never with ones this process inherited for another:
+// a script, which is handed the server in its environment, and a .yaml tool
+// whose args name the CLI or the server. An editor names neither, and keeps
+// the environment it would have had.
+func (d Definition) RunsTheCLI() bool {
+	if d.Script {
+		return true
+	}
+	for _, arg := range d.Args {
+		for _, placeholder := range cliPlaceholders {
+			if strings.Contains(arg, placeholder) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Environ is the discobox as environment, for a host script, which has no args
@@ -97,6 +136,9 @@ func (r Remote) Environ() []string {
 		"DISCOBOX_SSH_URL=" + r.sshURL(),
 		"DISCOBOX_GIT_URL=" + r.GitURL(),
 		"DISCOBOX_WORKDIR=" + r.workdir(),
+		"DISCOBOX_PROJECT=" + r.ProjectID,
+		"DISCOBOX_SERVER=" + r.Server,
+		"DISCOBOX_CLI=" + r.CLI,
 	}
 }
 

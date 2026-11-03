@@ -8,10 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/adrg/xdg"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -140,25 +143,204 @@ func TestAServerWithoutTheToolsRouteStillRunsTheCLIsTools(t *testing.T) {
 }
 
 // A host script has no args of its own to put placeholders in, so it is handed
-// the discobox in its environment.
+// the discobox in its environment: where it is, and what a script needs to
+// reach it again with the CLI (ADR 26-11-03-982 §1).
 func TestAHostScriptIsHandedTheDiscoboxInItsEnvironment(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the script is a shell script")
 	}
 	home := t.TempDir()
-	record := filepath.Join(t.TempDir(), "env")
-	declareUserTool(t, home, "gitk.sh", "#!/bin/sh\n#---\n# runs: host\n#---\n"+
-		"printf '%s\\n' \"$DISCOBOX_SSH_HOST\" \"$DISCOBOX_GIT_URL\" \"$DISCOBOX_WORKDIR\" \"$1\" > "+record+"\n")
-	if err := os.Chmod(filepath.Join(home, ".config", "discobox", "tools", "gitk.sh"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	record := declareEnvRecordingTool(t, home)
 	if _, _, stderr, err := runToolsCmd(t, vscodeFakeServer(), home, "gitk", "sbx_devbox00000001", "--", "--all"); err != nil {
 		t.Fatalf("tools gitk: %v\n%s", err, stderr)
 	}
-	want := "devbox\nssh://devbox/home/agent/repo\n/home/agent/repo\n--all\n"
-	if got := readFile(t, record); got != want {
-		t.Fatalf("the script saw %q, want %q", got, want)
+	got := strings.Split(readFile(t, record), "\n")
+	want := []string{"devbox", "ssh://devbox/home/agent/repo", "/home/agent/repo", "--all"}
+	if strings.Join(got[:4], "\n") != strings.Join(want, "\n") {
+		t.Fatalf("the script saw %q, want %q", got[:4], want)
 	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// --project said project-1; the script is handed what the server
+	// resolved it to, which a CLI on any machine reads the same way.
+	if got[4] != self || got[6] != resolvedTestProjectID {
+		t.Errorf("DISCOBOX_CLI = %q, DISCOBOX_PROJECT = %q; want %q, %q", got[4], got[6], self, resolvedTestProjectID)
+	}
+	if !strings.HasPrefix(got[5], "http://127.0.0.1:") {
+		t.Errorf("DISCOBOX_SERVER = %q, want the test server's address", got[5])
+	}
+}
+
+// A server named by its registered name is handed on as its address: a CLI
+// run by the script, on a machine whose registry may differ, dials the same
+// server.
+func TestAHostScriptIsHandedTheServersAddressNotItsName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the script is a shell script")
+	}
+	home := t.TempDir()
+	record := declareEnvRecordingTool(t, home)
+	setHome(t, home)
+	setConfigHome(t, filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	// The registry is found through xdg's cached directories: re-read them
+	// for this test's, and again after, so the server registered here is not
+	// every later test's.
+	xdg.Reload()
+	t.Cleanup(xdg.Reload)
+	server := vscodeFakeServer().start(t)
+	registerForTest(t, registeredServer{Name: "lab", Address: server.URL})
+
+	cmd := NewRootCommand()
+	var errOut strings.Builder
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", "lab", "--project", "project-1", "tools", "gitk", "sbx_devbox00000001"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("tools gitk: %v\n%s", err, errOut.String())
+	}
+	if got := strings.Split(readFile(t, record), "\n")[5]; got != server.URL {
+		t.Errorf("DISCOBOX_SERVER = %q, want the address %q that lab names", got, server.URL)
+	}
+}
+
+// A host tool is handed no token: the CLI it runs is authorized by its
+// transport, and one this process inherited was given for the primary and
+// would otherwise reach whatever server DISCOBOX_SERVER names
+// (App.childCLIEnv). Neither the inherited token nor a --token given to this
+// run reaches the script.
+func TestAHostScriptIsHandedNoToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the script is a shell script")
+	}
+	t.Setenv("DISCOBOX_TOKEN", "inherited-token")
+	home := t.TempDir()
+	record := filepath.Join(t.TempDir(), "token")
+	declareUserTool(t, home, "tok.sh", "#!/bin/sh\n#---\n# runs: host\n#---\nprintf %s \"$DISCOBOX_TOKEN\" > "+record+"\n")
+	if err := os.Chmod(filepath.Join(home, ".config", "discobox", "tools", "tok.sh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runToolsWithToken(t, home, "flag-token", "tok")
+	if got := readFile(t, record); got != "" {
+		t.Errorf("DISCOBOX_TOKEN = %q, want none", got)
+	}
+}
+
+// A .yaml host tool is usually an editor, and every terminal in it inherits
+// what it was started with: it is not handed the discobox's server and
+// project, which would aim every `discobox` run in it at this one discobox's
+// (ADR 0125 §4 hands the environment to a script).
+func TestAYAMLHostToolKeepsTheCLIsOwnEnvironment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the program is a shell script")
+	}
+	home := t.TempDir()
+	bin := t.TempDir()
+	record := filepath.Join(t.TempDir(), "env")
+	program := filepath.Join(bin, "fake-editor")
+	if err := os.WriteFile(program, []byte("#!/bin/sh\nprintf '%s|%s|%s' \"${DISCOBOX_SERVER-unset}\" \"${DISCOBOX_PROJECT-unset}\" \"$1\" > "+record+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	declareUserTool(t, home, "ed.yaml", "runs: host\nprogram: "+program+"\nargs: [\"{discobox.project}\"]\n")
+	// Whatever this process inherited is the editor's to keep; this test's
+	// starts with neither.
+	for _, name := range []string{"DISCOBOX_SERVER", "DISCOBOX_PROJECT"} {
+		t.Setenv(name, "")
+		_ = os.Unsetenv(name)
+	}
+	if _, _, stderr, err := runToolsCmd(t, vscodeFakeServer(), home, "ed", "sbx_devbox00000001"); err != nil {
+		t.Fatalf("tools ed: %v\n%s", err, stderr)
+	}
+	if got, want := readFile(t, record), "unset|unset|"+resolvedTestProjectID; got != want {
+		t.Errorf("the editor saw %q, want %q: no DISCOBOX_SERVER or DISCOBOX_PROJECT, and the resolved project as a placeholder", got, want)
+	}
+}
+
+// A .yaml tool that runs the CLI against the discobox's server, by naming
+// {discobox.server} or {discobox.cli}, is started as a script is, with no
+// token: never one this process inherited for the primary
+// (Definition.RunsTheCLI).
+func TestAYAMLHostToolThatRunsTheCLIIsHandedNoToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the program is a shell script")
+	}
+	t.Setenv("DISCOBOX_TOKEN", "inherited-token")
+	home := t.TempDir()
+	record := filepath.Join(t.TempDir(), "token")
+	program := filepath.Join(t.TempDir(), "fake-cli")
+	if err := os.WriteFile(program, []byte("#!/bin/sh\nprintf '%s|%s' \"$DISCOBOX_TOKEN\" \"$1\" > "+record+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	declareUserTool(t, home, "remote-ls.yaml", "runs: host\nprogram: "+program+"\nargs: [\"--server={discobox.server}\"]\n")
+	runToolsWithToken(t, home, "flag-token", "remote-ls")
+	token, server, _ := strings.Cut(readFile(t, record), "|")
+	if token != "" {
+		t.Errorf("DISCOBOX_TOKEN = %q, want none", token)
+	}
+	if !strings.HasPrefix(server, "--server=http://127.0.0.1:") {
+		t.Errorf("args = %q, want the server's address", server)
+	}
+}
+
+// `discobox tools --help` is what a person or an agent writes a tool from, so
+// it names every variable a host script is handed, and every placeholder it
+// names is one a .yaml tool's args are filled in with (ADR 26-11-03-982 §3).
+func TestToolsHelpNamesWhatAHostToolIsHanded(t *testing.T) {
+	cmd, _, err := NewRootCommand().Find([]string{"tools"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	help := cmd.Long
+	for _, entry := range (tools.Remote{}).Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if !strings.Contains(help, name) {
+			t.Errorf("tools --help does not say a host script is handed %s", name)
+		}
+	}
+	remote := tools.Remote{SandboxID: "sbx_1", Host: "h", Workdir: "/w", ProjectID: "p", Server: "s", CLI: "c"}
+	placeholders := regexp.MustCompile(`\{[a-z]+(\.[a-z]+)*\}`).FindAllString(help, -1)
+	if len(placeholders) == 0 {
+		t.Fatal("tools --help names no placeholders")
+	}
+	for _, placeholder := range placeholders {
+		if got, err := remote.Expand([]string{placeholder}); err != nil || got[0] == placeholder {
+			t.Errorf("tools --help names %s, which a host tool's args are not filled in with", placeholder)
+		}
+	}
+}
+
+// runToolsWithToken runs `discobox --token <token> tools <tool>` against the
+// devbox, which runToolsCmd cannot: its arguments follow `tools`.
+func runToolsWithToken(t *testing.T, home, token, tool string) {
+	t.Helper()
+	setHome(t, home)
+	setConfigHome(t, filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	server := vscodeFakeServer().start(t)
+	cmd := NewRootCommand()
+	var errOut strings.Builder
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "--token", token, "tools", tool, "sbx_devbox00000001"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("tools %s: %v\n%s", tool, err, errOut.String())
+	}
+}
+
+// declareEnvRecordingTool declares a user host script, gitk, that writes what
+// it was handed to the returned file, one value per line.
+func declareEnvRecordingTool(t *testing.T, home string) string {
+	t.Helper()
+	record := filepath.Join(t.TempDir(), "env")
+	declareUserTool(t, home, "gitk.sh", "#!/bin/sh\n#---\n# runs: host\n#---\n"+
+		"printf '%s\\n' \"$DISCOBOX_SSH_HOST\" \"$DISCOBOX_GIT_URL\" \"$DISCOBOX_WORKDIR\" \"$1\" "+
+		"\"$DISCOBOX_CLI\" \"$DISCOBOX_SERVER\" \"$DISCOBOX_PROJECT\" > "+record+"\n")
+	if err := os.Chmod(filepath.Join(home, ".config", "discobox", "tools", "gitk.sh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return record
 }
 
 func TestSandboxToolCommand(t *testing.T) {

@@ -210,6 +210,67 @@ func TestRemoteExpand(t *testing.T) {
 	}
 }
 
+// A host tool is handed what it needs to reach the same discobox again with
+// the CLI: the binary, the server's address and the resolved project (ADR
+// 26-11-03-982 §1), as placeholders for a .yaml tool and as environment for a
+// script.
+func TestRemoteHandsTheCLIServerAndProject(t *testing.T) {
+	r := Remote{
+		SandboxID: "sbx_1", Host: "discobox.box", Workdir: "/workspace/app",
+		ProjectID: "proj_1", Server: "https://discobox.example", CLI: "/usr/local/bin/discobox",
+	}
+	got, err := r.Expand([]string{"{discobox.cli}", "--server={discobox.server}", "--project", "{discobox.project}", "{discobox.id}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/usr/local/bin/discobox", "--server=https://discobox.example", "--project", "proj_1", "sbx_1"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("expanded = %q\nwant %q", got, want)
+	}
+
+	env := map[string]string{}
+	for _, entry := range r.Environ() {
+		name, value, _ := strings.Cut(entry, "=")
+		if _, seen := env[name]; seen {
+			t.Errorf("%s is set twice", name)
+		}
+		env[name] = value
+	}
+	for name, value := range map[string]string{
+		"DISCOBOX_ID":       "sbx_1",
+		"DISCOBOX_CLI":      "/usr/local/bin/discobox",
+		"DISCOBOX_SERVER":   "https://discobox.example",
+		"DISCOBOX_PROJECT":  "proj_1",
+		"DISCOBOX_WORKDIR":  "/workspace/app",
+		"DISCOBOX_SSH_HOST": "discobox.box",
+	} {
+		if env[name] != value {
+			t.Errorf("%s = %q, want %q", name, env[name], value)
+		}
+	}
+}
+
+// A tool that names the CLI or the server runs the CLI against the discobox's
+// server, and is started with what the CLI dials it with; an editor names
+// neither and keeps its own environment.
+func TestRunsTheCLI(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		def  Definition
+		want bool
+	}{
+		{"script", Definition{Script: true}, true},
+		{"editor", Definition{Program: []string{"code"}, Args: []string{"--folder-uri", "vscode-remote://ssh-remote+{ssh.host}{workdir.urlpath}"}}, false},
+		{"names the cli", Definition{Program: []string{"sh"}, Args: []string{"-c", "{discobox.cli} shell {discobox.id} -- true"}}, true},
+		{"names the server", Definition{Program: []string{"discobox"}, Args: []string{"--server={discobox.server}", "ls"}}, true},
+		{"names only the project", Definition{Program: []string{"echo"}, Args: []string{"{discobox.project}"}}, false},
+	} {
+		if got := tc.def.RunsTheCLI(); got != tc.want {
+			t.Errorf("%s: RunsTheCLI() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 // A template joins the host and the path with nothing between them, so the
 // path must begin with `/` or the rest of it runs on into the URL's authority.
 // A Windows drive path does not: `C:\x@attacker.example` read as authority is

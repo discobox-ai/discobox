@@ -104,8 +104,14 @@ remote. Open a pull request or fetch and merge that branch on your machine.
   open VS Code or Zed in the box's working directory; `discobox tools ls` lists
   every tool a box offers. Declare your own as a `.yaml` or a front-matter script
   in the box's `.discobox/tools` or in your own config directory's
-  `discobox/tools` (ADR 0125). Other editors with SSH remote support can also
-  connect directly.
+  `discobox/tools` (ADR 0125). A script of yours with `runs: host` runs on
+  your machine and is handed the CLI, server and project, so it can set the box
+  up first: have the box download a program into its `~/.cache`, copy your own
+  `~/.config/<tool>` in (config only: a token or key goes in `discobox secret`,
+  not in a copied file the box's agent can read), then open it there
+  (ADR 26-11-03-982).
+  `discobox tools --help` shows how to write one. Other editors with SSH remote
+  support can also connect directly.
 - **Desktop:** Access the box's graphical desktop and browser through VNC or
   noVNC, using port forwarding.
 - **Toolchain:** direnv loads the project's declared environment, including
