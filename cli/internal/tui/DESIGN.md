@@ -1889,7 +1889,7 @@ screen, the configuration pane or the showing tool, and every place that asked
   empty buffer otherwise.
 - **The last two rows are not tools: they are the discobox's addresses**
   (`addressSSHKey`, `addressGitKey`, `DataSource.Addresses`). `s` prints and
-  copies `ssh <name>`, `g` the `ssh://<name>/<workdir>` git URL, and both are
+  copies `ssh <id>`, `g` the `ssh://<id>/<workdir>` git URL, and both are
   the whole of what it takes from any shell on this machine. They are in the
   picker because the question is the picker's — how do I get at this box — and
   they are printed rather than captioned, because what makes them worth a row

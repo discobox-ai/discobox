@@ -270,6 +270,24 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   CLI's tests clear the variables to stay out of a developer's real Windows
   profile.
 
+## The managed ssh_config
+
+- **A Host pattern derives from the discobox's ID, never its name.** A
+  generated name is neither stable nor unique the way an ID is, and ssh takes
+  the first matching block, so a name that spells another discobox's ID would
+  quietly reach the wrong one. What a tool is handed as `{ssh.host}` is the
+  bare ID, the first of `sshConfigHostPatterns`.
+- **Every write of a project's managed config or known_hosts is restricted
+  and locked.** Each is put through `target.restrict` once written — over an
+  existing file `os.WriteFile` keeps the ACL an older CLI left, and an
+  Included config ssh refuses fails every host in the user's ssh_config — and
+  made under `sshConfigLockName`, since a write also re-keys other projects'
+  configs and a read-modify-write without it can put back stanzas another
+  command just replaced. (The key and its Windows mirror are not locked, since
+  nothing reads one back to rewrite it, and each is restricted where it is
+  written: the key through `privatefs.Restrict`, the mirror through
+  `restrictFile`, ADR 0102 §1.)
+
 ## Reading files a paste names
 
 - **The box can write what gets pasted.** OSC 52 puts its text on the user's

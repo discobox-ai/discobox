@@ -755,7 +755,7 @@ reads `sandbox.json`'s source spec), then `curl` it on
   from `docker inspect` of `discobox-sandbox-<pool>-<sbx>`) with no token, or
   a garbage `Bearer`, must answer `401`.
 - **SSH direct-tcpip.** `d run` writes the ssh config, so `ssh -W
-  127.0.0.1:<port> <box-name>` forwards through the server's sshd and the
+  127.0.0.1:<port> <box-id>` forwards through the server's sshd and the
   agent's `/tcp/attach`; a closed port shows the rejection reason the client
   prints (`channel 0: open failed: connect failed: ...`).
 

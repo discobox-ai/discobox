@@ -395,7 +395,7 @@ type resolvedAddresses struct {
 // action is one address as a row of the picker.
 //
 // The address itself is the row's detail, not a caption offering to produce it:
-// what makes `ssh mybox` worth a row is reading it and seeing that there is
+// what makes `ssh sbx_…` worth a row is reading it and seeing that there is
 // nothing else to it, and a row that said "copy the ssh address" would be a
 // button for a fact it declined to show.
 func (r resolvedAddresses) action(key, label, value, unreachable string) action {
@@ -410,8 +410,8 @@ func (r resolvedAddresses) action(key, label, value, unreachable string) action 
 	case r.Addresses == (Addresses{}):
 		row.why = "looking it up…"
 	default:
-		// Resolved, and this half of it came back empty: a discobox with no
-		// unambiguous host pattern, or none whose source ever landed.
+		// Resolved, and this half of it came back empty: a discobox whose
+		// source never landed.
 		row.why = "nothing to reach it by"
 	}
 	return row

@@ -84,7 +84,7 @@ func TestSSHConfigWriteProducesAUsableConfig(t *testing.T) {
 
 	config := readFile(t, configPath)
 	for _, want := range []string{
-		"Host devbox devbox.discobox.internal sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n",
+		"Host sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n",
 		"    User sbx_devbox00000001\n",
 		"    HostKeyAlias " + resolvedTestProjectID + ".discobox.internal\n",
 		"    IdentitiesOnly yes\n",
@@ -115,6 +115,101 @@ func TestSSHConfigWriteProducesAUsableConfig(t *testing.T) {
 	}
 	if !strings.Contains(stderr, configPath) {
 		t.Fatalf("stderr should report what was written, got %q", stderr)
+	}
+}
+
+// TestSSHConfigWriteClearsANameKeyedStanza: a CLI before this one keyed a
+// stanza by the discobox's generated name too. The next write rewrites its own
+// project's managed file wholesale, and re-keys every other project's by the
+// User each stanza already carries — that project may never be written again —
+// so no name survives in either, and the user's ~/.ssh/config is untouched.
+func TestSSHConfigWriteClearsANameKeyedStanza(t *testing.T) {
+	home := t.TempDir()
+	state := t.TempDir()
+	configPath, _ := managedPaths(state)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := managedConfigHeader(resolvedTestProjectID) +
+		"Host devbox devbox.discobox.internal sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n" +
+		"    User sbx_devbox00000001\n\n" +
+		"Host sad_einstein sad_einstein.discobox.internal sbx_gone0000000001 sbx_gone0000000001.discobox.internal\n" +
+		"    User sbx_gone0000000001\n"
+	if err := os.WriteFile(configPath, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Another project's, on a server this run does not reach: two stanzas,
+	// one keyed by name, and the comment an older CLI left for a discobox
+	// whose every pattern a name had claimed.
+	otherPath := filepath.Join(filepath.Dir(filepath.Dir(configPath)), "proj_other0000001", "config")
+	if err := os.MkdirAll(filepath.Dir(otherPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	otherStanza := func(host, user string) string {
+		return host + "\n    ProxyCommand discobox --server https://elsewhere admin ssh-proxy\n    User " + user +
+			"\n    IdentitiesOnly yes\n    HostKeyAlias proj_other0000001.discobox.internal\n"
+	}
+	other := managedConfigHeader("proj_other0000001") +
+		otherStanza("Host sad_einstein sad_einstein.discobox.internal sbx_other000000001 sbx_other000000001.discobox.internal sbx-other000000001 sbx-other000000001.discobox.internal", "sbx_other000000001") + "\n" +
+		"# sbx_other000000002 (sbx_other000000003) has no unambiguous host alias and was skipped\n\n" +
+		otherStanza("Host sbx-other000000002 sbx-other000000002.discobox.internal", "sbx_other000000002")
+	if err := os.WriteFile(otherPath, []byte(other), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	userConfig := "Include " + configPath + "\nInclude " + otherPath + "\n"
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "config"), []byte(userConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	cmd.SetOut(new(strings.Builder))
+	cmd.SetErr(new(strings.Builder))
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config --write: %v", err)
+	}
+
+	config := readFile(t, configPath)
+	for _, gone := range []string{"devbox ", "devbox.discobox.internal", "sad_einstein", "sbx_gone0000000001"} {
+		if strings.Contains(config, gone) {
+			t.Fatalf("the rewritten config still carries %q:\n%s", gone, config)
+		}
+	}
+	if !strings.Contains(config, "\nHost sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n") {
+		t.Fatalf("the rewritten config is not keyed by the ID:\n%s", config)
+	}
+	wantOther := managedConfigHeader("proj_other0000001") +
+		otherStanza("Host sbx_other000000001 sbx_other000000001.discobox.internal sbx-other000000001 sbx-other000000001.discobox.internal", "sbx_other000000001") + "\n\n" +
+		otherStanza("Host sbx_other000000002 sbx_other000000002.discobox.internal sbx-other000000002 sbx-other000000002.discobox.internal", "sbx_other000000002")
+	if got := readFile(t, otherPath); got != wantOther {
+		t.Fatalf("the other project's config =\n%s\nwant\n%s", got, wantOther)
+	}
+	if got := readFile(t, filepath.Join(home, ".ssh", "config")); got != userConfig {
+		t.Fatalf("user ssh config = %q", got)
+	}
+}
+
+// TestRekeySSHConfigStanzasLeavesACurrentConfigAlone: what this CLI writes now
+// is already keyed by the ID, so re-keying it changes nothing and no file is
+// rewritten on every run.
+func TestRekeySSHConfigStanzasLeavesACurrentConfigAlone(t *testing.T) {
+	config := managedConfigHeader("p") + renderSSHConfig(sshConfigRender{
+		sandboxes: []apimodel.Sandbox{
+			{ID: "sbx_one00000000001", Config: apimodel.SandboxConfig{Name: "one"}},
+			{ID: "sbx_two00000000001", Config: apimodel.SandboxConfig{Name: "two"}},
+		},
+		proxyCommand: "discobox admin ssh-proxy",
+		hostKeyAlias: "p.discobox.internal",
+		identityFile: "/k",
+	})
+	if got, changed := rekeySSHConfigStanzas(config); changed || got != config {
+		t.Fatalf("re-keyed a current config (changed=%v):\n%s", changed, got)
 	}
 }
 

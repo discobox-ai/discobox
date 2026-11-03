@@ -48,18 +48,9 @@ type sshConfigRender struct {
 // what gets written is exactly what would have been printed, apart from the
 // UserKnownHostsFile only the written form can honestly name.
 func renderSSHConfig(in sshConfigRender) string {
-	patterns := sshConfigHostPatterns(in.sandboxes)
 	var out strings.Builder
 	for i, sandbox := range in.sandboxes {
-		if len(patterns[i]) == 0 {
-			// Every candidate was claimed by another sandbox. Emitting `Host`
-			// with no patterns is an ssh_config syntax error that would break
-			// the whole file, so say what happened instead.
-			fmt.Fprintf(&out, "# %s (%s) has no unambiguous host alias and was skipped\n\n",
-				sandbox.Config.Name, sandbox.ID)
-			continue
-		}
-		fmt.Fprintf(&out, "Host %s\n", strings.Join(patterns[i], " "))
+		fmt.Fprintf(&out, "Host %s\n", strings.Join(sshConfigHostPatterns(sandbox.ID), " "))
 		// No HostName and no Port: there is no address to dial. ssh runs the
 		// ProxyCommand and speaks its protocol over its stdio. The whole line
 		// is escaped rather than the endpoint alone, since the executable's
@@ -147,6 +138,7 @@ func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, projectI
 		return err
 	}
 	notes("wrote %s", configPath.client)
+	rekeyManagedSSHConfigs(ctx, target, notes)
 	if edits.added {
 		notes("added an Include for it to %s", target.userConfig.client)
 	}
@@ -173,6 +165,82 @@ func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, projectI
 		}
 	}
 	return nil
+}
+
+// rekeyManagedSSHConfigs is the upgrade of what an older CLI wrote into every
+// project's managed config under this target: a stanza keyed by the discobox's
+// name as well as its ID, or a comment naming a discobox whose every pattern
+// was contested. A write rewrites only the project it is for, and another
+// project's file can go unwritten for good — its server gone, the project never
+// opened again — so each write re-keys the rest from what each stanza already
+// says: its User is the ID, and its Host line becomes that ID's patterns
+// (sshConfigHostPatterns). A file with nothing to re-key is not written. It
+// runs under sshConfigLockName, so no other write of the same file falls
+// between its read and its write.
+//
+// A rewritten file is restricted as the write above restricts its own: over an
+// existing file os.WriteFile keeps whatever ACL an older CLI left, and ssh
+// refuses an Included config it does not like the look of — failing every host
+// in the user's ssh_config. Best-effort, like the Include repair: a file it
+// cannot read, write or restrict is a note, and the write that called it
+// stands.
+func rekeyManagedSSHConfigs(ctx context.Context, target sshTarget, notes noteFunc) {
+	paths, err := filepath.Glob(filepath.Join(target.sshDir().local, "*", "config"))
+	if err != nil {
+		return
+	}
+	for _, local := range paths {
+		path := target.configPath(filepath.Base(filepath.Dir(local)))
+		data, err := os.ReadFile(path.local)
+		if err != nil {
+			notes("could not read %s to re-key it by discobox ID: %v", path.client, err)
+			continue
+		}
+		rekeyed, changed := rekeySSHConfigStanzas(string(data))
+		if !changed {
+			continue
+		}
+		if err := os.WriteFile(path.local, []byte(rekeyed), 0o600); err != nil {
+			notes("could not re-key %s by discobox ID: %v", path.client, err)
+			continue
+		}
+		if err := target.restrict(ctx, path); err != nil {
+			notes("could not narrow %s to the principals ssh reads it under: %v", path.client, err)
+		}
+		notes("re-keyed %s by discobox ID", path.client)
+	}
+}
+
+// skippedStanzaSuffix ends the comment an older CLI wrote in place of a stanza
+// whose every pattern another discobox's name had claimed.
+const skippedStanzaSuffix = " has no unambiguous host alias and was skipped"
+
+// rekeySSHConfigStanzas rewrites each stanza's Host line to its User's
+// patterns, and drops the comments an older CLI left for a skipped discobox,
+// reporting whether anything changed. A Host line with no User under it is
+// none of this CLI's and is left as it is.
+func rekeySSHConfigStanzas(config string) (string, bool) {
+	lines := strings.Split(config, "\n")
+	out := make([]string, 0, len(lines))
+	host := -1
+	changed := false
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "# ") && strings.HasSuffix(line, skippedStanzaSuffix):
+			changed = true
+			continue
+		case strings.HasPrefix(line, "Host "):
+			host = len(out)
+		case host >= 0 && strings.HasPrefix(line, "    User "):
+			want := "Host " + strings.Join(sshConfigHostPatterns(strings.TrimPrefix(line, "    User ")), " ")
+			if out[host] != want {
+				out[host], changed = want, true
+			}
+			host = -1
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n"), changed
 }
 
 // removeFiles takes back files this run wrote, reporting what it could not

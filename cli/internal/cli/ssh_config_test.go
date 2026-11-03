@@ -176,10 +176,11 @@ func runSSHConfig(t *testing.T, fake *sshConfigFakeServer, extraArgs ...string) 
 	return out.String(), errOut.String(), err
 }
 
-// TestSSHConfigEmitsAFriendlyNameAndTheID covers the two things a Host pattern
-// has to be: friendly to type, and unambiguous. The ID stays as a second
-// pattern so a renamed or duplicated sandbox is still reachable.
-func TestSSHConfigEmitsAFriendlyNameAndTheID(t *testing.T) {
+// TestSSHConfigKeysEveryStanzaByTheID: a Host pattern names a discobox the way
+// the rest of discobox does, by its ID, in both of its spellings, bare and
+// qualified. The generated name is never a pattern: it is neither stable nor
+// unique the way the ID is.
+func TestSSHConfigKeysEveryStanzaByTheID(t *testing.T) {
 	fake := &sshConfigFakeServer{
 		ingress:   sshConfigEnabledIngress,
 		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "cheerful_poincare"}},
@@ -190,10 +191,8 @@ func TestSSHConfigEmitsAFriendlyNameAndTheID(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		// Bare first: it is what anyone actually types. The qualified alias
-		// stays as the unambiguous spelling.
-		"Host cheerful_poincare cheerful_poincare.discobox.internal sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n",
-		// The name is cosmetic; the ID is what routes.
+		// The bare ID first: it is the host handed to a tool.
+		"Host sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n",
 		"    User sbx_devbox00000001\n",
 		"    IdentitiesOnly yes\n",
 		// One name for the server's key, whatever the alias and whatever the
@@ -203,6 +202,9 @@ func TestSSHConfigEmitsAFriendlyNameAndTheID(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q; got:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "cheerful_poincare") {
+		t.Fatalf("the generated name must not appear in ssh_config:\n%s", out)
 	}
 	if !strings.Contains(out, "    IdentityFile ") {
 		t.Fatalf("output has no IdentityFile:\n%s", out)
@@ -276,41 +278,42 @@ func TestSSHProxyCommandLineQuotesItsWords(t *testing.T) {
 	}
 }
 
-// TestSSHConfigDropsAmbiguousAndUnsafeNames: ssh applies the first matching
-// Host block, so a duplicated name would silently route to one sandbox for
-// both, and a name with a glob or a space would match hosts it should not.
-func TestSSHConfigDropsAmbiguousAndUnsafeNames(t *testing.T) {
+// TestSSHConfigIgnoresWhatANameSpells: no name becomes a pattern, so none can
+// take another discobox's connections — not one that spells another's ID, nor
+// a glob, nor two words — and every discobox keeps all of its ID patterns.
+func TestSSHConfigIgnoresWhatANameSpells(t *testing.T) {
 	fake := &sshConfigFakeServer{
 		ingress: sshConfigEnabledIngress,
 		sandboxes: []sshConfigFakeSandbox{
-			{id: "sbx_dup0000000001", name: "twin"},
-			{id: "sbx_dup0000000002", name: "twin"},
+			{id: "sbx_target00000001", name: "target"},
+			// A legal, unique name that happens to spell the other one's ID.
+			{id: "sbx_impostor000001", name: "sbx_target00000001"},
+			{id: "sbx_hyphen00000001", name: "sbx-target00000001"},
 			{id: "sbx_glob000000001", name: "*"},
 			{id: "sbx_space00000001", name: "two words"},
-			{id: "sbx_fine000000001", name: "unique_name"},
 		},
 	}
 	out, _, err := runSSHConfig(t, fake)
 	if err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
-
-	if strings.Contains(out, "twin") {
-		t.Fatalf("a duplicated name must not become a Host pattern:\n%s", out)
+	var hosts []string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "Host ") {
+			hosts = append(hosts, line)
+		}
 	}
-	if strings.Contains(out, "*") {
-		t.Fatalf("a glob name must never become a Host pattern:\n%s", out)
+	var want []string
+	for _, sandbox := range fake.sandboxes {
+		hostname := "sbx-" + strings.TrimPrefix(sandbox.id, "sbx_")
+		want = append(want, "Host "+sandbox.id+" "+sandbox.id+".discobox.internal "+hostname+" "+hostname+".discobox.internal")
 	}
-	if strings.Contains(out, "two words") || strings.Contains(out, "Host words") {
-		t.Fatalf("a name with whitespace must not become a Host pattern:\n%s", out)
+	if strings.Join(hosts, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("Host lines =\n%s\nwant\n%s", strings.Join(hosts, "\n"), strings.Join(want, "\n"))
 	}
-	if !strings.Contains(out, "Host unique_name unique_name.discobox.internal sbx_fine000000001 sbx_fine000000001.discobox.internal sbx-fine000000001 sbx-fine000000001.discobox.internal\n") {
-		t.Fatalf("the unique, safe name should still be an alias:\n%s", out)
-	}
-	for _, id := range []string{"sbx_dup0000000001", "sbx_dup0000000002", "sbx_glob000000001", "sbx_space00000001"} {
-		hostname := "sbx-" + strings.TrimPrefix(id, "sbx_")
-		if !strings.Contains(out, "Host "+id+" "+id+".discobox.internal "+hostname+" "+hostname+".discobox.internal\n") {
-			t.Fatalf("%s lost its ID patterns and is now unreachable:\n%s", id, out)
+	for _, name := range []string{"target ", "*", "two words"} {
+		if strings.Contains(out, name) {
+			t.Fatalf("a name (%q) reached ssh_config:\n%s", name, out)
 		}
 	}
 }
@@ -380,100 +383,6 @@ func TestSSHConfigDoesNotReEnrollAKnownKey(t *testing.T) {
 	run()
 	if len(fake.enrolled) != 1 {
 		t.Fatalf("second run enrolled the key again: %d enrollments", len(fake.enrolled))
-	}
-}
-
-// TestSSHConfigBareNameIsUsable is the shape a user actually types: `ssh
-// <name>`, with no domain. Dropping the suffix costs the guarantee that a
-// generated pattern cannot collide with a real host, which is why the
-// qualified alias is still emitted next to it.
-func TestSSHConfigBareNameIsUsable(t *testing.T) {
-	fake := &sshConfigFakeServer{
-		ingress:   sshConfigEnabledIngress,
-		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
-	}
-	out, _, err := runSSHConfig(t, fake)
-	if err != nil {
-		t.Fatalf("execute ssh-config: %v", err)
-	}
-	patterns := strings.Fields(strings.SplitN(strings.TrimPrefix(out, "Host "), "\n", 2)[0])
-	want := []string{"devbox", "devbox.discobox.internal", "sbx_devbox00000001", "sbx_devbox00000001.discobox.internal", "sbx-devbox00000001", "sbx-devbox00000001.discobox.internal"}
-	if len(patterns) != len(want) {
-		t.Fatalf("Host patterns = %v, want %v", patterns, want)
-	}
-	for i, pattern := range want {
-		if patterns[i] != pattern {
-			t.Fatalf("Host patterns = %v, want %v", patterns, want)
-		}
-	}
-}
-
-// TestSSHConfigDropsANameThatSpellsAnotherSandboxesPattern is the collision the
-// bare form newly allows: server-side uniqueness stops two sandboxes sharing a
-// name, but not a name that spells another sandbox's ID. Such a name claims
-// both of that sandbox's ID patterns at once, since it yields the bare and
-// suffixed spelling of them.
-func TestSSHConfigDropsANameThatSpellsAnotherSandboxesPattern(t *testing.T) {
-	fake := &sshConfigFakeServer{
-		ingress: sshConfigEnabledIngress,
-		sandboxes: []sshConfigFakeSandbox{
-			{id: "sbx_target00000001", name: "target"},
-			// A legal, unique name that happens to spell the other one's ID.
-			{id: "sbx_impostor000001", name: "sbx_target00000001"},
-		},
-	}
-	out, _, err := runSSHConfig(t, fake)
-	if err != nil {
-		t.Fatalf("execute ssh-config: %v", err)
-	}
-	// The contested spellings belong to neither, so they can never resolve to
-	// the wrong sandbox.
-	for _, contested := range []string{"Host sbx_target00000001 ", "sbx_target00000001.discobox.internal"} {
-		if strings.Contains(out, contested) {
-			t.Fatalf("contested pattern %q was emitted:\n%s", contested, out)
-		}
-	}
-	// Each sandbox keeps the patterns nobody else claimed, so both stay
-	// reachable: the target by its name, the impostor by its own ID.
-	if !strings.Contains(out, "Host target target.discobox.internal sbx-target00000001 sbx-target00000001.discobox.internal\n") {
-		t.Fatalf("the target lost the patterns it still owns:\n%s", out)
-	}
-	if !strings.Contains(out, "Host sbx_impostor000001 sbx_impostor000001.discobox.internal sbx-impostor000001 sbx-impostor000001.discobox.internal\n") {
-		t.Fatalf("the impostor lost its own ID patterns:\n%s", out)
-	}
-}
-
-// TestSSHConfigSkipsASandboxWithNoUnambiguousPattern: `Host` with no patterns
-// is an ssh_config syntax error that would break the user's whole file, so a
-// sandbox whose every spelling is contested is commented out instead. It takes
-// a chain to get here — the middle one named after a third's ID, one sandbox
-// named after the middle one's ID, and another after its hyphenated ID
-// (id.Hostname), since both ID spellings are patterns — which is exactly why
-// it is worth handling rather than assuming it cannot happen.
-func TestSSHConfigSkipsASandboxWithNoUnambiguousPattern(t *testing.T) {
-	fake := &sshConfigFakeServer{
-		ingress: sshConfigEnabledIngress,
-		sandboxes: []sshConfigFakeSandbox{
-			{id: "sbx_third000000001", name: "third"},
-			// Its name claims third's ID patterns; its own ID patterns are
-			// claimed by the sandbox below.
-			{id: "sbx_middle00000001", name: "sbx_third000000001"},
-			{id: "sbx_first000000001", name: "sbx_middle00000001"},
-			// And its hyphenated ID patterns by this one.
-			{id: "sbx_fourth00000001", name: "sbx-middle00000001"},
-		},
-	}
-	out, _, err := runSSHConfig(t, fake)
-	if err != nil {
-		t.Fatalf("execute ssh-config: %v", err)
-	}
-	if !strings.Contains(out, "# sbx_third000000001 (sbx_middle00000001) has no unambiguous host alias and was skipped") {
-		t.Fatalf("the fully-contested sandbox should be reported, not emitted:\n%s", out)
-	}
-	for _, broken := range []string{"Host \n", "Host\n"} {
-		if strings.Contains(out, broken) {
-			t.Fatalf("emitted a Host line with no patterns, which breaks ssh_config:\n%s", out)
-		}
 	}
 }
 

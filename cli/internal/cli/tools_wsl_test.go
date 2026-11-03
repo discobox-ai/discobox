@@ -229,7 +229,7 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 		// quoted because the profile has a space in it.
 		`    IdentityFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\id_ed25519"` + "\n",
 		`    UserKnownHostsFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + resolvedTestProjectID + `\known_hosts"` + "\n",
-		"Host devbox ",
+		"Host sbx_devbox00000001 ",
 	} {
 		if !strings.Contains(config, want) {
 			t.Fatalf("the Windows config is missing %q:\n%s", want, config)
@@ -261,7 +261,7 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 
 	// A folder URI, never a bare path: a path argument is what the Windows
 	// launcher rewrites into a window on the local WSL directory.
-	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/home/agent/repo"}
+	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+sbx_devbox00000001/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -476,13 +476,13 @@ func TestToolsZedOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	if !strings.Contains(config, `    ProxyCommand wsl.exe -d Ubuntu -e sh -c "exec '`) {
 		t.Fatalf("the Windows config does not re-enter the distribution:\n%s", config)
 	}
-	if !strings.Contains(config, "Host devbox ") {
+	if !strings.Contains(config, "Host sbx_devbox00000001 ") {
 		t.Fatalf("the editor's host is not in the config Windows ssh reads:\n%s", config)
 	}
 	// The URL crosses the boundary as it was built: Zed's launcher passes a
 	// known scheme through, while a bare path would be rewritten into a --wsl
 	// path in this distribution.
-	want := []string{"--new", "ssh://devbox/home/agent/repo"}
+	want := []string{"--new", "ssh://sbx_devbox00000001/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}

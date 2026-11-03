@@ -52,7 +52,7 @@ func TestToolsZedWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 
 	configPath, _ := managedPaths(state)
 	config := readFile(t, configPath)
-	if !strings.Contains(config, "Host devbox ") {
+	if !strings.Contains(config, "Host sbx_devbox00000001 ") {
 		t.Fatalf("the editor's host is not in the config ssh reads:\n%s", config)
 	}
 	if !strings.Contains(config, " admin ssh-proxy\n") {
@@ -62,7 +62,7 @@ func TestToolsZedWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 	// A URL rather than a path argument, on every platform: the launcher passes
 	// a known scheme through untouched and rewrites a bare path. No user and no
 	// port either — the stanza carries both.
-	want := []string{"--new", "ssh://devbox/home/agent/repo"}
+	want := []string{"--new", "ssh://sbx_devbox00000001/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -91,7 +91,7 @@ func TestToolsZedEncodesTheWorkdir(t *testing.T) {
 	if _, _, _, err := runToolsZedCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
-	want := []string{"--new", "ssh://devbox/home/agent/my%20repo"}
+	want := []string{"--new", "ssh://sbx_devbox00000001/home/agent/my%20repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -108,7 +108,7 @@ func TestToolsZedOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 	if _, _, _, err := runToolsZedCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
-	want := []string{"--new", "ssh://devbox/workspace"}
+	want := []string{"--new", "ssh://sbx_devbox00000001/workspace"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
