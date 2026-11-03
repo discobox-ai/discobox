@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 )
 
 // A narrated operation replaces the busy line as it goes, so a long wait says
@@ -64,18 +65,20 @@ func TestStartingANarrationEndsThePreviousOne(t *testing.T) {
 // the only thing that can say so.
 func TestOpeningAWorkspaceWatchesProvisioning(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	_, _, _ = openWorkspace(t, ds, "enter")
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		_, _, _ = openWorkspace(t, ds, "enter")
 
-	ds.mu.Lock()
-	watched := slices.Clone(ds.watched)
-	ds.mu.Unlock()
-	if len(watched) == 0 {
-		t.Fatal("the workspace never asked what the discobox was doing")
-	}
-	if watched[0] != ds.sandboxes[0].ID {
-		t.Fatalf("watched %q, want the discobox being attached to (%q)", watched[0], ds.sandboxes[0].ID)
-	}
+		ds.mu.Lock()
+		watched := slices.Clone(ds.watched)
+		ds.mu.Unlock()
+		if len(watched) == 0 {
+			t.Fatal("the workspace never asked what the discobox was doing")
+		}
+		if watched[0] != ds.sandboxes[0].ID {
+			t.Fatalf("watched %q, want the discobox being attached to (%q)", watched[0], ds.sandboxes[0].ID)
+		}
+	})
 }
 
 // Connecting ends the narration: the discobox agent accepts an attach only once
@@ -83,15 +86,17 @@ func TestOpeningAWorkspaceWatchesProvisioning(t *testing.T) {
 // nothing left to say about getting there.
 func TestConnectingEndsTheProvisioningNarration(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	_, m, _ := openWorkspace(t, ds, "enter")
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		_, m, _ := openWorkspace(t, ds, "enter")
 
-	if m.busy != "" {
-		t.Fatalf("busy = %q, want the line released once the terminal is up", m.busy)
-	}
-	if m.stopNarrating != nil {
-		t.Fatal("the provisioning watch outlived the wait it was narrating")
-	}
+		if m.busy != "" {
+			t.Fatalf("busy = %q, want the line released once the terminal is up", m.busy)
+		}
+		if m.stopNarrating != nil {
+			t.Fatal("the provisioning watch outlived the wait it was narrating")
+		}
+	})
 }
 
 // A create's warning is not a step of the wait: the next step would replace

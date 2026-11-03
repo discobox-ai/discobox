@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -74,22 +75,24 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 // reads as a prompt that was never sent.
 func TestThePromptIsSpentOnceTheServerTakesTheCreate(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.deliverGate = make(chan struct{})
-	m := New(t.Context(), ds)
-	m.logo = logo{}
-	d := newDriver(t, m)
-	d.start()
-	for _, key := range typeString("fix the reaper") {
-		d.dispatch(key)
-	}
-	d.key("enter")
-	d.wait("the prompt to be spent", func() bool { return m.prompt.Value() == "" })
-	if len(ds.execOpened()) != 0 {
-		t.Fatal("the create was still underway, and nothing should have attached yet")
-	}
-	close(ds.deliverGate)
-	d.wait("the attach", func() bool { return len(ds.execOpened()) == 1 })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.deliverGate = make(chan struct{})
+		m := New(t.Context(), ds)
+		m.logo = logo{}
+		d := newDriver(t, m)
+		d.start()
+		for _, key := range typeString("fix the reaper") {
+			d.dispatch(key)
+		}
+		d.key("enter")
+		d.wait("the prompt to be spent", func() bool { return m.prompt.Value() == "" })
+		if len(ds.execOpened()) != 0 {
+			t.Fatal("the create was still underway, and nothing should have attached yet")
+		}
+		close(ds.deliverGate)
+		d.wait("the attach", func() bool { return len(ds.execOpened()) == 1 })
+	})
 }
 
 // A create the server refused has nothing running the prompt, so it stays in
@@ -123,51 +126,53 @@ func TestARefusedCreateKeepsThePrompt(t *testing.T) {
 // land on an edit made in between. A second Enter is not a second create.
 func TestThePromptIsReadOnlyWhileTheCreateIsBeingSent(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.runGate = make(chan struct{})
-	m := New(t.Context(), ds)
-	m.logo = logo{}
-	// A colorless window draws dim text as plain text; the grey is what is
-	// checked below.
-	m.st = newStyles(true)
-	d := newDriver(t, m)
-	d.start()
-	for _, key := range typeString("fix the reaper") {
-		d.dispatch(key)
-	}
-	d.key("enter")
-	d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.runGate = make(chan struct{})
+		m := New(t.Context(), ds)
+		m.logo = logo{}
+		// A colorless window draws dim text as plain text; the grey is what is
+		// checked below.
+		m.st = newStyles(true)
+		d := newDriver(t, m)
+		d.start()
+		for _, key := range typeString("fix the reaper") {
+			d.dispatch(key)
+		}
+		d.key("enter")
+		d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 
-	for _, key := range typeString(", then the pool") {
-		d.dispatch(key)
-	}
-	d.dispatch(keyPress("backspace"))
-	d.dispatch(keyPress("ctrl+u"))
-	d.dispatch(tea.PasteMsg{Content: "pasted"})
-	d.key("enter")
-	if got := m.prompt.Value(); got != "fix the reaper" {
-		t.Fatalf("prompt = %q, want it untouched while the create is being sent", got)
-	}
-	if n := len(ds.runRequests()); n != 1 {
-		t.Fatalf("runs = %d, want Enter ignored while the create is being sent", n)
-	}
-	if m.prompt.Focused() {
-		t.Fatal("the composer should be blurred, which is what draws it read-only")
-	}
-	if view, want := m.prompt.View(), m.st.dimText.Render("fix the reaper"); !strings.Contains(view, want) {
-		t.Fatalf("composer drawn %q while the create is being sent, want its text greyed as %q", view, want)
-	}
+		for _, key := range typeString(", then the pool") {
+			d.dispatch(key)
+		}
+		d.dispatch(keyPress("backspace"))
+		d.dispatch(keyPress("ctrl+u"))
+		d.dispatch(tea.PasteMsg{Content: "pasted"})
+		d.key("enter")
+		if got := m.prompt.Value(); got != "fix the reaper" {
+			t.Fatalf("prompt = %q, want it untouched while the create is being sent", got)
+		}
+		if n := len(ds.runRequests()); n != 1 {
+			t.Fatalf("runs = %d, want Enter ignored while the create is being sent", n)
+		}
+		if m.prompt.Focused() {
+			t.Fatal("the composer should be blurred, which is what draws it read-only")
+		}
+		if view, want := m.prompt.View(), m.st.dimText.Render("fix the reaper"); !strings.Contains(view, want) {
+			t.Fatalf("composer drawn %q while the create is being sent, want its text greyed as %q", view, want)
+		}
 
-	close(ds.runGate)
-	d.wait("the attach", func() bool { return len(ds.execOpened()) == 1 })
-	// The fake records the attach from the command's goroutine, which can be
-	// before the create's answer reaches the window: the prompt is spent by
-	// that answer, so it is waited for, and the wait fails if it never is.
-	d.wait("the prompt to be spent once the server took the create", func() bool { return m.prompt.Value() == "" })
-	if got, want := m.prompt.Styles(), m.composerStyles; got.Blurred.Text.Render("x") != want.Blurred.Text.Render("x") ||
-		got.Blurred.CursorLine.Render("x") != want.Blurred.CursorLine.Render("x") {
-		t.Fatal("the composer's own styles should be back once the server answered")
-	}
+		close(ds.runGate)
+		d.wait("the attach", func() bool { return len(ds.execOpened()) == 1 })
+		// The fake records the attach from the command's goroutine, which can be
+		// before the create's answer reaches the window: the prompt is spent by
+		// that answer, so it is waited for, and the wait fails if it never is.
+		d.wait("the prompt to be spent once the server took the create", func() bool { return m.prompt.Value() == "" })
+		if got, want := m.prompt.Styles(), m.composerStyles; got.Blurred.Text.Render("x") != want.Blurred.Text.Render("x") ||
+			got.Blurred.CursorLine.Render("x") != want.Blurred.CursorLine.Render("x") {
+			t.Fatal("the composer's own styles should be back once the server answered")
+		}
+	})
 }
 
 // The new discobox card keeps the keys on its composer: whatever walks focus
@@ -176,24 +181,26 @@ func TestThePromptIsReadOnlyWhileTheCreateIsBeingSent(t *testing.T) {
 // which would draw it as editable.
 func TestTheNewCardDoesNotRefocusAComposerBeingSent(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.leader("h")
-	d.key("n")
-	if !m.newOpen || m.focus != focusPrompt {
-		t.Fatalf("new open %v, focus %v; want the new card's composer", m.newOpen, m.focus)
-	}
-	m.setSubmitting(true)
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.leader("h")
+		d.key("n")
+		if !m.newOpen || m.focus != focusPrompt {
+			t.Fatalf("new open %v, focus %v; want the new card's composer", m.newOpen, m.focus)
+		}
+		m.setSubmitting(true)
 
-	m.focus = focusList
-	send(t, m, tea.WindowSizeMsg{Width: m.screenWidth, Height: m.height})
-	if m.focus != focusPrompt || m.prompt.Focused() {
-		t.Fatalf("focus %v, composer focused %v; want the card's composer kept, still blurred", m.focus, m.prompt.Focused())
-	}
-	m.backToPanes()
-	if m.focus != focusPrompt || m.prompt.Focused() {
-		t.Fatalf("back from the list: focus %v, composer focused %v; want it kept blurred", m.focus, m.prompt.Focused())
-	}
+		m.focus = focusList
+		send(t, m, tea.WindowSizeMsg{Width: m.screenWidth, Height: m.height})
+		if m.focus != focusPrompt || m.prompt.Focused() {
+			t.Fatalf("focus %v, composer focused %v; want the card's composer kept, still blurred", m.focus, m.prompt.Focused())
+		}
+		m.backToPanes()
+		if m.focus != focusPrompt || m.prompt.Focused() {
+			t.Fatalf("back from the list: focus %v, composer focused %v; want it kept blurred", m.focus, m.prompt.Focused())
+		}
+	})
 }
 
 // A create that never got as far as the server — the working tree could not be
@@ -1172,37 +1179,39 @@ func TestSwitchingFolderForgetsTheCursor(t *testing.T) {
 // and it is the key the pane actually reserves, and the one the key lists name.
 func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := New(t.Context(), ds, WithLeader("ctrl+b"))
-	m.logo = logo{}
-	d := newDriver(t, m)
-	d.start()
-	// The window opens on the first discobox once the listing is in.
-	d.wait("the list", func() bool { return m.focus == focusList })
-	d.key("enter")
-	d.wait("the pane", func() bool { return m.focus == focusPane })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		m := New(t.Context(), ds, WithLeader("ctrl+b"))
+		m.logo = logo{}
+		d := newDriver(t, m)
+		d.start()
+		// The window opens on the first discobox once the listing is in.
+		d.wait("the list", func() bool { return m.focus == focusList })
+		d.key("enter")
+		d.wait("the pane", func() bool { return m.focus == focusPane })
 
-	if !strings.Contains(hintLine(m.hints()), "ctrl+b . actions") {
-		t.Errorf("the key list should name the leader: %q", hintLine(m.hints()))
-	}
-	if !strings.Contains(hintLine(m.headerHints()), "ctrl+b q quit") {
-		t.Errorf("the header should name the leader: %q", hintLine(m.headerHints()))
-	}
-	if !strings.Contains(m.helpText(), "ctrl+b q") {
-		t.Error("the help should name the leader")
-	}
+		if !strings.Contains(hintLine(m.hints()), "ctrl+b . actions") {
+			t.Errorf("the key list should name the leader: %q", hintLine(m.hints()))
+		}
+		if !strings.Contains(hintLine(m.headerHints()), "ctrl+b q quit") {
+			t.Errorf("the header should name the leader: %q", hintLine(m.headerHints()))
+		}
+		if !strings.Contains(m.helpText(), "ctrl+b q") {
+			t.Error("the help should name the leader")
+		}
 
-	// The configured leader arms the pane; the default one does not.
-	term := ds.terminals[0]
-	d.key("ctrl+a")
-	if got := term.typed("\x01"); !strings.Contains(got, "\x01") {
-		t.Fatalf("typed %q, want the default leader to reach the sandbox", got)
-	}
-	d.key("ctrl+b")
-	d.key("q")
-	if !m.quit {
-		t.Fatal("the configured leader should quit the window")
-	}
+		// The configured leader arms the pane; the default one does not.
+		term := ds.terminals[0]
+		d.key("ctrl+a")
+		if got := term.typed("\x01"); !strings.Contains(got, "\x01") {
+			t.Fatalf("typed %q, want the default leader to reach the sandbox", got)
+		}
+		d.key("ctrl+b")
+		d.key("q")
+		if !m.quit {
+			t.Fatal("the configured leader should quit the window")
+		}
+	})
 }
 
 // Tab goes round the window in the order it is drawn, bottom to top: the

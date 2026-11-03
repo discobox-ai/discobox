@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"testing/synctest"
 )
 
 func TestHarnessChangesReviewSavesDisplayedCandidate(t *testing.T) {
@@ -60,22 +61,24 @@ func TestHarnessChangesRefreshIsExplicit(t *testing.T) {
 }
 
 func TestWorkspaceLeaderOpensHarnessReview(t *testing.T) {
-	ds := newFakeSource(testSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "workspace-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
-	d, m, term := openWorkspace(t, ds, "enter")
-	d.key("ctrl+a")
-	d.key("H")
-	d.wait("harness review", func() bool { return m.dialog != nil && strings.Contains(m.dialog.title, "Harness changes") })
-	if got := term.typed("H"); strings.Contains(got, "H") {
-		t.Fatalf("review key reached harness: %q", got)
-	}
-	d.key("d")
-	d.wait("discarded candidate", func() bool { ds.mu.Lock(); defer ds.mu.Unlock(); return len(ds.harnessChangesWrites) == 1 })
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	if ds.harnessChangesWrites[0] != "discard sbx_one workspace-review" {
-		t.Fatalf("writes=%v", ds.harnessChangesWrites)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.harnessChanges = HarnessChanges{CandidateID: "workspace-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
+		d, m, term := openWorkspace(t, ds, "enter")
+		d.key("ctrl+a")
+		d.key("H")
+		d.wait("harness review", func() bool { return m.dialog != nil && strings.Contains(m.dialog.title, "Harness changes") })
+		if got := term.typed("H"); strings.Contains(got, "H") {
+			t.Fatalf("review key reached harness: %q", got)
+		}
+		d.key("d")
+		d.wait("discarded candidate", func() bool { ds.mu.Lock(); defer ds.mu.Unlock(); return len(ds.harnessChangesWrites) == 1 })
+		ds.mu.Lock()
+		defer ds.mu.Unlock()
+		if ds.harnessChangesWrites[0] != "discard sbx_one workspace-review" {
+			t.Fatalf("writes=%v", ds.harnessChangesWrites)
+		}
+	})
 }
 
 // Every settings field remains reachable above the fixed save/discard actions.

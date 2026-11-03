@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -89,97 +90,103 @@ func openPullPaneAt(t *testing.T, ds *fakeSource, width int) (*driver, *Model) {
 // like the issue beside it, and the tab says what GitHub's page does.
 func TestClickingTheHeaderPullRequestOpensItAsATab(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	d, m, _ := openWorkspaceAt(t, ds, "enter", wideConsole)
-	d.wait("the header", func() bool { return strings.Contains(plainFrame(m), "issue #4 · PR #9") })
-	opened := make(chan string, 4)
-	m.openOS = func(url string) error { opened <- url; return nil }
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		d, m, _ := openWorkspaceAt(t, ds, "enter", wideConsole)
+		d.wait("the header", func() bool { return strings.Contains(plainFrame(m), "issue #4 · PR #9") })
+		opened := make(chan string, 4)
+		m.openOS = func(url string) error { opened <- url; return nil }
 
-	x, y := at(t, m, "PR #9")
-	tap(t, m, x, y)
-	d.wait("the pull request", func() bool { return strings.Contains(plainFrame(m), "Reap only stopped boxes") })
-	select {
-	case got := <-opened:
-		t.Fatalf("clicking PR #9 opened %q, want the pull request tab", got)
-	default:
-	}
-	p := issueTabOf(m)
-	if p == nil || m.focusedPane() != p || p.name() != "PR #9" {
-		t.Fatalf("the pull request is not the focused tab, named for it: %v", p)
-	}
-	if got := p.issue.url; got != "https://github.com/acme/foo/pull/9" {
-		t.Errorf("the tab's page is %q, want the pull request's", got)
-	}
-
-	frame := tightFrame(m)
-	for _, want := range []string{
-		"● Open", "alice wants to merge 2 commits into main from", "fix-reaper · 2d ago · 1 comment",
-		"Reviewers", "● bob requested changes", "○ erin review requested",
-		"Changes", "3 files · 2 commits · +12 −3",
-		"Checks", "1 failing · 1 pending · 1 passed", "● lint", "● e2e",
-		"● Not ready to merge — a required review or check is",
-		"Fixes #4.",
-		"Alice A abc1234 reap only the stopped", "Alice A def5678 test it",
-		"alice requested a review from bob",
-	} {
-		if !strings.Contains(frame, want) {
-			t.Errorf("the pull request tab does not say %q:\n%s", want, frame)
+		x, y := at(t, m, "PR #9")
+		tap(t, m, x, y)
+		d.wait("the pull request", func() bool { return strings.Contains(plainFrame(m), "Reap only stopped boxes") })
+		select {
+		case got := <-opened:
+			t.Fatalf("clicking PR #9 opened %q, want the pull request tab", got)
+		default:
 		}
-	}
-	if strings.Contains(frame, "build") {
-		t.Errorf("a check that passed is listed with the ones to go and read:\n%s", frame)
-	}
-
-	// The review and its thread are further down than the window is tall.
-	d.key("G")
-	frame = tightFrame(m)
-	for _, want := range []string{
-		"bob requested changes", "Nearly.",
-		"reaper/reaper.go:3", "+ stopped()", "What about paused ones?", "Left alone.",
-		"carol commented", "alice force-pushed the fix-reaper branch",
-	} {
-		if !strings.Contains(frame, want) {
-			t.Errorf("the foot of the pull request does not say %q:\n%s", want, frame)
+		p := issueTabOf(m)
+		if p == nil || m.focusedPane() != p || p.name() != "PR #9" {
+			t.Fatalf("the pull request is not the focused tab, named for it: %v", p)
 		}
-	}
+		if got := p.issue.url; got != "https://github.com/acme/foo/pull/9" {
+			t.Errorf("the tab's page is %q, want the pull request's", got)
+		}
+
+		frame := tightFrame(m)
+		for _, want := range []string{
+			"● Open", "alice wants to merge 2 commits into main from", "fix-reaper · 2d ago · 1 comment",
+			"Reviewers", "● bob requested changes", "○ erin review requested",
+			"Changes", "3 files · 2 commits · +12 −3",
+			"Checks", "1 failing · 1 pending · 1 passed", "● lint", "● e2e",
+			"● Not ready to merge — a required review or check is",
+			"Fixes #4.",
+			"Alice A abc1234 reap only the stopped", "Alice A def5678 test it",
+			"alice requested a review from bob",
+		} {
+			if !strings.Contains(frame, want) {
+				t.Errorf("the pull request tab does not say %q:\n%s", want, frame)
+			}
+		}
+		if strings.Contains(frame, "build") {
+			t.Errorf("a check that passed is listed with the ones to go and read:\n%s", frame)
+		}
+
+		// The review and its thread are further down than the window is tall.
+		d.key("G")
+		frame = tightFrame(m)
+		for _, want := range []string{
+			"bob requested changes", "Nearly.",
+			"reaper/reaper.go:3", "+ stopped()", "What about paused ones?", "Left alone.",
+			"carol commented", "alice force-pushed the fix-reaper branch",
+		} {
+			if !strings.Contains(frame, want) {
+				t.Errorf("the foot of the pull request does not say %q:\n%s", want, frame)
+			}
+		}
+	})
 }
 
 // The leader's p is the pull request, as its i is the issue, and both can be
 // open at once: they are different tabs.
 func TestTheLeaderOpensThePullRequest(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	d, m := openPullPane(t, ds)
-	pull := issueTabOf(m)
-	if !strings.Contains(hintLine(m.hints()), "files changed") {
-		t.Errorf("the keys line does not offer the files changed: %q", hintLine(m.hints()))
-	}
-	d.key(m.leader())
-	d.key(issueKey)
-	d.wait("the issue", func() bool { return strings.Contains(plainFrame(m), "The reaper eats the wrong boxes") })
-	if got := len(m.shells.all()); got != 2 {
-		t.Fatalf("%d tabs with the issue and the pull request open, want 2", got)
-	}
-	d.key(m.leader())
-	d.key(pullKey)
-	if m.focusedPane() != pull || len(m.shells.all()) != 2 {
-		t.Errorf("leader %s with the pull request open did not go back to its tab", pullKey)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		d, m := openPullPane(t, ds)
+		pull := issueTabOf(m)
+		if !strings.Contains(hintLine(m.hints()), "files changed") {
+			t.Errorf("the keys line does not offer the files changed: %q", hintLine(m.hints()))
+		}
+		d.key(m.leader())
+		d.key(issueKey)
+		d.wait("the issue", func() bool { return strings.Contains(plainFrame(m), "The reaper eats the wrong boxes") })
+		if got := len(m.shells.all()); got != 2 {
+			t.Fatalf("%d tabs with the issue and the pull request open, want 2", got)
+		}
+		d.key(m.leader())
+		d.key(pullKey)
+		if m.focusedPane() != pull || len(m.shells.all()) != 2 {
+			t.Errorf("leader %s with the pull request open did not go back to its tab", pullKey)
+		}
+	})
 }
 
 // A discobox with no pull request says so rather than opening an empty tab.
 func TestTheLeaderSaysWhenThereIsNoPullRequest(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.key(m.leader())
-	d.key(pullKey)
-	if issueTabOf(m) != nil {
-		t.Fatalf("a tab opened on a discobox with no pull request")
-	}
-	if !strings.Contains(m.status, "no pull request to show") {
-		t.Errorf("status = %q, want it to say there is no pull request", m.status)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.key(m.leader())
+		d.key(pullKey)
+		if issueTabOf(m) != nil {
+			t.Fatalf("a tab opened on a discobox with no pull request")
+		}
+		if !strings.Contains(m.status, "no pull request to show") {
+			t.Errorf("status = %q, want it to say there is no pull request", m.status)
+		}
+	})
 }
 
 // filesSession is the session the tab's files changed are drawn from.
@@ -212,41 +219,43 @@ func quitFiles(t *testing.T, d *driver, ds *fakeSource, v *issuePane) {
 // the conversation, where it was read to.
 func TestThePullRequestShowsItsFilesChanged(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	d, m := openPullPane(t, ds)
-	v := issueTabOf(m).issue
-	d.key("j")
-	read := v.conversation.offset
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		d, m := openPullPane(t, ds)
+		v := issueTabOf(m).issue
+		d.key("j")
+		read := v.conversation.offset
 
-	d.key("f")
-	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
-	if want := []string{m.paneBox.ID + ": 0001112223334...abc1234567890"}; !slices.Equal(ds.pullReviews, want) {
-		t.Errorf("the files changed were started as %q, want %q", ds.pullReviews, want)
-	}
-	hints := hintLine(m.hints())
-	if !strings.Contains(hints, "q conversation") || strings.Contains(hints, "close PR") || strings.Contains(hints, "comment") {
-		t.Errorf("the keys line is %q, want the way back and none of the conversation's", hints)
-	}
-	if got := v.pageURL(); got != "https://github.com/acme/foo/pull/9/files" {
-		t.Errorf("o would open %q, want the files changed", got)
-	}
+		d.key("f")
+		d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+		if want := []string{m.paneBox.ID + ": 0001112223334...abc1234567890"}; !slices.Equal(ds.pullReviews, want) {
+			t.Errorf("the files changed were started as %q, want %q", ds.pullReviews, want)
+		}
+		hints := hintLine(m.hints())
+		if !strings.Contains(hints, "q conversation") || strings.Contains(hints, "close PR") || strings.Contains(hints, "comment") {
+			t.Errorf("the keys line is %q, want the way back and none of the conversation's", hints)
+		}
+		if got := v.pageURL(); got != "https://github.com/acme/foo/pull/9/files" {
+			t.Errorf("o would open %q, want the files changed", got)
+		}
 
-	// c is a comment in discobox-review, and f its own: neither is the tab's.
-	term := filesSession(t, ds, v)
-	d.key("c")
-	d.key("f")
-	if got := term.typed("cf"); !strings.Contains(got, "cf") || v.composing || !v.files {
-		t.Errorf("c and f on the files changed: session got %q, composing %v, files %v; want both in the session", got, v.composing, v.files)
-	}
+		// c is a comment in discobox-review, and f its own: neither is the tab's.
+		term := filesSession(t, ds, v)
+		d.key("c")
+		d.key("f")
+		if got := term.typed("cf"); !strings.Contains(got, "cf") || v.composing || !v.files {
+			t.Errorf("c and f on the files changed: session got %q, composing %v, files %v; want both in the session", got, v.composing, v.files)
+		}
 
-	// The window quitting is the way back, and its session is ended with it.
-	execID := v.review.execID
-	_ = term.Close()
-	d.wait("the conversation", func() bool { return !v.files })
-	if v.review != nil || v.conversation.offset != read || issueTabOf(m) == nil {
-		t.Errorf("the window quit: window %v, the conversation at %d; want it back where it was read to, %d", v.review != nil, v.conversation.offset, read)
-	}
-	d.wait("the session ended", func() bool { return slices.Contains(ds.endedExecs(), execID) })
+		// The window quitting is the way back, and its session is ended with it.
+		execID := v.review.execID
+		_ = term.Close()
+		d.wait("the conversation", func() bool { return !v.files })
+		if v.review != nil || v.conversation.offset != read || issueTabOf(m) == nil {
+			t.Errorf("the window quit: window %v, the conversation at %d; want it back where it was read to, %d", v.review != nil, v.conversation.offset, read)
+		}
+		d.wait("the session ended", func() bool { return slices.Contains(ds.endedExecs(), execID) })
+	})
 }
 
 // A session that ends before anything was typed at it ended on its own — an
@@ -254,272 +263,294 @@ func TestThePullRequestShowsItsFilesChanged(t *testing.T) {
 // read, until any key takes the tab back.
 func TestFilesChangedThatEndOnTheirOwnStayToBeRead(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.pullDiffs["abc1234567890"] = "flag provided but not defined: -head"
-	d, m := openPullPane(t, ds)
-	v := issueTabOf(m).issue
-	d.key("f")
-	d.wait("the session's screen", func() bool { return strings.Contains(plainFrame(m), "flag provided but not defined") })
-	_ = filesSession(t, ds, v).Close()
-	d.wait("the session to end", func() bool { return v.review != nil && v.review.exited })
-	if !v.files || !strings.Contains(plainFrame(m), "flag provided but not defined") {
-		t.Errorf("the session ended on its own and took its screen with it:\n%s", plainFrame(m))
-	}
-	if hints := hintLine(m.hints()); !strings.Contains(hints, "any key conversation") {
-		t.Errorf("the keys line is %q, want the way back", hints)
-	}
-	d.key("x")
-	if v.files || v.review != nil {
-		t.Errorf("a key on the ended session: files %v, window %v; want the conversation", v.files, v.review != nil)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.pullDiffs["abc1234567890"] = "flag provided but not defined: -head"
+		d, m := openPullPane(t, ds)
+		v := issueTabOf(m).issue
+		d.key("f")
+		d.wait("the session's screen", func() bool { return strings.Contains(plainFrame(m), "flag provided but not defined") })
+		_ = filesSession(t, ds, v).Close()
+		d.wait("the session to end", func() bool { return v.review != nil && v.review.exited })
+		if !v.files || !strings.Contains(plainFrame(m), "flag provided but not defined") {
+			t.Errorf("the session ended on its own and took its screen with it:\n%s", plainFrame(m))
+		}
+		if hints := hintLine(m.hints()); !strings.Contains(hints, "any key conversation") {
+			t.Errorf("the keys line is %q, want the way back", hints)
+		}
+		d.key("x")
+		if v.files || v.review != nil {
+			t.Errorf("a key on the ended session: files %v, window %v; want the conversation", v.files, v.review != nil)
+		}
+	})
 }
 
 // A session that does not start in time is given up on, and the tab says so;
 // the keys that go back to the conversation work while it is starting.
 func TestFilesChangedThatDoNotStartAreGivenUpOn(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	// The message rides the focused box's bottom edge, which in a split is
-	// half the window: wide enough here for the whole of it.
-	d, m := openPullPaneAt(t, ds, 200)
-	p := issueTabOf(m)
-	v := p.issue
-	d.key("f")
-	w := v.review
-	// The start's own answer is held back: as far as the tab knows, it is
-	// still starting.
-	w.stream = nil
-	d.dispatch(reviewMsg{pane: p.id, window: w, msg: reviewStartTimedOutMsg{}})
-	if v.files || v.review != nil {
-		t.Errorf("a start that timed out left the tab on files %v", v.files)
-	}
-	d.wait("the time-out said", func() bool { return strings.Contains(plainFrame(m), "did not start in the discobox") })
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		// The message rides the focused box's bottom edge, which in a split is
+		// half the window: wide enough here for the whole of it.
+		d, m := openPullPaneAt(t, ds, 200)
+		p := issueTabOf(m)
+		v := p.issue
+		d.key("f")
+		w := v.review
+		// The start's own answer is held back: as far as the tab knows, it is
+		// still starting.
+		w.stream = nil
+		d.dispatch(reviewMsg{pane: p.id, window: w, msg: reviewStartTimedOutMsg{}})
+		if v.files || v.review != nil {
+			t.Errorf("a start that timed out left the tab on files %v", v.files)
+		}
+		d.wait("the time-out said", func() bool { return strings.Contains(plainFrame(m), "did not start in the discobox") })
 
-	d.key("f")
-	v.review.stream = nil
-	d.key("esc")
-	if v.files || v.review != nil {
-		t.Errorf("esc while starting: files %v, window %v; want the conversation", v.files, v.review != nil)
-	}
+		d.key("f")
+		v.review.stream = nil
+		d.key("esc")
+		if v.files || v.review != nil {
+			t.Errorf("esc while starting: files %v, window %v; want the conversation", v.files, v.review != nil)
+		}
+	})
 }
 
 // A session that starts after its window was given up on is ended as it
 // lands: nothing is left to draw it, and nothing would list it.
 func TestFilesChangedStartedTooLateAreEnded(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	gate := make(chan struct{})
-	ds.pullReviewGate = gate
-	d, m := openPullPane(t, ds)
-	v := issueTabOf(m).issue
-	d.key("f")
-	d.key("q")
-	if v.files || v.review != nil {
-		t.Fatalf("q while starting: files %v", v.files)
-	}
-	close(gate)
-	d.wait("the late session ended", func() bool { return slices.Contains(ds.endedExecs(), "exec_files1") })
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		gate := make(chan struct{})
+		ds.pullReviewGate = gate
+		d, m := openPullPane(t, ds)
+		v := issueTabOf(m).issue
+		d.key("f")
+		d.key("q")
+		if v.files || v.review != nil {
+			t.Fatalf("q while starting: files %v", v.files)
+		}
+		close(gate)
+		d.wait("the late session ended", func() bool { return slices.Contains(ds.endedExecs(), "exec_files1") })
+	})
 }
 
 // The console's own way out ends the files changed it was showing, and waits
 // for that to reach the discobox: nothing would ever list them again.
 func TestQuittingTheConsoleEndsTheFilesChanged(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	d, m := openPullPane(t, ds)
-	v := issueTabOf(m).issue
-	d.key("f")
-	d.wait("the files changed", func() bool { return v.review != nil && v.review.execID != "" })
-	execID := v.review.execID
-	m.EndReviews(5 * time.Second)
-	if !slices.Contains(ds.endedExecs(), execID) {
-		t.Errorf("quitting left %s running, ended %q", execID, ds.endedExecs())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		d, m := openPullPane(t, ds)
+		v := issueTabOf(m).issue
+		d.key("f")
+		d.wait("the files changed", func() bool { return v.review != nil && v.review.execID != "" })
+		execID := v.review.execID
+		m.EndReviews(5 * time.Second)
+		if !slices.Contains(ds.endedExecs(), execID) {
+			t.Errorf("quitting left %s running, ended %q", execID, ds.endedExecs())
+		}
+	})
 }
 
 // A pull request whose files changed cannot be started says why, and the tab
 // stays on the conversation.
 func TestFilesChangedThatCannotBeOpenedSayWhy(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.pullReviewErr = errors.New("the discobox is asleep")
-	// The message rides the focused box's bottom edge, which in a split is
-	// half the window: wide enough here for the whole of it.
-	d, m := openPullPaneAt(t, ds, 200)
-	v := issueTabOf(m).issue
-	d.key("f")
-	d.wait("the failure", func() bool { return !v.files })
-	if v.review != nil {
-		t.Errorf("a session that failed left the tab a window")
-	}
-	if frame := plainFrame(m); !strings.Contains(frame, "cannot show the files changed: the discobox is asleep") {
-		t.Errorf("the failure is not said:\n%s", frame)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.pullReviewErr = errors.New("the discobox is asleep")
+		// The message rides the focused box's bottom edge, which in a split is
+		// half the window: wide enough here for the whole of it.
+		d, m := openPullPaneAt(t, ds, 200)
+		v := issueTabOf(m).issue
+		d.key("f")
+		d.wait("the failure", func() bool { return !v.files })
+		if v.review != nil {
+			t.Errorf("a session that failed left the tab a window")
+		}
+		if frame := plainFrame(m); !strings.Contains(frame, "cannot show the files changed: the discobox is asleep") {
+			t.Errorf("the failure is not said:\n%s", frame)
+		}
+	})
 }
 
 // The files changed are the tab's, never a tab of their own: the workspace's
 // listing reports the session, and nothing opens it beside the tab.
 func TestTheFilesChangedAreNotATab(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	d, m := openPullPane(t, ds)
-	d.key("f")
-	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
-	tabs := m.shells.len()
-	d.dispatch(workspaceTickMsg{gen: m.wsGen})
-	d.settle()
-	if m.shells.len() != tabs {
-		t.Errorf("the listing opened the files changed as a tab: %d tabs, want %d", m.shells.len(), tabs)
-	}
-	attaches := 0
-	for _, open := range ds.execOpened() {
-		if strings.Contains(open, "exec_files") {
-			attaches++
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		d, m := openPullPane(t, ds)
+		d.key("f")
+		d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+		tabs := m.shells.len()
+		d.dispatch(workspaceTickMsg{gen: m.wsGen})
+		d.settle()
+		if m.shells.len() != tabs {
+			t.Errorf("the listing opened the files changed as a tab: %d tabs, want %d", m.shells.len(), tabs)
 		}
-	}
-	if attaches != 1 {
-		t.Errorf("the files changed were attached %d times, want only by the tab", attaches)
-	}
+		attaches := 0
+		for _, open := range ds.execOpened() {
+			if strings.Contains(open, "exec_files") {
+				attaches++
+			}
+		}
+		if attaches != 1 {
+			t.Errorf("the files changed were attached %d times, want only by the tab", attaches)
+		}
+	})
 }
 
 // x closes an open pull request without merging it — one way, so one question
 // — and reopens a closed one; a merged one is past both.
 func TestThePullRequestIsClosedAndReopened(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	d, m := openPullPane(t, ds)
-	if !strings.Contains(hintLine(m.hints()), "close PR") {
-		t.Errorf("the keys line does not offer closing the pull request: %q", hintLine(m.hints()))
-	}
-	d.key("x")
-	if m.dialog == nil || !strings.Contains(plainFrame(m), "Close #9 without merging it?") {
-		t.Fatalf("x did not ask before closing it:\n%s", plainFrame(m))
-	}
-	d.key("y")
-	// The tab goes to its foot to show what was done, so the keys line is
-	// what says how it stands.
-	d.wait("the close", func() bool { return strings.Contains(hintLine(m.hints()), "reopen PR") })
-	d.key("g")
-	if !strings.Contains(plainFrame(m), "○ Closed") {
-		t.Errorf("the closed pull request's badge does not say so:\n%s", plainFrame(m))
-	}
-	d.key("x")
-	if m.dialog == nil || !strings.Contains(plainFrame(m), "Reopen #9?") {
-		t.Fatalf("x on a closed pull request did not ask to reopen it:\n%s", plainFrame(m))
-	}
-	d.key("y")
-	d.wait("the reopen", func() bool { return strings.Contains(hintLine(m.hints()), "close PR") })
-	ds.mu.Lock()
-	states := append([]string(nil), ds.states...)
-	ds.mu.Unlock()
-	if len(states) != 2 || states[0] != "https://github.com/acme/foo#9: closed/" || states[1] != "https://github.com/acme/foo#9: open/" {
-		t.Errorf("states = %v, want it closed and reopened, with no reason: a pull request has none", states)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		d, m := openPullPane(t, ds)
+		if !strings.Contains(hintLine(m.hints()), "close PR") {
+			t.Errorf("the keys line does not offer closing the pull request: %q", hintLine(m.hints()))
+		}
+		d.key("x")
+		if m.dialog == nil || !strings.Contains(plainFrame(m), "Close #9 without merging it?") {
+			t.Fatalf("x did not ask before closing it:\n%s", plainFrame(m))
+		}
+		d.key("y")
+		// The tab goes to its foot to show what was done, so the keys line is
+		// what says how it stands.
+		d.wait("the close", func() bool { return strings.Contains(hintLine(m.hints()), "reopen PR") })
+		d.key("g")
+		if !strings.Contains(plainFrame(m), "○ Closed") {
+			t.Errorf("the closed pull request's badge does not say so:\n%s", plainFrame(m))
+		}
+		d.key("x")
+		if m.dialog == nil || !strings.Contains(plainFrame(m), "Reopen #9?") {
+			t.Fatalf("x on a closed pull request did not ask to reopen it:\n%s", plainFrame(m))
+		}
+		d.key("y")
+		d.wait("the reopen", func() bool { return strings.Contains(hintLine(m.hints()), "close PR") })
+		ds.mu.Lock()
+		states := append([]string(nil), ds.states...)
+		ds.mu.Unlock()
+		if len(states) != 2 || states[0] != "https://github.com/acme/foo#9: closed/" || states[1] != "https://github.com/acme/foo#9: open/" {
+			t.Errorf("states = %v, want it closed and reopened, with no reason: a pull request has none", states)
+		}
+	})
 }
 
 func TestAMergedPullRequestIsNotClosed(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	pull := testPull()
-	pull.State, pull.Pull.Merged, pull.Pull.MergedBy, pull.Pull.MergedAt = "closed", true, "dave", time.Now().Add(-time.Hour)
-	pull.Timeline = append(pull.Timeline,
-		IssueEvent{Kind: "merged", Actor: "dave", At: pull.Pull.MergedAt, Subject: "fedcba9"},
-		IssueEvent{Kind: "closed", Actor: "dave", At: pull.Pull.MergedAt},
-	)
-	ds.issues["https://github.com/acme/foo#9"] = pull
-	d, m := openPullPane(t, ds)
-	frame := tightFrame(m)
-	for _, want := range []string{"● Merged", "dave merged 2 commits into main from"} {
-		if !strings.Contains(frame, want) {
-			t.Errorf("the merged pull request does not say %q:\n%s", want, frame)
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		pull := testPull()
+		pull.State, pull.Pull.Merged, pull.Pull.MergedBy, pull.Pull.MergedAt = "closed", true, "dave", time.Now().Add(-time.Hour)
+		pull.Timeline = append(pull.Timeline,
+			IssueEvent{Kind: "merged", Actor: "dave", At: pull.Pull.MergedAt, Subject: "fedcba9"},
+			IssueEvent{Kind: "closed", Actor: "dave", At: pull.Pull.MergedAt},
+		)
+		ds.issues["https://github.com/acme/foo#9"] = pull
+		d, m := openPullPane(t, ds)
+		frame := tightFrame(m)
+		for _, want := range []string{"● Merged", "dave merged 2 commits into main from"} {
+			if !strings.Contains(frame, want) {
+				t.Errorf("the merged pull request does not say %q:\n%s", want, frame)
+			}
 		}
-	}
-	if strings.Contains(frame, "to merge") {
-		t.Errorf("a merged pull request still says whether it can merge:\n%s", frame)
-	}
-	if hints := hintLine(m.hints()); strings.Contains(hints, "close PR") || strings.Contains(hints, "reopen PR") {
-		t.Errorf("a merged pull request's keys line offers %q", hints)
-	}
-	d.key("x")
-	if m.dialog != nil || !strings.Contains(m.status, "is merged") {
-		t.Errorf("x on a merged pull request: dialog %v, status %q; want it to say it is merged", m.dialog != nil, m.status)
-	}
-	d.key("G")
-	frame = tightFrame(m)
-	if !strings.Contains(frame, "dave merged commit fedcba9 into main") || strings.Contains(frame, "dave closed this") {
-		t.Errorf("the merge is not the one thing said of it:\n%s", frame)
-	}
+		if strings.Contains(frame, "to merge") {
+			t.Errorf("a merged pull request still says whether it can merge:\n%s", frame)
+		}
+		if hints := hintLine(m.hints()); strings.Contains(hints, "close PR") || strings.Contains(hints, "reopen PR") {
+			t.Errorf("a merged pull request's keys line offers %q", hints)
+		}
+		d.key("x")
+		if m.dialog != nil || !strings.Contains(m.status, "is merged") {
+			t.Errorf("x on a merged pull request: dialog %v, status %q; want it to say it is merged", m.dialog != nil, m.status)
+		}
+		d.key("G")
+		frame = tightFrame(m)
+		if !strings.Contains(frame, "dave merged commit fedcba9 into main") || strings.Contains(frame, "dave closed this") {
+			t.Errorf("the merge is not the one thing said of it:\n%s", frame)
+		}
+	})
 }
 
 // A comment on a pull request is posted the way one on an issue is, and the
 // tab comes back to the conversation to show it.
 func TestACommentIsPostedOnAPullRequest(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	d, m := openPullPane(t, ds)
-	v := issueTabOf(m).issue
-	d.key("c")
-	if !strings.Contains(plainFrame(m), "Comment on #9") {
-		t.Fatalf("c did not open the comment field:\n%s", plainFrame(m))
-	}
-	for _, r := range "LGTM" {
-		d.key(string(r))
-	}
-	d.key(issuePostKey)
-	d.wait("the comment", func() bool {
-		ds.mu.Lock()
-		defer ds.mu.Unlock()
-		return len(ds.comments) == 1
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		d, m := openPullPane(t, ds)
+		v := issueTabOf(m).issue
+		d.key("c")
+		if !strings.Contains(plainFrame(m), "Comment on #9") {
+			t.Fatalf("c did not open the comment field:\n%s", plainFrame(m))
+		}
+		for _, r := range "LGTM" {
+			d.key(string(r))
+		}
+		d.key(issuePostKey)
+		d.wait("the comment", func() bool {
+			ds.mu.Lock()
+			defer ds.mu.Unlock()
+			return len(ds.comments) == 1
+		})
+		if got, want := ds.comments[0], "https://github.com/acme/foo#9: LGTM"; got != want {
+			t.Errorf("posted %q, want %q", got, want)
+		}
+		d.wait("the field put away", func() bool { return !v.composing })
 	})
-	if got, want := ds.comments[0], "https://github.com/acme/foo#9: LGTM"; got != want {
-		t.Errorf("posted %q, want %q", got, want)
-	}
-	d.wait("the field put away", func() bool { return !v.composing })
 }
 
 // What the tag says a number is gives way to what GitHub says: `issue=9` on a
 // pull request is a pull request, tab and page.
 func TestAnIssueTagOnAPullRequestIsAPullRequest(t *testing.T) {
 	t.Parallel()
-	boxes := githubTaggedSandboxes()
-	boxes[0].Tags = []string{"issue=9"}
-	ds := newFakeSource(boxes...)
-	ds.issues = map[string]Issue{"https://github.com/acme/foo#9": testPull()}
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.key(m.leader())
-	d.key(issueKey)
-	d.wait("the pull request", func() bool { return strings.Contains(plainFrame(m), "Reap only stopped boxes") })
-	p := issueTabOf(m)
-	if p.name() != "PR #9" || p.issue.url != "https://github.com/acme/foo/pull/9" {
-		t.Errorf("the tab is %q onto %q, want the pull request", p.name(), p.issue.url)
-	}
-	if !strings.Contains(hintLine(m.hints()), "close PR") {
-		t.Errorf("the keys line is an issue's: %q", hintLine(m.hints()))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		boxes := githubTaggedSandboxes()
+		boxes[0].Tags = []string{"issue=9"}
+		ds := newFakeSource(boxes...)
+		ds.issues = map[string]Issue{"https://github.com/acme/foo#9": testPull()}
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.key(m.leader())
+		d.key(issueKey)
+		d.wait("the pull request", func() bool { return strings.Contains(plainFrame(m), "Reap only stopped boxes") })
+		p := issueTabOf(m)
+		if p.name() != "PR #9" || p.issue.url != "https://github.com/acme/foo/pull/9" {
+			t.Errorf("the tab is %q onto %q, want the pull request", p.name(), p.issue.url)
+		}
+		if !strings.Contains(hintLine(m.hints()), "close PR") {
+			t.Errorf("the keys line is an issue's: %q", hintLine(m.hints()))
+		}
+	})
 }
 
 // A check is a link to its own page — when that page is on the web. A check's
 // URL is whatever its app reported, and a click hands it to this machine.
 func TestAFailingCheckIsALinkToItsPage(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	_, m := openPullPane(t, ds)
-	opened := make(chan string, 4)
-	m.openOS = func(url string) error { opened <- url; return nil }
-	if frame := rawFrame(m); !strings.Contains(frame, "https://ci.example/lint") || strings.Contains(frame, "file:///etc/passwd") {
-		t.Fatalf("the checks' links are wrong: want lint's and not e2e's:\n%q", frame)
-	}
-	x, y := at(t, m, "● lint")
-	slowClock(m)
-	tap(t, m, x+2, y)
-	select {
-	case got := <-opened:
-		if got != "https://ci.example/lint" {
-			t.Errorf("clicking the check opened %q", got)
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		_, m := openPullPane(t, ds)
+		opened := make(chan string, 4)
+		m.openOS = func(url string) error { opened <- url; return nil }
+		if frame := rawFrame(m); !strings.Contains(frame, "https://ci.example/lint") || strings.Contains(frame, "file:///etc/passwd") {
+			t.Fatalf("the checks' links are wrong: want lint's and not e2e's:\n%q", frame)
 		}
-	case <-time.After(5 * time.Second):
-		t.Errorf("clicking the failing check opened nothing")
-	}
+		x, y := at(t, m, "● lint")
+		slowClock(m)
+		tap(t, m, x+2, y)
+		select {
+		case got := <-opened:
+			if got != "https://ci.example/lint" {
+				t.Errorf("clicking the check opened %q", got)
+			}
+		case <-time.After(5 * time.Second):
+			t.Errorf("clicking the failing check opened nothing")
+		}
+	})
 }
 
 // The words a pull request's events are drawn with.
@@ -579,24 +610,26 @@ func readyPull() Issue {
 // under the title, and a mark on the tab that shows from any pane.
 func TestAPullRequestReadyToMergeSaysSo(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.issues["https://github.com/acme/foo#9"] = readyPull()
-	d, m := openPullPane(t, ds)
-	frame := plainFrame(m)
-	if !strings.Contains(frame, "● Ready to merge into main") {
-		t.Errorf("the ready pull request does not say so:\n%s", frame)
-	}
-	if got := issueTabOf(m).name(); got != "PR #9 ●" {
-		t.Errorf("the tab is named %q, want the mark on it", got)
-	}
-	if !strings.Contains(hintLine(m.hints()), "m merge") {
-		t.Errorf("the keys line does not offer the merge: %q", hintLine(m.hints()))
-	}
-	d.key(m.leader())
-	d.key("left")
-	if !strings.Contains(plainFrame(m), "PR #9 ●") {
-		t.Errorf("the mark does not show from the terminal:\n%s", plainFrame(m))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.issues["https://github.com/acme/foo#9"] = readyPull()
+		d, m := openPullPane(t, ds)
+		frame := plainFrame(m)
+		if !strings.Contains(frame, "● Ready to merge into main") {
+			t.Errorf("the ready pull request does not say so:\n%s", frame)
+		}
+		if got := issueTabOf(m).name(); got != "PR #9 ●" {
+			t.Errorf("the tab is named %q, want the mark on it", got)
+		}
+		if !strings.Contains(hintLine(m.hints()), "m merge") {
+			t.Errorf("the keys line does not offer the merge: %q", hintLine(m.hints()))
+		}
+		d.key(m.leader())
+		d.key("left")
+		if !strings.Contains(plainFrame(m), "PR #9 ●") {
+			t.Errorf("the mark does not show from the terminal:\n%s", plainFrame(m))
+		}
+	})
 }
 
 // Each way of not being ready says which, in GitHub's terms.
@@ -635,144 +668,156 @@ func TestTheMergeBannerSaysWhyNot(t *testing.T) {
 // merged is the commit that was read.
 func TestThePullRequestIsMerged(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.issues["https://github.com/acme/foo#9"] = readyPull()
-	d, m := openPullPane(t, ds)
-	d.key(pullMergeKey)
-	frame := plainFrame(m)
-	if m.dialog == nil || !strings.Contains(frame, "Merge #9 into main") || !strings.Contains(frame, "squash and merge") {
-		t.Fatalf("m did not ask how to merge it:\n%s", frame)
-	}
-	if !strings.Contains(frame, "not allowed in this repository") {
-		t.Errorf("the merge commit this repository does not allow is offered as the rest are:\n%s", frame)
-	}
-	// The way the repository does not allow is not taken.
-	d.key("c")
-	ds.mu.Lock()
-	early := len(ds.merges)
-	ds.mu.Unlock()
-	if early != 0 || m.dialog == nil {
-		t.Fatalf("a method the repository does not allow merged it: %d merges, dialog %v", early, m.dialog != nil)
-	}
-	d.key("s")
-	d.wait("the merge", func() bool { return strings.Contains(m.status, "merged #9 (squash)") })
-	ds.mu.Lock()
-	merges := append([]string(nil), ds.merges...)
-	ds.mu.Unlock()
-	if len(merges) != 1 || merges[0] != "https://github.com/acme/foo#9: squash@abc1234567890" {
-		t.Fatalf("merges = %v, want one squash of the commit that was read", merges)
-	}
-	d.wait("the badge", func() bool {
-		d.key("g")
-		return strings.Contains(plainFrame(m), "● Merged")
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.issues["https://github.com/acme/foo#9"] = readyPull()
+		d, m := openPullPane(t, ds)
+		d.key(pullMergeKey)
+		frame := plainFrame(m)
+		if m.dialog == nil || !strings.Contains(frame, "Merge #9 into main") || !strings.Contains(frame, "squash and merge") {
+			t.Fatalf("m did not ask how to merge it:\n%s", frame)
+		}
+		if !strings.Contains(frame, "not allowed in this repository") {
+			t.Errorf("the merge commit this repository does not allow is offered as the rest are:\n%s", frame)
+		}
+		// The way the repository does not allow is not taken.
+		d.key("c")
+		ds.mu.Lock()
+		early := len(ds.merges)
+		ds.mu.Unlock()
+		if early != 0 || m.dialog == nil {
+			t.Fatalf("a method the repository does not allow merged it: %d merges, dialog %v", early, m.dialog != nil)
+		}
+		d.key("s")
+		d.wait("the merge", func() bool { return strings.Contains(m.status, "merged #9 (squash)") })
+		ds.mu.Lock()
+		merges := append([]string(nil), ds.merges...)
+		ds.mu.Unlock()
+		if len(merges) != 1 || merges[0] != "https://github.com/acme/foo#9: squash@abc1234567890" {
+			t.Fatalf("merges = %v, want one squash of the commit that was read", merges)
+		}
+		d.wait("the badge", func() bool {
+			d.key("g")
+			return strings.Contains(plainFrame(m), "● Merged")
+		})
+		if got := issueTabOf(m).name(); got != "PR #9" {
+			t.Errorf("the merged tab is still named %q", got)
+		}
+		if strings.Contains(hintLine(m.hints()), "m merge") {
+			t.Errorf("a merged pull request still offers the merge: %q", hintLine(m.hints()))
+		}
 	})
-	if got := issueTabOf(m).name(); got != "PR #9" {
-		t.Errorf("the merged tab is still named %q", got)
-	}
-	if strings.Contains(hintLine(m.hints()), "m merge") {
-		t.Errorf("a merged pull request still offers the merge: %q", hintLine(m.hints()))
-	}
 }
 
 // A pull request that is not ready may still be merged by someone allowed to:
 // the question says how it stands, and GitHub's refusal is reported as it is.
 func TestARefusedMergeSaysWhy(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.mergeErr = errors.New("GitHub answered 405: Required status check \"lint\" is failing")
-	d, m := openPullPane(t, ds)
-	d.key(pullMergeKey)
-	if frame := plainFrame(m); m.dialog == nil || !strings.Contains(frame, "Not ready to merge") {
-		t.Fatalf("the question does not say it is not ready:\n%s", frame)
-	}
-	d.key("s")
-	d.wait("the refusal", func() bool {
-		return strings.Contains(m.status, "#9 was not merged") && strings.Contains(m.status, "lint")
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.mergeErr = errors.New("GitHub answered 405: Required status check \"lint\" is failing")
+		d, m := openPullPane(t, ds)
+		d.key(pullMergeKey)
+		if frame := plainFrame(m); m.dialog == nil || !strings.Contains(frame, "Not ready to merge") {
+			t.Fatalf("the question does not say it is not ready:\n%s", frame)
+		}
+		d.key("s")
+		d.wait("the refusal", func() bool {
+			return strings.Contains(m.status, "#9 was not merged") && strings.Contains(m.status, "lint")
+		})
+		if v := issueTabOf(m).issue; v.changing || v.issue.Pull.Merged {
+			t.Errorf("after the refusal: changing %v, merged %v", v.changing, v.issue.Pull.Merged)
+		}
 	})
-	if v := issueTabOf(m).issue; v.changing || v.issue.Pull.Merged {
-		t.Errorf("after the refusal: changing %v, merged %v", v.changing, v.issue.Pull.Merged)
-	}
 }
 
 // What GitHub could not merge either is not asked about.
 func TestADraftOrConflictedPullRequestIsNotMerged(t *testing.T) {
 	t.Parallel()
-	for name, change := range map[string]func(*PullRequest){
-		"is a draft":     func(p *PullRequest) { p.Draft = true },
-		"conflicts with": func(p *PullRequest) { p.Mergeable = "dirty" },
-	} {
-		ds := pullSource()
-		pull := testPull()
-		change(pull.Pull)
-		ds.issues["https://github.com/acme/foo#9"] = pull
-		d, m := openPullPane(t, ds)
-		d.key(pullMergeKey)
-		if m.dialog != nil || !strings.Contains(m.status, name) {
-			t.Errorf("%s: dialog %v, status %q", name, m.dialog != nil, m.status)
+	synctest.Test(t, func(t *testing.T) {
+		for name, change := range map[string]func(*PullRequest){
+			"is a draft":     func(p *PullRequest) { p.Draft = true },
+			"conflicts with": func(p *PullRequest) { p.Mergeable = "dirty" },
+		} {
+			ds := pullSource()
+			pull := testPull()
+			change(pull.Pull)
+			ds.issues["https://github.com/acme/foo#9"] = pull
+			d, m := openPullPane(t, ds)
+			d.key(pullMergeKey)
+			if m.dialog != nil || !strings.Contains(m.status, name) {
+				t.Errorf("%s: dialog %v, status %q", name, m.dialog != nil, m.status)
+			}
 		}
-	}
+	})
 }
 
 // GitHub works out whether a pull request can merge when first asked, so one
 // it has yet to answer for is read again in a moment rather than a minute.
 func TestAPullRequestGitHubHasNotSettledIsReadAgain(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	pull := testPull()
-	pull.Pull.Mergeable = "unknown"
-	ds.issues["https://github.com/acme/foo#9"] = pull
-	d, m := openPullPane(t, ds)
-	p := issueTabOf(m)
-	if p.issue.settles != 1 {
-		t.Fatalf("settles = %d after the first read, want one early read asked for", p.issue.settles)
-	}
-	ds.mu.Lock()
-	ds.issues["https://github.com/acme/foo#9"] = readyPull()
-	ds.mu.Unlock()
-	d.dispatch(pullSettleMsg{id: p.id})
-	d.wait("the answer", func() bool { return strings.Contains(plainFrame(m), "Ready to merge") })
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		pull := testPull()
+		pull.Pull.Mergeable = "unknown"
+		ds.issues["https://github.com/acme/foo#9"] = pull
+		d, m := openPullPane(t, ds)
+		p := issueTabOf(m)
+		if p.issue.settles != 1 {
+			t.Fatalf("settles = %d after the first read, want one early read asked for", p.issue.settles)
+		}
+		ds.mu.Lock()
+		ds.issues["https://github.com/acme/foo#9"] = readyPull()
+		ds.mu.Unlock()
+		d.dispatch(pullSettleMsg{id: p.id})
+		d.wait("the answer", func() bool { return strings.Contains(plainFrame(m), "Ready to merge") })
+	})
 }
 
 // The key that asks how to merge is not one of the answers: a second press of
 // it, or its repeat, merges nothing.
 func TestTheMergeKeyTwiceDoesNotMerge(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	pull := readyPull()
-	pull.Pull.MergeMethods = nil
-	ds.issues["https://github.com/acme/foo#9"] = pull
-	d, m := openPullPane(t, ds)
-	d.key(pullMergeKey)
-	d.key(pullMergeKey)
-	ds.mu.Lock()
-	merges := len(ds.merges)
-	ds.mu.Unlock()
-	if merges != 0 || m.dialog == nil {
-		t.Fatalf("%s twice: %d merges, question up %v; want none and the question still asked", pullMergeKey, merges, m.dialog != nil)
-	}
-	for _, method := range mergeMethods {
-		if method.press == pullMergeKey {
-			t.Errorf("%q is picked with the key that asks", method.label)
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		pull := readyPull()
+		pull.Pull.MergeMethods = nil
+		ds.issues["https://github.com/acme/foo#9"] = pull
+		d, m := openPullPane(t, ds)
+		d.key(pullMergeKey)
+		d.key(pullMergeKey)
+		ds.mu.Lock()
+		merges := len(ds.merges)
+		ds.mu.Unlock()
+		if merges != 0 || m.dialog == nil {
+			t.Fatalf("%s twice: %d merges, question up %v; want none and the question still asked", pullMergeKey, merges, m.dialog != nil)
 		}
-	}
+		for _, method := range mergeMethods {
+			if method.press == pullMergeKey {
+				t.Errorf("%q is picked with the key that asks", method.label)
+			}
+		}
+	})
 }
 
 // The band's key is lit under the pointer, from the cells it is pressed on.
 func TestTheReadyBandsKeyIsLitUnderThePointer(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.issues["https://github.com/acme/foo#9"] = readyPull()
-	d, m := openPullPane(t, ds)
-	m.st = newStyles(true)
-	lit := m.st.hover.Render(pullMergeKey + mergeBandHint)
-	if strings.Contains(rawFrame(m), lit) {
-		t.Fatalf("the band's key is lit with the pointer elsewhere")
-	}
-	x, y := at(t, m, "merges it")
-	d.dispatch(tea.MouseMotionMsg{X: x, Y: y})
-	if !strings.Contains(rawFrame(m), lit) {
-		t.Errorf("the band's key is not lit under the pointer:\n%q", rawFrame(m))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.issues["https://github.com/acme/foo#9"] = readyPull()
+		d, m := openPullPane(t, ds)
+		m.st = newStyles(true)
+		lit := m.st.hover.Render(pullMergeKey + mergeBandHint)
+		if strings.Contains(rawFrame(m), lit) {
+			t.Fatalf("the band's key is lit with the pointer elsewhere")
+		}
+		x, y := at(t, m, "merges it")
+		d.dispatch(tea.MouseMotionMsg{X: x, Y: y})
+		if !strings.Contains(rawFrame(m), lit) {
+			t.Errorf("the band's key is not lit under the pointer:\n%q", rawFrame(m))
+		}
+	})
 }
 
 // A band too narrow for its key draws none, and says so to whoever marks it.
@@ -791,14 +836,16 @@ func TestANarrowReadyBandHasNoKey(t *testing.T) {
 // The ready band's key is a control: a click on it asks, as the key does.
 func TestTheReadyBandsKeyIsPressed(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.issues["https://github.com/acme/foo#9"] = readyPull()
-	_, m := openPullPane(t, ds)
-	x, y := at(t, m, "merges it")
-	tap(t, m, x, y)
-	if m.dialog == nil || !strings.Contains(plainFrame(m), "Merge #9 into main") {
-		t.Errorf("a click on the band's key did not ask how to merge:\n%s", plainFrame(m))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.issues["https://github.com/acme/foo#9"] = readyPull()
+		_, m := openPullPane(t, ds)
+		x, y := at(t, m, "merges it")
+		tap(t, m, x, y)
+		if m.dialog == nil || !strings.Contains(plainFrame(m), "Merge #9 into main") {
+			t.Errorf("a click on the band's key did not ask how to merge:\n%s", plainFrame(m))
+		}
+	})
 }
 
 // A push while the tab is open is said, on the tab and in the merge question,
@@ -807,150 +854,158 @@ func TestTheReadyBandsKeyIsPressed(t *testing.T) {
 // have now seen.
 func TestAPushWhileTheTabIsOpenIsSaid(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.issues["https://github.com/acme/foo#9"] = readyPull()
-	d, m := openPullPane(t, ds)
-	p := issueTabOf(m)
-	v := p.issue
-	d.key("f")
-	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
-	opened := v.review
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.issues["https://github.com/acme/foo#9"] = readyPull()
+		d, m := openPullPane(t, ds)
+		p := issueTabOf(m)
+		v := p.issue
+		d.key("f")
+		d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+		opened := v.review
 
-	pushed := readyPull()
-	pushed.Pull.HeadSHA = "fff9999000111"
-	ds.mu.Lock()
-	ds.issues["https://github.com/acme/foo#9"] = pushed
-	ds.pullDiffs["fff9999000111"] = "diff --git a/a/first.go b/a/first.go\nnew file mode 100644\n--- /dev/null\n+++ b/a/first.go\n@@ -0,0 +1 @@\n+package a\n"
-	ds.mu.Unlock()
-	d.dispatch(issueTickMsg{id: p.id})
-	d.wait("the push", func() bool { return strings.Contains(plainFrame(m), "commits were pushed since") })
-	// A push nobody asked to see leaves the files being read where they are.
-	if v.review != opened || !strings.Contains(plainFrame(m), "reaper/reaper_test.go") {
-		t.Errorf("the push moved the files changed under the person reading them:\n%s", plainFrame(m))
-	}
-	// The merge is asked from the conversation, which quitting the window
-	// goes back to.
-	quitFiles(t, d, ds, v)
-	d.key(pullMergeKey)
-	frame := plainFrame(m)
-	if m.dialog == nil || !strings.Contains(m.dialog.body, "at fff999900011 — commits were pushed since abc123456789 was read here: the head is now fff999900011") {
-		t.Errorf("the merge question does not name the commit and the push:\n%s", frame)
-	}
-	d.key("esc")
-	// A read asked for that fails has shown them nothing: the notice stays.
-	ds.mu.Lock()
-	ds.issueErr = errors.New("boom")
-	ds.mu.Unlock()
-	d.key("r")
-	d.wait("the failed read", func() bool { return v.err != "" && !v.loading })
-	if v.pushed == "" || !strings.Contains(plainFrame(m), "commits were pushed") {
-		t.Errorf("a read that failed took the notice down (pushed %q):\n%s", v.pushed, plainFrame(m))
-	}
-	ds.mu.Lock()
-	ds.issueErr = nil
-	ds.mu.Unlock()
-	// A read the person asks for is what they have seen, a head newer still
-	// included: the notice goes and is not raised again by that read.
-	again := readyPull()
-	again.Pull.HeadSHA = "eee8888000222"
-	ds.mu.Lock()
-	ds.issues["https://github.com/acme/foo#9"] = again
-	ds.mu.Unlock()
-	d.key("r")
-	d.wait("the read", func() bool { return v.issue.Pull.HeadSHA == "eee8888000222" && !v.loading })
-	if v.pushed != "" || strings.Contains(plainFrame(m), "commits were pushed") {
-		t.Errorf("a read that was asked for left the notice up (pushed %q):\n%s", v.pushed, plainFrame(m))
-	}
+		pushed := readyPull()
+		pushed.Pull.HeadSHA = "fff9999000111"
+		ds.mu.Lock()
+		ds.issues["https://github.com/acme/foo#9"] = pushed
+		ds.pullDiffs["fff9999000111"] = "diff --git a/a/first.go b/a/first.go\nnew file mode 100644\n--- /dev/null\n+++ b/a/first.go\n@@ -0,0 +1 @@\n+package a\n"
+		ds.mu.Unlock()
+		d.dispatch(issueTickMsg{id: p.id})
+		d.wait("the push", func() bool { return strings.Contains(plainFrame(m), "commits were pushed since") })
+		// A push nobody asked to see leaves the files being read where they are.
+		if v.review != opened || !strings.Contains(plainFrame(m), "reaper/reaper_test.go") {
+			t.Errorf("the push moved the files changed under the person reading them:\n%s", plainFrame(m))
+		}
+		// The merge is asked from the conversation, which quitting the window
+		// goes back to.
+		quitFiles(t, d, ds, v)
+		d.key(pullMergeKey)
+		frame := plainFrame(m)
+		if m.dialog == nil || !strings.Contains(m.dialog.body, "at fff999900011 — commits were pushed since abc123456789 was read here: the head is now fff999900011") {
+			t.Errorf("the merge question does not name the commit and the push:\n%s", frame)
+		}
+		d.key("esc")
+		// A read asked for that fails has shown them nothing: the notice stays.
+		ds.mu.Lock()
+		ds.issueErr = errors.New("boom")
+		ds.mu.Unlock()
+		d.key("r")
+		d.wait("the failed read", func() bool { return v.err != "" && !v.loading })
+		if v.pushed == "" || !strings.Contains(plainFrame(m), "commits were pushed") {
+			t.Errorf("a read that failed took the notice down (pushed %q):\n%s", v.pushed, plainFrame(m))
+		}
+		ds.mu.Lock()
+		ds.issueErr = nil
+		ds.mu.Unlock()
+		// A read the person asks for is what they have seen, a head newer still
+		// included: the notice goes and is not raised again by that read.
+		again := readyPull()
+		again.Pull.HeadSHA = "eee8888000222"
+		ds.mu.Lock()
+		ds.issues["https://github.com/acme/foo#9"] = again
+		ds.mu.Unlock()
+		d.key("r")
+		d.wait("the read", func() bool { return v.issue.Pull.HeadSHA == "eee8888000222" && !v.loading })
+		if v.pushed != "" || strings.Contains(plainFrame(m), "commits were pushed") {
+			t.Errorf("a read that was asked for left the notice up (pushed %q):\n%s", v.pushed, plainFrame(m))
+		}
 
-	// f opens the files changed over the head the person has now seen.
-	d.key("f")
-	d.wait("the new head's files", func() bool { return v.review != nil && v.review.execID != "" })
-	if v.review == opened || v.review.head != "eee8888000222" {
-		t.Errorf("f after a read of a new head opened the old head's files")
-	}
-	again2 := v.review
-	quitFiles(t, d, ds, v)
+		// f opens the files changed over the head the person has now seen.
+		d.key("f")
+		d.wait("the new head's files", func() bool { return v.review != nil && v.review.execID != "" })
+		if v.review == opened || v.review.head != "eee8888000222" {
+			t.Errorf("f after a read of a new head opened the old head's files")
+		}
+		again2 := v.review
+		quitFiles(t, d, ds, v)
 
-	// A push read while the files changed are open leaves them on the head
-	// they were opened over; the next f after r is the new head's.
-	ds.mu.Lock()
-	ds.issues["https://github.com/acme/foo#9"] = pushed
-	ds.mu.Unlock()
-	d.key("r")
-	d.wait("the read", func() bool { return v.issue.Pull.HeadSHA == "fff9999000111" && !v.loading })
-	d.key("f")
-	d.wait("the new head's files drawn", func() bool { return strings.Contains(plainFrame(m), "a/first.go") })
-	if v.review == again2 || v.review.head != "fff9999000111" || v.pushed != "" {
-		t.Errorf("f after r: head %q, pushed %q; want the new head's window", v.review.head, v.pushed)
-	}
-	// The new head is still ready to merge, and the tab still says so.
-	if !strings.HasSuffix(p.title, " ●") {
-		t.Errorf("the tab is titled %q, want it marked ready", p.title)
-	}
-	want := []string{
-		m.paneBox.ID + ": 0001112223334...abc1234567890",
-		m.paneBox.ID + ": 0001112223334...eee8888000222",
-		m.paneBox.ID + ": 0001112223334...fff9999000111",
-	}
-	if !slices.Equal(ds.pullReviews, want) {
-		t.Errorf("sessions started: %q, want one a head, %q", ds.pullReviews, want)
-	}
+		// A push read while the files changed are open leaves them on the head
+		// they were opened over; the next f after r is the new head's.
+		ds.mu.Lock()
+		ds.issues["https://github.com/acme/foo#9"] = pushed
+		ds.mu.Unlock()
+		d.key("r")
+		d.wait("the read", func() bool { return v.issue.Pull.HeadSHA == "fff9999000111" && !v.loading })
+		d.key("f")
+		d.wait("the new head's files drawn", func() bool { return strings.Contains(plainFrame(m), "a/first.go") })
+		if v.review == again2 || v.review.head != "fff9999000111" || v.pushed != "" {
+			t.Errorf("f after r: head %q, pushed %q; want the new head's window", v.review.head, v.pushed)
+		}
+		// The new head is still ready to merge, and the tab still says so.
+		if !strings.HasSuffix(p.title, " ●") {
+			t.Errorf("the tab is titled %q, want it marked ready", p.title)
+		}
+		want := []string{
+			m.paneBox.ID + ": 0001112223334...abc1234567890",
+			m.paneBox.ID + ": 0001112223334...eee8888000222",
+			m.paneBox.ID + ": 0001112223334...fff9999000111",
+		}
+		if !slices.Equal(ds.pullReviews, want) {
+			t.Errorf("sessions started: %q, want one a head, %q", ds.pullReviews, want)
+		}
+	})
 }
 
 // Whatever takes the tab away ends the window's session with it: closing the
 // tab, and leaving the workspace the tab is in.
 func TestTheFilesChangedEndWithTheirTab(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	// Leaving the workspace is detaching, on a console with no tree beside it.
-	d, m := openPullPaneAt(t, ds, narrowConsole)
-	v := issueTabOf(m).issue
-	d.key("f")
-	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
-	execID := v.review.execID
-	d.key(m.leader())
-	d.key("d")
-	d.wait("the workspace to close", func() bool { return !m.inPanes() })
-	d.wait("the session ended", func() bool { return slices.Contains(ds.endedExecs(), execID) })
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		// Leaving the workspace is detaching, on a console with no tree beside it.
+		d, m := openPullPaneAt(t, ds, narrowConsole)
+		v := issueTabOf(m).issue
+		d.key("f")
+		d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+		execID := v.review.execID
+		d.key(m.leader())
+		d.key("d")
+		d.wait("the workspace to close", func() bool { return !m.inPanes() })
+		d.wait("the session ended", func() bool { return slices.Contains(ds.endedExecs(), execID) })
+	})
 }
 
 // A drag in the files changed is the window's to the end: it is held as a
 // terminal's is, and what was selected elsewhere goes.
 func TestTheFilesChangedHoldTheirDrag(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	d, m := openPullPane(t, ds)
-	p := issueTabOf(m)
-	d.key("f")
-	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
-	x, y := at(t, m, "reaper/reaper_test.go")
-	send(t, m, tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-	if m.mouseCapture != p.id {
-		t.Errorf("a press in the files changed is held by pane %d, want the tab's %d", m.mouseCapture, p.id)
-	}
-	send(t, m, tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
-	if m.mouseCapture != 0 {
-		t.Errorf("the release left the drag held by %d", m.mouseCapture)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		d, m := openPullPane(t, ds)
+		p := issueTabOf(m)
+		d.key("f")
+		d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
+		x, y := at(t, m, "reaper/reaper_test.go")
+		send(t, m, tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		if m.mouseCapture != p.id {
+			t.Errorf("a press in the files changed is held by pane %d, want the tab's %d", m.mouseCapture, p.id)
+		}
+		send(t, m, tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+		if m.mouseCapture != 0 {
+			t.Errorf("the release left the drag held by %d", m.mouseCapture)
+		}
+	})
 }
 
 // While a comment is being written the keys are the field's: the ready band's
 // key is not a control then, so a click on it types nothing.
 func TestTheReadyBandsKeyIsNotPressedWhileWriting(t *testing.T) {
 	t.Parallel()
-	ds := pullSource()
-	ds.issues["https://github.com/acme/foo#9"] = readyPull()
-	d, m := openPullPane(t, ds)
-	v := issueTabOf(m).issue
-	d.key("c")
-	if !v.composing {
-		t.Fatal("c did not open the comment field")
-	}
-	x, y := at(t, m, "merges it")
-	tap(t, m, x, y)
-	if m.dialog != nil || v.composer.Value() != "" {
-		t.Errorf("a click on the band's key while writing: question up %v, field %q", m.dialog != nil, v.composer.Value())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.issues["https://github.com/acme/foo#9"] = readyPull()
+		d, m := openPullPane(t, ds)
+		v := issueTabOf(m).issue
+		d.key("c")
+		if !v.composing {
+			t.Fatal("c did not open the comment field")
+		}
+		x, y := at(t, m, "merges it")
+		tap(t, m, x, y)
+		if m.dialog != nil || v.composer.Value() != "" {
+			t.Errorf("a click on the band's key while writing: question up %v, field %q", m.dialog != nil, v.composer.Value())
+		}
+	})
 }
 
 // Checks that could not all be read say so, so a row of passes is not taken

@@ -1673,10 +1673,11 @@ func asListener(msg tea.Msg) (listenerMsg, bool) {
 }
 
 // commandWait is how long a command is given to finish. Every command a
-// test runs answers from a fake, so a working one never reaches it, however
-// loaded the machine: it is long so a slow run is not mistaken for a broken
-// one, and a command that reaches it fails the test, named — a wait nobody
-// wrapped in listen, or a fake that never answers.
+// test runs answers from a fake, so a working one never reaches it: run and
+// drain time it on the machine's clock, where it is long so a slow run is not
+// mistaken for a broken one, and the driver's wait on the bubble's, where a
+// slow machine does not count at all. A command that reaches it fails the
+// test, named — a wait nobody wrapped in listen, or a fake that never answers.
 const commandWait = 10 * time.Second
 
 // run runs one command to its end and returns its message.

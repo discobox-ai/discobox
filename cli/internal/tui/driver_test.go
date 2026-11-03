@@ -2,6 +2,7 @@ package tui
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -16,6 +17,12 @@ import (
 // leaving it abandons a goroutine still holding the output channel. The next pump
 // then races it for the same bytes, and the output goes to whichever one wins.
 // Anything with a live terminal in it is driven from here instead.
+//
+// A driven test runs inside synctest.Test (newDriver fails one that does not),
+// so every time below is the bubble's: it moves only when every goroutine in
+// the test is blocked. The window's timers then fire when the test's own work
+// says they are due, not when a loaded machine happens to get there, and a
+// settle or a wait is over only once whatever it waited for has had its say.
 type driver struct {
 	t    *testing.T
 	m    *Model
@@ -24,9 +31,35 @@ type driver struct {
 }
 
 func newDriver(t *testing.T, m *Model) *driver {
+	t.Helper()
+	inBubble(t)
 	d := &driver{t: t, m: m, msgs: make(chan tea.Msg, 256), done: make(chan struct{})}
-	t.Cleanup(func() { close(d.done) })
+	t.Cleanup(func() {
+		// The workspace on screen and every parked one are closed, and every
+		// stream closed ends the goroutines reading it: the bubble the test
+		// runs in is over only once they are. (Quitting closes only the
+		// parked ones; the process exiting takes the rest.)
+		m.closeWorkspace()
+		m.closeParked()
+		close(d.done)
+	})
 	return d
+}
+
+// inBubble fails a test that drives a window outside a synctest bubble.
+//
+// There is no asking whether a goroutine is in one, so it is told by
+// synctest.Wait, which panics outside a bubble — and inside one waits until
+// the bubble is idle, harmless before the window has started. The recover
+// takes any panic for that one, which is all Wait can raise.
+func inBubble(t *testing.T) {
+	t.Helper()
+	defer func() {
+		if recover() != nil {
+			t.Fatal("a driven window runs inside synctest.Test: its timers fire on the test's clock, not the machine's")
+		}
+	}()
+	synctest.Wait()
 }
 
 // start runs the model's Init, as the runtime does, in a 120x40 window.
@@ -92,8 +125,9 @@ func (d *driver) run(cmd tea.Cmd) {
 	}()
 }
 
-// settle delivers whatever messages have arrived, briefly, so the model catches
-// up with the commands in flight.
+// settle delivers whatever messages arrive in the next 200ms, so the model
+// catches up with the commands in flight. The bubble's clock passes them only
+// once every one of those commands has returned or parked.
 func (d *driver) settle() {
 	deadline := time.Now().Add(200 * time.Millisecond)
 	for time.Now().Before(deadline) {
@@ -107,9 +141,10 @@ func (d *driver) settle() {
 
 // wait pumps until a condition holds, and fails the test if it never does.
 //
-// It returns the moment the condition holds, so its bound is only what a
-// failing test costs: commandWait, long for the reason that is — a loaded
-// machine is slow, not broken.
+// It returns the moment the condition holds. Its bound, commandWait, is the
+// bubble's time, which the window's timers share: a wait the window answers
+// only after a poll or two still ends, and one it never answers fails as soon
+// as the window has nothing left to do for that long.
 func (d *driver) wait(what string, cond func() bool) {
 	d.t.Helper()
 	deadline := time.Now().Add(commandWait)

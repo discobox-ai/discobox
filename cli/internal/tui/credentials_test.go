@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -569,22 +570,24 @@ func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 // consequential and reached for in a hurry.
 func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
 	t.Parallel()
-	if credentialsLeaderKey == paneTerminalKey || strings.EqualFold(credentialsLeaderKey, paneTerminalKey) {
-		t.Fatalf("the credential key (%q) is a shift away from the terminal key (%q)",
-			credentialsLeaderKey, paneTerminalKey)
-	}
-	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
+	synctest.Test(t, func(t *testing.T) {
+		if credentialsLeaderKey == paneTerminalKey || strings.EqualFold(credentialsLeaderKey, paneTerminalKey) {
+			t.Fatalf("the credential key (%q) is a shift away from the terminal key (%q)",
+				credentialsLeaderKey, paneTerminalKey)
+		}
+		ds := newFakeSource(testSandboxes()...)
+		ds.requests = []CredentialRequest{waitingRequest()}
+		ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
-	d.key("ctrl+a")
-	d.key(credentialsLeaderKey)
-	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
-	if !strings.Contains(dialogText(m), "api.github.com") {
-		t.Fatalf("dialog = %q, want the request the banner is about", dialogText(m))
-	}
+		d.key("ctrl+a")
+		d.key(credentialsLeaderKey)
+		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+		if !strings.Contains(dialogText(m), "api.github.com") {
+			t.Fatalf("dialog = %q, want the request the banner is about", dialogText(m))
+		}
+	})
 }
 
 func TestTheBannerCountsSeveralRequests(t *testing.T) {
@@ -625,44 +628,46 @@ func TestAnAnsweredRequestClearsOnTheNextPoll(t *testing.T) {
 // gesture — and the whole band is the target, not the words on it.
 func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.requests = []CredentialRequest{waitingRequest()}
+		ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
-	// The span is recorded by the draw, so there has to have been one, and it
-	// covers both bands.
-	d.wait("the banner drawn", func() bool { return m.banner.live })
-	span := m.banner
-	if len(span.rows) != 2 || span.rows[0] != 1 {
-		t.Fatalf("banner rows = %v, want one under the header and one above the keys", span.rows)
-	}
-	if span.rows[1] != len(frame(m))-2 {
-		t.Fatalf("the lower band is on row %d of a %d-row frame, want it just above the keys row",
-			span.rows[1], len(frame(m)))
-	}
-
-	// Far from the words, still on the band — its left end, since its right
-	// end is the dismiss button — and the lower one answers as the upper one
-	// does.
-	x := span.start + 1
-	for _, row := range span.rows {
-		if !m.bannerAt(x, row) {
-			t.Fatalf("row %d does not answer as the band", row)
+		// The span is recorded by the draw, so there has to have been one, and it
+		// covers both bands.
+		d.wait("the banner drawn", func() bool { return m.banner.live })
+		span := m.banner
+		if len(span.rows) != 2 || span.rows[0] != 1 {
+			t.Fatalf("banner rows = %v, want one under the header and one above the keys", span.rows)
 		}
-	}
-	clickWindow(d, x, span.rows[1])
-	// The secrets are read first, so the status dialog gives way to the question.
-	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
-	if !strings.Contains(dialogText(m), "api.github.com") {
-		t.Fatalf("dialog = %q, want the request the banner was about", dialogText(m))
-	}
-	// The press belongs to the banner: it must not also have started a
-	// selection drag across the chrome.
-	if m.chromeCapture {
-		t.Fatal("the click also started a chrome selection")
-	}
+		if span.rows[1] != len(frame(m))-2 {
+			t.Fatalf("the lower band is on row %d of a %d-row frame, want it just above the keys row",
+				span.rows[1], len(frame(m)))
+		}
+
+		// Far from the words, still on the band — its left end, since its right
+		// end is the dismiss button — and the lower one answers as the upper one
+		// does.
+		x := span.start + 1
+		for _, row := range span.rows {
+			if !m.bannerAt(x, row) {
+				t.Fatalf("row %d does not answer as the band", row)
+			}
+		}
+		clickWindow(d, x, span.rows[1])
+		// The secrets are read first, so the status dialog gives way to the question.
+		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+		if !strings.Contains(dialogText(m), "api.github.com") {
+			t.Fatalf("dialog = %q, want the request the banner was about", dialogText(m))
+		}
+		// The press belongs to the banner: it must not also have started a
+		// selection drag across the chrome.
+		if m.chromeCapture {
+			t.Fatal("the click also started a chrome selection")
+		}
+	})
 }
 
 // The band takes its rows from the panes rather than adding them to the frame,
@@ -675,46 +680,48 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 // what puts a terminal's cursor somewhere other than the cell it is drawn in.
 func TestTheBandMovesTheChromeItPushesDown(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.key("ctrl+a")
-	d.key("s")
-	d.wait("the tab", func() bool { return m.shells.len() == 1 })
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.key("ctrl+a")
+		d.key("s")
+		d.wait("the tab", func() bool { return m.shells.len() == 1 })
 
-	rowsBefore, tabRowBefore := m.paneRows(), 1
-	if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore); !ok {
-		t.Fatal("no tab where the strip is drawn with no banner")
-	}
-	_, originBefore := m.paneOrigin(m.terminals.visible())
-	if got := len(frame(m)); got != m.height {
-		t.Fatalf("frame = %d rows with no band, want the window's %d", got, m.height)
-	}
+		rowsBefore, tabRowBefore := m.paneRows(), 1
+		if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore); !ok {
+			t.Fatal("no tab where the strip is drawn with no banner")
+		}
+		_, originBefore := m.paneOrigin(m.terminals.visible())
+		if got := len(frame(m)); got != m.height {
+			t.Fatalf("frame = %d rows with no band, want the window's %d", got, m.height)
+		}
 
-	ds.mu.Lock()
-	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.mu.Unlock()
-	d.dispatch(tickMsg{})
-	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
+		ds.mu.Lock()
+		ds.requests = []CredentialRequest{waitingRequest()}
+		ds.mu.Unlock()
+		d.dispatch(tickMsg{})
+		d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
-	// The frame is still exactly the window: two rows of band, two rows off
-	// the panes.
-	if got := len(frame(m)); got != m.height {
-		t.Fatalf("frame = %d rows with the band up, want the window's %d", got, m.height)
-	}
-	if m.paneRows() != rowsBefore-2 {
-		t.Fatalf("paneRows = %d, want two fewer than %d: a row of band at each end", m.paneRows(), rowsBefore)
-	}
-	// The grid — and so the cursor drawn in it — moves down by the top band
-	// alone. The band below it takes height, not position.
-	if _, origin := m.paneOrigin(m.terminals.visible()); origin != originBefore+1 {
-		t.Fatalf("pane origin = %d, want one below %d: only the top band moves the grid", origin, originBefore)
-	}
-	if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore); ok {
-		t.Fatal("the tab strip still answers on the row the banner now occupies")
-	}
-	if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore+1); !ok {
-		t.Fatal("the tab strip does not answer on the row it moved to")
-	}
+		// The frame is still exactly the window: two rows of band, two rows off
+		// the panes.
+		if got := len(frame(m)); got != m.height {
+			t.Fatalf("frame = %d rows with the band up, want the window's %d", got, m.height)
+		}
+		if m.paneRows() != rowsBefore-2 {
+			t.Fatalf("paneRows = %d, want two fewer than %d: a row of band at each end", m.paneRows(), rowsBefore)
+		}
+		// The grid — and so the cursor drawn in it — moves down by the top band
+		// alone. The band below it takes height, not position.
+		if _, origin := m.paneOrigin(m.terminals.visible()); origin != originBefore+1 {
+			t.Fatalf("pane origin = %d, want one below %d: only the top band moves the grid", origin, originBefore)
+		}
+		if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore); ok {
+			t.Fatal("the tab strip still answers on the row the banner now occupies")
+		}
+		if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore+1); !ok {
+			t.Fatal("the tab strip does not answer on the row it moved to")
+		}
+	})
 }
 
 // A refusal from the server is an instruction — "bound to api.github.com and
