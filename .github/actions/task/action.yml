@@ -81,19 +81,26 @@ runs:
           # Only Go's: golangci-lint does not run on Windows, and nothing
           # about its cache is known to race.
           echo "GOCACHEPROG=" >> "$GITHUB_ENV"
-          # Go falls back to its settings file when the variable is empty, so
-          # if the runner wrote it there (go env -w), take it out of the file
-          # too. Unlike a release run, a Windows run may change that file: the
-          # cache it would read is only unsafe here, not untrusted.
+          # Go reads an empty variable as unset and falls back to its settings
+          # files: the user's (go env -w) and then the toolchain's own
+          # $GOROOT/go.env, which is where Depot's Windows runner writes it
+          # (discobox-ai/vm#52). `go env -u` only edits the first, and fails
+          # when it does not exist, so take the line out of whichever file has
+          # it. Unlike a release run, a Windows run may change these files: the
+          # cache they name is only unsafe here, not untrusted.
+          for f in "$(GOCACHEPROG= $go env GOENV | tail -n 1)" "$(GOCACHEPROG= $go env GOROOT | tail -n 1)/go.env"; do
+            f=$(cygpath -u "$f")
+            if [ -f "$f" ] && grep -q '^[[:space:]]*GOCACHEPROG=' "$f"; then
+              sed -i '/^[[:space:]]*GOCACHEPROG=/d' "$f"
+              echo "Removed GOCACHEPROG from $f."
+            fi
+          done
           seen=$(GOCACHEPROG= $go env GOCACHEPROG | tail -n 1)
-          if [ -n "$seen" ]; then
-            GOCACHEPROG= $go env -u GOCACHEPROG
-            seen=$(GOCACHEPROG= $go env GOCACHEPROG | tail -n 1)
-          fi
           if [ -n "$seen" ]; then
             echo "::error title=Depot Cache on Windows::GOCACHEPROG is still set after clearing it; depot gocache races with vet on Windows (#537)."
             exit 1
           fi
+          echo "go env GOCACHEPROG is now empty."
           echo "Windows builds from a cold local cache: depot gocache races on Windows file renames (see the comment above this step)."
           exit 0
         fi
