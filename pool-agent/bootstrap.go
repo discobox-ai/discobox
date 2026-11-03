@@ -97,8 +97,9 @@ type Bootstrap struct {
 	// sandboxes' machines in: the pool's own, which its provider derives from
 	// the pool (ADR 26-10-23-551 §3).
 	MachineProject string `json:"machineProject,omitempty"`
-	// MachineBase is the ID of the driver's base a sandbox's machine boots;
-	// empty is the first base the driver lists.
+	// MachineBase is the driver's base a sandbox's machine is made fresh
+	// from, as the driver's configuration names it (machine.Config.Base);
+	// empty is the driver's default.
 	MachineBase string `json:"machineBase,omitempty"`
 	// MachineNetwork is the provider's network the pool's machine is on,
 	// which every sandbox's machine is made isolated on (ADR 26-10-23-551

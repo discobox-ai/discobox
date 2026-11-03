@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
 	"github.com/discobox-ai/vm/pkg/machine/boxd"
-	"github.com/discobox-ai/vm/pkg/machine/fake"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
@@ -52,24 +52,6 @@ func fakeInstance(t *testing.T) *model.SandboxProviderInstance {
 	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: ProviderType, Config: config}
 }
 
-// fakeBases is the fake driver's base catalog in these tests: what a pool
-// machine boots from, as one on boxd boots its default image.
-var fakeBases = []machine.Base{
-	{Name: "fake-default", ID: "fake-default-id", GuestOS: machine.OS(runtime.GOOS)},
-	{Name: "fake-other", ID: "fake-other-id", GuestOS: machine.OS(runtime.GOOS)},
-}
-
-// withFakeBases gives the fake driver the bases it lists, which it reads when
-// it is constructed.
-func withFakeBases(t *testing.T, bases []machine.Base) {
-	t.Helper()
-	data, err := json.Marshal(bases)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(fake.BasesEnv, string(data))
-}
-
 // openRuntime is newRuntime for the provider instance prov_test, closed when
 // the test ends as the server closes it.
 func openRuntime(t *testing.T, cfg Config) *Runtime {
@@ -91,14 +73,9 @@ func newFakePool(t *testing.T, base string) (*Runtime, *poolTestDriver) {
 		t.Skip("the fake guest's console and log are POSIX shell commands")
 	}
 	isolateStateRoot(t)
-	withFakeBases(t, fakeBases)
-	return fakePoolRuntime(t, base)
-}
-
-// fakePoolRuntime is newFakePool on the bases the test already set.
-func fakePoolRuntime(t *testing.T, base string) (*Runtime, *poolTestDriver) {
-	t.Helper()
-	r := openRuntime(t, fakeConfig(t))
+	cfg := fakeConfig(t)
+	cfg.Base = base
+	r := openRuntime(t, cfg)
 	driver := &poolTestDriver{Driver: r.engine.Driver}
 	e, err := engine.Open(driver, r.engine.Project)
 	if err != nil {
@@ -133,8 +110,8 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	if state := r.engine.State(ctx, inst); state != engine.Running {
 		t.Fatalf("pool machine is %s, want running", state)
 	}
-	if inst.Base == nil || inst.Base.ID != fakeBases[0].ID || inst.ImageID != "" {
-		t.Fatalf("pool machine runs from base %+v, image %q, want the driver's first base and no image", inst.Base, inst.ImageID)
+	if inst.From != "" {
+		t.Fatalf("pool machine %+v, want one made fresh from the driver's base", inst)
 	}
 	if begun != 1 || pool.State != model.PoolStateRegistering || pool.Ready || pool.Schedulable {
 		t.Fatalf("after create: begun=%d state=%q ready=%v schedulable=%v, want 1 registering false false", begun, pool.State, pool.Ready, pool.Schedulable)
@@ -185,50 +162,57 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	}
 }
 
-// A pool machine boots the base the provider names by its ID, rather than the
-// driver's first, and its bootstrap names the same base for its sandboxes. A
-// name is not taken for an ID, since a name can be given to another base; a
-// driver with no base to offer creates nothing, saying what to configure.
+// A pool machine is made fresh from the base the provider names, which is
+// the driver's own configuration (disco-vm ADR 26-11-03-606), and its
+// bootstrap names the same base for its sandboxes' machines.
 func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
 	ctx := context.Background()
-	byName, _ := newFakePool(t, fakeBases[1].Name)
-	pool13 := &model.Pool{ID: "pool-13"}
-	err := byName.EnsurePool(ctx, nil, nil, pool13, newTestMaker(), nil)
-	if err == nil || !strings.Contains(err.Error(), "no base with ID") {
-		t.Fatalf("EnsurePool() with a base named, not identified = %v, want a refusal", err)
-	}
-	if _, err := byName.host.(*poolMachine).instance(ctx, pool13); !errors.Is(err, errNoPoolMachine) {
-		t.Fatalf("a machine was made from a base named, not identified: %v", err)
-	}
-
-	r, driver := newFakePool(t, fakeBases[1].ID)
+	r, driver := newFakePool(t, "fake-other")
 	pool := &model.Pool{ID: "pool-10", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
 	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
-	inst, err := r.host.(*poolMachine).instance(ctx, pool)
+	if _, err := r.host.(*poolMachine).instance(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if bases := fakeBasesMade(t); len(bases) != 1 || bases[0] != "fake-other" {
+		t.Fatalf("machines made from bases %v, want the configured one", bases)
+	}
+	if driver.applied[0].MachineBase != "fake-other" {
+		t.Fatalf("bootstrap's machine base = %q, want the configured %q", driver.applied[0].MachineBase, "fake-other")
+	}
+}
+
+// fakeBasesMade is the base of every machine the fake driver made fresh in
+// the test's state root, from the marker it leaves at a machine's root.
+func fakeBasesMade(t *testing.T) []string {
+	t.Helper()
+	var bases []string
+	root, err := os.OpenRoot(stateRoot("fake"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inst.Base == nil || inst.Base.ID != fakeBases[1].ID {
-		t.Fatalf("pool machine runs from base %+v, want %s", inst.Base, fakeBases[1].Name)
+	defer root.Close()
+	err = fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || entry.Name() != ".disco-vm-install" {
+			return err
+		}
+		data, err := fs.ReadFile(root.FS(), path)
+		if err != nil {
+			return err
+		}
+		for line := range strings.Lines(string(data)) {
+			if base, ok := strings.CutPrefix(strings.TrimSpace(line), "base="); ok {
+				bases = append(bases, base)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if driver.applied[0].MachineBase != fakeBases[1].ID {
-		t.Fatalf("bootstrap's machine base = %q, want the configured %q", driver.applied[0].MachineBase, fakeBases[1].ID)
-	}
-
-	isolateStateRoot(t)
-	withFakeBases(t, nil)
-	bare, _ := fakePoolRuntime(t, "")
-	pool11 := &model.Pool{ID: "pool-11"}
-	err = bare.EnsurePool(ctx, nil, nil, pool11, newTestMaker(), nil)
-	if err == nil || !strings.Contains(err.Error(), "no base") || !strings.Contains(err.Error(), "provider's base") {
-		t.Fatalf("EnsurePool() on a driver with no base = %v, want a refusal naming the provider's base", err)
-	}
-	if _, err := bare.host.(*poolMachine).instance(ctx, pool11); !errors.Is(err, errNoPoolMachine) {
-		t.Fatalf("a machine was made with no base: %v", err)
-	}
+	return bases
 }
 
 // No driver builds an image: a remote driver's pool machine and sandboxes
@@ -411,7 +395,7 @@ func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
 	if err != nil || project != "prov-0123456789abcdef" {
 		t.Fatalf("remoteProject(prov_…) = %q, %v, want prov-0123456789abcdef", project, err)
 	}
-	if _, _, err := openDriver("boxd", "Not A Project!", nil); err == nil {
+	if _, _, err := openDriver("boxd", "Not A Project!", "", nil); err == nil {
 		t.Fatal("openDriver accepted an ID outside disco-vm's project rule")
 	}
 	isolateStateRoot(t)
@@ -420,7 +404,7 @@ func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
 		t.Fatalf("boxd engine project = %q, want the provider's", remote.engine.Project)
 	}
 	local := openRuntime(t, fakeConfig(t))
-	if _, project, err := openDriver("fake", "Not A Project!", nil); err != nil || project != localProject || local.engine.Project != localProject {
+	if _, project, err := openDriver("fake", "Not A Project!", "", nil); err != nil || project != localProject || local.engine.Project != localProject {
 		t.Fatalf("a local driver's project = %q, %v (engine %q), want %q for every provider", project, err, local.engine.Project, localProject)
 	}
 }

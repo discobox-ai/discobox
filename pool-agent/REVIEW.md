@@ -335,13 +335,37 @@ durable state asks the same question.
   the open gate and holds the clear's drain for up to a whole build. A new
   kind of container the runtime starts does the same, or a clear runs under
   it.
-- **A snapshot build's proxy record goes only with its container.** The
-  proxy reads an identity with no egress entry as unrestricted, and a build
+- **A snapshot build's proxy record goes only with its box.** The proxy
+  reads an identity with no egress entry as unrestricted, and a build
   outlives an agent that restarted under it, so the material reaper skips
-  `layout.IsSnapshotID` identities, and a build is removed in one order
-  (`removeSnapshotBuild`): its container, then its policy and material, then
-  its tree, each only once what goes before it is gone — the tree last,
-  since it is what the next sweep finds the build by to try again.
+  `layout.IsSnapshotID` identities, and a build is removed in one order: its
+  container or VM (gone, or committed, which never runs), then its policy and
+  material, then its tree (`removeSnapshotBuildMaterial`), each only once what goes
+  before it is gone — the tree last, since it is what the next sweep finds
+  the build by to try again.
+- **Nothing a build is given that is secret touches a disk it commits.** On a
+  VM the root disk is what `Commit` freezes, and a file written then deleted
+  leaves its bytes in free blocks that every copy carries, readable by root in
+  any sandbox made from it; the build's identity has no egress policy once it
+  is done. The plan, which holds the build's client key, goes on the snapshot
+  command's stdin (`provisioner.Plan.Stdin`), and the command puts
+  `SnapshotDir`, where the proxy material lands, on a tmpfs. Do not place a
+  build's secret through `CopyTo`, a tree, or a bind on a VM. Why: the first
+  machine build placed the plan as a file and deleted it before the commit.
+- **A machine snapshot is the done record's, never disco-vm's.** A `snap-`
+  VM is used only when the pool's record names its ID; the record is removed
+  before anything is done to the VM and written only after `Commit` returns,
+  and a VM no record names is only ever destroyed — never started, copied or
+  committed again — since nothing says how far its build got (ADR
+  26-11-03-986 §4). Do not read disco-vm's committed mark, or keep a
+  stopped build to commit later, instead.
+- **Whether a machine pool snapshots is the driver's report** of
+  `Capabilities.Commit`, never a commit tried: finding out by trying costs a
+  whole build on every create of a driver without it.
+- **The guest never powers itself off to end a build.** The snapshot command
+  reports on its exec and leaves the box running; the taker stops it. A
+  result written into the box would be committed on a VM, and a stopped VM's
+  disk cannot be read.
 - **A build's box is described by `boxConfig`, as a sandbox's is.** A host or
   network setting added to one and not the other makes a snapshot a box of
   another kind than the ones started from it.
@@ -386,7 +410,15 @@ and no held sandbox names, is removed only if its name is a sandbox's
 (`sbx-…`), and only once the same retention has passed since it was first seen
 so (`machine-orphans`). A pool's project is the provider's naming convention,
 not a fence (ADR 26-10-23-551 §4), so a machine of any other name in it is
-never this runtime's to remove.
+never this runtime's to remove — but one: a snapshot's VM, named exactly
+`snap-` and 24 hex digits (`isSnapshotMachineName`), which the snapshot sweep
+destroys on one look when no done record names it (ADR 26-11-03-986 §5),
+since it holds no sandbox's work and nothing says how far its build got. Each
+pass keeps to its own exact shape: a sweep that matched a bare prefix would
+take an operator's `snap-foo`, and one that grew a third shape needs its own
+reason here. A sandbox's machine made from a snapshot is made again fresh
+only before its agent has ever answered (`snapshot-proven`, written where the
+answer is seen): after that its disk is the sandbox's work.
 
 ## The API on a public URL
 

@@ -377,8 +377,6 @@ type DockerSandboxRuntime struct {
 	// sandboxBaseImage is the provider's sandbox base image, which every
 	// sandbox delivered its platform runs (ADR 26-10-16-423 §10).
 	sandboxBaseImage string
-	// snapshots is the snapshot builds under way and failed (snapshot.go).
-	snapshots snapshotBuilds
 }
 
 type DockerSandboxRuntimeConfig struct {

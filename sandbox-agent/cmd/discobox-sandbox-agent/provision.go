@@ -146,7 +146,7 @@ func applySandbox(ctx context.Context) int {
 	}
 	for _, command := range [][]string{
 		{"systemctl", "daemon-reload"},
-		{"systemctl", "start", "discobox-sandbox-agent.path"},
+		{"systemctl", "start", agentlayer.AgentStartUnit},
 	} {
 		runCtx, cancel := context.WithTimeout(ctx, time.Minute)
 		//nolint:gosec // G204: the commands are the fixed list above.

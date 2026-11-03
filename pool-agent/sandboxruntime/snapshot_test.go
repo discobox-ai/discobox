@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -143,10 +144,7 @@ func TestADeliveredCreateStartsFromItsPlansSnapshot(t *testing.T) {
 		t.Fatalf("started from %q, want the base image", got)
 	}
 	waitForSnapshotBuilds(t, r)
-	r.snapshots.mu.Lock()
-	_, failed := r.snapshots.failed[plan.Key()]
-	r.snapshots.mu.Unlock()
-	if !failed {
+	if !r.snapshotFailedRecently(plan.Key(), time.Now()) {
 		t.Fatal("no build of the plan's snapshot was made, or it did not fail against a daemon that cannot build")
 	}
 	// Failed within snapshotRetryAfter: the next create starts from the base
@@ -162,14 +160,11 @@ func TestADeliveredCreateStartsFromItsPlansSnapshot(t *testing.T) {
 	}
 }
 
-func waitForSnapshotBuilds(t *testing.T, r *DockerSandboxRuntime) {
+func waitForSnapshotBuilds(t *testing.T, r interface{ buildingSnapshots() map[string]bool }) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(time.Minute)
 	for time.Now().Before(deadline) {
-		r.snapshots.mu.Lock()
-		active := len(r.snapshots.active)
-		r.snapshots.mu.Unlock()
-		if active == 0 {
+		if len(r.buildingSnapshots()) == 0 {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -197,19 +192,25 @@ func TestDeliveredMovedReadsTheBaseOfASnapshot(t *testing.T) {
 	}
 }
 
-// buildDaemon plays a daemon a build runs against: the container it creates
-// "provisions" when started, writing the result the agent would into the
-// directory bound at /etc/discobox, and exits; what it is asked to commit is
-// recorded.
+// buildDaemon plays a daemon a build runs against: the exec it is asked for
+// in the container it created "provisions", reading the plan on its stdin
+// and exiting with code after writing stderr; what it is asked to place, run,
+// stop and commit is recorded.
 type buildDaemon struct {
-	t         *testing.T
-	result    string
-	mu        sync.Mutex
-	created   container.CreateRequest
-	placed    bool
+	t       *testing.T
+	code    int
+	stderr  string
+	mu      sync.Mutex
+	created container.CreateRequest
+	placed  bool
+	started bool
+	execCmd []string
+	plan    []byte
+	// bound is what the build's bound directory held when it ran.
+	bound     []os.DirEntry
+	stopped   bool
 	commitURL url.Values
 	committed container.Config
-	started   chan struct{}
 }
 
 func (d *buildDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -228,22 +229,39 @@ func (d *buildDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		d.placed = true
 		w.WriteHeader(http.StatusOK)
-	case strings.HasSuffix(r.URL.Path, "/containers/ctr_build/wait"):
-		// The daemon answers at once and writes the exit when it comes,
-		// which is what tells the client the wait is in place.
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.(http.Flusher).Flush()
-		d.mu.Unlock()
-		<-d.started
-		d.mu.Lock()
-		_, _ = w.Write([]byte(`{"StatusCode":0}`))
 	case strings.HasSuffix(r.URL.Path, "/containers/ctr_build/start"):
-		etc := d.created.HostConfig.Mounts[0].Source
-		if err := os.WriteFile(filepath.Join(etc, "snapshot-result.json"), []byte(d.result), 0o644); err != nil {
+		d.started = true
+		w.WriteHeader(http.StatusNoContent)
+	case strings.HasSuffix(r.URL.Path, "/containers/ctr_build/exec"):
+		var req struct{ Cmd []string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		d.execCmd = req.Cmd
+		_, _ = w.Write([]byte(`{"Id":"exec_1"}`))
+	case strings.HasSuffix(r.URL.Path, "/exec/exec_1/start"):
+		// The provisioning reads its plan on stdin, and says how it went on
+		// stderr, as the snapshot command does. The request is read whole
+		// before the hijack: a connection closed with a request unread is
+		// reset, losing what was written on it.
+		_, _ = io.Copy(io.Discard, r.Body)
+		d.bound, _ = os.ReadDir(d.created.HostConfig.Mounts[0].Source)
+		conn, buf, err := w.(http.Hijacker).Hijack()
+		if err != nil {
 			d.t.Error(err)
+			return
 		}
-		close(d.started)
+		defer conn.Close()
+		_, _ = buf.WriteString("HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.multiplexed-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n")
+		_ = buf.Flush()
+		d.plan, _ = io.ReadAll(buf.Reader)
+		if d.stderr != "" {
+			header := []byte{2, 0, 0, 0, 0, 0, 0, byte(len(d.stderr))}
+			_, _ = buf.Write(append(header, d.stderr...))
+		}
+		_ = buf.Flush()
+	case strings.HasSuffix(r.URL.Path, "/exec/exec_1/json"):
+		_, _ = fmt.Fprintf(w, `{"ID":"exec_1","Running":false,"ExitCode":%d}`, d.code)
+	case strings.HasSuffix(r.URL.Path, "/containers/ctr_build/stop"):
+		d.stopped = true
 		w.WriteHeader(http.StatusNoContent)
 	case strings.HasSuffix(r.URL.Path, "/commit"):
 		d.commitURL = r.URL.Query()
@@ -254,9 +272,9 @@ func (d *buildDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func buildFixture(t *testing.T, result string) (*DockerSandboxRuntime, *buildDaemon, snapshotPlan) {
+func buildFixture(t *testing.T, code int, stderr string) (*DockerSandboxRuntime, *buildDaemon, snapshotPlan) {
 	t.Helper()
-	daemon := &buildDaemon{t: t, result: result, started: make(chan struct{})}
+	daemon := &buildDaemon{t: t, code: code, stderr: stderr}
 	server := httptest.NewServer(daemon)
 	t.Cleanup(server.Close)
 	cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")), client.WithHTTPClient(server.Client()))
@@ -275,20 +293,18 @@ func buildFixture(t *testing.T, result string) (*DockerSandboxRuntime, *buildDae
 	return r, daemon, plan
 }
 
-// A build boots the base with the agent placed and an anonymous plan bound
-// at /etc/discobox, waits for it to power off, and commits it tagged by its
-// key with the base, its agent layer and the reclaim label; then nothing of
-// it is left (ADR 26-10-16-423 §8).
+// A build starts the base with the agent placed and an anonymous plan bound
+// at /etc/discobox, runs the snapshot command in it as an exec, stops it, and
+// commits it tagged by its key with the base, its agent layer and the reclaim
+// label; then nothing of it is left (ADR 26-11-03-986 §1).
 func TestASnapshotBuildCommitsTheBoxItProvisioned(t *testing.T) {
-	r, daemon, plan := buildFixture(t, `{}`)
-	var bound []byte
-	daemonPlan := func() {
-		etc := daemon.created.HostConfig.Mounts[0].Source
-		bound, _ = os.ReadFile(filepath.Join(etc, "snapshot.json"))
-	}
-	go func() { <-daemon.started; daemon.mu.Lock(); daemonPlan(); daemon.mu.Unlock() }()
+	r, daemon, plan := buildFixture(t, 0, "")
 	if err := r.buildSnapshot(context.Background(), plan); err != nil {
 		t.Fatal(err)
+	}
+	bound := daemon.plan
+	if !daemon.started || !slices.Equal(daemon.execCmd, []string{agentlayer.AgentPath, "snapshot"}) || !daemon.stopped {
+		t.Errorf("started %v, ran %v, stopped %v; want the snapshot command run in the started box, then the box stopped", daemon.started, daemon.execCmd, daemon.stopped)
 	}
 	created := daemon.created
 	if created.Image != "sha256:base" || created.Entrypoint[0] != "/sbin/init" || !created.HostConfig.Privileged {
@@ -299,6 +315,9 @@ func TestASnapshotBuildCommitsTheBoxItProvisioned(t *testing.T) {
 	}
 	if mounts := created.HostConfig.Mounts; len(mounts) != 1 || mounts[0].Target != agentlayer.SnapshotDir {
 		t.Errorf("build container mounts = %+v, want the plan's directory alone", mounts)
+	}
+	if len(daemon.bound) != 0 {
+		t.Errorf("the build's bound directory held %v as it ran; the plan goes on stdin, never on a disk", daemon.bound)
 	}
 	if !daemon.placed {
 		t.Error("the agent was not placed in the build container")
@@ -332,11 +351,11 @@ func TestASnapshotBuildCommitsTheBoxItProvisioned(t *testing.T) {
 	}
 }
 
-// A build whose provisioning failed commits nothing.
+// A build whose provisioning failed commits nothing, and says why.
 func TestAFailedSnapshotBuildCommitsNothing(t *testing.T) {
-	r, daemon, plan := buildFixture(t, `{"error":"feature \"docker\": step \"install\": exit status 1"}`)
+	r, daemon, plan := buildFixture(t, 1, `the docker feature failed to provision: exit status 1`)
 	err := r.buildSnapshot(context.Background(), plan)
-	if err == nil || !strings.Contains(err.Error(), "docker") {
+	if err == nil || !strings.Contains(err.Error(), "docker feature failed") || !strings.Contains(err.Error(), "status 1") {
 		t.Fatalf("buildSnapshot() = %v, want the provisioning's failure", err)
 	}
 	if daemon.commitURL != nil {
@@ -447,8 +466,10 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := testDockerRuntime(&DockerSandboxRuntime{client: cli, projectID: "proj_1", poolID: "pool_1"})
-	r.snapshots.failed = map[string]time.Time{"k": time.Now()}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1"})
+	if err := r.recordSnapshotFailure("k", time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.clearSnapshots(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -458,7 +479,7 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 	if filters := listed.Get("filters"); !strings.Contains(filters, snapshotRepository) || !strings.Contains(filters, "pool_1") {
 		t.Errorf("listed with filters %s, want this pool's snapshots", filters)
 	}
-	if len(r.snapshots.failed) != 0 {
+	if r.snapshotFailedRecently("k", time.Now()) {
 		t.Error("a clear kept the plans that failed to build")
 	}
 }

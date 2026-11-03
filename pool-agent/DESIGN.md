@@ -36,7 +36,7 @@ from the in-sandbox `sandbox-agent` API.
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs, and `NotifyReady` (`sd_notify` for a Type=notify unit). |
 | `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`, and a machine pool's `ProvisioningKeyFile`). See [The Pool Bundle](#the-pool-bundle). |
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
-| `provisioner` | The box provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §3): given a box's guest operations (`machine.Guest`: a disco-vm machine's, or a Docker pool container's), a tar tree and a command, it places the tree with disco-vm's copy and runs the command with its exec, returning its exit code and the tail of its output. No per-driver code, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a credential), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree. It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
+| `provisioner` | The box provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §3): given a box's guest operations (`machine.Guest`: a disco-vm machine's, or a container's as `ContainerGuest`, with the daemon's platform from `ContainerPlatform`), a tar tree, a command and its stdin, it places the tree with the guest's copy and runs the command with its exec, returning its exit code and the tail of its output. No per-driver code beyond that container's guest, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a credential), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree — or on `Plan.Stdin` where they must never touch the box's disk, as a snapshot build's plan (ADR 26-11-03-986 §1). It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
 | `vmtest` | Test support for code that drives disco-vm machines: `RunFakeGuestIfInvoked` lets a test binary be the guest agent of disco-vm's fake driver and the shim that holds a fake machine, and `FakeDriver` is that driver, with one base and any key source, so a test boots fake machines through the engine. Only tests import it, here and in the server's `vm` provider. |
 | `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
@@ -943,7 +943,7 @@ error. Only boxd is linked.
 
 ```mermaid
 flowchart LR
-    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom the driver's base\n(isolated, on the pool's network,\nfenced to the pool)"]
+    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network,\nfenced to the pool)"]
     inst --> start["startLocked: engine.Start"]
     start --> place["place: sandbox.json,\nagentlayer.Archive, then\ndiscobox-provision apply"]
     place -->|"placed before with something else"| restart["restart the machine"]
@@ -991,16 +991,17 @@ flowchart LR
   unarchiving create starts the same machine. **Delete** returns only once the
   driver no longer has the machine (ADR 0022 §3).
 - **Clear-cache** stops nothing, since no machine shares a cache: it empties
-  the proxy's response cache and asks each running sandbox's agent to empty
-  its own (`cache/clear`, the pool-only `cache-clear` scope). A stopped
+  the proxy's response cache, asks each running sandbox's agent to empty
+  its own (`cache/clear`, the pool-only `cache-clear` scope), and drops the
+  pool's snapshots ([On a machine pool](#on-a-machine-pool)). A stopped
   sandbox keeps its cache.
 - **Refused**: suspend (a machine is not frozen whole; a sleep is a stop),
   tree export and import, both `sandboxruntime.ErrUnsupported`, answered 501.
 - **The reaper** removes an unheld sandbox's machine with its tree, and a
   machine of the pool's project named as a sandbox's (`sbx-…`) that neither a
   tree nor a held sandbox names, once it has been so for the trees' retention
-  (its clock under the pool's `machine-orphans`). A machine of any other name
-  is left alone.
+  (its clock under the pool's `machine-orphans`). A snapshot's VM (`snap-…`)
+  is the snapshot sweep's. A machine of any other name is left alone.
 
 ### The Hop
 
@@ -1487,23 +1488,40 @@ bundle. `bundle` names the files its maker places beside it.
 ## Snapshots
 
 A delivered create starts from a **snapshot** of its plan when the pool has
-one, and otherwise from the sandbox base image, provisioning from scratch as
-above while the snapshot is built behind it
+one, and otherwise from its base, provisioning from scratch as above while
+the snapshot is built behind it
 ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
-§8; `snapshot.go`). A snapshot is only a cache: the control plane never knows
-which a box started from, and nothing fails for want of one.
+§8, [ADR 26-11-03-986](../docs/adr/26-11-03-986-a-machine-pool-snapshots-a-plan-by-committing-a-vm-it-provisioned-and-shut-down.md);
+`snapshot.go`, shared by both runtimes). A snapshot is only a cache: the
+control plane never knows which a box started from, and nothing fails for
+want of one. A Docker pool's snapshot is a committed image
+(`snapshotdocker.go`); a machine pool's is a committed disco-vm VM, and only
+where its driver reports `Capabilities.Commit`
+([On a machine pool](#on-a-machine-pool)).
 
 ```mermaid
 flowchart LR
-  create["delivered create"] --> key["plan key: base image ID, project, pool,<br/>agent, pins, features off, provisionEgress"]
-  key -->|"discobox-snapshot:&lt;key&gt; on its base"| snap["run the snapshot"]
-  key -->|"none"| base["run the base image"] --> ask["build it in the background<br/>(one at a time; a failure waits an hour)"]
-  ask --> build["build container: base + agent layer + pins,<br/>SnapshotPlan bound at /etc/discobox"]
-  build -->|"provisions, every step blocking,<br/>cleans, powers off"| commit["commit, tagged by key,<br/>reclaim label"]
+  create["delivered create"] --> key["plan key: base, project, pool,<br/>agent, pins, features off, provisionEgress"]
+  key -->|"a snapshot of the plan"| snap["start from the snapshot"]
+  key -->|"none"| base["start from the base"] --> ask["build it in the background<br/>(one at a time; a failure waits an hour)"]
+  ask --> build["build box: base + agent layer + pins"]
+  build -->|"exec: discobox-sandbox-agent snapshot, SnapshotPlan on stdin<br/>(provisions, every feature done, cleans, seals)"| stop["stop in order"]
+  stop --> commit["commit"]
 ```
 
+- **The build is one exec** (`runSnapshotCommand`, through
+  `provisioner.Provision` on both runtimes: a container as
+  `provisioner.ContainerGuest`). The taker starts its box, places the agent,
+  its units and its pins, and runs the agent's `snapshot` command as one
+  blocking exec with the plan on its stdin, whose exit status and stderr are
+  the build's result. The
+  command refuses to seal a box with any feature not done or failed (as
+  `discobox-provision wait` reads it), so no snapshot is committed that is
+  not provisioned whole. The guest never powers itself off: the taker stops
+  the box in order and commits it.
 - **The key** (`snapshotPlan`) is everything the snapshot holds depends on
-  and nothing of the sandbox: the base image's ID, the project and pool, the
+  and nothing of the sandbox: the base (a Docker pool's sandbox base image
+  ID; a machine pool's driver and the base its configuration names), the
   agent it is placed with and its bundles in order, the features turned off,
   and the create's `provisionEgress`. Every sandbox of one plan shares one snapshot.
 - **A build is anonymous.** Its proxy identity is its own
@@ -1518,10 +1536,19 @@ flowchart LR
   container to be found by: its material goes with the build, or with the
   sweep once its container is gone.
 - **Nothing of the build is committed but what it provisioned.** The plan,
-  its proxy material and the agent's record of it are in a directory bound at
-  `/etc/discobox`, and before it powers off the agent empties `machine-id`,
-  removes SSH host keys, and takes the build's proxy CA back out of the trust
-  store. A container inherits its image's labels, so the build carries only
+  which holds the build's client key, is never on a disk: it is the command's
+  stdin. Its proxy material and the agent's record of it are under
+  `/etc/discobox`, which is never on the committed disk either — a Docker
+  build's bind, a VM build's tmpfs the command mounts — and which the
+  command empties before it returns. It empties `machine-id`, removes SSH host keys, takes the build's
+  proxy CA back out of the trust store, and writes the seal
+  (`agentlayer.SealedFile`): a box made from a snapshot gives itself a new
+  machine ID and SSH host keys when its bootstrap arrives, before anything
+  else, since a boot the pool did not run (boxd's commit boots the disk once
+  more) may have written them again. It removes the agent's start link, so
+  a box made from the snapshot starts its agent when its maker says, as a
+  fresh one does, and the re-execution for the new machine ID never runs
+  under the maker's own systemctl calls. A container inherits its image's labels, so the build carries only
   its project's and pool's, which every container of the pool carries, and
   none saying it is a build, which would mark every sandbox started from the
   snapshot. It is found by its name (`snapshotContainerPrefix`) with those
@@ -1529,9 +1556,13 @@ flowchart LR
   mid-build, maybe still running — is swept with its tree and proxy material
   by the image reclaim, so none provisions on under a policy the pool no
   longer keeps, and it is removed with its pool by `SyncKnownPools`.
-- **A build is a start.** It enters the pool's start gate for its whole
-  length, and a cache clear ends it once the gate is shut
-  ([Clearing the Pool's Caches](#clearing-the-pools-caches)).
+- **A build is a start.** On a Docker pool it enters the pool's start gate
+  for its whole length, and a cache clear ends it once the gate is shut
+  ([Clearing the Pool's Caches](#clearing-the-pools-caches)). On either, a
+  clear forgets the plans that failed.
+- **A plan whose build failed waits an hour** before a create asks again. Its
+  failure is kept in the pool's tree (`snapshot-failures`), not in memory, so
+  an agent that keeps restarting does not keep building.
 - **A create with no `provisionEgress`** — from a server before it — starts
   from the base and builds nothing, rather than building unrestricted.
 - **The snapshot** is tagged `discobox-snapshot:<key>` and labelled with the
@@ -1550,11 +1581,61 @@ flowchart LR
   Its bound directory is in the pool's data subtree, beside the sandboxes'
   trees (`layout.Root.PoolSnapshots`), never in the build area no box may
   reach (ADR 0050).
-- **The build's contract is the agent's**, not this runtime's:
-  `agentlayer.SnapshotPlan` at `SnapshotPlanFile`, the agent's `snapshot`
-  command, the power-off, and `SnapshotResultFile`. What this runtime adds is
-  the Docker part — the container, the bind that keeps `SnapshotDir` out of
-  what is committed, and the commit.
+- **The build's contract is the agent's**, not a runtime's:
+  the agent's `snapshot` command run as an exec, `agentlayer.SnapshotPlan`
+  on its stdin, and the seal. What a runtime adds is its box — a
+  Docker pool's container, with the bind that keeps `SnapshotDir` out of what
+  is committed; a machine pool's VM — its stop, and its commit.
+
+### On a machine pool
+
+A machine pool builds snapshots only where its driver reports
+`Capabilities.Commit` (disco-vm ADR 26-11-03-868), read once and never found
+by trying. On any other driver every sandbox's machine is made fresh and
+provisions from scratch, and nothing below exists. `machinesnapshot.go`.
+
+- **One name per plan, and a done record.** A plan's snapshot is the VM
+  `snap-<key>` in the pool's project. What makes it a snapshot is the pool's
+  own record (`snapshot-records/<key>.json`, written by a synced rename),
+  holding the ID `Commit` returned. disco-vm's word that a VM is committed is
+  never read: a create is made `From` the VM only if the record exists and
+  the VM of the name has that ID.
+- **The base is keyed by name.** A machine pool's key holds the driver and
+  the base its configuration names (empty for the driver's default), since
+  disco-vm reports no base's identity (ADR 26-11-03-606). A base replaced
+  under the same name — boxd's default image moved — is not seen: clear the
+  pool's cache to drop its snapshots.
+- **A build always runs one sequence**: remove the record, destroy any VM of
+  the name and confirm it gone, create it fresh (isolated and fenced like a
+  sandbox's machine), start it, run the exec, stop it, `Commit`, write the
+  record. A failure stops at the step it reached and destroys the VM unless
+  the record names it, so a crash leaves either no record — the next build
+  starts over — or a record naming a VM that committed.
+- **A snapshot is dropped record first**, then its VM: by a cache clear
+  (every one), by the reclaim (unused for `snapshotRetention`, by
+  `lastUsed`), or because a sandbox made from it never came up. A create
+  holds the snapshot for its `Create` call: a VM a create holds is left for
+  the sweep, and a build of that plan waits for the next create to ask. A
+  clear waits out the build it ended before it drops anything, and a create
+  writes `lastUsed` at most hourly. A sweep, like a build, holds the build
+  lock, and skips its pass while a build holds it.
+- **The sweep** (the volume watcher's, its first pass at agent start)
+  destroys every VM named as a snapshot's (`snap-` and 24 hex digits,
+  `isSnapshotMachineName`) that no record names and no build under way holds,
+  drops the record of a snapshot whose VM is gone, and removes what the pool
+  laid for a build no longer under way, once its VM is gone. A VM that will
+  not go (hcs refuses one a copy still needs, `ErrInUse`) is tried again
+  next pass. The orphan reaper keeps to `sbx-` names, and the sweep to
+  `snap-`.
+- **A create whose snapshot is gone** (`ErrNotFound` from `Create`) makes the
+  machine fresh. A machine made from a snapshot whose agent never answers
+  (`errAgentNeverUp`: its machine stopped first, or the wait ran out) on the
+  machine's first start, before it has answered once, drops the snapshot, whose plan then waits as a failed
+  build's does, is destroyed, and is made again fresh in the same start
+  (`remakeFresh`). Nothing else of a start blames the snapshot, a failed
+  placement included. `machine.json` records the snapshot a machine was made
+  from (`snapshot`); the sandbox's tree marks that its agent has answered
+  (`snapshot-proven`, written by the wait that sees the answer).
 
 ## Sandbox DNS
 

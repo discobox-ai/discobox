@@ -48,8 +48,16 @@
   or its whole feature; everything after it, and every feature requiring it,
   is left out with it. The snapshot command also empties `machine-id`,
   removes SSH host keys, and untrusts the build's proxy CA itself
-  (`cleanMachine`); anything else a package generates per machine is the
-  feature's to keep out.
+  (`cleanMachine`), and a box made from a snapshot gives itself a new
+  machine ID and SSH host keys when its bootstrap arrives (`takeIdentity`,
+  on `agentlayer.SealedFile`); anything else a package generates per machine
+  is the feature's to keep out.
+
+- **The snapshot command never powers the box off, and writes no result
+  into it.** It runs as its taker's exec and answers on its exit status and
+  stderr; the taker stops the box. On a VM anything it leaves on the disk is
+  committed, so it empties `agentlayer.SnapshotDir` before it seals, and it
+  seals only a box with every feature done and none failed.
 
 - **A snapshot provisions with none of a sandbox's mounts.** No primary
   volume, no pool cache, no declared volume is bound in a build, as none was
@@ -63,7 +71,7 @@
   secrets and sources. Nothing it reads may come from a sandbox's bootstrap,
   and nothing it writes outside the provisioned features may land on the root
   filesystem: its intake's record is `agentlayer.SnapshotStateFile`, under the
-  directory its taker removes.
+  directory it empties before it seals.
 
 - **A `merge: json` source that stops setting a member sets it to `null`
   instead of dropping it.** The merge keeps every member the file there has

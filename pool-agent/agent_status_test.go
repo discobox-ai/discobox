@@ -168,7 +168,7 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 	client := newRecordingStatusClient()
 	bootstrap, identity, logger := testReporterArgs()
 	bootstrap.Runtime, bootstrap.Driver = RuntimeMachine, "boxd"
-	status := machinePoolStatus("boxd", machine.Capabilities{Isolation: true, Egress: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, hopDirect)
+	status := machinePoolStatus("boxd", machine.Capabilities{Isolation: true, Egress: []machine.EgressFence{machine.EgressAllow}, Commit: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, hopDirect)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -194,7 +194,7 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 		t.Fatalf("conditions = %#v, want a map", call.Conditions)
 	}
 	runtime, ok := conditions["runtime"].(map[string]any)
-	if !ok || runtime["kind"] != "machine" || runtime["driver"] != "boxd" || runtime["status"] != "ready" || runtime["isolation"] != true || runtime["egress"] != true || runtime["hop"] != hopDirect {
-		t.Fatalf("runtime condition = %#v, want the machine runtime on boxd, ready, isolating and fencing, reached directly", conditions["runtime"])
+	if !ok || runtime["kind"] != "machine" || runtime["driver"] != "boxd" || runtime["status"] != "ready" || runtime["isolation"] != true || runtime["egress"] != true || runtime["commit"] != true || runtime["hop"] != hopDirect {
+		t.Fatalf("runtime condition = %#v, want the machine runtime on boxd, ready, isolating, fencing and committing, reached directly", conditions["runtime"])
 	}
 }

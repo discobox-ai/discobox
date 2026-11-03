@@ -30,8 +30,12 @@ type Plan struct {
 	Tree io.Reader
 	// Command runs once the tree is placed. It must not ask for a TTY, which
 	// would merge its stderr into its stdout. Its argv is named in errors, so
-	// a secret goes in the tree, never in the command.
+	// a secret goes in the tree or Stdin, never in the command.
 	Command machine.ExecRequest
+	// Stdin is the command's standard input; nil is none. What only the
+	// command may read, and nothing may keep, goes here rather than in the
+	// tree, which is written to the machine's disk.
+	Stdin io.Reader
 }
 
 // Result is what the command reported: its exit code and the last
@@ -79,7 +83,7 @@ func Provision(ctx context.Context, guest machine.Guest, plan Plan) (Result, err
 		return Result{}, fmt.Errorf("place the tree in %s: %w", plan.Dir, err)
 	}
 	var stdout, stderr tailBuffer
-	code, err := machine.Run(ctx, guest, plan.Command, nil, &stdout, &stderr)
+	code, err := machine.Run(ctx, guest, plan.Command, plan.Stdin, &stdout, &stderr)
 	result := Result{ExitCode: code, Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
 	if err != nil {
 		result.ExitCode = -1

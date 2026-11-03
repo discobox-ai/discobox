@@ -43,14 +43,14 @@ type Config struct {
 	// because the limits the engine enforces — vz's two running macOS guests —
 	// are the host's (ADR 26-10-09-106 §4).
 	Driver string `json:"driver,omitempty"`
-	// Base is the ID of the driver's base a remote driver's pool machine, and
-	// its sandboxes' machines, boot from (machine.Driver.Bases): a machine is a
-	// driver base the agent is placed on, never an image of discobox's (ADR
-	// 26-10-23-551 §§1, 3). It is an ID, never a name, because a name can be
-	// given to another base after an operator chose it (a boxd snapshot's).
-	// Empty is the first base the driver lists: on boxd its default image when
-	// the account has one, and otherwise its oldest snapshot. A local driver's
-	// pool agent runs on this host, and boots no base.
+	// Base is the base a remote driver's pool machine, and its sandboxes'
+	// machines, are made fresh from: the driver's own configuration
+	// (machine.Config.Base, disco-vm ADR 26-11-03-606), in the driver's terms —
+	// boxd's image. A machine is a driver base the agent is placed on, never
+	// an image of discobox's (ADR 26-10-23-551 §§1, 3). Empty is the driver's
+	// default: on boxd its default image. A local driver's pool agent runs on
+	// this host, and boots no base. It was once an ID matched against the
+	// driver's bases; a boxd snapshot's ID stored then names no image now.
 	Base string `json:"base,omitempty"`
 	// APIKey is a remote driver's key for its service (boxd's), which the
 	// engine calls with. A local driver has none.
@@ -80,7 +80,7 @@ func Validate(data json.RawMessage) error {
 	}
 	// The provider instance's project is not known here, and the driver's
 	// kind is all there is to check the rest against.
-	driver, err := newDriver(cfg.Driver, localProject, nil)
+	driver, err := newDriver(cfg.Driver, localProject, "", nil)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "apiKey", Label: "API Key", Type: sandbox.ProviderConfigFieldSecret, Description: "On a remote driver such as boxd, the key the server calls the driver's service with. Give discobox an org or account of its own: every pool of this provider can reach what the key reaches."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "On a remote driver such as boxd, where its pool machines reach this server. Leave it empty and this server opens a channel to each pool machine instead, so it needs no public URL."},
 			{Key: "deliverProviderKey", Label: "Deliver Provider Key", Type: "boolean", Advanced: true, Description: "When the driver cannot issue a pool a narrower key that expires (boxd issues none from an API key), place this provider's own API key on the pool's machine instead. It reaches everything the key reaches, discobox never expires, renews or revokes it, and whoever reads it there keeps it: rotate it when a pool machine is lost or suspected. Without it such a pool is blocked."},
-			{Key: "base", Label: "Base", Type: "string", Description: "On a remote driver such as boxd, the ID of the driver's base a pool's machine and its sandboxes' machines boot from. Empty is the first base the driver lists: boxd's default image, or its oldest snapshot when the account has no default image, so name one there.", Advanced: true},
+			{Key: "base", Label: "Base", Type: "string", Description: "On a remote driver such as boxd, the base a pool's machine and its sandboxes' machines are made fresh from, in the driver's terms: boxd's image. Empty is the driver's default, boxd's default image.", Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

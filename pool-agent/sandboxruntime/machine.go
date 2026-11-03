@@ -41,8 +41,9 @@ import (
 
 // A machine pool's sandboxes are disco-vm machines on the pool's own engine
 // (ADR 26-10-23-551 §3), one per sandbox, named by its ID so that a create
-// that was lost is found by name. A sandbox's machine boots a driver base, and
-// every start places the platform bundle's agent layer, its units, its pins
+// that was lost is found by name. A sandbox's machine is made fresh from the
+// driver's base, or, where the driver commits, from its plan's snapshot
+// (machinesnapshot.go), and every start places the platform bundle's agent layer, its units, its pins
 // and sandbox.json through disco-vm's copy, then runs the agent's
 // `discobox-provision apply` through its exec (ADR 26-10-24-953 §2). The
 // sandbox agent listens where the driver's service says, and the pool reaches
@@ -65,8 +66,10 @@ type MachineSandboxRuntimeConfig struct {
 	Root layout.Root
 	// Engine is the pool's own disco-vm engine, in the pool's project.
 	Engine *engine.Engine
-	// Base is the ID of the driver's base a sandbox's machine boots; empty is
-	// the first base the driver lists.
+	// Base is the driver's base as its configuration names it
+	// (machine.Config.Base): what a fresh machine starts from, which the
+	// driver is made with. The runtime only keys snapshots by it, so a base
+	// moved is a snapshot built again.
 	Base string
 	// Isolate creates every sandbox's machine stripped of what its provider
 	// gives a machine by default, on Network alone (ADR 26-10-23-551 §4). A
@@ -111,6 +114,9 @@ type MachineSandboxRuntime struct {
 	// urls is each running sandbox's instance URL, asked of the driver once
 	// per start rather than on every dial.
 	urls sync.Map
+	// agentReadyTimeout bounds the wait for a started machine's agent; zero
+	// is machineAgentReadyTimeout. Only a test sets it.
+	agentReadyTimeout time.Duration
 }
 
 var _ Runtime = (*MachineSandboxRuntime)(nil)
@@ -128,7 +134,7 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 			return nil, errors.New("an isolated sandbox machine needs the pool's network, or it reaches nothing")
 		}
 	}
-	if cfg.Egress != nil && !cfg.Engine.Driver.Capabilities().Egress {
+	if cfg.Egress != nil && !cfg.Engine.Driver.Capabilities().Fences(cfg.Egress) {
 		return nil, fmt.Errorf("the %s driver cannot fence a sandbox's machine's egress to its pool (ADR 26-10-29-481 §4)", cfg.Engine.Driver.Name())
 	}
 	r := &MachineSandboxRuntime{
@@ -195,6 +201,29 @@ type machineRecord struct {
 	// Started reports a machine started since it was made: one that was not
 	// is created, not stopped.
 	Started bool `json:"started,omitempty"`
+	// Snapshot is the key of the snapshot the machine was made from; empty
+	// is a machine made fresh. One whose agent never answers before it has
+	// answered once (snapshotProvenName) drops the snapshot and is made again
+	// fresh (ADR 26-11-03-986 §6).
+	Snapshot string `json:"snapshot,omitempty"`
+}
+
+// snapshotProvenName marks, in a sandbox's tree, that the agent of its
+// machine made from a snapshot has answered: from then on the machine holds
+// the sandbox's work, and nothing blames the snapshot or makes the machine
+// again. It is written where the answer is seen (waitForSandboxAgent), on
+// its own, so no caller going away or record written beside it loses it.
+const snapshotProvenName = "snapshot-proven"
+
+func (r *MachineSandboxRuntime) snapshotProvenPath(sandboxID string) string {
+	return filepath.Join(r.sandboxRoot(sandboxID), snapshotProvenName)
+}
+
+// snapshotProven reports whether the sandbox's machine's agent has answered
+// since it was made from a snapshot.
+func (r *MachineSandboxRuntime) snapshotProven(sandboxID string) bool {
+	_, err := os.Stat(r.snapshotProvenPath(sandboxID))
+	return err == nil
 }
 
 func (r *MachineSandboxRuntime) machineRecordPath(sandboxID string) string {
@@ -295,7 +324,7 @@ func (r *MachineSandboxRuntime) sandbox(ctx context.Context, sandboxID string, i
 		ID:        inst.ID,
 		SandboxID: sandboxID,
 		Status:    status,
-		Image:     inst.Image,
+		Image:     r.snapshotBase(),
 		CreatedAt: inst.Created,
 		Metadata:  metadata,
 		Env:       copyMap(record.Env),
@@ -574,20 +603,20 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		return nil, false, err
 	}
 	r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
-	inst, err := r.ensureInstance(ctx, sandboxID)
+	inst, snapshot, err := r.ensureInstance(ctx, sandboxID, req)
 	if err != nil {
 		return nil, false, err
 	}
 	if record.Instance != inst.ID {
 		// Made just now, or found by name after a create that was lost: this
 		// machine has not been started by this record.
-		record = machineRecord{Instance: inst.ID}
+		record = machineRecord{Instance: inst.ID, Snapshot: snapshot}
 	}
 	listen, err := r.agentListenAddress(ctx, inst)
 	if err != nil {
 		return nil, false, err
 	}
-	doc, err := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, r.poolPublicKey(), inst.Image, r.poolEndpoints, req, proxyEnv, project.Project)
+	doc, err := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, r.poolPublicKey(), r.snapshotBase(), r.poolEndpoints, req, proxyEnv, project.Project)
 	if err != nil {
 		return nil, false, err
 	}
@@ -660,28 +689,42 @@ func (r *MachineSandboxRuntime) rebuildInPlace(ctx context.Context, sandboxID st
 		return err
 	}
 	if r.keepsDataOnVolume() {
-		inst, err := r.instance(ctx, sandboxID)
-		if err != nil && !errors.Is(err, ErrNotFound) {
-			return err
-		}
-		if err == nil {
-			if err := r.engine.Remove(ctx, inst, true); err != nil {
-				return fmt.Errorf("remove sandbox %s's machine to make it again: %w", sandboxID, err)
-			}
-		}
-		record, _, err := r.readMachineRecord(sandboxID)
-		if err != nil {
-			return err
-		}
-		if inst, err = r.ensureInstance(ctx, sandboxID); err != nil {
-			return err
-		}
-		record.Instance, record.Started = inst.ID, false
-		if err := r.writeMachineRecord(sandboxID, record); err != nil {
+		if err := r.remakeMachine(ctx, sandboxID); err != nil {
 			return err
 		}
 	}
 	return r.startLocked(ctx, sandboxID)
+}
+
+// remakeMachine destroys the sandbox's machine and makes a new one, fresh
+// from the driver's base, and records it as made and never started: its
+// bootstrap names where the new machine's agent listens. The caller holds
+// the sandbox's power lock.
+func (r *MachineSandboxRuntime) remakeMachine(ctx context.Context, sandboxID string) error {
+	if err := r.removeMachine(ctx, sandboxID); err != nil {
+		return err
+	}
+	record, ok, err := r.readMachineRecord(sandboxID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNoContainer
+	}
+	inst, _, err := r.ensureInstance(ctx, sandboxID, nil)
+	if err != nil {
+		return err
+	}
+	listen, err := r.agentListenAddress(ctx, inst)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(r.snapshotProvenPath(sandboxID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	record.Instance, record.Started, record.Snapshot = inst.ID, false, ""
+	record.Bootstrap.Runtime.AgentRuntime.ListenAddress = listen
+	return r.writeMachineRecord(sandboxID, record)
 }
 
 // rebuildForProjectLayer makes a running sandbox's machine again on the
@@ -727,42 +770,61 @@ func (r *MachineSandboxRuntime) takesRuntimeConfig(_ context.Context, sandboxID 
 	return true, nil
 }
 
-// ensureInstance is the sandbox's machine, made from the driver's base when
-// it has none. A create whose answer was lost made one already, which is
-// found by its name.
-func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID string) (machine.Instance, error) {
+// ensureInstance is the sandbox's machine, made when it has none: from its
+// plan's snapshot where there is one (snapshotFor), and otherwise fresh from
+// the driver's base, which a nil req always is. It returns the key of the
+// snapshot it was made from, empty for none. A create whose answer was lost
+// made one already, which is found by its name.
+func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (machine.Instance, string, error) {
 	inst, err := r.instance(ctx, sandboxID)
 	if err == nil {
-		return inst, r.fenced(inst)
+		return inst, "", r.fenced(inst)
 	}
 	if !errors.Is(err, ErrNotFound) {
-		return inst, err
+		return inst, "", err
 	}
 	name, err := machineName(sandboxID)
 	if err != nil {
-		return machine.Instance{}, err
+		return machine.Instance{}, "", err
 	}
-	base, err := r.baseRef(ctx)
-	if err != nil {
-		return machine.Instance{}, err
+	opts := r.createOptions(name)
+	from, snapshot, release := r.snapshotFor(ctx, req)
+	defer release()
+	if from != "" {
+		opts.From = from
+		inst, err = r.engine.Create(ctx, opts)
+		if errors.Is(err, engine.ErrNotFound) || errors.Is(err, machine.ErrNotFound) {
+			// The snapshot went between its lookup and this create.
+			slog.WarnContext(ctx, "a snapshot is gone; making the sandbox's machine fresh", "snapshot", from, "sandboxId", sandboxID)
+			opts.From, snapshot = "", ""
+		}
 	}
-	opts := engine.CreateOptions{Name: name, Egress: r.egress}
-	if r.isolate {
-		opts.Isolated, opts.Networks = true, []string{r.network}
+	if opts.From == "" {
+		inst, err = r.engine.Create(ctx, opts)
 	}
-	inst, err = r.engine.Create(ctx, base, opts)
 	if errors.Is(err, machine.ErrExists) {
 		if inst, err = r.instance(ctx, sandboxID); err != nil {
-			return inst, err
+			return inst, "", err
 		}
-		return inst, r.fenced(inst)
+		return inst, "", r.fenced(inst)
 	}
 	if err != nil {
 		// A create past the provider's quota fails here, and says so (ADR
 		// 26-10-09-106 §4).
-		return machine.Instance{}, fmt.Errorf("create sandbox %s's machine from %s: %w", sandboxID, base, err)
+		return machine.Instance{}, "", fmt.Errorf("create sandbox %s's machine: %w", sandboxID, err)
 	}
-	return inst, nil
+	return inst, snapshot, nil
+}
+
+// createOptions is how every machine of the pool is made, a sandbox's or a
+// snapshot build's: isolated on the pool's network and fenced to its hop
+// (ADR 26-10-23-551 §4, ADR 26-10-29-481 §4).
+func (r *MachineSandboxRuntime) createOptions(name string) engine.CreateOptions {
+	opts := engine.CreateOptions{Name: name, Egress: r.egress}
+	if r.isolate {
+		opts.Isolated, opts.Networks = true, []string{r.network}
+	}
+	return opts
 }
 
 // fenced refuses a machine found by name whose egress its driver does not
@@ -793,28 +855,6 @@ func sameEgress(got, want *machine.Egress) bool {
 		}
 	}
 	return len(allowed) == len(want.Allow)
-}
-
-// baseRef is the ID of the driver's base a sandbox's machine boots: the
-// configured one, matched by ID alone, or the first the driver lists.
-func (r *MachineSandboxRuntime) baseRef(ctx context.Context) (string, error) {
-	driver := r.engine.Driver.Name()
-	bases, err := r.engine.Driver.Bases(ctx)
-	if err != nil {
-		return "", fmt.Errorf("list the %s driver's bases: %w", driver, err)
-	}
-	if r.base == "" {
-		if len(bases) == 0 {
-			return "", fmt.Errorf("the %s driver offers no base to boot a sandbox's machine from", driver)
-		}
-		return bases[0].ID, nil
-	}
-	for _, base := range bases {
-		if base.ID == r.base {
-			return base.ID, nil
-		}
-	}
-	return "", fmt.Errorf("the %s driver has no base with ID %q", driver, r.base)
 }
 
 // agentListenAddress is where the sandbox agent listens in the machine: the
@@ -960,23 +1000,34 @@ func (r *MachineSandboxRuntime) placementCurrent(ctx context.Context, sandboxID,
 // root's alone.
 func bootstrapTree(data []byte, keypair *sandboxconfig.AgentTLS) io.Reader {
 	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	epoch := time.Unix(0, 0)
-	for _, dir := range []string{"etc/", "etc/discobox/"} {
-		_ = tw.WriteHeader(&tar.Header{Name: dir, Typeflag: tar.TypeDir, Mode: 0o755, ModTime: epoch})
-	}
-	_ = tw.WriteHeader(&tar.Header{Name: "etc/discobox/" + sandboxDocumentName, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(data)), ModTime: epoch})
-	_, _ = tw.Write(data)
+	tw := configTree(&buf)
+	writeTreeFile(tw, "etc/discobox/"+sandboxDocumentName, 0o644, data)
 	if keypair != nil {
 		agentTLSDir := "etc/discobox/" + sandboxconfig.AgentTLSDirName + "/"
-		_ = tw.WriteHeader(&tar.Header{Name: agentTLSDir, Typeflag: tar.TypeDir, Mode: 0o755, ModTime: epoch})
+		_ = tw.WriteHeader(&tar.Header{Name: agentTLSDir, Typeflag: tar.TypeDir, Mode: 0o755, ModTime: time.Unix(0, 0)})
 		for _, file := range agentTLSFiles(*keypair) {
-			_ = tw.WriteHeader(&tar.Header{Name: agentTLSDir + file.name, Typeflag: tar.TypeReg, Mode: int64(file.mode), Size: int64(len(file.data)), ModTime: epoch})
-			_, _ = tw.Write(file.data)
+			writeTreeFile(tw, agentTLSDir+file.name, int64(file.mode), file.data)
 		}
 	}
 	_ = tw.Close()
 	return &buf
+}
+
+// configTree starts a tar, placed at a machine's root, of what goes in
+// /etc/discobox: its directories, public, as the machine's own are.
+func configTree(w io.Writer) *tar.Writer {
+	tw := tar.NewWriter(w)
+	for _, dir := range []string{"etc/", "etc/discobox/"} {
+		_ = tw.WriteHeader(&tar.Header{Name: dir, Typeflag: tar.TypeDir, Mode: 0o755, ModTime: time.Unix(0, 0)})
+	}
+	return tw
+}
+
+// writeTreeFile adds the regular file name, of mode, to a tree. A tree is
+// written to memory, so it never fails.
+func writeTreeFile(tw *tar.Writer, name string, mode int64, data []byte) {
+	_ = tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: mode, Size: int64(len(data)), ModTime: time.Unix(0, 0)})
+	_, _ = tw.Write(data)
 }
 
 // SandboxDialer reaches the sandbox agent at its machine's private URL, where
@@ -1072,10 +1123,21 @@ const machineAgentReadyTimeout = 5 * time.Minute
 // network to the machine's URL.
 const machineAgentPollInterval = 250 * time.Millisecond
 
+// errAgentNeverUp is a machine's agent that never answered: its machine
+// stopped first, or the wait ran out. Until a machine made from a snapshot
+// has answered once it blames the snapshot (ADR 26-11-03-986 §6); nothing
+// else of a start does, a failed placement included, which the pool or a
+// moment of the box's may cause.
+var errAgentNeverUp = errors.New("the sandbox agent did not come up")
+
 // waitForSandboxAgent waits for the agent of a machine just started to answer
 // at its URL, or for the machine to stop.
 func (r *MachineSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxID string) error {
-	ctx, cancel := context.WithTimeout(ctx, machineAgentReadyTimeout)
+	timeout := r.agentReadyTimeout
+	if timeout == 0 {
+		timeout = machineAgentReadyTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var lastErr error
 	for {
@@ -1083,21 +1145,31 @@ func (r *MachineSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandbox
 		if err != nil {
 			lastErr = err
 		} else if err := sandboxAgentTerminalStateError(sb); err != nil {
-			return err
+			return errors.Join(errAgentNeverUp, err)
 		} else if dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort); err != nil {
 			lastErr = err
 		} else if lastErr = sandboxAgentHealthy(ctx, dial); lastErr == nil {
-			return nil
+			return r.markSnapshotProven(sandboxID)
 		}
 		select {
 		case <-ctx.Done():
 			if lastErr != nil {
-				return fmt.Errorf("wait for sandbox-agent: %w", lastErr)
+				return fmt.Errorf("wait for sandbox-agent: %w", errors.Join(errAgentNeverUp, lastErr))
 			}
 			return ctx.Err()
 		case <-time.After(machineAgentPollInterval):
 		}
 	}
+}
+
+// markSnapshotProven records that the agent of a sandbox's machine made from
+// a snapshot has answered (snapshotProvenName), once.
+func (r *MachineSandboxRuntime) markSnapshotProven(sandboxID string) error {
+	record, ok, err := r.readMachineRecord(sandboxID)
+	if err != nil || !ok || record.Snapshot == "" || r.snapshotProven(sandboxID) {
+		return err
+	}
+	return writeFileDurably(r.snapshotProvenPath(sandboxID), nil)
 }
 
 // stopRefusedSandbox stops a machine whose agent refused the pool's
@@ -1191,21 +1263,35 @@ func (r *MachineSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID str
 
 // removeMachine destroys the sandbox's machine and confirms it is gone.
 func (r *MachineSandboxRuntime) removeMachine(ctx context.Context, sandboxID string) error {
-	inst, err := r.instance(ctx, sandboxID)
-	if errors.Is(err, ErrNotFound) {
-		return nil
-	}
+	name, err := machineName(sandboxID)
 	if err != nil {
 		return err
 	}
-	if err := r.engine.Remove(ctx, inst, true); err != nil {
-		return fmt.Errorf("remove sandbox %s's machine: %w", sandboxID, err)
+	if err := r.destroyMachine(ctx, name); err != nil {
+		return fmt.Errorf("sandbox %s: %w", sandboxID, err)
 	}
-	if _, err := r.instance(ctx, sandboxID); !errors.Is(err, ErrNotFound) {
+	return nil
+}
+
+// destroyMachine destroys the pool's machine named name, a sandbox's or a
+// snapshot's, and confirms its driver no longer has it. One already gone is
+// not an error.
+func (r *MachineSandboxRuntime) destroyMachine(ctx context.Context, name string) error {
+	inst, err := r.engine.Driver.Instance(ctx, name)
+	if errors.Is(err, machine.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("look up machine %s: %w", name, err)
+	}
+	if err := r.engine.Remove(ctx, inst, true); err != nil {
+		return fmt.Errorf("remove machine %s: %w", name, err)
+	}
+	if _, err := r.engine.Driver.Instance(ctx, name); !errors.Is(err, machine.ErrNotFound) {
 		if err == nil {
 			err = errors.New("its driver still has it")
 		}
-		return fmt.Errorf("confirm sandbox %s's machine is removed: %w", sandboxID, err)
+		return fmt.Errorf("confirm machine %s is removed: %w", name, err)
 	}
 	return nil
 }
@@ -1226,8 +1312,8 @@ func (r *MachineSandboxRuntime) ImportTree(context.Context, string, io.Reader) e
 func (r *MachineSandboxRuntime) SyncKnownPools(context.Context, []string) error { return nil }
 
 // ClearCache empties the caches of this pool: its proxy's response cache,
-// and each running sandbox's own, which is on that sandbox's disk and which
-// its agent empties in place (sandbox agent's cache/clear). Nothing is shared
+// each running sandbox's own, which is on that sandbox's disk and which its
+// agent empties in place (sandbox agent's cache/clear), and its snapshots. Nothing is shared
 // between machines, so no sandbox is stopped; a stopped one keeps its cache.
 func (r *MachineSandboxRuntime) ClearCache(ctx context.Context) ([]string, error) {
 	var errs []error
@@ -1245,6 +1331,9 @@ func (r *MachineSandboxRuntime) ClearCache(ctx context.Context) ([]string, error
 		if err := r.clearSandboxCache(ctx, sb.SandboxID); err != nil {
 			errs = append(errs, fmt.Errorf("clear sandbox %s's caches: %w", sb.SandboxID, err))
 		}
+	}
+	if err := r.clearSnapshots(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("drop the pool's snapshots: %w", err))
 	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
@@ -1286,9 +1375,10 @@ func (r *MachineSandboxRuntime) clearSandboxCache(ctx context.Context, sandboxID
 
 // WatchSandboxVolumes reaps the trees of sandboxes the control plane no
 // longer holds, with their machines, and the pool's Git caches, as a
-// container pool does (ADR 26-10-01-876), and removes the machines of the
-// pool's project that no sandbox of this pool names: orphans of a pool whose
-// records were lost (ADR 26-10-23-551 §1).
+// container pool does (ADR 26-10-01-876), removes the machines of the pool's
+// project that no sandbox of this pool names: orphans of a pool whose
+// records were lost (ADR 26-10-23-551 §1), and sweeps its snapshots (ADR
+// 26-11-03-986 §5). Its first pass is at the agent's start.
 func (r *MachineSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger *slog.Logger, held HeldSandboxes) {
 	if logger == nil {
 		logger = slog.Default()
@@ -1303,6 +1393,7 @@ func (r *MachineSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger 
 			return r.removeMachine(ctx, sandboxID)
 		})
 		r.reapOrphanMachines(ctx, logger, held, time.Now())
+		r.sweepSnapshots(ctx, logger, time.Now())
 		r.gitCache.SweepIfDue(ctx, gitCacheSweepInterval, gitcache.Held(held), gitcache.SweepOptions{
 			NamespaceRetention: sandboxVolumeRetention,
 			CacheRetention:     gitCacheRetention,

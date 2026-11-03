@@ -28,6 +28,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/wire"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
+	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -605,7 +606,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	if err := begin(ctx); err != nil {
 		return recorded, err
 	}
-	guest := containerGuest{cli: cli, container: containerID}
+	guest := provisioner.ContainerGuest{Client: cli, Container: containerID}
 	record, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
@@ -678,7 +679,7 @@ func (e *Engine) poolBox(ctx context.Context, cli *client.Client, pool *model.Po
 	if err != nil {
 		return poolagent.Bootstrap{}, sandbox.PoolBox{}, err
 	}
-	platform, err := boxPlatform(ctx, cli)
+	platform, err := provisioner.ContainerPlatform(ctx, cli)
 	if err != nil {
 		return poolagent.Bootstrap{}, sandbox.PoolBox{}, err
 	}
@@ -785,7 +786,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
-	record, err := poolruntime.ProvisionBox(ctx, containerGuest{cli: cli, container: created.ID}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv()})
+	record, err := poolruntime.ProvisionBox(ctx, provisioner.ContainerGuest{Client: cli, Container: created.ID}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv()})
 	if err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}

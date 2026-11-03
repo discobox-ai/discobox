@@ -209,6 +209,12 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	if err != nil {
 		return err
 	}
+	// A machine made from a snapshot whose agent does not come up on its
+	// first start blames the snapshot (ADR 26-11-03-986 §6): one never
+	// started before this start, whose agent has never answered. A machine
+	// started before may have answered unseen (its start cut short after the
+	// boot, the pool agent gone), and then holds the sandbox's work.
+	firstFromSnapshot := record.Snapshot != "" && !record.Started && !r.snapshotProven(sandboxID)
 	r.publishSandboxState(ctx, sandboxID, StateStarting)
 	r.publishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
 	r.urls.Delete(sandboxID)
@@ -270,7 +276,36 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		}
 	}
 	r.publishSandboxPhase(ctx, sandboxID, PhaseWaitingForAgent)
-	return r.finishBoot(ctx, sandboxID, boot)
+	if err := r.finishBoot(ctx, sandboxID, boot); err != nil {
+		if firstFromSnapshot && ctx.Err() == nil && errors.Is(err, errAgentNeverUp) {
+			return r.remakeFresh(ctx, sandboxID, record.Snapshot, err)
+		}
+		return err
+	}
+	return nil
+}
+
+// remakeFresh makes again, fresh from the driver's base, a sandbox's machine
+// made from the snapshot keyed key whose agent never came up on its first
+// start, and starts it (ADR 26-11-03-986 §6). The snapshot is dropped first,
+// so no create after this one is made from it. The machine held nothing of
+// the sandbox's yet: it had never run its agent. The caller holds the
+// sandbox's power lock.
+func (r *MachineSandboxRuntime) remakeFresh(ctx context.Context, sandboxID, key string, cause error) error {
+	slog.WarnContext(ctx, "a sandbox machine made from a snapshot did not come up; dropping the snapshot and making the machine fresh",
+		"sandboxId", sandboxID, "snapshot", snapshotMachineName(key), "error", cause)
+	if err := r.dropSnapshot(ctx, key); err != nil {
+		slog.WarnContext(ctx, "drop a snapshot whose sandbox did not come up", "snapshot", snapshotMachineName(key), "error", err)
+	}
+	// The plan waits before it is built again, as a failed build's does: a
+	// snapshot rebuilt at once would likely fail its next sandbox the same.
+	if err := r.recordSnapshotFailure(key, time.Now()); err != nil {
+		slog.WarnContext(ctx, "record a snapshot whose sandbox did not come up", "snapshot", snapshotMachineName(key), "error", err)
+	}
+	if err := r.remakeMachine(ctx, sandboxID); err != nil {
+		return errors.Join(cause, err)
+	}
+	return r.startLocked(ctx, sandboxID)
 }
 
 // stopLocked shuts the sandbox's machine down. The caller holds the sandbox's

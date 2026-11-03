@@ -10,35 +10,46 @@ import (
 )
 
 // A snapshot is a box provisioned for no sandbox, kept so a box wanting the
-// same plan starts from it (ADR 26-10-16-423 §8). Whatever takes one — a
-// pool's Docker runtime commits a container; a machine provider would take its
-// own kind of snapshot — boots the provider's image with the agent placed as
-// Archive places it, and puts a SnapshotPlan at SnapshotPlanFile instead of a
-// sandbox's bootstrap. The agent's snapshot command, started by
-// discobox-snapshot.service, then provisions the platform and harness its pins
-// name with every step blocking, leaves out what a feature keeps out of a
-// snapshot, cleans the box of what is any one machine's, writes a
-// SnapshotResult to SnapshotResultFile, and powers the box off. The taker
-// reads the result, takes everything under SnapshotDir out of the box — a
-// Docker runtime binds it, so it is never in the container's own filesystem
-// — and snapshots what is left.
+// same plan starts from it (ADR 26-10-16-423 §8, ADR 26-11-03-986). Whatever
+// takes one — a pool's Docker runtime commits a container, a machine pool
+// commits a disco-vm VM — starts the provider's base with the agent placed as
+// Archive places it, and runs the agent's snapshot command in the box as one
+// blocking exec, with a SnapshotPlan on its standard input instead of a
+// sandbox's bootstrap. The plan holds the build's proxy client key, so it is
+// never written to the box's disk: on a VM anything written there is on the
+// disk the snapshot commits, and deleting a file leaves its bytes in free
+// blocks. For the same reason the command puts SnapshotDir, where the plan's
+// proxy material is laid, on a tmpfs unless it is a mount already (a
+// container's is a bind of its taker's). It then provisions the platform and
+// harness its pins name with every step blocking, leaves out what a feature
+// keeps out of a snapshot, cleans the box of what is any one machine's,
+// removes everything under SnapshotDir, writes SealedFile, and reports how it
+// went on its exit status and its output. It does not power the box off: the
+// taker stops it in order, and snapshots what is left.
 //
 // The plan is anonymous: it names no sandbox, account, source, secret or
 // credential, and its proxy identity is the build's own, so nothing of the
 // sandbox whose create asked for it reaches the snapshot.
 const (
-	// SnapshotDir holds the plan, the result, and what the plan's runtime
-	// config lays: the directory a sandbox's bootstrap is in.
+	// SnapshotDir holds what the plan's runtime config lays: the directory a
+	// sandbox's bootstrap is in. It is never on the disk a snapshot keeps (a
+	// tmpfs or its taker's bind), and the command empties it before it
+	// returns.
 	SnapshotDir = sandboxconfig.SandboxConfigDir
-	// SnapshotPlanFile is the plan. A box with it is taking a snapshot, and
-	// one with none never is.
-	SnapshotPlanFile = SnapshotDir + "/snapshot.json"
-	// SnapshotResultFile is the result, written last.
-	SnapshotResultFile = SnapshotDir + "/snapshot-result.json"
 	// SnapshotStateFile is where the snapshot's intake keeps the runtime
 	// config it applied: under SnapshotDir, never on the root filesystem the
 	// snapshot is taken of.
 	SnapshotStateFile = SnapshotDir + "/runtime-config.json"
+	// SnapshotCommand is the agent's snapshot command, as the taker runs it.
+	SnapshotCommand = "snapshot"
+	// SealedFile marks a box made from a snapshot: the snapshot command writes
+	// it last, onto the filesystem the snapshot keeps. A box that boots its
+	// sandbox with it first takes an identity of its own — a new machine ID
+	// and SSH host keys — and then removes it, since a boot nobody ran (a
+	// provider's own, as it captures or copies the disk) may have written the
+	// ones the snapshot cleaned. It is beside SnapshotDir, not in it, and in
+	// /etc, where no sandbox volume is ever mounted to hide it.
+	SealedFile = "/etc/discobox-sealed"
 )
 
 // SnapshotPlan is what a snapshot provisions, and how it reaches its pool.
@@ -79,17 +90,12 @@ func (p SnapshotPlan) Validate() error {
 	return nil
 }
 
-// ParseSnapshotPlan reads SnapshotPlanFile.
+// ParseSnapshotPlan reads a plan, as the snapshot command takes it on its
+// standard input.
 func ParseSnapshotPlan(data []byte) (SnapshotPlan, error) {
 	var plan SnapshotPlan
 	if err := json.Unmarshal(data, &plan); err != nil {
-		return SnapshotPlan{}, fmt.Errorf("decode %s: %w", SnapshotPlanFile, err)
+		return SnapshotPlan{}, fmt.Errorf("decode the snapshot plan: %w", err)
 	}
 	return plan, plan.Validate()
-}
-
-// SnapshotResult is how a snapshot's provisioning ended: an empty Error is a
-// box ready to be snapshotted.
-type SnapshotResult struct {
-	Error string `json:"error,omitempty"`
 }

@@ -1,6 +1,7 @@
 package sandboxruntime
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -18,32 +19,34 @@ import (
 	"sync"
 	"time"
 
-	cerrdefs "github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	"github.com/discobox-ai/vm/pkg/machine"
 
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 
-	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
+	"github.com/discobox-ai/discobox/pkg/fsdurable"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
+	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/proxy/egress"
 )
 
 // A snapshot is a box provisioned for no sandbox, kept so a sandbox wanting
-// the same plan starts from it (ADR 26-10-16-423 §8). On this runtime it is
-// an image committed from a build container: the sandbox base image, booted
-// with the agent placed and a snapshot plan (agentlayer.SnapshotPlan) where a
-// sandbox's bootstrap would be, provisioned with every step blocking, powered
-// off, and committed. It is only ever a cache: a delivered create finding no
-// snapshot for its plan runs the base image and provisions from scratch, as
-// before, and asks for the snapshot to be built behind it, so the next create
-// of the plan finds it. The control plane never knows which a box started
-// from.
+// the same plan starts from it (ADR 26-10-16-423 §8, ADR 26-11-03-986). Every
+// runtime builds one the same way: it starts its base with the agent placed
+// and a snapshot plan (agentlayer.SnapshotPlan) where a sandbox's bootstrap
+// would be, runs the agent's snapshot command in it as one blocking exec —
+// which provisions with every step blocking, checks every feature is done,
+// and cleans and seals the box — then stops the box in order and commits it.
+// On a Docker pool that is an image committed from a build container
+// (snapshotdocker.go); on a machine pool whose driver commits, a committed
+// disco-vm VM (machinesnapshot.go). It is only ever a cache: a delivered
+// create finding no snapshot for its plan starts from the base and provisions
+// from scratch, as before, and asks for the snapshot to be built behind it,
+// so the next create of the plan finds it. The control plane never knows
+// which a box started from.
 //
 // A build is anonymous. Its proxy identity is its own (layout.SnapshotIDPrefix), its
 // egress is the create's provisionEgress — every level but the sandbox's own
@@ -51,21 +54,6 @@ import (
 // credentials endpoint, so nothing of the create that asked for it is in it.
 
 const (
-	// snapshotRepository holds every snapshot, each tagged with its key, so
-	// a snapshot is found by name and the image reclaim, which keeps the
-	// newest of a repository, keeps the one built last whatever its age.
-	snapshotRepository = "discobox-snapshot"
-	// snapshotBaseLabel is, on a snapshot, the ID of the sandbox base image
-	// it was built from: a container started from it runs that base.
-	snapshotBaseLabel = "io.discobox.snapshot.base.v1"
-	// snapshotAgentLabel is, on a snapshot, the agent layer it holds, which
-	// a start need not place again.
-	snapshotAgentLabel = "io.discobox.snapshot.agent-layer.v1"
-	// snapshotContainerPrefix names every build container, which is how a
-	// build is found: a build's labels reach every container started from
-	// its snapshot, so it carries only its project's and pool's, which every
-	// container of the pool carries, and none saying it is a build.
-	snapshotContainerPrefix = "discobox-snapshot-"
 	// snapshotBuildTimeout bounds a build, which provisions everything a
 	// fresh box does in the background — Docker, Chromium, Nix, Go,
 	// Homebrew — with every step blocking.
@@ -73,24 +61,45 @@ const (
 	// snapshotRetryAfter is how long a plan whose build failed waits before
 	// a create asks for it again.
 	snapshotRetryAfter = time.Hour
+	// snapshotStopTimeout is how long a build's box gets to shut down in
+	// order before it is forced off.
+	snapshotStopTimeout = time.Minute
+	// snapshotFailuresName is the directory, in the pool's durable state,
+	// that holds when each plan's build last failed, by key. It is on disk so
+	// an agent that keeps restarting does not keep building (ADR 26-11-03-986
+	// §5).
+	snapshotFailuresName = "snapshot-failures"
 )
 
-// snapshotBuilds is the builds under way and the plans whose builds failed.
+// snapshotBuilds is the builds under way, and the creates holding a snapshot.
 type snapshotBuilds struct {
 	mu sync.Mutex
 	// active is the builds asked for and not yet ended, by key, each with
 	// what ends it early: a cache clear does.
 	active map[string]context.CancelFunc
-	failed map[string]time.Time
-	// one runs a build at a time: each is as heavy as a fresh box.
+	// using counts, by key, the creates making a box from that plan's
+	// snapshot: nothing removes one while a create reads it.
+	using map[string]int
+	// clearing counts the clears under way, which no build starts during.
+	clearing int
+	// one runs a build at a time: each is as heavy as a fresh box. A sweep
+	// holds it too, so nothing a build makes appears while a sweep decides
+	// what is left over, and a clear waits on it for the build it ended.
 	one sync.Mutex
+	// records serializes writes of the records a snapshot is kept by.
+	records sync.Mutex
 }
+
+// errSnapshotHeld ends a build that would replace a snapshot a create is
+// still making a box from. It is not the plan's failure.
+var errSnapshotHeld = errors.New("a create is still making a box from the snapshot it would replace")
 
 // snapshotPlan is what a delivered create is provisioned with, as a snapshot
 // is keyed: everything a snapshot of it holds depends on, and nothing of the
 // sandbox.
 type snapshotPlan struct {
-	// Base is the sandbox base image's ID.
+	// Base is what a build starts from: the sandbox base image's ID on a
+	// Docker pool, the driver and its configured base on a machine pool.
 	Base    string          `json:"base"`
 	Project string          `json:"project"`
 	Pool    string          `json:"pool"`
@@ -104,7 +113,7 @@ type snapshotPlan struct {
 	delivered assetcache.Delivery
 }
 
-// Key is the plan's digest's hex: the snapshot's tag.
+// Key is the plan's digest's hex: what its snapshot is found by.
 func (p snapshotPlan) Key() string {
 	data, err := json.Marshal(p)
 	if err != nil {
@@ -114,28 +123,21 @@ func (p snapshotPlan) Key() string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (p snapshotPlan) reference() string { return snapshotRepository + ":" + p.Key() }
-
 // buildID is the build's identity, which its proxy client certificate names.
 func (p snapshotPlan) buildID() string { return snapshotBuildID(p.Key()) }
 
 // snapshotBuildID is the build identity of the plan keyed key.
 func snapshotBuildID(key string) string { return layout.SnapshotIDPrefix + key[:24] }
 
-// snapshotContainerName is the container of the build whose identity is id.
-func (r *DockerSandboxRuntime) snapshotContainerName(id string) string {
-	return snapshotContainerPrefix + r.poolID + "-" + strings.TrimPrefix(id, layout.SnapshotIDPrefix)
-}
-
-// newSnapshotPlan is the plan of a delivered create on the base image baseID.
-func (r *DockerSandboxRuntime) newSnapshotPlan(baseID string, req *workerapimodel.PoolSandboxCreateRequest) (snapshotPlan, error) {
+// newSnapshotPlan is the plan of a delivered create on base.
+func (r *sandboxCore) newSnapshotPlan(base string, req *workerapimodel.PoolSandboxCreateRequest) (snapshotPlan, error) {
 	delivered := delivery(req)
 	pins, _, err := applied(delivered)
 	if err != nil {
 		return snapshotPlan{}, err
 	}
 	plan := snapshotPlan{
-		Base:      baseID,
+		Base:      base,
 		Project:   r.projectID,
 		Pool:      r.poolID,
 		Pins:      pins,
@@ -155,43 +157,16 @@ func (r *DockerSandboxRuntime) newSnapshotPlan(baseID string, req *workerapimode
 	return plan, nil
 }
 
-// deliveredImage is the image a delivered create's container runs: the
-// snapshot of its plan when there is one, and otherwise the sandbox base
-// image, with the snapshot asked for behind it. baseID is the base's ID.
-func (r *DockerSandboxRuntime) deliveredImage(ctx context.Context, baseID string, req *workerapimodel.PoolSandboxCreateRequest) string {
-	if !req.ProvisionEgress.Set {
-		// A server that sends no build policy gets no snapshot: built
-		// without one, it would run unrestricted.
-		return baseID
-	}
-	plan, err := r.newSnapshotPlan(baseID, req)
-	if err != nil {
-		slog.WarnContext(ctx, "plan a snapshot; starting from the sandbox base image", "error", err)
-		return baseID
-	}
-	inspected, err := r.client.ImageInspect(ctx, plan.reference())
-	switch {
-	case err == nil && inspected.Config != nil && inspected.Config.Labels[snapshotBaseLabel] == baseID:
-		slog.InfoContext(ctx, "starting from a snapshot", "snapshot", plan.reference(), "sandboxId", req.SandboxId)
-		return inspected.ID
-	case err != nil && !cerrdefs.IsNotFound(err):
-		slog.WarnContext(ctx, "look up a snapshot; starting from the sandbox base image", "snapshot", plan.reference(), "error", err)
-		return baseID
-	}
-	r.requestSnapshot(plan)
-	return baseID
-}
-
-// requestSnapshot builds plan's snapshot in the background, unless one is
-// being built or failed within snapshotRetryAfter.
-func (r *DockerSandboxRuntime) requestSnapshot(plan snapshotPlan) {
+// requestSnapshot builds plan's snapshot in the background with build,
+// unless one is being built or failed within snapshotRetryAfter.
+func (r *sandboxCore) requestSnapshot(plan snapshotPlan, build func(context.Context, snapshotPlan) error) {
 	key := plan.Key()
 	b := &r.snapshots
 	b.mu.Lock()
 	if b.active == nil {
-		b.active, b.failed = map[string]context.CancelFunc{}, map[string]time.Time{}
+		b.active = map[string]context.CancelFunc{}
 	}
-	if _, building := b.active[key]; building || time.Since(b.failed[key]) < snapshotRetryAfter {
+	if _, building := b.active[key]; building || b.clearing > 0 || r.snapshotFailedRecently(key, time.Now()) {
 		b.mu.Unlock()
 		return
 	}
@@ -204,81 +179,207 @@ func (r *DockerSandboxRuntime) requestSnapshot(plan snapshotPlan) {
 		err := func() error {
 			b.one.Lock()
 			defer b.one.Unlock()
-			// It starts a container as a create does, so it waits out a
-			// cache clear and holds the next one off (clearcache.go).
-			leave, err := r.starts.enter(ctx)
-			if err != nil {
-				return err
-			}
-			defer leave()
-			slog.Info("building a snapshot", "snapshot", plan.reference())
-			return r.buildSnapshot(ctx, plan)
+			slog.Info("building a snapshot", "snapshot", key)
+			return build(ctx, plan)
 		}()
+		// The failure is recorded before the build stops being one, so a
+		// create in between neither builds it again nor finds it failed.
+		switch {
+		case errors.Is(ctx.Err(), context.Canceled), errors.Is(err, errSnapshotHeld):
+			// Ended by a clear, or by a create holding what it would
+			// replace: the next create asks again.
+		case err != nil:
+			if recordErr := r.recordSnapshotFailure(key, time.Now()); recordErr != nil {
+				slog.Warn("record a failed snapshot build", "snapshot", key, "error", recordErr)
+			}
+		default:
+			if forgetErr := r.forgetSnapshotFailure(key); forgetErr != nil {
+				slog.Warn("forget a snapshot build's failure", "snapshot", key, "error", forgetErr)
+			}
+		}
 		b.mu.Lock()
 		delete(b.active, key)
-		switch {
-		case errors.Is(ctx.Err(), context.Canceled):
-			// Ended by a clear: the next create asks again.
-		case err != nil:
-			b.failed[key] = time.Now()
-		default:
-			delete(b.failed, key)
-		}
 		b.mu.Unlock()
 		if err != nil {
-			slog.Warn("build a snapshot; its plan provisions from scratch", "snapshot", plan.reference(), "error", err, "retryAfter", snapshotRetryAfter)
+			slog.Warn("build a snapshot; its plan provisions from scratch", "snapshot", key, "error", err, "retryAfter", snapshotRetryAfter)
 			return
 		}
-		slog.Info("built a snapshot", "snapshot", plan.reference(), "took", time.Since(started).Round(time.Second))
+		slog.Info("built a snapshot", "snapshot", key, "took", time.Since(started).Round(time.Second))
 	}()
+}
+
+// holdSnapshotClear ends every build asked for and starts none until the
+// returned release, then waits out the build it ended, for a clear that
+// drops what builds publish.
+func (r *sandboxCore) holdSnapshotClear() func() {
+	b := &r.snapshots
+	b.mu.Lock()
+	b.clearing++
+	for _, cancel := range b.active {
+		cancel()
+	}
+	b.mu.Unlock()
+	b.one.Lock()
+	return func() {
+		b.one.Unlock()
+		b.mu.Lock()
+		b.clearing--
+		b.mu.Unlock()
+	}
+}
+
+// cancelSnapshotBuilds ends every build asked for, as a cache clear does.
+func (r *sandboxCore) cancelSnapshotBuilds() {
+	r.snapshots.mu.Lock()
+	defer r.snapshots.mu.Unlock()
+	for _, cancel := range r.snapshots.active {
+		cancel()
+	}
+}
+
+// lockSnapshotSweep takes the build lock for a sweep, so no build makes
+// anything while it decides what is left over, and reports false while a
+// build holds it: what a build under way has made is not left over, and the
+// next pass sweeps. The caller unlocks r.snapshots.one when it reports true.
+func (r *sandboxCore) lockSnapshotSweep() bool { return r.snapshots.one.TryLock() }
+
+// buildingSnapshots is the keys of the builds asked for and not yet ended.
+func (r *sandboxCore) buildingSnapshots() map[string]bool {
+	r.snapshots.mu.Lock()
+	defer r.snapshots.mu.Unlock()
+	keys := make(map[string]bool, len(r.snapshots.active))
+	for key := range r.snapshots.active {
+		keys[key] = true
+	}
+	return keys
+}
+
+// holdSnapshot marks a create making a box from the snapshot keyed key, and
+// returns what releases it.
+func (r *sandboxCore) holdSnapshot(key string) func() {
+	b := &r.snapshots
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.using == nil {
+		b.using = map[string]int{}
+	}
+	b.using[key]++
+	return func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.using[key]--; b.using[key] <= 0 {
+			delete(b.using, key)
+		}
+	}
+}
+
+// snapshotInUse reports whether a create holds the snapshot keyed key.
+func (r *sandboxCore) snapshotInUse(key string) bool {
+	r.snapshots.mu.Lock()
+	defer r.snapshots.mu.Unlock()
+	return r.snapshots.using[key] > 0
+}
+
+// snapshotHeldBy reports whether a create holds a snapshot whose key names
+// match: a sweep knows a VM or build by its name, which holds only a key's
+// prefix.
+func (r *sandboxCore) snapshotHeldBy(match func(key string) bool) bool {
+	r.snapshots.mu.Lock()
+	defer r.snapshots.mu.Unlock()
+	for key, n := range r.snapshots.using {
+		if n > 0 && match(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// snapshotFailurePath holds when the build of the plan keyed key last failed.
+func (r *sandboxCore) snapshotFailurePath(key string) string {
+	return filepath.Join(r.root.PoolData(r.projectID, r.poolID), snapshotFailuresName, key)
+}
+
+// snapshotFailedRecently reports whether the plan keyed key failed to build
+// within snapshotRetryAfter of now.
+func (r *sandboxCore) snapshotFailedRecently(key string, now time.Time) bool {
+	at, ok := readSandboxTombstone(r.snapshotFailurePath(key))
+	return ok && now.Sub(at) < snapshotRetryAfter
+}
+
+func (r *sandboxCore) recordSnapshotFailure(key string, at time.Time) error {
+	path := r.snapshotFailurePath(key)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	r.snapshots.records.Lock()
+	defer r.snapshots.records.Unlock()
+	return writeFileDurably(path, []byte(at.UTC().Format(time.RFC3339)+"\n"))
+}
+
+func (r *sandboxCore) forgetSnapshotFailure(key string) error {
+	if err := os.Remove(r.snapshotFailurePath(key)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// sweepSnapshotFailures forgets the failures past snapshotRetryAfter, which
+// hold nothing back any longer.
+func (r *sandboxCore) sweepSnapshotFailures(now time.Time) {
+	dir := filepath.Join(r.root.PoolData(r.projectID, r.poolID), snapshotFailuresName)
+	entries, _ := os.ReadDir(dir)
+	for _, entry := range entries {
+		if !r.snapshotFailedRecently(entry.Name(), now) {
+			_ = os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
+}
+
+// forgetSnapshotFailures forgets every plan that failed to build, as a cache
+// clear does: a box that came up wrong from one starts from scratch next.
+func (r *sandboxCore) forgetSnapshotFailures() error {
+	return os.RemoveAll(filepath.Join(r.root.PoolData(r.projectID, r.poolID), snapshotFailuresName))
 }
 
 // snapshotsDir holds each build's tree (layout.Root.PoolSnapshots): its asset
-// record, its registry namespace, and the directory bound at
-// agentlayer.SnapshotDir.
-func (r *DockerSandboxRuntime) snapshotsDir() string {
+// record, its registry namespace, and, on a Docker pool, the directory bound
+// at agentlayer.SnapshotDir.
+func (r *sandboxCore) snapshotsDir() string {
 	return r.root.PoolSnapshots(r.projectID, r.poolID)
 }
 
-// buildSnapshot boots the base image with plan, waits for its provisioning
-// to power it off, and commits it as plan's snapshot. Everything it made on
-// the way — the container, the build's tree, its proxy material and policy —
-// is removed whatever the outcome.
-func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotPlan) (err error) {
+// prepareSnapshotBuild lays what the build of plan needs on the pool's side —
+// its tree, with the asset record assets.discobox.internal answers it from,
+// and its proxy material and egress policy — and returns its plan document,
+// and the agent to place beside it. What it laid goes with
+// removeSnapshotBuildMaterial, once the build's box is gone.
+func (r *sandboxCore) prepareSnapshotBuild(ctx context.Context, plan snapshotPlan) ([]byte, agentlayer.Agent, error) {
 	id := plan.buildID()
 	dir := r.root.Snapshot(r.projectID, r.poolID, id)
-	name := r.snapshotContainerName(id)
-	defer func() {
-		err = errors.Join(err, r.removeSnapshotBuild(context.WithoutCancel(ctx), id))
-	}()
-	if _, err := r.client.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
-		return fmt.Errorf("remove an earlier build container: %w", err)
-	}
 	if err := os.RemoveAll(dir); err != nil {
-		return err
+		return nil, agentlayer.Agent{}, err
 	}
-	etc := filepath.Join(dir, "etc")
-	if err := os.MkdirAll(etc, 0o755); err != nil {
-		return err
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, agentlayer.Agent{}, err
 	}
 	// What assets.discobox.internal answers the build, as a sandbox's record
 	// is what it answers the sandbox.
 	if err := assetcache.WriteRecord(dir, plan.delivered); err != nil {
-		return err
+		return nil, agentlayer.Agent{}, err
 	}
 	material, err := proxyagent.EnsureSandboxMaterial(r.root, r.projectID, r.poolID, id)
 	if err != nil {
-		return err
+		return nil, agentlayer.Agent{}, err
 	}
 	if err := proxyagent.SetSandboxEgress(r.root, r.projectID, r.poolID, id, plan.Egress); err != nil {
-		return err
+		return nil, agentlayer.Agent{}, err
 	}
 	agent, ok, err := r.sandboxAgent(ctx, id)
 	if err != nil {
-		return fmt.Errorf("the agent of pins %v: %w", plan.Pins, err)
+		return nil, agentlayer.Agent{}, fmt.Errorf("the agent of pins %v: %w", plan.Pins, err)
 	}
 	if !ok {
-		return errors.New("this pool has no asset cache to place the agent from")
+		return nil, agentlayer.Agent{}, errors.New("this pool has no asset cache to place the agent from")
 	}
 	// The proxy and DNS alone: a build asks for no credentials and builds
 	// nothing through the pool's builder.
@@ -294,181 +395,22 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 		Features:      plan.features,
 	}
 	if err := doc.Validate(); err != nil {
-		return err
+		return nil, agentlayer.Agent{}, err
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return err
+		return nil, agentlayer.Agent{}, err
 	}
-	// The client key is in it, so it is root's alone, as the material is.
-	if err := os.WriteFile(filepath.Join(etc, filepath.Base(agentlayer.SnapshotPlanFile)), data, 0o600); err != nil {
-		return err
-	}
-	// Bound, never copied in: nothing under it is in the container's own
-	// filesystem, so none of it is committed. It is the build's alone, and
-	// none of a sandbox's volumes is mounted: a build provisions as an
-	// image is built, onto the root filesystem the snapshot keeps.
-	hostCfg, netCfg := r.boxConfig([]mount.Mount{{Type: mount.TypeBind, Source: r.daemonPath(etc), Target: agentlayer.SnapshotDir}})
-	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name: name,
-		Config: &container.Config{
-			Image:    plan.Base,
-			Hostname: "discobox-snapshot",
-			// So the reaping of a pool that is gone finds it (SyncKnownPools).
-			Labels:     map[string]string{sandboxLabelProject: r.projectID, sandboxLabelPool: r.poolID},
-			Entrypoint: []string{"/sbin/init"},
-			Cmd:        []string{},
-			Tty:        true,
-		},
-		HostConfig:       hostCfg,
-		NetworkingConfig: netCfg,
-	})
-	if err != nil {
-		return fmt.Errorf("create the build container: %w", err)
-	}
-	reader, writer := io.Pipe()
-	go func() { writer.CloseWithError(agentlayer.Archive(writer, agent, false, plan.Pins, agentlayer.Units)) }()
-	_, err = r.client.CopyToContainer(ctx, created.ID, client.CopyToContainerOptions{DestinationPath: "/", Content: reader})
-	reader.Close()
-	if err != nil {
-		return fmt.Errorf("place the agent in the build container: %w", err)
-	}
-	waited := r.client.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNextExit})
-	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		return fmt.Errorf("start the build container: %w", err)
-	}
-	select {
-	case <-waited.Result:
-	case err := <-waited.Error:
-		return fmt.Errorf("wait for the build to power off: %w", err)
-	}
-	result, err := readSnapshotResult(filepath.Join(etc, filepath.Base(agentlayer.SnapshotResultFile)))
-	if err != nil {
-		return err
-	}
-	if result.Error != "" {
-		return fmt.Errorf("its provisioning failed: %s", result.Error)
-	}
-	labels := map[string]string{
-		harness.ReclaimLabel: harness.ReclaimLabelValue,
-		snapshotBaseLabel:    plan.Base,
-		snapshotAgentLabel:   agent.Digest,
-	}
-	if _, err := r.client.ContainerCommit(ctx, created.ID, client.ContainerCommitOptions{
-		Reference: plan.reference(),
-		Comment:   "a Discobox snapshot (ADR 26-10-16-423 §8)",
-		Config:    &container.Config{Labels: labels},
-	}); err != nil {
-		return fmt.Errorf("commit the snapshot: %w", err)
-	}
-	return nil
+	return data, agent, nil
 }
 
-// readSnapshotResult is the result the build wrote; none is a build that
-// powered off before it finished.
-func readSnapshotResult(path string) (agentlayer.SnapshotResult, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return agentlayer.SnapshotResult{}, errors.New("the build stopped without a result")
-	}
-	if err != nil {
-		return agentlayer.SnapshotResult{}, err
-	}
-	var result agentlayer.SnapshotResult
-	if err := json.Unmarshal(data, &result); err != nil {
-		return agentlayer.SnapshotResult{}, fmt.Errorf("decode the build's result: %w", err)
-	}
-	return result, nil
-}
-
-// snapshotOf is what a container's image says of the snapshot it is: the
-// base it was built from and the agent layer it holds, both empty for an
-// image that is no snapshot.
-func (r *DockerSandboxRuntime) snapshotOf(ctx context.Context, imageID string) (base, agentLayer string, err error) {
-	inspected, err := r.client.ImageInspect(ctx, imageID)
-	if err != nil {
-		return "", "", err
-	}
-	if inspected.Config == nil {
-		return "", "", nil
-	}
-	labels := inspected.Config.Labels
-	if !slices.ContainsFunc(inspected.RepoTags, func(tag string) bool { return strings.HasPrefix(tag, snapshotRepository+":") }) {
-		return "", "", nil
-	}
-	return labels[snapshotBaseLabel], labels[snapshotAgentLabel], nil
-}
-
-// sweepSnapshotBuilds removes the build containers and trees no build under
-// way holds — what a pool agent that stopped mid-build left, whose container
-// may still be running — with their proxy material, so none is left
-// provisioning under a policy the pool no longer holds for it. A build's tree
-// holds its asset record, so the sweep goes before the blob sweep reads it.
-func (r *DockerSandboxRuntime) sweepSnapshotBuilds(ctx context.Context) error {
-	r.snapshots.mu.Lock()
-	defer r.snapshots.mu.Unlock()
-	// A build holds its container and tree for its whole length; a key in
-	// active is one asked for, whatever it is doing now.
-	keep := map[string]bool{}
-	for key := range r.snapshots.active {
-		keep[snapshotBuildID(key)] = true
-	}
-	entries, err := os.ReadDir(r.snapshotsDir())
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	var errs []error
-	// Each tree no build holds goes whole, its container first.
-	named := map[string]bool{}
-	for _, entry := range entries {
-		named["/"+r.snapshotContainerName(entry.Name())] = true
-		if !keep[entry.Name()] {
-			errs = append(errs, r.removeSnapshotBuild(ctx, entry.Name()))
-		}
-	}
-	for id := range keep {
-		named["/"+r.snapshotContainerName(id)] = true
-	}
-	// And a build container with no tree, which holds nothing else.
-	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.snapshotBuildFilters().Add("label", sandboxLabelPool+"="+r.poolID)})
-	if err != nil {
-		return errors.Join(append(errs, err)...)
-	}
-	for _, ctr := range containers.Items {
-		if slices.ContainsFunc(ctr.Names, func(name string) bool { return named[name] }) {
-			continue
-		}
-		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// imageHoldsAgent reports whether the container's image is a snapshot
-// holding the agent layer digest.
-func (r *DockerSandboxRuntime) imageHoldsAgent(ctx context.Context, containerID, digest string) (bool, error) {
-	inspect, err := r.client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
-	if err != nil {
-		return false, err
-	}
-	_, layer, err := r.snapshotOf(ctx, inspect.Container.Image)
-	if err != nil {
-		return false, err
-	}
-	return layer == digest, nil
-}
-
-// removeSnapshotBuild removes the build id: its container, then its egress
-// policy and proxy material, then its tree, each only once what goes before
-// it is gone. Its policy stays while its container may still run, since an
-// identity with no egress entry is unrestricted, and its tree stays until
-// its policy and material are gone, since the tree is what the next sweep
-// finds a build by to try again.
-func (r *DockerSandboxRuntime) removeSnapshotBuild(ctx context.Context, id string) error {
-	if _, err := r.client.ContainerRemove(ctx, r.snapshotContainerName(id), client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
-		return fmt.Errorf("remove build %s's container: %w", id, err)
-	}
+// removeSnapshotBuildMaterial removes what the pool laid for the build id: its
+// egress policy and proxy material, then its tree, each only once what goes
+// before it is gone. Its caller has removed the build's box first, or seen it
+// committed, which never runs again: an identity with no egress entry is
+// unrestricted. The tree goes last, since it is what the next sweep finds a
+// build by to try again.
+func (r *sandboxCore) removeSnapshotBuildMaterial(id string) error {
 	if err := errors.Join(
 		proxyagent.RemoveSandboxPolicy(r.root, r.projectID, r.poolID, id),
 		proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, id),
@@ -478,40 +420,70 @@ func (r *DockerSandboxRuntime) removeSnapshotBuild(ctx context.Context, id strin
 	return os.RemoveAll(r.root.Snapshot(r.projectID, r.poolID, id))
 }
 
-// cancelSnapshotBuilds ends every build asked for, as a cache clear does.
-func (r *DockerSandboxRuntime) cancelSnapshotBuilds() {
-	r.snapshots.mu.Lock()
-	defer r.snapshots.mu.Unlock()
-	for _, cancel := range r.snapshots.active {
-		cancel()
+// snapshotCommand is the agent's snapshot command, as a build runs it.
+var snapshotCommand = []string{agentlayer.AgentPath, agentlayer.SnapshotCommand}
+
+// runSnapshotCommand is a build's one imaging exec, on every runtime (ADR
+// 26-11-03-986 §1): it places the agent, its units and pins in the started
+// box and runs the snapshot command there, its plan on standard input — never
+// on the box's disk, since the plan holds the build's client key. Its exit
+// status, and the end of its stderr, are the build's result.
+func runSnapshotCommand(ctx context.Context, guest machine.Guest, agent agentlayer.Agent, pins agentlayer.Pins, plan []byte) error {
+	reader, writer := io.Pipe()
+	go func() { writer.CloseWithError(agentlayer.Archive(writer, agent, false, pins, agentlayer.Units)) }()
+	defer reader.Close()
+	result, err := provisioner.Provision(ctx, guest, provisioner.Plan{
+		Dir:     "/",
+		Tree:    reader,
+		Command: machine.ExecRequest{Argv: snapshotCommand},
+		Stdin:   bytes.NewReader(plan),
+	})
+	if exit := (*provisioner.ExitError)(nil); errors.As(err, &exit) {
+		if tail := strings.TrimSpace(string(result.Stderr)); tail != "" {
+			return fmt.Errorf("its provisioning failed (status %d): %s", exit.ExitCode, tail)
+		}
+		return fmt.Errorf("its provisioning failed with status %d", exit.ExitCode)
 	}
+	if err != nil {
+		return fmt.Errorf("run the build's provisioning: %w", err)
+	}
+	return nil
 }
 
-// clearSnapshots removes this pool's snapshots no container runs, and forgets
-// which plans failed to build, as a cache clear does: a box that came up
-// wrong from one starts from scratch next.
-func (r *DockerSandboxRuntime) clearSnapshots(ctx context.Context) error {
-	r.snapshots.mu.Lock()
-	clear(r.snapshots.failed)
-	r.snapshots.mu.Unlock()
-	images, err := r.client.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.
-		Add("reference", snapshotRepository).
-		Add("label", sandboxLabelPool+"="+r.poolID)})
+// writeFileDurably writes data to path by a rename of a file of its own,
+// synced: once it returns, path holds data whole after a crash, and a reader
+// never sees part of it.
+func writeFileDurably(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
-	var errs []error
-	for _, image := range images.Items {
-		// Not forced: one a container runs is refused, and kept.
-		if _, err := r.client.ImageRemove(ctx, image.ID, client.ImageRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) && !cerrdefs.IsConflict(err) {
-			errs = append(errs, err)
-		}
+	tmp := f.Name()
+	defer os.Remove(tmp) // gone once renamed; left only by a failure
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
 	}
-	return errors.Join(errs...)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return fsdurable.SyncDir(filepath.Dir(path))
 }
 
-// snapshotBuildFilters finds this project's build containers, on a daemon
-// its pools may share.
-func (r *DockerSandboxRuntime) snapshotBuildFilters() client.Filters {
-	return client.Filters{}.Add("name", snapshotContainerPrefix).Add("label", sandboxLabelProject+"="+r.projectID)
+// removeFileDurably removes path, synced: once it returns, path is gone after
+// a crash too.
+func removeFileDurably(path string) error {
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return fsdurable.SyncDir(filepath.Dir(path))
 }

@@ -51,7 +51,8 @@ const (
 type poolMachine struct {
 	engine *engine.Engine
 	// base is the driver's base the machine, and its sandboxes' machines, are
-	// created from (Config.Base); empty is the first the driver lists.
+	// created fresh from (Config.Base), which the driver is made with and the
+	// pool's agent makes its own with; empty is the driver's default.
 	base string
 	// controlPlaneURL is where the machine reaches this server
 	// (Config.ControlPlaneURL).
@@ -359,13 +360,9 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 // only with machines that are not, so the pool's machine keeps what the
 // driver gives a machine (the pool's HostCredential says so).
 func (h *poolMachine) create(ctx context.Context, pool *model.Pool, project string) (engine.Instance, error) {
-	base, err := h.baseRef(ctx)
+	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: project, Networks: []string{project}})
 	if err != nil {
-		return engine.Instance{}, err
-	}
-	inst, err := h.engine.Create(ctx, base, engine.CreateOptions{Name: project, Networks: []string{project}})
-	if err != nil {
-		return engine.Instance{}, fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, base, notReachable(err))
+		return engine.Instance{}, fmt.Errorf("create pool %s's machine from the %s driver's base: %w", pool.ID, h.engine.Driver.Name(), notReachable(err))
 	}
 	return inst, nil
 }
@@ -446,29 +443,6 @@ func (h *poolMachine) acquireAgentClient(ctx context.Context, pool *model.Pool) 
 		return nil, fmt.Errorf("pool %s's machine: %w", pool.ID, notReachable(err))
 	}
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, strings.TrimRight(url, "/"), nil), nil
-}
-
-// baseRef is the ID of the driver's base a new pool machine is created from:
-// the configured one, found by its ID alone, or the first the driver lists. It
-// asks the driver each time, as the driver reads its service for each call.
-func (h *poolMachine) baseRef(ctx context.Context) (string, error) {
-	name := h.engine.Driver.Name()
-	bases, err := h.engine.Driver.Bases(ctx)
-	if err != nil {
-		return "", fmt.Errorf("list the %s driver's bases: %w", name, notReachable(err))
-	}
-	if h.base == "" {
-		if len(bases) == 0 {
-			return "", fmt.Errorf("the %s driver offers no base to boot a pool's machine from: set the provider's base to one's ID", name)
-		}
-		return bases[0].ID, nil
-	}
-	for _, base := range bases {
-		if base.ID == h.base {
-			return base.ID, nil
-		}
-	}
-	return "", fmt.Errorf("the %s driver has no base with ID %q, which the provider's base names", name, h.base)
 }
 
 func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) error {

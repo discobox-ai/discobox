@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/client/pkg/stringid"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -67,7 +68,7 @@ func (e *Engine) loadFromCache(ctx context.Context, lease *DockerClientLease, po
 		slog.WarnContext(ctx, "image cache: could not ask the pool's daemon what it runs", "pool", poolID, "image", image, "error", err)
 		return false
 	}
-	platform, ok := daemonPlatform(info.Info)
+	platform, ok := provisioner.DaemonPlatform(info.Info)
 	if !ok {
 		return false
 	}
@@ -108,19 +109,6 @@ func (e *Engine) importCachedImage(ctx context.Context, cli *client.Client, pool
 	slog.InfoContext(ctx, "loaded image from the image cache", "pool", poolID, "image", image,
 		"digest", cached.Digest(), "bytes", cached.Size(), "duration", time.Since(started))
 	return nil
-}
-
-// daemonPlatform is the platform a daemon runs images for, in the terms an
-// image index uses. Docker reports the kernel's name for the architecture.
-func daemonPlatform(info system.Info) (imagecache.Platform, bool) {
-	architecture := map[string]string{
-		"x86_64": "amd64", "amd64": "amd64",
-		"aarch64": "arm64", "arm64": "arm64",
-	}[strings.ToLower(info.Architecture)]
-	if architecture == "" || info.OSType == "" {
-		return imagecache.Platform{}, false
-	}
-	return imagecache.Platform{OS: info.OSType, Architecture: architecture}, true
 }
 
 func usesContainerdStore(info system.Info) bool {

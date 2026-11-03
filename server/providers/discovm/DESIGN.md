@@ -106,13 +106,19 @@ as ADR 26-10-09-106 §1 places it:
 - `poolMachine` reaches the host through the driver's guest operations
   (`Engine.Guest`: boxd's own API, or disco-vm's guest agent), never through
   the pool agent, for the console's reason ([../DESIGN.md](../DESIGN.md#pool-host-console)).
-- A pool machine is created from a driver base (ADR 26-10-23-551 §1): the
-  provider's `base`, matched by ID alone against what the driver lists
-  (`machine.Driver.Bases`), or else the first it lists: on boxd its default
-  image when the account has one, and otherwise the account's oldest
-  snapshot, so an account with no default image names an ID. A name is never taken for a base, because a name can be
-  given to another base (a boxd snapshot's) after an operator chose it. A
-  driver with no base answers that the provider must name one. Repair stops
+- A pool machine is created fresh from the driver's base (ADR 26-10-23-551
+  §1), which is the driver's own configuration (`machine.Config.Base`,
+  disco-vm ADR 26-11-03-606): the provider's `base`, in the driver's terms
+  (boxd's image), or else the driver's default (boxd's default image). The
+  driver is made with it (`openDriver`), and the pool agent makes its own
+  with the same base, which its bootstrap names. It was once an ID matched
+  against the bases the driver listed, which disco-vm no longer has: a value
+  stored then is handed to the driver as its base, which on boxd works for
+  an image's ID and not for a snapshot's, since a snapshot is no longer a
+  base (disco-vm ADR 26-11-03-606); set such a provider's base to an image.
+  A base is matched by what it is called, so one replaced under the same
+  name is not seen by the pool's snapshot key: clear the pool's cache.
+  Repair stops
   and starts the same machine, keeping its disk, and provisions it again;
   remove deletes it and revokes the pool's keys.
 - The pool's machine is created on a network of the pool's own (its project's
@@ -133,7 +139,7 @@ as ADR 26-10-09-106 §1 places it:
   healthy pool for a network fault; any other error, such as a missing,
   refused or too narrow key, is the pool's. Every other call that asks the
   driver's service about the machine — the lookup in front of every operation
-  (`instance`), its guest, URLs, create, bases, keys — reads its error the
+  (`instance`), its guest, URLs, create, keys — reads its error the
   same way (`notReachable`), so a service that drops for a moment during a
   running pool's reconcile records no failure on the pool and does not end a
   create waiting for its agent. Not mapped: a start or stop, whose own
@@ -143,8 +149,8 @@ as ADR 26-10-09-106 §1 places it:
   pool being made or moved. The reconciler's repair passes (a registration
   that timed out, a failed reconcile of a pool with sandboxes) record a
   failure either way: they do not requeue on `ErrPoolNotReachable`.
-- Tests host pools in machines of the `fake` driver booted from its bases
-  (`fake.BasesEnv`; a local driver, so they build that `poolMachine`
+- Tests host pools in machines of the `fake` driver made fresh from its
+  configured base (a local driver, so they build that `poolMachine`
   themselves), which runs the engine, its shim, and the guest operations as a
   real machine does.
 - A remote driver authenticates with the provider's `apiKey`, passed as

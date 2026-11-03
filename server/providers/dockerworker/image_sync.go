@@ -18,6 +18,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/moby/moby/api/types/system"
@@ -141,7 +142,7 @@ func (s *DevelopmentImageSynchronizer) buildBundles(ctx context.Context, daemonI
 	if len(builds) == 0 {
 		return nil
 	}
-	own, ok := daemonPlatform(info)
+	own, ok := provisioner.DaemonPlatform(info)
 	if !ok {
 		return fmt.Errorf("save development bundles: Docker daemon %s reports no platform", daemonID)
 	}
