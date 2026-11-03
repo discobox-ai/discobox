@@ -422,9 +422,10 @@ console reads OSC 7501, a program's report of its own status — without the pan
 growing a dependency on it, or the host a second parser racing the emulator
 over split sequences.
 
-**A held Ctrl after the prefix is tolerated.** `afterPrefix` matches the second
-keystroke with or without Ctrl, because the prefix is a Ctrl chord and letting
-go precisely between the two keys is a skill nobody should need. GNU screen has
+**The prefix's held modifier is tolerated after it.** `afterPrefix` matches the
+second keystroke with or without the modifier the prefix is held with — Ctrl
+for `ctrl+a`, Alt for `alt+g`, and only that one — because letting go
+precisely between the two keys is a skill nobody should need. GNU screen has
 bound both forms for decades; tmux binds only the bare one and the control
 variant silently does nothing. It applies *only* after the prefix — the detach
 key on its own is matched exactly, since its bare letter is one you type
@@ -434,11 +435,11 @@ Ctrl-A that letter is `a`.
 
 **A binding can hold the sequence open.** `WithRepeatingPrefixBinding` leaves the
 prefix armed after it fires, as long as the key that fired it was held with
-Ctrl, so `prefix ^← ^← ^←` is one chord rather than three. It is for the
-bindings you use in runs — walking across panes, resizing — where pressing the
-prefix per step is the whole cost of the operation. Letting go of Ctrl ends it,
-which is the release the fingers already make. While the run is open, only the
-repeating keys — still under Ctrl — are taken; any other key, bound letters
+the prefix's modifier, so `prefix ^← ^← ^←` is one chord rather than three. It
+is for the bindings you use in runs — walking across panes, resizing — where
+pressing the prefix per step is the whole cost of the operation. Letting go of
+the modifier ends it, which is the release the fingers already make. While the
+run is open, only the repeating keys — still under the modifier — are taken; any other key, bound letters
 included, ends the run and goes to the application. The prefix was held open
 for the run, never re-pressed, so the key after it is the first keystroke of
 whatever is typed next rather than a second command — without this, a run of
