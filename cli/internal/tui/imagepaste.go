@@ -111,7 +111,10 @@ func (m *Model) imageInput(p *pane, msg tea.Msg) (tea.Cmd, bool) {
 			p.imageHeld = append(p.imageHeld, msg)
 			return nil, true
 		}
-		if !imageKey(msg) || p.term.PrefixPending() || !m.harnessTerminal(p) {
+		// A leader on an image key (ctrl+v, alt+v) is the leader, and the
+		// image paste on that key is given up for it: the leader twice
+		// sends the key itself to the program, as any leader twice does.
+		if !imageKey(msg) || p.term.PrefixPending() || keyName(msg) == m.leader() || !m.harnessTerminal(p) {
 			return nil, false
 		}
 		return m.readKey(p, msg), true

@@ -268,3 +268,19 @@
   said only when the two lists are equal. A summary narrower than the rule
   tells the approver a widening is nothing — a first draft of `routeDiff`
   hid a split delegation's new routes that way.
+
+## The leader
+
+- **The window's own leader matching is a second copy of termpane's prefix
+  rules, and must stay the same rules** (`updateKey`'s `leaderArmed` branch
+  against `termpane.afterPrefix` and `handleKey`). Forgive the leader's own
+  modifier on the second key and no other — no hand-written `ctrl+` forms,
+  which under an Alt leader make Ctrl-L mean one thing on the list and another
+  in a pane — and match the leader itself in full before forgiving anything,
+  or the leader twice runs its bare letter's command (Ctrl-Q Ctrl-Q quitting).
+  Both slipped in once, when the leader grew an Alt form.
+- **A key the window takes ahead of termpane must yield to the leader**
+  (`imageInput`'s image keys, and anything like them). `NormalizeLeader`
+  accepts any Ctrl or Alt letter, so a key taken first is one some user's
+  leader is, and a leader that cannot be pressed in a harness terminal leaves
+  no way out of it.

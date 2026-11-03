@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,6 +14,8 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/execstream/client"
+	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
 func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
@@ -157,6 +163,199 @@ func TestTerminalDetachHintFollowsTheLeader(t *testing.T) {
 	}
 	if got := (&App{leaderKey: "ctrl+b"}).detachHint(); got != "Ctrl-B d" {
 		t.Errorf("ctrl+b detach hint = %q, want %q", got, "Ctrl-B d")
+	}
+	if got := (&App{leaderKey: "alt+g"}).detachHint(); got != "Alt-G d" {
+		t.Errorf("alt+g detach hint = %q, want %q", got, "Alt-G d")
+	}
+}
+
+// An Alt leader reaches a raw attach as Escape and then the letter, two bytes
+// that nothing says arrive in one read. The chord has to be found across reads,
+// and an Escape that turns out not to be it has to pass through untouched.
+func TestTerminalDetachFilterWithAnAltLeader(t *testing.T) {
+	const esc = 0x1b
+	f := newDetachFilter("alt+g")
+
+	var forwarded []byte
+	for _, read := range [][]byte{{'h', 'i', esc}, {'g'}, {'x'}} {
+		out, detach := f.filter(read)
+		if detach {
+			t.Fatalf("Alt-G then x detached")
+		}
+		forwarded = append(forwarded, out...)
+	}
+	if want := []byte{'h', 'i', esc, 'g', 'x'}; string(forwarded) != string(want) {
+		t.Fatalf("Alt-G then x forwarded %q, want %q", forwarded, want)
+	}
+
+	f = newDetachFilter("alt+g")
+	forwarded = nil
+	detached := false
+	for _, read := range [][]byte{{'h', 'i', esc}, {'g'}, {'d'}} {
+		out, detach := f.filter(read)
+		forwarded = append(forwarded, out...)
+		detached = detached || detach
+	}
+	if !detached || string(forwarded) != "hi" {
+		t.Fatalf("Alt-G d across reads: detach=%t forwarded=%q, want detach and %q", detached, forwarded, "hi")
+	}
+
+	// An arrow key is Escape too, and is not the leader.
+	f = newDetachFilter("alt+g")
+	if out, detach := f.filter([]byte{esc, '[', 'A'}); detach || string(out) != "\x1b[A" || f.undecided() {
+		t.Fatalf("up arrow = %q detach=%t, want it passed through", out, detach)
+	}
+
+	// Alt held through the pair sends Alt-D, which detaches too, however its
+	// two bytes are split.
+	for _, reads := range [][][]byte{
+		{{esc, 'g', esc, 'd'}},
+		{{esc}, {'g', esc}, {'d'}},
+	} {
+		f = newDetachFilter("alt+g")
+		detached = false
+		forwarded = nil
+		for _, read := range reads {
+			out, detach := f.filter(read)
+			forwarded = append(forwarded, out...)
+			detached = detached || detach
+		}
+		if !detached || len(forwarded) != 0 {
+			t.Fatalf("Alt-G Alt-D in reads %q: detach=%t forwarded=%q", reads, detached, forwarded)
+		}
+	}
+
+	// The leader twice is how you type one, and Escape twice is two Escapes,
+	// the second of which might still begin the leader.
+	f = newDetachFilter("alt+g")
+	if out, detach := f.filter([]byte{esc, 'g', esc, 'g', 'z'}); detach || string(out) != "\x1bgz" {
+		t.Fatalf("Alt-G twice = %q detach=%t, want one literal Alt-G", out, detach)
+	}
+	f = newDetachFilter("alt+g")
+	out, detach := f.filter([]byte{esc, esc})
+	if detach || string(out) != "\x1b" || !f.undecided() {
+		t.Fatalf("Escape Escape = %q detach=%t undecided=%t, want the first sent and the second held", out, detach, f.undecided())
+	}
+
+	// Another Alt chord is the program's, at once.
+	f = newDetachFilter("alt+g")
+	if out, detach := f.filter([]byte{esc, 'b'}); detach || string(out) != "\x1bb" || f.undecided() {
+		t.Fatalf("Alt-B = %q detach=%t, want it passed through", out, detach)
+	}
+	// And so is a Ctrl leader's chord under an Alt leader.
+	f = newDetachFilter("alt+g")
+	if out, detach := f.filter([]byte{0x01, 'd'}); detach || string(out) != "\x01d" {
+		t.Fatalf("Ctrl-A d under alt+g = %q detach=%t, want it passed through", out, detach)
+	}
+}
+
+// What the filter is still holding when the input goes quiet is decided by
+// flushing it: a lone Escape was the Escape key, and an armed leader with an
+// Escape after it is delivered with it, as a leader that qualified nothing is.
+func TestTerminalDetachFilterFlushesALoneEscape(t *testing.T) {
+	const esc = 0x1b
+	f := newDetachFilter("alt+g")
+	if out, _ := f.filter([]byte{'i', esc}); string(out) != "i" || !f.undecided() {
+		t.Fatalf("i Escape = %q undecided=%t, want the Escape held", out, f.undecided())
+	}
+	if got := f.flush(); string(got) != "\x1b" || f.undecided() {
+		t.Fatalf("flush = %q undecided=%t, want the Escape", got, f.undecided())
+	}
+	// Flushing decided it, so the next g is a g.
+	if out, detach := f.filter([]byte{'g'}); detach || string(out) != "g" {
+		t.Fatalf("g after the flush = %q detach=%t", out, detach)
+	}
+
+	f = newDetachFilter("alt+g")
+	f.filter([]byte{esc, 'g', esc})
+	if got := f.flush(); string(got) != "\x1bg\x1b" || f.armed {
+		t.Fatalf("Alt-G Escape flushed = %q armed=%t, want both delivered", got, f.armed)
+	}
+
+	// The armed leader alone is not undecided: it waits for its key however
+	// long that takes.
+	f = newDetachFilter("alt+g")
+	f.filter([]byte{esc, 'g'})
+	if f.undecided() || f.flush() != nil || !f.armed {
+		t.Fatalf("an armed leader should wait, not flush")
+	}
+	// Nor is anything under a Ctrl leader, whose keys are one byte each.
+	f = newDetachFilter("ctrl+a")
+	f.filter([]byte{esc})
+	if f.undecided() {
+		t.Fatalf("Escape under ctrl+a should be sent at once")
+	}
+}
+
+// recordingConn is the remote end of an exec stream as a list of the input it
+// was sent.
+type recordingConn struct {
+	mu     sync.Mutex
+	inputs [][]byte
+}
+
+func (c *recordingConn) ReadFrame() (frame.Frame, error) { select {} }
+func (c *recordingConn) Close() error                    { return nil }
+func (c *recordingConn) WriteFrame(typ byte, payload []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if typ == frame.Input {
+		c.inputs = append(c.inputs, append([]byte(nil), payload...))
+	}
+	return nil
+}
+
+func (c *recordingConn) sent() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return string(bytes.Join(c.inputs, nil))
+}
+
+// A lone Escape under an Alt leader reaches the program once the escape time
+// is up, without waiting for a keystroke that may never come — vim's way out of
+// insert mode is that key, pressed and then nothing.
+func TestTerminalInputSendsALoneEscapeAfterTheEscapeTime(t *testing.T) {
+	stdin, typed := io.Pipe()
+	conn := &recordingConn{}
+	s := client.New(client.Options{Conn: conn, Stdin: stdin})
+	done := make(chan error, 1)
+	go func() { done <- copyTerminalInput(context.Background(), s, newDetachFilter("alt+g")) }()
+
+	if _, err := typed.Write([]byte{'i', 0x1b}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for conn.sent() != "i\x1b" {
+		if time.Now().After(deadline) {
+			t.Fatalf("sent %q, want the Escape sent on its own once the escape time passed", conn.sent())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// The flush decided the held Escape and nothing else: the chord after it
+	// still detaches. (Across reads is the filter's; see
+	// TestTerminalDetachFilterWithAnAltLeader.)
+	if _, err := typed.Write([]byte{0x1b, 'g', 'd'}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, errTerminalDetached) {
+		t.Fatalf("copyTerminalInput = %v, want detached", err)
+	}
+	if got := conn.sent(); got != "i\x1b" {
+		t.Fatalf("sent %q, want nothing of the chord", got)
+	}
+}
+
+// Input that ends with half a leader held sends it: nothing more is coming to
+// finish it.
+func TestTerminalInputSendsWhatIsHeldWhenInputEnds(t *testing.T) {
+	conn := &recordingConn{}
+	s := client.New(client.Options{Conn: conn, Stdin: bytes.NewReader([]byte{'q', 0x1b})})
+	if err := copyTerminalInput(context.Background(), s, newDetachFilter("alt+g")); err != nil {
+		t.Fatal(err)
+	}
+	if got := conn.sent(); got != "q\x1b" {
+		t.Fatalf("sent %q, want q and the Escape", got)
 	}
 }
 

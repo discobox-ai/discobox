@@ -60,6 +60,12 @@ mouse over or takes it back — and the leader is Ctrl-A unless --leader or
 DISCOBOX_LEADER says otherwise, worth changing when it collides with something
 you run in your discoboxes. It is the same leader "discobox attach" detaches behind.
 
+A leader is a letter with Ctrl or Alt: "b" or "ctrl+b" is Ctrl-B, and "alt+g"
+(or "meta+g", "option+g") is Alt-G, for when every Ctrl letter is spoken for.
+Ctrl-C is never the leader. An Alt leader reaches discobox only from a terminal
+that sends Alt as Meta (an Escape before the key): on a Mac, set Terminal's
+"Use Option as Meta key", or iTerm2's Option key to "Esc+".
+
 F3 opens the harnesses — the same screen "discobox configure" opens — where an
 harness is enabled, disabled, made the project default, or has its files edited.
 What is enabled there is what the run options offer as the harness to run.
@@ -69,6 +75,7 @@ screen when it exits. Press F1 for the keys, and Ctrl-C to quit once no
 discobox terminal is up.`,
 		Example: `  discobox console
   discobox console --leader b
+  discobox console --leader alt+g
   DISCOBOX_LEADER=b discobox console`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -79,7 +86,7 @@ discobox terminal is up.`,
 		cmd.Aliases = []string{"c"}
 	}
 	cmd.Flags().StringVarP(&leaderFlag, "leader", "l", "",
-		"Prefix key for the terminal pane's own commands, as a single letter taken as Ctrl-that (e.g. -l b for Ctrl-B); defaults to "+keys.LeaderEnv+", then a")
+		"Prefix key for the terminal pane's own commands: a letter taken as Ctrl-that (e.g. -l b for Ctrl-B), or ctrl+ or alt+ one (e.g. -l alt+g for Alt-G); defaults to "+keys.LeaderEnv+", then a")
 	return cmd
 }
 

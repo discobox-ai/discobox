@@ -36,18 +36,68 @@ func TestLeaderIsConfigurable(t *testing.T) {
 	}
 }
 
-func TestControlByte(t *testing.T) {
-	for name, want := range map[string]byte{
-		"ctrl+a": 0x01,
-		"ctrl+d": 0x04,
-		"ctrl+z": 0x1a,
-		"a":      0,
-		"ctrl+5": 0,
-		"ctrl+":  0,
-		"":       0,
+func TestSequence(t *testing.T) {
+	for name, want := range map[string]string{
+		"ctrl+a": "\x01",
+		"ctrl+d": "\x04",
+		"ctrl+z": "\x1a",
+		"alt+g":  "\x1bg",
+		"d":      "d",
+		"ctrl+5": "",
+		"alt+[":  "",
+		"ctrl+":  "",
+		"alt+":   "",
+		"":       "",
 	} {
-		if got := ControlByte(name); got != want {
-			t.Errorf("ControlByte(%q) = %#x, want %#x", name, got, want)
+		if got := string(Sequence(name)); got != want {
+			t.Errorf("Sequence(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// A Ctrl chord is not the only leader a hand can reach: Alt (Option on a Mac)
+// with a letter collides with less of what runs inside a sandbox.
+func TestLeaderMayBeAnAltChord(t *testing.T) {
+	for _, given := range []string{"alt+g", "ALT+G", " alt+g "} {
+		got, err := NormalizeLeader(given)
+		if err != nil {
+			t.Fatalf("NormalizeLeader(%q): %v", given, err)
+		}
+		if got != "alt+g" {
+			t.Errorf("NormalizeLeader(%q) = %q, want alt+g", given, got)
+		}
+	}
+	if got := Describe("alt+g"); got != "Alt-G" {
+		t.Errorf("Describe(alt+g) = %q, want Alt-G", got)
+	}
+
+	// The key goes by other names on other keyboards, and the leader can be
+	// written with any of them.
+	for _, given := range []string{"meta+g", "option+g", "opt+g"} {
+		if got, err := NormalizeLeader(given); err != nil || got != "alt+g" {
+			t.Errorf("NormalizeLeader(%q) = %q, %v; want alt+g", given, got, err)
+		}
+	}
+	// Alt is not Ctrl, so Alt-C is a leader like any other letter.
+	if got, err := NormalizeLeader("alt+c"); err != nil || got != "alt+c" {
+		t.Errorf("NormalizeLeader(alt+c) = %q, %v; want alt+c", got, err)
+	}
+	// Alt-[ is how an arrow key begins, and Alt with no letter is nothing.
+	for _, given := range []string{"alt+[", "alt+", "alt+gg", "ctrl+alt+g"} {
+		if _, err := NormalizeLeader(given); err == nil {
+			t.Errorf("NormalizeLeader(%q) should be rejected", given)
+		}
+	}
+}
+
+func TestModifier(t *testing.T) {
+	for name, want := range map[string]string{
+		"ctrl+a": "ctrl+",
+		"alt+g":  "alt+",
+		"d":      "",
+	} {
+		if got := Modifier(name); got != want {
+			t.Errorf("Modifier(%q) = %q, want %q", name, got, want)
 		}
 	}
 }

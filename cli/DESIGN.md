@@ -30,7 +30,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/termguard` | Putting the terminal back when the console dies holding it, and saying why: a second process (`discobox admin console-guard`) on a lifeline pipe, plus the runtime's crash output sent to a temporary file it names. See below. |
 | `internal/github` | Reading a GitHub issue or pull request as its page shows it — the issue, its sub-issues, its whole timeline, and for a pull request (an issue to this API, so the same read) its branches, reviewers, review threads and checks (`pull.go`) — commenting on one, closing or reopening it, and merging a pull request (by one of the ways its repository allows, naming the head commit that was read), over the REST API as the person at this machine (`GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`; anonymous with none). A re-read of an issue nothing has happened to is one request — its `updated_at`, trusted for ten minutes with a token, since a reaction does not move it — and with no token an issue is read at most every five minutes (`AnonymousRefresh`): GitHub allows 60 anonymous requests an hour. An open pull request's checks are the exception: a check finishing moves no `updated_at`, so with a token they are read again on every re-read that is otherwise answered from the last one, and so is whether it can merge (`mergeable_state`), which moves with the base branch. With no token neither is: the re-read stays one request, and GitHub answers "unknown" to a reader it does not know, so a full read does not wait for that answer either. The checks are also not the pull request — a token that may not read them leaves the page without them, a failed read of them leaves the ones known, and a list that is not whole says so (`ChecksPartial`). A read the person asked for (`full`) is always a full one. The console's issue tab is its one user; the data source (`tui_issue.go`) turns its answers into the console's own types, making every string safe to draw on the way, since anyone who can comment on an issue writes them: names, paths, branches and diffs with `terminalSafe`, and what is written to be read (titles, bodies, commit messages) with `pageSafe`, which drops a page's invisible break hints and keeps the joiners an emoji sequence is made with. A pull request's files changed are not read from GitHub at all: they are discobox-review run in the discobox (`PullReview`, in `tui_terminal.go`), between the two commits the tab read. |
 | `internal/clientconfig` | `client.yaml`, this client's own configuration file: its settings, loading, the in-place edit of `run.skills` that `discobox skills` and the console's skills screen make (ADR 26-10-14-894 §3), and the generated reference and schema (ADR 26-10-09-389). See [Client Configuration](#client-configuration-adr-26-10-09-389). |
-| `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the console's panes and a plain attach must reserve the same key. |
+| `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the bytes a raw stream matches it as. Owned here because the console's panes and a plain attach must reserve the same key. |
 
 ## UI Dependency Direction
 
@@ -184,8 +184,10 @@ transport helpers where OpenAPI does not model the stream.
   (`Model.currentBox`).
 - `DISCOBOX_LEADER` sets the prefix key, normalized by `keys.NormalizeLeader`:
   a bare letter is taken as Ctrl-that, since a leader that is not a chord would
-  be a character you could never type, and only a letter is accepted because the
-  leader has to survive being turned back into the byte a terminal sends.
+  be a character you could never type; `alt+` (or `meta+`, `option+`) a letter
+  is the other chord. Only a letter is accepted because the leader has to
+  survive being turned back into the bytes a terminal sends (`keys.Sequence`:
+  Ctrl-x is one control byte, Alt-x is Escape then x).
   `discobox console --leader` overrides it for the console; nothing else takes a flag.
   It is one key for both the console's panes and a plain attach's detach chord.
 - Attach and shell are terminals rather than commands, and are drawn inside the
@@ -1615,11 +1617,19 @@ session, `pkg/execstream/client`.
   where the leader came from. The leader is the console's
   (`internal/keys`, `App.leader`), resolved once from `DISCOBOX_LEADER` in
   `App.validate` so a misspelling is reported before a terminal is handed over,
-  and `App.detachHint` is the one spelling the messages print. Ctrl-D counts as
-  the second key alongside a bare `d`, the leader typed twice sends one literal
-  leader, and a leader that qualified nothing is delivered with the key that
-  followed it — the same bargain `termpane` makes in a pane, so the keystrokes
-  mean the same thing either way. Docker's Ctrl-P Ctrl-Q is not used: it takes
+  and `App.detachHint` is the one spelling the messages print. `d` with the
+  leader's modifier still held (Ctrl-D, Alt-D) counts as the second key
+  alongside a bare `d`, the leader typed twice sends one literal leader, and a
+  leader that qualified nothing is delivered with the key that followed it —
+  the same bargain `termpane` makes in a pane, so the keystrokes mean the same
+  thing either way. Keys are byte sequences, held only while they could still
+  become one the filter waits for, so an Alt leader is found across reads and
+  an arrow key's `ESC [` goes straight through. An Escape that ends a read is
+  the one undecided case: it is flushed after `escapeTime` (50 ms, Neovim's
+  `ttimeoutlen`), tmux's `escape-time` pattern, so a lone Escape never waits
+  on a next keystroke. An inner program that turns on the kitty keyboard
+  protocol makes the outer terminal send `CSI … u` for a chord, which matches
+  no leader, Ctrl or Alt. Docker's Ctrl-P Ctrl-Q is not used: it takes
   a key programs want (Ctrl-P is history-back everywhere) and matches nothing
   the console does.
 - The other way out is repeated Ctrl-C, and it is the session's, not this
