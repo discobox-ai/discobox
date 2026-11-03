@@ -3470,9 +3470,11 @@ fire in the order their durations say however slow the machine is, and the
 driver's own bounds — `settle`'s pause, `wait`'s `commandWait` — measure the
 test's time, not the machine's. A goroutine blocked on real I/O (a pty, a
 pipe, a process) is not idle and holds the clock still, which is why a test
-of a real terminal or process makes no driver. When the test ends the
-driver closes the workspace on screen and every parked one, since the bubble
-ends only once every goroutine in it has.
+of a real terminal or process makes no driver. Process-wide machinery the
+window starts lazily joins the bubble that starts it, so `TestMain` starts
+it first: the signal loop a harness action's notify would start (`os/signal`).
+When the test ends the driver closes the workspace on screen and every parked
+one, since the bubble ends only once every goroutine in it has.
 
 Credential consent during source delivery uses the operation's narration feed:
 a question waits for the dialog's answer, and Git's credential process runs via

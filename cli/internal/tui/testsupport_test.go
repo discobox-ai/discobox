@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/signal"
 	"reflect"
 	"runtime"
 	"sort"
@@ -42,6 +43,17 @@ func TestMain(m *testing.M) {
 	listen = func(cmd tea.Cmd) tea.Cmd {
 		return func() tea.Msg { return listenerMsg{run: cmd} }
 	}
+	// os/signal starts its process-wide goroutines at the first Notify, and
+	// a goroutine belongs to the synctest bubble it was started in. The
+	// window's harness actions notify (harnessExec.Run), from inside a
+	// driven test's bubble, and a first notify from there leaves the
+	// process's signal loop in that bubble: blocked in a syscall, it is never
+	// idle, so the bubble's clock stops and the test hangs, or the runtime
+	// dies on a bubble's channel used from outside it. Started here, outside
+	// every bubble, it belongs to none.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt)
+	signal.Stop(signals)
 	os.Exit(m.Run())
 }
 
