@@ -297,6 +297,16 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   record with its next resize sends that resize into the dropped window. The
   repaint's shrink-and-restore nudge is such a burst (#468).
 
+## Testing a program's output
+
+- **A test that collects a multi-process program's output sets
+  `cmd.WaitDelay`.** With `Stdout` or `Stderr` set to anything but a file,
+  `Wait` returns only once every process holding the pipe has closed it, not
+  when the program exits. A browser's renderers inherit its stderr, so a stuck
+  child turns a fast failure, and the `Kill` then `Wait` of a cleanup, into a
+  hang until go test's timeout (`browserRun.open` in
+  `desktop/capture_e2e_test.go`, #508).
+
 ## Processes
 
 - Credentials must set supplementary groups explicitly. `NoSetGroups` leaves the
