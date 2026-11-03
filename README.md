@@ -140,7 +140,9 @@ machine, the client pushes your new commits into it while you are attached, and
   in the box's `.discobox/tools` or in your own config directory's
   `discobox/tools` (ADR 0125). A script of yours with `runs: host` runs on
   your machine and is handed the CLI, server and project, so it can set the box
-  up first: have the box download a program into its `~/.cache`, copy your own
+  up first: have the box download a program into its `~/.cache`, pinned by
+  sha256 and checked before it runs (every box in the pool running as your user
+  ID can write to that cache), copy your own
   `~/.config/<tool>` in (config only: a token or key goes in `discobox secret`,
   not in a copied file the box's agent can read), then open it there
   (ADR 26-11-03-982).

@@ -92,16 +92,29 @@ and never a credential: the discobox's agent reads whatever lands in it, so a
 token or key belongs in "discobox secret", not in a copied file. A program is
 wrong too: this machine may be macOS and the discobox Linux, on another
 architecture. Have the discobox download the program itself, into ~/.cache,
-which every discobox of yours in the pool shares, so the download happens
-once:
+which every discobox in the pool running as the same user ID shares, so the
+download happens once. Because any of those can write there, other people's
+included on a shared pool, pin the program's sha256 and run only a copy that
+matches it: check the cached file before using it, download it again when it
+does not match, and copy it into the discobox's own ~/.local/bin, checking the
+copy, never running or linking the cached file itself:
 
   db() { "$DISCOBOX_CLI" "$@"; }
-  db shell "$DISCOBOX_ID" -- sh -s <<'IN_BOX'
+  db shell "$DISCOBOX_ID" -- sh -s <<'IN_BOX' || exit   # a refused install stops
+    set -e
+    case $(uname -m) in    # sha256 of the tuicr binary in each release tarball
+      x86_64)  sum=7fd209205bdc3e682438f0f0d81684fb76de9f49e3b45feca36dde0488dd7f9c ;;
+      aarch64) sum=fad52a20f425af50be5fb51554a6460cc044341ada5b7b3fdaf8b09ecf82cf1d ;;
+    esac
+    ok() { echo "$sum  $1" | sha256sum -c --status; }
     c=$HOME/.cache/discobox-tools/tuicr/0.28.0
-    [ -x "$c/tuicr" ] || { mkdir -p "$c" && curl -fsSL \
-      "https://github.com/.../tuicr-0.28.0-$(uname -m)-unknown-linux-gnu.tar.gz" |
+    ok "$c/tuicr" || { rm -rf "$c" && mkdir -p "$c" && curl -fsSL \
+      "https://github.com/agavra/tuicr/releases/download/v0.28.0/tuicr-0.28.0-$(uname -m)-unknown-linux-gnu.tar.gz" |
       tar -xzf - -C "$c"; }
-    mkdir -p ~/.local/bin ~/.config && ln -sf "$c/tuicr" ~/.local/bin/tuicr
+    mkdir -p ~/.local/bin ~/.config
+    n=~/.local/bin/.tuicr.new
+    cp "$c/tuicr" "$n"; ok "$n" || { rm -f "$n"; exit 1; }
+    mv "$n" ~/.local/bin/tuicr
     rm -rf ~/.config/tuicr
   IN_BOX
   db cp -r ~/.config/tuicr "$DISCOBOX_ID:.config/tuicr"

@@ -1,6 +1,6 @@
 # 26-11-03-982 — A host tool is handed the CLI, server and project to set the discobox up
 
-- **Status**: Accepted (§1 amended before implementation landed: a host tool is handed no token, and the environment is a script's alone)
+- **Status**: Accepted (§1 amended before implementation landed: a host tool is handed no token, and the environment is a script's alone; §2 amended before implementation landed: a program fetched into the shared cache is pinned by sha256 and only a checked copy runs)
 - **Date**: 2026-11-03
 
   Accepted by the owner by merging #496, 2026-11-03.
@@ -69,6 +69,18 @@ the box itself, into its `~/.cache` (a cache volume shared by the user's
 boxes in the pool, ADR 0094, so a version downloads once), and linked into
 `~/.local/bin`. This is guidance, which `discobox tools --help` gives with a
 worked example. The CLI enforces nothing.
+
+*(Amended before implementation landed.)* Not linked: **pinned and copied**.
+Every box in the pool that runs as the same sandbox user ID can write that
+cache (ADR 0094 §2 keys it on the uid alone, so on a shared pool that can be
+another person's box), and a file found there is not trusted for being there. The tool pins the program's sha256,
+checks the cached file against it and downloads again when it does not
+match, then copies it into the box's own `~/.local/bin` (home is the box's
+data volume, not shared) and checks the copy. Only the checked copy runs, so a
+file swapped in the cache after the check is never what runs. An `-x` test,
+or a link into the cache, would run whatever another box planted, with this
+box's sources and egress. `cli/DESIGN.md` already keeps a user script out of
+`~/.cache` for the same reason (`deliverToolScript`).
 
 A host tool never names a path in the box from this machine, so it is handed
 no home directory and no bin path. It relies on three things the discobox
