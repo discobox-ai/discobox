@@ -263,6 +263,14 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   `ReadFrame`, and the host may send the output an action caused before that
   action's `Ack`, so a test that stops reading at that output and then polls
   can wait forever for an `Ack` sitting unread (#417).
+- **A test that waits for a socket peer's half-close sets a deadline on its
+  reads and skips on Windows** (`requireUnixHalfClose` in
+  `shimproxy/shimproxy_test.go`). On Windows a read pending while its peer
+  shuts the socket down can stall instead of returning EOF
+  (go.dev/issue/49352), and with no deadline that holds the whole `windows`
+  job until go test's 10-minute timeout (#473). The skip says the path is
+  untested there, not out of scope: a Windows Supervisor runs the same shim on
+  a Unix socket.
 
 ## Processes
 

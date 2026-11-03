@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,8 +22,31 @@ type halfCloseProxyHarness struct {
 	shimErr  <-chan error
 }
 
+// halfCloseDeadline bounds every read in a half-close test, so a half-close
+// that never arrives fails the test in seconds instead of hanging it until
+// go test's timeout. Every failure there reports the shim's and the proxy's
+// results (ends), so a shim that timed out waiting for EOF reads as that and
+// not as output the proxy dropped.
+const halfCloseDeadline = 10 * time.Second
+
+// requireUnixHalfClose skips a test that waits for a Unix socket peer's
+// half-close. On Windows a read pending on a socket while its peer shuts it
+// down can stall instead of returning EOF (go.dev/issue/49352; Go's own
+// TestCloseWrite sleeps around it), which hung these tests until go test's
+// timeout (#473). That is not Windows being out of scope: a Windows build's
+// Supervisor runs the same shim on a Unix socket, so an attach's half-close
+// there is untested and known to stall, and a Windows attach that relies on
+// it would not tear down.
+func requireUnixHalfClose(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("untested on Windows: a read pending on a Windows socket can miss its peer's half-close (go.dev/issue/49352)")
+	}
+}
+
 func newHalfCloseProxyHarness(t *testing.T, shim func(*net.UnixConn, *bufio.Reader) error) halfCloseProxyHarness {
 	t.Helper()
+	requireUnixHalfClose(t)
 	socketPath := filepath.Join(shorttmp.Dir(t), "shim.sock")
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
 	if err != nil {
@@ -38,6 +62,7 @@ func newHalfCloseProxyHarness(t *testing.T, shim func(*net.UnixConn, *bufio.Read
 			return
 		}
 		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(halfCloseDeadline))
 		reader := bufio.NewReader(conn)
 		req, err := http.ReadRequest(reader)
 		if err != nil {
@@ -54,6 +79,13 @@ func newHalfCloseProxyHarness(t *testing.T, shim func(*net.UnixConn, *bufio.Read
 
 	proxyErr := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The fake shim takes one attach. Anything else reaching this
+		// listener, such as the sandbox-agent's port probe (REVIEW.md), must
+		// not spend it.
+		if r.Method != http.MethodPost || r.URL.Path != "/attach" {
+			http.NotFound(w, r)
+			return
+		}
 		proxyErr <- AttachHTTPUpgrade(r.Context(), w, socketPath, "test-exec", true)
 	}))
 	t.Cleanup(server.Close)
@@ -64,6 +96,9 @@ func newHalfCloseProxyHarness(t *testing.T, shim func(*net.UnixConn, *bufio.Read
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
+	if err := conn.SetDeadline(time.Now().Add(halfCloseDeadline)); err != nil {
+		t.Fatal(err)
+	}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/attach", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -103,10 +138,10 @@ func TestAttachHTTPUpgradePreservesShimOutputAfterClientHalfClose(t *testing.T) 
 	shimReceived := make(chan []byte, 1)
 	harness := newHalfCloseProxyHarness(t, func(conn *net.UnixConn, reader *bufio.Reader) error {
 		payload, err := io.ReadAll(reader)
+		shimReceived <- payload
 		if err != nil {
 			return err
 		}
-		shimReceived <- payload
 		if _, err := conn.Write([]byte("from-shim")); err != nil {
 			return err
 		}
@@ -121,13 +156,13 @@ func TestAttachHTTPUpgradePreservesShimOutputAfterClientHalfClose(t *testing.T) 
 	}
 	output, err := io.ReadAll(harness.reader)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read after client half-close: %v (%s)", err, harness.ends())
 	}
 	if string(output) != "from-shim" {
-		t.Fatalf("output after client half-close = %q, want from-shim", output)
+		t.Fatalf("output after client half-close = %q, want from-shim (%s)", output, harness.ends())
 	}
 	if got := string(<-shimReceived); got != "from-client" {
-		t.Fatalf("shim input = %q, want from-client", got)
+		t.Fatalf("shim input = %q, want from-client (%s)", got, harness.ends())
 	}
 	waitHalfCloseResult(t, "proxy", harness.proxyErr)
 	waitHalfCloseResult(t, "shim", harness.shimErr)
@@ -143,31 +178,47 @@ func TestAttachHTTPUpgradePreservesClientInputAfterShimHalfClose(t *testing.T) {
 			return err
 		}
 		payload, err := io.ReadAll(reader)
-		if err != nil {
-			return err
-		}
 		shimReceived <- payload
-		return nil
+		return err
 	})
 
 	output, err := io.ReadAll(harness.reader)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read before shim half-close: %v (%s)", err, harness.ends())
 	}
 	if string(output) != "from-shim" {
-		t.Fatalf("output before shim half-close = %q, want from-shim", output)
+		t.Fatalf("output before shim half-close = %q, want from-shim (%s)", output, harness.ends())
 	}
 	if _, err := harness.client.Write([]byte("from-client")); err != nil {
-		t.Fatalf("write after shim half-close: %v", err)
+		t.Fatalf("write after shim half-close: %v (%s)", err, harness.ends())
 	}
 	if err := harness.client.CloseWrite(); err != nil {
 		t.Fatal(err)
 	}
 	if got := string(<-shimReceived); got != "from-client" {
-		t.Fatalf("shim input after its half-close = %q, want from-client", got)
+		t.Fatalf("shim input after its half-close = %q, want from-client (%s)", got, harness.ends())
 	}
 	waitHalfCloseResult(t, "proxy", harness.proxyErr)
 	waitHalfCloseResult(t, "shim", harness.shimErr)
+}
+
+// ends says how the shim and the proxy have finished so far, without waiting,
+// for a failure message. Only a failing test calls it: it consumes what it
+// reads.
+func (h halfCloseProxyHarness) ends() string {
+	return "shim: " + peekResult(h.shimErr) + ", proxy: " + peekResult(h.proxyErr)
+}
+
+func peekResult(result <-chan error) string {
+	select {
+	case err := <-result:
+		if err != nil {
+			return err.Error()
+		}
+		return "finished"
+	default:
+		return "still running"
+	}
 }
 
 func waitHalfCloseResult(t *testing.T, name string, result <-chan error) {
