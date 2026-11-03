@@ -27,6 +27,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
@@ -146,17 +147,27 @@ func New(runtimeProvider RuntimeProvider, definition sandbox.ProviderDefinition,
 	return p
 }
 
+// Initialize asks every pool of the provider to reconcile.
+//
+// It may run inside one of those pools' own reconciles: the first resolve
+// after a provider update, or a retry of a resolve that failed at startup, is
+// often the one the pool reconciler makes. The engine refuses that pool's mark
+// (reconcile.ErrSelfMark), and the pool is already reconciling, which is all
+// the mark asks for, so it is not an error. Failing on it left the provider
+// uncached and every later pass failing the same way. A pool that cannot be
+// marked does not stop the rest being marked.
 func (p *Provider) Initialize(ctx context.Context, provider *model.SandboxProviderInstance) error {
 	pools, err := p.manager.ListPoolsForProviderInstance(ctx, provider.ProjectID, provider.ID)
 	if err != nil {
 		return err
 	}
+	var errs []error
 	for i := range pools {
-		if err := p.manager.SchedulePoolReconciliation(ctx, provider.ProjectID, pools[i].ID); err != nil {
-			return err
+		if err := p.manager.SchedulePoolReconciliation(ctx, provider.ProjectID, pools[i].ID); err != nil && !errors.Is(err, reconcile.ErrSelfMark) {
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (p *Provider) List(context.Context) ([]*sandbox.Sandbox, error) {

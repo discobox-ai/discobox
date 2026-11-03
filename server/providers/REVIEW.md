@@ -5,6 +5,16 @@
   for reconciliation (`sandbox.PoolManager.SchedulePoolReconciliation`, a drift
   mark that never cuts a failure backoff); direct provider cleanup is reserved
   for managed runtime orphans with no DB row.
+- Provider code can run inside a pool's own reconcile: `ReconcilePool` and
+  `RepairPool`, and `Initialize`, which the pool reconciler's resolve runs
+  whenever it rebuilds the provider (after an update, or a startup resolve
+  that failed). A mark of that pool there is refused with
+  `reconcile.ErrSelfMark`. On a path that only reconciles, do not mark the
+  pool: the reconcile's own `Result` re-runs it, as pool-sync and the
+  registration timeout do. Where one call marks many pools, as `Initialize`
+  does, skip `ErrSelfMark`, since that pool is already reconciling, and keep
+  marking the others. An error returned from a resolve leaves the provider
+  uncached, so every later pass fails the same way (#377).
 - Keep pool-runtime drift detection separate from sandbox-runtime
   reconciliation. Even when both are Docker containers, drift detection may only
   observe pool runtimes; sandbox containers are owned by the pool-agent
