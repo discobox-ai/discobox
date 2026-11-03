@@ -99,3 +99,11 @@ jobs:
       - uses: ./.github/actions/task
         with:
           target: ci:test
+      # TEMPORARY (#537): what Go sees after the cache step; reverted before merge.
+      - name: Show GOCACHEPROG
+        if: always()
+        shell: bash
+        run: |
+          echo "env GOCACHEPROG=[${GOCACHEPROG-unset}]"
+          echo "go env GOCACHEPROG=[$(go env GOCACHEPROG)]"
+          echo "GOROOT/go.env:"; cat "$(go env GOROOT)/go.env"
