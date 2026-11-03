@@ -534,7 +534,11 @@ survive.
 
 The rebuild always lands on the image its harness config resolves to now, so a
 repair is an upgrade as well: the teardown has already discarded everything a
-re-pin costs, and a stale image is itself a way for a discobox to be wedged.`,
+re-pin costs, and a stale image is itself a way for a discobox to be wedged.
+
+A discobox still owed its source — its create never delivered it — is rebuilt
+but not started: it is left waiting for its source, and attaching to it or
+"discobox push" from where it was created delivers it, which starts it.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {

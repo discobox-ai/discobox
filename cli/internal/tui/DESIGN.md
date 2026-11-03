@@ -1112,11 +1112,14 @@ every other poll there.
 **The row says whether the discobox is worth asking about** (`Sandbox.Pushable`,
 `pushable` in `internal/cli/push_auto.go`): a source delivered by pushing it,
 this machine recorded as the origin host, and a state that can take one. A
-discobox still awaiting its source is excluded on purpose: a push to a parked
-one is its create's delivery, which starts it. That delivery happens when the
+discobox still owed its source is excluded on purpose, parked or failed: only
+its delivery may write into its origin. That delivery happens when the
 workspace opens instead (`Sandbox.AwaitsDelivery`, `deliverSource`), before
-anything attaches
-([ADR 26-09-24-005](../../../docs/adr/26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)).
+anything attaches, and repairs a failed one first
+([ADR 26-09-24-005](../../../docs/adr/26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md),
+[ADR 26-11-03-618](../../../docs/adr/26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md)).
+A repair (`R`) that leaves a discobox parked for its source reports it so
+(`DataSource.Do`'s note): it is not started, and opening it delivers it.
 A delivery that fails closes the workspace the way a primary that never came up
 does.
 

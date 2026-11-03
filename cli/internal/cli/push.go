@@ -178,13 +178,12 @@ func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, clie
 		})
 	}
 
-	// A discobox parked waiting for its source is not asking to be rebased
-	// onto: it holds nothing yet, and what it needs is the source the create
-	// never managed to hand it. There, a push is that delivery.
-	if sandboxAwaitingSource(*sandbox) {
-		if pending := sandboxcreate.PendingSourcePushes(sandbox); len(pending) > 0 {
-			return a.deliverAwaitedSource(ctx, cmd, client, projectID, sandbox, pending, host, gitServerURL, dirOverrides, onlySlug, branch, force)
-		}
+	// A discobox still owed its source is not asking to be rebased onto: it
+	// holds nothing yet, and what it needs is the source the create never
+	// managed to hand it. There, a push is that delivery, whether it is
+	// parked or the source-await timeout has failed it (ADR 26-11-03-618 §1).
+	if sandboxOwedSource(*sandbox) {
+		return a.deliverAwaitedSource(ctx, cmd, client, projectID, sandbox, sandboxcreate.PendingSourcePushes(sandbox), host, gitServerURL, dirOverrides, onlySlug, branch, force)
 	}
 
 	out := cmd.OutOrStdout()
@@ -271,6 +270,27 @@ func sandboxAwaitingSource(sandbox apimodel.Sandbox) bool {
 	return sandbox.Runtime.State == apiclientgen.SandboxRuntimeStateAwaitingSource
 }
 
+// sandboxOwedSource reports whether the discobox is owed its delivery: it has
+// sources a client delivers, and none has been reported delivered (ADR
+// 26-11-03-618 §1). It is the server's awaitingSourcePush, read off the
+// listing.
+//
+// Owed, not parked, is what the automatic push, `discobox push` and the attach
+// decide by: a discobox is owed its delivery while parked, while a repair
+// rebuilds it, and once the source-await timeout has failed it, and in every
+// one of those only the delivery may write into its origin.
+func sandboxOwedSource(sandbox apimodel.Sandbox) bool {
+	return !sandbox.Runtime.SourceDeliveredAt.IsSet() && len(sandboxcreate.PendingSourcePushes(&sandbox)) > 0
+}
+
+// sandboxFailed reports whether the discobox's create, or its last rebuild,
+// failed and settled. A failed discobox owed its delivery is repaired before
+// it is delivered: the server takes a delivery only from one that has never
+// run, which a repair parks it as again (ADR 26-11-03-618 §3).
+func sandboxFailed(sandbox apimodel.Sandbox) bool {
+	return sandbox.Runtime.State == apiclientgen.SandboxRuntimeStateFailed && !sandboxcreate.Repairing(&sandbox)
+}
+
 // deliverAwaitedSource gives a parked discobox the source it has been waiting
 // for and reports the delivery, which is what lets it start.
 //
@@ -323,6 +343,13 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 // Every source is resolved and checked before any of them is pushed: a
 // delivery the server would refuse halfway through leaves the discobox parked
 // with a partly written origin.
+//
+// A discobox the source-await timeout, or any other failure, has failed while
+// it was owed is repaired between the two (ADR 26-11-03-618 §3): the server
+// takes a delivery only from a discobox that has never run, and the repair
+// parks it as one again, with a fresh deadline and without starting it. The
+// checks come first so that a discobox this machine cannot deliver is not
+// rebuilt for a delivery that will not follow.
 func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox, pending []sandboxcreate.PendingSourcePush, hostID, gitServerURL string, dirOverrides map[string]string, step sandboxcreate.Report, options sandboxcreate.DeliveryOptions) ([]pushSourceReport, error) {
 	roots := make(map[string]string, len(pending))
 	sources := make([]pushSourceReport, 0, len(pending))
@@ -358,10 +385,42 @@ func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Clie
 			Commit:   commit,
 		})
 	}
+	if sandboxFailed(*sandbox) {
+		repaired, err := repairOwedSandbox(ctx, client, projectID, sandbox.ID, step)
+		if err != nil {
+			return nil, err
+		}
+		sandbox = repaired
+	}
 	if err := sandboxcreate.DeliverSource(ctx, client, projectID, sandbox, sandboxcreate.NewLocalSources(roots), gitServerURL, a.token, step, options); err != nil {
 		return nil, err
 	}
 	return sources, nil
+}
+
+// repairOwedSandbox repairs a failed discobox that is owed its delivery, so
+// that it can take it. The repair converges in the request (ADR 0035) and, the
+// discobox being owed, leaves it parked rather than starting it.
+func repairOwedSandbox(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, step sandboxcreate.Report) (*apimodel.Sandbox, error) {
+	if step != nil {
+		step(sandboxcreate.StepRepairing)
+	}
+	res, err := client.RepairSandbox(ctx, apiclientgen.RepairSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+	if err != nil {
+		return nil, fmt.Errorf("repair the discobox to deliver its source: %w", err)
+	}
+	repaired, err := expectResponse[apimodel.Sandbox](res)
+	if err != nil {
+		return nil, fmt.Errorf("repair the discobox to deliver its source: %w", err)
+	}
+	// A repair can settle the delivery itself: one into a pool cache is
+	// pulled again by the rebuild, and a cache filled since the create pulls,
+	// is recorded delivered, and starts. Then DeliverSource has nothing left
+	// to do. Only a row neither parked nor delivered is wrong.
+	if sandboxOwedSource(*repaired) && !sandboxAwaitingSource(*repaired) {
+		return nil, fmt.Errorf("the discobox was repaired to deliver its source, but it reads %s rather than waiting for it", repaired.Runtime.State)
+	}
+	return repaired, nil
 }
 
 // deliveredRefs are the commit a source is delivered at and the branch it lands

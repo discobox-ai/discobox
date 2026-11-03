@@ -286,3 +286,11 @@ enforces the ones a tree walk can see. These are the ones it cannot:
 - Retiring a command must preserve tests for shared live UI behavior. Rewrite
   fixtures using the remaining Git states instead of deleting the whole test:
   removing Apply's state initially removed the workspace-header refresh check.
+
+## A discobox owed its delivery
+
+- **A client decision about delivery keys on `sandboxOwedSource`**, never on
+  `awaiting_source` or an inline `SourceDeliveredAt` / `PendingSourcePushes`
+  pair. A discobox is owed its delivery while parked, failed, or being
+  repaired (ADR 26-11-03-618 §1), and every place that decided by state, or by
+  its own copy of the rule, let an ordinary push or a start through to one.

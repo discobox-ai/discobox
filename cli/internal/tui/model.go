@@ -883,7 +883,10 @@ type verbDoneMsg struct {
 	verb Verb
 	ids  []string
 	errs []error
-	then verbThen
+	// notes are, per id, what the answer left that sandbox doing beyond what
+	// the verb says (DataSource.Do).
+	notes []string
+	then  verbThen
 }
 
 // verbThen is what a verb's answer does beyond being reported, which only
@@ -2687,10 +2690,11 @@ func (m *Model) runVerb(verb Verb, ids []string, then verbThen) tea.Cmd {
 	run := func() tea.Msg {
 		defer feed.close()
 		errs := make([]error, len(ids))
+		notes := make([]string, len(ids))
 		for i, id := range ids {
-			errs[i] = m.ds.Do(m.ctx, verb, id, feed.credentials())
+			notes[i], errs[i] = m.ds.Do(m.ctx, verb, id, feed.credentials())
 		}
-		return verbDoneMsg{verb: verb, ids: ids, errs: errs, then: then}
+		return verbDoneMsg{verb: verb, ids: ids, errs: errs, notes: notes, then: then}
 	}
 	return tea.Batch(run, next)
 }
@@ -2810,12 +2814,32 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 	}
 	switch {
 	case failed == 0:
-		return tea.Batch(m.refresh(), m.report(false, "%s: %s", msg.verb, plural(done, "box", "boxes")), onTo)
+		return tea.Batch(m.refresh(), m.report(false, "%s: %s%s", msg.verb, plural(done, "box", "boxes"), m.verbNotes(msg)), onTo)
 	case done == 0 && len(msg.ids) == 1:
 		return tea.Batch(m.refresh(), m.report(true, "%s: %v", msg.verb, firstErr), onTo)
 	default:
 		return tea.Batch(m.refresh(), m.report(true, "%s: %d of %d failed: %v", msg.verb, failed, len(msg.ids), firstErr), onTo)
 	}
+}
+
+// verbNotes is what a verb's answer left its sandboxes doing beyond what the
+// verb says, for the line that reports it: the note alone for one sandbox,
+// and each noted sandbox by name for several.
+func (m *Model) verbNotes(msg verbDoneMsg) string {
+	var noted []string
+	for i, note := range msg.notes {
+		if note == "" || msg.errs[i] != nil {
+			continue
+		}
+		if len(msg.ids) == 1 {
+			return ", " + note
+		}
+		noted = append(noted, sandboxLabel(m.boxByID(msg.ids[i]))+" "+note)
+	}
+	if len(noted) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(noted, "; ")
 }
 
 // ---------------------------------------------------------------------------

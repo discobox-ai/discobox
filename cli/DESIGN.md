@@ -2419,8 +2419,10 @@ forever: the resume is `CompleteSandboxSourcePush`, which otherwise only the
 create path calls, so a rebase-time push would send commits into its origin and
 leave it exactly as parked as it found it.
 
-So when the discobox is in `awaiting_source`, `discobox push` performs the
-create's own delivery instead of the rebase-time one: each source is pushed at
+So when the discobox is **owed** its delivery — push-delivered sources and no
+`runtime.sourceDeliveredAt`, whatever its state (`sandboxOwedSource`, ADR
+26-11-03-618 §1) — `discobox push` performs the create's own delivery instead
+of the rebase-time one: each source is pushed at
 the commit it was pinned to at create — not whatever the local branch points at
 now — along with the workspace snapshot the create captured, and the whole set
 is reported complete, which starts the discobox. `sandboxcreate.DeliverSource`
@@ -2438,6 +2440,14 @@ source was created from a directory with no repository of its own, whose
 throwaway repository was deleted when that run ended (ADR 0045) and took the
 only copy of those commits with it. `--source`, `--branch`, and `--force` all
 describe a rebase-time push and are refused here rather than ignored.
+
+A discobox that failed while owed — the source-await timeout, or any other
+failure — is **repaired first**,
+after those checks and before any push (`repairOwedSandbox`, ADR 26-11-03-618
+§3): the server takes a delivery only from a discobox that has never run, and a
+repair parks an owed one as such again, with a fresh deadline and no start. The
+repair is a step of its own on the status line. A discobox this machine cannot
+deliver is never rebuilt for a delivery that will not follow.
 
 A delivery can be owed to an origin this client has already pushed past the
 pinned commit: a rebase-time push moved the branch, then the discobox came back
@@ -2462,11 +2472,18 @@ delivered by an attach: its origin is the creating sandbox's own claim, and
 what a person's machine delivers — from their directories, with their Git
 credentials — that sandbox could then read. It delivers its own, held to its
 own reach by the pool (§7); an explicit `discobox push` naming the discobox
-remains the person's to make. Owed means parked with no `runtime.sourceDeliveredAt`.
-A discobox stays parked after its delivery is reported, until the reconciler
-acts on the report, which is exactly what `new --raw` attaches to. The same
+remains the person's to make. Owed means no `runtime.sourceDeliveredAt`, and
+the attach delivers one that is parked or failed (ADR 26-11-03-618 §3); a
+failed one is repaired first, as above. One still being created is its create's
+to deliver. A discobox stays parked after its delivery is reported, until the
+reconciler acts on the report, which is exactly what `new --raw` attaches to. The same
 field ends `DeliverSource`'s wait early when somebody else's delivery was
 reported.
+
+`discobox start` and the console's start deliver in place of the start when
+the discobox is owed and this machine's to deliver (`deliverInsteadOfStart`):
+the server refuses a start for an owed discobox, and the delivery is what
+starts it.
 
 The console's workspace delivers when the row says `AwaitsDelivery`
 (`DataSource.DeliverSource`), and a raw attach delivers from
@@ -2509,6 +2526,12 @@ now — on a clock, whatever the developer switched to since — and those are l
 to the command. What the resolver holds between beats is only what a create
 fixed: a discobox that is not *yet* pushable is asked again rather than
 remembered.
+
+A discobox **owed its delivery** is never pushed, whatever its state — parked,
+failed by the source-await timeout, or being repaired (`pushableNow`, ADR
+26-11-03-618 §1). Until the delivery is reported only the delivery writes into
+its origin; a push of later commits there moves the branch the delivery still
+has to land on.
 
 `sandboxpush.Resolve` is what makes the ordinary beat free — the branch tip
 against the lease, no transport, and no loopback proxy stood up to reach one —

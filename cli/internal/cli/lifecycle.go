@@ -8,7 +8,6 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
@@ -102,21 +101,20 @@ fails does not hide the rest.`,
 				if err != nil {
 					return "", err
 				}
+				if action.verb == "start" {
+					status := newStatusLine(cmd.ErrOrStderr())
+					delivered, err := a.deliverInsteadOfStart(cmd.Context(), client, projectID, sandboxID, status.set, credentialDeliveryOptions(cmd, status, false))
+					status.clear()
+					if err != nil || delivered {
+						return sandboxID, err
+					}
+				}
 				res, err := action.post(cmd.Context(), client, projectID, sandboxID)
 				if err != nil {
 					return "", err
 				}
-				record, err := expectResponse[apimodel.Sandbox](res)
-				if err != nil {
+				if _, err := expectResponse[apimodel.Sandbox](res); err != nil {
 					return "", err
-				}
-				if action.verb == "start" && !record.Runtime.SourceDeliveredAt.IsSet() && len(sandboxcreate.PendingSourcePushes(record)) > 0 {
-					status := newStatusLine(cmd.ErrOrStderr())
-					err = a.deliverBeforeAttach(cmd.Context(), client, projectID, sandboxID, status.set, credentialDeliveryOptions(cmd, status, false))
-					status.clear()
-					if err != nil {
-						return "", err
-					}
 				}
 				return sandboxID, nil
 			})

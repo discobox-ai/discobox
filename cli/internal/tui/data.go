@@ -361,10 +361,11 @@ type Sandbox struct {
 	// delivery, the origin host and the state are all already in the response.
 	Pushable bool
 
-	// AwaitsDelivery reports that the discobox is parked waiting for a source
-	// this machine can deliver: its create stopped after it parked and before
-	// the push was reported, and this machine is the one it was created on.
-	// Opening the workspace delivers it first (ADR 26-09-24-005).
+	// AwaitsDelivery reports that the discobox is owed a source this machine
+	// can deliver: its create stopped before the delivery was reported, it is
+	// parked for it or has failed waiting, and this machine is the one it was
+	// created on. Opening the workspace delivers it first, repairing a failed
+	// one (ADR 26-09-24-005, ADR 26-11-03-618 §3).
 	AwaitsDelivery bool
 
 	// Git is where the work sits now, when the sandbox's agent has reported;
@@ -2180,8 +2181,11 @@ type DataSource interface {
 	// and is safe to call on one that already finished.
 	MeasureDirectory(ctx context.Context, dir string) (total func() DirectoryTotal, stop func())
 
-	// Do runs a lifecycle verb against one sandbox.
-	Do(ctx context.Context, verb Verb, sandboxID string, credentials CredentialUI) error
+	// Do runs a lifecycle verb against one sandbox. note, when not empty, is
+	// what the answer leaves the sandbox doing that the verb's name does not
+	// say — a repair that left it waiting for its source (ADR 26-11-03-618
+	// §2) — and the window reports it with the verb.
+	Do(ctx context.Context, verb Verb, sandboxID string, credentials CredentialUI) (note string, err error)
 
 	// Rename gives one sandbox a new name: the one in its meta, which its row
 	// shows from then on whatever its harness titles the terminal. It is not a
