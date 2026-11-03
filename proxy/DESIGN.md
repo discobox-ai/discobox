@@ -722,7 +722,9 @@ flowchart LR
   unresolved sentinel is, and refused 503 with `Retry-After` if no answer
   comes. A denial is an answer (nothing to watch for), remembered for
   `NegativeTTLSeconds` so a client whose binding is gone is not asked about on
-  every request.
+  every request, and taken as its answer by any resolve that looked before it
+  was asked (the background one an `ApplyConfig` starts, running late) — but
+  not by one that looked while it was in flight, which asks again.
 - **A value the sandbox may still hold is still watched for.** One displaced
   by a rotation, denied, or whose sentinel left is retired and watched for
   `rawRetiredGrace` (a day): a process started with it keeps it. One whose

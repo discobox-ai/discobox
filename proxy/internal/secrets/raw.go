@@ -101,8 +101,10 @@ type rawWatch struct {
 	entries   map[rawKey]rawEntry
 	retired   []rawRetired
 	inflight  map[rawKey]chan struct{}
-	// denied is when each key was last denied with nothing held, so a client
-	// whose binding is gone is not asked about on every request (await).
+	// denied is when each key was last asked about and denied with nothing
+	// held, so a client whose binding is gone is not asked about on every
+	// request (await), nor again by a resolve that looked before it was asked
+	// (resolve).
 	denied map[rawKey]time.Time
 	// sets is each client's RawSet, rebuilt on every change under mu and read
 	// without it on every request.
@@ -172,7 +174,7 @@ func (w *rawWatch) reconfigure(sentinels map[string][]string, refresh time.Durat
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), rawResolveTimeout)
 			defer cancel()
-			_, _ = w.resolve(ctx, key)
+			_, _ = w.resolve(ctx, key, now)
 		}()
 	}
 }
@@ -204,7 +206,7 @@ func (w *rawWatch) await(ctx context.Context, clientID string, retryUntil time.T
 	var errs []string
 	for _, key := range missing {
 		_, err := RetryTransient(ctx, retryUntil, func(attempt context.Context) (rawEntry, error) {
-			return w.resolve(attempt, key)
+			return w.resolve(attempt, key, now)
 		}, func(err error) bool { return errors.Is(err, ErrDenied) })
 		if err != nil && !errors.Is(err, ErrDenied) {
 			errs = append(errs, "raw secret value unavailable: "+err.Error())
@@ -251,7 +253,7 @@ func (w *rawWatch) current(ctx context.Context, key rawKey) (rawEntry, bool) {
 	if ok && now.Before(entry.refreshAt) {
 		return entry, true
 	}
-	fresh, err := w.resolve(ctx, key)
+	fresh, err := w.resolve(ctx, key, now)
 	if err == nil {
 		return fresh, true
 	}
@@ -266,8 +268,11 @@ func (w *rawWatch) current(ctx context.Context, key rawKey) (rawEntry, bool) {
 }
 
 // resolve asks for key's value, once at a time per key, and records the
-// answer. A denial retires what was held.
-func (w *rawWatch) resolve(ctx context.Context, key rawKey) (rawEntry, error) {
+// answer. A denial retires what was held. since is when the caller looked:
+// a value held, or a denial asked for since then, is its answer, so a
+// resolve that runs late (the background one reconfigure starts, behind a
+// request that already asked) does not ask again.
+func (w *rawWatch) resolve(ctx context.Context, key rawKey, since time.Time) (rawEntry, error) {
 	for {
 		w.mu.Lock()
 		if !slices.Contains(w.sentinels[key.clientID], key.sentinel) {
@@ -278,6 +283,11 @@ func (w *rawWatch) resolve(ctx context.Context, key rawKey) (rawEntry, error) {
 			// Answered since the caller looked.
 			w.mu.Unlock()
 			return entry, nil
+		}
+		if at, ok := w.denied[key]; ok && !at.Before(since) {
+			// Asked about since the caller looked, and denied.
+			w.mu.Unlock()
+			return rawEntry{}, ErrDenied
 		}
 		wait, busy := w.inflight[key]
 		if !busy {
@@ -298,18 +308,24 @@ func (w *rawWatch) resolve(ctx context.Context, key rawKey) (rawEntry, error) {
 			return rawEntry{}, ctx.Err()
 		}
 		// The ask that was in flight has answered: the loop takes its
-		// answer if it left one, and asks again if it did not.
+		// answer if it left one, a value or a denial, and asks again if it
+		// did not (the resolver could not be asked).
 	}
 }
 
 func (w *rawWatch) ask(ctx context.Context, key rawKey) (rawEntry, error) {
+	// A denial is stamped with when it was asked, not answered: it is the
+	// answer only of a resolve that looked before the question went out
+	// (resolve), never of one that looked while it was in flight, since the
+	// binding may have changed since it was asked about.
+	asked := w.now()
 	result, err := w.resolver.ResolveRaw(ctx, key.request())
 	now := w.now()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	still := slices.Contains(w.sentinels[key.clientID], key.sentinel)
 	if errors.Is(err, ErrDenied) || (err == nil && result.Value == "") {
-		w.denied[key] = now
+		w.denied[key] = asked
 		if old, ok := w.entries[key]; ok {
 			w.retireLocked(key, old, now)
 			delete(w.entries, key)

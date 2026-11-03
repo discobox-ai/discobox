@@ -266,3 +266,122 @@ func TestAwaitRawAnswersFromTheConfiguredSet(t *testing.T) {
 		t.Fatal("the awaited value is not watched for")
 	}
 }
+
+// A resolve takes a denial recorded since its caller looked as its answer, so
+// the background resolve Reconfigure starts does not ask again when it runs
+// behind a request that already asked; one from before it looked is asked
+// about again.
+func TestRawResolveTakesADenialSinceItLooked(t *testing.T) {
+	clock := &testClock{now: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
+	resolver := newRawResolver(map[string]RawResult{})
+	w := newRawWatch(resolver, clock.Now)
+	w.sentinels = map[string][]string{"sb-1": {"RAW-SENTINEL"}}
+	key := rawKey{clientID: "sb-1", sentinel: "RAW-SENTINEL"}
+
+	late := clock.Now()
+	clock.Add(time.Millisecond)
+	if _, err := w.resolve(context.Background(), key, clock.Now()); !errors.Is(err, ErrDenied) {
+		t.Fatalf("first resolve: err = %v, want denied", err)
+	}
+	if _, err := w.resolve(context.Background(), key, late); !errors.Is(err, ErrDenied) {
+		t.Fatalf("late resolve: err = %v, want denied", err)
+	}
+	if got := resolver.askedCount(); got != 1 {
+		t.Fatalf("asked %d times, want once: the late resolve asked again", got)
+	}
+
+	clock.Add(time.Millisecond)
+	w.resolve(context.Background(), key, clock.Now())
+	if got := resolver.askedCount(); got != 2 {
+		t.Fatalf("asked %d times, want a denial from before the caller looked asked about again", got)
+	}
+}
+
+// A resolve waiting on one in flight takes its denial rather than asking
+// again.
+func TestRawResolveWaitingTakesTheDenialInFlight(t *testing.T) {
+	resolver := newRawResolver(map[string]RawResult{})
+	asking, release := make(chan struct{}), make(chan struct{})
+	deny := resolver.raw
+	var once sync.Once
+	resolver.raw = func(req RawRequest) (RawResult, error) {
+		once.Do(func() { close(asking); <-release })
+		return deny(req)
+	}
+	w := newRawWatch(resolver, time.Now)
+	w.sentinels = map[string][]string{"sb-1": {"RAW-SENTINEL"}}
+	key := rawKey{clientID: "sb-1", sentinel: "RAW-SENTINEL"}
+
+	since := time.Now()
+	first := make(chan error, 1)
+	go func() {
+		_, err := w.resolve(context.Background(), key, since)
+		first <- err
+	}()
+	<-asking
+	second := make(chan error, 1)
+	go func() {
+		_, err := w.resolve(context.Background(), key, since)
+		second <- err
+	}()
+	// The second resolve is waiting on the first's ask once it holds the
+	// in-flight channel; give it the chance to get there, which the result
+	// does not depend on.
+	time.Sleep(10 * time.Millisecond)
+	close(release)
+	for _, done := range []chan error{first, second} {
+		if err := <-done; !errors.Is(err, ErrDenied) {
+			t.Fatalf("err = %v, want denied", err)
+		}
+	}
+	if got := resolver.askedCount(); got != 1 {
+		t.Fatalf("asked %d times, want once", got)
+	}
+}
+
+// A resolve that looked while an ask was in flight does not take its denial:
+// the binding may have been granted since the question went out, so it asks
+// again.
+func TestRawResolveAsksAgainBehindADenialAskedBeforeItLooked(t *testing.T) {
+	clock := &testClock{now: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
+	resolver := newRawResolver(map[string]RawResult{})
+	asking, release := make(chan struct{}), make(chan struct{})
+	deny := resolver.raw
+	var once sync.Once
+	resolver.raw = func(req RawRequest) (RawResult, error) {
+		first := false
+		once.Do(func() { first = true; close(asking); <-release })
+		if first {
+			// Answered as the binding stood when it was asked about.
+			return RawResult{}, ErrDenied
+		}
+		return deny(req)
+	}
+	w := newRawWatch(resolver, clock.Now)
+	w.sentinels = map[string][]string{"sb-1": {"RAW-SENTINEL"}}
+	key := rawKey{clientID: "sb-1", sentinel: "RAW-SENTINEL"}
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := w.resolve(context.Background(), key, clock.Now())
+		first <- err
+	}()
+	<-asking
+	clock.Add(time.Millisecond)
+	resolver.set("RAW-SENTINEL", RawResult{Value: rawValue}, true)
+	second := make(chan error, 1)
+	go func() {
+		_, err := w.resolve(context.Background(), key, clock.Now())
+		second <- err
+	}()
+	close(release)
+	if err := <-first; !errors.Is(err, ErrDenied) {
+		t.Fatalf("the ask in flight: err = %v, want denied", err)
+	}
+	if err := <-second; err != nil {
+		t.Fatalf("the resolve that looked later: err = %v, want the value granted since", err)
+	}
+	if set := w.set("sb-1"); len(set.Find(rawValue)) != 1 {
+		t.Fatal("the value granted since is not watched for")
+	}
+}
