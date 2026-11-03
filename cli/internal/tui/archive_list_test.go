@@ -60,46 +60,53 @@ func listedState(m *Model, id string) (State, bool) {
 	return "", false
 }
 
-// landed hands the window a listing asked for at asked, without running what
-// it asks for next: a read owed behind it would otherwise land first and
-// answer for it.
-func landed(m *Model, asked time.Time, boxes []Sandbox) {
-	m.listPoll.since = asked
+// landed hands the window the listing out, without running what it asks for
+// next: a read owed behind it would otherwise land first and answer for it.
+// What it asks for next is still sent, as the window sends it.
+func landed(m *Model, boxes []Sandbox) {
 	m.Update(listLoadedMsg{listing: Listing{Sandboxes: boxes}})
 }
 
-// A listing asked for before the archive was answered still says the box is
+// A listing sent before the archive was answered still says the box is
 // running; it does not put the row back while the archive is out, nor once
-// the archive has been answered. The listing asked for after the answer is
-// the server's word, and settles it.
+// the archive has been answered. The listing sent after the answer is the
+// server's word, and settles it. Which is which is counted in reads sent, so
+// it holds on a clock that cannot tell the two moments apart.
 func TestAListingOlderThanTheArchiveDoesNotBringTheRowBack(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	m := archiveSent(t, ds, "sbx_one", "sbx_two")
-	before := time.Now()
 
-	landed(m, before, testSandboxes())
+	if !m.listPoll.start(m.now()) {
+		t.Fatal("a read was already out")
+	}
+	landed(m, testSandboxes())
 	if st, shown := listedState(m, "sbx_one"); st != StateArchived || shown {
 		t.Fatalf("while the archive is out a stale listing put the row back: state %q, shown %v", st, shown)
 	}
 
-	// Answered while a read asked before it is still out: that read, landing,
-	// still says running.
-	m.listPoll.since = before
+	// Answered while a read sent before it is still out: that read, landing,
+	// still says running. The answer's own read waits behind it.
+	if !m.listPoll.start(m.now()) {
+		t.Fatal("a read was already out")
+	}
 	m.Update(verbDoneMsg{verb: VerbArchive, ids: []string{"sbx_one"}, errs: []error{nil}})
-	landed(m, before, testSandboxes())
+	landed(m, testSandboxes())
 	if st, shown := listedState(m, "sbx_one"); st != StateArchived || shown {
-		t.Fatalf("a listing asked for before the answer put the row back: state %q, shown %v", st, shown)
+		t.Fatalf("a listing sent before the answer put the row back: state %q, shown %v", st, shown)
 	}
 	if got := m.list.current(); got == nil || got.ID != "sbx_two" {
 		t.Fatalf("the cursor is on %v, want it kept on sbx_two", got)
 	}
+	if m.listPoll.since.IsZero() {
+		t.Fatal("the answer's own read was not sent once the stale one landed")
+	}
 
-	// The read asked for after the answer has the server's word: archiving,
+	// The read sent after the answer has the server's word: archiving,
 	// which the window lists as archived.
 	after := testSandboxes()
 	after[0].State = StateArchived
-	landed(m, time.Now(), after)
+	landed(m, after)
 	if len(m.list.archiving) != 0 {
 		t.Errorf("archive marks = %v once a listing after the answer landed, want none", m.list.archiving)
 	}

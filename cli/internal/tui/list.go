@@ -58,10 +58,10 @@ type sandboxList struct {
 	// archiving is the discoboxes an archive was asked for here, listed as
 	// archived from the press on rather than once the server has answered and
 	// the list has been read again: the row leaves the list at once, as an
-	// archived box does (markArchiving). The time is when the archive was
-	// answered, zero while it is out. A listing asked for before then may
-	// still say the box is running, so the mark holds until one asked for
-	// after it lands (settleArchives). A failed archive drops it at once
+	// archived box does (markArchiving). A listing sent before the archive
+	// was answered may still say the box is running, so the mark holds until
+	// one sent after the answer lands (settleArchives); which is which is
+	// counted in listings sent, not timed. A failed archive drops it at once
 	// (unmarkArchiving).
 	archiving map[string]archiveMark
 
@@ -185,8 +185,11 @@ func (l *sandboxList) keepingCursor(change func()) {
 // archiveMark is one discobox's archive that is out or not yet settled
 // (sandboxList.archiving).
 type archiveMark struct {
-	// answered is when the archive was answered, zero while it is out.
-	answered time.Time
+	// answered is whether the archive has been answered, and after is how
+	// many listings had been sent by then (poll.sent): only a later one
+	// knows of it.
+	answered bool
+	after    uint64
 	// was is the state the latest listing gave the box, which is what a
 	// failed archive puts back.
 	was State
@@ -205,12 +208,13 @@ func (l *sandboxList) markArchiving(ids []string) {
 	l.setAll(l.all)
 }
 
-// answeredArchives records that the archives for ids were answered at, so
-// that the first listing asked for after it is the one that settles them.
-func (l *sandboxList) answeredArchives(ids []string, at time.Time) {
+// answeredArchives records that the archives for ids were answered once
+// after listings had been sent, so that the first listing sent after that
+// is the one that settles them.
+func (l *sandboxList) answeredArchives(ids []string, after uint64) {
 	for _, id := range ids {
 		if mark, ok := l.archiving[id]; ok {
-			mark.answered = at
+			mark.answered, mark.after = true, after
 			l.archiving[id] = mark
 		}
 	}
@@ -235,12 +239,12 @@ func (l *sandboxList) unmarkArchiving(ids []string) {
 	})
 }
 
-// settleArchives drops the marks of archives answered before a listing was
-// asked for: that listing has the server's word on them, and an answered
+// settleArchives drops the marks of archives answered before listing number
+// asked was sent: that listing has the server's word on them, and an answered
 // archive is listed as archiving, which the window lists as archived.
-func (l *sandboxList) settleArchives(asked time.Time) {
+func (l *sandboxList) settleArchives(asked uint64) {
 	for id, mark := range l.archiving {
-		if !mark.answered.IsZero() && !asked.Before(mark.answered) {
+		if mark.answered && asked > mark.after {
 			delete(l.archiving, id)
 		}
 	}
