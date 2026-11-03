@@ -485,7 +485,13 @@ func (r *sandboxCore) awaitSourcesMaterialized(ctx context.Context, dial Dialer,
 			slog.WarnContext(ctx, "read sandbox source states", "sandboxId", sandboxID, "error", err)
 		}
 		pending := 0
-		notReady = ""
+		if err == nil {
+			// Only a read the sandbox answered says why it cannot clone yet.
+			// One that failed — the create's deadline passing while it was in
+			// flight — leaves the last reason standing, or the wait would end
+			// on that deadline without it.
+			notReady = ""
+		}
 		for _, source := range sources {
 			state, ok := states[source.Slug]
 			if ok && state.State == sourceStateMaterialized {
