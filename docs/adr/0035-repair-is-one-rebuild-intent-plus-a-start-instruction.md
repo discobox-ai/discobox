@@ -4,7 +4,9 @@
 - **Amended by**: [0064](0064-repair-rebuilds-on-the-current-image.md) — §1's intent also
   re-pins the sandbox to its harness config's current image;
   [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) — the same intent gains an automatic author, recorded once when a
-  failed sandbox with no container is used
+  failed sandbox with no container is used;
+  [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) — a rebuild that leaves the sandbox owed its client's delivery
+  sends no start
 - **Date**: 2026-08-12
 
 ## Context

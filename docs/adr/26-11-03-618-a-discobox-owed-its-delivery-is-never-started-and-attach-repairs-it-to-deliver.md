@@ -1,16 +1,21 @@
 # 26-11-03-618 — A discobox owed its delivery is never started, and an attach repairs a failed one to deliver it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-03
+  Accepted by the owner by merging #466, 2026-11-03.
+- **§2 amended**: 2026-11-03, before anything shipped against it. A start or
+  restart is refused for a parked, owed discobox too, since an instruction
+  has no wait to hold it, and `discobox start` and the console's start
+  deliver in its place.
 - **Issue**: [#70](https://github.com/discobox-ai/discobox/issues/70)
-- **Would supersede**: [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)
+- **Supersedes**: [26-09-24-005](26-09-24-005-attaching-to-a-discobox-awaiting-its-source-delivers-it.md)
   §1's "parked in `awaiting_source`" and §2's "parked **and** has none" as
   the condition for delivering on attach. The condition becomes *owed*
   (§1 below), and a failed discobox that is owed its delivery is repaired
   first (§3). The rest of 26-09-24-005 stands: the attach delivers before it
   dials, only from the origin host, through `sandboxcreate.DeliverSource`, and
   §3's handling of overlapping deliveries is unchanged.
-- **Would amend**:
+- **Amends**:
   - [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md):
     repair is one rebuild intent plus a start instruction, **unless** the
     rebuild leaves the discobox owed its delivery. Then it sends no start (§2).
@@ -112,10 +117,19 @@ delivery.
   parked (failed, in practice) is refused before ensure-running or the
   instruction reaches the pool. The answer is a `409` saying the discobox
   is still owed its source, and that attaching from its origin host or
-  `discobox push` delivers it. An owed discobox that *is* parked is waited on
-  as today (`sandboxProvisioningPending`). It is refused rather than repaired
-  automatically, because a repair would only park it again. Nothing would
-  then deliver it, and the action's wait would run out.
+  `discobox push` delivers it. An *action* on an owed discobox that is
+  parked is waited on as today (`sandboxProvisioningPending`). A *start or
+  restart* instruction waits for nothing, so it is refused for an owed
+  discobox whether parked or not: "as today" sent the pool the start. A
+  failed one is refused rather than repaired automatically, because a repair
+  would only park it again. Nothing would then deliver it, and the action's
+  wait would run out.
+- **`discobox start` and the console's start deliver in its place.** On the
+  machine that can deliver an owed discobox (26-09-24-005 §2), a start is
+  the person asking for it to run, and its delivery is what runs it. So the
+  client delivers it, repairing a failed one first as §3 does, instead of
+  sending the start the server would refuse. Elsewhere the start is sent and
+  the `409` names the way out.
 - `CompleteSandboxSourcePush` keeps accepting a report only from a
   discobox that has never run. Once a repair has parked a failed discobox
   again, the report is accepted. A failed one has to be repaired first, and
