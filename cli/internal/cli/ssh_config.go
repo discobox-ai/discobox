@@ -602,6 +602,9 @@ type sandboxSSHRemote struct {
 	// workingRoot is the discobox's working root, by its platform: where a
 	// tool opens when folder is empty.
 	workingRoot string
+	// projectID is the discobox's project as the server resolved it, never
+	// the `default` alias the command may have been given.
+	projectID string
 }
 
 func (t sandboxSSHRemote) describe() string {
@@ -657,7 +660,7 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 	if err != nil {
 		return sandboxSSHRemote{}, err
 	}
-	return sandboxSSHRemote{host: host, folder: folder, workingRoot: sandboxPaths(sandbox).WorkingRoot()}, nil
+	return sandboxSSHRemote{host: host, folder: folder, workingRoot: sandboxPaths(sandbox).WorkingRoot(), projectID: resolvedProjectID}, nil
 }
 
 // sandboxSSHFolder is the directory in the sandbox an ssh-driven program is

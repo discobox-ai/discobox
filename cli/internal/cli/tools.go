@@ -35,9 +35,8 @@ only one when there is one, otherwise you are asked to pick.
 
 git runs inside the discobox and ssh opens a session to it. Every other tool is
 declared in a file, and "discobox tools ls" lists the ones a discobox offers.
-A tool runs either in the discobox or here, handed the discobox's ssh host,
-working tree or git URL. Tools are declared, the last one winning on a shared
-name, by:
+A tool runs either in the discobox or here, on this machine, handed the
+discobox. Tools are declared, the last one winning on a shared name, by:
 
   this CLI                            vscode, zed
   the discobox's image                /usr/local/share/discobox/tools
@@ -46,7 +45,78 @@ name, by:
 
 A declaration is a .yaml file naming the program it runs, or a script with a
 front-matter block that is itself what runs. Only this CLI and you can declare
-a tool that runs on this machine.`,
+a tool that runs on this machine.
+
+A script's front matter is a commented block between two "#---" lines:
+
+  #!/bin/sh
+  #---
+  # name: tuicr
+  # description: review the box's changes in tuicr
+  # runs: host      here, on this machine; the default, sandbox, copies the
+  #                 script into the discobox and runs it there
+  #---
+
+A key: line names one key that runs a tool from the console's tools picker.
+The console runs a host tool with no terminal and shows only whether it
+failed, so a key there suits a tool that opens a window of its own, such as an
+editor; a terminal program, like this one, is run with "discobox tools tuicr".
+
+The id is the file name without an ordering prefix or extension
+(50-tuicr.sh is tuicr). A .yaml tool states the same fields as YAML, plus
+program: and args:, whose {discobox.id}, {discobox.cli}, {discobox.server},
+{discobox.project}, {ssh.host}, {ssh.url}, {git.url}, {workdir} and
+{workdir.urlpath} are filled in.
+
+A script that runs here is handed the discobox in its environment:
+
+  DISCOBOX_ID        the discobox's ID
+  DISCOBOX_WORKDIR   its working tree, inside the discobox
+  DISCOBOX_SSH_HOST  an ssh_config host that reaches it
+  DISCOBOX_SSH_URL   ssh://host/workdir
+  DISCOBOX_GIT_URL   the same, for git; empty when it has no working tree
+  DISCOBOX_CLI       this discobox binary
+  DISCOBOX_SERVER    the server's address
+  DISCOBOX_PROJECT   the project's ID
+
+with DISCOBOX_IROH_RELAY_URLS set to what this CLI dials that server with,
+and no DISCOBOX_TOKEN: a CLI is authorized by its connection to the server. A
+.yaml tool has its placeholders instead and none of this environment, so an
+editor's terminals are not aimed at one discobox for good.
+
+DISCOBOX_CLI reads DISCOBOX_SERVER and DISCOBOX_PROJECT back, so whatever the
+script runs it with reaches the same discobox, and the script can set the
+discobox up from this machine before opening it, for example installing a
+program there and copying your own config in. Copy config, never a program,
+and never a credential: the discobox's agent reads whatever lands in it, so a
+token or key belongs in "discobox secret", not in a copied file. A program is
+wrong too: this machine may be macOS and the discobox Linux, on another
+architecture. Have the discobox download the program itself, into ~/.cache,
+which every discobox of yours in the pool shares, so the download happens
+once:
+
+  db() { "$DISCOBOX_CLI" "$@"; }
+  db shell "$DISCOBOX_ID" -- sh -s <<'IN_BOX'
+    c=$HOME/.cache/discobox-tools/tuicr/0.28.0
+    [ -x "$c/tuicr" ] || { mkdir -p "$c" && curl -fsSL \
+      "https://github.com/.../tuicr-0.28.0-$(uname -m)-unknown-linux-gnu.tar.gz" |
+      tar -xzf - -C "$c"; }
+    mkdir -p ~/.local/bin ~/.config && ln -sf "$c/tuicr" ~/.local/bin/tuicr
+    rm -rf ~/.config/tuicr
+  IN_BOX
+  db cp -r ~/.config/tuicr "$DISCOBOX_ID:.config/tuicr"
+  exec "$DISCOBOX_CLI" shell "$DISCOBOX_ID" -- tuicr "$@"
+
+A script that runs here must be executable (chmod +x); it is run by its
+shebang, and the arguments after DISCOBOX are its "$@". Everything after
+"shell DISCOBOX --" runs in the discobox, in the working tree, with
+~/.local/bin on its PATH, and with a terminal when this one is; a ~ or $HOME
+there is expanded here, by this script's shell, so quote it into an "sh -c"
+when it means the discobox's. Paths "discobox cp" is given in a discobox are
+relative to its user's home, and it copies the way scp does: into a directory
+that exists, so remove the old copy first. A program that asks before it
+installs has no terminal to ask on under "sh -s". Run "discobox tools ls" to
+see the new tool, and why it cannot run if it cannot.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {

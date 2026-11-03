@@ -52,3 +52,23 @@
   next steps put a sandbox directory into `git -C <dir>` unquoted. Quote it for
   the user's shell before adding another such command, and do not treat this
   section as covering them.
+- **A child process that names a server sets `DISCOBOX_TOKEN` outright.**
+  Start its environment from `App.childCLIEnv`, never bare `os.Environ()`, and
+  say which token it carries: the App's own for the ProxyCommand and harness
+  configure, none for a host tool, whose CLI is authorized by its transport.
+  An App aimed at a registered server carries no token (`forServer`), so an
+  inherited `DISCOBOX_TOKEN` was given for the primary, and beside a
+  `DISCOBOX_SERVER` naming another server it sends the primary's bearer token
+  there. The ProxyCommand had this right; the host script's environment, which
+  started handing `DISCOBOX_SERVER` (ADR 26-11-03-982), first did not.
+- **What the CLI reads back goes to a script, never to an editor.**
+  `DISCOBOX_SERVER` and `DISCOBOX_PROJECT` are `--server` and `--project` to
+  every `discobox` run with them, and a `.yaml` host tool is usually an editor
+  whose terminals inherit its environment for the life of the window, so
+  `Remote.Environ` is a script's alone (ADR 0125 §4); a `.yaml` tool takes the
+  values as placeholders in its own args.
+- **The console runs a host tool with no terminal.**
+  `apiDataSource.RunHostTool` gives it empty stdin and discards its output, so
+  anything that documents a host tool's console key (`tools --help`, a skill)
+  says it suits a tool that opens its own window; a terminal program runs
+  through `discobox tools <id>`.

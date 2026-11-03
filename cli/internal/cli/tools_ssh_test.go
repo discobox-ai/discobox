@@ -81,18 +81,19 @@ func TestSSHClientProxyCommandIsQuotedForWindows(t *testing.T) {
 	}
 }
 
-// TestSSHProxyEnvCarriesWhatTheAppDialsWith: the ProxyCommand's command line
+// TestChildCLIEnvCarriesWhatTheAppDialsWith: the ProxyCommand's command line
 // names only the server, so the token and iroh settings reach it through the
 // environment — and an App aimed at a registered server, which carries no
 // token, must not hand the proxy one this process inherited for the primary.
-func TestSSHProxyEnvCarriesWhatTheAppDialsWith(t *testing.T) {
+func TestChildCLIEnvCarriesWhatTheAppDialsWith(t *testing.T) {
 	t.Setenv("DISCOBOX_TOKEN", "primary-token")
 	primary := &App{serverURL: "http://primary", token: "primary-token", irohRelayURLs: "https://relay.example"}
-	if env := primary.sshProxyEnv(); !slices.Contains(env, "DISCOBOX_TOKEN=primary-token") ||
+	if env := primary.childCLIEnv(primary.token); !slices.Contains(env, "DISCOBOX_TOKEN=primary-token") ||
 		!slices.Contains(env, "DISCOBOX_IROH_RELAY_URLS=https://relay.example") {
 		t.Fatalf("env = %v, want the primary's token and relays", env)
 	}
-	env := primary.forServer("http://registered").sshProxyEnv()
+	registered := primary.forServer("http://registered")
+	env := registered.childCLIEnv(registered.token)
 	if last := lastEnv(env, "DISCOBOX_TOKEN"); last != "" {
 		t.Fatalf("DISCOBOX_TOKEN = %q for a registered server, want it cleared", last)
 	}
