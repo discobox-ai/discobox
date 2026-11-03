@@ -40,6 +40,7 @@ title itself is a name "discobox rm" takes, not this one. A bare :PATH means the
 only discobox there is, or a prompt to pick one when there is more than one. A discobox on another server is written by its address,
 DISCOBOX_ADDRESS:PATH — discobox://<server>/<discobox>, where <server> is what
 "discobox admin remote" prints in its ADDRESS column: a peer ID, or a host.
+discobox:///<discobox>, with no server, is that discobox on the primary server.
 The SERVER column "discobox ls" prints is the name this machine registered that
 server under, and names nothing anywhere else. Everything without a colon is a
 local path.
@@ -173,6 +174,10 @@ func (a *App) resolveCPTarget(cmd *cobra.Command, operands []cpOperand) (cpTarge
 		address, _, err := endpoint.ParseSandboxAddress(operand.reference)
 		if err != nil {
 			return cpTarget{}, err
+		}
+		if address.Local() {
+			// On the primary, as selectAddressedSandbox reads it.
+			address.Server = a.serverURL
 		}
 		if _, seen := servers[serverKey(address.Server)]; !seen {
 			servers[serverKey(address.Server)] = address.Server

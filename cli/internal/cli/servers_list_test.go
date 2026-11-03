@@ -310,6 +310,36 @@ func TestSelectSandboxFindsAnIDOnWhicheverServerHasIt(t *testing.T) {
 	}
 }
 
+// discobox:///<discobox> is the discobox on the command's primary, and only
+// there: an address, not a bare ID, so a registered server that has it is
+// never asked, and nothing is registered (ADR 26-11-03-113 §2).
+func TestSelectSandboxLocalAddressIsThePrimarys(t *testing.T) {
+	useTempServersFile(t)
+	primary := fakeServer(t, "alpha", sandboxA)
+	other := fakeServer(t, "beta", sandboxB)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+	cmd, stderr := commandForTest()
+
+	target, projectID, sandboxID, _, err := app.selectSandbox(cmd, "discobox:///"+sandboxA)
+	if err != nil {
+		t.Fatalf("selectSandbox(discobox:///%s) error = %v", sandboxA, err)
+	}
+	if target != app || projectID != "project-1" || sandboxID != sandboxA {
+		t.Fatalf("selectSandbox(discobox:///%s) = %s %s %s, want the primary's", sandboxA, target.serverURL, projectID, sandboxID)
+	}
+
+	if _, _, _, _, err := app.selectSandbox(cmd, "discobox:///"+sandboxB); err == nil {
+		t.Fatalf("selectSandbox(discobox:///%s) found beta's discobox, want it looked for on the primary alone", sandboxB)
+	}
+	if reg, _ := loadServerRegistry(); len(reg.Servers) != 1 {
+		t.Fatalf("registry = %+v, want only beta", reg.Servers)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want nothing registered and nothing said", stderr.String())
+	}
+}
+
 // A discobox's address names its server, and reaching the discobox there
 // registers the server under the name it offers (ADR 0116 §6).
 func TestSelectSandboxAddressRegistersItsServer(t *testing.T) {
@@ -1523,6 +1553,35 @@ func TestCPRoutesAnAddress(t *testing.T) {
 	}
 }
 
+// cp reads discobox:///<discobox> on the primary, as every other command
+// does, and a copy pairing it with an address on another server is refused as
+// two servers (ADR 26-11-03-113 §2).
+func TestCPRoutesALocalAddressToThePrimary(t *testing.T) {
+	useTempServersFile(t)
+	primary := fakeServer(t, "alpha", sandboxA)
+	remote := fakeServer(t, "beta", sandboxB)
+	address := "discobox:///" + sandboxA
+
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+	cmd, _ := commandForTest()
+	operands := parseCPOperands([]string{address + ":/tmp/x", "."})
+	if !operands[0].remote || operands[0].reference != address || operands[0].path != "/tmp/x" {
+		t.Fatalf("operand = %+v, want the address and the path after it", operands[0])
+	}
+	target, err := app.resolveCPTarget(cmd, operands)
+	if err != nil {
+		t.Fatalf("resolveCPTarget() error = %v", err)
+	}
+	if target.app != app || target.resolved[address] != sandboxA {
+		t.Fatalf("the copy runs against %s with %v, want the primary's discobox", target.app.serverURL, target.resolved)
+	}
+
+	other := "discobox+http://" + strings.TrimPrefix(remote.URL, "http://") + "/" + sandboxB
+	if _, err := app.resolveCPTarget(cmd, parseCPOperands([]string{address + ":/tmp/x", other + ":/tmp/y"})); err == nil || !strings.Contains(err.Error(), "one copy reaches one server") {
+		t.Fatalf("resolveCPTarget() error = %v, want the primary and beta refused as two servers", err)
+	}
+}
+
 // One scp is pointed at one server, so a copy naming two servers is refused
 // rather than half made.
 func TestCPRefusesTwoServersInOneCopy(t *testing.T) {
@@ -1724,3 +1783,4 @@ func TestSelectSandboxRefusesAnIDShapedNameWhileAServerIsSilent(t *testing.T) {
 		t.Fatalf("selectSandbox(calm-heron) = %q, %v", id, err)
 	}
 }
+

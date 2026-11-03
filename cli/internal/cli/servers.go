@@ -770,6 +770,13 @@ func (e listedOnNoServer) Error() string {
 // it (ADR 0116 §6) — so a mistyped address leaves nothing behind.
 func (a *App) selectAddressedSandbox(cmd *cobra.Command, address endpoint.SandboxAddress) (*App, string, string, *apiclientgen.Client, error) {
 	ctx := cmd.Context()
+	if address.Local() {
+		// discobox:///<discobox> is the reader's server, which for a command is
+		// its primary: that one server, and no search of the others, which is
+		// what makes it an address rather than a bare ID (ADR 26-11-03-113 §2).
+		// The primary is never registered by being reached.
+		address.Server = a.serverURL
+	}
 	set, err := a.servers()
 	if err != nil {
 		return nil, "", "", nil, err

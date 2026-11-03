@@ -43,6 +43,7 @@ A server's address is one of:
 
 A discobox's address is its server's with the discobox after it,
 discobox://<server>/<discobox>. Attaching to one registers the server it names.
+discobox:///<discobox>, with no server, is a discobox on the primary server.
 
 With no subcommand, this lists the servers.`,
 		Example: `  discobox admin remote

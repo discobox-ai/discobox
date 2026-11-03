@@ -30,7 +30,9 @@ var errPickCanceled = errors.New("canceled")
 // Sandbox Interactively").
 //
 // A discobox's address — discobox://<server>/<discobox> — names both, and a
-// server first reached through one is registered (ADR 0116 §6). Any other
+// server first reached through one is registered (ADR 0116 §6);
+// discobox:///<discobox> names the discobox on the primary alone
+// (ADR 26-11-03-113 §2). Any other
 // argument is the NAME `discobox ls` prints, an ID or a short ID, by the root
 // commands' rule (resolveListedSandbox), looked for on the primary and then on
 // the registered servers, so a name or an ID copied from `discobox ls` works
