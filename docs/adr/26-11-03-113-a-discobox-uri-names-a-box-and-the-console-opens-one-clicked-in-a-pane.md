@@ -1,7 +1,10 @@
 # 26-11-03-113 — A `discobox://` URI names a box, `discobox:///<box>` names it on the reader's server, and the console opens one clicked in a pane
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-03
+
+  Accepted by the owner by merging #500, 2026-11-03.
+
 - **Extends**: [0116](0116-a-discobox-address-names-a-server-and-a-discobox.md)
   §1, whose address gains an empty-authority form; the rest of 0116, and its
   `<server>` table, stand.

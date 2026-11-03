@@ -6,6 +6,7 @@
 - **§4's "the primary not answering fails the command" superseded for the launcher by**: [0122](0122-a-window-that-polls-lists-the-servers-that-answer.md) — a window that polls lists the servers that answered, the primary included. It stands for `discobox ls` and the picker, and the rest of §4 stands everywhere.
 - **§4's "the launcher's credential inbox, and its harness and secret screens, are the primary's" superseded by**: [0131](0131-the-launcher-answers-every-servers-credential-requests-and-names-the-server-its-config-screens-edit.md) — the inbox is every server's, and the harness and secret screens are the header's server's.
 - **§3's "the primary is `--server`, `DISCOBOX_SERVER`, or the local default" superseded by**: [0135](0135-the-primary-server-is-recorded-by-admin-remote-primary.md) — `discobox admin remote primary` records a registered server as the primary those fall back to. The rest of §3 stands.
+- **§1's address extended by**: [26-11-03-113](26-11-03-113-a-discobox-uri-names-a-box-and-the-console-opens-one-clicked-in-a-pane.md) — `discobox:///<discobox>`, with an empty authority, names the discobox on the reader's server. The rest of §1 stands.
 - **Date**: 2026-09-11
 
 ## Context
