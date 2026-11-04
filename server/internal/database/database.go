@@ -124,10 +124,14 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := prepareSecretRequestParts(write); err != nil {
 		return err
 	}
+	if err := addSandboxParents(write); err != nil {
+		return err
+	}
 	backfillPoolKinds := addsImageKindColumn(write, &model.Pool{})
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
+
 	// The engine's dirty set, which a binding written with an expiry marks in
 	// its own transaction (store.recordBindingEventTx).
 	if err := reconcile.Migrate(write); err != nil {

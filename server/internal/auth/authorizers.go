@@ -77,7 +77,7 @@ func (a ProjectAuthorizer) Authorize(r *http.Request) (bool, error) {
 // nothing else, for a sandbox that may call the discobox API at all
 // (Sandbox.DiscoboxAPI, ADR 26-10-27-880 §9). It is decided by the route, and
 // for some routes by what the route names: a discobox, only one the caller
-// created, and a secret request, only when a discobox the caller created filed
+// created, and a secret request, only when a discobox the caller leads filed
 // it (ADR 26-09-30-782 §2).
 //
 // It answers every request a sandbox principal makes, refusing what the role
@@ -113,14 +113,16 @@ type named int
 const (
 	// The zero value asks nothing of what a route names.
 	_ named = iota
-	// createdDiscobox: the path names a discobox the caller created
+	// childDiscobox: the path names a discobox the caller leads
 	// (ADR 26-10-27-880 §9).
-	createdDiscobox
+	childDiscobox
 	// ownedRequest: the path names a secret request filed by a discobox the
 	// caller created — the request's owner (ADR 26-09-30-782 §2).
 	ownedRequest
-	// withinCaller: the path names a discobox the caller created, as
-	// createdDiscobox does, that reaches nothing the caller cannot
+	// ownAdoption is a request filed by the caller itself.
+	ownAdoption
+	// withinCaller: the path names a discobox the caller leads, as
+	// childDiscobox does, that reaches nothing the caller cannot
 	// (ADR 26-10-01-032 §4). It marks every route that writes to a discobox or
 	// sends into it — typing into its terminals, HTTP to its ports, powering
 	// it, running its services, writing its meta, delivering its source —
@@ -128,7 +130,7 @@ const (
 	// wider one; and archiving it, which sends nothing in but is a write, held
 	// to the caller's reach as every other write is (ADR 26-11-03-724 §1). A
 	// read brings data to the caller, never out of it, and stays
-	// createdDiscobox.
+	// childDiscobox.
 	withinCaller
 )
 
@@ -146,7 +148,7 @@ var sandboxRole = []sandboxRoleRoute{
 	// an event carries nothing the listing does not, and a box narrows the
 	// stream to the boxes it watches itself (ADR 26-11-01-560 §1).
 	{method: http.MethodGet, path: "events"},
-	{method: http.MethodGet, path: "sandboxes/*", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*", names: childDiscobox},
 	// Delivering a source into a discobox: the push into its origin, and the
 	// report that ends its wait (ADR 26-09-24-630 §2). Fetching from an origin
 	// is not delivery, and is not here.
@@ -161,12 +163,12 @@ var sandboxRole = []sandboxRoleRoute{
 	// Reading and typing into a discobox's terminals (ADR 26-10-01-397 §1),
 	// and reading one's record, transcript, and events. Attaching, and creating, starting or
 	// ending an exec, are not here (ADR 26-10-01-397 §2).
-	{method: http.MethodGet, path: "sandboxes/*/execs", names: createdDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*", names: createdDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/logs", names: createdDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/events", names: createdDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/screen", names: createdDiscobox},
-	{method: http.MethodPost, path: "sandboxes/*/execs/*/wait", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*/logs", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*/events", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*/screen", names: childDiscobox},
+	{method: http.MethodPost, path: "sandboxes/*/execs/*/wait", names: childDiscobox},
 	{method: http.MethodPost, path: "sandboxes/*/execs/*/input", names: withinCaller},
 	// Starting, stopping, and restarting a discobox (ADR 26-10-02-478 §1), and
 	// repairing or upgrading it onto the image its harness config resolves to.
@@ -188,9 +190,9 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPatch, path: "sandboxes/*", names: withinCaller},
 	// A discobox's services: reading them and their logs, and starting,
 	// stopping, and restarting the commands it declares.
-	{method: http.MethodGet, path: "sandboxes/*/services", names: createdDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/services/*", names: createdDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/services/*/logs", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/services", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/services/*", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/services/*/logs", names: childDiscobox},
 	{method: http.MethodPost, path: "sandboxes/*/services/*/start", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/services/*/stop", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/services/*/restart", names: withinCaller},
@@ -202,7 +204,7 @@ var sandboxRole = []sandboxRoleRoute{
 	// what it may hand on and see nothing else of the project's credentials.
 	// It carries names and bindings, never a value.
 	{method: http.MethodGet, path: "secrets"},
-	// The requests of the discoboxes it created, and no others (ADR
+	// The requests of the discoboxes it leads, and no others (ADR
 	// 26-09-30-782 §2). The listing is filtered to them where it is served,
 	// since a route cannot filter what it answers with.
 	{method: http.MethodGet, path: "secret-requests"},
@@ -213,6 +215,10 @@ var sandboxRole = []sandboxRoleRoute{
 	// copies into each create as a person's client does (ADR 26-10-14-894
 	// §1). Adding and removing them are a member's.
 	{method: http.MethodGet, path: "skills-sources"},
+	{method: http.MethodPost, path: "adoption-requests"},
+	{method: http.MethodGet, path: "adoption-requests"},
+	{method: http.MethodGet, path: "adoption-requests/*", names: ownAdoption},
+	{method: http.MethodPost, path: "sandboxes/*/release", names: childDiscobox},
 }
 
 func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
@@ -245,10 +251,19 @@ func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 		}
 		segment := strings.Split(rest, "/")[1:]
 		switch route.names {
-		case createdDiscobox:
-			return a.authorizeCreatedDiscobox(r, principal, segment[0])
+		case childDiscobox:
+			return a.authorizeChildDiscobox(r, principal, segment[0])
 		case withinCaller:
 			return a.authorizeWithinCaller(r, principal, segment[0])
+		case ownAdoption:
+			req, err := a.Store.GetAdoptionRequest(r.Context(), principal.ProjectID, segment[0])
+			if err != nil {
+				return false, err
+			}
+			if req.RequesterSandboxID != principal.SandboxID {
+				return false, denied
+			}
+			return true, nil
 		case ownedRequest:
 			return a.authorizeOwnedRequest(r, principal, segment[0])
 		}
@@ -275,9 +290,9 @@ func (a SandboxRoleAuthorizer) authorizeDiscoboxAPI(r *http.Request, principal P
 	return true, nil
 }
 
-// authorizeCreatedDiscobox allows a route on a discobox the caller created
+// authorizeChildDiscobox allows a route on a discobox the caller leads
 // (ADR 26-10-27-880 §9), and no other.
-func (a SandboxRoleAuthorizer) authorizeCreatedDiscobox(r *http.Request, principal Principal, sandboxID string) (bool, error) {
+func (a SandboxRoleAuthorizer) authorizeChildDiscobox(r *http.Request, principal Principal, sandboxID string) (bool, error) {
 	target, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, sandboxID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -285,20 +300,20 @@ func (a SandboxRoleAuthorizer) authorizeCreatedDiscobox(r *http.Request, princip
 		}
 		return false, authorizationError{status: http.StatusInternalServerError, err: err}
 	}
-	if target.CreatedBySandboxID == nil || *target.CreatedBySandboxID != principal.SandboxID {
-		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a discobox acts only on the discoboxes it created")}
+	if target.ParentSandboxID == nil || *target.ParentSandboxID != principal.SandboxID {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a discobox acts only on the discoboxes it leads")}
 	}
 	return true, nil
 }
 
-// authorizeWithinCaller allows a route on a discobox the caller created, as
-// authorizeCreatedDiscobox does, only when the target's effective egress policy
+// authorizeWithinCaller allows a route on a discobox the caller leads, as
+// authorizeChildDiscobox does, only when the target's effective egress policy
 // is covered by the caller's (ADR 26-10-01-032 §4): an unrestricted caller
 // acts on any, and a restricted one only on discoboxes restricted at least as
 // tightly. The policies are read as they stand, so a level loosened on the
 // target after this call is the person's who loosened it.
 func (a SandboxRoleAuthorizer) authorizeWithinCaller(r *http.Request, principal Principal, sandboxID string) (bool, error) {
-	if ok, err := a.authorizeCreatedDiscobox(r, principal, sandboxID); !ok || err != nil {
+	if ok, err := a.authorizeChildDiscobox(r, principal, sandboxID); !ok || err != nil {
 		return ok, err
 	}
 	caller, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, principal.SandboxID)
@@ -328,11 +343,11 @@ func (a SandboxRoleAuthorizer) authorizeWithinCaller(r *http.Request, principal 
 }
 
 // authorizeOwnedRequest allows a route on a secret request only when a
-// discobox the calling sandbox created filed it. A request a person or a pool
+// discobox the calling sandbox leads filed it. A request a person or a pool
 // opened has no discobox, and one whose discobox is gone has no owner left:
 // both are a person's to answer.
 func (a SandboxRoleAuthorizer) authorizeOwnedRequest(r *http.Request, principal Principal, requestID string) (bool, error) {
-	notYours := authorizationError{status: http.StatusForbidden, err: errors.New("a discobox answers only the requests of discoboxes it created")}
+	notYours := authorizationError{status: http.StatusForbidden, err: errors.New("a discobox answers only the requests of discoboxes it leads")}
 	req, err := a.Store.GetSecretRequest(r.Context(), principal.ProjectID, requestID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -350,7 +365,7 @@ func (a SandboxRoleAuthorizer) authorizeOwnedRequest(r *http.Request, principal 
 		}
 		return false, authorizationError{status: http.StatusInternalServerError, err: err}
 	}
-	if requester.CreatedBySandboxID == nil || *requester.CreatedBySandboxID != principal.SandboxID {
+	if requester.ParentSandboxID == nil || *requester.ParentSandboxID != principal.SandboxID {
 		return false, notYours
 	}
 	return true, nil

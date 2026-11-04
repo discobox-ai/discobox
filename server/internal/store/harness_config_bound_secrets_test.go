@@ -86,7 +86,7 @@ func TestEveryHarnessConfigReadCountsItsBindings(t *testing.T) {
 	}
 	check("GetHarnessConfigBySlug", got)
 
-	sandboxes, err := s.ListSandboxes(ctx, "project-1", "", nil)
+	sandboxes, err := s.ListSandboxes(ctx, "project-1", "", nil, "")
 	if err != nil || len(sandboxes) != 1 {
 		t.Fatalf("list sandboxes = %d, %v", len(sandboxes), err)
 	}

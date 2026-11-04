@@ -403,7 +403,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	lifetimeFlag := lifetime.NewFlag()
 	cmd := &cobra.Command{Use: "approve REQUEST_ID", Short: "Answer a secret request, binding the secret to the discobox that asked", Long: `Answer a secret request: each part approved binds the secret to the discobox
 that asked. A request has a use part — the secret in the variable it asked for
-— a delegate part — the secret given on to the discoboxes it creates — or both
+— a delegate part — the secret given on to the discoboxes it leads — or both
 (ADR 26-11-02-022).
 
 An answer decides every part the request has. A request with one part is

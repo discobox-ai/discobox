@@ -163,7 +163,7 @@ to call the API (`discoboxApi`). Without that, every run fails saying so,
 and only a person can allow it.
 
 ```bash
-discobox-monitor enable discobox-box --name workers -o created-by=me      # every box you start
+discobox-monitor enable discobox-box --name workers -o created-by=me      # every box you lead
 discobox-monitor enable discobox-box --name workers -o tag=issue           # every box tagged issue
 discobox-monitor enable discobox-box --name workers -o 'tag=role=worker lead=me'  # every selector matches
 discobox-monitor enable discobox-box --name w -o id=sbx_abc,sbx_def -o watch=terminal,requests
@@ -171,7 +171,7 @@ discobox-monitor enable discobox-box --name w -o id=sbx_abc,sbx_def -o watch=ter
 
 - `id` names boxes (comma-separated). `tag` selects them: `key` or
   `key=value`, separated by spaces, all of which must match. `created-by`
-  selects the boxes `me` (this box) or another box's ID created. `tag` and
+  selects the boxes led by `me` (this box) or another box's ID, using their parent. `tag` and
   `created-by` also take boxes created later, and both must match when you
   give both.
 - `watch` picks kinds: `state`, `terminal`, `requests`. All three when
@@ -187,7 +187,7 @@ discobox-monitor enable discobox-box --name w -o id=sbx_abc,sbx_def -o watch=ter
     what its screen says.
   - **`box.request` / `box.request.answered`:** a secret request from it
     pending, and then approved or denied. You see requests only from the
-    boxes this box created.
+    boxes this box leads.
 - A box is called by the name it was created with, not its window title.
 - An instance that names only ids ends itself once every one is gone.
 
@@ -346,3 +346,7 @@ then prints what really happened in that window:
 ```bash
 discobox-monitor test github-repo -o repo=foo/bar --since 2h --for 10s
 ```
+
+A parent change is news: a child adopted into the selection emits `box.adopted`
+(newly watched); a release or adoption away emits `box.gone` once. The
+`created-by` option keeps its name, and reads the current parent.

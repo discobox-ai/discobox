@@ -10,7 +10,7 @@ import (
 // nestSession is a window on this machine, in /src/app.
 var nestSession = Session{HostID: "host_here", OriginKey: "here:/src/app", HostKey: "here"}
 
-// nestBoxes is a lead a person created here, two discoboxes it created — one
+// nestBoxes is a lead a person created here, two discoboxes it leads — one
 // of which created one of its own — and an unrelated one. Each created one
 // records what a create from inside a discobox records: that discobox as the
 // machine, and a path inside it.

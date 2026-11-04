@@ -22,6 +22,13 @@ func (UnimplementedHandler) AcknowledgeSandboxHarnessConfig(ctx context.Context,
 	return r, ht.ErrNotImplemented
 }
 
+// ApproveAdoptionRequest implements approve-adoption-request operation.
+//
+// POST /projects/{projectId}/adoption-requests/{requestId}/approve
+func (UnimplementedHandler) ApproveAdoptionRequest(ctx context.Context, params ApproveAdoptionRequestParams) (r ApproveAdoptionRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ApproveSecretRequest implements approve-secret-request operation.
 //
 // Approve a secret request.
@@ -139,6 +146,13 @@ func (UnimplementedHandler) ConfirmSandboxAutostop(ctx context.Context, req *San
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
 func (UnimplementedHandler) CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (r CopySandboxFileRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CreateAdoptionRequest implements create-adoption-request operation.
+//
+// POST /projects/{projectId}/adoption-requests
+func (UnimplementedHandler) CreateAdoptionRequest(ctx context.Context, req *CreateAdoptionRequestBody, params CreateAdoptionRequestParams) (r CreateAdoptionRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -378,6 +392,13 @@ func (UnimplementedHandler) DeleteSecretBinding(ctx context.Context, params Dele
 	return r, ht.ErrNotImplemented
 }
 
+// DenyAdoptionRequest implements deny-adoption-request operation.
+//
+// POST /projects/{projectId}/adoption-requests/{requestId}/deny
+func (UnimplementedHandler) DenyAdoptionRequest(ctx context.Context, params DenyAdoptionRequestParams) (r DenyAdoptionRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DenySecretRequest implements deny-secret-request operation.
 //
 // Deny a secret request.
@@ -420,6 +441,13 @@ func (UnimplementedHandler) DismissSecretRefreshRequest(ctx context.Context, par
 //
 // POST /projects/{projectId}/jobs/{jobId}/force
 func (UnimplementedHandler) ForceJob(ctx context.Context, params ForceJobParams) (r ForceJobRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetAdoptionRequest implements get-adoption-request operation.
+//
+// GET /projects/{projectId}/adoption-requests/{requestId}
+func (UnimplementedHandler) GetAdoptionRequest(ctx context.Context, params GetAdoptionRequestParams) (r GetAdoptionRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -702,6 +730,13 @@ func (UnimplementedHandler) GetServerPeer(ctx context.Context) (r GetServerPeerR
 //
 // GET /projects/{projectId}/trust-requests/{requestId}
 func (UnimplementedHandler) GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (r GetTrustRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListAdoptionRequests implements list-adoption-requests operation.
+//
+// GET /projects/{projectId}/adoption-requests
+func (UnimplementedHandler) ListAdoptionRequests(ctx context.Context, params ListAdoptionRequestsParams) (r ListAdoptionRequestsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1199,6 +1234,13 @@ func (UnimplementedHandler) RefreshHarnessConfigImage(ctx context.Context, param
 //
 // POST /projects/{projectId}/secrets/{secretId}/refresh
 func (UnimplementedHandler) RefreshSecret(ctx context.Context, req *RefreshSecretBody, params RefreshSecretParams) (r RefreshSecretRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ReleaseSandbox implements release-sandbox operation.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/release
+func (UnimplementedHandler) ReleaseSandbox(ctx context.Context, params ReleaseSandboxParams) (r ReleaseSandboxRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

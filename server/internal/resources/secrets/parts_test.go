@@ -448,7 +448,7 @@ func handOnTo(t *testing.T, st *store.Store, secretID, parentID string) *model.S
 	t.Helper()
 	ctx := context.Background()
 	creator := testSandboxID
-	worker := &model.Sandbox{ID: "sbx-worker-" + parentID, ProjectID: "project-1", Name: "worker-" + parentID, PoolID: testPoolID, CreatedBySandboxID: &creator}
+	worker := &model.Sandbox{ID: "sbx-worker-" + parentID, ProjectID: "project-1", Name: "worker-" + parentID, PoolID: testPoolID, CreatedBySandboxID: &creator, ParentSandboxID: &creator}
 	if err := st.CreateSandbox(ctx, worker); err != nil {
 		t.Fatalf("create worker: %v", err)
 	}

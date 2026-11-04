@@ -418,7 +418,7 @@ type BoxSettings struct {
 	// decided from.
 	Egress Egress
 	// DiscoboxAPI is whether it may call the discobox API through its pool,
-	// acting only on the discoboxes it created.
+	// acting only on the discoboxes it leads.
 	DiscoboxAPI bool
 }
 
@@ -1483,7 +1483,14 @@ type CredentialRequest struct {
 	// rather than for a credential (ADR 0149). Host is then the endpoint,
 	// Justification is why the agent says it needs it, and Name and EnvVar
 	// are empty: the answer is not a secret but which certificate to pin.
-	Trust *TrustAsk
+	Adoption *AdoptionAsk
+	Trust    *TrustAsk
+}
+
+// AdoptionAsk names the child, its current lead, and the authority requested.
+type AdoptionAsk struct {
+	ChildID, ChildName, RequesterID, RequesterName, CurrentParentID string
+	ReadOnly                                                        bool
 }
 
 // RequestPart is one part of a request: where it asks for the credential to
@@ -1653,7 +1660,7 @@ type NewBinding struct {
 	TargetKind string
 	TargetID   string
 	// Use delivers it in EnvVar; Delegate lets a discobox the binding covers
-	// give it to the discoboxes it creates. At least one.
+	// give it to the discoboxes it leads. At least one.
 	Use      bool
 	Delegate bool
 	EnvVar   string
@@ -2491,6 +2498,7 @@ type DataSource interface {
 
 	// ApproveTrustRequest answers a trust request yes, pinning the chosen
 	// certificate for the asking discobox alone (ADR 0149).
+	DecideAdoptionRequest(ctx context.Context, server, requestID string, approve bool) error
 	ApproveTrustRequest(ctx context.Context, server string, approval TrustApproval) error
 
 	// DenyTrustRequest answers a trust request no.

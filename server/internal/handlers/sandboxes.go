@@ -17,7 +17,7 @@ func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandbo
 	if err != nil {
 		return apiError(apperrors.NewStatusError(http.StatusBadRequest, err.Error())), nil
 	}
-	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), originKeys(params.OriginKey), selectors)
+	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), originKeys(params.OriginKey), selectors, params.Parent.Or(""))
 	if err != nil {
 		return apiError(err), nil
 	}

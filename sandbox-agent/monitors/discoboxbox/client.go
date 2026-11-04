@@ -34,8 +34,8 @@ type boxEvent struct {
 		State string `json:"state"`
 		Kind  string `json:"kind"`
 	} `json:"program"`
-	Tags               map[string]string `json:"tags"`
-	CreatedBySandboxID string            `json:"createdBySandboxId"`
+	Tags            map[string]string `json:"tags"`
+	ParentSandboxID string            `json:"parentSandboxId"`
 }
 
 // The stream's event types.

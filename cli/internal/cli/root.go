@@ -250,6 +250,8 @@ See "%[1]s run --help" for everything run takes.`, name),
 	cmd.AddCommand(inGroup("automation", app.newCaptureCommand()))
 	cmd.AddCommand(inGroup("automation", app.newWaitCommand()))
 	cmd.AddCommand(inGroup("automation", app.newEventsCommand()))
+	cmd.AddCommand(inGroup("automation", app.newAdoptCommand()))
+	cmd.AddCommand(inGroup("automation", app.newReleaseCommand()))
 	cmd.AddCommand(inGroup("interface", app.newConsoleCommand()))
 	cmd.AddCommand(inGroup("files", app.newCPCommand()))
 	cmd.AddCommand(inGroup("files", app.newPushCommand()))

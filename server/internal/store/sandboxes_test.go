@@ -89,7 +89,7 @@ func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 	newSandbox("sandbox-2", "/src/beta")
 	newSandbox("sandbox-3", "")
 
-	matching, err := s.ListSandboxes(ctx, "project-1", "/src/alpha", nil)
+	matching, err := s.ListSandboxes(ctx, "project-1", "/src/alpha", nil, "")
 	if err != nil {
 		t.Fatalf("list sandboxes by source root: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 		t.Fatalf("sandboxes for /src/alpha = %v, want only sandbox-1", sandboxIDs(matching))
 	}
 
-	all, err := s.ListSandboxes(ctx, "project-1", "", nil)
+	all, err := s.ListSandboxes(ctx, "project-1", "", nil, "")
 	if err != nil {
 		t.Fatalf("list all sandboxes: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestListSandboxesFiltersByOriginKeys(t *testing.T) {
 
 	listed := func(keys ...string) map[string]bool {
 		t.Helper()
-		sandboxes, err := s.ListSandboxes(ctx, "project-1", "", keys)
+		sandboxes, err := s.ListSandboxes(ctx, "project-1", "", keys, "")
 		if err != nil {
 			t.Fatalf("list sandboxes by origin keys %v: %v", keys, err)
 		}

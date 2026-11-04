@@ -5,6 +5,10 @@ type AcknowledgeSandboxHarnessConfigRes interface {
 	acknowledgeSandboxHarnessConfigRes()
 }
 
+type ApproveAdoptionRequestRes interface {
+	approveAdoptionRequestRes()
+}
+
 type ApproveSecretRequestRes interface {
 	approveSecretRequestRes()
 }
@@ -47,6 +51,10 @@ type ConfirmSandboxAutostopRes interface {
 
 type CopySandboxFileRes interface {
 	copySandboxFileRes()
+}
+
+type CreateAdoptionRequestRes interface {
+	createAdoptionRequestRes()
 }
 
 type CreateHarnessConfigRes interface {
@@ -153,6 +161,10 @@ type DeleteSecretRes interface {
 	deleteSecretRes()
 }
 
+type DenyAdoptionRequestRes interface {
+	denyAdoptionRequestRes()
+}
+
 type DenySecretRequestRes interface {
 	denySecretRequestRes()
 }
@@ -171,6 +183,10 @@ type DismissSecretRefreshRequestRes interface {
 
 type ForceJobRes interface {
 	forceJobRes()
+}
+
+type GetAdoptionRequestRes interface {
+	getAdoptionRequestRes()
 }
 
 type GetHTTPAuditRes interface {
@@ -287,6 +303,10 @@ type GetServerPeerRes interface {
 
 type GetTrustRequestRes interface {
 	getTrustRequestRes()
+}
+
+type ListAdoptionRequestsRes interface {
+	listAdoptionRequestsRes()
 }
 
 type ListApprovalRequestsRes interface {
@@ -491,6 +511,10 @@ type RefreshHarnessConfigImageRes interface {
 
 type RefreshSecretRes interface {
 	refreshSecretRes()
+}
+
+type ReleaseSandboxRes interface {
+	releaseSandboxRes()
 }
 
 type RemoveSandboxFileRes interface {

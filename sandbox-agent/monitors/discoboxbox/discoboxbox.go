@@ -323,7 +323,7 @@ func (f *follower) observe(typ string, data boxEvent) error {
 		Name:      data.name(),
 		State:     data.DisplayState,
 		Tags:      maps.Clone(data.Tags),
-		CreatedBy: data.CreatedBySandboxID,
+		CreatedBy: data.ParentSandboxID,
 	}
 	if data.Program != nil && cur.State == "running" {
 		cur.Program, cur.Kind = data.Program.State, data.Program.Kind
@@ -337,6 +337,17 @@ func (f *follower) observe(typ string, data boxEvent) error {
 		cur.New, cur.Watched = prev.New, prev.Watched
 	}
 	f.st.Boxes[id] = cur
+	if prev != nil && prev.CreatedBy != cur.CreatedBy && f.cfg.CreatedBy != "" {
+		if prev.Watched && !f.cfg.selects(id, cur) {
+			cur.Watched = false
+			return f.emit(monitors.Event{Kind: "box.gone", Key: "box-" + id + "-state", Title: cur.Name + " is no longer led by " + f.cfg.CreatedBy, Summary: "parent changed"})
+		}
+		if !prev.Watched && f.cfg.selects(id, cur) {
+			cur.Watched = true
+			cur.New = false
+			return f.emit(monitors.Event{Kind: "box.adopted", Key: "box-" + id + "-state", Title: cur.Name + " is newly watched", Summary: "parent changed"})
+		}
+	}
 	if prev == nil || !prev.Watched {
 		return f.reselect(id)
 	}

@@ -533,7 +533,7 @@ turn it on — ask the user in chat (ADR 26-10-27-880 §9).
 
 With it, you may create discoboxes with `discobox run`, cut from the SOURCE
 you give it — `.` for this box's own checkout; list and read them (`admin box
-ls`, `admin box get`). On the discoboxes **you created**, and no others, you
+ls`, `admin box get`). On the discoboxes **you lead** (created or adopted), and no others, you
 may read and type into their terminals (`discobox capture`, `send`,
 `send-key`, and `wait --until finished --until blocked`, which counts from
 what you last sent) and read their logs (`admin terminal logs`); start, stop, and restart them (`discobox
@@ -547,7 +547,7 @@ and tag and name them (`discobox tag`, `discobox rename`). Purging a box
 (`admin box purge`) and unarchiving one are the user's, on any box, and a box
 the user brought back after you archived it is theirs to keep: do not archive
 it again. You list
-and answer the credential requests only of the boxes you created (`discobox
+and answer the credential requests only of the boxes you lead (`discobox
 secret request ls`, `approve`, `deny`), and approve only under a credential
 you were given to delegate. Nothing else: the user's other commands above need
 their machine or reach further than a box may, and are refused. A box you create is
@@ -567,3 +567,13 @@ for up front so you can answer the boxes on your own.
 For the threat model and what discobox does not defend against, point at
 https://discobox.ai and https://discobox.ai/security. Parts of the security
 model are shipped and parts are designed; do not guess which.
+
+### Adopt and release a child
+
+`discobox adopt <box> --reason "why"` asks a person in the inbox to let you lead
+that box and waits for the decision. Only a person answers. It must be in your
+project, not yourself or an ancestor, and neither archived nor deleting.
+Approval replaces any current parent. Your authority is the same as over a box
+you created; its secrets stay its own. A child wider than your egress is read-only.
+`discobox release <box>` gives it back; `discobox ls --parent me` lists your
+children. `PARENT` shows the current parent; JSON also keeps the immutable creator.

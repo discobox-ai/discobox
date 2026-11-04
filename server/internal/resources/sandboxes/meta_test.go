@@ -257,7 +257,7 @@ func TestListSandboxesFiltersOnRecordedTags(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := service.ListSandboxes(ctx, "project-1", "", nil, parsed)
+		got, err := service.ListSandboxes(ctx, "project-1", "", nil, parsed, "")
 		if err != nil {
 			t.Fatal(err)
 		}

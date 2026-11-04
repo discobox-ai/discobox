@@ -3060,7 +3060,7 @@ value's own `@` read as a host is seen rather than discovered.
 
 `--discobox-api` on both creates sets the new discobox's `discoboxApi`: it may
 call the discobox API through its pool, acting only on the discoboxes it
-creates (ADR 26-10-27-880 §9). A person sets or clears it on an existing one
+leads (ADR 26-11-03-970; created or adopted). A person sets or clears it on an existing one
 with `admin box update DISCOBOX --discobox-api[=false]`.
 
 `--from-json` (`runJSONRequest`, `run_json.go`) reads the whole request from stdin

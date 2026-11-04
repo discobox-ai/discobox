@@ -17,6 +17,7 @@ import (
 type sandboxFilter struct {
 	// server is the one server asked, by the name the SERVER column gives it.
 	server string
+	parent string
 	// source is the SOURCE column's text, matched exactly: the directory or
 	// repository URL a discobox was cut from, or "-" for one with none. It is
 	// `ls --source`, and what the column prints is the whole of its grammar.
@@ -75,6 +76,13 @@ not answer is left out, and says so on stderr.`,
 			if cmd.Flags().Changed("source") && filter.source == "" {
 				return fmt.Errorf("--source needs a value from the SOURCE column, or - for the discoboxes with no source")
 			}
+			if filter.parent == "me" {
+				id, err := ownSandboxID()
+				if err != nil {
+					return err
+				}
+				filter.parent = id
+			}
 			listed, unreachable, err := a.listEveryServer(cmd.Context(), filter)
 			if err != nil {
 				return err
@@ -101,6 +109,7 @@ not answer is left out, and says so on stderr.`,
 			return a.writeSandboxes(cmd, sandboxes, serverOf)
 		},
 	}
+	cmd.Flags().StringVar(&filter.parent, "parent", "", "Only list children of this discobox ID; me for the calling discobox")
 	cmd.Flags().StringVar(&filter.source, "source", "", "Only list the discoboxes whose SOURCE column is exactly this; - for the ones with no source")
 	cmd.Flags().StringVar(&filter.server, "on", "", "Only list the discoboxes on this server, by its name in the SERVER column")
 	cmd.Flags().StringArrayVar(&filter.tags, "tag", nil, "Only list discoboxes with this tag: KEY, or KEY=VALUE for that value; repeat to require several")
@@ -117,7 +126,7 @@ func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Cli
 	if err != nil {
 		return nil, err
 	}
-	params := apiclientgen.ListSandboxesParams{ProjectId: projectID, Tag: filter.tags}
+	params := apiclientgen.ListSandboxesParams{ProjectId: projectID, Tag: filter.tags, Parent: apiclientgen.NewOptString(filter.parent)}
 	bodyRes, err := client.ListSandboxes(ctx, params)
 	if err != nil {
 		return nil, err

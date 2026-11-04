@@ -79,3 +79,11 @@ bindings of the secret (`requestReplacements`): `get --secret` shows it for a
 pending request, and `approve --secret` reads it before sending and says it
 after, part by part — the binding kept, the ones that go, one that loses its
 use or is split, a new one made.
+
+## Adoption
+
+`adopt DISCOBOX --reason` files a sandbox-role adoption request and polls its
+answer until approved, denied or canceled. `release DISCOBOX` gives a child back.
+Both resolve by the same selection as other top-level sandbox commands.
+`ls --parent ID` filters by parent; `--parent me` reads this box's static config.
+Tables show PARENT; JSON preserves the creator beside it.

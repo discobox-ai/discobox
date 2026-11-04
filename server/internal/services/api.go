@@ -25,6 +25,7 @@ type CreateSecretBody = apimodel.CreateSecretBody
 type CreateSandboxCredentialRequestBody = apimodel.CreateSandboxCredentialRequestBody
 type SandboxCredentialPolicy = apimodel.SandboxCredentialPolicy
 type SandboxCredentialRequestDelegate = apimodel.SandboxCredentialRequestDelegate
+type CreateAdoptionRequestBody = apimodel.CreateAdoptionRequestBody
 type CreateSandboxTrustRequestBody = apimodel.CreateSandboxTrustRequestBody
 type ApproveTrustRequestBody = apimodel.ApproveTrustRequestBody
 type CreateSecretBindingBody = apimodel.CreateSecretBindingBody
@@ -158,12 +159,18 @@ var (
 
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
+	CreateAdoptionRequest(context.Context, string, CreateAdoptionRequestBody) (*model.AdoptionRequest, error)
+	ListAdoptionRequests(context.Context, string, string) ([]model.AdoptionRequest, error)
+	GetAdoptionRequest(context.Context, string, string) (*model.AdoptionRequest, error)
+	DecideAdoptionRequest(context.Context, string, string, bool) (*model.AdoptionRequest, error)
+	ReleaseSandbox(context.Context, string, string) error
+
 	// UpgradeBasis is what the API mappers report a sandbox's available
 	// upgrade against, so they give the answer an upgrade applies.
 	UpgradeBasis(ctx context.Context, projectID string) (SandboxUpgradeBasis, error)
 	// ListSandboxes filters on the sandboxes' recorded tags as well as where
 	// they came from; no selectors lists them whatever their tags.
-	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector) ([]model.Sandbox, error)
+	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, parent string) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)

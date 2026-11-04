@@ -38,7 +38,8 @@ flowchart LR
   a tag added later or options changed in place select from what is held. A
   box is watched when named by `id`, or when it matches every `tag` selector
   (`sandboxmeta`'s) and `created-by`, those given. `created-by=me` is this
-  box's ID from its sandbox config.
+  box's ID from its sandbox config; the event's `parentSandboxId` selects
+  who leads it, while the persisted option keeps its `created-by` spelling.
 - **Events are read through a local struct**, never `api/gen`'s types:
   runtime code does not use the public API's DTOs (the root `REVIEW.md`).
   Each field mirrors `SandboxEventData` in `server.yaml`. A box is called by
@@ -53,7 +54,9 @@ flowchart LR
   after the baseline is `New`, and so is any box first seen in a reset's
   replay, since every box the project had is held. A `New` box is reported
   created when it is first watched, however late its tag comes. Any other
-  box newly watched is recorded quietly.
+  box newly watched is recorded quietly, except a parent change: adoption is
+  `box.adopted` (newly watched), and release or adoption away is one `box.gone`,
+  even when only terminal changes are watched.
 - **A replay is whole at the ID-only event that ends it.** The server ends
   every replay with where the stream stands, even where that equals its last
   event's ID (ADR 26-11-01-560 §3). How long the run held the stream proves
@@ -74,7 +77,7 @@ flowchart LR
 - **A request is news when it was made after the baseline**, whichever box
   made it and however late that box came to be watched: it waits on
   someone. One made before the baseline is where things stood. The server
-  lists only the requests of the boxes this box created.
+  lists only the requests of the boxes this box leads.
 - **A watched box deleted is gone.** A named one is recorded gone whatever
   `watch` says, and an instance watching only ids ends
   (`discobox.finished`, final) once every one is gone. A named id is the

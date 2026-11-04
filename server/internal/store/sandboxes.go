@@ -13,6 +13,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/encryption"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -230,7 +231,7 @@ func (s *Store) ListAgentlessSandboxes(ctx context.Context) ([]model.Sandbox, er
 // Non-empty originKeys restrict it to sandboxes filed under any one of those
 // origin keys (ADR 0111). The two filters are independent: sourceRoot asks what
 // a sandbox runs against, originKeys ask where on which client it belongs.
-func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string) ([]model.Sandbox, error) {
+func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, parent string) ([]model.Sandbox, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -241,6 +242,9 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string,
 		Preload("Pool.ProviderInstance").
 		Preload("HarnessConfig", withBoundSecrets).
 		Where("project_id = ?", projectID)
+	if parent != "" {
+		query = query.Where("parent_sandbox_id = ?", parent)
+	}
 	if sourceRoot != "" {
 		query = query.Where("source_root = ?", sourceRoot)
 	}
@@ -258,6 +262,8 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string,
 }
 
 func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error {
+	// Creation starts with the creator as parent (ADR 26-11-03-970).
+	sandbox.ParentSandboxID = sandbox.CreatedBySandboxID
 	// The names listings read in place of the skills (sandboxSkillColumns).
 	sandbox.SkillNames = nil
 	if len(sandbox.Skills) > 0 {
@@ -268,6 +274,18 @@ func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error
 		return err
 	}
 	return s.inSandboxTx(ctx, func(txStore *Store, tx *gorm.DB) error {
+		if persisted.ParentSandboxID != nil {
+			if err := lockProject(tx, persisted.ProjectID); err != nil {
+				return err
+			}
+			var parent model.Sandbox
+			if err := tx.Where("project_id = ? AND id = ?", persisted.ProjectID, *persisted.ParentSandboxID).First(&parent).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return apperrors.NewStatusError(409, "creating sandbox no longer exists")
+				}
+				return err
+			}
+		}
 		if err := tx.Create(persisted).Error; err != nil {
 			return err
 		}
@@ -436,7 +454,7 @@ const sandboxAttachedHarnessColumn = "attached_harness_config_ids"
 const sandboxEventSeqColumn = "event_seq"
 
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn, sandboxAttachedHarnessColumn, sandboxEventSeqColumn)
+var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn, sandboxAttachedHarnessColumn, sandboxEventSeqColumn, "parent_sandbox_id", "created_by_sandbox_id")
 
 // CancelSandboxWakeTx is what every power instruction from outside writes: no
 // scheduled start, and a new epoch, whether or not a wake was set — the race
@@ -687,6 +705,12 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 	}
 
 	return s.Transaction(ctx, func(txStore *Store, tx *gorm.DB) error {
+		if err := lockProject(tx, projectID); err != nil {
+			return err
+		}
+		if err := txStore.clearSandboxChildrenTx(tx, projectID, sandboxID); err != nil {
+			return err
+		}
 		// Locked before its bindings are deleted, so a binding being written
 		// for it (CreateSecretBinding) either finds it gone or is deleted with
 		// it.

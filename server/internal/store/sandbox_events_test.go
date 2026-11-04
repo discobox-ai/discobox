@@ -477,9 +477,12 @@ func TestSandboxEventLogIsReadOnTheWriteHandle(t *testing.T) {
 // 26-11-01-560 §2).
 func TestSandboxEventsCarryTagsAndCreator(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t)
+	s, db := newTestStoreWithDB(t, false)
 	createTestPool(t, s, "project-1", "pool-1")
 	lead := "sandbox-lead"
+	if err := db.Write.Create(&model.Sandbox{ID: lead, Name: "lead", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	sandbox := &model.Sandbox{ID: "sandbox-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "alpha", CreatedBySandboxID: &lead}
 	sandbox.DesiredState = model.DesiredStatePresent
 	sandbox.State = "pending"

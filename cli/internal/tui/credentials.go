@@ -181,6 +181,9 @@ func (m *Model) openCredentialDialog(sandboxID string) tea.Cmd {
 // and whether it came from one at all. It reads the secrets first, because the
 // question it asks is which of them answers this.
 func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
+	if req.Adoption != nil {
+		return m.askAboutAdoption(req)
+	}
 	// A trust request is answered with a pin, not a secret: there is nothing
 	// to read first.
 	if req.Trust != nil {
@@ -667,7 +670,7 @@ func routeDiff(was, now []secretroute.Route, kept bool) []line {
 
 // delegationPurpose is what a binding to delegate is for, said the same way on
 // the request and on the binding.
-const delegationPurpose = "delegation — may give it to the discoboxes it creates, never uses it"
+const delegationPurpose = "delegation — may give it to the discoboxes it leads, never uses it"
 
 // rawDeliveryText is what a raw binding hands over (ADR 26-10-27-840),
 // said so a person approving it reads that the value itself leaves the pool.
@@ -700,7 +703,7 @@ func (m *Model) lifetimeChosen(a approval, again func() tea.Cmd) tea.Cmd {
 // no row that leaves either unsaid. back is the lifetime card.
 func (m *Model) askParts(a approval, back func() tea.Cmd) tea.Cmd {
 	items := []action{
-		{key: "both", press: "b", label: "Approve both", detail: "use it in " + variableOf(a.req) + ", and give it to the discoboxes it creates", enabled: true},
+		{key: "both", press: "b", label: "Approve both", detail: "use it in " + variableOf(a.req) + ", and give it to the discoboxes it leads", enabled: true},
 		{key: "use", press: "u", label: "Approve the use part only", detail: "deny the delegation", enabled: true},
 		{key: "delegate", press: "g", label: "Approve the delegate part only", detail: "deny its own use", enabled: true},
 	}
@@ -856,6 +859,9 @@ func roleLines(role requestrole.Role) []line {
 }
 
 func credentialName(req CredentialRequest) string {
+	if req.Adoption != nil {
+		return "adoption of " + req.Adoption.ChildID
+	}
 	if req.Trust != nil {
 		return "trust of " + req.Host
 	}
@@ -1124,6 +1130,9 @@ func (m *Model) finishApproval(a approval) tea.Cmd {
 }
 
 func (m *Model) denyCredential(req CredentialRequest) tea.Cmd {
+	if req.Adoption != nil {
+		return m.answerAdoption(req, false)
+	}
 	if req.Trust != nil {
 		m.dialog = statusDialog("Trust request", "denying…")
 		return func() tea.Msg {
@@ -1173,6 +1182,13 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 		return m.loadCredentialRequests()
 	}
 	m.dialog = nil
+	if msg.request.Adoption != nil {
+		verb := "denied"
+		if msg.approved {
+			verb = "approved"
+		}
+		return tea.Batch(m.loadCredentialRequests(), m.report(false, "%s %s", verb, credentialName(msg.request)))
+	}
 	if msg.approved {
 		// The lifetime is in the report because it is the half of what was
 		// just handed out that nothing else on screen will say again.

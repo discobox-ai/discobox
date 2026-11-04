@@ -136,6 +136,17 @@ func (h *Handler) ListApprovalRequests(ctx context.Context, params serverapi.Lis
 			Trust: serverapi.NewOptHostTrustRequest(trust),
 		}})
 	}
+	adoptions, err := h.services.Sandboxes.ListAdoptionRequests(ctx, params.ProjectId, status)
+	if err != nil {
+		return apiError(err), nil
+	}
+	for _, req := range adoptions {
+		adoption, err := services.Convert[apimodel.AdoptionRequest](req)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, dated{at: req.CreatedAt, item: apimodel.ApprovalRequest{Kind: serverapi.ApprovalRequestKindAdoption, Adoption: serverapi.NewOptAdoptionRequest(adoption)}})
+	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].at.After(items[j].at) })
 	body := &apimodel.ListApprovalRequestsBody{ApprovalRequests: make([]apimodel.ApprovalRequest, 0, len(items))}
 	for _, item := range items {
