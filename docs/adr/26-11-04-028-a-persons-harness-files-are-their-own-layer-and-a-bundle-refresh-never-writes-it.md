@@ -1,7 +1,9 @@
 # 26-11-04-028 — A person's harness files are their own layer, and a bundle refresh never writes it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-04
+
+  Accepted by the owner by merging #550, 2026-11-04.
 - **Relates to**:
   [0002](0002-harness-config-is-the-only-harness-concept.md), which split a
   config's files into the bundle's `Files` baseline and the configure flow's
