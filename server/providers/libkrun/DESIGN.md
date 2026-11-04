@@ -14,10 +14,18 @@ registry the first time — and no image is built on the host to start a pool.
 
 Both are dlopened or exec'd by name, never linked, so "somewhere the loader
 looks" is the whole of the install contract and a Nix store path does not
-satisfy it by itself. `nix develop .#libkrun` sets `LD_LIBRARY_PATH` and is the
-development answer; `nix build .#libkrun-runtime` builds the same closure for a
-machine that is not in a dev shell, which then names the library in the
-provider's `libkrunPath` or puts it on the loader's path itself.
+satisfy it by itself. Release-install instructions, including a remote-flake
+Nix build requiring no checkout and the two absolute path overrides, live in
+[the README](../../../README.md#libkrun-on-linux). `nix develop .#libkrun`
+sets `LD_LIBRARY_PATH` for development.
+
+Provider construction re-executes the launcher with `--check` and a bounded
+context before resolving images or constructing the engine. That child dlopens
+and binds the required libkrun symbols and looks up passt, honoring both path
+overrides. Missing software rejects provider creation through the existing
+resolve-and-rollback path; it never creates a failed pool. KVM remains a boot-time
+check. The probe never starts passt or a VM, and a native library fault stays in
+the child.
 
 Everything is ordered off that:
 

@@ -2,6 +2,7 @@ package krunvm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -228,4 +229,15 @@ func hostIPv4Nameserver() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("the host resolver configuration %s names no IPv4 nameserver", path)
+}
+
+// CheckDependencies probes host software without starting a VM or touching KVM.
+// It runs only in a short-lived launcher child.
+func CheckDependencies(libraryPath, passtPath string) error {
+	_, libraryErr := openLibrary(libraryPath)
+	_, passtErr := exec.LookPath((Config{PasstPath: passtPath}).PasstExecutable())
+	if passtErr != nil {
+		passtErr = fmt.Errorf("install passt on the server host's PATH or set the provider's passtPath: %w; see https://github.com/discobox-ai/discobox#libkrun-on-linux", passtErr)
+	}
+	return errors.Join(libraryErr, passtErr)
 }

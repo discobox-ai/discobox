@@ -1,11 +1,15 @@
 package libkrun
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
 )
@@ -46,7 +50,31 @@ func RunLauncherIfInvoked() {
 	os.Exit(0)
 }
 
+// checkHostDependencies uses the same executable and environment as a VM launch,
+// keeping native library loading (including a broken library) out of the server.
+func checkHostDependencies(ctx context.Context, cfg Config) error {
+	if err := krunvm.Supported(); err != nil {
+		return err
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, executable, launcherCommand, "--check", strings.TrimSpace(cfg.LibkrunPath), strings.TrimSpace(cfg.PasstPath))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("libkrun host prerequisites: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 func runLauncher(args []string) error {
+	if len(args) == 3 && args[0] == "--check" {
+		return krunvm.CheckDependencies(args[1], args[2])
+	}
+
 	if len(args) != 2 || args[0] != "--config" {
 		return errors.New("usage: --config <manifest>")
 	}

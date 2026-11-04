@@ -63,7 +63,7 @@ func openLibrary(path string) (*krunLibrary, error) {
 	}
 	handle, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 	if err != nil {
-		return nil, fmt.Errorf("load %s: %w; put libkrun on the dynamic loader's path (nix develop .#libkrun sets LD_LIBRARY_PATH) or name it in the provider's libkrunPath", path, err)
+		return nil, fmt.Errorf("load %s: %w; install libkrun on the server host's dynamic loader path or set the provider's libkrunPath; see https://github.com/discobox-ai/discobox#libkrun-on-linux", path, err)
 	}
 	lib := &krunLibrary{}
 	for name, target := range map[string]any{

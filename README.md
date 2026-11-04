@@ -50,6 +50,39 @@ to a Git remote. Review and merge them through your usual Git workflow.
 
 ![Discobox with an agent terminal, a shell, services, and forwarded ports](assets/screens/claude-code.png)
 
+### libkrun on Linux
+
+Linux uses Docker by default. The optional `libkrun` provider needs a
+Linux amd64 **server host** with usable `/dev/kvm`, `libkrun.so.1` on the
+dynamic loader's path, and `passt` on the server's `PATH`. The Discobox
+installer does not install these host dependencies. The server user needs
+read/write access to `/dev/kvm` (usually through the `kvm` group).
+
+Install libkrun and passt using your distribution's packages where available.
+The library must export the APIs this server uses; an older package is rejected
+with the missing symbol's name. Alternatively, with Nix and flakes enabled,
+build the runtime from the published repository without a source checkout:
+
+```bash
+nix build github:discobox-ai/discobox#libkrun-runtime --out-link discobox-libkrun-runtime
+```
+
+Keep that output link so Nix retains the runtime. Configure the provider with
+absolute paths to `discobox-libkrun-runtime/lib/libkrun.so.1` (`libkrunPath`)
+and `discobox-libkrun-runtime/bin/passt` (`passtPath`), on the server host:
+
+```bash
+discobox admin provider create --type libkrun \
+  --libkrun-path "$(realpath discobox-libkrun-runtime/lib/libkrun.so.1)" \
+  --passt-path "$(realpath discobox-libkrun-runtime/bin/passt)"
+```
+
+See `discobox admin provider create --help=libkrun` for all settings.
+Provider creation checks these software dependencies before accepting the
+provider; KVM is checked when a VM starts. After changing the server's `PATH`
+or dynamic loader environment, restart the server so its launchers inherit it.
+Guest images and the patched kernel are downloaded automatically on first use.
+
 ## Many sessions, many boxes
 
 An agent working in your checkout ties it up. You wait for it to finish, and a

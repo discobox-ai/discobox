@@ -178,9 +178,12 @@ func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dock
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkHostDependencies(ctx, cfg); err != nil {
 		return nil, err
 	}
 	guest, err := guestResolver(cfg, serverDefaults)
@@ -327,7 +330,7 @@ func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
 		Name:        "libkrun",
 		Icon:        "server",
-		Description: "Runs one Linux KVM-backed libkrun microVM per pool with VSOCK control traffic and outbound-only user-mode networking.",
+		Description: "Runs one Linux KVM-backed libkrun microVM per pool with VSOCK control traffic and outbound-only user-mode networking. Requires libkrun.so.1 on the server dynamic loader path and passt on its PATH (or libkrunPath/passtPath). Install instructions: https://github.com/discobox-ai/discobox#libkrun-on-linux",
 		// Each pool VM is sized from the pool's own size first (see vmsize).
 		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
