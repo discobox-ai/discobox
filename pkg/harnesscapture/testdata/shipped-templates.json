@@ -1,0 +1,45 @@
+[
+  {
+    "releases": "v0.1.0 .. v0.6.0-alpha.3",
+    "file": {
+      "path": ".claude.json",
+      "createOnly": true,
+      "template": true,
+      "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }}\n  {{- range .sources }}{{- if eq .slug \"primary\" }},\n  \"projects\": {\n    {{ .target | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n  {{- end }}{{- end }}\n}"
+    }
+  },
+  {
+    "releases": "v0.6.0 .. v0.18.1",
+    "file": {
+      "path": ".claude.json",
+      "createOnly": true,
+      "template": true,
+      "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }},\n  \"projects\": {\n    {{ .workingDir | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}"
+    }
+  },
+  {
+    "releases": "v0.19.0-rc.1 .. v0.19.0-rc.3",
+    "file": {
+      "path": ".claude.json",
+      "createOnly": true,
+      "template": true,
+      "content": "{\n  \"hasCompletedOnboarding\": true,\n  \"hasSeenAutoDefaultNudge\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }},\n  \"projects\": {\n    {{ .workingDir | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}"
+    }
+  },
+  {
+    "releases": "v0.6.0 .. v0.19.0-rc.3",
+    "file": {
+      "path": ".codex/config.toml",
+      "template": true,
+      "content": "# Managed by Discobox. Policy defaults (approval, sandbox) are the image's\n# system layer, /etc/codex/config.toml, which this file may override.\n{{- if .workingDir }}\n\n[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n{{- end }}\n"
+    }
+  },
+  {
+    "releases": "v0.1.0 .. v0.6.0-alpha.3",
+    "file": {
+      "path": ".codex/config.toml",
+      "template": true,
+      "content": "# Managed by Discobox. Policy defaults (approval, sandbox) are the image's\n# system layer, /etc/codex/config.toml, which this file may override.\n{{- range .sources }}{{- if eq .slug \"primary\" }}\n[projects.{{ .target | json }}]\ntrust_level = \"trusted\"\n{{- end }}{{- end }}\n"
+    }
+  }
+]

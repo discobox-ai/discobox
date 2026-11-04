@@ -2,6 +2,7 @@ package harnesscapture
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -62,5 +63,40 @@ func TestLegacyDeliveryUpgradeNeverExecutesTemplates(t *testing.T) {
 	next, err := UpgradeLegacyJSON(data)
 	if err != nil || !strings.Contains(string(next), "18446744073709551615") || !strings.Contains(string(next), "[null,1]") {
 		t.Fatalf("durable data changed: %s %v", next, err)
+	}
+}
+
+// TestLegacyUpgradeAcceptsEveryShippedTemplate feeds the upgrade each templated
+// harness file a release shipped, exactly as its harness/*/image.json declared
+// it. A database left by any of those releases must migrate (#553).
+func TestLegacyUpgradeAcceptsEveryShippedTemplate(t *testing.T) {
+	raw, err := os.ReadFile("testdata/shipped-templates.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shipped []struct {
+		Releases string         `json:"releases"`
+		File     map[string]any `json:"file"`
+	}
+	if err := json.Unmarshal(raw, &shipped); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range shipped {
+		t.Run(s.Releases+" "+s.File["path"].(string), func(t *testing.T) {
+			old, err := json.Marshal(map[string]any{"files": []any{s.File}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			next, err := UpgradeLegacyJSON(old)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(next), "{{") || strings.Contains(string(next), `"template"`) {
+				t.Fatalf("legacy syntax survived: %s", next)
+			}
+			if s.File["path"] == ".claude.json" && string(next) != `{"files":[]}` {
+				t.Fatalf("Claude Code seed kept: %s", next)
+			}
+		})
 	}
 }

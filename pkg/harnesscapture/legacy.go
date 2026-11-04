@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -39,7 +40,7 @@ func UpgradeLegacyJSON(data []byte) ([]byte, error) {
 		case map[string]any:
 			if content, ok := obj["content"].(string); ok && obj["template"] == true {
 				path, _ := obj["path"].(string)
-				if path == ".claude.json" && content == legacyClaudeSeed {
+				if path == ".claude.json" && slices.Contains(legacyClaudeSeeds, content) {
 					return nil, nil
 				}
 				if path == ".codex/config.toml" {
@@ -137,4 +138,11 @@ var legacyCodexTrust = []string{
 	legacySourceTrust, legacyWorkingTrust,
 }
 
-const legacyClaudeSeed = "{\n  \"hasCompletedOnboarding\": true,\n  \"hasSeenAutoDefaultNudge\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }},\n  \"projects\": {\n    {{ .workingDir | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}"
+// legacyClaudeSeeds is every .claude.json seed a release shipped: v0.1.0
+// through v0.6.0-alpha.3, v0.6.0 through v0.18.1, and the v0.19.0 release
+// candidates. The seed carries nothing a user chose, so it is dropped.
+var legacyClaudeSeeds = []string{
+	"{\n  \"hasCompletedOnboarding\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }}\n  {{- range .sources }}{{- if eq .slug \"primary\" }},\n  \"projects\": {\n    {{ .target | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n  {{- end }}{{- end }}\n}",
+	"{\n  \"hasCompletedOnboarding\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }},\n  \"projects\": {\n    {{ .workingDir | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}",
+	"{\n  \"hasCompletedOnboarding\": true,\n  \"hasSeenAutoDefaultNudge\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }},\n  \"projects\": {\n    {{ .workingDir | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}",
+}
