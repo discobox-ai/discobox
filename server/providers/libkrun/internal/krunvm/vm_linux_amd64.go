@@ -45,6 +45,16 @@ func checkKVM() error {
 // not reported itself yet.
 const passtStartTimeout = 5 * time.Second
 
+// CheckHost checks the default host dependencies without starting a VM. It is
+// called only in the launcher child: a broken native library must not take
+// down the server.
+func CheckHost(libraryPath, passtPath string) error {
+	if err := checkKVM(); err != nil {
+		return err
+	}
+	return CheckDependencies(libraryPath, passtPath)
+}
+
 // Run boots the VM this manifest describes and does not return while it lives.
 //
 // This runs in the launcher child, never in the server. The child is killed by
@@ -234,10 +244,21 @@ func hostIPv4Nameserver() (string, error) {
 // CheckDependencies probes host software without starting a VM or touching KVM.
 // It runs only in a short-lived launcher child.
 func CheckDependencies(libraryPath, passtPath string) error {
-	_, libraryErr := openLibrary(libraryPath)
-	_, passtErr := exec.LookPath((Config{PasstPath: passtPath}).PasstExecutable())
+	lib, libraryErr := openLibrary(libraryPath)
+	if libraryErr == nil {
+		libraryErr = errors.Join(lib.requireFeature(krunFeatureBlk, "virtio-block"), lib.requireFeature(krunFeatureNet, "virtio-net"))
+	}
+	passt, passtErr := exec.LookPath((Config{PasstPath: passtPath}).PasstExecutable())
 	if passtErr != nil {
 		passtErr = fmt.Errorf("install passt on the server host's PATH or set the provider's passtPath: %w; see https://github.com/discobox-ai/discobox#libkrun-on-linux", passtErr)
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, passt, "--version")
+		cmd.WaitDelay = time.Second
+		if output, err := cmd.CombinedOutput(); err != nil {
+			passtErr = fmt.Errorf("run passt --version: %w: %s", err, strings.TrimSpace(string(output)))
+		}
 	}
 	return errors.Join(libraryErr, passtErr)
 }

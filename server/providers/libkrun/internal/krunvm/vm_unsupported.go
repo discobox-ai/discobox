@@ -8,3 +8,4 @@ package krunvm
 func Run(Config) error { return ErrUnsupported }
 
 func CheckDependencies(string, string) error { return ErrUnsupported }
+func CheckHost(string, string) error         { return ErrUnsupported }

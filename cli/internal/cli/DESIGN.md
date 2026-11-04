@@ -176,3 +176,10 @@ Cancellation leaves the request pending. `api-access ls/get` read current and
 historical decisions; `approve/deny` answer them as a person. The console uses
 the same resources through its approval inbox. Approval enables the existing
 setting until a person turns it off in Settings.
+
+## Server startup warnings
+
+The local-server launch health handshake carries `health.Status.Warnings`
+through readiness. The CLI prints each distinct warning once above its startup
+progress line, escaping server text. `--quiet` suppresses startup narration.
+Connecting to an already-ready server does not replay its first-start warnings.

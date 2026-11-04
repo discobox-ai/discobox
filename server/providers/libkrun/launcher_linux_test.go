@@ -194,7 +194,7 @@ func TestDependencyCheckHonorsPasstOverride(t *testing.T) {
 	if err := os.WriteFile(passt, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err := checkHostDependencies(t.Context(), Config{LibkrunPath: "/nonexistent/libkrun.so", PasstPath: passt})
+	err := CheckHost(t.Context(), Config{LibkrunPath: "/nonexistent/libkrun.so", PasstPath: passt}, false)
 	if err == nil || !strings.Contains(err.Error(), "install libkrun") {
 		t.Fatalf("error = %v", err)
 	}

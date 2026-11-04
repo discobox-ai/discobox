@@ -685,6 +685,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	// A line per phase would leave a first run five of them scrolled above
 	// output that had nothing to do with them.
 	progress := a.serverStartupLine()
+	shownWarnings := make(map[string]bool)
 	started, err := endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
 		Endpoint: a.serverURL,
 		// Resolved only if a server actually has to be started, because
@@ -709,7 +710,15 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		Env:             localServerEnv(a.serverURL),
 		ExpectedVersion: expectedVersion,
 		OnProgress: func(status health.Status) {
-			progress.set(serverStartupText(status))
+			for _, warning := range status.Warnings {
+				if progress != nil && !shownWarnings[warning] {
+					progress.print("Warning: %s", terminalSafe(warning))
+					shownWarnings[warning] = true
+				}
+			}
+			if status.Starting() {
+				progress.set(serverStartupText(status))
+			}
 		},
 	})
 	progress.clear()

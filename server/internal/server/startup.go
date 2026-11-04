@@ -27,9 +27,10 @@ var processStart = time.Now()
 // server that is still coming up from one that has died on startup: very
 // different problems that would look identical.
 type startupHandler struct {
-	mu    sync.Mutex
-	phase string
-	ready atomic.Pointer[http.Handler]
+	mu       sync.Mutex
+	phase    string
+	warnings []string
+	ready    atomic.Pointer[http.Handler]
 }
 
 func newStartupHandler(phase string) *startupHandler {
@@ -61,13 +62,21 @@ func (h *startupHandler) setReady(handler http.Handler) {
 	h.ready.Store(&handler)
 }
 
+func (h *startupHandler) addWarning(warning string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.warnings = append(h.warnings, warning)
+}
+
 func (h *startupHandler) status() health.Status {
 	h.mu.Lock()
 	phase := h.phase
+	warnings := append([]string(nil), h.warnings...)
 	h.mu.Unlock()
 	return health.Status{
 		Status:        health.StatusStarting,
 		Phase:         phase,
+		Warnings:      warnings,
 		Version:       version.String(),
 		UptimeSeconds: time.Since(processStart).Seconds(),
 	}
@@ -75,6 +84,14 @@ func (h *startupHandler) status() health.Status {
 
 func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if handler := h.ready.Load(); handler != nil {
+		if r.URL.Path == health.Path {
+			status := readyStatus()
+			h.mu.Lock()
+			status.Warnings = append([]string(nil), h.warnings...)
+			h.mu.Unlock()
+			writeHealthStatus(w, http.StatusOK, status)
+			return
+		}
 		(*handler).ServeHTTP(w, r)
 		return
 	}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -175,6 +176,7 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 		status, err := probeEndpoint(ctx, opts)
 		if err == nil {
 			if !status.Starting() {
+				opts.progress(status)
 				return true, nil
 			}
 			return true, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
@@ -283,13 +285,14 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 		status, err := probeEndpoint(ctx, opts)
 		switch {
 		case err == nil && !status.Starting():
+			opts.progress(status)
 			return nil
 		case err == nil:
 			answered, unanswered = true, 0
 			// On the step changing, not on every poll: uptime moves with each
 			// answer, so comparing whole statuses reports the same step over
 			// and over.
-			if status.Status != last.Status || status.Phase != last.Phase {
+			if status.Status != last.Status || status.Phase != last.Phase || !slices.Equal(status.Warnings, last.Warnings) {
 				opts.progress(status)
 				last = status
 			}

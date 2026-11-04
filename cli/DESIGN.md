@@ -793,10 +793,11 @@ that needs a server stages one.
 
 The server's images are staged beside it (ADR 0113). The server names them:
 `serverResolver.stageImages` runs `<staged server> images`, which prints the
-VM guest its default provider boots (on macOS), the pool agent, the default
-sandbox image and the built-in harnesses, and stages them through `imagecache`
+VM guest on macOS and linux/amd64, libkrun's patched kernel on linux/amd64,
+and the default sandbox image. The CLI stages those images through `imagecache`
 into `<discobox state>/images` (`ImageCacheEnv` names another) for this
-machine's platform, fetching only the blobs the layout lacks. Every server the
+machine's platform, fetching only the blobs the layout lacks. Bundles are fetched
+by the server rather than staged. Every server the
 CLI runs is told that path in `DISCOBOX_IMAGE_CACHE_DIR`, so its providers
 fetch through it and its pools load from it. Only a server staged from this
 CLI's own manifest is asked — the same release, so it has the command; an older

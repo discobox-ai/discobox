@@ -71,3 +71,25 @@ func TestReadyStatusIdentifiesTheServer(t *testing.T) {
 		t.Fatalf("uptimeSeconds = %v, want a positive uptime", status.UptimeSeconds)
 	}
 }
+
+func TestStartupWarningsSurviveReadiness(t *testing.T) {
+	h := newStartupHandler("starting services")
+	h.addWarning("KVM unavailable; using Docker without VM isolation")
+	for _, ready := range []bool{false, true} {
+		if ready {
+			h.setReady(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { t.Error("health bypassed startup warning status") }))
+		}
+		resp := httptest.NewRecorder()
+		h.ServeHTTP(resp, httptest.NewRequestWithContext(t.Context(), http.MethodGet, health.Path, nil))
+		var status health.Status
+		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+			t.Fatal(err)
+		}
+		if len(status.Warnings) != 1 || status.Warnings[0] != "KVM unavailable; using Docker without VM isolation" {
+			t.Fatalf("warnings = %q", status.Warnings)
+		}
+		if ready && (resp.Code != http.StatusOK || status.Status != health.StatusReady) {
+			t.Fatalf("ready status: %d %+v", resp.Code, status)
+		}
+	}
+}

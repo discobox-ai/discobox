@@ -170,7 +170,15 @@ remote. Open a pull request or fetch and merge that branch on your machine.
 
 ## Isolation and credentials
 
-Discobox uses VM and container isolation. Agents can install packages and run
+On Linux, a fresh installation uses the existing libkrun microVM provider when
+KVM is usable, `passt` is on `PATH`, and `libkrun.so.1` is available to the dynamic
+loader with block and network support (currently linux/amd64). Otherwise it
+uses Docker and the launching CLI warns why: sandboxes share the host kernel
+without a VM isolation boundary. The choice is saved with the default pool;
+existing installations keep their provider. macOS uses Virtualization.framework
+and Windows uses WSL.
+
+Agents can install packages and run
 commands inside the box without approval prompts. Outbound traffic passes
 through a proxy with a separate mTLS identity for each box, destination policy,
 and request auditing.

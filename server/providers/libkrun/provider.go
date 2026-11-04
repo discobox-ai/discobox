@@ -183,7 +183,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	if err != nil {
 		return nil, err
 	}
-	if err := checkHostDependencies(ctx, cfg); err != nil {
+	if err := CheckHost(ctx, cfg, false); err != nil {
 		return nil, err
 	}
 	guest, err := guestResolver(cfg, serverDefaults)

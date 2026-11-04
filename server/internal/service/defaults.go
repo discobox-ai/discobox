@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
+	"github.com/discobox-ai/discobox/server/providers/libkrun"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -120,7 +123,12 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 		return err
 	}
 
-	return s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+	defaultProvider, warning, err := defaultSandboxProviderForOS(ctx, projectID, id.NewString(id.PrefixSandboxProvider), s.options.ListenEndpoints)
+	if err != nil {
+		return err
+	}
+	installed := false
+	err = s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
 		if _, err := txStore.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
 			return nil
 		} else if !errors.Is(err, store.ErrNotFound) {
@@ -130,7 +138,6 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 		if _, err := txStore.GetProject(ctx, projectID); err != nil {
 			return err
 		}
-		defaultProvider := defaultSandboxProviderForOS(projectID, id.NewString(id.PrefixSandboxProvider))
 		if err := txStore.CreateSandboxProviderInstance(ctx, defaultProvider); err != nil {
 			return err
 		}
@@ -147,11 +154,22 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 		if err != nil {
 			return err
 		}
-		return txStore.CreateServerState(ctx, &model.ServerState{
+		if err := txStore.CreateServerState(ctx, &model.ServerState{
 			Key:   defaultProviderInstalledStateKey,
 			Value: value,
-		})
+		}); err != nil {
+			return err
+		}
+		installed = true
+		return nil
 	})
+	if err == nil && installed && warning != "" {
+		slog.WarnContext(ctx, warning)
+		if s.options.StartupWarning != nil {
+			s.options.StartupWarning(warning)
+		}
+	}
+	return err
 }
 
 // ensureDefaultPool seeds the project's default pool against the built-in
@@ -179,16 +197,32 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 	return appStore.UpsertProject(ctx, project)
 }
 
-func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxProviderInstance {
+func defaultSandboxProviderForOS(ctx context.Context, projectID, providerID string, listenEndpoints []string) (*model.SandboxProviderInstance, string, error) {
 	provider := &model.SandboxProviderInstance{
 		ID:        providerID,
 		ProjectID: projectID,
 	}
 	switch runtime.GOOS {
 	case "linux":
+		err := libkrun.CheckHost(ctx, libkrun.Config{}, true)
+		if err == nil {
+			provider.Type = libkrun.ProviderType
+			provider.Name = "libkrun"
+			for _, listen := range listenEndpoints {
+				if parsed, err := endpoint.Parse(listen); err == nil && parsed.Scheme == "unix" {
+					provider.Config, err = json.Marshal(map[string]string{"controlPlaneSocket": "unix://" + parsed.Value})
+					if err != nil {
+						return nil, "", fmt.Errorf("encode default libkrun config: %w", err)
+					}
+					break
+				}
+			}
+			return provider, "", nil
+		}
 		provider.Type = "docker"
 		provider.Name = "Docker"
 		provider.Config = defaultDockerProviderConfig()
+		return provider, fmt.Sprintf("libkrun is unavailable (%v). Using Docker for the Default pool: sandboxes share the host kernel without a VM isolation boundary.", err), nil
 	case "darwin":
 		// Every field of the vz config has a default (see its Definition), so the
 		// built-in instance carries no configuration of its own, exactly as on
@@ -208,7 +242,7 @@ func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxPro
 		provider.Name = runtime.GOOS
 		provider.Disabled = true
 	}
-	return provider
+	return provider, "", nil
 }
 
 func defaultDockerProviderConfig() model.RawJSON {

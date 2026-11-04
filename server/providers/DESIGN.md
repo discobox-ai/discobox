@@ -863,7 +863,7 @@ instead. A provider never learns the store's layout: it asks for an image for a
 platform and reads the blobs back through the store, which verifies them.
 
 The store is also where the CLI staged the guest before starting the server
-(on macOS, where the default provider boots one), so a first pool extracts from
+(on macOS, and on linux/amd64 together with libkrun's patched kernel), so a first pool extracts from
 local blobs without a registry request; a guest nothing staged is downloaded
 into the store on the way, for the next pool and the next stage to find. For a
 digest-pinned reference the extracted directory is checked first, so a machine
