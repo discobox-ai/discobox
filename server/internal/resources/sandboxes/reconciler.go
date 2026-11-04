@@ -280,6 +280,22 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 		}
 	}
 	if err := r.createSandbox(ctx, sandbox, firstCreate); err != nil {
+		if errors.Is(err, ErrPoolAgentUnsupported) {
+			// The pool's agent is older than this server, which is the window
+			// of an upgrade: the server restarts first and the pool's agent is
+			// replaced after it. Settling here latched a failure no later
+			// reconcile looked at again, so a sandbox re-pinned in that window
+			// stayed failed once its pool had caught up. Say why it waits, and
+			// leave the generation unobserved and the state as it was: the
+			// engine retries the create with backoff, and the first one the
+			// pool's new agent takes converges it. The state is kept so a
+			// sandbox that has never run is still started by that create.
+			sandbox.RecordFailure(sandbox.State, err.Error(), "")
+			if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
+				return reconcile.Result{}, updateErr
+			}
+			return reconcile.Result{}, err
+		}
 		sandbox.ObservedGeneration = generation
 		sandbox.RecordFailure(model.SandboxStateFailed, err.Error(), failureReason(err))
 		if updateErr := r.updateAfterCreate(ctx, sandbox, generation); updateErr != nil {

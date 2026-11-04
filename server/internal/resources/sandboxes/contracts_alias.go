@@ -34,6 +34,7 @@ var ErrAlreadyExists = contract.ErrAlreadyExists
 var ErrArchived = contract.ErrArchived
 var ErrNoContainer = contract.ErrNoContainer
 var ErrPowerDownRefused = contract.ErrPowerDownRefused
+var ErrPoolAgentUnsupported = contract.ErrPoolAgentUnsupported
 
 const PowerDownIdle = contract.PowerDownIdle
 const PowerDownSleep = contract.PowerDownSleep

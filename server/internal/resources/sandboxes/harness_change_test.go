@@ -127,3 +127,57 @@ func TestPendingHarnessTargetCannotBeDeleted(t *testing.T) {
 		t.Fatalf("delete pending target: %v", err)
 	}
 }
+
+// A pool agent older than this server cannot take the reservation: the window
+// of an upgrade, where the server restarts first and the pool's agent is
+// replaced after it (#523). That is not the pool refusing the change, so the
+// proposal stays pending and the reconcile fails for the engine to retry,
+// rather than settling the user's change as refused and dropping it.
+func TestHarnessChangeWaitsOutAPoolAgentOlderThanTheServer(t *testing.T) {
+	svc, st := newUpgradeEngineFixture(t)
+	provider := &recordingProvider{}
+	manager := sandbox.NewProviderManager(svc.store)
+	manager.RegisterProvider("docker", provider)
+	manager.SetDefault("docker")
+	svc.sandboxProviders = manager
+	target := bundledConfig(t, svc.store, codexBundle, codexBundleV2)
+	oldConfig := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old", Configured: true}
+	if err := svc.store.CreateHarnessConfig(context.Background(), oldConfig); err != nil {
+		t.Fatal(err)
+	}
+	old := oldConfig.ID
+	sb := eligibleSandbox(t, st, old, codexBundle, codexBundleV1)
+	sb.HarnessConfigID = &old
+	sb.State = model.SandboxStateReady
+	sb.DesiredState = model.DesiredStatePresent
+	sb.PendingHarnessChange = &model.SandboxHarnessChange{ID: "change-1", Manifest: sb.SandboxManifest}
+	sb.PendingHarnessChange.Manifest.HarnessConfigID = &target.ID
+	sb.IncrementGeneration()
+	if err := svc.store.UpdateSandbox(context.Background(), sb); err != nil {
+		t.Fatal(err)
+	}
+	provider.updateErr = sandbox.ErrPoolAgentUnsupported
+	if _, err := svc.NewSandboxReconciler().Reconcile(context.Background(), SandboxDirtyID(sb.ProjectID, sb.ID)); !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		t.Fatalf("reconcile against an older agent = %v, want ErrPoolAgentUnsupported for the engine to retry", err)
+	}
+	got, err := svc.store.GetSandbox(context.Background(), sb.ProjectID, sb.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PendingHarnessChange == nil || got.PendingHarnessChange.ID != "change-1" || got.HarnessChangeError != "" || got.Converged() {
+		t.Fatalf("an older agent settled the change: pending %+v, error %q, observed %d of %d",
+			got.PendingHarnessChange, got.HarnessChangeError, got.ObservedGeneration, got.Generation)
+	}
+
+	provider.updateErr = nil
+	if _, err := svc.NewSandboxReconciler().Reconcile(context.Background(), SandboxDirtyID(sb.ProjectID, sb.ID)); err != nil {
+		t.Fatalf("reconcile once the agent is current: %v", err)
+	}
+	got, err = svc.store.GetSandbox(context.Background(), sb.ProjectID, sb.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HarnessConfigID == nil || *got.HarnessConfigID != target.ID || got.PendingHarnessChange != nil {
+		t.Fatalf("after the retry the harness is %v with %+v pending; want %s applied", got.HarnessConfigID, got.PendingHarnessChange, target.ID)
+	}
+}

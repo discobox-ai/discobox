@@ -92,7 +92,10 @@ func (r *SandboxReconciler) applyHarnessChange(ctx context.Context, sb *model.Sa
 	}
 	_, _, err = provider.Update(ctx, sandboxRefFromSandbox(sb), state, UpdateOptions{ReserveHarnessChange: proposal.ID})
 	if err != nil {
-		if !errors.Is(err, sandbox.ErrHarnessChangeRefused) && !errors.Is(err, sandbox.ErrNotFound) && !errors.Is(err, sandbox.ErrNoContainer) && !errors.Is(err, sandbox.ErrArchived) && !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		// An agent older than this server cannot take the reservation, which
+		// is the window of an upgrade rather than an answer: the proposal stays
+		// pending and the engine retries it until the pool's new agent does.
+		if !errors.Is(err, sandbox.ErrHarnessChangeRefused) && !errors.Is(err, sandbox.ErrNotFound) && !errors.Is(err, sandbox.ErrNoContainer) && !errors.Is(err, sandbox.ErrArchived) {
 			return reconcile.Result{}, err
 		}
 		sb.PendingHarnessChange = nil

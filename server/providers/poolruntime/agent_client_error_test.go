@@ -1,11 +1,16 @@
 package poolruntime
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
+	"strings"
 	"testing"
 
 	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -107,6 +112,67 @@ func TestPoolAgentWithoutTheRouteIsUnsupported(t *testing.T) {
 	}
 	if errors.Is(err, sandbox.ErrNotFound) {
 		t.Fatal("an agent without the route read as a missing sandbox")
+	}
+}
+
+// A pool agent older than the control plane cannot decode a request carrying a
+// field added since: every request schema is closed, and its generated server
+// answers 400 in its own error body, not a problem. That is the window of
+// every upgrade, where the server restarts first and the pool's agent is
+// replaced after it (#523), and it is the same statement about the agent as a
+// missing route, so a reconcile can wait it out rather than settle a failure.
+//
+// The agent here is the real one, behind a proxy that adds a field to every
+// request body, so the test pins what its generated server actually answers.
+func TestPoolAgentThatCannotDecodeTheRequestIsUnsupported(t *testing.T) {
+	ctx := context.Background()
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	agent, err := url.Parse(runtimeProvider.baseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(agent)
+	proxy.Transport = runtimeProvider.client.Transport
+	newer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			body["fieldFromANewerServer"] = true
+			data, _ := json.Marshal(body)
+			r.Body = io.NopCloser(bytes.NewReader(data))
+			r.ContentLength = int64(len(data))
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(newer.Close)
+	runtimeProvider.baseURL = newer.URL
+	runtimeProvider.client = newer.Client()
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+
+	_, _, err = provider.Create(ctx, sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1", PoolID: "pool-1"}, nil, sandbox.CreateOptions{})
+	if !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+		t.Fatalf("create against an agent that does not know a field = %v, want ErrPoolAgentUnsupported", err)
+	}
+	if !strings.Contains(err.Error(), "fieldFromANewerServer") {
+		t.Fatalf("create error = %v, want the agent's account of the field it could not read", err)
+	}
+}
+
+// The agent's other 400s stay ordinary failures, because a current agent gives
+// them too: its own refusals, which are problems, and a value its generated
+// validators refuse, which is in the generator's body like an unknown field.
+func TestPoolAgentBadRequestOtherThanAnUnknownFieldIsNotUnsupported(t *testing.T) {
+	for name, err := range map[string]error{
+		"a problem": poolStatusError(http.StatusBadRequest, ""),
+		"a value the validators refuse": &unexpectedPoolAgentResponse{StatusCode: http.StatusBadRequest,
+			Body: `{"error_message":"operation PoolCreateSandbox: decode request: validate: invalid: sandboxId (string: len 0 less than minimum 1)"}`},
+		"a 400 from something in front of the agent": &unexpectedPoolAgentResponse{StatusCode: http.StatusBadRequest, Body: "400 Bad Request: unexpected field"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := mapPoolClientError(err); errors.Is(got, sandbox.ErrPoolAgentUnsupported) {
+				t.Fatalf("mapped to %v, want an ordinary failure", got)
+			}
+		})
 	}
 }
 
