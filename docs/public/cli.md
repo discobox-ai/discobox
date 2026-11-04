@@ -2693,7 +2693,7 @@ and history, but discards whatever was written to its container filesystem
 outside them -- which is the reason to hold one back.
 
 --welcomed=false shows the console's welcome screen again on this project's
-next "discobox" or "discobox console": it is otherwise shown once, the first time
+next "discobox console": it is otherwise shown once, the first time
 the console opens on the project.
 
 --harness-changes-explained=false shows the console's explanation of saving a
@@ -3915,11 +3915,31 @@ discobox admin uninstall [flags]
 ## discobox adopt
 
 ~~~~text
-Ask a person to let this discobox lead another
+Ask a person to let this discobox lead DISCOBOX, and wait for their answer.
+
+Run this inside a discobox with discobox API access (--discobox-api at creation).
+A person approves or denies the request in the console's inbox on the secrets
+screen (F4), or from the requester's row (C). --reason is required and is shown
+to that person. Ctrl-C stops waiting; the request stays in the inbox.
+
+Approval replaces the child's current parent. The child's credentials and
+creator stay its own. A child with wider egress can only be read: writes and
+sends into it are refused. The child must be in the same project, cannot be
+this discobox or an ancestor, and cannot be archived or deleting.
+
+Use "discobox release" to give a child back and "discobox ls --parent me" to
+list the discoboxes this one leads.
 ~~~~
 
 ```text
 discobox adopt DISCOBOX [flags]
+```
+
+Examples:
+
+```text
+  discobox adopt mybox --reason 'Carry this feature through review'
+  discobox ls --parent me
 ```
 
 | Flag | Type | Default | Description |
@@ -4507,11 +4527,23 @@ discobox push [DISCOBOX] [flags]
 ## discobox release
 
 ~~~~text
-Give a child discobox back
+Give DISCOBOX back by clearing its parent. Its creator, files and credentials
+stay its own, and it keeps running. A person may release any discobox; a
+discobox with API access may release only a child it leads.
+
+The former parent loses the authority adoption or creation gave it over this
+child. Adopting it again needs a person's approval.
 ~~~~
 
 ```text
 discobox release DISCOBOX [flags]
+```
+
+Examples:
+
+```text
+  discobox release mybox
+  discobox ls --parent me
 ```
 
 | Flag | Type | Default | Description |
