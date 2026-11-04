@@ -6,7 +6,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -112,6 +115,67 @@ func TestProviderManagerFactoryCachesProviderInstances(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("factory calls = %d, want 1", calls)
+	}
+}
+
+// Two first resolves of one instance at once — a pool reconcile and the
+// startup pass over every instance, which run together at every start — build
+// it once. Built twice, the one cached second closed the first, which was
+// already running: its pool watcher's first scan was cut off mid-query
+// ("interrupted (9)") and a caller already holding it was left with a closed
+// provider.
+func TestProviderManagerBuildsAnInstanceOnceWhenResolvedConcurrently(t *testing.T) {
+	ctx := context.Background()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
+	var calls atomic.Int32
+	release := make(chan struct{})
+	var built []*fakeProvider
+	var builtMu sync.Mutex
+	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		calls.Add(1)
+		<-release
+		provider := &fakeProvider{image: "remote:latest"}
+		builtMu.Lock()
+		built = append(built, provider)
+		builtMu.Unlock()
+		return provider, nil
+	})
+	instance := &model.SandboxProviderInstance{ID: "provider-1", Type: "remote", UpdatedAt: time.Now().UTC()}
+
+	resolved := make([]sandbox.Provider, 2)
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	resolve := func(i int) {
+		defer wg.Done()
+		resolved[i], errs[i] = manager.ResolveInstance(ctx, instance)
+	}
+	wg.Add(2)
+	go resolve(0)
+	for calls.Load() == 0 {
+		runtime.Gosched()
+	}
+	go resolve(1)
+	// Long enough for the second resolve to reach the factory if nothing
+	// holds it back.
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("resolve %d: %v", i, err)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("factory calls = %d, want 1", got)
+	}
+	if resolved[0] != resolved[1] {
+		t.Fatal("concurrent resolves returned different providers")
+	}
+	for _, provider := range built {
+		if provider.closed {
+			t.Fatal("a provider handed to a caller was closed")
+		}
 	}
 }
 

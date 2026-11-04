@@ -29,6 +29,10 @@ rest of the config (ADR 26-10-31-694):
   field still in `config` fails the resolve and never reaches the provider.
 - **Rotation** is an update: it moves `UpdatedAt`, on which the manager's
   cache is keyed. No secret field is `Immutable`.
+- **Built once.** An instance is built one resolve at a time; a concurrent
+  resolve waits and takes the cached provider. Every start resolves each
+  instance from the running engine and the startup pass together, and a
+  second build closed the first while it was in use.
 - **No project secret** is named, so no binding, request, delegation or raw
   delivery reaches a provider's credential. An environment reference
   (`tokenEnv`, `sshPrivateKeyEnv`) is refused by name (400).
