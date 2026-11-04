@@ -74,13 +74,12 @@ from_auth_json() {
 	' | own
 }
 
-# delivered prints the import entries the configuration delivered into a home.
+# delivered prints the import entries the configuration delivered into this home.
 delivered() {
-	home=${1:-$HOME}
-	if [ -f "$home/$CREDENTIALS_PATH" ]; then
-		jq -c 'if type == "array" then . else [] end' "$home/$CREDENTIALS_PATH"
-	elif [ -f "$home/$LEGACY_AUTH_PATH" ]; then
-		from_auth_json <"$home/$LEGACY_AUTH_PATH" | jq -c .
+	if [ -f "$HOME/$CREDENTIALS_PATH" ]; then
+		jq -c 'if type == "array" then . else [] end' "$HOME/$CREDENTIALS_PATH"
+	elif [ -f "$HOME/$LEGACY_AUTH_PATH" ]; then
+		from_auth_json <"$HOME/$LEGACY_AUTH_PATH" | jq -c .
 	else
 		echo '[]'
 	fi
