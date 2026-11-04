@@ -104,8 +104,12 @@ Serialize relationship changes and deletion against that publication, so a
 concurrent child create or conversion cannot commit a stale parent snapshot,
 and a concurrent delete cannot leave a dangling parent ID. A child's
 personal edits use its revision as today; a changed inherited snapshot bumps
-that revision too, invalidating stale edits and save-back baselines rather
-than overwriting newer state. An unchanged snapshot does not bump it.
+that revision too, rejecting stale direct edits. Save-back retains
+[26-11-04-538](26-11-04-538-saving-a-harness-candidate-overwrites-without-a-revision-conflict.md)'s
+overwrite policy: revision advancement alone never invalidates a captured
+candidate. A changed manifest is still checked for compatibility before save;
+delivery baselines remain the record of what the box received. An unchanged
+snapshot does not bump the revision.
 
 Apply the existing re-snapshot effects to each changed config under its own
 identity: synchronize its owned credential routes from the new declarations,
@@ -188,8 +192,8 @@ this ADR is implemented; this proposal changes none of them.
 - **Resolve only the bundle live from the parent.** It can disagree with
   snapshotted commands, files and secret declarations. Resolving the entire
   snapshot live avoids that mismatch but would move parent resolution into
-  every consumer and leave child revision/save-back baselines unchanged when
-  inherited metadata changes. Atomic materialization keeps those boundaries
+  every consumer and require separate revision tracking to reject stale direct
+  edits when inherited metadata changes. Atomic materialization keeps those boundaries
   explicit and preserves inspection at write time.
 - **Inherit the parent's account or merge arbitrary settings.** That makes
   a second account depend on the first account's personal edits and risks
