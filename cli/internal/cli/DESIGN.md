@@ -87,3 +87,7 @@ answer until approved, denied or canceled. `release DISCOBOX` gives a child back
 Both resolve by the same selection as other top-level sandbox commands.
 `ls --parent ID` filters by parent; `--parent me` reads this box's static config.
 Tables show PARENT; JSON preserves the creator beside it.
+
+`exec` narrates preparation while command creation waits, using the same
+provisioning watcher as attach. Canceling ends the request and the watcher;
+the status row is cleared before terminal output begins.

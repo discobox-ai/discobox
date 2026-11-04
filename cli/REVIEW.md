@@ -324,3 +324,8 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   pair. A discobox is owed its delivery while parked, failed, or being
   repaired (ADR 26-11-03-618 §1), and every place that decided by state, or by
   its own copy of the rule, let an ordinary push or a start through to one.
+
+- **Escape decoded API errors before printing them.** Preparation failures can
+  carry feature logs from the sandbox. `responseError` escapes generated error
+  messages at the CLI boundary; a JSON escape becomes an active terminal control
+  after decoding unless the decoded string is escaped again.

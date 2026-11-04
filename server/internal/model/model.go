@@ -1321,6 +1321,20 @@ func (s *Sandbox) DisplayState() string {
 			// and nobody has seen it settle.
 			return "starting"
 		}
+		if s.RuntimeState == SandboxRuntimeStateRunning {
+			var status struct {
+				Provision *struct {
+					Ready bool   `json:"ready"`
+					Error string `json:"error"`
+				} `json:"provision"`
+			}
+			if json.Unmarshal(s.AgentStatus, &status) == nil && status.Provision != nil && !status.Provision.Ready {
+				if status.Provision.Error != "" {
+					return "error"
+				}
+				return "starting"
+			}
+		}
 		return s.RuntimeState
 	case SandboxStateArchived, SandboxStateDeleted:
 		return s.State

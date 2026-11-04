@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -70,7 +71,17 @@ so, and one more quits exec and leaves the command where it is.`,
 			if err != nil {
 				return err
 			}
+			status := newStatusLine(cmd.ErrOrStderr(), a.color)
+			watching, stopWatching := context.WithCancel(cmd.Context())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				a.watchProvisioning(watching, projectID, sandboxID, status.set)
+			}()
 			exec, err := a.createSandboxExec(cmd.Context(), projectID, sandboxID, body, true)
+			stopWatching()
+			<-done
+			status.clear()
 			if err != nil {
 				return err
 			}

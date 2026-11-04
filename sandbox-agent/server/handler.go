@@ -147,7 +147,11 @@ func (h *handler) resolveExecIDReadOnly(execID string) (string, error) {
 	}
 	exec, ok := h.terminals.CurrentPrimary()
 	if !ok {
-		return "", execs.ErrNotFound
+		message := "discobox primary terminal is not available; it may still be preparing; retry or attach to start it"
+		if h.provision != nil && h.provision.Status().Error != "" {
+			message = "discobox preparation failed: " + h.provision.Status().Error
+		}
+		return "", statusError{status: http.StatusConflict, message: message}
 	}
 	return exec.ID, nil
 }
@@ -277,6 +281,10 @@ func writeExecResolveError(w http.ResponseWriter, err error) {
 // execResolveStatusError is the generated-handler counterpart of
 // writeExecResolveError.
 func execResolveStatusError(err error) error {
+	var status statusError
+	if errors.As(err, &status) {
+		return status
+	}
 	if errors.Is(err, execs.ErrNotFound) {
 		return statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 	}
@@ -334,6 +342,19 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 		}
 		return &sandboxapi.CreateSandboxExecResponse{Exec: h.sandboxExec(created)}, nil
 	}
+	// Commands and login shells need the provisioned user environment too.
+	// Wait before creating any exec record so cancellation leaves no phantom.
+	if h.provision != nil {
+		waiting, cancel := context.WithTimeout(ctx, terminalReadyTimeout)
+		defer cancel()
+		if err := h.provision.AwaitReady(waiting); err != nil {
+			message := "discobox preparation failed: " + err.Error()
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				message = "discobox is still preparing; retry when preparation finishes"
+			}
+			return nil, statusError{status: http.StatusConflict, message: message}
+		}
+	}
 	created, err := h.execs.Create(ctx, execs.CreateRequest{
 		Command:          append([]string{}, req.Command...),
 		Shell:            shell,
@@ -358,7 +379,7 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 func (h *handler) DeleteSandboxExec(ctx context.Context, params sandboxapi.DeleteSandboxExecParams) error {
 	execID, err := h.resolveExecIDReadOnly(params.ExecId)
 	if err != nil {
-		return statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+		return execResolveStatusError(err)
 	}
 	if err := h.execs.Delete(ctx, execID); err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
@@ -372,7 +393,7 @@ func (h *handler) DeleteSandboxExec(ctx context.Context, params sandboxapi.Delet
 func (h *handler) GetSandboxExec(_ context.Context, params sandboxapi.GetSandboxExecParams) (*sandboxapi.SandboxExec, error) {
 	execID, err := h.resolveExecIDReadOnly(params.ExecId)
 	if err != nil {
-		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+		return nil, execResolveStatusError(err)
 	}
 	exec, ok := h.execs.Get(execID)
 	if !ok {
@@ -412,7 +433,7 @@ func (h *handler) ListSandboxExecs(context.Context, sandboxapi.ListSandboxExecsP
 func (h *handler) ListSandboxExecLogs(ctx context.Context, params sandboxapi.ListSandboxExecLogsParams) (*sandboxapi.SandboxExecLogsResponse, error) {
 	execID, err := h.resolveExecIDReadOnly(params.ExecId)
 	if err != nil {
-		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+		return nil, execResolveStatusError(err)
 	}
 	entries, err := h.execs.Logs(ctx, execID)
 	if err != nil {
@@ -431,7 +452,7 @@ func (h *handler) ListSandboxExecLogs(ctx context.Context, params sandboxapi.Lis
 func (h *handler) ListSandboxExecEvents(ctx context.Context, params sandboxapi.ListSandboxExecEventsParams) (*sandboxapi.SandboxExecEventsResponse, error) {
 	execID, err := h.resolveExecIDReadOnly(params.ExecId)
 	if err != nil {
-		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+		return nil, execResolveStatusError(err)
 	}
 	if _, ok := h.execs.Get(execID); !ok {
 		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}

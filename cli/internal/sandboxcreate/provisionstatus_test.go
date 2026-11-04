@@ -303,3 +303,33 @@ func TestOneLineEscapesWhatATerminalWouldActOn(t *testing.T) {
 		t.Fatalf("OneLine(%q) = %q, want ordinary text untouched", plain, OneLine(plain))
 	}
 }
+
+func TestProvisionStatusIncludesAgentPreparation(t *testing.T) {
+	runtime := apimodel.SandboxRuntime{
+		State:        apiclientgen.SandboxRuntimeStateReady,
+		RuntimeState: apiclientgen.NewOptSandboxRuntimeRuntimeState(apiclientgen.SandboxRuntimeRuntimeStateRunning),
+		DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState(apiclientgen.SandboxRuntimeDisplayStateStarting),
+	}
+	if got := ProvisionStatus(provisioning(runtime)); got != "preparing the discobox" {
+		t.Fatalf("status = %q, want preparation while the running agent provisions", got)
+	}
+	runtime.ProvisionProgress = apiclientgen.NewOptSandboxProvisionProgress(apimodel.SandboxProvisionProgress{Phase: apiclientgen.SandboxProvisionPhaseMaterializingSource})
+	runtime.ProvisionProgressAt = apiclientgen.NewOptDateTime(time.Now())
+	if got := ProvisionStatus(provisioning(runtime)); got != "preparing the discobox" {
+		t.Fatalf("recent pool phase hid agent preparation: %q", got)
+	}
+	runtime.State = apiclientgen.SandboxRuntimeStatePending
+	if got := ProvisionStatus(provisioning(runtime)); got != "sandbox checking out source" {
+		t.Fatalf("pending source delivery was hidden: %q", got)
+	}
+	runtime.State = apiclientgen.SandboxRuntimeStateReady
+	runtime.Generation = 2
+	if got := ProvisionStatus(provisioning(runtime)); got != "sandbox checking out source" {
+		t.Fatalf("in-flight source delivery was hidden: %q", got)
+	}
+	runtime.ObservedGeneration = 2
+	runtime.DisplayState.SetTo(apiclientgen.SandboxRuntimeDisplayStateRunning)
+	if got := ProvisionStatus(provisioning(runtime)); got != "" {
+		t.Fatalf("ready status = %q", got)
+	}
+}

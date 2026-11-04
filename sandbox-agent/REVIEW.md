@@ -744,3 +744,8 @@ user waits on every single start.
 
 - Bound the entire shim status exchange, not only the dial. An accepting but
   unresponsive shim must fail status reads so sleep can reach its ceiling.
+
+- **A primary read can precede its record and its shim.** Provision readiness
+  precedes source waiting and first record creation; that record precedes
+  installation and shim launch. Return preparation guidance in both windows,
+  keeping concrete unknown IDs as 404 and real ended sessions as ended.

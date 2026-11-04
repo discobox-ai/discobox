@@ -23,7 +23,12 @@ const maxTerminalWait = 60 * time.Second
 func (h *handler) GetSandboxExecScreen(ctx context.Context, params sandboxapi.GetSandboxExecScreenParams) (*sandboxapi.SandboxExecScreen, error) {
 	execID, err := h.resolveExecIDReadOnly(params.ExecId)
 	if err != nil {
-		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+		return nil, execResolveStatusError(err)
+	}
+	// The record precedes installation and the shim. A starting terminal has
+	// no screen yet; that is preparation, not an ended session.
+	if exec, ok := h.execs.Get(execID); ok && exec.Status == execs.StatusStarting {
+		return nil, statusError{status: http.StatusConflict, message: "discobox terminal is still preparing; retry when preparation finishes"}
 	}
 	screen, err := h.execs.Screen(ctx, execID, int(params.Scrollback.Or(0)))
 	if err != nil {
@@ -52,7 +57,7 @@ func (h *handler) GetSandboxExecScreen(ctx context.Context, params sandboxapi.Ge
 func (h *handler) SendSandboxExecInput(ctx context.Context, req *sandboxapi.SandboxExecInputBody, params sandboxapi.SendSandboxExecInputParams) (*sandboxapi.SandboxExecInputResult, error) {
 	execID, err := h.resolveExecIDReadOnly(params.ExecId)
 	if err != nil {
-		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+		return nil, execResolveStatusError(err)
 	}
 	parts := make([]shimruntime.InputPart, 0, len(req.Input))
 	for _, part := range req.Input {
@@ -70,7 +75,7 @@ func (h *handler) SendSandboxExecInput(ctx context.Context, req *sandboxapi.Sand
 func (h *handler) WaitSandboxExec(ctx context.Context, req *sandboxapi.SandboxExecWaitBody, params sandboxapi.WaitSandboxExecParams) (*sandboxapi.SandboxExecWaitResult, error) {
 	execID, err := h.resolveExecIDReadOnly(params.ExecId)
 	if err != nil {
-		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+		return nil, execResolveStatusError(err)
 	}
 	until := req.Until
 	hookEvents := until.HookEvents
