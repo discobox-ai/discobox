@@ -582,6 +582,14 @@ user waits on every single start.
 - **Keep the tagged files to the system calls.** Parse what a platform's tool
   prints in an untagged file, so the parser is tested in every CI lane rather
   than only on a Mac.
+- **A `sock_diag` field is read in its own byte order, and the comparison
+  test is what proves it.** In `inet_diag_msg` the port and address are
+  network order and uid and inode are host order; `x/sys/unix` has no struct,
+  so the offsets are ours. A change to `parseInetDiagMsg` or the request keeps
+  `TestSockDiagListsWhatProcfsLists` passing on a kernel with both. Only a
+  refusal (`errSockDiagUnsupported`) turns `sock_diag` off for good; any other
+  error falls back for one scan, so a transient `EAGAIN` does not put a host
+  back on the costly read for the agent's life.
 
 ## Idle stop
 
@@ -622,6 +630,12 @@ user waits on every single start.
   the hold is the agent's (`waitHold`), never a parameter. A snapshot change
   must move the version, and a tick that changed nothing must not, or the
   pool re-pushes the same ports twice a second.
+- **Moving the version is not free.** Each move the pool sees is a status
+  computation here (git status for every source) and a control-plane write;
+  a test run's short-lived listeners already move it on most ticks, which the
+  pool's per-sandbox wake spacing is what bounds. A change that makes the
+  version move more often — a new field in the snapshot, a finer probe state —
+  is weighed against that, not only against the scan.
 - **Output is not activity; a changed screen is.** `screenBuffer.sumText`
   hashes cell content only. Adding styles, the cursor, the scrollback (filled
   on every `CSI 2J`), or raw byte counts to it makes a self-drawn blinking

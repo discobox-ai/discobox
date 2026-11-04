@@ -4,8 +4,8 @@
 // having to know its number or its protocol (see ADR 0046). It reports the UDP
 // ports they have bound beside them, as udp and never probed (ADR 0109).
 //
-// Discovery is a read of the platform's socket table filtered by uid — procfs
-// on Linux, lsof on darwin, behind Scanner — cheap enough to repeat on a short
+// Discovery is a read of the platform's socket table filtered by uid —
+// sock_diag and procfs on Linux, lsof on darwin, behind Scanner — cheap enough to repeat on a short
 // interval. Classification is not: the only way to learn what a socket speaks
 // is to connect to it and write a request at it, so a socket is probed once and
 // the answer is cached for its lifetime. That is why this is a standing watcher

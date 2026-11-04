@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -44,12 +45,17 @@ type procNetTable struct {
 	state   string
 }
 
-var procNetTables = []procNetTable{
-	{name: "tcp", network: networkTCP, state: tcpStateListen},
-	{name: "tcp6", network: networkTCP, state: tcpStateListen},
-	{name: "udp", network: networkUDP, state: udpStateUnconnected},
-	{name: "udp6", network: networkUDP, state: udpStateUnconnected},
-}
+var (
+	procNetTCPTables = []procNetTable{
+		{name: "tcp", network: networkTCP, state: tcpStateListen},
+		{name: "tcp6", network: networkTCP, state: tcpStateListen},
+	}
+	procNetUDPTables = []procNetTable{
+		{name: "udp", network: networkUDP, state: udpStateUnconnected},
+		{name: "udp6", network: networkUDP, state: udpStateUnconnected},
+	}
+	procNetTables = slices.Concat(procNetTCPTables, procNetUDPTables)
+)
 
 // scan returns every listening TCP socket and every bound, unconnected UDP
 // socket owned by uid: a TCP socket in TCP_LISTEN, or a UDP socket nothing has
@@ -60,6 +66,13 @@ var procNetTables = []procNetTable{
 // A UDP socket on a port inside the ephemeral range is dropped (ADR 0109 §1;
 // see portRange).
 func (p Procfs) scan(_ context.Context, uid int64) ([]listener, error) {
+	return p.scanTables(procNetTables, uid)
+}
+
+// scanTables is scan over the named tables only. sockDiag reads the UDP ones
+// through it, since sock_diag lists TCP listeners far more cheaply than
+// net/tcp does and UDP no more cheaply than net/udp does.
+func (p Procfs) scanTables(tables []procNetTable, uid int64) ([]listener, error) {
 	procRoot := p.Root
 	if procRoot == "" {
 		procRoot = "/proc"
@@ -69,7 +82,7 @@ func (p Procfs) scan(_ context.Context, uid int64) ([]listener, error) {
 		errs []error
 	)
 	ephemeral := readEphemeralRange(procRoot)
-	for _, table := range procNetTables {
+	for _, table := range tables {
 		data, err := os.ReadFile(filepath.Join(procRoot, "net", table.name))
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
