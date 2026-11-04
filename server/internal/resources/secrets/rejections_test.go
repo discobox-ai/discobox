@@ -384,7 +384,7 @@ func TestListSecretRejectionsNamesTheHarnessThatOwnsTheCredential(t *testing.T) 
 	}
 	got := listed[0]
 	if got.HarnessConfigID != cfg.ID || got.HarnessConfigName != "Claude Code" {
-		t.Fatalf("harness = %q/%q, want the config whose configure flow made the credential", got.HarnessConfigID, got.HarnessConfigName)
+		t.Fatalf("harness = %q/%q, want the config that made the credential", got.HarnessConfigID, got.HarnessConfigName)
 	}
 	if got.EnvName != "ANTHROPIC_API_KEY" {
 		t.Fatalf("envName = %q, want the variable it is delivered in", got.EnvName)

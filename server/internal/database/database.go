@@ -646,19 +646,19 @@ func moveSecretHostsToLists(db *gorm.DB) error {
 	return nil
 }
 
-// liftConfiguredSecretGrantLimits takes the ceiling off the credentials a
-// harness configure flow created.
+// liftConfiguredSecretGrantLimits takes the ceiling off the credentials the
+// harness configure flow created, before it was retired (ADR 26-11-02-152).
 //
-// Those secrets are the harness's own: the flow binds one, grants it at harness
-// scope with no expiry, and deletes it when the harness is deconfigured. The
-// grant never lapses, because a harness that stops working an hour after it was
-// configured is a harness nobody configured. The limit these rows carry was
+// Those secrets are the harness's own: they are bound at harness scope with no
+// expiry, as save-back binds the ones it creates now, and a reset deletes them.
+// The grant never lapses, because a harness login that stops working an hour
+// after it was saved is no login at all. The limit these rows carry was
 // never chosen — it was the column default, back when the number was only a
 // default — and under a ceiling it would describe a lifetime the credential's
 // own grant does not have and refuse the next grant somebody writes for it.
 //
 // Only rows still carrying that old default are touched, and only those the
-// configure flow created. A secret a person created and then bound to a harness
+// harness owns (its configured secret IDs). A secret a person created and then bound to a harness
 // keeps whatever limit that person set; so does a configured secret whose limit
 // somebody has since changed.
 func liftConfiguredSecretGrantLimits(db *gorm.DB) error {
