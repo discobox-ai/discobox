@@ -85,11 +85,27 @@ func openLibrary(path string) (*krunLibrary, error) {
 	} {
 		symbol, err := purego.Dlsym(handle, name)
 		if err != nil || symbol == 0 {
-			return nil, fmt.Errorf("%s does not export %s; it is too old for this server", path, name)
+			return nil, missingSymbolError(path, name)
 		}
 		purego.RegisterFunc(target, symbol)
 	}
 	return lib, nil
+}
+
+// Missing optional-backend symbols do not imply an old library: distributions
+// can disable BLK and NET even in a current release.
+func missingSymbolError(path, symbol string) error {
+	feature := ""
+	switch symbol {
+	case "krun_add_disk3", "krun_set_root_disk_remount":
+		feature = "block-device"
+	case "krun_add_net_unixstream":
+		feature = "network"
+	}
+	if feature != "" {
+		return fmt.Errorf("%s does not export %s; it may have been built without %s support; install libkrun 1.19.7 or newer in the 1.x series built with BLK=1 NET=1 (nixpkgs: libkrun.override { withBlk = true; withNet = true; })", path, symbol, feature)
+	}
+	return fmt.Errorf("%s does not export %s; install libkrun 1.19.7 or newer in the 1.x series", path, symbol)
 }
 
 // boot configures a VM from the manifest and enters it. It never returns nil:

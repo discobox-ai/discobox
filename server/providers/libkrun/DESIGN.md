@@ -19,6 +19,13 @@ development answer; `nix build .#libkrun-runtime` builds the same closure for a
 machine that is not in a dev shell, which then names the library in the
 provider's `libkrunPath` or puts it on the loader's path itself.
 
+The library must be libkrun 1.19.7 or newer in the 1.x series, built with
+block-device and network support (`BLK=1 NET=1`). A recent version alone is
+not enough: nixpkgs disables both by default. Use
+`libkrun.override { withBlk = true; withNet = true; }` there. Missing
+`krun_add_disk3` or `krun_add_net_unixstream` exports report the relevant
+feature and these build requirements rather than claiming the library is old.
+
 Everything is ordered off that:
 
 1. `guestimage` fetches the shared guest image and the kernel image through the
