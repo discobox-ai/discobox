@@ -142,8 +142,9 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		// HUP must stop it without waiting out the kill grace.
 		dir := t.TempDir()
 		ready := filepath.Join(dir, "interactive")
+		hungup := filepath.Join(dir, "hungup")
 		rc := filepath.Join(dir, "rc")
-		if err := os.WriteFile(rc, fmt.Appendf(nil, "trap 'exit 129' HUP\ntrap -p HUP TERM > %q\n", ready), 0o600); err != nil {
+		if err := os.WriteFile(rc, fmt.Appendf(nil, "trap 'printf \"%%s\\n\" \"$SECONDS\" > %q; exit 129' HUP\ntrap -p HUP TERM > %q\n", hungup, ready), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -180,6 +181,13 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 		if took := time.Since(began); took >= shimStopGrace/2 {
 			traps, _ := os.ReadFile(ready)
 			t.Logf("interactive shell signal dispositions: %s", traps)
+			hupAt, hupErr := os.ReadFile(hungup)
+			status, statusErr := readRuntime(running.RuntimePath)
+			var code any
+			if status.ExitCode != nil {
+				code = *status.ExitCode
+			}
+			t.Logf("HUP trap ran at shell second %q (read error=%v); runtime status=%s exit code=%v (read error=%v)", hupAt, hupErr, status.Status, code, statusErr)
 			t.Fatalf("stopping a terminal took %s; an interactive shell has to be hung up, not waited out", took)
 		}
 		waitUntil(t, "the terminal's session to exit", func() bool {
