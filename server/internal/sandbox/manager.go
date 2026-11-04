@@ -46,8 +46,11 @@ type ProviderManager struct {
 	factories  map[string]ProviderFactory
 	validators map[string]ProviderConfigValidator
 	cache      map[string]cachedProvider
-	defaultID  string
-	secrets    ProviderSecrets
+	// building holds one lock per provider instance, taken across building
+	// it, so concurrent first resolves of an instance build it once.
+	building  map[string]*sync.Mutex
+	defaultID string
+	secrets   ProviderSecrets
 }
 
 type cachedProvider struct {
@@ -65,6 +68,7 @@ func NewProviderManager(secrets ProviderSecrets) *ProviderManager {
 		factories:  make(map[string]ProviderFactory),
 		validators: make(map[string]ProviderConfigValidator),
 		cache:      make(map[string]cachedProvider),
+		building:   make(map[string]*sync.Mutex),
 		defaultID:  PlatformDefaultProvider(),
 	}
 }
@@ -324,14 +328,26 @@ func (m *ProviderManager) factory(providerType string) ProviderFactory {
 	return m.factories[providerType]
 }
 
+// cachedProvider is the instance's provider, built on first use and again
+// whenever the instance's row has changed since.
+//
+// A build is one at a time per instance, and checks the cache again once it
+// holds the instance's lock. Every start resolves each instance from two
+// places at once — the reconcile engine, already running, and the startup
+// pass over every instance — and a provider built twice had the second close
+// the first, which by then was running and might be held: a Docker provider's
+// pool watcher had its first scan cut off mid-query. Other instances build
+// alongside, since one may wait on a host another does not need.
 func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.SandboxProviderInstance, factory ProviderFactory) (Provider, error) {
-	m.mu.RLock()
-	if cached, ok := m.cache[instance.ID]; ok && cached.updatedAt.Equal(instance.UpdatedAt) {
-		provider := cached.provider
-		m.mu.RUnlock()
+	if provider, ok := m.cachedFor(instance); ok {
 		return provider, nil
 	}
-	m.mu.RUnlock()
+	build := m.buildLock(instance.ID)
+	build.Lock()
+	defer build.Unlock()
+	if provider, ok := m.cachedFor(instance); ok {
+		return provider, nil
+	}
 
 	resolved, err := m.withSecrets(ctx, instance)
 	if err != nil {
@@ -353,6 +369,31 @@ func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.Sa
 		closeProvider(previous)
 	}
 	return provider, nil
+}
+
+// cachedFor is the cached provider of instance, if it was built from the row
+// as it reads now.
+func (m *ProviderManager) cachedFor(instance *model.SandboxProviderInstance) (Provider, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cached, ok := m.cache[instance.ID]
+	if !ok || !cached.updatedAt.Equal(instance.UpdatedAt) {
+		return nil, false
+	}
+	return cached.provider, true
+}
+
+// buildLock is the lock a build of the instance holds. It is kept for the
+// manager's lifetime: there is one per configured instance.
+func (m *ProviderManager) buildLock(instanceID string) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	lock, ok := m.building[instanceID]
+	if !ok {
+		lock = &sync.Mutex{}
+		m.building[instanceID] = lock
+	}
+	return lock
 }
 
 // withSecrets is instance with its sealed fields joined into its config, the

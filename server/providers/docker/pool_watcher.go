@@ -86,9 +86,11 @@ func reclaimImages(ctx context.Context, cli *client.Client, engine *dockerworker
 
 // run performs an initial best-effort drift scan and then watches for runtime
 // events. Scan failures are logged, never fatal: reconcile marks and runtime
-// events cover anything the scan missed.
+// events cover anything the scan missed. A scan cut off by the driver closing
+// is not one: the provider it belonged to is gone, and its store reads fail
+// for that alone ("interrupted").
 func (w dockerPoolWatcher) run(ctx context.Context) {
-	if _, err := w.scan(ctx); err != nil {
+	if _, err := w.scan(ctx); err != nil && ctx.Err() == nil {
 		log.Printf("docker pool watcher for provider %s initial scan failed: %v", w.providerID, err)
 	}
 	w.watch(ctx)
