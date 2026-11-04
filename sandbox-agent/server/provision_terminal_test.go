@@ -15,7 +15,7 @@ import (
 
 func TestTerminalReadsDistinguishPreparationFromUnknownTerminal(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	cfg := testConfigWithRunner(publicKey, &sandboxAgentFakeRunner{})
+	cfg := testConfigWithRunner(t, publicKey, &sandboxAgentFakeRunner{})
 	cfg.Provision = provision.NewTracker("")
 	router, err := NewRouter(cfg)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestTerminalReadsDistinguishPreparationFromUnknownTerminal(t *testing.T) {
 // failure must be named, while a concrete unknown ID remains a missing exec.
 func TestCommandCreationWhilePreparingIsCancelable(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	cfg := testConfigWithRunner(publicKey, &sandboxAgentFakeRunner{})
+	cfg := testConfigWithRunner(t, publicKey, &sandboxAgentFakeRunner{})
 	cfg.Provision = provision.NewTracker("")
 	router, err := NewRouter(cfg)
 	if err != nil {
@@ -91,7 +91,7 @@ func TestCommandCreationWhilePreparingIsCancelable(t *testing.T) {
 
 func TestPrimaryReadsBeforeRecordAndShim(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	cfg := testConfigWithRunner(publicKey, &sandboxAgentFakeRunner{})
+	cfg := testConfigWithRunner(t, publicKey, &sandboxAgentFakeRunner{})
 	built, err := newRouterAndManager(cfg)
 	if err != nil {
 		t.Fatal(err)
