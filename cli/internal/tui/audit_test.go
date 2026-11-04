@@ -568,3 +568,26 @@ func TestTheBannerKeysAnswerOverTheAuditScreen(t *testing.T) {
 		}
 	})
 }
+
+// The harness-changes band's key is one of them: over the audit it opens the
+// review rather than typing H into the audit's search.
+func TestTheHarnessChangesKeyAnswersOverTheAuditScreen(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		boxes := testSandboxes()
+		boxes[0].HarnessName = "Claude Code"
+		boxes[0].HarnessConfigCandidate, boxes[0].HarnessConfigPending = "cand_1", true
+		ds := newFakeSource(boxes...)
+		ds.harnessChanges = HarnessChanges{CandidateID: "cand_1", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
+		d, m, _ := openAuditScreen(t, ds)
+		deliverAudit(d, ds, AuditUpdate{Records: auditRecords("first", "second"), Polled: true})
+		d.wait("the harness-changes band", func() bool { return m.bannerShowing() == bannerHarnessChanges })
+
+		d.key("ctrl+a")
+		d.key(harnessChangesKey)
+		d.wait("the review", func() bool { return m.dialog != nil && strings.Contains(m.dialog.title, "Harness changes") })
+		if len(m.audit.search.terms) != 0 {
+			t.Fatalf("audit search = %v, want the key not typed into it", m.audit.search.terms)
+		}
+	})
+}

@@ -66,8 +66,9 @@
 - **Nothing teaches configuring a harness.** A harness is signed in and set
   up inside a discobox, and a box's change is saved with `admin harness save`
   or the console's harness-changes band (ADR 26-11-02-152). Help, a hint or a
-  band that sends somebody to a setup out here, or warns them off signing in
-  inside the box, is the model that was removed. `admin harness reset` is the
+  band that sends somebody to a setup out here is the model that was removed.
+  Saying what signing in and saving expose — a login typed in a box is
+  readable there, a save shares settings that can run commands — is not. `admin harness reset` is the
   one way back to a bundle's defaults.
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line
@@ -235,8 +236,8 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   authority is another host.
 - **A child process that names a server sets `DISCOBOX_TOKEN` outright.**
   Start its environment from `App.childCLIEnv`, never bare `os.Environ()`, and
-  say which token it carries: the App's own for the ProxyCommand and harness
-  configure, none for a host tool, whose CLI is authorized by its transport.
+  say which token it carries: the App's own for the ProxyCommand, none for a
+  host tool, whose CLI is authorized by its transport.
   An App aimed at a registered server carries no token (`forServer`), so an
   inherited `DISCOBOX_TOKEN` was given for the primary, and beside a
   `DISCOBOX_SERVER` naming another server it sends the primary's bearer token

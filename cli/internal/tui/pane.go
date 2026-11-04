@@ -566,10 +566,9 @@ func (m *Model) paneOptions(readOnly bool) []termpane.Option {
 	// says there is one, and an affordance that names a key the pane swallows
 	// is not one.
 	opts = append(opts, termpane.WithPrefixBinding(credentialsLeaderKey, openCredentialsMsg{}))
-	// The credential the header is telling you does not work — refused, or not
-	// there at all — for the same reason: the band names this key, and a key
-	// the pane swallowed would make the band a sentence rather than a button.
-	// See rejections.go and uncredentialed.go.
+	// The credential the header is telling you was refused, for the same
+	// reason: the band names this key, and a key the pane swallowed would make
+	// the band a sentence rather than a button. See rejections.go.
 	opts = append(opts, termpane.WithPrefixBinding(rejectedKey, openRejectedMsg{}))
 	// And the band's own dismissal, for the same reason again: the band draws
 	// a button for it, and the key is the button from the keyboard.
@@ -1604,8 +1603,9 @@ func (m *Model) viewPaneWindow() string {
 	rows := []string{
 		" " + pad + header + pad + " ",
 	}
-	// A credential request waiting on this discobox — or a credential to
-	// replace or configure — gets a band of its own under the header *and* one
+	// A credential request waiting on this discobox — or a refused credential
+	// to replace, or a harness change to save — gets a band of its own under
+	// the header *and* one
 	// above the keys. Whichever it is, the one thing this screen has to do is say so
 	// — on a screen that is mostly terminal, whichever end of it you are
 	// reading. Both are rows the workspace only has while there is something

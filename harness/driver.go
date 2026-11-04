@@ -125,14 +125,15 @@ func (f *File) UnmarshalJSON(data []byte) error {
 	return decoder.Decode((*plain)(f))
 }
 
-// Secret declares an environment variable the harness expects, and whether it is
-// required for the harness to run. Optional secrets are used when present but do
-// not block the harness from launching.
+// Secret declares an environment variable the harness expects, and whether the
+// harness needs it to be signed in. Nothing is refused for a missing one: a box
+// on a harness with nothing bound starts it signed out, and the person signs in
+// there (ADR 26-11-02-152 §1). Required is what the CLI and console show, so a
+// person can tell a credential the harness signs in with from an optional one.
 //
 // OneOfGroup ties a required secret to a set of alternatives: required secrets
-// sharing a group form an at-least-one requirement, satisfied when any member is
-// present (e.g. an API key or an OAuth token). Ungrouped required secrets each
-// must be satisfied independently.
+// sharing a group are one need, met by any member (e.g. an API key or an OAuth
+// token). Ungrouped required secrets are each a need of their own.
 // Delivery says how the sandbox hands this credential to the harness. Empty
 // (SecretDeliveryEnv) exports Name into the harness's environment. See
 // SecretDeliveryFile for the other case.

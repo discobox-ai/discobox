@@ -109,11 +109,6 @@ func anonymousSecret(projectID, value, host string) (*model.Secret, error) {
 // materializeSandboxSecrets makes a sandbox's sentinel rows its effective use
 // bindings, reporting whether any row changed.
 //
-// A sandbox in harness mode "config" is given, of its harness config's
-// bindings, only those of the secrets the configure flow made, under
-// harness.ConfigurePreviousEnvPrefix: the configure command uses them to
-// verify and keep an existing credential instead of re-prompting.
-//
 // The sentinel is kept wherever it can be: it is a per-sandbox opaque string
 // whose only meaning is the row it maps through, so repointing that row hands
 // the sandbox the new credential with nothing to re-deliver and no restart. It

@@ -348,9 +348,8 @@ type ResolvedHarnessConfig struct {
 	RelaunchCommand []string
 	Files           []model.HarnessConfigFile
 	// ConfiguredFiles overlays Files by path (docs/adr/0012 §1's Files
-	// overlay rule): files captured by the harness's configure flow, kept
-	// separate from the image baseline so a reconfigure never has to
-	// reconstruct or duplicate it.
+	// overlay rule): files saved back from a box, kept separate from the
+	// image baseline so a save never has to reconstruct or duplicate it.
 	ConfiguredFiles []model.HarnessConfigFile
 	// FileOverrides are a person's files (ADR 26-11-04-028), overlaying both
 	// sets above by path.

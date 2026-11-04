@@ -293,3 +293,41 @@ func TestTheExplainerWaitsForAFreeScreen(t *testing.T) {
 		t.Fatalf("dialog = %s, want the explainer once the screen is free", describe(m.dialog))
 	}
 }
+
+// Nor over a terminal that has the keys. The change is made by signing in
+// there, so the person may still be typing when the listing reports it, and
+// the explainer's actions are single letters: a typed "n" would spend the
+// project's one explanation.
+func TestTheExplainerWaitsWhileATerminalHasTheKeys(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		boxes := pendingSandboxes()
+		ds := newFakeSource(boxes...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the workspace", func() bool { return m.inPanes() })
+		m.explainHarnessChanges = true
+		if cmd := m.explainHarnessChangesIfOwed(); cmd != nil || m.dialog != nil || !m.explainHarnessChanges {
+			t.Fatalf("dialog = %s, want the explainer held while a terminal has the keys", describe(m.dialog))
+		}
+	})
+}
+
+// Nor over a prompt being written in the composer, the list's default focus:
+// a box often captures its change while the person, back from signing in, is
+// typing their next prompt, and a typed letter would answer the explainer.
+func TestTheExplainerWaitsWhileAPromptIsBeingWritten(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(pendingSandboxes()...)
+	m := newTestModel(t, ds)
+	m.explainHarnessChanges = true
+	send(t, m, keyPress("n"), tickMsg{})
+	if m.dialog != nil || ds.explained != 0 {
+		t.Fatalf("dialog = %s, want nothing while a prompt is being written", describe(m.dialog))
+	}
+	send(t, m, keyPress("backspace"))
+	m.promptTypedAt = m.now().Add(-promptQuiet)
+	send(t, m, tickMsg{})
+	if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+		t.Fatalf("dialog = %s, want the explainer once the composer is empty and quiet", describe(m.dialog))
+	}
+}

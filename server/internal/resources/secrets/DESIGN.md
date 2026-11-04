@@ -31,7 +31,7 @@ flowchart LR
     person["person"] -->|"binding CRUD"| binding[(secret_bindings)]
     approve["ApproveSecretRequest"] --> binding
     create["PrepareSandboxBindings"] --> binding
-    configure["harness configure / save-back"] --> binding
+    saveback["harness save-back"] --> binding
     binding -->|"every change, same tx"| events[(secret_binding_events)]
     binding -->|"MarkBindingHoldersDirtyTx"| sentinels["sandboxSentinels reconcile"]
     sentinels -->|"materialize + push route lists"| pool["pool proxy"]
@@ -434,9 +434,10 @@ approval, a create — and refuses forever under a limit.
 **Zero is "no limit"**, not an unset field; the column carries no GORM
 `default`, and the service owns the hour a creator who names none receives
 (`defaultMaxBindingTTLSeconds`). Lowering a limit binds what is bound next,
-not what stands. A harness's own credential carries no limit: configure binds
-it with no expiry, and `liftConfiguredSecretGrantLimits` zeroes the old 3600
-column default on configure-created secrets.
+not what stands. A harness's own credential carries no limit: save-back binds
+it with no expiry (`harnessconfigs.bindHarnessSecret`), and
+`liftConfiguredSecretGrantLimits` zeroes the old 3600 column default on the
+secrets the retired configure flow created.
 
 ## What a route's host covers
 

@@ -301,12 +301,28 @@
 - **Nothing offers to set a harness up.** Every harness runs (ADR
   26-11-02-152); a harness is signed in inside a discobox and its change saved
   from the harness-changes band. A new action, card or band that sends somebody
-  to configure a harness out here, or tells them not to sign in inside the box,
-  is the model this replaced.
+  to configure a harness out here is the model this replaced; saying what
+  signing in and saving expose is not.
+- **A band's leader key is bound in two places**: the pane's prefix bindings
+  (`pane.go`) and `updateKey`'s over-the-audit switch, since the audit screen
+  covers the panes but still draws the band. The harness-changes band's H was
+  added to the first and not the second, and over the audit it typed into the
+  search.
+- **Nothing unprompted that answers to single letters comes up over typing**:
+  not over a focused terminal, nor over the composer while it holds a draft or
+  was typed into in the last few seconds (`writingPrompt`). The explainer was
+  first guarded against the terminal only, and the composer is the list's
+  default focus.
+- **A flag the box reports never takes down a refusal the control plane
+  recorded.** `HarnessConfigPending` is the box's word; a refused login
+  standing aside for it once let a box turn the red refusal into the green
+  "review and save" offer.
 - **The harness-changes band's occurrence is its candidate.** Keyed on the box
   alone, a dismissal would hide every later change; keyed on nothing, it would
   come back on every listing.
 - **The explainer is recorded whichever way it is answered**, and only shown
   with nothing else in front (`explainHarnessChangesIfOwed`). A path that opens
-  it over the welcome or another dialog, or that records it without showing
-  it, loses the one explanation the project gets.
+  it over the welcome, another dialog or a focused terminal — where the person
+  is likely still typing their sign-in, and a typed letter answers it — or
+  that records it without showing it, loses the one explanation the project
+  gets.

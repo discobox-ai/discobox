@@ -24,7 +24,7 @@ func (s *Store) sealSecretForWrite(ctx context.Context, secret *model.Secret) (*
 	}
 	persisted := *secret
 	// A format nobody set is the value's shape, read here on every write, for
-	// every writer at once — the secrets service, the harness configure flow,
+	// every writer at once — the secrets service, harness save-back,
 	// an anonymous inline value, an OAuth refresh — so none of them can store
 	// a credential whose sentinel says nothing about what it stands for. An
 	// OAuth secret's access token is in Token too, and is what a sentinel for
@@ -124,7 +124,7 @@ func (s *Store) SentinelFormat(ctx context.Context, secret *model.Secret) string
 
 func (s *Store) CreateSecret(ctx context.Context, secret *model.Secret) error {
 	// A new secret's value is written now, whichever writer made it — the
-	// secrets service, the harness configure flow, an anonymous inline value.
+	// secrets service, harness save-back, an anonymous inline value.
 	if secret.ValueUpdatedAt == nil {
 		secret.ValueWritten(time.Now().UTC(), secret.ValueExpiresAt)
 	}
@@ -231,8 +231,8 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 	// and the same comparison still separates them.
 	//
 	// It lives here rather than in each service because "the value was
-	// replaced" has more than one writer — the secrets service, the harness
-	// configure flow's update-in-place, and whatever is added next — and a rule
+	// replaced" has more than one writer — the secrets service, harness
+	// save-back's update-in-place, and whatever is added next — and a rule
 	// enforced in one of them is a rule the others walk around.
 	stored, replacedValue, err := s.secretValueReplaced(ctx, secret)
 	if err != nil {

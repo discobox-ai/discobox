@@ -2623,8 +2623,7 @@ one, and otherwise — for a repair nobody typed — by what set it off and the
 failure it answers (`sandboxcreate.AutomaticRepairCause`). Every wait that takes
 `failed` for its answer asks `sandboxcreate.Repairing` first, or reads
 `displayState`, where `repairing` is neither `running` nor `error` and is
-waited through: `awaitSourceRequested`, `waitForSandboxCtx`,
-`waitForProvisionedSandbox`, and the attach's reconnect decision
+waited through: `awaitSourceRequested`, `waitForSandboxCtx`, and the attach's reconnect decision
 (`sandboxStoppedAttachDone`), which reconnects across the rebuild. `discobox ls`
 shows the state as `repairing` and that cause in its ERROR column
 (`sandboxMessage`), since recording the repair cleared the error the row had.
@@ -2637,10 +2636,10 @@ directly: when the discobox's own answer is `StepWaitingForPool` — the longest
 stretch of a cold start — it reads the pool (`PoolReader`) and says what the
 pool host is doing instead (`PoolProvisionStatus`).
 
-Three waits narrate from it, and the difference between them is only where the
-reads come from. The two that wait on their own reads are bounded by silence
-rather than total time (`sandboxcreate.StallClock`): each new phase resets the
-clock, so a long pull that keeps reporting is not cut off.
+Two waits narrate from it, and the difference between them is only where the
+reads come from. The wait for a source is bounded by silence rather than total
+time (`sandboxcreate.StallClock`): each new phase resets the clock, so a long
+pull that keeps reporting is not cut off.
 
 - **The attach** has `watchProvisioning`, a loop that exists to read. Its first
   read waits one interval, so an attach onto a running discobox connects inside
@@ -3233,7 +3232,7 @@ settings, a login — is captured by its agent as a candidate, reviewed with
 which makes it the default for every discobox on that harness config. The
 console says the same with its green harness-changes band and, the first time
 a project sees one, an explainer recorded on the project
-(`harnessChangesExplained`, `project update --harness-changes-explained`).
+(`harnessChangesExplained`, `admin project update --harness-changes-explained`).
 
 `admin harness reset` (`internal/cli/harness.go`) forgets what was saved — the
 files and the logins saves created — returning the config to its bundle's

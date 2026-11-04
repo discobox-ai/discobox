@@ -130,9 +130,13 @@ type Model struct {
 	// refreshed on the listing's beat and drawn in the header. Zero until the
 	// first report arrives, which draws nothing rather than zeroes.
 	resources Resources
-	prompt    textarea.Model
-	opts      *optionSet
-	logo      logo
+	// promptTypedAt is when a key last went into the composer, so something
+	// unprompted that acts on single letters can wait for the person to stop
+	// (explainHarnessChangesIfOwed).
+	promptTypedAt time.Time
+	prompt        textarea.Model
+	opts          *optionSet
+	logo          logo
 
 	// draft is the prompt as the store last had it. The window writes only
 	// when the field has moved away from it, so an idle window writes nothing
@@ -222,10 +226,10 @@ type Model struct {
 
 	// pendingRun is the run this window was opened to make — `discobox run`'s
 	// own request — held until the harness listing lands. It is started from
-	// there rather than from Init because the questions the window asks ahead
-	// of a create (a project with no default harness, a harness that has never
-	// been set up) are asked off that listing, and a run started before it
-	// arrived would meet the server's refusal instead of the question.
+	// there rather than from Init because the question the window asks ahead
+	// of a create (a project with no default harness) is asked off that
+	// listing, and a run started before it arrived would meet the server's
+	// refusal instead of the question.
 	pendingRun *RunRequest
 	// askSource is whether that run left its source unsaid (`discobox run`
 	// with no SOURCE), so the create card asks it before anything is made. The
@@ -1740,7 +1744,11 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// Except an error under typing. The failure that arrives while the next
 	// prompt is being written is exactly the one that would otherwise be
 	// wiped by the first letter of it, unread.
-	if !m.statusE || !m.typingIntoPrompt(msg) {
+	typing := m.typingIntoPrompt(msg)
+	if typing {
+		m.promptTypedAt = m.now()
+	}
+	if !m.statusE || !typing {
 		m.status, m.statusE, m.statusW = "", false, false
 		m.statusGen++
 	}
@@ -1883,6 +1891,8 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 				return m.openCredentialDialog(m.paneBox.ID)
 			case rejectedKey:
 				return m.openRejectedRemedy(m.currentBox())
+			case harnessChangesKey:
+				return m.reviewHarnessChanges(m.currentBox())
 			case bannerDismissKey:
 				return m.dismissBanner()
 			}
@@ -5061,27 +5071,23 @@ func (m *Model) helpText() string {
 		"  them. `discobox configure` opens the window here.",
 		"",
 		"    ↑ ↓ / k j      move            g / G   first / last",
-		"    e or Enter     enable it, or run its setup again. The setup",
-		"                   takes over the terminal and asks its own",
-		"                   questions; the window returns when it exits",
-		"    d              disable it, deleting the secrets and files its",
-		"                   setup created. It asks first, and releases the",
-		"                   project default if it holds it",
 		"    s              make it the project default, used by any",
 		"                   discobox without a harness of its own",
-		"    v              its full configuration: what it runs, which",
+		"    v or Enter     its full configuration: what it runs, which",
 		"                   secret answers each variable it needs, and the",
 		"                   files it carries",
 		"    f              edit one of those files in $EDITOR",
+		"    r              reset it to its bundle's defaults, forgetting",
+		"                   the settings and logins saved to it from",
+		"                   discoboxes. It asks first",
 		"    .              every action, as a menu",
 		"    Esc or " + HarnessesKeyName + "      leave this screen",
 		"",
-		"      ● enabled    ○ disabled    ✗ its setup did not finish",
 		"      ★ the project default",
 		"",
-		"  Every harness the project has appears in the run options whether",
-		"  or not it is enabled; one that needs no credentials runs without",
-		"  setup. The default is listed first.",
+		"  Every harness runs: one with no login starts signed out, and",
+		"  you sign in inside the discobox. What changes there is saved",
+		"  from the green band on that box. The default is listed first.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"The secrets (" + SecretsKeyName + ")",

@@ -83,9 +83,9 @@ the file belongs, listing every setting.`,
 	return cmd
 }
 
-// serverStopGrace is how long a server gets to shut down once the context ends
-// it. Draining providers means stopping containers and VMs, which is slower
-// than a process exit and is the whole reason for asking rather than killing.
+// serverStopGrace is how long a server is given to shut down once asked.
+// Draining providers means stopping containers and VMs, which is slower than a
+// process exit.
 const serverStopGrace = 30 * time.Second
 
 // runServerProcess runs the server in the foreground, as the thing this command
@@ -93,20 +93,12 @@ const serverStopGrace = 30 * time.Second
 //
 // No signal handling for the terminal's own interrupt: the child is in this
 // process's group, so Ctrl-C reaches it directly, and forwarding one would
-// deliver it twice.
-//
-// The context is the other way this ends, and there the server is asked to
-// stop rather than killed. os/exec's default is Process.Kill, which
-// takes a server down holding its provider state and the data directory's
-// singleton lock; this change's own launch path documents what that costs, in
-// the widened start window a replacement needs while the previous server is
-// still draining (pkg/endpoint/autolaunch.go). WaitDelay is the backstop for a
-// server that will not stop being asked.
+// deliver it twice. Nothing else ends it from here: no caller cancels a CLI
+// command's context, so the kill CommandContext would make on one never
+// happens.
 func runServerProcess(cmd *cobra.Command, path string, env []string) error {
 	//nolint:gosec // The path is the resolved server binary; see serverResolver.
 	server := exec.CommandContext(cmd.Context(), path)
-	server.Cancel = func() error { return stopServerProcess(server.Process) }
-	server.WaitDelay = serverStopGrace
 	server.Stdin = cmd.InOrStdin()
 	server.Stdout = cmd.OutOrStdout()
 	server.Stderr = cmd.ErrOrStderr()
