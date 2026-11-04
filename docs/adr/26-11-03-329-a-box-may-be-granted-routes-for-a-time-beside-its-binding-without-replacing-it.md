@@ -1,6 +1,6 @@
 # 26-11-03-329 — A box may be granted routes for a time beside its binding, without replacing it
 
-- **Status**: Accepted (amended before implementation landed: Leaves standing names §4, not §3, as what adds to 022 §4)
+- **Status**: Accepted (amended before implementation landed: Leaves standing names §4, not §3, as what adds to 022 §4; §§3 and 6 say a listing reads the resolved bindings, not the delivered rows)
 - **Date**: 2026-11-03
 
   Accepted by the owner by merging #502, 2026-11-03.
@@ -151,9 +151,13 @@ of the base's more specific blocked routes inside the base's grant (880 §4,
 The control plane decides the same way. `ResolveSandboxSecret` hands out
 the value for a host that some standing grant of the sentinel allows. It
 caps the cache by the latest expiry among the grants that allow that host.
-`store.RouteLists` stays the one builder of a grant's lists. A new
-`store.SentinelGrants` builds a sentinel's grants from it, and is what the
-pool is sent, what resolve checks, and what a listing shows.
+`store.RouteLists` stays the one builder of a grant's lists, and
+`store.BindingExpiry` of its expiry. A new `store.SentinelGrants` builds a
+sentinel's grants from them, and is what the pool is sent and what resolve
+checks. A listing builds each grant from the same two, over the resolved
+bindings rather than the delivered rows: the bindings are what delivery
+converges to, and a credential just granted is listed before its sentinel
+has been delivered, as it is today.
 
 ### 4. A use part is approved to replace or to add
 
@@ -218,8 +222,9 @@ for each grant, the hosts its open routes name (`model.OpenRouteHosts`)
 and its expiry. The existing `hosts` and `expiresAt` are kept as the union
 of hosts and the latest expiry, so an older reader stays correct about
 where the variable may go and until when. `discobox-access list` prints
-each grant on its own line. `ListSandboxCredentials` builds them from
-`store.SentinelGrants`.
+each grant on its own line. `ListSandboxCredentials` builds them from the
+sandbox's resolved bindings, each with `store.RouteLists` and
+`store.BindingExpiry` (§3).
 
 ## Alternatives rejected
 
