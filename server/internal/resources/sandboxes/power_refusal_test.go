@@ -22,6 +22,9 @@ func TestInstructionRefusalSaysWhatToDo(t *testing.T) {
 		{ErrNoContainer, "repair it"},
 		{ErrArchived, "repair it if the unarchive failed"},
 		{ErrNotFound, "repair it"},
+		// Its agent is being replaced, as every pool's is by a server
+		// upgrade (discobox#544).
+		{sandbox.ErrPoolNotReachable, "try again shortly"},
 	} {
 		t.Run(tc.cause.Error(), func(t *testing.T) {
 			err := runtimeRefusal(fmt.Errorf("pool: %w", tc.cause), sandboxStart.String())

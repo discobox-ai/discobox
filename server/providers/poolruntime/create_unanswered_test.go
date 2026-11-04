@@ -25,9 +25,9 @@ import (
 )
 
 // newDroppingRuntimeProvider is a pool agent that closes the connection under
-// its first drops creates without answering them, the way one whose container
-// is replaced mid-request does.
-func newDroppingRuntimeProvider(t *testing.T, projectID, poolID string, drops int32) (*testRuntimeProvider, *atomic.Int32) {
+// the first drops POSTs to a path ending in route without answering them, the
+// way one whose container is replaced mid-request does, and counts them.
+func newDroppingRuntimeProvider(t *testing.T, projectID, poolID, route string, drops int32) (*testRuntimeProvider, *atomic.Int32) {
 	t.Helper()
 	runtime := sandboxruntime.NewMemorySandboxRuntime()
 	controlPlaneKey, poolToken := newPoolAgentTestAuth(t, projectID, poolID, poolagentserver.ScopeSandboxRead, poolagentserver.ScopeSandboxWrite)
@@ -36,12 +36,12 @@ func newDroppingRuntimeProvider(t *testing.T, projectID, poolID string, drops in
 		Runtime:               runtime,
 		ControlPlanePublicKey: controlPlaneKey,
 	})
-	var creates atomic.Int32
+	var sent atomic.Int32
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/sandboxes") && creates.Add(1) <= drops {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, route) && sent.Add(1) <= drops {
 			conn, _, err := w.(http.Hijacker).Hijack()
 			if err != nil {
-				t.Errorf("hijack create: %v", err)
+				t.Errorf("hijack %s: %v", route, err)
 				return
 			}
 			_ = conn.Close()
@@ -50,7 +50,7 @@ func newDroppingRuntimeProvider(t *testing.T, projectID, poolID string, drops in
 		router.ServeHTTP(w, r)
 	}))
 	t.Cleanup(agent.Close)
-	return &testRuntimeProvider{baseURL: agent.URL, client: agent.Client(), token: poolToken, runtime: runtime}, &creates
+	return &testRuntimeProvider{baseURL: agent.URL, client: agent.Client(), token: poolToken, runtime: runtime}, &sent
 }
 
 // A pool agent replaced while a create is in it closes the connection without
@@ -62,7 +62,7 @@ func TestPoolProviderCreateIsSentAgainWhenThePoolAgentLeavesMidRequest(t *testin
 	poolCapacityPollInterval = time.Millisecond
 	t.Cleanup(func() { poolCapacityPollInterval = oldInterval })
 
-	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", 2)
+	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/sandboxes", 2)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
@@ -91,7 +91,7 @@ func TestPoolProviderCreateGivesUpOnAPoolAgentThatKeepsLeaving(t *testing.T) {
 	poolAgentWaitCeiling = 20 * time.Millisecond
 	t.Cleanup(func() { poolCapacityPollInterval, poolAgentWaitCeiling = oldInterval, oldCeiling })
 
-	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", 1<<30)
+	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/sandboxes", 1<<30)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
@@ -190,7 +190,7 @@ func TestPoolProviderCreateReportsWhatEndedTheWaitAfterALostRequest(t *testing.T
 	poolCapacityPollInterval = time.Millisecond
 	t.Cleanup(func() { poolCapacityPollInterval = oldInterval })
 
-	runtimeProvider, _ := newDroppingRuntimeProvider(t, "project-1", "pool-1", 1<<30)
+	runtimeProvider, _ := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/sandboxes", 1<<30)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
 	// The pool is deleted while its agent is away: the wait for the host
 	// reads it gone.
@@ -213,4 +213,75 @@ func (m *deletedOnReconcile) SchedulePoolReconciliation(ctx context.Context, pro
 	m.pool = nil
 	m.mu.Unlock()
 	return m.fakePoolManager.SchedulePoolReconciliation(ctx, projectID, poolID)
+}
+
+// createdOn creates sandbox-1 on the pool through provider and returns its
+// runtime state, which names the pool every later instruction is sent to.
+func createdOn(t *testing.T, provider *Provider) []byte {
+	t.Helper()
+	_, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	return state
+}
+
+// A server upgrade replaces every pool's agent, and the first thing sent to
+// it is often a person's start. The agent leaving under an instruction is not
+// its answer, and is not reported as one with only "EOF" to say why
+// (discobox#544): it is the pool not being reachable, which the caller that
+// can wait waits out. The instruction itself is sent once.
+func TestPoolProviderInstructionLostToTheAgentLeavingIsThePoolNotReachable(t *testing.T) {
+	ref := sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}
+	for _, tc := range []struct {
+		route string
+		send  func(*Provider, []byte) ([]byte, error)
+	}{
+		{"/start", func(p *Provider, state []byte) ([]byte, error) { return p.Start(context.Background(), ref, state) }},
+		{"/stop", func(p *Provider, state []byte) ([]byte, error) {
+			return p.Stop(context.Background(), ref, state, time.Second)
+		}},
+		{"/restart", func(p *Provider, state []byte) ([]byte, error) {
+			return p.Restart(context.Background(), ref, state, time.Second)
+		}},
+		{"/suspend", func(p *Provider, state []byte) ([]byte, error) { return p.Suspend(context.Background(), ref, state) }},
+		{"/ensure-running", func(p *Provider, state []byte) ([]byte, error) {
+			return state, p.EnsureRunning(context.Background(), ref, state)
+		}},
+	} {
+		t.Run(strings.TrimPrefix(tc.route, "/"), func(t *testing.T) {
+			runtimeProvider, sent := newDroppingRuntimeProvider(t, "project-1", "pool-1", tc.route, 1)
+			manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+			provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+			state := createdOn(t, provider)
+
+			rotated, err := tc.send(provider, state)
+			if !errors.Is(err, sandbox.ErrPoolNotReachable) {
+				t.Fatalf("%s lost to the agent leaving = %v, want the pool not reachable", tc.route, err)
+			}
+			if !strings.Contains(err.Error(), "sandbox on pool pool-1") || strings.Contains(err.Error(), runtimeProvider.baseURL) {
+				t.Fatalf("error = %q, want the pool named and the agent's address left out", err)
+			}
+			if string(rotated) != string(state) {
+				t.Fatalf("%s returned state %q, want the state it was given", tc.route, rotated)
+			}
+			if got := sent.Load(); got != 1 {
+				t.Fatalf("%s sent = %d, want 1: an instruction is not resent here", tc.route, got)
+			}
+		})
+	}
+}
+
+// A refusal is an answer, and keeps saying what it is.
+func TestPoolProviderInstructionRefusalIsNotThePoolNotReachable(t *testing.T) {
+	runtimeProvider, _ := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/start", 0)
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+	state := createdOn(t, provider)
+
+	// The agent holds no such sandbox, and says so.
+	_, err := provider.Start(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-2"}, state)
+	if err == nil || errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("start of a sandbox the agent does not hold = %v, want its refusal", err)
+	}
 }
