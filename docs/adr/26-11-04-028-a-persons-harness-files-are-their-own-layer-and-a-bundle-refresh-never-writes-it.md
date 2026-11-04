@@ -1,6 +1,6 @@
 # 26-11-04-028 — A person's harness files are their own layer, and a bundle refresh never writes it
 
-- **Status**: Accepted
+- **Status**: Accepted (§6 amended before implementation landed: the first seed splits every built-in, and a write to an unsplit set is refused)
 - **Date**: 2026-11-04
 
   Accepted by the owner by merging #550, 2026-11-04.
@@ -129,9 +129,20 @@ first re-snapshot of a config whose set is NULL (`SeedBuiltIns` or
 every `Files` entry whose path the freshly read bundle doesn't declare into
 `FileOverrides`, before writing the bundle's files. Every write after that
 leaves the set non-NULL, even when it's empty, so the split runs once.
-A config the next seed skips (digests unchanged) keeps its added files in
-`Files` until its bundle next moves, and they reach its sandboxes there as
-they do today.
+
+*Amended before implementation landed:* `SeedBuiltIns` re-snapshots a
+built-in whose set is NULL even when its digests haven't moved. It inspects
+every built-in on every pass anyway, so the split is judged against the
+bundle the config is on, and no built-in is left waiting on a bundle that
+may not move for a while. A request that writes `fileOverrides` on a config
+still NULL (one registered by hand and not refreshed yet, or a built-in whose
+bundle couldn't be read) is refused with 409, naming the refresh, or for a
+config registered before bundles the bundle, that splits it. The original
+text left such a config's files in `Files` until its bundle moved. Writing
+the set in the meantime would have ended the split, so a person's earlier
+files would have been lost at the next move. Splitting inline on that write
+was rejected: it made a file edit depend on reaching the registry, read the
+tag rather than the pinned digest, and refused configs with no bundle.
 
 What this can't recover: an edit to a bundle path made before this release.
 Its content and a bundle that changed that file look the same. A file the old
