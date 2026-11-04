@@ -363,6 +363,26 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 	}
 }
 
+// Esc on the copy question cancels, as its footer says: nothing is created and
+// the console is back at its prompt. Only "no" creates the empty discobox.
+func TestEscOnTheCopyQuestionCreatesNothing(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("enter"), keyPress("enter"))
+	if m.dialog == nil {
+		t.Fatal("a directory with no repository should be asked about")
+	}
+	send(t, m, keyPress("esc"))
+	if m.dialog != nil {
+		t.Fatal("Esc did not close the copy question")
+	}
+	if len(ds.runs) != 0 {
+		t.Fatalf("runs = %d, want 0: Esc on the copy question created a discobox", len(ds.runs))
+	}
+}
+
 // The size arrives while the question is up: it is asked immediately, with a
 // number that climbs, and only the final one is stated as fact.
 func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {

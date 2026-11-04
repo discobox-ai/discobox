@@ -3361,6 +3361,7 @@ func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
 	total, stop := m.ds.MeasureDirectory(m.ctx, dir)
 	m.copySize, m.copyStop, m.copyDir = total, stop, dir
 	m.dialog = m.includeDirtyDialog("Copy this directory?", dir, copyDirectoryBody, false, req)
+	m.leavesTheRun(m.dialog)
 	m.dialog.emphasis = directoryCopySize(total())
 	m.copyDialog = m.dialog
 	return m.pollDirectorySize()
@@ -3400,7 +3401,9 @@ func (m *Model) includeDirtyDialog(title, dir, body string, repository bool, req
 	}
 	d := actionsDialog(title, body, items, answer)
 	d.subject = dir
-	d.onCancel = func() tea.Cmd { return answer("false") }
+	if repository {
+		d.onCancel = func() tea.Cmd { return answer("false") }
+	}
 	return d
 }
 
