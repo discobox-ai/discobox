@@ -5,6 +5,7 @@
   never run: an action on a failed one, and a start or restart on any one,
   parked included, is refused before the pool is asked, and none is repaired
   automatically (§§1–3)
+- **Narrowed by**: [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) — explicit starts refused by an unreachable pool wait within the request (§6 of 26-10-12-711; §2 of 26-11-03-618). Source-delivery refusals remain.
 - **Date**: 2026-10-12
 - **Supersedes**: where [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md)
   §12 places the *decision* to start a sandbox on use (the pool agent's
