@@ -103,3 +103,16 @@ Tables show PARENT; JSON preserves the creator beside it.
 `exec` narrates preparation while command creation waits, using the same
 provisioning watcher as attach. Canceling ends the request and the watcher;
 the status row is cleared before terminal output begins.
+
+## Public command reference
+
+`WriteReference` walks the same Cobra tree as the CLI, initializes help and
+completion, and exports visible commands, aliases, local and inherited flags
+without executing callbacks. `internal/cmd/discobox-docs` fixes the executable name and
+removes DISCOBOX environment overrides before constructing the tree. The
+reference constructs it without user tool discovery and renders the config
+directory symbolically. Terminal help is fenced as text, preserving scripts
+and line breaks. It emits sorted commands and flags without timestamps. Runtime provider flags remain
+owned by the connected server catalog and are explicitly scoped out in the
+manual; the export includes the static create/update flags and explains how
+to obtain matching provider help. `docs:check` compares bytes without writing.

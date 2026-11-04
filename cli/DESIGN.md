@@ -9,6 +9,7 @@ transport helpers where OpenAPI does not model the stream.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/discobox` | Binary entrypoint. |
+| `internal/cmd/discobox-docs` | Offline public CLI reference exporter; see [the import contract](../docs/public-import.md). |
 | `cmd/discobox-clipwatch` | The Windows clipboard helper the Linux CLI carries and runs from WSL (`internal/clipwatch`). Windows only. |
 | `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, console API adapter, and the attach transports and policy layered on `pkg/execstream/client`. Staging itself is the root module's `serverstage`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. See [`internal/sandboxcreate/DESIGN.md`](internal/sandboxcreate/DESIGN.md). |

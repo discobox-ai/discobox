@@ -113,8 +113,7 @@ or every discobox of the project (--project-wide).
 
 --as names the environment variable it is delivered in: a sentinel that the
 discobox's pool exchanges for the value on the way out. It is never exchanged
-on a host the discobox's egress passes through unread (--egress-passthrough,
-ADR 26-10-31-819): the proxy reads nothing inside such a tunnel, so the host
+on a host the discobox's egress passes through unread (--egress-passthrough): the proxy reads nothing inside such a tunnel, so the host
 gets the sentinel and refuses it. Left out, it is the
 secret's name upper-snaked: github is GITHUB, npm-token is NPM_TOKEN. --route narrows where it
 may be sent for this binding; left out, it goes where the secret's routes say. --for is how long the binding lasts, within

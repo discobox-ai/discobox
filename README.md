@@ -15,6 +15,8 @@ Claude Code, Codex, OpenCode, GitHub Copilot, omp, and pi are included; other te
 agents can be packaged in an image. Discobox supports macOS, Linux, and Windows
 and is under active development.
 
+Public documentation: [v0.19 prerelease manual](docs/public/index.md).
+
 ## Getting started
 
 Install with Homebrew, on macOS or Linux:
@@ -42,7 +44,7 @@ Open the console from your repository to create a box:
 
 ```bash
 cd ~/src/my-project
-discobox
+discobox console
 ```
 
 Work with the agent, have it commit the changes inside the box, and push them

@@ -982,9 +982,20 @@ tasks:
       - task: verify:unchanged
         vars: { VERIFY_WHAT: "go.mod/go.sum", VERIFY_TASK: tidy }
 
+  docs:generate:
+    desc: Generate the public CLI reference from command definitions
+    cmds:
+      - go run ./cli/internal/cmd/discobox-docs
+
+  docs:check:
+    desc: Check the public CLI reference is current
+    cmds:
+      - go run ./cli/internal/cmd/discobox-docs -check
+
   generate:
     desc: Regenerate generated files
     cmds:
+      - task: docs:generate
       - task: generate:harness-settings
       - go generate {{.PACKAGES}}
       # Nested modules generate their own API surfaces and are not reached by

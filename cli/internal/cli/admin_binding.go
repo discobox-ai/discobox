@@ -32,7 +32,7 @@ func (a *App) newAdminBindingCommand() *cobra.Command {
 them, and read the trail of every change to them.
 
 A binding makes a secret available to a target — the project, a harness config
-or a discobox — to use in a variable, to give on, or both (ADR 26-10-27-880).
+or a discobox — to use in a variable, to give on, or both.
 To bind a secret as a person does, use ` + "`discobox secret bind`" + `.`,
 	}
 	cmd.AddCommand(

@@ -2193,7 +2193,7 @@ func TestBareVersionWordPrintsTheVersion(t *testing.T) {
 	// And the line is not the proof: an autolaunch that failed to resolve a
 	// server binary would print "unavailable" too. The path is the proof.
 	for _, args := range [][]string{{"version"}, {"--version"}} {
-		cmd, app := newRootCommand()
+		cmd, app := newRootCommand(true)
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)

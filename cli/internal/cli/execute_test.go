@@ -43,7 +43,7 @@ func TestServerUnreachableKeepsTheTimeoutAnswer(t *testing.T) {
 // The diagnosis is not at the top level (ADR 0112), so the failure is where
 // somebody finds out it exists — and the failure is the moment they need it.
 func TestUnreachableServerErrorNamesTheDiagnosis(t *testing.T) {
-	root, _ := newRootCommand()
+	root, _ := newRootCommand(true)
 	list, _, err := root.Find([]string{"ls"})
 	if err != nil {
 		t.Fatalf("Find(ls) error = %v", err)

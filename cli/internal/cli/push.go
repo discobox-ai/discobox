@@ -27,8 +27,7 @@ func (a *App) newPushCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "push [DISCOBOX] [flags]",
 		Short: "Push local commits to a discobox, for it to rebase onto",
-		Long: `Send this machine's commits to the pool a discobox fetches from, per
-docs/adr/0058 and docs/adr/26-10-10-545.
+		Long: `Send this machine's commits to the pool a discobox fetches from.
 
 Commits only ever move local -> the discobox's pool. Nothing in the discobox
 moves: no branch of its own changes, nothing is rebased, nothing is checked out.
