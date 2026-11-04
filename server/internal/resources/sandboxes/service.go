@@ -1039,6 +1039,12 @@ func runtimeRefusal(err error, verb string) error {
 		message = fmt.Sprintf("cannot %s sandbox: it is not running", verb)
 	case errors.Is(err, sandbox.ErrPoolAgentUnsupported):
 		message = fmt.Sprintf("cannot %s sandbox: its pool's agent does not support it; upgrade the pool", verb)
+	case errors.Is(err, sandbox.ErrPoolNotReachable):
+		// The pool's agent is not there to ask: its container is being
+		// replaced or restarted, as every pool's is by a server upgrade, or
+		// its healthcheck has not passed yet. It comes back on its own, and
+		// the instruction does not wait for it (ADR 26-10-12-711 §6).
+		message = fmt.Sprintf("cannot %s sandbox: its pool's agent is not answering, as while it is being replaced or restarted; try again shortly (%v)", verb, err)
 	case errors.Is(err, ErrNotFound):
 		// Not only the pool's 404: a sandbox whose create has not placed it on
 		// a pool yet reads the same way.

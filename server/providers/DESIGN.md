@@ -1114,6 +1114,16 @@ to `poolAgentResendMaxInterval`, since most drivers' acquires cannot see an
 agent that is not answering yet. Any answer the agent gives is still the
 create's one verdict.
 
+A power instruction (start, stop, restart, suspend, ensure-running) is sent
+once. One the agent was not there to answer is reported as
+`sandbox.ErrPoolNotReachable`, not as the bare transport error: a server upgrade
+replaces every pool's agent just as a person's first start after it arrives,
+and that start is the pool not being there, which the attach wait waits out and
+a power instruction's caller reports as "try again shortly" (409). It is not
+resent here, because every caller would then wait: the power reconciler's wake
+start, which must not land after a stop sent while it waited, holding a
+reconcile slot; and a restart, which is two steps.
+
 Only a driver whose acquire can see the pool container can refuse it. The
 local driver inspects the container for its port anyway, and refuses one that
 is not running or whose healthcheck is still starting

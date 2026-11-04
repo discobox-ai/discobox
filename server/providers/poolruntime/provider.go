@@ -748,27 +748,21 @@ func (p *Provider) Update(ctx context.Context, ref sandbox.SandboxRef, state []b
 }
 
 func (p *Provider) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
-	client, err := p.agentClientFromState(ctx, ref, state)
-	if err != nil {
-		return state, err
-	}
-	return client.Start(ctx, ref, state)
+	return p.instruct(ctx, ref, state, "start sandbox on", func(client *poolAgentClient) ([]byte, error) {
+		return client.Start(ctx, ref, state)
+	})
 }
 
 func (p *Provider) Stop(ctx context.Context, ref sandbox.SandboxRef, state []byte, timeout time.Duration) ([]byte, error) {
-	client, err := p.agentClientFromState(ctx, ref, state)
-	if err != nil {
-		return state, err
-	}
-	return client.Stop(ctx, ref, state, timeout)
+	return p.instruct(ctx, ref, state, "stop sandbox on", func(client *poolAgentClient) ([]byte, error) {
+		return client.Stop(ctx, ref, state, timeout)
+	})
 }
 
 func (p *Provider) Suspend(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
-	client, err := p.agentClientFromState(ctx, ref, state)
-	if err != nil {
-		return state, err
-	}
-	return client.Suspend(ctx, ref, state)
+	return p.instruct(ctx, ref, state, "suspend sandbox on", func(client *poolAgentClient) ([]byte, error) {
+		return client.Suspend(ctx, ref, state)
+	})
 }
 
 func (p *Provider) PowerDown(ctx context.Context, ref sandbox.SandboxRef, state []byte, reason sandbox.PowerDownReason) (sandbox.Wake, []byte, error) {
@@ -780,11 +774,9 @@ func (p *Provider) PowerDown(ctx context.Context, ref sandbox.SandboxRef, state 
 }
 
 func (p *Provider) Restart(ctx context.Context, ref sandbox.SandboxRef, state []byte, timeout time.Duration) ([]byte, error) {
-	client, err := p.agentClientFromState(ctx, ref, state)
-	if err != nil {
-		return state, err
-	}
-	return client.Restart(ctx, ref, state, timeout)
+	return p.instruct(ctx, ref, state, "restart sandbox on", func(client *poolAgentClient) ([]byte, error) {
+		return client.Restart(ctx, ref, state, timeout)
+	})
 }
 
 func (p *Provider) Get(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*sandbox.Sandbox, error) {
@@ -796,11 +788,46 @@ func (p *Provider) Get(ctx context.Context, ref sandbox.SandboxRef, state []byte
 }
 
 func (p *Provider) EnsureRunning(ctx context.Context, ref sandbox.SandboxRef, state []byte) error {
+	_, err := p.instruct(ctx, ref, state, "start sandbox on", func(client *poolAgentClient) ([]byte, error) {
+		return state, client.EnsureRunning(ctx, ref)
+	})
+	return err
+}
+
+// instruct delivers a power instruction to the agent of the sandbox's pool,
+// once.
+//
+// An instruction the agent was not there to answer (poolAgentUnanswered) is
+// not its answer, and is not reported as one. It is the pool not being
+// reachable, which is a condition: the attach wait waits it out for an
+// action's ensure-running, and a power instruction's caller answers it with
+// "try again shortly" rather than a bare 500 (ADR 26-10-12-711 §6). A server
+// upgrade does this to every pool: the new server replaces each pool's agent,
+// and the first thing a person sends after the upgrade is often a start, which
+// failed with only "EOF" to say why.
+//
+// It is not sent again here, as a create is (createOnPool). Every caller of an
+// instruction would wait then, the power reconciler's wake among them, whose
+// start must not land after a stop a person sent while it waited
+// (ADR 26-10-16-337 §6), and whose reconcile slot must not wait on a host; and
+// a restart is two steps, which a resend could run twice.
+func (p *Provider) instruct(ctx context.Context, ref sandbox.SandboxRef, state []byte, operation string, call func(*poolAgentClient) ([]byte, error)) ([]byte, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if err != nil {
-		return err
+		return state, err
 	}
-	return client.EnsureRunning(ctx, ref)
+	rotated, err := call(client)
+	if poolAgentUnanswered(ctx, err) {
+		return state, poolAgentLostError(operation, client.poolID, err)
+	}
+	return rotated, err
+}
+
+// poolAgentLostError is a call the pool's agent went away under before
+// answering: the pool not being reachable, with the transport error that lost
+// the call, minus the agent's internal address.
+func poolAgentLostError(operation, poolID string, lost error) error {
+	return fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, poolAgentTransportError(operation, poolID, lost))
 }
 
 // AcquireHTTPClient leases a client onto the sandbox's pool. A sandbox this
