@@ -80,7 +80,13 @@ function project(text, spec) {
         unsupported.push(...spec.exclude.filter((pattern) => matches(pattern, next)));
         continue;
       }
-      out[key] = walk(v, next);
+      const projected = walk(v, next);
+      // Excluding the last child must not leave a synthetic empty parent
+      // (for example, Codex's tui table containing only tooltip state).
+      // Preserve explicitly empty objects supplied by the user.
+      if (v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date) &&
+          Object.keys(v).length > 0 && Object.keys(projected).length === 0) continue;
+      out[key] = projected;
     }
     return out;
   }

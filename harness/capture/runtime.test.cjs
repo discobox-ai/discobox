@@ -1138,6 +1138,32 @@ test("Claude bundled settings and theme changes normalize without warning-only c
 });
 
 
+test("Codex model tooltip state is excluded from current and baseline settings", () => {
+  const f = fixture("codex"), p = ".codex/config.toml";
+  try {
+    const state = (count) => '[tui.model_availability_nux]\n"gpt-6.1-sol" = ' + count + '\n';
+    const input = (content) => ({ ...f.input, baseline: { files: [{ path: p, content }] } });
+    f.write(p, state(2));
+    assert.deepEqual(f.run(input(state(1))).files, []);
+    assert.deepEqual(f.run({ ...input(state(1)), baselineOnly: true }).files, []);
+    const preferences = '[tui]\ntheme = "light"\nnotifications = false\n';
+    f.write(p, preferences + state(2));
+    const current = f.run(input(preferences + state(1)));
+    const baseline = f.run({ ...input(preferences + state(1)), baselineOnly: true });
+    assert.deepEqual(current.files, baseline.files);
+    assert.equal(current.diagnostics.length, 0);
+    assert.equal(baseline.diagnostics.length, 0);
+    const config = current.files.find((file) => file.path === p);
+    assert(config.content.includes('theme = "light"'));
+    assert(config.content.includes('notifications = false'));
+    assert(!config.content.includes("model_availability_nux"));
+    assert.equal(fs.readFileSync(path.join(f.home, p), "utf8"), preferences + state(2));
+    assert.equal(project('[tui]\n', { format: "toml", exclude: ["tui.model_availability_nux"] }).empty, false);
+  } finally {
+    f.close();
+  }
+});
+
 test("Codex parses local project tables without corrupting multiline strings", () => {
  const f=fixture("codex"), p=".codex/config.toml";
  try {
