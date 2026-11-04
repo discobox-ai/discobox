@@ -384,7 +384,7 @@ and the preview says so. Clients diff the
 two; the agent's candidate and its size limits are untouched by them.
 
 `commitCapture` locks the config and bound secret rows, checks the candidate's
-config revision, manifest digest and binding/value revisions, then commits a
+identity, manifest and registered definition, then commits a
 patch to `ConfiguredFiles`, owned secrets, harness-config bindings, the origin's
 sentinels (`MaterializeSandboxSecretsTx`), dirty marks and an idempotency
 receipt in one transaction. The origin receives a sentinel for each newly
@@ -414,10 +414,10 @@ the harness caches real credentials (ADR 26-10-26-573).
 
 Every config row update uses a revision compare-and-swap. The public editor
 request carries the revision originally read, so loading the latest row at
-request time cannot hide an intervening save. Reset and manual binding mutations also advance
-the config revision, so an older local capture cannot resurrect removed state.
-
-An explicit force save bypasses config and secret revision conflicts while the
-same transaction locks the current rows. It retains identity, manifest and
-candidate validation, applies only the candidate patch and records the usual
-idempotency receipt.
+request time cannot hide an intervening edit. Save-back instead locks and reads
+the current rows and applies the chosen patch regardless of the candidate's
+config or credential revisions (ADR 26-11-04-538). At a shared saved path or
+captured credential the last commit wins; unrelated fields and personal
+overrides survive. A credential marked keep retains the current binding and
+value, including a renewal since capture. Receipt replay never reapplies it.
+There is one save mode, with no force parameter or revision-conflict retry.

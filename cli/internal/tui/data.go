@@ -2212,7 +2212,7 @@ type DataSource interface {
 
 	// Harness changes are safe previews; writes always name the reviewed candidate.
 	HarnessChanges(ctx context.Context, sandboxID string) (HarnessChanges, error)
-	SaveHarnessChanges(ctx context.Context, sandboxID, candidateID string, force bool) (string, error)
+	SaveHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error)
 	DiscardHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error)
 
 	// Harnesses is one server's harnesses, oldest first, which is the order

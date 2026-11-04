@@ -28,11 +28,11 @@ that revision while open and does not reload it at save time; a concurrent
 save-back or configuration edit returns a conflict instead of replacing a newer
 file bucket. The ordinary update command reads config and egress together once.
 
-Harness save-back accepts an explicit force option to bypass config and secret
-revision conflicts for the reviewed candidate. Identity, manifest and candidate
-validation still apply; unrelated files remain intact. The console offers an
-overwrite confirmation after a save conflict and retries the displayed candidate
-with force only after confirmation. CLI: `admin harness save --force`.
+Harness save-back overwrites the candidate's saved paths and captured credentials
+using current locked rows, even after a concurrent edit or renewal (ADR
+26-11-04-538). The CLI and console submit the displayed candidate once, without
+a force flag or second overwrite confirmation. Identity, manifest and candidate
+validation still apply; unrelated fields and personal overrides remain intact.
 
 ## WebSocket audit recordings
 

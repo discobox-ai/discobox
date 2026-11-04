@@ -8368,7 +8368,7 @@ paths:
         post:
             operationId: save-sandbox-harness-config-changes
             summary: Save sandbox harness config changes.
-            description: Revision conflicts return 409 with problem type urn:discobox:harness-config-revision-conflict and can be retried with force. Other conflicts require the recovery described in the response.
+            description: Save applies the chosen candidate patch over current saved settings and credentials, even if config or credential revisions have advanced. Unrelated fields and personal file overrides remain intact. Candidate identity, harness assignment, manifest and validation checks still apply.
             tags: [Harness Config Save Back]
             parameters:
                 - in: path
@@ -8381,11 +8381,6 @@ paths:
                   required: true
                   schema:
                     type: string
-                - in: query
-                  name: force
-                  description: Overwrite config and credential changes despite stale revisions. Candidate identity, manifest and validation checks still apply.
-                  schema:
-                    type: boolean
             requestBody:
                 required: true
                 content:

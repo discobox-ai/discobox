@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"context"
-	"errors"
-	"net/url"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
@@ -23,15 +21,9 @@ func (h *Handler) SaveSandboxHarnessConfigChanges(ctx context.Context, r *server
 	if err != nil {
 		return nil, err
 	}
-	input.Force = p.Force.Or(false)
 	out, err := h.services.HarnessConfigs.SaveSandboxHarnessConfigChanges(ctx, p.ProjectId, p.SandboxId, input)
 	if err != nil {
-		response := apiError(err)
-		if errors.Is(err, harnesscapture.ErrRevisionConflict) {
-			problemType, _ := url.Parse(harnesscapture.RevisionConflictType)
-			response.Response.Type = serverapi.NewOptURI(*problemType)
-		}
-		return response, nil
+		return apiError(err), nil
 	}
 	body, err := services.Convert[serverapi.HarnessConfigSaveResult](out)
 	return &body, err

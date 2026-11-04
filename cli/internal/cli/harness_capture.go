@@ -230,13 +230,12 @@ func (a *App) newHarnessChangesCommand() *cobra.Command {
 	return cmd
 }
 func (a *App) newHarnessSaveCommand() *cobra.Command {
-	var force bool
 	cmd := &cobra.Command{Use: "save SANDBOX CANDIDATE", Short: "Save a reviewed candidate as the harness defaults and shared credentials", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		project, box, client, err := a.sandboxRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
-		res, err := client.SaveSandboxHarnessConfigChanges(cmd.Context(), &api.HarnessConfigCandidateRequest{CandidateId: args[1]}, api.SaveSandboxHarnessConfigChangesParams{ProjectId: project, SandboxId: box, Force: api.NewOptBool(force)})
+		res, err := client.SaveSandboxHarnessConfigChanges(cmd.Context(), &api.HarnessConfigCandidateRequest{CandidateId: args[1]}, api.SaveSandboxHarnessConfigChangesParams{ProjectId: project, SandboxId: box})
 		if err != nil {
 			return err
 		}
@@ -250,7 +249,6 @@ func (a *App) newHarnessSaveCommand() *cobra.Command {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s (revision %d)\n", terminalSafe(result.State), result.ConfigRevision)
 		return nil
 	}}
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite shared config and credentials despite revision conflicts")
 	return cmd
 }
 func (a *App) newHarnessDiscardCommand() *cobra.Command {
@@ -288,6 +286,6 @@ func (a *App) newHarnessReconsiderCommand() *cobra.Command {
 		return writeJSON(cmd.OutOrStdout(), result)
 	}}
 	cmd.Flags().StringArrayVar(&files, "keep-file", nil, "Portable file path whose local change should be retained (repeatable)")
-	cmd.Flags().StringArrayVar(&credentials, "replace-credential", nil, "Credential environment variable to replace despite the conflict (repeatable)")
+	cmd.Flags().StringArrayVar(&credentials, "replace-credential", nil, "Credential environment variable whose captured value should be retained (repeatable)")
 	return cmd
 }

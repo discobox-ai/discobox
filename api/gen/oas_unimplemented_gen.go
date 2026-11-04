@@ -1366,8 +1366,9 @@ func (UnimplementedHandler) ResumeSandboxAutostop(ctx context.Context, params Re
 
 // SaveSandboxHarnessConfigChanges implements save-sandbox-harness-config-changes operation.
 //
-// Revision conflicts return 409 with problem type urn:discobox:harness-config-revision-conflict and
-// can be retried with force. Other conflicts require the recovery described in the response.
+// Save applies the chosen candidate patch over current saved settings and credentials, even if
+// config or credential revisions have advanced. Unrelated fields and personal file overrides remain
+// intact. Candidate identity, harness assignment, manifest and validation checks still apply.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 func (UnimplementedHandler) SaveSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (r SaveSandboxHarnessConfigChangesRes, _ error) {

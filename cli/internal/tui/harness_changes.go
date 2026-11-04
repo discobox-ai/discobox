@@ -1,15 +1,12 @@
 package tui
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
-
-var ErrHarnessChangesConflict = errors.New("shared harness configuration changed")
 
 const harnessChangesKey = "H"
 
@@ -46,8 +43,6 @@ type harnessChangesLoadedMsg struct {
 type harnessChangesDoneMsg struct {
 	box         Sandbox
 	candidateID string
-	save        bool
-	force       bool
 	state       string
 	err         error
 }
@@ -121,11 +116,11 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 			var state string
 			var err error
 			if key == "s" {
-				state, err = m.ds.SaveHarnessChanges(m.ctx, msg.box.ID, c.CandidateID, false)
+				state, err = m.ds.SaveHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
 			} else {
 				state, err = m.ds.DiscardHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
 			}
-			return harnessChangesDoneMsg{state: state, err: err, box: msg.box, candidateID: c.CandidateID, save: key == "s"}
+			return harnessChangesDoneMsg{state: state, err: err, box: msg.box, candidateID: c.CandidateID}
 		}
 	})
 	m.dialog.sections = sections
@@ -133,15 +128,6 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 }
 
 func (m *Model) harnessChangesDone(msg harnessChangesDoneMsg) tea.Cmd {
-	if msg.save && !msg.force && errors.Is(msg.err, ErrHarnessChangesConflict) {
-		m.dialog = confirmDialog("Overwrite harness changes?", "Shared harness defaults or credentials changed since this candidate was captured. Saving will overwrite conflicting changes with the reviewed candidate.\n\nOverwrite those changes?", func(string) tea.Cmd {
-			return func() tea.Msg {
-				state, err := m.ds.SaveHarnessChanges(m.ctx, msg.box.ID, msg.candidateID, true)
-				return harnessChangesDoneMsg{state: state, err: err, box: msg.box, candidateID: msg.candidateID, save: true, force: true}
-			}
-		})
-		return nil
-	}
 	if msg.err != nil {
 		m.dialog = errorDialog("Harness changes", msg.err.Error()+"\n\nReopen the preview to inspect current changes.")
 		return nil

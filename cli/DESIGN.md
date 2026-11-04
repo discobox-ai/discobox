@@ -3229,7 +3229,9 @@ There is no configure step (ADR 26-11-02-152): every registered harness runs,
 and a harness is signed in and set up inside a discobox. What a box changes —
 settings, a login — is captured by its agent as a candidate, reviewed with
 `admin harness changes`, and saved with `admin harness save` (or discarded),
-which makes it the default for every discobox on that harness config. The
+which makes it the default for every discobox on that harness config. Save
+overwrites the chosen saved paths and captured credentials even after a
+concurrent edit, with no force mode or second confirmation (ADR 26-11-04-538). The
 console says the same with its green harness-changes band and, the first time
 a project sees one, an explainer recorded on the project
 (`harnessChangesExplained`, `admin project update --harness-changes-explained`).

@@ -49,7 +49,7 @@ func captureFixtureStore(t *testing.T, st *store.Store) (*Service, *model.Harnes
 func TestCaptureCommitsPatchSecretsAndReceiptIdempotently(t *testing.T) {
 	s, cfg, c := captureFixture(t)
 	ctx := context.Background()
-	receipt, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, false)
+	receipt, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestCaptureCommitsPatchSecretsAndReceiptIdempotently(t *testing.T) {
 	if bytes.Contains(encoded, []byte("new-secret")) {
 		t.Fatal("receipt contains credential")
 	}
-	replay, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, false)
+	replay, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,28 +86,7 @@ func TestCaptureCommitsPatchSecretsAndReceiptIdempotently(t *testing.T) {
 	}
 }
 
-func TestCaptureConflictsAfterSettingsEditWithoutWritingSecret(t *testing.T) {
-	s, cfg, c := captureFixture(t)
-	ctx := context.Background()
-	cfg.Name = "Edited"
-	if err := s.store.UpdateHarnessConfig(ctx, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, false); err == nil {
-		t.Fatal("stale candidate accepted")
-	}
-	bindings, err := s.store.ListTargetUseBindings(ctx, cfg.ProjectID, model.SecretBindingTargetHarnessConfig, cfg.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(bindings) != 0 {
-		t.Fatal("conflicting candidate wrote secret")
-	}
-	if _, err := s.store.GetHarnessCaptureReceipt(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Fatal("conflicting candidate wrote receipt")
-	}
-}
-func TestCaptureConflictsAfterSecretRefreshAndPreservesUserBinding(t *testing.T) {
+func TestCaptureOverwritesAfterSecretRefreshAndPreservesUserBinding(t *testing.T) {
 	s, cfg, c := captureFixture(t)
 	ctx := context.Background()
 	sec := &model.Secret{ProjectID: cfg.ProjectID, Name: "User token", Type: "token", EncryptedValue: []byte(`{"token":"original"}`)}
@@ -127,10 +106,7 @@ func TestCaptureConflictsAfterSecretRefreshAndPreservesUserBinding(t *testing.T)
 	if err := s.store.UpdateSecret(ctx, sec); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, false); err == nil {
-		t.Fatal("rotated credential overwritten")
-	}
-	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, true); err != nil {
+	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c); err != nil {
 		t.Fatal(err)
 	}
 	bindings, err := s.store.ListTargetUseBindings(ctx, cfg.ProjectID, model.SecretBindingTargetHarnessConfig, cfg.ID)
@@ -162,7 +138,7 @@ func TestHarnessConfigUpdateRejectsStaleSnapshot(t *testing.T) {
 func TestCaptureRollsBackAssetsWhenDeliveryPreparationFails(t *testing.T) {
 	s, cfg, c := captureFixture(t)
 	s.sandboxes = &failingCaptureRuntime{}
-	if _, err := s.commitCapture(context.Background(), cfg.ProjectID, "sbx-capture", cfg.ID, c, false); err == nil {
+	if _, err := s.commitCapture(context.Background(), cfg.ProjectID, "sbx-capture", cfg.ID, c); err == nil {
 		t.Fatal("wanted delivery failure")
 	}
 	stored, err := s.store.GetHarnessConfig(context.Background(), cfg.ProjectID, cfg.ID)
@@ -196,7 +172,7 @@ func TestCaptureRejectsCredentialHiddenInTemplate(t *testing.T) {
 	}
 	c.WriteRevision = cfg.Revision
 	c.Files = []harnesscapture.FileChange{{Path: "~/.auth.json", File: &harnesscapture.File{Path: "~/.auth.json", Content: `{"token":"raw-stolen-secret"}`}}}
-	if _, err := s.commitCapture(context.Background(), cfg.ProjectID, "sbx-capture", cfg.ID, c, false); err == nil {
+	if _, err := s.commitCapture(context.Background(), cfg.ProjectID, "sbx-capture", cfg.ID, c); err == nil {
 		t.Fatal("raw secret template accepted")
 	}
 }
@@ -231,7 +207,7 @@ func TestCapturePreviewRejectsUnclassifiedFileAndRedactsDiagnostics(t *testing.T
 func TestHarnessEditorRejectsOriginalRevisionAfterCapture(t *testing.T) {
 	s, cfg, c := captureFixture(t)
 	ctx := context.Background()
-	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, false); err != nil {
+	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.UpdateHarnessConfig(ctx, cfg.ProjectID, cfg.ID, services.UpdateHarnessConfigBody{Revision: cfg.Revision, Name: serverapi.NewOptString("stale editor")})
@@ -263,7 +239,7 @@ func TestCaptureTemplateRequiresBoundOrNewCredential(t *testing.T) {
 			if !supply {
 				c.Credentials = nil
 			}
-			_, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, false)
+			_, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c)
 			if supply && err != nil {
 				t.Fatal(err)
 			}
@@ -351,7 +327,7 @@ func TestCapturePreviewMarksAChangeAnOverrideShadows(t *testing.T) {
 	}
 }
 
-func TestForceCaptureOverwritesStaleRevision(t *testing.T) {
+func TestCaptureOverwritesStaleRevision(t *testing.T) {
 	s, cfg, c := captureFixture(t)
 	ctx := context.Background()
 	cfg.Name = "Concurrent edit"
@@ -359,10 +335,7 @@ func TestForceCaptureOverwritesStaleRevision(t *testing.T) {
 	if err := s.store.UpdateHarnessConfig(ctx, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, false); err == nil {
-		t.Fatal("expected conflict")
-	}
-	receipt, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, true)
+	receipt, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,10 +351,96 @@ func TestForceCaptureOverwritesStaleRevision(t *testing.T) {
 	}
 }
 
-func TestForceCaptureStillRejectsChangedManifest(t *testing.T) {
+func TestCaptureStillRejectsChangedManifest(t *testing.T) {
 	s, cfg, c := captureFixture(t)
 	c.Baseline.ManifestDigest = "different"
-	if _, err := s.commitCapture(context.Background(), cfg.ProjectID, "sbx-capture", cfg.ID, c, true); err == nil {
-		t.Fatal("force bypassed manifest check")
+	if _, err := s.commitCapture(context.Background(), cfg.ProjectID, "sbx-capture", cfg.ID, c); err == nil {
+		t.Fatal("save bypassed manifest check")
+	}
+}
+
+func TestReviewedCaptureUsesCurrentRowsAndDoesNotReplayCredentials(t *testing.T) {
+	for _, keep := range []bool{false, true} {
+		t.Run(fmt.Sprintf("keep=%t", keep), func(t *testing.T) {
+			s, cfg, c := captureFixture(t)
+			ctx := context.Background()
+			first, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err := s.store.GetHarnessConfig(ctx, cfg.ProjectID, cfg.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret, err := s.store.GetSecret(ctx, cfg.ProjectID, current.ConfiguredSecretIDs[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.ID = "candidate-2"
+			c.Baseline, c.WriteRevision, c.SecretRevisions = first.Baseline, current.Revision, first.Baseline.SecretRevisions
+			c.Credentials[0].Keep = keep
+			c.Credentials[0].Value = json.RawMessage(`{"token":"captured-replacement"}`)
+			if keep {
+				c.Credentials[0].Value = nil
+			}
+			preview := harnesscapture.Preview{Files: append([]harnesscapture.FileChange(nil), c.Files...)}
+			if err := s.describeCapturePreview(ctx, cfg.ProjectID, "sbx-capture", &preview); err != nil {
+				t.Fatal(err)
+			}
+			if preview.Files[0].Previous == nil {
+				t.Fatal("missing reviewed before state")
+			}
+			// Both shared settings and the credential move after the diff was read.
+			current.Name = "concurrent name"
+			current.ConfiguredFiles = []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"model":"remote"}`}, {Path: "unrelated", Content: "keep"}}
+			if err := s.store.UpdateHarnessConfig(ctx, current); err != nil {
+				t.Fatal(err)
+			}
+			secret.EncryptedValue = []byte(`{"token":"renewed"}`)
+			if err := s.store.UpdateSecretValueIfUnchanged(ctx, secret, secret.Revision); err != nil {
+				t.Fatal(err)
+			}
+			saved, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err = s.store.GetHarnessConfig(ctx, cfg.ProjectID, cfg.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.Name != "concurrent name" || len(current.ConfiguredFiles) != 2 || current.ConfiguredFiles[0].Content != `{"model":"local"}` || current.ConfiguredFiles[1].Content != "keep" {
+				t.Fatalf("wrong patch: %+v", current)
+			}
+			secret, err = s.store.GetSecret(ctx, cfg.ProjectID, secret.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "captured-replacement"
+			if keep {
+				want = "renewed"
+			}
+			var value model.SecretValue
+			if err := json.Unmarshal(secret.EncryptedValue, &value); err != nil {
+				t.Fatal(err)
+			}
+			if value.Token != want {
+				t.Fatalf("token=%q want=%q", value.Token, want)
+			}
+			secret.EncryptedValue = []byte(`{"token":"renewed-after-save"}`)
+			if err := s.store.UpdateSecretValueIfUnchanged(ctx, secret, secret.Revision); err != nil {
+				t.Fatal(err)
+			}
+			replay, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret, err = s.store.GetSecret(ctx, cfg.ProjectID, secret.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if replay.Baseline.ConfigRevision != saved.Baseline.ConfigRevision || string(secret.EncryptedValue) != `{"token":"renewed-after-save"}` {
+				t.Fatal("receipt replay reapplied a stale credential")
+			}
+		})
 	}
 }
