@@ -2024,15 +2024,11 @@ func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdat
 	}
 }
 
-func (f *fakeSource) HeldGrants(_ context.Context, server, sandboxID, envVar string) ([]HeldGrant, error) {
+func (f *fakeSource) HeldGrants(_ context.Context, server, _, _ string) ([]HeldGrant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "HeldGrants@"+server)
-	var out []HeldGrant
-	for _, grant := range f.heldGrants {
-		out = append(out, grant)
-	}
-	return out, nil
+	return append([]HeldGrant(nil), f.heldGrants...), nil
 }
 
 func (f *fakeSource) Bindings(_ context.Context, server string, filter BindingFilter) ([]SecretBinding, error) {

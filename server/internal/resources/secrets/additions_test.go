@@ -95,7 +95,7 @@ func TestAnAdditionIsGrantedBesideTheBaseAndLapsesAlone(t *testing.T) {
 		t.Fatalf("base = %+v, %v; want it untouched, for good", stored, err)
 	}
 	added, err := st.SecretBindingByExactID(ctx, "project-1", answered.Use.BindingID)
-	if err != nil || !added.Adds || !added.Use || added.EnvName != "GH_TOKEN" || added.ExpiresAt == nil || added.ExpiresAt.Sub(time.Now()) > time.Hour {
+	if err != nil || !added.Adds || !added.Use || added.EnvName != "GH_TOKEN" || added.ExpiresAt == nil || time.Until(*added.ExpiresAt) > time.Hour {
 		t.Fatalf("addition = %+v, %v; want an addition in GH_TOKEN for the hour asked", added, err)
 	}
 
