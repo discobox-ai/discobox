@@ -415,7 +415,7 @@ func (a *App) newSecretBoundCommand() *cobra.Command {
 the default) can use: each variable and the secret in it, which binding it comes
 from, where it may be sent, and for how long — the narrowest plain binding per
 variable, with every route list a request carrying it is held to. An addition
-(ADR 26-11-03-329) is listed after the binding it stacks on, marked "+ added":
+is listed after the binding it stacks on, marked "+ added":
 a request carrying the variable is sent when that binding or any addition
 allows it, and each lasts as long as its own row says. One that does not apply
 — its variable is another secret's — is marked so, with why. Delegations it may

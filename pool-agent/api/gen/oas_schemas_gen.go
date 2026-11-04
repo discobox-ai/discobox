@@ -5802,10 +5802,10 @@ type PoolSandboxCreateRequest struct {
 	// sentinel must be allowed by every list; a sentinel with no lists, or an empty list, is sent
 	// nowhere.
 	SentinelRoutes OptNilPoolSandboxCreateRequestSentinelRoutes `json:"sentinelRoutes"`
-	// The grants each stable sentinel is held to, keyed by sentinel (ADR 26-11-03-329 §3), sent in
-	// place of sentinelRoutes to an agent that declared sentinelGrants. A request carrying the sentinel
-	// passes when some grant that has not expired allows it, as every one of that grant's lists must; a
-	// sentinel with no grants is sent nowhere.
+	// The grants each stable sentinel is held to, keyed by sentinel, sent in place of sentinelRoutes to
+	// an agent that declared sentinelGrants. A request carrying the sentinel passes when some grant that
+	// has not expired allows it, as every one of that grant's lists must; a sentinel with no grants is
+	// sent nowhere.
 	SentinelGrants OptNilPoolSandboxCreateRequestSentinelGrants `json:"sentinelGrants"`
 	// Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
 	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
@@ -6002,10 +6002,10 @@ func (s *PoolSandboxCreateRequestSecretEnv) init() PoolSandboxCreateRequestSecre
 	return m
 }
 
-// The grants each stable sentinel is held to, keyed by sentinel (ADR 26-11-03-329 §3), sent in
-// place of sentinelRoutes to an agent that declared sentinelGrants. A request carrying the sentinel
-// passes when some grant that has not expired allows it, as every one of that grant's lists must; a
-// sentinel with no grants is sent nowhere.
+// The grants each stable sentinel is held to, keyed by sentinel, sent in place of sentinelRoutes to
+// an agent that declared sentinelGrants. A request carrying the sentinel passes when some grant that
+// has not expired allows it, as every one of that grant's lists must; a sentinel with no grants is
+// sent nowhere.
 type PoolSandboxCreateRequestSentinelGrants map[string][]SentinelGrant
 
 func (s *PoolSandboxCreateRequestSentinelGrants) init() PoolSandboxCreateRequestSentinelGrants {
@@ -6535,7 +6535,7 @@ type PoolSandboxUpdateRequest struct {
 	// whole map (ADR 26-10-27-880 §4).
 	SentinelRoutes OptNilPoolSandboxUpdateRequestSentinelRoutes `json:"sentinelRoutes"`
 	// Replacement grants keyed by stable sentinel, sent with sentinels in place of sentinelRoutes and
-	// replacing the sandbox's whole map (ADR 26-11-03-329 §3).
+	// replacing the sandbox's whole map.
 	SentinelGrants OptNilPoolSandboxUpdateRequestSentinelGrants `json:"sentinelGrants"`
 	// Replacement secret-bound environment variable name to sentinel placeholder map for a running
 	// sandbox.
@@ -6669,7 +6669,7 @@ func (s *PoolSandboxUpdateRequestSecretEnv) init() PoolSandboxUpdateRequestSecre
 }
 
 // Replacement grants keyed by stable sentinel, sent with sentinels in place of sentinelRoutes and
-// replacing the sandbox's whole map (ADR 26-11-03-329 §3).
+// replacing the sandbox's whole map.
 type PoolSandboxUpdateRequestSentinelGrants map[string][]SentinelGrant
 
 func (s *PoolSandboxUpdateRequestSentinelGrants) init() PoolSandboxUpdateRequestSentinelGrants {
@@ -7548,9 +7548,9 @@ func (s *SandboxUser) SetUID(val OptInt64) {
 	s.UID = val
 }
 
-// One binding's say over a sentinel (ADR 26-11-03-329 §3) - its route lists, every one of which a
-// request must pass, and when it lapses. Grants are never merged into one list, so a blocked route
-// refuses only within its own grant.
+// One binding's say over a sentinel - its route lists, every one of which a request must pass, and
+// when it lapses. Grants are never merged into one list, so a blocked route refuses only within its
+// own grant.
 // Ref: #/components/schemas/SentinelGrant
 type SentinelGrant struct {
 	// The route lists, the secret's first; an empty list allows nothing.
