@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -416,7 +417,7 @@ func markMachineWired(sandboxID string) error {
 	if err := os.WriteFile(machineDataWiredFile, []byte(sandboxID+" "+token+"\n"), 0o644); err != nil { //nolint:gosec // G306: the pool reads it; it holds only the sandbox's ID and a token
 		return err
 	}
-	if err := os.MkdirAll(path.Dir(machineWiredPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(machineWiredPath), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(machineWiredPath, []byte(token+"\n"), 0o644) //nolint:gosec // G306: the pool reads it; a token of this start
