@@ -8,22 +8,30 @@ import (
 
 func (m *Model) askAboutAdoption(req CredentialRequest) tea.Cmd {
 	ask := req.Adoption
+	child, requester := ask.ChildID, ask.RequesterID
+	if ask.ChildName != "" {
+		child = fmt.Sprintf("%s (%s)", ask.ChildName, ask.ChildID)
+	}
+	if ask.RequesterName != "" {
+		requester = fmt.Sprintf("%s (%s)", ask.RequesterName, ask.RequesterID)
+	}
+	authority := line{text: "Read and type into terminals; start, stop, repair, upgrade and archive the child; change its meta; deliver its source; reach its ports; answer credential requests within what the parent may delegate."}
+	if ask.ReadOnly {
+		authority = line{text: "The child has wider egress. Every write and send into it will be refused; this parent may only read it.", tone: toneAlert}
+	}
 	d := actionsDialog("Adoption request", "", []action{
 		{key: "approve", label: "Approve adoption", enabled: true},
 		{key: "deny", press: "d", label: "Deny", enabled: true},
 	}, func(result string) tea.Cmd { return m.answerAdoption(req, result == "approve") })
 	d.sections = []section{{label: "who leads this discobox", fields: []field{
-		{label: "child", value: fmt.Sprintf("%s (%s)", ask.ChildName, ask.ChildID), tone: toneAccent},
-		{label: "requester", value: fmt.Sprintf("%s (%s)", ask.RequesterName, ask.RequesterID)},
+		{label: "child", value: child, tone: toneAccent},
+		{label: "requester", value: requester},
 		{label: "current parent", value: ask.CurrentParentID},
 		{label: "reason (the discobox's words)", value: req.Justification},
 	}}, {label: "approval allows the parent to", lines: []line{
-		{text: "Read and type into terminals; start, stop, repair, upgrade and archive the child; change its meta; deliver its source; reach its ports; answer credential requests within what the parent may delegate."},
+		authority,
 		{text: "The child's credentials stay its own. Authority covers this child alone."},
 	}}}
-	if ask.ReadOnly {
-		d.sections = append(d.sections, section{label: "read access only", lines: []line{{text: "The child has wider egress. Every write and send into it will be refused; this parent may only read it.", tone: toneAlert}}})
-	}
 	d.footer = "Approval replaces the current parent. Esc leaves the request waiting."
 	m.dialog = d
 	return nil

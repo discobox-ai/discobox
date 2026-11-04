@@ -169,3 +169,10 @@ func TestWelcomeDropsTheMarkOnAShortWindow(t *testing.T) {
 		t.Fatalf("the card is %d rows in a %d-row window", short, m.height)
 	}
 }
+
+func TestWelcomeTeachesTheCommandThatOpensTheConsole(t *testing.T) {
+	m := newWelcomeModel(t, newFakeSource())
+	if got := plainFrame(m); !strings.Contains(got, "discobox console") {
+		t.Fatalf("welcome teaches no console command:\n%s", got)
+	}
+}

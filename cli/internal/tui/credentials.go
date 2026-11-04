@@ -860,6 +860,9 @@ func roleLines(role requestrole.Role) []line {
 
 func credentialName(req CredentialRequest) string {
 	if req.Adoption != nil {
+		if req.Adoption.ChildName != "" {
+			return "adoption of " + req.Adoption.ChildName
+		}
 		return "adoption of " + req.Adoption.ChildID
 	}
 	if req.Trust != nil {
@@ -1217,7 +1220,9 @@ func (m *Model) viewCredentialBanner(width int) string {
 	st := m.st
 	subject := credentialName(pending[0])
 	what := "credential request"
-	if pending[0].Trust != nil {
+	if pending[0].Adoption != nil {
+		what = "adoption request"
+	} else if pending[0].Trust != nil {
 		// The name already says the host, so it is not said twice.
 		what = "trust request"
 	} else if pending[0].Refresh != nil {
@@ -1228,16 +1233,25 @@ func (m *Model) viewCredentialBanner(width int) string {
 	}
 	if len(pending) > 1 {
 		one, many := "credential request", "credential requests"
-		trusts := 0
+		trusts, adoptions, refreshes := 0, 0, 0
 		for _, req := range pending {
-			if req.Trust != nil {
+			switch {
+			case req.Adoption != nil:
+				adoptions++
+			case req.Trust != nil:
 				trusts++
+			case req.Refresh != nil:
+				refreshes++
 			}
 		}
-		switch trusts {
-		case 0:
-		case len(pending):
+		switch {
+		case trusts+adoptions+refreshes == 0:
+		case trusts == len(pending):
 			one, many = "trust request", "trust requests"
+		case adoptions == len(pending):
+			one, many = "adoption request", "adoption requests"
+		case refreshes == len(pending):
+			one, many = "refresh request", "refresh requests"
 		default:
 			one, many = "request", "requests"
 		}
@@ -1253,6 +1267,9 @@ func (m *Model) viewCredentialBanner(width int) string {
 // server's own wording of the refusal: that wording is the half that says what
 // to do next, so it is left whole as the dialog's body and this stands under it.
 func credentialErrorSection(req CredentialRequest) section {
+	if req.Adoption != nil {
+		return section{label: "still waiting", fields: []field{{label: "request", value: credentialName(req), tone: toneAccent}}}
+	}
 	if req.Trust != nil {
 		return section{label: "still waiting", fields: []field{{label: "trust", value: req.Host, tone: toneAccent}}}
 	}

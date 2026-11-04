@@ -140,22 +140,23 @@ type fakeSource struct {
 	// for a window with several; one not named there answers with
 	// projectSecrets and harnesses. onServer is every server-scoped call, as
 	// "Method@server", which is what says where the window sent it.
-	secretsOn       map[string][]Secret
-	harnessesOn     map[string][]Harness
-	onServer        []string
-	requestsErr     error
-	secretsErr      error
-	approvals       []Approval
-	trustApprovals  []TrustApproval
-	trustDenials    []string
-	denials         []string
-	createdSecrets  []NewSecret
-	approveErr      error
-	createSecretErr error
-	limited         []string
-	limitErr        error
-	updated         []SecretUpdate
-	revalued        []string
+	secretsOn         map[string][]Secret
+	harnessesOn       map[string][]Harness
+	onServer          []string
+	requestsErr       error
+	secretsErr        error
+	approvals         []Approval
+	trustApprovals    []TrustApproval
+	trustDenials      []string
+	adoptionDecisions []string
+	denials           []string
+	createdSecrets    []NewSecret
+	approveErr        error
+	createSecretErr   error
+	limited           []string
+	limitErr          error
+	updated           []SecretUpdate
+	revalued          []string
 	// projectBindings are the project's bindings; handedOn is how many
 	// bindings a delete takes with it, by binding ID.
 	projectBindings  []SecretBinding
@@ -2202,10 +2203,11 @@ func readySandboxes() []Sandbox {
 	return all
 }
 
-func (f *fakeSource) DecideAdoptionRequest(_ context.Context, server, requestID string, _ bool) error {
+func (f *fakeSource) DecideAdoptionRequest(_ context.Context, server, requestID string, approve bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "DecideAdoptionRequest@"+server)
+	f.adoptionDecisions = append(f.adoptionDecisions, fmt.Sprintf("%s=%t", requestID, approve))
 	if f.approveErr != nil {
 		return f.approveErr
 	}

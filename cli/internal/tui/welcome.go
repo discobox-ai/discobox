@@ -45,7 +45,7 @@ const welcomeIntro = "Discobox runs coding agents in isolated sandboxes on this 
 // discobox command in it because that step is not ours: it is the agent, or
 // you, working until there is something to take out.
 var welcomeSteps = []struct{ text, command string }{
-	{"A new box, with your source copied into it", "cd ~/src/my-project && discobox"},
+	{"A new box, with your source copied into it", "cd ~/src/my-project && discobox console"},
 	{"Work with the agent until the change is a commit", `git commit -am "..."`},
 	{"Send that commit to your remote", "git push"},
 }
