@@ -144,7 +144,7 @@ and history, but discards whatever was written to its container filesystem
 outside them -- which is the reason to hold one back.
 
 --welcomed=false shows the console's welcome screen again on this project's
-next "discobox" or "discobox console": it is otherwise shown once, the first time
+next "discobox console": it is otherwise shown once, the first time
 the console opens on the project.
 
 --harness-changes-explained=false shows the console's explanation of saving a

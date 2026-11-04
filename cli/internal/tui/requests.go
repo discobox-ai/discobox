@@ -156,6 +156,9 @@ func (l *requestList) row(st *styles, r CredentialRequest, i int, focused bool) 
 // requestSubject is what is being asked for: the credential an agent names,
 // or failing that the variable it wants one in.
 func requestSubject(r CredentialRequest) string {
+	if r.Adoption != nil {
+		return credentialName(r)
+	}
 	if r.Trust != nil {
 		return "trust this host"
 	}

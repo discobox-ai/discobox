@@ -93,7 +93,9 @@ the request asked; it is refused on a use part denied or absent.
 ## Adoption
 
 `adopt DISCOBOX --reason` files a sandbox-role adoption request and polls its
-answer until approved, denied or canceled. `release DISCOBOX` gives a child back.
+answer until approved, denied or the caller stops waiting. Stopping the command
+leaves the request pending in the person's inbox. Help names the API-access
+prerequisite and how a person answers. `release DISCOBOX` gives a child back.
 Both resolve by the same selection as other top-level sandbox commands.
 `ls --parent ID` filters by parent; `--parent me` reads this box's static config.
 Tables show PARENT; JSON preserves the creator beside it.

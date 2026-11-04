@@ -428,8 +428,10 @@ screen that guesses at the new state is a screen that drifts from the server.
 
 Adoption is an inbox kind (ADR 26-11-03-970). `AdoptionAsk` opens its own
 approve/deny card without reading secrets: child, requester, current parent,
-justification, every acquired capability, and the warning when egress permits
-only reads. `DecideAdoptionRequest` answers on the request's server. Successful
+justification and the acquired capabilities. A child with wider egress shows
+only read authority, without promising write capabilities. Inbox rows, bands
+and error cards name adoption and its child, using its name or falling back to
+its ID. `DecideAdoptionRequest` answers on the request's server. Successful
 answers refresh the inbox; conflicts leave it available to deny.
 
 An agent inside a discobox can ask a person for a credential it was not
