@@ -398,6 +398,7 @@ func TestWorkspaceTrustOverride(t *testing.T) {
 			if len(got) != 2 || got[0] != "-c" {
 				t.Fatalf("codex argv = %#v", got)
 			}
+			//nolint:gosec // G204: execute this repository's configure function under test.
 			cmd := exec.CommandContext(t.Context(), "sh", "-eu", "-c",
 				configuretest.Function(t, string(script), "ensure_workspace_trusted")+
 					"\nensure_workspace_trusted\nprintf '%s' \"$DISCOBOX_CODEX_TRUST\"")
