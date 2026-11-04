@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-04-616](26-11-04-616-whole-credential-is-an-explicit-approval-scope.md) | A credential approval restricts its grant to requested routes, requested hosts, or anywhere | Proposed (amends 26-11-02-022 §§3–4 and 6) |
 | [26-11-04-074](26-11-04-074-local-server-discovery-is-independent-of-shell-temporary-directories.md) | Local server discovery is independent of shell temporary directories | Proposed (narrows 0019 §3: bounded failure for an unreachable incumbent; preserves reachable startup and known shutdown handoffs) |
 | [26-11-04-746](26-11-04-746-a-sleep-request-has-a-fifteen-second-grace.md) | A sleep request has a fifteen-second grace | Accepted (narrows 26-10-16-337 §§1, 4, 5, 8: sleep waits for a minimum grace and bounded OSC 7501 working deferral; sleep and idle reporting are gated while waiting) |
 | [26-11-04-538](26-11-04-538-saving-a-harness-candidate-overwrites-without-a-revision-conflict.md) | Saving a harness candidate overwrites without a revision conflict | Accepted (supersedes 26-10-30-775's ordinary-save conflict and explicit-force policy and narrows 26-10-26-573 §3's save-back revision conflicts and mandatory reconsideration; file ownership follows 26-11-04-711 §2) |
