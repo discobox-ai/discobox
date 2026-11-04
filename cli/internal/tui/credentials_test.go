@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
+	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
