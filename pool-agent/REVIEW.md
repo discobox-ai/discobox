@@ -534,5 +534,7 @@ answer is seen): after that its disk is the sandbox's work.
   (`sandboxAgentStatusWakeSpacing`), never by what the sandbox answers.
 - **A tick's list does not undo a newer start or stop.** Listing sandboxes is
   not instant, and a start delta that arrives during it is newer than the
-  list; `waitOn` leaves any sandbox whose state changed after `listedAt` as
-  the delta left it.
+  list; `waitOn` leaves any sandbox whose state changed after the list was
+  read as the delta left it. Order them by a count of changes, never by
+  `time.Now()`: Windows' clock gives a change and the listing the same time,
+  and the first draft, comparing times, failed there.

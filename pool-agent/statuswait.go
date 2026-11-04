@@ -67,17 +67,19 @@ var errStatusWaitUnsupported = errors.New("sandbox agent does not answer the sta
 // calls it as the backstop; sandboxStateChanged starts and stops a waiter the
 // moment the runtime sees a sandbox start or stop.
 //
-// running was listed at listedAt, and listing is not instant (a Docker pool
-// inspects every container). A sandbox whose state changed since is left as
-// the change left it: the list is older than what it would undo, and a start
-// it undid would cost the new box its waiter until the next tick — the very
-// seconds a harness binds its sign-in callback in.
-func (p *sandboxAgentStatusPoller) waitOn(ctx context.Context, running []string, listedAt time.Time) {
+// running was listed after state change listedAfter (stateChanges), and
+// listing is not instant (a Docker pool inspects every container). A sandbox
+// whose state changed since is left as the change left it: the list is older
+// than what it would undo, and a start it undid would cost the new box its
+// waiter until the next tick — the very seconds a harness binds its sign-in
+// callback in. Changes are counted rather than timed: a clock as coarse as
+// Windows' gives a change and the listing the same time.
+func (p *sandboxAgentStatusPoller) waitOn(ctx context.Context, running []string, listedAfter uint64) {
 	keep := make(map[string]bool, len(running))
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for sandboxID, at := range p.stateChangedAt {
-		if !at.After(listedAt) {
+	for sandboxID, change := range p.stateChangedAt {
+		if change <= listedAfter {
 			delete(p.stateChangedAt, sandboxID)
 		}
 	}
@@ -106,14 +108,23 @@ func (p *sandboxAgentStatusPoller) sandboxStateChanged(ctx context.Context, sand
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.stateChangedAt == nil {
-		p.stateChangedAt = map[string]time.Time{}
+		p.stateChangedAt = map[string]uint64{}
 	}
-	p.stateChangedAt[sandboxID] = time.Now()
+	p.stateChanges++
+	p.stateChangedAt[sandboxID] = p.stateChanges
 	if state == sandboxruntime.StateRunning {
 		p.startWaiterLocked(ctx, sandboxID)
 		return
 	}
 	p.stopWaiterLocked(sandboxID)
+}
+
+// stateChangesSoFar is how many starts and stops the runtime has reported, for
+// a tick to say its list was read after them (waitOn).
+func (p *sandboxAgentStatusPoller) stateChangesSoFar() uint64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stateChanges
 }
 
 func (p *sandboxAgentStatusPoller) startWaiterLocked(ctx context.Context, sandboxID string) {
