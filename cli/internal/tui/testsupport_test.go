@@ -72,10 +72,6 @@ type fakeSource struct {
 	harnessChangesSaveErr error
 	resources             Resources
 	mu                    sync.Mutex
-	// skills is what the skills screen lists, and skillsErr what an add
-	// fails with.
-	skills    []SkillsEntry
-	skillsErr error
 	// renewals are the refresh requests answered, and renewErr what the next
 	// answer fails with.
 	renewals []Renewal
@@ -2068,44 +2064,6 @@ func (f *fakeSource) DeleteBinding(_ context.Context, server, bindingID string) 
 	}
 	f.projectBindings = kept
 	return f.handedOn[bindingID], nil
-}
-
-func (f *fakeSource) Skills(_ context.Context, server string) (SkillsListing, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.onServer = append(f.onServer, "Skills@"+server)
-	return SkillsListing{Entries: append([]SkillsEntry(nil), f.skills...), ClientFile: "/home/me/.config/discobox/client.yaml"}, nil
-}
-
-// AddSkills files a value the way the real one does by its form: one with a
-// scheme is the project's.
-func (f *fakeSource) AddSkills(_ context.Context, server, value string) (SkillsEntry, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.onServer = append(f.onServer, "AddSkills@"+server)
-	if f.skillsErr != nil {
-		return SkillsEntry{}, f.skillsErr
-	}
-	entry := SkillsEntry{Value: value}
-	if strings.Contains(value, "://") {
-		entry.Project, entry.ID = true, "skills_"+itoa(len(f.skills)+1)
-	}
-	f.skills = append(f.skills, entry)
-	return entry, nil
-}
-
-func (f *fakeSource) RemoveSkills(_ context.Context, server string, entry SkillsEntry) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.onServer = append(f.onServer, "RemoveSkills@"+server)
-	kept := f.skills[:0]
-	for _, e := range f.skills {
-		if e != entry {
-			kept = append(kept, e)
-		}
-	}
-	f.skills = kept
-	return nil
 }
 
 func (f *fakeSource) DeleteSecret(_ context.Context, server, secretID string) error {

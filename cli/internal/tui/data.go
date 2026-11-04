@@ -1705,33 +1705,6 @@ type BindingFilter struct {
 	SecretID string
 }
 
-// SkillsListing is what the skills screen lists.
-type SkillsListing struct {
-	// Entries are the project's first, in the order a create adds them, then
-	// client.yaml's.
-	Entries []SkillsEntry
-	// ClientFile is the client.yaml the directories are read from and written
-	// to; empty when the client reads none.
-	ClientFile string
-}
-
-// SkillsEntry is one skills source a new discobox gets.
-type SkillsEntry struct {
-	// Project is whether the project keeps it, on its server; otherwise it is
-	// client.yaml's.
-	Project bool
-	// ID is the project entry's ID; empty for client.yaml's.
-	ID string
-	// Value is what it names, as --skills takes it: a Git URL[@REF][//PATH],
-	// or an absolute directory.
-	Value string
-	// Label is Value as the window shows it, in the short spelling the add
-	// form takes back (sourceref.Ref.Display); empty shows Value.
-	Label string
-	// Added is when the project entry was added; zero for client.yaml's.
-	Added time.Time
-}
-
 // NewSecret is a credential typed into the window: from the approval dialog,
 // where the project has nothing that answers a request yet, or from the secrets
 // screen.
@@ -2429,20 +2402,6 @@ type DataSource interface {
 	// reason: a dead credential is dealt with on human time, and the
 	// client-facing event stream is gone (ADR 0061).
 	SecretRejections(ctx context.Context) ([]SecretRejection, error)
-
-	// Skills is the skills every new discobox gets from this window: the
-	// project's skills sources on one server, in the order a create adds them,
-	// then client.yaml's run.skills, which are this machine's whatever server
-	// the window is on (ADR 26-10-14-894).
-	Skills(ctx context.Context, server string) (SkillsListing, error)
-
-	// AddSkills files one value where it belongs, read as --skills reads it: a
-	// Git URL[@REF][//PATH] in the project's skills sources, a directory in
-	// client.yaml.
-	AddSkills(ctx context.Context, server, value string) (SkillsEntry, error)
-
-	// RemoveSkills takes one entry out of where it is kept.
-	RemoveSkills(ctx context.Context, server string, entry SkillsEntry) error
 
 	// Secrets is one server's secrets, for choosing which one answers a
 	// request and for the secrets screen. It never carries a value.

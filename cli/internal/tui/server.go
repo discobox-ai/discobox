@@ -40,9 +40,9 @@ func (m *Model) serverChoices() []string {
 	return append([]string(nil), m.session.Servers...)
 }
 
-// onConfigScreen reports whether the harnesses, the secrets or the skills
+// onConfigScreen reports whether the harnesses or the secrets
 // screen is the one the header is drawn over.
-func (m *Model) onConfigScreen() bool { return m.harnessesOpen || m.secretsOpen || m.skillsOpen }
+func (m *Model) onConfigScreen() bool { return m.harnessesOpen || m.secretsOpen }
 
 // configServer is the server the harnesses and secrets screens show and change,
 // and the one whose harnesses a create is checked against (ADR 0131 §2): the
@@ -98,16 +98,12 @@ func (m *Model) configServerChanged(was string) tea.Cmd {
 	}
 	m.harnesses.clear()
 	m.secrets.clear()
-	m.skills.clear()
 	m.pools = nil
 	m.opts.clearPools()
 	m.syncRequestRows()
 	cmds := []tea.Cmd{m.loadHarnesses(), m.loadPools()}
 	if m.secretsOpen {
 		cmds = append(cmds, m.loadSecrets())
-	}
-	if m.skillsOpen {
-		cmds = append(cmds, m.loadSkills())
 	}
 	return tea.Batch(cmds...)
 }

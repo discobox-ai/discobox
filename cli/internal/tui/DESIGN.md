@@ -36,8 +36,6 @@ flowchart LR
     M --> S["secretList (F4)"]
     S -->|n e d enter b| SVerb["Secrets / Bindings / CreateSecret / UpdateSecret / CreateBinding / DeleteBinding / DeleteSecret"]
     S -->|C| Cred
-    M --> K["skillsList (F5)"]
-    K -->|n d| KVerb["Skills / AddSkills / RemoveSkills"]
     WS -->|leader g| Cred
     WS -->|leader o| T["tools picker → Tools / NewTool / EndExec / RunHostTool / Addresses"]
     WS -->|leader A| Aud["audit screen → FollowAudit / AuditDetail"]
@@ -63,7 +61,6 @@ files" first and "Reset your files too" (`HarnessResetOverrides`) second
 is marked shadowed: saving keeps it beneath the override, and boxes go on
 being given the person's file (§2).
 
-
 ## The workspace tree
 
 `tree.go`, `bare.go`. With a workspace open on a window at least
@@ -83,7 +80,7 @@ flowchart LR
     Sw -->|parked| Un["unparkWorkspace"]
     Sw -->|not parked| Open["openFromList → attach"]
     Open --> Park["parkWorkspace (the one on screen)"]
-    T -->|F3 F4 F5| Pg["page right of the tree (pageFrame)"]
+    T -->|F3 F4| Pg["page right of the tree (pageFrame)"]
     T -->|n| New["new discobox card (newOpen)"]
     T -->|leader z| Exp["treeExpanded: the whole home screen"]
 ```
@@ -172,14 +169,14 @@ flowchart LR
   of it give them back. While the list has them, the right side's border is
   drawn unfocused, and the right side's keys are neither answered, offered
   nor pasted into: a page's keys line offers the list's.
-- **The harnesses, secrets and skills are pages right of the tree**, not
+- **The harnesses and secrets are pages right of the tree**, not
   screens over the window: entries under the list, on the same F-keys, drawn
   in a box like the workspace's (`pageFrame`) with the quit key above it
   where the workspace header has it. A page covers the live workspace without
   closing it; choosing the live box again puts the page away (`showLive`).
   An entry shows its key only where the key works.
 - **The tree's entries are leader keys too** (`treePageMsg`, `treeEntry`):
-  `leader n`, `leader F3`/`F4`/`F5` open the card or a page from a pane, the
+  `leader n`, `leader F3`/`F4` open the card or a page from a pane, the
   audit screen, a workspace opening, or another page — wherever the window has
   a tree, and the bare key belongs to something else. The bare keys and the
   leader's go through one `treeEntry`: the page already up is left to its own
@@ -223,23 +220,6 @@ window, that line included, and the credential band brings the chrome back. The 
 discoboxes** (`showAllBoxes`), which turns the window into the console in
 place: the tree beside the same workspace, its cursor on the box, and the
 window no longer one command's own.
-
-## The skills screen
-
-`skills.go`, on `F5`: the skills every new discobox gets, wherever each is kept
-(ADR 26-10-14-894). The project's skills sources on the header's server come
-first, in the order a create adds them, then client.yaml's `run.skills`, which
-are this machine's whichever server the header is on. Each row says where it
-is kept. It is `discobox admin skills` folded into the window, and the secrets
-screen's shape: `n` asks for one value and `DataSource.AddSkills` files it by
-what it is, read as `--skills` reads it — a repository, a Git URL or GitHub
-`owner/repo` with `[@REF][//PATH]`, with the project, a directory in
-client.yaml — so there is one thing to type rather than a list to choose. Each
-row reads in its short spelling (`sourceref.Display`: `owner/repo//skills`, a
-directory from `~`), which is itself what `n` takes; `d` asks before `RemoveSkills` takes the row out of
-where it is kept, and says that discoboxes already made keep theirs. ←→ move
-the server as on the other two screens, and a listing read for a server the
-header has since left is dropped (`skillsLoaded`).
 
 ## The secrets screen
 
@@ -451,7 +431,6 @@ approve/deny card without reading secrets: child, requester, current parent,
 justification, every acquired capability, and the warning when egress permits
 only reads. `DecideAdoptionRequest` answers on the request's server. Successful
 answers refresh the inbox; conflicts leave it available to deny.
-
 
 An agent inside a discobox can ask a person for a credential it was not
 provisioned with ([ADR 0031](../../../docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)),
@@ -2353,21 +2332,21 @@ harnesses, which are not one at a time. A press while the listing is out asks
 for another when that one lands rather than stacking a second, and once it is
 late (`listingSlowAfter`) the status line says how long it has been out.
 
-**F1, `F3`, `F4`, `F5` and Ctrl-O are the window's own keys** (`updateKey`), answered
+**F1, `F3`, `F4` and Ctrl-O are the window's own keys** (`updateKey`), answered
 ahead of every screen's dispatch *and* ahead of the run options panel. They are
 the way between screens as much as the way into one: the header offers `F3`,
-`F4` and `F5` from everywhere and the panel's harness row names `F3` in its hint, so a
+`F4` from everywhere and the panel's harness row names `F3` in its hint, so a
 surface that swallowed the key to its neighbour would make those offers a lie
 for exactly as long as somebody was reading them. All but F1 are guarded by
 `!m.inPanes()` — inside a pane every key is the sandbox's. Each is a toggle,
-and the four surfaces are peers: the harnesses, the secrets, the skills and
+and the three surfaces are peers: the harnesses, the secrets and
 the run options each put the others away on their way in — `openHarnesses`,
-`openSecrets`, `openSkills`, and the `optionsKey` branch of `updateKey` — so Esc from any of
+`openSecrets`, and the `optionsKey` branch of `updateKey` — so Esc from any of
 them goes back to the console rather than to a surface left standing
 underneath. That is not tidiness. A surface left open under another still
 answers its own key from the dispatch above, so the key would close something
-nobody could see and change no frame at all; a fifth peer added here has to
-clear the other four for the same reason.
+nobody could see and change no frame at all; another peer added here has to
+clear the others for the same reason.
 
 **The leader is configurable, and it is not this package's.** `--leader`/
 `DISCOBOX_LEADER` (`internal/keys.NormalizeLeader`, `WithLeader`) because the
@@ -3178,8 +3157,7 @@ Each
 choice reads in the short spelling `sourceref.Display` gives it, from
 `Session.Home` — `owner/repo` for GitHub over https, any other remote's URL
 without `.git`, a directory from `~` — which is a value the input field takes
-back. The skills screen's rows carry their label from the data source
-(`SkillsEntry.Label`). `on github` is the folder header's word alone.
+back. `on github` is the folder header's word alone.
 
 Sources and folders are not the same list. A folder is where a discobox is
 *listed* — a GitHub repository, or a machine and a source — so a repository is
@@ -3498,7 +3476,6 @@ the newest one where the busy line goes.
 | `narration.go` | what a slow operation is doing, on the busy line |
 | `tui.go` | `Run`: the program the CLI starts against a `DataSource` |
 | `secrets.go` | the secrets screen (`F4`): the three tables' focus and frame, the secrets table, a secret's card and bindings, the secret and binding forms |
-| `skills.go` | the skills screen (`F5`): the project's skills sources and client.yaml's `run.skills`, added to and removed from by what a value is |
 | `requests.go` | the secrets screen's lower table: the credential, refresh and trust requests waiting on a person |
 | `welcome.go` | the once-per-project introduction |
 | `draft.go` | the unsent prompt, saved per machine and restored |

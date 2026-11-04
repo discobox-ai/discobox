@@ -45,7 +45,6 @@ const (
 	hitRow
 	hitHarnessRow
 	hitSecretRow
-	hitSkillsRow
 	hitRequestRow
 	hitAuditRow
 

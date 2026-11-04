@@ -185,10 +185,6 @@ type Model struct {
 	// inbox. See secrets.go.
 	secrets *secretList
 
-	// skills is the skills every new discobox gets: the project's skills
-	// repositories and client.yaml's directories. See skills.go.
-	skills *skillsList
-
 	// requestRows is the credential requests waiting on a person, drawn under
 	// the secrets on that screen: what the project holds, and what is waiting
 	// on it. table is which of the two has the keys. See requests.go.
@@ -372,9 +368,6 @@ type Model struct {
 	// secretsOpen is whether the secrets screen has the window, on the same
 	// terms the harnesses screen has it.
 	secretsOpen bool
-	// skillsOpen is whether the skills screen has the window, on the same
-	// terms again.
-	skillsOpen bool
 
 	// audit is the audit screen, drawn over the workspace while it is up, and
 	// auditGen counts its openings. See audit.go.
@@ -565,7 +558,6 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		list:           newSandboxList(session),
 		harnesses:      newHarnessList(),
 		secrets:        newSecretList(),
-		skills:         newSkillsList(),
 		requestRows:    newRequestList(),
 		prompt:         ta,
 		composerStyles: composer,
@@ -1132,12 +1124,6 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case secretActionMsg:
 		return m.secretActed(msg)
 
-	case skillsLoadedMsg:
-		return m.skillsLoaded(msg)
-
-	case skillsActionMsg:
-		return m.skillsActed(msg)
-
 	case credentialsLoadedMsg:
 		// An approval or a denial re-reads the inbox itself, to take the
 		// request it just answered out of it; if the beat's read was out at
@@ -1628,7 +1614,7 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 		return m.updatePane(msg)
 	// Nor does the list in the tree, or the screen it has the keys from: the
 	// composer behind them is not drawn (updateKey, listHasKeys).
-	case m.harnessesOpen, m.secretsOpen, m.skillsOpen, m.submitting, m.listHasKeys():
+	case m.harnessesOpen, m.secretsOpen, m.submitting, m.listHasKeys():
 		return nil
 	}
 	before := m.promptState()
@@ -1947,20 +1933,12 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return m.openSecrets()
 	}
-	// The skills screen, on the next key again.
-	if keyName(msg) == skillsKey && !m.inPanes() {
-		if m.skillsOpen {
-			m.closeSkills()
-			return nil
-		}
-		return m.openSkills()
-	}
 	// The run options on the same terms again: one key that opens the panel and
 	// closes it, from every screen the window has of its own.
 	//
-	// It is a peer of the three screens rather than a layer over one, so
-	// opening it puts them away the same way openHarnesses, openSecrets and
-	// openSkills put it away. A screen left standing underneath would take its own key back
+	// It is a peer of the two screens rather than a layer over one, so
+	// opening it puts them away the same way openHarnesses and openSecrets
+	// put it away. A screen left standing underneath would take its own key back
 	// while nothing could see it: F3 over the panel would reach the harnesses
 	// dispatch above, close a screen that was already covered, and leave the
 	// frame exactly as it was — one press of the key the panel's own harness
@@ -1968,7 +1946,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if keyName(msg) == optionsKey && !m.inPanes() {
 		m.optionsOpen = !m.optionsOpen
 		if m.optionsOpen {
-			m.harnessesOpen, m.secretsOpen, m.skillsOpen = false, false, false
+			m.harnessesOpen, m.secretsOpen = false, false
 			m.layout()
 			return m.loadPools()
 		}
@@ -1989,9 +1967,6 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if m.secretsOpen {
 			return m.updateSecrets(msg)
 		}
-		if m.skillsOpen {
-			return m.updateSkills(msg)
-		}
 	}
 
 	switch m.focus {
@@ -2011,7 +1986,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 // motion, a chord, a key some other screen takes first — counts as doing
 // something.
 func (m *Model) typingIntoPrompt(msg tea.KeyPressMsg) bool {
-	if m.focus != focusPrompt || m.modalUp() || m.inPanes() || m.harnessesOpen || m.secretsOpen || m.skillsOpen {
+	if m.focus != focusPrompt || m.modalUp() || m.inPanes() || m.harnessesOpen || m.secretsOpen {
 		return false
 	}
 	switch keyName(msg) {
@@ -3711,8 +3686,6 @@ func (m *Model) layout() {
 	// list sized on the frame after that would open with no rows in it.
 	m.harnesses.width, m.harnesses.height = m.bodyWidth(), max(m.pageHeight()-harnessesChrome, 0)
 	m.harnesses.clamp()
-	m.skills.width, m.skills.height = m.bodyWidth(), max(m.pageHeight()-skillsChrome, 0)
-	m.skills.clamp()
 	// The lower table takes what its rows need, up to a third of the screen:
 	// what is waiting is usually a line or two, and a fixed split would spend
 	// half the screen on "nothing is waiting".
@@ -3858,8 +3831,6 @@ func (m *Model) view() tea.View {
 		content = m.viewHarnesses()
 	case m.secretsOpen:
 		content = m.viewSecrets()
-	case m.skillsOpen:
-		content = m.viewSkills()
 	default:
 		// The header spans the window; under it the mark stands beside the
 		// list, and the composer spans both again. Each block is drawn with
@@ -4138,7 +4109,6 @@ func (m *Model) headerHints() []hint {
 		keyed("F1", "f1", "help"),
 		keyed(HarnessesKeyName, harnessesKey, "harnesses"),
 		keyed(SecretsKeyName, secretsKey, "secrets"),
-		keyed(SkillsKeyName, skillsKey, "skills"),
 		quit,
 	}
 }
@@ -4484,9 +4454,6 @@ func (m *Model) hints() []hint {
 		if m.secretsOpen {
 			return m.secretHints()
 		}
-		if m.skillsOpen {
-			return m.skillsHints()
-		}
 	}
 	if m.audit != nil && m.inPanes() {
 		return m.auditHints()
@@ -4752,7 +4719,6 @@ func (m *Model) helpText() string {
 		"",
 		"    " + HarnessesKeyName + "             the harnesses",
 		"    " + SecretsKeyName + "             the project's secrets",
-		"    " + SkillsKeyName + "             the skills every new discobox gets",
 		"    Ctrl-O         run options",
 		"",
 		"───────────────────────────────────────────────────────────────",
@@ -4762,7 +4728,7 @@ func (m *Model) helpText() string {
 		"                   creates one and attaches to it. It first asks",
 		"                   where to cut it from, and Enter there creates.",
 		"                   Tab on that card shows its options: the harness,",
-		"                   the server where there are several, skills, and",
+		"                   the server where there are several, and",
 		"                   additional sources",
 		"    Shift-Enter    newline. Ctrl-Enter, Alt-Enter and Ctrl-J too",
 		"    Alt-E or F2    edit the prompt in $EDITOR",
@@ -4908,8 +4874,8 @@ func (m *Model) helpText() string {
 		"  On a window wide enough for it, the discobox list stays down the",
 		"  left of the workspace, and the box on the right is switched in",
 		"  place. A box switched away from keeps running and stays attached,",
-		"  so switching back is instant. Under the list are the harnesses,",
-		"  secrets and skills, which open on the right, and + new discobox.",
+		"  so switching back is instant. Under the list are the harnesses",
+		"  and secrets, which open on the right, and + new discobox.",
 		"",
 		"    " + leader + " h       to the list, from the leftmost pane; Esc back",
 		"    " + leader + " ↑ / ↓   the discobox above or below, or k and j",
@@ -4921,10 +4887,10 @@ func (m *Model) helpText() string {
 		"  starts it.",
 		"    " + leader + " " + paneZoomKey + "       on the list, the whole home screen and back",
 		"    n              on the list, a new discobox",
-		"    " + leader + " n / F3 / F4 / F5",
+		"    " + leader + " n / F3 / F4",
 		"                   the same as the list's entries, from anywhere",
 		"                   beside it: a new discobox, the harnesses, the",
-		"                   secrets, the skills",
+		"                   secrets",
 		"",
 		"  Beside the list there is nothing to detach to: a box is left by",
 		"  switching to another, and the window by quitting.",
