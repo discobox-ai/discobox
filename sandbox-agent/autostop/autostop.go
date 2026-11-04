@@ -17,7 +17,8 @@
 // (ADR 0017 §§10, 12).
 //
 // Sleep and wake are files, as leases are: a file in the sleep directory asks
-// to be powered down now, whatever else is going on, and a file in the wake
+// to sleep after a minimum grace and bounded primary-working deferral
+// (ADR 26-11-04-746), and a file in the wake
 // directory names, by its mtime, when the control plane should start the
 // sandbox again. Names beginning with "." are ignored in both, so a wake can be
 // written and dated before it is put in place.
@@ -49,12 +50,16 @@ const (
 	// DefaultInterval is how often the policy looks. It bounds how late a stop
 	// can be, not how early.
 	DefaultInterval = 30 * time.Second
+	// SleepGrace is the minimum wait from the newest sleep request.
+	SleepGrace = 15 * time.Second
+	// SleepCeiling bounds deferral for primary OSC 7501 working or read failure.
+	SleepCeiling = 2 * time.Minute
 	// DefaultLeaseDir holds the keepalive leases: every regular file in it is
 	// one, and its mtime counts as activity (ADR 0108 §4). It is on /run, so a
 	// lease dies with the boot that took it.
 	DefaultLeaseDir = "/run/discobox/keepalive"
 	// DefaultSleepDir holds the sleep requests: every regular file in it asks
-	// to power the sandbox down now (ADR 26-10-16-337 §1). It is on /run, so a
+	// to sleep after the grace (ADR 26-11-04-746). It is on /run, so a
 	// request a shutdown never consumed dies with the boot.
 	DefaultSleepDir = "/run/discobox/sleep"
 	// WakeDoneDir is where a wake goes once a boot has handed it to the
@@ -98,6 +103,10 @@ type Config struct {
 	// what it shows last changed, who is attached, when a client last acted —
 	// are the activity the policy reads.
 	Execs func() []execs.Exec
+	// PrimaryStatus reads the current primary terminal's effective OSC 7501
+	// state from its shim. Nil status with no error means no primary/report;
+	// an error (or missing reader) defers sleep until SleepCeiling.
+	PrimaryStatus func() (*programstatus.Status, error)
 	// LeaseDir defaults to DefaultLeaseDir.
 	LeaseDir string
 	// SleepDir defaults to DefaultSleepDir.
@@ -135,11 +144,12 @@ type Config struct {
 // would stop at the next tick. Leases are the exception, and are never
 // remembered: removing one has to release it.
 type Policy struct {
-	execs     func() []execs.Exec
-	leaseDir  string
-	sleepDir  string
-	wakeDir   string
-	wakeOwner *Owner
+	execs         func() []execs.Exec
+	primaryStatus func() (*programstatus.Status, error)
+	leaseDir      string
+	sleepDir      string
+	wakeDir       string
+	wakeOwner     *Owner
 	// controlPlaneMarker and handoverMarker are DefaultControlPlaneMarker and
 	// DefaultHandoverMarker unless a test moves them.
 	controlPlaneMarker string
@@ -191,10 +201,10 @@ type State struct {
 	// control plane. Idle, Sleep and NextWake are reported only while it is
 	// set (ADR 26-10-16-337 §8).
 	ControlPlanePower bool
-	// Idle is now at or past StopsAt: the point at which the policy used to
-	// power the sandbox off.
+	// Idle is at or past StopsAt with no sleep pending. Pending sleep owns
+	// power-down so idle cannot bypass its grace or working deferral.
 	Idle bool
-	// Sleep is the latest pending sleep request, zero when none is.
+	// Sleep is the latest pending request, only once eligible to sleep.
 	Sleep Request
 	// NextWake is the earliest wake in the future, zero when none is.
 	NextWake Request
@@ -244,6 +254,7 @@ func New(cfg Config) *Policy {
 	start := cfg.Now().UTC()
 	return &Policy{
 		execs:              cfg.Execs,
+		primaryStatus:      cfg.PrimaryStatus,
 		leaseDir:           cfg.LeaseDir,
 		sleepDir:           cfg.SleepDir,
 		wakeDir:            cfg.WakeDir,
@@ -407,9 +418,11 @@ func (p *Policy) Evaluate(now time.Time) State {
 		ControlPlanePower: p.controlPlane.Load(),
 	}
 	state.Idle = !now.Before(state.StopsAt)
-	for _, request := range ReadRequests(p.sleepDir) {
-		if request.At.After(state.Sleep.At) {
-			state.Sleep = request
+	pending := ReadRequests(p.sleepDir)
+	if len(pending) > 0 {
+		state.Idle = false
+		if p.sleepEligible(pending, now) {
+			state.Sleep = latestRequest(pending)
 		}
 	}
 	for _, wake := range p.wakes() {
@@ -420,10 +433,40 @@ func (p *Policy) Evaluate(now time.Time) State {
 	return state
 }
 
+// sleepEligible is shared by reports and fresh confirmation. Reads of primary
+// status are deliberately not cached: working can resume between the two.
+func (p *Policy) sleepEligible(pending []Request, now time.Time) bool {
+	if len(pending) == 0 {
+		return false
+	}
+	age := now.Sub(latestRequest(pending).At)
+	if age < SleepGrace {
+		return false
+	}
+	if age >= SleepCeiling {
+		return true
+	}
+	if p.primaryStatus == nil {
+		return false
+	}
+	status, err := p.primaryStatus()
+	return err == nil && (status == nil || status.State != programstatus.Working)
+}
+
+func latestRequest(requests []Request) Request {
+	var latest Request
+	for _, request := range requests {
+		if latest.IsZero() || request.At.After(latest.At) {
+			latest = request
+		}
+	}
+	return latest
+}
+
 // Confirm answers the control plane, under the pool's power lock, about a
 // power-down it is about to carry out (ADR 26-10-16-337 §5). Idle is
 // confirmed only if the sandbox is idle now — a client who attached since the
-// report is not cut off. Sleep is confirmed only if a request is pending now,
+// report is not cut off. Sleep is confirmed only if still eligible now,
 // and confirming it removes every pending request first, so a sandbox frozen
 // rather than shut down does not resume straight into another sleep.
 //
@@ -442,7 +485,7 @@ func (p *Policy) Confirm(reason Reason) (Request, error) {
 		}
 	case ReasonSleep:
 		pending := ReadRequests(p.sleepDir)
-		if len(pending) == 0 {
+		if !p.sleepEligible(pending, now) {
 			return Request{}, ErrNotConfirmed
 		}
 		for _, request := range pending {
@@ -626,14 +669,14 @@ func (p *Policy) Run(ctx context.Context) {
 		state := p.Evaluate(now)
 		if !state.Sleep.IsZero() {
 			// Without the control plane a sleep can only be what it always
-			// could: a power-off now. It is consumed first, as a confirmed
+			// could: a power-off after eligibility. It is consumed first, as a confirmed
 			// one is.
 			if _, err := p.Confirm(ReasonSleep); err != nil {
 				p.logger.Error("autostop consume sleep request", "error", err)
 				continue
 			}
 			p.logger.Info("sandbox asked to sleep, powering off", "request", state.Sleep.Name)
-		} else if now.Before(state.StopsAt) {
+		} else if !state.Idle {
 			continue
 		} else {
 			p.logger.Info("sandbox idle, powering off",

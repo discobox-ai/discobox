@@ -400,7 +400,7 @@ components:
             type: object
         SandboxAgentAutostopSleep:
             additionalProperties: false
-            description: A pending request to sleep - a file in /run/discobox/sleep. Present only once the pool has handed the sandbox's power to the control plane, which then powers the sandbox down - freezing it where its runtime can - after the sandbox confirms the request is still pending (ADR 26-10-16-337 §§1, 5).
+            description: An eligible sleep request from /run/discobox/sleep. Present only after control-plane handover and a minimum 15 seconds from the latest request mtime; primary OSC 7501 working or a status read failure defers eligibility until two minutes from that mtime. Absence can mean a request is still waiting. The runtime powers down after fresh eligibility confirmation (ADR 26-11-04-746).
             properties:
                 request:
                     description: The latest pending request's file name. Text the sandbox chose; escape it before printing it.
@@ -421,7 +421,7 @@ components:
                     description: Always true from a sandbox agent that can hand its power to the control plane - report idle, sleep and wake rather than power itself off. The pool hands it over only to a sandbox that says so (ADR 26-10-16-337 §8).
                     type: boolean
                 idle:
-                    description: Present once the pool has handed the sandbox's power to the control plane, and true when the sandbox has been idle for its timeout - the point at which it used to power itself off. The control plane stops it after the sandbox confirms, fresh, that it still is.
+                    description: Present once the pool has handed the sandbox's power to the control plane, and true when the idle timeout has passed with no sleep request pending. Pending sleep suppresses idle so shutdown cannot bypass sleep eligibility. The control plane stops it after fresh confirmation.
                     type: boolean
                 idleTimeoutSeconds:
                     description: How long the sandbox runs with nothing happening in it before it powers itself off.
@@ -1056,7 +1056,7 @@ components:
             description: Which power-down the pool is about to carry out, for the sandbox to confirm against what it sees now.
             properties:
                 reason:
-                    description: idle when the sandbox reported itself idle; sleep when it reported a pending sleep request.
+                    description: idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request.
                     enum:
                         - idle
                         - sleep
@@ -1970,7 +1970,7 @@ openapi: 3.1.1
 paths:
     /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm:
         post:
-            description: Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now; sleep only if a sleep request is pending now, and confirming it consumes every pending request. The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token carrying the pool-only autostop scope may call it.
+            description: Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now and no sleep request is pending; sleep only after rechecking the latest request mtime, minimum grace, and live primary OSC 7501 status against the two-minute ceiling (ADR 26-11-04-746). Successful sleep confirmation consumes every pending request. The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token carrying the pool-only autostop scope may call it.
             operationId: confirm-sandbox-autostop
             parameters:
                 - description: Project that owns the sandbox.

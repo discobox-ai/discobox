@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -608,6 +609,16 @@ func (s *Service) ResolvePrimary(ctx context.Context) (execs.Exec, error) {
 // exit rather than trigger a resume.
 func (s *Service) CurrentPrimary() (execs.Exec, bool) {
 	return selectLivePrimary(s.List())
+}
+
+// PrimaryProgramStatus observes the current primary without launching one.
+// Errors from its shim are preserved rather than mistaken for an absent report.
+func (s *Service) PrimaryProgramStatus() (*programstatus.Status, error) {
+	e, ok := s.CurrentPrimary()
+	if !ok {
+		return nil, nil
+	}
+	return s.execs.ProgramStatus(context.Background(), e.ID)
 }
 
 // selectLivePrimary picks the primary terminal to attach to: a running/starting

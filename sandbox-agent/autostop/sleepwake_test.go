@@ -36,8 +36,8 @@ func TestEvaluateReportsIdleSleepAndTheNextWake(t *testing.T) {
 	writeRequest(t, p.wakeDir, "past", epoch.Add(-time.Hour))
 	writeRequest(t, p.wakeDir, ".draft", epoch.Add(30*time.Minute))
 	state := p.Evaluate(epoch.Add(30 * time.Minute))
-	if !state.Idle {
-		t.Fatal("not idle at the idle timeout")
+	if state.Idle {
+		t.Fatal("pending sleep must suppress idle shutdown")
 	}
 	if state.Sleep.Name != "agent" {
 		t.Fatalf("sleep = %+v, want the agent's request", state.Sleep)
@@ -70,8 +70,8 @@ func TestConfirmSleepConsumesEveryPendingRequest(t *testing.T) {
 	if _, err := p.Confirm(ReasonSleep); !errors.Is(err, ErrNotConfirmed) {
 		t.Fatalf("confirm sleep with none pending = %v, want ErrNotConfirmed", err)
 	}
-	writeRequest(t, p.sleepDir, "agent", epoch)
-	writeRequest(t, p.sleepDir, "other", epoch)
+	writeRequest(t, p.sleepDir, "agent", epoch.Add(-SleepGrace))
+	writeRequest(t, p.sleepDir, "other", epoch.Add(-SleepGrace))
 	if _, err := p.Confirm(ReasonSleep); err != nil {
 		t.Fatalf("confirm sleep = %v", err)
 	}
@@ -88,12 +88,12 @@ func TestConfirmSleepConsumesEveryPendingRequest(t *testing.T) {
 func TestConfirmCarriesTheEarliestPendingWakeDueOnesFirst(t *testing.T) {
 	c := &clock{now: epoch}
 	p := newPolicy(t, c, nil)
-	writeRequest(t, p.sleepDir, "agent", epoch)
+	writeRequest(t, p.sleepDir, "agent", epoch.Add(-SleepGrace))
 	writeRequest(t, p.wakeDir, "later", epoch.Add(time.Hour))
 	if wake, err := p.Confirm(ReasonSleep); err != nil || wake.Name != "later" {
 		t.Fatalf("confirm = %+v, %v, want the future wake", wake, err)
 	}
-	writeRequest(t, p.sleepDir, "agent", epoch)
+	writeRequest(t, p.sleepDir, "agent", epoch.Add(-SleepGrace))
 	writeRequest(t, p.wakeDir, "missed", epoch.Add(-time.Hour))
 	if wake, err := p.Confirm(ReasonSleep); err != nil || wake.Name != "missed" {
 		t.Fatalf("confirm = %+v, %v, want the due wake no boot handed over", wake, err)
@@ -146,7 +146,7 @@ func TestRunNeverPowersOffOnceTheControlPlaneHoldsThePower(t *testing.T) {
 func TestRunPowersOffOnASleepRequestWithoutTheControlPlane(t *testing.T) {
 	c := &clock{now: epoch}
 	p, calls, _ := runPolicy(t, c, nil, func() error { return nil })
-	writeRequest(t, p.sleepDir, "agent", epoch)
+	writeRequest(t, p.sleepDir, "agent", epoch.Add(-SleepGrace))
 	select {
 	case <-calls:
 	case <-time.After(2 * time.Second):
@@ -208,7 +208,7 @@ func TestResumedSetsAsideTheWakesDueWithinABoot(t *testing.T) {
 	if want := filepath.Join(p.wakeDir, WakeDoneDir, "check-ci"); len(paths) != 1 || paths[0] != want {
 		t.Fatalf("paths = %v, want [%s]", paths, want)
 	}
-	writeRequest(t, p.sleepDir, "agent", epoch)
+	writeRequest(t, p.sleepDir, "agent", epoch.Add(-SleepGrace))
 	wake, err := p.Confirm(ReasonSleep)
 	if err != nil {
 		t.Fatal(err)

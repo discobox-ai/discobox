@@ -809,6 +809,24 @@ func (m *Manager) Get(id string) (Exec, bool) {
 	return cloneExec(exec), true
 }
 
+// ProgramStatus reads the shim's effective OSC 7501 report without falling back
+// to persisted observations on failure. Callers deciding whether it is safe to
+// sleep must distinguish no report from a shim that could not be read.
+func (m *Manager) ProgramStatus(ctx context.Context, id string) (*programstatus.Status, error) {
+	e, ok := m.Get(id)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	if e.Status != StatusRunning && e.Status != StatusStarting {
+		return nil, nil
+	}
+	status, err := shimproxy.StatusJSON[Exec](ctx, e.SocketPath)
+	if err != nil {
+		return nil, err
+	}
+	return status.ProgramStatus, nil
+}
+
 func (m *Manager) Logs(ctx context.Context, id string) ([]LogEntry, error) {
 	if _, ok := m.Get(id); !ok {
 		return nil, ErrNotFound

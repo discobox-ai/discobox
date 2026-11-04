@@ -344,9 +344,13 @@ discobox-power wake rm ci                                       # cancel one
 discobox-power status                                           # leases, sleep, wakes
 ```
 
-- **Sleep takes the box down within a minute, whatever else is going on** —
-  a person attached is disconnected, and your own terminal goes with it. Say
-  so to the user before you sleep, and do it as the last thing you do.
+- **Sleep waits at least 15 seconds after the latest request.** If the primary
+  terminal still reports OSC 7501 `working`, it waits up to two minutes from
+  that request; a failed status read also defers it until that ceiling. It then
+  powers down on the next poll and confirmation. This is a bounded delay, not
+  a guarantee that a turn or background command has finished. An attached
+  person is disconnected, and your terminal goes with it. Say so before you
+  sleep, and make sleep your last action.
 - **Where the pool can, sleep freezes the box rather than shutting it down.**
   Memory, `/run`, your harness and every terminal are kept as they are, and
   on waking everything carries on from where it froze: nothing is relaunched
@@ -373,7 +377,7 @@ By hand it is files, as leases are — set the time before the file is in the
 directory, or it is due the moment it lands:
 
 ```bash
-touch /run/discobox/sleep/agent                     # sleep now
+touch /run/discobox/sleep/agent                     # request sleep after grace
 echo 'check CI' > ~/.discobox/wake/.ci && touch -d '+45 min' ~/.discobox/wake/.ci \
   && mv ~/.discobox/wake/.ci ~/.discobox/wake/ci    # wake in 45 minutes
 ```

@@ -21409,10 +21409,10 @@ func (*Sandbox) updateSandboxMetaRes()         {}
 func (*Sandbox) updateSandboxRes()             {}
 func (*Sandbox) upgradeSandboxRes()            {}
 
-// A pending request to sleep - a file in /run/discobox/sleep. Present only once the pool has handed
-// the sandbox's power to the control plane, which then powers the sandbox down - freezing it where
-// its runtime can - after the sandbox confirms the request is still pending (ADR 26-10-16-337 §§1,
-// 5).
+// An eligible sleep request from /run/discobox/sleep. Present only after control-plane handover and
+// a minimum 15 seconds from the latest request mtime; primary OSC 7501 working or a status read
+// failure defers eligibility until two minutes from that mtime. Absence can mean a request is still
+// waiting. The runtime powers down after fresh eligibility confirmation (ADR 26-11-04-746).
 // Ref: #/components/schemas/SandboxAgentAutostopSleep
 type SandboxAgentAutostopSleep struct {
 	// The latest pending request's modification time.
@@ -21466,9 +21466,9 @@ type SandboxAgentAutostopStatus struct {
 	// and wake rather than power itself off. The pool hands it over only to a sandbox that says so (ADR
 	// 26-10-16-337 §8).
 	ControlPlanePower OptBool `json:"controlPlanePower"`
-	// Present once the pool has handed the sandbox's power to the control plane, and true when the
-	// sandbox has been idle for its timeout - the point at which it used to power itself off. The
-	// control plane stops it after the sandbox confirms, fresh, that it still is.
+	// Present once the pool has handed the sandbox's power to the control plane, and true when the idle
+	// timeout has passed with no sleep request pending. Pending sleep suppresses idle so shutdown cannot
+	// bypass sleep eligibility. The control plane stops it after fresh confirmation.
 	Idle  OptBool                      `json:"idle"`
 	Sleep OptSandboxAgentAutostopSleep `json:"sleep"`
 	// The earliest wake in the future, from ~/.discobox/wake. Present only once the pool has handed the
@@ -23774,7 +23774,7 @@ func (s *SandboxAutomaticRepair) SetLandedAt(val OptDateTime) {
 // now.
 // Ref: #/components/schemas/SandboxAutostopConfirmRequest
 type SandboxAutostopConfirmRequest struct {
-	// Idle when the sandbox reported itself idle; sleep when it reported a pending sleep request.
+	// Idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request.
 	Reason SandboxAutostopConfirmRequestReason `json:"reason"`
 }
 
@@ -23788,7 +23788,7 @@ func (s *SandboxAutostopConfirmRequest) SetReason(val SandboxAutostopConfirmRequ
 	s.Reason = val
 }
 
-// Idle when the sandbox reported itself idle; sleep when it reported a pending sleep request.
+// Idle when the sandbox reported itself idle; sleep when it reported an eligible sleep request.
 type SandboxAutostopConfirmRequestReason string
 
 const (

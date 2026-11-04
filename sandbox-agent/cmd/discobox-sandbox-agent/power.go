@@ -114,7 +114,7 @@ func sleep(d powerDirs, args []string, now time.Time, out io.Writer) error {
 	if err := put(d.sleep, "agent", "", now); err != nil {
 		return err
 	}
-	fmt.Fprintln(out, "sleep requested; the sandbox powers down within a minute")
+	fmt.Fprintln(out, "sleep requested; waits at least 15 seconds, defers while primary OSC 7501 reports working for up to 2 minutes, then powers down on the next poll")
 	return nil
 }
 

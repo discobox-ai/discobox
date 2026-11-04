@@ -39,6 +39,7 @@ func newPolicy(t *testing.T, c *clock, list func() []execs.Exec) *Policy {
 	dir := t.TempDir()
 	return New(Config{
 		Execs:              list,
+		PrimaryStatus:      func() (*programstatus.Status, error) { return nil, nil },
 		LeaseDir:           filepath.Join(dir, "keepalive"),
 		SleepDir:           filepath.Join(dir, "sleep"),
 		WakeDir:            filepath.Join(dir, "wake"),
@@ -273,6 +274,7 @@ func runPolicy(t *testing.T, c *clock, list func() []execs.Exec, powerOff func()
 	dir := t.TempDir()
 	p := New(Config{
 		Execs:              list,
+		PrimaryStatus:      func() (*programstatus.Status, error) { return nil, nil },
 		LeaseDir:           filepath.Join(dir, "keepalive"),
 		SleepDir:           filepath.Join(dir, "sleep"),
 		WakeDir:            filepath.Join(dir, "wake"),
