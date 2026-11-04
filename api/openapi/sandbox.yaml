@@ -1233,7 +1233,7 @@ components:
             description: One piece of input, naming exactly one of text or key.
             properties:
                 key:
-                    description: 'One named key: Enter, Tab, Escape, Backspace, Delete, Up, Down, Left, Right, Home, End, PageUp, PageDown, or C-a through C-z.'
+                    description: 'One named key: Enter, Tab, Escape, Space, Backspace, Delete, Up, Down, Left, Right, Home, End, PageUp, PageDown, or C-a through C-z.'
                     type: string
                 text:
                     description: Text, delivered as a bracketed paste when the program enabled one.
@@ -1353,6 +1353,28 @@ components:
                 - until
                 - timeoutSeconds
             type: object
+        SandboxExecWaitProgramState:
+            additionalProperties: false
+            description: One program status a wait ends on.
+            properties:
+                kind:
+                    description: For blocked, the kind it must be. Absent, any kind.
+                    enum:
+                        - permission
+                        - question
+                        - auth
+                    type: string
+                state:
+                    enum:
+                        - idle
+                        - working
+                        - done
+                        - blocked
+                        - error
+                    type: string
+            required:
+                - state
+            type: object
         SandboxExecWaitResult:
             additionalProperties: false
             properties:
@@ -1363,15 +1385,19 @@ components:
                     description: When the program last wrote output.
                     format: date-time
                     type: string
+                programStatus:
+                    $ref: '#/components/schemas/SandboxAgentProgramStatus'
+                    description: The program status that ended the wait, when one did.
                 reason:
                     enum:
                         - hook
                         - quiet
                         - exit
+                        - program
                         - timeout
                     type: string
                 resumeAfter:
-                    description: Where the next wait resumes, to pass as until.after exactly as given. After a hook, just past that hook; otherwise the point this wait counted from, so a hook recorded while it returned is still found.
+                    description: Where the next wait resumes, to pass as until.after exactly as given. After a hook, just past that hook; after a program status, just past its report; otherwise the point this wait counted from, so a hook recorded while it returned is still found.
                     type: string
             required:
                 - reason
@@ -1382,18 +1408,26 @@ components:
             description: The conditions a wait ends on; the first to hold ends it.
             properties:
                 after:
-                    description: Only hooks recorded after this point count — the resumeAfter a previous wait or input answered with, passed back as given, so nothing recorded between two calls is missed. Absent, only hooks recorded after the wait began.
+                    description: The point the wait counts from - the resumeAfter a previous wait or input answered with, passed back as given, so nothing recorded between two calls is missed. Only hooks and program reports after it count, and quiet is counted from no earlier than it. Absent, and without fromLastInput, the start of the wait. Refused beside fromLastInput.
                     type: string
                 exit:
                     description: The exec has ended.
+                    type: boolean
+                fromLastInput:
+                    description: Count from the last input this route's input operation wrote to the terminal - not what an attach carries, which includes what a person's own terminal sends unasked - so a wait on what the input caused misses nothing however late it is made (ADR 26-11-04-204 §4). A terminal never sent input counts from the start of the wait. Refused beside after.
                     type: boolean
                 hookEvents:
                     description: Harness hook event names from this terminal, such as Stop and Notification. A name matches either the harness's own event or its canonical (Claude Code) name, so a caller need not know which harness the terminal runs.
                     items:
                         type: string
                     type: array
+                programStates:
+                    description: Program statuses (OSC 7501) to end on. One holds when the program reports, after the point the wait counts from, a status whose effective state - and for blocked, kind, when given - is one of these. A state that held before that point does not count.
+                    items:
+                        $ref: '#/components/schemas/SandboxExecWaitProgramState'
+                    type: array
                 quietSeconds:
-                    description: Neither output nor input for this many seconds, counted from no earlier than the start of the wait.
+                    description: Neither output nor input for this many seconds, counted from no earlier than the point the wait counts from.
                     format: int64
                     minimum: 1
                     type: integer

@@ -14499,6 +14499,52 @@ func (o OptSandboxExecMetadata) Or(d SandboxExecMetadata) SandboxExecMetadata {
 	return d
 }
 
+// NewOptSandboxExecWaitProgramStateKind returns new OptSandboxExecWaitProgramStateKind with value set to v.
+func NewOptSandboxExecWaitProgramStateKind(v SandboxExecWaitProgramStateKind) OptSandboxExecWaitProgramStateKind {
+	return OptSandboxExecWaitProgramStateKind{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxExecWaitProgramStateKind is optional SandboxExecWaitProgramStateKind.
+type OptSandboxExecWaitProgramStateKind struct {
+	Value SandboxExecWaitProgramStateKind
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxExecWaitProgramStateKind was set.
+func (o OptSandboxExecWaitProgramStateKind) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxExecWaitProgramStateKind) Reset() {
+	var v SandboxExecWaitProgramStateKind
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxExecWaitProgramStateKind) SetTo(v SandboxExecWaitProgramStateKind) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxExecWaitProgramStateKind) Get() (v SandboxExecWaitProgramStateKind, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxExecWaitProgramStateKind) Or(d SandboxExecWaitProgramStateKind) SandboxExecWaitProgramStateKind {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxGitIdentity returns new OptSandboxGitIdentity with value set to v.
 func NewOptSandboxGitIdentity(v SandboxGitIdentity) OptSandboxGitIdentity {
 	return OptSandboxGitIdentity{
@@ -26042,8 +26088,8 @@ func (s *SandboxExecInputBody) SetInput(val []SandboxExecInputPart) {
 type SandboxExecInputPart struct {
 	// Text, delivered as a bracketed paste when the program enabled one.
 	Text OptString `json:"text"`
-	// One named key: Enter, Tab, Escape, Backspace, Delete, Up, Down, Left, Right, Home, End, PageUp,
-	// PageDown, or C-a through C-z.
+	// One named key: Enter, Tab, Escape, Space, Backspace, Delete, Up, Down, Left, Right, Home, End,
+	// PageUp, PageDown, or C-a through C-z.
 	Key OptString `json:"key"`
 }
 
@@ -26456,16 +26502,157 @@ func (s *SandboxExecWaitBody) SetTimeoutSeconds(val int64) {
 	s.TimeoutSeconds = val
 }
 
+// One program status a wait ends on.
+// Ref: #/components/schemas/SandboxExecWaitProgramState
+type SandboxExecWaitProgramState struct {
+	State SandboxExecWaitProgramStateState `json:"state"`
+	// For blocked, the kind it must be. Absent, any kind.
+	Kind OptSandboxExecWaitProgramStateKind `json:"kind"`
+}
+
+// GetState returns the value of State.
+func (s *SandboxExecWaitProgramState) GetState() SandboxExecWaitProgramStateState {
+	return s.State
+}
+
+// GetKind returns the value of Kind.
+func (s *SandboxExecWaitProgramState) GetKind() OptSandboxExecWaitProgramStateKind {
+	return s.Kind
+}
+
+// SetState sets the value of State.
+func (s *SandboxExecWaitProgramState) SetState(val SandboxExecWaitProgramStateState) {
+	s.State = val
+}
+
+// SetKind sets the value of Kind.
+func (s *SandboxExecWaitProgramState) SetKind(val OptSandboxExecWaitProgramStateKind) {
+	s.Kind = val
+}
+
+// For blocked, the kind it must be. Absent, any kind.
+type SandboxExecWaitProgramStateKind string
+
+const (
+	SandboxExecWaitProgramStateKindPermission SandboxExecWaitProgramStateKind = "permission"
+	SandboxExecWaitProgramStateKindQuestion   SandboxExecWaitProgramStateKind = "question"
+	SandboxExecWaitProgramStateKindAuth       SandboxExecWaitProgramStateKind = "auth"
+)
+
+// AllValues returns all SandboxExecWaitProgramStateKind values.
+func (SandboxExecWaitProgramStateKind) AllValues() []SandboxExecWaitProgramStateKind {
+	return []SandboxExecWaitProgramStateKind{
+		SandboxExecWaitProgramStateKindPermission,
+		SandboxExecWaitProgramStateKindQuestion,
+		SandboxExecWaitProgramStateKindAuth,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxExecWaitProgramStateKind) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxExecWaitProgramStateKindPermission:
+		return []byte(s), nil
+	case SandboxExecWaitProgramStateKindQuestion:
+		return []byte(s), nil
+	case SandboxExecWaitProgramStateKindAuth:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxExecWaitProgramStateKind) UnmarshalText(data []byte) error {
+	switch SandboxExecWaitProgramStateKind(data) {
+	case SandboxExecWaitProgramStateKindPermission:
+		*s = SandboxExecWaitProgramStateKindPermission
+		return nil
+	case SandboxExecWaitProgramStateKindQuestion:
+		*s = SandboxExecWaitProgramStateKindQuestion
+		return nil
+	case SandboxExecWaitProgramStateKindAuth:
+		*s = SandboxExecWaitProgramStateKindAuth
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type SandboxExecWaitProgramStateState string
+
+const (
+	SandboxExecWaitProgramStateStateIdle    SandboxExecWaitProgramStateState = "idle"
+	SandboxExecWaitProgramStateStateWorking SandboxExecWaitProgramStateState = "working"
+	SandboxExecWaitProgramStateStateDone    SandboxExecWaitProgramStateState = "done"
+	SandboxExecWaitProgramStateStateBlocked SandboxExecWaitProgramStateState = "blocked"
+	SandboxExecWaitProgramStateStateError   SandboxExecWaitProgramStateState = "error"
+)
+
+// AllValues returns all SandboxExecWaitProgramStateState values.
+func (SandboxExecWaitProgramStateState) AllValues() []SandboxExecWaitProgramStateState {
+	return []SandboxExecWaitProgramStateState{
+		SandboxExecWaitProgramStateStateIdle,
+		SandboxExecWaitProgramStateStateWorking,
+		SandboxExecWaitProgramStateStateDone,
+		SandboxExecWaitProgramStateStateBlocked,
+		SandboxExecWaitProgramStateStateError,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxExecWaitProgramStateState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxExecWaitProgramStateStateIdle:
+		return []byte(s), nil
+	case SandboxExecWaitProgramStateStateWorking:
+		return []byte(s), nil
+	case SandboxExecWaitProgramStateStateDone:
+		return []byte(s), nil
+	case SandboxExecWaitProgramStateStateBlocked:
+		return []byte(s), nil
+	case SandboxExecWaitProgramStateStateError:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxExecWaitProgramStateState) UnmarshalText(data []byte) error {
+	switch SandboxExecWaitProgramStateState(data) {
+	case SandboxExecWaitProgramStateStateIdle:
+		*s = SandboxExecWaitProgramStateStateIdle
+		return nil
+	case SandboxExecWaitProgramStateStateWorking:
+		*s = SandboxExecWaitProgramStateStateWorking
+		return nil
+	case SandboxExecWaitProgramStateStateDone:
+		*s = SandboxExecWaitProgramStateStateDone
+		return nil
+	case SandboxExecWaitProgramStateStateBlocked:
+		*s = SandboxExecWaitProgramStateStateBlocked
+		return nil
+	case SandboxExecWaitProgramStateStateError:
+		*s = SandboxExecWaitProgramStateStateError
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/SandboxExecWaitResult
 type SandboxExecWaitResult struct {
 	Reason SandboxExecWaitResultReason `json:"reason"`
 	// The hook that ended the wait, when one did.
 	Hook OptHarnessHookLog `json:"hook"`
+	// The program status that ended the wait, when one did.
+	ProgramStatus OptSandboxAgentProgramStatus `json:"programStatus"`
 	// When the program last wrote output.
 	OutputAt OptDateTime `json:"outputAt"`
 	// Where the next wait resumes, to pass as until.after exactly as given. After a hook, just past that
-	// hook; otherwise the point this wait counted from, so a hook recorded while it returned is still
-	// found.
+	// hook; after a program status, just past its report; otherwise the point this wait counted from, so
+	// a hook recorded while it returned is still found.
 	ResumeAfter string `json:"resumeAfter"`
 }
 
@@ -26477,6 +26664,11 @@ func (s *SandboxExecWaitResult) GetReason() SandboxExecWaitResultReason {
 // GetHook returns the value of Hook.
 func (s *SandboxExecWaitResult) GetHook() OptHarnessHookLog {
 	return s.Hook
+}
+
+// GetProgramStatus returns the value of ProgramStatus.
+func (s *SandboxExecWaitResult) GetProgramStatus() OptSandboxAgentProgramStatus {
+	return s.ProgramStatus
 }
 
 // GetOutputAt returns the value of OutputAt.
@@ -26499,6 +26691,11 @@ func (s *SandboxExecWaitResult) SetHook(val OptHarnessHookLog) {
 	s.Hook = val
 }
 
+// SetProgramStatus sets the value of ProgramStatus.
+func (s *SandboxExecWaitResult) SetProgramStatus(val OptSandboxAgentProgramStatus) {
+	s.ProgramStatus = val
+}
+
 // SetOutputAt sets the value of OutputAt.
 func (s *SandboxExecWaitResult) SetOutputAt(val OptDateTime) {
 	s.OutputAt = val
@@ -26517,6 +26714,7 @@ const (
 	SandboxExecWaitResultReasonHook    SandboxExecWaitResultReason = "hook"
 	SandboxExecWaitResultReasonQuiet   SandboxExecWaitResultReason = "quiet"
 	SandboxExecWaitResultReasonExit    SandboxExecWaitResultReason = "exit"
+	SandboxExecWaitResultReasonProgram SandboxExecWaitResultReason = "program"
 	SandboxExecWaitResultReasonTimeout SandboxExecWaitResultReason = "timeout"
 )
 
@@ -26526,6 +26724,7 @@ func (SandboxExecWaitResultReason) AllValues() []SandboxExecWaitResultReason {
 		SandboxExecWaitResultReasonHook,
 		SandboxExecWaitResultReasonQuiet,
 		SandboxExecWaitResultReasonExit,
+		SandboxExecWaitResultReasonProgram,
 		SandboxExecWaitResultReasonTimeout,
 	}
 }
@@ -26538,6 +26737,8 @@ func (s SandboxExecWaitResultReason) MarshalText() ([]byte, error) {
 	case SandboxExecWaitResultReasonQuiet:
 		return []byte(s), nil
 	case SandboxExecWaitResultReasonExit:
+		return []byte(s), nil
+	case SandboxExecWaitResultReasonProgram:
 		return []byte(s), nil
 	case SandboxExecWaitResultReasonTimeout:
 		return []byte(s), nil
@@ -26558,6 +26759,9 @@ func (s *SandboxExecWaitResultReason) UnmarshalText(data []byte) error {
 	case SandboxExecWaitResultReasonExit:
 		*s = SandboxExecWaitResultReasonExit
 		return nil
+	case SandboxExecWaitResultReasonProgram:
+		*s = SandboxExecWaitResultReasonProgram
+		return nil
 	case SandboxExecWaitResultReasonTimeout:
 		*s = SandboxExecWaitResultReasonTimeout
 		return nil
@@ -26573,14 +26777,25 @@ type SandboxExecWaitUntil struct {
 	// the harness's own event or its canonical (Claude Code) name, so a caller need not know which
 	// harness the terminal runs.
 	HookEvents []string `json:"hookEvents"`
-	// Only hooks recorded after this point count — the resumeAfter a previous wait or input answered
-	// with, passed back as given, so nothing recorded between two calls is missed. Absent, only hooks
-	// recorded after the wait began.
+	// The point the wait counts from - the resumeAfter a previous wait or input answered with, passed
+	// back as given, so nothing recorded between two calls is missed. Only hooks and program reports
+	// after it count, and quiet is counted from no earlier than it. Absent, and without fromLastInput,
+	// the start of the wait. Refused beside fromLastInput.
 	After OptString `json:"after"`
-	// Neither output nor input for this many seconds, counted from no earlier than the start of the wait.
+	// Count from the last input this route's input operation wrote to the terminal - not what an attach
+	// carries, which includes what a person's own terminal sends unasked - so a wait on what the input
+	// caused misses nothing however late it is made (ADR 26-11-04-204 §4). A terminal never sent input
+	// counts from the start of the wait. Refused beside after.
+	FromLastInput OptBool `json:"fromLastInput"`
+	// Neither output nor input for this many seconds, counted from no earlier than the point the wait
+	// counts from.
 	QuietSeconds OptInt64 `json:"quietSeconds"`
 	// The exec has ended.
 	Exit OptBool `json:"exit"`
+	// Program statuses (OSC 7501) to end on. One holds when the program reports, after the point the
+	// wait counts from, a status whose effective state - and for blocked, kind, when given - is one of
+	// these. A state that held before that point does not count.
+	ProgramStates []SandboxExecWaitProgramState `json:"programStates"`
 }
 
 // GetHookEvents returns the value of HookEvents.
@@ -26593,6 +26808,11 @@ func (s *SandboxExecWaitUntil) GetAfter() OptString {
 	return s.After
 }
 
+// GetFromLastInput returns the value of FromLastInput.
+func (s *SandboxExecWaitUntil) GetFromLastInput() OptBool {
+	return s.FromLastInput
+}
+
 // GetQuietSeconds returns the value of QuietSeconds.
 func (s *SandboxExecWaitUntil) GetQuietSeconds() OptInt64 {
 	return s.QuietSeconds
@@ -26601,6 +26821,11 @@ func (s *SandboxExecWaitUntil) GetQuietSeconds() OptInt64 {
 // GetExit returns the value of Exit.
 func (s *SandboxExecWaitUntil) GetExit() OptBool {
 	return s.Exit
+}
+
+// GetProgramStates returns the value of ProgramStates.
+func (s *SandboxExecWaitUntil) GetProgramStates() []SandboxExecWaitProgramState {
+	return s.ProgramStates
 }
 
 // SetHookEvents sets the value of HookEvents.
@@ -26613,6 +26838,11 @@ func (s *SandboxExecWaitUntil) SetAfter(val OptString) {
 	s.After = val
 }
 
+// SetFromLastInput sets the value of FromLastInput.
+func (s *SandboxExecWaitUntil) SetFromLastInput(val OptBool) {
+	s.FromLastInput = val
+}
+
 // SetQuietSeconds sets the value of QuietSeconds.
 func (s *SandboxExecWaitUntil) SetQuietSeconds(val OptInt64) {
 	s.QuietSeconds = val
@@ -26621,6 +26851,11 @@ func (s *SandboxExecWaitUntil) SetQuietSeconds(val OptInt64) {
 // SetExit sets the value of Exit.
 func (s *SandboxExecWaitUntil) SetExit(val OptBool) {
 	s.Exit = val
+}
+
+// SetProgramStates sets the value of ProgramStates.
+func (s *SandboxExecWaitUntil) SetProgramStates(val []SandboxExecWaitProgramState) {
+	s.ProgramStates = val
 }
 
 // Ref: #/components/schemas/SandboxExecsResponse

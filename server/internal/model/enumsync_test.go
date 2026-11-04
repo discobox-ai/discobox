@@ -99,6 +99,8 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxAgentListeningPort.protocol":   "what a listening port speaks is established by sandbox-agent probing it (ADR 0046); the server stores AgentStatus as opaque JSON",
 	"SandboxAgentProgramStatus.state":      "OSC 7501's vocabulary, owned by the root programstatus package and reported by the sandbox-agent (ADR 26-10-16-424); the server stores AgentStatus as opaque JSON",
 	"SandboxAgentProgramStatus.kind":       "OSC 7501's vocabulary, owned by the root programstatus package and reported by the sandbox-agent (ADR 26-10-16-424); the server stores AgentStatus as opaque JSON",
+	"SandboxExecWaitProgramState.state":    "OSC 7501's vocabulary, owned by the root programstatus package; a terminal wait the sandbox-agent serves and the server only proxies (ADR 26-11-04-204 §5)",
+	"SandboxExecWaitProgramState.kind":     "OSC 7501's vocabulary, owned by the root programstatus package; a terminal wait the sandbox-agent serves and the server only proxies (ADR 26-11-04-204 §5)",
 	"SandboxAgentProvisionStatus.state":    "provision.json's vocabulary, owned by the root provisionspec package and reported by the sandbox-agent (ADR 26-10-16-423 §6); the server stores AgentStatus as opaque JSON",
 	"SandboxAgentProvisionFeature.state":   "provision.json's vocabulary, owned by the root provisionspec package and reported by the sandbox-agent (ADR 26-10-16-423 §6); the server stores AgentStatus as opaque JSON",
 	"SandboxAgentProvisionFeature.how":     "provision.json's vocabulary, owned by the root provisionspec package and reported by the sandbox-agent (ADR 26-10-16-423 §6); the server stores AgentStatus as opaque JSON",

@@ -121,4 +121,9 @@ func TestWaitAnswersWithTheNamedHook(t *testing.T) {
 	if code, _ := wait(`{"until":{},"timeoutSeconds":1}`); code != http.StatusBadRequest {
 		t.Fatalf("wait for nothing = %d, want 400", code)
 	}
+	// A wait counts from one point: a resume point or the last input, never
+	// both (ADR 26-11-04-204 §4).
+	if code, _ := wait(`{"until":{"hookEvents":["Stop"],"after":"` + got.ResumeAfter + `","fromLastInput":true},"timeoutSeconds":1}`); code != http.StatusBadRequest {
+		t.Fatalf("wait after a point and from the last input = %d, want 400", code)
+	}
 }

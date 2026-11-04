@@ -194,6 +194,7 @@ type SandboxExecLogEntry = apigen.SandboxExecLogEntry
 type SandboxExecLogsResponse = apigen.SandboxExecLogsResponse
 type SandboxExecScreen = apigen.SandboxExecScreen
 type SandboxExecWaitBody = apigen.SandboxExecWaitBody
+type SandboxExecWaitProgramState = apigen.SandboxExecWaitProgramState
 type SandboxExecWaitResult = apigen.SandboxExecWaitResult
 type SandboxExecWaitUntil = apigen.SandboxExecWaitUntil
 type SandboxExecsResponse = apigen.SandboxExecsResponse

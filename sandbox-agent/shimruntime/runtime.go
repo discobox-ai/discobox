@@ -52,6 +52,9 @@ type Runtime struct {
 	outputAt       time.Time
 	inputAt        time.Time
 	activitySignal chan struct{}
+	// sentAt is when the input route last wrote to the terminal: input a
+	// caller sent, as against everything an attach carries (NoteSent).
+	sentAt time.Time
 }
 
 func New(protocol string, done <-chan struct{}, onFrame func(frame.Frame) error) *Runtime {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 func screenRuntime(t *testing.T, rows, cols uint16) *Runtime {
@@ -72,13 +73,13 @@ func TestTerminalOperationsNeedAScreen(t *testing.T) {
 // once it enabled that, cursor keys in application mode once it set that.
 func TestEncodeInputFollowsTheProgramsModes(t *testing.T) {
 	r := screenRuntime(t, 4, 20)
-	parts := []InputPart{{Text: "fix it\x1b[201~now"}, {Key: "Up"}, {Key: "Enter"}, {Key: "C-c"}}
+	parts := []InputPart{{Text: "fix it\x1b[201~now"}, {Key: "Up"}, {Key: "Enter"}, {Key: "C-c"}, {Key: "Space"}}
 
 	got, err := r.EncodeInput(parts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "fix it\x1b[201~now\x1b[A\r\x03"; string(got) != want {
+	if want := "fix it\x1b[201~now\x1b[A\r\x03 "; string(got) != want {
 		t.Fatalf("plain input = %q, want %q", got, want)
 	}
 
@@ -87,7 +88,8 @@ func TestEncodeInputFollowsTheProgramsModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "\x1b[200~fix itnow\x1b[201~\x1bOA\r\x03"; string(got) != want {
+	// Space is a key press even under bracketed paste, never a pasted " ".
+	if want := "\x1b[200~fix itnow\x1b[201~\x1bOA\r\x03 "; string(got) != want {
 		t.Fatalf("input under paste and app cursor = %q, want %q", got, want)
 	}
 }
@@ -124,7 +126,7 @@ func TestAwaitQuietRestartsOnOutput(t *testing.T) {
 		}
 	}()
 	began := time.Now()
-	if got := r.AwaitQuiet(context.Background(), 60*time.Millisecond, nil); got != WaitQuiet {
+	if got := r.Await(context.Background(), Await{Quiet: 60 * time.Millisecond}).Reason; got != WaitQuiet {
 		t.Fatalf("reason = %q, want quiet", got)
 	}
 	if elapsed := time.Since(began); elapsed < 140*time.Millisecond {
@@ -141,7 +143,7 @@ func TestAwaitQuietCountsFromTheCall(t *testing.T) {
 	time.Sleep(80 * time.Millisecond)
 
 	began := time.Now()
-	if got := r.AwaitQuiet(context.Background(), 60*time.Millisecond, nil); got != WaitQuiet {
+	if got := r.Await(context.Background(), Await{Quiet: 60 * time.Millisecond}).Reason; got != WaitQuiet {
 		t.Fatalf("reason = %q, want quiet", got)
 	}
 	if elapsed := time.Since(began); elapsed < 60*time.Millisecond {
@@ -157,7 +159,7 @@ func TestAwaitQuietRestartsOnInput(t *testing.T) {
 		r.NoteInput()
 	}()
 	began := time.Now()
-	if got := r.AwaitQuiet(context.Background(), 60*time.Millisecond, nil); got != WaitQuiet {
+	if got := r.Await(context.Background(), Await{Quiet: 60 * time.Millisecond}).Reason; got != WaitQuiet {
 		t.Fatalf("reason = %q, want quiet", got)
 	}
 	if elapsed := time.Since(began); elapsed < 100*time.Millisecond {
@@ -165,16 +167,105 @@ func TestAwaitQuietRestartsOnInput(t *testing.T) {
 	}
 }
 
+// Given a point to count from, quiet is measured from it rather than from the
+// call: a wait resumed after a terminal went quiet since that point answers at
+// once, and one that has not been quiet long enough waits only the rest
+// (ADR 26-11-04-204 §4).
+func TestAwaitQuietCountsFromSince(t *testing.T) {
+	r := screenRuntime(t, 4, 20)
+	r.NoteInput()
+	since := time.Now().UTC()
+	time.Sleep(80 * time.Millisecond)
+
+	began := time.Now()
+	if got := r.Await(context.Background(), Await{Since: since, Quiet: 60 * time.Millisecond}).Reason; got != WaitQuiet {
+		t.Fatalf("reason = %q, want quiet", got)
+	}
+	if elapsed := time.Since(began); elapsed > 40*time.Millisecond {
+		t.Fatalf("quiet after %v, though the terminal had been quiet since the point", elapsed)
+	}
+}
+
+// A program status ends a wait only on a report after the point it counts
+// from: a state that held before it (the agent idle before it was sent a
+// message) does not, and the same state reported again after it does.
+func TestAwaitProgramCountsOnlyReportsAfterSince(t *testing.T) {
+	r := screenRuntime(t, 4, 20)
+	r.Broadcast(frame.Stdout, []byte("\x1b]7501;state=idle\x1b\\"))
+	time.Sleep(5 * time.Millisecond)
+	since := time.Now().UTC()
+	finished := []ProgramMatch{{State: programstatus.Idle}, {State: programstatus.Done}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if got := r.Await(ctx, Await{Since: since, Program: finished}).Reason; got != WaitTimeout {
+		t.Fatalf("reason = %q, want timeout: the idle report came before the point", got)
+	}
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		r.Broadcast(frame.Stdout, []byte("\x1b]7501;state=working\x1b\\"))
+		time.Sleep(10 * time.Millisecond)
+		r.Broadcast(frame.Stdout, []byte("\x1b]7501;state=done\x1b\\"))
+	}()
+	got := r.Await(context.Background(), Await{Since: since, Program: finished})
+	if got.Reason != WaitProgram || got.Program == nil || got.Program.State != programstatus.Done {
+		t.Fatalf("result = %+v, want the done report", got)
+	}
+	if !got.Program.ReportedAt.After(since) {
+		t.Fatalf("reported at %v, not after %v", got.Program.ReportedAt, since)
+	}
+}
+
+// blocked with a kind matches only that kind; without one, any.
+func TestAwaitProgramMatchesBlockedKind(t *testing.T) {
+	r := screenRuntime(t, 4, 20)
+	since := time.Now().UTC().Add(-time.Second)
+	r.Broadcast(frame.Stdout, []byte("\x1b]7501;state=blocked:kind=permission\x1b\\"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	question := []ProgramMatch{{State: programstatus.Blocked, Kind: programstatus.Question}}
+	if got := r.Await(ctx, Await{Since: since, Program: question}).Reason; got != WaitTimeout {
+		t.Fatalf("reason = %q, want timeout: blocked on permission is not a question", got)
+	}
+	got := r.Await(context.Background(), Await{Since: since, Program: []ProgramMatch{{State: programstatus.Blocked}}})
+	if got.Reason != WaitProgram || got.Program.Kind != programstatus.Permission {
+		t.Fatalf("result = %+v, want blocked:permission", got)
+	}
+}
+
+// The screen says when the input route last wrote to the terminal, which is
+// where a wait counting from the last input begins. Other input — an attach's
+// frames, a focus report among them — does not move it.
+func TestScreenTextCarriesSentAt(t *testing.T) {
+	r := screenRuntime(t, 4, 20)
+	r.NoteInput()
+	if screen, err := r.ScreenText(0); err != nil || screen.SentAt != nil {
+		t.Fatalf("screen = %+v, %v; want nothing sent yet", screen.SentAt, err)
+	}
+	before := time.Now().UTC()
+	r.NoteSent()
+	sent, err := r.ScreenText(0)
+	if err != nil || sent.SentAt == nil || sent.SentAt.Before(before) {
+		t.Fatalf("sentAt = %v, %v; want at or after %v", sent.SentAt, err, before)
+	}
+	r.NoteInput()
+	if screen, _ := r.ScreenText(0); !screen.SentAt.Equal(*sent.SentAt) {
+		t.Fatalf("attach input moved sentAt from %v to %v", sent.SentAt, screen.SentAt)
+	}
+}
+
 func TestAwaitQuietEndsOnExitOrContext(t *testing.T) {
 	r := screenRuntime(t, 4, 20)
 	done := make(chan struct{})
 	close(done)
-	if got := r.AwaitQuiet(context.Background(), time.Hour, done); got != WaitExit {
+	if got := r.Await(context.Background(), Await{Quiet: time.Hour, Done: done}).Reason; got != WaitExit {
 		t.Fatalf("reason = %q, want exit", got)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	if got := r.AwaitQuiet(ctx, 0, nil); got != WaitTimeout {
+	if got := r.Await(ctx, Await{}).Reason; got != WaitTimeout {
 		t.Fatalf("reason = %q, want timeout", got)
 	}
 }
