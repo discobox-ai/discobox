@@ -672,12 +672,12 @@ func TestExecTakesTheListedNameAsItsDiscobox(t *testing.T) {
 	}
 }
 
-// With several discoboxes listed, `discobox shell` runs the command in the one
+// With several discoboxes listed, `discobox exec` runs the command in the one
 // named by what `discobox ls` shows for it (#545): a box renamed with
 // `discobox rename`, listed by that name and its program's msg, and a box its
 // agent titled. Neither is the generated name the discobox was created with,
 // and neither is asked to be picked from the others.
-func TestShellRunsInTheDiscoboxNamedAsListedAmongSeveral(t *testing.T) {
+func TestExecRunsInTheDiscoboxNamedAsListedAmongSeveral(t *testing.T) {
 	const (
 		renamedID = "sbx_h1ssjzhp60emtc2n"
 		titledID  = "sbx_k7mqz2r9x4c8v1bn"
@@ -719,14 +719,14 @@ func TestShellRunsInTheDiscoboxNamedAsListedAmongSeveral(t *testing.T) {
 		cmd := NewRootCommand()
 		cmd.SetOut(io.Discard)
 		cmd.SetErr(io.Discard)
-		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", reference, "--", "true"})
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", reference, "--", "true"})
 		err := cmd.Execute()
 		server.Close()
 		if err == nil || !strings.Contains(err.Error(), "has ended with exit code 0") {
-			t.Fatalf("shell %q -- true error = %v, want the exec to have run", reference, err)
+			t.Fatalf("exec %q -- true error = %v, want the exec to have run", reference, err)
 		}
 		if want := "/api/projects/project-1/sandboxes/" + wantID + "/execs"; execPath != want {
-			t.Fatalf("shell %q ran in %q, want %q", reference, execPath, want)
+			t.Fatalf("exec %q ran in %q, want %q", reference, execPath, want)
 		}
 	}
 }
