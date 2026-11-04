@@ -1192,3 +1192,46 @@ func TestResolveRunSourceWarnsAboutWorkLeftOut(t *testing.T) {
 		t.Fatalf("warnings = %q", warnings)
 	}
 }
+
+func TestDirectorySnapshotExcludesDiscoboxState(t *testing.T) {
+	home := testWorkspace(t)
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Chdir(home)
+	custom := "custom [state]"
+	t.Setenv("XDG_STATE_HOME", custom)
+	t.Setenv("DISCOBOX_DATA_DIR", "custom-data")
+	files := []string{"notes.txt", ".local/share/discobox/pool/data.raw", ".local/state/discobox/cli/key", "custom [state]/discobox/key", "custom-data/discobox.db", ".local/share/other/keep"}
+	for _, name := range files {
+		file := filepath.Join(home, name)
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte("content"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A source cannot opt the machine's state back into the copy set.
+	if err := os.WriteFile(filepath.Join(home, ".gitignore"), []byte("!**/discobox/**\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "home-link")
+	if err := os.Symlink(home, alias); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	source, err := resolveRunSource(context.Background(), alias, runSourceOptions{Platform: linuxSandbox})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer testLocalSources(source).Close()
+	git := runSourceTestGit(t, source.RepoRoot)
+	got := strings.TrimSpace(git("ls-tree", "-r", "--name-only", source.Workspace.SnapshotRef))
+	want := ".gitignore\n.local/share/other/keep\nnotes.txt"
+	if got != want {
+		t.Fatalf("copied paths = %q, want %q", got, want)
+	}
+	total := waitForTotal(t, MeasureDirectory(context.Background(), alias))
+	if total.Files != 3 {
+		t.Fatalf("measured %+v, want only three copyable files", total)
+	}
+}

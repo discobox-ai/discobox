@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 )
 
@@ -30,10 +31,10 @@ type DirectoryWalk struct {
 
 // MeasureDirectory starts counting what copying dir would carry into a sandbox.
 //
-// It is an estimate of the directory as it sits on disk: what git ends up
-// storing is smaller, because it compresses and because a .gitignore in the
-// directory is honored. Overstating is the safe direction for the one question
-// this answers — whether the directory is small enough to want copied at all.
+// It counts allocated file bytes, so sparse holes cost nothing. It is an
+// estimate of the directory as it sits on disk: what git ends up
+// storing differs, because it compresses and because a .gitignore in the
+// directory is honored. Discobox data and state are excluded from both.
 //
 // Anything it cannot read is skipped rather than failing the walk: a total
 // short by an unreadable subtree still answers that question, and an error
@@ -41,14 +42,28 @@ type DirectoryWalk struct {
 func MeasureDirectory(ctx context.Context, dir string) *DirectoryWalk {
 	ctx, cancel := context.WithCancel(ctx)
 	walk := &DirectoryWalk{stop: cancel}
+	absolute, err := filepath.Abs(dir)
+	if err == nil {
+		dir = absolute
+	}
+	if canonical, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = canonical
+	}
+	excluded := directoryStatePaths()
 	go func() {
 		defer cancel()
-		_ = filepath.WalkDir(dir, func(_ string, entry fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 			if ctx.Err() != nil {
 				return filepath.SkipAll
 			}
 			if err != nil {
 				if entry != nil && entry.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if slices.ContainsFunc(excluded, func(state string) bool { return pathInsideDirectory(state, path) }) {
+				if entry.IsDir() {
 					return fs.SkipDir
 				}
 				return nil
@@ -63,7 +78,7 @@ func MeasureDirectory(ctx context.Context, dir string) *DirectoryWalk {
 			// A file that went away mid-walk, or cannot be stat'd, is left out
 			// of the count rather than failing it.
 			if info, statErr := entry.Info(); statErr == nil {
-				walk.bytes.Add(info.Size())
+				walk.bytes.Add(allocatedBytes(path, info))
 				walk.files.Add(1)
 			}
 			return nil

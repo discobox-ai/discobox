@@ -31,8 +31,8 @@ func TestMeasureDirectoryCountsTheFilesThatWouldBeCopied(t *testing.T) {
 	}
 
 	total := waitForTotal(t, MeasureDirectory(context.Background(), dir))
-	if total.Bytes != 15 || total.Files != 2 {
-		t.Fatalf("total = %+v, want 15 bytes in 2 files", total)
+	if total.Bytes != testAllocated(t, filepath.Join(dir, "a.txt"))+testAllocated(t, filepath.Join(dir, "sub", "b.txt")) || total.Files != 2 {
+		t.Fatalf("total = %+v, want allocated bytes in 2 files", total)
 	}
 }
 
@@ -64,7 +64,7 @@ func TestMeasureDirectorySkipsWhatItCannotRead(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(closed, 0o755) })
 
 	total := waitForTotal(t, MeasureDirectory(context.Background(), dir))
-	if total.Bytes != 10 || total.Files != 1 {
+	if total.Bytes != testAllocated(t, filepath.Join(dir, "a.txt")) || total.Files != 1 {
 		t.Fatalf("total = %+v, want the readable file alone", total)
 	}
 }
@@ -105,4 +105,33 @@ func waitForTotal(t *testing.T, walk *DirectoryWalk) DirectoryTotal {
 	}
 	t.Fatal("the walk never finished")
 	return DirectoryTotal{}
+}
+
+func testAllocated(t *testing.T, path string) int64 {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return allocatedBytes(path, info)
+}
+
+func TestMeasureSparseDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sparse")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(1 << 30); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	total := waitForTotal(t, MeasureDirectory(context.Background(), dir))
+	if total.Files != 1 || total.Bytes != testAllocated(t, path) {
+		t.Fatalf("sparse total: %+v", total)
+	}
+	if runtime.GOOS != "windows" && total.Bytes >= 1<<30 {
+		t.Fatal("sparse file measured at apparent size")
+	}
 }

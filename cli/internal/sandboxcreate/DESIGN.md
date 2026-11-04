@@ -169,6 +169,10 @@ sandbox create requests.
   ahead of time). `IncludeDirty` does not decide it: there is no commit to
   start from instead, so copying leads. This package measures what would be copied for the frontend to
   show while it asks (`MeasureDirectory`, polled through `DirectoryWalk.Total`).
+  The estimate counts allocated file bytes, leaving sparse holes out. Discobox's
+  data and state paths (including overrides and resolved symlink targets) are
+  excluded from the measurement and from the disposable repository's snapshot;
+  Git exclude pathspecs enforce this even against negated ignore rules.
   Both frontends count the same thing the same way; only where the number is
   drawn is theirs.
 - Resolution can answer "no source": declining that question returns the zero

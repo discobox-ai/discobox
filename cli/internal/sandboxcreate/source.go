@@ -751,11 +751,10 @@ func directoryRunSource(ctx context.Context, dir, repoRoot string, sandbox platf
 		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
 		Destination: localRunDestination(sandbox, dir, dir),
 	}
-	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
+	workspaceTree, err := directoryWorkspaceTree(ctx, dir, repoRoot)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	defer cleanup()
 	if !workspaceTree.Dirty {
 		// An empty directory. There is nothing to snapshot, and the sandbox
 		// starts on the empty base commit — which is the point of running in
