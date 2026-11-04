@@ -5351,8 +5351,8 @@ type HarnessConfig struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Default environment variables declared by the registered image label.
 	Env OptNilHarnessConfigEnv `json:"env"`
-	// Files a person added or overrode. Each wins by path over the configure flow's file and the
-	// bundle's, and survives a bundle refresh, configure, and deconfigure.
+	// Files a person added or overrode. Each wins by path over a saved file and the bundle's, and
+	// survives a bundle refresh, a saved harness change and a plain reset.
 	FileOverrides OptNilHarnessConfigFileArray `json:"fileOverrides"`
 	// Non-secret files declared by the registered bundle's label. Rewritten whenever the bundle is
 	// re-read; no request writes them.
@@ -33428,8 +33428,7 @@ type UpdateHarnessConfigBody struct {
 	// Saved files to write into the harness's home directory over the bundle's, replacing the current set.
 	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
 	// A person's files, replacing the current set. Each adds a path to the harness's home directory or
-	// overrides the configure flow's or the bundle's file at it; the bundle's own files are never
-	// written.
+	// overrides the saved or the bundle's file at it; the bundle's own files are never written.
 	FileOverrides OptNilHarnessConfigFileArray `json:"fileOverrides"`
 	// Registers the harness bundle the config's manifest is read from, re-snapshotting the manifest from
 	// it. How a harness registered before bundles gets one.

@@ -586,7 +586,7 @@ components:
                     nullable: true
                     type: object
                 fileOverrides:
-                    description: Files a person added or overrode. Each wins by path over the configure flow's file and the bundle's, and survives a bundle refresh, configure, and deconfigure.
+                    description: Files a person added or overrode. Each wins by path over a saved file and the bundle's, and survives a bundle refresh, a saved harness change and a plain reset.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
@@ -6806,7 +6806,7 @@ components:
                     nullable: true
                     type: array
                 fileOverrides:
-                    description: A person's files, replacing the current set. Each adds a path to the harness's home directory or overrides the configure flow's or the bundle's file at it; the bundle's own files are never written.
+                    description: A person's files, replacing the current set. Each adds a path to the harness's home directory or overrides the saved or the bundle's file at it; the bundle's own files are never written.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
