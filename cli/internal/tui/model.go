@@ -3290,7 +3290,8 @@ func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
 // includeDirtyDialog is the two-answer question about what local content
 // reaches the discobox. It uses the same two descriptive rows as the standalone
 // run prompt. Both answers are answers — the discobox is created either way —
-// so cancel is heard as no.
+// so an explicit no still creates. Canceling the copy question stops the run;
+// the dirty-work question keeps its default of excluding local changes.
 //
 // The two questions differ in what they decide and which answer leads. About
 // a repository's uncommitted work, excluding leads, so Enter means the
@@ -3321,7 +3322,11 @@ func (m *Model) includeDirtyDialog(title, dir, body string, repository bool, req
 	}
 	d := actionsDialog(title, body, items, answer)
 	d.subject = dir
-	d.onCancel = func() tea.Cmd { return answer("false") }
+	if repository {
+		d.onCancel = func() tea.Cmd { return answer("false") }
+	} else {
+		m.leavesTheRun(d)
+	}
 	return d
 }
 

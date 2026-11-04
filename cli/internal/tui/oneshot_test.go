@@ -691,3 +691,18 @@ func TestStoppingFromAnAttachKeepsTheWindow(t *testing.T) {
 		}
 	})
 }
+
+func TestEscOnARunsDirectoryCopyQuestionEndsTheCommand(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+		d, m := openRun(t, ds, RunRequest{})
+		d.wait("the copy question", func() bool { return m.dialog != nil && m.dialog.title == "Copy this directory?" })
+		d.key("esc")
+		d.wait("the window to close", func() bool { return m.quit })
+		if !errors.Is(m.exitErr, errNothingCreated) || len(ds.runRequests()) != 0 {
+			t.Fatalf("exitErr = %v runs = %+v, want nothing created", m.exitErr, ds.runRequests())
+		}
+	})
+}

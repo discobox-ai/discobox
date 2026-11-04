@@ -3321,9 +3321,12 @@ naming a few of the paths; a directory that is not a repository asks whether to
 copy it in at all (`askToCopyDirectory`), with the size counted while the
 question is up (`DataSource.MeasureDirectory`) rather than before it, because
 walking a home directory takes long enough that waiting for the number would be
-the thing the question exists to avoid. Both are `includeDirtyDialog`, and Esc
-means no, since the discobox is created either way. They answer different
-fields and lead differently. The dirty question's answer is `IncludeDirty`,
+the thing the question exists to avoid. Both are `includeDirtyDialog`. Esc on
+the copy question cancels creation: the console returns to its prompt and a
+one-command run window exits with nothing created (`leavesTheRun`). Answering
+`n` still creates an empty discobox. Esc on the dirty-work question means no,
+keeping the committed history. They answer different fields and lead differently.
+The dirty question's answer is `IncludeDirty`,
 with excluding first, so Enter keeps the committed history. The copy
 question's is `CopyDirectory`, with copying first: there is no commit to start
 from instead, and the size is the reason to ask. A run `discobox run` opened
