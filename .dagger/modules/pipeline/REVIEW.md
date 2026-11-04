@@ -38,3 +38,9 @@
 - Enforce PR/release cache separation at the engine boundary, including SDK
   compilation, Dockerfile mounts, native helper inputs and publication tools.
   A cache name chosen by PR-controlled pipeline code is not isolation.
+- Pin ShellCheck to the development shell's supported version. Older distro
+  releases flag SC2119/SC2120 on valid optional function arguments in existing
+  harness scripts; do not weaken those checks or alter product scripts to
+  compensate for a stale pipeline toolchain.
+- Regenerate SDK bindings after moving pipeline code, even without API changes:
+  the Go SDK records source line maps in generated registration code.

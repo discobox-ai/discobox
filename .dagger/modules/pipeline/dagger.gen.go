@@ -870,24 +870,24 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Ci",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check the complete portable CI graph, including builds and native-job inputs.").
-							WithSourceMap(dag.SourceMap("main.go", 230, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 232, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("CiArtifacts",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Build verified portable CI artifacts for local export or native-job transport.\nThe ci check validates the complete graph; this function exposes its outputs.").
-							WithSourceMap(dag.SourceMap("main.go", 244, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 246, 1))).
 					WithFunction(
 						dag.Function("Dockerfiles",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check Dockerfile COPY paths and imported Go packages without building images.").
-							WithSourceMap(dag.SourceMap("main.go", 160, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 162, 1))).
 					WithFunction(
 						dag.Function("Emulation",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Register binfmt for foreign runtime builds. Native builds need no setup.\nThe same trusted helper was used by the former buildx path; registration\nmust also cover pre-exec hooks, which Dagger's per-command QEMU cannot wrap.").
-							WithSourceMap(dag.SourceMap("images.go", 399, 1)).
-							WithArg("platform", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 401, 2), DefaultValue: dagger.JSON("\"linux/arm64\"")})).
+							WithSourceMap(dag.SourceMap("images.go", 392, 1)).
+							WithArg("platform", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 394, 2), DefaultValue: dagger.JSON("\"linux/arm64\"")})).
 					WithFunction(
 						dag.Function("Format",
 							dag.TypeDef().WithObject("Changeset")).
@@ -902,39 +902,39 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Image",
 							dag.TypeDef().WithObject("Container")).
 							WithDescription("Build a product image or bundle using its product-owned Dockerfile.").
-							WithSourceMap(dag.SourceMap("images.go", 53, 1)).
-							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 53, 47)}).
-							WithArg("platform", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 55, 2), DefaultValue: dagger.JSON("\"linux/amd64\"")})).
+							WithSourceMap(dag.SourceMap("images.go", 52, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 52, 47)}).
+							WithArg("platform", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 54, 2), DefaultValue: dagger.JSON("\"linux/amd64\"")})).
 					WithFunction(
 						dag.Function("ImagesBuild",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Build every image and export OCI archives; no registry credentials or writes.").
-							WithSourceMap(dag.SourceMap("images.go", 191, 1)).
-							WithArg("platform", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 193, 2), DefaultValue: dagger.JSON("\"linux/amd64\"")})).
+							WithSourceMap(dag.SourceMap("images.go", 190, 1)).
+							WithArg("platform", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 192, 2), DefaultValue: dagger.JSON("\"linux/amd64\"")})).
 					WithFunction(
 						dag.Function("ImagesPublish",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Publish all product images to version tags. The registry and credentials are explicit.").
-							WithSourceMap(dag.SourceMap("images.go", 227, 1)).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 227, 55)}).
-							WithArg("registry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 227, 71)}).
-							WithArg("username", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 227, 88)}).
-							WithArg("password", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 227, 105)})).
+							WithSourceMap(dag.SourceMap("images.go", 226, 1)).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 226, 55)}).
+							WithArg("registry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 226, 71)}).
+							WithArg("username", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 226, 88)}).
+							WithArg("password", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 226, 105)})).
 					WithFunction(
 						dag.Function("Macos",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Native macOS command plan. Execution occurs outside the Linux engine.").
-							WithSourceMap(dag.SourceMap("main.go", 217, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 219, 1))).
 					WithFunction(
 						dag.Function("Mermaid",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Validate all repository Mermaid diagrams.").
-							WithSourceMap(dag.SourceMap("main.go", 266, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 268, 1))).
 					WithFunction(
 						dag.Function("ModuleTests",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Compile and test the pipeline itself, outside the application's go.work.").
-							WithSourceMap(dag.SourceMap("main.go", 185, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 187, 1))).
 					WithFunction(
 						dag.Function("NativeInputs",
 							dag.TypeDef().WithObject("Directory")).
@@ -994,17 +994,17 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Shell",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check repository shell scripts using the same toolchain as CI.").
-							WithSourceMap(dag.SourceMap("main.go", 261, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 263, 1))).
 					WithFunction(
 						dag.Function("Static",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Lint, cross-typecheck, deadcode, shellcheck, and validate Dockerfile inputs.").
-							WithSourceMap(dag.SourceMap("main.go", 137, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 139, 1))).
 					WithFunction(
 						dag.Function("Tests",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run every application's Go tests on Linux, using the modules in go.work.").
-							WithSourceMap(dag.SourceMap("main.go", 128, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 130, 1))).
 					WithFunction(
 						dag.Function("Tidy",
 							dag.TypeDef().WithObject("Changeset")).
@@ -1024,35 +1024,35 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Verify",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Verify formatting, tidy, generated files, and Mermaid without mutating the host.").
-							WithSourceMap(dag.SourceMap("main.go", 166, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 168, 1))).
 					WithFunction(
 						dag.Function("VmBuild",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Build and validate the guest or libkrun kernel; their release lines stay separate.").
-							WithSourceMap(dag.SourceMap("images.go", 263, 1)).
-							WithArg("kind", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 265, 2), DefaultValue: dagger.JSON("\"guest\"")}).
-							WithArg("platform", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 267, 2), DefaultValue: dagger.JSON("\"linux/amd64\"")})).
+							WithSourceMap(dag.SourceMap("images.go", 262, 1)).
+							WithArg("kind", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 264, 2), DefaultValue: dagger.JSON("\"guest\"")}).
+							WithArg("platform", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 266, 2), DefaultValue: dagger.JSON("\"linux/amd64\"")})).
 					WithFunction(
 						dag.Function("VmCheck",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Verify both guest architectures, or the amd64-only kernel, without publishing.").
-							WithSourceMap(dag.SourceMap("images.go", 303, 1)).
-							WithArg("kind", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 305, 2), DefaultValue: dagger.JSON("\"guest\"")})).
+							WithSourceMap(dag.SourceMap("images.go", 302, 1)).
+							WithArg("kind", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 304, 2), DefaultValue: dagger.JSON("\"guest\"")})).
 					WithFunction(
 						dag.Function("VmPublish",
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Publish verified VM artifacts and return the digest to pin in the server.").
-							WithSourceMap(dag.SourceMap("images.go", 319, 1)).
-							WithArg("kind", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 319, 51)}).
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 319, 57)}).
-							WithArg("registry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 319, 66)}).
-							WithArg("username", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 319, 76)}).
-							WithArg("password", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 319, 93)})).
+							WithSourceMap(dag.SourceMap("images.go", 318, 1)).
+							WithArg("kind", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 318, 51)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 318, 57)}).
+							WithArg("registry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 318, 66)}).
+							WithArg("username", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 318, 76)}).
+							WithArg("password", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("images.go", 318, 93)})).
 					WithFunction(
 						dag.Function("Windows",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Native Windows command plan. Execution occurs outside the Linux engine.").
-							WithSourceMap(dag.SourceMap("main.go", 223, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 225, 1))).
 					WithFunction(
 						dag.Function("WingetManifests",
 							dag.TypeDef().WithObject("Directory")).

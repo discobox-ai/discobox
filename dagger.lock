@@ -13,6 +13,7 @@
 ["","git-sha",["github.com/dagger/go-sdk","refs/tags/v1.1.0"],"2fa6a872760d2e2a33b612f1737ca5099d71ad0d"]
 ["","git-sha",["github.com/dagger/sdk-helpers","refs/tags/v1.0.6"],"16e5bf2837eb1dc840a1c9ad7d6dba385f0038d3"]
 ["","oci-sha",["docker.io/golangci/golangci-lint:v2.15.0-alpine"],"sha256:2ba875b990f1d8501ad4ec19be1ea0701e316ec3a4b764f7b129f62f01318bbf"]
+["","oci-sha",["docker.io/koalaman/shellcheck:v0.11.0"],"sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d"]
 ["","oci-sha",["docker.io/library/golang:1.25-alpine"],"sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59"]
 ["","oci-sha",["docker.io/library/golang:1.26-alpine"],"sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba"]
 ["","oci-sha",["docker.io/library/golang:1.27-alpine"],"sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c"]

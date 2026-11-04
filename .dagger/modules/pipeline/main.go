@@ -49,9 +49,11 @@ func New(ctx context.Context, ws *dagger.Workspace,
 func (m *Pipeline) Toolchain() *dagger.Container {
 	node := dag.Container().From("node:24.18.0-bookworm-slim")
 	pwsh := dag.Container().From("mcr.microsoft.com/powershell:7.5-debian-12")
+	shellcheck := dag.Container().From("koalaman/shellcheck:v0.11.0")
 	return dag.Container().From("golang:1.27.1").
-		WithExec([]string{"sh", "-ec", "apt-get update && apt-get install -y --no-install-recommends git gh curl ca-certificates jq shellcheck bats zip unzip binutils e2fsprogs libicu-dev && rm -rf /var/lib/apt/lists/*"}).
+		WithExec([]string{"sh", "-ec", "apt-get update && apt-get install -y --no-install-recommends git gh curl ca-certificates jq bats zip unzip binutils e2fsprogs libicu-dev && rm -rf /var/lib/apt/lists/*"}).
 		WithDirectory("/usr/local", node.Directory("/usr/local")).
+		WithFile("/usr/local/bin/shellcheck", shellcheck.File("/bin/shellcheck")).
 		WithDirectory("/opt/microsoft/powershell/7", pwsh.Directory("/opt/microsoft/powershell/7")).
 		WithSymlink("/opt/microsoft/powershell/7/pwsh", "/usr/local/bin/pwsh").
 		WithEnvVariable("NODE_USE_SYSTEM_CA", "1").
