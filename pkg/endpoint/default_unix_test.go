@@ -17,3 +17,14 @@ func TestDefaultEndpointEscapesTheRuntimeDir(t *testing.T) {
 		t.Fatalf("Parse(%q) = %+v, want unix socket %q", DefaultEndpoint(), got, want)
 	}
 }
+
+func TestDefaultEndpointIndependentOfTemporaryEnvironment(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	before := DefaultEndpoint()
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, t.TempDir())
+	}
+	if got := DefaultEndpoint(); got != before {
+		t.Fatalf("endpoint changed from %q to %q", before, got)
+	}
+}

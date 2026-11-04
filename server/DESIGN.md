@@ -780,13 +780,25 @@ keep serving — the incumbent keeps a listener on an orphaned inode, and becaus
 bind reports it, so for the default unix-only listen set the lock is the only
 guard.
 
-A starting server asks the incumbent to shut down, then waits for the lock,
-re-requesting and logging the holder on every pass. It never displaces a running
-server and never gives up: an incumbent that will not leave is visible in the log
-rather than silently duplicated. The lock is advisory and file-based so the
-kernel releases it on process death, including `SIGKILL` — a crashed server
-cannot strand a lock. `Run` takes it first so its deferred release runs last,
-after the listener cleanup has removed the socket the next server will bind.
+A starting server requests shutdown only on its selected endpoints and waits
+for the kernel lock. Accepted shutdowns and a CLI-observed automatic upgrade
+handoff preserve the five-minute drain allowance, including older holders with
+no metadata. A valid starting health response (HTTP 503 included) preserves the
+readiness allowance. Otherwise a three-second discovery grace yields an
+unreachable-holder error rather than an indefinite wait (ADR 26-11-04-074).
+The CLI passes its observed upgrade handoff in `DISCOBOX_SERVER_HANDOFF`, scoped
+to the endpoint it shut down. This is wait policy, never lock authority.
+
+Singleton refusal is atomically written to the launcher's private per-launch
+error record, so a systemd-owned child can report its diagnostic directly too.
+The launcher removes its record when startup completes or fails.
+
+The holder atomically publishes its PID and listen endpoints in private
+`server-holder.json` beside the lock, removing it before normal unlock. This
+advisory record supplies diagnostics only: missing, malformed and stale records
+cannot block a free lock or authorize shutdown. `Run` takes the lock first and
+releases it last, after listener and database cleanup. The kernel releases it
+on process death, including `SIGKILL`.
 
 ## Runtime Observability
 

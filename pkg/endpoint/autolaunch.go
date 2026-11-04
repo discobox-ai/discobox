@@ -20,6 +20,9 @@ import (
 )
 
 const (
+	// StartupErrorFileEnv carries a private, per-launch refusal record from the
+	// server to its launcher, including when systemd owns the child.
+	StartupErrorFileEnv  = "DISCOBOX_SERVER_START_ERROR_FILE"
 	defaultProbePath     = health.Path
 	defaultProbeInterval = 100 * time.Millisecond
 	// probesBeforeGone is how many consecutive unanswered probes mean a server
@@ -122,13 +125,32 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	opts.Env = append(opts.Env, "DISCOBOX_SERVER_HANDOFF=")
 	if replaceOlder {
 		opts.progress(health.Status{Status: health.StatusStarting, Phase: "stopping the older server"})
 		if err := replaceOlderServer(ctx, opts); err != nil {
 			return false, err
 		}
 		replacedOlder = true
+		opts.Env = append(opts.Env, "DISCOBOX_SERVER_HANDOFF="+opts.Endpoint)
 	}
+	// Create before either launch path, and keep the file private. An empty
+	// record is not a failure. Each launch has its own file so an earlier
+	// refusal cannot poison a subsequent attempt.
+	if err := os.MkdirAll(filepath.Dir(opts.logPath()), 0o700); err != nil {
+		return false, err
+	}
+	failure, err := os.CreateTemp(filepath.Dir(opts.logPath()), ".server-start-error-*")
+	if err != nil {
+		return false, err
+	}
+	failurePath := failure.Name()
+	if err := failure.Close(); err != nil {
+		_ = os.Remove(failurePath)
+		return false, err
+	}
+	defer os.Remove(failurePath)
+	opts.Env = append(opts.Env, StartupErrorFileEnv+"="+failurePath)
 	opts.progress(health.Status{Status: health.StatusStarting, Phase: "launching the server"})
 	child, err := startDetached(ctx, opts, command)
 	if err != nil {
@@ -171,6 +193,9 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 		// dies in milliseconds, and its explanation is in the log before the
 		// first probe. Waiting the rest out says nothing and delays every
 		// command that autolaunches after it.
+		if data, err := os.ReadFile(failurePath); err == nil && len(data) > 0 {
+			return true, fmt.Errorf("local server refused startup: %s", data)
+		}
 		if child.exited() {
 			return true, fmt.Errorf("local server at %s exited during startup%s", opts.Endpoint, opts.logTail())
 		}
@@ -179,6 +204,9 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 			return true, ctx.Err()
 		case <-time.After(opts.probeInterval()):
 		}
+	}
+	if replacedOlder {
+		return true, fmt.Errorf("local server at %s did not finish shutdown handoff: %w%s", opts.Endpoint, lastErr, opts.logTail())
 	}
 	return true, fmt.Errorf("local server at %s never answered: %w%s", opts.Endpoint, lastErr, opts.logTail())
 }
@@ -199,18 +227,31 @@ func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
 	if err != nil {
 		return err
 	}
-	shutdownCtx, cancel := context.WithTimeout(ctx, opts.probeTimeout())
-	defer cancel()
-	req, err := http.NewRequestWithContext(shutdownCtx, http.MethodPost, baseURL+"/shutdown", nil)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("stop older local server: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	readinessDeadline := time.Now().Add(opts.readyTimeout())
+	for {
+		shutdownCtx, cancel := context.WithTimeout(ctx, opts.probeTimeout())
+		req, err := http.NewRequestWithContext(shutdownCtx, http.MethodPost, baseURL+"/shutdown", nil)
+		if err != nil {
+			cancel()
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("stop older local server: %w", err)
+		}
+		_ = resp.Body.Close()
+		cancel()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			break
+		}
+		status, probeErr := probeEndpoint(ctx, opts)
+		if resp.StatusCode == http.StatusServiceUnavailable && probeErr == nil && status.Starting() {
+			if err := waitReady(ctx, opts, readinessDeadline); err != nil {
+				return err
+			}
+			continue
+		}
 		return fmt.Errorf("stop older local server: %s", resp.Status)
 	}
 	// Server shutdown includes draining reconcilers and VM backends. Give it the

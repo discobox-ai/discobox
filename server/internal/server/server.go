@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -64,6 +65,17 @@ func Run(ctx context.Context) error {
 	// server takes the lock and binds it.
 	releaseSingleton, err := acquireSingleton(ctx, cfg.DataDir, cfg.Listen)
 	if err != nil {
+		if path := os.Getenv(endpoint.StartupErrorFileEnv); path != "" {
+			// Atomic replacement prevents the launcher reading a partial diagnostic.
+			if f, writeErr := os.CreateTemp(filepath.Dir(path), ".server-start-error-*"); writeErr == nil {
+				_, writeErr = f.WriteString(err.Error())
+				closeErr := f.Close()
+				if writeErr == nil && closeErr == nil {
+					_ = os.Rename(f.Name(), path)
+				}
+				_ = os.Remove(f.Name())
+			}
+		}
 		return err
 	}
 	defer releaseSingleton()
@@ -387,30 +399,31 @@ func shutdownExistingLocalServer(ctx context.Context, endpoints []string) {
 
 // requestEndpointShutdown POSTs /shutdown to a single endpoint, ignoring any
 // error (including an unreachable endpoint).
-func requestEndpointShutdown(ctx context.Context, raw string) {
+func requestEndpointShutdown(ctx context.Context, raw string) bool {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	target, err := endpoint.Parse(raw)
 	if err != nil {
-		return
+		return false
 	}
 	baseURL, client, err := endpoint.HTTPClient(target, nil)
 	if err != nil {
-		return
+		return false
 	}
 	req, err := http.NewRequestWithContext(shutdownCtx, http.MethodPost, baseURL+"/shutdown", nil)
 	if err != nil {
-		return
+		return false
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return
+		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return
+		return false
 	}
-	log.Printf("requested shutdown of existing server at %s", raw)
+	log.Printf("requested shutdown of existing server at %q", raw)
+	return true
 }
 
 func serveAll(server *http.Server, listeners []serverListener) error {

@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -124,5 +126,116 @@ func TestDescribeSingletonHolderFallsBackWithoutPID(t *testing.T) {
 	}
 	if got := describeSingletonHolder(path); !strings.Contains(got, "4321") {
 		t.Fatalf("described holder %q, want it to name pid 4321", got)
+	}
+}
+
+func TestSingletonRecordLifetimeAndUnreachableDiagnostic(t *testing.T) {
+	dir := t.TempDir()
+	raw := "http://127.0.0.1:1"
+	release, err := acquireSingleton(context.Background(), dir, []string{raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	record := filepath.Join(dir, "server-holder.json")
+	info, err := os.Stat(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("record mode = %v", info.Mode())
+	}
+	start := time.Now()
+	_, err = acquireSingleton(context.Background(), dir, []string{"http://127.0.0.1:2"})
+	if err == nil {
+		t.Fatal("unreachable holder accepted")
+	}
+	for _, want := range []string{"unreachable", strconv.Itoa(os.Getpid()), raw, "--server", "server.lock", "127.0.0.1:2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q missing from %v", want, err)
+		}
+	}
+	if time.Since(start) > 8*time.Second {
+		t.Fatal("discovery exceeded initial answer budget")
+	}
+	release()
+	if _, err := os.Stat(record); !os.IsNotExist(err) {
+		t.Fatalf("record survived release: %v", err)
+	}
+}
+
+func TestSingletonPreservesStartupAndHandoffs(t *testing.T) {
+	for _, mode := range []string{"starting", "accepted shutdown", "older upgrade"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			// A legacy holder supplies no metadata; the upgrade evidence comes from
+			// the CLI that observed and stopped it before the listener disappeared.
+			held, err := filelock.TryAcquire(filepath.Join(dir, singletonLockName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer held.Release()
+			raw := "http://127.0.0.1:1"
+			if mode == "older upgrade" {
+				t.Setenv("DISCOBOX_SERVER_HANDOFF", raw)
+			} else {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if mode == "accepted shutdown" && r.URL.Path == "/shutdown" {
+						w.WriteHeader(200)
+						return
+					}
+					w.WriteHeader(503)
+					_, _ = w.Write([]byte(`{"status":"starting","phase":"initializing providers"}`))
+				}))
+				defer server.Close()
+				raw = server.URL
+			}
+			done := make(chan struct{})
+			go func() { defer close(done); time.Sleep(4 * time.Second); _ = held.Release() }()
+			defer func() { <-done }()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			release, err := acquireSingleton(ctx, dir, []string{raw})
+			if err != nil {
+				t.Fatalf("%s handoff: %v", mode, err)
+			}
+			release()
+		})
+	}
+}
+
+func TestSingletonStaleRecordDoesNotStrandFreeLock(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "server-holder.json"), []byte(`{"pid":123,"endpoints":["http://old"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	release, err := acquireSingleton(context.Background(), dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+}
+
+func TestSingletonStartingHealthSurvivesStalledShutdown(t *testing.T) {
+	dir := t.TempDir()
+	held, err := filelock.TryAcquire(filepath.Join(dir, singletonLockName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/shutdown" {
+			<-r.Context().Done()
+			return
+		}
+		w.WriteHeader(503)
+		_, _ = w.Write([]byte(`{"status":"starting","phase":"initializing"}`))
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	_, err = acquireSingleton(ctx, dir, []string{server.URL})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("starting server misclassified: %v", err)
 	}
 }

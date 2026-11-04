@@ -473,3 +473,14 @@ is one image for every VM backend: `vz` boots its `linux/arm64` variant and
 `libkrun` the `linux/amd64` one (ADR 0101). The libkrunfw-patched kernel libkrun
 needs is the one artifact it cannot take from there, so it has a third line of
 its own, `vm-kernel/v*`.
+
+## Local server discovery
+
+The default Unix endpoint uses `XDG_RUNTIME_DIR/discobox/server.sock`, or
+`/tmp/discobox-<uid>/discobox/server.sock` independently of shell temporary
+variables. `pkg/endpoint` validates ownership and privacy of the per-user
+directories before binding or dialing; it opens each path component without
+following user symlinks and allows the system `/tmp` alias on macOS. Explicit
+endpoints retain their configured trust. Windows keeps its named pipe.
+See the [server singleton design](server/DESIGN.md#single-server-per-data-directory)
+for lock-holder discovery and startup handoffs (ADR 26-11-04-074).

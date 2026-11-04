@@ -12,7 +12,7 @@ import (
 func DefaultEndpoint() string {
 	base := os.Getenv("XDG_RUNTIME_DIR")
 	if base == "" {
-		base = filepath.Join(os.TempDir(), "discobox-"+strconv.Itoa(os.Getuid()))
+		base = filepath.Join("/tmp", "discobox-"+strconv.Itoa(os.Getuid()))
 	}
 	// Rendered through net/url rather than concatenated: Parse reads the
 	// decoded path back, so a runtime directory holding "#", "?" or "%" must

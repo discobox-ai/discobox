@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSystemdRunArgsStartsUserUnitWithEnvironment(t *testing.T) {
@@ -179,4 +180,47 @@ func gidNotHeld(t *testing.T) int {
 	}
 	t.Fatal("this process is a member of every group")
 	return 0
+}
+
+func TestEnsureRunningReportsUserServiceRefusal(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, script string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("systemctl", "#!/bin/sh\nexit 0\n")
+	write("id", "#!/bin/sh\nexit 0\n")
+	write("systemd-run", `#!/bin/sh
+for arg in "$@"; do
+ case "$arg" in
+ -G) echo '`+strings.TrimSpace(groupIDsForTest())+`'; exit 0 ;;
+ --setenv=DISCOBOX_SERVER_START_ERROR_FILE=*) refusal="${arg#--setenv=DISCOBOX_SERVER_START_ERROR_FILE=}" ;;
+ esac
+done
+printf '%s' 'unreachable discobox-server (pid 4321) holds server.lock; use --server http://holder' > "$refusal"
+`)
+	t.Setenv("PATH", dir)
+	opts := LaunchOptions{Endpoint: "unix://" + testSocketPath(t), LogPath: filepath.Join(t.TempDir(), "server.log"), Command: staticCommand("/unused-server"), StartTimeout: 10 * time.Second, ProbeInterval: 10 * time.Millisecond}
+	start := time.Now()
+	_, err := EnsureRunning(context.Background(), opts)
+	if err == nil || !strings.Contains(err.Error(), "local server refused startup: unreachable") || strings.Contains(err.Error(), "never answered") {
+		t.Fatalf("refusal = %v", err)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("waited for generic timeout: %v", err)
+	}
+	files, err := filepath.Glob(filepath.Join(filepath.Dir(opts.LogPath), ".server-start-error-*"))
+	if err != nil || len(files) != 0 {
+		t.Fatalf("refusal record leaked: %v %v", files, err)
+	}
+}
+
+func groupIDsForTest() string {
+	var groups []string
+	for _, gid := range processGroupIDs() {
+		groups = append(groups, strconv.Itoa(gid))
+	}
+	return strings.Join(groups, " ")
 }

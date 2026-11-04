@@ -165,3 +165,9 @@ Global review expectations:
   overwrite the failure evidence it is meant to preserve. Adoption tests use a
   sandbox-created child and assert a nonempty creator: comparing absent
   creator IDs cannot detect a regression that clears one.
+
+- Default Unix socket privacy covers both ownership/mode bits and effective
+  ACL grants, including ancestors that could allow replacement. Darwin evaluates
+  ACL allow entries before mode bits: mode 0700 alone can still expose a moved
+  socket under shared `/tmp`. Reject unsafe directories rather than repairing
+  permissions or trusting their listeners.
