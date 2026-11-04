@@ -27,7 +27,7 @@ import (
 
 func TestHealthDoesNotRequireAuth(t *testing.T) {
 	publicKey, _ := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestHealthDoesNotRequireAuth(t *testing.T) {
 
 func TestListHarnessHooksRequiresExecReadScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestListHarnessHooksRequiresExecReadScope(t *testing.T) {
 
 func TestListHarnessHooksRejectsWriteOnlyScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestListHarnessHooksRejectsWriteOnlyScope(t *testing.T) {
 
 func TestGetSandboxAgentStatusRequiresStatusReadScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestGetSandboxAgentStatusReportsAutostopWhileItRuns(t *testing.T) {
 // scoped only for execs must not be able to read status.
 func TestGetSandboxAgentStatusRejectsBroaderScopeAlone(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestGetSandboxAgentStatusRejectsBroaderScopeAlone(t *testing.T) {
 // unlock exec routes.
 func TestGetSandboxAgentStatusStatusReadScopeCannotReadExecs(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestGetSandboxAgentStatusStatusReadScopeCannotReadExecs(t *testing.T) {
 
 func TestListSandboxExecsRequiresExecReadScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestListSandboxExecsRequiresExecReadScope(t *testing.T) {
 
 func TestListSandboxExecsRejectsTerminalReadScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestListSandboxExecsRejectsTerminalReadScope(t *testing.T) {
 
 func TestAttachSandboxExecRequiresExecWriteScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestAttachSandboxExecRequiresExecWriteScope(t *testing.T) {
 func TestCreateAgentTerminalRequiresWriteScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	runner := &sandboxAgentFakeRunner{}
-	router, err := NewRouter(testConfigWithRunner(publicKey, runner))
+	router, err := NewRouter(testConfigWithRunner(t, publicKey, runner))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestCreateAgentTerminalRequiresWriteScope(t *testing.T) {
 
 func TestTokenRouteIdentityMustMatch(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestAgentTerminalEventsAndResources(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	st := openAgentStore(t)
 	runner := &sandboxAgentFakeRunner{}
-	cfg := testConfigWithRunner(publicKey, runner)
+	cfg := testConfigWithRunner(t, publicKey, runner)
 	cfg.Store = st
 	cfg.ExecAuditRecorder = nil
 	cfg.Resources.RetentionCount = 2
@@ -453,7 +453,7 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	st := openAgentStore(t)
 	runner := &sandboxAgentFakeRunner{}
-	cfg := testConfigWithRunner(publicKey, runner)
+	cfg := testConfigWithRunner(t, publicKey, runner)
 	cfg.Store = st
 	cfg.ExecAuditRecorder = nil
 	cfg.Resources.SampleInterval = time.Hour
@@ -509,8 +509,9 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	}
 }
 
-func testConfig(publicKey string) Config {
-	runtimeDir, _ := os.MkdirTemp("", "discobox-sandbox-agent-test-*")
+func testConfig(t *testing.T, publicKey string) Config {
+	t.Helper()
+	runtimeDir := t.TempDir()
 	return Config{
 		Identity: Identity{
 			ProjectID: "project-1",
@@ -521,6 +522,7 @@ func testConfig(publicKey string) Config {
 		ListenAddress:         ":0",
 		WorkingRoot:           "/workspace",
 		RuntimeDir:            runtimeDir,
+		CaptureStateDir:       t.TempDir(),
 		DatabasePath:          filepath.Join(runtimeDir, "harness.db"),
 		Harness: config.Harness{
 			ID:      "codex",
@@ -532,8 +534,9 @@ func testConfig(publicKey string) Config {
 	}
 }
 
-func testConfigWithRunner(publicKey string, runner execs.UnitManager) Config {
-	cfg := testConfig(publicKey)
+func testConfigWithRunner(t *testing.T, publicKey string, runner execs.UnitManager) Config {
+	t.Helper()
+	cfg := testConfig(t, publicKey)
 	cfg.ExecUnitManager = runner
 	return cfg
 }
@@ -641,7 +644,7 @@ func (sandboxAgentNoopAudit) DeleteExecRecord(context.Context, string) error {
 // one it would be served to a token with no exec scope at all.
 func TestListExecEventsRequiresExecReadScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -709,7 +712,7 @@ func TestGetSandboxAgentStatusOmitsAnEmptyResourceSample(t *testing.T) {
 func TestEveryExecPathReceivesSecretEnvironment(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	runner := &sandboxAgentFakeRunner{}
-	cfg := testConfigWithRunner(publicKey, runner)
+	cfg := testConfigWithRunner(t, publicKey, runner)
 	secrets := map[string]string{"GH_TOKEN": "sentinel-first", "FILE_TOKEN": "sentinel-file"}
 	cfg.SecretEnv = func() map[string]string { return secrets }
 	cfg.Harness.FileSecrets = []string{"FILE_TOKEN"}

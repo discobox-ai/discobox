@@ -15,7 +15,7 @@ import (
 // boundary, but a scope names what it grants (ADR 0109).
 func TestAttachUDPTunnelRequiresUDPConnectScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestAttachUDPTunnelRequiresUDPConnectScope(t *testing.T) {
 
 func TestAttachUDPTunnelRejectsMissingQueryParams(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}

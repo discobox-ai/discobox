@@ -27,7 +27,7 @@ func getInventory(t *testing.T, router http.Handler, target, token string) *http
 // else (ADR 26-10-11-657 §1).
 func TestInventoryIsReadWithItsOwnScopeOnly(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestInventoryIsReadWithItsOwnScopeOnly(t *testing.T) {
 // post it on every poll; and naming that digest gets an answer with no parts.
 func TestInventoryDigestIsStableAndAKnownOneIsUnchanged(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestInventoryDigestIgnoresMapOrderAndObservationTime(t *testing.T) {
 // above all, which the pool holds for every sandbox it hosts.
 func TestServicesAndToolsAreGatedLikeExecs(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}

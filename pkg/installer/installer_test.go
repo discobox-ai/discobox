@@ -642,6 +642,12 @@ func TestShellDrawsTheMarkOnlyWhereItShows(t *testing.T) {
 }
 
 func TestPowerShellDrawsTheMarkOnlyWhereItShows(t *testing.T) {
+	// PowerShell disables ANSI rendering when NO_COLOR exists, even empty.
+	// Setenv registers restoration before removing it for the styled run.
+	t.Setenv("NO_COLOR", "")
+	if err := os.Unsetenv("NO_COLOR"); err != nil {
+		t.Fatal(err)
+	}
 	for _, shell := range powerShells(t) {
 		t.Run(filepath.Base(shell), func(t *testing.T) {
 			s := newServer(t, ladder)

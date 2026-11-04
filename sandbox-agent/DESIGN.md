@@ -842,7 +842,8 @@ only; the harness projects credential documents from the selected immutable
 credentials and current bindings, keeping credentials and delivery atomic.
 Random immutable candidates, observations and export output live in
 `/run/discobox/harness-capture`, in a mode-0700 directory with atomic mode-0600
-writes. They survive agent restart but disappear on sandbox reboot. The durable
+writes. `server.Config.CaptureStateDir` can override this directory; router tests
+use a temporary directory per test. They survive agent restart but disappear on sandbox reboot. The durable
 checkpoint beside the agent DB contains delivered/accepted credential documents, revisions,
 sentinel aliases and acknowledgment metadata. Frozen saves retain only their
 candidate identity, changed paths/removals and credential fingerprints; no raw
