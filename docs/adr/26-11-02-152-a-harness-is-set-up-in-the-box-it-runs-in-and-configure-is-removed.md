@@ -110,6 +110,13 @@ per machine; this, like the welcome, is about the project's shared harness).
 - **Save the first change automatically.** Editing a file in a box is not
   authority to change every other box's defaults or share its login
   (573 §2). The dialog explains the save; it does not make it.
+- **Keep a clean, sourceless box as the place a login is typed.** Configure's
+  box had no source, no services and no repository code, so a login typed
+  there never passed through a box running the project's work. It is what made
+  every harness a second sign-in flow to write and keep working, and it did
+  not keep a login out of a working box: save-back (573) already captured one
+  signed in there. A person who does not trust a box's code can sign in in a
+  fresh one; the console says what signing in and saving expose (below).
 - **Remember the explainer per machine.** It would explain again on a second
   machine and never to the second person on a project, which is why the
   welcome is the project's.
@@ -118,8 +125,30 @@ per machine; this, like the welcome, is about the project's shared harness).
 
 - A fresh project can run any built-in at once; the first box on a credentialed
   harness signs in, and saving that box's change shares the login.
-- Harness config rows lose three columns in place; existing overlays and
-  configure-created secrets are kept and keep being delivered.
+- The migration drops, in place, eight `harness_configs` columns
+  (`configured`, `configure_error`, `configure_sandbox_id`,
+  `configure_revision`, `configure_secret_revisions`, `config_command`,
+  `config_reminder`, `config_ports`) and `sandboxes.harness_mode`, after
+  marking every configure sandbox still open for deletion. Existing overlays
+  and configure-created secrets are kept and keep being delivered.
 - `discobox configure` stays the console's harnesses screen, now for the
   default, the config, file edits and reset.
-- A client built before this change that calls configure gets 404.
+- A client built before this change cannot read harness configs at all, not
+  only configure: `configured` was a required field of the harness config it
+  decodes, and is gone. Its harness list, get and update fail, and the
+  console's harnesses screen with them, as configure itself answers 404. This
+  is a breaking release for clients, and the CLI is upgraded with the server;
+  keeping a dead, always-true `configured` for a release would carry a field
+  that means nothing to let an older client offer a configure that no longer
+  exists.
+- A real login is now always typed into a working box, where configure kept
+  the first one out of it: the box's agent, its repository's code and its
+  services can read the harness's credential file between sign-in and the
+  sentinel handoff a save makes, and for as long as nobody saves. ADR 573
+  accepted that for a login captured beside configure; it is now the only
+  path. It is the exposure of signing in on one's own machine in a checkout of
+  the same repository, with an agent in the box that runs its code unasked; the
+  egress proxy still bounds where the box can send what it reads. The console does not send a person to sign in
+  again in the box a refused login was shown in, which may be what provoked
+  the refusal, and it says that a save shares the box's settings files —
+  hooks and commands among them — with every box on the harness.
