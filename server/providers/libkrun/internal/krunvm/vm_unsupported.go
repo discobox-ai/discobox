@@ -6,3 +6,5 @@ package krunvm
 // every server binary anyway, so that a manifest reaching the wrong platform is
 // refused with the provider's own error rather than an unknown-command one.
 func Run(Config) error { return ErrUnsupported }
+
+func CheckDependencies(string, string) error { return ErrUnsupported }

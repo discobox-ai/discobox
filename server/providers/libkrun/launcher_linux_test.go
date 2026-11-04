@@ -3,6 +3,7 @@
 package libkrun
 
 import (
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 	"github.com/discobox-ai/discobox/server/providers/libkrun/internal/krunvm"
@@ -163,4 +165,40 @@ func requireKVM(t *testing.T) {
 		t.Skipf("this host has no usable /dev/kvm: %v", err)
 	}
 	_ = device.Close()
+}
+
+func TestProviderRejectsMissingHostDependencies(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	cfg := Config{LibkrunPath: filepath.Join(t.TempDir(), "missing-libkrun.so")}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = newFromInstance(t.Context(), &model.SandboxProviderInstance{Config: data}, nil, nil, dockerworker.ServerDefaults{})
+	if err == nil {
+		t.Fatal("provider accepted missing host dependencies")
+	}
+	for _, want := range []string{"missing-libkrun.so", "install libkrun", "install passt", "libkrunPath", "passtPath"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "nix develop") {
+		t.Fatalf("checkout-dependent hint: %v", err)
+	}
+}
+
+func TestDependencyCheckHonorsPasstOverride(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	passt := filepath.Join(t.TempDir(), "custom-passt")
+	if err := os.WriteFile(passt, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := checkHostDependencies(t.Context(), Config{LibkrunPath: "/nonexistent/libkrun.so", PasstPath: passt})
+	if err == nil || !strings.Contains(err.Error(), "install libkrun") {
+		t.Fatalf("error = %v", err)
+	}
+	if strings.Contains(err.Error(), "install passt") {
+		t.Fatalf("ignored passt override: %v", err)
+	}
 }
