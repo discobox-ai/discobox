@@ -1578,6 +1578,11 @@ type Secret struct {
 	// be allowed by them, and by its binding's and parent's routes. None sends
 	// it nowhere; `*` sends it anywhere (ADR 26-10-27-939).
 	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the credential may be sent; none sends it nowhere"`
+	// RouteConstraints are independent lists ANDed with Routes. Bundle policy
+	// upgrades only append; no previous denial can become an allowance.
+	// NULL on existing rows adds no constraint (ADR 26-11-04-772).
+	RouteConstraints [][]SecretRoute `gorm:"column:route_constraints;type:text;serializer:json" json:"routeConstraints,omitempty" doc:"Additional route lists, all of which must allow; maintained by harness policy"`
+
 	// AllowRaw says the value itself may ever be handed to a discobox, by a
 	// binding a person makes raw (ADR 26-10-27-840 §1). It is part of the
 	// furthest the secret may go: no binding is raw unless it is set, and

@@ -36,3 +36,8 @@ strings. Missing or unregistered bindings fail without writing empty tokens. Pro
 is authoritative; captured metadata cannot redirect a refresh request.
 
 Literal settings and explicit credential references follow [ADR 26-10-30-457](../../docs/adr/26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md).
+
+Provider `typeRoutes` selects registered policy for the delivered credential
+type; otherwise `routes` applies. `manualRoutes` explains an explicit refusal
+to automatically capture an endpoint-specific credential. These are trusted
+manifest metadata, never supplied by a candidate.

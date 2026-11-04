@@ -273,6 +273,16 @@ components:
                         $ref: '#/components/schemas/HarnessCaptureRoute'
                     nullable: true
                     type: array
+                typeRoutes:
+                    description: Registered destination policy by delivered credential type; overrides common routes.
+                    type: object
+                    additionalProperties:
+                        type: array
+                        items:
+                            $ref: '#/components/schemas/HarnessCaptureRoute'
+                manualRoutes:
+                    description: Why capture requires a person-owned secret with explicit endpoint routes instead.
+                    type: string
                 types:
                     items:
                         type: string
@@ -6240,6 +6250,14 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
+                routeConstraints:
+                    description: Additional harness policy route lists; every list must allow in addition to routes and binding restrictions. An empty inner list denies all destinations.
+                    readOnly: true
+                    type: array
+                    items:
+                        type: array
+                        items:
+                            $ref: '#/components/schemas/SecretRoute'
                 routes:
                     description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924); every request it is sent in must fall on one
                     items:

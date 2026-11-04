@@ -309,3 +309,9 @@ locks, which are taken in ID order. This serializes ancestor walks against every
 parent change. Requests remain after purge as audit records. `UpdateSandbox`
 omits both parent and creator; create starts with the creator as parent.
 The secret request owner filter reads `parent_sandbox_id`.
+
+## Credential route lists
+
+`RouteLists` includes the secret's persisted `RouteConstraints` between its
+original routes and binding/parent restrictions. These lists are enforced
+together on resolve and in pool publication; no flattening or union is safe.

@@ -924,7 +924,11 @@ type HarnessCaptureProvider struct {
 	MultipleAccounts OptBool                        `json:"multipleAccounts"`
 	OAuth            OptHarnessCaptureOAuth         `json:"oauth"`
 	Routes           OptNilHarnessCaptureRouteArray `json:"routes"`
-	Types            []string                       `json:"types"`
+	// Registered destination policy by delivered credential type; overrides common routes.
+	TypeRoutes OptHarnessCaptureProviderTypeRoutes `json:"typeRoutes"`
+	// Why capture requires a person-owned secret with explicit endpoint routes instead.
+	ManualRoutes OptString `json:"manualRoutes"`
+	Types        []string  `json:"types"`
 }
 
 // GetEnvName returns the value of EnvName.
@@ -955,6 +959,16 @@ func (s *HarnessCaptureProvider) GetOAuth() OptHarnessCaptureOAuth {
 // GetRoutes returns the value of Routes.
 func (s *HarnessCaptureProvider) GetRoutes() OptNilHarnessCaptureRouteArray {
 	return s.Routes
+}
+
+// GetTypeRoutes returns the value of TypeRoutes.
+func (s *HarnessCaptureProvider) GetTypeRoutes() OptHarnessCaptureProviderTypeRoutes {
+	return s.TypeRoutes
+}
+
+// GetManualRoutes returns the value of ManualRoutes.
+func (s *HarnessCaptureProvider) GetManualRoutes() OptString {
+	return s.ManualRoutes
 }
 
 // GetTypes returns the value of Types.
@@ -992,9 +1006,31 @@ func (s *HarnessCaptureProvider) SetRoutes(val OptNilHarnessCaptureRouteArray) {
 	s.Routes = val
 }
 
+// SetTypeRoutes sets the value of TypeRoutes.
+func (s *HarnessCaptureProvider) SetTypeRoutes(val OptHarnessCaptureProviderTypeRoutes) {
+	s.TypeRoutes = val
+}
+
+// SetManualRoutes sets the value of ManualRoutes.
+func (s *HarnessCaptureProvider) SetManualRoutes(val OptString) {
+	s.ManualRoutes = val
+}
+
 // SetTypes sets the value of Types.
 func (s *HarnessCaptureProvider) SetTypes(val []string) {
 	s.Types = val
+}
+
+// Registered destination policy by delivered credential type; overrides common routes.
+type HarnessCaptureProviderTypeRoutes map[string][]HarnessCaptureRoute
+
+func (s *HarnessCaptureProviderTypeRoutes) init() HarnessCaptureProviderTypeRoutes {
+	m := *s
+	if m == nil {
+		m = map[string][]HarnessCaptureRoute{}
+		*s = m
+	}
+	return m
 }
 
 // A route a harness's captured secret is bound with, in SentinelRoute's shape.
@@ -2237,6 +2273,52 @@ func (o OptHarnessCaptureOAuth) Get() (v HarnessCaptureOAuth, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptHarnessCaptureOAuth) Or(d HarnessCaptureOAuth) HarnessCaptureOAuth {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessCaptureProviderTypeRoutes returns new OptHarnessCaptureProviderTypeRoutes with value set to v.
+func NewOptHarnessCaptureProviderTypeRoutes(v HarnessCaptureProviderTypeRoutes) OptHarnessCaptureProviderTypeRoutes {
+	return OptHarnessCaptureProviderTypeRoutes{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureProviderTypeRoutes is optional HarnessCaptureProviderTypeRoutes.
+type OptHarnessCaptureProviderTypeRoutes struct {
+	Value HarnessCaptureProviderTypeRoutes
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureProviderTypeRoutes was set.
+func (o OptHarnessCaptureProviderTypeRoutes) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureProviderTypeRoutes) Reset() {
+	var v HarnessCaptureProviderTypeRoutes
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureProviderTypeRoutes) SetTo(v HarnessCaptureProviderTypeRoutes) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureProviderTypeRoutes) Get() (v HarnessCaptureProviderTypeRoutes, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureProviderTypeRoutes) Or(d HarnessCaptureProviderTypeRoutes) HarnessCaptureProviderTypeRoutes {
 	if v, ok := o.Get(); ok {
 		return v
 	}

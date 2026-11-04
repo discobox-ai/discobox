@@ -233,6 +233,7 @@ func upgradeNestedRoutes(what string, raw json.RawMessage, path ...string) (json
 // they change.
 type routeColumn struct {
 	table, column string
+	lists         bool // column holds independent route lists, rather than one list
 	// path descends from the column's document to the objects whose "routes"
 	// member is a route list; none is the column being the list.
 	path    []string
@@ -242,6 +243,7 @@ type routeColumn struct {
 // routeColumns are every stored column that holds routes.
 var routeColumns = []routeColumn{
 	{table: "secrets", column: "routes", holders: secretHolders},
+	{table: "secrets", column: "route_constraints", lists: true, holders: secretHolders},
 	{table: "secret_bindings", column: "routes", holders: bindingHolders},
 	{table: "secret_requests", column: "routes"},
 	// The snapshot each binding event keeps of its binding.
@@ -289,7 +291,22 @@ func upgradeRouteColumn(db *gorm.DB, column routeColumn) error {
 		var next json.RawMessage
 		var changed bool
 		var err error
-		if column.path == nil {
+		if column.lists {
+			var lists []json.RawMessage
+			if err = json.Unmarshal(raw, &lists); err == nil {
+				for i, list := range lists {
+					var moved bool
+					lists[i], moved, err = upgradeRouteList(what, list)
+					if err != nil {
+						break
+					}
+					changed = changed || moved
+				}
+				if err == nil && changed {
+					next, err = json.Marshal(lists)
+				}
+			}
+		} else if column.path == nil {
 			next, changed, err = upgradeRouteList(what, raw)
 		} else {
 			next, changed, err = upgradeNestedRoutes(what, raw, column.path...)

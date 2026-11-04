@@ -564,7 +564,7 @@ func (m *captureManager) preview() hc.Preview {
 				path = ""
 			}
 			code := d.Code
-			if code != "partial" && code != "unsupported" {
+			if code != "partial" && code != "unsupported" && code != "endpoint-policy" {
 				code = "invalid"
 			}
 			p.Diagnostics = append(p.Diagnostics, hc.Diagnostic{Path: path, Code: code, Message: "Harness configuration needs attention"})

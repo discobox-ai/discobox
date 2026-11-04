@@ -329,3 +329,9 @@ not ready as `starting`, or `error` when blocking preparation failed. Runtime
 power state remains the pool observation. Async work after readiness does not
 hold back `running`, and provisioning never overrides a stopped box. Clients
 without a provision report retain the lifecycle/runtime projection.
+
+`Secret.RouteConstraints` stores independent lists that all must allow beside
+`Routes`. A NULL outer list adds no restriction; an empty inner list denies
+every destination. Harness policy changes only append normalized unique lists
+(ADR 26-11-04-772), preserving historical denials. The column is additive and
+API reads expose it as `routeConstraints`.

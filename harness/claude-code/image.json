@@ -47,6 +47,13 @@
               "/v1/messages"
             ]
           }
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.anthropic.com"
+            ]
+          }
         ]
       },
       {
@@ -59,6 +66,15 @@
             "host": "api.anthropic.com",
             "paths": [
               "/v1/messages"
+            ]
+          }
+        ],
+        "routes": [
+          {
+            "hosts": [
+              "api.anthropic.com",
+              "claude.ai",
+              "mcp-proxy.anthropic.com"
             ]
           }
         ]
@@ -86,7 +102,14 @@
           "types": [
             "token"
           ],
-          "host": "api.anthropic.com"
+          "host": "api.anthropic.com",
+          "routes": [
+            {
+              "hosts": [
+                "api.anthropic.com"
+              ]
+            }
+          ]
         },
         {
           "id": "anthropic",
@@ -98,7 +121,16 @@
             "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
             "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
           },
-          "host": "api.anthropic.com"
+          "host": "api.anthropic.com",
+          "routes": [
+            {
+              "hosts": [
+                "api.anthropic.com",
+                "claude.ai",
+                "mcp-proxy.anthropic.com"
+              ]
+            }
+          ]
         }
       ],
       "settings": [

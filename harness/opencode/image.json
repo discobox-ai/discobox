@@ -41,6 +41,13 @@
           "envName": "OPENCODE_ANTHROPIC_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.anthropic.com"
+              ]
+            }
           ]
         },
         {
@@ -53,6 +60,22 @@
           "oauth": {
             "tokenUrl": "https://auth.openai.com/oauth/token",
             "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
+          },
+          "routes": [
+            {
+              "hosts": [
+                "api.openai.com"
+              ]
+            }
+          ],
+          "typeRoutes": {
+            "oauth": [
+              {
+                "hosts": [
+                  "chatgpt.com"
+                ]
+              }
+            ]
           }
         },
         {
@@ -60,6 +83,13 @@
           "envName": "OPENCODE_GOOGLE_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "generativelanguage.googleapis.com"
+              ]
+            }
           ]
         },
         {
@@ -67,13 +97,21 @@
           "envName": "OPENCODE_GOOGLE_VERTEX_CREDENTIAL",
           "types": [
             "token"
-          ]
+          ],
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "groq",
           "envName": "OPENCODE_GROQ_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.groq.com"
+              ]
+            }
           ]
         },
         {
@@ -81,6 +119,13 @@
           "envName": "OPENCODE_MISTRAL_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.mistral.ai"
+              ]
+            }
           ]
         },
         {
@@ -88,6 +133,13 @@
           "envName": "OPENCODE_OPENROUTER_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "openrouter.ai"
+              ]
+            }
           ]
         },
         {
@@ -101,13 +153,67 @@
             "tokenUrl": "https://auth.x.ai/oauth2/token",
             "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
             "encoding": "form"
-          }
+          },
+          "routes": [
+            {
+              "hosts": [
+                "api.x.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "github-copilot",
           "envName": "OPENCODE_GITHUB_COPILOT_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ]
+            },
+            {
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ],
+              "paths": [
+                "/agents/swe/internal/memory/**",
+                "/mcp/readonly/**",
+                "/v1/messages/**"
+              ]
+            },
+            {
+              "hosts": [
+                "*.api.github.com",
+                "api.github.com"
+              ],
+              "paths": [
+                "/copilot_internal/**",
+                "/repos/github/copilot-cli/releases/**"
+              ]
+            },
+            {
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ],
+              "paths": [
+                "/agents/**",
+                "/mcp/**"
+              ],
+              "blocked": true
+            },
+            {
+              "hosts": [
+                "*.github.com",
+                "github.com"
+              ],
+              "blocked": true
+            }
           ]
         },
         {
@@ -115,6 +221,13 @@
           "envName": "OPENCODE_DEEPSEEK_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.deepseek.com"
+              ]
+            }
           ]
         },
         {
@@ -122,6 +235,13 @@
           "envName": "OPENCODE_CEREBRAS_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.cerebras.ai"
+              ]
+            }
           ]
         },
         {
@@ -129,6 +249,13 @@
           "envName": "OPENCODE_ZAI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.z.ai"
+              ]
+            }
           ]
         },
         {
@@ -136,6 +263,13 @@
           "envName": "OPENCODE_KIMI_CODING_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.kimi.com"
+              ]
+            }
           ]
         },
         {
@@ -143,6 +277,13 @@
           "envName": "OPENCODE_MINIMAX_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.minimax.io"
+              ]
+            }
           ]
         },
         {
@@ -150,6 +291,13 @@
           "envName": "OPENCODE_HUGGINGFACE_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "router.huggingface.co"
+              ]
+            }
           ]
         },
         {
@@ -157,20 +305,29 @@
           "envName": "OPENCODE_AZURE_CREDENTIAL",
           "types": [
             "token"
-          ]
+          ],
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "amazon-bedrock",
           "envName": "OPENCODE_AMAZON_BEDROCK_CREDENTIAL",
           "types": [
             "token"
-          ]
+          ],
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "google-gemini-cli",
           "envName": "OPENCODE_GOOGLE_GEMINI_CLI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "cloudcode-pa.googleapis.com"
+              ]
+            }
           ]
         },
         {
@@ -178,6 +335,15 @@
           "envName": "OPENCODE_GOOGLE_ANTIGRAVITY_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "daily-cloudcode-pa.googleapis.com",
+                "daily-cloudcode-pa.sandbox.googleapis.com",
+                "cloudcode-pa.googleapis.com"
+              ]
+            }
           ]
         },
         {
@@ -185,6 +351,13 @@
           "envName": "OPENCODE_OPENAI_CODEX_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "chatgpt.com"
+              ]
+            }
           ]
         },
         {
@@ -192,6 +365,14 @@
           "envName": "OPENCODE_XAI_OAUTH_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.x.ai",
+                "cli-chat-proxy.grok.com"
+              ]
+            }
           ]
         },
         {
@@ -199,13 +380,21 @@
           "envName": "OPENCODE_ALIBABA_CREDENTIAL",
           "types": [
             "token"
-          ]
+          ],
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "togetherai",
           "envName": "OPENCODE_TOGETHERAI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.together.xyz"
+              ]
+            }
           ]
         },
         {
@@ -213,6 +402,13 @@
           "envName": "OPENCODE_FIREWORKS_AI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.fireworks.ai"
+              ]
+            }
           ]
         },
         {
@@ -220,6 +416,13 @@
           "envName": "OPENCODE_PERPLEXITY_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.perplexity.ai"
+              ]
+            }
           ]
         },
         {
@@ -227,6 +430,13 @@
           "envName": "OPENCODE_COHERE_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.cohere.ai"
+              ]
+            }
           ]
         },
         {
@@ -234,6 +444,13 @@
           "envName": "OPENCODE_OPENCODE_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "opencode.ai"
+              ]
+            }
           ]
         }
       ],

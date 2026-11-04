@@ -657,7 +657,8 @@ itself alone; `*.h` the hosts beneath it), and optionally methods, path globs
 and a GraphQL or MCP block — and whether it is blocked; one declared in the
 shape before host patterns reads as it was meant (`harnesscapture.Route`,
 through `secretroute.FromLegacy`) until its image is rebuilt. A save writes
-the routes onto the secret it creates. An image declaring different ones
+the routes onto the secret it creates. Policy changes append independently
+enforced restrictions for owned secrets (ADR 26-11-04-772). An image declaring different ones
 re-syncs them, while a secret a person bound is theirs to route. Every
 request carrying the secret's sentinel must fall on one, and the most specific
 decides: a blocked one refuses, and anything no route covers is refused. Name
@@ -981,3 +982,12 @@ Meta sign in by device code.
   there is none.
 
 Literal settings and explicit credential references follow [ADR 26-10-30-457](../docs/adr/26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md).
+
+## Credential destination policy
+
+Built-in static secrets and captured providers declare destination policy in their
+manifests (ADR 26-11-04-772). Per-type `typeRoutes` overrides common `routes`;
+`manualRoutes` refuses automatic capture of account-specific endpoints, with a
+fixed diagnostic and local-file protection. See [the inventory and evidence](credential-destinations.md).
+Shell collects no credentials. Server-side refresh endpoints are separate from
+sandbox access-token spending.

@@ -139,6 +139,16 @@ components:
                         $ref: '#/components/schemas/HarnessCaptureRoute'
                     nullable: true
                     type: array
+                typeRoutes:
+                    description: Registered destination policy by delivered credential type; overrides common routes.
+                    type: object
+                    additionalProperties:
+                        type: array
+                        items:
+                            $ref: '#/components/schemas/HarnessCaptureRoute'
+                manualRoutes:
+                    description: Why capture requires a person-owned secret with explicit endpoint routes instead.
+                    type: string
                 types:
                     items:
                         type: string

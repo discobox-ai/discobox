@@ -44,7 +44,14 @@
             "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
             "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
           },
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.anthropic.com"
+              ]
+            }
+          ]
         },
         {
           "id": "openai",
@@ -52,7 +59,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.openai.com"
+              ]
+            }
+          ]
         },
         {
           "id": "google",
@@ -60,7 +74,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "generativelanguage.googleapis.com"
+              ]
+            }
+          ]
         },
         {
           "id": "google-vertex",
@@ -68,7 +89,8 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "groq",
@@ -76,7 +98,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.groq.com"
+              ]
+            }
+          ]
         },
         {
           "id": "mistral",
@@ -84,7 +113,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.mistral.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "openrouter",
@@ -92,7 +128,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "openrouter.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "xai",
@@ -100,7 +143,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.x.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "github-copilot",
@@ -108,7 +158,54 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ]
+            },
+            {
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ],
+              "paths": [
+                "/agents/swe/internal/memory/**",
+                "/mcp/readonly/**",
+                "/v1/messages/**"
+              ]
+            },
+            {
+              "hosts": [
+                "*.api.github.com",
+                "api.github.com"
+              ],
+              "paths": [
+                "/copilot_internal/**",
+                "/repos/github/copilot-cli/releases/**"
+              ]
+            },
+            {
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ],
+              "paths": [
+                "/agents/**",
+                "/mcp/**"
+              ],
+              "blocked": true
+            },
+            {
+              "hosts": [
+                "*.github.com",
+                "github.com"
+              ],
+              "blocked": true
+            }
+          ]
         },
         {
           "id": "deepseek",
@@ -116,7 +213,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.deepseek.com"
+              ]
+            }
+          ]
         },
         {
           "id": "cerebras",
@@ -124,7 +228,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.cerebras.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "zai",
@@ -132,7 +243,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.z.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "kimi-coding",
@@ -140,7 +258,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.kimi.com"
+              ]
+            }
+          ]
         },
         {
           "id": "minimax",
@@ -148,7 +273,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.minimax.io"
+              ]
+            }
+          ]
         },
         {
           "id": "huggingface",
@@ -156,7 +288,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "router.huggingface.co"
+              ]
+            }
+          ]
         },
         {
           "id": "azure",
@@ -164,7 +303,8 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "amazon-bedrock",
@@ -172,7 +312,8 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "google-gemini-cli",
@@ -180,7 +321,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "cloudcode-pa.googleapis.com"
+              ]
+            }
+          ]
         },
         {
           "id": "google-antigravity",
@@ -188,7 +336,16 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "daily-cloudcode-pa.googleapis.com",
+                "daily-cloudcode-pa.sandbox.googleapis.com",
+                "cloudcode-pa.googleapis.com"
+              ]
+            }
+          ]
         },
         {
           "id": "openai-codex",
@@ -201,7 +358,14 @@
             "tokenUrl": "https://auth.openai.com/oauth/token",
             "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
           },
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "chatgpt.com"
+              ]
+            }
+          ]
         },
         {
           "id": "xai-oauth",
@@ -215,7 +379,15 @@
             "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
             "encoding": "form"
           },
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.x.ai",
+                "cli-chat-proxy.grok.com"
+              ]
+            }
+          ]
         },
         {
           "id": "alibaba",
@@ -223,7 +395,8 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "togetherai",
@@ -231,7 +404,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.together.xyz"
+              ]
+            }
+          ]
         },
         {
           "id": "fireworks-ai",
@@ -239,7 +419,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.fireworks.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "perplexity",
@@ -247,7 +434,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.perplexity.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "cohere",
@@ -255,7 +449,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "api.cohere.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "opencode",
@@ -263,7 +464,14 @@
           "types": [
             "token"
           ],
-          "multipleAccounts": true
+          "multipleAccounts": true,
+          "routes": [
+            {
+              "hosts": [
+                "opencode.ai"
+              ]
+            }
+          ]
         }
       ],
       "settings": [

@@ -43,6 +43,23 @@ type Provider struct {
 	Host             string   `json:"host,omitempty"`
 	OAuth            *OAuth   `json:"oauth,omitempty"`
 	Routes           []Route  `json:"routes,omitempty"`
+	// TypeRoutes overrides the common routes for one delivered credential type.
+	TypeRoutes map[string][]Route `json:"typeRoutes,omitempty"`
+	// ManualRoutes explains why this provider requires a person-owned secret.
+	// Capture must not turn it into an unrestricted managed secret.
+	ManualRoutes string `json:"manualRoutes,omitempty"`
+}
+
+// CredentialRoutes is authoritative registered policy for the delivered type.
+// Legacy providers may omit policy; a manual provider explicitly denies auto capture.
+func (p Provider) CredentialRoutes(credentialType string) []Route {
+	if p.ManualRoutes != "" {
+		return nil
+	}
+	if routes, ok := p.TypeRoutes[credentialType]; ok {
+		return routes
+	}
+	return p.Routes
 }
 
 type OAuth struct {
@@ -260,6 +277,25 @@ func (d Definition) Validate() error {
 			return errors.New("invalid or duplicate capture provider")
 		}
 		seen[p.ID] = true
+		if p.ManualRoutes != "" && (len(p.Routes) > 0 || len(p.TypeRoutes) > 0) {
+			return errors.New("manual endpoint policy cannot declare automatic routes")
+		}
+		for kind := range p.TypeRoutes {
+			if !slices.Contains(p.Types, kind) {
+				return errors.New("route policy names an unsupported credential type")
+			}
+		}
+		policies := [][]Route{p.Routes}
+		for _, routes := range p.TypeRoutes {
+			policies = append(policies, routes)
+		}
+		for _, routes := range policies {
+			for _, route := range routes {
+				if _, err := secretroute.Normalize(secretroute.Route(route)); err != nil {
+					return errors.New("invalid capture provider route")
+				}
+			}
+		}
 		if len(p.Types) == 0 {
 			return errors.New("capture provider has no credential types")
 		}

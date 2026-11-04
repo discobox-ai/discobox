@@ -1256,3 +1256,15 @@ test("Claude initialization preserves a local login and preferences across resta
   assert.equal(fs.readFileSync(path.join(f.home,".claude.json"),"utf8"),"{broken");
  }finally{f.close();}
 });
+
+test("account-specific provider is protected and asks for explicit endpoint policy", () => {
+  const f = fixture("pi");
+  try {
+    f.write(".pi/agent/auth.json", {azure: {type: "api_key", key: "private-azure-value"}});
+    const out = f.run();
+    assert.equal(out.credentials.length, 0);
+    assert(out.protectedPaths.includes(".pi/agent/auth.json"));
+    assert(out.diagnostics.some(d => d.code === "endpoint-policy"));
+    assert(!JSON.stringify(out).includes("private-azure-value"));
+  } finally {f.close();}
+});
