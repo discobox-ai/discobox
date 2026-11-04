@@ -911,14 +911,25 @@ func TestThePagesOpenRightOfTheTreeAndNameTheirKeysWhereTheyWork(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
-		for _, label := range []string{"+ new discobox", "harnesses", "secrets", "skills"} {
+		for _, label := range []string{"+ new discobox", "harnesses", "secrets"} {
 			if key := treeKeyOf(t, m, label); key != "" {
 				t.Fatalf("with the panes focused %q names %q, want no key", label, key)
 			}
 		}
 
+		// Skills are managed through admin skills; neither the tree nor help
+		// offers a page, and its former key leaves the list in place.
+		for _, text := range []string{plainWindow(m), m.helpText()} {
+			if strings.Contains(text, "F5") || strings.Contains(text, "skills") {
+				t.Fatalf("console still offers skills:\n%s", text)
+			}
+		}
 		d.leader("h")
-		for label, want := range map[string]string{"+ new discobox": "n", "harnesses": "F3", "secrets": "F4", "skills": "F5"} {
+		d.key("f5")
+		if m.pageOpen() || !m.listHasKeys() {
+			t.Fatal("F5 should leave the list focused without opening a page")
+		}
+		for label, want := range map[string]string{"+ new discobox": "n", "harnesses": "F3", "secrets": "F4"} {
 			if key := treeKeyOf(t, m, label); key != want {
 				t.Fatalf("with the list focused %q names %q, want %q", label, key, want)
 			}
@@ -939,7 +950,7 @@ func TestThePagesOpenRightOfTheTreeAndNameTheirKeysWhereTheyWork(t *testing.T) {
 		if strings.Contains(window, "sbx_one  main@") {
 			t.Fatalf("the page has no workspace header over it:\n%s", window)
 		}
-		for label, want := range map[string]string{"+ new discobox": "", "harnesses": "F3", "secrets": "F4", "skills": "F5"} {
+		for label, want := range map[string]string{"+ new discobox": "", "harnesses": "F3", "secrets": "F4"} {
 			if key := treeKeyOf(t, m, label); key != want {
 				t.Fatalf("with a page up %q names %q, want %q", label, key, want)
 			}
@@ -959,7 +970,7 @@ func TestThePagesOpenRightOfTheTreeAndNameTheirKeysWhereTheyWork(t *testing.T) {
 
 // The tree's entries open behind the leader from a pane, from a page beside
 // the tree, and from the audit screen, not only from the list: n the new card,
-// F3 to F5 the pages. Nothing reaches the program.
+// F3 and F4 the pages. Nothing reaches the program.
 func TestTheLeaderOpensTheTreesEntriesFromAnywhereBesideIt(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -978,10 +989,6 @@ func TestTheLeaderOpensTheTreesEntriesFromAnywhereBesideIt(t *testing.T) {
 		if !m.inPanes() || m.focus != focusPane {
 			t.Fatalf("inPanes %v, focus %v; want the workspace back", m.inPanes(), m.focus)
 		}
-
-		d.leader(skillsKey)
-		d.wait("the skills", func() bool { return m.skillsOpen })
-		m.showLive()
 
 		d.leader("n")
 		if !m.newOpen || m.focus != focusPrompt {

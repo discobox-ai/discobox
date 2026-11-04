@@ -66,8 +66,6 @@ func (m *Model) filterDialog() *dialog {
 		title = "Show harnesses on"
 	case m.secretsOpen:
 		title = "Show secrets on"
-	case m.skillsOpen:
-		title = "Show skills on"
 	}
 	return &dialog{kind: dlgFilter, title: title, filter: p}
 }
@@ -448,8 +446,6 @@ func (m *Model) applyFilter(server string, f folder, tags []string) tea.Cmd {
 		return tea.Batch(reload, status("harnesses on %s · new discoboxes go there", server))
 	case m.secretsOpen:
 		return tea.Batch(reload, status("secrets on %s · new discoboxes go there", server))
-	case m.skillsOpen:
-		return tea.Batch(reload, status("skills on %s · new discoboxes go there", server))
 	case server == "":
 		return tea.Batch(reload, status("showing %s · new discoboxes go to %s", m.filterLabel(), m.primaryServer()))
 	}

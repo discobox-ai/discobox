@@ -23,8 +23,8 @@ import (
 // instant. Only the live one is drawn, and only the live one polls; a parked
 // workspace picks its poll back up when it is shown again.
 //
-// Under the list are the window's own pages — the harnesses, the secrets, the
-// skills — drawn right of the tree in place of the workspace, and the new
+// Under the list are the window's own pages — the harnesses and the secrets —
+// drawn right of the tree in place of the workspace, and the new
 // discobox card. Beside the tree there is nothing to detach to: a box is left
 // by switching to another, and the window by quitting (detaches).
 
@@ -75,19 +75,19 @@ func (m *Model) treeAvailable() bool {
 }
 
 // The window right of the tree shows one page: a discobox's workspace, or
-// one of the window's own — the harnesses, the secrets, the skills — or the
+// one of the window's own — the harnesses, the secrets — or the
 // new discobox card standing in place of either. The workspace under a page
 // stays live, just not drawn, and is back the moment the page is put away.
 
 // pageOpen reports whether one of the window's own pages, or the new
 // discobox card, is open.
 func (m *Model) pageOpen() bool {
-	return m.harnessesOpen || m.secretsOpen || m.skillsOpen || m.newOpen
+	return m.harnessesOpen || m.secretsOpen || m.newOpen
 }
 
 // closePages puts every page away.
 func (m *Model) closePages() {
-	m.harnessesOpen, m.secretsOpen, m.skillsOpen, m.optionsOpen = false, false, false, false
+	m.harnessesOpen, m.secretsOpen, m.optionsOpen = false, false, false
 	m.closeNew()
 }
 
@@ -130,10 +130,6 @@ func (m *Model) openPage(a treeAction) tea.Cmd {
 		m.closeNew()
 		m.focus = focusPane
 		return m.openSecrets()
-	case treeSkills:
-		m.closeNew()
-		m.focus = focusPane
-		return m.openSkills()
 	}
 	return nil
 }
@@ -147,7 +143,6 @@ var treePages = []struct {
 	{treeNew, "+ new discobox", "n"},
 	{treeHarnesses, "  harnesses", harnessesKey},
 	{treeSecrets, "  secrets", secretsKey},
-	{treeSkills, "  skills", skillsKey},
 }
 
 // treePageMsg is a tree entry's key behind the leader in a pane, so the
@@ -194,8 +189,6 @@ func (m *Model) pageShowing() (treeAction, bool) {
 		return treeHarnesses, true
 	case m.secretsOpen:
 		return treeSecrets, true
-	case m.skillsOpen:
-		return treeSkills, true
 	}
 	return 0, false
 }
@@ -211,7 +204,6 @@ const (
 	treeNew
 	treeHarnesses
 	treeSecrets
-	treeSkills
 )
 
 // treeAct does what a tree control was pressed for.
@@ -234,7 +226,7 @@ func (m *Model) treeAct(a treeAction) tea.Cmd {
 		m.backToPanes()
 	case treeFocus:
 		m.focusTree()
-	case treeNew, treeHarnesses, treeSecrets, treeSkills:
+	case treeNew, treeHarnesses, treeSecrets:
 		return m.openPage(a)
 	}
 	return nil

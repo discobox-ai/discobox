@@ -28,7 +28,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/wsl` | The questions only Windows can answer when the CLI runs in a WSL distribution: whether it does, `wslpath` either way, where a Windows program is (PATH, or its fixed Windows path when the distribution does not inherit PATH), and a Windows environment variable through `cmd.exe`. Every package that crosses into Windows from WSL asks through it. |
 | `internal/termguard` | Putting the terminal back when the console dies holding it, and saying why: a second process (`discobox admin console-guard`) on a lifeline pipe, plus the runtime's crash output sent to a temporary file it names. See below. |
 | `internal/github` | Reading a GitHub issue or pull request as its page shows it — the issue, its sub-issues, its whole timeline, and for a pull request (an issue to this API, so the same read) its branches, reviewers, review threads and checks (`pull.go`) — commenting on one, closing or reopening it, and merging a pull request (by one of the ways its repository allows, naming the head commit that was read), over the REST API as the person at this machine (`GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`; anonymous with none). A re-read of an issue nothing has happened to is one request — its `updated_at`, trusted for ten minutes with a token, since a reaction does not move it — and with no token an issue is read at most every five minutes (`AnonymousRefresh`): GitHub allows 60 anonymous requests an hour. An open pull request's checks are the exception: a check finishing moves no `updated_at`, so with a token they are read again on every re-read that is otherwise answered from the last one, and so is whether it can merge (`mergeable_state`), which moves with the base branch. With no token neither is: the re-read stays one request, and GitHub answers "unknown" to a reader it does not know, so a full read does not wait for that answer either. The checks are also not the pull request — a token that may not read them leaves the page without them, a failed read of them leaves the ones known, and a list that is not whole says so (`ChecksPartial`). A read the person asked for (`full`) is always a full one. The console's issue tab is its one user; the data source (`tui_issue.go`) turns its answers into the console's own types, making every string safe to draw on the way, since anyone who can comment on an issue writes them: names, paths, branches and diffs with `terminalSafe`, and what is written to be read (titles, bodies, commit messages) with `pageSafe`, which drops a page's invisible break hints and keeps the joiners an emoji sequence is made with. A pull request's files changed are not read from GitHub at all: they are discobox-review run in the discobox (`PullReview`, in `tui_terminal.go`), between the two commits the tab read. |
-| `internal/clientconfig` | `client.yaml`, this client's own configuration file: its settings, loading, the in-place edit of `run.skills` that `discobox admin skills` and the console's skills screen make (ADR 26-10-14-894 §3), and the generated reference and schema (ADR 26-10-09-389). See [Client Configuration](#client-configuration-adr-26-10-09-389). |
+| `internal/clientconfig` | `client.yaml`, this client's own configuration file: its settings, loading, the in-place edit of `run.skills` that `discobox admin skills` makes (ADR 26-10-14-894 §3), and the generated reference and schema (ADR 26-10-09-389). See [Client Configuration](#client-configuration-adr-26-10-09-389). |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the bytes a raw stream matches it as. Owned here because the console's panes and a plain attach must reserve the same key. |
 
 ## UI Dependency Direction
@@ -384,9 +384,8 @@ path the variable names: that location is the user's own.
   source, not a path, and is kept as the URL it stands for; one whose
   `//PATH` or `@REF` is refused is kept as written, so the create refuses it
   naming it and `skills rm` can still read the file (ADR 26-10-15-664).
-- **`run.skills` is written by `discobox admin skills add` and `rm`, and the
-  console's skills screen** (`clientconfig.AddSkill`, `RemoveSkill`). The edit
-  goes through the file's YAML node tree, so its comments and other settings
+- **`run.skills` is written by `discobox admin skills add` and `rm`**
+  (`clientconfig.AddSkill`, `RemoveSkill`). The edit goes through the file's YAML node tree, so its comments and other settings
   stay; a missing file is created; a file that does not parse is refused rather
   than written over; and what is written is decoded as `Load` decodes it before
   it replaces the file, through a rename. A directory is written absolute,
@@ -436,9 +435,6 @@ Both compare entries by key (`clientconfig.SkillKey`, `SkillsRepository.Key`),
 so any spelling of a repository names it. `run.skills` is read the same way:
 a shorthand entry is resolved against the file's directory and kept as the URL
 it stands for, so a create reads it alike from anywhere.
-The console's skills screen (`F5`) does the same through `apiDataSource.Skills`,
-`AddSkills` and `RemoveSkills` (`tui_skills.go`), except that a row already
-says which list it is in, so `RemoveSkills` takes it out of that one.
 
 ## Uninstall (`discobox admin uninstall`)
 

@@ -279,7 +279,7 @@ func newOptions(session Session) *optionSet {
 			// (ADR 26-10-14-894 §2).
 			label: "Project skills", kind: optChoice,
 			choices: []string{"on", "off"},
-			hint:    "--no-project-skills · the project's skills repositories (" + SkillsKeyName + "), added ahead of any --skills",
+			hint:    "--no-project-skills · the project's skills repositories, added ahead of any --skills",
 		},
 		optUserSkills: {
 			// Left alone it is client.yaml's run.userSkills, which is what

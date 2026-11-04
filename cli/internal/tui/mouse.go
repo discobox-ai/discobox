@@ -296,9 +296,6 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 	case hitSecretRow:
 		return m.pressSecretRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
-	case hitSkillsRow:
-		return m.pressSkillsRow(what.idx, clicks), false
-
 	case hitRequestRow:
 		return m.pressRequestRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
@@ -738,8 +735,6 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 		m.harnesses.move(-lines)
 	case hitSecretRow:
 		m.secrets.move(-lines)
-	case hitSkillsRow:
-		m.skills.move(-lines)
 	case hitRequestRow:
 		m.requestRows.move(-lines)
 	case hitAuditRow:
