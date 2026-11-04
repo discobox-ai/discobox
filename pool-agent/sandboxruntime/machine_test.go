@@ -62,7 +62,7 @@ func newMachineFixture(t *testing.T) *machineFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agents := &fakeMachineAgents{t: t, servers: map[string]*fakeMachineAgent{}}
+	agents := &fakeMachineAgents{servers: map[string]*fakeMachineAgent{}}
 	driver := &agentDriver{Driver: vmtest.FakeDriver(t, dir, machineTestProject, machine.StaticKey(key)), agents: agents}
 	e, err := engine.Open(driver, machineTestProject)
 	if err != nil {
@@ -159,7 +159,7 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	if err := json.Unmarshal([]byte(readMachineFile(t, guest, "/etc/discobox/sandbox.json")), &bootstrap); err != nil {
 		t.Fatal(err)
 	}
-	service, err := f.owner.Service(ctx, inst)
+	service, err := f.driver.Service(ctx, inst)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -760,6 +760,21 @@ type agentDriver struct {
 	upgrades        int
 }
 
+// Service owns a bound endpoint for the fixture's lifetime. disco-vm's fake
+// driver saves a port number after closing its reservation; using that number
+// later would race every other loopback listener on the host.
+func (d *agentDriver) Service(ctx context.Context, inst machine.Instance) (machine.Service, error) {
+	_, serviceErr := d.Driver.Service(ctx, inst)
+	if serviceErr != nil && !errors.Is(serviceErr, machine.ErrNotRunning) {
+		return machine.Service{}, serviceErr
+	}
+	service, err := d.agents.service(ctx, inst.Name)
+	if err != nil {
+		return machine.Service{}, err
+	}
+	return service, serviceErr
+}
+
 func (d *agentDriver) Capabilities() machine.Capabilities {
 	caps := d.Driver.Capabilities()
 	if d.noVolumes {
@@ -868,14 +883,15 @@ func (p *applyProcess) Wait(_, stderr io.Writer) (int, error) {
 			return 1, err
 		}
 	}
-	p.machine.driver.agents.start(p.machine.inst.Name, cfg)
+	if err := p.machine.driver.agents.start(p.machine.inst.Name, cfg); err != nil {
+		return 1, err
+	}
 	return 0, nil
 }
 
 // fakeMachineAgents are the sandbox agents of a test's machines, by machine
 // name.
 type fakeMachineAgents struct {
-	t       *testing.T
 	poolKey ed25519.PublicKey
 	mu      sync.Mutex
 	// snapshotFails makes the snapshot command fail, saying why on stderr;
@@ -883,30 +899,76 @@ type fakeMachineAgents struct {
 	// snapshot.
 	snapshotFails, sealedBroken bool
 	servers                     map[string]*fakeMachineAgent
+	endpoints                   map[string]*fakeMachineEndpoint
 	// last is each sandbox's agent that ran last, kept after its machine
 	// stops, so a test reads what it was told.
 	last map[string]*fakeMachineAgent
 }
 
-func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config) {
+// A stopped agent answers 503, but its listener stays owned so the bootstrap's
+// address is stable across boots. Only closeAll releases the endpoints.
+type fakeMachineEndpoint struct {
+	listener net.Listener
+	server   *http.Server
+	done     chan struct{}
+	err      error // written before done closes
+}
+
+func (a *fakeMachineAgents) service(ctx context.Context, name string) (machine.Service, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if old := a.servers[name]; old != nil {
-		old.close()
+	if a.endpoints == nil {
+		a.endpoints = map[string]*fakeMachineEndpoint{}
 	}
-	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", cfg.AgentRuntime.ListenAddress)
-	if err != nil {
-		a.t.Errorf("fake agent of %s listens on %s: %v", name, cfg.AgentRuntime.ListenAddress, err)
-		return
+	ep := a.endpoints[name]
+	if ep == nil {
+		listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
+		if err != nil {
+			return machine.Service{}, err
+		}
+		ep = &fakeMachineEndpoint{listener: listener, done: make(chan struct{})}
+		ep.server = &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a.mu.Lock()
+			agent := a.servers[name]
+			a.mu.Unlock()
+			if agent == nil {
+				http.Error(w, "fake agent is stopped", http.StatusServiceUnavailable)
+				return
+			}
+			agent.ServeHTTP(w, r)
+		})}
+		a.endpoints[name] = ep
+		go func() {
+			ep.err = ep.server.Serve(listener)
+			close(ep.done)
+		}()
+	}
+	address := ep.listener.Addr().String()
+	return machine.Service{Listen: "tcp:" + address, URL: "http://" + address, PrivateURL: "http://" + address}, nil
+}
+
+func (a *fakeMachineAgents) start(name string, cfg sandboxconfig.Config) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	ep := a.endpoints[name]
+	if ep == nil || ep.listener.Addr().String() != cfg.AgentRuntime.ListenAddress {
+		return fmt.Errorf("fake agent of %s has no reserved listener on %s", name, cfg.AgentRuntime.ListenAddress)
+	}
+	select {
+	case <-ep.done:
+		return fmt.Errorf("fake agent of %s cannot start: %w", name, ep.err)
+	default:
 	}
 	agent := &fakeMachineAgent{sandboxID: cfg.SandboxID, poolKey: a.poolKey}
-	agent.server = &http.Server{Handler: agent, ReadHeaderTimeout: 10 * time.Second}
-	go func() { _ = agent.server.Serve(listener) }()
+	if a.servers == nil {
+		a.servers = map[string]*fakeMachineAgent{}
+	}
 	a.servers[name] = agent
 	if a.last == nil {
 		a.last = map[string]*fakeMachineAgent{}
 	}
 	a.last[cfg.SandboxID] = agent
+	return nil
 }
 
 // snapshotScript stands in for the agent's snapshot command in a fake guest:
@@ -933,10 +995,7 @@ func (a *fakeMachineAgents) sealedNeverAnswers() bool {
 func (a *fakeMachineAgents) stop(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if agent := a.servers[name]; agent != nil {
-		agent.close()
-		delete(a.servers, name)
-	}
+	delete(a.servers, name)
 }
 
 func (a *fakeMachineAgents) get(t *testing.T, sandboxID string) *fakeMachineAgent {
@@ -953,8 +1012,11 @@ func (a *fakeMachineAgents) get(t *testing.T, sandboxID string) *fakeMachineAgen
 func (a *fakeMachineAgents) closeAll() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	for _, agent := range a.servers {
-		agent.close()
+	clear(a.servers)
+	for _, ep := range a.endpoints {
+		_ = ep.listener.Close()
+		_ = ep.server.Close()
+		<-ep.done
 	}
 }
 
@@ -963,14 +1025,11 @@ func (a *fakeMachineAgents) closeAll() {
 type fakeMachineAgent struct {
 	sandboxID string
 	poolKey   ed25519.PublicKey
-	server    *http.Server
 
 	mu        sync.Mutex
 	delivered []int64
 	clears    int
 }
-
-func (a *fakeMachineAgent) close() { _ = a.server.Close() }
 
 func (a *fakeMachineAgent) revisions() []int64 {
 	a.mu.Lock()
