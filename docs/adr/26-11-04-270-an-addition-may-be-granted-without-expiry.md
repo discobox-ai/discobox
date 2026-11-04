@@ -1,7 +1,9 @@
 # 26-11-04-270 — An addition may be granted without expiry
 
-- **Status**: Proposed (amends 26-11-03-329 §1's mandatory expiry and §2's descriptions of additions as expiring bindings, and extends §5's lifetime preview to no expiry)
+- **Status**: Accepted (amends 26-11-03-329 §1's mandatory expiry and §2's descriptions of additions as expiring bindings, and extends §5's lifetime preview to no expiry)
 - **Date**: 2026-11-04
+
+  Accepted by the owner by merging #649, 2026-11-04.
 - **Issue**: [#630](https://github.com/discobox-ai/discobox/issues/630)
 - **Amends**: [26-11-03-329](26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md) §1: an addition need not have an expiry; §2: an addition without a plain binding may be permanent, and a shadowed addition may apply again without an expiry deadline; §5: the addition preview includes a grant without expiry.
 - **Leaves standing**: 329's other binding-shape requirements, resolution and per-grant enforcement (§§1–3), addition/replacement choice and replacement clearing additions (§4), and grant listing (§6); [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §3's parent delegation bounds and §4's route enforcement; [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §4's separate decisions for each requested part. Omitted-lifetime defaults remain as implemented today.
