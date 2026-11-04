@@ -83,7 +83,7 @@ func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 		PoolID:          "pool-1",
 		Runtime:         poolagent.RuntimeMachine,
 		Driver:          "boxd",
-		MachineProject:  "pool-1",
+		MachinePool:     "pool-1",
 		PublicURL:       "https://pool-1.boxd.sh",
 		PrivateURL:      "http://pool-1.boxd:7302",
 	})
@@ -98,7 +98,7 @@ func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 	if bootstrap.ControlPlaneURL != "https://control.example" || bootstrap.PoolID != "pool-1" {
 		t.Fatalf("bootstrap = %+v, want the file's control plane and pool", bootstrap)
 	}
-	if bootstrap.Runtime != poolagent.RuntimeMachine || bootstrap.Driver != "boxd" {
+	if bootstrap.Runtime != poolagent.RuntimeMachine || bootstrap.Driver != "boxd" || bootstrap.MachinePool != "pool-1" {
 		t.Fatalf("runtime = %q driver = %q, want the file's machine runtime on boxd", bootstrap.Runtime, bootstrap.Driver)
 	}
 	if bootstrap.AgentListenURL != "http://0.0.0.0:3002" {
@@ -142,7 +142,7 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		name    string
 		runtime poolagent.Runtime
 		driver  string
-		project string
+		pool    string
 		public  string
 		private string
 		wantErr string
@@ -150,22 +150,22 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		{name: "none is docker", runtime: ""},
 		{name: "docker", runtime: poolagent.RuntimeDocker},
 		{name: "docker with a driver", runtime: poolagent.RuntimeDocker, driver: "boxd", wantErr: "driver"},
-		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302"},
-		{name: "machine behind an edge alone", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh", private: "https://pool-1.boxd.sh"},
-		{name: "machine without a private URL", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh", wantErr: "private URL"},
-		{name: "machine without a public URL", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
-		{name: "machine with a URL that is not http", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh", private: "tcp://pool-1.boxd:7302", wantErr: "private URL"},
-		{name: "machine with a URL that names a path", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh/agent", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
-		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, project: "pool-1", wantErr: "needs a driver"},
-		{name: "machine without a project", runtime: poolagent.RuntimeMachine, driver: "boxd", wantErr: "machine project"},
-		{name: "machine in a project disco-vm refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool_1", wantErr: "machine project"},
-		{name: "docker with a machine project", runtime: poolagent.RuntimeDocker, project: "pool-1", wantErr: "machine project"},
+		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302"},
+		{name: "machine behind an edge alone", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "https://pool-1.boxd.sh"},
+		{name: "machine without a private URL", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", wantErr: "private URL"},
+		{name: "machine without a public URL", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
+		{name: "machine with a URL that is not http", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh", private: "tcp://pool-1.boxd:7302", wantErr: "private URL"},
+		{name: "machine with a URL that names a path", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool-1", public: "https://pool-1.boxd.sh/agent", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
+		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, pool: "pool-1", wantErr: "needs a driver"},
+		{name: "machine without a pool", runtime: poolagent.RuntimeMachine, driver: "boxd", wantErr: "machine pool"},
+		{name: "machine in a pool disco-vm refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", pool: "pool_1", wantErr: "machine pool"},
+		{name: "docker with a machine pool", runtime: poolagent.RuntimeDocker, pool: "pool-1", wantErr: "machine pool"},
 		{name: "docker with a URL", runtime: poolagent.RuntimeDocker, private: "http://pool-1.boxd:7302", wantErr: "URLs"},
 		{name: "unknown", runtime: "podman", wantErr: "unknown pool runtime"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bootstrap := base
-			bootstrap.Runtime, bootstrap.Driver, bootstrap.MachineProject = tc.runtime, tc.driver, tc.project
+			bootstrap.Runtime, bootstrap.Driver, bootstrap.MachinePool = tc.runtime, tc.driver, tc.pool
 			bootstrap.PublicURL, bootstrap.PrivateURL = tc.public, tc.private
 			err := bootstrap.Validate()
 			if tc.wantErr == "" {
@@ -716,5 +716,16 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Serve() did not return once its context ended")
+	}
+}
+
+func TestLoadRefusesTheOldMachineProjectField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bootstrap.json")
+	if err := os.WriteFile(path, []byte(`{"controlPlaneUrl":"http://control.example","poolId":"pool-1","runtime":"machine","driver":"boxd","machineProject":"pool-1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(poolagent.EnvBootstrapFile, path)
+	if _, err := poolagent.Load(); err == nil || !strings.Contains(err.Error(), "machineProject") {
+		t.Fatalf("load old bootstrap = %v, want old field refused", err)
 	}
 }

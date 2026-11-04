@@ -51,7 +51,7 @@ func snapshotMachineName(key string) string { return snapshotMachinePrefix + key
 
 // isSnapshotMachineName reports whether name is one snapshotMachineName
 // makes: the prefix and 24 lower-case hex digits, and nothing else. A
-// pool's project is a naming convention, not a fence (ADR 26-10-23-551 §4),
+// pool's disco-vm pool is a naming convention, not a fence (ADR 26-10-23-551 §4),
 // so a machine of any other name, however it begins, is not the sweep's.
 func isSnapshotMachineName(name string) bool {
 	hex, ok := strings.CutPrefix(name, snapshotMachinePrefix)
@@ -302,7 +302,7 @@ func (r *MachineSandboxRuntime) dropSnapshot(ctx context.Context, key string) er
 }
 
 // sweepSnapshots removes what no snapshot is (ADR 26-11-03-986 §5): every
-// snap- VM of the pool's project that no done record names and no build under
+// snap- VM of the pool's disco-vm pool that no done record names and no build under
 // way holds, then what the pool laid for a build no longer under way, and
 // the record of a snapshot whose VM is gone. It reclaims a snapshot no
 // create has used for snapshotRetention, record first.

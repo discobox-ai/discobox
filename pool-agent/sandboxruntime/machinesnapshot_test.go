@@ -405,7 +405,7 @@ func TestABuildLeavesASnapshotACreateHolds(t *testing.T) {
 }
 
 // sweepMachineSnapshots runs one snapshot sweep at now, on the machines the
-// pool's project has, as the volume watcher does.
+// pool's disco-vm pool has, as the volume watcher does.
 func sweepMachineSnapshots(t *testing.T, r *MachineSandboxRuntime, now time.Time) {
 	t.Helper()
 	r.sweepSnapshots(context.Background(), slog.Default(), now)

@@ -22,8 +22,8 @@ import (
 // driver appends the shim's own arguments.
 const shimSubcommand = "__vm-shim"
 
-func shimCommand(exe, dir, driver, project string) []string {
-	return []string{exe, shimSubcommand, "--dir", dir, "--driver", driver, "--project", project}
+func shimCommand(exe, dir, driver, scope string) []string {
+	return []string{exe, shimSubcommand, "--dir", dir, "--driver", driver, "--pool", scope}
 }
 
 // RunShimIfInvoked runs this process as a disco-vm shim and exits, or returns
@@ -44,14 +44,14 @@ func RunShimIfInvoked() {
 }
 
 // runShim makes the driver the server made, from the same configuration
-// (driverConfig) on the same directory, driver and project, and runs the shim
+// (driverConfig) on the same directory, driver and scope, and runs the shim
 // it asked for. Canceling ctx shuts its guest down in order.
 func runShim(ctx context.Context, args []string) error {
-	if len(args) < 6 || args[0] != "--dir" || args[2] != "--driver" || args[4] != "--project" {
-		return errors.New("usage: --dir <state dir> --driver <driver> --project <project> <shim arguments>")
+	if len(args) < 6 || args[0] != "--dir" || args[2] != "--driver" || args[4] != "--pool" {
+		return errors.New("usage: --dir <state dir> --driver <driver> --pool <pool> <shim arguments>")
 	}
-	dir, name, project := args[1], args[3], args[5]
-	cfg, err := driverConfig(name, project, dir, nil)
+	dir, name, scope := args[1], args[3], args[5]
+	cfg, err := driverConfig(name, scope, dir, nil)
 	if err != nil {
 		return err
 	}

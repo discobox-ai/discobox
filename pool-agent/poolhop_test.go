@@ -15,7 +15,7 @@ func machineBootstrap(public, private string) Bootstrap {
 		PoolID:          "pool-1",
 		Runtime:         RuntimeMachine,
 		Driver:          "boxd",
-		MachineProject:  "pool-1",
+		MachinePool:     "pool-1",
 		PublicURL:       public,
 		PrivateURL:      private,
 	}

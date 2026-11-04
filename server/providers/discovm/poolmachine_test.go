@@ -397,9 +397,9 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
-	const project = "pool-0123456789abcdef"
-	if len(driver.created) != 1 || driver.created[0].Name != project || driver.created[0].Isolated || !slices.Equal(driver.created[0].Networks, []string{project}) {
-		t.Fatalf("created %+v, want one machine named %s, not isolated, on network %s alone", driver.created, project, project)
+	const scope = "pool-0123456789abcdef"
+	if len(driver.created) != 1 || driver.created[0].Name != scope || driver.created[0].Isolated || !slices.Equal(driver.created[0].Networks, []string{scope}) {
+		t.Fatalf("created %+v, want one machine named %s, not isolated, on network %s alone", driver.created, scope, scope)
 	}
 	if len(maker.enrolled) != 1 || maker.enrolled[0] != testPoolKey {
 		t.Fatalf("enrolled %q, want the key the box made", maker.enrolled)
@@ -408,10 +408,10 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		t.Fatalf("applied %d times, want once", driver.applies())
 	}
 	bootstrap := driver.applied[0]
-	if bootstrap.Runtime != poolagent.RuntimeMachine || bootstrap.Driver != "fake" || bootstrap.MachineProject != project || bootstrap.MachineNetwork != project ||
+	if bootstrap.Runtime != poolagent.RuntimeMachine || bootstrap.Driver != "fake" || bootstrap.MachinePool != scope || bootstrap.MachineNetwork != scope ||
 		bootstrap.ControlPlaneURL != testControlPlaneURL || bootstrap.PoolID != pool.ID || bootstrap.ProjectID != "project-1" || bootstrap.ControlPlaneKey != "control-plane-key" ||
 		!strings.HasPrefix(bootstrap.AgentListenURL, "http://") {
-		t.Fatalf("bootstrap = %+v, want the machine runtime on the pool's project and network, listening where the service does", bootstrap)
+		t.Fatalf("bootstrap = %+v, want the machine runtime on the pool's scope and network, listening where the service does", bootstrap)
 	}
 	// Both of the machine's URLs, as its driver gives them: the fake
 	// driver's machines share a loopback, so its private URL is its public
@@ -420,12 +420,12 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		t.Fatalf("bootstrap URLs = public %q private %q, want the fake machine's loopback URL as both", bootstrap.PublicURL, bootstrap.PrivateURL)
 	}
 	key := driver.lastKey(t)
-	if !key.Issued || key.Driver != "fake" || key.Secret == "" || !strings.HasPrefix(key.Name, project+"-") {
+	if !key.Issued || key.Driver != "fake" || key.Secret == "" || !strings.HasPrefix(key.Name, scope+"-") {
 		t.Fatalf("provisioning key = %v issued %v, want one the driver issued for the pool", key, key.Issued)
 	}
 	record := recordOf(t, pool)
-	if record.Project != project || record.Box.Agent == "" || record.Key == nil || record.Key.ID != key.ID || !record.Key.Issued {
-		t.Fatalf("record = %+v, want the project, the box and the key placed", record)
+	if record.MachinePool != scope || record.Box.Agent == "" || record.Key == nil || record.Key.ID != key.ID || !record.Key.Issued {
+		t.Fatalf("record = %+v, want the scope, the box and the key placed", record)
 	}
 	if strings.Contains(string(pool.RuntimeState), key.Secret) {
 		t.Fatal("the pool's record holds the key's secret")
@@ -601,11 +601,11 @@ func TestFakePoolMachineReplacedOffThePoolsNetworkIsRefused(t *testing.T) {
 	if err := r.engine.Remove(ctx, inst, true); err != nil {
 		t.Fatal(err)
 	}
-	project, err := poolProject(pool.ID)
+	scope, err := machinePool(pool.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.engine.Create(ctx, engine.CreateOptions{Name: project, Networks: []string{"someone-else"}}); err != nil {
+	if _, err := r.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{"someone-else"}}); err != nil {
 		t.Fatal(err)
 	}
 	keys := issuedKeys(t, r, pool)

@@ -42,12 +42,12 @@ func TestMachineNewRootOnDocker(t *testing.T) {
 		t.Setenv(docker.RootEnv, root)
 	}
 	ctx := context.Background()
-	project := "sbxrt-new-root"
-	driver := docker.New(machine.Config{Project: project, Base: image})
+	pool := "sbxrt-new-root"
+	driver := docker.New(machine.Config{Pool: pool, Base: image})
 	if err := driver.Check(ctx); err != nil {
 		t.Skipf("the docker driver cannot run here: %v", err)
 	}
-	e, err := engine.Open(driver, project)
+	e, err := engine.Open(driver, pool)
 	if err != nil {
 		t.Fatal(err)
 	}

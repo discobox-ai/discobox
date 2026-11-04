@@ -3,7 +3,7 @@
 - Nothing is placed on a remote driver's pool machine — the agent, the
   bootstrap, the provisioning key — that was not created on the pool's own
   network, off the account's default one (ADR 26-10-23-551 §4). A machine is
-  adopted by its name in the provider's project alone, and machines an older
+  adopted by its name in the provider's scope alone, and machines an older
   provider made (named otherwise, on no network of the pool's) are never
   adopted. Why: an unfenced boxd machine is reachable, exec and copy
   included, by the org's other machines.

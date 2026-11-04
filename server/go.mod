@@ -16,7 +16,7 @@ require (
 	github.com/discobox-ai/discobox v0.0.0
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
 	github.com/discobox-ai/envelope v0.0.0-20261102232903-985c222e7477
-	github.com/discobox-ai/vm v0.0.0-20261103201738-d267f6c63381
+	github.com/discobox-ai/vm v0.0.0-20261104181020-8e472d3ef694
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/distribution/reference v0.6.0
 	github.com/ebitengine/purego v0.11.1
@@ -464,3 +464,6 @@ replace github.com/Code-Hex/vz/v3 => github.com/discobox-ai/vz/v3 v3.7.2-0.20260
 replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8
 
 replace github.com/charmbracelet/ultraviolet => github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4
+
+// PR dependency: use the reviewed vm#65 head until its canonical module commit is merged.
+replace github.com/discobox-ai/vm => github.com/ibuildthecloud-bot/vm v0.0.0-20261104181020-8e472d3ef694

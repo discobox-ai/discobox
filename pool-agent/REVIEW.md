@@ -438,10 +438,10 @@ changed. A step added that lays a binary needs it there too.
 
 A machine's disk is its sandbox's only copy, so nothing removes one on a single
 look. The volume reaper removes a sandbox's machine with its unheld tree, after
-the trees' retention. An orphan, a machine of the pool's project that no tree
+the trees' retention. An orphan, a machine of the pool's disco-vm scope that no tree
 and no held sandbox names, is removed only if its name is a sandbox's
 (`sbx-…`), and only once the same retention has passed since it was first seen
-so (`machine-orphans`). A pool's project is the provider's naming convention,
+so (`machine-orphans`). A pool's disco-vm scope is the provider's naming convention,
 not a fence (ADR 26-10-23-551 §4), so a machine of any other name in it is
 never this runtime's to remove — but one: a snapshot's VM, named exactly
 `snap-` and 24 hex digits (`isSnapshotMachineName`), which the snapshot sweep

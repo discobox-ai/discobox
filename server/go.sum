@@ -308,8 +308,6 @@ github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0 h1:gIxKszXdZ1v0TCwgLOGF
 github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.4.0/go.mod h1:mLpdkgTL7Jvpc14B/kT5d/pxhjtngOrfczfCt7oPaLA=
 github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4 h1:YtkB9JJlFU0mtgxCkK98Ck98u9BkD/cX9rcCzber6gk=
 github.com/discobox-ai/ultraviolet v0.0.0-20260926043624-eff2d8acf8a4/go.mod h1:f/jRa757WUmaOZrbPspXymbg/GnbF+rwe4OLsG7aXYo=
-github.com/discobox-ai/vm v0.0.0-20261103201738-d267f6c63381 h1:GD5JvdIVn94eInLEgiU0ZY5UjMgYPeQBWzuDYKJdQiw=
-github.com/discobox-ai/vm v0.0.0-20261103201738-d267f6c63381/go.mod h1:G/fM+6aQ3F42kKu73REcTT0Myzq+9itAvcb349BxTNU=
 github.com/discobox-ai/vz/v3 v3.7.2-0.20260922054351-c8cee82c6395 h1:V89HfWnhexidYsgHFgS12POHuRVGPqLD6dz/V5OrFtw=
 github.com/discobox-ai/vz/v3 v3.7.2-0.20260922054351-c8cee82c6395/go.mod h1:1LsW0jqW0r0cQ+IeR4hHbjdqOtSidNCVMWhStMHGho8=
 github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906 h1:EwLFWyk7Xr5nauNLUpQr6dmIjlBa2SVTM1WiQqwIe/A=
@@ -537,6 +535,8 @@ github.com/hashicorp/yamux v0.1.2 h1:XtB8kyFOyHXYVFnwT5C3+Bdo8gArse7j2AQ0DA0Uey8
 github.com/hashicorp/yamux v0.1.2/go.mod h1:C+zze2n6e/7wshOZep2A70/aQU6QBRWJO/G6FT1wIns=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
+github.com/ibuildthecloud-bot/vm v0.0.0-20261104181020-8e472d3ef694 h1:DDQGXOuzTf96Na9NVPK6G7FF7ORj/DlEwTYJXuMSDr0=
+github.com/ibuildthecloud-bot/vm v0.0.0-20261104181020-8e472d3ef694/go.mod h1:uiogUqSfCw89KHN9ilnuJbDJ8Wik7lNF22MBLKZdYw8=
 github.com/in-toto/in-toto-golang v0.5.0 h1:hb8bgwr0M2hGdDsLjkJ3ZqJ8JFLL/tgYdAxF/XEFBbY=
 github.com/in-toto/in-toto-golang v0.5.0/go.mod h1:/Rq0IZHLV7Ku5gielPT4wPHJfH1GdHMCq8+WPxw8/BE=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=

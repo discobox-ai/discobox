@@ -35,9 +35,9 @@ import (
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 )
 
-// machineTestProject is the disco-vm project these tests' pools make their
+// machineTestPool is the disco-vm pool these tests' pools make their
 // sandboxes' machines in.
-const machineTestProject = "pool-machine-test"
+const machineTestPool = "pool-machine-test"
 
 // machineFixture is a machine pool's runtime over disco-vm's fake driver,
 // whose engine calls with a key the driver issued, as a pool machine's does
@@ -57,14 +57,14 @@ func newMachineFixture(t *testing.T) *machineFixture {
 	t.Helper()
 	dir := t.TempDir()
 	ctx := context.Background()
-	owner := vmtest.FakeDriver(t, dir, machineTestProject, nil)
+	owner := vmtest.FakeDriver(t, dir, machineTestPool, nil)
 	key, err := owner.IssueKey(ctx, machine.IssueRequest{Name: "pool-1", TTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
 	agents := &fakeMachineAgents{servers: map[string]*fakeMachineAgent{}}
-	driver := &agentDriver{Driver: vmtest.FakeDriver(t, dir, machineTestProject, machine.StaticKey(key)), agents: agents}
-	e, err := engine.Open(driver, machineTestProject)
+	driver := &agentDriver{Driver: vmtest.FakeDriver(t, dir, machineTestPool, machine.StaticKey(key)), agents: agents}
+	e, err := engine.Open(driver, machineTestPool)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func newMachineFixture(t *testing.T) *machineFixture {
 	t.Cleanup(func() {
 		instances, _ := owner.Instances(context.Background())
 		for _, inst := range instances {
-			_ = (&engine.Engine{Driver: owner, Project: machineTestProject}).Remove(context.Background(), inst, true)
+			_ = (&engine.Engine{Driver: owner, Pool: machineTestPool}).Remove(context.Background(), inst, true)
 		}
 		agents.closeAll()
 	})
@@ -244,7 +244,7 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 func TestMachineCreateFindsALostCreatesMachineByName(t *testing.T) {
 	f := newMachineFixture(t)
 	ctx := context.Background()
-	e := &engine.Engine{Driver: f.owner, Project: machineTestProject}
+	e := &engine.Engine{Driver: f.owner, Pool: machineTestPool}
 	lost, err := e.Create(ctx, engine.CreateOptions{Name: "sbx-2"})
 	if err != nil {
 		t.Fatal(err)
@@ -504,7 +504,7 @@ func TestMachineWithoutADataVolumeIsRebuiltInPlace(t *testing.T) {
 	f := newMachineFixture(t)
 	ctx := context.Background()
 	r := f.runtime
-	e := &engine.Engine{Driver: f.owner, Project: machineTestProject}
+	e := &engine.Engine{Driver: f.owner, Pool: machineTestPool}
 	if _, err := e.Create(ctx, engine.CreateOptions{Name: "sbx-10"}); err != nil {
 		t.Fatal(err)
 	}
@@ -696,7 +696,7 @@ func TestMachineRefusesWhatItCannotDo(t *testing.T) {
 // A driver that cannot isolate a machine is refused for a pool that must
 // (ADR 26-10-23-551 §4).
 func TestMachineRuntimeRefusesADriverThatCannotIsolate(t *testing.T) {
-	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestProject, nil), machineTestProject)
+	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil), machineTestPool)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1109,7 +1109,7 @@ func TestMachineOrphansAreRemovedAfterRetention(t *testing.T) {
 	if _, err := f.runtime.CreateSandbox(ctx, machineCreate("sbx_kept")); err != nil {
 		t.Fatal(err)
 	}
-	e := &engine.Engine{Driver: f.owner, Project: machineTestProject}
+	e := &engine.Engine{Driver: f.owner, Pool: machineTestPool}
 	for _, name := range []string{"sbx-orphan", "sbx-held", "pool-own-machine"} {
 		if _, err := e.Create(ctx, engine.CreateOptions{Name: name}); err != nil {
 			t.Fatal(err)
@@ -1238,8 +1238,8 @@ func (d *fencingDriver) Instance(ctx context.Context, name string) (machine.Inst
 // §4).
 func TestMachineCreateFencesTheMachine(t *testing.T) {
 	ctx := context.Background()
-	driver := &fencingDriver{Driver: vmtest.FakeDriver(t, t.TempDir(), machineTestProject, nil), fences: map[string]*machine.Egress{}}
-	e, err := engine.Open(driver, machineTestProject)
+	driver := &fencingDriver{Driver: vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil), fences: map[string]*machine.Egress{}}
+	e, err := engine.Open(driver, machineTestPool)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1277,7 +1277,7 @@ func TestMachineCreateFencesTheMachine(t *testing.T) {
 // A runtime asked to fence its sandboxes' machines refuses a driver that
 // cannot (ADR 26-10-29-481 §4).
 func TestMachineRuntimeRefusesADriverThatCannotFence(t *testing.T) {
-	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestProject, nil), machineTestProject)
+	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestPool, nil), machineTestPool)
 	if err != nil {
 		t.Fatal(err)
 	}

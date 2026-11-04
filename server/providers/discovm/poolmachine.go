@@ -38,7 +38,7 @@ const (
 )
 
 // poolMachine hosts a pool in a disco-vm machine of its own, in the provider's
-// project, named for its pool so a create that was lost is found rather than
+// scope, named for its pool so a create that was lost is found rather than
 // duplicated. It is a remote driver's shape (ADR 26-10-09-106 §1): the machine
 // boots a driver base, and is made the pool's box as a Docker pool's container
 // is (poolruntime.ProvisionBox, ADR 26-10-24-953 §2), with its bootstrap
@@ -104,9 +104,9 @@ func journalCommand(opts sandbox.PoolLogOptions) []string {
 type poolRuntimeState struct {
 	// Instance is the machine's ID at the driver.
 	Instance string `json:"instance"`
-	// Project is the disco-vm project the pool makes its sandboxes' machines
+	// MachinePool is the disco-vm scope the pool makes its sandboxes' machines
 	// in, which is also the network the pool's machine and theirs share.
-	Project string `json:"project,omitempty"`
+	MachinePool string `json:"machinePool,omitempty"`
 	// Box is the agent, the bundles and the placement placed.
 	Box poolruntime.BoxRecord `json:"box,omitzero"`
 	// Key is the provisioning key placed, without its secret.
@@ -132,21 +132,21 @@ func decodeRuntimeState(pool *model.Pool) poolRuntimeState {
 	return state.poolRuntimeState
 }
 
-// poolProject is the pool's own disco-vm project, derived from its ID within
-// disco-vm's project rule (ADR 26-10-23-551 §3: pool_x becomes pool-x). It is
-// the project the pool agent makes its sandboxes' machines in, the network
+// machinePool is the pool's own disco-vm scope, derived from its ID within
+// disco-vm's scope rule (ADR 26-10-23-551 §3: pool_x becomes pool-x). It is
+// the scope the pool agent makes its sandboxes' machines in, the network
 // the pool's machine and theirs share, and the name of the pool's machine in
-// the provider's project, which it never equals (prov-…).
-func poolProject(poolID string) (string, error) {
-	project := strings.ReplaceAll(strings.ToLower(poolID), "_", "-")
-	if err := machine.ValidateProject(project); err != nil {
-		return "", fmt.Errorf("pool %q has no disco-vm project: %w", poolID, err)
+// the provider's scope, which it never equals (prov-…).
+func machinePool(poolID string) (string, error) {
+	scope := strings.ReplaceAll(strings.ToLower(poolID), "_", "-")
+	if err := machine.ValidatePool(scope); err != nil {
+		return "", fmt.Errorf("pool %q has no disco-vm scope: %w", poolID, err)
 	}
-	return project, nil
+	return scope, nil
 }
 
-// poolMachineName is the pool's machine in the provider's project.
-func poolMachineName(poolID string) (string, error) { return poolProject(poolID) }
+// poolMachineName is the pool's machine in the provider's scope.
+func poolMachineName(poolID string) (string, error) { return machinePool(poolID) }
 
 // errNoPoolMachine is a pool whose machine was never created, or was removed.
 var errNoPoolMachine = errors.New("the pool has no machine")
@@ -231,7 +231,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	if err := h.keys.check(); err != nil {
 		return err
 	}
-	project, err := poolProject(pool.ID)
+	scope, err := machinePool(pool.ID)
 	if err != nil {
 		return err
 	}
@@ -256,8 +256,8 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 	// own network, as create makes it, is taken: anything else is not the
 	// pool's to key (ADR 26-10-23-551 §4).
 	replaced := err == nil && record.Instance != "" && record.Instance != inst.ID
-	if replaced && (inst.Isolated || !slices.Equal(inst.Networks, []string{project})) {
-		return fmt.Errorf("pool %s: the machine %s under its name is not the one it recorded, and is not on the pool's own network %s: nothing is placed on it", pool.ID, inst.ID, project)
+	if replaced && (inst.Isolated || !slices.Equal(inst.Networks, []string{scope})) {
+		return fmt.Errorf("pool %s: the machine %s under its name is not the one it recorded, and is not on the pool's own network %s: nothing is placed on it", pool.ID, inst.ID, scope)
 	}
 	if err != nil || replaced {
 		if err := gate(ctx); err != nil {
@@ -272,13 +272,13 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 		record = poolRuntimeState{}
 		if !replaced {
-			if inst, err = h.create(ctx, pool, project); err != nil {
+			if inst, err = h.create(ctx, pool, scope); err != nil {
 				return err
 			}
 		}
 		made = true
 	}
-	record.Instance, record.Project = inst.ID, project
+	record.Instance, record.MachinePool = inst.ID, scope
 	if err := h.writeState(pool, record); err != nil {
 		return err
 	}
@@ -314,7 +314,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		return err
 	}
 	provisioned := record.Box.Agent != ""
-	placement, err := h.placement(ctx, pool, inst, guest, maker, project)
+	placement, err := h.placement(ctx, pool, inst, guest, maker, scope)
 	if err != nil {
 		if provisioned && !force {
 			slog.WarnContext(ctx, "keeping the pool's machine as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
@@ -359,8 +359,8 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 // (ADR 26-10-23-551 §4). It is not isolated: boxd peers an isolated machine
 // only with machines that are not, so the pool's machine keeps what the
 // driver gives a machine (the pool's HostCredential says so).
-func (h *poolMachine) create(ctx context.Context, pool *model.Pool, project string) (engine.Instance, error) {
-	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: project, Networks: []string{project}})
+func (h *poolMachine) create(ctx context.Context, pool *model.Pool, scope string) (engine.Instance, error) {
+	inst, err := h.engine.Create(ctx, engine.CreateOptions{Name: scope, Networks: []string{scope}})
 	if err != nil {
 		return engine.Instance{}, fmt.Errorf("create pool %s's machine from the %s driver's base: %w", pool.ID, h.engine.Driver.Name(), notReachable(err))
 	}
@@ -371,7 +371,7 @@ func (h *poolMachine) create(ctx context.Context, pool *model.Pool, project stri
 // bootstrap, naming its own engine, the network its sandboxes' machines are
 // made on, and where its agent listens; and the agent and bundles for the
 // machine's platform.
-func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, maker poolruntime.PoolMaker, project string) (poolruntime.BoxPlacement, error) {
+func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, maker poolruntime.PoolMaker, scope string) (poolruntime.BoxPlacement, error) {
 	bootstrap, err := maker.Bootstrap(ctx)
 	if err != nil {
 		return poolruntime.BoxPlacement{}, err
@@ -386,9 +386,9 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	bootstrap.AgentListenURL = listen
 	bootstrap.Runtime = poolagent.RuntimeMachine
 	bootstrap.Driver = h.engine.Driver.Name()
-	bootstrap.MachineProject = project
+	bootstrap.MachinePool = scope
 	bootstrap.MachineBase = h.base
-	bootstrap.MachineNetwork = project
+	bootstrap.MachineNetwork = scope
 	// Where the server reaches the pool's agent, and where its sandboxes'
 	// machines reach the pool, from which the agent derives their endpoints
 	// and their fence (ADR 26-10-29-481 §§1–2). A driver with no path between
