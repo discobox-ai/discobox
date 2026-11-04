@@ -42,6 +42,7 @@ type App struct {
 	quiet         bool
 	debug         bool
 	autoStart     autoStartServer
+	color         colorWhen
 	errOut        io.Writer
 
 	// serverSource is where the server binary comes from, as far as the flags
@@ -188,18 +189,25 @@ See "%[1]s run --help" for everything run takes.`, name),
 			return cmd.Help()
 		},
 	}
-	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault(serverEnv, endpoint.DefaultEndpoint()), "Discobox API server endpoint, or a registered server's name; defaults to the primary \"discobox admin remote primary\" set, and to the local server when none is")
+	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault(serverEnv, endpoint.DefaultEndpoint()), "connect to `SERVER`, an endpoint or a registered server's name; defaults to the primary \"discobox admin remote primary\" set, and to the local server when none is")
+	// Its default is said in words: the endpoint it resolves to is this
+	// machine's socket path, which is noise in help.
+	cmd.PersistentFlags().Lookup("server").DefValue = ""
 	// A client has to be told the same relays as the server it dials. An
 	// address carries a peer ID and nothing else, so a server moved off n0's
 	// public relays does not move its clients with it (ADR 0096 §6 on server
 	// configuration).
 	cmd.PersistentFlags().StringVar(&app.irohRelayURLs, "iroh-relay", envOrDefault("DISCOBOX_IROH_RELAY_URLS", ""), "Comma-separated iroh relay servers to use instead of the public ones; must match the server's")
+	// Transport knobs few people need: they keep working, and help does not
+	// offer them (ADR 26-11-04-204 §1).
+	_ = cmd.PersistentFlags().MarkHidden("iroh-relay")
 	// An iroh connection fails in layers and reports only the top one. This
 	// prints each layer as it happens — the socket, the relay, the dial, the
 	// stream — plus iroh's own tracing at the same level. `discobox admin
 	// server status` answers the same question after the fact; this one answers
 	// it for the command that is failing.
 	cmd.PersistentFlags().StringVar(&app.irohLogLevel, "iroh-log", envOrDefault(endpoint.IrohLogEnv, ""), "Log the iroh transport as it connects: off, error, warn, info, debug, or trace")
+	_ = cmd.PersistentFlags().MarkHidden("iroh-log")
 	// Long form only: -p is run's prompt, and a persistent -p here would be
 	// run's too.
 	cmd.PersistentFlags().StringVar(&app.projectID, "project", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
@@ -209,48 +217,62 @@ See "%[1]s run --help" for everything run takes.`, name),
 	// the scripts and the launcher that pass it; it just stops being offered.
 	_ = cmd.PersistentFlags().MarkHidden("project")
 	// Not a chdir: nothing about this invocation's working directory changes.
-	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
-	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
-	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")
+	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "bearer `TOKEN` for API requests")
+	// A default taken from DISCOBOX_TOKEN is a credential, never printed.
+	cmd.PersistentFlags().Lookup("token").DefValue = ""
+	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "output `FORMAT`: table or json")
+	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "print HTTP requests and the git commands run on this machine")
+	app.color = colorAuto
+	cmd.PersistentFlags().Var(&app.color, "color", "set color `WHEN` to auto, always, or never")
 	cmd.PersistentFlags().Var(&app.autoStart, "auto-start-server", "Whether to start a local server when the endpoint is unavailable: true, false, or auto (the build and environment default, off for a development build)")
 	cmd.PersistentFlags().Lookup("auto-start-server").NoOptDefVal = string(autoStartServerTrue)
+	_ = cmd.PersistentFlags().MarkHidden("auto-start-server")
 	// The root's own flag rather than the one cobra adds for a Version: cobra
 	// prints that from a template, and the server's half of the answer is a
 	// request. The spelling is cobra's, -v included, so nothing that asked
 	// before has to ask differently now.
-	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print the client and server versions")
+	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "print the client and server versions")
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
 
-	cmd.AddCommand(app.newRunCommand())
-	cmd.AddCommand(app.newListCommand())
-	cmd.AddCommand(app.newEventsCommand())
-	cmd.AddCommand(app.newRemoveCommand())
-	for _, action := range sandboxLifecycles {
-		cmd.AddCommand(app.newLifecycleCommand(action))
+	// What help lists, by group (ADR 26-11-04-204 §1). A spelling kept working
+	// but not taught is a hidden second registration.
+	for _, group := range rootCommandGroups {
+		cmd.AddGroup(group)
 	}
-	cmd.AddCommand(app.newTagCommand())
-	cmd.AddCommand(app.newRenameCommand())
-	cmd.AddCommand(app.newShellCommand())
-	cmd.AddCommand(app.newCPCommand())
-	cmd.AddCommand(app.newAttachCommand())
-	cmd.AddCommand(app.newProxyCommand())
-	cmd.AddCommand(app.newPushCommand())
-	cmd.AddCommand(app.newToolsCommand())
-	cmd.AddCommand(app.newConfigureCommand())
-	cmd.AddCommand(app.newIDCommand())
-	cmd.AddCommand(app.newSecretCommand())
-	cmd.AddCommand(app.newTrustCommand())
-	cmd.AddCommand(app.newConsoleCommand("console", false))
+	cmd.AddCommand(inGroup("basic", app.newRunCommand()))
+	cmd.AddCommand(inGroup("basic", app.newListCommand()))
+	cmd.AddCommand(inGroup("basic", app.newAttachCommand()))
+	cmd.AddCommand(inGroup("basic", app.newExecCommand()))
+	for _, action := range sandboxLifecycles {
+		cmd.AddCommand(inGroup("basic", app.newLifecycleCommand(action)))
+	}
+	cmd.AddCommand(inGroup("basic", app.newRemoveCommand()))
+	cmd.AddCommand(inGroup("basic", app.newRenameCommand()))
+	cmd.AddCommand(inGroup("basic", app.newTagCommand()))
+	cmd.AddCommand(inGroup("automation", app.newSendCommand()))
+	cmd.AddCommand(inGroup("automation", app.newSendKeyCommand()))
+	cmd.AddCommand(inGroup("automation", app.newCaptureCommand()))
+	cmd.AddCommand(inGroup("automation", app.newWaitCommand()))
+	cmd.AddCommand(inGroup("automation", app.newEventsCommand()))
+	cmd.AddCommand(inGroup("interface", app.newConsoleCommand()))
+	cmd.AddCommand(inGroup("files", app.newCPCommand()))
+	cmd.AddCommand(inGroup("files", app.newPushCommand()))
+	cmd.AddCommand(inGroup("files", app.newProxyCommand()))
+	cmd.AddCommand(inGroup("files", app.newToolsCommand()))
+	cmd.AddCommand(inGroup("resources", app.newSecretCommand()))
+	cmd.AddCommand(inGroup("resources", app.newTrustCommand()))
+	cmd.AddCommand(inGroup("setup", app.newConfigureCommand()))
+	cmd.AddCommand(inGroup("setup", app.newAdminCommand()))
+	cmd.AddCommand(inGroup("other", app.newCompletionCommand()))
+	cmd.AddCommand(inGroup("other", app.newVersionCommand()))
+	cmd.SetHelpCommandGroupID("other")
 	// tui is the console's earlier name: it still opens it, and nothing lists
-	// or teaches it. See newConsoleCommand.
-	cmd.AddCommand(app.newConsoleCommand("tui", true))
-	cmd.AddCommand(app.newCompletionCommand())
-	cmd.AddCommand(app.newAdminCommand())
-	cmd.AddCommand(app.newVersionCommand())
-	// Cobra's usage template always lists a subcommand literally named "help",
-	// even when hidden. Give the help command another name so it stays out of the
-	// command list; the --help flag still works on every command.
-	cmd.SetHelpCommand(&cobra.Command{Use: "no-help", Hidden: true})
+	// or teaches it.
+	cmd.AddCommand(hiddenSpelling("tui", app.newConsoleCommand()))
+	cmd.AddCommand(hiddenSpelling("ps", app.newListCommand()))
+	cmd.AddCommand(hiddenSpelling("shell", app.newExecCommand()))
+	cmd.AddCommand(hiddenSpelling("id", app.newIDCommand()))
+	app.installHelp(cmd)
 	return cmd, app
 }
 
@@ -693,7 +715,7 @@ func (a *App) serverStartupLine() *statusLine {
 	if a.quiet || a.errOut == nil {
 		return nil
 	}
-	return newStatusLine(a.errOut)
+	return newStatusLine(a.errOut, a.color)
 }
 
 // serverStartupText says what the server this CLI just launched is doing.

@@ -1189,7 +1189,7 @@ func peerWithKeyByteForCLI(t *testing.T, b byte) endpoint.IrohID {
 func TestStatusPrintsTheServersPeerID(t *testing.T) {
 	peer := peerWithKeyByteForCLI(t, 0xbb).String()
 	var out strings.Builder
-	printStatus(&out, statusReport{
+	printStatus(&out, colorAuto, statusReport{
 		Endpoint:  endpoint.Diagnosis{Endpoint: "http://127.0.0.1:8081"},
 		Peer:      &identityValue{PeerID: peer, Source: "the server"},
 		Reachable: true,
@@ -1199,7 +1199,7 @@ func TestStatusPrintsTheServersPeerID(t *testing.T) {
 	}
 
 	out.Reset()
-	printStatus(&out, statusReport{
+	printStatus(&out, colorAuto, statusReport{
 		Endpoint:  endpoint.Diagnosis{Endpoint: "unix:///tmp/discobox.sock"},
 		Peer:      &identityValue{Source: "the server", Reason: "this server gives no peer ID, which only a server from before every server had one does"},
 		Reachable: true,

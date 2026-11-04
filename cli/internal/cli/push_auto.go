@@ -388,12 +388,12 @@ const pushWaitNotice = 300 * time.Millisecond
 // screen down by the time this runs, so an unexplained pause at the shell
 // prompt is exactly the silence ADR 0060 is about.
 func (a *App) waitForPushes(stderr io.Writer) {
-	waitSaying(stderr, "finishing a push into the discobox's origin…", a.pushInFlight.Wait)
+	waitSaying(stderr, a.color, "finishing a push into the discobox's origin…", a.pushInFlight.Wait)
 }
 
 // waitSaying runs wait, and puts what it is waiting for on screen if it lasts
 // long enough to be worth explaining.
-func waitSaying(stderr io.Writer, what string, wait func()) {
+func waitSaying(stderr io.Writer, color colorWhen, what string, wait func()) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -404,7 +404,7 @@ func waitSaying(stderr io.Writer, what string, wait func()) {
 		return
 	case <-time.After(pushWaitNotice):
 	}
-	status := newStatusLine(stderr)
+	status := newStatusLine(stderr, color)
 	status.set(what)
 	<-done
 	status.clear()
@@ -484,7 +484,7 @@ func (a *App) autoPushWhileAttached(ctx context.Context, client *apiclientgen.Cl
 	return func(stderr io.Writer) {
 		stopBeating()
 		var standing map[string]sourcePush
-		waitSaying(stderr, "finishing a push into the discobox's origin…", func() { standing = <-done })
+		waitSaying(stderr, a.color, "finishing a push into the discobox's origin…", func() { standing = <-done })
 		slugs := make([]string, 0, len(standing))
 		for slug := range standing {
 			slugs = append(slugs, slug)

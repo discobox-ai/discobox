@@ -368,13 +368,16 @@ A worker that stops with uncommitted work is either between steps or waiting
 on a question. Read its screen to tell which, and answer it:
 
 ```bash
-discobox admin terminal screen <discobox-id> primary
-discobox admin terminal input <discobox-id> primary "carry on and commit when the tests pass" Enter
-discobox admin terminal wait <discobox-id> primary --hook Stop
+discobox capture <discobox-id> --trim
+discobox send <discobox-id> "carry on and commit when the tests pass" && discobox send-key <discobox-id> Enter
+discobox wait <discobox-id> --until finished --until blocked
 ```
 
-`primary` is the worker's harness terminal; `discobox admin terminal ls
-<discobox-id>` lists the others. A worker that has stopped is started again
+`wait` counts from the input you just sent, so it never misses the answer;
+it returns on the worker's turn ending or its next question, and `--for 10m`
+gives up (exit 124). Each acts on the worker's harness terminal; `-t
+TERMINAL` names another, and `discobox admin terminal ls <discobox-id>` lists
+them. A worker that has stopped is started again
 with `discobox start`, and a wedged one with `discobox restart`. Stop a worker
 only when you are done with it. Its workspace and uncommitted work survive
 either way. Anything else — attaching, archiving, deleting — is a person's.

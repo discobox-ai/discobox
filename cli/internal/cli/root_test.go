@@ -205,11 +205,14 @@ func TestRootCommandHelp(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute help: %v", err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte("\n  run ")) {
+	listed := func(name string) bool {
+		return bytes.Contains(out.Bytes(), []byte("\n  "+name+" ")) || bytes.Contains(out.Bytes(), []byte("\n  "+name+", "))
+	}
+	if !listed("run") {
 		t.Fatalf("help output = %q, want visible run command", out.String())
 	}
 	// The same for the console's earlier name.
-	if !bytes.Contains(out.Bytes(), []byte("\n  console ")) {
+	if !listed("console") {
 		t.Fatalf("help output = %q, want visible console command", out.String())
 	}
 	tui, _, err := cmd.Find([]string{"tui"})
@@ -219,21 +222,24 @@ func TestRootCommandHelp(t *testing.T) {
 	if !tui.Hidden {
 		t.Fatal("tui is listed in the command list")
 	}
-	if bytes.Contains(out.Bytes(), []byte("\n  tui ")) {
+	if listed("tui") {
 		t.Fatalf("help output = %q, want tui unlisted", out.String())
 	}
-	if !bytes.Contains(out.Bytes(), []byte("\n  admin ")) {
+	if !listed("admin") {
 		t.Fatalf("help output = %q, want visible admin command", out.String())
 	}
 	if !bytes.Contains(out.Bytes(), []byte("Manage advanced Discobox configuration")) {
 		t.Fatalf("help output = %q, want admin command description", out.String())
 	}
-	// shell is the exception among the admin children: the friendly root `shell`
+	// exec is the exception among the admin children: the friendly root `exec`
 	// runs a command in a sandbox, while `admin exec` keeps the raw subcommands.
-	if command, _, err := cmd.Find([]string{"shell"}); err != nil || command.Name() != "shell" {
-		t.Fatalf("find root shell: command=%v err=%v", command, err)
+	// It was `shell`, which still runs it.
+	for _, name := range []string{"exec", "shell"} {
+		if command, _, err := cmd.Find([]string{name}); err != nil || command.Name() != name || command.Parent() != cmd {
+			t.Fatalf("find root %s: command=%v err=%v", name, command, err)
+		}
 	}
-	for _, unavailableAtRoot := range []string{"box", "terminal", "exec", "provider", "job", "harness", "hooks", "audit", "server"} {
+	for _, unavailableAtRoot := range []string{"box", "terminal", "provider", "job", "harness", "hooks", "audit", "server"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)
@@ -1912,7 +1918,7 @@ func TestBareCommandPrintsHelpWithoutATerminal(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	if !strings.Contains(out.String(), "Available Commands:") {
+	if !strings.Contains(out.String(), "Basic commands:") {
 		t.Fatalf("want the help, got:\n%s", out.String())
 	}
 	// And nothing tried to reach a server on the way there. A dial from here

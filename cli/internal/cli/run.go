@@ -329,7 +329,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// (ADR 0060). The line comes back down before anything else is
 	// written to stderr — and everything else this command writes there
 	// while it is up goes through it, since it owns the row it is on.
-	status := newStatusLine(cmd.ErrOrStderr())
+	status := newStatusLine(cmd.ErrOrStderr(), a.color)
 	defer status.clear()
 	// Where a line that is not a phase of the wait goes: what a declared source
 	// resolved to, which SSH key was enrolled, which ssh_config was written.

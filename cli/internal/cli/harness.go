@@ -287,7 +287,7 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	// longest thing the user will sit through — "waiting for it to start"
 	// says nothing for the minutes it can take.
 	name := "configure discobox " + id.RandomPart(sandbox.ID)
-	status := newStatusLine(stderr)
+	status := newStatusLine(stderr, a.color)
 	status.set(name + ": starting")
 	waitErr := a.waitForProvisionedSandbox(ctx, client, projectID, sandbox.ID, func(line string) {
 		status.set(name + ": " + line)

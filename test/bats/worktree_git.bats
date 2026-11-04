@@ -91,7 +91,7 @@ commit_in() {
 
 # in_box runs a shell command in the discobox's primary source.
 in_box() {
-  cli shell "$DISCOBOX_BATS_SANDBOX_ID" -- sh -c "$1"
+  cli exec "$DISCOBOX_BATS_SANDBOX_ID" -- sh -c "$1"
 }
 
 wait_for_ready() {

@@ -13,7 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
-// identityPair is what `discobox id` answers: the two IDs an enrollment is
+// identityPair is what `discobox admin id` answers: the two IDs an enrollment is
 // made of, each in both spellings so `-o json` never loses one.
 type identityPair struct {
 	Client identityValue `json:"client"`
@@ -184,7 +184,7 @@ func (a *App) serverIdentity(ctx context.Context) identityValue {
 			return newIdentityValue(id, source)
 		}
 	}
-	// No autolaunch: `discobox id` reports who this server is, and starting one
+	// No autolaunch: `discobox admin id` reports who this server is, and starting one
 	// to answer that is not the same question. The same rule `status` follows.
 	baseURL, httpClient, err := a.httpClientWithAutoStart(false)
 	if err != nil {

@@ -97,7 +97,7 @@ remote. Open a pull request or fetch and merge that branch on your machine.
 
 ## Working with a box
 
-- **Terminal and SSH:** Use the console or `discobox shell`. SSH configuration syncs
+- **Terminal and SSH:** Use the console or `discobox exec`. SSH configuration syncs
   automatically when a box is created, so `ssh $DISCOBOX_ID` works without manual
   setup. You can also connect by box name.
 - **Editor and tools:** Use `discobox tools vscode` or `discobox tools zed` to

@@ -67,8 +67,7 @@ so filter it out). Ctrl-C at the welcome screen quits it normally.
 
 The dev server's `claude-code` harness is usually configured already
 (`d admin harness list`). `d run -d -H claude-code --no-source` makes a box
-(no `--name`); there is no `d exec`: run commands in it with
-`d shell <sbx> -- sh -c '...'`. Edit `~/.claude/settings.json` there, wait
+(no `--name`); run commands in it with `d exec <sbx> -- sh -c '...'`. Edit `~/.claude/settings.json` there, wait
 ~10s for the watcher, then `d admin harness changes <sbx>` (`-o json` shows
 the preview's `previous` and `file`). In the console the list starts on the
 prompt: `Down` to the boxes, then `H`; `r` in the card re-reads it. Deleting
@@ -80,8 +79,8 @@ returns to `clean`; `d admin box purge <sbx> </dev/null` when done.
 # Verifying what a box's program reports (OSC 7501, terminal queries)
 
 No attach needed: drive a `d run -d -H shell --no-source` box's primary with
-`d admin terminal input <id> primary "<cmd>" Enter` and read it
-with `d admin terminal screen <id> primary`; the shim's record is
+`d send <id> "<cmd>" && d send-key <id> Enter` and read it
+with `d capture <id> --trim`; the shim's record is
 `d admin box get <id> -o json | jq '.runtime.agentStatus.sessions[]'` (`ls`
 lags it by the 15s poll). `d cp` scripts into `/tmp`.
 
@@ -89,7 +88,7 @@ lags it by the 15s poll). `d cp` scripts into `/tmp`.
   shim drops a group's live records when it leaves the foreground, and an
   interactive shell makes every command its own job. Hold the foreground —
   `bash -c 'printf "\e]7501;state=blocked\e\\\\"; sleep 3600'` — and quote by
-  writing a script file instead of nesting quotes through `input`.
+  writing a script file instead of nesting quotes through `send`.
 - A query's answer: in the box, `stty raw -echo; printf '\e]7501;?\e\\\e[c';
   read -r -t 3 -d c r; stty sane; printf '%q\n' "$r"` shows what came back and
   in what order. Attached from tmux, the DA1 part is tmux's (`?1;2;4`).
@@ -99,12 +98,13 @@ lags it by the 15s poll). `d cp` scripts into `/tmp`.
   `~/.claude.json` in, accept the trust dialog (`Down Enter`), and run with
   `--permission-mode default` to get a permission prompt. Leave it with
   `/exit` Enter: two `C-c` sent a second apart did not exit it, and the next
-  `input` became a prompt it acted on.
+  `send` became a prompt it acted on. `d wait <id> --until finished --until
+  blocked` returns on its turn's end or its prompt.
 - The console speaks OSC 7501 only to a terminal that answers its probe, and
   tmux does not. Run it under a Python `pty.fork()` stand-in that answers
   `\e]7501;?` (and DA1), logs every `\e]7501;` the console writes, and plays
   timed keys (`\x1b[A` focuses the list, `\r` opens a box, `\x01q` quits)
-  and `os.system` calls (`d admin terminal input`) to change the box mid-run.
+  and `os.system` calls (`d send`) to change the box mid-run.
 
 # Verifying the sandbox event stream (`discobox events`, ADR 26-10-29-316)
 
@@ -162,7 +162,7 @@ Wait for the image watcher to export the platform bundle (its log's `built
 platform as …/build/assets/discobox-platform/<hex>.tar`, and the server's
 platform moving) and the box to be pinned to it (`d admin box get <id> -o json
 | jq .config.platformBundleDigest`), then `d run -d -H shell --no-source -p
-x`; the agent a box runs is its platform pin's, delivered at every start. In the box (`d shell <id> -- ...`): `sudo
+x`; the agent a box runs is its platform pin's, delivered at every start. In the box (`d exec <id> -- ...`): `sudo
 iptables -S INPUT` shows the stub's rule, and `docker run --rm busybox:1.36
 ping -c1 -W2 example.com` on the default bridge, a user network, one with
 `-o com.docker.network.bridge.name=X`, and `--network host` shows nested
@@ -717,7 +717,7 @@ the new digest); check that before driving anything.
 ```bash
 d run -d -H shell --no-source -p true        # a box pinned to platform + shell bundle
 docker exec <pool> cat /var/lib/discobox/projects/*/pools/*/sandboxes/<sbx>/delivery.json
-d shell <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
+d exec <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
 ```
 
 - Pins on the server: `curl 127.0.0.1:8080/projects/<p>/sandboxes/<sbx>`
@@ -752,7 +752,7 @@ The pool delivers a runtime-config document at every boot (next section), but
 to drive one of these routes with a document of your own, call the in-box agent
 directly: `d run -H shell -d --include-dirty <dir>` a box (from a dirty checkout if the change
 reads `sandbox.json`'s source spec), then `curl` it on
-`127.0.0.1:3003/api/projects/<project>/sandboxes/<sbx>/...` from `d shell`.
+`127.0.0.1:3003/api/projects/<project>/sandboxes/<sbx>/...` from `d exec`.
 
 - **Token.** The agent trusts the server's pool-agent issuer key
   (`server_state` row `worker_agent_request_issuer`; unsealed in dev, so
@@ -769,7 +769,7 @@ reads `sandbox.json`'s source spec), then `curl` it on
 - **An origin.** Serve a bare repository from this box with a small
   `git http-backend` CGI wrapper on `0.0.0.0:<port>`; the box reaches it as
   `http://172.17.0.1:<port>` through its proxy.
-- `systemctl restart discobox-sandbox-agent` in the box ends the `d shell`
+- `systemctl restart discobox-sandbox-agent` in the box ends the `d exec`
   it was run from (shells are the agent's execs): background it and reconnect.
 - **The auth middleware, from outside.** The agent also listens on the
   container's own address: `curl http://<ip>:3003/execs` from this box (`ip`
@@ -918,7 +918,7 @@ as for the wiring recipe below), which carries what its pool placed.
 docker run -d --name vmlike --privileged --cgroupns=private --tmpfs /run \
   --tmpfs /run/lock vwire:test
 # a real bootstrap: any dev box's, with another sandboxId
-d shell <box> -- sudo cat /etc/discobox/sandbox.json | jq '.sandboxId="sbx_vmlike"' > $S/s.json
+d exec <box> -- sudo cat /etc/discobox/sandbox.json | jq '.sandboxId="sbx_vmlike"' > $S/s.json
 docker exec -i vmlike sh -c 'cat > /etc/discobox/.s.tmp && mv /etc/discobox/.s.tmp /etc/discobox/sandbox.json' < $S/s.json
 docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
 ```
@@ -939,7 +939,7 @@ pool places the agent layer, units and `pins.json`, and the agent fetches
 the rest into its store, then provisions from scratch — core blocks (ready in
 ~30s), the rest installs in the background through the pool proxy (`nix`
 takes minutes: it installs into a private namespace, then seeds the pool's
-`/nix` on first use; check with `d shell $B -- bash -lc 'nix eval --expr
+`/nix` on first use; check with `d exec $B -- bash -lc 'nix eval --expr
 "1 + 2"'`). To try a
 feature of your own, drop a tree in and restart:
 
@@ -948,14 +948,14 @@ feature of your own, drop a tree in and restart:
 git init $S/app && mkdir $S/app/.discobox && echo '{"features":{"brew":false}}' > $S/app/.discobox/settings.json
 d run -H shell -d $S/app -o json           # commit something first
 # a tree: features/<name>/provision.yaml + scripts, tarred and placed by root
-d shell <box> -- sh -c 'sudo tar -xz -C /' < $S/tree.tgz
+d exec <box> -- sh -c 'sudo tar -xz -C /' < $S/tree.tgz
 d stop <box>; d start <box>                # a real boot: wiring in discobox-wire, the rest in the agent
-d shell <box> -- cat /run/discobox/provision.json
+d exec <box> -- cat /run/discobox/provision.json
 ```
 
 - A slow `run` step (`sleep 90`) shows readiness first: `ready: true` with the
   feature `provisioning`, and its `commands:` as placeholders in
-  `/usr/local/lib/discobox/placeholders`; `d shell <box> -- sh -lc '<cmd>'`
+  `/usr/local/lib/discobox/placeholders`; `d exec <box> -- sh -lc '<cmd>'`
   waits, then runs the real one.
 - Edit a script in the box to re-run its step (its digest changes); the rest
   report `how: snapshot`.
@@ -990,7 +990,7 @@ go tool task build:ubuntu-sandbox-base > $S/ubuntu.log 2>&1
 # DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:ubuntu, then
 e new -d --no-source -H shell -p x
 e admin exec create <id> -- discobox-provision wait <f>
-d shell <id> -- sudo cat /var/log/discobox/provision/<f>.log   # result=applied per step
+d exec <id> -- sudo cat /var/log/discobox/provision/<f>.log   # result=applied per step
 ```
 
 Remove `discobox-sandbox-base:ubuntu`, and the isolated server's pool,
@@ -998,7 +998,7 @@ afterwards.
 
 # Verifying a container's boot (`discobox-wire.service`)
 
-A dev box shows the wiring: `d shell <box> -- systemctl show discobox-wire -p
+A dev box shows the wiring: `d exec <box> -- systemctl show discobox-wire -p
 ActiveState`, `sudo journalctl -b -u discobox-wire` (`wired sandbox volumes
 count=N`), and `findmnt` for the declared paths. `d stop`/`d start` is a new
 boot that re-wires; a normal stop exits the container 130.
@@ -1034,9 +1034,9 @@ docker inspect vfail --format '{{.State.ExitCode}}'; docker logs vfail | tail -2
 
 # Verifying the exec lifecycle (sandbox-agent/execs: shims, runtime files)
 
-Every `d shell <box> -- <cmd>` is one of the agent's shim-backed execs, so a
+Every `d exec <box> -- <cmd>` is one of the agent's shim-backed execs, so a
 burst of them drives `execs.Manager`, the shim and the watcher end to end; its
-exit status comes back as the client's (`d shell $id -- sh -c 'exit 7'; echo $?`).
+exit status comes back as the client's (`d exec $id -- sh -c 'exit 7'; echo $?`).
 
 - The runtime files are in `/run/discobox/agent-terminals` (the box's
   `sandbox.json` `agentRuntime.runtimeDir`), not the package default
@@ -1044,10 +1044,10 @@ exit status comes back as the client's (`d shell $id -- sh -c 'exit 7'; echo $?`
   `sudo sh -c '...'`, or the glob expands as the box user and matches nothing.
 - The box has `jq` but no `inotifywait` or `stat`; `ls -i` shows whether a
   write replaced the file (new inode) or rewrote it in place.
-- A probe you run with `d shell` is itself the newest exec; pick the file by
+- A probe you run with `d exec` is itself the newest exec; pick the file by
   its `command`, not by `ls -t`.
 - The dev server restarts whenever the image watcher finishes an image, which
-  drops every `d shell` in flight. Run an in-box loop detached (`nohup sh
+  drops every `d exec` in flight. Run an in-box loop detached (`nohup sh
   script > /root/log &`) and read its log afterwards.
 
 # Verifying sleep and wake (autostop, discobox-power, the power reconcile)
@@ -1093,11 +1093,11 @@ curl -s "$B/stat?path=~"
 printf hi | curl -s -X PUT -H 'Content-Type: application/octet-stream' \
   --data-binary @- "$B/content?path=notes/a.md&parents=true"
 curl -s "$B/content?path=/etc/shadow" -w ' [%{http_code}]\n'   # 403: runs as the user
-d shell <sbx_id> -- sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, not root
+d exec <sbx_id> -- sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, not root
 ```
 
-- There is no `discobox exec`; `shell <id> -- <command…>` runs one, and needs
-  `</dev/null` from a tool shell.
+- `exec <id> -- <command…>` runs one (`shell` is its old, hidden spelling), and
+  needs `</dev/null` from a tool shell.
 - The CLI's callers: a user tool script (`$XDG_CONFIG_HOME/discobox/tools/<n>.sh`,
   `tools <n> <id>`), a tool's `files:` (a `.yaml` tool with the
   default under `tools/<id>/`), a pasted image (console recipe above), and
@@ -1126,8 +1126,8 @@ Start a box in it with `d run -d -H shell --no-source --pool <name>`.
   <sbx-id-with-hyphens>.sandbox.discobox.internal:3003:<ip>
   https://<that name>:3003/healthz`; plain HTTP to a TLS agent answers 400, and
   another sandbox's name fails with curl exit 60.
-- The pool reaching it end to end: `d admin terminal input <id> primary
-  'echo X' Enter`, then `d admin terminal screen <id> primary`.
+- The pool reaching it end to end: `d send <id> 'echo X' && d send-key <id>
+  Enter`, then `d capture <id> --trim`.
 - A flip: `d admin pool update <name> --disable-agent-endpoint-tls`; the
   pool's container keeps its ID and start time, its bootstrap gains the
   field, and `systemctl show -p ActiveEnterTimestamp discobox-pool-agent` moves.
@@ -1180,7 +1180,7 @@ mediator, and the result comes back from `registry.discobox.internal` (ADR
 
 - A fresh box has dockerd socket-activated: `systemctl is-active docker`
   reads `inactive` until the first `docker` call; just build.
-- `d shell <box> -- sh -c 'docker build -t x . && docker run --rm x'`; the
+- `d exec <box> -- sh -c 'docker build -t x . && docker run --rm x'`; the
   pull shows as `registry.discobox.internal` rows in `d admin audit http
   --discobox <box>`. A build failing on `HEAD http://127.0.0.1:5000/...: 400`
   is buildkitd talking plaintext to the TLS registry: its toml lost
@@ -1243,7 +1243,7 @@ agent's published port, or the pool never registers.
   its sandboxes' in `pool-agent/sandboxruntime/machine_test.go`. What reaches a dev box is the
   sandbox agent's pool-only `POST .../cache/clear`, signed with a
   `cache-clear` token from the pool's identity key (above) and `curl`ed on
-  `127.0.0.1:3003` from `d shell`. **On a dev box it empties the whole pool's
+  `127.0.0.1:3003` from `d exec`. **On a dev box it empties the whole pool's
   caches.** A Docker box's cache paths are binds of its pool's shared cache:
   `/nix` is shared, and `~/.cache`, `~/go/pkg/mod`, `~/.npm`, `~/.rustup` and
   the agent version store are shared by every box with the same uid. So one

@@ -15,7 +15,7 @@ import (
 // stripped for a pipe or a file, and this report is pasted into issues.
 func TestPrintStatusNamesEveryLayerAndItsStatus(t *testing.T) {
 	var out bytes.Buffer
-	printStatus(&out, brokenStatusReport())
+	printStatus(&out, colorAuto, brokenStatusReport())
 	printed := out.String()
 
 	for _, want := range []string{
@@ -39,7 +39,7 @@ func TestPrintStatusNamesEveryLayerAndItsStatus(t *testing.T) {
 // A reachable server says so, and says nothing about layers to fix.
 func TestPrintStatusReportsAReachableServer(t *testing.T) {
 	var out bytes.Buffer
-	printStatus(&out, healthyStatusReport())
+	printStatus(&out, colorAuto, healthyStatusReport())
 	printed := out.String()
 
 	if !strings.Contains(printed, "The server is reachable.") {
@@ -61,7 +61,7 @@ func TestPrintStatusKeepsWarnings(t *testing.T) {
 		Hint:    "This machine cannot reach a public relay.",
 	})
 	var out bytes.Buffer
-	printStatus(&out, report)
+	printStatus(&out, colorAuto, report)
 	printed := out.String()
 
 	if !strings.Contains(printed, "cannot reach a public relay") {
@@ -191,7 +191,7 @@ func TestStatusCommandIsUnderAdminServer(t *testing.T) {
 func renderStatus(t *testing.T, report statusReport) string {
 	t.Helper()
 	var out bytes.Buffer
-	printStatus(&out, report)
+	printStatus(&out, colorAuto, report)
 	return out.String()
 }
 

@@ -202,7 +202,7 @@ func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, 
 }
 
 // NewShell creates, attaches and starts a fresh interactive shell exec — what
-// `discobox shell` with no command runs. Only the sandbox can say which shell its
+// `discobox exec` with no command runs. Only the sandbox can say which shell its
 // user has, so the request asks for one rather than naming it — along with the
 // shell this machine's user prefers (preferredShellEnv), which the sandbox runs
 // instead when it has it.

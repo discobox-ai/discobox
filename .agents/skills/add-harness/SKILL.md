@@ -251,7 +251,7 @@ passed, is the template:
    text is enough; save every pane to `/dev/shm` for the report.
 2. **run, from a shell started after it is granted**, so the credential's
    variable holds its sentinel: write the credential into the CLI's store in the configure sandbox on
-   stdin (`discobox shell <configure-box> -- sh -c 'umask 077; cat > …'`,
+   stdin (`discobox exec <configure-box> -- sh -c 'umask 077; cat > …'`,
    below), never typed into the TUI; finish the flow (the CLI's quit key, the
    script's own verification, its fixed status lines only), then `discobox
    new --no-source -d -H <id> -p <one-line question with a checkable answer>`
@@ -285,7 +285,7 @@ What this needs, learned the hard way:
   `anthropic-workspace-id` header most CLIs never send.
 - **A granted key goes into the configure sandbox on stdin**, never typed
   into the CLI's TUI: typing echoes it into the pane and the configure log.
-  `discobox --server … shell <configure-box> -- sh -c 'umask 077; cat > <the
+  `discobox --server … exec <configure-box> -- sh -c 'umask 077; cat > <the
   CLI's credential file>'` from a shell started after it was granted, then the
   CLI's quit key in the pane; print only the configure log's fixed status
   lines (`grep -o`), never the log.

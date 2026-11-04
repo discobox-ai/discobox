@@ -28,7 +28,7 @@ type Remote struct {
 	// CLI is the discobox binary handing the tool the discobox. With Server
 	// and ProjectID, which a CLI reads from DISCOBOX_SERVER and
 	// DISCOBOX_PROJECT, it is how a host script reaches the same discobox
-	// again: `"$DISCOBOX_CLI" shell "$DISCOBOX_ID" ...` (ADR 26-11-03-982).
+	// again: `"$DISCOBOX_CLI" exec "$DISCOBOX_ID" ...` (ADR 26-11-03-982).
 	CLI string
 }
 

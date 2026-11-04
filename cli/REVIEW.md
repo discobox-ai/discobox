@@ -98,7 +98,7 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   resolved IDs only, so `attach mybox` sent a name to the server as an ID.
 - **A listed name never beats an ID-shaped reference.** The box writes its
   listed name (its meta name, its terminal's title), so a box named `01hq`
-  would take what was meant for the discobox whose ID begins that way: `push` the user's source, `shell` their keystrokes.
+  would take what was meant for the discobox whose ID begins that way: `push` the user's source, `exec` their keystrokes.
   `matchSandboxName` refuses a name that is a short ID of another discobox;
   anything that matches a name keeps going through it. The check is only as
   good as the IDs it is given: with a server silent an ID-shaped name is
@@ -140,6 +140,11 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   missed, on a first pass:
   - format strings (`"%[1]s new"`, `"%s new %q"`);
   - the bare word in help prose ("By default new opens…").
+  The `shell` → `exec` rename missed, on a first pass, the worked scripts in
+  another command's help (`tools --help`'s host script, `db shell …`,
+  `"$DISCOBOX_CLI" shell …`) and the comments that quote them (`pkg/tools`):
+  grep for the old word after `$DISCOBOX_CLI`, after a shell function that
+  wraps the CLI, and in every `Long` and `Example`, not only after `discobox`.
 
   Leave what records history: ADRs and audit argv in tests. A persisted configuration
   key is renamed only with a read path for the old one, as `client.yaml`'s

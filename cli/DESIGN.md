@@ -98,7 +98,7 @@ transport helpers where OpenAPI does not model the stream.
   The field starts at two rows, grows with wrapped content up to the terminal
   height, then scrolls; leaving the composer removes its rows.
 - **The interactive window is `console`, with alias `c`.** It was `tui` first, so `tui` is
-  registered a second time, hidden (`newConsoleCommand` takes the spelling):
+  registered a second time, hidden (`hiddenSpelling`):
   not an alias, since cobra prints aliases in help and `tui` is not taught.
   `internal/tui` keeps its package name.
 - Bare `discobox` prints help in terminals, pipes, and scripts. Open the
@@ -115,10 +115,10 @@ transport helpers where OpenAPI does not model the stream.
   which supersedes [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
   trade on that point; `run` keeps its trailing prompt, where the name in front
   of the words says what they are.
-- `discobox version` is an ordinary hidden subcommand (`newVersionCommand`,
-  `printVersion`), because anything driving the CLI without reading its help
-  reaches for both spellings of a version. It is hidden rather than listed —
-  `--version` is what the help documents. Both print this client's version and
+- `discobox version` is an ordinary subcommand (`newVersionCommand`,
+  `printVersion`), listed under Other beside `--version`, because anything
+  driving the CLI without reading its help reaches for both spellings of a
+  version. Both print this client's version and
   the server's, which is asked for on its health endpoint
   (`endpoint.ProbeHealth`) with autolaunch off: a server that does not answer is
   `unavailable` and the command still succeeds, and none is ever started to
@@ -199,7 +199,7 @@ transport helpers where OpenAPI does not model the stream.
   pane draws. The primary terminal is the virtual primary exec id and needs no
   start — the agent resolves the sandbox's current primary terminal and
   relaunches it if it has stopped. A shell creates a new interactive TTY exec,
-  the same one `discobox shell` with no command runs; every new session carries
+  the same one `discobox exec` with no command runs; every new session carries
   `COLORTERM` and `NO_COLOR` from this terminal (`paneTerminalEnv`) so the
   sandbox knows how much color to use. `TERM` is deliberately not forwarded: the
   terminal on the client side of a pane is an emulator, not the user's, and the
@@ -545,7 +545,7 @@ is an error rather than a lost convenience.
   locked write, once it has answered, as `add` requires. `rm` refuses the
   recorded primary.
 - **A registration records the server's peer ID** (`registeredServer.ID`),
-  read the way `discobox id` reads it: off the address when that names a peer,
+  read the way `discobox admin id` reads it: off the address when that names a peer,
   a `discobox://` name resolved to one included, and from `GET /peer`
   otherwise. Every current server has one, whatever it listens on (ADR 0117),
   so it is empty only for a server from before that. It is
@@ -1031,10 +1031,11 @@ reaches the discobox, so neither check stands in for the other. It prints
 the tags the discobox holds afterwards, one per line, or its ID, description,
 and tags as terminal-safe JSON.
 
-`discobox shell` is the exception: the root command is the everyday one-shot "run
-this in my sandbox" verb, while `admin exec create` stays the raw, fully
+`discobox exec` is the exception: the root command is the everyday one-shot "run
+this in my sandbox" verb (it was `shell`, which still runs it as a hidden
+second registration, ADR 26-11-04-204 §1), while `admin exec create` stays the raw, fully
 configurable form (workdir, env, user, detach, explicit `-i`/`-t`). Both drive
-the same exec create/attach/status sequence. Shell requests `wait=ready` on
+the same exec create/attach/status sequence. Exec requests `wait=ready` on
 create, since it cannot reach the waiting attach until an exec exists. Raw
 `admin exec create` keeps the immediate API answer. The root form has no `-it`: stdin
 is always attached, and a PTY is requested only when stdin, stdout, and stderr
@@ -1043,7 +1044,7 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
-`discobox shell [DISCOBOX] [--] [CMD...]` and the tool and exec-create
+`discobox exec [DISCOBOX] [--] [CMD...]` and the tool and exec-create
 commands read the first positional as DISCOBOX and the remaining words as the
 command through `splitDiscoboxCommand`. An optional `--` immediately after
 DISCOBOX separates it explicitly; a leading `--` omits DISCOBOX and selects
@@ -1059,7 +1060,7 @@ full or short ID may also be spelled `sbx-…`, the way the discobox's hostname
 spells it; `id.Canonical` reads it back as `sbx_…` (a short one only after the
 name match), here and wherever else a discobox ID is resolved.
 
-`discobox shell` with no command runs a shell. The CLI never names the run
+`discobox exec` with no command runs a shell. The CLI never names the run
 user's shell: it sets `shell: true` on the exec create request and the sandbox
 resolves it from its own passwd database, because the local `$SHELL` describes
 this machine and says nothing about the identity the exec runs as. What `$SHELL`
@@ -1073,11 +1074,11 @@ preference.
 
 `discobox tools` groups the everyday development tools run *against* a sandbox —
 `git`, `ssh`, `vscode`, and `zed`. Each takes `[DISCOBOX] [--] [ARG...]` like
-`shell`, and everything else belongs to the subcommand that means it,
+`exec`, and everything else belongs to the subcommand that means it,
 including where the tool runs: `git` runs inside the sandbox and takes
 `--source` (with no shorthand: `-s` is `--secret` on `run`), while `ssh`,
 `vscode` and `zed` run on this machine and connect to the sandbox. Each then
-drives the same exec create/attach/status sequence as `discobox shell`.
+drives the same exec create/attach/status sequence as `discobox exec`.
 
 The default path sends no workdir and fetches no sandbox record: an exec with no
 workdir already lands in the sandbox-agent's default exec directory, which is the
@@ -1244,7 +1245,7 @@ flowchart LR
   then, never a registered name), and the project ID `concreteProjectID`
   resolved, never the `default` alias. `DISCOBOX_SERVER` and
   `DISCOBOX_PROJECT` are the variables the CLI reads, so
-  `"$DISCOBOX_CLI" shell "$DISCOBOX_ID"` needs no flags. `discobox tools
+  `"$DISCOBOX_CLI" exec "$DISCOBOX_ID"` needs no flags. `discobox tools
   --help` is the reference for writing one; `TestToolsHelpNamesWhatAHostToolIsHanded`
   holds it to `Remote.Environ`. A box with no source has no working tree: `{workdir}` is the
   sandbox's working root, by its platform (`sandboxpath.Paths.WorkingRoot`), and `{git.url}` an
@@ -1262,6 +1263,36 @@ flowchart LR
   re-resolves the catalog by id on every run and discards host-tool output,
   reporting only the error.
 
+## Help
+
+One writer draws every command's help (`internal/cli/help.go`, set as the
+root's help and usage functions), the way rex draws it
+([ADR 26-11-04-204](../docs/adr/26-11-04-204-help-is-grouped-and-colored-and-a-terminal-is-driven-from-the-top-level.md) §1):
+
+- The root lists its commands under groups (`rootCommandGroups`, cobra's
+  `AddGroup`), each command placed with `inGroup` where it is registered.
+  A listed root command in no group falls under `Commands:`, and
+  `TestRootHelpListsCommandsByGroup` fails on it. `help` is cobra's own,
+  listed under Other.
+- Section headers are bold and command and flag names cyan, when `--color`
+  (`auto`, `always`, `never`) says so for the stream help lands on: `auto` is
+  a terminal that shows color, `NO_COLOR` included (`streamHasColor`). The same
+  flag decides the status line's color and `admin server status`'s
+  (`colorWhen.writer`); it never reaches the console's
+  screen or a box's output.
+- A flag's value is an uppercase name: the word its usage backquotes, else
+  one made from what it takes (`flagValueName`: `DURATION`, `N`, its own name
+  for a string, a custom type's name). Its description is drawn as a
+  lowercase fragment (`lowerFirst`), so a usage may still be written as a
+  sentence. A command's own flags are under `Options:`, the persistent flags
+  it inherits under `Global options:`, in one aligned column.
+- `--auto-start-server`, `--iroh-log`, `--iroh-relay` and `--project` are
+  hidden flags: they work, and help does not offer them. `--server` and
+  `--token` show no default: one is this machine's socket path, said in words,
+  and the other may be a credential from `DISCOBOX_TOKEN`.
+- A command that draws its own help (`admin provider create`/`update`) keeps
+  its help function.
+
 ## Command Naming
 
 One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-23-600-the-cli-is-spelled-one-way-run-takes-its-source-and-only-commits-go-in.md) §1);
@@ -1276,7 +1307,8 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
   takes it, a record ID `admin audit get` takes.
 - **Aliases are shown.** Help lists every spelling a command answers to, as
   `run`'s does (`new`, `create`, `r`, `n`). A spelling kept working but not
-  taught is a hidden second registration instead (`tui`).
+  taught is a hidden second registration instead (`hiddenSpelling`): `tui`
+  for `console`, `ps` for `ls`, `shell` for `exec`, `id` for `admin id`.
 - **A group is named in the singular** (`harness`, `service`, `pool`), and the
   plural is an alias. `tools` is still plural, the in-box skills teaching it.
 - **A placeholder says what resolves.** It is `DISCOBOX`, `POOL`, `PROJECT`,
@@ -1291,7 +1323,7 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 - **A discobox is a `DISCOBOX` argument**, resolved by `selectSandbox`, never
   `--discobox-id`; a filter over many keeps a flag, `--discobox`. A command
   that runs a command takes it after `--` ([Choosing a Sandbox
-  Interactively](#choosing-a-sandbox-interactively), `discobox shell` above;
+  Interactively](#choosing-a-sandbox-interactively), `discobox exec` above;
   [ADR 26-10-24-254](../docs/adr/26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md)).
 - **One kind of value, one type** (ADR 26-10-24-254 §2). A length of time is
   `lifetime.Flag` (`forever` only where it is allowed, `NewLapsingFlag`
@@ -1338,7 +1370,7 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 ## Where a Global Flag Is Parsed
 
 The root's persistent flags — `--server`, `--iroh-relay`, `--iroh-log`,
-`--project`, `--token`, `--output`, `--debug` and
+`--project`, `--token`, `--output`, `--debug`, `--color` and
 `--auto-start-server` — are parsed by the command they are written in front of
 (`TraverseChildren` on the root). Cobra's default is the other way round: it
 finds the command first and hands it every flag, wherever it stood. The
@@ -1373,17 +1405,19 @@ themselves (`consumeProviderCreateGlobalFlags`), wherever those stand. That is
 safe there because nothing downstream of it is another program's flag table.
 The set it consumes is its own — `--server`, `--project`, `--token`,
 `--output`/`-o` and `--debug`, the ones a script points at another server with
-— and not the eight above: written after those two commands, the rest are
-passed through to the catalog.
+— and not the nine above: written after those two commands, the rest are
+passed through to the catalog. `--color` among them: it decides help's and the
+status line's color, and is written in front of the command to reach these
+two.
 
 `-c` and `-C` are deliberately not shorthands for anything. `-C` was
 `--clone`, the source every command acted on, until the source became `run`'s
 first argument and the console stopped taking one; ADRs before that (0077,
 0096, 0100, 0111) still spell it.
 
-`-c` is left unclaimed on purpose. `shell` and the `tools` commands parse
+`-c` is left unclaimed on purpose. `exec` and the `tools` commands parse
 their own flags up to the `--` that starts the command, so a shorthand written
-before it is this CLI's, and `discobox shell -c 'go test ./...'` is a plausible
+before it is this CLI's, and `discobox exec -c 'go test ./...'` is a plausible
 thing to type. A `-c` that meant `--clone` would take that command as a source
 path and run a login shell with the command dropped. Unclaimed, it says
 `unknown shorthand flag: 'c'` instead. The commands that turn flag parsing off outright (`cp`, `tools ssh`,
@@ -1482,7 +1516,7 @@ and resolves it with `selectSandbox` (`internal/cli/picker.go`): an address,
 or the NAME `discobox ls` prints, an ID or a short ID, on every server
 ([Many Servers](#many-servers-adr-0116)). One that names nothing is an error.
 Only zero arguments fall back to a pick, so a `[DISCOBOX]` is optional only
-where nothing follows it but a `--` (`shell`, `tools`, `admin exec create`) or
+where nothing follows it but a `--` (`exec`, `tools`, `admin exec create`) or
 nothing at all (`attach`, `push`, `proxy`, the `ls` of `admin exec`,
 `terminal` and `service`, `audit ls|hooks|execs`); a command with another
 positional requires it first (`admin terminal screen DISCOBOX TERMINAL_ID`)
@@ -1686,7 +1720,7 @@ session, `pkg/execstream/client`.
   stdin instead of silently dropping accepted input. Resize is idempotent state,
   so only its latest value is retained and restored.
 - A plain exec attach (`attachSandboxExec`, `internal/cli/sandbox_execs.go`) —
-  `discobox shell`, `admin exec create`, `discobox tools git`, everything that is not a
+  `discobox exec`, `admin exec create`, `discobox tools git`, everything that is not a
   harness terminal — follows the same PTY/no-PTY split as replay itself:
   `openExecAttachConn` picks the reconnecting transport, replay included, when
   `tty` is true, and the direct one otherwise. A TTY exec's screen can be
@@ -1873,12 +1907,37 @@ tool rather than only as a screenful:
   every boot the pool has ever had, and the operator running this almost always
   means the most recent one; `--tail 0` asks for the whole thing.
 
-## Terminal I/O (`discobox admin terminal screen|input|wait`)
+## Terminal I/O (`send`, `send-key`, `capture`, `wait`; `admin terminal screen|input|wait`)
 
-The terminal routes of [ADR 0137](../docs/adr/0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md),
-raw, one API call each (`internal/cli/sandbox_terminal_io.go`), under
-`admin terminal` beside `attach` and `logs` and taking the same
-`DISCOBOX TERMINAL_ID` (`primary` for the harness terminal):
+The terminal routes of [ADR 0137](../docs/adr/0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md)
+have two faces.
+
+**The everyday commands** (`internal/cli/terminal_drive.go`), at the top level
+and named as rex names them
+([ADR 26-11-04-204](../docs/adr/26-11-04-204-help-is-grouped-and-colored-and-a-terminal-is-driven-from-the-top-level.md) §§2–5),
+take `DISCOBOX` first and always — none picks a box — and the terminal by
+`-t`, `primary` by default:
+
+- `send` types its words, joined by spaces, as one text part (a paste where
+  the program asked for one); it never presses Enter.
+- `send-key` presses tmux-named keys (`terminalKeyNames`) and refuses a word
+  that names none, rather than typing it.
+- Both print nothing; `-o json` prints the route's answer.
+- `capture` prints every row of the screen, blank ones included; `--trim`
+  drops the blank rows below the last line written, as `admin terminal
+  screen` does.
+- `wait --until` reads `blocked[:KIND]` and `finished` as OSC 7501 states for
+  the route (`finished` is `idle`, `done` or `error`), `idle[=D]` as quiet,
+  `exit`, and anything else as a hook (`hook:NAME` past a keyword)
+  (`parseWaitUntil`). Its first call counts from the terminal's last input
+  (`fromLastInput`) unless `--after` names a point; one that runs out its 60s
+  is made again from the resume point it answered, until something holds or
+  `--for` passes (exit 124). It prints what held as `--until` would write it,
+  then the resume point (`waitAnswer`).
+
+**The raw commands** (`internal/cli/sandbox_terminal_io.go`), one API call
+each, under `admin terminal` beside `attach` and `logs` and taking the same
+`DISCOBOX TERMINAL_ID`:
 
 - `screen` prints the rendered screen as text, optionally with scrollback.
 - `input` reads its arguments as tmux `send-keys` does — a named key is that
@@ -1887,13 +1946,10 @@ raw, one API call each (`internal/cli/sandbox_terminal_io.go`), under
   hook's event and ID) and, last, the resume point; it exits 124 on timeout.
   `input` prints a resume point too. A longer wait is a series of calls, each
   passing the last resume point as `--after`, so nothing between them is
-  missed.
+  missed. `--after` is also where `--idle` counts from (ADR 26-11-04-204
+  §4): a terminal already quiet that long since the point answers at once.
 
-What a caller builds from these — sending a message and waiting for the
-agent's turn to end — needs to know which hook events end a turn for which
-harness, and is left to a tool above this one. Hooks are listed by
-`admin audit hooks`.
-
+Hooks are listed by `admin audit hooks`.
 ## Audit Reads (`discobox admin audit`)
 
 The audit commands read what a discobox left behind (ADR 0130), under `admin`
@@ -2048,7 +2104,7 @@ level or layering on the attach transports above.
   enrolls that key directly. With no argument it lists public keys from a
   running `SSH_AUTH_SOCK` agent (falling back to `~/.ssh/*.pub`) and reuses
   the shared picker (`internal/cli/picker.go`) for the "which key" choice
-  when there is more than one candidate — the same picker `discobox shell`'s
+  when there is more than one candidate — the same picker `discobox exec`'s
   sandbox selection, `run`'s source picker and its directory-copy question use.
   This step is
   enrollment convenience only: listing an agent's public keys proves nothing
@@ -2272,11 +2328,11 @@ Keystrokes reach the remote job, never this process. Two mechanisms, chosen by
 whether the attach has a PTY — not by which command is running:
 
 - **Raw mode (any TTY attach: `run`, `admin terminal attach`, `configure`,
-  `shell`/`admin exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
+  `exec`/`admin exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
   Ctrl-Z, and Ctrl-\ are never signals here — they travel as the bytes 0x03,
   0x1a, 0x1c and the *remote* line discipline signals the remote foreground job.
   Nothing to forward, and the local CLI is never the target.
-- **No PTY (`discobox shell` into a pipe or redirect).** The local terminal is still
+- **No PTY (`discobox exec` into a pipe or redirect).** The local terminal is still
   cooked, so those keys raise real signals here. `proxySignals` catches them and
   sends a Signal frame instead of acting on them.
 
@@ -2317,10 +2373,10 @@ same on every machine and takes no origin key. The directory `ls` runs in is
 not a filter there either.
 
 The commands that take a discobox by name or offer a pick — the pickers
-behind `attach`, `push`, `proxy` and `tools`, `shell`, `cp`, and `rm`,
+behind `attach`, `push`, `proxy` and `tools`, `exec`, `cp`, and `rm`,
 `start`/`stop`/`restart`, `tag`, `rename` — list with no filter: the runtime
 ones less the archived, the lifecycle and meta ones with them. Which servers
-they ask is 0116 §4's and unchanged: the pickers, `shell`, `cp` and `tools`
+they ask is 0116 §4's and unchanged: the pickers, `exec`, `cp` and `tools`
 every server; `rm`, the lifecycle commands, `tag` and `rename` the primary. The
 origin key narrows nothing in the CLI. In the console it is the folder of a
 discobox whose source is on no GitHub repository; one that is on GitHub sits in
@@ -3058,12 +3114,14 @@ another may not enroll a key, which would reach every discobox in the
 project, and has no use for an `ssh_config`. `admin ssh-config --write` calls
 `writeProjectSSHConfig` itself, where a refusal is the answer.
 
-## The Two IDs an Enrollment Is Made Of (`discobox id`)
+## The Two IDs an Enrollment Is Made Of (`discobox admin id`)
 
 Enrolling a client is two peer IDs meeting: this machine's, which a server
-admits, and the server's, which a client dials. `discobox id`
+admits, and the server's, which a client dials. `discobox admin id`
 (`internal/cli/identity.go`) prints both, because comparing them against what
-the other machine says is the whole of what a person does with them.
+the other machine says is the whole of what a person does with them. It is
+under `admin` with what exists for operating the system (ADR 0112); the
+top-level `id` it was still runs it, hidden (ADR 26-11-04-204 §1).
 
 - **The client half** is this machine's key file, generated on first use —
   the same file and the same generation `discobox admin peer id` performs, so
@@ -3131,7 +3189,7 @@ which versions the two ends run, is `discobox version`. The retired word is an
 unknown command like any other: no alias, and no hint naming the new path.
 
 Its header says who the server is as well as how it was reached: a `peer` row
-with the server's peer ID and where it came from, read the way `discobox id`
+with the server's peer ID and where it came from, read the way `discobox admin id`
 reads it. It is asked of the server only once the layers below have answered,
 so an unreachable server costs no second wait, and a server with no peer ID
 says so rather than leaving the row out.

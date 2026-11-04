@@ -2,7 +2,7 @@
 // ends of an interactive shell exec have to agree on: the environment variable
 // that carries it.
 //
-// A person opening a shell in a sandbox — `discobox shell` with no command, or
+// A person opening a shell in a sandbox — `discobox exec` with no command, or
 // a shell pane in the console — gets the shell they use when the sandbox has it, and the sandbox user's login shell when it does not (ADR
 // 0138). The preference rides in the exec request's environment rather than in
 // a field of its own, and is never stored: it belongs to the person at the

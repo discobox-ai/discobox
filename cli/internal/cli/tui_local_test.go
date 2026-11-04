@@ -45,7 +45,7 @@ func TestGlobalFlagsParseAgainstTheRootCommand(t *testing.T) {
 	app := &App{serverURL: "unix:///run/x.sock", projectID: "obot", autoStart: autoStartServerFalse}
 
 	cmd, _ := newRootCommand()
-	cmd.SetArgs(append(app.globalFlags(), "no-help"))
+	cmd.SetArgs(append(app.globalFlags(), "help"))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {

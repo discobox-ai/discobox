@@ -187,7 +187,7 @@ func (a *App) newTrustRequestApproveCommand() *cobra.Command {
 		}
 		return a.writeTrustRequest(cmd, request)
 	}}
-	cmd.Flags().StringVar(&pin, "pin", "", "Certificate to pin, as ca:SHA256 or leaf-spki:SHA256 from `discobox trust request get`; omit for the server's default (a supplied CA, else the chain's CA, else the host's key)")
+	cmd.Flags().StringVar(&pin, "pin", "", "Certificate to pin, as ca:SHA256 or leaf-spki:SHA256 from \"discobox trust request get\"; omit for the server's default (a supplied CA, else the chain's CA, else the host's key)")
 	cmd.Flags().Var(ttl, "ttl", "How long the trust lasts, up to 30d (defaults to what the agent asked for, or 1h)")
 	return cmd
 }
