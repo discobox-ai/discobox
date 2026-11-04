@@ -1,0 +1,4 @@
+darren@sbx-5fp90bq7kbz173cz:/workspace$ '/bin/bash' '-l'
+darren@sbx-5fp90bq7kbz173cz:/workspace$ printf "UX-582 terminal works\\n"
+UX-582 terminal works
+darren@sbx-5fp90bq7kbz173cz:/workspace$

@@ -1,0 +1,48 @@
+  [38;5;245mdiscobox  [39m                                            [38;5;240msbx_n8n6jjtqfagj1dpa[39m  [1m[38;5;196mblocked[0m  [38;5;111m]8;;http://localhost:6906\Desktop[39m]8;;\        [38;5;240mcpu 0%[39m  [38;5;240mmem 165M[39m  [38;5;240mdisk 115M[39m    [38;5;240mctrl+a d detach[39m
+  [1m[38;5;214m[48;5;52m ⚠  [39madoption request[0m[38;5;245m[48;5;52m  ·  [1m[39madoption of UX review child[0m[48;5;52m           [1m[38;5;231m[48;5;196m  click to answer  [0m[48;5;52m                                              [38;5;245m  or  [1m[39mctrl+a g[0m[38;5;245m[48;5;52m [1m[39m ✕ [0m
+[38;5;207m╭─────────────────────────────────────────────────────────────────[[1m[39m UX review lead [0m[38;5;207m]─────────────────────────────────────────────────────────────────╮
+│[39m darren@sbx-n8n6jjtqfagj1dpa:/workspace$ '/bin/bash' '-l'                                                                                           [38;5;207m│
+│[39m darren@sbx-n8n6jjtqfagj1dpa:/workspace$ /tmp/ux-discobox adopt sbx_5fp90bq7kbz17                                                                   [38;5;207m│
+│[39m 3cz --reason "Review the adoption approval flow for issue 582"                                                                                     [38;5;207m│
+│[39m Adoption request adopt_a0e5dgtkjn6jm997 is waiting for a person.                                                                                   [38;5;207m│
+│[39m Now leading sbx_5fp90bq7kbz173cz                                                                                                                   [38;5;207m│
+│[39m darren@sbx-n8n6jjtqfagj1dpa:/workspace$ /tmp/ux-discobox adopt sbx_5fp90bq7kbz173cz --reason "Review denial for issue 582"                         [38;5;207m│
+│[39m Adoption request adopt_cz0zqs92j9fga34x is waiting for a person.                                                                                   [38;5;207m│
+│[39m adoption request adopt_cz0zqs92j9fga34x was denied                                                                                                 [38;5;207m│
+│[39m darren@sbx-n8n6jjtqfagj1dpa:/workspace$                                                                                                            [38;5;207m│
+│[39m darren@sbx-n8n6jjtqfagj1dpa:/workspace$                                                                                                            [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+[39m  [1m[38;5;214m[48;5;52m ⚠  [39madoption request[0m[38;5;245m[48;5;52m  ·  [1m[39madoption of UX review child[0m[48;5;52m           [1m[38;5;231m[48;5;196m  click to answer  [0m[48;5;52m                                              [38;5;245m  or  [1m[39mctrl+a g[0m[38;5;245m[48;5;52m [1m[39m ✕ [0m
+  [38;5;240mctrl+a . actions · ctrl+a d detach · ctrl+a s shell · ctrl+a o tools · ctrl+a A audit[39m

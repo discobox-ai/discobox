@@ -1,0 +1,48 @@
+  [38;5;245mdiscobox  [39m                                                [38;5;240msbx_p06fyvzn0736308q[39m  [38;5;111m]8;;http://localhost:6907\Desktop[39m]8;;\              [38;5;240mcpu 0%[39m  [38;5;240mmem 372M[39m  [38;5;240mdisk 95M[39m    [38;5;240mctrl+a d detach[39m
+  [1m[38;5;120m[48;5;22m ✎  [39mUX review Claude settings or login changed in this box[0m[48;5;22m  [1m[38;5;231m[48;5;28m  click to review and save  [0m[48;5;22m                                        [38;5;245m  or  [1m[39mctrl+a H[0m[38;5;245m[48;5;22m [1m[39m ✕ [0m
+[38;5;207m╭──────────────────────────────────────────────────────────[[1m[39m UX review signed-out Claude [0m[38;5;207m]───────────────────────────────────────────────────────────╮
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m [38;5;174m ▐[48;5;16m▛███▛█[39m[49m   [1mClaude Code[0m [38;5;241mv2.1.318[39m                                                                                                                    [38;5;207m│
+│[39m [38;5;174m▝▜[48;5;16m█████[49m█▀[39m  [38;5;241mOpus 5.5 · API Usage Billing[39m                                                                                                            [38;5;207m│
+│[39m [38;5;174m ▝▝   ▝▝ [39m  [38;5;241m/workspace[39m                                                                                                                              [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m [38;5;174m▎[39m [1mAuto mode is now Claude Code's default permission mode.[0m                                                                                          [38;5;207m│
+│[39m [38;5;174m▎[39m [38;5;241mAuto mode lets Claude handle permission prompts automatically. Claude checks each tool call for risky actions and prompt injection before [39m       [38;5;207m│
+│[39m [38;5;174m▎[39m [38;5;241mexecuting, runs the ones it assesses as lower-risk, and blocks the rest.[39m                                                                         [38;5;207m│
+│[39m [38;5;174m▎[39m [38;5;241m]8;id=termpane-1-aawvmy8;https://code.claude.com/docs/en/permission-modes\https://code.claude.com/docs/en/permission-modes[39m]8;;\                                                                                                 [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m [38;5;105m▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔[39m [38;5;207m│
+│[39m    [1m[38;5;105mLogin[0m                                                                                                                                           [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m    [1mClaude Code can be used with your Claude subscription or billed based on API usage through your Console account.[0m                                [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m    Select login method:                                                                                                                            [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m    [38;5;105m❯[39m [38;5;241m1. [38;5;105mClaude account with subscription · [38;5;241mIndividual, Team, or Enterprise[39m                                                                         [38;5;207m│
+│[39m      [38;5;241m2. [39mAnthropic Console account · [38;5;241mAPI usage billing[39m                                                                                              [38;5;207m│
+│[39m      [38;5;241m3. [39m3rd-party platform · [38;5;241mAmazon Bedrock, Microsoft Foundry, Google Vertex AI[39m                                                                   [38;5;207m│
+│[39m                                                                                                                                                    [38;5;207m│
+│[39m    [3m[38;5;241mEsc to cancel[0m                                                                                                                                   [38;5;207m│
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+[39m  [1m[38;5;120m[48;5;22m ✎  [39mUX review Claude settings or login changed in this box[0m[48;5;22m  [1m[38;5;231m[48;5;28m  click to review and save  [0m[48;5;22m                                        [38;5;245m  or  [1m[39mctrl+a H[0m[38;5;245m[48;5;22m [1m[39m ✕ [0m
+  [38;5;240mctrl+a . actions · ctrl+a d detach · ctrl+a s shell · ctrl+a o tools · ctrl+a A audit · ctrl+a H review config · ctrl+a m take mouse[39m

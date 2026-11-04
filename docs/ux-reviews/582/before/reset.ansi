@@ -1,0 +1,48 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│ Discoboxes                 3 boxes │
+│ no source                  3 boxes │
+│  gallant_leavitt      starting     │
+│  UX review child      running      │
+│  UX review lead       running      │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                    │      │                                                                                                  │
+│                                    │      │  [1mReset[0m                                                                                           │
+│                                    │      │                                                                                                  │
+│                                    │      │  Reset Claude Code to its bundle's defaults? The settings and logins saved to it from            │
+│                                    │      │  discoboxes are deleted. New discoboxes on it start signed out until a login made in one is      │
+│                                    │      │  saved again; secrets you bound to it by hand are kept.                                          │
+│                                    │      │                                                                                                  │
+│                                    │      │  y yes (Enter)   n no                                                                            │
+│                                    │      │                                                                                                  │
+│                                    │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+├────────────────────────────────────┤
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│   skills                        F5 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

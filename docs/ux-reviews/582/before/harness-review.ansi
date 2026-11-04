@@ -1,0 +1,48 @@
+
+
+
+
+
+
+
+
+
+
+
+       ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+       │                                                                                                                                     │
+       │  [1mHarness changes — UX review signed-out Claude[0m                                                                                      │
+       │                                                                                                                                     │
+       │  State: pending · revision 1                                                                                                        │
+       │                                                                                                                                     │
+       │  Save updates shared harness defaults and credentials. Discard leaves local files unchanged.                                        │
+       │                                                                                                                                     │
+       │  ── update .claude/settings.json ─────────────────────────────────────────────────────────────────────────────────────────────────  │
+       │  @@ -1,7 +1,4 @@                                                                                                                    │
+       │   {                                                                                                                                 │
+       │     "theme": "dark",                                                                                                                │
+       │  -  "skipDangerousModePermissionPrompt": true,                                                                                      │
+       │  -  "permissions": {                                                                                                                │
+       │  -    "defaultMode": "bypassPermissions"                                                                                            │
+       │  -  }                                                                                                                               │
+       │  +  "showTurnDuration": true                                                                                                        │
+       │   }                                                                                                                                 │
+       │                                                                                                                                     │
+       │  ❯ s  [1mSave reviewed changes[0m                                                                                                         │
+       │    d  Discard candidate                                                                                                             │
+       │    r  Refresh preview                                                                                                               │
+       │                                                                                                                                     │
+       │  Enter runs the highlighted action · Esc cancels                                                                                    │
+       │                                                                                                                                     │
+       ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+

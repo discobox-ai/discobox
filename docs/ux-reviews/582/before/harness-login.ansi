@@ -1,0 +1,48 @@
+  discobox                                                       sbx_p06fyvzn0736308q                  cpu 0%  mem 484M  disk 95M    ctrl+a d detach
+  [1m ✎  UX review Claude settings or login changed in this box[0m   click to review and save                                             or  [1mctrl+a H[0m [1m ✕ [0m
+╭──────────────────────────────────────────────────────────[[1m UX review signed-out Claude [0m]───────────────────────────────────────────────────────────╮
+│                                                                                                                                                    │
+│  ▐▛███▛█   [1mClaude Code[0m v2.1.318                                                                                                                    │
+│ ▝▜██████▀  Opus 5.5 · API Usage Billing                                                                                                            │
+│  ▝▝   ▝▝   /workspace                                                                                                                              │
+│                                                                                                                                                    │
+│ ▎ [1mAuto mode is now Claude Code's default permission mode.[0m                                                                                          │
+│ ▎ Auto mode lets Claude handle permission prompts automatically. Claude checks each tool call for risky actions and prompt injection before        │
+│ ▎ executing, runs the ones it assesses as lower-risk, and blocks the rest.                                                                         │
+│ ▎ ]8;id=termpane-1-aawvmy8;https://code.claude.com/docs/en/permission-modes\https://code.claude.com/docs/en/permission-modes]8;;\                                                                                                 │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ │
+│    [1mLogin[0m                                                                                                                                           │
+│                                                                                                                                                    │
+│    [1mClaude Code can be used with your Claude subscription or billed based on API usage through your Console account.[0m                                │
+│                                                                                                                                                    │
+│    Select login method:                                                                                                                            │
+│                                                                                                                                                    │
+│    ❯ 1. Claude account with subscription · Individual, Team, or Enterprise                                                                         │
+│      2. Anthropic Console account · API usage billing                                                                                              │
+│      3. 3rd-party platform · Amazon Bedrock, Microsoft Foundry, Google Vertex AI                                                                   │
+│                                                                                                                                                    │
+│    [3mEsc to cancel[0m                                                                                                                                   │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  [1m ✎  UX review Claude settings or login changed in this box[0m   click to review and save                                             or  [1mctrl+a H[0m [1m ✕ [0m
+  ctrl+a . actions · ctrl+a d detach · ctrl+a s shell · ctrl+a o tools · ctrl+a A audit · ctrl+a H review config · ctrl+a m take mouse

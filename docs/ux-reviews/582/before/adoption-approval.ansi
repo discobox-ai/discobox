@@ -1,0 +1,48 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│ Discoboxes                 3 boxes │
+│ no source                  3 boxes │
+│  gallant_leavitt      running      │
+│  UX review child      running      │
+│  UX review lead       running    ! │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                    │      │                                                                                                  │
+│                                    │      │  [1mAdoption request[0m                                                                                │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── who leads this discobox ───────────────────────────────────────────────────────────────────  │
+│                                    │      │  child                          [1mUX review child (sbx_5fp90bq7kbz173cz)[0m                           │
+│                                    │      │  requester                      UX review lead (sbx_n8n6jjtqfagj1dpa)                            │
+│                                    │      │  current parent                 none                                                             │
+│                                    │      │  reason (the discobox's words)  Review the adoption approval flow for issue 582                  │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── approval allows the parent to ─────────────────────────────────────────────────────────────  │
+│                                    │      │  Read and type into terminals; start, stop, repair, upgrade and archive the child; change its    │
+│                                    │      │  meta; deliver its source; reach its ports; answer credential requests within what the parent    │
+│                                    │      │  may delegate.                                                                                   │
+│                                    │      │  The child's credentials stay its own. Authority covers this child alone.                        │
+│                                    │      │                                                                                                  │
+│                                    │      │  ❯    [1mApprove adoption[0m                                                                           │
+│                                    │      │    d  Deny                                                                                       │
+│                                    │      │                                                                                                  │
+│                                    │      │  Approval replaces the current parent. Esc leaves the request waiting.                           │
+│                                    │      │  Enter runs the highlighted action · Esc cancels                                                 │
+│                                    │      │                                                                                                  │
+│                                    │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+├────────────────────────────────────┤
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│   skills                        F5 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

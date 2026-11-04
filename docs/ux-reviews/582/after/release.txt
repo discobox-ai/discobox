@@ -1,0 +1,23 @@
+Give DISCOBOX back by clearing its parent. Its creator, files and credentials
+stay its own, and it keeps running. A person may release any discobox; a
+discobox with API access may release only a child it leads.
+
+The former parent loses the authority adoption or creation gave it over this
+child. Adopting it again needs a person's approval.
+
+Examples:
+  discobox release mybox
+  discobox ls --parent me
+
+Usage:
+  discobox release DISCOBOX [flags]
+
+Options:
+  -h, --help           help for release
+
+Global options:
+      --color WHEN     set color WHEN to auto, always, or never (default auto)
+      --debug          print HTTP requests and the git commands run on this machine
+  -o, --output FORMAT  output FORMAT: table or json (default table)
+      --server SERVER  connect to SERVER, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is
+      --token TOKEN    bearer TOKEN for API requests
