@@ -85,14 +85,14 @@ func fingerprint(key machine.Key) string {
 }
 
 // keyPrefix is how every key issued for the pool is named, so a provider that
-// lost its record of one finds it by name to revoke it. A pool's project is
+// lost its record of one finds it by name to revoke it. A pool's scope is
 // of fixed length, so no pool's prefix is another's.
 func keyPrefix(pool *model.Pool) (string, error) {
-	project, err := poolProject(pool.ID)
+	scope, err := machinePool(pool.ID)
 	if err != nil {
 		return "", err
 	}
-	return project + "-", nil
+	return scope + "-", nil
 }
 
 // providerKeyRecheck is how often a pool holding the provider's own key asks

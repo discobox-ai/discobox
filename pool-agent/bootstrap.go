@@ -93,10 +93,10 @@ type Bootstrap struct {
 	// Driver is the disco-vm driver a RuntimeMachine pool's sandboxes run on,
 	// such as boxd. Only that runtime has one.
 	Driver string `json:"driver,omitempty"`
-	// MachineProject is the disco-vm project a RuntimeMachine pool makes its
+	// MachinePool is the disco-vm pool a RuntimeMachine pool makes its
 	// sandboxes' machines in: the pool's own, which its provider derives from
 	// the pool (ADR 26-10-23-551 §3).
-	MachineProject string `json:"machineProject,omitempty"`
+	MachinePool string `json:"machinePool,omitempty"`
 	// MachineBase is the driver's base a sandbox's machine is made fresh
 	// from, as the driver's configuration names it (machine.Config.Base);
 	// empty is the driver's default.
@@ -170,15 +170,15 @@ func (b Bootstrap) Validate() error {
 		if b.Driver != "" {
 			return fmt.Errorf("driver %q is for the %s runtime; this pool's is %s", b.Driver, RuntimeMachine, RuntimeDocker)
 		}
-		if b.MachineProject != "" || b.MachineBase != "" || b.MachineNetwork != "" || b.PublicURL != "" || b.PrivateURL != "" {
-			return fmt.Errorf("a machine project, base, network and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
+		if b.MachinePool != "" || b.MachineBase != "" || b.MachineNetwork != "" || b.PublicURL != "" || b.PrivateURL != "" {
+			return fmt.Errorf("a machine pool, base, network and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
 		}
 	case RuntimeMachine:
 		if strings.TrimSpace(b.Driver) == "" {
 			return fmt.Errorf("the %s runtime needs a driver", RuntimeMachine)
 		}
-		if err := machine.ValidateProject(b.MachineProject); err != nil {
-			return fmt.Errorf("the %s runtime's machine project: %w", RuntimeMachine, err)
+		if err := machine.ValidatePool(b.MachinePool); err != nil {
+			return fmt.Errorf("the %s runtime's machine pool: %w", RuntimeMachine, err)
 		}
 		// A driver with no path between its machines cannot carry a machine
 		// pool: its sandboxes could not reach it (ADR 26-10-29-481 §1).

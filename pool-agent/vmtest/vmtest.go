@@ -74,11 +74,11 @@ func runFakeGuest(args []string) error {
 	return (&guest.Server{Version: "test", Root: *root, Fake: *isFake}).Serve(listener)
 }
 
-// runShim makes the fake driver again on the directory and project it was
+// runShim makes the fake driver again on the directory and pool it was
 // given, as its owner, and holds the instance it was started for.
 func runShim(args []string) error {
 	if len(args) < 2 {
-		return errors.New("usage: <dir> <project> <shim arguments>")
+		return errors.New("usage: <dir> <pool> <shim arguments>")
 	}
 	driver, err := newFakeDriver(args[0], args[1], nil)
 	if err != nil {
@@ -87,18 +87,18 @@ func runShim(args []string) error {
 	return local.ShimMain(context.Background(), driver, args[2:])
 }
 
-// FakeDriver is disco-vm's fake driver for project, keeping its machines in
+// FakeDriver is disco-vm's fake driver for pool, keeping its machines in
 // dir and calling with keys (nil is as the directory's owner), whose base is
 // Base: a test makes a fresh machine from it as a sandbox's or a pool's
 // machine is made from a driver's base. It commits, unless the test set
 // fake.NoCommitEnv before calling it. Its machines' shims are this test
 // binary, whose TestMain calls RunFakeGuestIfInvoked.
-func FakeDriver(t testing.TB, dir, project string, keys machine.KeySource) machine.Driver {
+func FakeDriver(t testing.TB, dir, pool string, keys machine.KeySource) machine.Driver {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("disco-vm's fake guests run POSIX processes here")
 	}
-	driver, err := newFakeDriver(dir, project, keys)
+	driver, err := newFakeDriver(dir, pool, keys)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,16 +108,16 @@ func FakeDriver(t testing.TB, dir, project string, keys machine.KeySource) machi
 // Base is FakeDriver's base.
 const Base = "base"
 
-func newFakeDriver(dir, project string, keys machine.KeySource) (machine.Driver, error) {
+func newFakeDriver(dir, pool string, keys machine.KeySource) (machine.Driver, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
 	return machine.New("fake", machine.Config{
-		Project:     project,
+		Pool:        pool,
 		Dir:         dir,
 		Base:        Base,
-		ShimCommand: []string{exe, shimSubcommand, dir, project},
+		ShimCommand: []string{exe, shimSubcommand, dir, pool},
 		Keys:        keys,
 	})
 }

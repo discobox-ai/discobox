@@ -76,9 +76,9 @@ func Validate(data json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	// The provider instance's project is not known here, and the driver's
+	// The provider instance's scope is not known here, and the driver's
 	// kind is all there is to check the rest against.
-	driver, err := newDriver(cfg.Driver, localProject, "", nil)
+	driver, err := newDriver(cfg.Driver, localPool, "", nil)
 	if err != nil {
 		return err
 	}

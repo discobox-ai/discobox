@@ -73,11 +73,11 @@ var _ poolruntime.RuntimeProvider = (*Runtime)(nil)
 
 // newRuntime opens the engine for the provider instance providerID.
 func newRuntime(cfg Config, providerID string) (*Runtime, error) {
-	driver, project, err := openDriver(cfg.Driver, providerID, strings.TrimSpace(cfg.Base), providerKeys(cfg))
+	driver, scope, err := openDriver(cfg.Driver, providerID, strings.TrimSpace(cfg.Base), providerKeys(cfg))
 	if err != nil {
 		return nil, err
 	}
-	e, err := engine.Open(driver, project)
+	e, err := engine.Open(driver, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -100,41 +100,41 @@ func providerKeys(cfg Config) machine.KeySource {
 	return machine.StaticKey(machine.Key{Driver: driver, Secret: key})
 }
 
-// openDriver makes the named driver in the disco-vm project (disco-vm ADR
+// openDriver makes the named driver in the disco-vm scope (disco-vm ADR
 // 0004) of the provider instance providerID's engine, calling a remote
 // driver's service with keys and making a fresh VM from base, its
 // configuration's (disco-vm ADR 26-11-03-606): a remote driver's pool
 // machine and its sandboxes' machines are made from it, and a local driver,
 // whose pool agent runs on this host, makes none.
 //
-// The project is the driver's configuration, but which one follows from what
-// the driver is: a local driver's is localProject, any other's is the
-// provider's own (remoteProject). So the driver is made in localProject first,
+// The scope is the driver's configuration, but which one follows from what
+// the driver is: a local driver's is localPool, any other's is the
+// provider's own (remotePool). So the driver is made in localPool first,
 // which construction alone cannot get wrong, and made again in the provider's
-// project when it is not local. Construction touches no hypervisor or service.
+// scope when it is not local. Construction touches no hypervisor or service.
 func openDriver(name, providerID, base string, keys machine.KeySource) (machine.Driver, string, error) {
-	driver, err := newDriver(name, localProject, base, nil)
+	driver, err := newDriver(name, localPool, base, nil)
 	if err != nil || isLocal(driver) {
-		return driver, localProject, err
+		return driver, localPool, err
 	}
-	project, err := remoteProject(providerID)
+	scope, err := remotePool(providerID)
 	if err != nil {
 		return nil, "", err
 	}
-	driver, err = newDriver(name, project, base, keys)
-	return driver, project, err
+	driver, err = newDriver(name, scope, base, keys)
+	return driver, scope, err
 }
 
-// newDriver constructs the named disco-vm driver for project, calling with
+// newDriver constructs the named disco-vm driver for scope, calling with
 // keys, its fresh VMs made from base (empty is the driver's default). The name is disco-vm's, and so is the registry it is looked up in:
 // this package knows no driver by name. Construction touches no hypervisor, so
 // validation may call it too.
-func newDriver(name, project, base string, keys machine.KeySource) (machine.Driver, error) {
+func newDriver(name, scope, base string, keys machine.KeySource) (machine.Driver, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("%s driver is required (one of %s)", ProviderType, strings.Join(machine.Names(), ", "))
 	}
-	cfg, err := driverConfig(name, project, stateRoot(name), keys)
+	cfg, err := driverConfig(name, scope, stateRoot(name), keys)
 	if err != nil {
 		return nil, err
 	}
@@ -146,55 +146,55 @@ func newDriver(name, project, base string, keys machine.KeySource) (machine.Driv
 	return driver, nil
 }
 
-// driverConfig is what the named driver is made with for project, by the
+// driverConfig is what the named driver is made with for scope, by the
 // server and by its shims alike.
 //
 //   - Dir is the host's state root for the driver (stateRoot), which a local
 //     driver keeps its images, instances, shims and keys in; a remote driver
 //     ignores it.
 //   - ShimCommand is this binary's hidden shim subcommand, with the same
-//     driver, project and directory, so the server ships no disco-vm binary.
+//     driver, scope and directory, so the server ships no disco-vm binary.
 //   - Keys is what the driver calls its service with: a remote driver's is
 //     the provider's API key (providerKeys). A local driver's shim and the
 //     server make it with none, so they act as its state root's owner.
 //     disco-vm reads no key of its own accord.
-func driverConfig(name, project, dir string, keys machine.KeySource) (machine.Config, error) {
+func driverConfig(name, scope, dir string, keys machine.KeySource) (machine.Config, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return machine.Config{}, err
 	}
 	return machine.Config{
-		Project:     project,
+		Pool:        scope,
 		Dir:         dir,
-		ShimCommand: shimCommand(exe, dir, name, project),
+		ShimCommand: shimCommand(exe, dir, name, scope),
 		Keys:        keys,
 	}, nil
 }
 
-// localProject is the disco-vm project of everything a local driver's
+// localPool is the disco-vm scope of everything a local driver's
 // provider instances make in its state root. It is one for all of them, as
 // the root is, because the engine counts the driver's running-guest cap (vz's
-// two macOS guests) over the driver's instances, which are its project's, and
-// that cap is the host's (stateRoot). It is not disco-vm's default project,
+// two macOS guests) over the driver's instances, which are its scope's, and
+// that cap is the host's (stateRoot). It is not disco-vm's default scope,
 // which is the disco-vm CLI's, so what a person makes with the CLI is never
 // discobox's.
-const localProject = "discobox"
+const localPool = "discobox"
 
-// remoteProject is a remote driver's project for the provider instance
+// remotePool is a remote driver's scope for the provider instance
 // providerID.
 //
 // A remote driver's machines outlive any store that records them and are
-// named for their project, which is how one store tells its own from the
+// named for their scope, which is how one store tells its own from the
 // account's other contents, another server's included (disco-vm ADR 0004). So
-// a remote driver's project is the provider instance's own (ADR 26-10-23-551
-// §1), spelled from its ID within disco-vm's project rule: prov_x becomes
+// a remote driver's scope is the provider instance's own (ADR 26-10-23-551
+// §1), spelled from its ID within disco-vm's scope rule: prov_x becomes
 // prov-x.
-func remoteProject(providerID string) (string, error) {
-	project := strings.ReplaceAll(strings.ToLower(providerID), "_", "-")
-	if err := machine.ValidateProject(project); err != nil {
-		return "", fmt.Errorf("%s provider %q has no disco-vm project: %w", ProviderType, providerID, err)
+func remotePool(providerID string) (string, error) {
+	scope := strings.ReplaceAll(strings.ToLower(providerID), "_", "-")
+	if err := machine.ValidatePool(scope); err != nil {
+		return "", fmt.Errorf("%s provider %q has no disco-vm scope: %w", ProviderType, providerID, err)
 	}
-	return project, nil
+	return scope, nil
 }
 
 // Close releases nothing: the engine keeps no state of its own (disco-vm ADR

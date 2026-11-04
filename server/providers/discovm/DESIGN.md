@@ -30,8 +30,15 @@ flowchart TD
 
 ## The Engine Is the Server's
 
+The disco-vm scope is named `pool` in its API. Bootstrap uses `MachinePool`
+(`machinePool` in JSON), driver configuration uses `Config.Pool`, and the
+server's shim takes `--pool`. Discobox's own project model is unchanged.
+Existing scope values and provider placement policy are retained here;
+host-wide capacity enforcement and one disco-vm scope per discobox pool
+are separate follow-ups. This cutover provides no bootstrap/state migration.
+
 - The engine is stateless (disco-vm ADR 26-10-23-417): the driver holds its
-  project and its state, and every image and instance is read from it.
+  scope and its state, and every image and instance is read from it.
   `driverConfig` is the one `machine.Config` the server and its shims make a
   driver with: the state root as `Dir`, this binary's shim as `ShimCommand`,
   and as `Keys` the provider's `apiKey` for a remote driver (`providerKeys`),
@@ -39,21 +46,21 @@ flowchart TD
 - One state root per driver per host (`stateRoot`, under the platform's data
   directory), shared by every provider instance on that driver; it is not
   configurable. Only a local driver keeps anything in it. Each provider
-  instance's driver is made in a disco-vm project (disco-vm ADR 0004;
+  instance's driver is made in a disco-vm scope (disco-vm ADR 0004;
   `openDriver`):
   - **remote driver**: the provider instance's own, spelled from its ID
     (`prov_x` → `prov-x`; ADR 26-10-23-551 §1). A remote driver's machines
-    outlive any store and are named for their project, so the project is
+    outlive any store and are named for their scope, so the scope is
     what keeps two servers, or two providers, on one account from taking each
     other's machines as their own orphans.
-  - **local driver**: `discobox` (`localProject`) for every provider
+  - **local driver**: `discobox` (`localPool`) for every provider
     instance. The engine counts a driver's running-guest cap at `Start`
-    over the driver's instances, which are its project's, so one project per
+    over the driver's instances, which are its scope's, so one scope per
     root is what makes vz's two running macOS guests the host's (ADR
-    26-10-09-106 §4). It is not disco-vm's default project, which is the
+    26-10-09-106 §4). It is not disco-vm's default scope, which is the
     disco-vm CLI's.
-- Which project follows from the driver's kind, so the driver is made in
-  `localProject` first and made again in the provider's when it is not a
+- Which scope follows from the driver's kind, so the driver is made in
+  `localPool` first and made again in the provider's when it is not a
   `*local.Driver`; construction touches no hypervisor or service.
 - The engine keeps no database. What the provider placed on a pool's machine
   is its record on the pool's row (below); `Runtime.Close` releases nothing,
@@ -64,12 +71,12 @@ flowchart TD
   value was in them: a local driver's pool never ran (its host agent is not
   staged, #64), and a boxd pool machine carried nothing placed on it. A boxd
   machine that engine made is named by its old instance ID, not by its
-  pool's project, so it is not found: the pool's next reconcile makes its
+  pool's scope, so it is not found: the pool's next reconcile makes its
   machine again, and the old one is the operator's to remove from the
-  account (`dvm-<project>--<id>`).
+  account (`dvm-<scope>--<id>`).
 - A local machine's shim is this binary re-executed as `__vm-shim`
   (`RunShimIfInvoked`, called from `server.RunVMLauncherIfInvoked` before
-  anything a server does) with the driver's directory, name and project; it
+  anything a server does) with the driver's directory, name and scope; it
   makes the same driver from `driverConfig` and runs `local.ShimMain`, so the
   server ships no disco-vm binary. A remote driver (boxd) runs no shim: the
   engine attaches to the service's machine on every call, so a running one is adopted across
@@ -100,7 +107,7 @@ as ADR 26-10-09-106 §1 places it:
 
 | driver | pool host | console | log |
 | --- | --- | --- | --- |
-| remote (boxd) | `poolMachine`: a Linux machine named for the pool's project (`pool_x` → `pool-x`), booted from a driver base | `bash -l` in it, through the driver's guest exec | its journal for this boot, through the same exec |
+| remote (boxd) | `poolMachine`: a Linux machine named for the pool's scope (`pool_x` → `pool-x`), booted from a driver base | `bash -l` in it, through the driver's guest exec | its journal for this boot, through the same exec |
 | local (vz, hcs) | `hostAgent`: a pool agent process under `<driver Dir>/pools/<pool>` (the state root) | refused, `sandbox.ErrPoolConsoleUnsupported`: the host is the user's own machine | the agent's `pool-agent.log` |
 
 - `poolMachine` reaches the host through the driver's guest operations
@@ -121,7 +128,7 @@ as ADR 26-10-09-106 §1 places it:
   Repair stops
   and starts the same machine, keeping its disk, and provisions it again;
   remove deletes it and revokes the pool's keys.
-- The pool's machine is created on a network of the pool's own (its project's
+- The pool's machine is created on a network of the pool's own (its scope's
   name) and no other, off the account's default one, so no other machine of
   the provider's reaches it; it is not isolated, since boxd peers an isolated
   machine only with machines that are not, so it keeps what the driver gives
@@ -174,7 +181,7 @@ operations (ADR 26-10-24-953 §2), every feature of the pool bundle applied:
 the pool-shared builder serves its sandboxes' builds there, beside the
 provisioning key and the driver's machine token, a cost ADR 26-10-27-767
 states. Its bootstrap names its own engine (ADR 26-10-23-551 §3):
-the machine runtime, the driver, the pool's project as the project and
+the machine runtime, the driver, the pool's scope as the scope and
 network its sandboxes' machines are made in, the provider's base, the
 provider's `controlPlaneUrl` or, with none, the channel's socket, and where
 the agent listens: the driver's `Service.Listen` for the machine, which its one URL reaches (ADR
@@ -189,7 +196,7 @@ driver's loopback port — is placed again with its new ones; boxd's stay put.
 
 `converge` runs on every reconcile, against the provider's own record on the
 pool's row (`poolRuntimeState` in `RuntimeState`: the machine, the pool's
-project, the agent and bundles placed, and the key without its secret),
+scope, the agent and bundles placed, and the key without its secret),
 never against anything the machine reports (551 §1):
 
 - no machine: the pool's keys are revoked by name (a machine lost outside
@@ -230,7 +237,7 @@ A pool's machine is given the key its engine calls the driver with
 when it is renewed: the agent's engine reads it on every call, so a renewed
 key restarts nothing.
 
-- **Issued** (`Driver.IssueKey`): named `<pool project>-<time>`, so every key
+- **Issued** (`Driver.IssueKey`): named `<pool scope>-<time>`, so every key
   of a pool is found by name, lasting `poolKeyTTL` (seven days), replaced by
   half its life. The old key is left to expire, not revoked, so no call in
   flight meets a revoked key; expired keys of the pool are swept at each

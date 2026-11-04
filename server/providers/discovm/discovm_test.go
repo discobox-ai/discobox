@@ -77,7 +77,7 @@ func newFakePool(t *testing.T, base string) (*Runtime, *poolTestDriver) {
 	cfg.Base = base
 	r := openRuntime(t, cfg)
 	driver := &poolTestDriver{Driver: r.engine.Driver}
-	e, err := engine.Open(driver, r.engine.Project)
+	e, err := engine.Open(driver, r.engine.Pool)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,16 +337,16 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 		t.Fatalf("Definition().Name = %q", provider.Definition().Name)
 	}
 	isolateStateRoot(t)
-	cfg, err := driverConfig("fake", localProject, stateRoot("fake"), nil)
+	cfg, err := driverConfig("fake", localPool, stateRoot("fake"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	exe, _ := os.Executable()
-	if want := shimCommand(exe, stateRoot("fake"), "fake", localProject); strings.Join(cfg.ShimCommand, " ") != strings.Join(want, " ") {
+	if want := shimCommand(exe, stateRoot("fake"), "fake", localPool); strings.Join(cfg.ShimCommand, " ") != strings.Join(want, " ") {
 		t.Fatalf("ShimCommand = %q, want %q", cfg.ShimCommand, want)
 	}
-	if cfg.Project != localProject || cfg.Dir != stateRoot("fake") {
-		t.Fatalf("driver config project %q dir %q, want %q in the state root", cfg.Project, cfg.Dir, localProject)
+	if cfg.Pool != localPool || cfg.Dir != stateRoot("fake") {
+		t.Fatalf("driver config scope %q dir %q, want %q in the state root", cfg.Pool, cfg.Dir, localPool)
 	}
 }
 
@@ -368,7 +368,7 @@ func TestDriverKeyIsTheProvidersConfiguration(t *testing.T) {
 // name: a remote driver's pool is a machine, a local one's is a host agent in
 // the driver's own state directory.
 func TestPoolHostFollowsTheDriversKind(t *testing.T) {
-	remote, err := engine.Open(boxd.New(machine.Config{Project: "prov-test"}), "prov-test")
+	remote, err := engine.Open(boxd.New(machine.Config{Pool: "prov-test"}), "prov-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,26 +386,26 @@ func TestPoolHostFollowsTheDriversKind(t *testing.T) {
 	}
 }
 
-// A remote driver's engine is the provider instance's own disco-vm project,
+// A remote driver's engine is the provider instance's own disco-vm scope,
 // spelled from its ID, so two servers or two providers on one account do not
 // take each other's machines for their own. A local driver's is one for every
 // provider, so the host's running-guest cap is counted over all of them.
 func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
-	project, err := remoteProject("prov_0123456789abcdef")
-	if err != nil || project != "prov-0123456789abcdef" {
-		t.Fatalf("remoteProject(prov_…) = %q, %v, want prov-0123456789abcdef", project, err)
+	scope, err := remotePool("prov_0123456789abcdef")
+	if err != nil || scope != "prov-0123456789abcdef" {
+		t.Fatalf("remotePool(prov_…) = %q, %v, want prov-0123456789abcdef", scope, err)
 	}
 	if _, _, err := openDriver("boxd", "Not A Project!", "", nil); err == nil {
-		t.Fatal("openDriver accepted an ID outside disco-vm's project rule")
+		t.Fatal("openDriver accepted an ID outside disco-vm's scope rule")
 	}
 	isolateStateRoot(t)
 	remote := openRuntime(t, Config{Driver: "boxd"})
-	if remote.engine.Project != "prov-test" {
-		t.Fatalf("boxd engine project = %q, want the provider's", remote.engine.Project)
+	if remote.engine.Pool != "prov-test" {
+		t.Fatalf("boxd engine scope = %q, want the provider's", remote.engine.Pool)
 	}
 	local := openRuntime(t, fakeConfig(t))
-	if _, project, err := openDriver("fake", "Not A Project!", "", nil); err != nil || project != localProject || local.engine.Project != localProject {
-		t.Fatalf("a local driver's project = %q, %v (engine %q), want %q for every provider", project, err, local.engine.Project, localProject)
+	if _, scope, err := openDriver("fake", "Not A Project!", "", nil); err != nil || scope != localPool || local.engine.Pool != localPool {
+		t.Fatalf("a local driver's scope = %q, %v (engine %q), want %q for every provider", scope, err, local.engine.Pool, localPool)
 	}
 }
 

@@ -57,7 +57,7 @@ nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-c
    the file's field. It holds no credential. The control plane and the agent's listener are one
    URL each, and the scheme alone picks the transport ([`wire`](../pkg/wire),
    in the root module). The bootstrap also names the sandbox runtime: `docker`
-   (the default) or `machine`, with its disco-vm driver, the disco-vm project
+   (the default) or `machine`, with its disco-vm driver, the disco-vm pool
    its sandboxes' machines are made in, the base they boot, the provider
    network they share with the pool's machine, and that machine's public and
    private URLs. Every pool's bootstrap says whether it reaches its sandboxes'
@@ -953,7 +953,7 @@ holds while both trees cover the same set of pools.
 A machine pool's sandboxes are disco-vm machines on the pool's own engine
 ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
 §3), `sandboxruntime.MachineSandboxRuntime`. The engine is opened on the
-bootstrap's driver and project, with a key source that reads
+bootstrap's driver and `MachinePool` scope, with a key source that reads
 `bundle.ProvisioningKeyFile` (a `machine.Key` as JSON) on every call, so a
 renewed key is a new file and nothing more; nothing of the file reaches an
 error. Only boxd is linked.
@@ -1058,7 +1058,7 @@ flowchart LR
 - **Refused**: suspend (a machine is not frozen whole; a sleep is a stop),
   tree export and import, both `sandboxruntime.ErrUnsupported`, answered 501.
 - **The reaper** removes an unheld sandbox's machine with its tree, and a
-  machine of the pool's project named as a sandbox's (`sbx-…`) that neither a
+  machine of the pool's disco-vm scope named as a sandbox's (`sbx-…`) that neither a
   tree nor a held sandbox names, once it has been so for the trees' retention
   (its clock under the pool's `machine-orphans`). A snapshot's VM (`snap-…`)
   is the snapshot sweep's. A machine of any other name is left alone.
@@ -1655,7 +1655,7 @@ by trying. On any other driver every sandbox's machine is made fresh and
 provisions from scratch, and nothing below exists. `machinesnapshot.go`.
 
 - **One name per plan, and a done record.** A plan's snapshot is the VM
-  `snap-<key>` in the pool's project. What makes it a snapshot is the pool's
+  `snap-<key>` in the pool's disco-vm scope. What makes it a snapshot is the pool's
   own record (`snapshot-records/<key>.json`, written by a synced rename),
   holding the ID `Commit` returned. disco-vm's word that a VM is committed is
   never read: a create is made `From` the VM only if the record exists and

@@ -64,7 +64,7 @@ type MachineSandboxRuntimeConfig struct {
 	AgentTLS bool
 	// Root is where the runtime reads and writes pool state.
 	Root layout.Root
-	// Engine is the pool's own disco-vm engine, in the pool's project.
+	// Engine is the pool's own disco-vm engine, in the pool's disco-vm pool.
 	Engine *engine.Engine
 	// Base is the driver's base as its configuration names it
 	// (machine.Config.Base): what a fresh machine starts from, which the
@@ -359,7 +359,7 @@ func (r *MachineSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string
 }
 
 // ListSandboxes is every sandbox of this pool with a machine, archived ones
-// aside. A machine of the pool's project that no sandbox's record names is
+// aside. A machine of the pool's disco-vm pool that no sandbox's record names is
 // an orphan, which the volume reaper removes (WatchSandboxVolumes).
 func (r *MachineSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, error) {
 	ids, err := r.StoredSandboxIDs(ctx)
@@ -1540,7 +1540,7 @@ func (r *MachineSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger 
 // holds when each orphan machine was first seen, by name.
 const orphanMarkersName = "machine-orphans"
 
-// reapOrphanMachines removes the machines of the pool's project that look
+// reapOrphanMachines removes the machines of the pool's disco-vm pool that look
 // like a sandbox's and that neither a tree of this pool nor a sandbox the
 // control plane holds names, once they have been seen so for
 // sandboxVolumeRetention, as an unheld tree is kept. Only a name a sandbox ID

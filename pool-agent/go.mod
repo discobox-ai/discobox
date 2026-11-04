@@ -9,7 +9,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/containerd/errdefs v1.0.0
 	github.com/discobox-ai/discobox v0.0.0-00010101000000-000000000000
-	github.com/discobox-ai/vm v0.0.0-20261103201738-d267f6c63381
+	github.com/discobox-ai/vm v0.0.0-20261104181020-8e472d3ef694
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fsnotify/fsnotify v1.10.1
@@ -116,3 +116,6 @@ tool github.com/ogen-go/ogen/cmd/ogen
 // Drop this with the one in the root go.mod, once an upstream release fixes both
 // call sites (elazarl/goproxy#805 covers only the MITM half).
 replace github.com/elazarl/goproxy => github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8
+
+// PR dependency: use the reviewed vm#65 head until its canonical module commit is merged.
+replace github.com/discobox-ai/vm => github.com/ibuildthecloud-bot/vm v0.0.0-20261104181020-8e472d3ef694
