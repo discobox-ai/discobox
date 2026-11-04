@@ -5,7 +5,7 @@
 // lifecycle reaches plugins and nothing else, so this plugin is the equivalent
 // unit — image-owned, version-coupled to the CLI it ships beside, and named by
 // opencode's managed config layer (`/etc/opencode`) rather than by the user's
-// own config, which the configure flow replaces (ADR 0147).
+// own config, which a saved harness change replaces (ADR 0147).
 //
 // It is an opencode 2 plugin (ADR 26-10-15-848): a directory whose `server`
 // module default-exports `{id, setup}`. opencode resolves a plugin path to a
@@ -90,7 +90,7 @@ export default {
   id: "discobox-hooks",
   setup: async ({ event, tool }) => {
     // Nothing to publish to when the sandbox agent is not listening — a
-    // configure sandbox, or opencode run outside a Discobox terminal. The
+    // build, or opencode run outside a Discobox terminal. The
     // publisher tolerates it, but spawning a process per event to discover
     // that does not.
     if (!process.env.DISCOBOX_HOOK_SOCKET) return;

@@ -32,8 +32,8 @@ setup_file() {
   mkdir -p "$DISCOBOX_BATS_HOME"
   export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0
 
-  cli admin harness ls -o json 2>/dev/null | jq -e '.harnessConfigs[] | select(.slug == "shell" and .configured)' >/dev/null ||
-    skip "the shell harness is not configured on the development server"
+  cli admin harness ls -o json 2>/dev/null | jq -e '.harnessConfigs[] | select(.slug == "shell")' >/dev/null ||
+    skip "the shell harness is not registered on the development server"
 
   # The developer's repository the discobox is cut from.
   export DISCOBOX_BATS_LOCAL="$BATS_SUITE_TMPDIR/local"

@@ -95,9 +95,8 @@ const serverStopGrace = 30 * time.Second
 // process's group, so Ctrl-C reaches it directly, and forwarding one would
 // deliver it twice.
 //
-// The context is the other way this ends — it is canceled when the process that
-// asked for this one goes away (watchParentProcess) — and there the server is
-// asked to stop rather than killed. os/exec's default is Process.Kill, which
+// The context is the other way this ends, and there the server is asked to
+// stop rather than killed. os/exec's default is Process.Kill, which
 // takes a server down holding its provider state and the data directory's
 // singleton lock; this change's own launch path documents what that costs, in
 // the widened start window a replacement needs while the previous server is

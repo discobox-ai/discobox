@@ -2,9 +2,7 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"slices"
 	"strings"
@@ -13,9 +11,6 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/harness"
-	execclient "github.com/discobox-ai/discobox/pkg/execstream/client"
-	"github.com/discobox-ai/x/id"
 )
 
 type harnessCreateOptions struct {
@@ -40,8 +35,7 @@ func (a *App) newHarnessCommand() *cobra.Command {
 	cmd.AddCommand(a.newHarnessChangesCommand(), a.newHarnessSaveCommand(), a.newHarnessDiscardCommand(), a.newHarnessReconsiderCommand())
 	cmd.AddCommand(a.newHarnessGetCommand())
 	cmd.AddCommand(a.newHarnessCreateCommand())
-	cmd.AddCommand(a.newHarnessConfigureCommand())
-	cmd.AddCommand(a.newHarnessDeconfigureCommand())
+	cmd.AddCommand(a.newHarnessResetCommand())
 	cmd.AddCommand(a.newHarnessRefreshImageCommand())
 	cmd.AddCommand(a.newHarnessUpdateCommand())
 	cmd.AddCommand(a.newHarnessEditCommand())
@@ -207,179 +201,30 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	return cmd
 }
 
-// newHarnessConfigureCommand runs a harness's configure flow. The server owns
-// applying the result: this drives the sequence and hands the terminal to the
-// user in between.
-//
-//	configure        create the ephemeral configure sandbox
-//	configure/attach seed the previous configuration into it
-//	attach "primary" launch the configure command and let the user drive it
-//	configure/commit verify it exited 0, apply what it wrote, delete the sandbox
-func (a *App) newHarnessConfigureCommand() *cobra.Command {
-	var setDefault bool
+// newHarnessResetCommand returns a harness config to its bundle's defaults
+// (ADR 26-11-02-152 §3): the files and logins saved from discoboxes' harness
+// changes go, and the bundle's own baseline is what every box gets again.
+func (a *App) newHarnessResetCommand() *cobra.Command {
+	var includeOverrides bool
 	cmd := &cobra.Command{
-		Use:               "configure HARNESS",
-		Short:             "Run a harness's interactive configure flow",
-		Long:              "Run a harness's interactive configure flow. Re-running reconfigures it, and the previous configuration is offered to the harness so it can pre-fill.",
+		Use:   "reset HARNESS",
+		Short: "Forget a harness's saved settings and logins",
+		Long: "Return the harness to its bundle's defaults: remove the settings files saved\n" +
+			"from discoboxes' harness changes, and the logins those saves created along with\n" +
+			"their bindings. Secrets you bound to the harness by hand are kept, and so are\n" +
+			"the files you added or overrode yourself, unless --include-overrides is given.\n" +
+			"New discoboxes on the harness start from the bundle's defaults, signed out; a\n" +
+			"login made in one of them can be saved again.",
 		Args:              cobra.ExactArgs(1),
-		Aliases:           []string{"enable", "reconfigure"},
 		ValidArgsFunction: a.completeHarnessConfigs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
-			harness, err := a.runHarnessConfigure(cmd.Context(), client, projectID, harnessID,
-				cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			if setDefault {
-				if err := a.setDefaultHarnessConfig(cmd.Context(), client, projectID, harness.ID); err != nil {
-					return err
-				}
-			}
-			return a.writeHarness(cmd, harness)
-		},
-	}
-	cmd.Flags().BoolVar(&setDefault, "default", false, "Make this the project's default harness once configured")
-	return cmd
-}
-
-// runHarnessConfigure drives the configure sequence to completion on the
-// streams it is given. The launcher does not call it directly: it runs
-// `discobox admin harness configure <id>` in a pane of its own
-// (OpenHarnessConfigure), which reaches this through the command above.
-func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string,
-	stdin io.Reader, stdout, stderr io.Writer,
-) (*apimodel.HarnessConfig, error) {
-	// Read before the sandbox exists: the ports the flow forwards are the
-	// bundle's declaration, and they are bound the moment there is a sandbox to
-	// forward them into — see forwardConfigurePorts.
-	configRes, err := client.GetHarnessConfig(ctx, apiclientgen.GetHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
-	if err != nil {
-		return nil, fmt.Errorf("start configure: %w", err)
-	}
-	config, err := expectResponse[apimodel.HarnessConfig](configRes)
-	if err != nil {
-		return nil, fmt.Errorf("start configure: %w", err)
-	}
-	sandboxRes, err := client.ConfigureHarnessConfig(ctx, apiclientgen.ConfigureHarnessConfigParams{
-		ProjectId: projectID, HarnessConfigId: harnessID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("start configure: %w", err)
-	}
-	sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
-	if err != nil {
-		return nil, fmt.Errorf("start configure: %w", err)
-	}
-	forward, err := a.forwardConfigurePorts(ctx, client, projectID, sandbox.ID, config.ConfigPorts.Or(nil), stderr)
-	if err != nil {
-		return nil, fmt.Errorf("forward configure ports: %w", err)
-	}
-	if forward != nil {
-		defer forward.Close()
-	}
-
-	// The same narration an attach gets (ADR 0060). It is the same wait, behind
-	// the same image pull and provisioning, and on a first run that is the
-	// longest thing the user will sit through — "waiting for it to start"
-	// says nothing for the minutes it can take.
-	name := "configure discobox " + id.RandomPart(sandbox.ID)
-	status := newStatusLine(stderr, a.color)
-	status.set(name + ": starting")
-	waitErr := a.waitForProvisionedSandbox(ctx, client, projectID, sandbox.ID, func(line string) {
-		status.set(name + ": " + line)
-	})
-	status.clear()
-	if waitErr != nil {
-		return nil, fmt.Errorf("configure discobox failed to start: %w", waitErr)
-	}
-	// Seeding must land before the configure command runs. It does: in config mode
-	// the sandbox-agent holds the primary terminal until it is attached, so nothing
-	// has started yet.
-	attachRes, err := client.AttachHarnessConfigConfigure(ctx, apiclientgen.AttachHarnessConfigConfigureParams{
-		ProjectId: projectID, HarnessConfigId: harnessID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prepare configure: %w", err)
-	}
-	if err := expectNoContent[apiclientgen.AttachHarnessConfigConfigureNoContent](attachRes); err != nil {
-		return nil, fmt.Errorf("prepare configure: %w", err)
-	}
-
-	// Attaching the virtual primary exec is what launches the configure command,
-	// so there is no terminal to wait for first.
-	fmt.Fprintf(stderr, "Attaching to configure terminal (answer any prompts)\n")
-	// The sandbox a configure flow runs in is the flow's, not a discobox
-	// anybody keeps work in, so nothing here is pushed into it (ADR 26-09-05-008 §1 on
-	// automatic push).
-	attachErr := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, execAttachOptions{notWorkingHere: true}, stdin, stdout, stderr)
-	return finishHarnessConfigure(attachErr, func() (*apimodel.HarnessConfig, error) {
-		res, err := client.CommitHarnessConfigConfigure(ctx, apiclientgen.CommitHarnessConfigConfigureParams{
-			ProjectId: projectID, HarnessConfigId: harnessID,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return expectResponse[apimodel.HarnessConfig](res)
-	}, stderr)
-}
-
-// finishHarnessConfigure decides what a configure flow's attach ending means,
-// and commits when there is something to commit: attachErr is how the attach
-// to the configure command ended, and commit is the server's commit.
-//
-// The commit is what deletes the setup sandbox, so it is made after every
-// ending of the command, not only a successful one. It is not made when the
-// command has not ended: a stream that broke, or an attach escaped locally
-// while the command still ran. The server reaps that sandbox once the flow
-// has gone quiet.
-func finishHarnessConfigure(attachErr error, commit func() (*apimodel.HarnessConfig, error), stderr io.Writer) (*apimodel.HarnessConfig, error) {
-	code, exited := ExitCode(attachErr)
-	if attachErr != nil && (!exited || errors.Is(attachErr, execclient.ErrInterrupted)) {
-		return nil, fmt.Errorf("attach configure terminal: %w", attachErr)
-	}
-	// The server checks the real exit status; detaching early surfaces as a
-	// commit error rather than a silent success.
-	committed, commitErr := commit()
-	switch {
-	case code == harness.ConfigureCanceledExitCode:
-		// The person running it chose to stop. Nothing was saved and the
-		// sandbox is gone, which is a cancellation, not a failure: the status
-		// passes on so whatever ran this command can tell the two apart, and
-		// the line says what happened without an error's prefix.
-		if commitErr != nil {
-			return nil, fmt.Errorf("cancel configure: %w", commitErr)
-		}
-		fmt.Fprintln(stderr, "Setup canceled; its setup sandbox is deleted.")
-		return nil, execclient.ExitError{Code: code}
-	case attachErr != nil:
-		// A failure, which the server refuses to commit; the status is the
-		// command's own story, and the refusal would only repeat it.
-		return nil, fmt.Errorf("attach configure terminal: %w", attachErr)
-	case commitErr != nil:
-		return nil, fmt.Errorf("configure: %w", commitErr)
-	}
-	return committed, nil
-}
-
-func (a *App) newHarnessDeconfigureCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:               "deconfigure HARNESS",
-		Short:             "Undo a harness's configure flow",
-		Long:              "Remove the secrets and files the configure flow created and mark the harness unconfigured. The harness itself is kept and can be configured again.",
-		Args:              cobra.ExactArgs(1),
-		Aliases:           []string{"disable"},
-		ValidArgsFunction: a.completeHarnessConfigs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			res, err := client.DeconfigureHarnessConfig(cmd.Context(), apiclientgen.DeconfigureHarnessConfigParams{
+			res, err := client.ResetHarnessConfig(cmd.Context(), apiclientgen.ResetHarnessConfigParams{
 				ProjectId: projectID, HarnessConfigId: harnessID,
+				IncludeOverrides: apiclientgen.NewOptBool(includeOverrides),
 			})
 			if err != nil {
 				return err
@@ -391,6 +236,8 @@ func (a *App) newHarnessDeconfigureCommand() *cobra.Command {
 			return a.writeHarness(cmd, harness)
 		},
 	}
+	cmd.Flags().BoolVar(&includeOverrides, "include-overrides", false, "Also remove the files you added or overrode, leaving nothing but the bundle's")
+	return cmd
 }
 
 func (a *App) newHarnessRefreshImageCommand() *cobra.Command {
@@ -404,8 +251,8 @@ func (a *App) newHarnessRefreshImageCommand() *cobra.Command {
 			"tag keeps describing a bundle that no longer exists under it — and its discoboxes\n" +
 			"never report an available upgrade. Built-in harnesses refresh themselves on\n" +
 			"server start; harnesses registered from your own bundle need this. A harness\n" +
-			"registered before bundles needs one first: `update --bundle`. Configured\n" +
-			"harnesses stay configured.",
+			"registered before bundles needs one first: `update --bundle`. Saved settings\n" +
+			"and logins are kept.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeHarnessConfigs,
 		RunE: func(cmd *cobra.Command, args []string) error {

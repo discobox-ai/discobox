@@ -15,34 +15,6 @@
         "content": "// Discobox's hooks for omp, installed with the image. Removing this file stops them.\nexport { default } from \"/usr/local/libexec/discobox/omp-hook-extension.js\";\n"
       }
     ],
-    "config": {
-      "reminder": "Sign in with /login, pick a default model with /model, then finish configuration with /exit.",
-      "ports": [
-        {
-          "port": 1455,
-          "unavailable": "Port 1455 is taken on your machine, so ChatGPT's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
-        },
-        {
-          "port": 54545,
-          "unavailable": "Port 54545 is taken on your machine, so Anthropic's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
-        },
-        {
-          "port": 8085,
-          "unavailable": "Port 8085 is taken on your machine, so Gemini CLI's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
-        },
-        {
-          "port": 51121,
-          "unavailable": "Port 51121 is taken on your machine, so Antigravity's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
-        },
-        {
-          "port": 54549,
-          "unavailable": "Port 54549 is taken on your machine, so OpenRouter's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into omp, or free the port and configure again."
-        }
-      ],
-      "command": [
-        "/usr/local/libexec/discobox/configure-omp"
-      ]
-    },
     "saveBack": {
       "version": 1,
       "watch": [

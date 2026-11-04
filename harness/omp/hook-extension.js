@@ -119,7 +119,7 @@ function publish(event, payload) {
 
 export default function discoboxHooks(pi) {
   // Nothing to publish to when the sandbox agent is not listening — a
-  // configure sandbox, or omp run outside a Discobox terminal. The publisher
+  // build, or omp run outside a Discobox terminal. The publisher
   // tolerates it, but spawning a process per event to discover that does not.
   if (!process.env.DISCOBOX_HOOK_SOCKET) return;
   for (const event of PUBLISHED_EVENTS) {

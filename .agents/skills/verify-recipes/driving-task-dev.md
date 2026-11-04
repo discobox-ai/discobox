@@ -101,8 +101,10 @@ d exec "$id" -- sh -c 'id; pwd; systemctl is-system-running'
 
 - `d run -H shell -d <dir>` cuts the box from a source directory instead of
   `--no-source`; only its commits go in unless `--include-dirty` is given.
-- `-H claude-code` / `-H codex` need a configured harness (`d admin harness
-  ls`, CONFIGURED column); unconfigured, that is **blocked**, not failed.
+- `-H claude-code` / `-H codex` start signed out until a login is saved for
+  the harness (`scripts/nested-claude-auth.sh` gives claude-code this box's
+  own); a box that cannot answer for want of a login is **blocked**, not
+  failed.
 - `docker ps --format '{{.ID}}\t{{.Image}}\t{{.Names}}' | grep "$id"` finds
   the container; it is named `discobox-sandbox-<pool>-<sandbox-id>`.
 - Inside it: `docker exec <container> systemctl is-active <unit>`,

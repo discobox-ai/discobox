@@ -21,8 +21,6 @@ steps:
   # harness-specific part of it.
   - name: agent-conf
     file: {path: /usr/local/libexec/discobox/agent.conf, source: agent.conf}
-  - name: configure
-    file: {path: /usr/local/libexec/discobox/configure-claude-code, source: configure.sh, mode: "0755"}
   # The harness-run convention (ADR 0086 §3): the harness installs its agent
   # under this name, over core's no-op, and the runtime types it. On PATH,
   # not in libexec, because the runtime resolves it by name.

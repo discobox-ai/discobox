@@ -133,7 +133,7 @@ func seedSourceProject(ctx context.Context, t *testing.T, st *store.Store) *mode
 	if err := st.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	config := &model.HarnessConfig{ProjectID: project.ID, Slug: "codex", Name: "Codex", BuiltIn: true, Configured: true, Bundle: "codex:stale",
+	config := &model.HarnessConfig{ProjectID: project.ID, Slug: "codex", Name: "Codex", BuiltIn: true, Bundle: "codex:stale",
 		Egress: egress.Policy{Allow: []string{"api.openai.com"}}}
 	config.ConfiguredFiles = []model.HarnessConfigFile{{Path: "/home/user/.codex/config", Content: "hello"}}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
@@ -187,8 +187,8 @@ func TestCreateProjectSeedsBuiltIns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list harness configs: %v", err)
 	}
-	if len(configs) != 1 || configs[0].Slug != "codex" || configs[0].Configured {
-		t.Fatalf("harness configs = %#v; want one unconfigured built-in", configs)
+	if len(configs) != 1 || configs[0].Slug != "codex" {
+		t.Fatalf("harness configs = %#v; want the one built-in", configs)
 	}
 }
 
@@ -247,8 +247,8 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 		t.Fatalf("harness configs = %#v; want one", configs)
 	}
 	config := configs[0]
-	if !config.Configured || len(config.ConfiguredFiles) != 1 {
-		t.Fatalf("copied harness config = %#v; want the configured state carried across", config)
+	if len(config.ConfiguredFiles) != 1 {
+		t.Fatalf("copied harness config = %#v; want the saved overlay carried across", config)
 	}
 	if strings.Join(config.Egress.Allow, ",") != "api.openai.com" {
 		t.Fatalf("built-in harness egress = %+v, want the level a person set carried across", config.Egress)
@@ -356,8 +356,8 @@ func TestCreateProjectCopySelectionExcludesPoolsAndHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list harness configs: %v", err)
 	}
-	if len(configs) != 1 || configs[0].Configured {
-		t.Fatalf("harness configs = %#v; want the seeded built-in, unconfigured", configs)
+	if len(configs) != 1 || len(configs[0].ConfiguredFiles) != 0 {
+		t.Fatalf("harness configs = %#v; want the seeded built-in, with nothing saved", configs)
 	}
 	if secrets, err := st.ListSecrets(ctx, project.ID); err != nil || len(secrets) != 0 {
 		t.Fatalf("secrets = %#v, %v; want none", secrets, err)
@@ -722,5 +722,46 @@ func TestUpdateProjectRecordsTheWelcome(t *testing.T) {
 	}
 	if cleared.Welcomed {
 		t.Fatal("the welcome could not be cleared")
+	}
+}
+
+// Saving harness changes is explained once per project, the welcome's way:
+// recorded on the project, kept across unrelated updates, and cleared to
+// explain again (ADR 26-11-02-152 §4).
+func TestUpdateProjectRecordsTheHarnessChangesExplainer(t *testing.T) {
+	svc, _, ctx := newService(t)
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Fresh"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if project.HarnessChangesExplained {
+		t.Fatal("a new project has already explained harness changes")
+	}
+	updated, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		HarnessChangesExplained: apigen.NewOptBool(true),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if !updated.HarnessChangesExplained || updated.Welcomed {
+		t.Fatalf("explained = %v, welcomed = %v; want only the explainer recorded", updated.HarnessChangesExplained, updated.Welcomed)
+	}
+	renamed, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		Name: apigen.NewOptString("Renamed"),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if !renamed.HarnessChangesExplained {
+		t.Fatal("renaming a project forgot the explainer")
+	}
+	cleared, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		HarnessChangesExplained: apigen.NewOptBool(false),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if cleared.HarnessChangesExplained {
+		t.Fatal("the explainer could not be cleared")
 	}
 }

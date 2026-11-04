@@ -46,6 +46,12 @@ const (
 	colAlertChip = "124"
 	colAlertLit  = "196"
 	colAlertMid  = "160"
+	// The band behind the harness-changes banner, and its chip: green, because
+	// what it says is an offer — a box has settings or a login worth saving —
+	// rather than something wrong. Every other band is the alert's red; this
+	// one reading differently at a glance is the point of it having its own.
+	colOfferBG   = "22"
+	colOfferChip = "28"
 	// The text on a chip, light on the band's red: the field is a strong color,
 	// and a chip is only a button while the words on it are the most readable
 	// thing in the bar.
@@ -140,7 +146,9 @@ type styles struct {
 	attentionMark lipgloss.Style
 	attentionText lipgloss.Style
 	attentionHint lipgloss.Style
-	info          lipgloss.Style
+	// offerMark is the harness-changes band's mark, in the green its band is.
+	offerMark lipgloss.Style
+	info      lipgloss.Style
 
 	stateRun  lipgloss.Style
 	stateBusy lipgloss.Style
@@ -220,6 +228,7 @@ func newStyles(color bool) *styles {
 	s.attentionMark = paint(colWarn).Bold(true)
 	s.attentionText = lipgloss.NewStyle().Bold(true)
 	s.attentionHint = paint(colGrey)
+	s.offerMark = paint(colGreen).Bold(true)
 	s.info = paint(colInfo)
 
 	s.stateRun = paint(colOK)

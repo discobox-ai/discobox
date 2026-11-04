@@ -1,4 +1,4 @@
-// Shared by interactive configure and background save-back.
+// Background save-back's normalization of pi's credentials.
 "use strict";
 exports.normalize = function (auth, previous = {}, sentinels = {}, definition) {
   const farFuture = 4102444800000;
@@ -51,7 +51,7 @@ exports.normalize = function (auth, previous = {}, sentinels = {}, definition) {
     "_CREDENTIAL";
 
   // notice says when a login nothing renews stops working, or that it
-  // already has: a kept one as much as a new one, since a reconfigure
+  // already has: a kept one as much as a new one, since a save
   // about something else would otherwise carry a dead login on in
   // silence.
   const notice = (provider, credential) => {
@@ -62,7 +62,7 @@ exports.normalize = function (auth, previous = {}, sentinels = {}, definition) {
     if (expires <= Date.now()) {
       return `${provider}'s sign-in expired ${day}, and Discobox cannot renew it. Sign in to it again, or with an API key.`;
     }
-    return `${provider}'s sign-in expires ${day}, and Discobox cannot renew it. Configure again after that, or sign in with an API key.`;
+    return `${provider}'s sign-in expires ${day}, and Discobox cannot renew it. Sign in again and save the change after that, or sign in with an API key.`;
   };
 
   // copilotHost is the GitHub API host a Copilot login's GitHub token is

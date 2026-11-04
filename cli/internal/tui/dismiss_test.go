@@ -48,36 +48,64 @@ func TestADismissedRefusalComesBackOnlyWhenItHappensAgain(t *testing.T) {
 	}
 }
 
-// The case the whole design turns on. The harness is configured while its band
-// is dismissed; the read that says so must forget the dismissal, so that the
-// harness signed out again — with nothing about it to tell the two apart — is
-// shown rather than taken for the one somebody already dismissed.
-func TestADismissalEndsWhenWhatItWasAboutIsOver(t *testing.T) {
+// workspaceWithHarnessChanges is a workspace open on a box whose harness has a
+// change to save, as the listing reports it.
+func workspaceWithHarnessChanges(t *testing.T) (*Model, *fakeSource) {
+	t.Helper()
+	boxes := testSandboxes()
+	ds := newFakeSource(boxes...)
+	m := newTestModel(t, ds)
+	boxes[0].HarnessID, boxes[0].HarnessName = "harness_claude", "Claude Code"
+	boxes[0].HarnessConfigPending, boxes[0].HarnessConfigCandidate = true, "cand_1"
+	m.paneBox = boxes[0]
+	m.list.setAll(boxes)
+	m.toolShown = &pane{tool: "diff"}
+	return m, ds
+}
+
+// A dismissed harness change stays down while the box reports the same
+// candidate, and comes back for a different one: the box captured another
+// change, which nobody has seen.
+func TestADismissedHarnessChangeComesBackForANewCandidate(t *testing.T) {
 	t.Parallel()
-	m, _ := workspaceWithUncredentialedHarness(t)
+	m, _ := workspaceWithHarnessChanges(t)
+	if got := m.bannerShowing(); got != bannerHarnessChanges {
+		t.Fatalf("banner = %v, want the harness change", got)
+	}
 	m.dismissBanner()
 	if got := m.bannerShowing(); got != bannerNone {
-		t.Fatalf("banner = %v, want the signed-out harness dismissed", got)
+		t.Fatalf("banner = %v, want the harness change dismissed", got)
 	}
 
-	// Still signed out on the next poll: still dismissed.
 	boxes := m.list.all
 	m.list.setAll(boxes)
 	m.pruneDismissed()
 	if got := m.bannerShowing(); got != bannerNone {
-		t.Fatalf("banner = %v, want it to stay dismissed while nothing changed", got)
+		t.Fatalf("banner = %v, want it to stay dismissed while the candidate is the same", got)
 	}
 
-	// Configured, then signed out again: its name for itself never changed,
-	// and it is shown anyway.
-	boxes[0].HarnessUncredentialed = false
+	boxes[0].HarnessConfigCandidate = "cand_2"
 	m.list.setAll(boxes)
 	m.pruneDismissed()
-	boxes[0].HarnessUncredentialed = true
-	m.list.setAll(boxes)
-	m.pruneDismissed()
-	if got := m.bannerShowing(); got != bannerUncredentialed {
-		t.Fatalf("banner = %v, want the band back once the harness is signed out again", got)
+	if got := m.bannerShowing(); got != bannerHarnessChanges {
+		t.Fatalf("banner = %v, want the band back for a new candidate", got)
+	}
+}
+
+// The harness change is last: a request, which a person is being waited on
+// for, is drawn over it, and dismissing the request reveals it.
+func TestAHarnessChangeQueuesBehindARequest(t *testing.T) {
+	t.Parallel()
+	m, _ := workspaceWithHarnessChanges(t)
+	req := waitingRequest()
+	req.SandboxID = m.paneBox.ID
+	m.setCredentialRequests([]CredentialRequest{req})
+	if got := m.bannerShowing(); got != bannerCredential {
+		t.Fatalf("banner = %v, want the request over the harness change", got)
+	}
+	m.dismissBanner()
+	if got := m.bannerShowing(); got != bannerHarnessChanges {
+		t.Fatalf("banner = %v, want the harness change once the request is dismissed", got)
 	}
 }
 
@@ -85,8 +113,8 @@ func TestADismissalEndsWhenWhatItWasAboutIsOver(t *testing.T) {
 // rest dismissed; a request that arrives after brings the band back.
 func TestADismissedRequestBandReturnsForANewRequest(t *testing.T) {
 	t.Parallel()
-	m, _ := workspaceWithUncredentialedHarness(t)
-	m.list.all[0].HarnessUncredentialed = false
+	m, _ := workspaceWithHarnessChanges(t)
+	m.list.all[0].HarnessConfigPending, m.list.all[0].HarnessConfigCandidate = false, ""
 	first, second := waitingRequest(), waitingRequest()
 	first.ID, second.ID = "req_1", "req_2"
 	for _, req := range []*CredentialRequest{&first, &second} {
@@ -108,18 +136,19 @@ func TestADismissedRequestBandReturnsForANewRequest(t *testing.T) {
 	}
 }
 
-// A band is about one discobox. Dismissing a signed-out harness in one box
-// leaves it up in another box on the same harness.
+// A band is about one discobox. Dismissing a harness change in one box leaves
+// another box's up, even with the same candidate name.
 func TestADismissalIsForOneDiscobox(t *testing.T) {
 	t.Parallel()
-	m, _ := workspaceWithUncredentialedHarness(t)
+	m, _ := workspaceWithHarnessChanges(t)
 	boxes := m.list.all
-	boxes[1].HarnessID, boxes[1].HarnessName, boxes[1].HarnessUncredentialed = "harness_claude", "Claude Code", true
+	boxes[1].HarnessID, boxes[1].HarnessName = "harness_claude", "Claude Code"
+	boxes[1].HarnessConfigPending, boxes[1].HarnessConfigCandidate = true, "cand_1"
 	m.list.setAll(boxes)
 	m.dismissBanner()
 
 	m.paneBox = boxes[1]
-	if got := m.bannerShowing(); got != bannerUncredentialed {
+	if got := m.bannerShowing(); got != bannerHarnessChanges {
 		t.Fatalf("banner = %v, want the other box's band still up", got)
 	}
 }
@@ -154,38 +183,39 @@ func TestTheBandsCloseButtonDismissesIt(t *testing.T) {
 	})
 }
 
-// The leader key is the button from the keyboard.
+// The leader key is the button from the keyboard — pressed in the pane the
+// keys are typed in, not posted: the pane hands its bindings' messages back
+// tagged with itself, and one the window does not take from there is dropped.
 func TestTheLeaderKeyDismissesTheBand(t *testing.T) {
 	t.Parallel()
-	m, _ := workspaceWithUncredentialedHarness(t)
-	m.Update(dismissBannerMsg{})
-	if got := m.bannerShowing(); got != bannerNone {
-		t.Fatalf("banner = %v, want it dismissed", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		boxes := testSandboxes()
+		boxes[0].HarnessName = "Claude Code"
+		boxes[0].HarnessConfigCandidate, boxes[0].HarnessConfigPending = "cand_1", true
+		ds := newFakeSource(boxes...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the harness change band", func() bool { return m.bannerShowing() == bannerHarnessChanges })
+		d.key("ctrl+a")
+		d.key(bannerDismissKey)
+		d.wait("the band dismissed", func() bool { return m.bannerShowing() == bannerNone })
+	})
 }
 
-// The key both credential bands print answers the band that is drawn. With a
-// refusal dismissed from under it, the signed-out harness's band is up, and its
-// key opens the harness's setup — not the dismissed refusal's card, which is
-// what precedence alone would pick.
-func TestTheCredentialKeyAnswersTheBandOnScreen(t *testing.T) {
+// The refusal's key, pressed in the pane, opens its remedy: for a harness's
+// shared login, the dialog saying to sign in again in the box.
+func TestTheRefusalKeyOpensItsRemedyFromAPane(t *testing.T) {
 	t.Parallel()
-	m, ds := workspaceWithUncredentialedHarness(t)
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "token"}}
-	m.setSecretRejections([]SecretRejection{secretRejection()})
-	m.dismissBanner()
-	if got := m.bannerShowing(); got != bannerUncredentialed {
-		t.Fatalf("banner = %v, want the signed-out harness once the refusal is dismissed", got)
-	}
-
-	_, cmd := m.Update(openRejectedMsg{})
-	drain(t, m, cmd, 0)
-	if got := ds.configuredHarnesses(); len(got) != 1 || got[0] != "harness_claude" {
-		t.Fatalf("configure opened for %v, want the harness whose band is drawn", got)
-	}
-	if m.dialog != nil && strings.Contains(m.dialog.title, "GitHub token") {
-		t.Fatal("the key opened the dismissed refusal's card")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		boxes := testSandboxes()
+		boxes[0].HarnessID = harnessRejection().HarnessConfigID
+		ds := newFakeSource(boxes...)
+		ds.rejections = []SecretRejection{harnessRejection()}
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.wait("the refusal band", func() bool { return m.bannerShowing() == bannerRejected })
+		d.key("ctrl+a")
+		d.key(rejectedKey)
+		d.wait("the remedy", func() bool { return m.dialog != nil })
+	})
 }
 
 // A dismissal covers the refusals it saw. A second refusal on the same box,

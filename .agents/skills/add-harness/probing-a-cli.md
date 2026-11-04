@@ -56,10 +56,11 @@ first, or a cached answer hides the request entirely.
 
 ## A browser sign-in's callback port
 
-A browser sign-in redirects to a callback server on the CLI's own localhost,
-which the configure flow can reach only if the image declares the port in
-`config.ports` (`harness.ConfigPort`): it forwards the same number from the
-user's machine. Point `BROWSER` at a script that appends its arguments to a
+A browser sign-in redirects to a callback server on the CLI's own localhost.
+In a box, the user's browser reaches it only through the console's workspace
+forward, which binds each listening port at its own number when that number
+is free on the user's machine; when it is not, the CLI's device-code or
+paste-back sign-in is the way, so find out whether the CLI has one. Point `BROWSER` at a script that appends its arguments to a
 file, start the sign-in in an isolated home (the CLI subcommand and the
 in-TUI flow both — they can differ), and read `redirect_uri` off the URL.
 Do it at least three times, and read the CLI's listen call if you can: a
@@ -152,8 +153,8 @@ do not route around a vendor's access control by presenting as another client.
   passes vacuously from Go, whose `exec` hands the child `/dev/null` unless
   `cmd.Stdin` is set, so give the wrapper real stdin.
 - Check that the non-interactive mode runs on the model the TUI starts on.
-  opencode 2's `run` ignores the `/models` pick the TUI uses, so a configure
-  check with no `--model` tested a free model and reported success.
+  opencode 2's `run` ignores the `/models` pick the TUI uses, so a check with
+  no `--model` tested a free model and reported success.
 - An isolation test with an empty `HOME` passes whatever `HOME` the wrapper
   sets. Plant the files the isolation must shut out, then mutate the line
   under test to a no-op and check the test fails.

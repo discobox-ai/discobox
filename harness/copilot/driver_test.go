@@ -9,62 +9,11 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/harness/internal/configuretest"
 	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
-
-func TestDefinitionConfigure(t *testing.T) {
-	def := Driver{}.Definition()
-	if id := (Driver{}).ID(); def.ID != id {
-		t.Fatalf("definition ID %q differs from the driver's %q, which is also its hook provider", def.ID, id)
-	}
-	scriptBytes, err := os.ReadFile("configure.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(scriptBytes)
-	for _, want := range []string{
-		harness.ConfigureOutputPath,
-		harness.ConfigurePreviousConfigPath,
-		// Reuse goes through the PREV_ sentinel and comes back as usePrevious,
-		// so no credential is read or re-emitted when the existing one is kept.
-		"'" + harness.ConfigurePreviousEnvPrefix + "' + envName",
-		"usePrevious",
-		// Every retry is gated on a person asking for one; see the loop check
-		// below.
-		"confirm_retry",
-	} {
-		if !strings.Contains(script, want) {
-			t.Errorf("configure script is missing %q", want)
-		}
-	}
-	// Every `continue` in the collection loop has to have asked first. An
-	// attempt that fails without reaching the user -- Copilot refusing to
-	// start, say -- fails again the instant it is retried, so an ungated
-	// `continue` is a busy loop rather than a retry.
-	loopStart := strings.Index(script, "while [ -z \"$TOKEN\" ]; do")
-	if loopStart < 0 {
-		t.Fatal("configure script has no credential-collection loop")
-	}
-	loop := script[loopStart:]
-	if loopEnd := strings.Index(loop, "\ndone\n"); loopEnd >= 0 {
-		loop = loop[:loopEnd]
-	}
-	segments := strings.Split(loop, "continue")
-	for _, leadingUpToAContinue := range segments[:len(segments)-1] {
-		if !strings.Contains(leadingUpToAContinue, "confirm_retry") {
-			t.Fatalf("configure script's loop continues without confirm_retry, so it can spin: %s", leadingUpToAContinue)
-		}
-	}
-	// Emphasis is opt-out, not unconditional: this output is also read from a
-	// log, and a hardcoded escape sequence would land there too.
-	if strings.Contains(script, `\033[`) && !strings.Contains(script, "NO_COLOR") {
-		t.Fatal("configure script colorizes without honoring NO_COLOR")
-	}
-}
 
 // TestImageDeclaresOneEnvDeliveredToken pins the half of the contract the
 // image owns (ADR 26-10-02-840 §1): one required token, in the variable Copilot
@@ -87,21 +36,6 @@ func TestImageDeclaresOneEnvDeliveredToken(t *testing.T) {
 		if file.Path == ".copilot/config.json" {
 			t.Errorf("image declares %s, which is Copilot's own state", file.Path)
 		}
-	}
-}
-
-// TestImageForwardsTheLoginCallbackPort pins how /login's browser sign-in
-// reaches back: it listens on 127.0.0.1:0, a new port each run, so the image
-// declares an ephemeral entry rather than a number, and says what to do when
-// the port it got is taken here.
-func TestImageForwardsTheLoginCallbackPort(t *testing.T) {
-	image := readImage(t)
-	ports := image.Harness.Config.Ports
-	if len(ports) != 1 || !ports[0].Ephemeral || ports[0].Port != 0 {
-		t.Fatalf("config ports = %+v, want one ephemeral entry", ports)
-	}
-	if !strings.Contains(ports[0].Unavailable, "device code") {
-		t.Fatalf("unavailable = %q, want it to name the device-code fallback", ports[0].Unavailable)
 	}
 }
 
@@ -244,9 +178,6 @@ type imageManifest struct {
 			Delivery string                 `json:"delivery"`
 			Routes   []harnesscapture.Route `json:"routes"`
 		} `json:"secrets"`
-		Config struct {
-			Ports []harness.ConfigPort `json:"ports"`
-		} `json:"config"`
 	} `json:"harness"`
 }
 
@@ -332,28 +263,4 @@ func readHooks(t *testing.T) hooksConfig {
 		t.Fatal(err)
 	}
 	return config
-}
-
-// Declining another attempt is the person choosing to stop, and the status
-// says so: the CLI reports it as a cancellation, the control plane records no
-// configure error, and both delete the setup sandbox all the same. Nobody
-// there to answer is the other thing -- a failure -- and keeps status 1.
-func TestDeclinedRetryCancelsSetup(t *testing.T) {
-	for _, answer := range []string{"n\n", "no\n", "N\n"} {
-		code, stderr := configuretest.RunFunction(t, "confirm_retry", answer)
-		if code != harness.ConfigureCanceledExitCode {
-			t.Fatalf("answering %q exited %d (stderr %q), want the canceled status %d", answer, code, stderr, harness.ConfigureCanceledExitCode)
-		}
-		if !strings.Contains(stderr, "canceled") {
-			t.Fatalf("answering %q says %q, not that setup was canceled", answer, stderr)
-		}
-	}
-	if code, stderr := configuretest.RunFunction(t, "confirm_retry", ""); code != 1 {
-		t.Fatalf("end of input exited %d (stderr %q), want the failure status 1", code, stderr)
-	}
-	for _, answer := range []string{"\n", "y\n"} {
-		if code, stderr := configuretest.RunFunction(t, "confirm_retry", answer); code != 0 {
-			t.Fatalf("answering %q exited %d (stderr %q), want another attempt", answer, code, stderr)
-		}
-	}
 }

@@ -1,6 +1,6 @@
 ---
 name: add-harness
-description: Add a new built-in coding harness (a terminal agent CLI such as Claude Code, Codex, OpenCode or GitHub Copilot) to Discobox — probe the real CLI, decide credential delivery, hooks and trust, build the harness/<id> image folder, wire it into the registry, Taskfile, watcher and docs, test it end to end on the nested dev server, and fold what it taught back into this skill. Use when the user asks to add, support, or package another agent CLI as a harness, or to change how an existing harness's image, configure flow, or launcher works.
+description: Add a new built-in coding harness (a terminal agent CLI such as Claude Code, Codex, OpenCode or GitHub Copilot) to Discobox — probe the real CLI, decide credential delivery, hooks and trust, build the harness/<id> image folder, wire it into the registry, Taskfile, watcher and docs, test it end to end on the nested dev server, and fold what it taught back into this skill. Use when the user asks to add, support, or package another agent CLI as a harness, or to change how an existing harness's image, save-back export, or launcher works.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write, Agent, AskUserQuestion, Skill
 metadata:
   argument-hint: "<cli name or npm package>"
@@ -13,8 +13,15 @@ the harness *does* is declared in its manifest and done by shell scripts baked
 into it ([`harness/DESIGN.md`](../../../harness/DESIGN.md), ADR 0086). So most
 of the work is finding out, **from the CLI itself**, how it authenticates,
 where it keeps state, how it is told to trust and auto-approve, and where a
-system-owned hook layer lives — and then writing four scripts against what
-you found.
+system-owned hook layer lives — and then writing its launcher, its save-back
+export and its hook config against what you found.
+
+There is no setup step. A person signs in to the harness inside a box, the way
+they would on their own machine, and the box's save-back offers the login and
+settings as a harness change to save for every box on the harness
+(ADR 26-11-02-152, 26-10-26-573). So a signed-out first launch has to work, and
+whatever the CLI writes when it signs in has to be something the export can
+read and a sentinel can stand in for.
 
 Read `harness/DESIGN.md` first, and the closest existing harness end to end.
 `harness/copilot` and `harness/opencode` are the most recent and the most
@@ -60,10 +67,11 @@ the techniques.
 
 | Question | Why it matters | How it went before |
 | --- | --- | --- |
-| How does it run a prompt interactively, and non-interactively? | `launch.sh`, and configure's check of the default model | claude/codex: positional; opencode: `--prompt`; copilot: `--interactive=` (the `=` keeps a dash-led prompt a prompt) |
+| How does it run a prompt interactively, and non-interactively? | `launch.sh` | claude/codex: positional; opencode: `--prompt`; copilot: `--interactive=` (the `=` keeps a dash-led prompt a prompt) |
 | How does it resume, and what happens with nothing to resume? | `--resume` in the convention | `--continue`, `resume --last`; copilot opens fresh |
-| Does a browser sign-in call back to a localhost port? Fixed, or a new one each run? | `config.ports` | codex: fixed 1455; opencode: fixed 1455 and 1456; copilot: a new one each run (`listen(0)`), so `{"ephemeral": true}` |
-| Where does a sign-in land, in what shape? | the configure capture | claude/codex: a JSON file; opencode 2: rows in SQLite, reached only through `auth export`/`auth import`; copilot: a "managed automatically" `config.json` it rewrites |
+| Does a browser sign-in call back to a localhost port? Fixed, or a new one each run? | whether sign-in in a box works from the user's browser | the console's workspace forward binds a box's listening port at its own number when that is free, which is where the redirect goes; when it is taken, the CLI's device-code or paste-back sign-in is the way. codex: fixed 1455; opencode: 1455 and 1456; copilot: a new one each run (`listen(0)`) |
+| Does a first launch with no login reach a sign-in, unattended? | every box starts signed out until a login is saved | omp's setup wizard blocked it until `startup.setupWizard: false`; claude's onboarding is merged into local state by the launcher |
+| Where does a sign-in land, in what shape? | the save-back export | claude/codex: a JSON file; opencode 2: rows in SQLite, reached only through `auth export`/`auth import`; copilot: a "managed automatically" `config.json` it rewrites |
 | Does it run a shared background server? | launch flags, hook attribution | opencode 2: a per-user service by default; `--standalone` on every command, or one terminal's environment publishes every terminal's hooks |
 | Is there a documented env var for the credential? Does it outrank the stored one? | env vs file delivery | copilot: `COPILOT_GITHUB_TOKEN` outranks a stored login |
 | Which hosts and paths receive the credential, and what else can it do there? | the secret's routes (and which to block), and whether to escalate to the user | copilot's token goes to `api.github.com` *and* `githubcopilot.com`, and carries `repo` |
@@ -77,11 +85,11 @@ the techniques.
 | Does it keep memories in a directory you can point elsewhere? | source-scoped memory | claude: managed setting; codex: bind mount; opencode/copilot: none |
 | Is the credential store a file at all? Is there an export/import? | delivery | omp: SQLite, but `omp auth export`/`import` is a published document — bind its secret leaves, import at launch |
 | Is there a system layer at all? Do settings layers merge lists or replace them? | where hooks and policy can live | omp: none; its `PI_CONFIG_FILES` overlay outranks the user but *replaces* any list it sets |
-| What does one-shot mode do with a non-terminal stdin? With several words? With `@word`, after `--` too? | `launch.sh`, configure's check | omp and pi `-p` wait for stdin to close; each word is its own message; `@x` attaches a file — `</dev/null`, and the prompt after `--`. pi reads `@x` as a file even after `--`: a prompt that starts with `@` gets a leading space, which pi sends as it is |
+| What does one-shot mode do with a non-terminal stdin? With several words? With `@word`, after `--` too? | `launch.sh` | omp and pi `-p` wait for stdin to close; each word is its own message; `@x` attaches a file — `</dev/null`, and the prompt after `--`. pi reads `@x` as a file even after `--`: a prompt that starts with `@` gets a leading space, which pi sends as it is |
 | Does every provider's client honour `HTTPS_PROXY`? | a sandbox's egress is the proxy | pi installs undici's `EnvHttpProxyAgent` globally and every provider answered through the proxy; omp's Anthropic client reads only `PI_PROXY` and otherwise connects direct, hanging every request in a discobox; fakes on `127.0.0.1` never see this, so make one real request through the sandbox's proxy before §6. Derive such a variable from `HTTPS_PROXY` in the image (a `/etc/profile.d` file the scripts also source): a loopback proxy address written into `image.json` is rewritten by a build in a discobox |
 | What do its dependencies' install scripts fetch? | image build, version store | omp's onnxruntime-node downloads a CUDA build from GitHub on linux-x64 and hung the build: `ONNXRUNTIME_NODE_INSTALL_CUDA=skip` at build time and in the image's env. A scratchpad install that takes minutes is the warning |
 | Does a first interactive run open a wizard? | unattended launch | omp's five-step setup wizard stalls a launch until `startup.setupWizard: false` |
-| Does a provider read anything out of the token itself? | whether a sentinel can stand in for it | a sentinel copies a token's shape, not its contents: pi's ChatGPT provider reads the account from the access token's JWT claims and fails locally on a sentinel, so configure leaves that login out and says why |
+| Does a provider read anything out of the token itself? | whether a sentinel can stand in for it | a sentinel copies a token's shape, not its contents: pi's ChatGPT provider reads the account from the access token's JWT claims and fails locally on a sentinel, so the export leaves that login out and says why |
 | Is a "refresh" a standard OAuth refresh, or an exchange? | `oauth` vs a sentinel the CLI exchanges itself | pi's Copilot login keeps a GitHub token as `refresh` and swaps it at `copilot_internal/v2/token` for a 30-minute Copilot token. The control plane cannot; read where the exchange sends the token (a header the proxy can swap, or a body it cannot) through a TLS-terminating proxy, and take the in-sandbox exchange to the user |
 
 ## 2. Decide
@@ -92,7 +100,7 @@ Write these down before writing scripts; most become ADR sections.
    `codex-cli` costs a special case in the Taskfile and the watcher forever.
 2. **Credential secrets.** Name, `required`, `oneOfGroup` for alternatives,
    `type` (`token`, or `oauth` only when the control plane can run a standard
-   refresh), and `host` (one host or none; a configure output may set it).
+   refresh), and `host` (one host or none).
    `rejectionScope` (`[{host, paths}]`) only when the provider refuses or
    accepts the login at endpoints that do not answer for it — a `401` for what
    the login may do, beside inference that works; name the endpoints that do
@@ -113,11 +121,11 @@ Write these down before writing scripts; most become ADR sections.
    expired — only when the user accepts the short-lived token landing in the
    sandbox. A login nothing in a sandbox can use (one read from its claims,
    one with no key at all, like Bedrock's AWS profile, a key that is a
-   command) is left out, and configure says so: a silent drop reads as "No
-   provider is signed in".
-4. **Policy baseline**: auto-approve and trust, in a layer the configure
-   capture cannot replace — a system config, an image env var, or a launcher
-   flag. Not the user's settings file: configure replaces that wholesale.
+   command) is left out, and the export says so in a diagnostic: a silent drop
+   reads as "No provider is signed in".
+4. **Policy baseline**: auto-approve and trust, in a layer save-back cannot
+   replace — a system config, an image env var, or a launcher flag. Not the
+   user's settings file: a saved harness change replaces that.
 5. **Hooks**: which system layer, and which events. With none (omp), a
    harness file in the CLI's user extension directory that re-exports a
    module the image installs keeps the code the image's; never a settings
@@ -136,53 +144,45 @@ may use any executable that implements the JSON command contract.
 
 | File | Contract |
 | --- | --- |
-| `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `run: install-cli.sh` step; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `configure.sh` → `/usr/local/libexec/discobox/configure-<id>` (`0755`), `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`) |
+| `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `run: install-cli.sh` step; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `capture.sh` → `/usr/local/libexec/discobox/<id>-capture` (`0755`) with the exporter helpers, `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`) |
 | `install-cli.sh` | executable; `npm install -g` the CLI, then `rm -rf /root/.npm` |
 | `Dockerfile` | The bundle alone, as every harness's: one `FROM scratch AS bundle` stage that labels `io.discobox.image.v1` from `HARNESS_METADATA` through `${HARNESS_METADATA:?...}` and `COPY`s every file `provision.yaml` names, and it, into `/features/<id>/` (`harness/feature_test.go` checks the copy is whole). No harness is an image: a box applies the bundle |
-| `image.json` | `apiVersion`, `platformAPIVersion` (`discobox.ai/platform/v1`, which registration requires), `env` (auto-update off, policy env), `harness.{id,name,description,secrets,files,config.{command,reminder,ports}}`. No `runCommand` — the convention is the command. Every localhost callback port a sign-in uses goes in `config.ports` — its number when fixed, `{"ephemeral": true}` when it changes each run — with an `unavailable` message naming the fallback (device code, an API key) |
+| `image.json` | `apiVersion`, `platformAPIVersion` (`discobox.ai/platform/v1`, which registration requires), `env` (auto-update off, policy env), `harness.{id,name,description,secrets,files,saveBack}`. No `runCommand` — the convention is the command. No `config`: a configure command or its ports is refused at registration (ADR 26-11-02-152) |
 | `agent.conf` | `AGENT_PACKAGE`, `AGENT_BIN` for the pool-cached version store |
 | `driver.go` | `ID()` and `Definition()` naming `Bundle: harness.BundleRef("discobox-harness-<id>")` |
 | `launch.sh` | join prompt words into one prompt, passed so the CLI cannot read it as flags or files (omp: after `--`); `--resume` → the CLI's resume; `exec` the CLI with the policy flags |
-| `configure.sh` | see below |
+| `capture.sh`, `<id>-normalize.cjs` | the save-back export and handoff (see below) |
 | hook config | in the CLI's own schema, at its system layer. A JavaScript hook (opencode, omp, pi) publishes an allowlist of events, and each payload is an allowlist too, never a list of field names to drop: the transcript travels under many names. Projecting by shape (scalars, a tool's input) holds only while nothing large is a scalar — pi's `before_agent_start.systemPrompt` is a string, so pi's extension names the fields it keeps per event; check every scalar of every published event's type |
 
-**`configure.sh`** — copy the shape of `codex-cli` or `copilot`, which encode
-lessons that each cost a bug:
+**Save-back** — copy the shape of `codex-cli` (a file credential the control
+plane refreshes) or `opencode` (a store reached through the CLI's own
+export/import). `image.json`'s `saveBack` names what to watch, the credential
+files and their schemas, and the providers; `capture.sh` runs
+`harness-capture/runtime.cjs` with the harness's normalizer. Lessons that each
+cost a bug:
 
-- Banner says *this is configuration, not a session*, separates required from
-  optional steps, honors `NO_COLOR`, and waits for Enter (a full-screen TUI
-  erases it otherwise).
-- Every `continue` in the collection loop is preceded by `confirm_retry`; end
-  of input at any prompt exits non-zero rather than spinning.
-- Leaving on purpose exits `harness.ConfigureCanceledExitCode` (10), never a
-  failure's status: a no to a retry that means "give up" (`confirm_retry` in
-  `claude-code`, `codex-cli`, `copilot`), and Ctrl-C through the `trap … INT`
-  right after `set -eu`. Never exit 10 for a failure. Test the prompt with
-  `configuretest.RunFunction`; `harness/configure_interrupt_test.go` checks
-  the trap.
-- Reconfigure opens already signed in with the `PREV_` sentinel; finding the
-  sentinel unchanged afterwards means `usePrevious`, never a value. A kept
-  credential that fails verification stops being offered.
-- Clear the CLI's stored credential before each round so a retry cannot
-  capture an earlier attempt.
-- Verify with a tool-free one-shot run using only the chosen credential, in
-  an isolated home so a stored login cannot stand in for it.
-- Return the user's settings file, minus anything the script set for its own
-  sake; never return the CLI's state files or trust maps.
-- With several accounts of one provider (omp), name each secret by which
-  secret it is — its `PREV_` sentinel, then its account — never by its
-  position in what the CLI exported; a re-login moves it.
+- The first launch is signed out. The launcher has to reach the CLI's sign-in
+  with nothing delivered, and must not treat a missing credential file as an
+  error.
+- A sign-in is a candidate, not a save: the export captures it before anything
+  restores the delivered sentinel over it, and the handoff after a save
+  replaces only the credential that was saved.
+- With several accounts of one provider (omp), match each by its sentinel,
+  then its account — never by its position in what the CLI exported; a
+  re-login moves it.
 - Keep settings literal. Declare credential-file schemas and use explicit JSON
   `{"$secret":"NAME"}` objects at secret leaves. Launchers own local trust and
   onboarding; file templates and settings suffixes are unsupported.
-- Check what was *entered*, not which prompt it came in at. Copilot's PAT
-  prompt takes any token Copilot accepts, gh's repo-scoped `gho_` included;
-  a least-privilege prompt has to look at the token it got, warn on a broad
-  one, and name the secret for what the token is.
+- Export the user's settings file minus anything the image set for its own
+  sake; never the CLI's state files or trust maps.
+- Look at the token a sign-in produced, not the gesture that produced it.
+  Copilot's PAT sign-in takes any token Copilot accepts, gh's repo-scoped
+  `gho_` included; name the secret for what the token is, and say in a
+  diagnostic when it is broader than the harness needs.
 
 Moving a harness to a new major of its CLI is this whole skill again, against
 the existing folder: probe, an ADR superseding the old one, and every
-configuration captured under the old CLI keeps working without a reconfigure
+configuration saved under the old CLI keeps working without a new sign-in
 (opencode 2 reads opencode 1's `auth.json` in its launcher). When the npm
 package changes too (`opencode-ai` → `@opencode/cli`), `AGENT_PACKAGE`
 changes, and the agent store replaces a pin into the old package's directory.
@@ -205,7 +205,7 @@ Every place the last harness touched (find them: `git grep -il <last-id> -- ':!h
 - `cli/internal/cli/audit_list.go` `hookPayload`/`hookSummary` if the CLI's
   tool-hook payload has a new shape, with a case in `audit_test.go`.
 - Docs: `harness/DESIGN.md` (driver list, managed layers, updater list,
-  memory, a configure-flow section), `README.md`,
+  memory, its save-back conversion), `README.md`,
   `sandbox-agent/DESIGN.md` (watcher's image list),
   `sandbox-agent/features/core/skills/discobox/SKILL.md` (harness row).
 
@@ -220,14 +220,14 @@ In `harness/<id>/`, mirroring the siblings:
   none.
 - **Manifest**: secrets, delivery, policy env, no command override, the
   Dockerfile installs each script where the contract says.
-- **`configure.sh`, behaviorally**: rewrite `/run/discobox/configure/` to a
-  temp dir, stub the CLI with the storage shape you measured and `script` as
-  `exec sh -c "$4"`, drive stdin. Cover first sign-in, keep, replace inside a
-  kept session, revoked keep, refused credential retried only when asked,
-  end of input, and each login it leaves out saying why. Put the delivered
+- **The export, behaviorally**, in `harness/capture/runtime.test.cjs` and
+  against `harnesscapture.Definition.ValidateCandidate`: stub the CLI with the
+  storage shape you measured and cover a first sign-in, an unchanged delivered
+  sentinel (no candidate), a replaced login, a cleared login, the handoff
+  after a save, and each login it leaves out saying why. Put the delivered
   credentials file in the home rendered with sentinels the sandbox was *not*
   given: rendered with none, its fields are empty and get skipped anyway, so a
-  missing reset passes. Check each test fails when the behavior it names is
+  missing check passes. Check each test fails when the behavior it names is
   broken — break it and run the test; most first drafts pass something.
 - **Synthetic events in their real shapes.** A driver that fires a hook event
   with `{}` cannot see a payload that leaks the transcript; take the shapes
@@ -245,17 +245,20 @@ Against the nested `task dev` server (`.agents/skills/verify-recipes/driving-tas
 credential the user grants through `discobox-access`. Copilot's run, which
 passed, is the template:
 
-1. **prep, no credential**: in a detached tmux pane, run the user's own
-   command, `discobox admin harness configure <id>`, and drive it to the
-   point where the CLI's TUI is up, ready for a sign-in. Waiting on a pane's
-   text is enough; save every pane to `/dev/shm` for the report.
+1. **prep, no credential**: in a detached tmux pane, create a box on the
+   harness as a user would, `discobox new --no-source -H <id>`, and drive it
+   to the point where the CLI's TUI is up, signed out, ready for a sign-in.
+   Waiting on a pane's text is enough; save every pane to `/dev/shm` for the
+   report.
 2. **run, from a shell started after it is granted**, so the credential's
-   variable holds its sentinel: write the credential into the CLI's store in the configure sandbox on
-   stdin (`discobox exec <configure-box> -- sh -c 'umask 077; cat > …'`,
-   below), never typed into the TUI; finish the flow (the CLI's quit key, the
-   script's own verification, its fixed status lines only), then `discobox
-   new --no-source -d -H <id> -p <one-line question with a checkable answer>`
-   and wait on its screen for the answer.
+   variable holds its sentinel: write the credential into the CLI's store in
+   that box on stdin (`discobox exec <box> -- sh -c 'umask 077; cat > …'`,
+   below), never typed into the TUI. Its save-back reports a harness change:
+   `discobox admin harness changes <box>` previews it (credentials redacted),
+   and `discobox admin harness save <box> <candidate>` saves it. Then
+   `discobox new --no-source -d -H <id> -p <one-line question with a
+   checkable answer>` — a second box, which receives the saved login — and
+   wait on its screen for the answer.
 3. Check the audit: `discobox admin audit hooks <box>` shows the
    image's hooks under its provider, and `--event Stop` (a canonical name)
    finds them.
@@ -275,24 +278,21 @@ What this needs, learned the hard way:
   the request. When the user says so, the sentinel in
   `~/.claude/.credentials.json` works one level down
   (`scripts/nested-claude-auth.sh` explains why). Put it where the CLI
-  stores a login from inside the configure session (omp: its `!` shell
-  escape, `omp auth import`), as a credential nothing will refresh, and the
+  stores a login inside the box (omp: its `!` shell escape,
+  `omp auth import`), as a credential nothing will refresh, and the
   rest of the flow runs for real. Anthropic may still refuse the answer to a
   third-party harness ("Third-party apps now draw from your extra usage",
   a 400 — pi warns of it in its TUI first): then everything up to the model
   is verified, and an answer needs an API key. Ask for a workspace-scoped
   one: an organization-level key is refused without an
   `anthropic-workspace-id` header most CLIs never send.
-- **A granted key goes into the configure sandbox on stdin**, never typed
-  into the CLI's TUI: typing echoes it into the pane and the configure log.
-  `discobox --server … exec <configure-box> -- sh -c 'umask 077; cat > <the
-  CLI's credential file>'` from a shell started after it was granted, then the
-  CLI's quit key in the pane; print only the configure log's fixed status
-  lines (`grep -o`), never the log.
-- **A model chosen in the configure session may not persist.** pi's
-  `/model NAME` sets the session's model; only its picker saves a default.
-  Read `settings.json` (or the CLI's equivalent) in the returned files, and
-  say in the banner which gesture saves.
+- **A granted key goes into the box on stdin**, never typed into the CLI's
+  TUI: typing echoes it into the pane and its scrollback. `discobox --server …
+  exec <box> -- sh -c 'umask 077; cat > <the CLI's credential file>'` from a
+  shell started after it was granted.
+- **A model chosen in a session may not persist.** pi's `/model NAME` sets
+  the session's model; only its picker saves a default. Read `settings.json`
+  (or the CLI's equivalent) in the harness change's preview before saving.
 - **`terminal input` prints a resume point; pass it to `terminal wait
   --after`.** A one-line answer's `Stop` lands before a wait started after
   it, which then times out.
@@ -327,8 +327,8 @@ harness among the precedents if it is now the clearest example of something.
 ## Save-back changes
 
 - A harness with `saveBack` installs the same `image.json` that labels its bundle.
-  Configure and background export share normalization code and read refresh
-  provider metadata from this document; do not maintain a second client table.
+  The export reads refresh provider metadata from this document; do not
+  maintain a second client table.
 - Exercise exporter output against `harnesscapture.Definition.ValidateCandidate`,
   not only JavaScript fixtures. In particular, native exports with a top-level
   array and settings with literal dotted keys exercise different schema paths.

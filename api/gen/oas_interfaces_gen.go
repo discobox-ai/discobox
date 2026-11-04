@@ -17,10 +17,6 @@ type AssignSandboxHarnessSecretsRes interface {
 	assignSandboxHarnessSecretsRes()
 }
 
-type AttachHarnessConfigConfigureRes interface {
-	attachHarnessConfigConfigureRes()
-}
-
 type AttachSandboxExecOnceRes interface {
 	attachSandboxExecOnceRes()
 }
@@ -41,16 +37,8 @@ type ClearSandboxCacheRes interface {
 	clearSandboxCacheRes()
 }
 
-type CommitHarnessConfigConfigureRes interface {
-	commitHarnessConfigConfigureRes()
-}
-
 type CompleteSandboxSourcePushRes interface {
 	completeSandboxSourcePushRes()
-}
-
-type ConfigureHarnessConfigRes interface {
-	configureHarnessConfigRes()
 }
 
 type ConfirmSandboxAutostopRes interface {
@@ -111,10 +99,6 @@ type CreateSecretBindingRes interface {
 
 type CreateSecretRes interface {
 	createSecretRes()
-}
-
-type DeconfigureHarnessConfigRes interface {
-	deconfigureHarnessConfigRes()
 }
 
 type DeleteHarnessConfigRes interface {
@@ -535,6 +519,10 @@ type ReportSandboxInventoriesRes interface {
 
 type ReportSandboxSecretRejectionRes interface {
 	reportSandboxSecretRejectionRes()
+}
+
+type ResetHarnessConfigRes interface {
+	resetHarnessConfigRes()
 }
 
 type ResolveGatewayHeadersRes interface {

@@ -28,31 +28,23 @@ func TestTheRefusedBandNamesTheCredentialAndTheHost(t *testing.T) {
 	}
 }
 
-// Nothing on the bar may read as an invitation to sign in inside the discobox.
-// That cannot work and cannot stick — the sandbox agent puts the delivered
-// sentinel back within thirty seconds (ADR 0059) — so a user sent there loses
-// the time twice.
-func TestTheRefusedBandDoesNotSendAnybodyIntoTheBox(t *testing.T) {
+// A harness's refused login is replaced the way it was made: signing in again
+// in a discobox and saving the change (ADR 26-11-02-152). The bar says so.
+func TestTheRefusedHarnessBandSaysToSignInAgain(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
 
 	row := strings.ToLower(ansi.Strip(m.viewRejectedBanner(120)))
-	for _, forbidden := range []string{"/login", "log in here", "sign in here", "in the box", "inside"} {
-		if strings.Contains(row, forbidden) {
-			t.Fatalf("band = %q, want nothing pointing into the sandbox (%q)", row, forbidden)
-		}
+	if !strings.Contains(row, "sign in again") {
+		t.Fatalf("band = %q, want it to say to sign in again", row)
 	}
-	// And the positive half, which is the one that does the work: a reader
-	// mid-session in the terminal under this bar has to be told the sign-in
-	// happens somewhere else, or "sign in again" is read as the /login they
-	// were already about to type.
-	if !strings.Contains(row, "on this machine") {
-		t.Fatalf("band = %q, want it to say where the sign-in happens", row)
+	if strings.Contains(row, "on this machine") {
+		t.Fatalf("band = %q, want no remedy sent outside the box", row)
 	}
 }
 
-// The same for a credential no harness owns: replacing a value is not something
-// that can be done from inside the box either.
+// A credential no harness owns is replaced out here: replacing a value is not
+// something that can be done from inside the box.
 func TestTheRefusedBandPlacesEveryRemedyOutsideTheBox(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, secretRejection())
@@ -165,21 +157,45 @@ func TestTheRefusedBandDoesNotThrob(t *testing.T) {
 	}
 }
 
-// Pressing it opens the harness's own setup, over the discobox you were
-// watching — the fix is out here, and the session is still there when it is
-// done.
-func TestPressingTheRefusedBandOpensTheHarnessSetup(t *testing.T) {
+// Pressing it for a harness's login says how to sign in again — in the box,
+// then save the change — and reads nothing: there is no setup out here to open.
+func TestPressingTheRefusedBandExplainsSigningInAgain(t *testing.T) {
 	t.Parallel()
 	m, ds := workspaceWithRejection(t, harnessRejection())
-	ds.harnesses = []Harness{{
-		ID: "harness_claude", Name: "Claude Code", Slug: "claude-code",
-		State: HarnessEnabled, Configurable: true,
-	}}
+	before := len(ds.calls())
 
 	drain(t, m, m.openRejectedRemedy(m.paneBox), 0)
 
-	if got := ds.configuredHarnesses(); len(got) != 1 || got[0] != "harness_claude" {
-		t.Fatalf("configure opened for %v, want the harness that owns the credential", got)
+	if m.dialog == nil || m.dialog.kind != dlgMessage {
+		t.Fatalf("dialog = %s, want the sign-in explanation", describe(m.dialog))
+	}
+	for _, want := range []string{"Sign in again in this discobox", "save it", "replaces the refused login"} {
+		if !strings.Contains(m.dialog.body, want) {
+			t.Fatalf("body = %q, want %q", m.dialog.body, want)
+		}
+	}
+	if calls := ds.calls(); len(calls) != before {
+		t.Fatalf("calls = %v, want nothing read for a harness's login", calls[before:])
+	}
+}
+
+// Signing in again in the box is the refused login's remedy, and the change it
+// made is what replaces it once saved. So once the box has that change, the
+// refusal stands aside for the harness-changes band rather than telling
+// somebody to do what they just did; a refusal of anything else stays up.
+func TestARefusedHarnessLoginStandsAsideForTheChangeThatReplacesIt(t *testing.T) {
+	t.Parallel()
+	m, _ := workspaceWithRejection(t, harnessRejection())
+	boxes := m.list.all
+	boxes[0].HarnessConfigPending, boxes[0].HarnessConfigCandidate = true, "cand_1"
+	m.list.setAll(boxes)
+	if got := m.bannerShowing(); got != bannerHarnessChanges {
+		t.Fatalf("banner = %v, want the harness change over the refused login", got)
+	}
+
+	m.setSecretRejections([]SecretRejection{harnessRejection(), secretRejection()})
+	if got := m.bannerShowing(); got != bannerRejected {
+		t.Fatalf("banner = %v, want a refused project secret to stay up", got)
 	}
 }
 
@@ -297,8 +313,8 @@ func workspaceWithRejection(t *testing.T, rejection SecretRejection) (*Model, *f
 
 // The fix goes where the credential lives. The harnesses and secrets screens act
 // on the server the header names; a refused credential's band acts on the
-// credential's own server, which need not be the same one — and configuring the
-// other server's harness of the same name is the mistake ADR 0131 §2 exists to
+// credential's own server, which need not be the same one — and replacing the
+// other server's secret of the same name is the mistake ADR 0131 §2 exists to
 // prevent.
 func TestTheRefusedBandsRemedyGoesToTheCredentialsServer(t *testing.T) {
 	t.Parallel()
@@ -307,7 +323,6 @@ func TestTheRefusedBandsRemedyGoesToTheCredentialsServer(t *testing.T) {
 		rejection SecretRejection
 		want      string
 	}{
-		{"harness", harnessRejection(), "OpenHarnessConfigure@beta"},
 		{"secret", secretRejection(), "Secrets@beta"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -320,10 +335,6 @@ func TestTheRefusedBandsRemedyGoesToTheCredentialsServer(t *testing.T) {
 			m.list.server = ""
 			m.paneBox.Server = "beta"
 			m.setSecretRejections([]SecretRejection{rejection})
-			ds.harnessesOn = map[string][]Harness{"beta": {{
-				ID: "harness_claude", Name: "Claude Code", Slug: "claude-code",
-				State: HarnessEnabled, Configurable: true,
-			}}}
 			ds.secretsOn = map[string][]Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "token"}}}
 
 			drain(t, m, m.openRejectedRemedy(m.paneBox), 0)

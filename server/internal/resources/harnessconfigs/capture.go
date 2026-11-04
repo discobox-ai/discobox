@@ -97,11 +97,13 @@ func (s *Service) sendCaptureRequest(ctx context.Context, projectID, sandboxID, 
 
 // describeCapturePreview sets each change's before and after from the stored
 // configuration, so a client can show what a save changes rather than only
-// what it writes. Previous is the file a save replaces: a person's override
-// over the configured file over the bundle's, at the current revision,
-// whatever the sandbox was delivered. A removal drops the topmost of those, so
-// its after is the file beneath it (fileBeneath), when there is one. Nothing
-// here is applied.
+// what it writes. Previous is the file a box is given at the path now: a
+// person's override over the saved file over the bundle's, at the current
+// revision, whatever the sandbox was delivered. A save writes the saved set
+// only (ADR 26-11-04-028 §5), so at a path a person overrode the change is
+// Shadowed: it is kept, and boxes go on being given the override. A removal's
+// after is what boxes are given once the saved file is gone (fileBeneath).
+// Nothing here is applied.
 func (s *Service) describeCapturePreview(ctx context.Context, projectID, sandboxID string, p *harnesscapture.Preview) error {
 	if len(p.Files) == 0 {
 		return nil
@@ -128,6 +130,7 @@ func (s *Service) describeCapturePreview(ctx context.Context, projectID, sandbox
 			previous := current.Files[n]
 			change.Previous = &previous
 		}
+		change.Shadowed = slices.ContainsFunc(cfg.FileOverrides, func(f model.HarnessConfigFile) bool { return f.Path == change.Path })
 		if !change.Remove {
 			continue
 		}
@@ -138,23 +141,17 @@ func (s *Service) describeCapturePreview(ctx context.Context, projectID, sandbox
 	return nil
 }
 
-// fileBeneath is the file a save-back removal at path falls back to: the
-// configure flow's file beneath a person's override, or the bundle's beneath
-// either. A removal takes path out of the topmost set that holds it.
+// fileBeneath is what a box is given at path once a save-back removal takes
+// the saved file out: a person's override, which a save never touches, else
+// the bundle's file.
 func fileBeneath(cfg *model.HarnessConfig, path string) (model.HarnessConfigFile, bool) {
 	at := func(f model.HarnessConfigFile) bool { return f.Path == path }
-	sets := [][]model.HarnessConfigFile{cfg.Files}
-	if slices.ContainsFunc(cfg.FileOverrides, at) {
-		sets = append(sets, cfg.ConfiguredFiles)
-	}
-	var found model.HarnessConfigFile
-	ok := false
-	for _, set := range sets {
+	for _, set := range [][]model.HarnessConfigFile{cfg.FileOverrides, cfg.Files} {
 		if n := slices.IndexFunc(set, at); n >= 0 {
-			found, ok = set[n], true
+			return set[n], true
 		}
 	}
-	return found, ok
+	return model.HarnessConfigFile{}, false
 }
 
 func (s *Service) GetSandboxHarnessConfigChanges(ctx context.Context, p, b string) (harnesscapture.Preview, error) {
@@ -302,27 +299,23 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 		// The config and secret rows remain locked. Every write below rolls back
 		// together if validation or delivery preparation fails.
 		//
-		// A path a person overrode is saved to their override, which is what
-		// a sandbox is given at it; any other path patches the configure
-		// flow's set (ADR 26-11-04-028 §5).
+		// A save patches the saved set at every path and never a person's
+		// override (ADR 26-11-04-028 §5): what a box wrote stays what a plain
+		// reset takes back, and at a path an override holds it is shadowed.
 		for _, change := range c.Files {
-			set := &cfg.ConfiguredFiles
-			if slices.ContainsFunc(cfg.FileOverrides, func(f model.HarnessConfigFile) bool { return f.Path == change.Path }) {
-				set = &cfg.FileOverrides
-			}
-			index := slices.IndexFunc(*set, func(f model.HarnessConfigFile) bool { return f.Path == change.Path })
+			index := slices.IndexFunc(cfg.ConfiguredFiles, func(f model.HarnessConfigFile) bool { return f.Path == change.Path })
 			if change.Remove {
 				if index >= 0 {
-					*set = slices.Delete(*set, index, index+1)
+					cfg.ConfiguredFiles = slices.Delete(cfg.ConfiguredFiles, index, index+1)
 				}
 				continue
 			}
 			f := change.File
 			file := model.HarnessConfigFile{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
 			if index >= 0 {
-				(*set)[index] = file
+				cfg.ConfiguredFiles[index] = file
 			} else {
-				*set = append(*set, file)
+				cfg.ConfiguredFiles = append(cfg.ConfiguredFiles, file)
 			}
 		}
 		for _, credential := range c.Credentials {

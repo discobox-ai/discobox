@@ -180,6 +180,11 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 		// which is worth having for a screen that otherwise appears once.
 		project.Welcomed = welcomed
 	}
+	if explained, ok := input.HarnessChangesExplained.Get(); ok {
+		// Settable both ways, as Welcomed is: the console sets it once it has
+		// explained saving harness changes, and clearing it explains again.
+		project.HarnessChangesExplained = explained
+	}
 	egressChanged := false
 	if level, ok := input.Egress.Get(); ok {
 		if project.Egress, err = services.EgressPolicyToModel(level); err != nil {

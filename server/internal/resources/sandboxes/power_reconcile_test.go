@@ -77,7 +77,7 @@ func newPowerFixture(t *testing.T) *powerFixture {
 		t.Fatal(err)
 	}
 	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-t", CreatedByUserID: "user-1", Name: "sleepy",
-		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Image: "image"}}
+		SandboxManifest: model.SandboxManifest{Image: "image"}}
 	sb.DesiredState = model.DesiredStatePresent
 	if err := st.CreateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)

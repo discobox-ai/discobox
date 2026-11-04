@@ -16,30 +16,6 @@
         "content": "// Discobox's hooks for pi, installed with the image. Removing this file stops them.\nexport { default } from \"/usr/local/libexec/discobox/pi-hook-extension.js\";\n"
       }
     ],
-    "config": {
-      "reminder": "Sign in with /login, pick a default model with /model, then finish configuration with /quit.",
-      "ports": [
-        {
-          "port": 53692,
-          "unavailable": "Port 53692 is taken on your machine, so Anthropic's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into pi, or sign in with an API key."
-        },
-        {
-          "port": 1455,
-          "unavailable": "Port 1455 is taken on your machine, so OpenAI's browser sign-in cannot call back here. After you authorize, copy the address your browser lands on and paste it into pi, or sign in with an API key."
-        },
-        {
-          "port": 1456,
-          "unavailable": "Port 1456 is taken on your machine, so Radius's browser sign-in cannot call back here. In /login choose Radius's device-code sign-in instead, or free the port and configure again."
-        },
-        {
-          "ephemeral": true,
-          "unavailable": "OpenRouter's browser sign-in calls back to a port pi picks fresh, and the one it picked is taken on your machine. After you authorize, copy the address your browser lands on and paste it into pi, or sign in with an OpenRouter API key."
-        }
-      ],
-      "command": [
-        "/usr/local/libexec/discobox/configure-pi"
-      ]
-    },
     "saveBack": {
       "version": 1,
       "watch": [

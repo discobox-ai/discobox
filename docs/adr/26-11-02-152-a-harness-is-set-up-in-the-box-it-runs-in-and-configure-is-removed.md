@@ -2,6 +2,8 @@
 
 - **Status**: Accepted (supersedes [0009](0009-previous-configure-secrets-are-prefixed-sentinels.md)
   and [26-10-09-867](26-10-09-867-a-configure-port-may-be-ephemeral-and-is-still-bound-at-its-own-number.md);
+  supersedes [0065](0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md),
+  whose local pty pane only configure still used;
   supersedes [0002](0002-harness-config-is-the-only-harness-concept.md)'s
   `Configured` enable flag, its server-side configure flow and its
   `harnessMode=config` sandbox, keeping its single harness-config concept and
@@ -79,13 +81,22 @@ The first time a person's console sees a box report a pending harness change,
 it opens a dialog explaining what the change is, that saving it makes it the
 shared default for every box on that harness config in the project (signed-in
 credentials included), and that discarding leaves only this box changed. It
-offers to review the change now. Afterwards the row hint and `H` review are
-the only prompts.
+offers to review the change now.
+
+Every pending change, the first and the rest, also raises a band across the
+workspace like a credential request's, painted green because it is an offer
+rather than a fault. Pressing it opens the review, where saving accepts the
+change; dismissing it holds until the box reports a new candidate. The row
+hint and `H` stay.
+
+The console's band for a harness with no credential bound, which sent the
+person out of the box to configure, is removed: signing in inside the box is
+now the way, and a refused harness login says to sign in again there and save.
 
 Once is per project, recorded on the project as `harnessChangesExplained`,
 the same way `welcomed` records its introduction (ADR 26-10-20-596's state is
 per machine; this, like the welcome, is about the project's shared harness).
-`project update --harness-changes-explained=false` shows it again.
+`admin project update --harness-changes-explained=false` shows it again.
 
 ## Alternatives rejected
 

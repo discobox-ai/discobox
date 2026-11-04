@@ -22,13 +22,10 @@ true of it, and true *by rule* rather than by slug:
   knows whether that is bash, zsh, or fish. `sandbox-agent`'s terminal layer
   treats a declared harness with no command as that shell, keeping the declared
   harness identity.
-- It is born `Configured` — because it declares no secrets, which is the rule
-  for every built-in. A harness with no credentials to collect is ready when
-  seeded, and a fresh project has to be usable before anyone configures
-  anything.
-- `configure` refuses it — stated as "it declares no configure command"
-  rather than by slug, since that is true of any such harness. Deleting it is
-  already refused by the built-in rule.
+- Like every registered harness it can run as soon as it is seeded: there is
+  no enable flag, and a harness that needs a credential starts signed out and
+  is signed in inside the box (ADR 26-11-02-152 §1). Deleting it is refused by
+  the built-in rule.
 
 ## Registration and bundle metadata
 
@@ -47,13 +44,12 @@ true of it, and true *by rule* rather than by slug:
   `harness.ComposeBundleLabels` — the platform's `10-platform` layer, then
   every `io.discobox.image.v1.<NN>-<name>` layer the bundle carries, then its
   own `io.discobox.image.v1` — before validating the merged result and
-  snapshotting the run/relaunch/configure argv, configure reminder and ports,
-  files, secret declarations, env, volumes, additional groups, and declared
-  egress hosts onto the config (`snapshotImageMetadata`). Nothing re-reads the
-  labels afterward. Configure ports (`harness.ConfigPort`) are validated as a
-  port number each, declared once, or as the single numberless ephemeral
-  entry; the forward they ask for is the CLI's, not this service's — see
-  `cli/internal/cli` → `forwardConfigurePorts`.
+  snapshotting the run/relaunch argv, save-back definition, files, secret
+  declarations, env, volumes, additional groups, and declared egress hosts
+  onto the config (`snapshotImageMetadata`). Nothing re-reads the labels
+  afterward. A bundle that still declares the retired configure command or
+  ports is refused when its manifest is decoded (`harness`), naming
+  ADR 26-11-02-152.
 - The **platform bundle** is the one the server's release pins
   (`harnessdefs.References.PlatformBundle`, which server configuration
   resolves: the release manifest's `Bundles.Platform`, `platformBundle` in
@@ -121,7 +117,7 @@ true of it, and true *by rule* rather than by slug:
 - **A harness registered before bundles** keeps the manifest its image's
   labels gave it, and neither a bundle nor an image: the image it ran as was
   cleared (`internal/database`), since no harness is an image. It runs nowhere
-  — create and configure refuse it, saying so — until `UpdateHarnessConfig`
+  — create refuses it, saying so — until `UpdateHarnessConfig`
   with a `bundle` registers one, read before anything is saved. A refresh has
   nothing to read it again from and is refused, saying so. A built-in is
   given its bundle by its next seed.
@@ -143,7 +139,7 @@ true of it, and true *by rule* rather than by slug:
   `.env` → server restart, or a build-mode save) reaches a running server.
   `NewService` receives the resolved `harnessdefs.References` from server
   configuration; an explicitly selected release manifest replaces the
-  environment overrides. Seeding never changes `Configured`. A seed whose slug
+  environment overrides. Seeding never touches the saved overlay. A seed whose slug
   belongs to a user-created config fails visibly before inspection or
   mutation.
 - Seeding is **not** how a test gets a harness config. It reads metadata off a
@@ -189,131 +185,28 @@ digest is already persisted, so what is lost is the upgrade rather than the
 refresh, and the sandboxes it missed keep reporting an available upgrade until
 this config's bundle next resolves.
 
-## Configured lifecycle
+## Every harness runs; credentials arrive by save-back
 
-`Configured` is the enable flag — **only configured harnesses can be selected to
-run** (enforced in `resources/sandboxes` at sandbox create; `harnessMode=config`
-is exempt, being the configure flow itself).
+There is no enable flag (ADR 26-11-02-152 §1). Create, a harness change, a
+transfer and project copy select any registered harness, and none refuses a
+harness for a declared credential nothing binds: the box starts its harness
+signed out, the person signs in there, and saving the box's harness change
+(see [Saving local harness configuration](#saving-local-harness-configuration))
+is what puts a credential on the config for every other box.
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Server
-    participant B as Configure sandbox
-    C->>S: POST .../configure
-    S->>B: create (harnessMode=config, primary NOT launched)
-    S-->>C: 202 Sandbox
-    C->>S: POST .../configure/attach
-    S->>B: seed previous config (configure-created secrets only)
-    C->>B: attach exec "primary" → launches configure command
-    C->>S: POST .../configure/commit
-    S->>B: read primary exec status (read-only)
-    alt still running
-        S-->>C: 409, flow stays in flight
-    else exited 0
-        S->>B: cat ConfigureOutputPath
-        S->>S: apply files + secrets + bindings, Configured=true
-        S->>B: delete sandbox
-    else exit code ConfigureCanceledExitCode (status exited or failed)
-        S->>S: nothing applied, no ConfigureError
-        S->>B: delete sandbox
-        S-->>C: 200 HarnessConfig, as it was
-    else other non-zero, failed, or lost
-        S->>S: ConfigureError set, Configured unchanged
-        S->>B: delete sandbox
-    end
-```
-
-- Commit is the only thing that deletes the configure sandbox before the TTL
-  reap, so a client commits after **every** finished command, not only a
-  successful one. A command that exited `harness.ConfigureCanceledExitCode`
-  was left by its person on purpose (declining another attempt, Ctrl-C). The
-  agent reports any non-zero exit as `failed` with its exit code, so the code
-  is read whichever status it rides on. It is no failure, so it records no
-  `ConfigureError`, and the commit succeeds with the harness unchanged.
-
-- Configure's agent calls happen inside a user request, using the caller's
-  credentials (`AcquireSandboxHTTPClient`). The separate capture-delivery
-  reconciler uses an explicit server-only lease to acknowledge already-committed
-  intent; it cannot collect new credentials.
-- The client says *when* to commit but never *what happened*: the exit status is
-  read from the sandbox, so a caller cannot mark a harness configured without
-  having run the flow.
-- Commit must resolve the primary **read-only** — resolving the virtual `"primary"`
-  id relaunches a lost primary, which here would restart the configure command
-  instead of observing that it never finished. (A configure primary that exited
-  or failed is not relaunched by anything: it runs once.)
-- In config mode the sandbox-agent defers the primary until attach, so seeding
-  always precedes the configure command.
-- Re-configuring is allowed and clobbers any in-flight attempt, so an abandoned
-  run cannot wedge a harness. The reconciler (resource type `harnessConfig`)
-  reaps a configure sandbox once the config has gone `configureTTL` (1h) since
-  its last update without a commit and records `ConfigureError`. It also retries
-  capture acknowledgments. Cleanup runs independently before delivery, so an
-  unreachable capture origin cannot strand a configure sandbox.
-- The configure sandbox runs as `harness.ConfigureUserName`/`ConfigureUserUID`
-  (`discobox`, 10000), **not root**. A run sandbox mirrors the caller's own user
-  (ADR 0025 §5); this one has no source and no caller identity to mirror, so the
-  flow names the account and boot creates it (ADR 0025 §4). A harness CLI is
-  entitled to refuse to run as root — Claude Code refuses `bypassPermissions`
-  there — so configuring as root would verify a credential under an identity no
-  run sandbox ever uses.
-- Because of that, both `ConfigureOutputPath` and `ConfigurePreviousConfigPath`
-  live under `harness.ConfigureDir` (`/run/discobox/configure`), which
-  sandbox-agent creates in config mode owned by that user, mode 0700.
-  `/run/discobox` itself stays root-owned — it holds the resolved secrets file,
-  the proxy CA bundles and trust env, and the control-plane and buildkit
-  sockets — so the seed write and the command's own output go into the one
-  subdirectory the sandbox user owns rather than widening all of it.
-- To exercise or troubleshoot this whole flow without a real credential, use the
-  stub harness fixture: `test/harness-stub/README.md`.
-
-### Seeding the previous configuration
-
-`configure/attach` writes the previous configuration to
-`harness.ConfigurePreviousConfigPath` in the **same shape** the configure command
-writes its output, so the command can parse its own prior output rather than
-re-prompt from nothing. Only what this flow created is replayed —
-`ConfiguredFiles`, and bindings whose secret is in `ConfiguredSecretIDs`. A
-secret the user bound by hand is theirs, not the flow's to replay.
-
-**The seed carries no secret values.** It is metadata: env name, name, type,
-host, `usePrevious`. Values reach the configure sandbox the same way every other
-sandbox secret does — as sentinels in its environment, materialized from the
-harness config's bindings under `harness.ConfigurePreviousEnvPrefix`
-(`resources/sandboxes.materializeSandboxSecrets`). Nothing on this path calls
-`OpenSecretValue`; no credential is ever serialized into the sandbox.
-
-That is also why there is **no binding check here**. The sentinel resolves
-through `ResolveSandboxSecret`, which requires the harness config's binding to
-stand — one enforcement point, at use, instead of a second copy of the rule
-that could drift from it.
-
-A secret that no longer exists produces no `PREV_` variable at all: deleting it
-deletes its binding, and the seed walks bindings. The narrow case is a secret
-that still exists whose binding a person removed (`discobox secret unbind`);
-configure-made bindings set no expiry, so they do not lapse on their own. Then
-no sentinel is delivered and the configure command's verification fails.
-
-Applying output writes one use binding on the harness config per variable
+A saved credential gets one use binding on the harness config per variable
 (`bindHarnessSecret`): no routes of its own, so it inherits the secret's, and
-no expiry. A newly collected secret is routed to what the image declares for
-its variable, else the host the command named, else `*` (ADR 26-10-27-939
-§2), and named after the variable — with the config's slug before it when the
+no expiry. A newly saved secret is routed to what the image declares for its
+variable, else the host its provider names, else `*` (ADR 26-10-27-939 §2),
+and named after the variable — with the config's slug before it when the
 project already has a secret of that name, since a secret's name is unique in
-its project. A secret returned with `usePrevious` (or as its own sentinel)
-keeps its row and binding, and stays out of the replacement sweep. A new value
-for an env name a configure-created secret already binds updates that secret
-in place, so its ID and every sentinel keyed on it stay stable; a changed host
-moves its routes with it. Any other previously configured secret is deleted,
-its holders marked. Every binding written marks the sandboxes running the
-config, which materialize it. See `harness/DESIGN.md` for the command-side
-contract.
+its project (`freeSecretName`). Every binding written marks the sandboxes
+running the config, which materialize it.
 
 ## OAuth (rotating) secrets
 
-A configure command may return a secret of type `oauth` (the claude-code
-subscription login does). Its value carries the current access token in
+A saved credential may be of type `oauth` (the claude-code subscription login
+is). Its value carries the current access token in
 `SecretValue.Token` — so the proxy swap is byte-identical to a `bearer` — plus
 the refresh material (`refreshToken`, `tokenUrl`, `clientId`,
 `accessTokenExpiresAt`) that **never leaves the control plane**: the resolve
@@ -330,8 +223,8 @@ They are **captured at login, never assumed.** Which scopes a login yields
 depends on the account and the flow, and claiming one the token does not have
 trades a clear client-side refusal for an opaque upstream 401. `/login` is the
 only moment they are visible — the authorization server returns them alongside
-the token and they appear nowhere else — so the configure command copies them
-out of the credentials file it just read. A rotation carries them forward
+the token and they appear nowhere else — so the harness's export copies them
+out of the credentials file the login wrote. A rotation carries them forward
 untouched: a refresh mints a new token for the *same* authorization, not a new one.
 
 Refresh happens lazily inside `ResolveSandboxSecret` (`resources/secrets`), the
@@ -355,7 +248,7 @@ one place that decrypts and hands out a value:
 - The resolution's `ExpiresAt` is capped at `min(binding expiry, token expiry)`,
   so the proxy's per-`(client, sentinel, host)` cache lapses at token expiry and
   re-resolves — which is what triggers the next refresh. The **binding stays
-  persistent**: consent is "the harness is configured", not the 8-hour token
+  persistent**: consent is "the login was saved", not the 8-hour token
   TTL, so tokens rotate silently without re-approval.
 - A failed refresh is not fatal while a token is still on hand: it is served and
   a use-time `401` from upstream is left as the authority on liveness.
@@ -372,11 +265,13 @@ its own without reconstructing another's (ADR 26-11-04-028):
 | Set | Owner | Written by | Never written by |
 | --- | --- | --- | --- |
 | `Files` | the bundle | `snapshotImageMetadata` (create, seed, refresh) | any request |
-| `ConfiguredFiles` | the configure flow | configure (authoritative), save-back, `harness edit` of a configured file; cleared by deconfigure | seed, refresh |
-| `FileOverrides` | a person | `fileOverrides` on create/update, `harness edit` of a bundle file, save-back of a path it holds | seed, refresh, configure, deconfigure |
+| `ConfiguredFiles` | saved harness changes | save-back (every path), `harness edit` of a saved file; cleared by reset | seed, refresh |
+| `FileOverrides` | a person | `fileOverrides` on create/update, `harness edit` of a bundle file; cleared only by `reset --include-overrides` | seed, refresh, save-back, a plain reset |
 
-At each path a sandbox is given the override, else the configured file, else
-the bundle's. The CLI sends a person's whole set back with only the named
+At each path a sandbox is given the override, else the saved file, else the
+bundle's. A save never writes an override (ADR 26-11-04-028 §5): what a box
+wrote stays undoable by a plain reset, and at a path an override holds it is
+shadowed until the person removes or edits theirs. The CLI sends a person's whole set back with only the named
 paths changed (`--file`, `--remove-file`, `--clear-file`), under the revision
 it read.
 
@@ -402,14 +297,14 @@ runtime entries merge by path, a matching path replaces):
   `ResolvedHarnessConfig` schema), since that boundary is an independently
   generated OpenAPI contract, not a shared Go type.
 - `pool-agent/sandboxruntime.buildSandboxDocument` assigns the bundle baseline to
-  `sandboxconfig.Document.Image.Files`, and the configured files followed by the
+  `sandboxconfig.Document.Image.Files`, and the saved files followed by the
   overrides to `Document.Runtime.Files`, so `sandboxconfig.Effective`'s
   existing `mergeFiles(image, runtime, project)` does the actual overlay-by-path
   — a later runtime entry wins at a path — the same function that already
   merges a project's `.discobox/settings.json` `filesAdd` in
   (`pkg/sandboxconfig/effective.go`). No merge logic lives in this package.
 
-## Routes on configured secrets
+## Routes on saved secrets
 
 A bundle may declare routes on a secret (ADR 26-10-02-924 §2; see
 [`harness/DESIGN.md`](../../../../harness/DESIGN.md)). They are snapshotted
@@ -417,43 +312,35 @@ with the secret declarations and written onto the secrets in
 `ConfiguredSecretIDs` only; a secret a person bound to the config keeps the
 routes that person gave it.
 
-- A secret configure mints is created with its routes, so the rebind that
+- A secret a save mints is created with its routes, so the rebind that
   follows hands running sandboxes a sentinel already held to them.
-- `syncConfiguredSecretRoutes` rewrites the routes of the secrets configure
-  updated in place or kept, and of every configured secret when the bundle is
-  re-read (`RefreshHarnessConfigImage`, `SeedBuiltIns`). It runs in one
+- `syncConfiguredSecretRoutes` rewrites the routes of every saved secret when
+  the bundle is re-read (`RefreshHarnessConfigImage`, `SeedBuiltIns`). It runs in one
   transaction with the config's snapshot and marks the sentinel delivery of
   the sandboxes holding a changed secret (`MarkSecretHoldersDirtyTx`), so the
   routes, the snapshot and their delivery commit together; see
   [`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md).
 
-## Deconfigure
+## Reset
 
-Deconfigure deletes the secrets the configure flow created (cascading their
-bindings), removes every remaining use binding on the config — a
-hand-bound secret survives, its binding does not — clears `ConfiguredFiles` and
-`ConfigureError`, and sets `Configured=false`, leaving the bundle baseline intact
-so the harness can simply be configured again.
+Reset (`ResetHarnessConfig`, `POST .../reset`; ADR 26-11-02-152 §3) returns a
+config to its bundle's defaults: it deletes the secrets saved changes created
+(`ConfiguredSecretIDs`, cascading their bindings, their holders marked) and
+clears `ConfiguredFiles`, leaving the bundle baseline and any secret a person
+bound to the config by hand. A person's `FileOverrides` are kept too, unless
+the caller asks for them to go (`includeOverrides`, `admin harness reset
+--include-overrides`; ADR 26-11-04-028 §1). It claims the row's revision first, so a save in
+flight against the old overlay conflicts. Nothing about whether the harness can
+run changes, so reset is allowed on the project default and on a harness with
+nothing saved, which it leaves as it is. The refusal to delete a built-in
+points at reset only when there is something saved for it to remove.
+
 `UpdateHarnessConfig` can replace a person's set (`fileOverrides`) or the
-configure flow's (`configuredFiles`), never the bundle's; that is how the CLI's
-file editing (`harness edit`, and `f` on the console's harnesses screen)
-applies hand edits without a reconfigure. An edited configured file remains
-owned by the configure lifecycle and is still cleared on deconfigure; an
-edited bundle file becomes an override, which deconfigure keeps.
+saved one (`configuredFiles`), never the bundle's; that is how the CLI's file
+editing (`harness edit`, and `f` on the console's harnesses screen) applies
+hand edits. An edited saved file stays a saved file and is cleared on reset;
+an edited bundle file becomes an override, which a plain reset keeps.
 
-Deconfigure is also **refused for a harness with nothing to configure** (409):
-configure is what would undo it, and configure refuses that harness too, so
-turning one off would be a door that only opens one way — the create path
-rejects an unconfigured harness, a built-in cannot be deleted, and seeding never
-revisits `Configured`. The reserved `shell` built-in is what lands there, born
-configured because it declares no secrets. For the same reason the refusal to
-delete a built-in only points at `deconfigure` where that would do something.
-
-Deconfigure is **refused for the project default** (409): the default must always
-point at a configured harness, or `run` with no explicit harness would resolve to
-an unconfigured one and be rejected at sandbox create. The client releases the
-default first — `UnsetDefaultHarnessConfig` (`DELETE .../default`) clears it, and
-the CLI's harnesses screen does this automatically when disabling the default.
 Deleting a default harness is fine: `store.DeleteHarnessConfig` clears the
 pointer in the same transaction, and a project with no default refuses a create
 that names no harness (ADR 0048) rather than resolving to one nobody chose.
@@ -471,25 +358,13 @@ Delete is refused (409) while any sandbox still references the config.
   exact `{"$secret":"ENV_NAME"}` references at schema-registered secret leaves;
   only the sandbox resolves these to current sentinels. There is no executable
   file templating or public-config rendering context.
-- Launchers and configure commands own directory trust and onboarding using the
-  actual working directory. Shared preferences never carry those local paths.
+- Launchers own directory trust and onboarding using the actual working
+  directory. Shared preferences never carry those local paths.
 - `SandboxRuntime` is this package's whole seam onto sandboxes, and it carries
-  configure's sandbox lifecycle and caller-authorized access; server-authorized
-  delivery of committed capture receipts; and config-change fan-outs that rebind
+  save-back's caller-authorized access (`AcquireSandboxHTTPClient`, so a save
+  only works from inside a user request); server-authorized delivery of
+  committed capture receipts; and config-change fan-outs that rebind
   credentials and upgrade bundle pins.
-- The configure flow reaches the sandbox agent through `SandboxRuntime`
-  (`AcquireSandboxHTTPClient`), which authorizes the caller's scopes — so it only
-  works from inside a user request, which is the point.
-- That lease addresses the **pool host**, not the sandbox: the pool agent passes
-  exec and files routes through to the agent under `/api/project/{p}/pool/{p}/sandboxes/{s}/…`,
-  and requests carry two tokens — the pool's on `Authorization`, the agent's on
-  `X-Discobox-Sandbox-Agent-Authorization` for the pool agent to forward inward.
-  `sandboxagentclient` builds that route and carries both tokens; the
-  generated sandbox client cannot express the route shape, so `agentClient`
-  makes those calls directly through it. The previous configuration is seeded, and the
-  configure output read back, through the files API (ADR 26-10-22-499), as the
-  sandbox's default user — not through execs of `sh` and `cat` — so the lease
-  asks for `exec:read` (the primary's status) and `files:read`/`files:write`.
 
 ## Saving local harness configuration
 
@@ -501,10 +376,11 @@ proxied as user routes.
 
 A preview's file changes are described from the stored config, never from the
 sandbox (`describeCapturePreview`): `previous` is the file a save replaces —
-the override over the configured file over the bundle's, at the current
-revision — and a removal's `file` is the one beneath the topmost set holding
-the path (`fileBeneath`). A save of a path an override holds patches the
-override; any other path patches `ConfiguredFiles`. Clients diff the
+the override over the saved file over the bundle's, at the current revision —
+and a removal's `file` is the one beneath the topmost set holding the path
+(`fileBeneath`). A save always patches `ConfiguredFiles`, never an override
+(ADR 26-11-04-028 §5): at a path an override holds the saved file is shadowed,
+and the preview says so. Clients diff the
 two; the agent's candidate and its size limits are untouched by them.
 
 `commitCapture` locks the config and bound secret rows, checks the candidate's
@@ -538,9 +414,7 @@ the harness caches real credentials (ADR 26-10-26-573).
 
 Every config row update uses a revision compare-and-swap. The public editor
 request carries the revision originally read, so loading the latest row at
-request time cannot hide an intervening save. Configure captures its
-starting revision and bound-secret revisions and commits transactionally only
-while both still match. Deconfigure and manual binding mutations also advance
+request time cannot hide an intervening save. Reset and manual binding mutations also advance
 the config revision, so an older local capture cannot resurrect removed state.
 
 An explicit force save bypasses config and secret revision conflicts while the

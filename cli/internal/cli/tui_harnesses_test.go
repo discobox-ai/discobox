@@ -12,67 +12,14 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
-func TestToTUIHarnessState(t *testing.T) {
-	cases := []struct {
-		name string
-		cfg  apimodel.HarnessConfig
-		want tui.HarnessState
-	}{
-		{"configured", apimodel.HarnessConfig{Configured: true}, tui.HarnessEnabled},
-		{"never configured", apimodel.HarnessConfig{}, tui.HarnessDisabled},
-		{"configure failed", apimodel.HarnessConfig{ConfigureError: apiclientgen.NewOptString("boom")}, tui.HarnessFailed},
-		// A reconfigure that failed after one that worked leaves the working
-		// configuration in place, so the harness is still enabled.
-		{"failed after configured", apimodel.HarnessConfig{Configured: true, ConfigureError: apiclientgen.NewOptString("boom")}, tui.HarnessEnabled},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := harnessState(tc.cfg); got != tc.want {
-				t.Fatalf("harnessState = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-// A harness runs signed out when it has a configure flow to collect
-// credentials and none are bound, whatever its image declares or requires:
-// opencode declares nothing and runs on its free tier with nothing bound, and
-// is flagged on purpose, since that default is why nobody would otherwise know
-// to configure it. Every other case says nothing: a harness with no flow
-// (`shell`) has no remedy to offer, and a server that predates the count has
-// not said zero.
-func TestHarnessUncredentialed(t *testing.T) {
-	secrets := apiclientgen.NewOptNilHarnessConfigSecretArray([]apimodel.HarnessConfigSecret{{Name: "ANTHROPIC_API_KEY"}})
-	configure := apiclientgen.NewOptNilStringArray([]string{"claude-configure"})
-	cases := []struct {
-		name string
-		cfg  apimodel.HarnessConfig
-		want bool
-	}{
-		{"nothing bound", apimodel.HarnessConfig{BoundSecrets: apiclientgen.NewOptInt64(0), Secrets: secrets, ConfigCommand: configure}, true},
-		{"one bound", apimodel.HarnessConfig{BoundSecrets: apiclientgen.NewOptInt64(1), Secrets: secrets, ConfigCommand: configure}, false},
-		{"older server", apimodel.HarnessConfig{Secrets: secrets, ConfigCommand: configure}, false},
-		{"declares none, like opencode", apimodel.HarnessConfig{BoundSecrets: apiclientgen.NewOptInt64(0), ConfigCommand: configure}, true},
-		{"no configure flow", apimodel.HarnessConfig{BoundSecrets: apiclientgen.NewOptInt64(0), Secrets: secrets}, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := harnessUncredentialed(tc.cfg); got != tc.want {
-				t.Fatalf("harnessUncredentialed = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 // A harness config becomes a harness row: its identity, whether it is the
-// project default, and its files with the ones its configure flow wrote first,
+// project default, and its files with the ones saved from discoboxes first,
 // since those overlay the image-declared file of the same path.
 func TestToTUIHarness(t *testing.T) {
 	cfg := apimodel.HarnessConfig{
-		ID: "hc_1", Name: "Claude", Slug: "claude", Configured: true, BuiltIn: true,
-		Bundle:         apiclientgen.NewOptString("ghcr.io/example/claude:latest"),
-		ConfigReminder: apiclientgen.NewOptString("Log in, then exit."),
-		RunCommand:     []string{"claude", "--dangerously-skip-permissions"},
+		ID: "hc_1", Name: "Claude", Slug: "claude", BuiltIn: true,
+		Bundle:     apiclientgen.NewOptString("ghcr.io/example/claude:latest"),
+		RunCommand: []string{"claude", "--dangerously-skip-permissions"},
 		Secrets: apiclientgen.NewOptNilHarnessConfigSecretArray([]apimodel.HarnessConfigSecret{
 			{Name: "ANTHROPIC_API_KEY", Required: apiclientgen.NewOptBool(true), OneOfGroup: apiclientgen.NewOptString("auth")},
 		}),
@@ -86,11 +33,8 @@ func TestToTUIHarness(t *testing.T) {
 	}
 
 	harness := toTUIHarness(cfg, "hc_1")
-	if harness.State != tui.HarnessEnabled || !harness.Default || !harness.BuiltIn {
-		t.Fatalf("harness = %+v, want an enabled, default, built-in harness", harness)
-	}
-	if harness.ConfigReminder != "Log in, then exit." {
-		t.Fatalf("config reminder = %q, want image-declared reminder", harness.ConfigReminder)
+	if !harness.Default || !harness.BuiltIn {
+		t.Fatalf("harness = %+v, want a default, built-in harness", harness)
 	}
 	if len(harness.Secrets) != 1 || harness.Secrets[0].Name != "ANTHROPIC_API_KEY" ||
 		!harness.Secrets[0].Required || harness.Secrets[0].OneOf != "auth" || !harness.Secrets[0].Declared {
@@ -99,8 +43,8 @@ func TestToTUIHarness(t *testing.T) {
 	if len(harness.Files) != 2 {
 		t.Fatalf("files = %+v, want both sets", harness.Files)
 	}
-	if harness.Files[0].Path != ".claude.json" || harness.Files[0].Source != tui.HarnessFileConfigured || !harness.Files[0].CreateOnly {
-		t.Fatalf("first file = %+v, want the configured .claude.json", harness.Files[0])
+	if harness.Files[0].Path != ".claude.json" || harness.Files[0].Source != tui.HarnessFileSaved || !harness.Files[0].CreateOnly {
+		t.Fatalf("first file = %+v, want the saved .claude.json", harness.Files[0])
 	}
 	if harness.Files[1].Path != "settings.json" || harness.Files[1].Source != tui.HarnessFileFromBundle {
 		t.Fatalf("second file = %+v, want the image-declared settings.json", harness.Files[1])
@@ -155,26 +99,20 @@ func TestHarnessSecretsResolveBindings(t *testing.T) {
 	}
 }
 
-// Disabling the project default must release the default first: the server
-// refuses to deconfigure a default harness, so the data source does the unset
-// the user would otherwise have to do by hand.
-func TestDoHarnessDisableReleasesTheDefaultFirst(t *testing.T) {
+// Reset is the reset route and nothing else: the project default stays the
+// default, since a reset harness can still run.
+func TestDoHarnessResetCallsReset(t *testing.T) {
 	const harnessID = "hc_1"
 	var gotPaths []string
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		gotPaths = append(gotPaths, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"welcomed":true,"defaultHarnessConfigId":"` + harnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
-		case r.Method == http.MethodDelete && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/default":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"welcomed":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/deconfigure":
-			_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"configured":false,"builtIn":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
-		default:
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
+		if r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/reset" {
+			_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"builtIn":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			return
 		}
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(server.Close)
 
@@ -183,55 +121,10 @@ func TestDoHarnessDisableReleasesTheDefaultFirst(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ds := &apiDataSource{app: &App{}, client: client, projectID: "project-1"}
-	if err := ds.DoHarness(context.Background(), "", tui.HarnessDisable, harnessID); err != nil {
-		t.Fatalf("disable the default harness: %v", err)
+	if err := ds.DoHarness(context.Background(), "", tui.HarnessReset, harnessID); err != nil {
+		t.Fatalf("reset a harness: %v", err)
 	}
-
-	want := []string{
-		"GET /projects/project-1",
-		"DELETE /projects/project-1/harness-configs/" + harnessID + "/default",
-		"POST /projects/project-1/harness-configs/" + harnessID + "/deconfigure",
-	}
-	if len(gotPaths) != len(want) {
-		t.Fatalf("requests = %v, want %v", gotPaths, want)
-	}
-	for i, path := range want {
-		if gotPaths[i] != path {
-			t.Fatalf("requests = %v, want %v", gotPaths, want)
-		}
-	}
-}
-
-// A harness that is not the default is deconfigured without touching it.
-func TestDoHarnessDisableKeepsAnotherDefault(t *testing.T) {
-	const harnessID = "hc_1"
-	var gotPaths []string
-	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-		gotPaths = append(gotPaths, r.Method+" "+r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"welcomed":true,"defaultHarnessConfigId":"hc_other","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/deconfigure":
-			_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"configured":false,"builtIn":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
-		default:
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	client, err := apiclientgen.NewClient(server.URL)
-	if err != nil {
-		t.Fatalf("new client: %v", err)
-	}
-	ds := &apiDataSource{app: &App{}, client: client, projectID: "project-1"}
-	if err := ds.DoHarness(context.Background(), "", tui.HarnessDisable, harnessID); err != nil {
-		t.Fatalf("disable a harness: %v", err)
-	}
-	for _, path := range gotPaths {
-		if path == "DELETE /projects/project-1/harness-configs/"+harnessID+"/default" {
-			t.Fatalf("requests = %v, want no unset of a default this harness does not hold", gotPaths)
-		}
+	if want := "POST /projects/project-1/harness-configs/" + harnessID + "/reset"; len(gotPaths) != 1 || gotPaths[0] != want {
+		t.Fatalf("requests = %v, want only %s", gotPaths, want)
 	}
 }

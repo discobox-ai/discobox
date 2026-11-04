@@ -1,9 +1,14 @@
 # Harness Design
 
 This package owns the shared harness bundle contract (the manifest labels and
-their layering, volume and env resolution, the configure-flow paths) and the
-built-in harness bundles: their manifests, harness-owned hook definitions,
-launchers, and configure scripts.
+their layering, volume and env resolution) and the built-in harness bundles:
+their manifests, harness-owned hook definitions, launchers, and save-back
+exporters.
+
+A harness has no setup step (ADR 26-11-02-152). Every registered harness runs;
+a box on one with no login saved starts it signed out, the person signs in
+there, and that box's save-back offers the login and settings as a harness
+change to save for every box on the harness config.
 
 ## Saving local configuration
 
@@ -13,8 +18,10 @@ credential-file schemas, and authoritative provider metadata. Each built-in codi
 harness bundle carries `capture/runtime.cjs`, `capture/settings.cjs`, and the parser
 licenses beside its metadata and normalization module. The generic platform
 ships none of these: export/handoff are arbitrary installed commands, not a Node
-API. These six built-ins use Node through their own feature dependency. Interactive configure and background capture share the
-normalizers. Configure still owns onboarding and verification.
+API. These six built-ins use Node through their own feature dependency. Save-back
+is the only way a login or setting reaches a harness config from a box;
+onboarding and workspace trust are each launcher's, never something a save
+carries.
 
 Export is noninteractive JSON over stdin/stdout. It preserves ordinary settings,
 omits the harness-declared credential/local paths, and converts supported local
@@ -59,8 +66,8 @@ requires no package installation. Parse failures retain prior state. Older
 settings allowlist definitions require a harness metadata refresh; they are not
 silently treated as unrestricted documents.
 Portable settings are literal files. Codex excludes parsed local-project tables
-and supplies workspace trust as a process configuration override in its launcher
-and configure flow. Claude's initializer takes the capture lock while merging onboarding and trust
+and supplies workspace trust as a process configuration override in its
+launcher. Claude's initializer takes the capture lock while merging onboarding and trust
 into local state, preserving other fields and serializing with credential handoff. Neither exports trust into shared settings.
 Credential documents use exact JSON objects `{"$secret":"ENV_NAME"}` at registered
 secret leaves. The installer substitutes current sentinels using JSON encoding;
@@ -112,15 +119,20 @@ coding harnesses; shell carries no capture implementation.
   image — and the sandbox agent applies its platform and harness bundles at
   every start (§7, `agentlayer`).
 - One bundle contains at most one harness. Its identity, seed files,
-  secret declarations, optional config command, env defaults, declarative
+  secret declarations, save-back declaration, env defaults, declarative
   volumes, supplementary groups (`additionalGroups`), features, the
   destinations it needs to reach (`harness.egressHosts`, joining the harness's
   egress level and never restricting anything themselves, ADR 26-10-01-032 §3),
   and any command overrides are published in the bundle's OCI labels (`harness.ImageMetadata`) for
   server-side registration. `image.json` is the authoring source a label is
   compacted from (see `Taskfile.yml`). Save-back bundles also install that same
-  document beside their capture command; configure and capture read its
-  provider definitions, so refresh clients and route policy have one source.
+  document beside their capture command, which reads its provider
+  definitions, so refresh clients and route policy have one source.
+- **A configure declaration is refused** (ADR 26-11-02-152 §2): a `config`
+  key under `harness` — the configure command, its reminder, its callback
+  ports — fails to parse (`Image.UnmarshalJSON`), naming the retired key, so a
+  bundle written for the removed flow is not registered without the setup
+  step its author expected.
 - **What a platform has is declared, and what it lacks is the declaration's
   absence** — never a probe at runtime or an optional interface (ADR 0145 §3).
   A bundle declares no `platform` and no `imageKind`, because its steps
@@ -256,7 +268,7 @@ coding harnesses; shell carries no capture implementation.
 - Runtime commands are never supplied by the server or pool-agent: the
   harness's feature installs its CLI when a box provisions it, as the next
   point says.
-- Each harness folder owns its `Dockerfile`, `image.json`, configure script,
+- Each harness folder owns its `Dockerfile`, `image.json`, launcher, exporter,
   and other image-specific assets. The folder is the harness's feature
   ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §4): its `provision.yaml` installs the CLI (`install-cli.sh`) and places
@@ -360,37 +372,14 @@ coding harnesses; shell carries no capture implementation.
   the variable too, ahead of asking whether it writes to a terminal, and may
   put OSC 8 into a pipe. That cost is kept to the one image whose agent needs
   the hint, rather than made every exec's default.
-- `harnessMode: config` selects the image-owned interactive config command;
-  normal or omitted mode selects the image-owned run/relaunch commands.
-- **A config command may declare the ports its sign-in needs** (`config.ports`,
-  `harness.ConfigPort`). A browser sign-in ends at a callback server on the
-  CLI's own localhost, at a port the identity provider registered in advance —
-  Codex's ChatGPT login redirects to `localhost:1455` and nowhere else — and
-  inside a sandbox that server is one the user's browser cannot reach. The
-  configure flow forwards each declared port from the user's machine into the
-  configure sandbox **at the same number or not at all**
-  (`portforward.Options.Exact`): the redirect URI is fixed, so a forward that
-  landed on the next free port would look bound and answer no browser. A port
-  the machine cannot give is reported in the image's own `unavailable` words —
-  only the image knows what its harness can still do without the callback — in
-  the configure terminal and, in the console, on the configure pane's header,
-  where the CLI's full-screen sign-in cannot paint over it. See
-  [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md)
-  for the snapshot and [`cli/internal/tui/DESIGN.md`](../cli/internal/tui/DESIGN.md)
-  for the pane.
-- **A sign-in whose callback port changes every run declares an ephemeral
-  entry** (`{"ephemeral": true}`, at most one; ADR 26-10-09-867). The flow then follows the
-  configure sandbox's discovered listening ports, as the workspace's forward
-  does, and binds each TCP one at the same number — exact, as above, since the
-  browser holds a redirect URI naming the sandbox's number. Declared services
-  (the desktop) are not followed: no sign-in redirects to them. A taken port is
-  reported when it is found, which is mid-flow, so the console's header cannot
-  warn of it ahead of time; the CLI names the number and the entry's
-  `unavailable` words say what to do. A port is found through the sandbox's
-  reported listing, which a configure sandbox refreshes on a fast cadence (a
-  0.5 s scan, a 1 s pool poll, a 1 s CLI poll), so a bind trails the listener
-  by a few seconds at most; the harness's own instructions tell the user to
-  reload a callback page the browser could not reach.
+- **A sign-in's callback port needs no declaration.** A browser sign-in ends
+  at a callback server on the CLI's own localhost, at a port the identity
+  provider registered or one picked each run. The console's workspace forward
+  binds each port a box listens on at its own number when that number is free
+  on the user's machine, which is where the redirect sends the browser; when
+  it is taken, the CLI's device-code or paste-back sign-in is the way. The
+  configure flow's declared, exactly-bound ports are retired with it
+  (ADR 26-11-02-152 §2, superseding ADR 26-10-09-867).
 
 ## Driver Model
 
@@ -415,14 +404,10 @@ coding harnesses; shell carries no capture implementation.
   control plane records no harness platform: a sandbox's is its pool's (ADR
   26-11-01-122). See
   [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md).
-- Whether a harness has an interactive configure flow is the image's
-  declaration (`config.command`), snapshotted as the config's config command.
-  The configure process writes files and collected secret values to
-  `ConfigureOutputPath`. Configure files use the
-  same home-relative contract as all harness files; configure commands run from
-  the sandbox workdir and must use `$HOME` when invoking one of those files.
-  Every included coding harness supports config mode — see
-  [Configure flows](#configure-flows).
+- A harness has no setup command. Every included coding harness starts
+  signed out in a box with nothing saved, and declares `saveBack` so a sign-in
+  there can be saved for the harness config — see
+  [Credentials per harness](#credentials-per-harness).
 - Provider-specific implementations live in one folder per harness:
   - `claude-code`
   - `codex-cli`
@@ -440,7 +425,7 @@ coding harnesses; shell carries no capture implementation.
   - `shell` — the login shell, and the end of the resolution chain. Its
     Dockerfile installs nothing (the platform already ships the shell) and its
     `image.json` names only the platform API version it runs on: no identity
-    to declare beyond its reserved slug, no secrets, no configure flow, and its
+    to declare beyond its reserved slug, no secrets, no save-back, and its
     env and volumes are the platform's layer. The reserved slug is also what withholds the harness-run
     convention from it — a command typed into this terminal would be a second
     shell inside the first. It is otherwise an ordinary harness in every
@@ -473,14 +458,14 @@ subject to repo trust prompts or user/project override:
   `server.js` default-exports `{id, setup}`; a single file is refused) is what
   claude-code, codex-cli and copilot declare as commands, and it invokes the same generic
   publisher. It publishes only when `DISCOBOX_HOOK_SOCKET` is set, which keeps
-  it silent in a configure sandbox and outside a Discobox terminal. It hears the lifecycle
+  it silent in a build and outside a Discobox terminal. It hears the lifecycle
   through the bus, which a plugin subscribes to after opencode starts: the
   TUI, which is how the launcher runs a session, creates its session later and
   published every event in each run measured, while `opencode run` can create
   its session, and exit, before the subscription is up. The managed layer is
   read last of all, after the user's global config and a project's, and plugin
   entries accumulate across layers rather than replacing, so naming this one
-  neither loses to the configure flow's capture nor drops a plugin the user
+  neither loses to a saved harness change nor drops a plugin the user
   added. Its policy baseline is a launch flag rather than a system layer (see
   [OpenCode](#opencode)).
 - Copilot: `/etc/github-copilot/policy.d/discobox.json`. Copilot loads every
@@ -493,7 +478,7 @@ subject to repo trust prompts or user/project override:
 - omp: **no system layer** for hooks or settings
   ([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md)).
   Its lifecycle reaches JavaScript extensions alone, as opencode's does, so
-  `hook-extension.js` is the unit, installed beside the configure script; the
+  `hook-extension.js` is the unit, installed beside the launcher; the
   image's harness files put a one-line re-export of it in
   `~/.omp/agent/extensions/discobox-hooks.js`. omp discovers that directory
   beside the user's own `extensions:` setting rather than instead of it — an
@@ -506,8 +491,8 @@ subject to repo trust prompts or user/project override:
   The policy baseline is the `PI_CONFIG_FILES` overlay `/etc/omp/discobox.yml`,
   scalars only, and two launch flags (see [omp](#omp)).
 - pi: **no system layer** and no settings overlay either ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md)).
-  The same shape as omp's: `hook-extension.js` installed beside the configure
-  script, reached from `~/.pi/agent/extensions/discobox-hooks.js`. Each
+  The same shape as omp's: `hook-extension.js` installed beside the
+  launcher, reached from `~/.pi/agent/extensions/discobox-hooks.js`. Each
   published event carries the fields named for it, not a projection by shape:
   pi's `before_agent_start` carries the whole system prompt as a plain string.
   The policy baseline is the image's env and the launcher's `--approve` (see
@@ -608,9 +593,8 @@ has no memory feature:
   `claude`. That makes it the sandbox's environment rather than a launch flag:
   the harness terminal launches at sandbox start, and a `claude` typed into
   any shell afterwards finds the same memory. The policy layer also keeps it
-  out of `.claude/settings.json`, which the configure flow deliberately
-  replaces with the user's captured settings, and outranks anything that file
-  says. Claude Code's temp tree — session scratchpads among it — is
+  out of `.claude/settings.json`, which a saved harness change replaces with
+  the user's own settings, and outranks anything that file says. Claude Code's temp tree — session scratchpads among it — is
   environmental too: the image's env sets
   `CLAUDE_CODE_TMPDIR=/var/lib/claude-code` and declares that path a `data`
   volume owned by the sandbox user, so scratchpads survive an upgrade and
@@ -639,60 +623,28 @@ the CLI has a system layer for it. The codex feature lays
 sandbox is the isolation boundary, so Codex's own approval prompts and inner
 sandbox would only guard a machine that exists to be written to. It is the
 *system* layer and not the harness's `.codex/config.toml` file precisely because
-that file is the user's: the configure flow captures whatever the user left in
-it, and a baseline living there would be replaced by that capture on the first
-reconfigure. The same layer selects Codex's `activity` and `thread-title`
+that file is the user's: save-back exports whatever the user left in it, and
+a baseline living there would be replaced by the first saved change. The same layer selects Codex's `activity` and `thread-title`
 terminal-title items. Codex 0.150 gives an unnamed thread a provisional title
 from its first prompt, replaces it asynchronously with a generated title, and
 preserves manual `/rename` values. Codex emits that thread title as OSC 0; the
 sandbox agent observes it and Discobox uses it as the sandbox display name.
 
-## Configure flows
+## Credentials per harness
 
-A configure command's contract is one fixed directory, two fixed paths in it,
-and one env prefix:
+A harness has no setup command (ADR 26-11-02-152). A box on a harness config
+with no login saved starts its CLI signed out; the person signs in there with
+the CLI's own sign-in, and the box's save-back exports what the CLI wrote as a
+harness change. Saving it stores each credential as a secret bound to the
+harness config and its settings in the config's overlay, and every later box
+on the config receives them: credentials as sentinels in the document the CLI
+reads, settings as literal files. This section is what each CLI writes, what
+the export makes of it, and how it is delivered.
 
-- Both paths live under `ConfigureDir` (`/run/discobox/configure`), created by
-  sandbox-agent in config mode, **owned by the sandbox user, mode 0700**. It is
-  not `/run/discobox` itself: that is root-owned and holds the resolved secrets
-  file, the proxy's CA bundles and trust env, and the control-plane and buildkit
-  sockets, so a configure command running as a non-root user gets this one
-  writable subdirectory rather than write access to all of them.
-- It **writes** its result to `ConfigureOutputPath`
-  (`<ConfigureDir>/harness-configure.json`).
-- It **may read** the previous run's output from `ConfigurePreviousConfigPath`
-  (`<ConfigureDir>/harness-previous-config.json`), seeded before the command
-  starts. Same shape, but **no secret values** — it says which secrets exist, not
-  what they are.
-- Each of those secrets is offered as `ConfigurePreviousEnvPrefix` + its env
-  name: a secret bound to `ANTHROPIC_API_KEY` arrives as
-  `PREV_ANTHROPIC_API_KEY`.
-
-**A credential never enters the sandbox.** `PREV_*` holds a sentinel that the
-proxy swaps for the real value on an outbound request, and only while a live
-binding covers it. So a configure command can *use* the old credential — that is
-how it verifies one — without being able to read, print, or log it. Nothing
-along this path decrypts a secret, and a revoked credential simply fails the
-command's own verification.
-
-The prefix is not decoration. Seeding `ANTHROPIC_API_KEY` itself would let the
-harness CLI silently authenticate with the old credential: the flow would offer
-a choice it had already made, and its verification would prove nothing about the
-credential being configured.
-
-Output is authoritative and replaces the previous configuration wholesale, so a
-command that means to keep a file must re-emit it. To keep a *secret*, a command
-returns it with `usePrevious: true` and no value; handing the `PREV_` sentinel
-back as the value (`X=$PREV_X`) means the same thing, since storing a sentinel
-as a credential would only configure the harness with something that resolves to
-nothing.
-
-The seed is therefore itself a valid output: writing it back unchanged is an
-exact no-op reconfigure, which is the baseline a command edits rather than
-rebuilds.
-
-Every configure command should offer to keep an existing credential rather than
-force a re-login, and should verify it first — it may have been revoked since.
+**A credential never reaches another sandbox.** Delivery is a sentinel the
+proxy swaps for the real value on an outbound request, only while a binding
+covers it. The box that signed in holds the real credential until the save's
+handoff replaces it with the accepted sentinel (ADR 26-10-26-573 §4).
 
 **A secret may declare routes** (`Secret.Routes`,
 [ADR 26-10-02-924](../docs/adr/26-10-02-924-a-secret-may-carry-routes-and-every-request-it-is-sent-in-must-fall-on-one.md)):
@@ -701,18 +653,19 @@ is a `secretroute.Route` (ADR 26-10-27-880 §4) — host patterns (a host covers
 itself alone; `*.h` the hosts beneath it), and optionally methods, path globs
 and a GraphQL or MCP block — and whether it is blocked; one declared in the
 shape before host patterns reads as it was meant (`harnesscapture.Route`,
-through `secretroute.FromLegacy`) until its image is rebuilt. Configure
-writes the routes onto the secret it creates. An image declaring different
-ones re-syncs them, while a secret a person bound is theirs to route. Every
+through `secretroute.FromLegacy`) until its image is rebuilt. A save writes
+the routes onto the secret it creates. An image declaring different ones
+re-syncs them, while a secret a person bound is theirs to route. Every
 request carrying the secret's sentinel must fall on one, and the most specific
 decides: a blocked one refuses, and anything no route covers is refused. Name
 the harness's own endpoints, and block the paths beneath them that reach what
 the account owns rather than what the harness needs. A route a judge used to
 read is a blocked one (ADR 26-10-27-880).
 
-The CLI applies returned files and encrypted secret bindings only after the
-configure terminal exits successfully. No configure flow stores credentials in a
-public harness file.
+A browser sign-in's callback reaches a box through the console's workspace
+forward, at its own number when that is free (see [Image Contract](#image-contract));
+every built-in also offers a device-code, paste-back or key sign-in for when
+it is not.
 
 A configure command's exit status is part of the contract. 0 is success; any
 other status saves nothing, and the setup sandbox is deleted either way.
@@ -732,107 +685,42 @@ happened.
 
 ### Claude Code
 
-`claude-code/configure.sh` launches a bare, interactive `claude` and lets the
-user sign in and configure it the way they normally would, rather than
-reimplementing an auth menu: Claude Code's own onboarding already offers the
-same choice (Claude subscription vs. Anthropic Console account), and both
-choices write their result to disk, so the script only needs to inspect what's
-there once the user leaves the session (`/exit` or Ctrl-D).
+`/login` inside a box writes one of two credentials, both read by the export:
 
-- When the seed lists a secret whose `PREV_` variable is set, the session opens
-  **already signed in**: `seed_previous_credential` writes that sentinel where
-  Claude Code reads a credential, replaying the previously captured file so the
-  seeded session carries the same scopes the real login had. There is no
-  keep-or-replace question — the answer is whatever the user does in the
-  session. Reconfigure is usually about a setting (model, theme, statusline),
-  and changing one should not cost a fresh login.
-- Afterwards `detect_credential` decides what changed by comparing what it finds
-  against the sentinel it seeded. The sentinel is a value the script chose, so
-  finding it still in place proves nothing re-authenticated, and the credential
-  is reported back as `usePrevious` rather than as a value. A *changed*
-  credential wins over an unchanged one in either shape: signing in to a Console
-  account leaves the subscription file untouched, so stopping at the first
-  credential found would report "unchanged" and discard the account the user
-  just switched to.
-- A seeded credential that fails verification stops being seeded. Another round
-  would sign the session back in with it and detect "unchanged" again, offering
-  a retry that cannot succeed until the user signs in afresh.
-- Every round prints an instruction banner and waits for Enter
-  (`confirm_launch`) before starting anything. Two things the banner has to do,
-  because the failure mode is a confused user rather than a broken script:
-  - Say **this is configuration, not a session**. The user is dropped into a CLI
-    they know, in a sandbox that is deleted the moment they leave, so the
-    default reading — "my working session has started" — is the wrong one.
-  - Separate the **required** steps (`/login`, then `/exit`; setup captures
-    nothing without the first and cannot finish before the second) from the
-    optional ones (`/model`, `/config`). A seeded session says it is already
-    signed in instead, and lists `/login` as optional, for switching accounts
-    only. Color carries that split — the heading
-    and the required steps are emphasized, commands are cyan — degrading to
-    identical wording when `NO_COLOR` is set or either stream is not a terminal,
-    since this also lands in logs.
+- `~/.claude/.credentials.json` — a subscription login's rotating OAuth blob
+  (access token + **refresh token** + expiry), saved as an `oauth` secret
+  (`CLAUDE_CODE_OAUTH_TOKEN`) with the fixed Anthropic `tokenUrl`/`clientId`
+  from the provider definition, so the control plane refreshes the access
+  token as it expires (see `resources/harnessconfigs/DESIGN.md` → OAuth
+  secrets). Only `/login` yields a refresh token; `claude setup-token` does
+  not. The blob's `scopes` and `subscriptionType` travel with it. They are not
+  credentials — they say what the login may do — and Claude Code gates Remote
+  Control on finding `user:profile` recorded beside the token, so they are
+  kept rather than assumed.
+- `primaryApiKey` in `~/.claude.json` — an Anthropic Console account's
+  long-lived managed key, saved as a plain `token` secret
+  (`ANTHROPIC_API_KEY`). A later sandbox gets its sentinel back **in the same
+  field**, through a credential document whose `primaryApiKey` is an explicit
+  secret reference. Startup also initializes this field from the current
+  sentinel context when absent or carrying a known old alias; it preserves a
+  newer local login.
 
-  The wait is the point: `claude` repaints the terminal as it starts, and
-  increasingly runs full-screen, so a banner printed straight into a launch is
-  gone before it can be read. It then runs `claude` under `script` (it needs a
-  real TTY), and once the user exits, checks two locations in a fixed order:
-  - `~/.claude/.credentials.json` — a subscription `/login` writes the
-    rotating OAuth blob (access token + **refresh token** + expiry) here. The
-    script returns that whole blob plus the fixed Anthropic
-    `tokenUrl`/`clientId` as an `oauth`-typed secret
-    (`CLAUDE_CODE_OAUTH_TOKEN`), so the control plane can refresh the access
-    token as it expires (see `resources/harnessconfigs/DESIGN.md` → OAuth
-    secrets). This is why the subscription path is `/login` and not `claude
-    setup-token`: only `/login` yields a refresh token.
-    The blob's `scopes` and `subscriptionType` are copied out with it. They are
-    not credentials — they say what the login may do — and `/login` is the only
-    moment they can be read. Claude Code gates Remote Control on finding
-    `user:profile` recorded beside the token, so they are captured rather than
-    assumed; guessing a scope the token lacks turns a clear refusal into a 401.
-  - `primaryApiKey` in `~/.claude.json` — an Anthropic Console account login
-    writes its long-lived managed key here. The script returns it as a plain
-    `token` secret (`ANTHROPIC_API_KEY`), and a later sandbox gets its sentinel
-    back **in the same field it was read from**, through a credential document
-    whose `primaryApiKey` is an explicit secret reference. Startup also initializes
-    this field from the current sentinel context when absent or carrying a known
-    old alias; it preserves a newer local login.
+Neither credential is exported as an environment variable. Both are declared
+`delivery: file` (`harness.SecretDeliveryFile`), so the sentinel is minted and
+rendered into the file the CLI reads, and the variable is withheld — a CLI
+that finds both prefers the variable, and the variable carries none of the
+metadata the file does. The delivered credentials file's expiry is far out,
+so Claude Code never tries to rotate a sentinel.
 
-  Neither credential is exported as an environment variable. Both are declared
-  `delivery: file` (`harness.SecretDeliveryFile`), so the sentinel is minted and
-  rendered into the file the CLI reads, and the variable is withheld — a CLI
-  that finds both prefers the variable, and the variable carries none of the
-  metadata the file does.
-  If neither is present, the script reports whether `claude` exited non-zero
-  (it would not run) or cleanly (the user didn't sign in) and offers to relaunch
-  it. Every retry goes through `confirm_retry`, so the loop only turns when a
-  person asks it to: an attempt that fails before reaching the user fails again
-  the instant it is retried, and looping on that is a busy loop rather than a
-  retry; answering no is a cancellation (`harness.ConfigureCanceledExitCode`),
-  not a failure. A candidate that fails verification is cleared
-  (`clear_captured_credential`) before the retry, so a stale artifact from an
-  earlier attempt in the same sandbox can't be mistaken for a fresh one.
-- The launcher and configure flow run `claude-code-capture init`. It merges
-  onboarding, the auto-mode nudge marker, and trust for the actual current
-  directory into `.claude.json`, preserving other projects, preferences and
-  newer local credentials. Malformed state is left intact and startup fails.
-- `.claude/settings.json` remains literal, with the bypass-permission defaults.
-  Claude refuses bypass as root, so configure runs as the sandbox account.
-- Every path ends in a `claude -p` check with only the chosen variable in the
-  environment (and the credentials file moved aside), so a credential that
-  cannot actually talk to the API never reaches a `HarnessConfig`. The script
-  exits non-zero rather than looping when stdin is closed — at
-  `confirm_launch` or at `confirm_retry` — which fails the configure flow.
-- It returns **one file**: a snapshot of `~/.claude/settings.json`, exactly as
-  the user left it (theme, model, statusline, ... — whatever they touched
-  during the session, or nothing, if they touched nothing). This is
-  deliberately narrower than "return everything the sandbox has" —
-  `~/.claude.json` is still never returned, since besides the credential
-  already extracted above it carries this sandbox's own per-workspace trust
-  map, which must not override a real sandbox's trust state. See
-  `resources/harnessconfigs/DESIGN.md` for how a returned file actually
-  reaches a later sandbox.
-
-  Both credentials declare `rejectionScope`: `api.anthropic.com`, `/v1/messages`. A
+- The launcher runs `claude-code-capture init`. It merges onboarding, the
+  auto-mode nudge marker, and trust for the actual current directory into
+  `.claude.json`, preserving other projects, preferences and newer local
+  credentials. Malformed state is left intact and startup fails.
+- `.claude/settings.json` is exported as the user left it, and remains
+  literal, with the bypass-permission defaults. `~/.claude.json` is never
+  exported as a file: besides the credential, it carries the box's own
+  per-workspace trust map.
+- Both credentials declare `rejectionScope`: `api.anthropic.com`, `/v1/messages`. A
   secret's `rejectionScope` (`harness.RejectionRule`: a host, and path prefixes
   on a segment boundary) names the requests that answer for the credential;
   only what an upstream makes of one of them draws or clears the refused
@@ -843,35 +731,25 @@ there once the user leaves the session (`/exit` or Ctrl-D).
 
 ### Codex CLI
 
-`codex-cli/configure.sh` follows the claude-code shape: it launches a bare,
-interactive `codex` and lets the user sign in and configure it the way they
-normally would, then inspects what codex itself wrote. Codex's onboarding
-already offers every sign-in this flow would otherwise reimplement — **ChatGPT
-in a browser**, **ChatGPT by device code**, or an API key — and all of them
-write `$CODEX_HOME/auth.json`, so the script only has to read what the session
-left behind. The sandbox has no browser, so the banner says how each of the two
-ChatGPT sign-ins gets there: the browser flow prints a link to open on the
-user's own machine and completes against a callback server on the sandbox's
-localhost:1455, which the image declares as a config port so the configure flow
-forwards it in from the user's machine (see [Image Contract](#image-contract));
-device code is the fallback the flow names when that port was taken, in the
-image's `unavailable` message.
+Codex's onboarding offers **ChatGPT in a browser**, **ChatGPT by device
+code**, or an API key, and all of them write `$CODEX_HOME/auth.json`. The
+browser sign-in completes against a callback server on the box's
+localhost:1455; device code is the way when that port is taken on the user's
+machine.
 
 - **Both credentials are delivered as a file, never an environment variable**
-  (`delivery: file`). This is not the tidiness argument claude-code makes; codex
-  leaves no choice. The interactive TUI reads no credential variable at all
-  (only `codex exec` honors `CODEX_API_KEY`), and a ChatGPT token has no
-  variable to be read from in the first place. `~/.codex/auth.json` is the one
-  delivery both halves of the harness agree on, so the flow returns it as a
+  (`delivery: file`). Codex leaves no choice: the interactive TUI reads no
+  credential variable at all (only `codex exec` honors `CODEX_API_KEY`), and a
+  ChatGPT token has no variable to be read from. `~/.codex/auth.json` is the
+  one delivery both halves of the harness agree on, so it is delivered as a
   credential document with the sentinel in the credential's place.
-- An **API key** sign-in leaves `{"OPENAI_API_KEY": "sk-…"}`, stored as a plain
+- An **API key** sign-in leaves `{"OPENAI_API_KEY": "sk-…"}`, saved as a plain
   `token` secret (`OPENAI_API_KEY`).
 - A **ChatGPT** sign-in leaves `tokens.{id_token, access_token, refresh_token,
-  account_id}`, stored as an `oauth` secret (`CODEX_OAUTH_TOKEN`) with OpenAI's
+  account_id}`, saved as an `oauth` secret (`CODEX_OAUTH_TOKEN`) with OpenAI's
   fixed token endpoint and client id and the access token's own `exp`, so the
-  control plane refreshes it as it expires (see
-  `resources/harnessconfigs/DESIGN.md` → OAuth secrets). Two details of the
-  returned file follow from the credential living in the control plane:
+  control plane refreshes it as it expires. Two details of the delivered file
+  follow from the credential living in the control plane:
   - `last_refresh` is far future. Codex rotates a token whose `last_refresh` is
     older than 28 days, and a rotation from inside a sandbox could not succeed —
     the refresh token is not there — nor does it need to, since a sentinel does
@@ -884,28 +762,11 @@ image's `unavailable` message.
     is not a secret. The plan type is also recorded on the secret as
     `subscriptionType`, the same non-secret "what this grant is" metadata
     claude-code records scopes as.
-- Reconfigure seeds the previous auth.json back with the `PREV_` sentinel in
-  place of its secret reference, so the session opens **already signed in** and
-  changing a model or theme costs no re-authentication. Detection is the same
-  comparison claude-code makes: a value equal to the seeded sentinel proves
-  nothing re-authenticated and comes back as `usePrevious`.
-  - Codex has no `/login`; the way to change accounts from a signed-in session
-    is `/logout`, which signs out **and exits**. So a session that comes back
-    with no credential after being seeded is a deliberate logout, and the script
-    says so and offers to start codex again rather than reporting a missed step.
-  - Whatever the script does *not* seed, it removes. A configured harness
-    delivers its own auth.json into the configure sandbox like any other file,
-    but configure seeds its own credential from `PREV_` bindings instead of
-    installing run-mode credential documents. There is no baseline auth.json.
-- Verification runs `codex exec` against the auth.json as it stands, which is
-  exactly what a run sandbox will do. There is no environment variable to point
-  codex at one credential instead of another, so the file is the subject of the
-  check and the environment is scrubbed of the variables `codex exec` would
-  otherwise prefer over it.
-- It returns a credential document for `auth.json` and literal user preferences
-  for `~/.codex/config.toml`, excluding parsed `[projects]` tables. Both the
-  launcher and configure pass `-c projects.<JSON-quoted cwd>.trust_level="trusted"`.
-  Trust never needs to be appended to the user's file or persisted centrally.
+- There is no baseline auth.json: an empty one reads as signed in.
+- Literal user preferences in `~/.codex/config.toml` are exported, excluding
+  parsed `[projects]` tables. The launcher passes
+  `-c projects.<JSON-quoted cwd>.trust_level="trusted"`, so trust never needs
+  to be appended to the user's file or persisted centrally.
 - Existing stored trust suffixes and credential references are converted in
   place by the server migration. Old sandbox bootstraps and capture checkpoints
   use the same bounded conversion on read. Unknown executable templates fail
@@ -913,21 +774,18 @@ image's `unavailable` message.
 
 ### OpenCode
 
-`opencode/configure.sh` follows the codex shape — a bare interactive
-`opencode`, then an inspection of the credentials it stored — for a harness
-whose credentials are not one of two fixed kinds. opencode reaches every
-models.dev provider, and a user connects as many as they like with `/connect`,
-so the image declares no secrets at all: their names are only known once
-something is connected, and the built-in seeds `Configured`, like any image
-that declares none. See
+A user connects as many models.dev providers as they like with `/connect`, so
+the image declares no secrets at all: their names are only known once
+something is connected. See
 [ADR 0127](../docs/adr/0127-the-opencode-harness-runs-opencode-1.md) and
 [ADR 26-10-15-848](../docs/adr/26-10-15-848-the-opencode-harness-runs-opencode-2.md).
+ChatGPT's browser sign-in calls back to 1455 and DigitalOcean's to 1456;
+ChatGPT also has a headless sign-in, and the rest connect with a key.
 
-- **Every opencode command runs `--standalone`**: the launcher, the configure
-  script and the credentials helper. Without it opencode
-  talks to a per-user background service, which outlives the terminal that
-  started it and would run the hook plugin in that terminal's environment for
-  every terminal after it.
+- **Every opencode command runs `--standalone`**: the launcher and the
+  credentials helper. Without it opencode talks to a per-user background
+  service, which outlives the terminal that started it and would run the hook
+  plugin in that terminal's environment for every terminal after it.
 - **Credentials are rows in opencode's database**, read and written only
   through `opencode auth export` and `auth import`, opencode's own interchange
   format: `{id, integrationID, label, active, value}`, where `value` is
@@ -935,16 +793,16 @@ that declares none. See
   metadata}`, or `{type: external, methodID}`. Import never updates an id it
   already holds.
 - **One secret per provider**, `OPENCODE_<PROVIDER>_CREDENTIAL`, from the
-  provider's active credential. The name is stable per provider, so a
-  reconfigure that replaces a credential updates its secret in place. An
-  `external` credential holds no secret and is not captured.
+  provider's active credential. The name is stable per provider, so a save
+  that replaces a credential updates its secret in place. An `external`
+  credential holds no secret and is not captured.
 - **The secret's type follows how the credential renews.** A key is a `token`.
   An OAuth sign-in whose `refresh_token` grant the control plane can perform —
   OpenAI (ChatGPT, the client and endpoint the codex image refreshes), xAI
   (whose endpoint takes the request form-encoded, recorded as
   `tokenRequestEncoding: form`) — is an `oauth` secret. Any other OAuth sign-in
   (GitHub Copilot; DigitalOcean and Snowflake, which cannot be renewed from
-  here) is a `token` holding its access token, and the script says when it
+  here) is a `token` holding its access token, and the export says when it
   expires.
 - **Delivery is the export as a credential document**,
   `.config/discobox/opencode-credentials.json`: each entry under the image's
@@ -965,111 +823,62 @@ that declares none. See
   never logged out or changed, though a changed configuration takes back
   which one is active. A configuration made under ADR
   0127 delivers opencode 1's `auth.json` instead; the helper reads it with
-  opencode's own legacy mapping, so it keeps working until it is reconfigured,
-  and on a sandbox that ran opencode 1 the switch keeps it active over
+  opencode's own legacy mapping, so it keeps working until a new sign-in is
+  saved, and on a sandbox that ran opencode 1 the switch keeps it active over
   opencode's own import of the same file. The helper is the one place the
-  image's entries are made (`own`) and the one reader of what was delivered
-  (`delivered`), for the launcher and configure.
-- **The default model is checked, and a failure only warns.** The check runs
-  on the model a sandbox starts on — the `model` setting, else the last
-  `/models` pick, else opencode's own choice — named with `--model` from
-  `opencode-model` (`model.sh`), since `opencode run` alone does not read the
-  `/models` pick. Only that model is
-  checked: whether a request succeeds depends on the model as much as the
-  credential (a plan that excludes it, a region that needs opting in to), which
-  opencode's model list does not show, so checking each provider on a model
-  picked for it reports working keys as broken. A failure offers to start
-  opencode again; declining saves everything as it is. Connecting nothing is
-  allowed after a warning — opencode runs without a provider, on its free
-  models or a local server.
-- **Reconfigure imports the previous credentials** with each `PREV_` sentinel
-  substituted, so the session opens connected. An entry whose key or access
-  token is still that sentinel was not replaced, and comes back as
-  `usePrevious` with its previous entry verbatim. A delivered opencode 1
-  `auth.json` is removed and its entries are what is seeded and kept.
-- It also returns opencode's settings as the user left them — the global
+  image's entries are made (`own`).
+- It also exports opencode's settings as the user left them — the global
   `opencode.json`, `opencode.jsonc`, `config.json`, and `cli.json` (theme,
   keybinds; opencode 2 migrates an opencode 1 `tui.json` into it) — and
-  `.local/state/opencode/model.json`, the `/models` choice, as `createOnly`: it
-  seeds a sandbox's first launch and belongs to the sandbox after that.
+  `.local/state/opencode/model.json`, the `/models` choice.
 - **The policy baseline is `--auto`** on the launch, approving every tool use a
   rule does not deny, and a launch prompt goes to `--prompt`, which the TUI
   submits. opencode's system layer, `/etc/opencode`, is its *managed*
   configuration, which outranks a project's own rules, and the user's global
-  config is replaced by the captured settings — so neither is the place for it.
+  config is replaced by a saved change — so neither is the place for it.
 - **Discobox's own settings for the harness** live in
   `.config/discobox/opencode-harness.json`, a plain harness file the image
-  declares and configure returns: `webSearch`. It is edited
-  with `discobox admin harness edit opencode .config/discobox/opencode-harness.json`,
-  and a reconfigure keeps whatever was edited into it, but for the
-  `judgeModel` a harness configured before the judge was removed carried,
-  which it drops.
-- **Web search is asked during configure.** opencode 2 searches with every
+  declares: `webSearch`. It is edited in a box and saved as a harness change,
+  or with `discobox admin harness edit opencode
+  .config/discobox/opencode-harness.json`. opencode 2 searches with every
   provider by default, through a keyless search service. The launcher reads
   `webSearch`: `false` denies the `websearch` permission through
   `OPENCODE_CONFIG_CONTENT`, which takes the tool away from the model; `true`
-  and `null` — the image's baseline, before anyone configured — leave
-  opencode's default.
-- The configure image declares config ports 1455 (ChatGPT's browser sign-in)
-  and 1456 (DigitalOcean's). A browser sign-in on a random port cannot be
-  forwarded; those providers connect with a key.
+  and `null` — the image's baseline — leave opencode's default.
 
 ### GitHub Copilot
 
-`copilot/configure.sh` asks how to sign in before it starts Copilot, because
-the two ways differ in what they hand every discobox
-([ADR 26-10-02-840](../docs/adr/26-10-02-840-the-copilot-harness-takes-its-github-token-from-the-environment.md)):
-
-- **A fine-grained PAT with only "Copilot Requests"**, the default, read by
-  Copilot's own `copilot login --with-token`, which validates it.
-- **`/login`** in a bare Copilot. Its browser sign-in calls back to a port
-  it picks fresh each run (`listen(0)`; GitHub accepts any loopback port), so
-  the image declares an ephemeral config port; device code is the fallback
-  when the port it got is taken here. Its token is an OAuth App `gho_` token with `repo` scope among
-  others, and Copilot sends it to both `api.github.com` and
-  `githubcopilot.com`, so its secret carries no host. The script says that
-  every discobox using the harness could then act on every repository the
-  account can, and goes on only on an explicit yes; the warning defaults to
-  no. A token pasted at the PAT prompt that is not a fine-grained PAT — gh's
-  own `gho_` token, which Copilot also takes — has to clear the same warning,
-  and is named for what it is rather than for the prompt it came in at. So
-  does any such token the session itself stores: the choice made before
-  Copilot starts binds nothing, since `/login` runs inside it from either
-  path, and what is stored is what is saved.
-
-Either way Copilot stores the token, and the script reads it back:
+A box signs in inside Copilot, by `/login` or with a token
+([ADR 26-10-02-840](../docs/adr/26-10-02-840-the-copilot-harness-takes-its-github-token-from-the-environment.md)).
+`/login`'s browser sign-in calls back to a port it picks fresh each run
+(`listen(0)`; GitHub accepts any loopback port); device code is the way when
+that port is taken on the user's machine. Its token is an OAuth App `gho_`
+token with `repo` scope among others; a fine-grained PAT with only "Copilot
+Requests" is the least-privilege alternative.
 
 - **Storage is `~/.copilot/config.json`**, Copilot's own state file (JSON
   under `//` comment lines): `authTokens["<host>:<login>"].token`, for the
-  account `lastLoggedInUser` names. A sandbox has no keychain, and without
-  `storeTokenPlaintext` Copilot stops a sign-in at a consent question, so the
-  script sets that in `settings.json` while it runs and strips it from what it
-  returns. It clears `config.json` before each round so a retry never captures
-  an earlier attempt.
+  account `lastLoggedInUser` names. A sandbox has no keychain, and Copilot
+  stores the token in plaintext only under `storeTokenPlaintext`, which the
+  export never carries into shared settings.
 - **One `token` secret, `COPILOT_GITHUB_TOKEN`, delivered in the
   environment.** Copilot documents that variable for headless use and it
   outranks a stored login; `gh` and git never read it, and Copilot strips it
   from the environment of the commands its agent runs. Neither sign-in yields
-  anything to refresh. `config.json` is never returned: it is Copilot's state,
-  rewritten as it runs.
-- **Only github.com.** A login to another host is refused: an Enterprise Cloud
-  account also needs `COPILOT_GH_HOST` in every sandbox, and a configure
-  command returns no env.
-- **Reconfigure opens signed in** with the `PREV_` sentinel as
-  `COPILOT_GITHUB_TOKEN`; Enter keeps it (`usePrevious`). Copilot stores a
-  `/login` even with a token in its environment, so signing in to another
-  account inside the kept session replaces it, once that token has cleared
-  the warning. A kept token that fails
-  verification stops being offered.
+  anything to refresh. `config.json` is never exported as a file: it is
+  Copilot's state, rewritten as it runs. After a save the handoff removes the
+  saved plaintext token; a running process keeps its previous environment
+  until it restarts.
+- **Only github.com.** A login to another host is refused by the export: an
+  Enterprise Cloud account also needs `COPILOT_GH_HOST` in every sandbox, and
+  a harness change carries no env.
 - **The token is held to Copilot's own traffic.** `COPILOT_GITHUB_TOKEN`
-  declares routes (ADR 26-10-02-924), which configure writes onto the secret:
+  declares routes (ADR 26-10-02-924), which a save writes onto the secret:
   Copilot's own endpoints under `githubcopilot.com` and `api.github.com` are
   sent; its MCP server, its agents and the rest of `github.com` are blocked
   routes, which a judge used to read (ADR 26-10-27-880); anything else is
   refused. The agent needs a binding of its own to do more on GitHub.
-- Every path ends in a tool-free `copilot -p` with only the chosen token, in a
-  `COPILOT_HOME` of its own so the stored login cannot stand in for it.
-- It returns `~/.copilot/settings.json` as the user left it (`/config model`,
+- It exports `~/.copilot/settings.json` as the user left it (`/config model`,
   theme, status line), minus `storeTokenPlaintext`.
 - **The policy baseline is two switches.** `COPILOT_ALLOW_ALL=true` in the
   image's env trusts the directory Copilot starts in — without it an
@@ -1084,10 +893,12 @@ Either way Copilot stores the token, and the script reads it back:
 
 ### omp
 
-`omp/configure.sh` follows the opencode shape — a bare interactive `omp`,
-then a read of what it stored — for a harness whose credentials are any number
-of providers' ([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md)).
-The image declares no secrets.
+A harness whose credentials are any number of providers'
+([ADR 26-10-14-718](../docs/adr/26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md)).
+The image declares no secrets. A box signs in with `/login`; every omp
+browser sign-in (ChatGPT 1455, Anthropic 54545, Gemini CLI 8085, Antigravity
+51121, OpenRouter 54549) also takes the redirect URL pasted back, which is the
+way when its port is taken on the user's machine.
 
 - **Credentials live in SQLite** (`~/.omp/agent/agent.db`), and omp moves them
   with `omp auth export` and `omp auth import`: `{version: 1, credentials:
@@ -1096,13 +907,13 @@ The image declares no secrets.
   same provider's key and the same account's login, and keeps the rest.
 - **One secret per credential**, `OMP_<PROVIDER>_CREDENTIAL`, a second account
   of one provider `_2`. omp exports several accounts in no fixed order, so a
-  credential is named by which secret it is: the one whose `PREV_` sentinel it
-  still holds, else the previous secret of the same account (provider,
-  `accountId`, `email`), else the provider's lowest free name. A key is a `token`; an OAuth login the control plane
-  can renew — Anthropic and ChatGPT with the clients the claude-code and codex
-  images are renewed with, xAI form-encoded — is an `oauth` secret; any other
-  login is a `token` holding its access token, and the script says when it
-  expires, or that it has — kept or new.
+  credential is named by which secret it is: the one whose sentinel it still
+  holds, else the previous secret of the same account (provider, `accountId`,
+  `email`), else the provider's lowest free name. A key is a `token`; an OAuth
+  login the control plane can renew — Anthropic and ChatGPT with the clients
+  the claude-code and codex images are renewed with, xAI form-encoded — is an
+  `oauth` secret; any other login is a `token` holding its access token, and
+  the export says when it expires, or that it has.
 - **Delivery is the export document as a credential document**,
   `.config/discobox/omp-credentials.json`, with sentinels in place of keys and
   access tokens, `refresh` a placeholder (or the sentinel, for GitHub Copilot,
@@ -1112,26 +923,19 @@ The image declares no secrets.
   refreshed. omp reads ChatGPT's `chatgpt-account-id` from the access token's
   claims, which a sentinel does not carry.
 - **`PI_PROXY` follows `HTTPS_PROXY`** (`proxy-env.sh`, installed as
-  `/etc/profile.d/omp-proxy.sh` and sourced by the launcher and configure
-  command). omp's Anthropic transport is its own client that
-  reads only `PI_PROXY`, and without it connects direct, which a sandbox's
-  egress does not allow: every Anthropic request hangs into "Connection
-  error.". It is derived rather than written into the manifest, where a build
-  in a discobox would rewrite the loopback address (ADR 26-10-01-425).
+  `/etc/profile.d/omp-proxy.sh` and sourced by the launcher). omp's Anthropic
+  transport is its own client that reads only `PI_PROXY`, and without it
+  connects direct, which a sandbox's egress does not allow: every Anthropic
+  request hangs into "Connection error.". It is derived rather than written
+  into the manifest, where a build in a discobox would rewrite the loopback
+  address (ADR 26-10-01-425).
 - `ONNXRUNTIME_NODE_INSTALL_CUDA=skip`, at build time and in the image's env
   (the version store installs omp in the sandbox): omp's onnxruntime-node
   dependency otherwise downloads onnxruntime's CUDA build from GitHub on
   install, which no sandbox can use and which hung a build outright.
-- **Reconfigure imports the previous document** with each `PREV_` sentinel
-  substituted, after removing `agent.db`, so the session opens signed in to
-  exactly that. An entry whose key or access token is still that sentinel was
-  not replaced, and comes back as `usePrevious` with its previous entry
-  verbatim.
-- The session runs **without the image's overlay**, so a first configure gets
-  omp's own setup wizard (sign-in, default model, theme), and the default
-  model is then checked with a tool-free `omp -p`; a failure only warns. It
-  returns `.omp/agent/config.yml` as omp wrote it; not `models.yml`, which holds literal keys and `!` commands, as pi's
-  `models.json` does, so custom providers are configured in the sandbox.
+- It exports `.omp/agent/config.yml` as omp wrote it; not `models.yml`, which
+  holds literal keys and `!` commands, as pi's `models.json` does, so custom
+  providers are configured in each sandbox.
 - **The policy baseline** is `PI_CONFIG_FILES=/etc/omp/discobox.yml` in the
   image's env — `startup.setupWizard: false`, whose wizard otherwise stalls an
   unattended launch, and `startup.checkUpdate: false` — and the launcher's
@@ -1139,15 +943,15 @@ The image declares no secrets.
   argument: omp sends each positional argument as its own message and reads
   an `@`-led one as a file. Resume is `--continue`, which opens a new session
   when there is none.
-- The configure image declares config ports 1455 (ChatGPT), 54545
-  (Anthropic), 8085 (Gemini CLI), 51121 (Antigravity) and 54549 (OpenRouter).
-  Every omp browser sign-in also takes the redirect URL pasted back, which is
-  the fallback when a port is taken.
 
 ### pi
 
-`pi/configure.sh` follows the opencode shape — a bare interactive `pi`, then a
-read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md)). The image declares no secrets.
+The agent omp descends from, with the same any-providers credentials
+([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md)).
+The image declares no secrets. A box signs in with `/login`; each browser
+sign-in (Anthropic 53692, OpenAI 1455, Radius 1456, OpenRouter on a port of
+its own) also takes the redirect URL pasted back, and Copilot, xAI, Kimi and
+Meta sign in by device code.
 
 - **Credentials live in `~/.pi/agent/auth.json`**, one entry per provider:
   `{type: api_key, key, env?}` or `{type: oauth, access, refresh, expires, …}`.
@@ -1155,30 +959,25 @@ read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harne
 - **One secret per provider**, `PI_<PROVIDER>_CREDENTIAL`. A key is a `token`;
   an Anthropic or xAI login is an `oauth` secret, renewed with the clients the
   claude-code and opencode images are renewed with; any other login is a
-  `token` holding its access token, and the script says when it expires, or
-  that it has — kept or new. Left out, and said: a key that is a `!` command
-  (pi runs it), a ChatGPT subscription (`openai-codex`), whose account pi
-  reads from the access token's claims and fails locally without, and an
-  entry with no key or token at all (Bedrock's AWS profile or credential
-  chain), which uses credentials kept on the machine pi runs on.
+  `token` holding its access token, and the export says when it expires, or
+  that it has. Left out, and said: a key that is a `!` command (pi runs it), a
+  ChatGPT subscription (`openai-codex`), whose account pi reads from the
+  access token's claims and fails locally without, and an entry with no key or
+  token at all (Bedrock's AWS profile or credential chain), which uses
+  credentials kept on the machine pi runs on.
 - **A Copilot login's secret is its GitHub token**, bound to `api.github.com`
   (or `api.<domain>` for GitHub Enterprise). pi exchanges it, at
   `copilot_internal/v2/token` with the token as a bearer header, for a Copilot
   token of about 30 minutes, which it keeps in `access`. That exchange runs in
   the sandbox, through the proxy, so the real Copilot token lands in the
-  sandbox's `auth.json`; the GitHub token does not.
+  sandbox's `auth.json`; the GitHub token does not. An unchanged refresh
+  sentinel with a changed `access` is that exchange, not a new login.
 - **Delivery is auth.json as a credential document**, with sentinels in
   place of keys and access tokens, `refresh` a placeholder and `expires` far
   future where the control plane renews; a Copilot entry carries the sentinel
   in `refresh`, a placeholder `access` and `expires` zero, so pi exchanges
   before its first request.
-- **Reconfigure writes the previous auth.json back** with each `PREV_`
-  sentinel substituted, replacing what the configured harness delivered, so
-  the session opens signed in to exactly that. An entry whose key, access
-  token or (for Copilot) refresh token is still that sentinel was not
-  replaced, and comes back as `usePrevious` with its previous entry verbatim.
-  The default model is checked with a tool-free `pi -p`; a failure only warns.
-  It returns `settings.json` and `keybindings.json` as pi wrote them; not
+- It exports `settings.json` and `keybindings.json` as pi wrote them; not
   `models.json` or `mcp.json`, which hold literal keys and commands.
 - **The policy baseline** is the image's env — `PI_SKIP_VERSION_CHECK=1`,
   `PI_TELEMETRY=0`, since pi otherwise reports an install on a first run and
@@ -1193,9 +992,5 @@ read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harne
   argument as its own message, and reads an `@`-led one as a file to attach
   even after `--`. Resume is `--continue`, which opens a new session when
   there is none.
-- The configure image declares config ports 53692 (Anthropic), 1455 (OpenAI),
-  1456 (Radius) and an ephemeral one for OpenRouter. Each browser sign-in also
-  takes the redirect URL pasted back; Copilot, xAI, Kimi and Meta sign in by
-  device code.
 
 Literal settings and explicit credential references follow [ADR 26-10-30-457](../docs/adr/26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md).

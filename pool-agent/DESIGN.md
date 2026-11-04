@@ -881,14 +881,10 @@ A standing poller (`startSandboxAgentStatusPoller`, `statuspoll.go`) checks
 every currently-running hosted sandbox's sandbox-agent status endpoint (git
 status, terminal sessions, active connections) on a 15s interval and
 pushes a batch of what it collected to the control plane
-(`/api/pools/{pool_id}/sandbox-agent-status`). Sandboxes created in configure
-mode are polled every second besides, so a sign-in's callback port reaches the
-CLI before the user's browser does (ADR 26-10-09-867); the runtime finds them
-with `RunningSandboxIDsInMode`, one filtered list against the
-`discobox.harness_mode` label set at create, rather than `ListSandboxes`'s
-inspect of every container. The standing poll leaves those sandboxes to the
-fast one, so each sandbox is reported by one loop, in the order it was
-observed, and a slow standing tick never holds the fast one up. One unreachable or erroring
+(`/api/pools/{pool_id}/sandbox-agent-status`). One loop reports every sandbox,
+so each sandbox's reports arrive in the order they were observed. A
+`discobox.harness_mode` label or machine-record `harnessMode` left by a pool
+from before configure was removed is ignored (ADR 26-11-02-152). One unreachable or erroring
 sandbox is skipped, never blocking or failing the rest of the tick, and a poll
 or push failure never affects sandbox lifecycle. The bearer token for each
 sandbox-agent call is a short-lived, `status:read`-only token the control
@@ -911,8 +907,7 @@ forward. A digest counts as taken only once the control plane's answer does
 not name the sandbox as wanted, so an inventory it does not hold is sent in
 full on the next tick. A report carries at most 8 MiB of inventories
 (`inventoryReportBatches`), so a large pool's first tick is several reports
-rather than one the size of the pool. Configure sandboxes are not asked, an
-inventory over 4 MiB is not posted, and a sandbox agent without the route — or a token
+rather than one the size of the pool. An inventory over 4 MiB is not posted, and a sandbox agent without the route — or a token
 without the scope, from a control plane older than this — is skipped quietly.
 
 `pool-sync` (scope `pool:sync`) is how a shared host daemon reclaims *whole*
@@ -1932,7 +1927,7 @@ flowchart LR
   somebody meant. The home directory volume is wired by the sandbox-agent
   against the `%HOME%`/`%UID%`/`%GID%` tokens, which resolve inside the sandbox.
 - Keep harness behavior opaque. The pool host transports only selected harness
-  identity, `harnessMode`, and the non-secret project file overlay. Commands and
+  identity and the non-secret project file overlay. Commands and
   the project harness catalog are image-owned and never interpreted here.
 - The injected `NO_PROXY` carries `sandboxconfig.LocalSubnetsToken` in place of
   the sandbox's own directly-connected networks: pool-agent cannot know them

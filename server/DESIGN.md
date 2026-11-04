@@ -891,7 +891,7 @@ never moves a running sandbox, and they are what the pool lets the box fetch
   is upgraded or repaired.
 - **Nothing to move to opts a sandbox out.** A missing harness config, one
   with no bundle — registered before bundles — or a development bundle no pool
-  has built yet, and harness mode `config`.
+  has built yet.
 - **Enforcement is on the pool host, not here.** The control plane sends the
   pins; `pool-agent/sandboxruntime` builds the container from the sandbox base
   image and places the agent it is pinned to, and the box fetches only what
@@ -980,7 +980,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/service` | Root API service aggregation, default data initialization, service startup, and reconciler registration. |
 | `internal/reconcile` | Level-triggered reconcile engine: dirty set, lease-based claiming, failure backoff, periodic scan. |
 | `internal/resources/jobs` | Jobs API: a read and force view over the reconcile engine's dirty set. |
-| `internal/resources/harnessconfigs` | Harness config definition, project-scoped harness config API behavior, built-in seeding, and the configure-sandbox reaper reconciler. |
+| `internal/resources/harnessconfigs` | Harness config definition, project-scoped harness config API behavior, built-in seeding, saving a discobox's harness changes, and the reconciler that delivers their acknowledgments. |
 | `internal/resources/projects` | Project create, update, delete, set-default, and copying configuration into a new project. |
 | `internal/resources/sandboxes` | Sandbox API service behavior, intent writes, the sandbox reconciler, agent observation ingest, and sandbox provider catalog helpers. |
 | `internal/resources/pools` | Pool resource API, the pool-agent surface (status, observation and resource reports), the pool and pool-image reconcilers, and the trusted control plane provider drivers call. |

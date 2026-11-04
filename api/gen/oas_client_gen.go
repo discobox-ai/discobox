@@ -51,17 +51,6 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-secrets
 	AssignSandboxHarnessSecrets(ctx context.Context, request *AssignSandboxHarnessSecretsBody, params AssignSandboxHarnessSecretsParams) (AssignSandboxHarnessSecretsRes, error)
-	// AttachHarnessConfigConfigure invokes attach-harness-config-configure operation.
-	//
-	// Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
-	// This seeds the previous configuration into the sandbox at a well-known path so the harness's
-	// configure command may pre-fill from it; only the secrets a previous configure of this harness
-	// config created, bound on it, are included. The configure command is not launched until the primary
-	// terminal is attached, so
-	// seeding always precedes it. Call this before attaching to exec id "primary".
-	//
-	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach
-	AttachHarnessConfigConfigure(ctx context.Context, params AttachHarnessConfigConfigureParams) (AttachHarnessConfigConfigureRes, error)
 	// AttachSandboxExec invokes attach-sandbox-exec operation.
 	//
 	// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -105,17 +94,6 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear
 	ClearSandboxCache(ctx context.Context, params ClearSandboxCacheParams) (ClearSandboxCacheRes, error)
-	// CommitHarnessConfigConfigure invokes commit-harness-config-configure operation.
-	//
-	// Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the
-	// result it wrote, applies the declared secrets and files to the harness config, and marks it
-	// configured. A non-zero exit leaves the harness unconfigured with configureError set, except the
-	// canceled status (10: the person running it chose to stop), which applies nothing, records no
-	// error, and answers with the harness as it was. The ephemeral configure sandbox is deleted
-	// whichever way the command ended, so a client commits after every finished flow.
-	//
-	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit
-	CommitHarnessConfigConfigure(ctx context.Context, params CommitHarnessConfigConfigureParams) (CommitHarnessConfigConfigureRes, error)
 	// CompleteSandboxSourcePush invokes complete-sandbox-source-push operation.
 	//
 	// Report that the client finished pushing a push-delivered source into the sandbox's Git repository,
@@ -124,18 +102,6 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/complete-source-push
 	CompleteSandboxSourcePush(ctx context.Context, request *CompleteSandboxSourcePushBody, params CompleteSandboxSourcePushParams) (CompleteSandboxSourcePushRes, error)
-	// ConfigureHarnessConfig invokes configure-harness-config operation.
-	//
-	// Launch the harness's interactive configure flow and return the ephemeral sandbox running it.
-	// The caller attaches to the returned sandbox's primary terminal. The server watches that terminal:
-	// on exit 0 it reads /run/discobox/configure/harness-configure.json from the sandbox, applies the
-	// secrets and
-	// files it declares, and marks the harness configured; on a non-zero exit the harness is left
-	// unconfigured and configureError is set. The sandbox is deleted either way.
-	// Re-running configure on an already configured harness is allowed.
-	//
-	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure
-	ConfigureHarnessConfig(ctx context.Context, params ConfigureHarnessConfigParams) (ConfigureHarnessConfigRes, error)
 	// ConfirmSandboxAutostop invokes confirm-sandbox-autostop operation.
 	//
 	// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
@@ -231,15 +197,6 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/secret-bindings
 	CreateSecretBinding(ctx context.Context, request *CreateSecretBindingBody, params CreateSecretBindingParams) (CreateSecretBindingRes, error)
-	// DeconfigureHarnessConfig invokes deconfigure-harness-config operation.
-	//
-	// Remove the assets the configure flow created for this harness — the secrets it created and their
-	// bindings, plus the files it wrote — and mark the harness unconfigured. The image-declared
-	// baseline
-	// is left intact.
-	//
-	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure
-	DeconfigureHarnessConfig(ctx context.Context, params DeconfigureHarnessConfigParams) (DeconfigureHarnessConfigRes, error)
 	// DeleteHarnessConfig invokes delete-harness-config operation.
 	//
 	// Delete a harness config.
@@ -875,7 +832,7 @@ type Invoker interface {
 	// metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
 	// config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
 	// and its sandboxes can never report an available upgrade. Built-in configs get this
-	// automatically on server start; user-registered ones need this call. Never flips configured.
+	// automatically on server start; user-registered ones need this call.
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
 	RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error)
@@ -940,6 +897,16 @@ type Invoker interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-secret-rejections
 	ReportSandboxSecretRejection(ctx context.Context, request *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (ReportSandboxSecretRejectionRes, error)
+	// ResetHarnessConfig invokes reset-harness-config operation.
+	//
+	// Return the harness config to its bundle's defaults: remove the files saved from discoboxes'
+	// harness changes, and the secrets those saves created along with their bindings (ADR 26-11-02-152
+	// §3).
+	// The bundle-declared baseline, and secrets a person bound by hand, are left intact, and so are a
+	// person's fileOverrides unless includeOverrides is set (ADR 26-11-04-028).
+	//
+	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/reset
+	ResetHarnessConfig(ctx context.Context, params ResetHarnessConfigParams) (ResetHarnessConfigRes, error)
 	// ResolveGatewayHeaders invokes resolve-gateway-headers operation.
 	//
 	// Resolve the server environment values a sandbox's gateway sets headers from.
@@ -1713,123 +1680,6 @@ func (c *Client) sendAssignSandboxHarnessSecrets(ctx context.Context, request *A
 	return result, nil
 }
 
-// AttachHarnessConfigConfigure invokes attach-harness-config-configure operation.
-//
-// Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
-// This seeds the previous configuration into the sandbox at a well-known path so the harness's
-// configure command may pre-fill from it; only the secrets a previous configure of this harness
-// config created, bound on it, are included. The configure command is not launched until the primary
-// terminal is attached, so
-// seeding always precedes it. Call this before attaching to exec id "primary".
-//
-// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach
-func (c *Client) AttachHarnessConfigConfigure(ctx context.Context, params AttachHarnessConfigConfigureParams) (AttachHarnessConfigConfigureRes, error) {
-	res, err := c.sendAttachHarnessConfigConfigure(ctx, params)
-	return res, err
-}
-
-func (c *Client) sendAttachHarnessConfigConfigure(ctx context.Context, params AttachHarnessConfigConfigureParams) (res AttachHarnessConfigConfigureRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("attach-harness-config-configure"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, AttachHarnessConfigConfigureOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [5]string
-	pathParts[0] = "/projects/"
-	{
-		// Encode "projectId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "projectId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.ProjectId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[1] = encoded
-	}
-	pathParts[2] = "/harness-configs/"
-	{
-		// Encode "harnessConfigId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "harnessConfigId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[3] = encoded
-	}
-	pathParts[4] = "/configure/attach"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "POST", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeAttachHarnessConfigConfigureResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
 // AttachSandboxExec invokes attach-sandbox-exec operation.
 //
 // Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -2447,123 +2297,6 @@ func (c *Client) sendClearSandboxCache(ctx context.Context, params ClearSandboxC
 	return result, nil
 }
 
-// CommitHarnessConfigConfigure invokes commit-harness-config-configure operation.
-//
-// Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the
-// result it wrote, applies the declared secrets and files to the harness config, and marks it
-// configured. A non-zero exit leaves the harness unconfigured with configureError set, except the
-// canceled status (10: the person running it chose to stop), which applies nothing, records no
-// error, and answers with the harness as it was. The ephemeral configure sandbox is deleted
-// whichever way the command ended, so a client commits after every finished flow.
-//
-// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit
-func (c *Client) CommitHarnessConfigConfigure(ctx context.Context, params CommitHarnessConfigConfigureParams) (CommitHarnessConfigConfigureRes, error) {
-	res, err := c.sendCommitHarnessConfigConfigure(ctx, params)
-	return res, err
-}
-
-func (c *Client) sendCommitHarnessConfigConfigure(ctx context.Context, params CommitHarnessConfigConfigureParams) (res CommitHarnessConfigConfigureRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("commit-harness-config-configure"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, CommitHarnessConfigConfigureOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [5]string
-	pathParts[0] = "/projects/"
-	{
-		// Encode "projectId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "projectId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.ProjectId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[1] = encoded
-	}
-	pathParts[2] = "/harness-configs/"
-	{
-		// Encode "harnessConfigId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "harnessConfigId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[3] = encoded
-	}
-	pathParts[4] = "/configure/commit"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "POST", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeCommitHarnessConfigConfigureResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
 // CompleteSandboxSourcePush invokes complete-sandbox-source-push operation.
 //
 // Report that the client finished pushing a push-delivered source into the sandbox's Git repository,
@@ -2674,124 +2407,6 @@ func (c *Client) sendCompleteSandboxSourcePush(ctx context.Context, request *Com
 
 	stage = "DecodeResponse"
 	result, err := decodeCompleteSandboxSourcePushResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// ConfigureHarnessConfig invokes configure-harness-config operation.
-//
-// Launch the harness's interactive configure flow and return the ephemeral sandbox running it.
-// The caller attaches to the returned sandbox's primary terminal. The server watches that terminal:
-// on exit 0 it reads /run/discobox/configure/harness-configure.json from the sandbox, applies the
-// secrets and
-// files it declares, and marks the harness configured; on a non-zero exit the harness is left
-// unconfigured and configureError is set. The sandbox is deleted either way.
-// Re-running configure on an already configured harness is allowed.
-//
-// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure
-func (c *Client) ConfigureHarnessConfig(ctx context.Context, params ConfigureHarnessConfigParams) (ConfigureHarnessConfigRes, error) {
-	res, err := c.sendConfigureHarnessConfig(ctx, params)
-	return res, err
-}
-
-func (c *Client) sendConfigureHarnessConfig(ctx context.Context, params ConfigureHarnessConfigParams) (res ConfigureHarnessConfigRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("configure-harness-config"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/configure"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ConfigureHarnessConfigOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [5]string
-	pathParts[0] = "/projects/"
-	{
-		// Encode "projectId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "projectId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.ProjectId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[1] = encoded
-	}
-	pathParts[2] = "/harness-configs/"
-	{
-		// Encode "harnessConfigId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "harnessConfigId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[3] = encoded
-	}
-	pathParts[4] = "/configure"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "POST", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeConfigureHarnessConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -4278,121 +3893,6 @@ func (c *Client) sendCreateSecretBinding(ctx context.Context, request *CreateSec
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateSecretBindingResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// DeconfigureHarnessConfig invokes deconfigure-harness-config operation.
-//
-// Remove the assets the configure flow created for this harness — the secrets it created and their
-// bindings, plus the files it wrote — and mark the harness unconfigured. The image-declared
-// baseline
-// is left intact.
-//
-// POST /projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure
-func (c *Client) DeconfigureHarnessConfig(ctx context.Context, params DeconfigureHarnessConfigParams) (DeconfigureHarnessConfigRes, error) {
-	res, err := c.sendDeconfigureHarnessConfig(ctx, params)
-	return res, err
-}
-
-func (c *Client) sendDeconfigureHarnessConfig(ctx context.Context, params DeconfigureHarnessConfigParams) (res DeconfigureHarnessConfigRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("deconfigure-harness-config"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, DeconfigureHarnessConfigOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [5]string
-	pathParts[0] = "/projects/"
-	{
-		// Encode "projectId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "projectId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.ProjectId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[1] = encoded
-	}
-	pathParts[2] = "/harness-configs/"
-	{
-		// Encode "harnessConfigId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "harnessConfigId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[3] = encoded
-	}
-	pathParts[4] = "/deconfigure"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "POST", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeDeconfigureHarnessConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -16050,7 +15550,7 @@ func (c *Client) sendReconsiderSandboxHarnessConfigChanges(ctx context.Context, 
 // metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
 // config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
 // and its sandboxes can never report an available upgrade. Built-in configs get this
-// automatically on server start; user-registered ones need this call. Never flips configured.
+// automatically on server start; user-registered ones need this call.
 //
 // POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
 func (c *Client) RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error) {
@@ -16988,6 +16488,143 @@ func (c *Client) sendReportSandboxSecretRejection(ctx context.Context, request *
 
 	stage = "DecodeResponse"
 	result, err := decodeReportSandboxSecretRejectionResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ResetHarnessConfig invokes reset-harness-config operation.
+//
+// Return the harness config to its bundle's defaults: remove the files saved from discoboxes'
+// harness changes, and the secrets those saves created along with their bindings (ADR 26-11-02-152
+// §3).
+// The bundle-declared baseline, and secrets a person bound by hand, are left intact, and so are a
+// person's fileOverrides unless includeOverrides is set (ADR 26-11-04-028).
+//
+// POST /projects/{projectId}/harness-configs/{harnessConfigId}/reset
+func (c *Client) ResetHarnessConfig(ctx context.Context, params ResetHarnessConfigParams) (ResetHarnessConfigRes, error) {
+	res, err := c.sendResetHarnessConfig(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendResetHarnessConfig(ctx context.Context, params ResetHarnessConfigParams) (res ResetHarnessConfigRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("reset-harness-config"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/reset"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ResetHarnessConfigOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/harness-configs/"
+	{
+		// Encode "harnessConfigId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "harnessConfigId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/reset"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "includeOverrides" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "includeOverrides",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.IncludeOverrides.Get(); ok {
+				return e.EncodeValue(conv.BoolToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeResetHarnessConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

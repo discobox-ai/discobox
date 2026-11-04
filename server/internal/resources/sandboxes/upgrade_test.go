@@ -33,7 +33,7 @@ func pinnedSandbox(t *testing.T, st *store.Store, configID, bundle, digest strin
 		CreatedByUserID: "user-1",
 		PoolID:          "pool-1",
 		Name:            fmt.Sprintf("sandbox-%d", pinnedSandboxSeq.Add(1)),
-		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Bundle: bundle, BundleDigest: digest},
+		SandboxManifest: model.SandboxManifest{Bundle: bundle, BundleDigest: digest},
 	}
 	if configID != "" {
 		sb.HarnessConfigID = &configID
@@ -65,7 +65,7 @@ func bundledConfig(t *testing.T, st *store.Store, bundle, digest string) *model.
 	t.Helper()
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"},
-		Bundle: bundle, BundleDigest: digest, Configured: true,
+		Bundle: bundle, BundleDigest: digest,
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -149,26 +149,12 @@ func TestUpgradeTargetSkipsAnUnbuiltBundle(t *testing.T) {
 	}
 }
 
-// A config-mode sandbox runs the configure flow and is thrown away: it follows
-// nothing.
-func TestUpgradeTargetIgnoresConfigModeSandboxes(t *testing.T) {
-	ctx := context.Background()
-	svc, st := newBindingFixture(t)
-	config := bundledConfig(t, st, codexBundle, codexBundleV2)
-
-	configMode := pinnedSandbox(t, st, config.ID, codexBundle, codexBundleV1)
-	configMode.HarnessMode = "config"
-	if target, err := svc.currentRepin(ctx, configMode); err != nil || target.Available {
-		t.Fatalf("config-mode target = %+v, %v; want unavailable", target, err)
-	}
-}
-
 // shellConfig seeds the reserved built-in an unconverged sandbox upgrades to.
 func shellConfig(t *testing.T, st *store.Store, bundle, digest string) *model.HarnessConfig {
 	t.Helper()
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: harnessdefs.ShellSlug, Name: "Shell",
-		BuiltIn: true, Configured: true, Bundle: bundle, BundleDigest: digest,
+		BuiltIn: true, Bundle: bundle, BundleDigest: digest,
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatalf("create shell config: %v", err)

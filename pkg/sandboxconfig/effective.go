@@ -33,9 +33,8 @@ type Config struct {
 	// image or project layer contributes to it.
 	Git GitIdentity `json:"git"`
 
-	Env         map[string]string `json:"env,omitempty"`
-	ProxyEnvs   []string          `json:"proxyEnvs,omitempty"`
-	HarnessMode string            `json:"harnessMode,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	ProxyEnvs []string          `json:"proxyEnvs,omitempty"`
 
 	Files                   []File           `json:"files,omitempty"`
 	Volumes                 []harness.Volume `json:"volumes,omitempty"`
@@ -68,7 +67,6 @@ type Harness struct {
 	Description     string                     `json:"description,omitempty"`
 	RunCommand      []string                   `json:"runCommand"`
 	RelaunchCommand []string                   `json:"relaunchCommand,omitempty"`
-	ConfigCommand   []string                   `json:"configCommand,omitempty"`
 }
 
 // Provenance is diagnostic only: the raw per-layer inputs Effective merged,
@@ -106,7 +104,6 @@ func Effective(doc Document) (Config, Provenance) {
 		SkillsSources:       append([]SkillsSource(nil), doc.Runtime.SkillsSources...),
 		Features:            maps.Clone(doc.Runtime.Features),
 
-		HarnessMode:      doc.Runtime.HarnessMode,
 		Volumes:          cloneVolumes(doc.Image.Volumes),
 		AdditionalGroups: cloneStrings(doc.Image.AdditionalGroups),
 		Secrets:          append([]harness.Secret(nil), doc.Image.Secrets...),
@@ -120,7 +117,6 @@ func Effective(doc Document) (Config, Provenance) {
 		Description:     doc.Image.HarnessDescription,
 		RunCommand:      overrideGrant(doc.Image.RunCommand, projectRunCommand(doc.Project)),
 		RelaunchCommand: overrideGrant(doc.Image.RelaunchCommand, projectRelaunchCommand(doc.Project)),
-		ConfigCommand:   cloneStrings(doc.Image.ConfigCommand),
 	}
 
 	cfg.Env = mergeEnv(doc.Image.Env, doc.Runtime.Env)

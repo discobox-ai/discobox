@@ -25,74 +25,6 @@ const (
 	ReclaimLabel      = "io.discobox.reclaimable.v1"
 	ReclaimLabelValue = "true"
 
-	// ConfigureDir is the one directory the configure flow exchanges files in.
-	// It is **not** /run/discobox itself: that holds the resolved secrets file
-	// (ADR 0012 §3), the proxy's CA bundles and rendered trust env (ADR 0020),
-	// and the control-plane and buildkit sockets, all root-owned. A configure
-	// command runs as the sandbox user (ConfigureUserName), so it needs a
-	// directory it can write, and widening /run/discobox to get one would let
-	// that user replace any of those entries.
-	//
-	// sandbox-agent creates it in config mode, owned by the sandbox user and
-	// mode 0700, so the widening stops at this directory (see
-	// sandbox-agent/server → ensureConfigureDir).
-	//
-	// ConfigureOutputPath is where a harness's configure command writes the
-	// secrets and files it collected, for the control plane to read back before
-	// the ephemeral configure sandbox is deleted.
-	//
-	// ConfigurePreviousConfigPath is where the control plane seeds the previous
-	// configuration before re-running configure, so a configure command may
-	// pre-fill from it. It carries files and secret *metadata* only — never a
-	// secret value.
-	//
-	// All three are fixed points of the image contract rather than per-image
-	// settings — the configure commands hardcode them too.
-	ConfigureDir                = "/run/discobox/configure"
-	ConfigureOutputPath         = ConfigureDir + "/harness-configure.json"
-	ConfigurePreviousConfigPath = ConfigureDir + "/harness-previous-config.json"
-
-	// ConfigurePreviousEnvPrefix prefixes the environment variable carrying a
-	// previously configured secret into the configure sandbox: a secret bound to
-	// ANTHROPIC_API_KEY is offered back as PREV_ANTHROPIC_API_KEY.
-	//
-	// The value is a sentinel, not the credential: the proxy swaps it for the real
-	// value on an outbound request only while a live grant covers it, so the
-	// configure command can exercise the old credential without ever holding it.
-	//
-	// The prefix is deliberate. Seeding the original variable name would let the
-	// harness CLI silently authenticate with the old credential, which would make
-	// the configure flow's choice ambiguous and its verification meaningless.
-	ConfigurePreviousEnvPrefix = "PREV_"
-
-	// ConfigureUserName, ConfigureUserUID, and ConfigureUserGID are the account
-	// the configure sandbox runs as. Unlike a run sandbox, whose user mirrors
-	// the caller's own (ADR 0025 §5), a configure sandbox has no source and no
-	// caller identity to mirror, so the flow names one itself. The image does
-	// not carry this account; boot creates it (ADR 0025 §4).
-	//
-	// The point is that it is **not root**. A harness CLI is entitled to refuse
-	// to run as root — Claude Code refuses `bypassPermissions` there — and a
-	// configure sandbox that ran as root would be configuring the harness under
-	// an identity no real sandbox ever uses, so a credential could verify here
-	// and still be collected by a CLI that will not start later.
-	ConfigureUserName = "discobox"
-	ConfigureUserUID  = 10000
-	ConfigureUserGID  = 10000
-
-	// ConfigureCanceledExitCode is the status a configure command exits with
-	// when the person running it chose to stop — declined a retry, say —
-	// rather than when it failed. Either way nothing is saved and the setup
-	// sandbox is deleted; the difference is what everyone after it says about
-	// it: the control plane records no configure error, and the CLI reports a
-	// cancellation, not a failure, and exits with this same status so the
-	// console that ran it can tell the two apart.
-	//
-	// It is not 130, the status of an interrupted command, because the CLI
-	// exits 130 on its own when an attach is escaped locally, with the
-	// command still running in the sandbox — nothing was decided there.
-	ConfigureCanceledExitCode = 10
-
 	// RunCommand is the command a harness image is expected to install on PATH,
 	// and the one the runtime types when the image declares no override
 	// (ADR 0086 §3). The base image ships it as a shim that execs nothing, so
@@ -132,7 +64,6 @@ type Image struct {
 	RelaunchCommand []string                   `json:"relaunchCommand,omitempty"`
 	Files           []File                     `json:"files,omitempty"`
 	Secrets         []Secret                   `json:"secrets,omitempty"`
-	Config          *ImageMode                 `json:"config,omitempty"`
 	// EgressHosts are the destinations the harness needs to work at all — its
 	// model API, chiefly — in the egress allow-entry form ("api.anthropic.com",
 	// "*.example.com"). They join the harness level's allow list of every
@@ -141,53 +72,28 @@ type Image struct {
 	EgressHosts []string `json:"egressHosts,omitempty"`
 }
 
-// ImageMode describes the interactive configuration command supported by an
-// image. The command writes its result to ConfigureOutputPath and may read the
-// previous configuration from ConfigurePreviousConfigPath; both paths are part
-// of the contract, so the image only declares the command.
-type ImageMode struct {
-	Command  []string `json:"command"`
-	Reminder string   `json:"reminder,omitempty"`
-	// Ports are the callback ports the configure command needs reachable at
-	// the same number on the user's own machine. See ConfigPort.
-	Ports []ConfigPort `json:"ports,omitempty"`
+// retiredImageKeys are harness keys a bundle once declared for the configure
+// flow, which is removed (ADR 26-11-02-152 §2). A bundle still declaring one
+// is refused rather than having it silently ignored: its author expects a
+// setup step that no longer runs.
+var retiredImageKeys = map[string]string{
+	"config": "the configure command and its ports",
 }
 
-// ConfigPort is one local port a configure command's sign-in depends on.
-//
-// A harness CLI signing in through a browser starts a callback server on its
-// own localhost and sends the browser to a redirect URI naming that exact port
-// — one the identity provider has registered in advance, so it is not
-// negotiable. In a sandbox that server is on the *sandbox's* localhost, where
-// the user's browser cannot reach it, which is why the only sign-in that has
-// worked here is a device code.
-//
-// Declaring the port asks the configure flow to forward it: the same port
-// number on this machine, tunneled into the configure sandbox, for as long as
-// the flow runs. Same number or nothing — the redirect URI is fixed, so a
-// forward that landed on the next free port would answer no browser while
-// looking like it had worked.
-//
-// Some sign-ins pick their callback port fresh each run — Copilot's binds
-// 127.0.0.1:0, and GitHub accepts any loopback port — so no number can be
-// declared ahead of it. Ephemeral asks the flow to follow the configure
-// sandbox's discovered listening ports instead and forward each one it sees
-// at that same number, under the same rule: never moved, because the number
-// is already in the redirect URI the browser was handed.
-type ConfigPort struct {
-	// Port is the number to forward. Zero, and only zero, when Ephemeral.
-	Port int `json:"port"`
-	// Ephemeral forwards every TCP port the configure sandbox is found
-	// listening on, each at its own number. At most one entry is ephemeral.
-	Ephemeral bool `json:"ephemeral,omitempty"`
-	// Unavailable is what to tell the user when the port cannot be bound here,
-	// because something else on their machine already holds it. Only the image
-	// knows what its harness can still do without the callback — sign in by
-	// device code, in Codex's case — so the fallback is the image's to spell
-	// out. Empty falls back to saying which port could not be bound. For an
-	// ephemeral entry it follows the CLI's own words naming the discovered
-	// port that was taken, so it says what to do rather than what happened.
-	Unavailable string `json:"unavailable,omitempty"`
+// UnmarshalJSON refuses a harness declaration that still carries a retired
+// configure key (retiredImageKeys).
+func (i *Image) UnmarshalJSON(data []byte) error {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keys); err != nil {
+		return err
+	}
+	for key, what := range retiredImageKeys {
+		if _, ok := keys[key]; ok {
+			return fmt.Errorf("harness declares %q (%s), which is retired: a harness is set up by signing in inside the box it runs in, and save-back shares it (ADR 26-11-02-152)", key, what)
+		}
+	}
+	type plain Image
+	return json.Unmarshal(data, (*plain)(i))
 }
 
 // Definition is a built-in shortcut for registering an included harness.
@@ -242,9 +148,9 @@ func (f *File) UnmarshalJSON(data []byte) error {
 // Routes are where the harness itself sends this credential (ADR
 // 26-10-02-924, ADR 26-10-27-880 §4): a request carrying it must fall on one,
 // and the most specific covering it must not be blocked. A route declared in
-// the shape before host patterns reads as it was meant (harnesscapture.Route). Configure writes them onto the secret it
-// creates; they are the image's alone, and a configure flow cannot add to them
-// or change them.
+// the shape before host patterns reads as it was meant (harnesscapture.Route).
+// Saving a harness change writes them onto the secret it creates; they are the
+// image's alone, and a save cannot add to them or change them.
 type Secret struct {
 	Name           string
 	Required       bool

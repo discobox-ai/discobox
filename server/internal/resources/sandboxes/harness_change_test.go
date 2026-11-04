@@ -20,7 +20,7 @@ func TestHarnessChangeRefusalKeepsEffectiveHarness(t *testing.T) {
 	manager.SetDefault("docker")
 	svc.sandboxProviders = manager
 	target := bundledConfig(t, svc.store, codexBundle, codexBundleV2)
-	oldConfig := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old", Configured: true}
+	oldConfig := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old"}
 	if err := svc.store.CreateHarnessConfig(context.Background(), oldConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestHarnessSelectorValidationAndSameConfigNoOp(t *testing.T) {
 
 func TestHarnessChangeAppliesSameBundleDifferentConfigAndFencesReplacement(t *testing.T) {
 	svc, st := newUpgradeEngineFixture(t)
-	old := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old", Configured: true, Bundle: codexBundle, BundleDigest: codexBundleV2}
+	old := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old", Bundle: codexBundle, BundleDigest: codexBundleV2}
 	if err := st.CreateHarnessConfig(context.Background(), old); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestHarnessChangeAppliesSameBundleDifferentConfigAndFencesReplacement(t *te
 
 func TestPendingHarnessTargetCannotBeDeleted(t *testing.T) {
 	svc, st := newUpgradeEngineFixture(t)
-	old := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old", Configured: true}
+	old := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old"}
 	if err := st.CreateHarnessConfig(context.Background(), old); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestHarnessChangeWaitsOutAPoolAgentOlderThanTheServer(t *testing.T) {
 	manager.SetDefault("docker")
 	svc.sandboxProviders = manager
 	target := bundledConfig(t, svc.store, codexBundle, codexBundleV2)
-	oldConfig := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old", Configured: true}
+	oldConfig := &model.HarnessConfig{ProjectID: "project-1", Slug: "old", Name: "Old"}
 	if err := svc.store.CreateHarnessConfig(context.Background(), oldConfig); err != nil {
 		t.Fatal(err)
 	}

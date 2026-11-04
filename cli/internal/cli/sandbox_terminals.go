@@ -339,32 +339,26 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	// can block for minutes behind a cold image pull, and a push is not a
 	// reason to wait longer to see the terminal. Everything it does is silent
 	// until the stream is over — see autoPushWhileAttached.
-	//
-	// An attach that says it is not somebody working here does none of it, and
-	// does not even ask: a configure flow's throwaway sandbox holds no source
-	// of anyone's, and asking would cost it a client and a request per run.
-	if !opts.notWorkingHere {
-		// Named for what it is: "client" in this file is the exec stream's.
-		apiClient, err := a.apiClient()
-		if err != nil {
-			return err
-		}
-		// A discobox still waiting for its source from this machine gets it
-		// first, and the dial below then waits on a discobox that is starting
-		// rather than on a push nobody is making (ADR 26-09-24-005).
-		delivering := newStatusLine(stderr, a.color)
-		ui := &cobra.Command{}
-		ui.SetIn(stdin)
-		ui.SetOut(stdout)
-		ui.SetErr(stderr)
-		err = a.deliverBeforeAttach(ctx, apiClient, projectID, sandboxID, delivering.set, credentialDeliveryOptions(ui, delivering, false))
-		delivering.clear()
-		if err != nil {
-			return err
-		}
-		stopPushing := a.autoPushWhileAttached(ctx, apiClient, projectID, sandboxID)
-		defer stopPushing(stderr)
+	// Named for what it is: "client" in this file is the exec stream's.
+	apiClient, err := a.apiClient()
+	if err != nil {
+		return err
 	}
+	// A discobox still waiting for its source from this machine gets it
+	// first, and the dial below then waits on a discobox that is starting
+	// rather than on a push nobody is making (ADR 26-09-24-005).
+	delivering := newStatusLine(stderr, a.color)
+	ui := &cobra.Command{}
+	ui.SetIn(stdin)
+	ui.SetOut(stdout)
+	ui.SetErr(stderr)
+	err = a.deliverBeforeAttach(ctx, apiClient, projectID, sandboxID, delivering.set, credentialDeliveryOptions(ui, delivering, false))
+	delivering.clear()
+	if err != nil {
+		return err
+	}
+	stopPushing := a.autoPushWhileAttached(ctx, apiClient, projectID, sandboxID)
+	defer stopPushing(stderr)
 	// The dial blocks for as long as the sandbox takes to become attachable —
 	// every tier below waits for the readiness only it can see (ADR 0039) —
 	// which behind a cold image pull is minutes on a silent socket. Say what it

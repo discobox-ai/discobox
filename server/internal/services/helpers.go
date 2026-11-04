@@ -267,9 +267,6 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 	if sandbox.HarnessConfigID != nil {
 		config["harnessConfigId"] = *sandbox.HarnessConfigID
 	}
-	if sandbox.HarnessMode != "" {
-		config["harnessMode"] = sandbox.HarnessMode
-	}
 	if sandbox.Model != nil {
 		config["model"] = *sandbox.Model
 	}
@@ -547,9 +544,7 @@ func (t SandboxPinTarget) upgradeReason(sandbox *model.Sandbox) string {
 // says so: comparing tags would report "up to date" for every sandbox on a tag
 // its workflow rebuilds in place, which is the failure ADR 0016 §1 exists to
 // prevent. The release's bundles are every box's, so they are a target of
-// their own even for a sandbox whose harness has nothing to move to; only a
-// config-mode sandbox, which runs the configure flow and is thrown away,
-// follows nothing.
+// their own even for a sandbox whose harness has nothing to move to.
 //
 // A sandbox from before bundles, pinned to a runnable harness image, has no
 // bundle pin, so its harness's bundle is always a move for it.
@@ -563,9 +558,6 @@ func (t SandboxPinTarget) upgradeReason(sandbox *model.Sandbox) string {
 // for it is adopting the config, and its pins matching already is not the
 // same as it being converged (ADR 0032 §4).
 func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig, release ReleasePins) (SandboxPinTarget, bool) {
-	if sandbox.HarnessMode == "config" {
-		return SandboxPinTarget{}, false
-	}
 	var target SandboxPinTarget
 	available := false
 	if pins, ok := HarnessConfigPins(config); ok {

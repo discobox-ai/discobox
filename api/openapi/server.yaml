@@ -221,7 +221,7 @@ components:
             type: object
         HarnessCaptureFileChange:
             additionalProperties: false
-            description: 'One file a candidate writes (file) or removes (remove). A sandbox never sends previous, nor file on a removal. On a preview the server serves, previous is the file a save replaces (the configured file over the bundle''s, at the current revision), and a removal''s file is the bundle''s own file it falls back to, when it ships one; both are for display and never applied.'
+            description: 'One file a candidate writes (file) or removes (remove). A sandbox never sends previous, shadowed, nor file on a removal. On a preview the server serves, previous is the file a box is given at the path now (a person''s override over the saved file over the bundle''s, at the current revision), a removal''s file is what it falls back to, and shadowed says a person''s override holds the path: a save keeps the change beneath it, and boxes go on being given the override. All are for display and never applied.'
             properties:
                 file:
                     $ref: '#/components/schemas/HarnessCaptureFile'
@@ -230,6 +230,8 @@ components:
                 previous:
                     $ref: '#/components/schemas/HarnessCaptureFile'
                 remove:
+                    type: boolean
+                shadowed:
                     type: boolean
             required:
                 - path
@@ -560,39 +562,15 @@ components:
                     nullable: true
                     type: array
                 boundSecrets:
-                    description: How many of the harness's environment variables have a project secret bound. Zero on a harness with a configure command means every discobox on it runs without credentials until it is configured. Absent from servers that predate it.
+                    description: How many of the harness's environment variables have a project secret bound. Zero means every discobox on it starts its harness signed out, until a sign-in made in one is saved. Absent from servers that predate it.
                     format: int64
                     readOnly: true
                     type: integer
                 builtIn:
                     description: True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted.
                     type: boolean
-                configCommand:
-                    description: Argv declared by the registered image for its interactive configuration command, when it has one.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                configReminder:
-                    description: Reminder shown outside the interactive configuration terminal, declared by the registered image.
-                    type: string
-                configPorts:
-                    description: Local ports the configure flow forwards into the configure sandbox at the same port number, declared by the registered image.
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigPort'
-                    nullable: true
-                    type: array
-                configureError:
-                    description: Why the last configure attempt failed. Cleared when a configure starts or succeeds.
-                    type: string
-                configureSandboxId:
-                    description: Sandbox running the configure flow, while one is in flight.
-                    type: string
-                configured:
-                    description: True once the configure flow completed successfully. Only configured harnesses can be selected to run.
-                    type: boolean
                 configuredFiles:
-                    description: Files written by the configure flow. These overlay the bundle-declared files by path when resolving a sandbox, beneath fileOverrides.
+                    description: Files saved from a discobox's harness changes. These overlay the bundle-declared files by path when resolving a sandbox, beneath fileOverrides.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
@@ -675,7 +653,6 @@ components:
                 - slug
                 - name
                 - builtIn
-                - configured
                 - createdAt
                 - updatedAt
             type: object
@@ -738,23 +715,6 @@ components:
                     nullable: true
                     type: array
             type: object
-        HarnessConfigPort:
-            additionalProperties: false
-            description: A local port a harness's configure flow needs bound at the same number on the user's machine and forwarded into the configure sandbox, such as an OAuth callback its sign-in redirects to. An ephemeral entry names no number and stands for every TCP port the configure sandbox is found listening on.
-            properties:
-                ephemeral:
-                    description: Forward each TCP port the configure sandbox is discovered listening on, at its own number, for a sign-in whose callback port changes every run. Port is 0 when set.
-                    type: boolean
-                port:
-                    description: The port, bound locally at exactly this number or not at all. 0 for an ephemeral entry.
-                    format: int64
-                    type: integer
-                unavailable:
-                    description: What to tell the user when the port cannot be bound on their machine; empty falls back to naming the port. For an ephemeral entry it follows the client's own words naming the discovered port, and says what to do.
-                    type: string
-            required:
-                - port
-            type: object
         HarnessConfigFile:
             additionalProperties: false
             description: A file to write into a harness's home directory when the harness is installed.
@@ -798,7 +758,7 @@ components:
                         $ref: '#/components/schemas/SecretReportRule'
                     type: array
                 routes:
-                    description: Where the harness itself sends this credential, declared by its image (ADR 26-10-02-924). Configure writes them onto the secret it creates for it.
+                    description: Where the harness itself sends this credential, declared by its image (ADR 26-10-02-924). Saving a harness change writes them onto the secret it creates for it.
                     items:
                         $ref: '#/components/schemas/SecretRouteInput'
                     type: array
@@ -2356,7 +2316,7 @@ components:
                     description: This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where neither the cgroup nor procfs could be read.
                 autostop:
                     $ref: '#/components/schemas/SandboxAgentAutostopStatus'
-                    description: The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode sandbox is always.
+                    description: The sandbox's idle-stop policy. Absent while the policy is not running.
                 meta:
                     $ref: '#/components/schemas/SandboxMeta'
                     description: The sandbox's name, description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record. Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
@@ -4115,6 +4075,9 @@ components:
                 welcomed:
                     description: Whether this project has already shown its introduction. The launcher sets it once, the first time it welcomes someone to the project; clearing it shows the welcome again.
                     type: boolean
+                harnessChangesExplained:
+                    description: Whether this project has already explained saving a discobox's harness changes. The console sets it once, the first time it sees a discobox with harness changes to save; clearing it explains again.
+                    type: boolean
             type: object
         Project:
             additionalProperties: false
@@ -4201,12 +4164,16 @@ components:
                 welcomed:
                     description: Whether this project has already shown its introduction
                     type: boolean
+                harnessChangesExplained:
+                    description: Whether this project has already explained saving a discobox's harness changes
+                    type: boolean
             required:
                 - id
                 - ownerUserId
                 - name
                 - default
                 - welcomed
+                - harnessChangesExplained
                 - createdAt
                 - updatedAt
             type: object
@@ -4349,12 +4316,6 @@ components:
                 harnessConfigId:
                     description: Harness config ID
                     type: string
-                harnessMode:
-                    description: 'What this sandbox exists for: its normal run command, or its interactive configure command.'
-                    enum:
-                        - run
-                        - config
-                    type: string
                 model:
                     description: Model the harness should use
                     type: string
@@ -4439,12 +4400,6 @@ components:
                     description: The new discobox's own egress policy level. A discobox creating another may not make one that can reach anything it cannot.
                 harnessConfigId:
                     description: Harness config ID
-                    type: string
-                harnessMode:
-                    description: 'What the sandbox exists for: run works in it, and config runs the image-owned interactive configuration command once.'
-                    enum:
-                        - run
-                        - config
                     type: string
                 model:
                     description: Model the harness should use
@@ -6087,7 +6042,7 @@ components:
                     description: Environment variable the credential is delivered in, when one names it
                     type: string
                 harnessConfigId:
-                    description: Harness config whose configure flow owns this credential, when one does
+                    description: Harness config whose saved harness changes own this credential, when one does
                     type: string
                 harnessConfigName:
                     description: Display name of that harness config
@@ -6836,7 +6791,7 @@ components:
                     readOnly: true
                     type: string
                 configuredFiles:
-                    description: Configure-flow files to write into the harness's home directory, replacing the current set
+                    description: Saved files to write into the harness's home directory over the bundle's, replacing the current set
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
@@ -9799,16 +9754,13 @@ paths:
             summary: Update a harness config
             tags:
                 - Harness Configs
-    /projects/{projectId}/harness-configs/{harnessConfigId}/configure:
+    /projects/{projectId}/harness-configs/{harnessConfigId}/reset:
         post:
             description: |-
-                Launch the harness's interactive configure flow and return the ephemeral sandbox running it.
-                The caller attaches to the returned sandbox's primary terminal. The server watches that terminal:
-                on exit 0 it reads /run/discobox/configure/harness-configure.json from the sandbox, applies the secrets and
-                files it declares, and marks the harness configured; on a non-zero exit the harness is left
-                unconfigured and configureError is set. The sandbox is deleted either way.
-                Re-running configure on an already configured harness is allowed.
-            operationId: configure-harness-config
+                Return the harness config to its bundle's defaults: remove the files saved from discoboxes'
+                harness changes, and the secrets those saves created along with their bindings (ADR 26-11-02-152 §3).
+                The bundle-declared baseline, and secrets a person bound by hand, are left intact, and so are a person's fileOverrides unless includeOverrides is set (ADR 26-11-04-028).
+            operationId: reset-harness-config
             parameters:
                 - description: Project ID
                   in: path
@@ -9825,85 +9777,11 @@ paths:
                   schema:
                     description: Harness config ID
                     type: string
-            responses:
-                202:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Sandbox'
-                    description: Accepted
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Run a harness config's configure flow
-            tags:
-                - Harness Configs
-    /projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach:
-        post:
-            description: |-
-                Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
-                This seeds the previous configuration into the sandbox at a well-known path so the harness's
-                configure command may pre-fill from it; only the secrets a previous configure of this harness
-                config created, bound on it, are included. The configure command is not launched until the primary terminal is attached, so
-                seeding always precedes it. Call this before attaching to exec id "primary".
-            operationId: attach-harness-config-configure
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
+                - description: Also remove a person's fileOverrides, for a config with nothing but its bundle. By default a reset keeps them.
+                  in: query
+                  name: includeOverrides
                   schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Harness config ID
-                  in: path
-                  name: harnessConfigId
-                  required: true
-                  schema:
-                    description: Harness config ID
-                    type: string
-            responses:
-                204:
-                    description: No Content
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Seed the configure sandbox before attaching
-            tags:
-                - Harness Configs
-    /projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit:
-        post:
-            description: |-
-                Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the
-                result it wrote, applies the declared secrets and files to the harness config, and marks it
-                configured. A non-zero exit leaves the harness unconfigured with configureError set, except the
-                canceled status (10: the person running it chose to stop), which applies nothing, records no
-                error, and answers with the harness as it was. The ephemeral configure sandbox is deleted
-                whichever way the command ended, so a client commits after every finished flow.
-            operationId: commit-harness-config-configure
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Harness config ID
-                  in: path
-                  name: harnessConfigId
-                  required: true
-                  schema:
-                    description: Harness config ID
-                    type: string
+                    type: boolean
             responses:
                 200:
                     content:
@@ -9917,46 +9795,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Commit a harness config's configure flow
-            tags:
-                - Harness Configs
-    /projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure:
-        post:
-            description: |-
-                Remove the assets the configure flow created for this harness — the secrets it created and their
-                bindings, plus the files it wrote — and mark the harness unconfigured. The image-declared baseline
-                is left intact.
-            operationId: deconfigure-harness-config
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Harness config ID
-                  in: path
-                  name: harnessConfigId
-                  required: true
-                  schema:
-                    description: Harness config ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/HarnessConfig'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Undo a harness config's configure flow
+            summary: Reset a harness config to its bundle's defaults
             tags:
                 - Harness Configs
     /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image:
@@ -9966,7 +9805,7 @@ paths:
                 metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
                 config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
                 and its sandboxes can never report an available upgrade. Built-in configs get this
-                automatically on server start; user-registered ones need this call. Never flips configured.
+                automatically on server start; user-registered ones need this call.
             operationId: refresh-harness-config-image
             parameters:
                 - description: Project ID

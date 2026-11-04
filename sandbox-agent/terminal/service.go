@@ -82,7 +82,6 @@ type ServiceConfig struct {
 	Units        execs.UnitManager
 	Installer    Installer
 	PrimaryState PrimaryStateStore
-	HarnessMode  string
 	// Prompt is the sandbox's initial prompt, retained so the primary terminal
 	// can be relaunched on demand (it is ignored once the primary has launched
 	// once and relaunch uses the harness's relaunch command instead).
@@ -120,7 +119,6 @@ type Service struct {
 	// homeDirectory is the manifest's explicit home, when it carries one. The
 	// run user's own home stands in for it everywhere else (resolveHomeDir).
 	homeDirectory  string
-	harnessMode    string
 	bootPrompt     []string
 	skills         sandboxconfig.Skills
 	skillsSources  []sandboxconfig.SkillsSource
@@ -179,7 +177,6 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		installer:      cfg.Installer,
 		primaryState:   cfg.PrimaryState,
 		homeDirectory:  strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
-		harnessMode:    strings.TrimSpace(cfg.HarnessMode),
 		bootPrompt:     append([]string(nil), cfg.Prompt...),
 		skills:         cfg.Skills,
 		skillsSources:  append([]sandboxconfig.SkillsSource(nil), cfg.SkillsSources...),
@@ -188,7 +185,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		installing:     map[string]struct{}{},
 		launches:       map[string]*terminalLaunch{},
 	}
-	if cfg.Harness.SaveBack == nil || cfg.HarnessMode == config.HarnessModeConfig {
+	if cfg.Harness.SaveBack == nil {
 		for _, dir := range []string{cfg.CaptureStateDir, cfg.CaptureRecoveryDir} {
 			if dir == "" {
 				continue
@@ -201,7 +198,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 			}
 		}
 	}
-	if cfg.Harness.SaveBack != nil && cfg.HarnessMode != config.HarnessModeConfig {
+	if cfg.Harness.SaveBack != nil {
 		s.capture, err = newCaptureManager(s, cfg)
 		if err != nil {
 			return nil, err
@@ -214,7 +211,6 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 				// fields it was resolved from: a sandbox whose manifest names
 				// nobody still runs as somebody, and the files belong to them.
 				Capture:       s.capture,
-				Configure:     cfg.HarnessMode == config.HarnessModeConfig,
 				User:          defaultUser,
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
 				Definition:    cfg.Harness.SaveBack,
@@ -306,20 +302,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	// nothing. A child of the shell is not orphaned, so Ctrl-Z stops it and
 	// the shell is left to hand back a prompt, same as any local terminal. The
 	// shell fallback harness IS that shell, so it needs no command typed in.
-	//
-	// A configure flow is the exception, and runs its command as the exec
-	// itself. What the flow is *for* is the command's exit status — the server
-	// reads it to decide whether the setup worked — and a command typed into a
-	// shell does not have one the exec can report: the shell outlives it, so
-	// the terminal never reaches "exited" until somebody types exit, and the
-	// code it reports then is the shell's. Job control is worth a login shell
-	// for a harness you sit in front of; it is not worth the answer to "did
-	// this succeed" for a program that runs once and ends.
-	switch {
-	case s.harnessMode == config.HarnessModeConfig:
-		execReq.Shell = false
-		execReq.Command = command
-	case harnessID != ShellHarnessID:
+	if harnessID != ShellHarnessID {
 		execReq.StartupCommand = command
 	}
 	created, err := s.execs.Create(ctx, execReq)
@@ -390,7 +373,7 @@ func (s *Service) Relaunches(exec execs.Exec) bool {
 	case execs.StatusLost:
 		return true
 	case execs.StatusExited, execs.StatusFailed:
-		return s.harnessMode != config.HarnessModeConfig
+		return true
 	}
 	return false
 }
@@ -481,7 +464,7 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 		ID:             id,
 		Env:            env,
 		User:           cloneUser(s.defaultUser),
-		StartupCommand: reviveStartupCommand(harness, harnessID, s.harnessMode, s.bootPrompt),
+		StartupCommand: reviveStartupCommand(harness, harnessID, s.bootPrompt),
 	})
 	if err != nil {
 		s.returnWake(wake)
@@ -497,16 +480,10 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 // reviveStartupCommand is the command a revived terminal types into its fresh
 // login shell: the harness's relaunch (resume) command when it has one, the
 // bare harness command otherwise — never the initial prompt, which belongs to
-// the terminal's first run only. The shell harness types nothing (the shell IS
-// the terminal, recorded as the exec's own command), and neither does a
-// configure flow, whose command is the exec's own for the same reason and is
-// what a relaunch re-runs — which it does only for a run that was lost, never
-// for one that ended (see revive).
-func reviveStartupCommand(harness config.Harness, harnessID, harnessMode string, prompt []string) []string {
-	switch {
-	case harnessID == ShellHarnessID:
-		return nil
-	case harnessMode == config.HarnessModeConfig:
+// the terminal's first run only. The shell harness types nothing: the shell IS
+// the terminal, recorded as the exec's own command.
+func reviveStartupCommand(harness config.Harness, harnessID string, prompt []string) []string {
+	if harnessID == ShellHarnessID {
 		return nil
 	}
 	return append(resumeStartupCommand(harness), prompt...)
@@ -856,11 +833,6 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 	if wake != "" {
 		request.Env = map[string]string{WakeEnv: wake}
 	}
-	if s.harnessMode == config.HarnessModeConfig {
-		// The image-owned config command is exact: never append the normal prompt
-		// and never replace it with the normal relaunch command.
-		request.command = append([]string{}, harness.Command...)
-	}
 	created, err := s.Create(ctx, request)
 	if err != nil {
 		s.returnWake(wake)
@@ -984,9 +956,7 @@ func (i CompositeInstaller) RestoreSecretFiles(ctx context.Context, harness conf
 
 // FileInstaller writes a harness's configured files into its home directory.
 type FileInstaller struct {
-	// Configure flows seed credentials themselves from the previous bindings.
-	Configure bool
-	Capture   *captureManager
+	Capture *captureManager
 	// User is the run user, already resolved through every layer the exec
 	// path uses. Nil means the manifest named nobody and the harness inherits
 	// this process's identity, which is still an identity with a home.
@@ -1014,9 +984,6 @@ func (i FileInstaller) EnsureInstalled(ctx context.Context, harness config.Harne
 	}
 	home = filepath.Clean(home)
 	for _, file := range i.Capture.files(harness.Files) {
-		if i.Configure && i.Definition != nil && slices.Contains(i.Definition.CredentialFiles, file.Path) {
-			continue
-		}
 		if i.Capture.protect(file.Path, true) {
 			continue
 		}

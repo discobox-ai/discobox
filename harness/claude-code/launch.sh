@@ -37,8 +37,8 @@ fi
 # The path names the uid, so the image's static managed settings cannot carry
 # it. The launcher writes it as a managed-settings drop-in instead: policy, like
 # the rest of the image's Claude Code settings, so a `claude` typed into any
-# shell afterwards finds the same memory, `.claude/settings.json` (which the
-# configure flow replaces) never holds it, and nothing that file says outranks
+# shell afterwards finds the same memory, `.claude/settings.json` (which a
+# saved harness change replaces) never holds it, and nothing that file says outranks
 # it.
 SOURCE_DATA=/.discobox/data-per-source/primary
 MANAGED_DROP_INS=/etc/claude-code/managed-settings.d

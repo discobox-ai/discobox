@@ -37,6 +37,7 @@ func judgeEraSchema(t *testing.T, db *database.DB) {
 		`ALTER TABLE host_trusts ADD COLUMN uses text`,
 		`ALTER TABLE host_trust_requests ADD COLUMN uses text`,
 		`ALTER TABLE projects ADD COLUMN judge_pool_id text DEFAULT ''`,
+		`ALTER TABLE sandboxes ADD COLUMN harness_mode text NOT NULL DEFAULT 'run'`,
 		`ALTER TABLE projects ADD COLUMN judge_sandbox_id text DEFAULT ''`,
 		`ALTER TABLE secret_rejections ADD COLUMN use_id text NOT NULL DEFAULT ''`,
 		`DROP INDEX idx_sandbox_secret_env`,
@@ -127,13 +128,16 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 
 	hc := "hc-1"
 	for _, sandbox := range []*model.Sandbox{
-		{ID: "sbx-judge", Name: "judge", SandboxManifest: model.SandboxManifest{HarnessMode: "judge"}},
+		{ID: "sbx-judge", Name: "judge"},
 		{ID: "sbx-copilot", Name: "copilot", SandboxManifest: model.SandboxManifest{HarnessConfigID: &hc}},
 	} {
 		sandbox.ProjectID, sandbox.PoolID, sandbox.CreatedByUserID = "project-1", "pool-1", "user-1"
 		if err := write.Create(sandbox).Error; err != nil {
 			t.Fatalf("create sandbox %s: %v", sandbox.ID, err)
 		}
+	}
+	if err := write.Exec(`UPDATE sandboxes SET harness_mode = 'judge' WHERE id = 'sbx-judge'`).Error; err != nil {
+		t.Fatal(err)
 	}
 	for _, trust := range []*model.HostTrust{
 		{ID: "ht-judged", ExpiresAt: live},
@@ -253,13 +257,14 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 				}
 			}
 		}
-		// The judge reads as a run discobox being deleted, and is marked to be.
+		// The judge is a discobox being deleted, and is marked to be; the mode
+		// it was found by is gone with the column (retireConfigureFlow).
 		var judge model.Sandbox
 		if err := write.First(&judge, "id = ?", "sbx-judge").Error; err != nil {
 			t.Fatalf("run %d: read judge: %v", run, err)
 		}
-		if judge.HarnessMode != "run" || judge.DesiredState != model.DesiredStateDeleted || judge.Generation == 0 {
-			t.Fatalf("run %d: judge = mode %q, desired %q, generation %d; want a run discobox marked for deletion", run, judge.HarnessMode, judge.DesiredState, judge.Generation)
+		if judge.DesiredState != model.DesiredStateDeleted || judge.Generation == 0 {
+			t.Fatalf("run %d: judge = desired %q, generation %d; want a discobox marked for deletion", run, judge.DesiredState, judge.Generation)
 		}
 		var trusts []string
 		if err := write.Model(&model.HostTrust{}).Order("id").Pluck("id", &trusts).Error; err != nil {

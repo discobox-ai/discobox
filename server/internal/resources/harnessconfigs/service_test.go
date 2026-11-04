@@ -48,50 +48,24 @@ func conflict(t *testing.T, err error) {
 	}
 }
 
-// The project default must always point at a configured harness, so disabling
-// (deconfiguring) it in place is refused; the client unsets the default first.
-func TestDeconfigureDefaultHarnessConfigIsRefused(t *testing.T) {
+// Every harness can run, so the project default can be reset in place: it
+// stays the default, back at its bundle's defaults (ADR 26-11-02-152 §3).
+func TestResetDefaultHarnessConfigKeepsItTheDefault(t *testing.T) {
 	ctx := context.Background()
 	svc, st, configID := newBindingService(t)
 
-	config, err := st.GetHarnessConfig(ctx, "project-1", configID)
-	if err != nil {
-		t.Fatalf("get harness config: %v", err)
-	}
-	config.Configured = true
-	// A harness that can be configured again is the one this is about; a
-	// harness with nothing to configure is refused before the default is
-	// even considered.
-	config.ConfigCommand = []string{"/usr/local/libexec/discobox/configure-codex"}
-	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
-		t.Fatalf("mark configured: %v", err)
-	}
 	if _, err := svc.SetDefaultHarnessConfig(ctx, "project-1", configID); err != nil {
 		t.Fatalf("set default: %v", err)
 	}
-
-	_, err = svc.DeconfigureHarnessConfig(ctx, "project-1", configID)
-	conflict(t, err)
-
-	// Still configured and still the default: the refused call changed nothing.
-	config, err = st.GetHarnessConfig(ctx, "project-1", configID)
+	if _, err := svc.ResetHarnessConfig(ctx, "project-1", configID, false); err != nil {
+		t.Fatalf("reset the default: %v", err)
+	}
+	project, err := st.GetProject(ctx, "project-1")
 	if err != nil {
-		t.Fatalf("get harness config after refusal: %v", err)
+		t.Fatalf("get project: %v", err)
 	}
-	if !config.Configured {
-		t.Fatal("harness config should remain configured after a refused deconfigure")
-	}
-
-	// Unsetting the default releases it, after which deconfigure succeeds.
-	project, err := svc.UnsetDefaultHarnessConfig(ctx, "project-1", configID)
-	if err != nil {
-		t.Fatalf("unset default: %v", err)
-	}
-	if project.DefaultHarnessConfigID != "" {
-		t.Fatalf("default = %q, want empty", project.DefaultHarnessConfigID)
-	}
-	if _, err := svc.DeconfigureHarnessConfig(ctx, "project-1", configID); err != nil {
-		t.Fatalf("deconfigure after unset: %v", err)
+	if project.DefaultHarnessConfigID != configID {
+		t.Fatalf("default = %q, want %q kept", project.DefaultHarnessConfigID, configID)
 	}
 }
 
@@ -134,9 +108,8 @@ func TestDeleteDefaultHarnessConfigClearsProjectDefault(t *testing.T) {
 	}
 }
 
-// UpdateHarnessConfig can replace the configure-flow file set independently of
-// the image-declared files, so users can hand-edit a configured file without a
-// full reconfigure.
+// UpdateHarnessConfig can replace the saved file set independently of the
+// image-declared files, so users can hand-edit a saved file.
 func TestUpdateHarnessConfigConfiguredFiles(t *testing.T) {
 	ctx := context.Background()
 	svc, st, configID := newBindingService(t)

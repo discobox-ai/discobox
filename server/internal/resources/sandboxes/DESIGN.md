@@ -27,8 +27,7 @@ flowchart LR
   then ID) →
   the project default → 409. A deleted default counts as no default. A
   sandbox is pinned to its harness config's `Bundle`/`BundleDigest`
-  (`createHarnessPins`, `services.HarnessConfigPins`) — in config mode too,
-  since the configure command is harness-bundle content — and to the platform
+  (`createHarnessPins`, `services.HarnessConfigPins`) and to the platform
   the release names. No harness is an image and there is no default image
   (ADR 26-10-16-423 §10): a config registered before bundles, which has no
   bundle, is refused with 409, and one whose bundle has no content digest — a
@@ -226,7 +225,7 @@ that mark.
 
 | Use | Routes | Stopped sandbox | Not usable yet | Failed, no container |
 | --- | --- | --- | --- | --- |
-| action | exec attach, create, input, start, delete; service start, stop, restart; HTTP, tcp and udp; ssh; the worktree's git; harness configure; meta write | the pool is asked to start it before the lease is handed out | waited for | repaired, once |
+| action | exec attach, create, input, start, delete; service start, stop, restart; HTTP, tcp and udp; ssh; the worktree's git; save harness configuration; meta write | the pool is asked to start it before the lease is handed out | waited for | repaired, once |
 | read | exec logs, events, resources; service logs; a source's origin, and what the pool's cache holds of it | started by the pool agent when the request arrives | answered at once | answered at once |
 | inspect | exec list and get; service list and get; tools | never started: the pool agent waits out a boot under way and refuses it otherwise, and the refusal is answered from the sandbox's last inventory ([below](#a-sandbox-that-is-not-running-is-read-from-its-inventory)) | answered at once | answered at once |
 | observe | terminal screen, exec wait, exec-events, harness-hooks | refused by the pool agent, a boot under way included; the screen is answered from the inventory | answered at once | answered at once |
@@ -1017,16 +1016,12 @@ than the recorded watermark are no-ops.
 A sandbox selects a persisted image-backed `HarnessConfig`. The selected image
 overrides a caller-supplied generic sandbox image. Providers receive only the
 harness identity and project-configured non-secret file overlay; run, relaunch,
-config, and static file metadata stay inside the image.
+and static file metadata stay inside the image.
 
-`harnessMode` is persisted sandbox intent. Normal/omitted `run` mode applies the
-harness secret requirement gate before scheduling, binding each of the harness
-config's secrets to its declared env name. `config` mode skips that gate so the
-image-owned interactive command can collect required credentials, and instead
-binds the secrets a previous configure run created under
-`harness.ConfigurePreviousEnvPrefix` (`materializeSandboxSecrets`) — the
-same sentinels, under `PREV_`-prefixed names so the harness CLI cannot quietly
-authenticate with the old credential. See
+Every sandbox is a run sandbox: there is no harness mode (ADR 26-11-02-152 §2).
+Nothing gates a create, a harness change or an import on the harness's
+declared credentials: one nothing binds leaves the harness signed out, to be
+signed in inside the box and saved back. See
 `resources/harnessconfigs/DESIGN.md`.
 
 Secret assignments commit in the same transaction as the sandbox row and its
@@ -1046,15 +1041,11 @@ naming the binding that delivers it — the sandbox's own, else its harness
 config's, else the project's. A row for a variable nothing binds any more is
 removed; one whose binding moved to another secret is repointed, keeping its
 sentinel unless the new secret's format differs; a newly bound variable gets a
-new sentinel. A configure-mode sandbox gets, of its harness config's bindings,
-only the configure-created secrets, under `harness.ConfigurePreviousEnvPrefix`.
-The create materializes in its transaction, after storing the bindings it was
+new sentinel. The create materializes in its transaction, after storing the bindings it was
 given (inline secrets become an anonymous secret routed to their host or `*`
 and a use binding, both written in that transaction, so a failed create keeps
 no value); `ensure` materializes again before building the create
-options, catching what changed while the sandbox was down. A required secret
-of the harness config that nothing delivers refuses the create
-(`checkRequiredSecrets`).
+options, catching what changed while the sandbox was down.
 
 A raw binding ([ADR 26-10-27-840](../../../../docs/adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md))
 materializes the same way, its row carrying the delivery (`SandboxSecret.Raw`).
@@ -1136,7 +1127,7 @@ failures and a silent startup timeout propagate to the sandbox error.
 
 `UpdateSandbox` accepts a harness selector or explicit config ID (ADR
 26-10-24-650). Same-config selection does not upgrade. A different selection
-requires a settled, present sandbox and a configured, compatible target.
+requires a settled, present sandbox and a compatible target.
 
 A persisted `PendingHarnessChange` carries the proposed manifest separately from
 its effective spec, with a generation bump and dirty mark. Reconciliation asks

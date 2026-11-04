@@ -540,8 +540,8 @@ func TestBuildSandboxDocumentOverlaysConfiguredFilesOntoRuntimeLayer(t *testing.
 				{Path: ".claude.json", Content: `{}`},
 			}),
 			ConfiguredFiles: workerclient.NewOptNilHarnessConfigFileArray([]workerapimodel.HarnessConfigFile{
-				// Overlays the image baseline's settings.json by path with what the
-				// configure flow captured.
+				// Overlays the image baseline's settings.json by path with what a
+				// saved harness change captured.
 				{Path: ".claude/settings.json", Content: `{"theme":"light"}`},
 			}),
 		}),

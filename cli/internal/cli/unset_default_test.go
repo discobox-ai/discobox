@@ -11,8 +11,8 @@ import (
 // has, and with none set it asks the server to clear nothing.
 func TestUnsetDefaultClearsTheProjectsDefault(t *testing.T) {
 	const project = `{"id":"project-1","name":"p","defaultPoolId":"pool_default","defaultHarnessConfigId":"hc_default",` +
-		`"default":true,"ownerUserId":"user-1","welcomed":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
-	const cleared = `{"id":"project-1","name":"p","default":true,"ownerUserId":"user-1","welcomed":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
+		`"default":true,"ownerUserId":"user-1","welcomed":true,"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
+	const cleared = `{"id":"project-1","name":"p","default":true,"ownerUserId":"user-1","welcomed":true,"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
 	for _, tc := range []struct {
 		group, path string
 	}{

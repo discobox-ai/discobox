@@ -138,12 +138,6 @@ cleanup() {
 		fi
 	fi
 	if [ -n "$harness_id" ]; then
-		configure_sandbox_id="$("${cli[@]}" admin harness get "$harness_id" 2>/dev/null | jq -r '.configureSandboxId // empty' || true)"
-		if [ -n "$configure_sandbox_id" ] && [ "$configure_sandbox_id" != "$sandbox_id" ]; then
-			"${cli[@]}" admin box rm "$configure_sandbox_id" >/dev/null 2>&1 || true
-			wait_for_sandbox_deletion "$configure_sandbox_id" || true
-		fi
-		"${cli[@]}" admin harness deconfigure "$harness_id" >/dev/null 2>&1 || true
 		"${cli[@]}" admin harness delete "$harness_id" >/dev/null 2>&1 || true
 	fi
 	exit "$status"
@@ -236,8 +230,7 @@ harness_json="$("${cli[@]}" admin harness create \
 	--slug "$harness_name" \
 	--bundle "$bundle")"
 harness_id="$(jq -er '.id' <<<"$harness_json")"
-
-timeout 3m "${cli[@]}" admin harness configure "$harness_id" </dev/null >"$output_dir/configure.json"
+printf '%s\n' "$harness_json" >"$output_dir/harness.json"
 
 mode_enabled() {
 	case ",$modes," in

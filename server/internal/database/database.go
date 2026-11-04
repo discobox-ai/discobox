@@ -204,6 +204,11 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := retireSecretGrants(write); err != nil {
 		return err
 	}
+	// After retireCredentialJudge, which finds a judge by the harness mode
+	// this drops.
+	if err := retireConfigureFlow(write); err != nil {
+		return err
+	}
 	// After the two retirements above, which read routes in the shape they
 	// were stored in.
 	if err := upgradeRouteShapes(write); err != nil {

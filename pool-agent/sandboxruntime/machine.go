@@ -108,8 +108,8 @@ type MachineSandboxRuntime struct {
 	network string
 	egress  *machine.Egress
 	// observed is each sandbox's power state as the runtime last saw it,
-	// which answers what must not wait on the driver (RunningSandboxIDsInMode)
-	// and what the driver cannot say for now (an unreachable service).
+	// which answers what the driver cannot say for now (an unreachable
+	// service).
 	observed sync.Map
 	// urls is each running sandbox's instance URL, asked of the driver once
 	// per start rather than on every dial.
@@ -192,7 +192,6 @@ type machineRecord struct {
 	// Instance is the machine's ID, as its driver keeps it.
 	Instance        string `json:"instance"`
 	SpecFingerprint string `json:"specFingerprint,omitempty"`
-	HarnessMode     string `json:"harnessMode,omitempty"`
 	// Env is the sandbox user's environment, which names who owns what the
 	// pool serves the sandbox (GitOriginPath).
 	Env map[string]string `json:"env,omitempty"`
@@ -327,9 +326,6 @@ func (r *MachineSandboxRuntime) sandbox(ctx context.Context, sandboxID string, i
 		return nil, err
 	}
 	metadata := map[string]string{"driver": r.engine.Driver.Name(), "instance": inst.ID}
-	if record.HarnessMode != "" {
-		metadata[sandboxLabelHarnessMode] = record.HarnessMode
-	}
 	return &Sandbox{
 		ID:        inst.ID,
 		SandboxID: sandboxID,
@@ -407,32 +403,6 @@ func (r *MachineSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, 
 		out = append(out, sb)
 	}
 	return out, nil
-}
-
-// RunningSandboxIDsInMode reads what the runtime last saw, never the driver:
-// it is called every second.
-func (r *MachineSandboxRuntime) RunningSandboxIDsInMode(_ context.Context, harnessMode string) ([]string, error) {
-	if harnessMode == "" || harnessMode == string(sandboxconfig.HarnessModeRun) {
-		return nil, nil
-	}
-	var out []string
-	var err error
-	r.observed.Range(func(key, value any) bool {
-		sandboxID, _ := key.(string)
-		if status, _ := value.(Status); status != StatusRunning {
-			return true
-		}
-		record, ok, readErr := r.readMachineRecord(sandboxID)
-		if readErr != nil {
-			err = readErr
-			return false
-		}
-		if ok && record.HarnessMode == harnessMode {
-			out = append(out, sandboxID)
-		}
-		return true
-	})
-	return out, err
 }
 
 // CreateSandbox makes the sandbox's machine, or makes it again: a spec that
@@ -649,7 +619,6 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 	}
 	user := resolveSandboxUser(r.paths, req)
 	record.SpecFingerprint = strings.TrimSpace(optString(req.Config.SpecFingerprint))
-	record.HarnessMode = harnessModeOf(req.Config)
 	record.Env = envWithSandboxUser(nil, user)
 	record.Bootstrap = doc
 	if err := r.writeMachineRecord(sandboxID, record); err != nil {

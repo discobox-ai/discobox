@@ -1,6 +1,6 @@
 # 0009 — Previous configure secrets are offered as prefixed sentinels
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md)
 - **Date**: 2026-07-21
 
 ## Context

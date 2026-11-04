@@ -24,7 +24,6 @@ func TestSandboxToAPIIncludesRegisteredHarnessConfig(t *testing.T) {
 			ProjectID:  "p1",
 			Slug:       "codex",
 			BuiltIn:    true,
-			Configured: true,
 			Name:       "Codex",
 			RunCommand: []string{"codex"},
 		},

@@ -18,7 +18,6 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Used by create (ADR 0083). |
 | `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
-| `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
 | `internal/lifetime` | How long a binding lasts, said the way people say it: the presets an approval offers, the words every length-of-time flag parses (`Flag`: `--for`, `--ttl`, `--max-binding-ttl`, `--expires-in`, and `--since` counting back), and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/apiroute` | A secret route between the API's shape and `secretroute.Route`, the one reading of a route (ADR 26-10-27-880 §4). The CLI and the console parse, print and edit routes as `secretroute.Route`; this is the one place the two shapes meet, so a field added to a route is carried in one place. |
 | `internal/requestrole` | How a credential request's policy files are shown to the person answering it (ADR 26-11-02-022 §3), shared by `secret request get` and the console's request card: grouped by document digest, never by the name the asking discobox gave them, each beside a summary worked out from the routes the server resolved — hosts, methods, path patterns with wildcards marked, GraphQL operations, MCP tools — and marked when two documents share a name or an argument narrows nothing. Plain text: the caller escapes it. |
@@ -40,30 +39,6 @@ transport helpers where OpenAPI does not model the stream.
   frontend contracts only; API and terminal adapters belong outside it.
 - `internal/cli` may adapt generated API clients and terminal transports to the
   console's interfaces, but must not become the owner of logic shared by frontends.
-- Harness configuration runs the real `discobox admin harness configure <id>`
-  command in a local pty (`openLocalHarnessConfigure`).
-- Where that pty comes from is `internal/localpty`, whose `PTY` is everything a
-  pane needs of one: read, write, resize, close, and `io.EOF` when the command
-  exits. Unix opens a pty pair through `creack/pty`; Windows creates a
-  pseudo-console and starts the child itself, because a ConPTY is attached
-  through a thread attribute `os/exec` cannot carry — so `localpty.Start` takes
-  argv rather than an `*exec.Cmd`. See
-  [ADR 0065](../docs/adr/0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md).
-- A pane child must not outlive the process that drew it. Both of the ways a
-  pane ends its command — canceling the context, closing the PTY — run inside
-  the console, so a console that dies without unwinding ends neither. The
-  child is `Setsid` with a pty of its own, which is what this package is for and
-  also means nothing the operating system does reaches it: no SIGHUP from the
-  real terminal, no shared process group. `localpty.Start` therefore sets
-  `DISCOBOX_PARENT_PID`, and the child's `PersistentPreRunE` runs the rest of
-  the command under a context that is canceled once that process is gone
-  (`parentwatch.go`), and leaves anyway if canceling did not end it. It is
-  polled rather than signaled because macOS has neither `PR_SET_PDEATHSIG` nor
-  job objects. It is opt-in from the spawner because an orphaned pane child and
-  a command the user backgrounded from a shell look identical from inside. The
-  child consumes the variable rather than reading it, so it reaches one process
-  and not everything that process starts — above all the autolaunched server,
-  a singleton whose whole point is to outlive the CLI that forked it.
 - **The command that makes a discobox is `run`, and `new`, `create`, `r` and
   `n` are its aliases.** It is one registration (`newRunCommand`), and help
   lists every spelling: each is what somebody reaching for "make a discobox"
@@ -134,8 +109,7 @@ transport helpers where OpenAPI does not model the stream.
   a broken environment asks first is what they are running, so a leader key the
   environment spells wrong must not be what stops them hearing it.
 - `discobox configure` is the same console opened on its harnesses screen
-  (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
-  Step*.
+  (`tui.WithHarnesses()`), not a window of its own. See *Harnesses*.
 - `discobox run` and `discobox attach` are the same console, opened on one run
   (`tui.WithRun`) and on one discobox (`tui.WithAttach`), not a terminal stream
   on the caller's screen. What run creates is a machine with terminals,
@@ -2327,7 +2301,7 @@ level or layering on the attach transports above.
 Keystrokes reach the remote job, never this process. Two mechanisms, chosen by
 whether the attach has a PTY — not by which command is running:
 
-- **Raw mode (any TTY attach: `run`, `admin terminal attach`, `configure`,
+- **Raw mode (any TTY attach: `run`, `admin terminal attach`,
   `exec`/`admin exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
   Ctrl-Z, and Ctrl-\ are never signals here — they travel as the bytes 0x03,
   0x1a, 0x1c and the *remote* line discipline signals the remote foreground job.
@@ -2582,10 +2556,7 @@ Both front ends run the same rule, over one resolver (`App.pushSandboxSources`,
   loop guarded by the workspace generation (`internal/tui/push.go`);
 - a **raw attach** — `attach --raw`, `new --raw`, `admin terminal attach`,
   `admin terminal create --attach` — from the one choke point they share
-  (`attachSandboxTerminal` → `App.autoPushWhileAttached`). The one attach there
-  that is not somebody working in a discobox says so
-  (`execAttachOptions.notWorkingHere`): a harness's configure flow attaches to a
-  throwaway sandbox holding nobody's source.
+  (`attachSandboxTerminal` → `App.autoPushWhileAttached`).
 
 Only a source checked out at a **branch** is sent. One created from a tag or a
 bare commit names no branch, so the push would fall back to whatever `HEAD` is
@@ -2681,10 +2652,6 @@ clock, so a long pull that keeps reporting is not cut off.
   container is created before the discobox parks — is on the record it already
   has. Its phases replace `StepAwaitingSource` on the line as they are recorded,
   so the longest step in a create is not a silent one.
-- **The harness configure flow's wait** (`waitForProvisionedSandbox`,
-  `internal/cli/waitprovisioned.go`) is one loop that both waits and narrates,
-  because two loops would read the same discobox at different moments to answer
-  questions about the same thing.
 
 `statusLine` is where it lands for the commands: one rewritable line on a
 terminal, appended lines off one, and cleared before the stream is handed to
@@ -2999,8 +2966,7 @@ See [ADR 0093](../docs/adr/0093-a-local-sources-origin-is-its-git-directory.md).
 ## No Source At All
 
 `discobox run --no-source` (`PromptOptions.NoSource`) creates a discobox with
-nothing materialized in it — the shape the harness configure sandbox already
-had, reached deliberately. It is not "a source that resolved to nothing": no
+nothing materialized in it. It is not "a source that resolved to nothing": no
 `config.source` is sent at all, and the create request carries no local source
 for delivery to push.
 
@@ -3258,61 +3224,35 @@ Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
 (push at create), `sandboxpush.Push` (re-push) — so neither the local socket, which is the default endpoint, nor a peer address
 is a server only half the CLI can reach.
 
-## Harness Configure Step
+## Harnesses
 
-`discobox admin harness configure` (`internal/cli/harness.go`) drives a harness's
-interactive configure flow. The server owns applying the result; the CLI only
-sequences the calls and hands the user the terminal in between:
+There is no configure step (ADR 26-11-02-152): every registered harness runs,
+and a harness is signed in and set up inside a discobox. What a box changes —
+settings, a login — is captured by its agent as a candidate, reviewed with
+`admin harness changes`, and saved with `admin harness save` (or discarded),
+which makes it the default for every discobox on that harness config. The
+console says the same with its green harness-changes band and, the first time
+a project sees one, an explainer recorded on the project
+(`harnessChangesExplained`, `project update --harness-changes-explained`).
 
-0. The ports the harness bundle declares for its flow are bound on this machine
-   and forwarded into the configure sandbox (`forwardConfigurePorts`,
-   `harness_configure_ports.go`) — exactly, or reported as unavailable in the
-   image's own words, because a sign-in callback is sent to that number and no
-   other. An ephemeral entry has no number to bind ahead of time: the forward
-   polls the sandbox's port listing every second for the length of the flow
-   and binds each TCP port it finds at that same number, never another.
-1. `POST .../configure` — the server creates the ephemeral `harnessMode: config`
-   sandbox and returns it.
-2. `POST .../configure/attach` — the server seeds the previous configuration into
-   it.
-3. attach to the virtual `"primary"` exec (`primaryExecID`) — **this is what
-   launches the configure command**, since the sandbox-agent defers the primary
-   terminal in config mode. That ordering is why seeding always lands first, and
-   why nothing waits for a terminal to appear first: none exists until attach.
-4. `POST .../configure/commit` — the server reads the command's real exit status,
-   applies the secrets and files it wrote, and deletes the sandbox. The commit
-   is the only thing that deletes it before the server's TTL reap, so the CLI
-   makes it after **every** ending of the command, not only a successful one
-   (`finishHarnessConfigure`); it skips it only when the command has not ended
-   — the stream broke, or the attach was escaped locally (`ErrInterrupted`).
-   A command that exited `harness.ConfigureCanceledExitCode` was left on
-   purpose: the CLI says the setup was canceled and exits with that same
-   status, so the console that ran it reports a cancellation, not a failure.
+`admin harness reset` (`internal/cli/harness.go`) forgets what was saved — the
+files and the logins saves created — returning the config to its bundle's
+defaults. The project default is left alone: a reset harness still runs.
 
-The console's harnesses screen does not call `runHarnessConfigure` itself: it
-runs this command in a pane (`apiDataSource.OpenHarnessConfigure` →
-`openLocalHarnessConfigure`, see *UI Dependency Direction*), so the flow the
-window draws is the one a shell gets.
-
-`discobox configure` (alias `config`) is the console opened
-on that screen — `tui.WithHarnesses()`, reachable in the window itself on `F3` —
-and nothing else. It is not a second menu over the same harnesses: managing them
+`discobox configure` (alias `config`) is the console opened on its harnesses
+screen — `tui.WithHarnesses()`, reachable in the window itself on `F3` — and
+nothing else. It is not a second menu over the same harnesses: managing them
 and running something on one are the same job from two ends, and one list with
 one set of keys is what the window already provides.
 
 The window's half of the data seam lives in `internal/cli/tui_harnesses.go`:
 `Harnesses`/`HarnessSecrets` map harness configs (plus the project's default
-pointer and the harness config's secret bindings) onto `tui.Harness`, `DoHarness` runs disable and
-set-default, `OpenHarnessConfigure` opens the configure pane, and
-`EditHarnessFile` is the one that needs the real terminal (handed over with
-`tea.Exec`) and reuses `editHarnessFile` unchanged.
-Disable releases the project default first when the target holds it, since the
-server refuses to deconfigure a default harness.
-
-Re-running reconfigures and clobbers any in-flight attempt. Nothing here parses
-the configure output or creates secrets: a client that crashes mid-flow cannot
-leave a half-applied harness, and an abandoned sandbox is reaped by the server.
-See `server/internal/resources/harnessconfigs/DESIGN.md`.
+pointer and the harness config's secret bindings) onto `tui.Harness`,
+`DoHarness` runs reset and set-default, and `EditHarnessFile` is the one that
+needs the real terminal (handed over with `tea.Exec`) and reuses
+`editHarnessFile` unchanged. The listing row carries the box's reported
+`harnessConfigCandidate` (`Sandbox.HarnessConfigCandidate`), which is the
+harness-changes band's occurrence.
 
 ## Pool Health Display
 

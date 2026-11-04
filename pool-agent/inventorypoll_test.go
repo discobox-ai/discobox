@@ -170,19 +170,6 @@ func TestInventoryIsNotPostedForASandboxAgentWithoutTheRoute(t *testing.T) {
 	}
 }
 
-// A configure sandbox is polled every second for its ports, and never for an
-// inventory.
-func TestInventoryIsNotReadOnTheConfigureTick(t *testing.T) {
-	agent := &inventoryAgent{digest: "sha256:one"}
-	poller, client := newInventoryPoller(t, agent)
-	poller.pollAndReport(context.Background(), []string{"sandbox-1"})
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	if len(client.reported) != 1 || len(client.inventories) != 0 {
-		t.Fatalf("status entries = %d, inventory reports = %d; want 1 and 0", len(client.reported), len(client.inventories))
-	}
-}
-
 // A pool's inventories do not all go in one request: a report is bounded,
 // whatever the pool's size, and nothing is dropped or split to keep it so.
 func TestInventoryReportsAreBoundedInSize(t *testing.T) {

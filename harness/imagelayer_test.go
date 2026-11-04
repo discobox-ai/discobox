@@ -149,6 +149,32 @@ func TestResolveImageLabelsRejectsEmptyLayer(t *testing.T) {
 	}
 }
 
+// A bundle that still declares a configure command or its ports is refused
+// rather than registered without them: the configure flow is removed
+// (ADR 26-11-02-152 §2), and an author who declared one expects a setup step
+// that no longer runs.
+func TestResolveImageLabelsRefusesARetiredConfigureDeclaration(t *testing.T) {
+	for name, config := range map[string]string{
+		"command": `{"command": ["/usr/local/libexec/discobox/configure-agent"]}`,
+		"ports":   `{"ports": [{"port": 1455}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			labels := baseLayerLabel(t)
+			labels[ImageLabel] = `{
+				"apiVersion": "discobox.dev/image/v1",
+				"harness": {"id": "agent", "name": "Agent", "config": ` + config + `}
+			}`
+			_, _, err := ResolveImageLabels(labels)
+			if err == nil {
+				t.Fatal("a bundle declaring a configure command registered")
+			}
+			if !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), "26-11-02-152") {
+				t.Errorf("error = %v, want it to say the configure declaration is retired and cite the ADR", err)
+			}
+		})
+	}
+}
+
 func TestResolveImageLabelsIgnoresUnrelatedLabels(t *testing.T) {
 	labels := baseLayerLabel(t)
 	labels[ReclaimLabel] = ReclaimLabelValue

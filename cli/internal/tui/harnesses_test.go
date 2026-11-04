@@ -1,13 +1,10 @@
 package tui
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
-
-	"github.com/discobox-ai/discobox/harness"
 )
 
 // The harness config card is the other card the window puts up to be read, so
@@ -148,89 +145,21 @@ func TestHarnessesCursorMoves(t *testing.T) {
 	}
 }
 
-// Enabling runs the harness's own setup in an unmistakable configuration pane,
-// with harness-authored guidance outside the terminal grid.
-func TestHarnessesEnableRunsTheSetup(t *testing.T) {
+// Reset asks first, since it deletes the settings and logins saved to the
+// harness, and nothing brings those back but signing in and saving again.
+func TestHarnessesResetConfirms(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
-
-	if len(ds.configured) != 1 || ds.configured[0] != "hc_codex" {
-		t.Fatalf("configured = %v, want the harness under the cursor", ds.configured)
-	}
-	frame := plainFrame(m)
-	for _, want := range []string{"Harness configuration · Codex", "Configuring Codex", "Use /login, then /exit when sign-in is complete."} {
-		if !strings.Contains(frame, want) {
-			t.Fatalf("configuration pane is missing %q:\n%s", want, frame)
-		}
-	}
-	if m.busy != "" {
-		t.Fatalf("busy = %q, want it cleared once the setup returned", m.busy)
-	}
-}
-
-// A port the setup declares and this machine cannot give it is said in the
-// pane's header, in the harness's own words, where the setup's full-screen
-// sign-in cannot paint over it — and only when the port is actually taken.
-func TestHarnessesEnableWarnsWhenADeclaredPortIsTaken(t *testing.T) {
-	t.Parallel()
-	declare := func(ds *fakeSource) {
-		for i := range ds.harnesses {
-			if ds.harnesses[i].ID == "hc_codex" {
-				ds.harnesses[i].ConfigPorts = []HarnessConfigPort{{Port: 1455, Unavailable: "Port 1455 is taken; sign in with Device Code instead."}}
-			}
-		}
-	}
-
-	ds := newFakeSource()
-	declare(ds)
-	ds.portsInUse = map[int]bool{1455: true}
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
-	if frame := plainFrame(m); !strings.Contains(frame, "Port 1455 is taken; sign in with Device Code instead.") {
-		t.Fatalf("configuration pane does not warn about the taken port:\n%s", frame)
-	}
-
-	ds = newFakeSource()
-	declare(ds)
-	m = newTestModel(t, ds)
-	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
-	if frame := plainFrame(m); strings.Contains(frame, "Port 1455 is taken") {
-		t.Fatalf("configuration pane warns about a port that is free:\n%s", frame)
-	}
-}
-
-// An ephemeral entry names no port until the setup's sandbox listens on one,
-// so there is nothing to check before the pane opens and nothing to warn of.
-func TestHarnessesEnableDoesNotProbeAnEphemeralPort(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource()
-	for i := range ds.harnesses {
-		if ds.harnesses[i].ID == "hc_codex" {
-			ds.harnesses[i].ConfigPorts = []HarnessConfigPort{{Ephemeral: true, Unavailable: "Sign in by device code instead."}}
-		}
-	}
-	ds.portsInUse = map[int]bool{0: true}
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
-	if frame := plainFrame(m); strings.Contains(frame, "Sign in by device code instead.") {
-		t.Fatalf("configuration pane warns about an ephemeral port before any was found:\n%s", frame)
-	}
-}
-
-// Disabling asks first, since it deletes the secrets and files the setup wrote.
-func TestHarnessesDisableConfirms(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource()
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("f3"), keyPress("d"))
+	send(t, m, keyPress("f3"), keyPress("r"))
 
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
-		t.Fatal("d should ask before disabling")
+		t.Fatal("r should ask before resetting")
 	}
-	if !strings.Contains(m.dialog.body, "project default") {
-		t.Fatalf("the question should say the default is released first: %q", m.dialog.body)
+	for _, want := range []string{"bundle's defaults", "logins saved", "bound to it by hand are kept"} {
+		if !strings.Contains(m.dialog.body, want) {
+			t.Fatalf("the question should say %q: %q", want, m.dialog.body)
+		}
 	}
 	if len(ds.didHarness) != 0 {
 		t.Fatalf("did = %v, want nothing done before the question is answered", ds.didHarness)
@@ -242,27 +171,56 @@ func TestHarnessesDisableConfirms(t *testing.T) {
 		t.Fatalf("did = %v, want nothing done after answering no", ds.didHarness)
 	}
 
-	send(t, m, keyPress("d"), keyPress("y"))
-	if len(ds.didHarness) != 1 || ds.didHarness[0] != "disable hc_claude" {
-		t.Fatalf("did = %v, want the harness disabled", ds.didHarness)
+	send(t, m, keyPress("r"), keyPress("y"))
+	if len(ds.didHarness) != 1 || ds.didHarness[0] != "reset hc_claude" {
+		t.Fatalf("did = %v, want the harness reset", ds.didHarness)
 	}
-	if !strings.Contains(plainFrame(m), "disabled Claude") {
-		t.Fatalf("the status line should report the disable:\n%s", plainFrame(m))
+	if !strings.Contains(plainFrame(m), "reset Claude to its bundle's defaults") {
+		t.Fatalf("the status line should report the reset:\n%s", plainFrame(m))
 	}
 }
 
-// An action that does not apply says why rather than doing nothing.
-func TestHarnessesDisableNeedsAnEnabledHarness(t *testing.T) {
+// A harness with files a person added or overrode asks which reset is meant:
+// a plain one keeps those files, and is offered first; the other leaves
+// nothing but the bundle's (ADR 26-11-04-028 §1).
+func TestResettingAHarnessWithYourFilesAsksWhetherToKeepThem(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource()
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("f3"), keyPress("j"), keyPress("j"), keyPress("d"))
-
-	if m.dialog == nil || m.dialog.kind != dlgMessage {
-		t.Fatal("disabling a harness that is not enabled should explain itself")
+	for _, tc := range []struct {
+		key, want string
+	}{
+		{"r", "reset hc_claude"},
+		{"a", "reset with your files hc_claude"},
+	} {
+		ds := newFakeSource()
+		ds.harnesses[0].Files = append(ds.harnesses[0].Files, HarnessFile{Path: ".config/x.txt", Content: "mine", Source: HarnessFileOverride})
+		m := newTestModel(t, ds)
+		send(t, m, keyPress("f3"), keyPress("r"))
+		if m.dialog == nil || m.dialog.kind != dlgActions || m.dialog.items[0].key != "r" {
+			t.Fatalf("dialog = %s, want keeping your files offered first", describe(m.dialog))
+		}
+		send(t, m, keyPress(tc.key))
+		if len(ds.didHarness) != 1 || ds.didHarness[0] != tc.want {
+			t.Fatalf("pressing %s did %v, want %q", tc.key, ds.didHarness, tc.want)
+		}
 	}
-	if len(ds.didHarness) != 0 {
-		t.Fatalf("did = %v, want nothing done", ds.didHarness)
+}
+
+// Every harness can be run, so nothing on the screen offers to set one up.
+func TestHarnessesOfferNoSetup(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource())
+	send(t, m, keyPress("f3"))
+	for i := range m.harnesses.all {
+		for _, a := range harnessActions(m.harnesses.all[i]) {
+			if a.key == "e" || a.key == "d" || strings.Contains(a.label, "enable") || strings.Contains(a.label, "configure") {
+				t.Fatalf("%s offers %q (%s), want no setup action", m.harnesses.all[i].displayName(), a.key, a.label)
+			}
+		}
+	}
+	// Enter reads the harness rather than starting anything.
+	send(t, m, keyPress("enter"))
+	if m.dialog == nil || m.dialog.kind != dlgText {
+		t.Fatal("Enter should open the config card")
 	}
 }
 
@@ -270,8 +228,7 @@ func TestHarnessesSetDefault(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	// The second row is enabled and not the default, which is the only state
-	// s applies to.
+	// The second row is not the default, which is the only state s applies to.
 	send(t, m, keyPress("f3"), keyPress("j"), keyPress("s"))
 
 	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_codex" {
@@ -308,12 +265,12 @@ func TestHarnessesConfigCard(t *testing.T) {
 	}
 	body := m.dialog.body
 	for _, want := range []string{
-		"enabled", "★ default", "built-in", "hc_claude",
+		"★ default", "built-in", "hc_claude",
 		"ghcr.io/example/claude:latest", "claude",
 		"ANTHROPIC_API_KEY", "required", "sec_1", "api_key", "anthropic-api-key",
 		"CLAUDE_CODE_OAUTH_TOKEN", "one of auth", "nothing bound",
 		"CUSTOM_TOKEN", "bound by hand", "sec_2",
-		".claude.json", "written by its setup", "settings.json", "from the image",
+		".claude.json", "saved from a discobox", "settings.json", "from the image",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("config card is missing %q:\n%s", want, body)
@@ -330,9 +287,9 @@ func TestHarnessFileDetailNamesItsSource(t *testing.T) {
 		want string
 	}{
 		{HarnessFile{Content: "{}", Source: HarnessFileFromBundle, CreateOnly: true}, "2 B · from the image · create-only"},
-		{HarnessFile{Content: "{}", Source: HarnessFileConfigured, Shadows: []HarnessFileSource{HarnessFileFromBundle}}, "2 B · written by its setup · over the image's"},
+		{HarnessFile{Content: "{}", Source: HarnessFileSaved, Shadows: []HarnessFileSource{HarnessFileFromBundle}}, "2 B · saved from a discobox · over the image's"},
 		{HarnessFile{Content: "{}", Source: HarnessFileOverride}, "2 B · yours"},
-		{HarnessFile{Content: "{}", Source: HarnessFileOverride, Shadows: []HarnessFileSource{HarnessFileConfigured, HarnessFileFromBundle}}, "2 B · yours · over its setup's"},
+		{HarnessFile{Content: "{}", Source: HarnessFileOverride, Shadows: []HarnessFileSource{HarnessFileSaved, HarnessFileFromBundle}}, "2 B · yours · over the saved one"},
 	} {
 		if got := harnessFileDetail(tc.file); got != tc.want {
 			t.Errorf("detail = %q, want %q", got, tc.want)
@@ -353,7 +310,7 @@ func TestHarnessesEditFile(t *testing.T) {
 		t.Fatal("f should open the file picker")
 	}
 	if len(m.dialog.items) != 2 || m.dialog.items[0].label != ".claude.json" {
-		t.Fatalf("files = %+v, want the ones its setup wrote first", m.dialog.items)
+		t.Fatalf("files = %+v, want the saved ones first", m.dialog.items)
 	}
 
 	send(t, m, keyPress("enter"))
@@ -383,8 +340,7 @@ func TestHarnessesEditNeedsFiles(t *testing.T) {
 	}
 }
 
-// The run options' harness choices are the harnesses, with the default leading,
-// so enabling one makes it selectable without the window being reopened.
+// The run options' harness choices are the harnesses, with the default leading.
 func TestHarnessChoicesFollowTheListing(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
@@ -439,21 +395,6 @@ func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 	}
 }
 
-// A failed harness's row says why, under the cursor, where there is room for
-// it.
-func TestHarnessesFailedRowShowsTheError(t *testing.T) {
-	t.Parallel()
-	m := newTestModel(t, newFakeSource())
-	send(t, m, keyPress("f3"), keyPress("G"), keyPress("k"))
-	if !strings.Contains(plainFrame(m), "the setup exited before it finished") {
-		t.Fatalf("a failed harness should say why under the cursor:\n%s", plainFrame(m))
-	}
-	send(t, m, keyPress("g"))
-	if strings.Contains(plainFrame(m), "the setup exited before it finished") {
-		t.Fatal("the error belongs to the row under the cursor, not to every frame")
-	}
-}
-
 // The frame is exactly the terminal's height, harnesses screen included: one
 // row too many scrolls the terminal, which is the one thing the renderer cannot
 // redraw its way out of.
@@ -475,8 +416,8 @@ func TestHarnessesFrameFitsTheTerminal(t *testing.T) {
 // Every action that applies to the row under the cursor is on the hint line.
 // Hiding the ones that do not apply is the point of the line, but an action
 // that applies and is named nowhere is one nothing would tell you about: `s`
-// in particular applies only to a harness that is enabled and not already the
-// default, which is the state the fixture's second row is in.
+// in particular applies only to a harness that is not already the default,
+// which is the state the fixture's second row is in.
 func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
@@ -510,27 +451,24 @@ func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
 	}
 }
 
-// s is the only action that needs a harness which is enabled and not already
-// the default, so it is the one most easily left unreachable.
+// s is the only action that needs a harness which is not already the default,
+// so it is the one most easily left unreachable.
 func TestHarnessHintsOfferTheDefault(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	send(t, m, keyPress("f3"), keyPress("j"))
 
 	if hints := hintLine(m.harnessHints()); !strings.Contains(hints, "s default") {
-		t.Fatalf("hints = %q, want the default offered on an enabled non-default harness", hints)
+		t.Fatalf("hints = %q, want the default offered on a non-default harness", hints)
 	}
 }
 
-// Running on a harness that has never been set up is refused by the server at
-// create, so the window asks first and offers the way out — the same setup the
-// harnesses screen runs.
-func TestRunningAnUnconfiguredHarnessOffersToSetItUp(t *testing.T) {
+// A run on any harness goes straight to create: there is no setup a harness
+// has to have been through first (ADR 26-11-02-152).
+func TestRunningAnyHarnessDoesNotAsk(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-
-	// Custom is registered and disabled, which is the case worth asking about.
 	harness := m.opts.opts[optHarness]
 	for i, choice := range harness.choices {
 		if choice == "custom" {
@@ -540,46 +478,11 @@ func TestRunningAnUnconfiguredHarnessOffersToSetItUp(t *testing.T) {
 	send(t, m, typeString("do the thing")...)
 	send(t, m, keyPress("enter"), keyPress("enter"))
 
-	if m.dialog == nil || m.dialog.kind != dlgConfirm {
-		t.Fatal("running an unconfigured harness should ask before failing at create")
+	if m.dialog != nil && (m.dialog.kind == dlgConfirm || m.dialog.kind == dlgActions) {
+		t.Fatalf("running a harness should not ask anything: %s", describe(m.dialog))
 	}
-	if len(ds.runs) != 0 {
-		t.Fatalf("runs = %v, want the run held until the harness works", ds.runs)
-	}
-
-	// Yes runs its setup, on the terminal, the way e does on the screen.
-	send(t, m, keyPress("y"))
-	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
-		t.Fatalf("configured = %v, want the chosen harness set up", ds.configured)
-	}
-}
-
-// A harness that declares no setup cannot be short of one, so there is nothing
-// to offer and the window says so instead of asking a question whose yes does
-// nothing.
-func TestRunningAHarnessWithNoSetupSaysSoRatherThanAsking(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource()
-	for i := range ds.harnesses {
-		if ds.harnesses[i].ID == "hc_shell" {
-			ds.harnesses[i].State = HarnessDisabled
-		}
-	}
-	m := newTestModel(t, ds)
-
-	harness := m.opts.opts[optHarness]
-	for i, choice := range harness.choices {
-		if choice == "shell" {
-			harness.idx = i
-		}
-	}
-	send(t, m, keyPress("enter"), keyPress("enter"))
-
-	if m.dialog != nil && m.dialog.kind == dlgConfirm {
-		t.Fatal("a harness with no setup should not be offered one")
-	}
-	if !strings.Contains(plainFrame(m), "no setup to run") {
-		t.Fatalf("the window should say why it cannot run:\n%s", plainFrame(m))
+	if len(ds.runs) != 1 || ds.runs[0].Harness != "custom" {
+		t.Fatalf("runs = %v, want the run on the chosen harness", ds.runs)
 	}
 }
 
@@ -619,52 +522,18 @@ func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
 	}
 }
 
-// Choosing a harness that already works makes it the default outright.
-func TestChoosingAWorkingHarnessMakesItTheDefault(t *testing.T) {
+// Choosing a harness makes it the default outright.
+func TestChoosingAHarnessMakesItTheDefault(t *testing.T) {
 	t.Parallel()
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"), keyPress("enter"))
 
-	// Claude is the first candidate and is enabled.
+	// Claude is the first candidate.
 	send(t, m, keyPress("1"))
 
 	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_claude" {
 		t.Fatalf("did = %v, want the chosen harness made default", ds.didHarness)
-	}
-	if len(ds.configured) != 0 {
-		t.Fatalf("configured = %v, want no setup for a harness that already works", ds.configured)
-	}
-}
-
-// Choosing one that has never been set up runs its setup first and makes it the
-// default afterwards — one intent, not two. A setup that left the project still
-// without a default would ask the same question on the next prompt.
-func TestChoosingAnUnconfiguredHarnessSetsItUpThenDefaultsIt(t *testing.T) {
-	t.Parallel()
-	ds := noDefaultSource(t)
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("enter"), keyPress("enter"))
-
-	// Custom is registered and disabled.
-	var chose bool
-	for i, item := range m.dialog.items {
-		if item.label == "Custom" {
-			send(t, m, keyPress(itoa(i+1)))
-			chose = true
-			break
-		}
-	}
-	if !chose {
-		t.Fatalf("Custom should be among the candidates: %v", m.dialog.items)
-	}
-
-	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
-		t.Fatalf("configured = %v, want the chosen harness set up", ds.configured)
-	}
-	finishConfigure(t, m)
-	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_custom" {
-		t.Fatalf("did = %v, want it made default once its setup succeeded", ds.didHarness)
 	}
 }
 
@@ -674,7 +543,7 @@ func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	ds.harnesses = []Harness{{
-		ID: "hc_shell", Name: "Shell", Slug: "shell", State: HarnessEnabled,
+		ID: "hc_shell", Name: "Shell", Slug: "shell",
 		BuiltIn: true, Shell: true,
 	}}
 	m := newTestModel(t, ds)
@@ -723,8 +592,8 @@ func TestAPromptBeforeTheListingLandsIsNotRefused(t *testing.T) {
 	}
 }
 
-// The question interrupted a run, so answering it runs. Choosing a harness that
-// already works sets the default and then submits the prompt that asked.
+// The question interrupted a run, so answering it runs: choosing a harness sets
+// the default and then submits the prompt that asked.
 func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
 	t.Parallel()
 	ds := noDefaultSource(t)
@@ -737,80 +606,6 @@ func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
 	}
 	if got := promptText(ds.runs[0]); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the one that was waiting", got)
-	}
-}
-
-// Same when the chosen harness had to be set up first: the run waits for the
-// setup and the default, then goes.
-func TestSettingUpAChosenDefaultResumesTheRunThatAsked(t *testing.T) {
-	t.Parallel()
-	ds := noDefaultSource(t)
-	m := newTestModel(t, ds)
-	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"), keyPress("enter"))
-
-	for i, item := range m.dialog.items {
-		if item.label == "Custom" {
-			send(t, m, keyPress(itoa(i+1)))
-			break
-		}
-	}
-
-	finishConfigure(t, m)
-	if len(ds.configured) != 1 || len(ds.didHarness) != 1 {
-		t.Fatalf("configured = %v, did = %v, want both before the run", ds.configured, ds.didHarness)
-	}
-	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "fix the reaper" {
-		t.Fatalf("runs = %v, want the interrupted run submitted after the setup", ds.runs)
-	}
-}
-
-// Accepting the offer to set up a harness the run named also resumes it: the
-// run was interrupted the same way and is waiting for the same thing.
-func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource()
-	m := newTestModel(t, ds)
-	harness := m.opts.opts[optHarness]
-	for i, choice := range harness.choices {
-		if choice == "custom" {
-			harness.idx = i
-		}
-	}
-	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"), keyPress("enter"), keyPress("y"))
-
-	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
-		t.Fatalf("configured = %v, want the named harness set up", ds.configured)
-	}
-	finishConfigure(t, m)
-	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "fix the reaper" {
-		t.Fatalf("runs = %v, want the interrupted run submitted after the setup", ds.runs)
-	}
-}
-
-// A setup that fails leaves the run unsubmitted: the harness still cannot carry
-// it, and running anyway would fail at create for the reason just reported.
-func TestAFailedSetupDoesNotResumeTheRun(t *testing.T) {
-	t.Parallel()
-	ds := noDefaultSource(t)
-	ds.configureErr = errors.New("the setup exited before it finished")
-	m := newTestModel(t, ds)
-	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"))
-
-	for i, item := range m.dialog.items {
-		if item.label == "Custom" {
-			send(t, m, keyPress(itoa(i+1)))
-			break
-		}
-	}
-
-	if len(ds.runs) != 0 {
-		t.Fatalf("runs = %v, want nothing run after a setup that failed", ds.runs)
-	}
-	if len(ds.didHarness) != 0 {
-		t.Fatalf("did = %v, want no default set from a setup that failed", ds.didHarness)
 	}
 }
 
@@ -844,70 +639,6 @@ func TestTheTwoScreensReachEachOther(t *testing.T) {
 	}
 }
 
-// The configure terminal owns the keyboard while it is up, even though the
-// screen that opened it is still open behind it.
-//
-// This is the whole of a bug worth a regression test: the screen's keys are
-// commands, and Enter is "reconfigure the harness under the cursor". A key that
-// reached past the pane therefore restarted the very setup that was waiting to
-// be typed at — the harness's banner says "Press Enter to start Claude Code",
-// and pressing it tore the flow down and began another.
-func TestTheConfigureTerminalTakesTheKeysFromTheScreenBehindIt(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress(harnessesKey), keyPress("e"))
-	if m.overlay == nil || m.overlay.configure == nil {
-		t.Fatal("e should open the harness's setup in a pane")
-	}
-	if len(ds.configured) != 1 {
-		t.Fatalf("configured = %v, want one setup started", ds.configured)
-	}
-	if !m.harnessesOpen {
-		t.Fatal("the screen should still be open behind the pane")
-	}
-	term := ds.terminals[len(ds.terminals)-1]
-
-	send(t, m, keyPress("enter"))
-	if len(ds.configured) != 1 {
-		t.Fatalf("configured = %v, want Enter typed at the terminal rather than starting the setup again", ds.configured)
-	}
-	if got := term.typed("\r"); !strings.Contains(got, "\r") {
-		t.Fatalf("the terminal was sent %q, want the Enter that was pressed", got)
-	}
-
-	// And the rest of the screen's letters, which are its other commands.
-	send(t, m, keyPress("d"), keyPress("q"))
-	if len(ds.didHarness) != 0 {
-		t.Fatalf("did = %v, want the screen's letters typed at the terminal instead", ds.didHarness)
-	}
-	if !m.harnessesOpen || m.overlay == nil {
-		t.Fatal("q belongs to the pane; it should not have closed the screen behind it")
-	}
-	if got := term.typed("dq"); !strings.Contains(got, "dq") {
-		t.Fatalf("the terminal was sent %q, want the letters that were typed", got)
-	}
-}
-
-// The key list under a configure terminal is the pane's, not the screen's. It
-// is what tells the user which keys are theirs, and offering the screen's while
-// the pane holds them is how a key that no longer works gets pressed.
-func TestTheKeyListUnderAConfigureTerminalIsThePanes(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := newTestModel(t, ds)
-	send(t, m, keyPress(harnessesKey), keyPress("e"))
-
-	out := plainFrame(m)
-	if strings.Contains(out, "reconfigure") {
-		t.Fatalf("the harnesses key list is still offered under the pane:\n%s", out)
-	}
-	if !strings.Contains(out, m.detachHint()) {
-		t.Fatalf("the pane's own way out is missing:\n%s", out)
-	}
-}
-
 // Every harness is offered, the default leading: a harness names no
 // platform and no image kind, so no pool rules one out (ADR 26-11-01-122).
 func TestHarnessChoicesOfferEveryHarness(t *testing.T) {
@@ -921,101 +652,5 @@ func TestHarnessChoicesOfferEveryHarness(t *testing.T) {
 	want := []string{"codex", "shell", "claude"}
 	if got := m.opts.opts[optHarness].choices; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("choices = %v, want %v", got, want)
-	}
-}
-
-// leaveSetup ends the open configuration pane with the status a configure
-// command leaves with, as the local command running it reports it.
-func leaveSetup(t *testing.T, m *Model, ds *fakeSource, code int) {
-	t.Helper()
-	ds.mu.Lock()
-	term := ds.terminals[len(ds.terminals)-1]
-	ds.mu.Unlock()
-	term.mu.Lock()
-	term.exit = &code
-	term.mu.Unlock()
-	finishConfigure(t, m)
-}
-
-// Leaving setup without signing in, and declining another attempt, is a choice
-// and not a failure: no error is reported, nothing is made the default, the
-// run that was waiting is not made — and since leaving one harness's setup
-// does not answer which harness the project should run, that question comes
-// back, for another harness or for Esc.
-func TestLeavingAChosenDefaultsSetupAsksAgain(t *testing.T) {
-	t.Parallel()
-	ds := noDefaultSource(t)
-	m := newTestModel(t, ds)
-	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"), keyPress("enter"))
-	for i, item := range m.dialog.items {
-		if item.label == "Custom" {
-			send(t, m, keyPress(itoa(i+1)))
-			break
-		}
-	}
-
-	leaveSetup(t, m, ds, harness.ConfigureCanceledExitCode)
-	if len(ds.runs) != 0 || len(ds.didHarness) != 0 {
-		t.Fatalf("runs = %v, did = %v, want neither after a setup that was left", ds.runs, ds.didHarness)
-	}
-	if m.dialog == nil || m.dialog.title != "Which harness should this project run?" {
-		t.Fatalf("dialog = %+v, want the harness question asked again", m.dialog)
-	}
-	if !strings.Contains(m.status, "canceled") || m.statusE {
-		t.Fatalf("status = %q (error %v), want setup reported canceled, not failed", m.status, m.statusE)
-	}
-
-	// Answering it this time runs, as the first answer would have.
-	send(t, m, keyPress("1"))
-	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "fix the reaper" {
-		t.Fatalf("runs = %v, want the run made once the question is answered", ds.runs)
-	}
-}
-
-// A run that named a harness needing setup has nothing to ask again once that
-// setup is left: it says so, plainly, and makes nothing.
-func TestLeavingANamedHarnesssSetupMakesNothing(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource()
-	m := newTestModel(t, ds)
-	choice := m.opts.opts[optHarness]
-	for i, name := range choice.choices {
-		if name == "custom" {
-			choice.idx = i
-		}
-	}
-	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"), keyPress("enter"), keyPress("y"))
-
-	leaveSetup(t, m, ds, harness.ConfigureCanceledExitCode)
-	if len(ds.runs) != 0 {
-		t.Fatalf("runs = %v, want nothing run after a setup that was left", ds.runs)
-	}
-	if frame := plainFrame(m); !strings.Contains(frame, "no discobox was created") || strings.Contains(frame, "exited with code") {
-		t.Fatalf("the window should say nothing was created, without an error:\n%s", frame)
-	}
-}
-
-// Any other status the setup ends with is still the failure it was.
-func TestASetupThatExitsNonZeroIsAFailure(t *testing.T) {
-	t.Parallel()
-	ds := noDefaultSource(t)
-	m := newTestModel(t, ds)
-	send(t, m, typeString("fix the reaper")...)
-	send(t, m, keyPress("enter"), keyPress("enter"))
-	for i, item := range m.dialog.items {
-		if item.label == "Custom" {
-			send(t, m, keyPress(itoa(i+1)))
-			break
-		}
-	}
-
-	leaveSetup(t, m, ds, 1)
-	if len(ds.runs) != 0 || m.dialog != nil {
-		t.Fatalf("runs = %v, dialog = %+v, want the run ended and nothing asked", ds.runs, m.dialog)
-	}
-	if frame := plainFrame(m); !strings.Contains(frame, "exited with code 1") {
-		t.Fatalf("the window should report the failure:\n%s", frame)
 	}
 }

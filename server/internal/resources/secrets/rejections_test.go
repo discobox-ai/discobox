@@ -353,7 +353,7 @@ func TestListSecretRejectionsNamesTheHarnessThatOwnsTheCredential(t *testing.T) 
 	svc, st := newResolveFixture(t)
 
 	cfg := &model.HarnessConfig{
-		ID: "harness-1", ProjectID: "project-1", Name: "Claude Code", Slug: "claude-code", Configured: true,
+		ID: "harness-1", ProjectID: "project-1", Name: "Claude Code", Slug: "claude-code",
 	}
 	if err := st.CreateHarnessConfig(ctx, cfg); err != nil {
 		t.Fatalf("create harness config: %v", err)

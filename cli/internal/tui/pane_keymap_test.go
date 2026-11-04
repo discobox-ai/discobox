@@ -51,7 +51,7 @@ func TestPanesCarryTheWindowsKeymap(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newTestModel(t, newFakeSource(testSandboxes()...))
-			pane := termpane.New(m.paneOptions(paneWorkspace, false)...)
+			pane := termpane.New(m.paneOptions(false)...)
 			pane.SetSize(40, 5)
 			stream := &keymapStream{written: make(chan []byte, 16), closed: make(chan struct{})}
 			pane.Attach(stream)

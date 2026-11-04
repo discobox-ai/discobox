@@ -131,23 +131,31 @@ func TestAnOverrideOfABundlePathSurvivesARefresh(t *testing.T) {
 	wantFiles(t, "overrides", got.FileOverrides, []model.HarnessConfigFile{{Path: ".claude/settings.json", Content: `{"mine":true}`}})
 }
 
-// Configure and deconfigure own ConfiguredFiles, not a person's files.
-func TestDeconfigureKeepsAPersonsFiles(t *testing.T) {
+// A plain reset takes back what boxes saved, not a person's files; asked to,
+// it clears those too, to an empty set rather than nil, which would read as
+// a config not yet split (ADR 26-11-04-028 §1).
+func TestResetKeepsAPersonsFilesUnlessAsked(t *testing.T) {
 	ctx := context.Background()
 	svc, _, config := seededClaude(t)
 	config = setOverrides(t, svc, config, apimodel.HarnessConfigFile{Path: ".config/x.txt", Content: "mine"})
-	config.Configured = true
-	config.ConfigCommand = []string{"/configure"}
-	config.ConfiguredFiles = []model.HarnessConfigFile{{Path: ".claude/settings.json", Content: `{"configured":true}`}}
+	config.ConfiguredFiles = []model.HarnessConfigFile{{Path: ".claude/settings.json", Content: `{"saved":true}`}}
 	if err := svc.store.UpdateHarnessConfig(ctx, config); err != nil {
 		t.Fatal(err)
 	}
-	got, err := svc.DeconfigureHarnessConfig(ctx, "project-1", config.ID)
+	got, err := svc.ResetHarnessConfig(ctx, "project-1", config.ID, false)
 	if err != nil {
-		t.Fatalf("deconfigure: %v", err)
+		t.Fatalf("reset: %v", err)
 	}
-	wantFiles(t, "configured files", got.ConfiguredFiles, nil)
+	wantFiles(t, "saved files", got.ConfiguredFiles, nil)
 	wantFiles(t, "overrides", got.FileOverrides, []model.HarnessConfigFile{{Path: ".config/x.txt", Content: "mine"}})
+
+	got, err = svc.ResetHarnessConfig(ctx, "project-1", config.ID, true)
+	if err != nil {
+		t.Fatalf("reset including overrides: %v", err)
+	}
+	if got.FileOverrides == nil || len(got.FileOverrides) != 0 {
+		t.Fatalf("overrides = %#v, want an empty, split set", got.FileOverrides)
+	}
 }
 
 // A config from before the set existed keeps a person's files in Files. The
@@ -321,10 +329,10 @@ func TestCreateTakesAPersonsFilesAsItsFirstOverrides(t *testing.T) {
 	wantFiles(t, "overrides", config.FileOverrides, []model.HarnessConfigFile{{Path: ".acme", Content: "mine", CreateOnly: true}})
 }
 
-// A save-back of a path a person overrode lands in the override, which is
-// what a sandbox is given there; any other path patches the configure flow's
-// set (ADR 26-11-04-028 §5).
-func TestCaptureSavesAnOverriddenPathToTheOverride(t *testing.T) {
+// A save never writes a person's file (ADR 26-11-04-028 §5): a path a person
+// overrode is saved to the saved set beneath the override, where a plain reset
+// can take it back, and the override is left as the person wrote it.
+func TestCaptureSavesAnOverriddenPathBeneathTheOverride(t *testing.T) {
 	s, cfg, c := captureFixture(t)
 	ctx := context.Background()
 	cfg.ConfiguredFiles = []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"model":"configured"}`}}
@@ -348,19 +356,27 @@ func TestCaptureSavesAnOverriddenPathToTheOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantFiles(t, "overrides", stored.FileOverrides, []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"model":"local"}`}})
-	wantFiles(t, "configured files", stored.ConfiguredFiles, []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"model":"configured"}`}})
+	wantFiles(t, "overrides", stored.FileOverrides, []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"model":"mine"}`}})
+	wantFiles(t, "saved files", stored.ConfiguredFiles, []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"model":"local"}`}})
+
+	reset, err := s.ResetHarnessConfig(ctx, cfg.ProjectID, cfg.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFiles(t, "saved files after reset", reset.ConfiguredFiles, nil)
+	wantFiles(t, "overrides after reset", reset.FileOverrides, []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"model":"mine"}`}})
 }
 
-// Removing an overridden path in a preview falls back to the configure flow's
-// file beneath it, not the bundle's.
-func TestFileBeneathAnOverrideIsTheConfiguredFile(t *testing.T) {
+// A removal in a preview falls back to what a box is given once the saved
+// file is gone: a person's override, which a save never touches, else the
+// bundle's file.
+func TestFileBeneathASavedFileIsTheOverrideElseTheBundles(t *testing.T) {
 	cfg := &model.HarnessConfig{
 		Files:           []model.HarnessConfigFile{{Path: "a", Content: "bundle"}, {Path: "b", Content: "bundle-b"}},
-		ConfiguredFiles: []model.HarnessConfigFile{{Path: "a", Content: "configured"}},
-		FileOverrides:   []model.HarnessConfigFile{{Path: "a", Content: "mine"}, {Path: "c", Content: "mine-c"}},
+		ConfiguredFiles: []model.HarnessConfigFile{{Path: "a", Content: "configured"}, {Path: "b", Content: "saved-b"}},
+		FileOverrides:   []model.HarnessConfigFile{{Path: "a", Content: "mine"}},
 	}
-	for path, want := range map[string]string{"a": "configured", "b": "bundle-b", "c": ""} {
+	for path, want := range map[string]string{"a": "mine", "b": "bundle-b", "c": ""} {
 		got, ok := fileBeneath(cfg, path)
 		if want == "" {
 			if ok {

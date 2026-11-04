@@ -171,16 +171,18 @@ type ExportInput struct {
 }
 
 // FileChange is one file a candidate writes or removes. A sandbox never sends
-// Previous, nor File on a removal. On a preview the control plane serves,
-// both are set from its stored configuration so a reviewer sees what a save
-// changes, not only what it writes: Previous is the file the save replaces,
-// and a removal's File is the bundle's own file it falls back to. Neither is
-// ever applied.
+// Previous, Shadowed, nor File on a removal. On a preview the control plane
+// serves, they are set from its stored configuration so a reviewer sees what
+// a save changes, not only what it writes: Previous is the file a box is given
+// at the path now, a removal's File is what it falls back to, and Shadowed
+// says a person's override holds the path, so a save keeps the change beneath
+// it and boxes go on being given the override. None of them is ever applied.
 type FileChange struct {
 	Path     string `json:"path"`
 	Remove   bool   `json:"remove,omitempty"`
 	File     *File  `json:"file,omitempty"`
 	Previous *File  `json:"previous,omitempty"`
+	Shadowed bool   `json:"shadowed,omitempty"`
 }
 
 // Candidate is immutable and private. Its ID is random, not a public hash of

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -343,11 +342,6 @@ func (s *Service) ListSecretRejections(ctx context.Context, projectID string) ([
 // has to gain a scope when its image does, not when somebody next signs in.
 // A variable the harness does not declare, and a sandbox with no harness
 // config, have none — which is every request, as before.
-//
-// A configure sandbox is handed the stored login under the variable's name
-// behind harness.ConfigurePreviousEnvPrefix, and runs the same CLI against the
-// same endpoints with it, so that name answers to the declaration too:
-// reconfiguring a live login must not report it dead.
 func (s *Service) reportScope(ctx context.Context, sandbox *model.Sandbox, envName string) ([]model.HarnessSecretRejectionRule, error) {
 	if sandbox.HarnessConfigID == nil || strings.TrimSpace(*sandbox.HarnessConfigID) == "" {
 		return nil, nil
@@ -359,7 +353,6 @@ func (s *Service) reportScope(ctx context.Context, sandbox *model.Sandbox, envNa
 		}
 		return nil, err
 	}
-	envName = strings.TrimPrefix(envName, harness.ConfigurePreviousEnvPrefix)
 	for _, declared := range config.Secrets {
 		if declared.Name == envName {
 			return declared.RejectionScope, nil

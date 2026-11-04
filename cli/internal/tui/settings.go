@@ -140,15 +140,12 @@ func settingsDialog(box Sandbox, was BoxSettings, harnesses []Harness) *dialog {
 	return d
 }
 
-// harnessChoices is every enabled harness on the box's server, and the box's
-// own harness whatever state it is in, so the row opens on what the box has.
+// harnessChoices is every harness on the box's server, so the row opens on
+// what the box has.
 func harnessChoices(current string, box Sandbox, harnesses []Harness) []choice {
 	var choices []choice
 	found := false
 	for _, h := range harnesses {
-		if h.ID != current && h.State != HarnessEnabled {
-			continue
-		}
 		found = found || h.ID == current
 		label := h.flagName()
 		hint := h.Name

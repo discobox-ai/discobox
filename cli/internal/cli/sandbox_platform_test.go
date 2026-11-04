@@ -32,7 +32,7 @@ func placementServer(t *testing.T, posted *map[string]any) *httptest.Server {
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
-			_, _ = w.Write([]byte(`{"id":"project-1","name":"p","defaultPoolId":"pool_default","default":true,"ownerUserId":"user-1","welcomed":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"project-1","name":"p","defaultPoolId":"pool_default","default":true,"ownerUserId":"user-1","welcomed":true,"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/pools":
 			_, _ = w.Write([]byte(`{"pools":[` + linux + `,` + windows + `]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/pools/pool_default":

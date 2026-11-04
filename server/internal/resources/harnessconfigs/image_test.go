@@ -199,65 +199,6 @@ func TestParseImageMetadataRejectsUnknownVolumeKind(t *testing.T) {
 	}
 }
 
-// A configure port is forwarded at its own number or not at all, so a number
-// no listener can hold, or one declared twice, is a broken image.
-func TestParseImageMetadataRejectsBadConfigPorts(t *testing.T) {
-	for name, ports := range map[string][]harness.ConfigPort{
-		"zero":                {{Port: 0}},
-		"too high":            {{Port: 65536}},
-		"duplicate":           {{Port: 1455}, {Port: 1455, Unavailable: "a second opinion"}},
-		"ephemeral with port": {{Port: 1455, Ephemeral: true}},
-		"two ephemeral":       {{Ephemeral: true}, {Ephemeral: true, Unavailable: "a second opinion"}},
-	} {
-		label, err := json.Marshal(harness.ImageMetadata{Harness: &harness.Image{
-			ID: "codex", Name: "Codex", RunCommand: []string{"codex"},
-			Config: &harness.ImageMode{Command: []string{"configure"}, Ports: ports},
-		}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err == nil {
-			t.Fatalf("%s config port was accepted", name)
-		}
-	}
-}
-
-// An ephemeral entry beside a fixed one is a valid declaration.
-func TestParseImageMetadataAcceptsAnEphemeralConfigPort(t *testing.T) {
-	label, err := json.Marshal(harness.ImageMetadata{Harness: &harness.Image{
-		ID: "copilot", Name: "Copilot", RunCommand: []string{"copilot"},
-		Config: &harness.ImageMode{Command: []string{"configure"}, Ports: []harness.ConfigPort{
-			{Port: 1455}, {Ephemeral: true, Unavailable: "use a device code"},
-		}},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := parseBundle("sha256:abc", bundleLabels(string(label))); err != nil {
-		t.Fatalf("ephemeral config port was refused: %v", err)
-	}
-}
-
-// What the label declares for config mode lands on the config as declared,
-// message included, and is cleared again by an image that no longer declares it.
-func TestSnapshotImageMetadataCarriesConfigPorts(t *testing.T) {
-	config := &model.HarnessConfig{Slug: "codex"}
-	snapshotImageMetadata(config, imageMetadata{ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{
-		ID: "codex", Name: "Codex",
-		Config: &harness.ImageMode{
-			Command: []string{"configure"}, Reminder: " sign in ",
-			Ports: []harness.ConfigPort{{Port: 1455, Unavailable: "use a device code"}},
-		},
-	}}})
-	if config.ConfigReminder != "sign in" || len(config.ConfigPorts) != 1 || config.ConfigPorts[0] != (harness.ConfigPort{Port: 1455, Unavailable: "use a device code"}) {
-		t.Fatalf("config mode snapshot = %q %#v", config.ConfigReminder, config.ConfigPorts)
-	}
-	snapshotImageMetadata(config, imageMetadata{ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{ID: "codex", Name: "Codex"}}})
-	if config.ConfigCommand != nil || config.ConfigReminder != "" || config.ConfigPorts != nil {
-		t.Fatalf("config mode survived an image that declares none: %q %q %#v", config.ConfigCommand, config.ConfigReminder, config.ConfigPorts)
-	}
-}
-
 // Every included image.json must be metadata this server accepts, merged the
 // way the built image will carry it: the base image's layer, then the harness's
 // own. The build compacts these files straight into their labels, and a

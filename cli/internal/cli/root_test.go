@@ -583,7 +583,7 @@ func TestHarnessSetDefaultCommand(t *testing.T) {
 			// unrecognized value like a full ID falls through unchanged.
 			_, _ = w.Write([]byte(`{"harnessConfigs":[]}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/default":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"welcomed":true,"defaultHarnessConfigId":"` + harnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"welcomed":true,"harnessChangesExplained":true,"defaultHarnessConfigId":"` + harnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		default:
 			t.Fatalf("request = %s %s, want list then PUT set-default path", r.Method, r.URL.Path)
 		}
@@ -803,11 +803,11 @@ func TestHarnessListShowsProjectDefault(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
 			_, _ = w.Write([]byte(`{"harnessConfigs":[` +
-				`{"id":"harness-other-full-id","projectId":"project-1","slug":"other","name":"Other","builtIn":false,"configured":false,"runCommand":["other"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
-				`{"id":"` + defaultHarnessID + `","projectId":"project-1","slug":"codex","name":"Codex","builtIn":true,"configured":true,"runCommand":["codex"],"createdAt":"2026-01-01T00:01:00Z","updatedAt":"2026-01-01T00:01:00Z"}` +
+				`{"id":"harness-other-full-id","projectId":"project-1","slug":"other","name":"Other","builtIn":false,"runCommand":["other"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
+				`{"id":"` + defaultHarnessID + `","projectId":"project-1","slug":"codex","name":"Codex","builtIn":true,"runCommand":["codex"],"createdAt":"2026-01-01T00:01:00Z","updatedAt":"2026-01-01T00:01:00Z"}` +
 				`]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"welcomed":true,"defaultHarnessConfigId":"` + defaultHarnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"welcomed":true,"harnessChangesExplained":true,"defaultHarnessConfigId":"` + defaultHarnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -910,7 +910,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 		}
 		gotFiles = body.Files
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"configured":false,"runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -963,7 +963,7 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 		}
 		gotFiles = body.Files
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"configured":false,"runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -998,7 +998,7 @@ func TestHarnessCreateAndUpdateSendTheBundle(t *testing.T) {
 			return
 		}
 		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID {
-			_, _ = w.Write([]byte(`{"id":"` + harnessID + `","revision":3,"projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"configured":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"` + harnessID + `","revision":3,"projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 			return
 		}
 		var body map[string]any
@@ -1013,7 +1013,7 @@ func TestHarnessCreateAndUpdateSendTheBundle(t *testing.T) {
 		default:
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"configured":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 

@@ -33,10 +33,6 @@ type imageManifest struct {
 		Secrets         []any          `json:"secrets"`
 		RunCommand      []string       `json:"runCommand"`
 		RelaunchCommand []string       `json:"relaunchCommand"`
-		Config          struct {
-			Ports   []harness.ConfigPort `json:"ports"`
-			Command []string             `json:"command"`
-		} `json:"config"`
 	} `json:"harness"`
 }
 
@@ -60,47 +56,6 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(raw)
-}
-
-func TestDefinitionConfigure(t *testing.T) {
-	script := readFile(t, "configure.sh") + readFile(t, "omp-normalize.cjs") + readFile(t, "image.json")
-	for _, required := range []string{
-		harness.ConfigureOutputPath,
-		harness.ConfigurePreviousConfigPath,
-		// Reuse goes through the PREV_ sentinel and comes back as usePrevious,
-		// so no credential is read or re-emitted when the existing one is kept.
-		`process.env['PREV_' + name]`,
-		"usePrevious",
-		// The credentials template is JSON, so a quote inside a template action
-		// arrives at the renderer backslash-escaped and the parser rejects it.
-		"$secret: envName",
-		// Every retry is a person asking for one.
-		"confirm_retry",
-	} {
-		if !strings.Contains(script, required) {
-			t.Errorf("configure script is missing %q", required)
-		}
-	}
-	if strings.Contains(script, "index .secrets") {
-		t.Fatal("configure script quotes a key inside a template action, which cannot survive JSON encoding")
-	}
-	loopStart := strings.Index(script, "while :; do")
-	if loopStart < 0 {
-		t.Fatal("configure script has no configuration loop")
-	}
-	loop := script[loopStart:]
-	if loopEnd := strings.Index(loop, "\ndone\n"); loopEnd >= 0 {
-		loop = loop[:loopEnd]
-	}
-	// Split on `continue`: every segment but the last is the code leading up to
-	// one, and each has to have asked before taking it. An attempt that fails
-	// without reaching the user fails again the instant it is retried.
-	segments := strings.Split(loop, "continue")
-	for _, leadingUpToAContinue := range segments[:len(segments)-1] {
-		if !strings.Contains(leadingUpToAContinue, "confirm_retry") {
-			t.Fatal("configure script's loop continues without confirm_retry, so it can spin")
-		}
-	}
 }
 
 // TestImageManifest pins the half of the contract the image owns
@@ -135,18 +90,6 @@ func TestImageManifest(t *testing.T) {
 	if len(image.Harness.RunCommand) != 0 || len(image.Harness.RelaunchCommand) != 0 {
 		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
 			image.Harness.RunCommand, image.Harness.RelaunchCommand)
-	}
-	// Browser sign-ins end at fixed localhost ports, which only a forward from
-	// the user's machine can reach; each says what to do when it cannot be.
-	var ports []int
-	for _, port := range image.Harness.Config.Ports {
-		ports = append(ports, port.Port)
-		if port.Unavailable == "" {
-			t.Errorf("port %d says nothing when it cannot be forwarded", port.Port)
-		}
-	}
-	if !slices.Equal(ports, []int{1455, 54545, 8085, 51121, 54549}) {
-		t.Fatalf("config ports = %v", ports)
 	}
 }
 
@@ -214,7 +157,6 @@ func TestImagePolicy(t *testing.T) {
 		"discobox.yml": overlayPath,
 		"proxy-env.sh": "/etc/profile.d/omp-proxy.sh",
 		"launch.sh":    "/usr/local/bin/" + harness.RunCommand,
-		"configure.sh": image.Harness.Config.Command[0],
 		"agent.conf":   "/usr/local/libexec/discobox/agent.conf",
 	} {
 		if got := feature.Installs(source); got != want {
@@ -350,7 +292,7 @@ func TestPIProxyFollowsHTTPSProxy(t *testing.T) {
 			}
 		})
 	}
-	for _, script := range []string{"launch.sh", "configure.sh"} {
+	for _, script := range []string{"launch.sh"} {
 		if !strings.Contains(readFile(t, script), ". /etc/profile.d/omp-proxy.sh") {
 			t.Errorf("%s does not set PI_PROXY", script)
 		}

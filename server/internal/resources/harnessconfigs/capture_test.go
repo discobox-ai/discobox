@@ -282,8 +282,8 @@ func TestCaptureTemplateRequiresBoundOrNewCredential(t *testing.T) {
 }
 
 // A preview's before is what the server stores, not anything the sandbox says:
-// the configured file over the bundle's, and a removal's after is the
-// bundle's own file it falls back to.
+// the saved file over the bundle's, and a removal's after is the bundle's own
+// file it falls back to.
 func TestCapturePreviewIsDescribedFromStoredConfig(t *testing.T) {
 	s, cfg, _ := captureFixture(t)
 	ctx := context.Background()
@@ -323,6 +323,31 @@ func TestCapturePreviewIsDescribedFromStoredConfig(t *testing.T) {
 		if got := content(tc.change.File); got != tc.result {
 			t.Errorf("%s file = %s, want %s", tc.change.Path, got, tc.result)
 		}
+	}
+}
+
+// At a path a person overrode, a save is kept beneath the override and boxes
+// go on being given it, so the preview says the change is shadowed, from the
+// stored overrides and never from the sandbox (ADR 26-11-04-028 §5).
+func TestCapturePreviewMarksAChangeAnOverrideShadows(t *testing.T) {
+	s, cfg, _ := captureFixture(t)
+	ctx := context.Background()
+	cfg.FileOverrides = []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"theme":"mine"}`}}
+	if err := s.store.UpdateHarnessConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	p := harnesscapture.Preview{Files: []harnesscapture.FileChange{
+		{Path: "~/.fixture", File: &harnesscapture.File{Path: "~/.fixture", Content: `{"theme":"hook"}`}},
+		{Path: "~/.new", File: &harnesscapture.File{Path: "~/.new", Content: `{}`}, Shadowed: true},
+	}}
+	if err := s.describeCapturePreview(ctx, cfg.ProjectID, "sbx-capture", &p); err != nil {
+		t.Fatal(err)
+	}
+	if !p.Files[0].Shadowed || p.Files[0].Previous == nil || p.Files[0].Previous.Content != `{"theme":"mine"}` {
+		t.Fatalf("overridden change = %+v, want it shadowed with the override as what boxes are given", p.Files[0])
+	}
+	if p.Files[1].Shadowed {
+		t.Fatal("a path nobody overrode is shadowed because the sandbox said so")
 	}
 }
 

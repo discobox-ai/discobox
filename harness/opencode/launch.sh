@@ -33,7 +33,7 @@ if ! /usr/local/libexec/discobox/opencode-credentials sync; then
 fi
 
 # Web search is Discobox's setting (.config/discobox/opencode-harness.json),
-# answered during configure. opencode 2 searches the web with every provider
+# edited in the sandbox and saved as a harness change like opencode's own. opencode 2 searches the web with every provider
 # by default, so only "off" needs saying, and a permission rule denying the
 # tool is what removes it from what the model is offered.
 SETTINGS="$HOME/.config/discobox/opencode-harness.json"
@@ -52,6 +52,5 @@ fi
 # exists to be written to — the same baseline the claude-code and codex images
 # set. A flag rather than configuration: opencode's system layer
 # (/etc/opencode) is its *managed* configuration, which outranks a project's own
-# rules, and the user's global config is replaced by the configure flow's
-# capture.
+# rules, and the user's global config is replaced by a saved harness change.
 exec opencode --standalone --auto "$@"

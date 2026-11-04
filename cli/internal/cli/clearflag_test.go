@@ -113,8 +113,8 @@ func TestHarnessUpdateRefusesARemovalItCannotMake(t *testing.T) {
 }
 
 // harnesses get lists each path once with the set it comes from, the one an
-// override hides, and a configured path escaped: a configure command inside a
-// discobox wrote it.
+// override hides, and a saved path escaped: a discobox's saved harness change
+// wrote it.
 func TestWriteHarnessListsEachFileWithItsSource(t *testing.T) {
 	cfg := updateTestConfig()
 	cfg.FileOverrides = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{
@@ -142,7 +142,7 @@ func TestWriteHarnessListsEachFileWithItsSource(t *testing.T) {
 		}
 	}
 	want := []string{
-		".claude/settings.json yours (over configure) no",
+		".claude/settings.json yours (over saved) no",
 		".config/x.txt yours no",
 		".claude.json bundle yes",
 	}

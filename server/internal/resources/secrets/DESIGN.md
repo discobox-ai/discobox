@@ -315,7 +315,7 @@ The value goes in and never comes back. `SecretValue` is a request shape only:
 the token, and for an OAuth credential the refresh token, token URL, client id,
 client secret, scopes, subscription type and access-token expiry. That is enough to register
 one by hand — a credential captured somewhere else, or rotated outside a
-configure flow — rather than only through a harness's login.
+harness — rather than only through a harness's saved login.
 
 What comes back is `Secret.oauth`: where it renews, whose client it is, what the
 grant may do, which plan it belongs to, when the access token goes stale, and
@@ -490,8 +490,8 @@ discobox that hit the failure, and a credential fixed upstream would otherwise
 keep a band nobody can dismiss.
 
 Replacing a value clears the rejections on it in `store.UpdateSecret`, which is
-the one point every writer passes through — the secrets service and the harness
-configure flow's update-in-place both — and the test is against what is stored
+the one point every writer passes through — the secrets service and a saved
+harness change's update-in-place both — and the test is against what is stored
 rather than the shape of what arrived, so it holds with an encryption provider and without
 one. The harness that owns a credential is derived at read time from
 `ConfiguredSecretIDs` and the config's bindings rather than stored, because
@@ -520,8 +520,8 @@ from the real thing.
 A `Format` nobody set is the value's shape, and the store keeps it so: it is
 re-read on every write of the secret (`sealSecretForWrite`), the OAuth refresh's
 value-only write included (`UpdateSecretValueIfUnchanged`), for every writer
-and every type — an OAuth secret's access token is in `Token` — so the harness
-configure flow's raw rows carry one too. `Store.RefreshSecretFormats` runs at
+and every type — an OAuth secret's access token is in `Token` — so a saved
+harness login's rows carry one too. `Store.RefreshSecretFormats` runs at
 startup as the upgrade path: it re-reads every such row, so a shape stored under
 an older provider table (`sk-ant-{alnum:5}-` before the kind marker was kept) is
 corrected without anybody replacing the value. A person may set a format instead

@@ -2,8 +2,8 @@
 # opencode-credentials: puts the credentials the harness configuration delivers
 # into opencode's own store (ADR 26-10-15-848 §3, §4).
 #
-# opencode 2 keeps credentials as rows in its SQLite database, which the
-# configure flow cannot deliver as a file. What it delivers instead is
+# opencode 2 keeps credentials as rows in its SQLite database, which a harness
+# config cannot deliver as a file. What it delivers instead is
 # opencode's own interchange format — `opencode auth export` output, with each
 # provider's sentinel in place of its secret — as a resolved credential document,
 # and this script imports it through `opencode auth import`, opencode's
@@ -14,14 +14,6 @@
 #       before every launch, because the harness file is rewritten whenever a
 #       terminal launches the harness and import never updates a credential it
 #       already has.
-#   opencode-credentials delivered [HOME]
-#       Print the import entries the configuration delivered into HOME (this
-#       user's when omitted): the export when there is one, else what a
-#       configuration made under ADR 0127 — opencode 1's auth.json — becomes.
-#       Configure reads a previous run's files through it.
-#   opencode-credentials own
-#       Read [{integrationID, value}] on stdin and print them as the image's
-#       own import entries.
 #
 # The credentials the image delivers carry fixed ids, cred_discobox_<provider>,
 # so they are told apart from a credential the user connected by hand inside a
@@ -193,10 +185,8 @@ sync() {
 
 case ${1-} in
 sync) sync ;;
-delivered) delivered "${2-}" ;;
-own) own ;;
 *)
-	printf '%s\n' "usage: opencode-credentials sync | delivered [HOME] | own" >&2
+	printf '%s\n' "usage: opencode-credentials sync" >&2
 	exit 2
 	;;
 esac

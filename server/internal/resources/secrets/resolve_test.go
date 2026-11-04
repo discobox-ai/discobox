@@ -343,31 +343,7 @@ func TestResolveSandboxSecretCarriesTheHarnessRejectionScope(t *testing.T) {
 	if res := resolve("sb-1", "SENTINEL-S"); !reflect.DeepEqual(res.ReportScope, scope) {
 		t.Fatalf("report scope = %#v, want the one the harness now declares for FOO", res.ReportScope)
 	}
-	// A configure sandbox holds the stored login under the prefixed name, and
-	// runs the same CLI with it.
-	prev, err := st.ResolveSandboxBindings(ctx, mustGetSandbox(t, st, "sb-1"), time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	applied, _ := prev.UseFor("FOO")
-	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-1", SecretID: sec.ID, EnvName: "PREV_FOO", Sentinel: "SENTINEL-P", BindingID: applied.Binding.ID,
-	}); err != nil {
-		t.Fatalf("create assignment: %v", err)
-	}
-	if res := resolve("sb-1", "SENTINEL-P"); !reflect.DeepEqual(res.ReportScope, scope) {
-		t.Fatalf("report scope = %#v, want FOO's for the previous credential a configure run is handed", res.ReportScope)
-	}
 	if res := resolve("sb-bare", "SENTINEL-B"); res.ReportScope != nil {
 		t.Fatalf("report scope = %#v, want none for a sandbox with no harness config", res.ReportScope)
 	}
-}
-
-func mustGetSandbox(t *testing.T, st *store.Store, sandboxID string) *model.Sandbox {
-	t.Helper()
-	sandbox, err := st.GetSandbox(context.Background(), "project-1", sandboxID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sandbox
 }

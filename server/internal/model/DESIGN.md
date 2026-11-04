@@ -18,8 +18,8 @@ completion timestamp and require no backfill (ADR 26-10-23-948).
 | `Project` | Group for sandboxes, provider configuration, harness configuration, and pools. Carries the `default` project flag, default pool/harness config, archive retention, sandbox upgrade policy, and its egress level (ADR 26-10-01-032). |
 | `ProjectMember` | Grants a user a role on a project. |
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
-| `Sandbox` | Main managed runtime/session resource. Belongs to a project and pool; embeds its spec as `SandboxManifest` (harness config, `harnessMode`, image, source, user, and the skills it was created with, content and all; reads return only their names, from `SkillNames` beside the manifest, which the insert writes and listings read instead of loading the skills; and `SkillsSources`, the directories of its skills sources in the order a later one wins in, each naming a `SourceCodeReferences` key whose `GitSource.Purpose` is `skills`, a list because the references are a map, ADR 26-10-14-294; and `Features`, the repository's features as its client read them from `.discobox/settings.json`, each on or off, carried into the bootstrap so the box provisions every one not turned off, omitted when empty so no older sandbox's fingerprint moves, ADR 26-10-16-423 §§4, 11) and carries its platform (its pool's, set when it is placed, immutable, outside the manifest so it moves no fingerprint), observed runtime state, agent status, resources, its own egress level (outside the manifest, so a change rebuilds nothing; ADR 26-10-01-032), and `DiscoboxAPI`, whether it may call the discobox API (ADR 26-10-27-880 §9). |
-| `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. Records its bundle and the manifest composed from it — never a platform or an image kind, which are its pool's (ADR 26-11-01-122) — the egress hosts the bundle declares, and the egress level a person set (ADR 26-10-01-032). The included harnesses are seeded as `builtIn` configs; a config is selectable only once `configured`. |
+| `Sandbox` | Main managed runtime/session resource. Belongs to a project and pool; embeds its spec as `SandboxManifest` (harness config, image, source, user, and the skills it was created with, content and all; reads return only their names, from `SkillNames` beside the manifest, which the insert writes and listings read instead of loading the skills; and `SkillsSources`, the directories of its skills sources in the order a later one wins in, each naming a `SourceCodeReferences` key whose `GitSource.Purpose` is `skills`, a list because the references are a map, ADR 26-10-14-294; and `Features`, the repository's features as its client read them from `.discobox/settings.json`, each on or off, carried into the bootstrap so the box provisions every one not turned off, omitted when empty so no older sandbox's fingerprint moves, ADR 26-10-16-423 §§4, 11) and carries its platform (its pool's, set when it is placed, immutable, outside the manifest so it moves no fingerprint), observed runtime state, agent status, resources, its own egress level (outside the manifest, so a change rebuilds nothing; ADR 26-10-01-032), and `DiscoboxAPI`, whether it may call the discobox API (ADR 26-10-27-880 §9). |
+| `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. Records its bundle and the manifest composed from it — never a platform or an image kind, which are its pool's (ADR 26-11-01-122) — the egress hosts the bundle declares, and the egress level a person set (ADR 26-10-01-032). The included harnesses are seeded as `builtIn` configs; every config can run (ADR 26-11-02-152 §1), and what discoboxes save back to it overlays its bundle's defaults (`configuredFiles`, `configuredSecretIds`). |
 | `SandboxProviderInstance` | Project-scoped backend identity: provider type, credentials, and connection config. Capacity and sharing policy live on `Pool`. |
 | `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Embeds its spec as `PoolManifest` (name, immutable provider instance, and the pool's size: CPU, memory, storage); carries the runtime lifecycle, the one platform its agent declares it hosts, agent identity and public key, `ready`/`schedulable`/`degraded` flags, reported capacity, image staging, resources, heartbeat, and its egress level (ADR 26-10-01-032). Sandboxes in one pool share a cache, the pool's CPU and memory, and a kernel/host. |
 | `SandboxAccessIssuerKey` | Per-project, per-user issuer key used by the control plane to sign sandbox access tokens. `ProjectUserKey` is a type alias for it. |
@@ -114,7 +114,10 @@ Helpers: `SetState`, `RecordIntent`, `IncrementGeneration`, `Converged`,
 Specs are embedded anonymously and stay flat (ADR 0017 §11): `SandboxManifest`
 holds exactly the fields whose change requires a container rebuild, and
 `SandboxManifest.Fingerprint()` is the drift check; `PoolManifest` holds the
-pool host spec.
+pool host spec. The fingerprint still hashes the retired harness mode, `run`,
+at its old position (`fingerprintedManifest`): it is recorded on containers
+that outlive the field, and dropping it from the hash would rebuild every one
+(ADR 26-11-02-152 §2).
 
 A sandbox's power state is a separate axis (ADR 0034): `runtimeState`
 (`starting`/`running`/`stopping`/`stopped`/`suspended`, empty = not observed) is written
@@ -203,10 +206,8 @@ erDiagram
         string slug
         string name
         bool built_in
-        bool configured
-        string image
-        string image_digest
-        json platforms
+        string bundle
+        string bundle_digest
         string run_command
         string relaunch_command
         json files

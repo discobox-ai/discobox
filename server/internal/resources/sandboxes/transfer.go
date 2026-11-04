@@ -389,20 +389,12 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	// into the bytes that were just restored, and the server's own rule would
 	// contradict them (ADR 0123 §4).
 
-	// Every refusal that is left happens here, before the upload. A destination
-	// harness with a required secret nobody has bound is an ordinary condition,
-	// not a corrupt archive, and answering it after a multi-gigabyte upload --
-	// which in a transfer has already stopped the source -- would make the user
-	// pay the whole transfer again for it. Only the write is left below.
+	// Every refusal that is left happens here, before the upload: answering
+	// one after a multi-gigabyte upload -- which in a transfer has already
+	// stopped the source -- would make the user pay the whole transfer again
+	// for it. Only the write is left below.
 	bindings, warnings, err := s.importSecretBindings(ctx, projectID, sb, spec.Secrets)
 	if err != nil {
-		return nil, err
-	}
-	own := make(map[string]struct{}, len(bindings))
-	for _, binding := range bindings {
-		own[binding.EnvName] = struct{}{}
-	}
-	if err := checkRequiredSecrets(ctx, s.store, sb, harnessConfig.ID, own); err != nil {
 		return nil, err
 	}
 
@@ -470,14 +462,10 @@ func (s *Service) importHarnessConfig(ctx context.Context, projectID string, har
 	}
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("this project has no harness %s; configure it here first, or name another with --harness", wanted))
+			fmt.Sprintf("this project has no harness %s; register it here first, or name another with --harness", wanted))
 	}
 	if err != nil {
 		return nil, err
-	}
-	if !config.Configured {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("harness %q is not configured; run `discobox admin harness configure %s` first", config.Slug, config.Slug))
 	}
 	return config, nil
 }

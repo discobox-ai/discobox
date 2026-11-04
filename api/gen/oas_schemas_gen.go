@@ -234,11 +234,6 @@ func (s *AssignSandboxHarnessSecretsBody) SetHarnessConfigId(val string) {
 	s.HarnessConfigId = val
 }
 
-// AttachHarnessConfigConfigureNoContent is response for AttachHarnessConfigConfigure operation.
-type AttachHarnessConfigConfigureNoContent struct{}
-
-func (*AttachHarnessConfigConfigureNoContent) attachHarnessConfigConfigureRes() {}
-
 type AttachSandboxExecOnceOK struct {
 	Data io.Reader
 }
@@ -2482,11 +2477,8 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 func (*ErrorModelStatusCode) approveSecretRequestRes()                  {}
 func (*ErrorModelStatusCode) approveTrustRequestRes()                   {}
 func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()           {}
-func (*ErrorModelStatusCode) attachHarnessConfigConfigureRes()          {}
 func (*ErrorModelStatusCode) clearPoolCacheRes()                        {}
-func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()          {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()             {}
-func (*ErrorModelStatusCode) configureHarnessConfigRes()                {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()                   {}
 func (*ErrorModelStatusCode) createPeerRes()                            {}
 func (*ErrorModelStatusCode) createPoolRes()                            {}
@@ -2499,7 +2491,6 @@ func (*ErrorModelStatusCode) createSandboxRes()                         {}
 func (*ErrorModelStatusCode) createSandboxTrustRequestRes()             {}
 func (*ErrorModelStatusCode) createSecretBindingRes()                   {}
 func (*ErrorModelStatusCode) createSecretRes()                          {}
-func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigRes()                   {}
 func (*ErrorModelStatusCode) deletePeerRes()                            {}
 func (*ErrorModelStatusCode) deletePoolRes()                            {}
@@ -2577,6 +2568,7 @@ func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()               {}
 func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()              {}
 func (*ErrorModelStatusCode) reportSandboxInventoriesRes()              {}
 func (*ErrorModelStatusCode) reportSandboxSecretRejectionRes()          {}
+func (*ErrorModelStatusCode) resetHarnessConfigRes()                    {}
 func (*ErrorModelStatusCode) resolveGatewayHeadersRes()                 {}
 func (*ErrorModelStatusCode) resolvePoolAssetRes()                      {}
 func (*ErrorModelStatusCode) resolveSandboxRawSecretRes()               {}
@@ -4984,16 +4976,19 @@ func (s *HarnessCaptureFile) SetPath(val string) {
 	s.Path = val
 }
 
-// One file a candidate writes (file) or removes (remove). A sandbox never sends previous, nor file
-// on a removal. On a preview the server serves, previous is the file a save replaces (the configured
-// file over the bundle's, at the current revision), and a removal's file is the bundle's own file it
-// falls back to, when it ships one; both are for display and never applied.
+// One file a candidate writes (file) or removes (remove). A sandbox never sends previous, shadowed,
+// nor file on a removal. On a preview the server serves, previous is the file a box is given at the
+// path now (a person's override over the saved file over the bundle's, at the current revision), a
+// removal's file is what it falls back to, and shadowed says a person's override holds the path: a
+// save keeps the change beneath it, and boxes go on being given the override. All are for display
+// and never applied.
 // Ref: #/components/schemas/HarnessCaptureFileChange
 type HarnessCaptureFileChange struct {
 	File     OptHarnessCaptureFile `json:"file"`
 	Path     string                `json:"path"`
 	Previous OptHarnessCaptureFile `json:"previous"`
 	Remove   OptBool               `json:"remove"`
+	Shadowed OptBool               `json:"shadowed"`
 }
 
 // GetFile returns the value of File.
@@ -5016,6 +5011,11 @@ func (s *HarnessCaptureFileChange) GetRemove() OptBool {
 	return s.Remove
 }
 
+// GetShadowed returns the value of Shadowed.
+func (s *HarnessCaptureFileChange) GetShadowed() OptBool {
+	return s.Shadowed
+}
+
 // SetFile sets the value of File.
 func (s *HarnessCaptureFileChange) SetFile(val OptHarnessCaptureFile) {
 	s.File = val
@@ -5034,6 +5034,11 @@ func (s *HarnessCaptureFileChange) SetPrevious(val OptHarnessCaptureFile) {
 // SetRemove sets the value of Remove.
 func (s *HarnessCaptureFileChange) SetRemove(val OptBool) {
 	s.Remove = val
+}
+
+// SetShadowed sets the value of Shadowed.
+func (s *HarnessCaptureFileChange) SetShadowed(val OptBool) {
+	s.Shadowed = val
 }
 
 // Ref: #/components/schemas/HarnessCaptureOAuth
@@ -5331,29 +5336,15 @@ type HarnessConfig struct {
 	// Supplementary OS groups (already present in the image, e.g. "docker") the sandbox user is added to
 	// at boot, declared by the registered image label.
 	AdditionalGroups OptNilStringArray `json:"additionalGroups"`
-	// How many of the harness's environment variables have a project secret bound. Zero on a harness
-	// with a configure command means every discobox on it runs without credentials until it is
-	// configured. Absent from servers that predate it.
+	// How many of the harness's environment variables have a project secret bound. Zero means every
+	// discobox on it starts its harness signed out, until a sign-in made in one is saved. Absent from
+	// servers that predate it.
 	BoundSecrets OptInt64 `json:"boundSecrets"`
 	// True for the included harnesses seeded by the server. Built-in configs track their image and
 	// cannot be deleted.
 	BuiltIn bool `json:"builtIn"`
-	// Argv declared by the registered image for its interactive configuration command, when it has one.
-	ConfigCommand OptNilStringArray `json:"configCommand"`
-	// Reminder shown outside the interactive configuration terminal, declared by the registered image.
-	ConfigReminder OptString `json:"configReminder"`
-	// Local ports the configure flow forwards into the configure sandbox at the same port number,
-	// declared by the registered image.
-	ConfigPorts OptNilHarnessConfigPortArray `json:"configPorts"`
-	// Why the last configure attempt failed. Cleared when a configure starts or succeeds.
-	ConfigureError OptString `json:"configureError"`
-	// Sandbox running the configure flow, while one is in flight.
-	ConfigureSandboxId OptString `json:"configureSandboxId"`
-	// True once the configure flow completed successfully. Only configured harnesses can be selected to
-	// run.
-	Configured bool `json:"configured"`
-	// Files written by the configure flow. These overlay the bundle-declared files by path when
-	// resolving a sandbox, beneath fileOverrides.
+	// Files saved from a discobox's harness changes. These overlay the bundle-declared files by path
+	// when resolving a sandbox, beneath fileOverrides.
 	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
@@ -5438,36 +5429,6 @@ func (s *HarnessConfig) GetBoundSecrets() OptInt64 {
 // GetBuiltIn returns the value of BuiltIn.
 func (s *HarnessConfig) GetBuiltIn() bool {
 	return s.BuiltIn
-}
-
-// GetConfigCommand returns the value of ConfigCommand.
-func (s *HarnessConfig) GetConfigCommand() OptNilStringArray {
-	return s.ConfigCommand
-}
-
-// GetConfigReminder returns the value of ConfigReminder.
-func (s *HarnessConfig) GetConfigReminder() OptString {
-	return s.ConfigReminder
-}
-
-// GetConfigPorts returns the value of ConfigPorts.
-func (s *HarnessConfig) GetConfigPorts() OptNilHarnessConfigPortArray {
-	return s.ConfigPorts
-}
-
-// GetConfigureError returns the value of ConfigureError.
-func (s *HarnessConfig) GetConfigureError() OptString {
-	return s.ConfigureError
-}
-
-// GetConfigureSandboxId returns the value of ConfigureSandboxId.
-func (s *HarnessConfig) GetConfigureSandboxId() OptString {
-	return s.ConfigureSandboxId
-}
-
-// GetConfigured returns the value of Configured.
-func (s *HarnessConfig) GetConfigured() bool {
-	return s.Configured
 }
 
 // GetConfiguredFiles returns the value of ConfiguredFiles.
@@ -5595,36 +5556,6 @@ func (s *HarnessConfig) SetBuiltIn(val bool) {
 	s.BuiltIn = val
 }
 
-// SetConfigCommand sets the value of ConfigCommand.
-func (s *HarnessConfig) SetConfigCommand(val OptNilStringArray) {
-	s.ConfigCommand = val
-}
-
-// SetConfigReminder sets the value of ConfigReminder.
-func (s *HarnessConfig) SetConfigReminder(val OptString) {
-	s.ConfigReminder = val
-}
-
-// SetConfigPorts sets the value of ConfigPorts.
-func (s *HarnessConfig) SetConfigPorts(val OptNilHarnessConfigPortArray) {
-	s.ConfigPorts = val
-}
-
-// SetConfigureError sets the value of ConfigureError.
-func (s *HarnessConfig) SetConfigureError(val OptString) {
-	s.ConfigureError = val
-}
-
-// SetConfigureSandboxId sets the value of ConfigureSandboxId.
-func (s *HarnessConfig) SetConfigureSandboxId(val OptString) {
-	s.ConfigureSandboxId = val
-}
-
-// SetConfigured sets the value of Configured.
-func (s *HarnessConfig) SetConfigured(val bool) {
-	s.Configured = val
-}
-
 // SetConfiguredFiles sets the value of ConfiguredFiles.
 func (s *HarnessConfig) SetConfiguredFiles(val OptNilHarnessConfigFileArray) {
 	s.ConfiguredFiles = val
@@ -5710,12 +5641,11 @@ func (s *HarnessConfig) SetVolumes(val OptNilHarnessVolumeArray) {
 	s.Volumes = val
 }
 
-func (*HarnessConfig) commitHarnessConfigConfigureRes() {}
-func (*HarnessConfig) createHarnessConfigRes()          {}
-func (*HarnessConfig) deconfigureHarnessConfigRes()     {}
-func (*HarnessConfig) getHarnessConfigRes()             {}
-func (*HarnessConfig) refreshHarnessConfigImageRes()    {}
-func (*HarnessConfig) updateHarnessConfigRes()          {}
+func (*HarnessConfig) createHarnessConfigRes()       {}
+func (*HarnessConfig) getHarnessConfigRes()          {}
+func (*HarnessConfig) refreshHarnessConfigImageRes() {}
+func (*HarnessConfig) resetHarnessConfigRes()        {}
+func (*HarnessConfig) updateHarnessConfigRes()       {}
 
 // Ref: #/components/schemas/HarnessConfigAcknowledgment
 type HarnessConfigAcknowledgment struct {
@@ -6036,53 +5966,6 @@ func (s *HarnessConfigFile) SetCreateOnly(val OptBool) {
 	s.CreateOnly = val
 }
 
-// A local port a harness's configure flow needs bound at the same number on the user's machine and
-// forwarded into the configure sandbox, such as an OAuth callback its sign-in redirects to. An
-// ephemeral entry names no number and stands for every TCP port the configure sandbox is found
-// listening on.
-// Ref: #/components/schemas/HarnessConfigPort
-type HarnessConfigPort struct {
-	// Forward each TCP port the configure sandbox is discovered listening on, at its own number, for a
-	// sign-in whose callback port changes every run. Port is 0 when set.
-	Ephemeral OptBool `json:"ephemeral"`
-	// The port, bound locally at exactly this number or not at all. 0 for an ephemeral entry.
-	Port int64 `json:"port"`
-	// What to tell the user when the port cannot be bound on their machine; empty falls back to naming
-	// the port. For an ephemeral entry it follows the client's own words naming the discovered port, and
-	// says what to do.
-	Unavailable OptString `json:"unavailable"`
-}
-
-// GetEphemeral returns the value of Ephemeral.
-func (s *HarnessConfigPort) GetEphemeral() OptBool {
-	return s.Ephemeral
-}
-
-// GetPort returns the value of Port.
-func (s *HarnessConfigPort) GetPort() int64 {
-	return s.Port
-}
-
-// GetUnavailable returns the value of Unavailable.
-func (s *HarnessConfigPort) GetUnavailable() OptString {
-	return s.Unavailable
-}
-
-// SetEphemeral sets the value of Ephemeral.
-func (s *HarnessConfigPort) SetEphemeral(val OptBool) {
-	s.Ephemeral = val
-}
-
-// SetPort sets the value of Port.
-func (s *HarnessConfigPort) SetPort(val int64) {
-	s.Port = val
-}
-
-// SetUnavailable sets the value of Unavailable.
-func (s *HarnessConfigPort) SetUnavailable(val OptString) {
-	s.Unavailable = val
-}
-
 // Ref: #/components/schemas/HarnessConfigReconsideration
 type HarnessConfigReconsideration struct {
 	Current   HarnessCaptureBaseline `json:"current"`
@@ -6269,8 +6152,8 @@ type HarnessConfigSecret struct {
 	// Requests that answer for the credential. Only what an upstream makes of one of them is taken as a
 	// fact about it, a refusal and an acceptance alike; empty is every request (ADR 26-10-13-595).
 	RejectionScope []SecretReportRule `json:"rejectionScope"`
-	// Where the harness itself sends this credential, declared by its image (ADR 26-10-02-924).
-	// Configure writes them onto the secret it creates for it.
+	// Where the harness itself sends this credential, declared by its image (ADR 26-10-02-924). Saving a
+	// harness change writes them onto the secret it creates for it.
 	Routes []SecretRouteInput `json:"routes"`
 }
 
@@ -11530,69 +11413,6 @@ func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigF
 	return d
 }
 
-// NewOptNilHarnessConfigPortArray returns new OptNilHarnessConfigPortArray with value set to v.
-func NewOptNilHarnessConfigPortArray(v []HarnessConfigPort) OptNilHarnessConfigPortArray {
-	return OptNilHarnessConfigPortArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilHarnessConfigPortArray is optional nullable []HarnessConfigPort.
-type OptNilHarnessConfigPortArray struct {
-	Value []HarnessConfigPort
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilHarnessConfigPortArray was set.
-func (o OptNilHarnessConfigPortArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilHarnessConfigPortArray) Reset() {
-	var v []HarnessConfigPort
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilHarnessConfigPortArray) SetTo(v []HarnessConfigPort) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilHarnessConfigPortArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilHarnessConfigPortArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []HarnessConfigPort
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilHarnessConfigPortArray) Get() (v []HarnessConfigPort, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilHarnessConfigPortArray) Or(d []HarnessConfigPort) []HarnessConfigPort {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilHarnessConfigSecretArray returns new OptNilHarnessConfigSecretArray with value set to v.
 func NewOptNilHarnessConfigSecretArray(v []HarnessConfigSecret) OptNilHarnessConfigSecretArray {
 	return OptNilHarnessConfigSecretArray{
@@ -13809,52 +13629,6 @@ func (o OptSandboxConfigFeatures) Or(d SandboxConfigFeatures) SandboxConfigFeatu
 	return d
 }
 
-// NewOptSandboxConfigHarnessMode returns new OptSandboxConfigHarnessMode with value set to v.
-func NewOptSandboxConfigHarnessMode(v SandboxConfigHarnessMode) OptSandboxConfigHarnessMode {
-	return OptSandboxConfigHarnessMode{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSandboxConfigHarnessMode is optional SandboxConfigHarnessMode.
-type OptSandboxConfigHarnessMode struct {
-	Value SandboxConfigHarnessMode
-	Set   bool
-}
-
-// IsSet returns true if OptSandboxConfigHarnessMode was set.
-func (o OptSandboxConfigHarnessMode) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSandboxConfigHarnessMode) Reset() {
-	var v SandboxConfigHarnessMode
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSandboxConfigHarnessMode) SetTo(v SandboxConfigHarnessMode) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxConfigHarnessMode) Get() (v SandboxConfigHarnessMode, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSandboxConfigHarnessMode) Or(d SandboxConfigHarnessMode) SandboxConfigHarnessMode {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptSandboxConfigSourceCodeReferences returns new OptSandboxConfigSourceCodeReferences with value set to v.
 func NewOptSandboxConfigSourceCodeReferences(v SandboxConfigSourceCodeReferences) OptSandboxConfigSourceCodeReferences {
 	return OptSandboxConfigSourceCodeReferences{
@@ -13987,52 +13761,6 @@ func (o OptSandboxCreateConfigFeatures) Get() (v SandboxCreateConfigFeatures, ok
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxCreateConfigFeatures) Or(d SandboxCreateConfigFeatures) SandboxCreateConfigFeatures {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptSandboxCreateConfigHarnessMode returns new OptSandboxCreateConfigHarnessMode with value set to v.
-func NewOptSandboxCreateConfigHarnessMode(v SandboxCreateConfigHarnessMode) OptSandboxCreateConfigHarnessMode {
-	return OptSandboxCreateConfigHarnessMode{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSandboxCreateConfigHarnessMode is optional SandboxCreateConfigHarnessMode.
-type OptSandboxCreateConfigHarnessMode struct {
-	Value SandboxCreateConfigHarnessMode
-	Set   bool
-}
-
-// IsSet returns true if OptSandboxCreateConfigHarnessMode was set.
-func (o OptSandboxCreateConfigHarnessMode) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSandboxCreateConfigHarnessMode) Reset() {
-	var v SandboxCreateConfigHarnessMode
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSandboxCreateConfigHarnessMode) SetTo(v SandboxCreateConfigHarnessMode) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxCreateConfigHarnessMode) Get() (v SandboxCreateConfigHarnessMode, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSandboxCreateConfigHarnessMode) Or(d SandboxCreateConfigHarnessMode) SandboxCreateConfigHarnessMode {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -19056,6 +18784,8 @@ type Project struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Whether this project has already shown its introduction.
 	Welcomed bool `json:"welcomed"`
+	// Whether this project has already explained saving a discobox's harness changes.
+	HarnessChangesExplained bool `json:"harnessChangesExplained"`
 }
 
 // GetEgress returns the value of Egress.
@@ -19153,6 +18883,11 @@ func (s *Project) GetWelcomed() bool {
 	return s.Welcomed
 }
 
+// GetHarnessChangesExplained returns the value of HarnessChangesExplained.
+func (s *Project) GetHarnessChangesExplained() bool {
+	return s.HarnessChangesExplained
+}
+
 // SetEgress sets the value of Egress.
 func (s *Project) SetEgress(val OptEgressPolicy) {
 	s.Egress = val
@@ -19246,6 +18981,11 @@ func (s *Project) SetUpdatedAt(val time.Time) {
 // SetWelcomed sets the value of Welcomed.
 func (s *Project) SetWelcomed(val bool) {
 	s.Welcomed = val
+}
+
+// SetHarnessChangesExplained sets the value of HarnessChangesExplained.
+func (s *Project) SetHarnessChangesExplained(val bool) {
+	s.HarnessChangesExplained = val
 }
 
 func (*Project) createProjectRes()             {}
@@ -21655,7 +21395,6 @@ func (s *Sandbox) SetUpdatedAt(val time.Time) {
 }
 
 func (*Sandbox) completeSandboxSourcePushRes() {}
-func (*Sandbox) configureHarnessConfigRes()    {}
 func (*Sandbox) createSandboxRes()             {}
 func (*Sandbox) getSandboxRes()                {}
 func (*Sandbox) pullSandboxSourceRes()         {}
@@ -23738,8 +23477,7 @@ type SandboxAgentStatusResponse struct {
 	// This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where
 	// neither the cgroup nor procfs could be read.
 	Resources OptSandboxAgentResourceUsage `json:"resources"`
-	// The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode
-	// sandbox is always.
+	// The sandbox's idle-stop policy. Absent while the policy is not running.
 	Autostop OptSandboxAgentAutostopStatus `json:"autostop"`
 	// The sandbox's name, description and tags, read from ~/.discobox/meta.json in the sandbox user's
 	// home, which is their system of record. Empty when there is no such file. Absent when the file
@@ -24451,8 +24189,6 @@ func (s *SandboxCloneProgress) SetBytes(val OptInt64) {
 type SandboxConfig struct {
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
-	// What this sandbox exists for: its normal run command, or its interactive configure command.
-	HarnessMode OptSandboxConfigHarnessMode `json:"harnessMode"`
 	// Model the harness should use.
 	Model OptString `json:"model"`
 	// Model reasoning level the harness should use.
@@ -24509,11 +24245,6 @@ type SandboxConfig struct {
 // GetHarnessConfigId returns the value of HarnessConfigId.
 func (s *SandboxConfig) GetHarnessConfigId() OptString {
 	return s.HarnessConfigId
-}
-
-// GetHarnessMode returns the value of HarnessMode.
-func (s *SandboxConfig) GetHarnessMode() OptSandboxConfigHarnessMode {
-	return s.HarnessMode
 }
 
 // GetModel returns the value of Model.
@@ -24619,11 +24350,6 @@ func (s *SandboxConfig) GetUser() OptSandboxUser {
 // SetHarnessConfigId sets the value of HarnessConfigId.
 func (s *SandboxConfig) SetHarnessConfigId(val OptString) {
 	s.HarnessConfigId = val
-}
-
-// SetHarnessMode sets the value of HarnessMode.
-func (s *SandboxConfig) SetHarnessMode(val OptSandboxConfigHarnessMode) {
-	s.HarnessMode = val
 }
 
 // SetModel sets the value of Model.
@@ -24751,48 +24477,6 @@ func (s *SandboxConfigFeatures) init() SandboxConfigFeatures {
 	return m
 }
 
-// What this sandbox exists for: its normal run command, or its interactive configure command.
-type SandboxConfigHarnessMode string
-
-const (
-	SandboxConfigHarnessModeRun    SandboxConfigHarnessMode = "run"
-	SandboxConfigHarnessModeConfig SandboxConfigHarnessMode = "config"
-)
-
-// AllValues returns all SandboxConfigHarnessMode values.
-func (SandboxConfigHarnessMode) AllValues() []SandboxConfigHarnessMode {
-	return []SandboxConfigHarnessMode{
-		SandboxConfigHarnessModeRun,
-		SandboxConfigHarnessModeConfig,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxConfigHarnessMode) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxConfigHarnessModeRun:
-		return []byte(s), nil
-	case SandboxConfigHarnessModeConfig:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
-	switch SandboxConfigHarnessMode(data) {
-	case SandboxConfigHarnessModeRun:
-		*s = SandboxConfigHarnessModeRun
-		return nil
-	case SandboxConfigHarnessModeConfig:
-		*s = SandboxConfigHarnessModeConfig
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a
 // skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
 type SandboxConfigSourceCodeReferences map[string]GitSource
@@ -24813,9 +24497,6 @@ type SandboxCreateConfig struct {
 	Egress OptEgressPolicy `json:"egress"`
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
-	// What the sandbox exists for: run works in it, and config runs the image-owned interactive
-	// configuration command once.
-	HarnessMode OptSandboxCreateConfigHarnessMode `json:"harnessMode"`
 	// Model the harness should use.
 	Model OptString `json:"model"`
 	// Model reasoning level the harness should use.
@@ -24868,11 +24549,6 @@ func (s *SandboxCreateConfig) GetEgress() OptEgressPolicy {
 // GetHarnessConfigId returns the value of HarnessConfigId.
 func (s *SandboxCreateConfig) GetHarnessConfigId() OptString {
 	return s.HarnessConfigId
-}
-
-// GetHarnessMode returns the value of HarnessMode.
-func (s *SandboxCreateConfig) GetHarnessMode() OptSandboxCreateConfigHarnessMode {
-	return s.HarnessMode
 }
 
 // GetModel returns the value of Model.
@@ -24958,11 +24634,6 @@ func (s *SandboxCreateConfig) SetEgress(val OptEgressPolicy) {
 // SetHarnessConfigId sets the value of HarnessConfigId.
 func (s *SandboxCreateConfig) SetHarnessConfigId(val OptString) {
 	s.HarnessConfigId = val
-}
-
-// SetHarnessMode sets the value of HarnessMode.
-func (s *SandboxCreateConfig) SetHarnessMode(val OptSandboxCreateConfigHarnessMode) {
-	s.HarnessMode = val
 }
 
 // SetModel sets the value of Model.
@@ -25064,49 +24735,6 @@ func (s *SandboxCreateConfigFeatures) init() SandboxCreateConfigFeatures {
 		*s = m
 	}
 	return m
-}
-
-// What the sandbox exists for: run works in it, and config runs the image-owned interactive
-// configuration command once.
-type SandboxCreateConfigHarnessMode string
-
-const (
-	SandboxCreateConfigHarnessModeRun    SandboxCreateConfigHarnessMode = "run"
-	SandboxCreateConfigHarnessModeConfig SandboxCreateConfigHarnessMode = "config"
-)
-
-// AllValues returns all SandboxCreateConfigHarnessMode values.
-func (SandboxCreateConfigHarnessMode) AllValues() []SandboxCreateConfigHarnessMode {
-	return []SandboxCreateConfigHarnessMode{
-		SandboxCreateConfigHarnessModeRun,
-		SandboxCreateConfigHarnessModeConfig,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxCreateConfigHarnessMode) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxCreateConfigHarnessModeRun:
-		return []byte(s), nil
-	case SandboxCreateConfigHarnessModeConfig:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxCreateConfigHarnessMode) UnmarshalText(data []byte) error {
-	switch SandboxCreateConfigHarnessMode(data) {
-	case SandboxCreateConfigHarnessModeRun:
-		*s = SandboxCreateConfigHarnessModeRun
-		return nil
-	case SandboxCreateConfigHarnessModeConfig:
-		*s = SandboxCreateConfigHarnessModeConfig
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // Skills to install into the harness's skill directories on the sandbox's first launch, by name,
@@ -32010,7 +31638,7 @@ type SecretRejection struct {
 	SandboxId OptString `json:"sandboxId"`
 	// Environment variable the credential is delivered in, when one names it.
 	EnvName OptString `json:"envName"`
-	// Harness config whose configure flow owns this credential, when one does.
+	// Harness config whose saved harness changes own this credential, when one does.
 	HarnessConfigId OptString `json:"harnessConfigId"`
 	// Display name of that harness config.
 	HarnessConfigName OptString `json:"harnessConfigName"`
@@ -33777,7 +33405,7 @@ type UpdateHarnessConfigBody struct {
 	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Configure-flow files to write into the harness's home directory, replacing the current set.
+	// Saved files to write into the harness's home directory over the bundle's, replacing the current set.
 	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
 	// A person's files, replacing the current set. Each adds a path to the harness's home directory or
 	// overrides the configure flow's or the bundle's file at it; the bundle's own files are never
@@ -34093,6 +33721,10 @@ type UpdateProjectBody struct {
 	// Whether this project has already shown its introduction. The launcher sets it once, the first time
 	// it welcomes someone to the project; clearing it shows the welcome again.
 	Welcomed OptBool `json:"welcomed"`
+	// Whether this project has already explained saving a discobox's harness changes. The console sets
+	// it once, the first time it sees a discobox with harness changes to save; clearing it explains
+	// again.
+	HarnessChangesExplained OptBool `json:"harnessChangesExplained"`
 }
 
 // GetEgress returns the value of Egress.
@@ -34125,6 +33757,11 @@ func (s *UpdateProjectBody) GetWelcomed() OptBool {
 	return s.Welcomed
 }
 
+// GetHarnessChangesExplained returns the value of HarnessChangesExplained.
+func (s *UpdateProjectBody) GetHarnessChangesExplained() OptBool {
+	return s.HarnessChangesExplained
+}
+
 // SetEgress sets the value of Egress.
 func (s *UpdateProjectBody) SetEgress(val OptEgressPolicy) {
 	s.Egress = val
@@ -34153,6 +33790,11 @@ func (s *UpdateProjectBody) SetSandboxUpgradePolicy(val OptUpdateProjectBodySand
 // SetWelcomed sets the value of Welcomed.
 func (s *UpdateProjectBody) SetWelcomed(val OptBool) {
 	s.Welcomed = val
+}
+
+// SetHarnessChangesExplained sets the value of HarnessChangesExplained.
+func (s *UpdateProjectBody) SetHarnessChangesExplained(val OptBool) {
+	s.HarnessChangesExplained = val
 }
 
 // Whether this project's stopped and failed sandboxes are moved onto their harness config's image

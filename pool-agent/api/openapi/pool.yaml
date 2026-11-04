@@ -748,11 +748,6 @@ components:
                         type: string
                     nullable: true
                     type: array
-                configCommand:
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
                 env:
                     additionalProperties:
                         type: string
@@ -781,12 +776,6 @@ components:
             additionalProperties: false
             properties:
                 harnessConfigId:
-                    type: string
-                harnessMode:
-                    description: What this sandbox exists for, carried through to its sandbox configuration.
-                    enum:
-                        - run
-                        - config
                     type: string
                 model:
                     type: string

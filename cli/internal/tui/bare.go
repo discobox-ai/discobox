@@ -13,7 +13,7 @@ import (
 // and everything behind it work as they always do.
 //
 // The chrome comes back the moment there is something for it to arrange: a
-// second terminal, a shell, a tool, an overlay, the credential band.
+// second terminal, a shell, a tool, a band.
 
 // bare reports whether the window is drawn without chrome.
 func (m *Model) bare() bool {

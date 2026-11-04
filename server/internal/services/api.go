@@ -104,20 +104,10 @@ type HarnessConfigService interface {
 	UnsetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error)
 	DeleteHarnessConfig(ctx context.Context, projectID, configID string) error
 
-	// ConfigureHarnessConfig launches the harness's interactive configure sandbox
-	// and returns it. The caller seeds it via AttachHarnessConfigConfigure, attaches
-	// to its primary terminal, then calls CommitHarnessConfigConfigure. Re-running
-	// is allowed and clobbers any in-flight attempt.
-	ConfigureHarnessConfig(ctx context.Context, projectID, configID string) (*model.Sandbox, error)
-	// AttachHarnessConfigConfigure seeds the previous configuration into the
-	// in-flight configure sandbox. Call it before attaching to the primary terminal.
-	AttachHarnessConfigConfigure(ctx context.Context, projectID, configID string) error
-	// CommitHarnessConfigConfigure verifies the configure command exited 0, applies
-	// what it wrote, and deletes the configure sandbox.
-	CommitHarnessConfigConfigure(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
-	// DeconfigureHarnessConfig removes the assets the configure flow created and
-	// marks the config unconfigured.
-	DeconfigureHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
+	// ResetHarnessConfig returns the config to its bundle's defaults: it
+	// removes the files and secrets saved harness changes created
+	// (ADR 26-11-02-152 §3).
+	ResetHarnessConfig(ctx context.Context, projectID, configID string, includeOverrides bool) (*model.HarnessConfig, error)
 	// RefreshHarnessConfigImage re-inspects the config's image and re-snapshots
 	// its label metadata and digest.
 	RefreshHarnessConfigImage(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)

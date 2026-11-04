@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
-
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"
@@ -256,44 +254,25 @@ func TestCaptureAddsOriginAccountWithoutReplacingBoxOverridesOrConsumerAssignmen
 	}
 }
 
-type captureJanitorRuntime struct {
-	stubSandboxRuntime
-	deleted []string
-}
+// unreachableOriginRuntime is a runtime whose origin sandbox cannot be
+// reached, so a committed receipt cannot be delivered.
+type unreachableOriginRuntime struct{ stubSandboxRuntime }
 
-func (r *captureJanitorRuntime) DeleteSandbox(_ context.Context, _, id string) error {
-	r.deleted = append(r.deleted, id)
-	return nil
-}
-func (*captureJanitorRuntime) AcquireSandboxHTTPClientForServer(context.Context, string, string, []string, services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (*unreachableOriginRuntime) AcquireSandboxHTTPClientForServer(context.Context, string, string, []string, services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
 	return nil, nil, errors.New("origin is unreachable")
 }
 
-func TestCaptureDeliveryFailureDoesNotBlockConfigureJanitor(t *testing.T) {
+// A receipt whose origin cannot be reached is reported and kept for the next
+// pass, never dropped.
+func TestCaptureDeliveryFailureIsReportedAndKept(t *testing.T) {
 	svc, cfg, candidate := captureFixture(t)
 	ctx := context.Background()
 	if _, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate, false); err != nil {
 		t.Fatal(err)
 	}
-	runtime := &captureJanitorRuntime{}
-	svc.sandboxes = runtime
-	if err := svc.store.Transaction(ctx, func(_ *store.Store, db *gorm.DB) error {
-		return db.Model(&model.HarnessConfig{}).Where("id = ?", cfg.ID).UpdateColumns(map[string]any{"configure_sandbox_id": "configure-expired", "updated_at": time.Now().Add(-2 * configureTTL)}).Error
-	}); err != nil {
-		t.Fatal(err)
-	}
+	svc.sandboxes = &unreachableOriginRuntime{}
 	if _, err := svc.Reconcile(ctx, cfg.ID); err == nil {
 		t.Fatal("delivery failure was not reported")
-	}
-	if len(runtime.deleted) != 1 || runtime.deleted[0] != "configure-expired" {
-		t.Fatal("unreachable origin blocked configure cleanup")
-	}
-	current, err := svc.store.GetHarnessConfig(ctx, cfg.ProjectID, cfg.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current.ConfigureSandboxID != "" {
-		t.Fatal("configure lifecycle was not cleared")
 	}
 	pending, err := svc.store.ListPendingHarnessCaptureReceipts(ctx, cfg.ProjectID, cfg.ID)
 	if err != nil || len(pending) != 1 {

@@ -14,65 +14,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/harness/internal/credentialtest"
-
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 )
-
-func TestDefinitionConfigure(t *testing.T) {
-	scriptBytes, err := os.ReadFile("configure.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	normalizer, err := os.ReadFile("opencode-normalize.cjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	metadata, err := os.ReadFile("image.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(scriptBytes) + string(normalizer) + string(metadata)
-	for _, required := range []string{
-		harness.ConfigureOutputPath,
-		harness.ConfigurePreviousConfigPath,
-		// Reuse goes through the PREV_ sentinel and comes back as usePrevious,
-		// so no credential is read or re-emitted when the existing one is kept.
-		`sentinels[envName]`,
-		"usePrevious",
-		// The credentials template is JSON, so a quote inside a template action
-		// arrives at the renderer backslash-escaped and the parser rejects it.
-		"$secret: envName",
-		// Every retry is a person asking for one.
-		"confirm_retry",
-	} {
-		if !strings.Contains(script, required) {
-			t.Errorf("configure script is missing %q", required)
-		}
-	}
-	if strings.Contains(script, "index .secrets") {
-		t.Fatal("configure script quotes a key inside a template action, which cannot survive JSON encoding")
-	}
-	loopStart := strings.Index(script, "while :; do")
-	if loopStart < 0 {
-		t.Fatal("configure script has no configuration loop")
-	}
-	loop := script[loopStart:]
-	if loopEnd := strings.Index(loop, "\ndone\n"); loopEnd >= 0 {
-		loop = loop[:loopEnd]
-	}
-	// Split on `continue`: every segment but the last is the code leading up to
-	// one, and each has to have asked before taking it. An attempt that fails
-	// without reaching the user fails again the instant it is retried.
-	segments := strings.Split(loop, "continue")
-	for _, leadingUpToAContinue := range segments[:len(segments)-1] {
-		if !strings.Contains(leadingUpToAContinue, "confirm_retry") {
-			t.Fatal("configure script's loop continues without confirm_retry, so it can spin")
-		}
-	}
-}
 
 // TestImageDeclaresNoCredentials pins the half of the contract the image owns.
 // Which secrets exist is only known once a user connects providers, so the
@@ -91,10 +36,6 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 			Secrets         []any          `json:"secrets"`
 			RunCommand      []string       `json:"runCommand"`
 			RelaunchCommand []string       `json:"relaunchCommand"`
-			Config          struct {
-				Ports   []harness.ConfigPort `json:"ports"`
-				Command []string             `json:"command"`
-			} `json:"config"`
 		} `json:"harness"`
 	}
 	if err := json.Unmarshal(raw, &image); err != nil {
@@ -107,7 +48,7 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 		t.Fatalf("manifest declares secrets %v, want none", image.Harness.Secrets)
 	}
 	// The one baseline file is Discobox's settings, edited in the declared set
-	// until a configure run returns its own copy — so it is rewritten on every
+	// until a saved harness change returns its own copy — so it is rewritten on every
 	// launch rather than kept from the first, or an edit would never land.
 	if len(image.Harness.Files) != 1 || image.Harness.Files[0].Path != settingsPath ||
 		image.Harness.Files[0].CreateOnly {
@@ -131,29 +72,13 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 	if image.Env["OPENCODE_DISABLE_AUTOUPDATE"] != "1" {
 		t.Fatalf("manifest env = %v, want opencode's updater disabled", image.Env)
 	}
-	// ChatGPT's and DigitalOcean's browser sign-ins end at fixed localhost
-	// ports, which only a forward from the user's machine can reach. opencode
-	// 2 still listens on 1455 and 1456 (measured on 2.0.29); ChatGPT's falls
-	// back to 1457 only when 1455 is taken inside the sandbox, which it is not.
-	var ports []int
-	for _, port := range image.Harness.Config.Ports {
-		ports = append(ports, port.Port)
-		if port.Unavailable == "" {
-			t.Errorf("port %d says nothing when it cannot be forwarded", port.Port)
-		}
-	}
-	if !slices.Equal(ports, []int{1455, 1456}) {
-		t.Fatalf("config ports = %v, want [1455 1456]", ports)
-	}
 	feature := featuretest.Load(t, ".")
 	if !feature.Runs(t, "npm install -g @opencode/cli") {
 		t.Error("the feature does not install opencode's CLI")
 	}
 	for source, want := range map[string]string{
 		"launch.sh":      "/usr/local/bin/" + harness.RunCommand,
-		"configure.sh":   image.Harness.Config.Command[0],
 		"credentials.sh": credentialsHelper,
-		"model.sh":       modelHelper,
 	} {
 		if got := feature.Installs(source); got != want {
 			t.Errorf("the feature installs %s at %q, want %q", source, got, want)
@@ -169,12 +94,8 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 }
 
 // credentialsHelper is where the image installs credentials.sh, and where the
-// launcher and the configure script run it from.
+// launcher runs it from.
 const credentialsHelper = "/usr/local/libexec/discobox/opencode-credentials" //nolint:gosec // A path, not a credential.
-
-// modelHelper is where the image installs model.sh, which the configure
-// script asks which model a session starts on.
-const modelHelper = "/usr/local/libexec/discobox/opencode-model"
 
 // TestLaunchJoinsThePromptWords covers the wrapper's half of the harness-run
 // convention (ADR 0086 §3). opencode's positional argument is the project
@@ -532,312 +453,9 @@ func writeJSON(t *testing.T, path string, v any) {
 	}
 }
 
-// connectedStore is opencode's store as /connect leaves it: one credential of
-// each shape the configure flow handles differently, a second zai account the
-// user switched away from, and a credential fetched from outside opencode.
-const connectedStore = `[
-  {"id": "cred_a", "integrationID": "openai", "label": "OAuth", "active": true, "value": {"type": "oauth", "methodID": "chatgpt-browser", "refresh": "real-openai-refresh", "access": "real-openai-access", "expires": 1900000000000, "metadata": {"accountID": "acct-1"}}},
-  {"id": "cred_b", "integrationID": "xai", "label": "OAuth", "active": true, "value": {"type": "oauth", "methodID": "device", "refresh": "real-xai-refresh", "access": "real-xai-access", "expires": 1900000000000}},
-  {"id": "cred_c", "integrationID": "github-copilot", "label": "OAuth", "active": true, "value": {"type": "oauth", "methodID": "device", "refresh": "real-gh-token", "access": "real-gh-token", "expires": 0}},
-  {"id": "cred_d", "integrationID": "zai", "label": "API key", "active": true, "value": {"type": "key", "key": "real-zai-key"}},
-  {"id": "cred_e", "integrationID": "zai", "label": "old", "active": false, "value": {"type": "key", "key": "real-old-zai-key"}},
-  {"id": "cred_f", "integrationID": "azure", "label": "Azure CLI", "active": true, "value": {"type": "external", "methodID": "azure-cli"}}
-]`
-
-// TestConfigureCapturesEveryConnectedProvider runs configure.sh against a
-// stubbed opencode that "connects" providers the way /connect leaves them, and
-// checks what the harness config would store and deliver.
-func TestConfigureCapturesEveryConnectedProvider(t *testing.T) {
-	env := newConfigureEnv(t)
-	env.connect = connectedStore
-	out := env.run(t, nil, nil)
-
-	secrets := map[string]map[string]any{}
-	for _, secret := range out.Secrets {
-		secrets[secret["envName"].(string)] = secret
-	}
-	if len(secrets) != 4 {
-		t.Fatalf("secrets = %v, want one per provider holding a secret", out.Secrets)
-	}
-	value := func(name string) map[string]any {
-		t.Helper()
-		secret, ok := secrets[name]
-		if !ok {
-			t.Fatalf("no secret %s in %v", name, out.Secrets)
-		}
-		v, _ := secret["value"].(map[string]any)
-		return v
-	}
-	if v := value("OPENCODE_OPENAI_CREDENTIAL"); secrets["OPENCODE_OPENAI_CREDENTIAL"]["type"] != "oauth" ||
-		v["token"] != "real-openai-access" || v["refreshToken"] != "real-openai-refresh" ||
-		v["tokenUrl"] != "https://auth.openai.com/oauth/token" || v["tokenRequestEncoding"] != nil {
-		t.Fatalf("openai secret = %v", secrets["OPENCODE_OPENAI_CREDENTIAL"])
-	}
-	if v := value("OPENCODE_XAI_CREDENTIAL"); secrets["OPENCODE_XAI_CREDENTIAL"]["type"] != "oauth" || v["tokenRequestEncoding"] != "form" {
-		t.Fatalf("xai secret = %v, want an oauth secret refreshed form-encoded", secrets["OPENCODE_XAI_CREDENTIAL"])
-	}
-	// Copilot's token does not expire and has nothing to refresh with.
-	if v := value("OPENCODE_GITHUB_COPILOT_CREDENTIAL"); secrets["OPENCODE_GITHUB_COPILOT_CREDENTIAL"]["type"] != "token" || v["token"] != "real-gh-token" {
-		t.Fatalf("copilot secret = %v, want a token", secrets["OPENCODE_GITHUB_COPILOT_CREDENTIAL"])
-	}
-	// The account opencode uses, not the one the user switched away from.
-	if v := value("OPENCODE_ZAI_CREDENTIAL"); secrets["OPENCODE_ZAI_CREDENTIAL"]["type"] != "token" || v["token"] != "real-zai-key" {
-		t.Fatalf("zai secret = %v, want the active key", secrets["OPENCODE_ZAI_CREDENTIAL"])
-	}
-
-	// Rendered the way a sandbox renders it, the credentials file carries
-	// sentinels and nothing real, under the ids the launcher owns.
-	rendered := out.renderCredentials(t, map[string]string{
-		"OPENCODE_OPENAI_CREDENTIAL":         "S-OPENAI",
-		"OPENCODE_XAI_CREDENTIAL":            "S-XAI",
-		"OPENCODE_GITHUB_COPILOT_CREDENTIAL": "S-GH",
-		"OPENCODE_ZAI_CREDENTIAL":            "S-ZAI",
-	})
-	if strings.Contains(rendered, "real-") {
-		t.Fatalf("delivered credentials hold a real one: %s", rendered)
-	}
-	var entries []map[string]any
-	if err := json.Unmarshal([]byte(rendered), &entries); err != nil {
-		t.Fatalf("rendered credentials are not JSON: %v\n%s", err, rendered)
-	}
-	delivered := map[string]map[string]any{}
-	for _, entry := range entries {
-		if entry["id"] != "cred_discobox_"+strings.ReplaceAll(entry["integrationID"].(string), "/", "_") || entry["active"] != true {
-			t.Fatalf("delivered entry %v, want the image's own id, active", entry)
-		}
-		delivered[entry["integrationID"].(string)], _ = entry["value"].(map[string]any)
-	}
-	if openai := delivered["openai"]; openai["access"] != "S-OPENAI" || openai["refresh"] != "discobox-refresh-happens-in-the-control-plane" ||
-		openai["expires"] != float64(4102444800000) || openai["methodID"] != "chatgpt-browser" ||
-		!reflect.DeepEqual(openai["metadata"], map[string]any{"accountID": "acct-1"}) {
-		t.Fatalf("delivered openai entry = %v", openai)
-	}
-	if gh := delivered["github-copilot"]; gh["access"] != "S-GH" || gh["refresh"] != "S-GH" || gh["expires"] != float64(0) {
-		t.Fatalf("delivered copilot entry = %v, want the sentinel in both token fields and no expiry", gh)
-	}
-	if zai := delivered["zai"]; zai["key"] != "S-ZAI" || zai["type"] != "key" {
-		t.Fatalf("delivered zai entry = %v", zai)
-	}
-	if _, ok := delivered["azure"]; ok {
-		t.Fatal("delivered a credential that holds no secret")
-	}
-	if _, ok := out.file(".config/opencode/opencode.json"); !ok {
-		t.Fatal("configure did not return the settings the user left")
-	}
-	if _, ok := out.file(".config/opencode/cli.json"); !ok {
-		t.Fatal("configure did not return cli.json, where opencode 2 keeps the theme")
-	}
-	if _, ok := out.file(".local/share/opencode/auth.json"); ok {
-		t.Fatal("configure returned an opencode 1 auth.json")
-	}
-	// The check is of the model a sandbox starts on: here the `model` the
-	// session left in opencode.json.
-	runArgs, err := os.ReadFile(filepath.Join(env.dir, "run-args"))
-	if err != nil {
-		t.Fatalf("configure never checked the default model: %v", err)
-	}
-	if !strings.Contains(string(runArgs), "--standalone --model=openai/gpt-5.6-terra ") {
-		t.Fatalf("configure checked %s, want the configured model, standalone", runArgs)
-	}
-
-	// Reconfigure: the same harness, a user who changes nothing. Every
-	// credential is seeded as its sentinel and comes back as usePrevious.
-	previous := map[string]any{"files": out.Files, "secrets": stripValues(out.Secrets)}
-	env.connect = ""
-	again := env.run(t, previous, map[string]string{
-		"PREV_OPENCODE_OPENAI_CREDENTIAL":         "S-OPENAI",
-		"PREV_OPENCODE_XAI_CREDENTIAL":            "S-XAI",
-		"PREV_OPENCODE_GITHUB_COPILOT_CREDENTIAL": "S-GH",
-		"PREV_OPENCODE_ZAI_CREDENTIAL":            "S-ZAI",
-	})
-	if len(again.Secrets) != 4 {
-		t.Fatalf("reconfigure secrets = %v, want the four kept", again.Secrets)
-	}
-	for _, secret := range again.Secrets {
-		if secret["usePrevious"] != true || secret["value"] != nil {
-			t.Fatalf("reconfigure secret %v, want usePrevious and no value", secret)
-		}
-	}
-	before, _ := out.file(credentialsPath)
-	after, _ := again.file(credentialsPath)
-	if before["content"] != after["content"] {
-		t.Fatalf("a kept credential's delivered entry changed:\nbefore %v\nafter  %v", before["content"], after["content"])
-	}
-
-	// Replacing one inside a kept session captures the new one and keeps the
-	// rest.
-	env.connect = `[{"id": "cred_new", "integrationID": "zai", "label": "API key", "active": true, "value": {"type": "key", "key": "real-new-zai-key"}}]`
-	replaced := env.run(t, previous, map[string]string{
-		"PREV_OPENCODE_OPENAI_CREDENTIAL":         "S-OPENAI",
-		"PREV_OPENCODE_XAI_CREDENTIAL":            "S-XAI",
-		"PREV_OPENCODE_GITHUB_COPILOT_CREDENTIAL": "S-GH",
-		"PREV_OPENCODE_ZAI_CREDENTIAL":            "S-ZAI",
-	})
-	checkReplaced(t, replaced)
-
-	// The same, where opencode leaves the seeded credential active beside
-	// the new sign-in: the new one is still what is captured.
-	keepActive := env.run(t, previous, map[string]string{
-		"STUB_CONNECT_KEEPS_ACTIVE":               "1",
-		"PREV_OPENCODE_OPENAI_CREDENTIAL":         "S-OPENAI",
-		"PREV_OPENCODE_XAI_CREDENTIAL":            "S-XAI",
-		"PREV_OPENCODE_GITHUB_COPILOT_CREDENTIAL": "S-GH",
-		"PREV_OPENCODE_ZAI_CREDENTIAL":            "S-ZAI",
-	})
-	checkReplaced(t, keepActive)
-}
-
-// checkReplaced is a reconfigure in which only zai was signed in again.
-func checkReplaced(t *testing.T, replaced configureOutput) {
-	t.Helper()
-	for _, secret := range replaced.Secrets {
-		if secret["envName"] == "OPENCODE_ZAI_CREDENTIAL" {
-			if v, _ := secret["value"].(map[string]any); secret["usePrevious"] == true || v["token"] != "real-new-zai-key" {
-				t.Fatalf("replaced zai secret = %v, want the new key", secret)
-			}
-		} else if secret["usePrevious"] != true {
-			t.Fatalf("secret %v was not replaced, want it kept", secret)
-		}
-	}
-}
-
-// With no `model` setting a sandbox starts on the /models pick, which
-// `opencode run` does not read on its own (measured on opencode 2.0.29: it ran
-// a free model instead). So configure checks the pick by name.
-func TestConfigureChecksTheModelPickedWithModels(t *testing.T) {
-	env := newConfigureEnv(t)
-	env.connect = `[{"id": "cred_a", "integrationID": "anthropic", "label": "API key", "active": true, "value": {"type": "key", "key": "real-key"}}]`
-	env.run(t, nil, map[string]string{"STUB_PICK_ONLY": "1"})
-	runArgs, err := os.ReadFile(filepath.Join(env.dir, "run-args"))
-	if err != nil {
-		t.Fatalf("configure never checked the model: %v", err)
-	}
-	if !strings.Contains(string(runArgs), "--model=anthropic/claude-haiku-4-5 ") {
-		t.Fatalf("configure checked %s, want the /models pick", runArgs)
-	}
-}
-
 // credentialsPath is the harness file that delivers the credentials,
 // home-relative.
 const credentialsPath = ".config/discobox/opencode-credentials.json" //nolint:gosec // A path, not a credential.
-
-// A configuration made under ADR 0127 returned opencode 1's auth.json. Its
-// reconfigure opens signed in to the same providers, keeps each one a user
-// does not replace, and returns opencode 2's credentials file in its place.
-func TestConfigureReconfiguresAnOpencode1Configuration(t *testing.T) {
-	env := newConfigureEnv(t)
-	previous := map[string]any{
-		"files": []map[string]any{{
-			"path":     ".local/share/opencode/auth.json",
-			"template": true,
-			"content": `{
-  "openai": {"type": "oauth", "refresh": "discobox-refresh-happens-in-the-control-plane", "access": {"$secret":"OPENCODE_OPENAI_CREDENTIAL"}, "expires": 4102444800000, "accountId": "acct-1"},
-  "zai": {"type": "api", "key": {"$secret":"OPENCODE_ZAI_CREDENTIAL"}}
-}`,
-		}},
-		"secrets": []map[string]any{
-			{"envName": "OPENCODE_OPENAI_CREDENTIAL", "type": "oauth"},
-			{"envName": "OPENCODE_ZAI_CREDENTIAL", "type": "token"},
-		},
-	}
-	env.homeFiles = map[string]string{".local/share/opencode/auth.json": `{"zai": {"type": "api", "key": ""}}`}
-	out := env.run(t, previous, map[string]string{
-		"PREV_OPENCODE_OPENAI_CREDENTIAL": "S-OPENAI",
-		"PREV_OPENCODE_ZAI_CREDENTIAL":    "S-ZAI",
-	})
-	if len(out.Secrets) != 2 {
-		t.Fatalf("secrets = %v, want both kept", out.Secrets)
-	}
-	for _, secret := range out.Secrets {
-		if secret["usePrevious"] != true {
-			t.Fatalf("secret %v, want it kept", secret)
-		}
-	}
-	if _, ok := out.file(".local/share/opencode/auth.json"); ok {
-		t.Fatal("configure returned the opencode 1 auth.json")
-	}
-	rendered := out.renderCredentials(t, map[string]string{"OPENCODE_OPENAI_CREDENTIAL": "S-OPENAI", "OPENCODE_ZAI_CREDENTIAL": "S-ZAI"})
-	var entries []map[string]any
-	if err := json.Unmarshal([]byte(rendered), &entries); err != nil {
-		t.Fatal(err)
-	}
-	want := []map[string]any{
-		storeEntry("cred_discobox_openai", "openai", map[string]any{
-			"type": "oauth", "methodID": "chatgpt-browser", "refresh": "discobox-refresh-happens-in-the-control-plane",
-			"access": "S-OPENAI", "expires": float64(4102444800000), "metadata": map[string]any{"accountID": "acct-1"}}),
-		storeEntry("cred_discobox_zai", "zai", map[string]any{"type": "key", "key": "S-ZAI"}),
-	}
-	if !reflect.DeepEqual(entries, want) {
-		t.Fatalf("delivered credentials = %v, want %v", entries, want)
-	}
-}
-
-// TestConfigureKeepsProvidersWhenTheDefaultModelFails covers a default model
-// that does not answer — a plan or region restriction, not a bad credential.
-// It is reported, and declining to start opencode again saves every provider.
-func TestConfigureKeepsProvidersWhenTheDefaultModelFails(t *testing.T) {
-	env := newConfigureEnv(t)
-	env.connect = `[
-		{"id": "cred_a", "integrationID": "opencode-go", "label": "API key", "active": true, "value": {"type": "key", "key": "real-go-key"}},
-		{"id": "cred_b", "integrationID": "zai", "label": "API key", "active": true, "value": {"type": "key", "key": "real-zai-key"}}
-	]`
-	out := env.runWithInput(t, nil, map[string]string{"STUB_RUN_FAILS": "1"}, "\nn\n\n")
-	var names []string
-	for _, secret := range out.Secrets {
-		names = append(names, secret["envName"].(string))
-	}
-	slices.Sort(names)
-	if !slices.Equal(names, []string{"OPENCODE_OPENCODE_GO_CREDENTIAL", "OPENCODE_ZAI_CREDENTIAL"}) {
-		t.Fatalf("secrets = %v, want both providers kept", names)
-	}
-}
-
-// TestConfigureAsksAboutWebSearch covers the web search question: the answer
-// is recorded in Discobox's settings for the harness, a setting someone added
-// by editing that file survives the reconfigure, and the judge model a
-// harness configured before the judge was removed carried is dropped.
-func TestConfigureAsksAboutWebSearch(t *testing.T) {
-	env := newConfigureEnv(t)
-	env.connect = `[{"id": "cred_a", "integrationID": "zai", "label": "API key", "active": true, "value": {"type": "key", "key": "real-zai-key"}}]`
-	env.homeFiles = map[string]string{
-		settingsPath: `{"judgeModel": "anthropic/claude-opus-5", "edited": "kept", "webSearch": true}`,
-	}
-	for _, tc := range []struct {
-		answer string
-		want   bool
-	}{
-		{"n", false},
-		{"y", true},
-		// No answer keeps the previous one.
-		{"", true},
-	} {
-		out := env.runWithInput(t, nil, nil, "\n"+tc.answer+"\n")
-		file, ok := out.file(settingsPath)
-		if !ok {
-			t.Fatalf("answer %q: configure returned no settings file", tc.answer)
-		}
-		var settings map[string]any
-		if err := json.Unmarshal([]byte(file["content"].(string)), &settings); err != nil {
-			t.Fatal(err)
-		}
-		_, judge := settings["judgeModel"]
-		if settings["webSearch"] != tc.want || settings["edited"] != "kept" || judge {
-			t.Fatalf("answer %q: settings = %v, want webSearch %v, the edit kept and no judge model", tc.answer, settings, tc.want)
-		}
-	}
-}
-
-// End of input at any question is nobody being there, and fails configure
-// rather than deciding for them or spinning.
-func TestConfigureFailsAtEndOfInput(t *testing.T) {
-	env := newConfigureEnv(t)
-	env.connect = `[{"id": "cred_a", "integrationID": "zai", "label": "API key", "active": true, "value": {"type": "key", "key": "real-zai-key"}}]`
-	for _, input := range []string{"", "\n"} {
-		if out, err := env.attempt(t, nil, nil, input); err == nil {
-			t.Fatalf("input %q: configure succeeded at end of input:\n%s", input, out)
-		}
-	}
-}
 
 // settingsPath is Discobox's settings file for the harness, home-relative.
 const settingsPath = ".config/discobox/opencode-harness.json"
@@ -948,91 +566,13 @@ func runWrapperIn(t *testing.T, script string, files map[string]string, stub str
 	return strings.TrimSpace(string(out))
 }
 
-type configureEnv struct {
-	dir    string
-	home   string
-	bin    string
-	runDir string
-	script string
-	// connect is the credentials the stubbed interactive opencode adds to its
-	// store, as `auth export` would print them, standing in for what the user
-	// connects in the session.
-	connect string
-	// homeFiles are written into the sandbox home before the script runs:
-	// what a configured harness delivers into its configure sandbox.
-	homeFiles map[string]string
-}
-
-func newConfigureEnv(t *testing.T) *configureEnv {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the harness image's scripts run on Linux")
-	}
-	for _, tool := range []string{"sh", "node", "jq", "timeout", "grep", "tail", "mktemp", "cat"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("no %s to run the configure script with", tool)
-		}
-	}
-	dir := t.TempDir()
-	env := &configureEnv{
-		dir:    dir,
-		home:   filepath.Join(dir, "home"),
-		bin:    filepath.Join(dir, "bin"),
-		runDir: filepath.Join(dir, "run") + "/",
-		script: filepath.Join(dir, "configure.sh"),
-	}
-	for _, d := range []string{env.bin, env.runDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	raw, err := os.ReadFile("configure.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeExecutable(t, env.script, withHelpers(t, strings.ReplaceAll(string(raw), "/run/discobox/configure/", env.runDir)))
-	writeExecutable(t, filepath.Join(dir, "opencode-image.json"), readFile(t, "image.json"))
-	writeExecutable(t, filepath.Join(dir, "opencode-normalize.cjs"), readFile(t, "opencode-normalize.cjs"))
-	// `script -q -e -c CMD /dev/null` runs CMD with a terminal; here it just
-	// runs it.
-	writeExecutable(t, filepath.Join(env.bin, "script"), "#!/bin/sh\nexec sh -c \"$4\"\n")
-	// The stubbed opencode keeps credentials as opencode 2 does. A bare
-	// launch "connects" $STUB_CONNECT the way /connect does — a new account
-	// becomes its provider's active one — and writes the user's settings;
-	// `run` answers the check.
-	writeExecutable(t, filepath.Join(env.bin, "opencode"), "#!/bin/sh\n"+storeStub+`case "$*" in
-run*)
-	printf '%s\n' "$*" >>"$HOME/../run-args"
-	if [ -n "${STUB_RUN_FAILS:-}" ]; then echo "Error: this model needs an opt-in" >&2; exit 1; fi
-	echo "discobox-ok" ;;
---standalone)
-	mkdir -p "$HOME/.config/opencode" "$(dirname "$store")"
-	if [ -n "${STUB_PICK_ONLY:-}" ]; then
-		mkdir -p "$HOME/.local/state/opencode"
-		echo '{"recent":[{"providerID":"anthropic","modelID":"claude-haiku-4-5"}]}' >"$HOME/.local/state/opencode/model.json"
-	else
-		echo '{"model":"openai/gpt-5.6-terra"}' >"$HOME/.config/opencode/opencode.json"
-	fi
-	echo '{"theme":"tokyonight"}' >"$HOME/.config/opencode/cli.json"
-	[ -f "$store" ] || echo '[]' >"$store"
-	if [ -n "${STUB_CONNECT:-}" ]; then
-		jq --argjson in "$STUB_CONNECT" --arg keep "${STUB_CONNECT_KEEPS_ACTIVE-}" '($in | map(.integrationID)) as $ids
-			| map(if (.integrationID | IN($ids[])) and $keep == "" then .active = false else . end) + $in' "$store" >"$store.tmp" &&
-			mv "$store.tmp" "$store"
-	fi ;;
-*) echo "unexpected opencode $*" >&2; exit 1 ;;
-esac
-`)
-	return env
-}
-
 // withHelpers points a script at the helpers in this checkout rather than
 // where the image installs them, each behind an executable of its own as the
 // image installs it.
 func withHelpers(t *testing.T, script string) string {
 	t.Helper()
 	dir := t.TempDir()
-	for path, source := range map[string]string{credentialsHelper: "credentials.sh", modelHelper: "model.sh"} {
+	for path, source := range map[string]string{credentialsHelper: "credentials.sh"} {
 		abs, err := filepath.Abs(source)
 		if err != nil {
 			t.Fatal(err)
@@ -1054,119 +594,6 @@ func writeExecutable(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil { //nolint:gosec // A stub the script under test executes.
 		t.Fatal(err)
 	}
-}
-
-type configureOutput struct {
-	Files   []map[string]any `json:"files"`
-	Secrets []map[string]any `json:"secrets"`
-}
-
-// run runs configure.sh in a fresh sandbox home, with previous as the seeded
-// previous configuration and extra in the environment, and returns its output.
-func (e *configureEnv) run(t *testing.T, previous map[string]any, extra map[string]string) configureOutput {
-	t.Helper()
-	return e.runWithInput(t, previous, extra, "\n\n")
-}
-
-// runWithInput is run with stdin: one line per question the script asks.
-func (e *configureEnv) runWithInput(t *testing.T, previous map[string]any, extra map[string]string, input string) configureOutput {
-	t.Helper()
-	combined, err := e.attempt(t, previous, extra, input)
-	if err != nil {
-		t.Fatalf("configure.sh: %v\n%s", err, combined)
-	}
-	raw, err := os.ReadFile(e.runDir + "harness-configure.json")
-	if err != nil {
-		t.Fatalf("configure wrote no output: %v\n%s", err, combined)
-	}
-	var out configureOutput
-	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-
-// attempt runs configure.sh and answers what it printed and how it exited.
-func (e *configureEnv) attempt(t *testing.T, previous map[string]any, extra map[string]string, input string) (string, error) {
-	t.Helper()
-	if err := os.RemoveAll(e.home); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(e.home, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for rel, content := range e.homeFiles {
-		path := filepath.Join(e.home, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, name := range []string{"harness-configure.json", "harness-previous-config.json"} {
-		_ = os.Remove(e.runDir + name)
-	}
-	if previous != nil {
-		raw, err := json.Marshal(previous)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(e.runDir+"harness-previous-config.json", raw, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	cmd := exec.CommandContext(t.Context(), "sh", e.script) //nolint:gosec // The configure script under test, copied into this test's directory.
-	cmd.Env = append(os.Environ(),
-		"HOME="+e.home,
-		"PATH="+e.bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"STUB_CONNECT="+e.connect,
-		"NO_COLOR=1",
-		"XDG_DATA_HOME=", "XDG_CONFIG_HOME=", "XDG_STATE_HOME=",
-	)
-	for key, value := range extra {
-		cmd.Env = append(cmd.Env, key+"="+value)
-	}
-	cmd.Stdin = strings.NewReader(input)
-	combined, err := cmd.CombinedOutput()
-	return string(combined), err
-}
-
-func (o configureOutput) file(path string) (map[string]any, bool) {
-	for _, file := range o.Files {
-		if file["path"] == path {
-			return file, true
-		}
-	}
-	return nil, false
-}
-
-// renderCredentials renders the returned credentials file the way the sandbox
-// agent renders a templated harness file (sandbox-agent/terminal).
-func (o configureOutput) renderCredentials(t *testing.T, sentinels map[string]string) string {
-	t.Helper()
-	file, ok := o.file(credentialsPath)
-	if !ok {
-		t.Fatal("missing credential document")
-	}
-	rendered := credentialtest.Resolve(t, file["path"].(string), file["content"].(string), sentinels)
-	return rendered
-}
-
-// stripValues is what the control plane seeds as the previous configuration:
-// the secrets' metadata, never their values.
-func stripValues(secrets []map[string]any) []map[string]any {
-	out := make([]map[string]any, 0, len(secrets))
-	for _, secret := range secrets {
-		kept := map[string]any{}
-		for key, value := range secret {
-			if key != "value" {
-				kept[key] = value
-			}
-		}
-		out = append(out, kept)
-	}
-	return out
 }
 
 // pluginSet reads one `const NAME = new Set([...])` out of the plugin source.
@@ -1296,7 +723,7 @@ func TestStreamRateEventsAreNotPublished(t *testing.T) {
 }
 
 // The plugin reaches opencode from its managed layer, which outranks both the
-// user's global config and a project's — and which the configure flow's
+// user's global config and a project's — and which save-back's
 // capture cannot replace, because it captures the user's config and not this.
 // opencode 2 names plugins under `plugins` and takes a directory, refusing a
 // single file.

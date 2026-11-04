@@ -55,7 +55,7 @@ func TestCreateKeepsItsFeatures(t *testing.T) {
 		}
 	}
 
-	manifest := model.SandboxManifest{HarnessMode: "run", Image: "img"}
+	manifest := model.SandboxManifest{Image: "img"}
 	before := manifest.Fingerprint()
 	manifest.Features = map[string]sandboxconfig.Feature{}
 	if manifest.Fingerprint() != before {

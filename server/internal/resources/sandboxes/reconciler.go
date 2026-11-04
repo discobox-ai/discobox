@@ -628,7 +628,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.Description = sb.Description
 	opts.HarnessConfigID = sb.HarnessConfigID
 	opts.HarnessChangeID = sb.HarnessChangeID
-	opts.HarnessMode = sb.HarnessMode
 	opts.Model = sb.Model
 	opts.ModelServiceTier = sb.ModelServiceTier
 	opts.ModelReasoningLevel = sb.ModelReasoningLevel
@@ -723,7 +722,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 				Name:             cfg.Name,
 				RunCommand:       cfg.RunCommand,
 				RelaunchCommand:  cfg.RelaunchCommand,
-				ConfigCommand:    cfg.ConfigCommand,
 				Files:            cfg.Files,
 				ConfiguredFiles:  cfg.ConfiguredFiles,
 				FileOverrides:    cfg.FileOverrides,

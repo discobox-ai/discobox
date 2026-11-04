@@ -54,16 +54,23 @@ func TestProjectCreateRejectsCopyWithoutFrom(t *testing.T) {
 // projects/service.go). Absent, the flag must not touch the field at all —
 // every other field on this command already tells "not given" from "given as
 // the type's zero value" through cmd.Flags().Changed, and welcomed must too.
+//
+// --harness-changes-explained is the same escape hatch for the console's
+// explanation of saving a discobox's harness changes.
 func TestProjectUpdateWelcomedFlag(t *testing.T) {
 	const projectID = "proj_aaaaaaaaaaaaaaaa"
 	for _, tc := range []struct {
-		name string
-		args []string
-		want *bool
+		name  string
+		field string
+		args  []string
+		want  *bool
 	}{
-		{"not given", nil, nil},
-		{"false", []string{"--welcomed=false"}, boolPtr(false)},
-		{"bare flag means true", []string{"--welcomed"}, boolPtr(true)},
+		{"not given", "welcomed", nil, nil},
+		{"false", "welcomed", []string{"--welcomed=false"}, boolPtr(false)},
+		{"bare flag means true", "welcomed", []string{"--welcomed"}, boolPtr(true)},
+		{"explained not given", "harnessChangesExplained", nil, nil},
+		{"explained false", "harnessChangesExplained", []string{"--harness-changes-explained=false"}, boolPtr(false)},
+		{"explained bare flag means true", "harnessChangesExplained", []string{"--harness-changes-explained"}, boolPtr(true)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var posted map[string]any
@@ -76,7 +83,7 @@ func TestProjectUpdateWelcomedFlag(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				_, _ = w.Write([]byte(`{"id":"` + projectID + `","ownerUserId":"user-1","name":"Project",` +
-					`"default":false,"welcomed":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+					`"default":false,"welcomed":true,"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 			}))
 			t.Cleanup(server.Close)
 
@@ -92,15 +99,15 @@ func TestProjectUpdateWelcomedFlag(t *testing.T) {
 			if method != http.MethodPatch || path != "/projects/"+projectID {
 				t.Fatalf("request = %s %s, want PATCH /projects/%s", method, path, projectID)
 			}
-			got, ok := posted["welcomed"]
+			got, ok := posted[tc.field]
 			if tc.want == nil {
 				if ok {
-					t.Fatalf("welcomed = %v in the request body, want it left out entirely", got)
+					t.Fatalf("%s = %v in the request body, want it left out entirely", tc.field, got)
 				}
 				return
 			}
 			if !ok || got != *tc.want {
-				t.Fatalf("welcomed = %#v, want %v", got, *tc.want)
+				t.Fatalf("%s = %#v, want %v", tc.field, got, *tc.want)
 			}
 		})
 	}

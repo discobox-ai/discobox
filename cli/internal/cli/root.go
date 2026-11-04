@@ -170,10 +170,6 @@ See "%[1]s run --help" for everything run takes.`, name),
 			if err := app.resolveServerName(serverChosen(cmd)); err != nil {
 				return err
 			}
-			// Every command, not just the ones a pane runs: which command a
-			// pane is showing is the launcher's business, and a watch nobody
-			// asked for is a no-op (watchParentProcess).
-			cmd.SetContext(watchParentProcess(cmd.Context(), app.errOut))
 			return nil
 		},
 		// The words a bare `discobox` is given are refused, so nothing below

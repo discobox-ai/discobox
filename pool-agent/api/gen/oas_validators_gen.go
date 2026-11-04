@@ -1777,24 +1777,6 @@ func (s *ResolvedHarnessConfig) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.ConfigCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "configCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if value, ok := s.Volumes.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -1878,24 +1860,6 @@ func (s *SandboxConfig) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.HarnessMode.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "harnessMode",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		var failures []validate.FieldError
 		for i, elem := range s.SkillsSources {
 			if err := func() error {
@@ -1960,17 +1924,6 @@ func (s *SandboxConfig) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
-}
-
-func (s SandboxConfigHarnessMode) Validate() error {
-	switch s {
-	case "run":
-		return nil
-	case "config":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
 }
 
 func (s SandboxConfigSourceCodeReferences) Validate() error {

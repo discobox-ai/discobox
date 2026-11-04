@@ -844,8 +844,8 @@ func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) 
 		return writeJSON(cmd.OutOrStdout(), harness)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tCONFIGURED\tRUN COMMAND\tSECRETS\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatConfigured(harness), strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tRUN COMMAND\tSECRETS\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
 	if err := tw.Flush(); err != nil {
 		return err
 	}
@@ -854,8 +854,8 @@ func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) 
 		return nil
 	}
 	// Each path once, as a discobox is given it, and which set it comes from:
-	// what --remove-file can take back is what says "yours". A configured
-	// file's path is what a configure command inside a discobox wrote.
+	// what --remove-file can take back is what says "yours". A saved
+	// file's path is what a discobox's saved harness change wrote.
 	fmt.Fprintln(cmd.OutOrStdout())
 	tw = tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FILE\tFROM\tCREATE-ONLY")
@@ -872,8 +872,8 @@ func formatHarnessFileSource(file harnessFile) string {
 		switch source {
 		case tui.HarnessFileOverride:
 			return "yours"
-		case tui.HarnessFileConfigured:
-			return "configure"
+		case tui.HarnessFileSaved:
+			return "saved"
 		default:
 			return "bundle"
 		}
@@ -900,24 +900,11 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 		defaultID = defaultHarnessConfigID[0]
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tCONFIGURED\tDEFAULT\tRUN COMMAND\tUPDATED")
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
 	for _, harness := range harnesses {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatConfigured(&harness), formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt))
 	}
 	return tw.Flush()
-}
-
-// formatConfigured renders whether a harness has completed its configure flow.
-// Only a configured harness can be run, so this is the column that explains why
-// `discobox run -H <slug>` is refused. A failed attempt shows its reason.
-func formatConfigured(harness *apimodel.HarnessConfig) string {
-	if harness.Configured {
-		return "yes"
-	}
-	if reason := strings.TrimSpace(harness.ConfigureError.Or("")); reason != "" {
-		return "no (failed)"
-	}
-	return "no"
 }
 
 func (a *App) writeHarnessSecretBindings(cmd *cobra.Command, declarations []apimodel.HarnessConfigSecret, bindings []apimodel.SecretBinding) error {

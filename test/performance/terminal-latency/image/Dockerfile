@@ -9,4 +9,4 @@ ARG HARNESS_METADATA
 # server would ever refuse. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
-COPY configure.sh probe.py provision.yaml /features/terminal-latency/
+COPY probe.py provision.yaml /features/terminal-latency/

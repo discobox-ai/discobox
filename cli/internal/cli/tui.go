@@ -66,9 +66,11 @@ Ctrl-C is never the leader. An Alt leader reaches discobox only from a terminal
 that sends Alt as Meta (an Escape before the key): on a Mac, set Terminal's
 "Use Option as Meta key", or iTerm2's Option key to "Esc+".
 
-F3 opens the harnesses — the same screen "discobox configure" opens — where an
-harness is enabled, disabled, made the project default, or has its files edited.
-What is enabled there is what the run options offer as the harness to run.
+F3 opens the harnesses — the same screen "discobox configure" opens — where a
+harness is made the project default, has its files edited, or is reset to its
+bundle's defaults. A discobox whose harness changed its settings or signed in
+shows a green band; saving that change shares it with every discobox on the
+harness.
 
 The window takes the whole terminal while it is up, and puts back what was on
 screen when it exits. Press F1 for the keys, and Ctrl-C to quit once no
@@ -128,12 +130,20 @@ func (a *App) runConsole(cmd *cobra.Command, leaderFlag string, options ...tui.O
 	// tui.WithAttach and tui.WithRun — since a window opened on one discobox
 	// (`discobox attach`) has no screen behind the introduction to hand over
 	// to, while one opened on one run (`discobox run`) does.
-	welcomed, err := a.projectWelcomed(cmd.Context(), client, projectID)
+	//
+	// The harness-changes explainer is read with it, from the same project, for
+	// the same reason: it is once per project (ADR 26-11-02-152 §4), and the
+	// window has to know before its first listing whether a box with a change
+	// to save is the first one this project has seen.
+	intro, err := a.projectIntroductions(cmd.Context(), client, projectID)
 	if err != nil {
 		return err
 	}
-	if !welcomed {
+	if !intro.welcomed {
 		options = append(options, tui.WithWelcome())
+	}
+	if !intro.harnessChangesExplained {
+		options = append(options, tui.WithHarnessChangesUnexplained())
 	}
 	// The window's own loop does not wait for the commands it has in flight
 	// when it quits, and one of them may be a push that cannot be interrupted
@@ -172,16 +182,22 @@ func canAskInline(cmd *cobra.Command) bool {
 	return canOpenWindow(cmd) && isTerminalStream(cmd.ErrOrStderr())
 }
 
-// projectWelcomed reports whether this project has already shown its
-// introduction. A project the server cannot describe is an error worth stopping
-// on: everything the window does needs the project, and a launcher that opened
-// anyway would fail again on its first request.
-func (a *App) projectWelcomed(ctx context.Context, client *apiclientgen.Client, projectID string) (bool, error) {
+// projectIntroductions is what this project has already explained: its
+// welcome, and saving a discobox's harness changes. A project the server cannot
+// describe is an error worth stopping on: everything the window does needs the
+// project, and a launcher that opened anyway would fail again on its first
+// request.
+type projectIntroductions struct {
+	welcomed                bool
+	harnessChangesExplained bool
+}
+
+func (a *App) projectIntroductions(ctx context.Context, client *apiclientgen.Client, projectID string) (projectIntroductions, error) {
 	project, err := a.getProject(ctx, client, projectID)
 	if err != nil {
-		return false, err
+		return projectIntroductions{}, err
 	}
-	return project.Welcomed, nil
+	return projectIntroductions{welcomed: project.Welcomed, harnessChangesExplained: project.HarnessChangesExplained}, nil
 }
 
 // apiDataSource is the launcher's one seam onto the rest of the CLI. Everything
@@ -458,6 +474,19 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 // `discobox project` commands use rather than an endpoint of its own.
 func (d *apiDataSource) MarkWelcomed(ctx context.Context) error {
 	body := &apimodel.UpdateProjectBody{Welcomed: apiclientgen.NewOptBool(true)}
+	res, err := d.client.UpdateProject(ctx, body, apiclientgen.UpdateProjectParams{ProjectId: d.projectID})
+	if err != nil {
+		return err
+	}
+	_, err = expectResponse[apimodel.Project](res)
+	return err
+}
+
+// MarkHarnessChangesExplained records on the project that saving a discobox's
+// harness changes has been explained, through the same project update
+// MarkWelcomed uses.
+func (d *apiDataSource) MarkHarnessChangesExplained(ctx context.Context) error {
+	body := &apimodel.UpdateProjectBody{HarnessChangesExplained: apiclientgen.NewOptBool(true)}
 	res, err := d.client.UpdateProject(ctx, body, apiclientgen.UpdateProjectParams{ProjectId: d.projectID})
 	if err != nil {
 		return err
@@ -885,7 +914,6 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		}
 		row.HarnessID = cfg.ID
 		row.HarnessName = strings.TrimSpace(cfg.Name)
-		row.HarnessUncredentialed = harnessUncredentialed(cfg)
 	}
 	if upgrade, ok := sb.Runtime.Upgrade.Get(); ok {
 		row.Upgrade = upgrade.Available
@@ -957,7 +985,8 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	if status, ok := sb.Runtime.AgentStatus.Get(); ok {
 		var candidate string
 		if json.Unmarshal(status["harnessConfigCandidate"], &candidate) == nil {
-			row.HarnessConfigPending = candidate != ""
+			row.HarnessConfigCandidate = terminalSafe(strings.TrimSpace(candidate))
+			row.HarnessConfigPending = row.HarnessConfigCandidate != ""
 		}
 	}
 	row.AgentObservedAt = sb.Runtime.AgentStatusObservedAt.Or(time.Time{})

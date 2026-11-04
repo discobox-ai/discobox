@@ -266,7 +266,7 @@ func (m *Model) openIssue(number int, pull bool) tea.Cmd {
 	m.nextPaneID++
 	_, width := m.columns(m.shells.len() + 1)
 	cols, rows := m.paneCells(width)
-	term := termpane.New(m.paneOptions(paneWorkspace, true)...)
+	term := termpane.New(m.paneOptions(true)...)
 	term.SetSize(cols, rows)
 	p := &pane{
 		id: m.nextPaneID, term: term, sandbox: box,

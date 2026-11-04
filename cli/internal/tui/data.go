@@ -284,15 +284,11 @@ type Sandbox struct {
 	Harness string
 	// HarnessID is that harness's config ID. The slug above is what the row
 	// shows; this is what matches a credential the window has been told is
-	// refused, and what its configure flow is opened by.
+	// refused.
 	HarnessID string
 	// HarnessName is that harness's name as a person reads it, which is what
 	// a band about the harness calls it.
 	HarnessName string
-	// HarnessUncredentialed is a harness with a configure flow and no
-	// credentials bound to it: every session on it runs signed out until it is
-	// configured. See uncredentialed.go.
-	HarnessUncredentialed bool
 
 	// CreatedBy is the ID of the discobox that created this one, on the same
 	// server, and empty for one a person created. The list draws it under
@@ -390,6 +386,10 @@ type Sandbox struct {
 	Provisioning string
 	// HarnessConfigPending reports a captured local settings or credential change.
 	HarnessConfigPending bool
+	// HarnessConfigCandidate is that change's candidate ID, as the box reports
+	// it: what names the occurrence the harness-changes band is about, so
+	// dismissing it holds only until the box captures a different change.
+	HarnessConfigCandidate string
 
 	// Repaired is the last automatic repair of this box, once it is over. It is
 	// carried because a repair that works clears the failure it answered, and
@@ -552,21 +552,6 @@ func (v ListView) Equal(o ListView) bool {
 // tag, which is the default and so nothing to remember.
 func (v ListView) IsZero() bool { return v.Equal(ListView{}) }
 
-// HarnessState is what a harness is set to, and so whether a discobox can be
-// run on it. It is the one thing the harnesses screen is really about: a
-// harness that has never been through its own setup has no credentials to work
-// with.
-type HarnessState string
-
-const (
-	// HarnessEnabled has been through its configure flow and can be run.
-	HarnessEnabled HarnessState = "enabled"
-	// HarnessDisabled has not, or has been taken back out of use.
-	HarnessDisabled HarnessState = "disabled"
-	// HarnessFailed tried and did not finish. The reason is on the harness.
-	HarnessFailed HarnessState = "failed"
-)
-
 // SecretRejection is a credential the window knows does not work: an upstream
 // refused it, the pool's proxy could not save it with a second value, and the
 // server could not renew it (ADR 0132).
@@ -575,12 +560,13 @@ const (
 // discobox a refused credential looks exactly like Discobox failing to deliver
 // one, and saying which credential was refused, and where, is what separates
 // "this is broken" from "this token is dead". The second job is the remedy,
-// which is why the harness is carried: a credential its configure flow made is
-// replaced by configuring it again, and anything else by replacing the value.
+// which is why the harness is carried: a credential a harness change saved is
+// replaced by signing in again in the box and saving, and anything else by
+// replacing the value.
 type SecretRejection struct {
 	// Server is the server the credential belongs to, by the name the window
-	// lists it under, and where the remedy goes (ADR 0131 §1): a harness is
-	// configured again on its own server, and a secret replaced there. Empty
+	// lists it under, and where the remedy goes (ADR 0131 §1): a secret is
+	// replaced on its own server. Empty
 	// when there is only one server.
 	Server     string
 	SecretID   string
@@ -596,7 +582,7 @@ type SecretRejection struct {
 	// names one. It is often what a person recognizes the credential by.
 	EnvName string
 	// SandboxID is the discobox that most recently ran into it, and
-	// HarnessConfigID the harness whose configure flow owns the credential,
+	// HarnessConfigID the harness whose saved changes own the credential,
 	// when one does. Between them they decide which workspace raises the band
 	// and what pressing it opens.
 	SandboxID         string
@@ -654,10 +640,9 @@ type Pool struct {
 // its own, so the card asks for it when it is opened. See
 // DataSource.HarnessSecrets.
 type Harness struct {
-	ID    string
-	Name  string
-	Slug  string
-	State HarnessState
+	ID   string
+	Name string
+	Slug string
 
 	// Default is the harness a discobox is created on when nothing says otherwise.
 	Default bool
@@ -668,22 +653,6 @@ type Harness struct {
 	// not offered as a project's default, since defaulting to it is the same as
 	// having no coding harness at all.
 	Shell bool
-	// Configurable is whether the image declares a setup command to run. The
-	// reserved `shell` built-in declares none — it is a login shell with no
-	// credentials to collect — and neither enabling nor disabling applies to
-	// one, since the server refuses both.
-	Configurable bool
-	// ConfigReminder is harness-authored guidance shown outside its configure
-	// terminal, so the terminal itself cannot be mistaken for a normal session.
-	ConfigReminder string
-	// ConfigPorts are the local ports its configure flow forwards into the
-	// configure sandbox at the same number — a sign-in's callback port. The
-	// flow binds them; the window only asks ahead whether it can, so the
-	// header can say so for the whole session. See DataSource.LocalPortsInUse.
-	ConfigPorts []HarnessConfigPort
-	// Error is why the configure flow did not finish, when it did not.
-	Error string
-
 	// Bundle is the harness bundle every discobox on it applies (ADR
 	// 26-10-16-423 §2), and Digest its digest.
 	Bundle string
@@ -696,21 +665,6 @@ type Harness struct {
 	Files   []HarnessFile
 
 	Updated time.Time
-}
-
-// HarnessConfigPort is one port a harness's configure flow needs bound at its
-// own number on this machine.
-type HarnessConfigPort struct {
-	// Port is zero when Ephemeral.
-	Port int
-	// Ephemeral stands for whatever ports the configure sandbox turns out to
-	// listen on, which the flow forwards as it finds them. Nothing can be
-	// checked for it before the flow opens.
-	Ephemeral bool
-	// Unavailable is what to tell the user when it cannot be: the harness's
-	// own words, since only it knows what its sign-in can still do without
-	// the port. Always filled in.
-	Unavailable string
 }
 
 // HarnessSecret is one environment variable a harness runs with.
@@ -743,7 +697,7 @@ type HarnessFile struct {
 
 	// Source is the file set this file comes from. A harness lists each path
 	// once, as a discobox is given it: a person's override over the
-	// configure flow's file over the bundle's.
+	// saved file over the bundle's.
 	Source HarnessFileSource
 	// Shadows are the sets beneath it that have a file at this path too, which
 	// it hides, topmost first.
@@ -757,8 +711,8 @@ type HarnessFileSource string
 const (
 	// HarnessFileFromBundle is a file the harness's bundle declares.
 	HarnessFileFromBundle HarnessFileSource = "bundle"
-	// HarnessFileConfigured is a file its configure flow wrote.
-	HarnessFileConfigured HarnessFileSource = "configured"
+	// HarnessFileSaved is a file saved from a discobox's harness change.
+	HarnessFileSaved HarnessFileSource = "saved"
 	// HarnessFileOverride is a file a person added or overrode.
 	HarnessFileOverride HarnessFileSource = "override"
 )
@@ -789,20 +743,28 @@ func (v ServiceVerb) done(name string) string {
 
 // HarnessVerb is a harness action that runs against the API and returns,
 // leaving the window up — the counterpart of Verb for the harnesses screen.
-// Enabling is not among them: it is an interactive flow that owns the terminal.
 type HarnessVerb string
 
 const (
-	HarnessDisable    HarnessVerb = "disable"
-	HarnessSetDefault HarnessVerb = "set default"
+	// HarnessReset forgets what was saved from discoboxes' harness changes —
+	// settings files and the logins those saves created — returning the
+	// harness to its bundle's defaults (ADR 26-11-02-152 §3).
+	HarnessReset HarnessVerb = "reset"
+	// HarnessResetOverrides is a reset that also removes the files a person
+	// added or overrode, leaving nothing but the bundle's (ADR 26-11-04-028 §1).
+	HarnessResetOverrides HarnessVerb = "reset with your files"
+	HarnessSetDefault     HarnessVerb = "set default"
 )
 
 // done is what the status line says once the verb has run.
 func (v HarnessVerb) done(name string) string {
-	if v == HarnessSetDefault {
+	switch v {
+	case HarnessSetDefault:
 		return name + " is now the default"
+	case HarnessResetOverrides:
+		return "reset " + name + " to its bundle's files alone"
 	}
-	return "disabled " + name
+	return "reset " + name + " to its bundle's defaults, keeping your files"
 }
 
 // displayName is what the harness is called on screen: its name, the slug it is
@@ -1383,13 +1345,6 @@ type Terminal interface {
 	// terminal is open, and a receive that nobody is waiting on is dropped
 	// rather than blocking the transport.
 	Events() <-chan TerminalEvent
-}
-
-// ExitReporter provides the local harness configure command's exit status.
-// Remote terminals report connection closure rather than a command verdict.
-type ExitReporter interface {
-	// ExitStatus is the command's exit code, and whether it has ended.
-	ExitStatus() (code int, done bool)
 }
 
 // Binding is one sandbox port reachable at a local one, while a Forward is
@@ -2125,6 +2080,11 @@ type DataSource interface {
 	// remembers, not this machine: see welcome.go.
 	MarkWelcomed(ctx context.Context) error
 
+	// MarkHarnessChangesExplained records that the project has explained
+	// saving a discobox's harness changes, so no window on it explains again.
+	// The project remembers, as it does the welcome: see harness_changes.go.
+	MarkHarnessChangesExplained(ctx context.Context) error
+
 	// List is the project's sandboxes, newest-created first, across every
 	// server the window lists, with the servers that did not answer
 	// (ADR 0116 §4). It is polled, so it answers with what the servers have
@@ -2278,18 +2238,6 @@ type DataSource interface {
 
 	// DoHarness runs a lifecycle verb against one harness.
 	DoHarness(ctx context.Context, server string, verb HarnessVerb, harnessID string) error
-
-	// OpenHarnessConfigure starts the harness's interactive setup on a terminal
-	// the window draws in a dedicated configuration pane.
-	OpenHarnessConfigure(ctx context.Context, server, harnessID string, cols, rows int) (Terminal, error)
-
-	// LocalPortsInUse reports which of the given local ports cannot be bound
-	// on this machine right now. The window asks just before it opens a
-	// configure flow that declares ports (Harness.ConfigPorts), so the pane's
-	// header can carry the harness's own warning for as long as the flow runs
-	// — the flow itself binds them a moment later and says the same thing in
-	// its terminal, where a full-screen sign-in then paints over it.
-	LocalPortsInUse(ctx context.Context, ports []int) []int
 
 	// EditHarnessFile opens one of the harness's files in the user's editor and
 	// saves what it wrote back, reporting whether anything changed. The window

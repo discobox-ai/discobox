@@ -55,11 +55,11 @@ In another terminal (the runner needs `docker`, `go`, `jq`, `timeout`, and
 go tool task perf:terminal
 ```
 
-The runner builds the current CLI and the fixture harness, registers and
-configures it under a unique name, gives each path/profile pair a fresh disposable
+The runner builds the current CLI and the fixture harness, registers it under
+a unique name, gives each path/profile pair a fresh disposable
 sandbox, and deletes only those resources. Separate sandboxes prevent replay
 or detach state from one probe contaminating the next. Reports land under
-`.tmp/terminal-latency/<run-id>/`, beside `configure.json` and a
+`.tmp/terminal-latency/<run-id>/`, beside `harness.json` and a
 `sandbox-<mode>-<profile>.json` for each sandbox.
 
 After the readiness marker is observed, each client drains the initial replay

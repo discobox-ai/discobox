@@ -1,4 +1,4 @@
-// Shared by interactive configure and background save-back.
+// Background save-back's normalization of omp's credentials.
 "use strict";
 exports.normalize = function (
   exported,
@@ -50,8 +50,8 @@ exports.normalize = function (
   // holds them, which a sign-in replacing one can change — so a position
   // in the export names nothing. Three passes, each taking only names the
   // ones before it left:
-  //   1. A credential still holding the PREV_ sentinel of a previous
-  //      secret is that secret, kept.
+  //   1. A credential still holding the sentinel delivered for a
+  //      previous secret is that secret, kept.
   //   2. A new credential for an account a previous secret held — the
   //      same provider, accountId and email — replaces that secret in
   //      place.
@@ -135,7 +135,7 @@ exports.normalize = function (
   }
 
   // notice says when a login nothing renews stops working, or that it
-  // already has: a kept one as much as a new one, since a reconfigure
+  // already has: a kept one as much as a new one, since a save
   // about something else would otherwise carry a dead login on in
   // silence.
   const notice = (provider, credential) => {
@@ -146,7 +146,7 @@ exports.normalize = function (
     if (expires <= Date.now()) {
       return `${provider}'s sign-in expired ${day}, and Discobox cannot renew it. Sign in to it again, or with an API key.`;
     }
-    return `${provider}'s sign-in expires ${day}, and Discobox cannot renew it. Configure again after that, or sign in with an API key.`;
+    return `${provider}'s sign-in expires ${day}, and Discobox cannot renew it. Sign in again and save the change after that, or sign in with an API key.`;
   };
 
   const plan = [];

@@ -256,9 +256,6 @@ type Model struct {
 	// read. See Model.exit.
 	exitErr error
 
-	// overlay is the command that has the screen over the workspace while it
-	// runs.
-	overlay    *pane
 	nextPaneID int
 
 	// mouseSeized is whether the leader plus m has taken the mouse from the
@@ -459,6 +456,12 @@ type Model struct {
 	// welcoming is whether the introduction has the window. It is shown once
 	// per project and dismissed with Enter; see welcome.go.
 	welcoming bool
+
+	// explainHarnessChanges is whether the project has yet to explain saving a
+	// discobox's harness changes: the explainer is owed the first time a
+	// listed box has one. It goes false once the explainer is shown, and is
+	// never set again by this window; see harness_changes.go.
+	explainHarnessChanges bool
 
 	// copySize is the measurement behind the "copy this directory?" question:
 	// the running total, the walk's stop, and the dialog the number is being
@@ -1115,7 +1118,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.opts.setSources(m.list.sources())
 		m.openOnList()
 		m.layout()
-		return tea.Batch(again, m.reportUnreachable(msg.listing.Unreachable))
+		// Last, once the screen the listing leaves up is settled: the
+		// explainer waits for a screen with nothing else in front of it.
+		return tea.Batch(again, m.reportUnreachable(msg.listing.Unreachable), m.explainHarnessChangesIfOwed())
 
 	case secretsLoadedListMsg:
 		return m.secretsLoaded(msg)
@@ -1161,13 +1166,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case openRejectedMsg:
-		return m.openCredentialRemedy(m.currentBox())
+		return m.openRejectedRemedy(m.currentBox())
 
 	case rejectionRemedyMsg:
 		return m.rejectionRemedy(msg)
-
-	case uncredentialedRemedyMsg:
-		return m.uncredentialedRemedy(msg)
 
 	case dismissBannerMsg:
 		return m.dismissBanner()
@@ -1397,9 +1399,6 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		msg.opt.items = append(msg.opt.items, msg.source.Value)
 		return nil
 
-	case configurePaneOpenedMsg:
-		return m.configurePaneOpened(msg)
-
 	case workspaceExecsMsg:
 		return m.workspaceExecs(msg)
 
@@ -1488,12 +1487,6 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case poolsLoadedMsg:
 		m.poolsLoaded(msg)
 		return nil
-
-	case harnessSetupMsg:
-		if msg.andDefault {
-			return m.configureHarnessThen(m.configServer(), msg.harness, &msg.harness, msg.resume)
-		}
-		return m.configureHarnessThen(m.configServer(), msg.harness, nil, msg.resume)
 
 	case harnessDefaultMsg:
 		return m.chooseDefaultHarness(msg)
@@ -1845,7 +1838,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		// A page right of the tree has no pane to own the leader either: h is
 		// the way to the tree, and ↑↓ switch boxes, as they do from a pane.
-		if m.pageUp() && !m.listFront && m.treeShown() {
+		if m.pageOpen() && !m.listFront && m.treeShown() {
 			if delta, ok := boxStep(key); ok {
 				return m.switchBox(delta)
 			}
@@ -1889,7 +1882,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			case credentialsLeaderKey:
 				return m.openCredentialDialog(m.paneBox.ID)
 			case rejectedKey:
-				return m.openCredentialRemedy(m.currentBox())
+				return m.openRejectedRemedy(m.currentBox())
 			case bannerDismissKey:
 				return m.dismissBanner()
 			}
@@ -1978,11 +1971,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// Neither screen while a pane is on screen. They are drawn *under* a pane,
 	// never over one — View reaches `case m.inPanes()` first, and the mouse
 	// leaves them out of modalUp for the same reason — so a key taken here is
-	// one the program in the pane could never receive. That is not a corner
-	// case: both of these screens open panes of their own and stay open behind
-	// them, so the configure terminal a harness opens sat there reading nothing
-	// while Enter went on meaning "reconfigure the highlighted harness" to the
-	// list underneath, restarting the flow the user was looking at.
+	// one the program in the pane could never receive.
 	if !m.inPanes() && !m.listHasKeys() {
 		if m.harnessesOpen {
 			return m.updateHarnesses(msg)
@@ -3098,9 +3087,6 @@ func (m *Model) runRequest(req RunRequest) tea.Cmd {
 	if cmd, stop := m.askForADefaultHarness(req); stop {
 		return cmd
 	}
-	if cmd, stop := m.askToSetUpHarness(req); stop {
-		return cmd
-	}
 	return m.startRun(req)
 }
 
@@ -3185,9 +3171,6 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 	items := make([]action, 0, len(candidates))
 	for i, harness := range candidates {
 		detail := "make it the project default"
-		if harness.State != HarnessEnabled {
-			detail = "set it up, then make it the default"
-		}
 		n := itoa(i + 1)
 		items = append(items, action{
 			key: n, press: n, label: harness.displayName(), detail: detail, enabled: true,
@@ -3210,14 +3193,10 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 	return nil, true
 }
 
-// chooseDefaultHarness acts on that choice: a harness that already works
-// becomes the default outright, and one that does not is set up first. Either
-// way the run that asked the question runs when it is answered.
+// chooseDefaultHarness acts on that choice: the harness becomes the default,
+// and the run that asked the question runs when it is answered.
 func (m *Model) chooseDefaultHarness(msg harnessDefaultMsg) tea.Cmd {
-	if msg.harness.State == HarnessEnabled {
-		return m.runHarnessVerb(HarnessSetDefault, msg.harness, msg.resume)
-	}
-	return m.configureHarnessThen(m.configServer(), msg.harness, &msg.harness, msg.resume)
+	return m.runHarnessVerb(HarnessSetDefault, msg.harness, msg.resume)
 }
 
 // projectDefaultHarness is the harness the project runs when nothing says
@@ -3243,38 +3222,6 @@ func (m *Model) defaultCandidates() []Harness {
 	return out
 }
 
-// askToSetUpHarness stops a run whose harness cannot run, and offers the way
-// out. It reports whether the run was stopped.
-//
-// A harness that has never been through its setup has no credentials, and the
-// server refuses the sandbox at create — so the alternative to asking here is
-// an error a few seconds later saying the same thing with nothing to do about
-// it. The offer is the same configure flow the harnesses screen runs.
-func (m *Model) askToSetUpHarness(req RunRequest) (tea.Cmd, bool) {
-	if req.Harness == "" {
-		// Nothing chosen: whatever the project default resolves to at create is
-		// the server's answer, and it is entitled to give it.
-		return nil, false
-	}
-	harness, ok := m.harnessNamed(req.Harness)
-	if !ok || harness.State == HarnessEnabled {
-		return nil, false
-	}
-	name := harness.displayName()
-	if !harness.Configurable {
-		// Nothing to offer: it declares no setup, so it is not the setup that
-		// is missing. Saying so beats a confirm whose yes does nothing.
-		return m.runFailed(fmt.Errorf("%s cannot be run and has no setup to run", name)), true
-	}
-	m.dialog = confirmDialog("Set up "+name+"?",
-		name+" has not been set up, so a discobox cannot be created on it. Run its setup now? It takes the terminal and asks its own questions.",
-		func(string) tea.Cmd {
-			return func() tea.Msg { return harnessSetupMsg{harness: harness, resume: &req} }
-		})
-	m.leavesTheRun(m.dialog)
-	return nil, true
-}
-
 // leavesTheRun makes turning down a question a run stopped to ask end the
 // run's own window, as turning down its create card does (createDialog):
 // nothing was made, and there is no list behind the question to land on. The
@@ -3283,17 +3230,6 @@ func (m *Model) leavesTheRun(d *dialog) {
 	if m.oneShot() {
 		d.onCancel = func() tea.Cmd { return m.exit(errNothingCreated) }
 	}
-}
-
-// harnessNamed finds the harness a run request names, by the same name the
-// request carries it as — what `--harness` takes.
-func (m *Model) harnessNamed(name string) (Harness, bool) {
-	for _, harness := range m.harnesses.all {
-		if harness.flagName() == name {
-			return harness, true
-		}
-	}
-	return Harness{}, false
 }
 
 func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
@@ -3791,10 +3727,6 @@ func (m *Model) layout() {
 	if m.workspaceShown() {
 		for _, p := range m.allPanes() {
 			p.term.SetSize(m.paneCells(m.paneWidthOf(p)))
-		}
-		if m.overlay != nil {
-			// It has the screen, whatever is under it.
-			m.overlay.term.SetSize(m.paneCells(m.width))
 		}
 		return
 	}
@@ -4531,10 +4463,9 @@ func says(text string) hint { return hint{text: text} }
 func pressing(text string, keys ...string) hint { return hint{text: text, keys: keys} }
 
 func (m *Model) hints() []hint {
-	// Only while the screen is the one on screen. A pane opened from it is
-	// drawn over it and takes the keys (updateKey), so offering the list's own
-	// keys under a configure terminal would be offering keys that no longer do
-	// what they say. The list beside a page takes them the same way, so the
+	// Only while the screen is the one on screen. A pane drawn over it takes
+	// the keys (updateKey), so offering the list's own keys under one would be
+	// offering keys that no longer do what they say. The list beside a page takes them the same way, so the
 	// keys offered are the list's (updateKey, listHasKeys).
 	if !m.inPanes() && !m.listHasKeys() {
 		if m.harnessesOpen {
@@ -4651,25 +4582,19 @@ func (m *Model) paneHints() []hint {
 		return m.toolHints(p)
 	}
 	// A workspace terminal is the discobox's own and you detach from the
-	// whole workspace; the command over them is this CLI's, and you close
-	// it alone.
-	what, out := "the box", "detach"
-	if p == m.overlay {
-		what, out = string(p.action), "close"
-	}
-	// Beside the tree there is no list to detach to: the workspace is
-	// left by switching boxes, and the window by quitting.
-	leave := []hint{pressing(m.detachHint()+" "+out, leader, paneDetachAlt)}
-	if out == "detach" && !m.detaches() {
+	// whole workspace. Beside the tree there is no list to detach to: the
+	// workspace is left by switching boxes, and the window by quitting.
+	leave := []hint{pressing(m.detachHint()+" detach", leader, paneDetachAlt)}
+	if !m.detaches() {
 		leave = nil
 	}
 	// What can be done to the box itself — stop, rename, archive — is a
 	// menu away, offered where the reader is looking.
 	hints := append([]hint{pressing(leader+" "+boxMenuKey+" actions", leader, boxMenuKey)}, leave...)
-	// A screen over the workspace — the overlay, a tool — has the leader's
+	// A screen over the workspace — a tool — has the leader's
 	// menu key for itself (underScreen), so the menu is not offered there.
 	if m.hasScreen(p) {
-		hints = append([]hint{says("every key goes to " + what)}, leave...)
+		hints = append([]hint{says("every key goes to the box")}, leave...)
 	}
 	if p.service != "" {
 		// A service reads no input, so the line does not open by promising

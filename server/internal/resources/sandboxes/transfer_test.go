@@ -127,7 +127,7 @@ func configuredHarness(t *testing.T, st *store.Store, slug, name string) *model.
 		digest = "sha256:" + hex.EncodeToString(sum[:])
 	}
 	config := &model.HarnessConfig{
-		ProjectID: "project-1", Slug: slug, Name: name, Configured: true,
+		ProjectID: "project-1", Slug: slug, Name: name,
 		Bundle: "ghcr.io/discobox-ai/discobox-harness-" + slug + ":v1", BundleDigest: digest,
 		RunCommand: []string{slug},
 	}
@@ -160,7 +160,7 @@ func exportArchive(t *testing.T, mutate func(*sandboxexport.Manifest), files map
 			Harness: sandboxexport.Harness{Slug: "codex", Name: "Codex"},
 			Origin:  &model.Origin{HostID: "host-abc", Hostname: "laptop", User: "dev"},
 			Manifest: model.SandboxManifest{
-				Bundle: codexBundle, BundleDigest: codexBundleV2, HarnessMode: "run",
+				Bundle: codexBundle, BundleDigest: codexBundleV2,
 			},
 		},
 	}
@@ -346,23 +346,18 @@ func TestImportBindsSecretsByNameAndWarnsAboutTheRest(t *testing.T) {
 	}
 }
 
-// A destination harness that declares a required secret nobody here has bound
-// is an ordinary condition, not a corrupt archive. Answering it after the tree
-// has landed makes the user pay a multi-gigabyte upload for a 400 and leaves an
-// orphan tree on the pool — and in a transfer the source is already stopped, so
-// the retry is the whole upload again.
+// A destination with no harness the archive can run on is an ordinary
+// condition, not a corrupt archive. Answering it after the tree has landed
+// makes the user pay a multi-gigabyte upload for a refusal and leaves an
+// orphan tree on the pool — and in a transfer the source is already stopped,
+// so the retry is the whole upload again.
 func TestImportRefusesBeforeTheTreeIsUploaded(t *testing.T) {
-	ctx, svc, st, provider := transferFixture(t)
-	config := configuredHarness(t, st, "codex", "Codex")
-	config.Secrets = []model.HarnessConfigSecret{{Name: "OPENAI_API_KEY", Required: true}}
-	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
-		t.Fatal(err)
-	}
+	ctx, svc, _, provider := transferFixture(t)
 	archive := exportArchive(t, nil, map[string]string{"data/big": "pretend this is a workspace"})
 
 	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
 	if err == nil {
-		t.Fatal("an import was accepted although the destination harness has an unbound required secret")
+		t.Fatal("an import was accepted although the destination has no harness for it")
 	}
 	if provider.imported != nil {
 		t.Error("the tree was uploaded before the refusal")
@@ -462,7 +457,7 @@ func TestExportCarriesNoSecretValuesAndNamesItsHarness(t *testing.T) {
 	sb := &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
 		SandboxManifest: model.SandboxManifest{
-			HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2, HarnessMode: "run",
+			HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2,
 		},
 	}
 	if err := st.CreateSandbox(ctx, sb); err != nil {
@@ -609,7 +604,7 @@ func TestExportAndImportCarryTheMetaCopy(t *testing.T) {
 	config := configuredHarness(t, st, "codex", "Codex")
 	if err := st.CreateSandbox(ctx, &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
-		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Bundle: config.Bundle, HarnessMode: "run"},
+		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Bundle: config.Bundle},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -733,7 +728,7 @@ func TestExportRecordsThePlatform(t *testing.T) {
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
 		Platform: platform.Pool(),
 		SandboxManifest: model.SandboxManifest{
-			HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2, HarnessMode: "run",
+			HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2,
 		},
 	}
 	if err := st.CreateSandbox(ctx, sb); err != nil {
@@ -766,7 +761,7 @@ func TestExportTakesThePoolsPlatformForASandboxWithNone(t *testing.T) {
 	}
 	sb := &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
-		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2, HarnessMode: "run"},
+		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2},
 	}
 	if err := st.CreateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)

@@ -89,7 +89,8 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
 
 1. Registers reconcilers: `sandbox` (`sandboxes.Service.RegisterJobs`, with
    `Options.SandboxReconcileJobConcurrency`), `harnessConfig`
-   (`harnessconfigs.Service`, so in-flight configure flows survive a restart),
+   (`harnessconfigs.Service`, so committed save-back acknowledgments are
+   delivered across a restart),
    and `pool` (`pools.ControlPlane.RegisterJobs`).
 2. Invalidates previous pool health with `Store.BeginPoolHealthChecks`. This
    runs before any worker or HTTP listener can use old readiness; pool
