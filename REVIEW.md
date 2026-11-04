@@ -53,10 +53,11 @@ Global review expectations:
 - A CI job that builds what a tag publishes never reads a build cache that a
   pull request can write. Go trusts what `GOCACHEPROG` returns for a key, and a
   pull request's test code runs with that cache's credentials, so it can plant
-  compiled packages a release would link. `.github/actions/task` keeps Depot
-  Cache only for `pull_request` events and pushes to a branch, by event rather
-  than by ref, since a dispatched release runs off a branch; a release path
-  that skips that action has to turn it off itself.
+  compiled packages a release would link. `.github/actions/release-engine` starts
+  a fresh local engine/anonymous volume for release inputs and publication,
+  separate from PR Cloud engines. Keep that boundary for native helpers,
+  Dockerfile mounts and SDK compilation too. A workflow dispatch can release
+  from a branch, so isolate by operation rather than by the checked-out ref.
 - A Taskfile target the macOS or Windows CI job runs (`ci:darwin`, `ci:test`,
   `release:build`, and what they call) uses only Go, `go tool` dependencies,
   git, and what the runner image ships. Those jobs have no Nix devShell (ADR

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,7 +29,7 @@ func productImages() []imageSpec {
 		if name == "codex" {
 			dir = "codex-cli"
 		}
-		images = append(images, imageSpec{Name: "harness-" + name, Context: "harness/" + dir, Dockerfile: "Dockerfile", Metadata: "harness/" + dir + "/image.json", MetadataArg: "HARNESS_METADATA", Bundle: true, Neutral: true})
+		images = append(images, imageSpec{Name: "harness-" + name, Context: ".", Dockerfile: "harness/" + dir + "/Dockerfile", Metadata: "harness/" + dir + "/image.json", MetadataArg: "HARNESS_METADATA", Bundle: true, Neutral: true})
 	}
 	return images
 }
@@ -359,25 +358,19 @@ func (m *Pipeline) kernel(ctx context.Context) (*dagger.Container, error) {
 	if len(inputs) != 2 {
 		return nil, fmt.Errorf("kernel recipe must declare both checksummed source archives")
 	}
-	ctr := dag.Container(dagger.ContainerOpts{Platform: "linux/amd64"}).From("public.ecr.aws/docker/library/debian:13-slim").
-		WithExec([]string{"bash", "-ec", "apt-get update && apt-get install -y --no-install-recommends bc binutils bison build-essential ca-certificates cpio flex libelf-dev libssl-dev patch python3 python3-pyelftools xz-utils && rm -rf /var/lib/apt/lists/*"})
-	kernelVersion := ""
-	for _, input := range inputs {
-		ctr = ctr.WithFile(input[3], dag.HTTP(input[2], dagger.HTTPOpts{Checksum: "sha256:" + input[1]})).WithExec([]string{"bash", "-ec", `printf '%s  %s\n' "$1" "$2" | sha256sum -c -`, "verify-source", input[1], input[3]})
-		if strings.HasSuffix(input[3], ".tar.xz") {
-			kernelVersion = strings.TrimSuffix(path.Base(input[3]), ".tar.xz")
-		}
+	source := m.Source
+	for i, input := range inputs {
+		// The native HTTP API enforces the pinned digest before Dockerfile
+		// execution. Only the unsupported ADD transport is adapted; every
+		// product build instruction still comes from the canonical recipe.
+		local := fmt.Sprintf(".dagger/kernel-input-%d", i)
+		source = source.WithFile(local, dag.HTTP(input[2], dagger.HTTPOpts{Checksum: "sha256:" + input[1]}))
+		recipe = strings.Replace(recipe, input[0], "COPY "+local+" "+input[3], 1)
 	}
-	if kernelVersion == "" {
-		return nil, fmt.Errorf("kernel version missing from declared sources")
-	}
-	ctr = ctr.WithWorkdir("/src").WithEnvVariable("KERNEL_VERSION", kernelVersion).
-		WithExec([]string{"bash", "-ec", `tar -xzf /tmp/libkrunfw.tar.gz --strip-components=1; mkdir -p tarballs; ln -s "/tmp/$KERNEL_VERSION.tar.xz" "tarballs/$KERNEL_VERSION.tar.xz"; make "$KERNEL_VERSION"`}).
-		WithFile("/usr/local/bin/configure-discobox-kernel", m.Source.File("vm-image/kernel/configure-kernel"), dagger.ContainerWithFileOpts{Permissions: 0755}).
-		WithExec([]string{"configure-discobox-kernel", kernelVersion}).
-		WithExec([]string{"make", "-C", kernelVersion, "-j4", "KBUILD_BUILD_TIMESTAMP=Mon Jun 1 14:28:39 UTC 2026", "KBUILD_BUILD_USER=root", "KBUILD_BUILD_HOST=discobox", "vmlinux"})
-	out := dag.Directory().WithFile("vmlinux", ctr.File("/src/"+kernelVersion+"/vmlinux")).WithFile("kernel.config", ctr.File("/src/"+kernelVersion+"/.config"))
-	return dag.Container(dagger.ContainerOpts{Platform: "linux/amd64"}).WithRootfs(out), nil
+	source = source.WithNewFile("vm-image/kernel/Dockerfile", recipe)
+	return source.DockerBuild(dagger.DirectoryDockerBuildOpts{
+		Dockerfile: "vm-image/kernel/Dockerfile", Platform: "linux/amd64",
+	}), nil
 }
 
 // Consume the watcher/runtime's canonical epoch instead of keeping another pin.

@@ -27,3 +27,14 @@
   Its early exit can make a producer's SIGPIPE look like a missing value; the
   Dockerfile import check reported an existing `pkg/hostscope` COPY as missing.
   Feed finite captured output through a here-string instead.
+- Kernel builds must execute the product Dockerfile. If the engine cannot
+  implement a Dockerfile transport such as checksummed HTTP ADD, adapt only
+  that instruction using a digest-verified input; never copy package lists,
+  build commands or output paths into a second pipeline recipe.
+- Keep Cloud source administration out of CI's OIDC execution identity.
+  Enabling automatic Cloud Checks is a maintainer setup operation; trying
+  `dagger cloud checks on` on every push failed with unauthorized even while
+  the same commit's engine-based checks succeeded.
+- Enforce PR/release cache separation at the engine boundary, including SDK
+  compilation, Dockerfile mounts, native helper inputs and publication tools.
+  A cache name chosen by PR-controlled pipeline code is not isolation.

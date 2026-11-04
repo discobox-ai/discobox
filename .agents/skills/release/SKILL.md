@@ -117,19 +117,18 @@ readily as GitHub, and `discobox` is the pool's
 remote the host's branch tracks. Point `upstream` at GitHub whether or not it
 exists. `discobox-ai/discobox` is public, so `git fetch` and
 `git ls-remote` need no credential; every push and every `gh` call runs under
-the token asked for once, up front (below). A push needs the token named
-explicitly and the URL spelled out, or the access judge will refuse it:
+the token asked for once, up front (below), which arrives in `GH_TOKEN`. A
+push needs the token named explicitly and the URL spelled out:
 
 ```bash
 git remote add upstream https://github.com/discobox-ai/discobox.git 2>/dev/null ||
   git remote set-url upstream https://github.com/discobox-ai/discobox.git
-discobox-access run --use <id> -- git -c credential.helper= \
+git -c credential.helper= \
   -c 'credential.helper=!f() { if test "$1" = get; then echo username=x-access-token; echo "password=$GH_TOKEN"; fi; }; f' \
   push https://github.com/discobox-ai/discobox.git HEAD:main
 ```
 
-The tag goes the same way, under the same use, with `refs/tags/vX.Y.Z` in
-place of `HEAD:main`.
+The tag goes the same way, with `refs/tags/vX.Y.Z` in place of `HEAD:main`.
 
 The Dagger constructor takes an explicit repository and defaults to
 `discobox-ai/discobox`. For a fork, pass `dagger api call --repository=OWNER/REPO`;
@@ -137,13 +136,15 @@ source transport remotes do not choose release destinations.
 
 ### Inside a discobox: ask for access once, up front
 
-Every GitHub step in this skill runs on one `GH_TOKEN` with host `github.com`:
-`git push` over https, and every `gh` call, which goes to `api.github.com` and
-is covered by the same grant. Ask for all of it in one request, so the human
-answers once and the release then runs without them.
+Every GitHub step in this skill runs on one `GH_TOKEN`: `git push` over https
+to `github.com`, and every `gh` call, which goes to `api.github.com`. A host
+is exact, so the request names both, each narrowed to what the release does
+there: pushing `main` and the tag to this repository, and reading it, its CI
+and the tap. Ask for all of it in one request, so the human answers once and
+the release then runs without them.
 
-1. **Settle the version first.** The tag's statement names it, and a version
-   changed after the grant is a second request. If the user did not name one and it is
+1. **Settle the version first.** The justification names it, and a version
+   changed after it is granted is a second request. If the user did not name one and it is
    not a plain patch bump, ask the patch-or-minor question now, not at the tag.
 2. **Request before anything else, in the background**, and run the local
    `ci:test` and `ci:check` while the human answers:
@@ -153,31 +154,14 @@ discobox-access request --json <<'EOF'
 {
   "name": "github",
   "envVar": "GH_TOKEN",
-  "hosts": ["github.com"],
-  "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main, watch CI until it is green, tag the green commit, then check the release and the dev Homebrew formula. git uses the token over https to github.com and gh uses it against api.github.com. Needed for about two hours, since CI can take several rounds.",
-  "uses": [
-    {"description": "Release vX.Y.Z of discobox-ai/discobox"}
+  "routes": [
+    "github.com/discobox-ai/discobox.git/**,/discobox-ai/discobox/**",
+    "GET api.github.com/repos/discobox-ai/discobox/**",
+    "GET api.github.com/repos/discobox-ai/homebrew-tap/**",
+    "api.github.com/graphql graphql=query"
   ],
-  "statements": [
-    "allow read on anything in repository \"discobox-ai/discobox\"",
-    "allow read on anything in repository \"discobox-ai/homebrew-tap\"",
-    "allow push on branch \"main\" in repository \"discobox-ai/discobox\"",
-    "allow create on tag \"vX.Y.Z\" in repository \"discobox-ai/discobox\"",
-    "deny force-push, delete on branch in anywhere",
-    "deny update, delete on tag in anywhere",
-    "deny update, delete on release in anywhere",
-    "deny create, update, delete, push on anything in repository \"discobox-ai/homebrew-tap\"",
-    "deny read on secret in anywhere"
-  ],
-  "definitions": {
-    "repository": "a GitHub repository",
-    "branch": "a git branch in a repository",
-    "secret": "an Actions, Dependabot or environment secret",
-    "push": "create a branch or add commits to it, or move it with --force-with-lease",
-    "force-push": "move a branch with --force and no lease",
-    "tag": "a git tag in a repository",
-    "release": "a GitHub release, its notes and its assets"
-  },
+  "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main of discobox-ai/discobox, watch CI until it is green, create tag vX.Y.Z on the green commit, then read the release and the dev Homebrew formula in discobox-ai/homebrew-tap. git uses the token over https to github.com and gh uses it against api.github.com. I will not force-push, delete or move a branch or tag, change a release, write to the tap, or read secrets. Needed for about two hours, since CI can take several rounds.",
+  "grantTTLSeconds": 7200,
   "wait": true,
   "timeoutSeconds": 3600
 }
@@ -187,28 +171,39 @@ EOF
 Each of these is shaped by something that went wrong on the release that wrote
 it down:
 
-- **The tag's statement names a version, never a commit.** The release commit
+- **The justification names a version, never a commit.** The release commit
   moves whenever CI needs a fix or `main` moves under you — one release went through
   three candidate commits — and an approval naming one commit cannot honestly
   be stretched to another. §3's gate is what picks the commit.
-- **The justification says how long.** The approver picks the grant's lifetime
-  and the request has no field for it. One grant lasted an hour, less than a
+- **Ask for how long it takes.** The approver picks the binding's lifetime, from
+  `grantTTLSeconds` as the default. One lasted an hour, less than a
   release with a CI fix in it takes.
 - **Never two requests in flight.** One filed while another is still pending
-  comes back as that one — same request ID, same policy — and what it asked
-  for is never shown to anyone. If a statement turns out to be missing, wait
-  until nothing is pending, then ask.
+  comes back as that one — same request ID — and what it asked for is never
+  shown to anyone. If something turns out to be missing, wait until nothing is
+  pending, then ask.
 - **`unavailable` with a control-plane 503 is a restart, not an answer.** The
   human never saw the request. Retry once before telling them to approve
   anything.
 
-Deliberately left out: `brew:refresh`, `brew:publish`, deleting a pushed tag,
-and promoting (§7). Each is a failure path or a human's decision, and the moment
-one is needed is a moment the human should be looking anyway. Ask then.
+Deliberately left out: Homebrew refresh or publication, deleting a pushed tag,
+and promoting (§5). Each is a failure path or a human's decision, and the moment
+one is needed is a moment the human should be looking anyway. Ask then. None
+has a route here: every API route is a `GET` or a GraphQL query, so `gh`
+writes nothing, though the GraphQL queries read every repository the token
+can see. The git route is held to this repository but not to a ref: a push
+can write, force or delete any branch or tag of it, so which refs a push
+writes is the justification's — `main` and the tag, never a delete or a
+force — and `main`'s branch protection covers `main`.
 
 ## 1. Current pipeline boundary
 
 The repository now uses `.dagger/modules/pipeline` (ADR 26-10-26-225).
+Before local release, preview or publication work, start the fresh release
+engine described in `docs/dagger.md` and select it with `DAGGER_ENGINE`.
+Never use the engine/cache scope that checks unmerged PR code. Actions does
+this through `.github/actions/release-engine`; native release Go caches must
+also be separate from PR caches.
 Native macOS and Windows commands run conventionally in Actions or on a local
 machine of that operating system. Linux builds portable executables/helpers;
 Mac consumes the helpers and supplies signed source-bound artifacts. A Linux
@@ -267,7 +262,7 @@ dagger api call release --version=vX.Y.Z --native-artifacts=build/native --usern
 Credentials are Dagger Secrets. Do not print them or embed them into shell
 command strings. A local `gh` credential can be supplied with
 `--token=cmd:'gh auth token'`. Use discobox-access for credentials not already
-granted; the initial policy above does not grant write access to the tap.
+granted; the initial route grant above does not grant write access to the tap.
 
 Publication creates a GitHub prerelease. A dot version also advances registry
 latest aliases and the Homebrew dev formula. Explicit semver prereleases

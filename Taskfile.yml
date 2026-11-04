@@ -748,6 +748,12 @@ tasks:
     cmds:
       - dagger api call generate -y
 
+  generate:harness-settings:
+    desc: Rebuild the bundled harness settings parsers and their licenses
+    cmds:
+      - pnpm install --frozen-lockfile
+      - node scripts/build-harness-settings.mjs
+
   generate:verify:
     desc: Verify generators and repository consistency
     cmds:

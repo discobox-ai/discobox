@@ -63,13 +63,19 @@ behind file-change hooks that invoke the Task shortcuts.
 
 ## Dagger Cloud execution and cache
 
-Trusted Actions jobs execute Dagger on Cloud Engines with `DAGGER_ENGINE=cloud`.
+Trusted CI checks execute Dagger on Cloud Engines with `DAGGER_ENGINE=cloud`.
 They authenticate through GitHub OIDC: the job grants `id-token: write` and
 sets `DAGGER_CLOUD_TOKEN` to the literal **`oidc`**, not a repository secret.
 The pinned CLI requests GitHub's short-lived token with audience `dagger.cloud`
 and exchanges it with Dagger Cloud. The repository must be authorized in the
 intended Dagger Cloud organization's GitHub integration before this exchange
 can succeed. No static Cloud token needs to be stored in Actions.
+
+Enabling automatic Cloud Checks is a one-time repository administration step:
+a maintainer with a Cloud login may run `dagger cloud checks on` and inspect
+`dagger cloud checks status`. CI's OIDC identity executes checks on engines;
+it cannot administer Cloud source configuration. The workflow runs
+`dagger check` explicitly and does not attempt that administrative mutation.
 
 The official action installs the pinned CLI. Engine and OIDC settings live in
 the job environment because the workflows invoke Dagger in separate steps;
@@ -96,6 +102,36 @@ GitHub OIDC is available only inside Actions. Local/headless clients need their
 own login or a CI token supplied through a credential manager. To return to the
 local engine, omit `--engine=cloud` and unset any `DAGGER_ENGINE` override.
 Never commit a Cloud token.
+
+## Release cache isolation
+
+PR checks and release/publication jobs have different engine cache scopes.
+Release, preview, native-helper production, promotion and VM publication jobs
+use `.github/actions/release-engine`: a pinned local engine with a newly
+allocated anonymous `/var/lib/dagger` volume and Cloud authentication disabled.
+They do not attach or import a cache used by PRs. This isolates Go module/build
+caches, Dockerfile cache mounts and SDK compilation together. Native release
+jobs also disable `setup-go` cache restoration. Trusted CI can retain Cloud's
+shared cache without making it a release input.
+
+For local release work, use a fresh engine rather than one used to check PRs:
+
+```sh
+docker run --detach --privileged --name discobox-release-engine \
+  --volume /var/lib/dagger registry.dagger.io/engine:v1.0.0-beta.21
+export DAGGER_ENGINE=container://discobox-release-engine
+export DAGGER_CLOUD_TOKEN=
+# Run the release/preview/publication commands below in this shell.
+# After the operation completes:
+# docker rm --force --volumes discobox-release-engine
+```
+
+The fixed container name intentionally refuses to reuse an existing engine.
+Local native release builds likewise require a Go module/build cache that PR
+code has never written. Cache volume names alone are not a trust boundary:
+PR-controlled modules could choose the same names. Reusing Cloud for releases
+would require an administrator-enforced cache scope unavailable to PR OIDC,
+or a documented Dagger guarantee that makes sharing these mutable caches safe.
 
 ## End-to-end release rehearsal
 

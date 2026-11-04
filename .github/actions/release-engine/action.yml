@@ -1,0 +1,17 @@
+name: Isolated release engine
+description: Install Dagger and start a fresh engine whose cache was never writable by PR code
+runs:
+  using: composite
+  steps:
+    - uses: dagger/dagger-for-github@v8.4.0
+      with:
+        version: v1.0.0-beta.21
+    - name: Create a release-only cache scope
+      shell: bash
+      run: |
+        set -eu
+        # An anonymous volume is always new. Do not attach a host/Cloud cache
+        # or reuse the automatic engine that PR checks may have populated.
+        # An existing container with this name makes docker run fail closed.
+        docker run --detach --privileged --name discobox-release-engine \
+          --volume /var/lib/dagger registry.dagger.io/engine:v1.0.0-beta.21

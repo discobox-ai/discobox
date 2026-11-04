@@ -16,7 +16,8 @@ implicit credential lookup in the graph.
   digests, rootfs diff IDs, config and manifest references before import.
 - `publish.go`: publication gates and explicit credentials, direct Homebrew
   updates, stable promotion, manual winget submission, and local preview.
-- `generate.go`: source edits returned as Changesets; checks never mutate the
+- `generate.go`: Go contracts and bundled harness settings parsers/licenses,
+  with installed Node dependencies excluded from returned Changesets; checks never mutate the
   developer's checkout. SDK generation is a separate `go-sdk` operation.
 - `trust.go`: inspects the base image's saved public roots and runs the actual
   core provisioning script from the platform bundle. Checks the exported store
@@ -55,7 +56,11 @@ for the workspace Git importer.
 Engine selection belongs to the caller. Trusted Actions jobs select Dagger
 Cloud with GitHub OIDC (`DAGGER_CLOUD_TOKEN=oidc`, job-scoped `id-token: write`)
 so cache persists across ephemeral runners; fork and Dependabot PRs use local
-engines with Cloud authentication disabled. Native jobs do not
+engines with Cloud authentication disabled. Release, preview, native-helper production,
+promotion and VM publication use fresh local engines with anonymous cache
+volumes and no Cloud authentication. PR and release caches never share an
+engine, covering SDK compilation and Dockerfile mounts as well as this
+module's volumes. Native release jobs disable Go cache restoration. Native jobs do not
 receive the Cloud token. Local commands can select either backend without
 changing the pipeline. `Ci` is the single aggregate portable check; component
 operations remain callable functions. `CiArtifacts` exposes build/trust/helper

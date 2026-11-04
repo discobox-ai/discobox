@@ -32,8 +32,13 @@ func TestImageInventory(t *testing.T) {
 			t.Errorf("duplicate %s", image.Name)
 		}
 		seen[image.Name] = true
-		if strings.HasPrefix(image.Name, "harness-") && (!image.Neutral || !image.Bundle || image.Metadata == "") {
-			t.Errorf("harness lost its neutral bundle contract: %+v", image)
+		if strings.HasPrefix(image.Name, "harness-") {
+			if !image.Neutral || !image.Bundle || image.Metadata == "" {
+				t.Errorf("harness lost its neutral bundle contract: %+v", image)
+			}
+			if image.Context != "." || !strings.HasPrefix(image.Dockerfile, "harness/") {
+				t.Errorf("harness cannot copy the shared capture runtime: %+v", image)
+			}
 		}
 	}
 }

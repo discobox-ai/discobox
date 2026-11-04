@@ -18,11 +18,10 @@ jobs:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     permissions:
-      id-token: write
       contents: write
     env:
-      DAGGER_ENGINE: cloud
-      DAGGER_CLOUD_TOKEN: oidc
+      DAGGER_ENGINE: container://discobox-release-engine
+      DAGGER_CLOUD_TOKEN: ''
       RELEASE_VERSION: ${{ inputs.tag || github.event.release.tag_name }}
       RELEASE_REPOSITORY: ${{ github.repository }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -32,9 +31,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
-      - uses: dagger/dagger-for-github@v8.4.0
-        with:
-          version: v1.0.0-beta.21
+      - uses: ./.github/actions/release-engine
       - run: >-
           dagger api call --repository="$RELEASE_REPOSITORY" promote
           --version="$RELEASE_VERSION" --token=env:GH_TOKEN --tap-token=env:TAP_TOKEN

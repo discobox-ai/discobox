@@ -1,6 +1,6 @@
 # 26-10-26-225 — Dagger owns CI and release with native worker boundaries
 
-Status: Accepted (supersedes ADR 0066 §§1–4, 6–7 for CI/release orchestration and tooling; ADR 0105 §3's workflow-only promotion and its Taskfile/tap-dispatch consequences)
+Status: Accepted (supersedes ADR 0066 §§1–4, 6–7 for CI/release orchestration and tooling; ADR 0105 §3's workflow-only promotion and its Taskfile/tap-dispatch consequences; ADR 26-11-02-173 §1 and its composite-action consequences)
 
 Date: 2026-10-26
 
