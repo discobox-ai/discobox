@@ -1,0 +1,39 @@
+can you look at sbx-yhg7pcs4by9bmsq5 and tell me why it can't find claude?
+
+---
+
+I think #2 is the best fix, stop install harnesss through whatever dir it finds. Can we do an audit of everything else to make sure that there aren't other similar pathing issues in our bundles?
+
+---
+
+now I just got ```darren@dvm-pool-dfqcve6ztdsmgbd6--sbx-yhg7pcs4by9bmsq5:/workspace/discobox$ 'discobox-harness-run'
+EACCES: permission denied, mkdir '/var/lib/claude-code'``` after the manual fix you did.
+
+---
+
+now I just got ```darren@dvm-pool-dfqcve6ztdsmgbd6--sbx-yhg7pcs4by9bmsq5:/workspace/discobox$ 'discobox-harness-run'
+EACCES: permission denied, mkdir '/var/lib/claude-code'``` after the manual fix you suggested, those two commands.
+
+---
+
+why don't we hit the /var/lib/claude-code issue in our docker setup?
+
+---
+
+no, even on boxd I want all the bind mounts to exist. I want /.discobox/{data,cache} to be here and be mounted just the same as the docker setup.
+
+---
+
+curious about DNS setup, in a VM do we not configure DNS to go through the pool node?
+
+---
+
+going back to the nod issues. I don't want to install node/npm if it's already there, but I do want to fix the directories we install into. Would that make sense? Can you copy the ADR you wrote into the launched sandbox (it's working now), also document all the other findings and fixes and copy as a file there too. Then tell the box to read the mds and implement. Use the terminal sendkeys support to communicate with it.
+
+---
+
+what changes do we have locally? Do they overlap with what we handed off to the box?
+
+---
+
+can  you write a local file of your analysis and then I'll launch a discobox from this work to finish up this work

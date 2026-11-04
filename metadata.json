@@ -1,0 +1,60 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M6MBG850GCA0633JREFDS1VN",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "docs/adr/26-11-02-023-a-machine-sandbox-wires-its-declared-volumes-from-its-own-data-and-cache-roots.md",
+    "docs/adr/README.md",
+    "local-changes-handoff.md",
+    "pkg/poolauth/keyfile.go",
+    "pkg/poolauth/keyfile_test.go",
+    "pool-agent/DESIGN.md",
+    "pool-agent/gitcache/gitcache.go",
+    "pool-agent/sandboxruntime/machine.go",
+    "pool-agent/sandboxruntime/machine_test.go",
+    "pool-agent/sandboxruntime/origin.go",
+    "pool-agent/sandboxruntime/runtime.go",
+    "pool-agent/sandboxruntime/sources.go",
+    "sandbox-agent/DESIGN.md",
+    "sandbox-agent/boot/boot.go",
+    "sandbox-agent/boot/desktop.go",
+    "sandbox-agent/boot/sessionbus.go",
+    "sandbox-agent/sourceconverge/converge.go",
+    "sandbox-agent/sourceconverge/converge_test.go",
+    "sandbox-agent/sourceconverge/git.go",
+    "server/providers/discovm/poolmachine.go",
+    "server/providers/discovm/poolmachine_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 172,
+    "cache_creation_tokens": 238326,
+    "cache_read_tokens": 9310109,
+    "output_tokens": 59896,
+    "api_call_count": 79
+  },
+  "redaction": {
+    "replacements": 88,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 88,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
