@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
+	"github.com/discobox-ai/discobox/server/providers/libkrun"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -324,9 +326,14 @@ func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 }
 
 func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
+	// Make the host runtime unavailable regardless of the test host's KVM.
+	t.Setenv("PATH", t.TempDir())
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, nil, service.Options{})
+	var warnings []string
+	svc := service.New(appStore, nil, service.Options{StartupWarning: func(warning string) {
+		warnings = append(warnings, warning)
+	}})
 
 	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -347,6 +354,9 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 			t.Fatalf("linux provider = %#v, want enabled docker", providers[0])
 		}
 		assertDefaultDockerProviderConfig(t, providers[0].Config, "")
+		if len(warnings) != 1 || !strings.Contains(warnings[0], "without a VM isolation boundary") {
+			t.Fatalf("warnings = %q, want one Docker isolation warning", warnings)
+		}
 	}
 	if _, err := appStore.GetServerState(ctx, "defaults.default_sandbox_provider.installed"); err != nil {
 		t.Fatalf("get install state: %v", err)
@@ -414,12 +424,16 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	if len(providers) != 0 {
 		t.Fatalf("providers len = %d after delete + re-init, want 0 (deleted provider must not be recreated)", len(providers))
 	}
+	if runtime.GOOS == "linux" && len(warnings) != 1 {
+		t.Fatalf("warnings = %q, want no repeated warning after seeding", warnings)
+	}
 }
 
 // Seeding happens once; afterward the provider instance belongs to the user.
 // The server must never rewrite its config on a later boot, not even to restore
 // a key the user removed.
 func TestInitializeDefaultsLeavesEditedDefaultProviderConfigAlone(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	if runtime.GOOS != "linux" {
 		t.Skip("default docker provider is installed on linux")
 	}
@@ -742,4 +756,54 @@ func (p *recordingSandboxProvider) PullSource(context.Context, sandboxes.Sandbox
 
 func (p *recordingSandboxProvider) CheckCreateCompatibility(context.Context, sandboxes.SandboxRef) error {
 	return nil
+}
+
+func TestInitializeDefaultsSelectsLinuxProviderAndKeepsIt(t *testing.T) {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("libkrun defaults are linux/amd64")
+	}
+	for _, tc := range []struct {
+		host, want string
+		warnings   int
+	}{{"ready", "libkrun", 0}, {"unavailable", "docker", 1}} {
+		t.Run(tc.host, func(t *testing.T) {
+			t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", tc.host)
+			appStore, projectID := newProviderCatalogTestStore(t)
+			var warnings []string
+			svc := service.New(appStore, nil, service.Options{ListenEndpoints: []string{"http://127.0.0.1:18471", "unix:///tmp/custom-server.sock"}, StartupWarning: func(w string) { warnings = append(warnings, w) }})
+			if _, err := svc.InitializeDefaults(t.Context(), service.DefaultUserID); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := svc.ListSandboxProviderInstances(t.Context(), projectID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rows) != 1 || rows[0].Type != tc.want || len(warnings) != tc.warnings {
+				t.Fatalf("providers=%+v warnings=%q", rows, warnings)
+			}
+			if tc.want == "libkrun" {
+				cfg, err := libkrun.Decode(rows[0].Config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if cfg.ControlPlaneSocket != "unix:///tmp/custom-server.sock" {
+					t.Fatalf("control plane socket = %q", cfg.ControlPlaneSocket)
+				}
+			}
+			// A change in host capability must neither reseed nor repeat the warning,
+			// including when the service is recreated as it is on a server restart.
+			t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", "unavailable")
+			svc = service.New(appStore, nil, service.Options{StartupWarning: func(w string) { t.Errorf("repeated warning: %s", w) }})
+			if _, err := svc.InitializeDefaults(t.Context(), service.DefaultUserID); err != nil {
+				t.Fatal(err)
+			}
+			after, err := svc.ListSandboxProviderInstances(t.Context(), projectID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after) != 1 || after[0].ID != rows[0].ID || after[0].Type != tc.want {
+				t.Fatalf("changed provider on restart: %+v", after)
+			}
+		})
+	}
 }

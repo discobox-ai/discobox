@@ -39,6 +39,7 @@ const (
 
 // AppOptions controls application wiring.
 type AppOptions struct {
+	StartupWarning func(string)
 	// Harnesses is what the built-in harnesses resolve against.
 	Harnesses harnessdefs.References
 	UserID    string
@@ -216,6 +217,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		addressPeerID = opts.ServerPeer.ID
 	}
 	appServices := service.New(appStore, reconcileEngine, service.Options{
+		StartupWarning:                 opts.StartupWarning,
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 		DevelopmentImageSync:           developmentImageSync,
 		DevelopmentBundles:             developmentBundles,

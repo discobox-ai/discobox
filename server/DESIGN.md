@@ -1071,3 +1071,11 @@ and treats a decode failure as "not reported", which the next report heals.
 Add lower-level `DESIGN.md` files next to packages when a package gains its own
 architecture rules. Keep this module-level doc focused on server boundaries and
 cross-package flow.
+
+## First-start provider warnings
+
+Default-provider seeding reports a fallback through `AppOptions.StartupWarning`.
+The running server keeps it in `pkg/health.Status.Warnings` both while starting
+and when ready. These are process-local first-start warnings, not repeated on
+a restart of an already seeded database. The CLI receives them through the
+normal launch health probe; no server log parsing is involved.

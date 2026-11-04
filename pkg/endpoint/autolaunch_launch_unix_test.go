@@ -131,13 +131,14 @@ func TestEnsureRunningWaitsOutAStartingServer(t *testing.T) {
 				writeStatus(t, w, health.Status{Status: health.StatusStarting, Phase: "migrating the database"})
 				return
 			}
-			writeStatus(t, w, health.Status{Status: health.StatusReady})
+			writeStatus(t, w, health.Status{Status: health.StatusReady, Warnings: []string{"Docker fallback"}})
 		}),
 	}
 	defer server.Close()
 	go func() { _ = server.Serve(listener) }()
 
 	var phases []string
+	var warnings []string
 	opts := LaunchOptions{
 		Endpoint:      endpointURL,
 		LogPath:       filepath.Join(t.TempDir(), "server.log"),
@@ -145,7 +146,12 @@ func TestEnsureRunningWaitsOutAStartingServer(t *testing.T) {
 		ProbeInterval: 10 * time.Millisecond,
 		ProbeTimeout:  time.Second,
 		ReadyTimeout:  10 * time.Second,
-		OnProgress:    func(s health.Status) { phases = append(phases, s.Phase) },
+		OnProgress: func(s health.Status) {
+			if s.Starting() {
+				phases = append(phases, s.Phase)
+			}
+			warnings = append(warnings, s.Warnings...)
+		},
 	}
 	started, err := EnsureRunning(context.Background(), opts)
 	if err != nil {
@@ -157,6 +163,9 @@ func TestEnsureRunningWaitsOutAStartingServer(t *testing.T) {
 	}
 	if len(phases) != 1 || phases[0] != "migrating the database" {
 		t.Fatalf("phases = %v, want the starting phase reported exactly once", phases)
+	}
+	if len(warnings) != 1 || warnings[0] != "Docker fallback" {
+		t.Fatalf("ready warning lost: %q", warnings)
 	}
 }
 
@@ -378,7 +387,7 @@ func TestAutolaunchReplacementHelper(t *testing.T) {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/healthz":
-				writeStatus(t, w, health.Status{Status: health.StatusReady, Version: "v0.5.1"})
+				writeStatus(t, w, health.Status{Status: health.StatusReady, Version: "v0.5.1", Warnings: []string{"Docker fallback"}})
 			case "/shutdown":
 				w.WriteHeader(http.StatusAccepted)
 				go func() {
@@ -400,5 +409,51 @@ func writeStatus(t *testing.T, w http.ResponseWriter, status health.Status) {
 	t.Helper()
 	if err := json.NewEncoder(w).Encode(status); err != nil {
 		t.Errorf("encode status: %v", err)
+	}
+}
+
+// A server may finish initialization before the launcher's first successful
+// probe. Its ready response must still deliver the first-start warning.
+func TestEnsureRunningReportsWarningsOnFirstReadyProbe(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	endpointURL := "unix://" + testSocketPath(t)
+	var warnings []string
+	started, err := EnsureRunning(t.Context(), LaunchOptions{
+		Endpoint:   endpointURL,
+		LogPath:    filepath.Join(t.TempDir(), "server.log"),
+		Command:    staticCommand(os.Args[0], "-test.run=^TestAutolaunchReplacementHelper$"),
+		Env:        []string{"DISCOBOX_TEST_SERVER_ENDPOINT=" + endpointURL},
+		OnProgress: func(s health.Status) { warnings = append(warnings, s.Warnings...) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := Parse(endpointURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseURL, client, err := HTTPClient(target, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/shutdown", nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = resp.Body.Close()
+	}()
+	if !started || len(warnings) != 1 || warnings[0] != "Docker fallback" {
+		t.Fatalf("started=%t warnings=%q", started, warnings)
+	}
+	warnings = nil
+	if started, err := EnsureRunning(t.Context(), LaunchOptions{Endpoint: endpointURL, OnProgress: func(s health.Status) { warnings = append(warnings, s.Warnings...) }}); err != nil || started || len(warnings) != 0 {
+		t.Fatalf("already running: started=%t warnings=%q err=%v", started, warnings, err)
 	}
 }

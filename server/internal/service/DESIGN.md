@@ -132,8 +132,13 @@ application policy, not engine behavior.
   project's `DefaultPoolID`) exactly once, gated on the
   `defaults.default_sandbox_provider.installed` `server_state` row rather than on
   the records. After that they are ordinary user-owned records; deleting them is
-  permanent. The provider type follows the host OS: `docker` on Linux, `vz` on
-  macOS, `wslc` on Windows, and a disabled `unsupported` instance elsewhere.
+  permanent. The provider type follows the host OS: `libkrun` on linux/amd64
+  when KVM, passt and the native library are usable,
+  otherwise `docker` with an isolation warning; `vz` on macOS, `wslc` on
+  Windows, and a disabled `unsupported` instance elsewhere. The host probe runs
+  before the transaction, and a fallback warning is published only after seeding
+  commits. The libkrun instance records this server's Unix listener for its VM's
+  control-plane forward. Later boots neither probe nor change existing providers.
   `WithoutDefaultProviderInstallation` skips this step.
 
 `EnsureHarnessAvailable` delegates to `harnessconfigs`; `internal/server` calls

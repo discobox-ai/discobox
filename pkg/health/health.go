@@ -24,6 +24,9 @@ const (
 // — can only be answered while the answer is still "it is taking a while".
 type Status struct {
 	Status string `json:"status"`
+	// Warnings are startup decisions the launching client should show once.
+	// They remain present when ready so a client cannot miss a fast startup.
+	Warnings []string `json:"warnings,omitempty"`
 	// Phase is the startup step in progress, present only while starting.
 	Phase   string `json:"phase,omitempty"`
 	Version string `json:"version,omitempty"`

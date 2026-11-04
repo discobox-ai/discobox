@@ -67,6 +67,9 @@ type Service struct {
 }
 
 type Options struct {
+	// StartupWarning reports a first-run default-provider fallback to the
+	// startup health response and the server log.
+	StartupWarning                 func(string)
 	Harnesses                      harnessdefs.References
 	SandboxReconcileJobConcurrency int
 	DevelopmentImageSync           *dockerworker.DevelopmentImageSynchronizer

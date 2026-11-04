@@ -41,10 +41,10 @@ func TestEnsureLocalServerNarratesAStartingServer(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			if probes.Add(1) < 3 {
 				w.WriteHeader(http.StatusServiceUnavailable)
-				encodeStatus(t, w, health.Status{Status: health.StatusStarting, Phase: "migrating the database"})
+				encodeStatus(t, w, health.Status{Status: health.StatusStarting, Phase: "migrating the database", Warnings: []string{"KVM unavailable; using Docker without VM isolation"}})
 				return
 			}
-			encodeStatus(t, w, health.Status{Status: health.StatusReady})
+			encodeStatus(t, w, health.Status{Status: health.StatusReady, Warnings: []string{"KVM unavailable; using Docker without VM isolation"}})
 		}),
 	}
 	defer server.Close()
@@ -59,6 +59,9 @@ func TestEnsureLocalServerNarratesAStartingServer(t *testing.T) {
 
 	if !strings.Contains(out.String(), "migrating the database") {
 		t.Fatalf("nothing said what the server was doing: %q", out.String())
+	}
+	if strings.Count(out.String(), "Warning: KVM unavailable") != 1 {
+		t.Fatalf("warning missing or repeated: %q", out.String())
 	}
 	// Nothing was launched here, so there is no background process to warn
 	// about — saying so would be a lie about the user's machine.

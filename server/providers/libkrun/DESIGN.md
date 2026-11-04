@@ -40,8 +40,9 @@ Everything is ordered off that:
    server's image store (ADR 0113 §5) and extracts `root.ext4` and `vmlinux`,
    one directory per digest. The pool reports this as
    `sandbox.PoolPhaseFetchingVMImage`, with byte counts while anything is
-   downloaded. libkrun is not Linux's default provider, so a CLI does not stage
-   these ahead of a first run; the first pool fetches them into the store.
+   downloaded. The CLI stages these ahead of a first run on linux/amd64. A first-start
+   host probe chooses this provider when KVM and the default runtime are usable,
+   otherwise Docker, with a warning naming the reason and loss of VM isolation.
 2. The launcher child boots the VM and its Docker daemon comes up.
 3. With development image sync on, the engine converges the watcher's
    sandbox base image onto that daemon — copied from the host daemon
@@ -80,7 +81,11 @@ launcher that exits first fails `EnsureVM` with the tail of `launcher.log`.
 `krunvm.Supported` is a platform gate only: the provider is registered
 everywhere, `NewDriver` refuses off linux/amd64 with `krunvm.ErrUnsupported`,
 and `/dev/kvm` is checked by the launcher immediately before boot, never at
-configuration time.
+configuration time. First-start default selection also calls `CheckHost`, which
+re-executes this binary as `__pool-vm-launcher --check-host`: it checks the KVM
+API, finds passt, loads the library and verifies block and network features,
+without booting a guest. Native loading stays out of the server. A ten-second
+deadline and child exit turn a bad load into a fallback reason.
 
 **The VM dies with the server.** Two mechanisms, both needed:
 `PR_SET_PDEATHSIG` is armed by the kernel and survives anything the server does

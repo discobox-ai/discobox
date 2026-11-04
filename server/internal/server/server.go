@@ -216,6 +216,7 @@ func Run(ctx context.Context) error {
 		imageCache = imagecache.Open(dir)
 	}
 	router, appServices, appStore, shutdownApp, err := NewApp(ctx, db.Write, db.Read, AppOptions{
+		StartupWarning:                 startup.addWarning,
 		SSHIngress:                     sshIngress,
 		ServerPeer:                     serverPeer(irohPeerID),
 		ServerInfo:                     services.ServerInfo{Name: cfg.Name},
