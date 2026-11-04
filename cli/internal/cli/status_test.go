@@ -168,7 +168,7 @@ func TestPrintStatusHeadsWithBothVersions(t *testing.T) {
 // the top-level word is not a command at all: it is refused like any other
 // unknown one rather than taken for something else.
 func TestStatusCommandIsUnderAdminServer(t *testing.T) {
-	root, _ := newRootCommand()
+	root, _ := newRootCommand(true)
 	found, _, err := root.Find([]string{"admin", "server", "status"})
 	if err != nil {
 		t.Fatalf("Find(admin server status) error = %v", err)

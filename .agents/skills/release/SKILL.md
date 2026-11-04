@@ -280,6 +280,19 @@ Fix these properly rather than skipping wholesale — one of them (a home
 directory resolved before checking whether there was anything to install) was a
 real launch failure that only Windows exposed.
 
+## Documentation gate
+
+Before tagging, run `go tool task docs:check` and review `docs/public/`
+against the exact release CLI and console (including workflows and keys).
+After publication creates the tag, follow `docs/public-import.md`: resolve
+that docs-containing release tag to its full SHA and require a reviewed site
+import PR recording the allowlist, file mapping and exporter version/command
+before promoting its docs as current. Normal site builds consume committed
+snapshots only. Keep prerelease labels until stable promotion is explicitly
+approved; do not move the site stable target just because a tag exists.
+Before marking a release stable, require that reviewed site import and confirm
+its exact product version and SHA match the release being promoted.
+
 ## 3. Tag the commit CI verified
 
 Check what CI actually ran against. Local `main` may have moved on while the

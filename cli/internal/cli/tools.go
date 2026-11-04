@@ -24,7 +24,11 @@ import (
 // machine declares are subcommands, so help and completion know them; a tool
 // only the discobox declares cannot be known until one is chosen, and is run
 // by the same command built on demand.
-func (a *App) newToolsCommand() *cobra.Command {
+func (a *App) newToolsCommand(includeUserTools bool) *cobra.Command {
+	toolsDir := "<config dir>/discobox/tools"
+	if includeUserTools {
+		toolsDir = userToolsDirHelp()
+	}
 	cmd := &cobra.Command{
 		Use:     "tools TOOL [DISCOBOX] [--] [ARG...]",
 		Aliases: []string{"tool", "t"},
@@ -44,7 +48,7 @@ discobox. Tools are declared, the last one winning on a shared name, by:
   this CLI                            vscode, zed
   the discobox's image                /usr/local/share/discobox/tools
   the discobox's primary source       .discobox/tools
-  you                                 ` + userToolsDirHelp() + `
+  you                                 ` + toolsDir + `
 
 A declaration is a .yaml file naming the program it runs, or a script with a
 front-matter block that is itself what runs. Only this CLI and you can declare
@@ -159,7 +163,10 @@ see the new tool, and why it cannot run if it cannot.`,
 	cmd.AddCommand(a.newToolsListCommand())
 	// A user directory that cannot be read leaves its tools to the on-demand
 	// path, which reports why when one is asked for.
-	local, _ := localTools()
+	local := builtinTools()
+	if includeUserTools {
+		local, _ = localTools()
+	}
 	for _, def := range local {
 		if reservedToolIDs[def.ID] {
 			continue

@@ -329,3 +329,10 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   carry feature logs from the sandbox. `responseError` escapes generated error
   messages at the CLI boundary; a JSON escape becomes an active terminal control
   after decoding unless the decoded string is escaped again.
+
+## Public CLI reference
+
+- Keep terminal help in a fenced text block when exporting Markdown: shell
+  comments and heredocs otherwise become headings and HTML. Generate from the
+  command tree without loading user tools or exposing machine paths. User tool
+  declarations may contain private names and descriptions.

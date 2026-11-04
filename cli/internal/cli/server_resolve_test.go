@@ -237,7 +237,7 @@ func TestServerBinaryFlagAndEnvReachResolution(t *testing.T) {
 	named := filepath.Join(t.TempDir(), "not-there")
 	for _, from := range []string{"flag", "environment"} {
 		t.Run(from, func(t *testing.T) {
-			root, _ := newRootCommand()
+			root, _ := newRootCommand(true)
 			args := []string{"admin", "server"}
 			if from == "flag" {
 				args = append(args, "--binary", named)

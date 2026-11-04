@@ -51,7 +51,7 @@ func TestEnsureLocalServerNarratesAStartingServer(t *testing.T) {
 	go func() { _ = server.Serve(listener) }()
 
 	var out bytes.Buffer
-	_, app := newRootCommand()
+	_, app := newRootCommand(true)
 	app.serverURL, app.errOut = endpointURL, &out
 	if err := app.ensureLocalServer(context.Background()); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestEnsureLocalServerStaysQuietWhenAsked(t *testing.T) {
 	go func() { _ = server.Serve(listener) }()
 
 	var out bytes.Buffer
-	_, app := newRootCommand()
+	_, app := newRootCommand(true)
 	app.serverURL, app.errOut, app.quiet = endpointURL, &out, true
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -134,7 +134,7 @@ func TestAnInvocationAutolaunchesAtMostOnce(t *testing.T) {
 	defer server.Close()
 	go func() { _ = server.Serve(listener) }()
 
-	_, app := newRootCommand()
+	_, app := newRootCommand(true)
 	app.serverURL, app.quiet = endpointURL, true
 
 	if _, _, err := app.httpClientWithAutoStart(true); err != nil {
@@ -206,7 +206,7 @@ func TestAutolaunchKeepsSelectedOlderServerAcrossInvocations(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			for range 2 {
-				_, app := newRootCommand()
+				_, app := newRootCommand(true)
 				app.serverURL, app.quiet, app.serverSource = endpointURL, true, selected
 				if err := app.ensureLocalServer(ctx); err != nil {
 					t.Fatal(err)

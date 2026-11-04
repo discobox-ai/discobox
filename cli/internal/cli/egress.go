@@ -30,8 +30,7 @@ a wildcard ("*.github.com", "registry.*", "*"), an IP, or a CIDR, never a port.
 empties it.
 
 --egress-passthrough names hosts whose HTTPS proxy CONNECT is spliced to the
-origin unread instead of intercepted, so TLS stays end to end (ADR
-26-10-31-819): for a client that pins its certificate, or a protocol the proxy
+origin unread instead of intercepted, so TLS stays end to end: for a client that pins its certificate, or a protocol the proxy
 does not read. It never admits a host, and nothing inside such a tunnel is read:
 no credential is swapped into it, and only the connection, its TLS hello, and
 its byte counts are audited. A discobox a person creates passes through every

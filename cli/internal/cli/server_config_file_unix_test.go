@@ -35,7 +35,7 @@ func TestServerConfigFileFlagReachesTheServer(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			root, _ := newRootCommand()
+			root, _ := newRootCommand(true)
 			root.SetArgs(append([]string{"admin", "server", "--binary", server}, test.args...))
 			root.SetOut(io.Discard)
 			root.SetErr(io.Discard)

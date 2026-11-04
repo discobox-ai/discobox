@@ -114,13 +114,14 @@ func commandName() string {
 }
 
 func NewRootCommand() *cobra.Command {
-	cmd, _ := newRootCommand()
+	cmd, _ := newRootCommand(true)
 	return cmd
 }
 
 // newRootCommand is NewRootCommand with the App it wired, so a test can ask the
-// app about the tree it is part of.
-func newRootCommand() (*cobra.Command, *App) {
+// app about the tree it is part of. The offline reference excludes user tools
+// so constructing it neither reads local declarations nor exports their text.
+func newRootCommand(includeUserTools bool) (*cobra.Command, *App) {
 	cobra.EnableCommandSorting = false
 
 	app := &App{autoStart: autoStartServerAuto}
@@ -256,7 +257,7 @@ See "%[1]s run --help" for everything run takes.`, name),
 	cmd.AddCommand(inGroup("files", app.newCPCommand()))
 	cmd.AddCommand(inGroup("files", app.newPushCommand()))
 	cmd.AddCommand(inGroup("files", app.newProxyCommand()))
-	cmd.AddCommand(inGroup("files", app.newToolsCommand()))
+	cmd.AddCommand(inGroup("files", app.newToolsCommand(includeUserTools)))
 	cmd.AddCommand(inGroup("resources", app.newSecretCommand()))
 	cmd.AddCommand(inGroup("resources", app.newTrustCommand()))
 	cmd.AddCommand(inGroup("setup", app.newConfigureCommand()))

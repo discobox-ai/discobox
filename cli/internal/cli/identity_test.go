@@ -101,7 +101,7 @@ func TestIDJSONCarriesBothForms(t *testing.T) {
 // exists for operating the system (ADR 0112); the top-level `id` it was still
 // runs it, and help no longer teaches it (ADR 26-11-04-204 §1).
 func TestIDCommandIsUnderAdminAndStillAnswersAtTheTop(t *testing.T) {
-	root, _ := newRootCommand()
+	root, _ := newRootCommand(true)
 	found, _, err := root.Find([]string{"admin", "id"})
 	if err != nil || found.Name() != "id" || found.Parent().Name() != "admin" {
 		t.Fatalf("Find(admin id) = %v, %v; want the command under admin", found, err)
