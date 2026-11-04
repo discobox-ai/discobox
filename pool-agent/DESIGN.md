@@ -890,7 +890,9 @@ sandbox is skipped, never blocking or failing the rest of the tick, and a poll
 or push failure never affects sandbox lifecycle. The bearer token for each
 sandbox-agent call is a short-lived, `status:read`-only token the control
 plane mints on request (`/api/pools/{pool_id}/sandbox-agent-status-tokens`)
-and the poller caches per sandbox, refreshing before expiry — pool-agent holds
+and the poller caches per sandbox, refreshing before expiry. Cache fills are
+serialized across ticks and port waiters, so concurrent misses reuse the
+first mint; the shared state mutex is released during the mint request. Pool-agent holds
 no key sandbox-agent trusts on its own, so this indirection is what lets the
 poll loop reach sandbox-agent's authenticated status route without discobox-
 server ever originating a request into a sandbox itself. See
