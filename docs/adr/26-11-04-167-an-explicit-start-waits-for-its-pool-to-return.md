@@ -90,8 +90,13 @@ Admit an explicit start once and cancel its scheduled wake once, retaining the
 resulting `WakeEpoch` as the request's ordering token. Retries never cancel a
 wake again or obtain a new token. Before every resend, require that token to
 remain current and that the sandbox still exists, is present, and is not owed
-source. A newer outside power instruction supersedes the waiting start even
-if that newer instruction fails to reach the pool. Repair admission also supersedes an older waiting start; its own final start
+source. A newer outside start, stop or restart supersedes the waiting start
+even if that newer instruction fails to reach the pool. Suspend retains
+[26-10-16-420](26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)
+§3: it moves the wake epoch and supersedes this wait only after successful
+freeze; a refused suspend changes neither the wake nor the pending start.
+Serialize that successful completion with retry dispatch as well.
+Repair admission also supersedes an older waiting start; its own final start
 retains the repair request's ordering token across the rebuild, so it cannot
 start after a stop admitted during that rebuild. Archive and delete end the
 wait too; unarchiving later must not revive the old request. Return a conflict
@@ -157,8 +162,9 @@ No additional product decision is deferred.
 
 Implementation must cover recovery after one or several pool-unreachable
 answers, the status while pending, stall/ceiling/caller deadlines, cancellation,
-and a later stop, suspend, restart, repair, archive or delete superseding the
-wait. Include a race at the check/dispatch boundary and an unanswered first
+and a later stop, successful suspend, restart, repair, archive or delete
+superseding the wait. A refused suspend must leave the pending start and its
+wake bookkeeping unchanged. Include a race at the check/dispatch boundary and an unanswered first
 attempt, not only a stop between two polls. Verify that retries cancel the wake
 once, initial provisioning and owed source still refuse, typed repair's final
 start follows this policy, and scheduled wakes/restart gain no new replay.
