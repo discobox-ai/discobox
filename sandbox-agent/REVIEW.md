@@ -694,6 +694,14 @@ user waits on every single start.
   delivered files. Otherwise every omitted baseline file becomes a false local
   change, even after the exporter recovers. Cover restart with a persisted
   version-1/partial baseline and an already-created false candidate.
+- **Nothing is compared before the harness's files are installed**
+  (`captureManager.observe`, `state.Installed`). The watcher looks as the
+  agent starts, before the primary's first launch writes the delivered
+  files, and a home without them reads as every delivered file removed: a
+  fresh box offered "remove `.claude/settings.json`" for its first seconds,
+  long enough for a status check-in to raise the band and the explainer over
+  a review that then said `clean`. A new early observer, or a new way files
+  are laid down, keeps that order.
 
 ## Clearing caches
 
