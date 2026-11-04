@@ -1350,3 +1350,12 @@ names a raw secret, so credential installation never writes a raw value into `$H
 
 Git clone meters are parsed by the shared `pkg/gitprogress` package, also used
 by pool pulls. Source convergence keeps ownership of clone state and reporting.
+
+A primary-terminal read with no current terminal answers 409 with preparation guidance even after provisioning is ready,
+until the first terminal record exists. A screen of a starting terminal also
+answers 409 while installation and launch prepare its shim. A
+failed preparation names its failure; concrete unknown exec IDs remain 404.
+These reads never launch or wait. Command and login-shell creation wait for
+blocking provisioning on the request context before making an exec record;
+cancellation leaves no record. Existing terminals remain readable during a new
+provisioning run.

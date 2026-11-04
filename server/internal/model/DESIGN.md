@@ -323,3 +323,9 @@ itself.
 is immutable creation history. Neither belongs in the manifest fingerprint.
 `AdoptionRequest` is the person's decision record, kept after sandbox purge;
 its current parent, display names and read-only warning are unmigrated read fields.
+
+`Sandbox.DisplayState` projects a running agent whose reported provisioning is
+not ready as `starting`, or `error` when blocking preparation failed. Runtime
+power state remains the pool observation. Async work after readiness does not
+hold back `running`, and provisioning never overrides a stopped box. Clients
+without a provision report retain the lifecycle/runtime projection.

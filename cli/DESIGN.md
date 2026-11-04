@@ -2608,8 +2608,9 @@ phase beats any inference from state, and a phase that has not been restated
 within `ProvisionProgressFresh` is describing the past rather than the present —
 the record is the last report and is never cleared. A discobox with nothing left
 to provision reports **nothing**, so the caller keeps its own line: what remains
-then is the harness install and the terminal launch, which no channel reports
-upward. A phase this build does not know is spelled out rather than dropped,
+then is terminal installation and launch. Blocking agent provisioning is
+projected through the server display state and remains narrated as preparation;
+see [`sandboxcreate`](internal/sandboxcreate/DESIGN.md). A phase this build does not know is spelled out rather than dropped,
 because a CLI is routinely older than the control plane it talks to.
 
 A repair in flight (`displayState: repairing`, ADR 26-10-12-711 §8) is read

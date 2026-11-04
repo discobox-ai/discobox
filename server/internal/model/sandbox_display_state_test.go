@@ -82,3 +82,22 @@ func TestSandboxDisplayState(t *testing.T) {
 		})
 	}
 }
+
+func TestSandboxDisplayStateProvisioning(t *testing.T) {
+	for _, tc := range []struct{ name, runtime, status, want string }{
+		{"pending", "running", `{"provision":{"ready":false,"state":"pending"}}`, "starting"},
+		{"provisioning", "running", `{"provision":{"ready":false,"state":"provisioning"}}`, "starting"},
+		{"failed", "running", `{"provision":{"ready":false,"error":"core failed"}}`, "error"},
+		{"async work", "running", `{"provision":{"ready":true,"state":"provisioning"}}`, "running"},
+		{"async failure", "running", `{"provision":{"ready":true,"state":"failed"}}`, "running"},
+		{"stopped", "stopped", `{"provision":{"ready":false}}`, "stopped"},
+		{"legacy", "running", `{}`, "running"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := model.Sandbox{ResourceLifecycle: model.ResourceLifecycle{State: model.SandboxStateReady}, RuntimeState: tc.runtime, AgentStatus: model.RawJSON(tc.status)}
+			if got := s.DisplayState(); got != tc.want {
+				t.Fatalf("DisplayState() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

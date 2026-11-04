@@ -22,8 +22,8 @@ func expectNoContent[T any](res any) error {
 func responseError(res any) error {
 	if problem, ok := res.(*apiclientgen.ErrorModelStatusCode); ok {
 		status := problem.StatusCode
-		title := problem.Response.Title.Value
-		detail := problem.Response.Detail.Value
+		title := terminalSafe(problem.Response.Title.Value)
+		detail := terminalSafe(problem.Response.Detail.Value)
 		switch {
 		case title != "" && detail != "":
 			return fmt.Errorf("request failed: %d %s: %s", status, title, detail)
@@ -37,7 +37,7 @@ func responseError(res any) error {
 	}
 	if problem, ok := res.(*apiclientgen.ErrorResponseStatusCode); ok {
 		status := problem.StatusCode
-		message := problem.Response.Error
+		message := terminalSafe(problem.Response.Error)
 		if message != "" {
 			return fmt.Errorf("request failed: %d %s", status, message)
 		}

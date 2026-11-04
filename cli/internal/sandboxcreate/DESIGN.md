@@ -329,3 +329,9 @@ An unknown pool after server restart is narrated as "waiting for the pool agent
 to become ready". Fresh driver provisioning progress refines that message;
 image preparation can continue while the health wait is pending. The server
 holds creation until a current status report permits placement.
+
+Provision narration also respects the server display state: a converged running
+container shown as `starting` still says "preparing the discobox" until the
+agent reports readiness. This current agent report outranks the pool phase
+from boot or source delivery, even while that older phase is fresh. This is
+shared by CLI and console waits.

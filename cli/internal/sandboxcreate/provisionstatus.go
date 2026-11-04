@@ -80,6 +80,12 @@ func ProvisionStatus(sandbox *apimodel.Sandbox) Step {
 	if provisioned(sandbox) {
 		return ""
 	}
+	// A live agent still preparing has passed the pool's boot/source phases.
+	// Its display state is the current report; a recent pool phase is past.
+	if runtime.State == apiclientgen.SandboxRuntimeStateReady && runtime.Generation == runtime.ObservedGeneration &&
+		runtime.RuntimeState.Or("") == apiclientgen.SandboxRuntimeRuntimeStateRunning && runtime.DisplayState.Or("") == apiclientgen.SandboxRuntimeDisplayStateStarting {
+		return "preparing the discobox"
+	}
 	if phase := recordedPhase(runtime); phase != "" {
 		return phase
 	}
@@ -166,12 +172,12 @@ func OneLine(value string) string {
 // reconciler has finished the intent it is acting on, that intent settled as
 // ready, and the container is up.
 //
-// A converged, ready, running sandbox is one whose remaining wait is inside
-// it — the harness install and the terminal launch, which no channel reports
-// upward (ADR 0060) — so the sandbox itself has nothing left to say.
+// The server projects blocking agent provisioning into displayState. Older
+// servers omit that field; retain their lifecycle/runtime reading.
 func provisioned(sandbox *apimodel.Sandbox) bool {
 	runtime := sandbox.Runtime
-	return runtime.Generation == runtime.ObservedGeneration &&
+	return runtime.DisplayState.Or(apiclientgen.SandboxRuntimeDisplayStateRunning) == apiclientgen.SandboxRuntimeDisplayStateRunning &&
+		runtime.Generation == runtime.ObservedGeneration &&
 		runtime.State == apiclientgen.SandboxRuntimeStateReady &&
 		runtime.RuntimeState.Or("") == apiclientgen.SandboxRuntimeRuntimeStateRunning
 }
