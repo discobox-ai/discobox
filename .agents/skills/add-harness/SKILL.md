@@ -117,7 +117,10 @@ Write these down before writing scripts; most become ADR sections.
    provider is signed in".
 4. **Policy baseline**: auto-approve and trust, in a layer the configure
    capture cannot replace — a system config, an image env var, or a launcher
-   flag. Not the user's settings file: configure replaces that wholesale.
+   flag. Do not use the user's settings file: configure replaces it wholesale.
+   Codex splits `-c` keys on dots without parsing quoted keys: pass
+   workspace trust as `projects={"/path"={trust_level="trusted"}}`, with the
+   path quoted inside the TOML value, and verify it in the real TUI.
 5. **Hooks**: which system layer, and which events. With none (omp), a
    harness file in the CLI's user extension directory that re-exports a
    module the image installs keeps the code the image's; never a settings

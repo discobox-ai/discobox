@@ -140,7 +140,7 @@ previous_env() {
 # Trust is a process override; portable user settings remain literal.
 ensure_workspace_trusted() {
     trust_key=$(node -e 'process.stdout.write(JSON.stringify(process.cwd()))')
-    export DISCOBOX_CODEX_TRUST="projects.$trust_key.trust_level=\"trusted\""
+    export DISCOBOX_CODEX_TRUST="projects={$trust_key={trust_level=\"trusted\"}}"
 }
 
 # extract_api_key reads the long-lived key an API key sign-in wrote to

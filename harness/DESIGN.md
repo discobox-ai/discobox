@@ -904,7 +904,7 @@ image's `unavailable` message.
   otherwise prefer over it.
 - It returns a credential document for `auth.json` and literal user preferences
   for `~/.codex/config.toml`, excluding parsed `[projects]` tables. Both the
-  launcher and configure pass `-c projects.<JSON-quoted cwd>.trust_level="trusted"`.
+  launcher and configure pass `-c 'projects={<JSON-quoted cwd>={trust_level="trusted"}}'`.
   Trust never needs to be appended to the user's file or persisted centrally.
 - Existing stored trust suffixes and credential references are converted in
   place by the server migration. Old sandbox bootstraps and capture checkpoints
