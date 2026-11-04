@@ -17,11 +17,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
-// RevisionConflictType identifies a save conflict that explicit force can override.
-const RevisionConflictType = "urn:discobox:harness-config-revision-conflict"
-
-var ErrRevisionConflict = errors.New("harness configuration revision changed")
-
 const Version = 1
 const MaxBytes = 2 << 20
 const ScopeRead = "harness-config:read"
@@ -188,6 +183,7 @@ type FileChange struct {
 // Candidate is immutable and private. Its ID is random, not a public hash of
 // secret material. WriteRevision may advance through explicit reconsideration;
 // Baseline continues to describe the content the sandbox actually received.
+// These revisions describe snapshots and never gate saving the chosen patch.
 type Candidate struct {
 	ID              string            `json:"id"`
 	Baseline        Baseline          `json:"baseline"`
@@ -363,8 +359,6 @@ type SaveResult struct {
 }
 
 type CandidateRequest struct {
-	// Force is a user-authorized control-plane save override, never sent to the agent.
-	Force       bool   `json:"force,omitempty"`
 	CandidateID string `json:"candidateId"`
 }
 

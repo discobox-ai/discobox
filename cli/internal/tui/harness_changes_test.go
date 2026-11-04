@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -119,33 +120,18 @@ func TestHarnessReviewScrollsEverySettingsField(t *testing.T) {
 	}
 }
 
-func TestHarnessChangesConflictRequiresConfirmation(t *testing.T) {
-	for _, confirm := range []bool{false, true} {
-		t.Run(map[bool]string{false: "cancel", true: "overwrite"}[confirm], func(t *testing.T) {
-			ds := newFakeSource(testSandboxes()...)
-			ds.harnessChanges = HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "update"}}}
-			ds.harnessChangesSaveErr = ErrHarnessChangesConflict
-			m := newTestModel(t, ds)
-			send(t, m, keyPress("tab"), keyPress("H"), keyPress("s"))
-			if !strings.Contains(dialogText(m), "Overwrite harness changes?") {
-				t.Fatalf("missing confirmation: %s", dialogText(m))
-			}
-			if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesForces[0] {
-				t.Fatal("forced without confirmation")
-			}
-			ds.harnessChanges.CandidateID = "new-candidate"
-			if confirm {
-				send(t, m, keyPress("enter"))
-				if len(ds.harnessChangesWrites) != 2 || ds.harnessChangesWrites[1] != "save sbx_one reviewed" || !ds.harnessChangesForces[1] {
-					t.Fatalf("wrong retry: %v %v", ds.harnessChangesWrites, ds.harnessChangesForces)
-				}
-			} else {
-				send(t, m, keyPress("esc"))
-				if len(ds.harnessChangesWrites) != 1 {
-					t.Fatal("saved after cancellation")
-				}
-			}
-		})
+func TestHarnessSaveFailureIsReportedWithoutRetry(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.harnessChanges = HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "update"}}}
+	ds.harnessChangesSaveErr = errors.New("upgrade or recreate the sandbox")
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("H"), keyPress("s"))
+	if text := dialogText(m); !strings.Contains(text, "upgrade or recreate the sandbox") || strings.Contains(text, "Overwrite") {
+		t.Fatalf("wrong recovery dialog: %s", text)
+	}
+	send(t, m, keyPress("enter"))
+	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one reviewed" {
+		t.Fatalf("unexpected retry: %v", ds.harnessChangesWrites)
 	}
 }
 

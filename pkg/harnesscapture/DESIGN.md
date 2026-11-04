@@ -20,7 +20,9 @@ Validate before accepting a candidate or exposing its files as a preview.
 config; a candidate carrying one is invalid.
 Credential objects and exporter output are private; never log them. Public
 candidate IDs are random, never hashes of credential material. Delivery baselines
-and conditional write revisions have different meanings and remain separate.
+and reconsideration revisions describe their respective snapshots. Save applies
+the chosen patch to current rows without comparing those revisions (ADR
+26-11-04-538); delivery baselines still identify what the sandbox received.
 
 Settings preserve arbitrary structured preferences but reject manifest-declared
 credential and local paths. The exporter applies those same exclusions before

@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +11,6 @@ import (
 	"time"
 
 	api "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
-	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 )
 
 func TestHarnessPreviewEscapesUntrustedDisplayData(t *testing.T) {
@@ -127,23 +124,18 @@ func TestHarnessChangesAcceptsProjectAndServerFlags(t *testing.T) {
 	}
 }
 
-func TestSaveHarnessChangesOffersForceOnlyForRevisionConflicts(t *testing.T) {
-	for _, tc := range []struct {
-		name, problemType, detail string
-		conflict                  bool
-	}{
-		{"revision", harnesscapture.RevisionConflictType, "revision changed", true},
-		{"manifest", "about:blank", "upgrade or recreate the sandbox", false},
-		{"candidate", "about:blank", "harness capture request was refused", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+func TestSaveHarnessChangesSendsCandidateOnce(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			requests := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
-					w.WriteHeader(http.StatusOK)
+					w.WriteHeader(200)
 					return
 				}
-				if r.URL.Query().Get("force") != "true" {
-					t.Error("force option was lost")
+				requests++
+				if r.URL.RawQuery != "" {
+					t.Errorf("unexpected save options: %s", r.URL.RawQuery)
 				}
 				var body api.HarnessConfigCandidateRequest
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -152,9 +144,14 @@ func TestSaveHarnessChangesOffersForceOnlyForRevisionConflicts(t *testing.T) {
 				if body.CandidateId != "reviewed" {
 					t.Error("candidate changed")
 				}
-				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(409)
-				_ = json.NewEncoder(w).Encode(map[string]any{"status": 409, "title": "Conflict", "detail": tc.detail, "type": tc.problemType})
+				if fail {
+					w.Header().Set("Content-Type", "application/problem+json")
+					w.WriteHeader(409)
+					_, _ = w.Write([]byte(`{"status":409,"title":"Conflict","detail":"upgrade or recreate the sandbox"}`))
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"candidateId":"reviewed","harnessConfigId":"harness","configRevision":2,"state":"saved"}`))
+				}
 			}))
 			defer server.Close()
 			client, err := api.NewClient(server.URL)
@@ -162,9 +159,16 @@ func TestSaveHarnessChangesOffersForceOnlyForRevisionConflicts(t *testing.T) {
 				t.Fatal(err)
 			}
 			ds := &apiDataSource{client: client, projectID: "project-1"}
-			_, err = ds.SaveHarnessChanges(context.Background(), "box", "reviewed", true)
-			if err == nil || errors.Is(err, tui.ErrHarnessChangesConflict) != tc.conflict || !strings.Contains(err.Error(), tc.detail) {
-				t.Fatalf("wrong conflict classification: %v", err)
+			state, err := ds.SaveHarnessChanges(context.Background(), "box", "reviewed")
+			if fail {
+				if err == nil || !strings.Contains(err.Error(), "upgrade or recreate") {
+					t.Fatalf("lost recovery: %v", err)
+				}
+			} else if err != nil || state != "saved" {
+				t.Fatalf("save: %s %v", state, err)
+			}
+			if requests != 1 {
+				t.Fatalf("requests=%d", requests)
 			}
 		})
 	}

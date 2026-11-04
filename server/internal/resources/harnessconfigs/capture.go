@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"maps"
 	"net/http"
 	"slices"
 
@@ -24,7 +23,7 @@ import (
 )
 
 func captureConflict() error {
-	return apperrors.NewStatusError(http.StatusConflict, "harness configuration changed; reconsider the candidate before saving")
+	return apperrors.NewStatusError(http.StatusConflict, "harness assignment or candidate no longer matches; capture the local configuration again")
 }
 
 func captureDefinitionConflict() error {
@@ -201,7 +200,7 @@ func (s *Service) SaveSandboxHarnessConfigChanges(ctx context.Context, p, b stri
 		if candidate.ID != r.CandidateID || candidate.ID == "" {
 			return harnesscapture.SaveResult{}, captureConflict()
 		}
-		receipt, err = s.commitCapture(ctx, p, b, configID, candidate, r.Force)
+		receipt, err = s.commitCapture(ctx, p, b, configID, candidate)
 	}
 	if err != nil {
 		return harnesscapture.SaveResult{}, err
@@ -217,11 +216,11 @@ func (s *Service) SaveSandboxHarnessConfigChanges(ctx context.Context, p, b stri
 	return result, nil
 }
 
-func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c harnesscapture.Candidate, force bool) (*model.HarnessCaptureReceipt, error) {
+func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c harnesscapture.Candidate) (*model.HarnessCaptureReceipt, error) {
 	var receipt *model.HarnessCaptureReceipt
 	err := s.store.Transaction(ctx, func(tx *store.Store, db *gorm.DB) error {
-		// Serialize config mutations and lock credential rows before checking their
-		// revisions; a proxy refresh completing first conflicts unless the user forces the save.
+		// Serialize writes against current rows. Saving applies the chosen patch
+		// even when config edits or credential renewals followed its capture.
 		var locked model.HarnessConfig
 		if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND id = ?", p, configID).First(&locked).Error; err != nil {
 			return err
@@ -253,18 +252,11 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 				return err
 			}
 		}
-		baseline, err := tx.CaptureBaseline(ctx, p, configID)
-		if err != nil {
-			return err
-		}
 		if c.Baseline.ManifestDigest != cfg.ManifestDigest {
 			return captureDefinitionConflict()
 		}
 		if c.Baseline.HarnessConfigID != configID {
 			return captureConflict()
-		}
-		if !force && (c.WriteRevision != cfg.Revision || !maps.Equal(c.SecretRevisions, baseline.SecretRevisions)) {
-			return apperrors.StatusError{Status: http.StatusConflict, Message: "harness configuration revision changed; force the save to overwrite conflicting changes, or reconsider the candidate", Cause: harnesscapture.ErrRevisionConflict}
 		}
 		if cfg.SaveBack == nil {
 			return apperrors.NewStatusError(http.StatusBadRequest, "harness does not support configuration capture")
@@ -326,7 +318,7 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 		if err := tx.UpdateHarnessConfig(ctx, cfg); err != nil {
 			return err
 		}
-		baseline, err = tx.CaptureBaseline(ctx, p, configID)
+		baseline, err := tx.CaptureBaseline(ctx, p, configID)
 		if err != nil {
 			return err
 		}
@@ -363,7 +355,7 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 	}
 	if c.Keep {
 		if existingID == "" {
-			return captureConflict()
+			return apperrors.NewStatusError(http.StatusConflict, "credential binding no longer exists; capture the local configuration again")
 		}
 		return nil
 	}

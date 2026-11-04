@@ -50,20 +50,21 @@ func TestCaptureErrorsDecodeWithGeneratedClient(t *testing.T) {
 
 type captureSaveService struct {
 	services.HarnessConfigService
-	request  harnesscapture.CandidateRequest
-	revision bool
+	request harnesscapture.CandidateRequest
+	fail    bool
 }
 
 func (s *captureSaveService) SaveSandboxHarnessConfigChanges(_ context.Context, _, _ string, r harnesscapture.CandidateRequest) (harnesscapture.SaveResult, error) {
 	s.request = r
-	if s.revision {
-		return harnesscapture.SaveResult{}, apperrors.StatusError{Status: 409, Message: "revision changed", Cause: harnesscapture.ErrRevisionConflict}
+	if s.fail {
+		return harnesscapture.SaveResult{}, apperrors.NewStatusError(409, "upgrade or recreate the sandbox")
 	}
-	return harnesscapture.SaveResult{}, apperrors.NewStatusError(409, "upgrade or recreate the sandbox")
+	return harnesscapture.SaveResult{CandidateID: r.CandidateID, HarnessConfigID: "harness", ConfigRevision: 2, State: "saved"}, nil
 }
-func TestSaveConflictTypeAndForceRoundTrip(t *testing.T) {
-	for _, revision := range []bool{false, true} {
-		svc := &captureSaveService{revision: revision}
+
+func TestSaveCandidateRoundTrip(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		svc := &captureSaveService{fail: fail}
 		handler, err := NewServer(services.Services{HarnessConfigs: svc})
 		if err != nil {
 			t.Fatal(err)
@@ -73,20 +74,24 @@ func TestSaveConflictTypeAndForceRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		res, err := client.SaveSandboxHarnessConfigChanges(context.Background(), &serverapi.HarnessConfigCandidateRequest{CandidateId: "reviewed"}, serverapi.SaveSandboxHarnessConfigChangesParams{ProjectId: "default", SandboxId: "box", Force: serverapi.NewOptBool(true)})
+		res, err := client.SaveSandboxHarnessConfigChanges(context.Background(), &serverapi.HarnessConfigCandidateRequest{CandidateId: "reviewed"}, serverapi.SaveSandboxHarnessConfigChangesParams{ProjectId: "default", SandboxId: "box"})
 		server.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
-		problem, ok := res.(*serverapi.ErrorModelStatusCode)
-		if !ok || problem.StatusCode != 409 {
-			t.Fatalf("unexpected response: %#v", res)
+		if fail {
+			problem, ok := res.(*serverapi.ErrorModelStatusCode)
+			if !ok || problem.StatusCode != 409 || problem.Response.Detail.Or("") != "upgrade or recreate the sandbox" {
+				t.Fatalf("lost recovery: %#v", res)
+			}
+		} else {
+			saved, ok := res.(*serverapi.HarnessConfigSaveResult)
+			if !ok || saved.State != "saved" || saved.CandidateId != "reviewed" {
+				t.Fatalf("wrong save result: %#v", res)
+			}
 		}
-		if (problem.Response.Type.Value.String() == harnesscapture.RevisionConflictType) != revision {
-			t.Fatalf("wrong conflict type: %v", problem.Response.Type)
-		}
-		if !svc.request.Force || svc.request.CandidateID != "reviewed" {
-			t.Fatalf("request changed: %+v", svc.request)
+		if svc.request.CandidateID != "reviewed" {
+			t.Fatalf("candidate changed: %+v", svc.request)
 		}
 	}
 }

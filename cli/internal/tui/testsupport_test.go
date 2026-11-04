@@ -70,7 +70,6 @@ type fakeSource struct {
 	harnessChanges        HarnessChanges
 	harnessChangesWrites  []string
 	harnessChangesSaveErr error
-	harnessChangesForces  []bool
 	resources             Resources
 	mu                    sync.Mutex
 	// skills is what the skills screen lists, and skillsErr what an add
@@ -2179,12 +2178,11 @@ func (f *fakeSource) HarnessChanges(_ context.Context, id string) (HarnessChange
 	f.onServer = append(f.onServer, "HarnessChanges@"+id)
 	return f.harnessChanges, nil
 }
-func (f *fakeSource) SaveHarnessChanges(_ context.Context, id, candidate string, force bool) (string, error) {
+func (f *fakeSource) SaveHarnessChanges(_ context.Context, id, candidate string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.harnessChangesWrites = append(f.harnessChangesWrites, "save "+id+" "+candidate)
-	f.harnessChangesForces = append(f.harnessChangesForces, force)
-	if !force {
+	if f.harnessChangesSaveErr != nil {
 		return "", f.harnessChangesSaveErr
 	}
 	return "saved", nil

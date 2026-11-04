@@ -349,7 +349,7 @@ func TestCaptureSavesAnOverriddenPathBeneathTheOverride(t *testing.T) {
 		t.Fatalf("baseline files = %+v, want the override on top", baseline.Files)
 	}
 	c.Baseline, c.SecretRevisions = baseline, baseline.SecretRevisions
-	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c, false); err != nil {
+	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c); err != nil {
 		t.Fatal(err)
 	}
 	stored, err := s.store.GetHarnessConfig(ctx, cfg.ProjectID, cfg.ID)
