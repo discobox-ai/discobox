@@ -138,7 +138,8 @@ func (m *promptComposer) footer() string {
 		b.WriteString("Enter submit · Shift-Enter newline · Esc cancel · Alt-E editor")
 	}
 	if m.status != "" {
-		b.WriteString("\n" + m.status)
+		b.WriteString("\n")
+		b.WriteString(m.status)
 	}
 	return ansi.Hardwrap(b.String(), m.width, true)
 }

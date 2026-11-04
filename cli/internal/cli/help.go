@@ -134,23 +134,36 @@ func writeHelp(out io.Writer, cmd *cobra.Command, style helpStyle, full bool) {
 	var b strings.Builder
 	if full {
 		if text := strings.TrimRightFunc(cmp.Or(cmd.Long, cmd.Short), unicode.IsSpace); text != "" {
-			b.WriteString(text + "\n\n")
+			b.WriteString(text)
+			b.WriteString("\n\n")
 		}
 		if cmd.Example != "" {
-			b.WriteString(style.header("Examples:") + "\n" + strings.TrimRightFunc(cmd.Example, unicode.IsSpace) + "\n\n")
+			b.WriteString(style.header("Examples:"))
+			b.WriteString("\n")
+			b.WriteString(strings.TrimRightFunc(cmd.Example, unicode.IsSpace))
+			b.WriteString("\n\n")
 		}
 	}
 
-	b.WriteString(style.header("Usage:") + "\n")
+	b.WriteString(style.header("Usage:"))
+	b.WriteString("\n")
 	subcommands := cmd.HasAvailableSubCommands()
 	if cmd.Runnable() && (!subcommands || cmd.HasParent()) {
-		b.WriteString("  " + cmd.UseLine() + "\n")
+		b.WriteString("  ")
+		b.WriteString(cmd.UseLine())
+		b.WriteString("\n")
 	}
 	if subcommands {
-		b.WriteString("  " + cmd.CommandPath() + " [command] [flags]\n")
+		b.WriteString("  ")
+		b.WriteString(cmd.CommandPath())
+		b.WriteString(" [command] [flags]\n")
 	}
 	if len(cmd.Aliases) > 0 {
-		b.WriteString("\n" + style.header("Aliases:") + "\n  " + strings.Join(append([]string{cmd.Name()}, cmd.Aliases...), ", ") + "\n")
+		b.WriteString("\n")
+		b.WriteString(style.header("Aliases:"))
+		b.WriteString("\n  ")
+		b.WriteString(strings.Join(append([]string{cmd.Name()}, cmd.Aliases...), ", "))
+		b.WriteString("\n")
 	}
 
 	if subcommands {
@@ -163,11 +176,15 @@ func writeHelp(out io.Writer, cmd *cobra.Command, style helpStyle, full bool) {
 		width = max(width, len(row.name))
 	}
 	if len(local) > 0 {
-		b.WriteString("\n" + style.header("Options:") + "\n")
+		b.WriteString("\n")
+		b.WriteString(style.header("Options:"))
+		b.WriteString("\n")
 		writeFlagRows(&b, local, width, style)
 	}
 	if len(inherited) > 0 {
-		b.WriteString("\n" + style.header("Global options:") + "\n")
+		b.WriteString("\n")
+		b.WriteString(style.header("Global options:"))
+		b.WriteString("\n")
 		writeFlagRows(&b, inherited, width, style)
 	}
 	if subcommands {
@@ -194,9 +211,15 @@ func writeCommandList(b *strings.Builder, cmd *cobra.Command, style helpStyle) {
 		if len(rows) == 0 {
 			return
 		}
-		b.WriteString("\n" + style.header(title) + "\n")
+		b.WriteString("\n")
+		b.WriteString(style.header(title))
+		b.WriteString("\n")
 		for _, r := range rows {
-			b.WriteString("  " + style.name(r.name) + strings.Repeat(" ", width-len(r.name)+4) + r.short + "\n")
+			b.WriteString("  ")
+			b.WriteString(style.name(r.name))
+			b.WriteString(strings.Repeat(" ", width-len(r.name)+4))
+			b.WriteString(r.short)
+			b.WriteString("\n")
 		}
 	}
 	for _, group := range cmd.Groups() {
@@ -241,7 +264,11 @@ func writeFlagRows(b *strings.Builder, rows []helpFlag, width int, style helpSty
 	for _, row := range rows {
 		// The leading spaces are layout, not the name: only the name is colored.
 		indent := len(row.name) - len(strings.TrimLeft(row.name, " "))
-		b.WriteString(row.name[:indent] + style.name(row.name[indent:]) + strings.Repeat(" ", width-len(row.name)+2) + row.usage + "\n")
+		b.WriteString(row.name[:indent])
+		b.WriteString(style.name(row.name[indent:]))
+		b.WriteString(strings.Repeat(" ", width-len(row.name)+2))
+		b.WriteString(row.usage)
+		b.WriteString("\n")
 	}
 }
 

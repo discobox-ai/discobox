@@ -90,7 +90,9 @@ func TestHarnessReviewScrollsEverySettingsField(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	var content strings.Builder
 	for n := 0; n < 100; n++ {
-		content.WriteString("+field-" + itoa(n) + ": value\n")
+		content.WriteString("+field-")
+		content.WriteString(itoa(n))
+		content.WriteString(": value\n")
 	}
 	ds.harnessChanges = HarnessChanges{CandidateID: "long-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1,100 @@\n" + content.String()}}}
 	m := newTestModel(t, ds)
