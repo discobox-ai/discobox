@@ -180,6 +180,12 @@ the pool yourself — `git fetch discobox && git rebase discobox/<branch>`
 
 Name the port when you report a running server.
 
+Everything you post outside the box — GitHub PR bodies, issues, comments and
+review replies, and the like elsewhere, such as Slack messages and tickets —
+ends with ``<sub>From `$DISCOBOX_ADDRESS`</sub>``, replacing `$DISCOBOX_ADDRESS`
+with its environment value, on its own line, last. Keep the footer last when
+editing a body, and leave it off only when `DISCOBOX_ADDRESS` is unset.
+
 ## The desktop
 
 This box has a graphical Xfce desktop, and the user can watch it in a browser
