@@ -182,7 +182,7 @@ func TestHarnessesResetConfirms(t *testing.T) {
 
 // A harness with files a person added or overrode asks which reset is meant:
 // a plain one keeps those files, and is offered first; the other leaves
-// nothing but the bundle's (ADR 26-11-04-028 §1).
+// nothing but the bundle's (ADR 26-11-04-711 §1).
 func TestResettingAHarnessWithYourFilesAsksWhetherToKeepThem(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

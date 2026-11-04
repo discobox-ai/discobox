@@ -292,7 +292,7 @@ func (s *Service) copyHarnessConfig(ctx context.Context, sourceConfig *model.Har
 	} else {
 		config.ConfiguredFiles = sourceConfig.ConfiguredFiles
 		config.ConfiguredSecretIDs = configuredSecretIDs
-		// A person's files are theirs, like the configure flow's result. A
+		// A person's files are theirs, like what boxes saved. A
 		// source from before the set existed has none to give, and the seeded
 		// config keeps its own.
 		if sourceConfig.FileOverrides != nil {

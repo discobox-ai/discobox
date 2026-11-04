@@ -100,7 +100,7 @@ func (s *Service) sendCaptureRequest(ctx context.Context, projectID, sandboxID, 
 // what it writes. Previous is the file a box is given at the path now: a
 // person's override over the saved file over the bundle's, at the current
 // revision, whatever the sandbox was delivered. A save writes the saved set
-// only (ADR 26-11-04-028 §5), so at a path a person overrode the change is
+// only (ADR 26-11-04-711 §2), so at a path a person overrode the change is
 // Shadowed: it is kept, and boxes go on being given the override. A removal's
 // after is what boxes are given once the saved file is gone (fileBeneath).
 // Nothing here is applied.
@@ -300,7 +300,7 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 		// together if validation or delivery preparation fails.
 		//
 		// A save patches the saved set at every path and never a person's
-		// override (ADR 26-11-04-028 §5): what a box wrote stays what a plain
+		// override (ADR 26-11-04-711 §2): what a box wrote stays what a plain
 		// reset takes back, and at a path an override holds it is shadowed.
 		for _, change := range c.Files {
 			index := slices.IndexFunc(cfg.ConfiguredFiles, func(f model.HarnessConfigFile) bool { return f.Path == change.Path })

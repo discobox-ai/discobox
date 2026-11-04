@@ -133,7 +133,7 @@ func TestAnOverrideOfABundlePathSurvivesARefresh(t *testing.T) {
 
 // A plain reset takes back what boxes saved, not a person's files; asked to,
 // it clears those too, to an empty set rather than nil, which would read as
-// a config not yet split (ADR 26-11-04-028 §1).
+// a config not yet split (ADR 26-11-04-711 §1).
 func TestResetKeepsAPersonsFilesUnlessAsked(t *testing.T) {
 	ctx := context.Background()
 	svc, _, config := seededClaude(t)
@@ -329,7 +329,7 @@ func TestCreateTakesAPersonsFilesAsItsFirstOverrides(t *testing.T) {
 	wantFiles(t, "overrides", config.FileOverrides, []model.HarnessConfigFile{{Path: ".acme", Content: "mine", CreateOnly: true}})
 }
 
-// A save never writes a person's file (ADR 26-11-04-028 §5): a path a person
+// A save never writes a person's file (ADR 26-11-04-711 §2): a path a person
 // overrode is saved to the saved set beneath the override, where a plain reset
 // can take it back, and the override is left as the person wrote it.
 func TestCaptureSavesAnOverriddenPathBeneathTheOverride(t *testing.T) {

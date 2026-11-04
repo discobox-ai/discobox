@@ -9,7 +9,8 @@
   `harnessMode=config` sandbox, keeping its single harness-config concept and
   deconfigure as reset (§3); completes
   [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md)
-  §8's follow-up)
+  §8's follow-up; §3's reset narrowed by [26-11-04-711](26-11-04-711-a-reset-keeps-a-persons-harness-files-and-a-save-never-writes-them.md): a plain
+  reset keeps a person's files)
 - **Date**: 2026-11-02
 
 ## Context

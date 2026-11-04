@@ -1,24 +1,19 @@
 # 26-11-04-028 — A person's harness files are their own layer, and a bundle refresh never writes it
 
-- **Status**: Accepted (§6 amended before implementation landed: the first seed splits every built-in, and a write to an unsplit set is refused;
-  §1 and §5 amended before release, with [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md)
-  removing configure: a plain reset keeps a person's files and `--include-overrides` clears them, and a save never writes them;
-  narrows 26-11-02-152 §3)
+- **Status**: Accepted (§6 amended before implementation landed: the first seed splits every built-in, and a write to an unsplit set is refused; §5 and §1's "configure and deconfigure never write it" superseded by [26-11-04-711](26-11-04-711-a-reset-keeps-a-persons-harness-files-and-a-save-never-writes-them.md))
 - **Date**: 2026-11-04
 
   Accepted by the owner by merging #550, 2026-11-04.
 - **Relates to**:
   [0002](0002-harness-config-is-the-only-harness-concept.md), which split a
-  config's files into the bundle's `Files` baseline and the saved
-  `ConfiguredFiles` (the configure flow's then; save-back's since
-  [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md)).
-  This adds a third set beside them and changes neither.
+  config's files into the bundle's `Files` baseline and the configure flow's
+  `ConfiguredFiles`. This adds a third set beside them and changes neither.
   [0012](0012-sandbox-config-is-three-attribute-owned-layers.md) §1, whose
   runtime layer's `Files` overlay by path carries the new set to a sandbox
   with no change to the merge.
   [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md)
-  §3, whose save-back patches `ConfiguredFiles` by path, and still does:
-  a save never writes a person's file (§5).
+  §3, whose save-back patches `ConfiguredFiles` by path. §5 here narrows
+  which set a saved path goes to.
 
 ## Context
 
@@ -46,16 +41,15 @@ So no file set today belongs to a person:
 | Set | Written by | Overwritten by |
 | --- | --- | --- |
 | `Files` | the bundle's label, and `update --file` | every re-snapshot (seed, refresh) |
-| `ConfiguredFiles` | save-back, `harnesses edit` | reset clears it (ADR 26-11-02-152) |
+| `ConfiguredFiles` | the configure flow, save-back, `harnesses edit` | every configure (the output is authoritative, ADR 0009), and deconfigure clears it |
 
 ## Decision
 
 **A harness config gains a third file set, `FileOverrides`, which belongs to
 the person who wrote it. A file in it adds a path or replaces the one beneath
-it, and only a person changes it. Seeding, refresh and save-back never write
-it — a saved change at a path it holds is shadowed by it (§5) — and reset
-keeps it unless asked to clear it too. `files` stays the
-bundle's, and no request writes it.**
+it, and only a person changes it. Seeding, refresh, configure and
+deconfigure never write it. `files` stays the bundle's, and no request
+writes it.**
 
 ### 1. `FileOverrides` is a person's, per path
 
@@ -66,13 +60,9 @@ of the other two sets.
 
 - `snapshotImageMetadata`, `SeedBuiltIns` and `RefreshHarnessConfigImage`
   never read or write it. A bundle that moves leaves it as it was.
-- Reset (`admin harness reset`, the harnesses screen's `r`) doesn't clear
-  it: reset forgets what boxes saved — `ConfiguredFiles` and the logins
-  save-back created — and a person's file is not that. `admin harness reset
-  --include-overrides` clears `FileOverrides` as well, for a config put all
-  the way back to its bundle; the console's reset asks the same question
-  first, with keeping them the default. A person's file is still there after
-  a plain reset.
+- Configure doesn't write it, and deconfigure doesn't clear it: neither
+  wrote it. A person's file is still there when the harness is configured
+  again.
 - Deleting the config deletes it with the row.
 
 ### 2. By path, `FileOverrides` wins over `ConfiguredFiles`, which wins over `Files`
@@ -87,6 +77,9 @@ each gain a `fileOverrides` field. `pool-agent/sandboxruntime` writes
 `sandboxconfig.mergeFiles` already upserts in order, so the later entry wins
 at a shared path. `sandboxconfig` doesn't change, and a test in it pins that
 a later runtime entry wins.
+
+A config-mode sandbox (the configure flow's) is handed the overrides too: it
+runs the harness the way every sandbox will.
 
 ### 3. The API writes `fileOverrides`, never `files`
 
@@ -119,27 +112,14 @@ a later runtime entry wins.
   with the set its effective file comes from (bundle, configured, override),
   and name a file the override shadows.
 
-### 5. Save-back never writes a person's file; an override shadows a save
+### 5. Save-back writes to the set that holds the path
 
-A save-back change (ADR 26-10-26-573 §3) patches `ConfiguredFiles`, whatever
-path it is at. At a path an override holds, the saved file is beneath the
-override and does not reach a sandbox while the override stands. The
-harness-changes review says so for each such path ("shadowed by your
-override"), and `harnesses get` names the configured file the override
-shadows (§4); removing or editing the override is how the saved change takes
-effect.
-
-A save writing into the override instead would make what a box wrote the
-person's own: a hook or MCP server a box slipped into an overridden
-`.claude/settings.json` would then run in every box on the harness, and a
-plain reset — which keeps overrides — would not take it back. Kept in
-`ConfiguredFiles`, a bad save is undone by a plain reset, and a person's file
-changes only when the person changes it.
-
-The capture baseline (`store.CaptureBaseline`) and the preview's `previous`
-(`describeCapturePreview`) describe the effective file, with the overrides on
-top, so a box that left an overridden file as delivered has nothing to save
-there.
+A save-back change (ADR 26-10-26-573 §3) to a path that an override holds
+changes the override. Any other path patches `ConfiguredFiles`, as today.
+Without this, a saved change would land beneath the person's override and
+never reach a sandbox. The capture baseline (`store.CaptureBaseline`) and
+the preview's `previous` (`describeCapturePreview`) describe the effective
+file, with the overrides on top.
 
 ### 6. A config upgraded from before this has its added files moved, once
 
@@ -188,17 +168,11 @@ without one of its files: a tombstone entry (`remove: true`) in
   forever. §6 accepts that ambiguity once, for data written before the
   distinction existed, and never again.
 - **Keep a person's files in `ConfiguredFiles`.** Save-back already patches
-  it. But reset clears it, so a person's file would go with what boxes saved,
-  and reset would have to guess which files were the person's.
-- **A save at an overridden path writes the override.** The saved change
-  would take effect at once, but a box's file would become the person's and
-  outlive a plain reset (§5). Tracking which overrides a save last wrote, so
-  reset could revert them, is more state for the same result.
-- **Reset clears every set but the bundle's.** "Back to the bundle's
-  defaults" read literally. But a person's file is a choice nobody made in a
-  box, and reset is how a bad saved change or login is undone; losing the
-  person's files to that is the bug this ADR exists for. Clearing them is
-  asked for (`--include-overrides`).
+  it. But configure's output is authoritative (ADR 0009): a configure command
+  that writes only its own files drops the person's, and deconfigure clears
+  them. Merging configure's output by path instead would break configure's
+  ability to remove a file it wrote before, and make deconfigure guess which
+  files were its own.
 - **Refuse `files` on a built-in.** It's the issue's fallback, and it's
   honest, but it takes away the only way to give a built-in harness a file
   short of registering a copy of it, which then loses the bundle tracking that
@@ -214,10 +188,8 @@ without one of its files: a tombstone entry (`remove: true`) in
   in `harnesses get claude-code`. That's #524's "Done when".
 - The request bodies' `files` field is gone. A script that sets it gets a 400
   naming the field, and moves to `fileOverrides` or the CLI.
-- A saved change at a path a person overrode is kept but shadowed (§5): the
-  review and `harnesses get` say so, and removing the override shows the
-  saved file.
-- A plain reset leaves a person's files in place; `--include-overrides` is
-  the way to a config with nothing but its bundle.
+- A configure command that writes a file at a path a person overrode is
+  shadowed by the override. `harnesses get` says so (§4). Removing the
+  override shows the configured file.
 - Three sets, not two, reach the pool. `pool-agent` and the server change
   together, as they already do for `configuredFiles`.

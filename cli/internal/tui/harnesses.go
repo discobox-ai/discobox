@@ -435,7 +435,7 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 			return nil
 		}
 		// A person's own files are not what a box saved, so a reset keeps
-		// them unless asked, and keeping them comes first (ADR 26-11-04-028 §1).
+		// them unless asked, and keeping them comes first (ADR 26-11-04-711 §1).
 		items := []action{
 			{key: "r", press: "r", label: "Reset, keep your files", detail: "the files you added or overrode stay", enabled: true},
 			{key: "a", press: "a", label: "Reset your files too", detail: "nothing but the bundle's files is left", enabled: true},

@@ -31,7 +31,7 @@ func harnessChangeAction(f api.HarnessCaptureFileChange) string {
 
 // harnessChangeShadowNote says when a person's override holds the path: a save
 // keeps the change beneath it, and boxes go on being given the person's file
-// (ADR 26-11-04-028 §5).
+// (ADR 26-11-04-711 §2).
 func harnessChangeShadowNote(f api.HarnessCaptureFileChange) string {
 	if f.Shadowed.Or(false) {
 		return " (shadowed by your override, which boxes keep getting)"

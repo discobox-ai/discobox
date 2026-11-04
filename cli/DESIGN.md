@@ -3236,7 +3236,10 @@ a project sees one, an explainer recorded on the project
 
 `admin harness reset` (`internal/cli/harness.go`) forgets what was saved — the
 files and the logins saves created — returning the config to its bundle's
-defaults. The project default is left alone: a reset harness still runs.
+defaults. A person's own files (overrides) are kept unless `--include-overrides`
+is given (ADR 26-11-04-711 §1). The project default is left alone: a reset
+harness still runs. `admin harness changes` marks a change at a path a person
+overrode as shadowed: a save keeps it beneath the override (§2).
 
 `discobox configure` (alias `config`) is the console opened on its harnesses
 screen — `tui.WithHarnesses()`, reachable in the window itself on `F3` — and
