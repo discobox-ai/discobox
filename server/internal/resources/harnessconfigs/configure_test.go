@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -20,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 	"gorm.io/gorm"
 )
 
@@ -1213,5 +1216,109 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 	}
 	if got := runtime.marked; len(got) != 1 || got[0] != secretID {
 		t.Fatalf("marked = %v, want the change to mark the secret's holders for reconcile", got)
+	}
+}
+
+// finishedConfigureRuntime is a configure sandbox whose primary terminal has
+// exited with exitCode, as its agent reports it — a non-zero exit as failed,
+// with its code (sandbox-agent/execs shimRuntime.wait) — and records which
+// sandboxes were deleted.
+type finishedConfigureRuntime struct {
+	stubSandboxRuntime
+	agent   *httptest.Server
+	deleted []string
+}
+
+func newFinishedConfigureRuntime(t *testing.T, exitCode int) *finishedConfigureRuntime {
+	t.Helper()
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/execs") {
+			http.NotFound(w, r)
+			return
+		}
+		exec := map[string]any{
+			"tty": true, "primary": true, "status": "exited", "exitCode": exitCode,
+			"createdAt": time.Now().UTC(),
+		}
+		if exitCode != 0 {
+			exec["status"], exec["error"] = "failed", fmt.Sprintf("exit status %d", exitCode)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"execs": []map[string]any{exec}})
+	}))
+	t.Cleanup(agent.Close)
+	return &finishedConfigureRuntime{agent: agent}
+}
+
+func (r *finishedConfigureRuntime) AcquireSandboxHTTPClient(_ context.Context, projectID, sandboxID string, _ []string, _ services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
+	lease := transport.NewHTTPClientLeaseWithBaseURL(r.agent.Client(), r.agent.URL, func() {})
+	return lease, &model.Sandbox{ID: sandboxID, ProjectID: projectID, PoolID: "pool-1"}, nil
+}
+
+func (r *finishedConfigureRuntime) DeleteSandbox(_ context.Context, _, id string) error {
+	r.deleted = append(r.deleted, id)
+	return nil
+}
+
+// Leaving setup without a credential ends the configure command non-zero, and
+// the setup sandbox has to go all the same: it was only ever the flow's. A
+// person who declined another attempt (the canceled status) chose to stop, so
+// that commit records no configure error and answers with the harness as it
+// was; any other status is a failure, recorded and refused.
+func TestCommitDeletesTheSetupSandboxWhicheverWayTheFlowEnded(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		exitCode  int
+		wantErr   bool
+		wantError string
+	}{
+		{name: "canceled", exitCode: harness.ConfigureCanceledExitCode},
+		{name: "failed", exitCode: 1, wantErr: true, wantError: "configure failed or configuration changed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			st := newTestStore(t)
+			config := &model.HarnessConfig{
+				ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code",
+				Bundle: "img:1", ConfigCommand: []string{"configure"},
+			}
+			if err := st.CreateHarnessConfig(ctx, config); err != nil {
+				t.Fatalf("create harness config: %v", err)
+			}
+			runtime := newFinishedConfigureRuntime(t, tc.exitCode)
+			svc := &Service{store: st, inspector: &stubInspector{}, sandboxes: runtime, dirtier: stubDirtier{}}
+			started, err := svc.ConfigureHarnessConfig(ctx, "project-1", config.ID)
+			if err != nil {
+				t.Fatalf("configure: %v", err)
+			}
+
+			committed, err := svc.CommitHarnessConfigConfigure(ctx, "project-1", config.ID)
+			if tc.wantErr {
+				var status apperrors.StatusError
+				if !errors.As(err, &status) || status.Status != http.StatusConflict {
+					t.Fatalf("commit after exit %d = %v, want a 409", tc.exitCode, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("commit after a canceled flow: %v", err)
+				}
+				if committed.Configured {
+					t.Fatal("a canceled flow marked the harness configured")
+				}
+			}
+			if !slices.Contains(runtime.deleted, started.ID) {
+				t.Fatalf("deleted sandboxes = %v, want the setup sandbox %s among them", runtime.deleted, started.ID)
+			}
+			current, err := st.GetHarnessConfig(ctx, "project-1", config.ID)
+			if err != nil {
+				t.Fatalf("get harness config: %v", err)
+			}
+			if current.ConfigureSandboxID != "" {
+				t.Fatalf("configure sandbox id = %q, want it cleared", current.ConfigureSandboxID)
+			}
+			if current.ConfigureError != tc.wantError {
+				t.Fatalf("configure error = %q, want %q", current.ConfigureError, tc.wantError)
+			}
+		})
 	}
 }

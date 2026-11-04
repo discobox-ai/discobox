@@ -53,5 +53,9 @@ func interruptNotice(stderr io.Writer, raw bool, what string) func() {
 // interruptedExit ends a command whose attach was escaped locally. The notice
 // already said what happened, so all that is left to carry is the status a
 // shell reports for a command its user interrupted; ExitCode makes it a silent
-// exit rather than a printed error.
-func interruptedExit() error { return client.ExitError{Code: 130} }
+// exit rather than a printed error. It still matches client.ErrInterrupted, so
+// a caller can tell an attach it escaped — the remote command still running —
+// from a remote command that exited 130 itself.
+func interruptedExit() error {
+	return fmt.Errorf("%w: %w", client.ErrInterrupted, client.ExitError{Code: 130})
+}

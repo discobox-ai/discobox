@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/discobox-ai/discobox/harness"
 )
 
 // The harness config card is the other card the window puts up to be read, so
@@ -900,5 +902,101 @@ func TestHarnessChoicesOfferEveryHarness(t *testing.T) {
 	want := []string{"codex", "shell", "claude"}
 	if got := m.opts.opts[optHarness].choices; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("choices = %v, want %v", got, want)
+	}
+}
+
+// leaveSetup ends the open configuration pane with the status a configure
+// command leaves with, as the local command running it reports it.
+func leaveSetup(t *testing.T, m *Model, ds *fakeSource, code int) {
+	t.Helper()
+	ds.mu.Lock()
+	term := ds.terminals[len(ds.terminals)-1]
+	ds.mu.Unlock()
+	term.mu.Lock()
+	term.exit = &code
+	term.mu.Unlock()
+	finishConfigure(t, m)
+}
+
+// Leaving setup without signing in, and declining another attempt, is a choice
+// and not a failure: no error is reported, nothing is made the default, the
+// run that was waiting is not made — and since leaving one harness's setup
+// does not answer which harness the project should run, that question comes
+// back, for another harness or for Esc.
+func TestLeavingAChosenDefaultsSetupAsksAgain(t *testing.T) {
+	t.Parallel()
+	ds := noDefaultSource(t)
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"), keyPress("enter"))
+	for i, item := range m.dialog.items {
+		if item.label == "Custom" {
+			send(t, m, keyPress(itoa(i+1)))
+			break
+		}
+	}
+
+	leaveSetup(t, m, ds, harness.ConfigureCanceledExitCode)
+	if len(ds.runs) != 0 || len(ds.didHarness) != 0 {
+		t.Fatalf("runs = %v, did = %v, want neither after a setup that was left", ds.runs, ds.didHarness)
+	}
+	if m.dialog == nil || m.dialog.title != "Which harness should this project run?" {
+		t.Fatalf("dialog = %+v, want the harness question asked again", m.dialog)
+	}
+	if !strings.Contains(m.status, "canceled") || m.statusE {
+		t.Fatalf("status = %q (error %v), want setup reported canceled, not failed", m.status, m.statusE)
+	}
+
+	// Answering it this time runs, as the first answer would have.
+	send(t, m, keyPress("1"))
+	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "fix the reaper" {
+		t.Fatalf("runs = %v, want the run made once the question is answered", ds.runs)
+	}
+}
+
+// A run that named a harness needing setup has nothing to ask again once that
+// setup is left: it says so, plainly, and makes nothing.
+func TestLeavingANamedHarnesssSetupMakesNothing(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	m := newTestModel(t, ds)
+	choice := m.opts.opts[optHarness]
+	for i, name := range choice.choices {
+		if name == "custom" {
+			choice.idx = i
+		}
+	}
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"), keyPress("enter"), keyPress("y"))
+
+	leaveSetup(t, m, ds, harness.ConfigureCanceledExitCode)
+	if len(ds.runs) != 0 {
+		t.Fatalf("runs = %v, want nothing run after a setup that was left", ds.runs)
+	}
+	if frame := plainFrame(m); !strings.Contains(frame, "no discobox was created") || strings.Contains(frame, "exited with code") {
+		t.Fatalf("the window should say nothing was created, without an error:\n%s", frame)
+	}
+}
+
+// Any other status the setup ends with is still the failure it was.
+func TestASetupThatExitsNonZeroIsAFailure(t *testing.T) {
+	t.Parallel()
+	ds := noDefaultSource(t)
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, keyPress("enter"), keyPress("enter"))
+	for i, item := range m.dialog.items {
+		if item.label == "Custom" {
+			send(t, m, keyPress(itoa(i+1)))
+			break
+		}
+	}
+
+	leaveSetup(t, m, ds, 1)
+	if len(ds.runs) != 0 || m.dialog != nil {
+		t.Fatalf("runs = %v, dialog = %+v, want the run ended and nothing asked", ds.runs, m.dialog)
+	}
+	if frame := plainFrame(m); !strings.Contains(frame, "exited with code 1") {
+		t.Fatalf("the window should report the failure:\n%s", frame)
 	}
 }

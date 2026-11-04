@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/termpane"
 )
@@ -1097,12 +1098,23 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		m.closeOverlay()
 		m.layout()
 		err := msg.Err
+		name := flow.harness.displayName()
 		if err == nil {
-			if code, done := exitCode(p.stream); done && code != 0 {
+			code, done := exitCode(p.stream)
+			switch {
+			case done && code == harness.ConfigureCanceledExitCode:
+				// The person running setup chose to stop, and the command
+				// has already deleted its sandbox: an answer, not an error.
+				return func() tea.Msg {
+					return harnessDoneMsg{
+						text: "setup of " + name + " canceled; nothing was saved", canceled: true,
+						andDefault: flow.andDefault, resume: flow.resume,
+					}
+				}
+			case done && code != 0:
 				err = fmt.Errorf("configure command exited with code %d", code)
 			}
 		}
-		name := flow.harness.displayName()
 		if err != nil {
 			return func() tea.Msg {
 				return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err), resume: flow.resume}

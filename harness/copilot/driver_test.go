@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/internal/configuretest"
 	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
@@ -331,4 +332,28 @@ func readHooks(t *testing.T) hooksConfig {
 		t.Fatal(err)
 	}
 	return config
+}
+
+// Declining another attempt is the person choosing to stop, and the status
+// says so: the CLI reports it as a cancellation, the control plane records no
+// configure error, and both delete the setup sandbox all the same. Nobody
+// there to answer is the other thing -- a failure -- and keeps status 1.
+func TestDeclinedRetryCancelsSetup(t *testing.T) {
+	for _, answer := range []string{"n\n", "no\n", "N\n"} {
+		code, stderr := configuretest.RunFunction(t, "confirm_retry", answer)
+		if code != harness.ConfigureCanceledExitCode {
+			t.Fatalf("answering %q exited %d (stderr %q), want the canceled status %d", answer, code, stderr, harness.ConfigureCanceledExitCode)
+		}
+		if !strings.Contains(stderr, "canceled") {
+			t.Fatalf("answering %q says %q, not that setup was canceled", answer, stderr)
+		}
+	}
+	if code, stderr := configuretest.RunFunction(t, "confirm_retry", ""); code != 1 {
+		t.Fatalf("end of input exited %d (stderr %q), want the failure status 1", code, stderr)
+	}
+	for _, answer := range []string{"\n", "y\n"} {
+		if code, stderr := configuretest.RunFunction(t, "confirm_retry", answer); code != 0 {
+			t.Fatalf("answering %q exited %d (stderr %q), want another attempt", answer, code, stderr)
+		}
+	}
 }

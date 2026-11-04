@@ -3226,7 +3226,14 @@ sequences the calls and hands the user the terminal in between:
    terminal in config mode. That ordering is why seeding always lands first, and
    why nothing waits for a terminal to appear first: none exists until attach.
 4. `POST .../configure/commit` — the server reads the command's real exit status,
-   applies the secrets and files it wrote, and deletes the sandbox.
+   applies the secrets and files it wrote, and deletes the sandbox. The commit
+   is the only thing that deletes it before the server's TTL reap, so the CLI
+   makes it after **every** ending of the command, not only a successful one
+   (`finishHarnessConfigure`); it skips it only when the command has not ended
+   — the stream broke, or the attach was escaped locally (`ErrInterrupted`).
+   A command that exited `harness.ConfigureCanceledExitCode` was left on
+   purpose: the CLI says the setup was canceled and exits with that same
+   status, so the console that ran it reports a cancellation, not a failure.
 
 The console's harnesses screen does not call `runHarnessConfigure` itself: it
 runs this command in a pane (`apiDataSource.OpenHarnessConfigure` →

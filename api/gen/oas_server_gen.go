@@ -90,8 +90,10 @@ type Handler interface {
 	//
 	// Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the
 	// result it wrote, applies the declared secrets and files to the harness config, and marks it
-	// configured. A non-zero exit leaves the harness unconfigured with configureError set. The ephemeral
-	// configure sandbox is deleted either way.
+	// configured. A non-zero exit leaves the harness unconfigured with configureError set, except the
+	// canceled status (10: the person running it chose to stop), which applies nothing, records no
+	// error, and answers with the harness as it was. The ephemeral configure sandbox is deleted
+	// whichever way the command ended, so a client commits after every finished flow.
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit
 	CommitHarnessConfigConfigure(ctx context.Context, params CommitHarnessConfigConfigureParams) (CommitHarnessConfigConfigureRes, error)

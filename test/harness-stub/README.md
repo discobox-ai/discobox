@@ -58,7 +58,11 @@ discobox admin harness delete stub
 
 To exercise the failure path (commit must record `configureError` and leave the
 harness unconfigured), add `STUB_CONFIGURE_EXIT` with a non-zero value to
-`image.json`'s `env` and rebuild the bundle, so it reaches the label.
+`image.json`'s `env` and rebuild the bundle, so it reaches the label. 10 is the
+exception: it is the canceled status (`harness.ConfigureCanceledExitCode`),
+which records no `configureError` and commits with a 200. Either way the setup
+sandbox is deleted. `test/bats/harness_configure.bats` builds both variants
+(`build_exit_stub_bundle 10`, `build_exit_stub_bundle 1`).
 
 ## Notes
 
