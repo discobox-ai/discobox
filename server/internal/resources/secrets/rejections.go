@@ -263,7 +263,8 @@ func (s *Service) dropStaleRejections(ctx context.Context, rejections []model.Se
 // unable to use, with what a caller needs to act on each.
 //
 // The harness is derived here rather than stored: a credential belongs to a
-// harness config when that config's configure flow created it, and the same
+// harness config when that config created it — save-back, or the configure
+// flow before it — and the same
 // answer would otherwise have to be written — and cleared — by every path that
 // touches either side.
 func (s *Service) ListSecretRejections(ctx context.Context, projectID string) ([]model.SecretRejection, error) {
@@ -286,7 +287,7 @@ func (s *Service) ListSecretRejections(ctx context.Context, projectID string) ([
 		return nil, err
 	}
 	// Which harness config owns a secret, and what it calls it. A secret the
-	// configure flow created is named by that config; the variable it is
+	// config created (its configured secret IDs) is named by that config; the variable it is
 	// delivered in comes from the binding, which is what a person recognizes it
 	// by on the harness's own card.
 	type owner struct {

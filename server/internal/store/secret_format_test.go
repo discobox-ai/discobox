@@ -12,7 +12,7 @@ import (
 )
 
 // Every value write records the shape its sentinels take, whichever writer
-// made it and whatever type the secret is. The harness configure flow writes
+// made it and whatever type the secret is. Harness save-back writes
 // raw rows with no format of its own, and a Claude Code subscription login is
 // an oauth secret; its sentinel has to read as an OAuth access token, or
 // Claude Code takes it for something else.

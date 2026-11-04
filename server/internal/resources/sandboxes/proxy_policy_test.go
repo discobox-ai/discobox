@@ -394,7 +394,7 @@ func TestAFailedCreateStillQueuesTheEgressPush(t *testing.T) {
 }
 
 // A whole-row save of a project or a harness config — a default being set,
-// the configure flow committing — loaded before a person changed its egress
+// a harness change being saved — loaded before a person changed its egress
 // level must not save the old level back.
 func TestAStaleWholeRowSaveDoesNotRevertProjectOrHarnessEgress(t *testing.T) {
 	ctx := context.Background()
