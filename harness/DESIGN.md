@@ -667,22 +667,6 @@ forward, at its own number when that is free (see [Image Contract](#image-contra
 every built-in also offers a device-code, paste-back or key sign-in for when
 it is not.
 
-A configure command's exit status is part of the contract. 0 is success; any
-other status saves nothing, and the setup sandbox is deleted either way.
-`harness.ConfigureCanceledExitCode` (10) says the person chose to stop (the
-"Try again?" a sign-in-less session ends on, answered no): the control plane
-records no configure error, and the CLI says "Setup canceled" and exits with
-that status, so the console reports a cancellation rather than a failure. Every
-built-in script also traps Ctrl-C (SIGINT, while the script itself holds the
-terminal) to it: an interrupt at a prompt is leaving as much as a no is. Nobody
-there to answer (end of input) is still a failure, status 1. It is not 130,
-which the CLI exits with on its own when an attach is escaped locally.
-
-10 is **reserved** for every configure command, a bundle registered with
-`admin harness create --bundle` as much as a built-in: a command must never
-exit 10 for a failure, which would then be recorded as nothing having
-happened.
-
 ### Claude Code
 
 `/login` inside a box writes one of two credentials, both read by the export:

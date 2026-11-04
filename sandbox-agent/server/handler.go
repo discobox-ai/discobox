@@ -199,9 +199,6 @@ func (h *handler) sessionGoneMessage(execID string) string {
 	if !ok || terminal.HarnessID(exec) == "" {
 		return message + "; create a new exec to run it again"
 	}
-	if h.terminals != nil && !h.terminals.Relaunches(exec) {
-		return message + "; a configure command runs once, so configure the harness again to rerun it"
-	}
 	return message + "; attach it again to relaunch it"
 }
 

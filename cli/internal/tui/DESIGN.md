@@ -3306,14 +3306,6 @@ None of this fires before the listing has landed: an empty listing and one still
 in flight look the same and mean opposite things, so a prompt is never refused
 on the strength of what has not arrived.
 
-Choosing a harness that has never been through its setup stops the run and
-offers the setup instead (`askToSetUpHarness`). The server refuses that sandbox
-at create, so the alternative is the same refusal a few seconds later with
-nothing to do about it; yes runs the same flow `e` runs on the harnesses screen.
-A harness that declares no setup is told apart from one that is merely missing
-it — there is nothing to offer, so the window says so rather than asking a
-question whose yes does nothing.
-
 **What a create carries in is asked before it is made** (`DataSource.Workspace`,
 `workspaceChecked`). Enter first reads what the source directory would carry. A
 repository with uncommitted changes asks whether to include them as a snapshot,
