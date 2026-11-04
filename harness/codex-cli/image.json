@@ -11,13 +11,27 @@
         "name": "OPENAI_API_KEY",
         "required": true,
         "oneOfGroup": "auth",
-        "delivery": "file"
+        "delivery": "file",
+        "routes": [
+          {
+            "hosts": [
+              "api.openai.com"
+            ]
+          }
+        ]
       },
       {
         "name": "CODEX_OAUTH_TOKEN",
         "required": true,
         "oneOfGroup": "auth",
-        "delivery": "file"
+        "delivery": "file",
+        "routes": [
+          {
+            "hosts": [
+              "chatgpt.com"
+            ]
+          }
+        ]
       }
     ],
     "saveBack": {
@@ -41,7 +55,14 @@
           "types": [
             "token"
           ],
-          "host": "api.openai.com"
+          "host": "api.openai.com",
+          "routes": [
+            {
+              "hosts": [
+                "api.openai.com"
+              ]
+            }
+          ]
         },
         {
           "id": "openai",
@@ -52,7 +73,14 @@
           "oauth": {
             "tokenUrl": "https://auth.openai.com/oauth/token",
             "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
-          }
+          },
+          "routes": [
+            {
+              "hosts": [
+                "chatgpt.com"
+              ]
+            }
+          ]
         }
       ],
       "settings": [

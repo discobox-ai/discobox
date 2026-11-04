@@ -196,8 +196,10 @@ is what puts a credential on the config for every other box.
 
 A saved credential gets one use binding on the harness config per variable
 (`bindHarnessSecret`): no routes of its own, so it inherits the secret's, and
-no expiry. A newly saved secret is routed to what the image declares for its
-variable, else the host its provider names, else `*` (ADR 26-10-27-939 §2),
+no expiry. A newly saved secret uses registered provider/type routes. Built-in
+providers without a shared destination require explicit person-owned policy
+(ADR 26-11-04-772). Legacy third-party metadata keeps its declared host/`*`
+fallback (ADR 26-10-27-939 §2). It is
 and named after the variable — with the config's slug before it when the
 project already has a secret of that name, since a secret's name is unique in
 its project (`freeSecretName`). Every binding written marks the sandboxes
@@ -314,7 +316,7 @@ routes that person gave it.
 
 - A secret a save mints is created with its routes, so the rebind that
   follows hands running sandboxes a sentinel already held to them.
-- `syncConfiguredSecretRoutes` rewrites the routes of every saved secret when
+- `syncConfiguredSecretRoutes` appends independent restrictions to every owned saved secret when
   the bundle is re-read (`RefreshHarnessConfigImage`, `SeedBuiltIns`). It runs in one
   transaction with the config's snapshot and marks the sentinel delivery of
   the sandboxes holding a changed secret (`MarkSecretHoldersDirtyTx`), so the
@@ -421,3 +423,11 @@ captured credential the last commit wins; unrelated fields and personal
 overrides survive. A credential marked keep retains the current binding and
 value, including a renewal since capture. Receipt replay never reapplies it.
 There is one save mode, with no force parameter or revision-conflict retry.
+
+Provider destination policy follows ADR 26-11-04-772: capture and bundle refresh
+select by delivered credential type, including numbered accounts, and append
+independent `Secret.RouteConstraints` for owned secrets. Previous route lists
+remain enforced. Manual bindings are unchanged. A provider marked `manualRoutes`
+refuses new automatic capture and adds an empty denying list to an old owned
+credential on refresh. The fixed diagnostic directs the person to bind a secret
+with explicit endpoint routes. See [the inventory](../../../../harness/credential-destinations.md).

@@ -89,8 +89,8 @@ func (s *Service) freeSecretName(ctx context.Context, config *model.HarnessConfi
 	return "", fmt.Errorf("no free name for secret %q", name)
 }
 
-// syncConfiguredSecretRoutes writes the routes the config's image declares for
-// each secret onto the secret a save-back created for it (ADR 26-10-02-924),
+// syncConfiguredSecretRoutes adds the image's static/provider policy as an
+// independent restriction on each owned secret (ADR 26-11-04-772),
 // so every request the harness sends it in must fall on one. Only those
 // secrets are written: one a person bound to the config is theirs to describe.
 // It runs in the caller's transaction, wherever the image is re-read, and marks the sandboxes holding
@@ -110,9 +110,8 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, txStore *store
 		return err
 	}
 	for _, binding := range bindings {
-		// An image that declares no routes for a variable says nothing about
-		// where its secret goes, and leaves it as the save wrote it.
-		if !configured[binding.SecretID] || len(declared[binding.EnvName]) == 0 {
+		// A manually bound secret is a person's policy, never the bundle's to rewrite.
+		if !configured[binding.SecretID] {
 			continue
 		}
 		secret, err := txStore.GetSecret(ctx, config.ProjectID, binding.SecretID)
@@ -122,7 +121,25 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, txStore *store
 			}
 			return err
 		}
-		changed, err := secret.ReplaceRoutes(declared[binding.EnvName])
+		routes, found := declared[binding.EnvName]
+		if config.SaveBack != nil {
+			for _, provider := range config.SaveBack.Providers {
+				if _, matches := config.SaveBack.Provider(provider.ID, binding.EnvName); matches {
+					if provider.ManualRoutes != "" || len(provider.CredentialRoutes(secret.Type)) > 0 {
+						routes = nil
+						for _, route := range provider.CredentialRoutes(secret.Type) {
+							routes = append(routes, model.SecretRoute(route))
+						}
+						found = true
+					}
+					break
+				}
+			}
+		}
+		if !found {
+			continue
+		}
+		changed, err := secret.RestrictRoutes(routes)
 		if err != nil {
 			return fmt.Errorf("routes of configured secret %q: %w", binding.EnvName, err)
 		}

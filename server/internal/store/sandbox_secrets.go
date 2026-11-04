@@ -305,7 +305,7 @@ func (s *Store) bindingRouteLists(ctx context.Context, projectID, bindingID, sec
 // binding's and the parent's when they have any. It is the one builder of
 // them: what the pool is sent, what resolve checks, and what a listing shows.
 func RouteLists(secret *model.Secret, binding, parent *model.SecretBinding) [][]secretroute.Route {
-	lists := [][]secretroute.Route{secret.Routes}
+	lists := append([][]secretroute.Route{secret.Routes}, secret.RouteConstraints...)
 	if len(binding.Routes) > 0 {
 		lists = append(lists, binding.Routes)
 	}

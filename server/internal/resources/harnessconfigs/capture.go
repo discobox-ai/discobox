@@ -315,6 +315,10 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 				return err
 			}
 		}
+		if err := s.syncConfiguredSecretRoutes(ctx, tx, db, cfg); err != nil {
+			return err
+		}
+
 		if err := tx.UpdateHarnessConfig(ctx, cfg); err != nil {
 			return err
 		}
@@ -358,6 +362,9 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 			return apperrors.NewStatusError(http.StatusConflict, "credential binding no longer exists; capture the local configuration again")
 		}
 		return nil
+	}
+	if provider.ManualRoutes != "" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "this provider requires explicit endpoint routes; create a secret with those routes and bind it to the harness config")
 	}
 	var value model.SecretValue
 	if err := json.Unmarshal(c.Value, &value); err != nil {
@@ -410,20 +417,25 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 	}
 	secret.Type = c.Type
 	secret.EncryptedValue = raw
-	// Where it may go: the routes the provider registers. A provider that
-	// registers none leaves an existing secret's routes as they are — a
-	// person may have narrowed them — and gives a new one its host, else
-	// anywhere (ADR 26-10-27-939 §2).
-	routes := make([]model.SecretRoute, 0, len(provider.Routes))
-	for _, route := range provider.Routes {
+	// Registered policy initializes a new secret and independently narrows an
+	// existing one, preserving all prior denials (ADR 26-11-04-772). Old
+	// third-party metadata without routes keeps its explicit host/anywhere
+	// fallback; built-ins must declare policy or refuse automatic capture.
+	routes := make([]model.SecretRoute, 0, len(provider.CredentialRoutes(c.Type)))
+	for _, route := range provider.CredentialRoutes(c.Type) {
 		routes = append(routes, model.SecretRoute(route))
 	}
 	if len(routes) == 0 && !owned {
-		routes = configuredRoutes(&model.HarnessConfig{}, "", hostscope.Normalize(provider.Host))
+		routes = configuredRoutes(cfg, c.EnvName, hostscope.Normalize(provider.Host))
 	}
 	routesChanged := false
 	if len(routes) > 0 {
-		if routesChanged, err = secret.ReplaceRoutes(routes); err != nil {
+		if owned {
+			routesChanged, err = secret.RestrictRoutes(routes)
+		} else {
+			routesChanged, err = secret.ReplaceRoutes(routes)
+		}
+		if err != nil {
 			return apperrors.NewStatusError(http.StatusBadRequest, "invalid credential routes")
 		}
 	}
@@ -506,6 +518,9 @@ func (s *Service) validateCapturePreview(ctx context.Context, projectID, sandbox
 		case "partial":
 			diagnostic.Code = "capture-incomplete"
 			diagnostic.Message = "Configuration is incomplete, unreadable, or invalid. Check the local file; it has been retained unchanged."
+		case "endpoint-policy":
+			diagnostic.Code = "capture-endpoint-policy"
+			diagnostic.Message = "This login needs explicit endpoint routes. Create a secret with those routes and bind it to the harness config; the local login has been retained unchanged."
 		case "unsupported":
 			diagnostic.Code = "capture-unsupported"
 			diagnostic.Message = "The harness cannot export this configuration or login format. Check the local file; it has been retained unchanged."

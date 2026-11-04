@@ -533,6 +533,11 @@ function capture(id, definition, normalizer, input) {
       (e.value.refreshToken === "" || e.value.refreshToken == null)
     )
       continue;
+    if (prov?.manualRoutes && !known.has(token)) {
+      diagnostic(p, "endpoint-policy");
+      output.protectedPaths.push(...definition.credentialFiles);
+      continue;
+    }
     const unsupported =
       !prov ||
       typeof token !== "string" ||

@@ -43,13 +43,27 @@
           "oauth": {
             "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
             "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-          }
+          },
+          "routes": [
+            {
+              "hosts": [
+                "api.anthropic.com"
+              ]
+            }
+          ]
         },
         {
           "id": "openai",
           "envName": "PI_OPENAI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.openai.com"
+              ]
+            }
           ]
         },
         {
@@ -57,6 +71,13 @@
           "envName": "PI_GOOGLE_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "generativelanguage.googleapis.com"
+              ]
+            }
           ]
         },
         {
@@ -64,13 +85,21 @@
           "envName": "PI_GOOGLE_VERTEX_CREDENTIAL",
           "types": [
             "token"
-          ]
+          ],
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "groq",
           "envName": "PI_GROQ_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.groq.com"
+              ]
+            }
           ]
         },
         {
@@ -78,6 +107,13 @@
           "envName": "PI_MISTRAL_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.mistral.ai"
+              ]
+            }
           ]
         },
         {
@@ -85,6 +121,13 @@
           "envName": "PI_OPENROUTER_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "openrouter.ai"
+              ]
+            }
           ]
         },
         {
@@ -98,7 +141,14 @@
             "tokenUrl": "https://auth.x.ai/oauth2/token",
             "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
             "encoding": "form"
-          }
+          },
+          "routes": [
+            {
+              "hosts": [
+                "api.x.ai"
+              ]
+            }
+          ]
         },
         {
           "id": "github-copilot",
@@ -106,13 +156,33 @@
           "types": [
             "token"
           ],
-          "host": "api.github.com"
+          "host": "api.github.com",
+          "routes": [
+            {
+              "hosts": [
+                "api.github.com"
+              ],
+              "methods": [
+                "GET"
+              ],
+              "paths": [
+                "/copilot_internal/v2/token"
+              ]
+            }
+          ]
         },
         {
           "id": "deepseek",
           "envName": "PI_DEEPSEEK_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.deepseek.com"
+              ]
+            }
           ]
         },
         {
@@ -120,6 +190,13 @@
           "envName": "PI_CEREBRAS_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.cerebras.ai"
+              ]
+            }
           ]
         },
         {
@@ -127,6 +204,13 @@
           "envName": "PI_ZAI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.z.ai"
+              ]
+            }
           ]
         },
         {
@@ -134,6 +218,13 @@
           "envName": "PI_KIMI_CODING_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.kimi.com"
+              ]
+            }
           ]
         },
         {
@@ -141,6 +232,13 @@
           "envName": "PI_MINIMAX_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.minimax.io"
+              ]
+            }
           ]
         },
         {
@@ -148,6 +246,13 @@
           "envName": "PI_HUGGINGFACE_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "router.huggingface.co"
+              ]
+            }
           ]
         },
         {
@@ -155,20 +260,29 @@
           "envName": "PI_AZURE_CREDENTIAL",
           "types": [
             "token"
-          ]
+          ],
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "amazon-bedrock",
           "envName": "PI_AMAZON_BEDROCK_CREDENTIAL",
           "types": [
             "token"
-          ]
+          ],
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "google-gemini-cli",
           "envName": "PI_GOOGLE_GEMINI_CLI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "cloudcode-pa.googleapis.com"
+              ]
+            }
           ]
         },
         {
@@ -176,6 +290,15 @@
           "envName": "PI_GOOGLE_ANTIGRAVITY_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "daily-cloudcode-pa.googleapis.com",
+                "daily-cloudcode-pa.sandbox.googleapis.com",
+                "cloudcode-pa.googleapis.com"
+              ]
+            }
           ]
         },
         {
@@ -183,6 +306,13 @@
           "envName": "PI_OPENAI_CODEX_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "chatgpt.com"
+              ]
+            }
           ]
         },
         {
@@ -190,6 +320,14 @@
           "envName": "PI_XAI_OAUTH_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.x.ai",
+                "cli-chat-proxy.grok.com"
+              ]
+            }
           ]
         },
         {
@@ -197,13 +335,21 @@
           "envName": "PI_ALIBABA_CREDENTIAL",
           "types": [
             "token"
-          ]
+          ],
+          "manualRoutes": "This provider uses account, region or deployment-specific endpoints. Create a secret with explicit endpoint routes and bind it to the harness config."
         },
         {
           "id": "togetherai",
           "envName": "PI_TOGETHERAI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.together.xyz"
+              ]
+            }
           ]
         },
         {
@@ -211,6 +357,13 @@
           "envName": "PI_FIREWORKS_AI_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.fireworks.ai"
+              ]
+            }
           ]
         },
         {
@@ -218,6 +371,13 @@
           "envName": "PI_PERPLEXITY_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.perplexity.ai"
+              ]
+            }
           ]
         },
         {
@@ -225,6 +385,13 @@
           "envName": "PI_COHERE_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "api.cohere.ai"
+              ]
+            }
           ]
         },
         {
@@ -232,6 +399,13 @@
           "envName": "PI_OPENCODE_CREDENTIAL",
           "types": [
             "token"
+          ],
+          "routes": [
+            {
+              "hosts": [
+                "opencode.ai"
+              ]
+            }
           ]
         }
       ],

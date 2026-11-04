@@ -12,12 +12,15 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/proxy/gateway"
 )
 
 // These drive the parts the unit tests cannot reach: a real proxy swapping a
@@ -26,7 +29,7 @@ import (
 
 // startRoutedProxy runs the pool proxy over the resolver this package builds,
 // with sentinel registered for sb-1 under routes, as SecretsFile would.
-func startRoutedProxy(ctx context.Context, t *testing.T, controlPlaneURL, sentinel string, lists [][]secretroute.Route) (*proxy.Server, proxy.ClientMaterial) {
+func startRoutedProxy(ctx context.Context, t *testing.T, controlPlaneURL, sentinel string, lists [][]secretroute.Route, configure func(*proxy.Config)) (*proxy.Server, proxy.ClientMaterial) {
 	t.Helper()
 	root := withTestRoot(t)
 	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlaneURL, "tok"); err != nil {
@@ -49,6 +52,14 @@ func startRoutedProxy(ctx context.Context, t *testing.T, controlPlaneURL, sentin
 	cfg.CertDir = bundle.Dir
 	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
 	cfg.Recording.Enabled = false
+	if configure != nil {
+		configure(&cfg)
+		for client, routes := range cfg.Gateways.Clients {
+			if err := SetSandboxGateways(root, testProjectID, testPoolID, client, routes); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	resolver := newSecretResolver(root, testProjectID, testPoolID)
 	server, err := proxy.NewServer(ctx, cfg, bundle, resolver)
 	if err != nil {
@@ -104,7 +115,7 @@ func TestASentinelIsHeldToItsRoutesOnRealTraffic(t *testing.T) {
 	server, material := startRoutedProxy(ctx, t, controlPlane.URL, sentinel, [][]secretroute.Route{{
 		{Hosts: []string{originHost}},
 		{Hosts: []string{originHost}, Paths: []string{"/admin/**"}, Blocked: true},
-	}})
+	}}, nil)
 	client := proxyClient(t, server, material)
 	get := func(path string) int {
 		t.Helper()
@@ -322,4 +333,96 @@ func waitForProxyAddr(t *testing.T, server *proxy.Server) string {
 	}
 	t.Fatal("proxy never reported a listen address")
 	return ""
+}
+
+// Actual built-in Claude metadata crosses the publication file, real resolver
+// and proxy. The gateway is only a local observation origin: authorization
+// still sees the original provider destination before the rewrite.
+func TestClaudeManifestPolicyOnRealProxyTraffic(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var manifest harness.ImageMetadata
+	raw, err := os.ReadFile("../../harness/claude-code/image.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	var routes []secretroute.Route
+	for _, s := range manifest.Harness.Secrets {
+		if s.Name == "CLAUDE_CODE_OAUTH_TOKEN" {
+			for _, r := range s.Routes {
+				routes = append(routes, secretroute.Route(r))
+			}
+		}
+	}
+	if len(routes) == 0 {
+		t.Fatal("Claude has no routes")
+	}
+	const sentinel = "sk-ant-oat01-SENTINELSENTINELSENTINEL"
+	const value = "sk-ant-oat01-TESTVALUEFORINTEGRATION"
+	var reached, resolved atomic.Int32
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return
+		}
+		reached.Add(1)
+		if r.Header.Get("Authorization") != "Bearer "+value {
+			t.Error("upstream did not receive swapped value")
+		}
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer origin.Close()
+	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return
+		}
+		resolved.Add(1)
+		exp := time.Now().Add(time.Hour)
+		_ = json.NewEncoder(w).Encode(resolveResponseBody{Status: "approved", Value: value, ExpiresAt: &exp})
+	}))
+	defer control.Close()
+	server, material := startRoutedProxy(ctx, t, control.URL, sentinel, [][]secretroute.Route{routes}, func(cfg *proxy.Config) {
+		cfg.Recording.Enabled = true
+		cfg.Recording.BodyDir = t.TempDir()
+		cfg.Recording.StreamDir = t.TempDir()
+		cfg.Gateways.Clients = map[string][]gateway.Route{"sb-1": {gateway.Normalize(gateway.Route{Name: "test-origin", Match: "http://api.anthropic.com", Target: origin.URL})}}
+	})
+	client := proxyClient(t, server, material)
+	for _, tc := range []struct {
+		host   string
+		status int
+	}{{"api.anthropic.com", 200}, {"not-anthropic.example", 403}} {
+		req, _ := http.NewRequestWithContext(ctx, "GET", "http://"+tc.host+"/v1/messages", nil)
+		req.Header.Set("Authorization", "Bearer "+sentinel)
+		resp, e := client.Do(req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != tc.status {
+			t.Fatalf("%s: got %d: %s", tc.host, resp.StatusCode, body)
+		}
+	}
+	if reached.Load() != 1 || resolved.Load() != 1 {
+		t.Fatalf("upstream %d resolves %d: denied request escaped", reached.Load(), resolved.Load())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rows, e := server.ClientHTTPAudit(ctx, "sb-1", proxy.AuditQuery{})
+		if e != nil {
+			t.Fatal(e)
+		}
+		for _, row := range rows {
+			if row.Blocked && row.Status == 403 {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no blocked audit entry")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
