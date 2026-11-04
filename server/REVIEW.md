@@ -29,3 +29,11 @@
   expected line deadlocks or spins on the fake clock instead of printing what
   it read (`TestSandboxEventsStreamsServerSentEvents` lost all of it when it
   moved into a bubble).
+
+- A shutdown request and an incumbent health probe have independent chances to
+  answer. Observe valid starting/503 health before waiting on a slow shutdown,
+  and bound discovery across all endpoints. A shared deadline once let a hung
+  shutdown hide a reachable starting server and misreport it as unreachable.
+- Singleton refusal reaches the launching CLI through its per-launch error
+  record, including systemd launches that have no child process handle. A
+  useful log tail alone still left those launches reporting `never answered`.

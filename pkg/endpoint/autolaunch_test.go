@@ -1,7 +1,13 @@
 package endpoint
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/health"
 )
@@ -47,5 +53,18 @@ func TestSystemdUnitNameSanitizesCommandName(t *testing.T) {
 	got := systemdUnitName("Discobox Dev!", "abc123")
 	if got != "discobox-dev-server-abc123" {
 		t.Fatalf("systemdUnitName() = %q", got)
+	}
+}
+
+func TestEnsureRunningOlderStartingServerGetsReadinessAllowance(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"starting","phase":"migrating","version":"v0.5.0"}`))
+	}))
+	defer server.Close()
+	opts := LaunchOptions{Endpoint: server.URL, LockPath: filepath.Join(t.TempDir(), "launch.lock"), Command: func(context.Context) (Command, error) { return Command{Path: "unused-server"}, nil }, ExpectedVersion: "v0.5.1", ReadyTimeout: 50 * time.Millisecond, ProbeInterval: 5 * time.Millisecond}
+	_, err := EnsureRunning(context.Background(), opts)
+	if err == nil || !strings.Contains(err.Error(), "did not finish starting") || !strings.Contains(err.Error(), "migrating") {
+		t.Fatalf("starting older server: %v", err)
 	}
 }
