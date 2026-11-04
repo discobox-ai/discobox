@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -446,7 +447,15 @@ func TestRuntimeFileIsNeverTornByConcurrentWriters(t *testing.T) {
 				return
 			default:
 			}
-			if exec, err := readRuntime(path); err != nil || exec.ID != "ex_torn" {
+			exec, err := readRuntime(path)
+			// Windows can hide the name during a replace. Continuous writers
+			// can outlast readRuntimeFile's bounded missing-file retry (#586).
+			// That is not a torn record; still require every successful read
+			// to parse, and the read after each pair of writers to succeed.
+			if runtime.GOOS == "windows" && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil || exec.ID != "ex_torn" {
 				select {
 				case torn <- fmt.Sprintf("read %q, %v", exec.ID, err):
 				default:
