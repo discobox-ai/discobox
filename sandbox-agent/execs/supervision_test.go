@@ -134,15 +134,15 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 			t.Skip("bash not available")
 		}
 		agent := startContractAgent(t, newUnits, contractRuntimeDir(t), newContractAudit())
-		// The rc file says when the shell is interactive. bash sets itself to
-		// ignore SIGTERM as it initializes, before it reads its rc file, so a
-		// stop that lands after the sentinel meets the shell a terminal
-		// really holds; one that landed earlier would kill a shell that had
-		// not got that far, and pass without the hangup.
+		// Bash ignores SIGTERM when it becomes interactive. Establish HUP's
+		// exit behavior explicitly before announcing readiness too: native
+		// shells and their inherited signal dispositions can differ. The
+		// contract is still that TERM alone cannot stop this terminal, and
+		// HUP must stop it without waiting out the kill grace.
 		dir := t.TempDir()
 		ready := filepath.Join(dir, "interactive")
 		rc := filepath.Join(dir, "rc")
-		if err := os.WriteFile(rc, fmt.Appendf(nil, ": > %q\n", ready), 0o600); err != nil {
+		if err := os.WriteFile(rc, fmt.Appendf(nil, "trap 'exit 129' HUP\ntrap -p HUP TERM > %q\n", ready), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -171,6 +171,8 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 			t.Fatalf("stop: %v", err)
 		}
 		if took := time.Since(began); took >= shimStopGrace/2 {
+			traps, _ := os.ReadFile(ready)
+			t.Logf("interactive shell signal dispositions: %s", traps)
 			t.Fatalf("stopping a terminal took %s; an interactive shell has to be hung up, not waited out", took)
 		}
 		waitUntil(t, "the terminal's session to exit", func() bool {

@@ -301,6 +301,11 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   record with its next resize sends that resize into the dropped window. The
   repaint's shrink-and-restore nudge is such a burst (#468).
 
+- A terminal-stop fixture establishes its HUP exit handler before announcing
+  readiness. Bash ignoring TERM does not establish HUP handling across native
+  shell initialization and inherited dispositions. Keep the strict stop-time
+  assertion; omitting HUP delivery must still fail by waiting out the grace.
+
 ## Testing a program's output
 
 - **A test that collects a multi-process program's output sets
