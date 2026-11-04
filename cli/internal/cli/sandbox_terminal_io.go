@@ -196,8 +196,10 @@ output carries both names.
 It prints the reason — hook (with the event and hook ID), quiet, or exit — and
 exits 0, or prints timeout and exits 124. The last field is where the next
 wait resumes: pass it as --after, as input's output is passed, and a hook
-recorded between two calls is not missed. Without --after, only hooks recorded
-after the wait began count. Pass "primary" for the discobox's harness
+recorded between two calls is not missed. --after is also where --idle counts
+from: a terminal quiet since that point, by --idle's length, answers at once.
+Without --after, only hooks recorded after the wait began count, and quiet is
+counted from it. Pass "primary" for the discobox's harness
 terminal.`,
 		Example: `  after=$(discobox admin terminal input sbx_1 primary "run the tests" Enter)
   discobox admin terminal wait sbx_1 primary --hook Stop --after "$after"
@@ -266,7 +268,7 @@ terminal.`,
 		},
 	}
 	cmd.Flags().StringSliceVar(&hooks, "hook", nil, "Harness hook event to wait for, by its own or canonical name, such as Stop (repeatable)")
-	cmd.Flags().StringVar(&after, "after", "", "Only hooks recorded after this resume point, as input or a previous wait printed it")
+	cmd.Flags().StringVar(&after, "after", "", "Count only hooks recorded, and quiet, after this resume point, as input or a previous wait printed it")
 	cmd.Flags().DurationVar(&idle, "idle", 0, "Wait for no output or input for this long (e.g. 10s)")
 	cmd.Flags().BoolVar(&exit, "exit", false, "Wait for the terminal's program to exit")
 	cmd.Flags().DurationVar(&timeout, "timeout", maxTerminalWait, "Give up after this long, at most 60s")

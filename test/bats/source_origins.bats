@@ -114,7 +114,7 @@ in_box() {
     id="$1"
     shift
   fi
-  cli shell "$id" -- sh -c "$1"
+  cli exec "$id" -- sh -c "$1"
 }
 
 wait_for_ready() {

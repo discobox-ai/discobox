@@ -352,7 +352,7 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		// A discobox still waiting for its source from this machine gets it
 		// first, and the dial below then waits on a discobox that is starting
 		// rather than on a push nobody is making (ADR 26-09-24-005).
-		delivering := newStatusLine(stderr)
+		delivering := newStatusLine(stderr, a.color)
 		ui := &cobra.Command{}
 		ui.SetIn(stdin)
 		ui.SetOut(stdout)
@@ -375,7 +375,7 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	// after the primary terminal is launched and installed, so a connection in
 	// hand means the terminal is about to draw. Clearing here also keeps the
 	// status line from ever sharing the screen with it.
-	status := newStatusLine(stderr)
+	status := newStatusLine(stderr, a.color)
 	watching, stopWatching := context.WithCancel(ctx)
 	go a.watchProvisioning(watching, projectID, sandboxID, status.set)
 	frames, err := a.openReconnectingSandboxExecAttach(ctx, projectID, sandboxID, terminalID, opts)

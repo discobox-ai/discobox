@@ -47,7 +47,7 @@ func statusLineOnPTY(t *testing.T, cols int, draw func(*statusLine)) string {
 			}
 		}
 	}()
-	draw(newStatusLine(tty))
+	draw(newStatusLine(tty, colorAuto))
 	tty.Close()
 	<-done
 	return captured.String()
@@ -138,7 +138,7 @@ func TestStatusLineKeepsTheSpinnerWithoutColor(t *testing.T) {
 // a log file.
 func TestStatusLineAppendsPlainLinesOffATerminal(t *testing.T) {
 	var out bytes.Buffer
-	line := newStatusLine(&out)
+	line := newStatusLine(&out, colorAuto)
 	line.set(serverStartupText(health.Status{Status: health.StatusStarting, Phase: "migrating the database"}))
 	line.set(serverStartupText(health.Status{Status: health.StatusStarting, Phase: "starting services"}))
 	line.clear()
@@ -289,7 +289,7 @@ func TestStatusLineNotesLeaveNothingBehindWhilePrintsStay(t *testing.T) {
 // which key it enrolled and which config it wrote.
 func TestStatusLineNotesAreKeptOffATerminal(t *testing.T) {
 	var out bytes.Buffer
-	line := newStatusLine(&out)
+	line := newStatusLine(&out, colorAuto)
 	line.note("wrote %s", "/state/discobox/cli/ssh/project-1/config")
 	line.clear()
 	if got, want := out.String(), "wrote /state/discobox/cli/ssh/project-1/config\n"; got != want {
@@ -336,7 +336,7 @@ func TestStatusLineDrawsADownloadOnOneRow(t *testing.T) {
 // distinct report, and no spinner frames written into a log file.
 func TestStatusLineAppendsADownloadOffATerminal(t *testing.T) {
 	var out bytes.Buffer
-	line := newStatusLine(&out)
+	line := newStatusLine(&out, colorAuto)
 	line.set(serverStageText(serverstage.Progress{Asset: "discobox-server", Index: 1, Assets: 1, Total: 94 << 20, Current: 12 << 20}))
 	line.set(serverStageText(serverstage.Progress{Done: true}))
 	line.clear()

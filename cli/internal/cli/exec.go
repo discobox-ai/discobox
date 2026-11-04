@@ -11,12 +11,13 @@ import (
 	idpkg "github.com/discobox-ai/x/id"
 )
 
-// newShellCommand implements `discobox shell`: the everyday counterpart to the
+// newExecCommand implements `discobox exec`: the everyday counterpart to the
 // raw, fully configurable `discobox admin exec create`. It takes the discobox
-// and an optional -- before the command (selectDiscoboxCommand).
-func (a *App) newShellCommand() *cobra.Command {
+// and an optional -- before the command (selectDiscoboxCommand). It was
+// `shell`, which still runs it, hidden (ADR 26-11-04-204 §1).
+func (a *App) newExecCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "shell [DISCOBOX] [--] [CMD...]",
+		Use:   "exec [DISCOBOX] [--] [CMD...]",
 		Short: "Run a command in a discobox, or its login shell",
 		Long: `Run a command in a discobox and stream it to this terminal, or open its login
 shell.
@@ -36,14 +37,14 @@ it is the discobox user's login shell, from that user's passwd entry.
 
 Stdin is always attached, and a PTY is allocated only when this terminal is one,
 so piping and redirecting behave like a local command. Signals are forwarded to
-the remote process, and shell exits with its exit code. If an interrupt stops
+the remote process, and exec exits with its exit code. If an interrupt stops
 getting through — the discobox or the server has gone quiet — Ctrl-C again says
-so, and one more quits shell and leaves the command where it is.`,
-		Example: `  discobox shell
-  discobox shell mybox
-  discobox shell mybox -- go test ./...
-  discobox shell sbx_01hq ls -la
-  discobox shell -- git log --oneline`,
+so, and one more quits exec and leaves the command where it is.`,
+		Example: `  discobox exec
+  discobox exec mybox
+  discobox exec mybox -- go test ./...
+  discobox exec sbx_01hq ls -la
+  discobox exec -- git log --oneline`,
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {

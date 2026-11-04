@@ -97,16 +97,18 @@ func TestIDJSONCarriesBothForms(t *testing.T) {
 	}
 }
 
-// `discobox id` is top-level: it is half of the enrollment step, and the other
-// half is printed by a server at startup, not by a command under `admin`.
-func TestIDCommandIsTopLevel(t *testing.T) {
+// `discobox admin id` prints the enrollment's two IDs, under `admin` with what
+// exists for operating the system (ADR 0112); the top-level `id` it was still
+// runs it, and help no longer teaches it (ADR 26-11-04-204 §1).
+func TestIDCommandIsUnderAdminAndStillAnswersAtTheTop(t *testing.T) {
 	root, _ := newRootCommand()
-	found, _, err := root.Find([]string{"id"})
-	if err != nil {
-		t.Fatalf("Find(id) error = %v", err)
+	found, _, err := root.Find([]string{"admin", "id"})
+	if err != nil || found.Name() != "id" || found.Parent().Name() != "admin" {
+		t.Fatalf("Find(admin id) = %v, %v; want the command under admin", found, err)
 	}
-	if found.Name() != "id" || found.Parent() != root {
-		t.Fatalf("id resolved to %q under %v, want a top-level command", found.Name(), found.Parent())
+	old, _, err := root.Find([]string{"id"})
+	if err != nil || old.Name() != "id" || old.Parent() != root || !old.Hidden {
+		t.Fatalf("Find(id) = %v, %v; want a hidden top-level spelling", old, err)
 	}
 }
 

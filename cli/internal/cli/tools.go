@@ -103,7 +103,7 @@ does not match, and copy it into the discobox's own ~/.local/bin, checking the
 copy, never running or linking the cached file itself:
 
   db() { "$DISCOBOX_CLI" "$@"; }
-  db shell "$DISCOBOX_ID" -- sh -s <<'IN_BOX' || exit   # a refused install stops
+  db exec "$DISCOBOX_ID" -- sh -s <<'IN_BOX' || exit   # a refused install stops
     set -e
     case $(uname -m) in    # sha256 of the tuicr binary in each release tarball
       x86_64)  sum=7fd209205bdc3e682438f0f0d81684fb76de9f49e3b45feca36dde0488dd7f9c ;;
@@ -121,11 +121,11 @@ copy, never running or linking the cached file itself:
     rm -rf ~/.config/tuicr
   IN_BOX
   db cp -r ~/.config/tuicr "$DISCOBOX_ID:.config/tuicr"
-  exec "$DISCOBOX_CLI" shell "$DISCOBOX_ID" -- tuicr "$@"
+  exec "$DISCOBOX_CLI" exec "$DISCOBOX_ID" -- tuicr "$@"
 
 A script that runs here must be executable (chmod +x); it is run by its
 shebang, and the arguments after DISCOBOX are its "$@". Everything after
-"shell DISCOBOX --" runs in the discobox, in the working tree, with
+"exec DISCOBOX --" runs in the discobox, in the working tree, with
 ~/.local/bin on its PATH, and with a terminal when this one is; a ~ or $HOME
 there is expanded here, by this script's shell, so quote it into an "sh -c"
 when it means the discobox's. Paths "discobox cp" is given in a discobox are
@@ -332,7 +332,7 @@ CLI flags go before DISCOBOX.`,
 
 // runToolInSelected runs command inside the discobox, in the working tree of
 // the selected source, streamed to this terminal exactly like `discobox
-// shell`, by the App aimed at the server it is on (selectSandbox).
+// exec`, by the App aimed at the server it is on (selectSandbox).
 func (a *App) runToolInSelected(cmd *cobra.Command, projectID, sandboxID string, client *apiclientgen.Client, sourceSlug string, env, command []string) error {
 	ctx := cmd.Context()
 	var err error

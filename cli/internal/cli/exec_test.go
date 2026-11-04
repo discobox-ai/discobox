@@ -111,16 +111,16 @@ func TestMatchSandboxArgAmbiguousShortIDErrors(t *testing.T) {
 	}
 }
 
-// A full generated ID is trusted by shape alone, so `discobox shell` must not pay
+// A full generated ID is trusted by shape alone, so `discobox exec` must not pay
 // for a sandbox listing it does not need before creating the exec — the same
 // no-extra-round-trip path a full ID takes as every command's DISCOBOX.
-func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
+func TestExecFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/sandboxes"):
-			t.Fatal("shell listed sandboxes despite a full generated ID")
+			t.Fatal("exec listed sandboxes despite a full generated ID")
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs"):
 			if got := r.URL.Query().Get("wait"); got != "ready" {
 				t.Fatalf("create wait = %q, want ready", got)
@@ -146,14 +146,14 @@ func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "ls", "-la"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", sandboxID, "ls", "-la"})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("execute shell error = nil")
+		t.Fatal("execute exec error = nil")
 	}
 	if !strings.Contains(err.Error(), "has ended with exit code 0") {
-		t.Fatalf("execute shell error = %q", err)
+		t.Fatalf("execute exec error = %q", err)
 	}
 	if command, _ := createBody["command"].([]any); len(command) != 2 || command[0] != "ls" || command[1] != "-la" {
 		t.Fatalf("create body command = %v, want [ls -la]", createBody["command"])
@@ -165,7 +165,7 @@ func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 
 // A short ID that matches exactly one of the sandboxes `discobox ls` would show
 // resolves to that sandbox, and everything after the -- is the command.
-func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
+func TestExecShortIDMatchUsesListedSandbox(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var listed bool
 	var createBody map[string]any
@@ -197,14 +197,14 @@ func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "sbx_h1ssj", "--", "echo", "hi"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", "sbx_h1ssj", "--", "echo", "hi"})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("execute shell error = nil")
+		t.Fatal("execute exec error = nil")
 	}
 	if !strings.Contains(err.Error(), "has ended with exit code 0") {
-		t.Fatalf("execute shell error = %q", err)
+		t.Fatalf("execute exec error = %q", err)
 	}
 	if !listed {
 		t.Fatal("expected a sandbox listing to resolve the short ID")
@@ -217,7 +217,7 @@ func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 // With no DISCOBOX before the --, the single listed discobox is picked the
 // way an omitted DISCOBOX is everywhere, and everything after the -- is the
 // command.
-func TestShellWithNoDiscoboxPicksTheSoleOne(t *testing.T) {
+func TestExecWithNoDiscoboxPicksTheSoleOne(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -247,14 +247,14 @@ func TestShellWithNoDiscoboxPicksTheSoleOne(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "--", "echo", "hi"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", "--", "echo", "hi"})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("execute shell error = nil")
+		t.Fatal("execute exec error = nil")
 	}
 	if !strings.Contains(err.Error(), "has ended with exit code 0") {
-		t.Fatalf("execute shell error = %q", err)
+		t.Fatalf("execute exec error = %q", err)
 	}
 	if command, _ := createBody["command"].([]any); len(command) != 2 || command[0] != "echo" || command[1] != "hi" {
 		t.Fatalf("create body command = %v, want [echo hi]", createBody["command"])
@@ -264,7 +264,7 @@ func TestShellWithNoDiscoboxPicksTheSoleOne(t *testing.T) {
 // An argument is the discobox, never guessed to be the command: one that names
 // no discobox is refused, saying where a command goes, and more than one
 // before the -- is refused with the line that works. Neither runs anything.
-func TestShellNeverTakesADiscoboxArgumentForTheCommand(t *testing.T) {
+func TestExecNeverTakesADiscoboxArgumentForTheCommand(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
@@ -278,23 +278,23 @@ func TestShellNeverTakesADiscoboxArgumentForTheCommand(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	for args, want := range map[string][]string{
-		"echo":    {`no discobox for "echo"`, "a command goes after --: discobox shell -- echo"},
-		"echo hi": {`no discobox for "echo"`, "discobox shell -- echo"},
+		"echo":    {`no discobox for "echo"`, "a command goes after --: discobox exec -- echo"},
+		"echo hi": {`no discobox for "echo"`, "discobox exec -- echo"},
 	} {
 		cmd := NewRootCommand()
 		cmd.SetOut(io.Discard)
 		cmd.SetErr(io.Discard)
-		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "shell"}, strings.Fields(args)...))
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "exec"}, strings.Fields(args)...))
 		err := cmd.Execute()
 		for _, part := range want {
 			if err == nil || !strings.Contains(err.Error(), part) {
-				t.Fatalf("shell %s error = %v, want %q", args, err, part)
+				t.Fatalf("exec %s error = %v, want %q", args, err, part)
 			}
 		}
 	}
 }
 
-func TestShellNoArgsRunsLoginShell(t *testing.T) {
+func TestExecNoArgsRunsLoginShell(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -321,15 +321,15 @@ func TestShellNoArgsRunsLoginShell(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec"})
 	t.Setenv("SHELL", "/bin/zsh")
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("execute shell error = nil")
+		t.Fatal("execute exec error = nil")
 	}
 	if !strings.Contains(err.Error(), "has ended with exit code 0") {
-		t.Fatalf("execute shell error = %q", err)
+		t.Fatalf("execute exec error = %q", err)
 	}
 	if shell, _ := createBody["shell"].(bool); !shell {
 		t.Fatalf("create body shell = %v, want true for no command", createBody["shell"])
@@ -344,7 +344,7 @@ func TestShellNoArgsRunsLoginShell(t *testing.T) {
 	}
 }
 
-func TestShellNoArgsIgnoresArchivedSandbox(t *testing.T) {
+func TestExecNoArgsIgnoresArchivedSandbox(t *testing.T) {
 	const archivedID = "sbx_9kvq9z81yq2t3dwn"
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
@@ -364,21 +364,21 @@ func TestShellNoArgsIgnoresArchivedSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec"})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("execute shell error = nil")
+		t.Fatal("execute exec error = nil")
 	}
 	if !strings.Contains(err.Error(), "there are no discoboxes") {
-		t.Fatalf("execute shell error = %q, want the empty candidate message", err)
+		t.Fatalf("execute exec error = %q, want the empty candidate message", err)
 	}
 }
 
 // An ambiguous short ID is reported outright rather than silently falling
 // back to treating it as a command, since its shape said it was meant as an
 // ID reference.
-func TestShellAmbiguousShortIDErrorsBeforeAnyExecCall(t *testing.T) {
+func TestExecAmbiguousShortIDErrorsBeforeAnyExecCall(t *testing.T) {
 	id1 := "sbx_ab" + strings.Repeat("1", 14)
 	id2 := "sbx_ab" + strings.Repeat("2", 14)
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -397,22 +397,22 @@ func TestShellAmbiguousShortIDErrorsBeforeAnyExecCall(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "ab", "--", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", "ab", "--", "ls"})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("execute shell error = nil")
+		t.Fatal("execute exec error = nil")
 	}
 	if !strings.Contains(err.Error(), "matches more than one discobox") {
-		t.Fatalf("execute shell error = %q, want an ambiguity message", err)
+		t.Fatalf("execute exec error = %q, want an ambiguity message", err)
 	}
 }
 
-// `discobox shell SANDBOX -- CMD` is the documented separator form. shell stops
+// `discobox exec SANDBOX -- CMD` is the documented separator form. exec stops
 // parsing flags at the sandbox, so pflag hands the -- through untouched and
-// shell has to drop it itself; before it did, -- reached the sandbox as the
+// exec has to drop it itself; before it did, -- reached the sandbox as the
 // command's argv[0].
-func TestShellSeparatorAfterSandboxIsNotPartOfTheCommand(t *testing.T) {
+func TestExecSeparatorAfterSandboxIsNotPartOfTheCommand(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -436,10 +436,10 @@ func TestShellSeparatorAfterSandboxIsNotPartOfTheCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "--", "ls", "-la"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", sandboxID, "--", "ls", "-la"})
 
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "has ended with exit code 0") {
-		t.Fatalf("execute shell error = %v", err)
+		t.Fatalf("execute exec error = %v", err)
 	}
 	command, _ := createBody["command"].([]any)
 	if len(command) != 2 || command[0] != "ls" || command[1] != "-la" {
@@ -451,7 +451,7 @@ func TestShellSeparatorAfterSandboxIsNotPartOfTheCommand(t *testing.T) {
 // word happens to match a sandbox still runs as a command. Without this the
 // separator would mean the opposite of what it says: `ls` would be read as the
 // sandbox and `-la` as the whole command.
-func TestShellSeparatorBeforeSandboxStopsSandboxMatching(t *testing.T) {
+func TestExecSeparatorBeforeSandboxStopsSandboxMatching(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -478,10 +478,10 @@ func TestShellSeparatorBeforeSandboxStopsSandboxMatching(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "--", "ls", "-la"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", "--", "ls", "-la"})
 
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "has ended with exit code 0") {
-		t.Fatalf("execute shell error = %v", err)
+		t.Fatalf("execute exec error = %v", err)
 	}
 	command, _ := createBody["command"].([]any)
 	if len(command) != 2 || command[0] != "ls" || command[1] != "-la" {
@@ -489,9 +489,9 @@ func TestShellSeparatorBeforeSandboxStopsSandboxMatching(t *testing.T) {
 	}
 }
 
-// Only the leading separator is shell's. One the caller typed inside the
+// Only the leading separator is exec's. One the caller typed inside the
 // command belongs to the command -- `git log -- path` has to reach git whole.
-func TestShellSeparatorInsideCommandIsPassedThrough(t *testing.T) {
+func TestExecSeparatorInsideCommandIsPassedThrough(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -515,10 +515,10 @@ func TestShellSeparatorInsideCommandIsPassedThrough(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "--", "git", "log", "--", "docs/"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", sandboxID, "--", "git", "log", "--", "docs/"})
 
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "has ended with exit code 0") {
-		t.Fatalf("execute shell error = %v", err)
+		t.Fatalf("execute exec error = %v", err)
 	}
 	command, _ := createBody["command"].([]any)
 	if len(command) != 4 || command[0] != "git" || command[2] != "--" || command[3] != "docs/" {
@@ -527,8 +527,8 @@ func TestShellSeparatorInsideCommandIsPassedThrough(t *testing.T) {
 }
 
 // A separator with nothing after it leaves no command, which is the login
-// shell -- the same as naming the sandbox alone.
-func TestShellSeparatorWithNoCommandRunsLoginShell(t *testing.T) {
+// exec -- the same as naming the sandbox alone.
+func TestExecSeparatorWithNoCommandRunsLoginShell(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -552,10 +552,10 @@ func TestShellSeparatorWithNoCommandRunsLoginShell(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "--"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "exec", sandboxID, "--"})
 
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "has ended with exit code 0") {
-		t.Fatalf("execute shell error = %v", err)
+		t.Fatalf("execute exec error = %v", err)
 	}
 	if shell, _ := createBody["shell"].(bool); !shell {
 		t.Fatalf("create body = %v, want the login shell", createBody)
@@ -642,10 +642,10 @@ func TestMatchSandboxArgEmptyNamesNothing(t *testing.T) {
 	}
 }
 
-// `discobox shell` takes its DISCOBOX by the NAME `discobox ls` prints, a
+// `discobox exec` takes its DISCOBOX by the NAME `discobox ls` prints, a
 // window title included: an argument there is the discobox, so the title
 // `discobox ls` shows is the one that has to work.
-func TestShellTakesTheListedNameAsItsDiscobox(t *testing.T) {
+func TestExecTakesTheListedNameAsItsDiscobox(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
 	t.Chdir(t.TempDir())
@@ -750,7 +750,7 @@ func TestSplitDiscoboxCommand(t *testing.T) {
 		{args: []string{"box", "ls"}, discobox: "box", command: []string{"ls"}},
 		{args: []string{"box", "git", "log", "--", "docs/"}, discobox: "box", command: []string{"git", "log", "--", "docs/"}},
 	} {
-		cmd := &cobra.Command{Use: "shell"}
+		cmd := &cobra.Command{Use: "exec"}
 		cmd.Flags().SetInterspersed(false)
 		// No flags to parse: the -- reaches the split as an argument, as it
 		// does for tools ssh.

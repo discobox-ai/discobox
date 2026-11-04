@@ -34,14 +34,14 @@ import (
 // the project's sandboxes, with a prompt for a new one a press of Esc away —
 // and in that prompt when there are none yet.
 //
-// name is what it is registered under. It is "console", and also "tui", its
-// earlier name, hidden so it keeps working without being offered.
-func (a *App) newConsoleCommand(name string, hidden bool) *cobra.Command {
+// "tui", its earlier name, is a hidden second registration of it, so it keeps
+// working without being offered (hiddenSpelling).
+func (a *App) newConsoleCommand() *cobra.Command {
 	var leaderFlag string
 	cmd := &cobra.Command{
-		Use:    name,
-		Hidden: hidden,
-		Short:  "Open the discobox console",
+		Use:     "console",
+		Aliases: []string{"c"},
+		Short:   "Open the discobox console",
 		Long: `Open the console.
 
 The window opens on the list of discoboxes you already have, the first one
@@ -81,9 +81,6 @@ discobox terminal is up.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.runConsole(cmd, leaderFlag)
 		},
-	}
-	if name == "console" {
-		cmd.Aliases = []string{"c"}
 	}
 	cmd.Flags().StringVarP(&leaderFlag, "leader", "l", "",
 		"Prefix key for the terminal pane's own commands: a letter taken as Ctrl-that (e.g. -l b for Ctrl-B), or ctrl+ or alt+ one (e.g. -l alt+g for Alt-G); defaults to "+keys.LeaderEnv+", then a")

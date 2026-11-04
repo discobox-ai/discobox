@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"runtime"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/colorprofile"
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -290,7 +288,7 @@ func (a *App) writeStatus(cmd *cobra.Command, report statusReport) error {
 		}
 		return statusExit(report)
 	}
-	printStatus(cmd.OutOrStdout(), report)
+	printStatus(cmd.OutOrStdout(), a.color, report)
 	return statusExit(report)
 }
 
@@ -333,8 +331,8 @@ var (
 // The columns are padded here rather than by a tabwriter, because every cell
 // is painted: a tabwriter measures the escape sequences as characters and
 // lines the rows up by a width nobody sees.
-func printStatus(out io.Writer, report statusReport) {
-	writer := colorprofile.NewWriter(out, os.Environ())
+func printStatus(out io.Writer, color colorWhen, report statusReport) {
+	writer := color.writer(out)
 	paint := func(style lipgloss.Style, text string) string {
 		if text == "" {
 			return text

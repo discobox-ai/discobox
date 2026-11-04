@@ -174,7 +174,7 @@ the pool yourself — `git fetch discobox && git rebase discobox/<branch>`
   the ephemeral range (`/proc/sys/net/ipv4/ip_local_port_range`, normally
   32768–60999) — inside it, a socket looks like a client's. Bind a fixed
   number below it, or declare it (below).
-- They can also use `discobox shell`, `discobox cp`, `discobox tools`, or
+- They can also use `discobox exec`, `discobox cp`, `discobox tools`, or
   `ssh <box-id>` after `discobox admin ssh-config --write`. The id is
   `sandboxId` in `sandbox.json`; nothing sets it in your environment.
 
@@ -285,7 +285,7 @@ Nobody has to stop a discobox. It powers itself off once nothing has happened
 in it for its idle timeout — 30 minutes unless the pool sets another; `jq
 .agentRuntime.idleTimeout /etc/discobox/sandbox.json` says, and empty means 30
 minutes — and starts again on its own the next time anyone uses it
-— an attach, `discobox shell`, a git fetch, a request to a forwarded port. Its
+— an attach, `discobox exec`, a git fetch, a request to a forwarded port. Its
 terminals come back where they were, with the harness relaunched into its
 session. What was running is gone.
 
@@ -482,7 +482,7 @@ Installed in every discobox, whatever it was made from:
 These are the user's commands, run on their side:
 
 ```
-discobox            open the console
+discobox console    open the console
 discobox run        launch a prompt in a new box
 discobox ls         every box (--source, --on, --tag narrow it)
 discobox rm         archive boxes (alias: delete)
@@ -491,15 +491,19 @@ discobox stop       stop boxes
 discobox restart    restart boxes
 discobox rename     name a box
 discobox attach     open a box's window
-discobox shell      a command, or a login shell, in a box
+discobox exec       a command, or a login shell, in a box
+discobox send       type text into a box's terminal (send-key presses keys)
+discobox capture    print a box's screen
+discobox wait       wait until a box's agent is finished, blocked, idle
+discobox events     follow boxes' state changes as they happen
 discobox push       push local commits into a box, to rebase there
 discobox proxy      forward a box's ports without the window open
 discobox cp         copy files in and out
 discobox tools      run git, ssh, VS Code, or Zed against a box
 discobox secret     secrets, bindings, and approval requests
 discobox configure  enable, disable, and set the default harness
-discobox id         print this machine's peer ID and the server's
-discobox admin      pools, projects, harnesses, the server and its status
+discobox admin      pools, projects, harnesses, the server and its status;
+                    admin id prints this machine's peer ID and the server's
 ```
 
 Only `discobox run` makes a box: `discobox run SOURCE [PROMPT...]`, where
@@ -530,8 +534,9 @@ turn it on — ask the user in chat (ADR 26-10-27-880 §9).
 With it, you may create discoboxes with `discobox run`, cut from the SOURCE
 you give it — `.` for this box's own checkout; list and read them (`admin box
 ls`, `admin box get`). On the discoboxes **you created**, and no others, you
-may read and type into their terminals and read their logs (`admin terminal
-screen`, `input`, `wait`, `logs`); start, stop, and restart them (`discobox
+may read and type into their terminals (`discobox capture`, `send`,
+`send-key`, and `wait --until finished --until blocked`, which counts from
+what you last sent) and read their logs (`admin terminal logs`); start, stop, and restart them (`discobox
 start`, `stop`, `restart`); repair and upgrade them (`admin box repair`,
 `upgrade`); archive them once their work is done (`discobox rm`), which keeps
 their data for the project's retention so a person can still bring one back;

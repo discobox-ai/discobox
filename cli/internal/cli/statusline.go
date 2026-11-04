@@ -80,12 +80,13 @@ const (
 
 var statusSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-func newStatusLine(out io.Writer) *statusLine {
+// newStatusLine draws on out, in color as --color says (ADR 26-11-04-204 §1).
+func newStatusLine(out io.Writer, color colorWhen) *statusLine {
 	tty := isTerminalStream(out)
 	return &statusLine{
 		out:   out,
 		tty:   tty,
-		color: tty && streamHasColor(out),
+		color: tty && color.colors(out),
 		stop:  make(chan struct{}),
 	}
 }

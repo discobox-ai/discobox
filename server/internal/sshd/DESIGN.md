@@ -112,7 +112,7 @@ output — while never starting leaves the session hanging on a suspended exec.
 Every session channel requests `workdir: "~"`: SSH starts a session in the
 user's home directory and `scp`/`sftp` resolve relative paths against it,
 while the sandbox's own exec default is the primary source directory — right
-for `discobox shell`, but it would land uploads inside the sandbox's git
+for `discobox exec`, but it would land uploads inside the sandbox's git
 working tree. The tilde is expanded in the sandbox (`sandbox-agent/execs`),
 the only place that knows the run user's home.
 
