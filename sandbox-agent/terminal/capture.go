@@ -369,6 +369,16 @@ func (m *captureManager) observe(ctx context.Context) error {
 			return err
 		}
 	}
+	// Until the harness's files are installed — the primary terminal's first
+	// launch writes them (FileInstaller) — the home does not hold what was
+	// delivered yet, so comparing it with the baseline reads every delivered
+	// file as removed. The watcher's first look runs as the agent starts,
+	// before that launch, and offered "remove .claude/settings.json" for the
+	// seconds until the file was written: a band and a review for a change
+	// nobody made. Nothing in the home is the box's own change before then.
+	if !m.state.Installed {
+		return nil
+	}
 	if !m.completeBaseline(m.state.Normalized) {
 		// Recover an older persisted partial projection without treating its
 		// missing settings as the delivered truth. Frozen in-flight snapshots

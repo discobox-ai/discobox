@@ -29,7 +29,7 @@ func captureFixture(t *testing.T) (*Service, *hc.Export, *string) {
 	baseline := hc.File{Path: "settings.json", Content: `{"model":"old"}`}
 	observed := &hc.Export{Version: 1, Files: []hc.File{{Path: "settings.json", Content: `{"model":"new"}`}}}
 	outcome := "applied"
-	m := &captureManager{definition: d, path: filepath.Join(state, "state.json"), home: home, state: captureState{Baseline: hc.Baseline{HarnessConfigID: "config", ConfigRevision: 1, Files: []hc.File{baseline}}, History: map[string]hc.Candidate{}, State: "clean"}}
+	m := &captureManager{definition: d, path: filepath.Join(state, "state.json"), home: home, state: captureState{Baseline: hc.Baseline{HarnessConfigID: "config", ConfigRevision: 1, Files: []hc.File{baseline}}, History: map[string]hc.Candidate{}, State: "clean", Installed: true}}
 	m.run = func(_ context.Context, args []string, input, output any) error {
 		if args[0] == "/handoff" {
 			output.(*hc.HandoffResult).State = outcome
@@ -1029,5 +1029,35 @@ func TestCaptureCommandLogsOnlyFixedDiagnosticCodes(t *testing.T) {
 		if (logs.Len() > 0) != tc.logged || strings.Contains(logs.String(), "private-token") {
 			t.Fatalf("unexpected diagnostic log: %s", logs.String())
 		}
+	}
+}
+
+// Before the harness's files are installed the home holds none of what was
+// delivered, and that is not the box removing them: nothing is offered until
+// the first launch has written them, and then only what really differs.
+func TestNothingIsOfferedBeforeTheHarnessFilesAreInstalled(t *testing.T) {
+	s, observed, _ := captureFixture(t)
+	ctx := context.Background()
+	s.capture.state.Installed = false
+	observed.Files = nil
+	p, err := s.HarnessConfigChanges(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.State != "clean" || p.CandidateID != "" || len(p.Files) != 0 {
+		t.Fatalf("preview before install = %+v, want clean with nothing offered", p)
+	}
+
+	i := FileInstaller{Definition: &s.capture.definition, Capture: s.capture, HomeDirectory: s.capture.home}
+	if err := i.EnsureInstalled(ctx, config.Harness{Files: []config.HarnessFile{{Path: "settings.json", Content: `{"model":"old"}`}}}, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	observed.Files = []hc.File{{Path: "settings.json", Content: `{"model":"old"}`}}
+	p, err = s.HarnessConfigChanges(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.State != "clean" || len(p.Files) != 0 {
+		t.Fatalf("preview after install = %+v, want clean: the file is as delivered", p)
 	}
 }
