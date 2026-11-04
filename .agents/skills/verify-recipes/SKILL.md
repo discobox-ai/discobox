@@ -1311,3 +1311,34 @@ agent's published port, or the pool never registers.
   `disco-vm rm --force` cleans up (the scratch root keeps root-owned
   directories). The pool runtime's side is `TestMachineNewRootOnDocker`, run
   with `DISCO_VM_DOCKER_IMAGE=debian:trixie` and `DISCO_VM_AGENT` set.
+
+# Verifying an upgrade from a release (server first, pool agents after)
+
+For anything about the window where the server is already on the new build and
+a pool's agent is still the previous release's (#523): run the release's server
+in isolated dirs, make boxes, then start this tree's server on the same data.
+
+- `gh release download vX.Y.Z --repo discobox-ai/discobox -p discobox-linux-amd64
+  -p discobox-server-linux-amd64` into `$S/rel`. **Never run the release server
+  bare, even with `--help`**: it ignores the flag and starts on the default
+  `~/.local/share/discobox` and `~/.config/discobox`, with its own pool.
+- An env file with `HOME`, `DISCOBOX_SERVER_LISTEN=http://127.0.0.1:8095`,
+  `DISCOBOX_{DATA,CONFIG,CACHE,STATE}_DIR` and `DATABASE_DSN=sqlite3://…` all
+  under `$S/up`, and `unset DISCOBOX_SERVER`. Run the release server under it
+  (`run_in_background`), and drive it with the release CLI
+  (`--server http://127.0.0.1:8095`, `run -H shell -d --no-source`, `stop`).
+- Stop it, then run this tree's server under the same env plus
+  `DISCOBOX_ENV_FILE=/workspace/discobox/.env` (the loop's images and bundles).
+  Build that binary yourself (`cd server && go build -o $S/… ./cmd/discobox-server`),
+  since `build/discobox-server` moves under you. Its pool reconcile replaces the
+  old agent about a minute later, so the window is real. Read box state from the
+  sqlite DB (`state, generation, observed_generation, error_message`) as well as
+  `admin box ls`.
+- A server that fails to start on the old release's database is itself a
+  finding: the migration must take every release's seeds (2ade8b9a). Don't
+  edit the database to get past it.
+- Pools share this box's Docker daemon and `/var/lib/discobox` with the dev loop.
+  Clean up afterwards by name: `docker rm -f` every container matching the test
+  pool's ID, `docker volume rm discobox-pool-<pool>-docker`, and `sudo rm -rf
+  /var/lib/discobox/{identity,cache/projects,proxy/projects}/<project>`. Never
+  remove the loop's project.
