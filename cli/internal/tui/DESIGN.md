@@ -57,6 +57,14 @@ shows the harness bundle's optional configuration reminder. This keeps prompts
 drawn by the harness visually inside a setup flow rather than presenting them
 as an ordinary harness session.
 
+The pane reads the command's exit status when it closes. 0 is a setup that
+worked; `harness.ConfigureCanceledExitCode` is one its person left on purpose,
+reported as a cancellation, not an error (`harnessSetupCanceled`). Neither
+makes a run that was waiting on the setup: a run waiting on the choice of a
+project default gets that question again, since leaving one harness's setup does
+not answer it, and any other run ends saying no discobox was created. Every
+other status is the failure it reports.
+
 The same header carries a **warning about the ports the flow declared and this
 machine cannot give it** (`Harness.ConfigPorts`, `configurePortWarning`), in the
 harness bundle's own words — Codex's says to sign in by device code instead,

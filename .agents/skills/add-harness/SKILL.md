@@ -154,6 +154,12 @@ lessons that each cost a bug:
   erases it otherwise).
 - Every `continue` in the collection loop is preceded by `confirm_retry`; end
   of input at any prompt exits non-zero rather than spinning.
+- Leaving on purpose exits `harness.ConfigureCanceledExitCode` (10), never a
+  failure's status: a no to a retry that means "give up" (`confirm_retry` in
+  `claude-code`, `codex-cli`, `copilot`), and Ctrl-C through the `trap … INT`
+  right after `set -eu`. Never exit 10 for a failure. Test the prompt with
+  `configuretest.RunFunction`; `harness/configure_interrupt_test.go` checks
+  the trap.
 - Reconfigure opens already signed in with the `PREV_` sentinel; finding the
   sentinel unchanged afterwards means `usePrevious`, never a value. A kept
   credential that fails verification stops being offered.

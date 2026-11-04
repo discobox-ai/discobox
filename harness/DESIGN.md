@@ -714,6 +714,22 @@ The CLI applies returned files and encrypted secret bindings only after the
 configure terminal exits successfully. No configure flow stores credentials in a
 public harness file.
 
+A configure command's exit status is part of the contract. 0 is success; any
+other status saves nothing, and the setup sandbox is deleted either way.
+`harness.ConfigureCanceledExitCode` (10) says the person chose to stop (the
+"Try again?" a sign-in-less session ends on, answered no): the control plane
+records no configure error, and the CLI says "Setup canceled" and exits with
+that status, so the console reports a cancellation rather than a failure. Every
+built-in script also traps Ctrl-C (SIGINT, while the script itself holds the
+terminal) to it: an interrupt at a prompt is leaving as much as a no is. Nobody
+there to answer (end of input) is still a failure, status 1. It is not 130,
+which the CLI exits with on its own when an attach is escaped locally.
+
+10 is **reserved** for every configure command, a bundle registered with
+`admin harness create --bundle` as much as a built-in: a command must never
+exit 10 for a failure, which would then be recorded as nothing having
+happened.
+
 ### Claude Code
 
 `claude-code/configure.sh` launches a bare, interactive `claude` and lets the
@@ -791,7 +807,8 @@ there once the user leaves the session (`/exit` or Ctrl-D).
   it. Every retry goes through `confirm_retry`, so the loop only turns when a
   person asks it to: an attempt that fails before reaching the user fails again
   the instant it is retried, and looping on that is a busy loop rather than a
-  retry. A candidate that fails verification is cleared
+  retry; answering no is a cancellation (`harness.ConfigureCanceledExitCode`),
+  not a failure. A candidate that fails verification is cleared
   (`clear_captured_credential`) before the retry, so a stale artifact from an
   earlier attempt in the same sandbox can't be mistaken for a fresh one.
 - The launcher and configure flow run `claude-code-capture init`. It merges

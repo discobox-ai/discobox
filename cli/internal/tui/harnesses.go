@@ -330,6 +330,10 @@ type harnessFileMsg struct {
 type harnessDoneMsg struct {
 	text string
 	err  error
+	// canceled says the action was a setup its person chose to leave: no
+	// error, but nothing done either, so whatever was waiting on it does not
+	// go on.
+	canceled bool
 	// andDefault is a harness to make the project default once this action has
 	// succeeded. Setting up a harness because the project had no default is one
 	// intent, not two: a setup that left the project still without one would
@@ -655,6 +659,9 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 		}
 		return tea.Batch(m.loadHarnesses(), m.report(true, "%v", msg.err))
 	}
+	if msg.canceled {
+		return m.harnessSetupCanceled(msg)
+	}
 	if msg.andDefault != nil {
 		// The listing is re-read by the verb's own completion, so it is not
 		// asked for twice here. The run rides along with it: it is waiting on
@@ -673,6 +680,28 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 	// the listing this just re-read has not necessarily caught up yet.
 	req := *msg.resume
 	return tea.Batch(done, func() tea.Msg { return resumeRunMsg{req: req} })
+}
+
+// harnessSetupCanceled takes a setup its person left without finishing. A
+// run waiting on it is not made: the harness it needed still is not set up.
+// When the run was waiting on the choice of a project default, that question
+// is asked again, since leaving one harness's setup is not an answer to it —
+// another harness may be, and Esc there ends the run as it always does.
+// Otherwise the run ends, saying plainly that nothing was made.
+func (m *Model) harnessSetupCanceled(msg harnessDoneMsg) tea.Cmd {
+	said := m.report(false, "%s", msg.text)
+	if msg.resume == nil {
+		return tea.Batch(m.loadHarnesses(), said)
+	}
+	if msg.andDefault != nil {
+		if ask, asked := m.askForADefaultHarness(*msg.resume); asked {
+			return tea.Batch(m.loadHarnesses(), said, ask)
+		}
+	}
+	if m.oneShot() {
+		return m.exit(errNothingCreated)
+	}
+	return tea.Batch(m.loadHarnesses(), m.report(false, "%s, so no discobox was created", msg.text))
 }
 
 // harnessFilesDialog is the file picker: the harness's files, the ones its

@@ -80,6 +80,19 @@ const (
 	ConfigureUserUID  = 10000
 	ConfigureUserGID  = 10000
 
+	// ConfigureCanceledExitCode is the status a configure command exits with
+	// when the person running it chose to stop — declined a retry, say —
+	// rather than when it failed. Either way nothing is saved and the setup
+	// sandbox is deleted; the difference is what everyone after it says about
+	// it: the control plane records no configure error, and the CLI reports a
+	// cancellation, not a failure, and exits with this same status so the
+	// console that ran it can tell the two apart.
+	//
+	// It is not 130, the status of an interrupted command, because the CLI
+	// exits 130 on its own when an attach is escaped locally, with the
+	// command still running in the sandbox — nothing was decided there.
+	ConfigureCanceledExitCode = 10
+
 	// RunCommand is the command a harness image is expected to install on PATH,
 	// and the one the runtime types when the image declares no override
 	// (ADR 0086 §3). The base image ships it as a shim that execs nothing, so

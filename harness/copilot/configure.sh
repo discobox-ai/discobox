@@ -38,6 +38,10 @@
 # without ever being readable in this sandbox. Keeping it is reported back as
 # usePrevious, not as a value.
 set -eu
+# Ctrl-C while this script has the terminal (a prompt, a check) is the person
+# leaving setup, as much as answering no is: the canceled status
+# (harness.ConfigureCanceledExitCode), not the 130 an interrupt would be.
+trap 'echo >&2; echo "Setup canceled; nothing was saved." >&2; exit 10' INT
 HARNESS_CAPTURE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 export HARNESS_CAPTURE_DIR
 
@@ -213,8 +217,11 @@ confirm_retry() {
 	echo
 	case "${retry_choice:-y}" in
 	[nN]*)
-		echo "Aborting without configuring Copilot." >&2
-		exit 1
+		# A choice, not a failure: the status that says so
+		# (harness.ConfigureCanceledExitCode) is what lets the CLI report a
+		# cancellation and the control plane record no configure error.
+		echo "Setup canceled; nothing was saved." >&2
+		exit 10
 		;;
 	esac
 }

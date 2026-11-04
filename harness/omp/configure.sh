@@ -35,6 +35,10 @@
 # holding its sentinel afterwards was not replaced, and is reported back as
 # usePrevious rather than as a value.
 set -eu
+# Ctrl-C while this script has the terminal (a prompt, a check) is the person
+# leaving setup, as much as answering no is: the canceled status
+# (harness.ConfigureCanceledExitCode), not the 130 an interrupt would be.
+trap 'echo >&2; echo "Setup canceled; nothing was saved." >&2; exit 10' INT
 HARNESS_CAPTURE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 export HARNESS_CAPTURE_DIR
 

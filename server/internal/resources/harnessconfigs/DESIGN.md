@@ -214,11 +214,23 @@ sequenceDiagram
         S->>B: cat ConfigureOutputPath
         S->>S: apply files + secrets + bindings, Configured=true
         S->>B: delete sandbox
-    else non-zero, failed, or lost
+    else exit code ConfigureCanceledExitCode (status exited or failed)
+        S->>S: nothing applied, no ConfigureError
+        S->>B: delete sandbox
+        S-->>C: 200 HarnessConfig, as it was
+    else other non-zero, failed, or lost
         S->>S: ConfigureError set, Configured unchanged
         S->>B: delete sandbox
     end
 ```
+
+- Commit is the only thing that deletes the configure sandbox before the TTL
+  reap, so a client commits after **every** finished command, not only a
+  successful one. A command that exited `harness.ConfigureCanceledExitCode`
+  was left by its person on purpose (declining another attempt, Ctrl-C). The
+  agent reports any non-zero exit as `failed` with its exit code, so the code
+  is read whichever status it rides on. It is no failure, so it records no
+  `ConfigureError`, and the commit succeeds with the harness unchanged.
 
 - Configure's agent calls happen inside a user request, using the caller's
   credentials (`AcquireSandboxHTTPClient`). The separate capture-delivery

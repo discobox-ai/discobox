@@ -68,6 +68,8 @@ PY
   go tool task build:platform-bundle
   go tool task build:harness-stub-bundle
   build_keep_stub_bundle
+  build_exit_stub_bundle 10
+  build_exit_stub_bundle 1
 
   PORT="$DISCOBOX_BATS_PORT" \
   DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
@@ -166,6 +168,20 @@ build_keep_stub_bundle() {
   local metadata
   metadata="$(jq -c '.env.STUB_CONFIGURE_KEEP = "1"' "$REPO_ROOT/test/harness-stub/image.json")"
   docker build --build-arg HARNESS_METADATA="$metadata" -t discobox-harness-stub-keep:local - <<'DOCKERFILE'
+FROM discobox-harness-stub:local
+ARG HARNESS_METADATA
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required}"
+DOCKERFILE
+}
+
+# build_exit_stub_bundle derives a stub bundle whose configure command does all
+# its work and then exits with $1 (discobox-harness-stub-exit$1:local), the way
+# build_keep_stub_bundle bakes its toggle in. 10 is
+# harness.ConfigureCanceledExitCode: the person running setup chose to stop.
+build_exit_stub_bundle() {
+  local code="$1" metadata
+  metadata="$(jq -c --arg code "$code" '.env.STUB_CONFIGURE_EXIT = $code' "$REPO_ROOT/test/harness-stub/image.json")"
+  docker build --build-arg HARNESS_METADATA="$metadata" -t "discobox-harness-stub-exit$code:local" - <<'DOCKERFILE'
 FROM discobox-harness-stub:local
 ARG HARNESS_METADATA
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required}"
@@ -402,4 +418,52 @@ configure_stub() {
   # deconfigured harness created.
   run query "SELECT COUNT(*) FROM secrets s JOIN secret_bindings b ON b.secret_id = s.id WHERE b.target_kind = 'harnessConfig' AND b.target_id = '$harness_id'"
   [ "$output" = "0" ]
+}
+
+# A configure command that ended without succeeding still leaves no setup
+# sandbox behind: it was only ever the flow's, and the card promises it is
+# deleted the moment you leave. Only the commit deletes it, so the CLI makes
+# one after every ending, not only a successful one.
+#
+# Leaving on purpose (the canceled status) is not a failure: the CLI says so,
+# exits with that status for whatever ran it, and the server records no
+# configure error. Any other status stays the failure it was.
+@test "a configure that ends without succeeding deletes its setup sandbox" {
+  local pool_id code slug harness_id
+  pool_id="$(ensure_pool)"
+  [ -n "$pool_id" ]
+
+  for code in 10 1; do
+    slug="stub-exit$code"
+    run cli admin harness create --bundle "discobox-harness-stub-exit$code:local" \
+      --slug "$slug" --name "Stub (exit $code)"
+    [ "$status" -eq 0 ]
+    harness_id="$(printf '%s' "$output" | json_get id)"
+    [ -n "$harness_id" ]
+
+    run configure_stub "$slug"
+    [ "$status" -eq "$code" ]
+    [[ "$output" == *"stub configure: done"* ]]
+    if [ "$code" -eq 10 ]; then
+      [[ "$output" == *"Setup canceled; its setup sandbox is deleted."* ]]
+    fi
+
+    run cli admin harness get "$slug"
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s' "$output" | json_get configured)" = "False" ]
+
+    # Nothing it wrote was applied, and the flow is over.
+    run query "SELECT COUNT(*) FROM secret_bindings WHERE target_kind = 'harnessConfig' AND target_id = '$harness_id'"
+    [ "$output" = "0" ]
+    run query "SELECT configure_sandbox_id || '|' || configure_error FROM harness_configs WHERE id = '$harness_id'"
+    if [ "$code" -eq 10 ]; then
+      [ "$output" = "|" ]
+    else
+      [[ "$output" == "|configure failed"* ]]
+    fi
+    # No configure sandbox is still wanted. The stub's earlier configures
+    # committed and so deleted theirs; this one must too.
+    run query "SELECT COUNT(*) FROM sandboxes WHERE name LIKE 'configure-%' AND desired_state = 'present'"
+    [ "$output" = "0" ]
+  done
 }

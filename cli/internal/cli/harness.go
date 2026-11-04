@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,8 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/harness"
+	execclient "github.com/discobox-ai/discobox/pkg/execstream/client"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -312,21 +315,52 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	// The sandbox a configure flow runs in is the flow's, not a discobox
 	// anybody keeps work in, so nothing here is pushed into it (ADR 26-09-05-008 §1 on
 	// automatic push).
-	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, execAttachOptions{notWorkingHere: true}, stdin, stdout, stderr); err != nil {
-		return nil, fmt.Errorf("attach configure terminal: %w", err)
-	}
+	attachErr := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, execAttachOptions{notWorkingHere: true}, stdin, stdout, stderr)
+	return finishHarnessConfigure(attachErr, func() (*apimodel.HarnessConfig, error) {
+		res, err := client.CommitHarnessConfigConfigure(ctx, apiclientgen.CommitHarnessConfigConfigureParams{
+			ProjectId: projectID, HarnessConfigId: harnessID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return expectResponse[apimodel.HarnessConfig](res)
+	}, stderr)
+}
 
+// finishHarnessConfigure decides what a configure flow's attach ending means,
+// and commits when there is something to commit: attachErr is how the attach
+// to the configure command ended, and commit is the server's commit.
+//
+// The commit is what deletes the setup sandbox, so it is made after every
+// ending of the command, not only a successful one. It is not made when the
+// command has not ended: a stream that broke, or an attach escaped locally
+// while the command still ran. The server reaps that sandbox once the flow
+// has gone quiet.
+func finishHarnessConfigure(attachErr error, commit func() (*apimodel.HarnessConfig, error), stderr io.Writer) (*apimodel.HarnessConfig, error) {
+	code, exited := ExitCode(attachErr)
+	if attachErr != nil && (!exited || errors.Is(attachErr, execclient.ErrInterrupted)) {
+		return nil, fmt.Errorf("attach configure terminal: %w", attachErr)
+	}
 	// The server checks the real exit status; detaching early surfaces as a
 	// commit error rather than a silent success.
-	committedRes, err := client.CommitHarnessConfigConfigure(ctx, apiclientgen.CommitHarnessConfigConfigureParams{
-		ProjectId: projectID, HarnessConfigId: harnessID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("configure: %w", err)
-	}
-	committed, err := expectResponse[apimodel.HarnessConfig](committedRes)
-	if err != nil {
-		return nil, fmt.Errorf("configure: %w", err)
+	committed, commitErr := commit()
+	switch {
+	case code == harness.ConfigureCanceledExitCode:
+		// The person running it chose to stop. Nothing was saved and the
+		// sandbox is gone, which is a cancellation, not a failure: the status
+		// passes on so whatever ran this command can tell the two apart, and
+		// the line says what happened without an error's prefix.
+		if commitErr != nil {
+			return nil, fmt.Errorf("cancel configure: %w", commitErr)
+		}
+		fmt.Fprintln(stderr, "Setup canceled; its setup sandbox is deleted.")
+		return nil, execclient.ExitError{Code: code}
+	case attachErr != nil:
+		// A failure, which the server refuses to commit; the status is the
+		// command's own story, and the refusal would only repeat it.
+		return nil, fmt.Errorf("attach configure terminal: %w", attachErr)
+	case commitErr != nil:
+		return nil, fmt.Errorf("configure: %w", commitErr)
 	}
 	return committed, nil
 }

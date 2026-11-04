@@ -50,6 +50,12 @@ const execSettleTimeout = 15 * time.Second
 // finish and commit again.
 var errConfigureRunning = errors.New("the configure flow is still running")
 
+// errConfigureCanceled marks a configure command that exited with
+// harness.ConfigureCanceledExitCode: the person running it chose to stop. It
+// commits nothing, as a failure does, but it is no failure, so it records no
+// configure error and the commit answers with the harness as it was.
+var errConfigureCanceled = errors.New("the configure flow was canceled")
+
 // configureOutput is the JSON a harness's configure command leaves at
 // harness.ConfigureOutputPath. The same shape is seeded back in as the previous
 // configuration (harness.ConfigurePreviousConfigPath) so a configure command can
@@ -316,6 +322,12 @@ func (s *Service) previousConfiguration(ctx context.Context, config *model.Harne
 
 // CommitHarnessConfigConfigure finishes an in-flight configure: it verifies the
 // configure command actually exited 0, reads what it wrote, and applies it.
+// Whichever way the command ended, the configure sandbox is deleted, so a
+// client commits after every finished flow, not only a successful one.
+//
+// A command that exited with harness.ConfigureCanceledExitCode was stopped by
+// the person running it: nothing is applied and no configure error recorded,
+// and the harness is returned as it was. Any other non-zero exit is a failure.
 //
 // The caller says when to commit, but not what happened — the exit status is read
 // from the sandbox itself, so a client cannot mark a harness configured without
@@ -401,6 +413,9 @@ func (s *Service) CommitHarnessConfigConfigure(ctx context.Context, projectID, c
 			current.ConfigureRevision = 0
 			current.ConfigureSecretRevisions = nil
 			current.ConfigureError = "configure failed or configuration changed"
+			if errors.Is(configureErr, errConfigureCanceled) {
+				current.ConfigureError = ""
+			}
 			return tx.UpdateHarnessConfig(ctx, current)
 		}); err != nil {
 			return nil, err
@@ -411,7 +426,7 @@ func (s *Service) CommitHarnessConfigConfigure(ctx context.Context, projectID, c
 		slog.WarnContext(ctx, "failed to delete configure sandbox",
 			"harnessConfigId", config.ID, "sandboxId", sandboxID, "error", err)
 	}
-	if configureErr != nil {
+	if configureErr != nil && !errors.Is(configureErr, errConfigureCanceled) {
 		return nil, apperrors.NewStatusError(http.StatusConflict, configureErr.Error())
 	}
 	return s.store.GetHarnessConfig(ctx, projectID, configID)
@@ -435,6 +450,14 @@ func (s *Service) collectConfigureOutput(ctx context.Context, projectID, sandbox
 	}
 	if !found {
 		return nil, errors.New("the configure flow was never started")
+	}
+	switch terminal.Status {
+	case "exited", "failed":
+		// The agent reports a command that exited non-zero as failed, with
+		// its exit code, so the canceled status is read from either.
+		if terminal.ExitCode != nil && *terminal.ExitCode == harness.ConfigureCanceledExitCode {
+			return nil, errConfigureCanceled
+		}
 	}
 	switch terminal.Status {
 	case "exited":
