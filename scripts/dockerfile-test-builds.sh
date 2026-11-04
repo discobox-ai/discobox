@@ -97,7 +97,7 @@ build_dockerfile() {
       [ "$harness_dir" = codex-cli ] && harness=codex
       run_task "$dockerfile" build:harness-bundle HARNESS="$harness"
       ;;
-    test/harness-stub/Dockerfile|test/performance/terminal-latency/image/Dockerfile)
+    test/harness-stub/Dockerfile|test/performance/terminal-latency/image/Dockerfile|test/ux-smoke/image/Dockerfile)
       # Bundles like every harness's, each of which refuses to build without
       # its manifest, under a test tag so a running server's is not moved.
       echo "[dockerfile-test-builds] building $dockerfile with context $(dirname "$dockerfile")"

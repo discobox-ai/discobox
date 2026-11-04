@@ -252,6 +252,12 @@ not listed here.
 
 ## Build, Check, and Release
 
+The required Linux `ci:ux-smoke` job boots an isolated Docker stack and drives
+the terminal, harness save/reset and adoption flows through real boxes. Its
+fixtures, bounds, ownership and failure evidence are described in
+[`test/ux-smoke/README.md`](test/ux-smoke/README.md). Portable `ci:test` stays
+independent of Docker.
+
 Three layers, and the top one holds no logic (ADR 0066):
 
 ```mermaid

@@ -159,3 +159,9 @@ Global review expectations:
   text. The spec is the API's documentation and is user facing (owner, PR #549);
   an ADR is history for this repository's developers. Say what the thing does,
   in plain words. ADRs are cited in code comments, `DESIGN.md` and `REVIEW.md`.
+
+- Required real-box smoke tests retain each command's output even on timeout,
+  and collect sandbox container logs before purging boxes. Cleanup must not
+  overwrite the failure evidence it is meant to preserve. Adoption tests use a
+  sandbox-created child and assert a nonempty creator: comparing absent
+  creator IDs cannot detect a regression that clears one.

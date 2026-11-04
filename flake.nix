@@ -78,6 +78,7 @@
               pkgs.git
               pkgs.gh
               pkgs.jq
+              pkgs.python3 # Docker UX smoke orchestration (stdlib only).
               # `release:windows-zip` builds the archive winget installs from,
               # and `scripts/winget-manifests.sh` reads back the one a release
               # actually uploaded to check it holds what the manifest claims.
