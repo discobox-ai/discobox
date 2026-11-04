@@ -20,22 +20,24 @@ import (
 
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/discobox/proxy/bridge"
+	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 )
 
 // fakePool is the pool's DNS-over-TLS endpoint: it answers every query with
 // one A record, or with padding past a UDP datagram for names starting "big",
 // after a pause for names starting "slow", and counts the connections it
-// accepted.
+// authenticated.
 type fakePool struct {
 	addr     string
 	accepted atomic.Int32
 	mu       sync.Mutex
 	conns    []net.Conn
 	// open and peak count connections held at once, which is what the
-	// pool's per-sandbox admission bounds.
+	// pool's per-sandbox admission bounds. Unauthenticated port probes
+	// are tracked in conns for cleanup but never counted here.
 	open, peak int
 	// serials is the client certificate each connection presented, in the
-	// order they were accepted.
+	// order they authenticated.
 	serials []string
 }
 
@@ -106,17 +108,17 @@ func startPool(t *testing.T, serverTLS *tls.Config) *fakePool {
 			if err != nil {
 				return
 			}
-			pool.accepted.Add(1)
 			pool.mu.Lock()
 			pool.conns = append(pool.conns, conn)
-			pool.open++
-			pool.peak = max(pool.peak, pool.open)
 			pool.mu.Unlock()
 			go func() {
+				authenticated := false
 				defer func() {
 					_ = conn.Close()
 					pool.mu.Lock()
-					pool.open--
+					if authenticated {
+						pool.open--
+					}
 					pool.mu.Unlock()
 				}()
 				tlsConn, _ := conn.(*tls.Conn)
@@ -124,6 +126,12 @@ func startPool(t *testing.T, serverTLS *tls.Config) *fakePool {
 					return
 				}
 				pool.mu.Lock()
+				// A TCP accept alone may be the sandbox's port probe. Count
+				// only connections authenticated as a sandbox by mTLS.
+				authenticated = true
+				pool.accepted.Add(1)
+				pool.open++
+				pool.peak = max(pool.peak, pool.open)
 				pool.serials = append(pool.serials, tlsConn.ConnectionState().PeerCertificates[0].SerialNumber.String())
 				pool.mu.Unlock()
 				for {
@@ -271,6 +279,28 @@ func parse(t *testing.T, data []byte) dnsmessage.Message {
 		t.Fatal(err)
 	}
 	return message
+}
+
+// Port discovery probes every listening TCP socket, including this fixture's
+// DNS-over-TLS endpoint. Those unauthenticated connections are not the stub's.
+func TestFakePoolIgnoresPortProbes(t *testing.T) {
+	p := newPKI(t)
+	pool := startPool(t, p.server)
+	ports.Probe(t.Context(), netip.MustParseAddrPort(pool.addr))
+	if got := pool.accepted.Load(); got != 0 {
+		t.Errorf("pool counted %d connections from port discovery, want 0", got)
+	}
+	pool.mu.Lock()
+	open, peak := pool.open, pool.peak
+	pool.mu.Unlock()
+	if open != 0 || peak != 0 {
+		t.Errorf("after port discovery: open=%d peak=%d, want both 0", open, peak)
+	}
+	udp, _ := startStub(t, p, pool.addr, "127.0.0.1")
+	askUDP(t, udp, query(t, 1, "example.com.", 0))
+	if got := pool.accepted.Load(); got != 1 {
+		t.Errorf("pool counted %d connections after a DNS query, want 1", got)
+	}
 }
 
 func TestStubAnswersFromThePoolOnOneConnection(t *testing.T) {

@@ -1,5 +1,9 @@
 # Sandbox Agent Review Notes
 
+- Count DNS fixture connections only after successful mTLS authentication.
+  Port discovery opens plaintext and unauthenticated TLS connections to every
+  listening TCP socket; counting accepts inflates reuse and admission checks.
+
 ## The DNS stub's firewall
 
 - **A new way of putting a sandbox on a shared network keeps its interface
