@@ -1,0 +1,48 @@
+  discobox                                                  sbx_n8n6jjtqfagj1dpa  blocked             cpu 0%  mem 298M  disk 115M    ctrl+a d detach
+  [1m ⚠  credential request[0m  ·  [1madoption of sbx_5fp90bq7kbz173cz[0m      click to answer                                                  or  [1mctrl+a g[0m [1m ✕ [0m
+╭─────────────────────────────────────────────────────────────────[[1m UX review lead [0m]─────────────────────────────────────────────────────────────────╮
+│ darren@sbx-n8n6jjtqfagj1dpa:/workspace$ '/bin/bash' '-l'                                                                                           │
+│ darren@sbx-n8n6jjtqfagj1dpa:/workspace$ /tmp/ux-discobox adopt sbx_5fp90bq7kbz17                                                                   │
+│ 3cz --reason "Review the adoption approval flow for issue 582"                                                                                     │
+│ Adoption request adopt_a0e5dgtkjn6jm997 is waiting for a person.                                                                                   │
+│ Now leading sbx_5fp90bq7kbz173cz                                                                                                                   │
+│ darren@sbx-n8n6jjtqfagj1dpa:/workspace$ /tmp/ux-discobox adopt sbx_5fp90bq7kbz173cz --reason "Review denial for issue 582"                         │
+│ Adoption request adopt_cz0zqs92j9fga34x is waiting for a person.                                                                                   │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+│                                                                                                                                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  [1m ⚠  credential request[0m  ·  [1madoption of sbx_5fp90bq7kbz173cz[0m      click to answer                                                  or  [1mctrl+a g[0m [1m ✕ [0m
+  ctrl+a . actions · ctrl+a d detach · ctrl+a s shell · ctrl+a o tools · ctrl+a A audit

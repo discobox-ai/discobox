@@ -1,0 +1,48 @@
+
+
+
+
+
+
+
+
+
+
+
+       ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+       │                                                                                                                                     │
+       │  [1mAdoption request[0m                                                                                                                   │
+       │                                                                                                                                     │
+       │  ── who leads this discobox ──────────────────────────────────────────────────────────────────────────────────────────────────────  │
+       │  child                          [1mUX review child (sbx_5fp90bq7kbz173cz)[0m                                                              │
+       │  requester                      UX review lead (sbx_n8n6jjtqfagj1dpa)                                                               │
+       │  current parent                 none                                                                                                │
+       │  reason (the discobox's words)  Review read-only adoption with a wider child for issue 582                                          │
+       │                                                                                                                                     │
+       │  ── approval allows the parent to ────────────────────────────────────────────────────────────────────────────────────────────────  │
+       │  Read and type into terminals; start, stop, repair, upgrade and archive the child; change its meta; deliver its source; reach       │
+       │  its ports; answer credential requests within what the parent may delegate.                                                         │
+       │  The child's credentials stay its own. Authority covers this child alone.                                                           │
+       │                                                                                                                                     │
+       │  ── read access only ─────────────────────────────────────────────────────────────────────────────────────────────────────────────  │
+       │  The child has wider egress. Every write and send into it will be refused; this parent may only read it.                            │
+       │                                                                                                                                     │
+       │  ❯    [1mApprove adoption[0m                                                                                                              │
+       │    d  Deny                                                                                                                          │
+       │                                                                                                                                     │
+       │  Approval replaces the current parent. Esc leaves the request waiting.                                                              │
+       │  Enter runs the highlighted action · Esc cancels                                                                                    │
+       │                                                                                                                                     │
+       ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+

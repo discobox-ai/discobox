@@ -1,0 +1,48 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+       ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+       │                                                                                                                                     │
+       │  [1mSaving harness changes[0m                                                                                                             │
+       │                                                                                                                                     │
+       │  UX review Claude in this discobox changed its settings or signed in.                                                               │
+       │                                                                                                                                     │
+       │  Saving makes those settings, and that login, the shared default for every discobox on UX review Claude in this project: new        │
+       │  discoboxes start with them, and a saved login is the one all of them use.                                                          │
+       │                                                                                                                                     │
+       │  Settings can include hooks and commands, which then run in every discobox on UX review Claude: read what changed before you save   │
+       │  it.                                                                                                                                │
+       │                                                                                                                                     │
+       │  Nothing is shared until you save. Discarding the change, or leaving it, keeps it in this discobox only.                            │
+       │                                                                                                                                     │
+       │  Whenever a box has a change to save, a green band says so and H behind the leader reviews it.                                      │
+       │                                                                                                                                     │
+       │  ❯ r  [1mReview changes[0m  see what changed, then save or discard it                                                                     │
+       │    n  Not now         the band and H stay to review it later                                                                        │
+       │                                                                                                                                     │
+       │  Enter runs the highlighted action · Esc cancels                                                                                    │
+       │                                                                                                                                     │
+       ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,48 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                    ╭────────────────────────────────────────────────────────────────────────────╮
+                                    │                                                                            │
+                                    │  [1mWelcome to Discobox[0m                                                       │
+                                    │                                                                            │
+                                    │  Discobox runs coding agents in isolated sandboxes on this machine.        │
+                                    │                                                                            │
+                                    │  1. A new box, with your source copied into it                             │
+                                    │  [1m   cd ~/src/my-project && discobox[0m                                        │
+                                    │                                                                            │
+                                    │  2. Work with the agent until the change is a commit                       │
+                                    │  [1m   git commit -am "..."[0m                                                   │
+                                    │                                                                            │
+                                    │  3. Send that commit to your remote                                        │
+                                    │  [1m   git push[0m                                                               │
+                                    │                                                                            │
+                                    │  Enter on a discobox opens it, Esc goes to the prompt to start one, F1     │
+                                    │  lists every key.                                                          │
+                                    │                                                                            │
+                                    │  Press Enter to continue                                                   │
+                                    │                                                                            │
+                                    ╰────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,48 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│  machine  cpu 0.2/64               │
+│ Discoboxes                 3 boxes │
+│ no source                  3 boxes │
+│  UX review signed-o…  idle         │
+│  UX review child      running      │
+│  UX review lead       running    ! │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                    │      │                                                                                                  │
+│                                    │      │  [1mReset[0m                                                                                           │
+│                                    │      │                                                                                                  │
+│                                    │      │  Reset UX review Claude to its bundle's defaults? The settings and logins saved to it from       │
+│                                    │      │  discoboxes are deleted. New discoboxes on it start signed out until a login made in one is      │
+│                                    │      │  saved again; secrets you bound to it by hand are kept.                                          │
+│                                    │      │                                                                                                  │
+│                                    │      │  It has files you added or overrode yourself.                                                    │
+│                                    │      │                                                                                                  │
+│                                    │      │  ❯ r  [1mReset, keep your files[0m  the files you added or overrode stay                               │
+│                                    │      │    a  Reset your files too    nothing but the bundle's files is left                             │
+│                                    │      │                                                                                                  │
+│                                    │      │  Enter runs the highlighted action · Esc cancels                                                 │
+│                                    │      │                                                                                                  │
+│                                    │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+│                                    │
+├────────────────────────────────────┤
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│   skills                        F5 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

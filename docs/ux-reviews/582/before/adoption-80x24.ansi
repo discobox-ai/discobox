@@ -1,0 +1,24 @@
+
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  [1mAdoption request[0m                                                    │
+    │                                                                      │
+    │  ── who leads this discobox ───────────────────────────────────────  │
+    │  child                   [1mUX review child (sbx_5fp90bq7kbz173cz)[0m      │
+    │  requester               UX review lead (sbx_n8n6jjtqfagj1dpa)       │
+    │  current parent          none                                        │
+    │  reason (the discobox'…  Review the adoption approval flow for       │
+    │                          issue 582                                   │
+    │                                                                      │
+    │    … PgUp/PgDn to scroll                                             │
+    │                                                                      │
+    │  ❯    [1mApprove adoption[0m                                               │
+    │    d  Deny                                                           │
+    │                                                                      │
+    │  Approval replaces the current parent. Esc leaves the request        │
+    │  waiting.                                                            │
+    │  Enter runs the highlighted action · Esc cancels                     │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+
+

@@ -1,0 +1,32 @@
+Ask a person to let this discobox lead DISCOBOX, and wait for their answer.
+
+Run this inside a discobox with discobox API access (--discobox-api at creation).
+A person approves or denies the request in the console's inbox on the secrets
+screen (F4), or from the requester's row (C). --reason is required and is shown
+to that person. Ctrl-C stops waiting; the request stays in the inbox.
+
+Approval replaces the child's current parent. The child's credentials and
+creator stay its own. A child with wider egress can only be read: writes and
+sends into it are refused. The child must be in the same project, cannot be
+this discobox or an ancestor, and cannot be archived or deleting.
+
+Use "discobox release" to give a child back and "discobox ls --parent me" to
+list the discoboxes this one leads.
+
+[1mExamples:[0m
+  discobox adopt mybox --reason 'Carry this feature through review'
+  discobox ls --parent me
+
+[1mUsage:[0m
+  discobox adopt DISCOBOX [flags]
+
+[1mOptions:[0m
+  [36m-h, --help[0m           help for adopt
+      [36m--reason REASON[0m  why this discobox should lead the child
+
+[1mGlobal options:[0m
+      [36m--color WHEN[0m     set color WHEN to auto, always, or never (default auto)
+      [36m--debug[0m          print HTTP requests and the git commands run on this machine
+  [36m-o, --output FORMAT[0m  output FORMAT: table or json (default table)
+      [36m--server SERVER[0m  connect to SERVER, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is
+      [36m--token TOKEN[0m    bearer TOKEN for API requests

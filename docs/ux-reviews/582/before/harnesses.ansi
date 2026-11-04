@@ -1,0 +1,48 @@
+ discobox                                                                                                                              ctrl+a q quit
+╭───────[[1m discoboxes [0m]────────[+][x]─╮╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ all discoboxes ▾                   ││                                                                                                              │
+│ Discoboxes                 2 boxes ││  [1mHarnesses[0m                                                                                      [1m7 harnesses[0m  │
+│ no source                  2 boxes ││ ❯ [1mClaude Code[0m                      built-in  2 secrets  2 files  just now discobox-harness-claude-code:dev-… │
+│  vigorous_diffie      starting     ││   Codex                            built-in  2 secrets  1 file   just now discobox-harness-codex:dev-ab37c0… │
+│  bold_almeida         starting     ││   OpenCode                         built-in             2 files  just now discobox-harness-opencode:dev-0a0… │
+│                                    ││   GitHub Copilot                   built-in  1 secret   1 file   just now discobox-harness-copilot:dev-3d57… │
+│                                    ││   omp                              built-in             2 files  just now discobox-harness-omp:dev-8627857b… │
+│                                    ││   pi                               built-in             2 files  just now discobox-harness-pi:dev-11bac7dad… │
+│                                    ││   Shell                            built-in             1 file   just now discobox-harness-shell:dev-594768… │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+│                                    ││                                                                                                              │
+├────────────────────────────────────┤│                                                                                                              │
+│ + new discobox                     ││                                                                                                              │
+│ [1m  harnesses[0m                     F3 ││                                                                                                              │
+│   secrets                       F4 ││                                                                                                              │
+│   skills                        F5 ││                                                                                                              │
+│ ctrl+a h list · ctrl+a ↑↓ switch   ││                                                                                                              │
+╰────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                        s default · v config · f files · r reset · Esc back

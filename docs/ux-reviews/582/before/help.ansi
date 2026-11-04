@@ -1,0 +1,69 @@
+bash-5.2$ ./build/discobox --color always --help
+Discobox runs coding agents in isolated sandboxes on this machine.
+
+Make a discobox with "discobox run":
+
+  discobox run . 'fix the failing tests'
+  discobox run -H codex -d . 'fix the failing tests'
+
+With no command it shows this help. Open the console with "discobox console".
+See "discobox run --help" for everything run takes.
+
+[1mUsage:[0m
+  discobox [command] [flags]
+
+[1mBasic commands:[0m
+  [36mrun, new, create, r, n[39m    Run a prompt in a new discobox
+  [36mls, list[39m                  List discoboxes
+  [36mattach[39m                    Open a discobox: its terminal and what runs beside it
+  [36mexec[39m                      Run a command in a discobox, or its login shell
+  [36mstart[39m                     Start discoboxes
+  [36mstop[39m                      Stop discoboxes
+  [36mrestart[39m                   Restart discoboxes
+  [36mrm, delete, remove[39m        Archive discoboxes
+  [36mrename[39m                    Name a discobox
+  [36mtag[39m                       Set and remove a discobox's tags
+
+[1mAutomation:[0m
+  [36msend[39m                      Send text to a discobox's terminal
+  [36msend-key[39m                  Send key presses to a discobox's terminal
+  [36mcapture[39m                   Print a discobox's screen and scrollback
+  [36mwait[39m                      Wait until a discobox is blocked, finished, idle, or exits
+  [36mevents[39m                    Print discoboxes' state changes as they happen
+  [36madopt[39m                     Ask a person to let this discobox lead another
+  [36mrelease[39m                   Give a child discobox back
+
+[1mInterface:[0m
+  [36mconsole, c[39m                Open the discobox console
+
+[1mFiles & ports:[0m
+  [36mcp, scp[39m                   Copy files to and from a discobox
+  [36mpush[39m                      Push local commits to a discobox, for it to rebase onto
+  [36mproxy[39m                     Forward a discobox's listening ports to local ports
+  [36mtools, tool, t[39m            Run a development tool against a discobox
+
+[1mResources:[0m
+  [36msecret, secrets[39m           Manage project secrets
+  [36mtrust, trusts[39m             Manage the hosts discoboxes trust by a pinned certificate
+
+[1mSetup:[0m
+  [36mconfigure, config[39m         Set the default harness and manage what is saved to each
+  [36madmin[39m                     Manage advanced Discobox configuration
+
+[1mOther:[0m
+  [36mcompletion[39m                Generate shell completion script
+  [36mversion[39m                   Print the client and server versions
+  [36mhelp[39m                      Help about any command
+
+[1mOptions:[0m
+      [36m--color WHEN[39m     set color WHEN to auto, always, or never (default auto)
+      [36m--debug[39m          print HTTP requests and the git commands run on this machine
+  [36m-h, --help[39m           help for discobox
+  [36m-o, --output FORMAT[39m  output FORMAT: table or json (default table)
+      [36m--server SERVER[39m  connect to SERVER, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and
+to the local server when none is
+      [36m--token TOKEN[39m    bearer TOKEN for API requests
+  [36m-v, --version[39m        print the client and server versions
+
+Use "discobox [command] --help" for more information about a command.
+bash-5.2$

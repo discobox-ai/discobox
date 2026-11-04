@@ -1,0 +1,2 @@
+CLI verification: admin harness update ux-582 --file '.claude/ux-review.txt=personal file'
+admin harness reset ux-582 kept fileOverrides [{path:.claude/ux-review.txt,content:personal file}].

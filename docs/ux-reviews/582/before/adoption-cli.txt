@@ -1,0 +1,9 @@
+darren@sbx-n8n6jjtqfagj1dpa:/workspace$ '/bin/bash' '-l'
+darren@sbx-n8n6jjtqfagj1dpa:/workspace$ /tmp/ux-discobox adopt sbx_5fp90bq7kbz17
+3cz --reason "Review the adoption approval flow for issue 582"
+Adoption request adopt_a0e5dgtkjn6jm997 is waiting for a person.
+Now leading sbx_5fp90bq7kbz173cz
+darren@sbx-n8n6jjtqfagj1dpa:/workspace$ /tmp/ux-discobox adopt sbx_5fp90bq7kbz173cz --reason "Review denial for issue 582"
+Adoption request adopt_cz0zqs92j9fga34x is waiting for a person.
+adoption request adopt_cz0zqs92j9fga34x was denied
+darren@sbx-n8n6jjtqfagj1dpa:/workspace$
