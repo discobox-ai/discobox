@@ -22395,6 +22395,39 @@ func (s *OptSandboxExecMetadata) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxExecWaitProgramStateKind as json.
+func (o OptSandboxExecWaitProgramStateKind) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SandboxExecWaitProgramStateKind from json.
+func (o *OptSandboxExecWaitProgramStateKind) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxExecWaitProgramStateKind to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxExecWaitProgramStateKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxExecWaitProgramStateKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxGitIdentity as json.
 func (o OptSandboxGitIdentity) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -43468,6 +43501,205 @@ func (s *SandboxExecWaitBody) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *SandboxExecWaitProgramState) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxExecWaitProgramState) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("state")
+		s.State.Encode(e)
+	}
+	{
+		if s.Kind.Set {
+			e.FieldStart("kind")
+			s.Kind.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxExecWaitProgramState = [2]string{
+	0: "state",
+	1: "kind",
+}
+
+// Decode decodes SandboxExecWaitProgramState from json.
+func (s *SandboxExecWaitProgramState) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxExecWaitProgramState to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "state":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.State.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"state\"")
+			}
+		case "kind":
+			if err := func() error {
+				s.Kind.Reset()
+				if err := s.Kind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxExecWaitProgramState")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxExecWaitProgramState) {
+					name = jsonFieldsNameOfSandboxExecWaitProgramState[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxExecWaitProgramState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxExecWaitProgramState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxExecWaitProgramStateKind as json.
+func (s SandboxExecWaitProgramStateKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxExecWaitProgramStateKind from json.
+func (s *SandboxExecWaitProgramStateKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxExecWaitProgramStateKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxExecWaitProgramStateKind(v) {
+	case SandboxExecWaitProgramStateKindPermission:
+		*s = SandboxExecWaitProgramStateKindPermission
+	case SandboxExecWaitProgramStateKindQuestion:
+		*s = SandboxExecWaitProgramStateKindQuestion
+	case SandboxExecWaitProgramStateKindAuth:
+		*s = SandboxExecWaitProgramStateKindAuth
+	default:
+		*s = SandboxExecWaitProgramStateKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxExecWaitProgramStateKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxExecWaitProgramStateKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxExecWaitProgramStateState as json.
+func (s SandboxExecWaitProgramStateState) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxExecWaitProgramStateState from json.
+func (s *SandboxExecWaitProgramStateState) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxExecWaitProgramStateState to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxExecWaitProgramStateState(v) {
+	case SandboxExecWaitProgramStateStateIdle:
+		*s = SandboxExecWaitProgramStateStateIdle
+	case SandboxExecWaitProgramStateStateWorking:
+		*s = SandboxExecWaitProgramStateStateWorking
+	case SandboxExecWaitProgramStateStateDone:
+		*s = SandboxExecWaitProgramStateStateDone
+	case SandboxExecWaitProgramStateStateBlocked:
+		*s = SandboxExecWaitProgramStateStateBlocked
+	case SandboxExecWaitProgramStateStateError:
+		*s = SandboxExecWaitProgramStateStateError
+	default:
+		*s = SandboxExecWaitProgramStateState(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxExecWaitProgramStateState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxExecWaitProgramStateState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *SandboxExecWaitResult) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -43487,6 +43719,12 @@ func (s *SandboxExecWaitResult) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ProgramStatus.Set {
+			e.FieldStart("programStatus")
+			s.ProgramStatus.Encode(e)
+		}
+	}
+	{
 		if s.OutputAt.Set {
 			e.FieldStart("outputAt")
 			s.OutputAt.Encode(e, json.EncodeDateTime)
@@ -43498,11 +43736,12 @@ func (s *SandboxExecWaitResult) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxExecWaitResult = [4]string{
+var jsonFieldsNameOfSandboxExecWaitResult = [5]string{
 	0: "reason",
 	1: "hook",
-	2: "outputAt",
-	3: "resumeAfter",
+	2: "programStatus",
+	3: "outputAt",
+	4: "resumeAfter",
 }
 
 // Decode decodes SandboxExecWaitResult from json.
@@ -43534,6 +43773,16 @@ func (s *SandboxExecWaitResult) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"hook\"")
 			}
+		case "programStatus":
+			if err := func() error {
+				s.ProgramStatus.Reset()
+				if err := s.ProgramStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"programStatus\"")
+			}
 		case "outputAt":
 			if err := func() error {
 				s.OutputAt.Reset()
@@ -43545,7 +43794,7 @@ func (s *SandboxExecWaitResult) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"outputAt\"")
 			}
 		case "resumeAfter":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ResumeAfter = string(v)
@@ -43566,7 +43815,7 @@ func (s *SandboxExecWaitResult) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00001001,
+		0b00010001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -43634,6 +43883,8 @@ func (s *SandboxExecWaitResultReason) Decode(d *jx.Decoder) error {
 		*s = SandboxExecWaitResultReasonQuiet
 	case SandboxExecWaitResultReasonExit:
 		*s = SandboxExecWaitResultReasonExit
+	case SandboxExecWaitResultReasonProgram:
+		*s = SandboxExecWaitResultReasonProgram
 	case SandboxExecWaitResultReasonTimeout:
 		*s = SandboxExecWaitResultReasonTimeout
 	default:
@@ -43682,6 +43933,12 @@ func (s *SandboxExecWaitUntil) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.FromLastInput.Set {
+			e.FieldStart("fromLastInput")
+			s.FromLastInput.Encode(e)
+		}
+	}
+	{
 		if s.QuietSeconds.Set {
 			e.FieldStart("quietSeconds")
 			s.QuietSeconds.Encode(e)
@@ -43693,13 +43950,25 @@ func (s *SandboxExecWaitUntil) encodeFields(e *jx.Encoder) {
 			s.Exit.Encode(e)
 		}
 	}
+	{
+		if s.ProgramStates != nil {
+			e.FieldStart("programStates")
+			e.ArrStart()
+			for _, elem := range s.ProgramStates {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxExecWaitUntil = [4]string{
+var jsonFieldsNameOfSandboxExecWaitUntil = [6]string{
 	0: "hookEvents",
 	1: "after",
-	2: "quietSeconds",
-	3: "exit",
+	2: "fromLastInput",
+	3: "quietSeconds",
+	4: "exit",
+	5: "programStates",
 }
 
 // Decode decodes SandboxExecWaitUntil from json.
@@ -43739,6 +44008,16 @@ func (s *SandboxExecWaitUntil) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"after\"")
 			}
+		case "fromLastInput":
+			if err := func() error {
+				s.FromLastInput.Reset()
+				if err := s.FromLastInput.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"fromLastInput\"")
+			}
 		case "quietSeconds":
 			if err := func() error {
 				s.QuietSeconds.Reset()
@@ -43758,6 +44037,23 @@ func (s *SandboxExecWaitUntil) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"exit\"")
+			}
+		case "programStates":
+			if err := func() error {
+				s.ProgramStates = make([]SandboxExecWaitProgramState, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SandboxExecWaitProgramState
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.ProgramStates = append(s.ProgramStates, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"programStates\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

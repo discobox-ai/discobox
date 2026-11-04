@@ -7,6 +7,7 @@ import (
 	"time"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimruntime"
@@ -75,37 +76,57 @@ func (h *handler) WaitSandboxExec(ctx context.Context, req *sandboxapi.SandboxEx
 	hookEvents := until.HookEvents
 	quiet := int(until.QuietSeconds.Or(0))
 	exit := until.Exit.Or(false)
-	if len(hookEvents) == 0 && quiet == 0 && !exit {
-		return nil, statusError{status: http.StatusBadRequest, message: "a wait needs something to wait for: hookEvents, quietSeconds, or exit"}
+	program := programMatches(until.ProgramStates)
+	if len(hookEvents) == 0 && quiet == 0 && !exit && len(program) == 0 {
+		return nil, statusError{status: http.StatusBadRequest, message: "a wait needs something to wait for: hookEvents, quietSeconds, exit, or programStates"}
 	}
 	if len(hookEvents) > 0 && h.store == nil {
 		return nil, statusError{status: http.StatusServiceUnavailable, message: "this sandbox agent keeps no harness hook record"}
+	}
+	after, fromLastInput := until.After.Or(""), until.FromLastInput.Or(false)
+	if after != "" && fromLastInput {
+		return nil, statusError{status: http.StatusBadRequest, message: "a wait counts from after or from the last input, not both"}
 	}
 	timeout := min(time.Duration(req.TimeoutSeconds)*time.Second, maxTerminalWait)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Where hooks count from: the resume point a previous call answered with,
-	// or the start of this one. A wait that ends on anything but a hook answers
-	// with this same point, so the next resumes where this one began and a hook
+	// Where the wait counts from: the resume point a previous call answered
+	// with, the terminal's last input, or the start of this one. Hooks and
+	// program reports count after it, and quiet from no earlier than it. A
+	// wait that ends on anything but a hook or a report answers with this
+	// same point, so the next resumes where this one began and a hook
 	// recorded while it returned is not lost between them.
 	since := h.store.HarnessHookResumePoint()
-	if after := until.After.Or(""); after != "" {
+	switch {
+	case after != "":
 		if since, err = parseResumePoint(after); err != nil {
 			return nil, statusError{status: http.StatusBadRequest, message: "after is not a resume point this agent answered with"}
 		}
+	case fromLastInput:
+		// The shim stamps each write the input route makes, and not an
+		// attach's frames, which carry what a person's terminal sends unasked
+		// (ADR 26-11-04-204 §4). One never sent to counts from now.
+		screen, err := h.execs.Screen(ctx, execID, 0)
+		if err != nil {
+			return nil, terminalError(err)
+		}
+		if screen.SentAt != nil {
+			since = *screen.SentAt
+		}
 	}
 
-	// The shim waits on what only it sees — output and exit — while this waits
-	// on the hooks the collector records. Whichever holds first answers.
+	// The shim waits on what only it sees — output, input, exit and the
+	// program's reports — while this waits on the hooks the collector
+	// records. Whichever holds first answers.
 	type shimAnswer struct {
 		result execs.ShimWaitResult
 		err    error
 	}
 	shimDone := make(chan shimAnswer, 1)
-	if quiet > 0 || exit {
+	if quiet > 0 || exit || len(program) > 0 {
 		go func() {
-			result, err := h.execs.AwaitTerminal(ctx, execID, execs.ShimWait{QuietSeconds: quiet, Exit: exit, TimeoutSeconds: int(timeout / time.Second)})
+			result, err := h.execs.AwaitTerminal(ctx, execID, execs.ShimWait{Since: &since, QuietSeconds: quiet, Exit: exit, Program: program, TimeoutSeconds: int(timeout / time.Second)})
 			shimDone <- shimAnswer{result, err}
 		}()
 	} else if _, ok := h.execs.Get(execID); !ok {
@@ -139,6 +160,12 @@ func (h *handler) WaitSandboxExec(ctx context.Context, req *sandboxapi.SandboxEx
 				return nil, terminalError(answer.err)
 			}
 			out := &sandboxapi.SandboxExecWaitResult{Reason: sandboxapi.SandboxExecWaitResultReason(answer.result.Reason), ResumeAfter: formatResumePoint(since)}
+			if status := answer.result.Program; status != nil {
+				// Resumed just past the report, so the next wait does not
+				// end on the same one again.
+				out.ProgramStatus = sandboxapi.NewOptSandboxAgentProgramStatus(sandboxAgentProgramStatus(*status))
+				out.ResumeAfter = formatResumePoint(status.ReportedAt)
+			}
 			if answer.result.OutputAt != nil {
 				out.OutputAt = sandboxapi.NewOptDateTime(*answer.result.OutputAt)
 			}
@@ -148,6 +175,18 @@ func (h *handler) WaitSandboxExec(ctx context.Context, req *sandboxapi.SandboxEx
 			return h.waitResult(context.Background(), execID, shimruntime.WaitTimeout, nil, since), nil
 		}
 	}
+}
+
+// programMatches is a wait's program states as the shim matches them.
+func programMatches(states []sandboxapi.SandboxExecWaitProgramState) []shimruntime.ProgramMatch {
+	matches := make([]shimruntime.ProgramMatch, 0, len(states))
+	for _, state := range states {
+		matches = append(matches, shimruntime.ProgramMatch{
+			State: programstatus.State(state.State),
+			Kind:  programstatus.Kind(state.Kind.Or("")),
+		})
+	}
+	return matches
 }
 
 // waitResult reports what a wait ended on, with the terminal's last output

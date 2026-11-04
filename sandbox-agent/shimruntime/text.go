@@ -9,6 +9,8 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // ScreenText is a terminal's screen as a person looking at it would read it
@@ -27,6 +29,12 @@ type ScreenText struct {
 	// screen has none.
 	Scrollback []string   `json:"scrollback,omitempty"`
 	OutputAt   *time.Time `json:"outputAt,omitempty"`
+	// SentAt is when the input route last wrote to the terminal — send,
+	// send-key, admin terminal input — and not an attach, whose frames carry
+	// what the person's own terminal sends unasked (focus reports, query
+	// answers): where a wait counting from the last input begins
+	// (ADR 26-11-04-204 §4).
+	SentAt *time.Time `json:"sentAt,omitempty"`
 	// Exited is the shim's to fill: the runtime does not know the process.
 	Exited bool `json:"exited"`
 }
@@ -47,6 +55,10 @@ func (r *Runtime) ScreenText(scrollback int) (ScreenText, error) {
 	if !r.outputAt.IsZero() {
 		at := r.outputAt
 		text.OutputAt = &at
+	}
+	if !r.sentAt.IsZero() {
+		at := r.sentAt
+		text.SentAt = &at
 	}
 	return text, nil
 }
@@ -141,6 +153,10 @@ func keySequence(name string, appCursor bool) (string, bool) {
 	switch name {
 	case "Enter":
 		return "\r", true
+	case "Space":
+		// A key, never a paste: a program in bracketed paste reads a pasted
+		// space as text, not as the press that toggles or pages.
+		return " ", true
 	case "Tab":
 		return "\t", true
 	case "Escape":
@@ -172,11 +188,13 @@ func keySequence(name string, appCursor bool) (string, bool) {
 	return "", false
 }
 
-// Wait reasons a terminal reports (ADR 0137 §3).
+// Wait reasons a terminal reports (ADR 0137 §3), and the program's report
+// (ADR 26-11-04-204 §5).
 const (
 	WaitQuiet   = "quiet"
 	WaitExit    = "exit"
 	WaitTimeout = "timeout"
+	WaitProgram = "program"
 )
 
 // noteOutputLocked records that the program just wrote output, and wakes
@@ -196,6 +214,15 @@ func (r *Runtime) NoteInput() {
 	r.signalActivityLocked()
 }
 
+// NoteSent records that the input route is about to write to the terminal,
+// for a wait to count from (ADR 26-11-04-204 §4). It is stamped before the
+// write, so whatever the input causes is reported after it.
+func (r *Runtime) NoteSent() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sentAt = time.Now().UTC()
+}
+
 func (r *Runtime) signalActivityLocked() {
 	if r.activitySignal != nil {
 		close(r.activitySignal)
@@ -203,40 +230,102 @@ func (r *Runtime) signalActivityLocked() {
 	r.activitySignal = make(chan struct{})
 }
 
-// AwaitQuiet blocks until the terminal has had neither output nor input for
-// quiet, done closes, or ctx ends, and says which. The quiet period starts no
-// earlier than the call: output from before it says nothing about whether the
-// program has answered what it was just sent. With quiet zero it waits only on
-// done and ctx.
-func (r *Runtime) AwaitQuiet(ctx context.Context, quiet time.Duration, done <-chan struct{}) string {
-	began := time.Now().UTC()
+// ProgramMatch is a program status a wait ends on: a state, and for blocked
+// optionally the kind. An empty Kind matches any kind.
+type ProgramMatch struct {
+	State programstatus.State `json:"state"`
+	Kind  programstatus.Kind  `json:"kind,omitempty"`
+}
+
+// Holds reports whether status is one m matches.
+func (m ProgramMatch) Holds(status programstatus.Status) bool {
+	return status.State == m.State && (m.Kind == "" || status.Kind == m.Kind)
+}
+
+// Await is what a terminal wait asks of the runtime: what to wait for, and
+// the point it counts from.
+type Await struct {
+	// Since is the point the wait counts from: quiet is measured from no
+	// earlier than it, and only a report after it counts. Zero is the call.
+	Since time.Time
+	// Quiet is how long the terminal must go without output or input; zero
+	// waits on no quiet.
+	Quiet time.Duration
+	// Program is the program statuses to end on, matched against the
+	// effective status (ADR 26-10-16-424 §3) after a report past Since.
+	Program []ProgramMatch
+	// Done ends the wait as an exit when it closes; nil waits on no exit.
+	Done <-chan struct{}
+}
+
+// AwaitResult is what a wait ended on: its reason, and for a program status
+// the status that held.
+type AwaitResult struct {
+	Reason  string
+	Program *programstatus.Status
+}
+
+// Await blocks until one of what w names holds, done closes, or ctx ends,
+// and says which (ADR 0137 §3, ADR 26-11-04-204 §§4-5).
+//
+// Quiet starts no earlier than w.Since, or the call when it is zero: output
+// from before it says nothing about whether the program has answered what it
+// was just sent. A program status counts only from a report after the same
+// point, so a state that held before the input does not end the wait.
+//
+// Every report arrives as output, which wakes this: Observe signals under the
+// lock it feeds the emulator under, so the status read after the wake has the
+// report in it.
+func (r *Runtime) Await(ctx context.Context, w Await) AwaitResult {
+	since := w.Since
+	if since.IsZero() {
+		since = time.Now().UTC()
+	}
 	for {
 		r.mu.Lock()
 		if r.activitySignal == nil {
 			r.activitySignal = make(chan struct{})
 		}
 		signal := r.activitySignal
-		last := began
+		last := since
 		for _, at := range []time.Time{r.outputAt, r.inputAt} {
 			if at.After(last) {
 				last = at
 			}
 		}
+		var held *programstatus.Status
+		if len(w.Program) > 0 && r.screen != nil {
+			r.runScreenLocked(func(screen *screenBuffer) {
+				status, ok := screen.programStatusNow()
+				if !ok || !status.ReportedAt.After(since) {
+					return
+				}
+				for _, match := range w.Program {
+					if match.Holds(status) {
+						held = &status
+						return
+					}
+				}
+			})
+		}
 		r.mu.Unlock()
+		if held != nil {
+			return AwaitResult{Reason: WaitProgram, Program: held}
+		}
 
 		var timer *time.Timer
 		var quietTimer <-chan time.Time
-		if quiet > 0 {
-			remaining := time.Until(last.Add(quiet))
+		if w.Quiet > 0 {
+			remaining := time.Until(last.Add(w.Quiet))
 			if remaining <= 0 {
-				return WaitQuiet
+				return AwaitResult{Reason: WaitQuiet}
 			}
 			timer = time.NewTimer(remaining)
 			quietTimer = timer.C
 		}
 		reason := ""
 		select {
-		case <-done:
+		case <-w.Done:
 			reason = WaitExit
 		case <-ctx.Done():
 			reason = WaitTimeout
@@ -248,7 +337,7 @@ func (r *Runtime) AwaitQuiet(ctx context.Context, quiet time.Duration, done <-ch
 			timer.Stop()
 		}
 		if reason != "" {
-			return reason
+			return AwaitResult{Reason: reason}
 		}
 	}
 }

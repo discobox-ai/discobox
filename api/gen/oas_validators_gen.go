@@ -7165,6 +7165,77 @@ func (s *SandboxExecWaitBody) Validate() error {
 	return nil
 }
 
+func (s *SandboxExecWaitProgramState) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.State.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "state",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Kind.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "kind",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SandboxExecWaitProgramStateKind) Validate() error {
+	switch s {
+	case "permission":
+		return nil
+	case "question":
+		return nil
+	case "auth":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SandboxExecWaitProgramStateState) Validate() error {
+	switch s {
+	case "idle":
+		return nil
+	case "working":
+		return nil
+	case "done":
+		return nil
+	case "blocked":
+		return nil
+	case "error":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *SandboxExecWaitResult) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -7182,6 +7253,24 @@ func (s *SandboxExecWaitResult) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.ProgramStatus.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "programStatus",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -7195,6 +7284,8 @@ func (s SandboxExecWaitResultReason) Validate() error {
 	case "quiet":
 		return nil
 	case "exit":
+		return nil
+	case "program":
 		return nil
 	case "timeout":
 		return nil
@@ -7234,6 +7325,31 @@ func (s *SandboxExecWaitUntil) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "quietSeconds",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		var failures []validate.FieldError
+		for i, elem := range s.ProgramStates {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "programStates",
 			Error: err,
 		})
 	}

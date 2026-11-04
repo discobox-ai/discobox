@@ -559,6 +559,20 @@ user waits on every single start.
   of that name elsewhere needs one too, or a clean checkout lacks it while
   the author's tree builds.
 
+## Terminal waits
+
+- **A wait's "last input" is the input route's stamp (`sentAt`), never
+  `inputAt`.** An attach's frames carry what the person's own terminal sends
+  unasked — focus-in/out reports, answers to the program's queries — beside
+  their keys, and the shim cannot tell them apart. Counting from `inputAt`, a
+  focus report landing after the agent's report put the point past it, and a
+  wait with no limit hung (ADR 26-11-04-204 §4, amended for this). `inputAt`
+  stays what quiet measures: any byte in is activity.
+- **A program-status wait matches only a report after the point it counts
+  from.** The effective status is sticky — an `idle` from before the input is
+  still the status after it — so matching the status without `ReportedAt`
+  ends a `finished` wait at once on the previous turn.
+
 ## Platform observation
 
 - **Ports, resource counters and power-off go through their seam**

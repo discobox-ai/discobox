@@ -1100,9 +1100,25 @@ signer. Error output never includes exporter stderr or parse fragments.
   The screen is text rendered from the emulator's cells, never the raw stream.
   Input is encoded against the modes the program set (bracketed paste,
   application cursor keys) and counts as access, like an attach's input frames.
-  The shim answers quiet and exit. Quiet counts from the latest of output,
-  input, and the wait's start, so a wait right after typing cannot be satisfied
-  by output that predates it. Exit is the shim's own `exited` signal, since
+  A wait counts from one point: `after`, the terminal's last input
+  (`fromLastInput`, read from the shim's `sentAt`, which only the input route
+  stamps: an attach's frames carry what a person's terminal sends unasked,
+  focus reports and query answers, and one landing after the agent's report
+  would hide it), or its start
+  ([ADR 26-11-04-204](../docs/adr/26-11-04-204-help-is-grouped-and-colored-and-a-terminal-is-driven-from-the-top-level.md) §4).
+  The shim answers quiet, exit and the program's status (`shimruntime.Await`).
+  Quiet counts from the latest of output, input, and that point, so a wait
+  right after typing cannot be satisfied by output that predates it, and one
+  made again after 60s does not restart a quiet period it was halfway
+  through. A program status holds on the effective status (ADR 26-10-16-424
+  §3) after a report past the point, so a state that held before the input
+  never ends the wait; a report arrives as output, which wakes the wait under
+  the lock the emulator is fed under. A shim that predates `since`, `program` and
+  `sentAt` would ignore them, and a program wait on it would only ever time
+  out. That cannot happen in a running box: a shim outlives an agent restart
+  but not a stop, and a new agent arrives only with a start, when it is placed
+  in the box (`pkg/agentlayer`), so every shim a wait reaches is its agent's
+  own version. Exit is the shim's own `exited` signal, since
   `done` closes only after the post-exit linger, and a screen read during that
   linger says `exited`. Meanwhile the agent watches the
   hook record for the named hook events (`store.HarnessHookSignal`,
@@ -1115,8 +1131,9 @@ signer. Error output never includes exporter stderr or parse fragments.
   timestamp, since an API date-time is whole seconds). Points and hook stamps
   come from one store clock that never repeats (`HarnessHookResumePoint`), so a
   hook in the same wall-clock tick as a point still falls after it: just past the hook a
-  wait ended on, or the point it counted from, or just before the input was
-  delivered. A caller waiting longer passes it back as `after`, so nothing
+  wait ended on, just past the report a program status was read from, or the
+  point it counted from, or just before the input was delivered. The shim's
+  sent and report stamps are the same box's wall clock, from another process. A caller waiting longer passes it back as `after`, so nothing
   between two calls is missed. The pool serves a screen or a wait only while
   the sandbox runs (`requireRunning`); reading never starts it. A screen read
   of a sandbox that is not running is answered by the control plane from the
@@ -1126,7 +1143,7 @@ signer. Error output never includes exporter stderr or parse fragments.
   unexpected EOF.
 - stdout and stderr are separate frames, never merged by the shim: `frame.Stdout`
   and `frame.Stderr` (and the matching `LogStream` values on the audit log), so a
-  client can route each the way a local command does — `discobox shell cmd
+  client can route each the way a local command does — `discobox exec box cmd
   2>/dev/null` drops only stderr. Merging is the client's to do and loses no
   information; merging in the shim is irreversible. A TTY exec has nothing to
   split, since the kernel merges both onto the PTY before the shim reads them, so
@@ -1171,7 +1188,7 @@ signer. Error output never includes exporter stderr or parse fragments.
   This is exactly what a harness terminal's `Shell: true` + `StartupCommand` buys
   it (see above) — the harness is never the exec's session leader, so its
   process group is never orphaned in the first place. A command that *is* the
-  session leader (a plain exec, `discobox shell -t sleep 30`) cannot be stopped by
+  session leader (a plain exec, `discobox exec box -- sleep 30`) cannot be stopped by
   Ctrl-Z for the same orphan rule — `ssh host sleep 30` behaves identically —
   which is why terminals do not take that path.
 - Exit status uses the shell convention for signal deaths: `128+signum`, so an

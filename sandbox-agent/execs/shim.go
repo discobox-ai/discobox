@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/sandbox-agent/procio"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimruntime"
 )
@@ -304,18 +305,26 @@ type ShimInput struct {
 	Input []shimruntime.InputPart `json:"input"`
 }
 
-// ShimWait is the body of a shim's POST /wait: what to wait for, and for how
-// long. The shim answers quiet and exit; hook events are the agent's to watch.
+// ShimWait is the body of a shim's POST /wait: what to wait for, from when,
+// and for how long. The shim answers quiet, exit and the program's status;
+// hook events are the agent's to watch.
 type ShimWait struct {
-	QuietSeconds   int  `json:"quietSeconds,omitempty"`
-	Exit           bool `json:"exit,omitempty"`
-	TimeoutSeconds int  `json:"timeoutSeconds"`
+	// Since is the point the wait counts from (ADR 26-11-04-204 §4): quiet
+	// from no earlier than it, and a program status only from a report after
+	// it. Absent, the call.
+	Since          *time.Time                 `json:"since,omitempty"`
+	QuietSeconds   int                        `json:"quietSeconds,omitempty"`
+	Exit           bool                       `json:"exit,omitempty"`
+	Program        []shimruntime.ProgramMatch `json:"program,omitempty"`
+	TimeoutSeconds int                        `json:"timeoutSeconds"`
 }
 
-// ShimWaitResult is what a shim's wait ended on.
+// ShimWaitResult is what a shim's wait ended on, with the program's status
+// when that is what held.
 type ShimWaitResult struct {
-	Reason   string     `json:"reason"`
-	OutputAt *time.Time `json:"outputAt,omitempty"`
+	Reason   string                `json:"reason"`
+	OutputAt *time.Time            `json:"outputAt,omitempty"`
+	Program  *programstatus.Status `json:"program,omitempty"`
 }
 
 func (r *shimRuntime) handleScreen(w http.ResponseWriter, req *http.Request) {
@@ -351,6 +360,7 @@ func (r *shimRuntime) handleInput(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	r.touchAccess()
+	r.stream.NoteSent()
 	if err := r.writeInput(payload); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -388,8 +398,16 @@ func (r *shimRuntime) handleWait(w http.ResponseWriter, req *http.Request) {
 	if body.Exit {
 		done = r.exited
 	}
-	reason := r.stream.AwaitQuiet(ctx, time.Duration(max(body.QuietSeconds, 0))*time.Second, done)
-	result := ShimWaitResult{Reason: reason}
+	await := shimruntime.Await{
+		Quiet:   time.Duration(max(body.QuietSeconds, 0)) * time.Second,
+		Program: body.Program,
+		Done:    done,
+	}
+	if body.Since != nil {
+		await.Since = *body.Since
+	}
+	held := r.stream.Await(ctx, await)
+	result := ShimWaitResult{Reason: held.Reason, Program: held.Program}
 	if screen, err := r.stream.ScreenText(0); err == nil {
 		result.OutputAt = screen.OutputAt
 	}
