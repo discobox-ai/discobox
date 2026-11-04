@@ -44,6 +44,14 @@ const (
 	// that same version is an agent that is not holding, and the waiter backs
 	// off rather than spin.
 	sandboxAgentStatusWaitMinHold = time.Second
+	// sandboxAgentStatusWakeSpacing is the least time between two wakes for
+	// one sandbox. A wake costs a status computation in the box (git status
+	// for every source) and a write to the control plane, and what moves the
+	// version is the box's: a test run starting and stopping servers moves it
+	// twice a second, and a hostile agent can move it on every answer. A
+	// change inside the spacing is not lost: the next wait names the version
+	// before it and is answered at once.
+	sandboxAgentStatusWakeSpacing = 2 * time.Second
 	// sandboxAgentStatusWakeQueue is how many changed sandboxes can wait for
 	// the loop. A waiter that finds it full drops its wake: the loop is behind
 	// on a burst, and the next tick checks every sandbox in anyway.
@@ -58,16 +66,29 @@ var errStatusWaitUnsupported = errors.New("sandbox agent does not answer the sta
 // are missing and stopping the ones for sandboxes no longer running. The tick
 // calls it as the backstop; sandboxStateChanged starts and stops a waiter the
 // moment the runtime sees a sandbox start or stop.
-func (p *sandboxAgentStatusPoller) waitOn(ctx context.Context, running []string) {
+//
+// running was listed at listedAt, and listing is not instant (a Docker pool
+// inspects every container). A sandbox whose state changed since is left as
+// the change left it: the list is older than what it would undo, and a start
+// it undid would cost the new box its waiter until the next tick — the very
+// seconds a harness binds its sign-in callback in.
+func (p *sandboxAgentStatusPoller) waitOn(ctx context.Context, running []string, listedAt time.Time) {
 	keep := make(map[string]bool, len(running))
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	for sandboxID, at := range p.stateChangedAt {
+		if !at.After(listedAt) {
+			delete(p.stateChangedAt, sandboxID)
+		}
+	}
 	for _, sandboxID := range running {
 		keep[sandboxID] = true
-		p.startWaiterLocked(ctx, sandboxID)
+		if _, changed := p.stateChangedAt[sandboxID]; !changed {
+			p.startWaiterLocked(ctx, sandboxID)
+		}
 	}
 	for sandboxID := range p.waiters {
-		if !keep[sandboxID] {
+		if _, changed := p.stateChangedAt[sandboxID]; !keep[sandboxID] && !changed {
 			p.stopWaiterLocked(sandboxID)
 		}
 	}
@@ -84,6 +105,10 @@ func (p *sandboxAgentStatusPoller) sandboxStateChanged(ctx context.Context, sand
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.stateChangedAt == nil {
+		p.stateChangedAt = map[string]time.Time{}
+	}
+	p.stateChangedAt[sandboxID] = time.Now()
 	if state == sandboxruntime.StateRunning {
 		p.startWaiterLocked(ctx, sandboxID)
 		return
@@ -146,6 +171,9 @@ func (p *sandboxAgentStatusPoller) waitForPorts(ctx context.Context, sandboxID s
 			case p.wake <- sandboxID:
 			default:
 			}
+			// However quickly it changes again, this sandbox is not checked
+			// in again before the spacing is up.
+			sleepContext(ctx, sandboxAgentStatusWakeSpacing)
 		} else if time.Since(asked) < sandboxAgentStatusWaitMinHold {
 			// The version it was named, answered without holding: an agent
 			// that is not waiting, whatever the reason. Asking again at once

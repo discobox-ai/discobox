@@ -527,4 +527,12 @@ answer is seen): after that its disk is the sandbox's work.
 - **A waiter must not spin.** Every way a wait can come back without holding —
   a failure, a 404, no version, the named version answered at once — is
   followed by a pause, or one sandbox with an older or broken agent costs a
-  connection per millisecond.
+  connection per millisecond. So is a *changed* version: the box decides what
+  its version is, so a hostile agent, or an honest test run starting servers,
+  moves it on every answer, and each wake is a status computation and a
+  control-plane write. Wakes for one sandbox are spaced by the pool
+  (`sandboxAgentStatusWakeSpacing`), never by what the sandbox answers.
+- **A tick's list does not undo a newer start or stop.** Listing sandboxes is
+  not instant, and a start delta that arrives during it is newer than the
+  list; `waitOn` leaves any sandbox whose state changed after `listedAt` as
+  the delta left it.

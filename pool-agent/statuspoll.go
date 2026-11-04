@@ -106,6 +106,9 @@ type sandboxAgentStatusPoller struct {
 	// waiters cancels the wait held on each running sandbox's ports, by
 	// sandbox ID; guarded by mu.
 	waiters map[string]context.CancelFunc
+	// stateChangedAt is when the runtime last reported each sandbox starting
+	// or stopping, so a tick's older list does not undo it (waitOn).
+	stateChangedAt map[string]time.Time
 }
 
 // ResourceSamples is the newest counters this poller has seen, by sandbox ID.
@@ -124,6 +127,7 @@ func (p *sandboxAgentStatusPoller) ResourceSamples() map[string]sandboxResourceS
 // one unreachable or erroring sandbox never blocks or fails the batch, then
 // pushes whatever was successfully collected this tick.
 func (p *sandboxAgentStatusPoller) tick(ctx context.Context) {
+	listedAt := time.Now()
 	sandboxes, err := p.runtime.ListSandboxes(ctx)
 	if err != nil {
 		p.logger.Warn("list sandboxes for status poll", "error", err)
@@ -135,7 +139,7 @@ func (p *sandboxAgentStatusPoller) tick(ctx context.Context) {
 			running = append(running, sb.SandboxID)
 		}
 	}
-	p.waitOn(ctx, running)
+	p.waitOn(ctx, running, listedAt)
 	p.pollAndReport(ctx, running)
 	p.reportInventories(ctx, running)
 }
