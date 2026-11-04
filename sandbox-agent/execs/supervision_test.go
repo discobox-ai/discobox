@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
+	"golang.org/x/sys/unix"
 )
 
 // TestMain lets this test binary be its own exec shim. Both unit managers
@@ -166,6 +167,12 @@ func testUnitManagerContract(t *testing.T, newUnits func(t *testing.T, runtimeDi
 			_, err := os.Stat(ready)
 			return err == nil
 		})
+		pid := int(running.PID)
+		observed, identityErr := processIdentity(pid)
+		sid, sessionErr := unix.Getsid(pid)
+		members, membersErr := sessionMembers(pid)
+		t.Logf("terminal pid=%d recorded identity=%q observed identity=%q identity error=%v session=%d session error=%v members=%+v members error=%v",
+			pid, running.ProcessIdentity, observed, identityErr, sid, sessionErr, members, membersErr)
 		began := time.Now()
 		if _, err := agent.manager.Stop(context.Background(), exec.ID); err != nil {
 			t.Fatalf("stop: %v", err)
