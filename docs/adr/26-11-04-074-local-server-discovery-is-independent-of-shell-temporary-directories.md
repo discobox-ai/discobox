@@ -1,7 +1,10 @@
 # 26-11-04-074 — Local server discovery is independent of shell temporary directories
 
-- **Status**: Proposed (narrows ADR 0019 §3: an unreachable incumbent may fail startup with a diagnostic; reachable startup and known shutdown handoffs retain their waits)
+- **Status**: Accepted (narrows ADR 0019 §3: an unreachable incumbent may fail startup with a diagnostic; reachable startup and known shutdown handoffs retain their waits)
 - **Date**: 2026-11-04
+
+Accepted by the owner by merging #599, 2026-11-04
+
 - **Issue**: [#541](https://github.com/discobox-ai/discobox/issues/541)
 
 ## Context

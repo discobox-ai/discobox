@@ -1,6 +1,6 @@
 # 0019 — One server per data directory, enforced by an advisory file lock
 
-- **Status**: Accepted
+- **Status**: Accepted (section 3 narrowed by [ADR 26-11-04-074](26-11-04-074-local-server-discovery-is-independent-of-shell-temporary-directories.md))
 - **Date**: 2026-07-30
 
 ## Context
