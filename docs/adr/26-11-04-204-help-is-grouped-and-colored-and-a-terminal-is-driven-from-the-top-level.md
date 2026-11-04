@@ -1,7 +1,10 @@
 # 26-11-04-204 — Help is grouped and colored, and a terminal is driven from the top level with `send`, `send-key`, `capture` and `wait`
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-04
+
+  Accepted by the owner by merging #548, 2026-11-04.
+
 - **Amends**: [0137](0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md)
   §3, whose wait gains two conditions and a resume point of its own, and whose
   `quietSeconds` counts from the point the wait counts from rather than from
