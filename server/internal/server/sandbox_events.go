@@ -73,7 +73,9 @@ func sandboxEventsHandler(service services.SandboxService, poll, ping time.Durat
 			flusher.Flush()
 			return true
 		}
-		frame.WriteString("retry: " + strconv.FormatInt(sandboxEventRetry.Milliseconds(), 10) + "\n\n")
+		frame.WriteString("retry: ")
+		frame.WriteString(strconv.FormatInt(sandboxEventRetry.Milliseconds(), 10))
+		frame.WriteString("\n\n")
 		if !send() {
 			return
 		}
@@ -110,7 +112,9 @@ func sandboxEventsHandler(service services.SandboxService, poll, ping time.Durat
 			// as often as a ping would be, in a ping's place.
 			idle := len(events) == 0 && time.Since(lastWrite) >= ping
 			if cursor := stream.Cursor(); cursor != sent && (len(events) > 0 || idle) {
-				frame.WriteString("id: " + strconv.FormatInt(cursor, 10) + "\n\n")
+				frame.WriteString("id: ")
+				frame.WriteString(strconv.FormatInt(cursor, 10))
+				frame.WriteString("\n\n")
 				sent = cursor
 			} else if idle {
 				frame.WriteString(": ping\n\n")
@@ -156,13 +160,19 @@ var errSandboxEventCursor = errors.New("the last event ID is not one this stream
 // alone.
 func writeSandboxEvent(frame *bytes.Buffer, event services.SandboxStreamEvent) {
 	if event.Type == "" {
-		frame.WriteString("id: " + strconv.FormatInt(*event.ID, 10) + "\n\n")
+		frame.WriteString("id: ")
+		frame.WriteString(strconv.FormatInt(*event.ID, 10))
+		frame.WriteString("\n\n")
 		return
 	}
 	if event.ID != nil {
-		frame.WriteString("id: " + strconv.FormatInt(*event.ID, 10) + "\n")
+		frame.WriteString("id: ")
+		frame.WriteString(strconv.FormatInt(*event.ID, 10))
+		frame.WriteString("\n")
 	}
-	frame.WriteString("event: " + event.Type + "\n")
+	frame.WriteString("event: ")
+	frame.WriteString(event.Type)
+	frame.WriteString("\n")
 	frame.WriteString("data: ")
 	frame.Write(event.Data)
 	frame.WriteString("\n\n")

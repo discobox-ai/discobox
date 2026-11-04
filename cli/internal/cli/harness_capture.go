@@ -86,7 +86,9 @@ func harnessChangeDiff(f api.HarnessCaptureFileChange) string {
 			case gotextdiff.Delete:
 				mark = "-"
 			}
-			out.WriteString(mark + strings.TrimSuffix(l.Content, "\n") + "\n")
+			out.WriteString(mark)
+			out.WriteString(strings.TrimSuffix(l.Content, "\n"))
+			out.WriteString("\n")
 			if !strings.HasSuffix(l.Content, "\n") {
 				out.WriteString("\\ No newline at end of file\n")
 			}

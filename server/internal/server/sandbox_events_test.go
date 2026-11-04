@@ -145,6 +145,10 @@ func TestSandboxEventsStreamsServerSentEvents(t *testing.T) {
 		_ = body.Close()
 		<-done
 
+		if err := scanner.Err(); err != nil {
+			t.Fatalf("read sandbox events: %v", err)
+		}
+
 		if resp.status != http.StatusOK {
 			t.Fatalf("status %d", resp.status)
 		}
