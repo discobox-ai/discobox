@@ -1,6 +1,7 @@
 # 26-10-01-397 — A discobox reads and types into the terminals of the discoboxes it creates
 
 - **Status**: Accepted (§1's authority by creator superseded by [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md): the terminals of any discobox in the project)
+- Creator-scoped authority superseded by [26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md): read the parent instead of the creator.
 - **Date**: 2026-10-01
 - **Supersedes**: in [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md),
   for the discoboxes the caller created and only for the four routes of §1:

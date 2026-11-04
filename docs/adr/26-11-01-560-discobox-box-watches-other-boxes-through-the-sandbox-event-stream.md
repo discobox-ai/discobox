@@ -1,6 +1,7 @@
 # 26-11-01-560 — `discobox-box` watches other boxes through the sandbox event stream
 
 - **Status**: Accepted
+- Creator-scoped authority superseded by [26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md): read the parent instead of the creator.
 - **Date**: 2026-11-01
 - **Amends**:
   - [26-10-31-073](26-10-31-073-a-box-runs-the-monitors-its-agent-enables-and-queues-their-events-until-it-pops-them.md)

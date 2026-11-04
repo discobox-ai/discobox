@@ -1,6 +1,7 @@
 # 26-10-08-447 — A discobox tags the discoboxes it creates
 
 - **Status**: Accepted (§1's "no name" superseded by
+- Creator-scoped authority superseded by [26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md): read the parent instead of the creator.
   [26-10-12-026](26-10-12-026-a-sandboxs-name-is-meta-and-renaming-it-is-a-meta-write.md); §1's authority by creator superseded by
   [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md))
 - **Date**: 2026-10-08
