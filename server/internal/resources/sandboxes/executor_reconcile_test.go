@@ -3,6 +3,8 @@ package sandboxes_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,6 +246,69 @@ func TestReconcileRecordsAnUnavailableImageAsTheFailureReason(t *testing.T) {
 			}
 			if updated.ErrorReason != tc.reason {
 				t.Fatalf("error reason = %q, want %q", updated.ErrorReason, tc.reason)
+			}
+		})
+	}
+}
+
+// A create the pool's agent cannot take because it is older than this server is
+// the window of an upgrade: the server restarts first, and the pool's agent is
+// replaced after it. Settling that as a failure latched it for good, and a
+// stopped sandbox re-pinned in the window stayed in error after its pool had
+// caught up (#523). The reconcile says why it waits, leaves the generation
+// unobserved for the engine's retry, and the first create the new agent takes
+// converges it, starting one that has never run as it would have.
+func TestReconcileWaitsOutAPoolAgentOlderThanTheServer(t *testing.T) {
+	ctx := context.Background()
+	tooOld := fmt.Errorf("%w: status 400: decode request: unexpected field \"pullSources\"", sandboxes.ErrPoolAgentUnsupported)
+	for name, tc := range map[string]struct {
+		lifecycle model.ResourceLifecycle
+		started   bool
+	}{
+		"a re-pinned stopped sandbox": {model.ResourceLifecycle{
+			DesiredState: model.DesiredStatePresent, State: model.SandboxStateReady, Generation: 3, ObservedGeneration: 2,
+		}, false},
+		"a sandbox that has never run": {model.ResourceLifecycle{
+			DesiredState: model.DesiredStatePresent, State: model.SandboxStatePending, Generation: 1,
+		}, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			appStore := newExecutorTestStore(t)
+			sb := createSandboxForReconcile(t, appStore, tc.lifecycle)
+
+			old := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{createErr: tooOld}))
+			if _, err := old.ReconcileSandbox(ctx, sb); !errors.Is(err, sandboxes.ErrPoolAgentUnsupported) {
+				t.Fatalf("reconcile against an older agent = %v, want ErrPoolAgentUnsupported for the engine to retry", err)
+			}
+			waiting, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if waiting.Converged() {
+				t.Fatal("the reconcile settled the generation; nothing would try the create again")
+			}
+			if waiting.State != tc.lifecycle.State {
+				t.Fatalf("state = %q, want %q kept while it waits", waiting.State, tc.lifecycle.State)
+			}
+			if waiting.ErrorMessage == nil || !strings.Contains(*waiting.ErrorMessage, "pullSources") {
+				t.Fatalf("error message = %v, want why it waits", waiting.ErrorMessage)
+			}
+
+			provider := &recordingCreateProvider{}
+			current := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
+			if _, err := current.ReconcileSandbox(ctx, waiting); err != nil {
+				t.Fatalf("reconcile once the agent is current: %v", err)
+			}
+			converged, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !converged.Converged() || converged.State != model.SandboxStateReady || converged.ErrorMessage != nil {
+				t.Fatalf("after the retry: state %q, observed %d of %d, error %v; want ready, converged, no error",
+					converged.State, converged.ObservedGeneration, converged.Generation, converged.ErrorMessage)
+			}
+			if provider.lastStart != tc.started {
+				t.Fatalf("create asked to start = %v, want %v", provider.lastStart, tc.started)
 			}
 		})
 	}

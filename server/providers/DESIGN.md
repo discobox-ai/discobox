@@ -646,10 +646,16 @@ Every error the agent's handlers return is `application/problem+json`, and
 `mapPoolClientError` classifies it by status and RFC 7807 type (`archived`,
 `image unavailable`). An error status in any other form came from outside the
 handlers — above all the router's plain-text 404 for a route an older agent
-does not have — and `contractClient` reports it with its status instead of
-leaving the generated client to fail decoding it. A 404 of that kind is
-`sandbox.ErrPoolAgentUnsupported`, never `ErrNotFound`: the agent is behind,
-not the resource missing.
+does not have, and its generated server's JSON 400 for a request it cannot
+decode or validate — and `contractClient` reports it with its status instead
+of leaving the generated client to fail decoding it. The 404, and the 400 whose
+decoder names an unexpected field (`refusesAnUnknownField`), are
+`sandbox.ErrPoolAgentUnsupported`, never `ErrNotFound` or a plain failure: the
+agent is behind, not the resource missing or the request wrong. Every upgrade
+has that window, because the server restarts first and a pool's agent is
+replaced after it; compatibility across it is not kept, only convergence once
+both are current. The generated server's other 400s, a value its validators
+refuse, can come from a current agent and stay plain failures.
 
 ### The Durable Tree
 

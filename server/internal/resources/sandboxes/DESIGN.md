@@ -553,6 +553,15 @@ sandbox from before bundles pinned to no platform. A retry cannot get past that 
 can, so the API reports it beside `upgrade.available` and a client offers the
 upgrade. The reconciler still does not re-pin on its own (see above).
 
+A create its pool's agent cannot take because it is older than the server
+(`ErrPoolAgentUnsupported`: a route or a request field it does not have) is
+not settled. It is the window of an upgrade, which ends when the pool's
+reconcile replaces the agent, and a settled failure would outlive it, since
+nothing reconciles a converged failure again. `ensure` records why the
+sandbox waits as its `ErrorMessage`, keeps its `State`, leaves the generation
+unobserved, and returns the error, so the engine retries the create with its
+backoff until the new agent takes it.
+
 `ensure` creates the container and does not start it. The exception is a
 sandbox that has never run — `pending`, or `awaiting_source` resuming after its
 push — because asking for a sandbox means asking for one that runs. A rebuild
@@ -1133,7 +1142,9 @@ A persisted `PendingHarnessChange` carries the proposed manifest separately from
 its effective spec, with a generation bump and dirty mark. Reconciliation asks
 the pool to reserve its stopped runtime using that proposal's ID. A runtime
 refusal clears the proposal and records the refusal without changing the
-selected harness. A transient connection failure keeps the proposal retryable.
+selected harness. A transient connection failure keeps the proposal retryable,
+and so does an agent older than the server (`ErrPoolAgentUnsupported`), which
+is an upgrade in progress rather than the pool's answer.
 The pool's durable fence blocks starts and stale creates across process restarts.
 
 Once reserved, a transaction applies the whole target manifest and harness-owned

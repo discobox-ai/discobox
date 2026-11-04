@@ -740,6 +740,20 @@ func (e *unexpectedPoolAgentResponse) Error() string {
 	return fmt.Sprintf("status %d: %s", e.StatusCode, e.Body)
 }
 
+// refusesAnUnknownField reports whether this is the pool agent's generated
+// server refusing a request for a field it does not declare: a 400 in the
+// generator's own error body, from its decoder. Every request schema is closed
+// (ADR 0118 §1), so that is an agent older than the field, which is the window
+// of every upgrade: the server restarts first and a pool's agent is replaced
+// after it. The rest of that server's 400s, a value its validators refuse, can
+// come from an agent as current as the server, and stay ordinary failures.
+func (e *unexpectedPoolAgentResponse) refusesAnUnknownField() bool {
+	return e.StatusCode == http.StatusBadRequest &&
+		strings.Contains(e.Body, `"error_message"`) &&
+		strings.Contains(e.Body, "decode request") &&
+		strings.Contains(e.Body, "unexpected field")
+}
+
 // poolHarnessConfigSecrets forwards the harness's declared credentials. Only
 // the declaration crosses here -- never a value: what the sandbox needs is
 // Delivery, which says whether the sentinel is exported as an environment
@@ -1154,7 +1168,7 @@ func mapPoolClientError(err error) error {
 	}
 	var unexpected *unexpectedPoolAgentResponse
 	if errors.As(err, &unexpected) {
-		if unexpected.StatusCode == http.StatusNotFound {
+		if unexpected.StatusCode == http.StatusNotFound || unexpected.refusesAnUnknownField() {
 			return fmt.Errorf("%w: %w", sandbox.ErrPoolAgentUnsupported, unexpected)
 		}
 		return fmt.Errorf("pool-agent request failed: %w", unexpected)

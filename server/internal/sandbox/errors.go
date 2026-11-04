@@ -61,9 +61,12 @@ var (
 	ErrImageUnavailable = errors.New("sandbox image is not available")
 
 	// ErrPoolAgentUnsupported indicates the pool's agent does not have the
-	// operation asked of it: it answered with a route-level 404 rather than one
-	// of its own errors, which is what an agent that predates the operation
-	// does. The pool is moved onto the current agent when it is reconciled.
+	// operation asked of it, or a field of it: it answered with a route-level
+	// 404, or its generated decoder's 400 naming an unexpected field, rather
+	// than one of its own errors, which is what an agent that predates the
+	// operation or the field does. The pool is moved onto the current agent
+	// when it is reconciled, so it is a condition of an upgrade in progress,
+	// not an answer about the request.
 	ErrPoolAgentUnsupported = errors.New("the pool agent does not support this operation")
 
 	// ErrNoSandboxCapacity indicates no provider capacity is available for sandbox placement.
