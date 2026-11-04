@@ -98,21 +98,14 @@ func (m *Model) bannerShowing() bannerKind {
 // bannerWanted is whether a band has something to say about this discobox on
 // the screen as it is now.
 //
-// A refused harness login stands aside while the box has a harness change to
-// save: signing in again in the box is that refusal's remedy, and the change
-// it made is what replaces the refused login once saved (rejections.go). A
-// refusal of anything else stays up over it.
+// A refusal stays up over the harness-changes band, a refused harness login
+// included. The refusal is the control plane's record; a pending change is the
+// box's own report, and a box that could take a refusal down by reporting one
+// would turn "your login was refused" into "click to review and save" in front
+// of the person it wants to sign in.
 func (m *Model) bannerWanted(kind bannerKind, box Sandbox) bool {
 	switch kind {
 	case bannerRejected:
-		if box.HarnessConfigPending {
-			for _, rejection := range m.rejectionsFor(box) {
-				if !rejection.harnessOwned() {
-					return true
-				}
-			}
-			return false
-		}
 		return m.hasRejection(box)
 	case bannerCredential:
 		return len(m.requests[box.ID]) > 0

@@ -318,7 +318,7 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	}
 	// A replaced value retracts what was recorded about the credential it
 	// replaced (ADR 0132 §4). The store does it, for every writer at once —
-	// this one and the harness configure flow's update-in-place — rather than
+	// this one and harness save-back's update-in-place — rather than
 	// each of them remembering to.
 	//
 	// A running discobox's proxy holds its swaps to the routes it was last

@@ -129,7 +129,8 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	sandboxService.SetServerPeerID(options.ServerPeerID)
 	harnessConfigService := harnessconfigs.NewService(store, options.Harnesses, options.ServerDefaults.Release != nil)
 	harnessConfigService.SetDevelopmentBundles(options.DevelopmentBundles)
-	// The configure flow runs an ephemeral sandbox and watches it through the
+	// Save-back reaches the sandbox a candidate was captured in, fans a saved
+	// change out to the config's sandboxes, and delivers captures through the
 	// reconcile engine, so it needs both.
 	harnessConfigService.SetSandboxRuntime(sandboxService)
 	harnessConfigService.SetDirtier(engine)
@@ -298,8 +299,8 @@ func (s *Service) registerReconcilers() error {
 	if err := s.RegisterJobs(sandboxOptions...); err != nil {
 		return err
 	}
-	// Delivers committed harness capture acknowledgments and reaps configure
-	// flows, including accepted intent that outlives a server restart.
+	// Delivers committed harness capture acknowledgments, including ones that
+	// outlive a server restart.
 	if err := s.engine.Register(harnessconfigs.HarnessConfigResourceType, s.harnessConfigs); err != nil {
 		return err
 	}

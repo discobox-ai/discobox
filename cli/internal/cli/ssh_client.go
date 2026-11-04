@@ -122,15 +122,15 @@ func sshClientHost(sandboxID string) string {
 }
 
 // childCLIEnv is the environment of a process this CLI starts that runs the
-// CLI against this App's server: the ssh ProxyCommand, harness configure in a
-// local pty, and a host tool that runs the CLI (ADR 26-11-03-982). The
+// CLI against this App's server: the ssh ProxyCommand and a host tool that
+// runs the CLI (ADR 26-11-03-982). The
 // ProxyCommand's command line names the server and nothing else, since ssh's
 // argv is readable by every process on the machine; the iroh settings this App
 // dials with travel here, and so does DISCOBOX_TOKEN, set outright to token:
 // never left to what this process inherited, which was given for the primary
 // and would reach whatever server the child is aimed at (forServer drops it
-// for a registered server). The ProxyCommand and harness configure hand on the
-// App's own token; a host tool is handed none, since a CLI is authorized by
+// for a registered server). The ProxyCommand hands on the App's own token; a
+// host tool is handed none, since a CLI is authorized by
 // its transport and the user's own program has no use for the bearer token.
 func (a *App) childCLIEnv(token string) []string {
 	return append(os.Environ(),

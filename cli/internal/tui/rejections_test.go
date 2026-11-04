@@ -169,7 +169,7 @@ func TestPressingTheRefusedBandExplainsSigningInAgain(t *testing.T) {
 	if m.dialog == nil || m.dialog.kind != dlgMessage {
 		t.Fatalf("dialog = %s, want the sign-in explanation", describe(m.dialog))
 	}
-	for _, want := range []string{"Sign in again in this discobox", "save it", "replaces the refused login"} {
+	for _, want := range []string{"Sign in again in a new discobox", "save it", "replaces the refused login"} {
 		if !strings.Contains(m.dialog.body, want) {
 			t.Fatalf("body = %q, want %q", m.dialog.body, want)
 		}
@@ -179,23 +179,36 @@ func TestPressingTheRefusedBandExplainsSigningInAgain(t *testing.T) {
 	}
 }
 
-// Signing in again in the box is the refused login's remedy, and the change it
-// made is what replaces it once saved. So once the box has that change, the
-// refusal stands aside for the harness-changes band rather than telling
-// somebody to do what they just did; a refusal of anything else stays up.
-func TestARefusedHarnessLoginStandsAsideForTheChangeThatReplacesIt(t *testing.T) {
+// A refused login is the control plane's record, and a pending harness change
+// is the box's own report: the change never takes the refusal down, or a box
+// could turn "your login was refused" into "click to review and save".
+func TestARefusedHarnessLoginStaysUpOverAHarnessChange(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
 	boxes := m.list.all
 	boxes[0].HarnessConfigPending, boxes[0].HarnessConfigCandidate = true, "cand_1"
 	m.list.setAll(boxes)
-	if got := m.bannerShowing(); got != bannerHarnessChanges {
-		t.Fatalf("banner = %v, want the harness change over the refused login", got)
-	}
-
-	m.setSecretRejections([]SecretRejection{harnessRejection(), secretRejection()})
 	if got := m.bannerShowing(); got != bannerRejected {
-		t.Fatalf("banner = %v, want a refused project secret to stay up", got)
+		t.Fatalf("banner = %v, want the refused login over the harness change", got)
+	}
+	m.dismissBanner()
+	if got := m.bannerShowing(); got != bannerHarnessChanges {
+		t.Fatalf("banner = %v, want the harness change once the refusal is dismissed", got)
+	}
+}
+
+// The refused login's remedy does not send the person back into the box it
+// showed in, which may be what provoked it, and says what a save shares.
+func TestTheSignInAgainDialogNamesAFreshBoxAndWhatASaveShares(t *testing.T) {
+	t.Parallel()
+	body := signInAgainDialog(harnessRejection()).body
+	for _, want := range []string{"new discobox", "rather than the box this refusal showed in", "can run commands"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dialog body %q does not say %q", body, want)
+		}
+	}
+	if strings.Contains(body, "in this discobox") {
+		t.Fatalf("dialog body %q sends the person back into this box", body)
 	}
 }
 

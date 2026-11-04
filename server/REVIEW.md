@@ -12,3 +12,10 @@
   `configfile.Decode` refuses unknown keys (`KnownFields(true)`), so deleting the
   field makes a file that still sets the key stop the server before the
   retired-key warning can run — `overlayDir` was retired that way once.
+- Removing a field a response schema in `api/openapi/server.yaml` lists as
+  `required` breaks every client generated before it on every route that
+  returns the schema, not only the route the field was about: ogen decodes a
+  missing required field as an error. Say so where the removal is decided (an
+  ADR's Consequences, a `!` commit). `configured` on the harness config was
+  removed with configure, and the first draft claimed only configure's own
+  routes broke.

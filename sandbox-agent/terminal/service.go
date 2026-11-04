@@ -328,9 +328,8 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 
 // Revive relaunches a dead terminal-mode exec in place under its own id: a
 // terminal's exec id is its durable identity (ADR 0038), so attaching to or
-// starting an ended terminal resumes it rather than addressing a dead record,
-// unless it is a configure flow's finished run (see Relaunches), which is
-// returned as it ended. The harness's relaunch command runs as a fresh login shell's typed-in job
+// starting an ended terminal resumes it rather than addressing a dead record
+// (see Relaunches). The harness's relaunch command runs as a fresh login shell's typed-in job
 // (ADR 0027) in a new unit generation, with the harness, env and secrets
 // re-resolved exactly as Create resolves them. A live terminal is returned untouched;
 // non-terminal execs are never revived.
@@ -358,21 +357,14 @@ func (s *Service) Revive(ctx context.Context, id string) (execs.Exec, error) {
 // Relaunches reports whether reviving a terminal would run it again: whether
 // it has ended in a way that attaching to or starting it resumes.
 //
-// A live terminal is not relaunched, and neither is a configure flow's run that
-// exited or failed. That command runs once, and how it ended is the flow's
-// result: the server commits on it. Re-running it would replace that result
-// with one nobody watched, and fence the shim a late attacher is replaying the
-// first run's output from. The client attaches to the primary and then starts
-// it, so a command that ends before the start arrives would otherwise always
-// run twice. A lost run never produced a result, so it relaunches in any mode.
+// A harness terminal that exited, failed or was lost relaunches; a live one,
+// and any terminal that is not a harness's, does not.
 func (s *Service) Relaunches(exec execs.Exec) bool {
 	if HarnessID(exec) == "" {
 		return false
 	}
 	switch exec.Status {
-	case execs.StatusLost:
-		return true
-	case execs.StatusExited, execs.StatusFailed:
+	case execs.StatusLost, execs.StatusExited, execs.StatusFailed:
 		return true
 	}
 	return false
@@ -589,7 +581,7 @@ const PrimaryExecID = "primary"
 
 // ResolvePrimary ensures the primary terminal is live — relaunching it with the
 // harness's relaunch command when it has stopped and Relaunches allows it — and
-// returns it. A configure flow's finished run is returned as it ended.
+// returns it.
 //
 // It returns the terminal the launch actually produced rather than re-scanning,
 // so an attach connects to the exec it waited behind. Only when there was

@@ -673,10 +673,12 @@ fits the credential. A harness's shared login is replaced the way it was made
 harness's own login and save the change, which replaces the refused login in
 place for every box on the harness (`signInAgainDialog`). Any other secret's
 value is replaced out here, from the same card the secrets screen opens, and
-its call says *on this machine*. Once the box has a harness change to save, a
-refused harness login stands aside for the harness-changes band (`bannerWanted`):
-saving that change is the fix in progress, and a band telling somebody to do
-what they just did would hide it. The rejections it draws from are polled
+its call says *on this machine*. The harness login's remedy names a fresh
+discobox, not the one the refusal showed in, and says that a save shares the
+box's settings files too. A refusal stays up over the harness-changes band
+(`bannerWanted`): the refusal is the control plane's record and a pending
+change is the box's own report, which must not be able to take it down. The
+rejections it draws from are polled
 beside the credential inbox and also mark the secrets screen's rows, so one
 read answers both.
 
@@ -691,12 +693,16 @@ A press, or leader+`H`, opens the review card, where Save takes it.
 **The first harness change a project's console sees is explained once**
 (`explainHarnessChangesIfOwed`): a dialog saying that saving makes the change —
 settings and login — the shared default for every discobox on that harness in
-the project, and that nothing is shared until somebody saves. It offers the
+the project, that settings can carry hooks and commands that then run in every
+one, and that nothing is shared until somebody saves. It offers the
 review or Not now, and either way records it on the project
 (`Project.harnessChangesExplained`, `MarkHarnessChangesExplained`), the way the
 welcome is recorded: per project, not per machine. The window reads the flag
 when it opens (`WithHarnessChangesUnexplained`), and checks after every listing,
-so it waits for a screen with no welcome, dialog or run options in front.
+so it waits for a screen with no welcome, dialog, run options or terminal with
+the keys in front: the change is made by signing in in that terminal, and the
+explainer's actions are single letters a person still typing there would
+answer it with.
 
 **The request's chip throbs** (`armBannerPulse`): the field under `click to
 answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,

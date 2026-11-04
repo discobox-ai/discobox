@@ -447,13 +447,14 @@ type HarnessConfigFile struct {
 }
 
 // HarnessConfigSecret declares an environment variable the harness expects, and
-// whether it is required for the harness to run.
+// whether the harness needs it to be signed in. It is shown, never enforced: a
+// box with nothing bound starts the harness signed out (ADR 26-11-02-152 §1).
 type HarnessConfigSecret struct {
 	Name     string `json:"name" doc:"Environment variable name the harness expects to be set" pattern:"^[A-Za-z_][A-Za-z0-9_]*$"`
-	Required bool   `json:"required,omitempty" doc:"Whether the secret must be set for the harness to run"`
+	Required bool   `json:"required,omitempty" doc:"Whether the harness needs this secret to be signed in; nothing is refused without it, and a box with none starts the harness signed out"`
 	// OneOfGroup ties a required secret to a set of alternatives: required secrets
-	// sharing a group are satisfied when at least one member is present.
-	OneOfGroup string `json:"oneOfGroup,omitempty" doc:"Groups a required secret with alternatives; the requirement is satisfied when at least one member of the group is present"`
+	// sharing a group are one need, met by any member.
+	OneOfGroup string `json:"oneOfGroup,omitempty" doc:"Groups a required secret with alternatives; the need is met when any member of the group is present"`
 	// Delivery says how the sandbox hands the credential to the harness. Empty
 	// exports Name into the harness's environment; "file" withholds that export
 	// because the harness reads the credential from an installed file instead.
@@ -464,8 +465,8 @@ type HarnessConfigSecret struct {
 	// as a fact about it. Empty is every request.
 	RejectionScope []HarnessSecretRejectionRule `json:"rejectionScope,omitempty" doc:"Requests whose refusal or acceptance says whether the credential is alive; empty is every request"`
 	// Routes are where the harness itself sends the credential, declared by
-	// the image and never by a caller or a configure flow. Configure writes
-	// them onto the secret it creates for it (ADR 26-10-02-924).
+	// the image and never by a caller. Save-back writes them onto the secret
+	// it creates for it (ADR 26-10-02-924).
 	Routes []SecretRoute `json:"routes,omitempty" doc:"Where the harness itself sends this credential, declared by its image"`
 }
 

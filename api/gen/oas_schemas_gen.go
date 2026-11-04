@@ -6140,11 +6140,11 @@ func (*HarnessConfigSaveResult) saveSandboxHarnessConfigChangesRes() {}
 type HarnessConfigSecret struct {
 	// Environment variable name the harness expects to be set.
 	Name string `json:"name"`
-	// Whether the secret must be set for the harness to run. Optional secrets are used when present but
-	// do not block the harness.
+	// Whether the harness needs this secret to be signed in. Nothing is refused without it; a discobox
+	// with none starts the harness signed out.
 	Required OptBool `json:"required"`
-	// Groups a required secret with alternatives; the requirement is satisfied when at least one member
-	// of the group is present.
+	// Groups a required secret with alternatives; the need is met when any member of the group is
+	// present.
 	OneOfGroup OptString `json:"oneOfGroup"`
 	// How the credential reaches the harness. env (the default) exports the variable named by name; file
 	// withholds that export because the harness reads the credential from a file the harness config

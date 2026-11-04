@@ -663,7 +663,7 @@ func (d *dialog) find(lines []string) []int {
 // margin costs more than the frame gives.
 //
 // Height is an allowance rather than a size: a dialog grows into it and stops
-// at its content, so the config card fills the screen and "Disable Codex?"
+// at its content, so the config card fills the screen and "Reset Codex?"
 // stays the size of the question.
 const (
 	dialogFillPercent = 90

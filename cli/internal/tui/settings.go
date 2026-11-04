@@ -218,7 +218,7 @@ func (m *Model) saveSettings(msg boxSettingsSaveMsg) tea.Cmd {
 
 // settingsDone takes the wait down. A refusal puts the form back, holding
 // everything typed and saying why on it, since the server refuses for reasons
-// a person fixes in one row — a harness not configured, a name already taken —
+// a person fixes in one row — a harness that is not there, a name already taken —
 // and retyping six rows for that is the alternative. A form given up meanwhile
 // is not brought back; the refusal goes to the status line instead.
 func (m *Model) settingsDone(msg boxSettingsDoneMsg) tea.Cmd {

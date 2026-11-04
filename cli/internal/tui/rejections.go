@@ -21,10 +21,9 @@ import (
 // change, which replaces the refused login in place for every box on the
 // harness. Any other secret is replaced by giving it a new value out here.
 //
-// A harness sign-in in progress outranks the refusal of the login it replaces:
-// once the box has a harness change to save, the refused login's band stands
-// aside for the harness-changes band (bannerWanted), since saving that change
-// is the fix and a band telling somebody to do what they just did hides it.
+// The remedy names a fresh discobox, not the one the refusal showed in: a box
+// can provoke a refusal, and a login typed into it is readable there. And the
+// refusal is never taken down by a change the box reports (bannerWanted).
 //
 // It outranks every other band, including a credential request (see
 // bannerKind), because an agent that has just taken a 401 asks for a credential
@@ -237,8 +236,10 @@ func signInAgainDialog(rejection SecretRejection) *dialog {
 		name = "the harness"
 	}
 	body := name + "'s shared login was refused, and could not be renewed. Every discobox on " + name + " uses it.\n\n" +
-		"Sign in again in this discobox, the way " + name + " signs in anywhere — its own login command, in its terminal. " +
-		"The new login shows up as a harness change on this box: save it, and it replaces the refused login for every discobox on " + name + "."
+		"Sign in again in a new discobox on " + name + ", the way " + name + " signs in anywhere — its own login command, in its terminal. " +
+		"A login typed in a box can be read by the code running there, so use one whose code you trust rather than the box this refusal showed in.\n\n" +
+		"The new login shows up as a harness change on that box: save it, and it replaces the refused login for every discobox on " + name + ". " +
+		"Saving also shares the box's changed settings files, which can run commands in every discobox on " + name + ": read the review before you save."
 	d := &dialog{kind: dlgMessage, title: name + " sign-in refused", body: body}
 	return d
 }
