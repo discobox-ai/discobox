@@ -1,0 +1,131 @@
+{
+  "renderer": "kitty",
+  "rendererVersion": "0.41.1",
+  "display": "Xvfb :88, 1800x1100x24",
+  "rendering": "Mesa software OpenGL (LIBGL_ALWAYS_SOFTWARE=1)",
+  "capture": "scrot 1.12.1, X11 window 2097164; original PNG bytes",
+  "cliSourceCommit": "84e4800bf6261186d86e53f0aad2a5ba27f30535",
+  "cliVersion": "84e4800bf626",
+  "serverVersion": "b70abf7ff4d3+dirty (existing dev loop, unchanged product source from the original walk)",
+  "files": [
+    {
+      "file": "welcome.png",
+      "width": 1351,
+      "height": 865,
+      "sha256": "948807b805cd1132f1476c51ff34208721408588e0baf253b6d6df5190e151c6",
+      "capturedAt": "2026-11-04T21:14:15.339961+00:00"
+    },
+    {
+      "file": "help.png",
+      "width": 900,
+      "height": 1066,
+      "sha256": "147219cf913896f3447afd2840ffcd80e4e28e6df6559d98668241dbcb8817fa",
+      "capturedAt": "2026-11-04T21:15:23.929286+00:00"
+    },
+    {
+      "file": "adopt-help.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "90cd8f174fa5b5d27a8275ed59920b9ee9c7362cb1871807b29ad71c99e3a300",
+      "capturedAt": "2026-11-04T21:15:49.108772+00:00"
+    },
+    {
+      "file": "wait-help.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "3612ab1163485296c5c8d6be51275b2b9991bd2f79499308166d36ad3d2a1582",
+      "capturedAt": "2026-11-04T21:16:40.552766+00:00"
+    },
+    {
+      "file": "harnesses.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "36a35b9e6f822bfae817666320f7c3dfe3460fc46abf7bb936af3ffba734eee2",
+      "capturedAt": "2026-11-04T21:14:39.829434+00:00"
+    },
+    {
+      "file": "harness-login.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "51655c99563b5ef564e1c2133bea6cb3eb42f2fa89b7eebc241e15f0ffe3d651",
+      "capturedAt": "2026-11-04T21:16:21.576399+00:00"
+    },
+    {
+      "file": "harness-band.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "afd1b3ced47901e126f211698e4a5c921ca395e42f02e320fbc0c86c20462250",
+      "capturedAt": "2026-11-04T21:18:35.429985+00:00"
+    },
+    {
+      "file": "harness-explainer.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "a10ea22f0246c28eb8c4c1d181246dddaf9f53d2a0c3e3db27b0bf40d9aa005a",
+      "capturedAt": "2026-11-04T21:15:19.637203+00:00"
+    },
+    {
+      "file": "harness-review.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "be63020930a008f95320dde856d7b9aad6a8c04f605d6c500bac7b3c1fa1fb82",
+      "capturedAt": "2026-11-04T21:18:13.818567+00:00"
+    },
+    {
+      "file": "reset.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "ac0acde00f20ff2e7c12dcf7a8c68d9d5678ee8c8eb561f1e2b595ce37bc233e",
+      "capturedAt": "2026-11-04T21:14:50.018631+00:00"
+    },
+    {
+      "file": "reset-overrides.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "577b765e9893abb83925d745a700271529fc5bbc09d94b7d70b4cbd7bfd967fe",
+      "capturedAt": "2026-11-04T21:16:13.323240+00:00"
+    },
+    {
+      "file": "adoption-inbox.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "f4df1431828dc308e56a0d08c4f29e5c120f2443e02591377b96fede60bb8481",
+      "capturedAt": "2026-11-04T21:18:54.666356+00:00"
+    },
+    {
+      "file": "adoption-banner.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "4098242c31108f5d7f9996f23842be4359aa014a1865df7e557085456b9a6c8d",
+      "capturedAt": "2026-11-04T21:14:51.404657+00:00"
+    },
+    {
+      "file": "adoption-approval.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "8950c65f23759551dc887e8ae56e8f12f8f48ebced5aaa6f20b41b2d490e9d97",
+      "capturedAt": "2026-11-04T21:15:08.007978+00:00"
+    },
+    {
+      "file": "adoption-80x24.png",
+      "width": 720,
+      "height": 432,
+      "sha256": "3f2bde78daec159c9a5fa08661846ddb0a2f7554e1a57efcb27edf742058b654",
+      "capturedAt": "2026-11-04T21:15:09.304003+00:00"
+    },
+    {
+      "file": "adoption-read-only.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "48556df0648c9be8a6db49b968dd00694046861e3aad275ef0c6f39aed0b4eab",
+      "capturedAt": "2026-11-04T21:18:56.045383+00:00"
+    },
+    {
+      "file": "adoption-error.png",
+      "width": 1350,
+      "height": 864,
+      "sha256": "22bd884ab870d1ef60b5e4d7041d8cbc9699037b7b5860d7c235a8d5b0259b74",
+      "capturedAt": "2026-11-04T21:16:39.145739+00:00"
+    }
+  ]
+}

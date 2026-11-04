@@ -1,5 +1,8 @@
 # Release UX walk — #582
 
+**Actual terminal screenshots:** [Live Kitty gallery](rendered/README.md).
+These native window captures supersede the earlier PNG reconstructions below.
+
 Walked 2026-11-04 against the real development CLI, server, Docker pool and
 three disposable boxes. Baseline: `b70abf7ff4d3` (adoption already merged).
 Baseline console captures report `+dirty` because regression tests had been
@@ -23,11 +26,13 @@ captures. This document records evidence, not release approval.
 | Real-box UX tests are opt-in; CI does not run them | Split into [#587](https://github.com/discobox-ai/discobox/issues/587) |
 | Exec/capture on a cold, still-provisioning box reports “sandbox exec not found” | Split into [#592](https://github.com/discobox-ai/discobox/issues/592) |
 
-## Captures
+## Historical terminal-cell reconstructions
 
-PNG files render the cells recorded by tmux `capture-pane -p -e`; matching
-`.ansi` files preserve the text and SGR attributes. These are terminal captures,
-not generated UI mockups. The standard terminal was 150×48; the small approval
+The older PNG files below were reconstructed from tmux `capture-pane -p -e`
+using a custom HTML renderer; they are **not native terminal screenshots** and
+omit graphics and protocol effects. They remain only as historical text
+comparisons. Matching `.ansi` files preserve the recorded text and SGR
+attributes. The standard terminal was 150×48; the small approval
 capture was 80×24. Baseline console windows inherited `NO_COLOR=1`; colored
 after captures explicitly unset it and set `COLORTERM=truecolor`. The palette
 was not changed by this PR. PNGs use a dark background and a monospace font;
