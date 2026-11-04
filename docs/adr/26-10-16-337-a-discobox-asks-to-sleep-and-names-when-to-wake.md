@@ -1,6 +1,6 @@
 # 26-10-16-337 — A discobox asks to sleep and names when to wake, and the control plane powers it
 
-- **Status**: Accepted (§5's sleep as a stop on every runtime amended, and its deferred freeze decided for Docker pools, by [26-10-16-420](26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md))
+- **Status**: Accepted (§5's sleep as a stop on every runtime amended, and its deferred freeze decided for Docker pools, by [26-10-16-420](26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md); §§1, 4, 5, 8 narrowed by [26-11-04-746](26-11-04-746-a-sleep-request-has-a-fifteen-second-grace.md) for minimum grace and bounded OSC 7501 working deferral)
 - **Date**: 2026-10-16
 - **Supersedes**: in [0108](0108-a-sandbox-stops-itself-when-its-terminals-go-quiet.md),
   §1's power-off by the sandbox itself, and its rejection of the server taking

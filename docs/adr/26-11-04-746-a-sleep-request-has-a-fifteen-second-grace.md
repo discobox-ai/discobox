@@ -1,7 +1,8 @@
 # 26-11-04-746 — A sleep request has a fifteen-second grace
 
-- **Status**: Proposed (narrows [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §§1, 4, 5, 8: sleep waits for a minimum grace and bounded OSC 7501 working deferral; sleep and idle reporting are gated while waiting)
+- **Status**: Accepted (narrows [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §§1, 4, 5, 8: sleep waits for a minimum grace and bounded OSC 7501 working deferral; sleep and idle reporting are gated while waiting)
 - **Date**: 2026-11-04
+- Accepted by the owner by merging #565, 2026-11-04
 - **Relates to**: [#564](https://github.com/discobox-ai/discobox/issues/564);
   [26-10-16-420](26-10-16-420-a-docker-pool-freezes-a-sleeping-sandbox-and-a-person-can-suspend-one.md)
   §2, Docker's freeze with stop fallback;
