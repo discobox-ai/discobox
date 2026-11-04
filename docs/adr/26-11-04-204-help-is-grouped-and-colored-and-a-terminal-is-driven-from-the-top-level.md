@@ -3,7 +3,9 @@
 - **Status**: Accepted
 - **Date**: 2026-11-04
 
-  Accepted by the owner by merging #548, 2026-11-04.
+  Accepted by the owner by merging #548, 2026-11-04. §4 amended before
+  implementation landed, by the owner's call: the last input is the last the
+  input route wrote, not any write to the terminal.
 
 - **Amends**: [0137](0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md)
   §3, whose wait gains two conditions and a resume point of its own, and whose
@@ -275,15 +277,20 @@ the program's status record for a status condition and both of a hook's names.
 ### 4. By default a wait counts from the terminal's last input
 
 **What a wait counts from, unless `--after` says otherwise, is the last input
-written to the terminal**, so `send` then `wait` never misses the reply, however
-soon the reply comes and however late `wait` is called.
+sent to the terminal through the input route** (`send`, `send-key`, `admin
+terminal input`), so `send` then `wait` never misses the reply, however soon
+the reply comes and however late `wait` is called.
 
-- The wait route's `until` gains `fromLastInput: true`. The sandbox agent asks
-  the shim for its `inputAt`, and counts hooks, status reports and quiet from
-  it. A terminal never written to counts from the call, as today. It is
+- The wait route's `until` gains `fromLastInput: true`. The shim stamps
+  `sentAt` as the input route writes, before the bytes go in; the sandbox
+  agent asks the shim for it, and counts hooks, status reports and quiet from
+  it. A terminal never sent input counts from the call, as today. It is
   refused beside `after`.
-- `inputAt` is any input: the input route's, and a person typing into an
-  attach. A wait is about what the terminal was last told, by whoever told it.
+- An attach's input does not move it. An attach's frames carry what the
+  person's own terminal sends unasked, focus-in and focus-out reports and
+  answers to the program's queries, as well as their typing. One landing after
+  the agent's report would put the point past it, and a wait with no `--for`
+  would then wait for a turn that never comes.
 - The CLI's `wait` sends `fromLastInput` on its first call, unless `--after
   POINT` is given. `--after` stays for scripts that chain waits.
 - `quietSeconds` counts from no earlier than the point the wait counts from,
@@ -292,7 +299,7 @@ soon the reply comes and however late `wait` is called.
   names neither. With them, `idle=5s` returns as soon as the terminal has
   been quiet for five seconds since the input, and a wait made again after
   60s (§5) does not restart the quiet period it was halfway through.
-- Hook times come from the store's clock and `inputAt` from the shim's, both
+- Hook times come from the store's clock and `sentAt` from the shim's, both
   the box's wall clock. A hook the input caused is recorded after the input
   was written.
 
@@ -363,10 +370,16 @@ Global options:
 
 **`send` records the resume point on this machine for `wait` to pick up.**
 The issue's fallback, if the server could not say when the terminal was last
-written to. It can: the shim stamps every write (`inputAt`). A local record
-also misses what it cannot see: a `send` from another machine or another box,
-and a person typing in the console. And it is state the CLI would have to
-keep, per box and terminal, and expire.
+written to. It can: the shim stamps the input route's writes (`sentAt`). A
+local record also misses what it cannot see: a `send` from another machine or
+another box. And it is state the CLI would have to keep, per box and
+terminal, and expire.
+
+**Any input moves the point, a person typing into an attach included**, as
+first decided. An attach carries what the person's terminal sends unasked
+(focus reports, query answers) in the same frames as their keys, and the shim
+cannot tell them apart. A focus report after the agent's report would hide
+that report from the wait, which then hangs.
 
 **`wait` counts from the call, as `admin terminal wait` does.** Then `send`,
 `send-key Enter`, `wait --until finished` loses a quick turn, one that ends
@@ -422,8 +435,10 @@ interface, and the group says so.
 
 - `send BOX '…' && send-key BOX Enter && wait BOX --until finished` returns
   on the reply, including when the agent was already finished before.
-- A person typing into an attached terminal moves the point a later `wait`
-  counts from. That is what the terminal was last told.
+- A person typing into an attached terminal does not move the point a later
+  `wait` counts from. A script that waits without having sent anything counts
+  from the last `send`, and may find a report that came before the person's
+  typing.
 - For a harness that reports no OSC 7501 status, `--until finished` and
   `--until blocked` never hold. The help says so, and points to a hook.
 - `shell` and `id` leave help. Docs, examples and the in-box skills move to
