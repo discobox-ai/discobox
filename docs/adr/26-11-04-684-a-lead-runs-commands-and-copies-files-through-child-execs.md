@@ -1,6 +1,6 @@
 # 26-11-04-684 — A lead runs commands and copies files through child execs
 
-- **Status**: Proposed (would supersede 0140 §4's refusal and deferral of execs for a child; 26-10-01-397 §1's refusal of waiting acquire and §2's exclusion of create, start, delete and attach; extends 26-11-03-970 §§2–3's unchanged route set and adoption disclosure)
+- **Status**: Proposed (would supersede 0140 §4's refusal and deferral of execs for a child; 26-10-01-397 §1's refusal of waiting acquire and §2's exclusion of create, start, delete and attach; extends 26-11-03-970 §§2–3's unchanged route set and adoption disclosure; narrows 26-10-22-499 §4's scp-over-SSH transport to scp/SFTP over API execs for sandbox callers)
 - **Date**: 2026-11-04
 - **Issue**: [#609](https://github.com/discobox-ai/discobox/issues/609)
 - **Relates to**: [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md), [26-10-01-397](26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md), [26-11-03-970](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md), [26-10-01-032](26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md) §4, and [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §9.
@@ -32,6 +32,27 @@ forcing a lead to type them through the harness adds fragility. Adoption can
 expose a child's existing files and credential sentinels: that trust decision
 belongs in the person's approval, not in a promise that only a screen is read.
 
+The files API already exists on main, implemented by `sandbox-agent/files`,
+contracted under `sandboxes/{id}/files/*` in `api/openapi/server.yaml`, and
+forwarded by `sandbox_agent_terminals_proxy.go`. It supplies stat, list,
+streamed read/write, mkdir, remove, move and copy within a sandbox as its
+default user. `cli/internal/cli/sandbox_files.go` already uses it. Open
+[PR #334](https://github.com/discobox-ai/discobox/pull/334) adds AHP resource
+access over that API; the API itself is not waiting for that PR. Today the
+sandbox role omits these routes and its service scope allow-list omits
+`files:read` and `files:write`.
+
+The sandbox also already has certificate-backed identity for API calls.
+`proxy.EnsureClientCertificate` puts its ID in the pool-issued client
+certificate's Common Name; `generateSignedCert` currently generates an RSA-2048
+key, not an elliptic-curve key. The proxy verifies the mTLS chain and derives
+the caller from that certificate (`proxy/http.go`, `proxy/server.go`). The
+pool's API gate replaces caller-supplied identity headers with that ID and its
+own assertion (`pool-agent/proxyagent/gate.go`); `SandboxForwardAuthenticator`
+verifies the assertion and checks that the pool hosts the named sandbox.
+Thus the API already derives a sandbox principal from the existing certificate,
+without registering a new public key.
+
 ## Decision
 
 ### 1. The current parent gets the whole exec lifecycle
@@ -52,6 +73,16 @@ file is also a write, including a download. There is no read-only shell or copy
 exception for a child with wider egress. Commands, login shells, PTYs, non-PTY
 binary streams and exit status use the existing exec protocol. Preserve the
 create-suspended, attach-before-start ordering.
+
+The complete API path must support the attach stream. Today the pool's API
+gate strips `Connection`/`Upgrade` and uses a bounded ordinary HTTP request
+(`pool-agent/proxyagent/gate.go`), so adding the server routes and acquire
+permission alone is insufficient. Extend that same authenticated gate to carry
+exec attach upgrades and bidirectional bytes, EOF and close, retaining the
+pool-derived caller identity and fail-closed revocation below. Do not open an
+unauthenticated tunnel or let a sandbox set the forwarding identity. Ordinary
+bounded API calls retain their existing timeout; an authorized interactive
+attach must not inherit that two-minute ordinary-request cutoff.
 
 Authorize waiting acquire for these exec operations at the service boundary,
 with the same current-parent, project, API flag and egress checks; do not remove
@@ -90,8 +121,11 @@ Select the transport from the authenticated caller identity supplied by the
 server, not solely from being inside a box or the presence of an environment
 variable. A sandbox principal never falls back to enrolling a key after a 403.
 People retain the current SSH-backed path. No new project key, SSH certificate,
-file API, or archive extraction protocol is introduced. Raw SSH ingress and
-TCP/UDP tunnels remain outside the sandbox role. This grants the CLI's copy
+file API, or archive extraction protocol is introduced. The existing mTLS
+certificate continues to identify the caller through the pool's API gate;
+this proposal changes its allowed operations, not how that identity is minted.
+The existing files API is not widened to the sandbox role by this decision.
+Raw SSH ingress and TCP/UDP tunnels remain outside the sandbox role. This grants the CLI's copy
 commands, not arbitrary external SSH clients a new sandbox identity.
 
 ### 3. Parenthood and authority remain live during a stream
@@ -134,6 +168,7 @@ boundary apply throughout.
 | Release | R | R |
 | Answer child's credential requests | Within caller's delegation | Within caller's delegation |
 | Direct child secret bind/unbind, binding list or secret value retrieval | Denied | Denied |
+| Direct `/files/*` API calls | Denied | Denied |
 | Raw SSH/key enrollment; TCP/UDP tunnels | Denied | Denied |
 | Purge, unarchive, general spec changes, adoption approval | Denied | Denied |
 | Separate suspend API | No new permission | No new permission |
@@ -176,13 +211,30 @@ protocol can carry a reason; the CLI must surface failure rather than success.
 
 - **Enroll an SSH key for the lead.** Today's key authenticates as a person
   across a project, escaping parent, API-flag and egress checks.
-- **Introduce child-scoped SSH certificates or bind HTTP sandbox identity into
-  SSH.** Possible, but adds credential issuance or another SSH authentication
-  mode and channel revocation model for access exec already supplies. Revisit
-  if sandbox principals need general external SSH tools beyond copy.
-- **Replace scp with tar over exec or a new file API.** Changes established
-  option, symlink and path behavior or adds an extraction surface. Keep scp
-  and SFTP doing the filesystem work.
+- **Use the existing sandbox certificate/key at SSH ingress.** The identity
+  can be derived, and RSA versus elliptic curve is not the authorization
+  boundary. But today's SSH callback matches raw key fingerprints against
+  authorized keys or project SSH-key rows, then creates a user principal
+  (`server/internal/sshd/server.go`); it does not verify pool-issued X.509
+  client certificates or map them to sandbox principals. A raw SSH key proof
+  carries neither the X.509 issuer nor its sandbox Common Name. Enrolling that
+  key in today's project table would grant the same project-wide user access.
+  Reusing the certificate safely would need an authenticated certificate or
+  pool assertion path into SSH, a sandbox principal, live child/egress/API
+  checks on channels, and revocation. That is possible without minting a new
+  key, but a new SSH authentication mode is not needed for API exec access.
+  Revisit if sandbox principals need general external SSH tools beyond copy.
+- **Use the existing files API for `cp`.** No new file endpoint is needed,
+  and it would keep content out of exec input logs. But it would require new
+  sandbox-role file permissions and reimplementing scp's recursive, metadata,
+  symlink and option behavior in the CLI. Preserve the decision in
+  [26-10-22-499 §4](26-10-22-499-a-discobox-has-a-files-api-that-acts-as-its-user.md)
+  to let scp perform transfers; narrow only its SSH ingress transport for a
+  sandbox caller. This tradeoff deliberately keeps transfer input in the
+  existing exec logging path. Do not claim that the files API is absent.
+- **Replace scp with tar over exec.** Changes established option, symlink and
+  path behavior and adds an extraction surface. Keep scp and SFTP doing the
+  filesystem work.
 - **Allow only adopted children, or only execs the lead created.** Parenthood
   already governs both kinds of child and all their terminals; extra provenance
   gates make the model inconsistent.
@@ -201,7 +253,10 @@ by terminal input explicit, especially for a child with pre-existing bindings.
 Implementation must demonstrate command exit status, a login shell, binary and
 recursive copy both ways, remote-to-remote relay and legacy scp, for created and
 approved adopted children. Exercise the real CLI/scp against running boxes,
-without SSH-key listing or enrollment by a sandbox caller. Authorizer and
+without SSH-key listing or enrollment by a sandbox caller. Exercise the full
+pool API gate, not a direct server URL: prove an interactive attach lasts past
+the ordinary gate timeout, binary bytes and EOF cross it, spoofed forwarding
+identity is discarded, and revoked attaches close. Authorizer and
 service tests must cover direct invocation, self/unrelated/cross-project
 refusals, wider-child downloads as well as uploads, API disable, exec target
 mismatch, release/reparent between create and start, and revocation of an
