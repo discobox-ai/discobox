@@ -1037,9 +1037,10 @@ func (i FileInstaller) gid() *int64 {
 // It asks the exec layer rather than resolving again from the manifest. The
 // manifest is one of three layers — the image's own identity is another — and
 // resolving from it alone fails wherever the manifest names nobody, which is
-// every sandbox the server creates for itself. A configure sandbox is created
-// with no user at all, and installing a harness's files into it died on a home
-// the exec running two lines later had no trouble finding (ADR 0025 §5).
+// every sandbox the server creates for itself. The retired configure sandbox
+// was created with no user at all, and installing a harness's files into it
+// died on a home the exec running two lines later had no trouble finding
+// (ADR 0025 §5).
 func resolveHomeDir(explicit string, user *execs.User, env map[string]string) (string, error) {
 	if home := strings.TrimSpace(explicit); home != "" {
 		return home, nil

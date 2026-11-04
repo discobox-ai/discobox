@@ -52,7 +52,7 @@ func TestResolveHomeDirFallsBackToEnv(t *testing.T) {
 
 // A sandbox whose manifest names nobody still runs as somebody, and its harness
 // files still have to land somewhere. This is every sandbox the server creates
-// for itself — a configure sandbox carries no user at all — and it used to fail
+// for itself — the retired configure sandbox carried no user at all — and it failed
 // with "no home directory could be resolved for the run user" while the exec
 // starting two lines later found one without trouble.
 func TestResolveHomeDirForASandboxThatNamesNoUser(t *testing.T) {
