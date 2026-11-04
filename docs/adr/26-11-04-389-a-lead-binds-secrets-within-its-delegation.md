@@ -1,9 +1,9 @@
 # 26-11-04-389 — A lead binds secrets within its delegation
 
-- **Status**: Proposed (would amend [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §3's approval-or-create-only handoff and its decision not to require route containment at approval; §5's direct-write authorization, extended to bounded sandbox writes)
+- **Status**: Proposed (would amend [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §3's approval-or-create-only handoff and its decision not to require route containment at approval; §5's direct-write authorization, extended to bounded sandbox writes; would narrow [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §5's replacement preview requirement for sandbox approvers only)
 - **Date**: 2026-11-04
 - **Issue**: [#616](https://github.com/discobox-ai/discobox/issues/616)
-- **Keeps**: [26-11-03-970](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md) §§2, 9's immediate-parent authority and private child credentials; [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §5's replacement protections.
+- **Keeps**: [26-11-03-970](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md) §§2, 9's immediate-parent authority and private child credentials; [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §5's replacement protections and person-facing replacement preview.
 
 ## Context
 
@@ -56,8 +56,16 @@ are never combined to manufacture a wider delegation. Parent choice is
 deterministic among fitting candidates (latest expiry, then binding ID),
 and the chosen ID is recorded.
 
-Direct creation is added to the sandbox role. General binding list, get,
-update, delete and event-list routes remain unavailable to it. This proposal
+Direct creation uses `POST /projects/{projectId}/sandboxes/{sandboxId}/secret-bindings`.
+The sandbox role authorizer loads the target from the path and checks its
+current parent against the authenticated caller before body interpretation,
+following `server/internal/auth/DESIGN.md`'s resource-identity rule. The body
+carries the grant but no target kind or target ID; the path fixes both. The
+service rechecks this authority in the write transaction (§3). The existing
+project-level `POST /projects/{projectId}/secret-bindings` remains person-only;
+the CLI routes a sandbox's direct grant through the target-addressed endpoint.
+General binding list, get, update, delete and event-list routes remain
+unavailable to the sandbox role. This proposal
 gives no authority to modify a binding a person or another delegation owns.
 A direct create that collides with an existing binding returns a conflict;
 it does not replace it. Approval retains the existing replacement and
