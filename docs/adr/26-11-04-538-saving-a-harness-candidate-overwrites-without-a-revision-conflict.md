@@ -1,7 +1,9 @@
 # 26-11-04-538 — Saving a harness candidate overwrites without a revision conflict
 
-- **Status**: Proposed (would supersede [26-10-30-775](26-10-30-775-a-user-can-force-save-a-reviewed-harness-candidate.md)'s ordinary-save conflict and explicit-force policy, and narrow [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md) §3's revision conflicts and mandatory reconsideration for save-back)
+- **Status**: Accepted (supersedes [26-10-30-775](26-10-30-775-a-user-can-force-save-a-reviewed-harness-candidate.md)'s ordinary-save conflict and explicit-force policy, and narrows [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md) §3's revision conflicts and mandatory reconsideration for save-back; §1's file ownership follows [26-11-04-711](26-11-04-711-a-reset-keeps-a-persons-harness-files-and-a-save-never-writes-them.md) §2)
 - **Date**: 2026-11-04
+
+  Accepted by the owner by merging #568, 2026-11-04.
 - **Issue**: [#566](https://github.com/discobox-ai/discobox/issues/566)
 
 ## Context
