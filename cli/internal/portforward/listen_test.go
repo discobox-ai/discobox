@@ -1,6 +1,7 @@
 package portforward
 
 import (
+	"errors"
 	"net"
 	"reflect"
 	"strconv"
@@ -44,8 +45,31 @@ func TestListenNearestSkipsPortsThatAreTaken(t *testing.T) {
 		t.Fatalf("listenNearest: %v", err)
 	}
 	defer listener.Close()
-	if got := listener.Addr().(*net.TCPAddr).Port; got != want+2 {
-		t.Fatalf("bound %d, want %d — the first free port above %d", got, want+2, want)
+	// Other processes and OS reservations can occupy later ports too. The
+	// search may even exhaust its range and fall back to an ephemeral port.
+	if got := listener.Addr().(*net.TCPAddr).Port; got == 0 || got == want || got == want+1 {
+		t.Fatalf("bound %d, want a nonzero port other than occupied ports %d and %d", got, want, want+1)
+	}
+}
+
+// Check the exact search order without assuming any host port is free.
+func TestBindNearestSkipsPortsThatAreTaken(t *testing.T) {
+	var tried []int
+	got, err := bindNearest(8080, DefaultSearch, func(port int) (int, error) {
+		tried = append(tried, port)
+		if port == 8082 {
+			return port, nil
+		}
+		return 0, errors.New("port unavailable")
+	})
+	if err != nil {
+		t.Fatalf("bindNearest: %v", err)
+	}
+	if got != 8082 {
+		t.Fatalf("bound %d, want 8082", got)
+	}
+	if want := []int{8080, 8081, 8082}; !reflect.DeepEqual(tried, want) {
+		t.Fatalf("tried %v, want %v", tried, want)
 	}
 }
 
