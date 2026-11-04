@@ -760,7 +760,7 @@ machine.
 - There is no baseline auth.json: an empty one reads as signed in.
 - Literal user preferences in `~/.codex/config.toml` are exported, excluding
   parsed `[projects]` tables. The launcher passes
-  `-c projects.<JSON-quoted cwd>.trust_level="trusted"`, so trust never needs
+  `-c 'projects={<JSON-quoted cwd>={trust_level="trusted"}}'`, so trust never needs
   to be appended to the user's file or persisted centrally.
 - Existing stored trust suffixes and credential references are converted in
   place by the server migration. Old sandbox bootstraps and capture checkpoints

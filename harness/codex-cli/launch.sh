@@ -27,8 +27,10 @@ else
 fi
 
 # Workspace trust is process-local; portable user settings contain no paths.
+# Codex splits override keys on dots without parsing TOML key quotes. Put the
+# quoted workspace path in the TOML value instead, where quotes are parsed.
 TRUST_KEY=$(node -e 'process.stdout.write(JSON.stringify(process.cwd()))')
-set -- -c "projects.$TRUST_KEY.trust_level=\"trusted\"" "$@"
+set -- -c "projects={$TRUST_KEY={trust_level=\"trusted\"}}" "$@"
 
 # Codex copies to the native clipboard first and writes OSC 52 to its terminal
 # only when it sees an SSH (or tmux) session. The image's DISPLAY=:0 gives it a
