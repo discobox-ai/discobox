@@ -153,3 +153,9 @@ Global review expectations:
   never to a ref. A skill once told approvers "nothing that closes is routed"
   over `updatePullRequest`. Say what the routes stop and what they do not,
   and keep repository-scoped writes on REST where REST has them.
+- No ADR number or reference in user-facing text: OpenAPI descriptions
+  (`api/openapi/server.yaml`, `pool-agent/api/openapi/pool.yaml`) and the code
+  generated from them, model `doc:` tags, CLI help, error messages, and console
+  text. The spec is the API's documentation and is user facing (owner, PR #549);
+  an ADR is history for this repository's developers. Say what the thing does,
+  in plain words. ADRs are cited in code comments, `DESIGN.md` and `REVIEW.md`.

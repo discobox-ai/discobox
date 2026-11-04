@@ -533,8 +533,7 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 
 // One credential a target holds, resolved: the binding that applies (the narrowest per variable),
-// each addition stacking on it (ADR 26-11-03-329 §2), and every route list a request carrying it is
-// held to.
+// each addition stacking on it, and every route list a request carrying it is held to.
 // Ref: #/components/schemas/BoundSecret
 type BoundSecret struct {
 	// An addition, stacking on the binding that delivers envVar as a grant of its own; a request passes
@@ -1391,7 +1390,7 @@ type CreateSandboxCredentialRequestBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// The use part's routes are asked in addition to what the sandbox holds, as an addition beside its
-	// binding, rather than as its whole use of the credential (ADR 26-11-03-329 §4). Needs a use part.
+	// binding, rather than as its whole use of the credential. Needs a use part.
 	Add OptBool `json:"add"`
 	// Environment variable the credential is wanted in. Required for the use part, the ask to use it; a
 	// request with only a delegate part names none, since a delegation delivers nothing to the asking
@@ -25343,10 +25342,9 @@ type SandboxCredential struct {
 	Raw OptSandboxCredentialRaw `json:"raw"`
 	// Secret backing the credential.
 	SecretId string `json:"secretId"`
-	// For a use, each grant the variable's sentinel is held to (ADR 26-11-03-329 §3): the binding's
-	// first, then each addition stacking on it, with the hosts it may be sent to and when it lapses. A
-	// request passes when some grant allows it. hosts and expiresAt are their union and the latest of
-	// them.
+	// For a use, each grant the variable's sentinel is held to: the binding's first, then each addition
+	// stacking on it, with the hosts it may be sent to and when it lapses. A request passes when some
+	// grant allows it. hosts and expiresAt are their union and the latest of them.
 	Grants []SandboxCredentialGrant `json:"grants"`
 }
 
@@ -25440,7 +25438,7 @@ func (s *SandboxCredential) SetGrants(val []SandboxCredentialGrant) {
 	s.Grants = val
 }
 
-// One grant a credential delivered in a variable is held to (ADR 26-11-03-329 §3).
+// One grant a credential delivered in a variable is held to.
 // Ref: #/components/schemas/SandboxCredentialGrant
 type SandboxCredentialGrant struct {
 	// The binding the grant is.
@@ -25678,9 +25676,9 @@ type SandboxCredentialRequestPartStatus struct {
 	// Once the use part is granted, the person approving handed over the value itself rather than a
 	// sentinel (ADR 26-10-27-840): in envVar (env), or the path of a file holding it there (file).
 	Raw OptSandboxCredentialRequestPartStatusRaw `json:"raw"`
-	// Once the use part is granted, how (ADR 26-11-03-329 §4): add, an addition beside what the sandbox
-	// held in envVar, which stays as it was; replace, its whole use of the credential, in place of what
-	// it held. It may differ from what was asked.
+	// Once the use part is granted, how: add, an addition beside what the sandbox held in envVar, which
+	// stays as it was; replace, its whole use of the credential, in place of what it held. It may differ
+	// from what was asked.
 	GrantedAs OptSandboxCredentialRequestPartStatusGrantedAs `json:"grantedAs"`
 	// The part's status.
 	Status SandboxCredentialRequestPartStatusStatus `json:"status"`
@@ -25756,9 +25754,9 @@ func (s *SandboxCredentialRequestPartStatus) SetStatus(val SandboxCredentialRequ
 	s.Status = val
 }
 
-// Once the use part is granted, how (ADR 26-11-03-329 §4): add, an addition beside what the sandbox
-// held in envVar, which stays as it was; replace, its whole use of the credential, in place of what
-// it held. It may differ from what was asked.
+// Once the use part is granted, how: add, an addition beside what the sandbox held in envVar, which
+// stays as it was; replace, its whole use of the credential, in place of what it held. It may differ
+// from what was asked.
 type SandboxCredentialRequestPartStatusGrantedAs string
 
 const (
@@ -31094,16 +31092,16 @@ func (*Secret) getSecretRes()     {}
 func (*Secret) refreshSecretRes() {}
 func (*Secret) updateSecretRes()  {}
 
-// A secret made available to a target (ADR 26-10-27-880 §1): existing and unexpired, it is the
-// whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a
-// discobox the binding covers give the credential to the discoboxes it leads. An addition (adds)
-// stacks on the binding delivering envVar instead of replacing or shadowing it (ADR 26-11-03-329).
+// A secret made available to a target: existing and unexpired, it is the whole of the permission.
+// Use delivers the credential's sentinel in envVar; delegate lets a discobox the binding covers give
+// the credential to the discoboxes it leads. An addition (adds) stacks on the binding delivering
+// envVar instead of replacing or shadowing it.
 // Ref: #/components/schemas/SecretBinding
 type SecretBinding struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// An addition: a use on a discobox, with an expiry, that stacks on the binding delivering envVar
-	// instead of replacing or shadowing it (ADR 26-11-03-329).
+	// instead of replacing or shadowing it.
 	Adds OptBool `json:"adds"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
@@ -32827,7 +32825,7 @@ func (*SecretRequest) getSecretRequestRes()     {}
 // Ref: #/components/schemas/SecretRequestPart
 type SecretRequestPart struct {
 	// Use part only: the discobox asks for these routes in addition to what it holds, as an addition,
-	// rather than as its whole use of the credential (ADR 26-11-03-329 §4).
+	// rather than as its whole use of the credential.
 	Add OptBool `json:"add"`
 	// Use part only: how an approved part was granted, as an addition beside what the discobox held or
 	// replacing it.
@@ -32949,13 +32947,13 @@ func (s *SecretRequestPartApprovedAs) UnmarshalText(data []byte) error {
 // The decision on one part of a request.
 // Ref: #/components/schemas/SecretRequestPartDecision
 type SecretRequestPartDecision struct {
-	// Use part only: how an approved part is granted (ADR 26-11-03-329 §4). add makes an addition
-	// beside what the discobox holds, replacing nothing; replace makes it the discobox's whole use of
-	// the secret. Omitted takes what the request asked, which is replace unless it asked to add.
+	// Use part only: how an approved part is granted. add makes an addition beside what the discobox
+	// holds, replacing nothing; replace makes it the discobox's whole use of the secret. Omitted takes
+	// what the request asked, which is replace unless it asked to add.
 	As OptSecretRequestPartDecisionAs `json:"as"`
 	// Approve makes the part's binding, replacing the discobox's sandbox-level bindings of that kind for
-	// the secret (ADR 26-11-02-022 §5), or for a use part granted as add, an addition beside them (ADR
-	// 26-11-03-329 §4); deny leaves them as they are.
+	// the secret, or for a use part granted as add, an addition beside them; deny leaves them as they
+	// are.
 	Decision SecretRequestPartDecisionDecision `json:"decision"`
 	// Use part only: grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the
 	// variable the request named, file the path of a file holding it there. A person's choice alone, and
@@ -33019,9 +33017,9 @@ func (s *SecretRequestPartDecision) SetTtlSeconds(val OptInt64) {
 	s.TtlSeconds = val
 }
 
-// Use part only: how an approved part is granted (ADR 26-11-03-329 §4). add makes an addition
-// beside what the discobox holds, replacing nothing; replace makes it the discobox's whole use of
-// the secret. Omitted takes what the request asked, which is replace unless it asked to add.
+// Use part only: how an approved part is granted. add makes an addition beside what the discobox
+// holds, replacing nothing; replace makes it the discobox's whole use of the secret. Omitted takes
+// what the request asked, which is replace unless it asked to add.
 type SecretRequestPartDecisionAs string
 
 const (
@@ -33064,8 +33062,8 @@ func (s *SecretRequestPartDecisionAs) UnmarshalText(data []byte) error {
 }
 
 // Approve makes the part's binding, replacing the discobox's sandbox-level bindings of that kind for
-// the secret (ADR 26-11-02-022 §5), or for a use part granted as add, an addition beside them (ADR
-// 26-11-03-329 §4); deny leaves them as they are.
+// the secret, or for a use part granted as add, an addition beside them; deny leaves them as they
+// are.
 type SecretRequestPartDecisionDecision string
 
 const (
@@ -34423,9 +34421,8 @@ type UpdatePoolStatusBody struct {
 	Ready       bool      `json:"ready"`
 	Schedulable bool      `json:"schedulable"`
 	// The agent holds each sentinel to grants, any one of which may allow a request, each with its own
-	// expiry (ADR 26-11-03-329 §3), and takes them as sentinelGrants. Declared on every report; an
-	// agent from before grants sends none, and is sent each sentinel's first grant's route lists as
-	// sentinelRoutes.
+	// expiry, and takes them as sentinelGrants. Declared on every report; an agent from before grants
+	// sends none, and is sent each sentinel's first grant's route lists as sentinelRoutes.
 	SentinelGrants OptBool `json:"sentinelGrants"`
 }
 

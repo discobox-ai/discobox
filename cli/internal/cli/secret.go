@@ -355,14 +355,14 @@ what their routes grant, and the answer once there is one.
 A pending request with a use part shows what applies in its variable now,
 grant by grant with its lifetime, the routes it asks that none of them names,
 and what granting it each way would do: as an addition, for its own lifetime
-beside what the discobox holds, or as a replacement of it (ADR 26-11-03-329
-§5), naming any routes a replacement would cut short or shadow.
+beside what the discobox holds, or as a replacement of it, naming any routes a
+replacement would cut short or shadow.
 
 --secret, on a pending request, shows what approving every part with that
 secret, the use part as the request asks, would do to the bindings the
 discobox already holds of it: a part approved to replace replaces them, so
-access it loses is read before it is approved (ADR 26-11-02-022 §5). approve
---secret says it again for the parts it approves.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+access it loses is read before it is approved. approve --secret says it again
+for the parts it approves.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -417,8 +417,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	lifetimeFlag := lifetime.NewFlag()
 	cmd := &cobra.Command{Use: "approve REQUEST_ID", Short: "Answer a secret request, binding the secret to the discobox that asked", Long: `Answer a secret request: each part approved binds the secret to the discobox
 that asked. A request has a use part — the secret in the variable it asked for
-— a delegate part — the secret given on to the discoboxes it leads — or both
-(ADR 26-11-02-022).
+— a delegate part — the secret given on to the discoboxes it leads — or both.
 
 An answer decides every part the request has. A request with one part is
 approved by this command; one with both needs a decision for each, --use and
@@ -428,7 +427,7 @@ denied leaves them as they are.
 
 --use-as add grants the use part as an addition instead: a binding of its own
 beside what the discobox holds in the variable, for its own lifetime, which
-leaves that as it is and alone goes when it lapses (ADR 26-11-03-329).
+leaves that as it is and alone goes when it lapses.
 --use-as replace makes it the discobox's whole use of the secret. Left out, the
 use part is granted as the request asked, which is replace unless the discobox
 asked to add. secret request get shows what each would do first.
