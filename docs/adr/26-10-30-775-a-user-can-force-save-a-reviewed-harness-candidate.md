@@ -1,6 +1,6 @@
 # 26-10-30-775 — A user can force-save a reviewed harness candidate
 
-- **Status**: Accepted (narrows [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md) §3's conflict-resolution requirement)
+- **Status**: Superseded for ordinary-save conflicts and explicit force by [26-11-04-538](26-11-04-538-saving-a-harness-candidate-overwrites-without-a-revision-conflict.md) (narrows [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md) §3's conflict-resolution requirement)
 - **Date**: 2026-10-30
 
 ## Context
