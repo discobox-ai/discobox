@@ -1048,6 +1048,12 @@ tasks:
       - task: check:dockerfile-deps
       - task: check:shell
 
+  ci:ux-smoke:
+    desc: Run required Docker terminal, harness save/reset and adoption smoke flows
+    platforms: [linux]
+    cmds:
+      - timeout --signal=TERM --kill-after=60s 25m python3 test/ux-smoke/run.py
+
   ci:test:
     desc: Run every module's tests the way CI does
     # No Docker and no harness bundles: the suite that would need them seeds its

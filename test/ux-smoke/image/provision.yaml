@@ -1,0 +1,8 @@
+apiVersion: discobox.ai/provision/v1
+requires: [core]
+steps:
+  - name: packages
+    packages:
+      debian: [jq]
+  - name: exporter
+    file: {path: /usr/local/libexec/discobox/ux-smoke-export, source: export.sh, mode: "0755"}

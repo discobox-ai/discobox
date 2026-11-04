@@ -1,0 +1,60 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "platformAPIVersion": "discobox.ai/platform/v1",
+  "harness": {
+    "id": "ux-smoke",
+    "name": "UX Smoke",
+    "runCommand": [
+      "sh"
+    ],
+    "files": [
+      {
+        "path": ".ux-smoke.json",
+        "content": "{\"model\":\"bundle\"}\n"
+      }
+    ],
+    "saveBack": {
+      "version": 1,
+      "watch": [
+        ".ux-smoke.json",
+        ".ux-smoke-token"
+      ],
+      "exportCommand": [
+        "/usr/local/libexec/discobox/ux-smoke-export"
+      ],
+      "handoffCommand": [
+        "/usr/local/libexec/discobox/ux-smoke-export",
+        "handoff"
+      ],
+      "providers": [
+        {
+          "id": "synthetic",
+          "envName": "UX_SMOKE_TOKEN",
+          "types": [
+            "token"
+          ],
+          "host": "ux-smoke.invalid"
+        }
+      ],
+      "settings": [
+        {
+          "path": ".ux-smoke.json",
+          "format": "json"
+        }
+      ],
+      "credentialFiles": [
+        ".ux-smoke-token"
+      ]
+    },
+    "secrets": [
+      {
+        "name": "UX_SMOKE_TOKEN",
+        "required": false
+      }
+    ]
+  },
+  "features": {
+    "desktop": false,
+    "docker": false
+  }
+}
