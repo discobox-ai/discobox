@@ -1,0 +1,58 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M6MBG8SRY90EASDRE7WMB7CZ",
+  "session_id": "e527ea23-d388-462a-984f-063bffc8f3d3",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-04T22:40:02.881044381Z",
+  "branch": "main",
+  "checkpoints_count": 8,
+  "save_step_count": 7,
+  "files_touched": [
+    "pkg/poolauth/keyfile.go",
+    "pkg/poolauth/keyfile_test.go",
+    "pool-agent/DESIGN.md",
+    "pool-agent/gitcache/gitcache.go",
+    "pool-agent/sandboxruntime/machine.go",
+    "pool-agent/sandboxruntime/machine_test.go",
+    "pool-agent/sandboxruntime/origin.go",
+    "pool-agent/sandboxruntime/runtime.go",
+    "pool-agent/sandboxruntime/sources.go",
+    "sandbox-agent/DESIGN.md",
+    "sandbox-agent/boot/boot.go",
+    "sandbox-agent/boot/desktop.go",
+    "sandbox-agent/boot/sessionbus.go",
+    "sandbox-agent/sourceconverge/converge.go",
+    "sandbox-agent/sourceconverge/converge_test.go",
+    "sandbox-agent/sourceconverge/git.go",
+    "server/providers/discovm/poolmachine.go",
+    "server/providers/discovm/poolmachine_test.go"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "d3416ce3fc25",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 478,
+    "cache_creation_tokens": 653248,
+    "cache_read_tokens": 50460573,
+    "output_tokens": 99365,
+    "api_call_count": 229
+  },
+  "redaction": {
+    "replacements": 147,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 150,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 8
+  }
+}

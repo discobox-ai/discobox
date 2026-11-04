@@ -1,0 +1,215 @@
+does this seem like a problem, i'm trying to create a discobox on boxd and seeing the following in `discobox admin pool logs boxd` 
+
+<pasted_content id="bb12">
+Nov 01 05:57:15 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[798]: time=2026-11-01T05:57:15.520Z level=INFO msg="pool agent serving sandbox assets" addr=/var/lib/discobox/proxy/projects/proj_jb256gcnpxksg5v5/pools/pool_dfqcve6ztdsmgbd6/assets.sock
+Nov 01 05:57:16 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[1135]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'uname -m; hostname' sh
+Nov 01 05:57:16 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[1135]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 05:57:16 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[1135]: pam_unix(sudo:session): session closed for user root
+Nov 01 05:57:30 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[798]: time=2026-11-01T05:57:30.781Z level=WARN msg="poll sandbox-agent status" sandboxId=sbx_kve3px797apyn0me error="Get \"http://localhost:3003/api/projects/proj_jb256gcnpxksg5v5/sandboxes/sbx_kve3px797apyn0me/status\": dial tcp 10.39.14.70:7302: connect: connection refused"
+Nov 01 05:57:30 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[798]: time=2026-11-01T05:57:30.792Z level=WARN msg="poll sandbox-agent inventory" sandboxId=sbx_kve3px797apyn0me error="Get \"http://localhost:3003/api/projects/proj_jb256gcnpxksg5v5/sandboxes/sbx_kve3px797apyn0me/inventory\": dial tcp 10.39.14.70:7302: connect: connection refused"
+Nov 01 05:57:45 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[798]: time=2026-11-01T05:57:45.545Z level=WARN msg="poll sandbox-agent status" sandboxId=sbx_kve3px797apyn0me error="Get \"http://localhost:3003/api/projects/proj_jb256gcnpxksg5v5/sandboxes/sbx_kve3px797apyn0me/status\": dial tcp 10.39.14.70:7302: connect: connection refused"
+Nov 01 05:57:45 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[798]: time=2026-11-01T05:57:45.558Z level=WARN msg="poll sandbox-agent inventory" sandboxId=sbx_kve3px797apyn0me error="Get \"http://localhost:3003/api/projects/proj_jb256gcnpxksg5v5/sandboxes/sbx_kve3px797apyn0me/inventory\": dial tcp 10.39.14.70:7302: connect: connection refused"
+Nov 01 05:57:49 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[1171]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'uname -m; hostname' sh
+Nov 01 05:57:49 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[1171]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 05:57:50 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[1171]: pam_unix(sudo:session): session closed for user root
+Nov 01 05:58:00 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[798]: time=2026-11-01T05:58:00.545Z level=WARN msg="poll sandbox-agent status" sandboxId=sbx_kve3px797apyn0me error="Get \"http://localhost:3003/api/projects/proj_jb256gcnpxksg5v5/sandboxes/sbx_kve3px797apyn0me/status\": dial tcp 10.39.14.70:7302: connect: connection refused"
+Nov 01 05:58:00 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[798]: time=2026-11-01T05:58:00.558Z level=WARN msg="poll sandbox-agent inventory" sandboxId=sbx_kve3px797apyn0me error="Get \"http://localhost:3003/api/projects/proj_jb256gcnpxksg5v5/sandboxes/sbx_kve3px797apyn0me/inventory\": dial tcp 10.39.14.70:7302: connect: connection refused"
+</pasted_content id="bb12">
+
+---
+
+```
+
+<pasted_content id="bb12">
+Nov 01 05:57:21 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me dockerd[90]: time="2026-11-01T05:57:21.587342709Z" level=info msg="API listen on /run/docker.sock"
+Nov 01 05:57:21 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[290]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- systemctl is-system-running --wait
+Nov 01 05:57:21 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[290]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 05:57:21 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[290]: pam_unix(sudo:session): session closed for user root
+Nov 01 05:57:21 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[293]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'mkdir -p -- "$1" && exec tar -x -f - --no-same-owner --no-overwrite>
+Nov 01 05:57:21 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[293]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 05:57:21 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[293]: pam_unix(sudo:session): session closed for user root
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[297]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'mkdir -p -- "$1" && exec tar -x -f - --no-same-owner --no-overwrite>
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[297]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[297]: pam_unix(sudo:session): session closed for user root
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[301]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'mkdir -p -- "$1" && exec tar -x -f - --no-same-owner --no-overwrite>
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[301]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[301]: pam_unix(sudo:session): session closed for user root
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[305]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- /opt/discobox/current/features/core/discobox-sandbox-agent provision apply
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[305]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me systemd[1]: Reloading requested from client PID 313 ('systemctl')...
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me systemd[1]: Reloading...
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me sudo[305]: pam_unix(sudo:session): session closed for user root
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me groupadd[357]: group added to /etc/group: name=darren, GID=1002
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me groupadd[357]: group added to /etc/gshadow: name=darren
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me groupadd[357]: new group: name=darren, GID=1002
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me useradd[363]: new user: name=darren, UID=1002, GID=1002, home=/home/darren, shell=/bin/bash, from=none
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[370]: /etc/sudoers.d/discobox-user: parsed OK
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me usermod[375]: add 'darren' to group 'systemd-journal'
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me usermod[375]: add 'darren' to group 'kvm'
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me usermod[375]: add 'darren' to group 'docker'
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me usermod[375]: add 'darren' to shadow group 'systemd-journal'
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me usermod[375]: add 'darren' to shadow group 'kvm'
+Nov 01 05:57:46 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me usermod[375]: add 'darren' to shadow group 'docker'
+Nov 01 05:57:47 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me systemctl[418]: Failed to try-restart discobox-session-bus.socket: Unit discobox-session-bus.socket not found.
+Nov 01 05:57:47 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[346]: 2026/11/01 05:57:47 ERROR provision sandbox error="systemctl try-restart discobox-session-bus.socket: exit status 5"
+Nov 01 05:57:49 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[434]: /etc/sudoers.d/discobox-user: parsed OK
+Nov 01 05:57:49 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me systemctl[475]: Failed to try-restart discobox-session-bus.socket: Unit discobox-session-bus.socket not found.
+Nov 01 05:57:49 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[424]: 2026/11/01 05:57:49 ERROR provision sandbox error="systemctl try-restart discobox-session-bus.socket: exit status 5"
+Nov 01 05:57:51 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[491]: /etc/sudoers.d/discobox-user: parsed OK
+Nov 01 05:57:52 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me systemctl[533]: Failed to try-restart discobox-session-bus.socket: Unit discobox-session-bus.socket not found.
+Nov 01 05:57:52 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[481]: 2026/11/01 05:57:52 ERROR provision sandbox error="systemctl try-restart discobox-session-bus.socket: exit status 5"
+Nov 01 05:57:54 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[550]: /etc/sudoers.d/discobox-user: parsed OK
+Nov 01 05:57:54 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me systemctl[590]: Failed to try-restart discobox-session-bus.socket: Unit discobox-session-bus.socket not found.
+Nov 01 05:57:54 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[539]: 2026/11/01 05:57:54 ERROR provision sandbox error="systemctl try-restart discobox-session-bus.socket: exit status 5"
+Nov 01 05:57:56 dvm-pool-dfqcve6ztdsmgbd6--sbx-kve3px797apyn0me discobox-sandbox-agent[606]: /etc/sudoers.d/discobox-user: parsed OK
+</pasted_content id="bb12">
+
+```
+
+---
+
+why is this fix needed, what is going on?
+
+---
+
+i launched a new one and it's still failing
+
+---
+
+yes, fix
+
+---
+
+I tried another one, but did discobox-ai/discobox as the source and got 
+           │  the discobox failed: pool-agent request failed: materialize source "primary": source target: stat /workspace/discobox: no such file or directory                                                 │
+
+---
+
+ok, I deleted all the boxd machines (but not the sandboxes) and now I'm getting ```
+
+<pasted_content id="bb12">
+2026/10/31 23:37:13 api docs available at pool control-plane streams/docs                                                                                                                                 2026/10/31 23:37:13 iroh: no relay; this server is reachable only from networks that can route to it directly (direct addresses 10.54.93.1:45375 10.54.94.1:45375 10.54.95.1:45375 172.17.0.1:45375 172.18.0.1:45375 192.168.1.112:45375 192.168.1.168:45375 192.168.122.1:45375 127.0.0.1:45375 [::1]:34895)                                                                                                       2026/10/31 23:37:15 WARN pool control-plane channel down; redialing pool_id=pool_dfqcve6ztdsmgbd6 error="open the control-plane channel: the pool agent answered 502 Bad Gateway: <!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 — boxd</title>\n<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap\" rel=\"stylesheet\">\n<style>\n*{margin:0;padding:0;box-sizing:border-box}\nbody{font-family:'JetBrains Mono',ui-monospace,monospace;background:#0" redial_in=1s                                                                                  2026/10/31 23:37:28 iroh: back on a relay (https://usw1-1.relay.n0.iroh.link./) after 0s without one                                                                                                      2026/10/31 23:37:34 WARN pool-sync failed pool=pool_dfqcve6ztdsmgbd6 error="pool-agent request failed: status 502: <!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 — boxd</title>\n<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap\" rel=\"stylesheet\">\n<style>\n*{margin:0;padding:0;box-sizing:border-box}\nbody{font-family:'JetBrains Mono',ui-monospace,monospace;background:#0"
+</pasted_content id="bb12">
+
+``` trying to launch another box
+
+---
+
+and the pool is ```pool_dfqcve6ztdsmgbd6  boxd     prov_te6754gkjpyzjxfx           offline  offline  false  host  host    host     6 seconds ago   pool agent has not reported since 2026-11-01T06:33:45Z```
+
+---
+
+on boot I see 
+
+<pasted_content id="bb12">
+Nov 01 06:34:46 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 dockerd[102]: time="2026-11-01T06:34:46.190820096Z" level=info msg="API listen on /run/docker.sock"
+Nov 01 06:34:46 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[188]: pam_unix(sudo:session): session closed for user root
+Nov 01 06:34:46 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[299]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'mkdir -p -- "$1" && exec tar -x -f - --no-same-owner --no-overwrite-dir -C "$1"' sh /var/lib/disco-vm
+Nov 01 06:34:46 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[299]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 06:34:46 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[299]: pam_unix(sudo:session): session closed for user root
+Nov 01 06:34:47 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[303]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'mkdir -p -- "$1" && exec tar -x -f - --no-same-owner --no-overwrite-dir -C "$1"' sh /
+Nov 01 06:34:47 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[303]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 06:34:47 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[303]: pam_unix(sudo:session): session closed for user root
+Nov 01 06:34:47 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[307]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'uname -m; hostname' sh
+Nov 01 06:34:47 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[307]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 06:34:47 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[307]: pam_unix(sudo:session): session closed for user root
+Nov 01 06:34:59 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[312]:     boxd : PWD=/home/boxd ; USER=root ; COMMAND=/usr/bin/env -C / -- sh -c 'uname -m; hostname' sh
+Nov 01 06:34:59 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[312]: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1000)
+Nov 01 06:34:59 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 sudo[312]: pam_unix(sudo:session): session closed for user root
+Nov 01 06:35:01 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6
+</pasted_content id="bb12">
+
+---
+
+but it never recovered
+
+---
+
+it's still failing
+
+---
+
+you can ssh there
+
+---
+
+station76 is 192.168.1.112
+
+---
+
+now getting 
+
+<pasted_content id="bb12">
+Nov 01 06:55:01 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 CRON[1511]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)
+Nov 01 06:55:01 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 CRON[1512]: (root) CMD (command -v debian-sa1 > /dev/null && debian-sa1 1 1)
+Nov 01 06:55:01 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 CRON[1511]: pam_unix(cron:session): session closed for user root
+Nov 01 06:55:15 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: time=2026-11-01T06:55:15.556Z level=WARN msg="poll sandbox-agent status" sandboxId=sbx_gt6pb3b4r3y40d55 error="Get \"http://localhost:3003/api/projects/proj_jb256gcnpxksg5v5/sandboxes/sbx_gt6pb3b4r3y40d55/status\": dial tcp 10.39.86.94:7302: connect: connection refused"
+Nov 01 06:55:15 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: time=2026-11-01T06:55:15.565Z level=WARN msg="poll sandbox-agent inventory" sandboxId=sbx_gt6pb3b4r3y40d55 error="Get \"http://localhost:3003/api/projects/proj_jb256gcnpxksg5v5/sandboxes/sbx_gt6pb3b4r3y40d55/inventory\": dial tcp 10.39.86.94:7302: connect: connection refused"
+Nov 01 06:55:20 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:20 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/primary.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:20 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:20 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/hooks.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:20 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:20 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/skills.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:20 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:20 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/x.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:20 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:20 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/primary.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:20 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:20 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/hooks.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:20 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:20 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/skills.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:21 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:21 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/x.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:26 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:26 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/primary.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:26 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:26 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/hooks.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:26 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:26 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/skills.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:26 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:26 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/x.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:36 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:36 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/primary.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:37 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/11/01 06:55:37 WARN rejected a control-plane request status=401 reason=missing_token method=GET path=/api/project/proj_jb256gcnpxksg5v5/pool/pool_dfqcve6ztdsmgbd6/sandboxes/sbx_gt6pb3b4r3y40d55/git-origins/hooks.git/info/refs pool_id=pool_dfqcve6ztdsmgbd6 error="no sandbox token"
+Nov 01 06:55:37 dvm-prov-te6754gkjpyzjxfx--pool-dfqcve6ztdsmgbd6 discobox-pool-agent[795]: 2026/1
+</pasted_content id="bb12">
+
+---
+
+task dev is running after syncthing copies the files. keep fixing and trying to launch a box with `discobox run -H shell --pool boxd discobox-ai/discobox` until it works e2e
+
+---
+
+<task-notification>
+<task-id>bq7jdeu3z</task-id>
+<tool-use-id>toolu_01S9Eqo87uKbDeXhLcS6pf7p</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/tasks/bq7jdeu3z.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /home/darren/src/disco2; timeout 1200 discobox run -d -H shell --pool boxd discobox-ai/discobox &gt; /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/run1.log 2&gt;&amp;1; echo exit=$?; tail -30 /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/run1.log" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bham424ov</task-id>
+<tool-use-id>toolu_012sLfjFfKhHQH8hQaaYhNqQ</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/tasks/bham424ov.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /home/darren/src/disco2; timeout 1500 discobox run -d -H shell --pool boxd discobox-ai/discobox &gt; /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/run2.log 2&gt;&amp;1; echo exit=$?; tail -15 /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/run2.log" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b4clc6hrz</task-id>
+<tool-use-id>toolu_019i2Pcger1Qs6w23A1Hczd8</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/tasks/b4clc6hrz.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /home/darren/src/disco2; timeout 1500 discobox run -d -H shell --pool boxd discobox-ai/discobox &gt; /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/run3.log 2&gt;&amp;1; echo exit=$?; tail -8 /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/run3.log | cut -c1-400" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bhkarv90v</task-id>
+<tool-use-id>toolu_01HMjymp4m9mPAHZAmCjUYem</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/tasks/bhkarv90v.output</output-file>
+<status>completed</status>
+<summary>Background command "cd /home/darren/src/disco2; timeout 1700 nix develop -c go tool task ci:test &gt; /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/citest.log 2&gt;&amp;1; echo exit=$?; grep -E "^(--- FAIL|FAIL|panic)" /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/citest.log | head -30; tail -5 /tmp/claude-1002/-home-darren-src-disco2/e527ea23-d388-462a-984f-063bffc8f3d3/scratchpad/citest.log" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+I deleted those machines in discobox but the boxd machines are still around which points to an issue in that we are possibly orphaning machines. machines if created in a remote provider must immeidately be register so that we can delete them. or since these are in an error state we aren't deleting them properly. Can  you investigate that
+
+---
+
+but archived boxes are not deleted, right? they should be stopped.
