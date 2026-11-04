@@ -61,6 +61,7 @@
           "format": "toml",
           "exclude": [
             "projects",
+            "tui.model_availability_nux",
             "api_key",
             "model_providers.*.api_key",
             "model_providers.*.experimental_bearer_token",
