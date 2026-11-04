@@ -219,6 +219,10 @@ func TestABoxLinkInAnAttachWindowSaysHowToOpenIt(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openBare(t, ds)
 
+		// Attach opens from its given box before the listing arrives. The
+		// link needs that listing to identify the other box.
+		d.wait("the box listing", func() bool { return m.list.loaded })
+
 		x, y := printBoxLink(t, d, m, term, "discobox:///sbx_two")
 		clickWindow(d, x+1, y)
 		d.wait("the refusal", func() bool { return strings.Contains(m.status, `discobox attach "sbx_two"`) })

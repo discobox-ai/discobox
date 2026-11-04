@@ -237,6 +237,10 @@
 - **A driver test waits for what it asserts.** A fake records a call from the
   command's goroutine, before the window has the answer: wait on the window's
   state, not on the fake's.
+- **An attach test that needs other boxes waits for `m.list.loaded`.**
+  The primary terminal can open before the first listing, since attach starts
+  from its given box. Waiting for terminal output alone left the box-link test
+  clicking before it could identify the other box and reporting it missing.
 - **A driver test runs in `synctest.Test`.** Build the model, its fakes and
   their channels inside the bubble: one made outside it is not the bubble's,
   and a goroutine blocked on it holds the clock still. Inside, `time` is the
