@@ -692,7 +692,7 @@ func TestImportRefusesAnotherPlatform(t *testing.T) {
 	configuredHarness(t, st, "codex", "Codex")
 	// The pool's agent says it hosts another platform than the archive's.
 	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, nil)
@@ -708,7 +708,7 @@ func TestImportRefusesAnotherPlatform(t *testing.T) {
 		t.Error("the tree was uploaded before the platform was refused")
 	}
 
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
@@ -756,7 +756,7 @@ func TestExportTakesThePoolsPlatformForASandboxWithNone(t *testing.T) {
 	ctx, svc, st, provider := transferFixture(t)
 	config := configuredHarness(t, st, "codex", "Codex")
 	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	sb := &model.Sandbox{
@@ -789,7 +789,7 @@ func TestImportOfAnArchiveFromBeforePlatformsGuessesNone(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
 	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	archive := exportArchive(t, nil, map[string]string{"data/x": "x"})
@@ -827,7 +827,7 @@ func TestImportWaitsOnAPoolThatHasNotDeclaredYet(t *testing.T) {
 func TestImportRefusesAPoolOfAnotherImageKind(t *testing.T) {
 	ctx, svc, st, provider := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, map[string]string{"data/x": "x"})

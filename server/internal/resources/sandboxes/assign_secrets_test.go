@@ -24,7 +24,7 @@ import (
 type recordingProvider struct {
 	updates []sandbox.UpdateOptions
 	updated [][]string
-	routes  []map[string][][]secretroute.Route
+	routes  []map[string][]secretroute.Grant
 	// updateErrs fail the next updates, one each, in order.
 	updateErrs []error
 	// egress records each egress policy pushed, and updateErr is what Update
@@ -66,7 +66,7 @@ func (p *recordingProvider) Update(_ context.Context, _ sandbox.SandboxRef, stat
 	}
 	if opts.Sentinels != nil {
 		p.updated = append(p.updated, append([]string{}, opts.Sentinels...))
-		p.routes = append(p.routes, opts.SentinelRoutes)
+		p.routes = append(p.routes, opts.SentinelGrants)
 	}
 	if opts.Egress != nil {
 		p.egress = append(p.egress, *opts.Egress)
@@ -281,7 +281,7 @@ func TestARawBindingIsPushedRawAndNeverAsASentinel(t *testing.T) {
 	if raw := pushed.RawSecrets[rows[0].Sentinel]; raw != (RawSecret{EnvName: "OPENAI_API_KEY", Delivery: "file"}) {
 		t.Fatalf("pushed raw = %#v, want the row's delivery by its sentinel", pushed.RawSecrets)
 	}
-	if len(pushed.SentinelRoutes[rows[0].Sentinel]) == 0 {
-		t.Fatalf("pushed routes = %#v, want the raw sentinel's route lists", pushed.SentinelRoutes)
+	if len(pushed.SentinelGrants[rows[0].Sentinel]) == 0 {
+		t.Fatalf("pushed grants = %#v, want the raw sentinel's grant", pushed.SentinelGrants)
 	}
 }

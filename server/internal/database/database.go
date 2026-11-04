@@ -127,6 +127,11 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := addSandboxParents(write); err != nil {
 		return err
 	}
+	// Before AutoMigrate: the use index's condition narrowed to plain
+	// bindings, and AutoMigrate leaves an index of a known name as it is.
+	if err := dropRetiredPlainUseIndex(write); err != nil {
+		return err
+	}
 	backfillPoolKinds := addsImageKindColumn(write, &model.Pool{})
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
@@ -220,6 +225,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	}
 	// After the route upgrade, which converts the routes it moves.
 	if err := splitSecretRequestParts(write); err != nil {
+		return err
+	}
+	// After the split, which makes the use parts this records.
+	if err := recordReplacingApprovals(write); err != nil {
 		return err
 	}
 	if err := rekeySandboxOrigins(write); err != nil {

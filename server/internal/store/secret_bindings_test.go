@@ -109,31 +109,115 @@ func TestDeleteSecretBindingCascades(t *testing.T) {
 	}
 }
 
-// Every sentinel has route lists, since a pool sends one with none nowhere:
-// the secret's, the binding's when it has any, its parent's when it has any;
-// one whose binding is gone gets a single empty list (ADR 26-10-27-880 §4).
-func TestSentinelRouteListsCoverEverySentinel(t *testing.T) {
+// Every sentinel has a grant, since a pool sends one with none nowhere: the
+// secret's route lists, the binding's when it has any, its parent's when it
+// has any, and the earlier expiry; one whose binding is gone gets a single
+// grant of one empty list (ADR 26-10-27-880 §4, ADR 26-11-03-329 §3).
+func TestSentinelGrantsCoverEverySentinel(t *testing.T) {
 	ctx := context.Background()
 	s, sb1, sb2, secret := bindingFixture(t)
+	expires := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	parent := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID, Delegate: true,
-		Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}}})
+		Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}}, ExpiresAt: &expires})
 	child := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb2.ID, Use: true, EnvName: "GH_TOKEN", ParentID: parent.ID})
 	rows := []model.SandboxSecret{
-		{SecretID: secret.ID, BindingID: child.ID, Sentinel: "S-CHILD"},
-		{SecretID: secret.ID, BindingID: "bind_gone", Sentinel: "S-GONE"},
-		{SecretID: secret.ID, Sentinel: "S-NONE"},
+		{SecretID: secret.ID, BindingID: child.ID, EnvName: "GH_TOKEN", Sentinel: "S-CHILD"},
+		{SecretID: secret.ID, BindingID: "bind_gone", EnvName: "GONE", Sentinel: "S-GONE"},
+		{SecretID: secret.ID, EnvName: "NONE", Sentinel: "S-NONE"},
 	}
-	got, err := s.SentinelRouteLists(ctx, "project-1", rows)
+	got, err := s.SentinelGrants(ctx, sb2, rows, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string][][]secretroute.Route{
-		"S-CHILD": {{{Hosts: []string{"github.com"}}}, {{Hosts: []string{"api.github.com"}}}},
-		"S-GONE":  {{}},
-		"S-NONE":  {{}},
+	want := map[string][]secretroute.Grant{
+		"S-CHILD": {{Lists: [][]secretroute.Route{{{Hosts: []string{"github.com"}}}, {{Hosts: []string{"api.github.com"}}}}, ExpiresAt: &expires}},
+		"S-GONE":  {{Lists: [][]secretroute.Route{{}}}},
+		"S-NONE":  {{Lists: [][]secretroute.Route{{}}}},
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("route lists = %+v, want %+v", got, want)
+		t.Fatalf("grants = %+v, want %+v", got, want)
+	}
+}
+
+// An addition stacks on the plain binding of its variable as a grant of its
+// own, with its own routes and expiry, without shadowing the binding a
+// harness config gives; one of another secret, or lapsed, is no grant; and
+// with no plain binding the addition that lapses last delivers the variable
+// (ADR 26-11-03-329 §§1–3).
+func TestAdditionsStackOnTheBindingOfTheirVariable(t *testing.T) {
+	ctx := context.Background()
+	s, sb1, _, secret := bindingFixture(t)
+	other := &model.Secret{ID: "sec-2", ProjectID: "project-1", Name: "npm", Type: model.SecretTypeToken,
+		Routes: []model.SecretRoute{{Hosts: []string{"registry.npmjs.org"}}}, EncryptedValue: []byte(`{"token":"t"}`)}
+	if err := s.CreateSecret(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	hour, twoHours, gone := now.Add(time.Hour), now.Add(2*time.Hour), now.Add(-time.Minute)
+	base := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: "hc-1",
+		Use: true, EnvName: "GH_TOKEN", Routes: []model.SecretRoute{{Hosts: []string{"github.com"}, Methods: []string{"GET"}}}})
+	added := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID,
+		Use: true, Adds: true, EnvName: "GH_TOKEN", Routes: []model.SecretRoute{{Hosts: []string{"github.com"}, Methods: []string{"POST"}}}, ExpiresAt: &hour})
+	createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID,
+		Use: true, Adds: true, EnvName: "GH_TOKEN", ExpiresAt: &gone})
+	unapplied := createBinding(t, s, &model.SecretBinding{SecretID: other.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID,
+		Use: true, Adds: true, EnvName: "GH_TOKEN", ExpiresAt: &hour})
+	alone := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID,
+		Use: true, Adds: true, EnvName: "GITHUB_TOKEN", ExpiresAt: &hour})
+	last := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID,
+		Use: true, Adds: true, EnvName: "GITHUB_TOKEN", ExpiresAt: &twoHours})
+
+	effective, err := s.ResolveSandboxBindings(ctx, sb1, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh, ok := effective.UseFor("GH_TOKEN")
+	if !ok || gh.Binding.ID != base.ID || len(gh.Additions) != 1 || gh.Additions[0].Binding.ID != added.ID {
+		t.Fatalf("GH_TOKEN = %+v, want the harness config's binding with the live addition of its secret on it", gh)
+	}
+	if len(effective.Unapplied) != 1 || effective.Unapplied[0].Binding.ID != unapplied.ID {
+		t.Fatalf("unapplied = %+v, want the addition of another secret", effective.Unapplied)
+	}
+	github, ok := effective.UseFor("GITHUB_TOKEN")
+	if !ok || github.Binding.ID != last.ID || len(github.Additions) != 1 || github.Additions[0].Binding.ID != alone.ID {
+		t.Fatalf("GITHUB_TOKEN = %+v, want the addition that lapses last delivering it, the other stacked on it", github)
+	}
+
+	grants, err := s.SentinelGrants(ctx, sb1, []model.SandboxSecret{{SecretID: secret.ID, BindingID: base.ID, EnvName: "GH_TOKEN", Sentinel: "S"}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []secretroute.Grant{
+		{Lists: [][]secretroute.Route{{{Hosts: []string{"github.com"}}}, {{Hosts: []string{"github.com"}, Methods: []string{"GET"}}}}},
+		{Lists: [][]secretroute.Route{{{Hosts: []string{"github.com"}}}, {{Hosts: []string{"github.com"}, Methods: []string{"POST"}}}}, ExpiresAt: &hour, Adds: true},
+	}
+	if !reflect.DeepEqual(grants["S"], want) {
+		t.Fatalf("grants = %+v, want the base's and the addition's, each whole", grants["S"])
+	}
+	// A row materialized for another binding than the one the variable now
+	// stands on is given no additions: they stack on what delivers it.
+	stale, err := s.SentinelGrants(ctx, sb1, []model.SandboxSecret{{SecretID: secret.ID, BindingID: added.ID, EnvName: "GH_TOKEN", Sentinel: "S"}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale["S"]) != 1 {
+		t.Fatalf("grants = %+v, want the row's own binding's alone", stale["S"])
+	}
+}
+
+// One plain use binding per target and variable, and any number of
+// additions beside it (idx_secret_binding_plain_use).
+func TestATargetHoldsOnePlainUseBindingPerVariable(t *testing.T) {
+	ctx := context.Background()
+	s, sb1, _, secret := bindingFixture(t)
+	expires := time.Now().UTC().Add(time.Hour)
+	createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID, Use: true, EnvName: "GH_TOKEN"})
+	for range 2 {
+		createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID, Use: true, Adds: true, EnvName: "GH_TOKEN", ExpiresAt: &expires})
+	}
+	second := &model.SecretBinding{ProjectID: "project-1", SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID, Use: true, EnvName: "GH_TOKEN"}
+	if err := s.CreateSecretBinding(ctx, second, store.BindingChange{Actor: "user-1"}); err == nil {
+		t.Fatal("a second plain use binding in one variable was stored")
 	}
 }
 

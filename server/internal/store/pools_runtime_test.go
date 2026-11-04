@@ -33,7 +33,7 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 	if enrolled.State == model.PoolStateActive {
 		t.Fatal("enrollment wrote the reconciler's state")
 	}
-	updated, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
+	updated, _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, false, true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
 	if err != nil {
 		t.Fatalf("update status: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestUpdatePoolStatusLeavesReconcilerVerdictAlone(t *testing.T) {
 		t.Fatalf("record failure: %v", err)
 	}
 
-	updated, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 1, 1<<30, 1<<30, nil)
+	updated, _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, false, true, true, false, 1, 1<<30, 1<<30, nil)
 	if err != nil {
 		t.Fatalf("update status: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestSchedulablePoolForSandboxIgnoresCapacity(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 0, 0, 0, nil); err != nil {
+	if _, _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, false, true, true, false, 0, 0, 0, nil); err != nil {
 		t.Fatalf("update status: %v", err)
 	}
 
@@ -145,7 +145,7 @@ func TestSchedulablePoolForSandboxUsesFreshHealthRatherThanLifecycle(t *testing.
 	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
+	if _, _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, false, true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); err != nil {
@@ -169,7 +169,7 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
 		t.Fatal(err)
 	}
-	reported, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil)
+	reported, _, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, false, true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("startup placement = %v, want wait", err)
 	}
-	if _, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, false, false, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, false, false, false, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	// A reconcile holding a pre-heartbeat snapshot must not erase freshness.
@@ -201,7 +201,7 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("stale reconcile overwrote a negative heartbeat: %v", err)
 	}
-	if _, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := s.UpdatePoolStatus(ctx, pool.ID, platform.Pool(), platform.OCI, false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", pool.ID)); err != nil {
@@ -244,7 +244,7 @@ func TestSchedulablePoolKeepsPreloadGateDespiteFreshHeartbeat(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	pool, err := s.GetPool(ctx, "project-1", "pool-1")
@@ -269,7 +269,7 @@ func TestSchedulablePoolForSandboxRefusesAnotherPlatform(t *testing.T) {
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
 	arm := platform.Platform{OS: "linux", Arch: "arm64"}
-	registered, err := s.UpdatePoolStatus(ctx, "pool-1", arm, platform.OCI, true, true, false, 1, 1<<30, 1<<30, nil)
+	registered, _, err := s.UpdatePoolStatus(ctx, "pool-1", arm, platform.OCI, false, true, true, false, 1, 1<<30, 1<<30, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestSchedulablePoolForSandboxRefusesAnotherPlatform(t *testing.T) {
 	}
 	// The heartbeat is what a pool from before platforms corrects itself by.
 	amd := platform.Platform{OS: "linux", Arch: "amd64"}
-	updated, err := s.UpdatePoolStatus(ctx, "pool-1", amd, platform.OCI, true, true, false, 1, 1<<30, 1<<30, nil)
+	updated, _, err := s.UpdatePoolStatus(ctx, "pool-1", amd, platform.OCI, false, true, true, false, 1, 1<<30, 1<<30, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,10 +332,10 @@ func TestAnAgentThatDeclaresNoPlatformIsNotGuessedAt(t *testing.T) {
 	}
 
 	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := s.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
-	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Platform{}, platform.OCI, true, true, false, 1, 1, 1, nil)
+	pool, _, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Platform{}, platform.OCI, false, true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func schedulablePool(t *testing.T, s *store.Store, poolID string, hosts platform
 	t.Helper()
 	ctx := context.Background()
 	createTestPool(t, s, "project-1", poolID)
-	pool, err := s.UpdatePoolStatus(ctx, poolID, hosts, runs, true, true, false, 1, 1<<30, 1<<30, nil)
+	pool, _, err := s.UpdatePoolStatus(ctx, poolID, hosts, runs, false, true, true, false, 1, 1<<30, 1<<30, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,21 +498,21 @@ func TestAnAgentThatDeclaresNoImageKindRunsOCI(t *testing.T) {
 	if !pool.ImageKind.IsZero() {
 		t.Fatalf("image kind = %q before the agent reported, want none", pool.ImageKind)
 	}
-	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.ImageKind{}, true, true, false, 1, 1, 1, nil)
+	pool, _, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.ImageKind{}, false, true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if pool.ImageKind != platform.OCI {
 		t.Fatalf("first report with no kind: image kind = %q, want oci", pool.ImageKind)
 	}
-	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), true, true, false, 1, 1, 1, nil)
+	pool, _, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), false, true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if pool.ImageKind != platform.VM("boxd") {
 		t.Fatalf("reported vm/boxd: image kind = %q", pool.ImageKind)
 	}
-	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.ImageKind{}, true, true, false, 1, 1, 1, nil)
+	pool, _, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.ImageKind{}, false, true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

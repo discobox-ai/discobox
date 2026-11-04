@@ -7,7 +7,8 @@ asks a person for.
 
 Cleartext leaves the control plane through two doors, both called by a pool
 agent's proxy for one of its own sandboxes: `ResolveSandboxSecret`, for one
-sentinel and one destination host, and `ResolveSandboxRawSecret`, for one raw
+sentinel and one destination host that some grant it is held to allows, held
+by the pool until the latest such grant lapses, and `ResolveSandboxRawSecret`, for one raw
 binding's handle and no host ([below](#a-raw-binding-hands-over-the-value)). An
 approved answer names the secret beside its value, which the proxy records on
 the request it swaps the value into
@@ -47,6 +48,18 @@ flowchart LR
   `store.Covers`). A binding that has lapsed, or whose parent has gone or
   lapsed, is not there. `ListBoundSecrets` is that view, with each binding's
   route lists and the earlier of its and its parent's expiry.
+- **An addition stacks; nothing else does** ([ADR 26-11-03-329](../../../../docs/adr/26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md)).
+  `SecretBinding.Adds` is a use on a sandbox, by sentinel, with an expiry,
+  that applies beside the plain binding delivering its variable at whatever
+  level, and of the same secret only (`EffectiveBinding.Additions`); with no
+  plain binding there, the addition that lapses last delivers the variable
+  and the others stack on it. One beside a variable another secret delivers,
+  or one whose binding hands over the value itself, which nothing stacks on,
+  does not apply but stands (`EffectiveBindings.Unapplied`, listed with why).
+  A sentinel is then held to a grant for each, any one of which may allow a
+  request (`store.SentinelGrants`, `secretroute.DecideGrants`): one binding's
+  blocked routes never cut into another's, and an addition lapsing takes only
+  its own routes away.
 - **Every change is recorded** in `secret_binding_events`, in the transaction
   that makes it: created, updated, deleted, expired, with who did it and why
   — a request ID, the parent whose removal took it, the target or secret whose
@@ -59,9 +72,12 @@ flowchart LR
   (`refuseSandboxPrincipal`); a discobox hands a credential on only by
   approving a request or at a create, under a delegate binding.
 - **Shaped for what it does** (`checkBindingShape`): a use names a variable
-  matching `services.EnvVarNamePattern`, a delegation alone names none. One
-  use binding per target and variable, one delegate binding per target and
-  secret — unique indexes, a 409 on collision. An update may change what it is
+  matching `services.EnvVarNamePattern`, a delegation alone names none, and an
+  addition is a use alone, on a sandbox, by sentinel, with an expiry, however
+  it is written. One plain use binding per target and variable, any number of
+  additions beside it, one delegate binding per target and secret — unique
+  indexes (`idx_secret_binding_plain_use`, `idx_secret_binding_delegate`), a
+  409 on collision. An update may change what it is
   for (`UpdateSecretBinding`): use off takes the variable away; delegate off
   removes everything handed on under it, each recorded and its holders
   marked; delegate on is refused for a binding handed on itself, since no
@@ -138,8 +154,12 @@ does, so the proxy never asks. Refresh requests are their own record
   `MaxRequestPolicies`, `MaxPartRoutes` and `MaxRequestRouteBytes` — what the
   whole request resolves to, spent as each document resolves — are
   boundaries, each a 400 naming what broke it.
-- **An ask is deduplicated** per sandbox, name, variable (or none), lifetime
-  and set of parts, with the same routes in each in any order
+- **A use part may ask to add** (`SecretRequestPart.Add`, ADR 26-11-03-329
+  §4): its routes in addition to what the discobox holds, for their own
+  lifetime, rather than as its whole use. A delegate part never does, and an
+  ask to add with no use part is a 400.
+- **An ask is deduplicated** per sandbox, name, variable (or none), lifetime,
+  whether it asks to add, and set of parts, with the same routes in each in any order
   (`store.FindPendingAgentCredentialRequests`); policies and the
   justification are left out, since they change nothing approval grants.
 - **The lifetime asked for** is bounded at `agentcreds.MaxGrantTTLSeconds` —
@@ -158,7 +178,18 @@ request is `approved` when any part was, `denied` when none was, and records
 each part's outcome and binding. Every binding, its events, the holders' marks
 and the decision are one transaction (`commitApproval`).
 
-An approved part **replaces** the discobox's own bindings of its kind for the
+An approved use part is granted **as an addition** when the answer says
+`add`, or names no way and the request asked to add (`partApproval.adds`,
+ADR 26-11-03-329 §4); the request records it (`ApprovedAs`). The addition is
+stored beside what stands and touches none of it (`addBinding`), so a base
+held for good, inherited from a harness config or project, or handed on
+under another discobox's delegation keeps its routes and lifetime; it is
+refused (409) where the variable is delivered by another secret, since it
+would never apply there, or by a binding that hands over the value itself,
+since it would widen where that value goes on a sentinel ask, and an addition of the value itself, or forever, is
+a 400. A delegate part is always a replacement.
+
+Otherwise an approved part **replaces** the discobox's own bindings of its kind for the
 secret (`replaceBindings`, §5); a request states the whole access of that
 kind, never an addition. Harness config and project bindings are not touched.
 Which binding becomes what is `pkg/bindingplan`'s rule, the one the CLI and
@@ -167,9 +198,10 @@ the delegate part to what it leaves (`bindingplan.Answer`): over a binding
 that both uses and delegates, approving both takes its use into one new use
 binding and then updates the delegation left in place, with no split.
 
-- **Use:** the use-only binding in the asked variable — else the oldest — is
-  updated in place, and the other use-only ones are deleted with their
-  sentinels. A binding that also delegates loses only its use side and is
+- **Use:** the plain use-only binding in the asked variable — else the oldest —
+  is updated in place, and the other use-only ones are deleted with their
+  sentinels, every addition of the secret among them: a replacement is the
+  discobox's whole use of it. A binding that also delegates loses only its use side and is
   never deleted, so its delegation and its children stay. With no use-only
   binding left, the approval's is made, and takes over the variable — so the
   sentinel, which follows the variable when it is materialized — of a binding
@@ -238,6 +270,9 @@ value.
 - **`ListSandboxCredentials`** — the sandbox's effective use bindings, each in
   its variable, with the host patterns the open routes of the narrowest list
   it is held to name (`model.OpenRouteHosts`) and its expiry, and its live delegate bindings with no variable.
+  A use lists each grant its sentinel is held to — its binding's, then each
+  addition's — with its own hosts and expiry; its hosts and expiry are their
+  union and the latest of them, which a reader from before grants takes.
 - **`CreateSandboxCredentialRequest`** — records the ask and returns at once.
 - **`GetSandboxCredentialRequest`** — a sandbox's own request and, for each
   part approved, the binding it made while it stands. The handler reports each
@@ -403,13 +438,17 @@ or blocked; `*` covers every host and is the least specific route. A secret with
 is sent nowhere: `*` is how a person says anywhere. A binding may narrow them
 with routes of its own, and a child is held to its parent's too.
 
-- **Route lists, every one of which must allow.** A sentinel's lists are the
-  secret's, the binding's when it has any, and the parent's when it has any
-  (`store.RouteLists`). The pool runs `secretroute.Decide` over them on every
-  swap; `ResolveSandboxSecret` hands a value out only for a host every list
-  allows (`secretroute.HostAllowed`), from a binding that stands
+- **Route lists, every one of which must allow, in a grant any one of which
+  may.** A binding's lists are the secret's, the binding's when it has any,
+  and the parent's when it has any (`store.RouteLists`); with its expiry they
+  are one grant, and a sentinel is held to its binding's grant and one for
+  each addition stacking on it (`store.SentinelGrants`, ADR 26-11-03-329 §3).
+  The pool runs `secretroute.DecideGrants` over them on every swap, by its own
+  clock; `ResolveSandboxSecret` hands a value out only for a host some live
+  grant allows in every list (`secretroute.GrantsAllowingHost`), from a binding that stands
   (`standingBinding`: present, a use of the sentinel's secret, on a level
-  covering the sandbox, live, under a live parent).
+  covering the sandbox, live, under a live parent), and caps the pool's hold
+  on it by the latest of those grants.
 - **`model.NormalizeRoutes` normalizes and dedupes** every route written —
   a secret's, a binding's, a request's or an approval's, a harness's declared
   ones, an inline secret's — through `secretroute.Normalize`, and

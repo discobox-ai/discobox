@@ -248,6 +248,15 @@ The migration that adds the column backfills OCI for every pool that existed
 then, and only on that start: a pool created since has no kind until its agent
 says, since it may be a vm pool.
 
+Beside them an agent declares whether it holds a sandbox's sentinels to
+grants (`sentinelGrants`, `Pool.SentinelGrants`, ADR 26-11-03-329 §3), which
+decides whether its sandboxes are sent grants or each sentinel's first grant
+as route lists. An agent from before grants sends none, recorded as false. A
+report that changes it marks every present sandbox on the pool for sentinel
+delivery, as drift, in the transaction that records it
+(`SandboxDelivery.MarkPoolSentinelsTx`): nothing else changed, so nothing else
+would send them in the shape the agent now takes.
+
 The kind is the pool's alone: a harness names none (ADR 26-11-01-122), so a
 sandbox is whatever kind of box its pool runs, and placement checks no kind.
 The one thing refused for it is an import onto a pool that runs anything but
@@ -265,7 +274,7 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | `HealthCheckStartedAt` | server startup | `Store.BeginPoolHealthChecks`, before workers/listeners |
 | `PublicKey`, `KeyType` | pool's maker | `ControlPlane.EnrollPool`, once per box it makes (ADR 26-10-24-953 §4) |
 | `RegisteredAt` | pool agent | its first `UpdatePoolStatus` heartbeat |
-| `Platform`, `ImageKind` | pool agent | every `UpdatePoolStatus` heartbeat |
+| `Platform`, `ImageKind`, `SentinelGrants` | pool agent | every `UpdatePoolStatus` heartbeat |
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt`, `StatusReportedAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |

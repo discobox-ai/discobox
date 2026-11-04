@@ -80,6 +80,16 @@ pending request, and `approve --secret` reads it before sending and says it
 after, part by part — the binding kept, the ones that go, one that loses its
 use or is split, a new one made.
 
+A use part may be granted as an addition beside what the discobox holds
+instead (ADR 26-11-03-329 §4): `get` says how it asks to be granted, and on a
+pending request what applies in its variable now (`requestUseGrants`, from
+the resolved bound secrets), grant by grant with its lifetime, the routes
+asked that none of them names — compared as `secretroute.Format` writes them,
+and said to be — and what each way would do, naming any grant a replacement
+would cut short, shadow or remove (`writeUseGrants`). `approve --use-as
+add|replace` chooses the way, sent only when given so the server grants it as
+the request asked; it is refused on a use part denied or absent.
+
 ## Adoption
 
 `adopt DISCOBOX --reason` files a sandbox-role adoption request and polls its

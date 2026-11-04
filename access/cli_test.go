@@ -787,3 +787,77 @@ func TestRequestRefusesPoliciesThatOutgrowTheBody(t *testing.T) {
 		t.Fatal("request sent, want nothing")
 	}
 }
+
+// --add asks for the use part's routes in addition to what the box holds
+// (ADR 26-11-03-329 §4), from the flags and from --json alike; without a use
+// part there is nothing to add, and it is refused before anything is sent.
+func TestRequestCarriesAnAskToAdd(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	if _, stderr, code := capture(t, "", func() int { return Run(append(slices.Clone(askFlags), "--add")) }); code != exitOK {
+		t.Fatalf("exit = %d: %s", code, stderr)
+	}
+	if !svc.gotRequest.Add || svc.gotRequest.EnvVar != "GITHUB_TOKEN" {
+		t.Fatalf("request = %#v, want its use part asked as an addition", svc.gotRequest)
+	}
+	svc.gotRequest = agentcreds.RequestBody{}
+	body := `{"name":"github","envVar":"GITHUB_TOKEN","routes":["POST api.github.com/repos/acme/web/pulls"],"add":true}`
+	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
+		t.Fatalf("exit = %d: %s", code, stderr)
+	}
+	if !svc.gotRequest.Add {
+		t.Fatalf("request = %#v, want \"add\" carried", svc.gotRequest)
+	}
+	svc.gotRequest = agentcreds.RequestBody{}
+	_, stderr, code := capture(t, "", func() int {
+		return Run([]string{"request", "--name", "github", "--add", "--delegate-route", "GET api.github.com/**"})
+	})
+	if code != exitUsage || !strings.Contains(stderr, "--add") || svc.gotRequest.Name != "" {
+		t.Fatalf("an ask to add with no use part: exit = %d, stderr %s, sent %#v", code, stderr, svc.gotRequest)
+	}
+}
+
+// A credential held under several grants lists each on its own line, so
+// what goes when an addition lapses, and what stays, is read off it.
+func TestListSaysEachGrantACredentialIsHeldTo(t *testing.T) {
+	expires := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	serve(t, &fakeService{credentials: []agentcreds.Credential{{
+		Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com", "uploads.github.com"},
+		Grants: []agentcreds.CredentialGrant{
+			{Hosts: []string{"api.github.com"}},
+			{Hosts: []string{"uploads.github.com"}, Adds: true, ExpiresAt: &expires},
+		},
+	}}})
+	stdout, _, code := capture(t, "", func() int { return Run([]string{"list"}) })
+	if code != exitOK {
+		t.Fatalf("exit = %d", code)
+	}
+	for _, want := range []string{
+		"github (GITHUB_TOKEN), under 2 grants:",
+		"  binding → api.github.com [never expires]",
+		"  added → uploads.github.com [expires 2026-11-01T00:00:00Z]",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout lacks %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// A granted use part says how it was granted, so an agent that asked to add
+// and was given a replacement knows what it no longer holds (ADR 26-11-03-329
+// §4).
+func TestWaitSaysHowTheUsePartWasGranted(t *testing.T) {
+	granted := &agentcreds.Credential{Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"}}
+	for grantedAs, want := range map[string]string{
+		agentcreds.GrantedAsAdd:     "granted as an addition: what you held in GITHUB_TOKEN stays as it was",
+		agentcreds.GrantedAsReplace: "granted as a replacement: this is now your whole use of it in GITHUB_TOKEN",
+	} {
+		serve(t, &fakeService{requestPolls: []agentcreds.RequestStatus{
+			{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Use: &agentcreds.PartStatus{Status: agentcreds.StatusGranted, Credential: granted, GrantedAs: grantedAs}},
+		}})
+		stdout, stderr, code := capture(t, "", func() int { return Run(append(slices.Clone(askFlags), "--add", "--wait", "--timeout", "10s")) })
+		if code != exitOK || !strings.Contains(stdout, want) {
+			t.Fatalf("%s: exit = %d, stderr %s, stdout lacks %q:\n%s", grantedAs, code, stderr, want, stdout)
+		}
+	}
+}

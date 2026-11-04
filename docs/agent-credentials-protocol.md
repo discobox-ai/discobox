@@ -113,6 +113,27 @@ handed over the value itself in `envVar`, or the path of a file holding it,
 rather than a placeholder; no request asks for that, it is the approver's choice
 ([ADR 26-10-27-840](adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md)).
 
+A credential in a variable may be held under several grants: the binding that
+delivers it and each addition stacking on it, granted for a time of its own
+([ADR 26-11-03-329](adr/26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md)).
+`grants` lists them, each with its `hosts`, `expiresAt` and, for an addition,
+`adds`; a request is sent when some grant allows it, so when an addition lapses
+only its hosts go. `hosts` and `expiresAt` beside them are their union and the
+latest of them.
+
+```json
+{
+  "name": "github",
+  "envVar": "GITHUB_TOKEN",
+  "hosts": ["api.github.com", "uploads.github.com"],
+  "purpose": "use",
+  "grants": [
+    { "hosts": ["api.github.com"] },
+    { "hosts": ["uploads.github.com"], "adds": true, "expiresAt": "2026-08-12T18:00:00Z" }
+  ]
+}
+```
+
 ## `request` — ask for something new
 
 ```
@@ -149,6 +170,17 @@ the caller creates may be given it. A delegation names no variable; it is
 delivered to nothing in the caller, and lets the caller send nothing itself.
 Each part's lists are independent, and a person answers the two separately
 in one answer.
+
+A use part is the caller's whole use of the credential: approved, it replaces
+what the caller holds in the variable, routes and lifetime both. `"add": true`
+asks for its routes in addition instead, for their own lifetime: approved so,
+they are an addition beside what the caller holds, which is left as it was,
+and only they go when they lapse
+([ADR 26-11-03-329](adr/26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md)).
+The person answering may grant either way, and a granted use part says which
+in its status, `grantedAs` (`add` or `replace`): after a replacement, what the
+caller held and did not ask for again is gone. `add` without a use part is
+`invalid`, and a delegate part is always a replacement.
 
 `name` is the credential asked for and `envVar` the variable it is wanted in.
 `hosts` and `routes` are where it will be sent; a part names at least one of

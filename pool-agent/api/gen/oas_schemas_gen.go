@@ -3166,6 +3166,69 @@ func (o OptNilPoolSandboxCreateRequestSecretEnv) Or(d PoolSandboxCreateRequestSe
 	return d
 }
 
+// NewOptNilPoolSandboxCreateRequestSentinelGrants returns new OptNilPoolSandboxCreateRequestSentinelGrants with value set to v.
+func NewOptNilPoolSandboxCreateRequestSentinelGrants(v PoolSandboxCreateRequestSentinelGrants) OptNilPoolSandboxCreateRequestSentinelGrants {
+	return OptNilPoolSandboxCreateRequestSentinelGrants{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxCreateRequestSentinelGrants is optional nullable PoolSandboxCreateRequestSentinelGrants.
+type OptNilPoolSandboxCreateRequestSentinelGrants struct {
+	Value PoolSandboxCreateRequestSentinelGrants
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxCreateRequestSentinelGrants was set.
+func (o OptNilPoolSandboxCreateRequestSentinelGrants) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxCreateRequestSentinelGrants) Reset() {
+	var v PoolSandboxCreateRequestSentinelGrants
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxCreateRequestSentinelGrants) SetTo(v PoolSandboxCreateRequestSentinelGrants) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxCreateRequestSentinelGrants) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxCreateRequestSentinelGrants) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxCreateRequestSentinelGrants
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxCreateRequestSentinelGrants) Get() (v PoolSandboxCreateRequestSentinelGrants, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxCreateRequestSentinelGrants) Or(d PoolSandboxCreateRequestSentinelGrants) PoolSandboxCreateRequestSentinelGrants {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilPoolSandboxCreateRequestSentinelRoutes returns new OptNilPoolSandboxCreateRequestSentinelRoutes with value set to v.
 func NewOptNilPoolSandboxCreateRequestSentinelRoutes(v PoolSandboxCreateRequestSentinelRoutes) OptNilPoolSandboxCreateRequestSentinelRoutes {
 	return OptNilPoolSandboxCreateRequestSentinelRoutes{
@@ -3349,6 +3412,69 @@ func (o OptNilPoolSandboxUpdateRequestSecretEnv) Get() (v PoolSandboxUpdateReque
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilPoolSandboxUpdateRequestSecretEnv) Or(d PoolSandboxUpdateRequestSecretEnv) PoolSandboxUpdateRequestSecretEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilPoolSandboxUpdateRequestSentinelGrants returns new OptNilPoolSandboxUpdateRequestSentinelGrants with value set to v.
+func NewOptNilPoolSandboxUpdateRequestSentinelGrants(v PoolSandboxUpdateRequestSentinelGrants) OptNilPoolSandboxUpdateRequestSentinelGrants {
+	return OptNilPoolSandboxUpdateRequestSentinelGrants{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxUpdateRequestSentinelGrants is optional nullable PoolSandboxUpdateRequestSentinelGrants.
+type OptNilPoolSandboxUpdateRequestSentinelGrants struct {
+	Value PoolSandboxUpdateRequestSentinelGrants
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxUpdateRequestSentinelGrants was set.
+func (o OptNilPoolSandboxUpdateRequestSentinelGrants) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxUpdateRequestSentinelGrants) Reset() {
+	var v PoolSandboxUpdateRequestSentinelGrants
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxUpdateRequestSentinelGrants) SetTo(v PoolSandboxUpdateRequestSentinelGrants) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxUpdateRequestSentinelGrants) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxUpdateRequestSentinelGrants) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxUpdateRequestSentinelGrants
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxUpdateRequestSentinelGrants) Get() (v PoolSandboxUpdateRequestSentinelGrants, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxUpdateRequestSentinelGrants) Or(d PoolSandboxUpdateRequestSentinelGrants) PoolSandboxUpdateRequestSentinelGrants {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5676,6 +5802,11 @@ type PoolSandboxCreateRequest struct {
 	// sentinel must be allowed by every list; a sentinel with no lists, or an empty list, is sent
 	// nowhere.
 	SentinelRoutes OptNilPoolSandboxCreateRequestSentinelRoutes `json:"sentinelRoutes"`
+	// The grants each stable sentinel is held to, keyed by sentinel (ADR 26-11-03-329 §3), sent in
+	// place of sentinelRoutes to an agent that declared sentinelGrants. A request carrying the sentinel
+	// passes when some grant that has not expired allows it, as every one of that grant's lists must; a
+	// sentinel with no grants is sent nowhere.
+	SentinelGrants OptNilPoolSandboxCreateRequestSentinelGrants `json:"sentinelGrants"`
 	// Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
 	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
 	// secrets rotate.
@@ -5750,6 +5881,11 @@ func (s *PoolSandboxCreateRequest) GetRawSecrets() OptNilPoolSandboxCreateReques
 // GetSentinelRoutes returns the value of SentinelRoutes.
 func (s *PoolSandboxCreateRequest) GetSentinelRoutes() OptNilPoolSandboxCreateRequestSentinelRoutes {
 	return s.SentinelRoutes
+}
+
+// GetSentinelGrants returns the value of SentinelGrants.
+func (s *PoolSandboxCreateRequest) GetSentinelGrants() OptNilPoolSandboxCreateRequestSentinelGrants {
+	return s.SentinelGrants
 }
 
 // GetSecretEnv returns the value of SecretEnv.
@@ -5827,6 +5963,11 @@ func (s *PoolSandboxCreateRequest) SetSentinelRoutes(val OptNilPoolSandboxCreate
 	s.SentinelRoutes = val
 }
 
+// SetSentinelGrants sets the value of SentinelGrants.
+func (s *PoolSandboxCreateRequest) SetSentinelGrants(val OptNilPoolSandboxCreateRequestSentinelGrants) {
+	s.SentinelGrants = val
+}
+
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxCreateRequest) SetSecretEnv(val OptNilPoolSandboxCreateRequestSecretEnv) {
 	s.SecretEnv = val
@@ -5856,6 +5997,21 @@ func (s *PoolSandboxCreateRequestSecretEnv) init() PoolSandboxCreateRequestSecre
 	m := *s
 	if m == nil {
 		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// The grants each stable sentinel is held to, keyed by sentinel (ADR 26-11-03-329 §3), sent in
+// place of sentinelRoutes to an agent that declared sentinelGrants. A request carrying the sentinel
+// passes when some grant that has not expired allows it, as every one of that grant's lists must; a
+// sentinel with no grants is sent nowhere.
+type PoolSandboxCreateRequestSentinelGrants map[string][]SentinelGrant
+
+func (s *PoolSandboxCreateRequestSentinelGrants) init() PoolSandboxCreateRequestSentinelGrants {
+	m := *s
+	if m == nil {
+		m = map[string][]SentinelGrant{}
 		*s = m
 	}
 	return m
@@ -6378,6 +6534,9 @@ type PoolSandboxUpdateRequest struct {
 	// Replacement route lists keyed by stable sentinel, sent with sentinels and replacing the sandbox's
 	// whole map (ADR 26-10-27-880 §4).
 	SentinelRoutes OptNilPoolSandboxUpdateRequestSentinelRoutes `json:"sentinelRoutes"`
+	// Replacement grants keyed by stable sentinel, sent with sentinels in place of sentinelRoutes and
+	// replacing the sandbox's whole map (ADR 26-11-03-329 §3).
+	SentinelGrants OptNilPoolSandboxUpdateRequestSentinelGrants `json:"sentinelGrants"`
 	// Replacement secret-bound environment variable name to sentinel placeholder map for a running
 	// sandbox.
 	SecretEnv OptNilPoolSandboxUpdateRequestSecretEnv `json:"secretEnv"`
@@ -6421,6 +6580,11 @@ func (s *PoolSandboxUpdateRequest) GetRawSecrets() OptNilPoolSandboxUpdateReques
 // GetSentinelRoutes returns the value of SentinelRoutes.
 func (s *PoolSandboxUpdateRequest) GetSentinelRoutes() OptNilPoolSandboxUpdateRequestSentinelRoutes {
 	return s.SentinelRoutes
+}
+
+// GetSentinelGrants returns the value of SentinelGrants.
+func (s *PoolSandboxUpdateRequest) GetSentinelGrants() OptNilPoolSandboxUpdateRequestSentinelGrants {
+	return s.SentinelGrants
 }
 
 // GetSecretEnv returns the value of SecretEnv.
@@ -6468,6 +6632,11 @@ func (s *PoolSandboxUpdateRequest) SetSentinelRoutes(val OptNilPoolSandboxUpdate
 	s.SentinelRoutes = val
 }
 
+// SetSentinelGrants sets the value of SentinelGrants.
+func (s *PoolSandboxUpdateRequest) SetSentinelGrants(val OptNilPoolSandboxUpdateRequestSentinelGrants) {
+	s.SentinelGrants = val
+}
+
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxUpdateRequest) SetSecretEnv(val OptNilPoolSandboxUpdateRequestSecretEnv) {
 	s.SecretEnv = val
@@ -6494,6 +6663,19 @@ func (s *PoolSandboxUpdateRequestSecretEnv) init() PoolSandboxUpdateRequestSecre
 	m := *s
 	if m == nil {
 		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Replacement grants keyed by stable sentinel, sent with sentinels in place of sentinelRoutes and
+// replacing the sandbox's whole map (ADR 26-11-03-329 §3).
+type PoolSandboxUpdateRequestSentinelGrants map[string][]SentinelGrant
+
+func (s *PoolSandboxUpdateRequestSentinelGrants) init() PoolSandboxUpdateRequestSentinelGrants {
+	m := *s
+	if m == nil {
+		m = map[string][]SentinelGrant{}
 		*s = m
 	}
 	return m
@@ -7364,6 +7546,38 @@ func (s *SandboxUser) SetName(val OptString) {
 // SetUID sets the value of UID.
 func (s *SandboxUser) SetUID(val OptInt64) {
 	s.UID = val
+}
+
+// One binding's say over a sentinel (ADR 26-11-03-329 §3) - its route lists, every one of which a
+// request must pass, and when it lapses. Grants are never merged into one list, so a blocked route
+// refuses only within its own grant.
+// Ref: #/components/schemas/SentinelGrant
+type SentinelGrant struct {
+	// The route lists, the secret's first; an empty list allows nothing.
+	Lists [][]SentinelRoute `json:"lists"`
+	// When the grant lapses; the agent refuses it from then by its own clock. Absent lasts until a
+	// delivery removes it.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+}
+
+// GetLists returns the value of Lists.
+func (s *SentinelGrant) GetLists() [][]SentinelRoute {
+	return s.Lists
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SentinelGrant) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// SetLists sets the value of Lists.
+func (s *SentinelGrant) SetLists(val [][]SentinelRoute) {
+	s.Lists = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SentinelGrant) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
 }
 
 // Where a secret may be sent (ADR 26-10-02-924, ADR 26-10-27-880 §4). A request falls on the route

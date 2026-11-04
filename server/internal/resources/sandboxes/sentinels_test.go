@@ -5,9 +5,11 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // sentinelFixture is a placed sandbox holding one injected secret whose
@@ -63,7 +65,7 @@ func TestSentinelDeliveryRetriesWithoutFailingTheSandbox(t *testing.T) {
 	if len(rec.updated) != 1 || len(rec.updated[0]) != 1 || rec.updated[0][0] != "SENT-1" {
 		t.Fatalf("updated = %v, want the sentinel set delivered on the retry", rec.updated)
 	}
-	if got := rec.routes[0]["SENT-1"]; len(got) != 1 || len(got[0]) != 1 || !slices.Equal(got[0][0].Hosts, []string{"github.com"}) {
+	if got := rec.routes[0]["SENT-1"]; len(got) != 1 || len(got[0].Lists) != 1 || len(got[0].Lists[0]) != 1 || !slices.Equal(got[0].Lists[0][0].Hosts, []string{"github.com"}) {
 		t.Fatalf("routes = %v, want the secret's routes delivered with it", rec.routes)
 	}
 }
@@ -135,7 +137,7 @@ func TestASendThatCarriedStaleRoutesMarksTheDeliveryAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current := map[string][][]secretroute.Route{"SENT-1": {{{Hosts: []string{"github.com"}}}}}
+	current := map[string][]secretroute.Grant{"SENT-1": {{Lists: [][]secretroute.Route{{{Hosts: []string{"github.com"}}}}}}}
 	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, current); err != nil {
 		t.Fatal(err)
 	}
@@ -151,5 +153,44 @@ func TestASendThatCarriedStaleRoutesMarksTheDeliveryAgain(t *testing.T) {
 	}
 	if len(dirty) != 1 || dirty[0].ResourceID != SandboxDirtyID("project-1", "sb-1") {
 		t.Fatalf("dirty = %v, want the sandbox's delivery marked again", dirty)
+	}
+}
+
+// An addition reaches the pool as a grant of its own beside its base's, with
+// its expiry, under the base's sentinel; once it lapses the next delivery
+// holds the sentinel to the base's grant alone (ADR 26-11-03-329 §3).
+func TestAnAdditionIsDeliveredAsAGrantOfItsOwn(t *testing.T) {
+	ctx := context.Background()
+	svc, rec, sec := sentinelFixture(t)
+	hour := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	addition := &model.SecretBinding{ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1",
+		Use: true, Adds: true, EnvName: "GH_TOKEN", Routes: []model.SecretRoute{{Hosts: []string{"github.com"}, Methods: []string{"POST"}}}, ExpiresAt: &hour}
+	if err := svc.store.CreateSecretBinding(ctx, addition, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	r := svc.NewSentinelReconciler()
+	id := SandboxDirtyID("project-1", "sb-1")
+	if _, err := r.Reconcile(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	got := rec.routes[len(rec.routes)-1]["SENT-1"]
+	if len(got) != 2 || got[0].ExpiresAt != nil || got[1].ExpiresAt == nil || !got[1].ExpiresAt.Equal(hour) ||
+		len(got[1].Lists) != 2 || !slices.Equal(got[1].Lists[1][0].Methods, []string{"POST"}) {
+		t.Fatalf("grants = %+v, want the base's and the addition's with its expiry", got)
+	}
+
+	lapsed := time.Now().UTC().Add(-time.Second)
+	addition.ExpiresAt = &lapsed
+	if err := svc.store.UpdateSecretBinding(ctx, addition, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.routes[len(rec.routes)-1]["SENT-1"]; len(got) != 1 || got[0].ExpiresAt != nil {
+		t.Fatalf("grants = %+v, want the base's alone once the addition lapsed", got)
+	}
+	if updated := rec.updated[len(rec.updated)-1]; len(updated) != 1 || updated[0] != "SENT-1" {
+		t.Fatalf("sentinels = %v, want the same sentinel kept", updated)
 	}
 }

@@ -824,8 +824,9 @@ func (r *sandboxCore) stageSandbox(ctx context.Context, sandboxID string, req *w
 	}
 	sentinels, _ := req.Sentinels.Get()
 	rawSecrets, _ := req.RawSecrets.Get()
+	sentinelGrants, _ := req.SentinelGrants.Get()
 	sentinelRoutes, _ := req.SentinelRoutes.Get()
-	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelRoutes(sentinelRoutes)); err != nil {
+	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelGrants(sentinelGrants, sentinelRoutes)); err != nil {
 		return nil, err
 	}
 	// Recorded beside the sentinels, before the box exists, so the proxy
@@ -1588,22 +1589,46 @@ func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string)
 	return r.sandboxFromInspect(ctx, inspect.Container), nil
 }
 
-// proxySentinelRoutes are the route lists the control plane sent with a
-// sandbox's sentinels (ADR 26-10-27-880 §4), as the proxy enforces them.
-func proxySentinelRoutes(in map[string][][]workerapimodel.SentinelRoute) map[string][][]secretroute.Route {
-	out := make(map[string][][]secretroute.Route, len(in))
-	for sentinel, lists := range in {
-		converted := make([][]secretroute.Route, 0, len(lists))
-		for _, list := range lists {
-			routes := make([]secretroute.Route, 0, len(list))
-			for _, route := range list {
-				routes = append(routes, sentinelRoute(route))
+// proxySentinelGrants are the grants the control plane sent with a
+// sandbox's sentinels (ADR 26-11-03-329 §3), as the proxy enforces them. This
+// agent declares sentinelGrants, so a control plane that knows grants sends
+// them; one from before sends route lists, each sentinel's read as one grant
+// with no expiry, which is what they meant.
+func proxySentinelGrants(grants map[string][]workerapimodel.SentinelGrant, routes map[string][][]workerapimodel.SentinelRoute) map[string][]secretroute.Grant {
+	if grants != nil {
+		out := make(map[string][]secretroute.Grant, len(grants))
+		for sentinel, held := range grants {
+			converted := make([]secretroute.Grant, 0, len(held))
+			for _, grant := range held {
+				item := secretroute.Grant{Lists: proxyRouteLists(grant.Lists)}
+				if expires, ok := grant.ExpiresAt.Get(); ok {
+					expires := expires.UTC()
+					item.ExpiresAt = &expires
+				}
+				converted = append(converted, item)
 			}
-			converted = append(converted, routes)
+			out[sentinel] = converted
 		}
-		out[sentinel] = converted
+		return out
+	}
+	out := make(map[string][]secretroute.Grant, len(routes))
+	for sentinel, lists := range routes {
+		out[sentinel] = []secretroute.Grant{{Lists: proxyRouteLists(lists)}}
 	}
 	return out
+}
+
+// proxyRouteLists are route lists the control plane sent, field for field.
+func proxyRouteLists(lists [][]workerapimodel.SentinelRoute) [][]secretroute.Route {
+	converted := make([][]secretroute.Route, 0, len(lists))
+	for _, list := range lists {
+		routes := make([]secretroute.Route, 0, len(list))
+		for _, route := range list {
+			routes = append(routes, sentinelRoute(route))
+		}
+		converted = append(converted, routes)
+	}
+	return converted
 }
 
 // sentinelRoute is one route the control plane sent, field for field. The
@@ -1665,9 +1690,10 @@ func (r *sandboxCore) UpdateSandbox(ctx context.Context, sandboxID string, req *
 			// raced a delete would otherwise leave entries no material record
 			// names, which the reaper never finds.
 			rawSecrets, _ := req.RawSecrets.Get()
+			sentinelGrants, _ := req.SentinelGrants.Get()
 			sentinelRoutes, _ := req.SentinelRoutes.Get()
 			if err := r.updateSandboxProxyPolicy(ctx, sandboxID, func() error {
-				return proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelRoutes(sentinelRoutes))
+				return proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelGrants(sentinelGrants, sentinelRoutes))
 			}); err != nil {
 				return nil, err
 			}

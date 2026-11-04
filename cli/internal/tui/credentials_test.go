@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"strconv"
 	"strings"
 	"testing"
@@ -948,11 +949,61 @@ func TestARequestWithTwoPartsIsAnsweredPartByPart(t *testing.T) {
 		t.Fatalf("card = %q, want what the asking discobox holds, and only that, said as replaced", text)
 	}
 	drain(t, m, m.dialog.action("use"), 0)
+	// The discobox holds a use binding of the secret, so how the use part is
+	// granted is asked (ADR 26-11-03-329 §4); the request asked to replace.
+	if len(ds.approvals) != 0 || m.dialog == nil || m.dialog.title != "Add, or replace?" {
+		t.Fatalf("dialog = %s, approvals %v; want how the use part is granted asked first", describe(m.dialog), ds.approvals)
+	}
+	drain(t, m, m.dialog.action("replace"), 0)
 	if len(ds.approvals) != 1 {
 		t.Fatalf("approvals = %#v, want one call", ds.approvals)
 	}
-	if got := ds.approvals[0]; got.Use != PartApprove || got.Delegate != PartDeny || got.SecretID != "sec_gh" {
-		t.Fatalf("approval = %#v, want the use part approved and the delegation denied", got)
+	if got := ds.approvals[0]; got.Use != PartApprove || got.Delegate != PartDeny || got.SecretID != "sec_gh" || got.UseAs != "replace" {
+		t.Fatalf("approval = %#v, want the use part approved as a replacement and the delegation denied", got)
+	}
+}
+
+// A request asking to add, to a discobox already holding the variable, is
+// asked about with both outcomes on one card: what applies there now, grant
+// by grant with its lifetime, the routes asked that none of them names, and
+// what replacing would cut short (ADR 26-11-03-329 §5). The way it asked is
+// first; granted so, it is an addition, by sentinel even of a secret that
+// allows its value to be handed over.
+func TestAnAskToAddIsAnsweredWithWhatItHoldsBeside(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	pulls := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/repos/acme/web/pulls"}}
+	reads := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}}
+	req.Use = &RequestPart{Routes: []secretroute.Route{pulls}, Add: true}
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", AllowRaw: true, Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", From: "harnessConfig", Routes: []secretroute.Route{reads}}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
+	if m.dialog == nil || m.dialog.title != "Add, or replace?" {
+		t.Fatalf("dialog = %s, want how the use part is granted asked", describe(m.dialog))
+	}
+	text := dialogText(m)
+	for _, want := range []string{
+		"As an addition (asked)", "As a replacement",
+		"holds in " + req.EnvVar + " now", "GET api.github.com · no expiry · from its harness config",
+		"if replaced, it is shadowed for 1 hour",
+		"POST api.github.com/repos/acme/web/pulls (as written)",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("card = %q, want %q", text, want)
+		}
+	}
+	drain(t, m, m.dialog.action("add"), 0)
+	if len(ds.approvals) != 1 {
+		t.Fatalf("dialog = %s, approvals = %#v; want the addition sent with no question of delivery", describe(m.dialog), ds.approvals)
+	}
+	if got := ds.approvals[0]; got.UseAs != "add" || got.Raw != "" {
+		t.Fatalf("approval = %#v, want an addition by sentinel", got)
 	}
 }
 
@@ -991,7 +1042,7 @@ func TestTheCardSaysWhatEachBindingBecomes(t *testing.T) {
 		{ID: "asked", Use: true, EnvVar: "GH_TOKEN", Created: at(1)},
 		{ID: "both", Use: true, Delegate: true, EnvVar: "GH_LEAD", Created: at(2)},
 	}
-	use := replacedRows(replacedFields(standing, false, "GH_TOKEN", true, nil, nil))
+	use := replacedRows(replacedFields(standing, false, "GH_TOKEN", bindingplan.Replace, nil, nil))
 	for _, want := range []string{
 		"the one in GH_TOKEN, sent to the secret's routes — kept, takes this approval",
 		"the one in GITHUB_TOKEN, sent to the secret's routes — goes",
@@ -1001,18 +1052,18 @@ func TestTheCardSaysWhatEachBindingBecomes(t *testing.T) {
 			t.Errorf("use part:\n%s\nwant %q", use, want)
 		}
 	}
-	delegate := replacedRows(replacedFields(standing, true, "GH_TOKEN", false, nil, nil))
+	delegate := replacedRows(replacedFields(standing, true, "GH_TOKEN", "", nil, nil))
 	if !strings.Contains(delegate, "stays the delegation; its use moves to a binding of its own in GH_LEAD") || strings.Contains(delegate, "GITHUB_TOKEN") {
 		t.Errorf("delegate part:\n%s", delegate)
 	}
-	if got := replacedRows(replacedFields(standing[2:], false, "GH_TOKEN", true, nil, nil)); !strings.Contains(got, "and a new binding is made") {
+	if got := replacedRows(replacedFields(standing[2:], false, "GH_TOKEN", bindingplan.Replace, nil, nil)); !strings.Contains(got, "and a new binding is made") {
 		t.Errorf("a use part with nothing to keep:\n%s", got)
 	}
 	// Both parts approved over the binding that uses and delegates: the use
 	// part takes its use, and the delegate part then updates the delegation
 	// left — no split, no second new use binding.
 	both := standing[2:]
-	if got := replacedRows(replacedFields(both, true, "GH_TOKEN", true, nil, nil)); !strings.Contains(got, "the delegation, sent to the secret's routes — kept, takes this approval") ||
+	if got := replacedRows(replacedFields(both, true, "GH_TOKEN", bindingplan.Replace, nil, nil)); !strings.Contains(got, "the delegation, sent to the secret's routes — kept, takes this approval") ||
 		strings.Contains(got, "moves") || strings.Contains(got, "new binding") {
 		t.Errorf("delegate part after the use part:\n%s", got)
 	}
@@ -1098,7 +1149,11 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			fields := replacedFields(tc.standing, tc.delegate, "GH_TOKEN", !tc.delegate, tc.asked, tc.secret)
+			useAs := bindingplan.Replace
+			if tc.delegate {
+				useAs = ""
+			}
+			fields := replacedFields(tc.standing, tc.delegate, "GH_TOKEN", useAs, tc.asked, tc.secret)
 			if got, want := replacedRows(fields), strings.Join(tc.want, "\n"); got != want {
 				t.Errorf("fields:\n%s\nwant:\n%s", got, want)
 			}

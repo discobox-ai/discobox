@@ -92,12 +92,27 @@ const (
 //
 // Raw is set for one the caller holds the value of rather than a placeholder
 // for (RawEnv, RawFile).
+//
+// Grants are, for one delivered in a variable, each grant it is held to (ADR
+// 26-11-03-329 §6): the binding that delivers it, then each addition
+// stacking on it, each with its own hosts and expiry. A request is sent when
+// some grant allows it, so an addition's hosts go when it lapses while the
+// others' stay. Hosts and ExpiresAt are their union and the latest of them.
 type Credential struct {
-	Name      string     `json:"name"`
-	EnvVar    string     `json:"envVar,omitempty"`
-	Hosts     []string   `json:"hosts,omitempty"`
-	Purpose   string     `json:"purpose,omitempty"`
-	Raw       string     `json:"raw,omitempty"`
+	Name      string            `json:"name"`
+	EnvVar    string            `json:"envVar,omitempty"`
+	Hosts     []string          `json:"hosts,omitempty"`
+	Purpose   string            `json:"purpose,omitempty"`
+	Raw       string            `json:"raw,omitempty"`
+	ExpiresAt *time.Time        `json:"expiresAt,omitempty"`
+	Grants    []CredentialGrant `json:"grants,omitempty"`
+}
+
+// CredentialGrant is one grant a credential is held to: where it may be sent
+// under it, and until when. Adds is an addition (ADR 26-11-03-329 §1).
+type CredentialGrant struct {
+	Hosts     []string   `json:"hosts"`
+	Adds      bool       `json:"adds,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
@@ -190,10 +205,17 @@ const (
 // instead (ADR 26-10-30-584); on one part they are exclusive with routes and
 // hosts.
 //
+// Add asks for the use part's routes in addition to what the caller holds
+// (ADR 26-11-03-329 §4): granted so, they are an addition beside the binding
+// delivering EnvVar, with a lifetime of their own, and that binding is left
+// as it is. Without it the use part is the caller's whole use of the
+// credential, replacing what it holds. The approver may grant either way.
+//
 // Justification is shown to the person answering; nothing evaluates it.
 type RequestBody struct {
 	Name            string        `json:"name"`
 	EnvVar          string        `json:"envVar,omitempty"`
+	Add             bool          `json:"add,omitempty"`
 	Hosts           []string      `json:"hosts,omitempty"`
 	Routes          []string      `json:"routes,omitempty"`
 	Policies        []Policy      `json:"policies,omitempty"`
@@ -258,10 +280,22 @@ type RequestStatus struct {
 // caller now holds under it, as the approver chose it: the hosts and lifetime
 // may differ from the ones asked for. A credential granted for use is in its
 // variable for every command started from then on.
+//
+// GrantedAs is, once the use part is granted, how (ADR 26-11-03-329 §4):
+// GrantedAsAdd, beside what the caller held in the variable, which stays as
+// it was; GrantedAsReplace, its whole use of the credential, in place of what
+// it held. It may differ from what was asked.
 type PartStatus struct {
 	Status     string      `json:"status"`
 	Credential *Credential `json:"credential,omitempty"`
+	GrantedAs  string      `json:"grantedAs,omitempty"`
 }
+
+// How a granted use part was granted.
+const (
+	GrantedAsAdd     = "add"
+	GrantedAsReplace = "replace"
+)
 
 // Settled reports whether a request has reached a terminal status, which is
 // what a polling client waits for.

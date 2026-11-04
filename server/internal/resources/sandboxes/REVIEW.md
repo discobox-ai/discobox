@@ -60,6 +60,14 @@
   after the commit is lost for good, since the delivery reconcilers have no
   scan to re-find it. This is the second time an observation was marked as
   intent (power-down, above).
+- **A capability a pool declares on its reports, which changes what the
+  server sends its sandboxes, re-delivers to them when it flips.** Nothing
+  else about them changed, so nothing else marks them: an agent upgraded in
+  place over running containers is otherwise sent the old shape until some
+  unrelated change happens to push. `Pool.SentinelGrants` (ADR 26-11-03-329
+  §3) marks every present sandbox's sentinel delivery, as drift, in the
+  transaction that records the report (`MarkPoolSentinelsTx`); the next
+  field of this kind does the same.
 
 ## The spec fingerprint
 

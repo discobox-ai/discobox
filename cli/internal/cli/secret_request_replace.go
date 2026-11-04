@@ -13,7 +13,9 @@ import (
 
 // partReplacement is what approving one part of a request with a secret does
 // to the bindings the asking discobox already holds of it (ADR 26-11-02-022
-// §5), as bindingplan decides it — the rule the server applies.
+// §5): replacing them, or, for a use part granted as an addition, nothing
+// (ADR 26-11-03-329 §4), as bindingplan decides it — the rule the server
+// applies.
 type partReplacement struct {
 	label string
 	plan  bindingplan.Plan
@@ -21,10 +23,11 @@ type partReplacement struct {
 }
 
 // requestReplacements reads the asking discobox's own sandbox-level bindings
-// of secretID and plans the answer against them: each part approved
-// (useApproved, delegateApproved), the delegate part against what the use
-// part leaves, as the server applies them (bindingplan.Answer).
-func (a *App) requestReplacements(ctx context.Context, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest, secretID string, useApproved, delegateApproved bool) ([]partReplacement, error) {
+// of secretID and plans the answer against them: the use part as useAs
+// grants it, empty when it is not approved, and the delegate part when
+// delegateApproved, against what the use part leaves, as the server applies
+// them (bindingplan.Answer).
+func (a *App) requestReplacements(ctx context.Context, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest, secretID string, useAs bindingplan.As, delegateApproved bool) ([]partReplacement, error) {
 	box := request.SandboxId.Or("")
 	if box == "" {
 		return nil, nil
@@ -49,13 +52,16 @@ func (a *App) requestReplacements(ctx context.Context, client *apiclientgen.Clie
 			continue
 		}
 		held[b.ID] = b
-		standing = append(standing, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, EnvName: b.EnvVar.Or(""), Created: b.CreatedAt})
+		standing = append(standing, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, Adds: b.Adds.Or(false), EnvName: b.EnvVar.Or(""), Created: b.CreatedAt})
 	}
 	_, asksUse := request.Use.Get()
 	_, asksDelegate := request.Delegate.Get()
-	use, delegate := bindingplan.Answer(standing, request.EnvName.Or(""), asksUse && useApproved, asksDelegate && delegateApproved)
+	if !asksUse {
+		useAs = ""
+	}
+	use, delegate := bindingplan.Answer(standing, request.EnvName.Or(""), useAs, asksDelegate && delegateApproved)
 	var out []partReplacement
-	if asksUse && useApproved {
+	if useAs != "" {
 		out = append(out, partReplacement{label: "use", plan: use, held: held})
 	}
 	if asksDelegate && delegateApproved {
@@ -74,12 +80,18 @@ func (r partReplacement) lines(done bool) []string {
 		return would
 	}
 	var out []string
+	if r.plan.Adds {
+		return []string{verb("an addition is made beside them; none of them is touched", "an addition was made beside them; none of them was touched")}
+	}
 	for _, step := range r.plan.Steps {
 		// Said as the binding stands when this part is applied: a delegate
 		// part after a use part reads what the use part left.
 		b := r.held[step.Binding.ID]
 		what := "the delegation " + b.ID
-		if step.Binding.Use {
+		switch {
+		case step.Binding.Adds:
+			what = "the addition " + b.ID + " in " + step.Binding.EnvName
+		case step.Binding.Use:
 			what = b.ID + " in " + step.Binding.EnvName
 		}
 		where := "the secret's routes"

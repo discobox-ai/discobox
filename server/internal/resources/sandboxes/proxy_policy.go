@@ -119,6 +119,27 @@ func (s *Service) MarkProxyPolicyChangedTx(ctx context.Context, txStore *store.S
 	return nil
 }
 
+// MarkPoolSentinelsTx marks the sentinel delivery of every present sandbox
+// on a pool, in the caller's transaction: what its agent takes changed (ADR
+// 26-11-03-329 §3), so each sandbox's sentinels are sent again in that shape.
+// It is a delivery a pool's report earns, so it is marked as drift, never
+// intent (sandboxes/REVIEW.md, "Marks a pool observation earns").
+func (s *Service) MarkPoolSentinelsTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID string) error {
+	if s.engine == nil {
+		return nil
+	}
+	ids, err := txStore.ListPresentSandboxIDs(ctx, projectID, poolID, "")
+	if err != nil {
+		return err
+	}
+	for _, sandboxID := range ids {
+		if err := s.engine.MarkDirtyDriftTx(ctx, txDB, SentinelsResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // refuseSandboxRoleUpdate is ADR 26-10-31-819 §5's check on an update from
 // the sandbox role, which reaches it only for a discobox it created and does
 // not reach less than (authorizeWithinCaller): it may change that discobox's

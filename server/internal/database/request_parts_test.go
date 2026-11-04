@@ -74,9 +74,14 @@ func TestMigrateSplitsSecretRequestsIntoParts(t *testing.T) {
 	part := func(outcome, binding string) model.SecretRequestPart {
 		return model.SecretRequestPart{Asked: true, Routes: want, Outcome: outcome, BindingID: binding}
 	}
+	replaced := func(p model.SecretRequestPart) model.SecretRequestPart {
+		p.ApprovedAs = model.SecretRequestApprovedAsReplace
+		return p
+	}
 	for id, expect := range map[string]struct{ use, delegate model.SecretRequestPart }{
-		"r-use-pending":       {use: part("", "")},
-		"r-use-approved":      {use: part(model.SecretRequestPartApproved, "bind-use")},
+		"r-use-pending": {use: part("", "")},
+		// Every approval before additions replaced (ADR 26-11-03-329 §4).
+		"r-use-approved":      {use: replaced(part(model.SecretRequestPartApproved, "bind-use"))},
 		"r-delegate-denied":   {delegate: part(model.SecretRequestPartDenied, "")},
 		"r-delegate-approved": {delegate: part(model.SecretRequestPartApproved, "bind-delegate")},
 	} {

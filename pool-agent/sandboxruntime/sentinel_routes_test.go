@@ -3,16 +3,18 @@ package sandboxruntime
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	poolagentapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 )
 
-// The route lists the control plane sends with a sentinel reach the proxy as
-// lists, in order and each kept apart (ADR 26-10-27-880 §4): merging them
-// would turn "every list allows" into "any route allows".
-func TestProxySentinelRoutesKeepEachList(t *testing.T) {
+// The route lists a control plane from before grants sends with a sentinel
+// reach the proxy as one grant with no expiry, its lists in order and each
+// kept apart (ADR 26-10-27-880 §4): merging them would turn "every list
+// allows" into "any route allows".
+func TestProxySentinelRoutesAreOneGrantKeepingEachList(t *testing.T) {
 	in := map[string][][]workerapimodel.SentinelRoute{
 		"SENT": {
 			{{Hosts: []string{"*"}}},
@@ -22,17 +24,39 @@ func TestProxySentinelRoutesKeepEachList(t *testing.T) {
 			},
 		},
 	}
-	want := map[string][][]secretroute.Route{
-		"SENT": {
+	want := map[string][]secretroute.Grant{
+		"SENT": {{Lists: [][]secretroute.Route{
 			{{Hosts: []string{secretroute.AnyHost}}},
 			{
 				{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/acme/**"}},
 				{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/acme/admin/**"}, Blocked: true},
 			},
+		}}},
+	}
+	if got := proxySentinelGrants(nil, in); !reflect.DeepEqual(got, want) {
+		t.Fatalf("proxySentinelGrants = %+v, want %+v", got, want)
+	}
+}
+
+// Grants reach the proxy each apart, in order, with their expiry, and in
+// place of any route lists beside them (ADR 26-11-03-329 §3).
+func TestProxySentinelGrantsKeepEachGrantAndItsExpiry(t *testing.T) {
+	expires := time.Date(2026, 11, 3, 13, 0, 0, 0, time.UTC)
+	grants := map[string][]workerapimodel.SentinelGrant{
+		"SENT": {
+			{Lists: [][]workerapimodel.SentinelRoute{{{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}}}}},
+			{Lists: [][]workerapimodel.SentinelRoute{{{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}}}}, ExpiresAt: poolagentapi.NewOptDateTime(expires)},
 		},
 	}
-	if got := proxySentinelRoutes(in); !reflect.DeepEqual(got, want) {
-		t.Fatalf("proxySentinelRoutes = %+v, want %+v", got, want)
+	routes := map[string][][]workerapimodel.SentinelRoute{"SENT": {{{Hosts: []string{"*"}}}}}
+	want := map[string][]secretroute.Grant{
+		"SENT": {
+			{Lists: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}}}}},
+			{Lists: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}}}}, ExpiresAt: &expires},
+		},
+	}
+	if got := proxySentinelGrants(grants, routes); !reflect.DeepEqual(got, want) {
+		t.Fatalf("proxySentinelGrants = %+v, want %+v", got, want)
 	}
 }
 

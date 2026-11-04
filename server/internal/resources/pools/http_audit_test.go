@@ -128,7 +128,7 @@ func newAuditServiceWith(t *testing.T, shape func(*model.Pool)) (*Service, *audi
 	}); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	return NewService(appStore, manager, NewControlPlane(appStore, nil), &recordedEgress{}), provider
+	return NewService(appStore, manager, NewControlPlane(appStore, nil), &recordedDelivery{}), provider
 }
 
 // The whole project, merged newest first across pools, with the pool that did

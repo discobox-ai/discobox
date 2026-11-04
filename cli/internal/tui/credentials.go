@@ -74,6 +74,7 @@ type secretsLoadedMsg struct {
 type standingLoadedMsg struct {
 	approval approval
 	standing []SecretBinding
+	held     []HeldGrant
 	err      error
 }
 
@@ -530,9 +531,35 @@ func bindingSection(a approval) section {
 		if part != nil {
 			asked = part.Routes
 		}
-		fields = append(fields, replacedFields(a.standing, kind.delegate, a.req.EnvVar, a.use == PartApprove, asked, a.secret.Routes)...)
+		fields = append(fields, replacedFields(a.standing, kind.delegate, a.req.EnvVar, a.usePlanned(), asked, a.secret.Routes)...)
 	}
 	return section{label: "the binding", fields: fields}
+}
+
+// holdsUse reports whether there is anything a use part could replace or
+// stack on: a grant applying in its variable, or a use binding of the chosen
+// secret the discobox holds. With nothing, an addition and a replacement make
+// the same one binding, so the card asking which is not shown and the part
+// is granted as the request asked.
+func (a approval) holdsUse() bool {
+	if len(a.held) > 0 {
+		return true
+	}
+	for _, b := range a.standing {
+		if b.Use {
+			return true
+		}
+	}
+	return false
+}
+
+// usePlanned is how the use part is planned on the cards: as it will be
+// granted, empty when it is denied or not asked.
+func (a approval) usePlanned() bindingplan.As {
+	if a.use != PartApprove {
+		return ""
+	}
+	return a.useAs
 }
 
 // partsPurpose says what a request with a delegate part asks, said the same
@@ -549,9 +576,9 @@ func partsPurpose(req CredentialRequest) string {
 // takes the approval, which go, which lose their use or are split, and
 // whether a new one is made. bindingplan decides it, by the rule the server
 // applies, so access lost to a replacement is said before the approval, not
-// found after it. envVar is the variable the use part asks for; useApproved
-// is whether the use part is approved too, since a delegate part is applied
-// to what the use part leaves (bindingplan.Answer).
+// found after it. envVar is the variable the use part asks for; useAs is how
+// the use part is granted, empty when it is not approved, since a delegate
+// part is applied to what the use part leaves (bindingplan.Answer).
 //
 // Each binding is a heading row and, under it, a diff of its routes against
 // asked, the routes the part approves: the routes it loses, and — on the one
@@ -561,17 +588,23 @@ func partsPurpose(req CredentialRequest) string {
 // sent to". secretRoutes stand in for either side that names none. A diff
 // is what a person approving is checking for; two long lists side by side
 // leave them to find the difference themselves.
-func replacedFields(standing []SecretBinding, delegate bool, envVar string, useApproved bool, asked, secretRoutes []secretroute.Route) []field {
+func replacedFields(standing []SecretBinding, delegate bool, envVar string, useAs bindingplan.As, asked, secretRoutes []secretroute.Route) []field {
 	held := map[string]SecretBinding{}
 	var mine []bindingplan.Binding
 	for _, b := range standing {
 		held[b.ID] = b
-		mine = append(mine, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, EnvName: b.EnvVar, Created: b.Created})
+		mine = append(mine, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, Adds: b.Adds, EnvName: b.EnvVar, Created: b.Created})
 	}
-	use, delegatePlan := bindingplan.Answer(mine, envVar, useApproved || !delegate, delegate)
+	if !delegate && useAs == "" {
+		useAs = bindingplan.Replace
+	}
+	use, delegatePlan := bindingplan.Answer(mine, envVar, useAs, delegate)
 	plan := use
 	if delegate {
 		plan = delegatePlan
+	}
+	if plan.Adds {
+		return []field{{label: "replaces", value: "nothing: an addition beside what it holds", tone: toneDim}}
 	}
 	var fields []field
 	add := func(value string, t tone) {
@@ -688,13 +721,117 @@ func (m *Model) lifetimeChosen(a approval, again func() tea.Cmd) tea.Cmd {
 	if a.req.asksBoth() && !a.partsChosen {
 		return m.askParts(a, again)
 	}
+	if a.use == PartApprove && a.req.Use != nil && !a.useAsChosen && a.holdsUse() {
+		return m.askUseAs(a, again)
+	}
 	if a.fresh {
 		return m.askNewCredentialForm(a)
 	}
-	if a.secret.AllowRaw && a.use == PartApprove {
+	// An addition is delivered by sentinel (ADR 26-11-03-329 §1): the value
+	// itself is a replacement's to hand over.
+	if a.secret.AllowRaw && a.use == PartApprove && a.useAs != bindingplan.Add {
 		return m.askDelivery(a, again)
 	}
 	return m.finishApproval(a)
+}
+
+// askUseAs asks how an approved use part is granted (ADR 26-11-03-329 §§4,
+// 5): as an addition, for its own lifetime beside what the discobox holds in
+// the variable, or as a replacement of it. Both outcomes are on the card —
+// the grants held now, the routes asked that none of them names, and what
+// each way lasts — and the way the request asked is first. back is the card
+// before.
+func (m *Model) askUseAs(a approval, back func() tea.Cmd) tea.Cmd {
+	variable := variableOf(a.req)
+	until := lifetime.Label(a.ttl)
+	add := action{key: string(bindingplan.Add), press: "a", label: "As an addition",
+		detail: "these routes for " + until + "; what it holds in " + variable + " stays as it is", enabled: true}
+	replace := action{key: string(bindingplan.Replace), press: "r", label: "As a replacement",
+		detail: "its whole use of the credential, for " + until + ", in place of what it holds", enabled: true}
+	items := []action{replace, add}
+	if a.useAs == bindingplan.Add {
+		items = []action{add, replace}
+	}
+	items[0].label += " (asked)"
+	again := func() tea.Cmd { return m.askUseAs(a, back) }
+	d := actionsDialog("Add, or replace?", "", items, func(result string) tea.Cmd {
+		next := a
+		next.useAs, next.useAsChosen = bindingplan.As(result), true
+		return m.lifetimeChosen(next, again)
+	})
+	d.sections = []section{heldSection(a), bindingSection(a)}
+	d.answerLabel = "does it get these routes beside what it holds, or in place of it?"
+	d.footer = "an addition alone goes when it lapses; the rest keeps working"
+	d.onCancel = back
+	m.dialog = d
+	return nil
+}
+
+// heldSection is what applies in the use part's variable now, grant by
+// grant with its lifetime, then the routes asked that none of them names,
+// compared as written (ADR 26-11-03-329 §5), and what replacing would do to
+// each.
+func heldSection(a approval) section {
+	variable := variableOf(a.req)
+	s := section{label: "holds in " + variable + " now"}
+	if len(a.held) == 0 {
+		s.fields = append(s.fields, field{label: "nothing", value: "an addition is the first grant there", tone: toneDim})
+	}
+	// What a replacement does to each grant is bindingplan's rule, the one
+	// the server applies; a lifetime of forever cuts nothing short.
+	var until time.Time
+	if a.ttl > 0 {
+		until = time.Now().Add(a.ttl)
+	}
+	planned := make([]bindingplan.Held, 0, len(a.held))
+	for _, grant := range a.held {
+		planned = append(planned, bindingplan.Held{ID: grant.BindingID, Adds: grant.Adds, Own: grant.From == BindingSandbox, Expires: grant.Expires})
+	}
+	fates := map[string]bindingplan.HeldFate{}
+	for _, step := range bindingplan.Replacing(planned, until) {
+		fates[step.Held.ID] = step.Fate
+	}
+	var named [][]string
+	for _, grant := range a.held {
+		what := "binding"
+		if grant.Adds {
+			what = "addition"
+		}
+		value := strings.Join(formatRoutes(grant.Routes), "; ") + " · no expiry"
+		if !grant.Expires.IsZero() {
+			value = strings.Join(formatRoutes(grant.Routes), "; ") + " · until " + grant.Expires.Local().Format("Jan 2 15:04")
+		}
+		switch grant.From {
+		case BindingHarnessConfig:
+			value += " · from its harness config"
+		case BindingProject:
+			value += " · from its project"
+		}
+		s.fields = append(s.fields, field{label: what, value: value})
+		named = append(named, formatRoutes(grant.Routes))
+		var fate string
+		switch fates[grant.BindingID] {
+		case bindingplan.Goes:
+			fate = "goes"
+		case bindingplan.Shadowed:
+			fate = "is shadowed for " + lifetime.Label(a.ttl)
+		case bindingplan.Shortened:
+			fate = "lasts only " + lifetime.Label(a.ttl)
+		}
+		if fate != "" {
+			s.fields = append(s.fields, field{label: "", value: "if replaced, it " + fate, tone: toneAlert})
+		}
+	}
+	var asked []secretroute.Route
+	if a.req.Use != nil {
+		asked = a.req.Use.Routes
+	}
+	if fresh := bindingplan.NewRoutes(formatRoutes(asked), named); len(fresh) == 0 {
+		s.fields = append(s.fields, field{label: "new routes", value: "none, as written", tone: toneDim})
+	} else {
+		s.fields = append(s.fields, field{label: "new routes", value: strings.Join(fresh, "; ") + " (as written)", tone: toneAccent})
+	}
+	return s
 }
 
 // askParts asks, of a request with both parts, what each one's answer is
@@ -1047,13 +1184,23 @@ type approval struct {
 	// standing is the asking discobox's own bindings of the chosen secret:
 	// what an approved part replaces.
 	standing []SecretBinding
+	// held is what applies in the use part's variable now, from whichever
+	// level: what an addition stacks on (ADR 26-11-03-329 §5).
+	held []HeldGrant
+	// useAs is how an approved use part is granted, as the request asked
+	// until the person chooses (useAsChosen).
+	useAs       bindingplan.As
+	useAsChosen bool
 }
 
 // newApproval is an answer to req, its parts approved until asked otherwise.
 func newApproval(req CredentialRequest, secrets []Secret) approval {
-	a := approval{req: req, secrets: secrets}
+	a := approval{req: req, secrets: secrets, useAs: bindingplan.Replace}
 	if req.Use != nil || req.Delegate == nil {
 		a.use = PartApprove
+	}
+	if req.Use != nil && req.Use.Add {
+		a.useAs = bindingplan.Add
 	}
 	if req.Delegate != nil {
 		a.delegate = PartApprove
@@ -1088,7 +1235,11 @@ func (m *Model) chooseSecret(a approval, secretID string) tea.Cmd {
 				standing = append(standing, b)
 			}
 		}
-		return standingLoadedMsg{approval: a, standing: standing, err: err}
+		var held []HeldGrant
+		if err == nil && a.req.Use != nil && a.req.EnvVar != "" {
+			held, err = m.ds.HeldGrants(m.ctx, a.req.Server, a.req.SandboxID, a.req.EnvVar)
+		}
+		return standingLoadedMsg{approval: a, standing: standing, held: held, err: err}
 	}
 }
 
@@ -1099,7 +1250,7 @@ func (m *Model) standingLoaded(msg standingLoadedMsg) tea.Cmd {
 		return nil
 	}
 	a := msg.approval
-	a.standing = msg.standing
+	a.standing, a.held = msg.standing, msg.held
 	return m.askLifetime(a, m.toRequest(a))
 }
 
@@ -1118,6 +1269,13 @@ func (m *Model) finishApproval(a approval) tea.Cmd {
 		Raw:        a.raw,
 		Use:        a.use,
 		Delegate:   a.delegate,
+	}
+	if a.use == PartApprove && a.req.Use != nil {
+		// Always said, so the binding made is the one the card showed.
+		sent.UseAs = string(a.useAs)
+		if a.useAs == bindingplan.Add {
+			what = "approving an addition for " + lifetime.Label(a.ttl) + "…"
+		}
 	}
 	if a.raw != "" {
 		what = "approving the value itself for " + lifetime.Label(a.ttl) + "…"

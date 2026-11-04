@@ -5048,6 +5048,56 @@ func (s *OptNilPoolSandboxCreateRequestSecretEnv) UnmarshalJSON(data []byte) err
 	return s.Decode(d)
 }
 
+// Encode encodes PoolSandboxCreateRequestSentinelGrants as json.
+func (o OptNilPoolSandboxCreateRequestSentinelGrants) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolSandboxCreateRequestSentinelGrants from json.
+func (o *OptNilPoolSandboxCreateRequestSentinelGrants) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilPoolSandboxCreateRequestSentinelGrants to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v PoolSandboxCreateRequestSentinelGrants
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make(PoolSandboxCreateRequestSentinelGrants)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilPoolSandboxCreateRequestSentinelGrants) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilPoolSandboxCreateRequestSentinelGrants) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolSandboxCreateRequestSentinelRoutes as json.
 func (o OptNilPoolSandboxCreateRequestSentinelRoutes) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -5194,6 +5244,56 @@ func (s OptNilPoolSandboxUpdateRequestSecretEnv) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptNilPoolSandboxUpdateRequestSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolSandboxUpdateRequestSentinelGrants as json.
+func (o OptNilPoolSandboxUpdateRequestSentinelGrants) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolSandboxUpdateRequestSentinelGrants from json.
+func (o *OptNilPoolSandboxUpdateRequestSentinelGrants) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilPoolSandboxUpdateRequestSentinelGrants to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v PoolSandboxUpdateRequestSentinelGrants
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make(PoolSandboxUpdateRequestSentinelGrants)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilPoolSandboxUpdateRequestSentinelGrants) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilPoolSandboxUpdateRequestSentinelGrants) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -8348,6 +8448,12 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SentinelGrants.Set {
+			e.FieldStart("sentinelGrants")
+			s.SentinelGrants.Encode(e)
+		}
+	}
+	{
 		if s.SecretEnv.Set {
 			e.FieldStart("secretEnv")
 			s.SecretEnv.Encode(e)
@@ -8355,7 +8461,7 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [15]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [16]string{
 	0:  "pullSources",
 	1:  "$schema",
 	2:  "agent",
@@ -8370,7 +8476,8 @@ var jsonFieldsNameOfPoolSandboxCreateRequest = [15]string{
 	11: "sentinels",
 	12: "rawSecrets",
 	13: "sentinelRoutes",
-	14: "secretEnv",
+	14: "sentinelGrants",
+	15: "secretEnv",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -8523,6 +8630,16 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sentinelRoutes\"")
+			}
+		case "sentinelGrants":
+			if err := func() error {
+				s.SentinelGrants.Reset()
+				if err := s.SentinelGrants.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sentinelGrants\"")
 			}
 		case "secretEnv":
 			if err := func() error {
@@ -8697,6 +8814,72 @@ func (s PoolSandboxCreateRequestSecretEnv) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSandboxCreateRequestSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolSandboxCreateRequestSentinelGrants) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolSandboxCreateRequestSentinelGrants) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.ArrStart()
+		for _, elem := range elem {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+}
+
+// Decode decodes PoolSandboxCreateRequestSentinelGrants from json.
+func (s *PoolSandboxCreateRequestSentinelGrants) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSandboxCreateRequestSentinelGrants to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem []SentinelGrant
+		if err := func() error {
+			elem = make([]SentinelGrant, 0)
+			if err := d.Arr(func(d *jx.Decoder) error {
+				var elemElem SentinelGrant
+				if err := elemElem.Decode(d); err != nil {
+					return err
+				}
+				elem = append(elem, elemElem)
+				return nil
+			}); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolSandboxCreateRequestSentinelGrants")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSandboxCreateRequestSentinelGrants) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSandboxCreateRequestSentinelGrants) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -10244,6 +10427,12 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SentinelGrants.Set {
+			e.FieldStart("sentinelGrants")
+			s.SentinelGrants.Encode(e)
+		}
+	}
+	{
 		if s.SecretEnv.Set {
 			e.FieldStart("secretEnv")
 			s.SecretEnv.Encode(e)
@@ -10251,7 +10440,7 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxUpdateRequest = [9]string{
+var jsonFieldsNameOfPoolSandboxUpdateRequest = [10]string{
 	0: "$schema",
 	1: "reserveHarnessChange",
 	2: "config",
@@ -10260,7 +10449,8 @@ var jsonFieldsNameOfPoolSandboxUpdateRequest = [9]string{
 	5: "sentinels",
 	6: "rawSecrets",
 	7: "sentinelRoutes",
-	8: "secretEnv",
+	8: "sentinelGrants",
+	9: "secretEnv",
 }
 
 // Decode decodes PoolSandboxUpdateRequest from json.
@@ -10350,6 +10540,16 @@ func (s *PoolSandboxUpdateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sentinelRoutes\"")
+			}
+		case "sentinelGrants":
+			if err := func() error {
+				s.SentinelGrants.Reset()
+				if err := s.SentinelGrants.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sentinelGrants\"")
 			}
 		case "secretEnv":
 			if err := func() error {
@@ -10491,6 +10691,72 @@ func (s PoolSandboxUpdateRequestSecretEnv) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSandboxUpdateRequestSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolSandboxUpdateRequestSentinelGrants) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolSandboxUpdateRequestSentinelGrants) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.ArrStart()
+		for _, elem := range elem {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+}
+
+// Decode decodes PoolSandboxUpdateRequestSentinelGrants from json.
+func (s *PoolSandboxUpdateRequestSentinelGrants) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSandboxUpdateRequestSentinelGrants to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem []SentinelGrant
+		if err := func() error {
+			elem = make([]SentinelGrant, 0)
+			if err := d.Arr(func(d *jx.Decoder) error {
+				var elemElem SentinelGrant
+				if err := elemElem.Decode(d); err != nil {
+					return err
+				}
+				elem = append(elem, elemElem)
+				return nil
+			}); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolSandboxUpdateRequestSentinelGrants")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSandboxUpdateRequestSentinelGrants) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSandboxUpdateRequestSentinelGrants) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -12834,6 +13100,141 @@ func (s *SandboxUser) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxUser) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SentinelGrant) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SentinelGrant) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("lists")
+		e.ArrStart()
+		for _, elem := range s.Lists {
+			e.ArrStart()
+			for _, elem := range elem {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+		e.ArrEnd()
+	}
+	{
+		if s.ExpiresAt.Set {
+			e.FieldStart("expiresAt")
+			s.ExpiresAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+}
+
+var jsonFieldsNameOfSentinelGrant = [2]string{
+	0: "lists",
+	1: "expiresAt",
+}
+
+// Decode decodes SentinelGrant from json.
+func (s *SentinelGrant) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SentinelGrant to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "lists":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				s.Lists = make([][]SentinelRoute, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem []SentinelRoute
+					elem = make([]SentinelRoute, 0)
+					if err := d.Arr(func(d *jx.Decoder) error {
+						var elemElem SentinelRoute
+						if err := elemElem.Decode(d); err != nil {
+							return err
+						}
+						elem = append(elem, elemElem)
+						return nil
+					}); err != nil {
+						return err
+					}
+					s.Lists = append(s.Lists, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"lists\"")
+			}
+		case "expiresAt":
+			if err := func() error {
+				s.ExpiresAt.Reset()
+				if err := s.ExpiresAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"expiresAt\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SentinelGrant")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSentinelGrant) {
+					name = jsonFieldsNameOfSentinelGrant[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SentinelGrant) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SentinelGrant) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

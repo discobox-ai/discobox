@@ -93,7 +93,20 @@ func writeCredential(w io.Writer, credential agentcreds.Credential) {
 	case credential.Raw == agentcreds.RawFile:
 		delivered = credential.EnvVar + ", the path of a file holding the value"
 	}
-	fmt.Fprintf(w, "%s (%s → %s) %s\n", credential.Name, delivered, strings.Join(credential.Hosts, ", "), expiry(credential.ExpiresAt))
+	if len(credential.Grants) < 2 {
+		fmt.Fprintf(w, "%s (%s → %s) %s\n", credential.Name, delivered, strings.Join(credential.Hosts, ", "), expiry(credential.ExpiresAt))
+		return
+	}
+	// Held to several grants (ADR 26-11-03-329 §6): each its own line, so
+	// what goes when an addition lapses, and what stays, is read off it.
+	fmt.Fprintf(w, "%s (%s), under %d grants:\n", credential.Name, delivered, len(credential.Grants))
+	for _, grant := range credential.Grants {
+		what := "  binding"
+		if grant.Adds {
+			what = "  added"
+		}
+		fmt.Fprintf(w, "%s → %s %s\n", what, strings.Join(grant.Hosts, ", "), expiry(grant.ExpiresAt))
+	}
 }
 
 // expiry says how long a credential lasts, including that it lasts forever:
@@ -121,6 +134,7 @@ func expiry(expiresAt *time.Time) string {
 type requestInput struct {
 	Name            string         `json:"name"`
 	EnvVar          string         `json:"envVar"`
+	Add             bool           `json:"add,omitempty"`
 	Hosts           []string       `json:"hosts,omitempty"`
 	Routes          []string       `json:"routes,omitempty"`
 	Policies        []policyInput  `json:"policies,omitempty"`
@@ -158,6 +172,7 @@ func runRequest(ctx context.Context, args []string) int {
 	flags.BoolVar(&structured, "json", false, "read the request as JSON on stdin and emit JSON")
 	flags.StringVar(&input.Name, "name", "", "credential name (e.g. github)")
 	flags.StringVar(&input.EnvVar, "env-var", "", "environment variable to deliver it in, to use it")
+	flags.BoolVar(&input.Add, "add", false, "ask for these routes in addition to what you hold, for their own lifetime, leaving what you hold as it is; without it the request is your whole use of the credential")
 	flags.Var(&hosts, "hosts", "exact hosts you will send it to, comma-separated or repeated; *.example.com is the hosts beneath example.com")
 	flags.Var(&routes, "route", "a route you will send it on, "+routeSyntax+"; repeat for more")
 	flags.Var(policyFlag{&policies, false}, "policy", "a credential policy file naming the routes you will send it on; repeat for more")
@@ -213,6 +228,7 @@ func runRequest(ctx context.Context, args []string) int {
 	body := agentcreds.RequestBody{
 		Name:            input.Name,
 		EnvVar:          input.EnvVar,
+		Add:             input.Add,
 		Hosts:           input.Hosts,
 		Routes:          input.Routes,
 		Justification:   input.Justification,
@@ -276,6 +292,8 @@ func (input requestInput) check() string {
 		return "name the variable to deliver it in with --env-var (\"envVar\" in --json), such as GITHUB_TOKEN; a request only to delegate it names no destination of its own"
 	case uses && len(input.Hosts) == 0 && len(input.Routes) == 0 && len(input.Policies) == 0:
 		return "name where you will send it with --route (\"routes\" in --json), such as 'GET api.github.com/repos/acme/web/**', --hosts (\"hosts\") or --policy (\"policies\")"
+	case input.Add && !uses:
+		return "--add (\"add\" in --json) asks for the routes you will use it on in addition to what you hold: name them with --env-var and --route, --hosts or --policy"
 	case len(input.Policies) > 0 && (len(input.Hosts) > 0 || len(input.Routes) > 0):
 		return "--policy names the routes itself: leave out --route and --hosts (\"routes\" and \"hosts\" in --json) beside it"
 	case input.Delegate != nil && len(input.Delegate.Routes) == 0 && len(input.Delegate.Policies) == 0:
@@ -495,6 +513,12 @@ func (out *emitter) requestStatus(status agentcreds.RequestStatus) int {
 				fmt.Fprintf(w, "    (a person handed over the value itself: it is in %s for every command you start from now on, within seconds, and not in a shell already running; send it only where it is meant to go)\n", credential.EnvVar)
 			default:
 				fmt.Fprintf(w, "    (in %s for every command you start from now on)\n", credential.EnvVar)
+			}
+			switch part.status.GrantedAs {
+			case agentcreds.GrantedAsAdd:
+				fmt.Fprintf(w, "    (granted as an addition: what you held in %s stays as it was, and only this goes when it lapses)\n", credential.EnvVar)
+			case agentcreds.GrantedAsReplace:
+				fmt.Fprintf(w, "    (granted as a replacement: this is now your whole use of it in %s; what you held there and did not ask for again is gone)\n", credential.EnvVar)
 			}
 		}
 	})

@@ -144,7 +144,18 @@ discobox-access request \
 
 A request states **the whole access you want** of each kind. Approving it
 replaces what you held of that kind for that credential — wider or
-narrower — so to add a route, ask again with every route you need.
+narrower — routes and lifetime both.
+
+To be given **a few more routes for a while** without touching what you
+hold, add `--add` (`"add": true` in `--json`) and name only the new routes,
+with the `--ttl` you need them for. Approved so, they are an addition beside
+what you hold: when it lapses only those routes stop working, and the rest
+keeps its own lifetime. `discobox-access list` then shows each grant on a
+line of its own. The person may still grant it as a replacement, or a plain
+ask as an addition. The answer says which ("granted as an addition" or
+"granted as a replacement", `grantedAs` in `--json`): after a replacement,
+what you held and did not ask for again is gone. `--add` is for the use part
+only.
 
 With `--json`, the same request is read from stdin, which keeps quotes and
 apostrophes in your justification out of the shell's hands:

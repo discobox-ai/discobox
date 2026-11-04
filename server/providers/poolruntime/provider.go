@@ -252,7 +252,7 @@ func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManag
 		if err != nil {
 			return err
 		}
-		client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+		client := newPoolAgentClient(pool, p.manager, lease)
 		return client.SyncKnownPools(ctx, provider.ProjectID, known)
 	})
 }
@@ -350,7 +350,7 @@ func (p *Provider) ListHTTPAudit(ctx context.Context, pool *model.Pool, query sa
 	if err != nil {
 		return nil, err
 	}
-	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	client := newPoolAgentClient(pool, p.manager, lease)
 	return client.ListHTTPAudit(ctx, pool.ProjectID, query)
 }
 
@@ -364,7 +364,7 @@ func (p *Provider) ListDNSAudit(ctx context.Context, pool *model.Pool, filter sa
 	if err != nil {
 		return nil, err
 	}
-	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	client := newPoolAgentClient(pool, p.manager, lease)
 	return client.ListDNSAudit(ctx, pool.ProjectID, filter)
 }
 
@@ -378,7 +378,7 @@ func (p *Provider) GetHTTPAudit(ctx context.Context, pool *model.Pool, sandboxID
 	if err != nil {
 		return nil, err
 	}
-	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	client := newPoolAgentClient(pool, p.manager, lease)
 	return client.GetHTTPAudit(ctx, pool.ProjectID, sandboxID, id)
 }
 
@@ -393,7 +393,7 @@ func (p *Provider) OpenHTTPAuditArtifact(ctx context.Context, pool *model.Pool, 
 	if err != nil {
 		return nil, err
 	}
-	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	client := newPoolAgentClient(pool, p.manager, lease)
 	return client.OpenHTTPAuditArtifact(ctx, pool.ProjectID, sandboxID, id, artifact)
 }
 
@@ -513,7 +513,7 @@ func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, sta
 			}
 			return nil, state, err
 		}
-		client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+		client := newPoolAgentClient(pool, p.manager, lease)
 		runtimeSandbox, created, err := client.Create(ctx, ref, state, opts)
 		if !poolAgentUnanswered(ctx, err) {
 			return runtimeSandbox, created, err
@@ -881,7 +881,7 @@ func (p *Provider) agentClientForPool(ctx context.Context, pool *model.Pool) (*p
 	if err != nil {
 		return nil, err
 	}
-	return &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}, nil
+	return newPoolAgentClient(pool, p.manager, lease), nil
 }
 
 func (p *Provider) acquirePoolAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {

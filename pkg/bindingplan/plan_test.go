@@ -80,7 +80,7 @@ func TestDelegateUpdatesOrSplits(t *testing.T) {
 // binding that is never made.
 func TestAnAnswerPlansTheDelegatePartAfterTheUsePart(t *testing.T) {
 	standing := []Binding{{ID: "both", Use: true, Delegate: true, EnvName: "GH_LEAD", Created: at(0)}}
-	use, delegate := Answer(standing, "GH_TOKEN", true, true)
+	use, delegate := Answer(standing, "GH_TOKEN", Replace, true)
 	if use.Keep != "" || fates(use)["both"] != LosesUse {
 		t.Fatalf("use plan %+v, want a new binding and both losing its use", use)
 	}
@@ -92,7 +92,7 @@ func TestAnAnswerPlansTheDelegatePartAfterTheUsePart(t *testing.T) {
 	}
 	// The delegate part alone still splits it, and a part not approved plans
 	// nothing.
-	use, delegate = Answer(standing, "GH_TOKEN", false, true)
+	use, delegate = Answer(standing, "GH_TOKEN", "", true)
 	if len(use.Steps) != 0 || fates(delegate)["both"] != Split {
 		t.Fatalf("plans %+v / %+v, want the delegate part alone to split", use, delegate)
 	}
@@ -140,5 +140,74 @@ func TestWithinASecondTheIDDecidesWhateverThePrecision(t *testing.T) {
 	}
 	if s, p := Use(server, "GITHUB_TOKEN").Keep, Use(preview, "GITHUB_TOKEN").Keep; s != p || s != "bind_a" {
 		t.Fatalf("server keeps %q, preview %q; want both bind_a", s, p)
+	}
+}
+
+// A replacement is the whole use of the secret: every addition goes, and an
+// addition is never the binding kept, even in the asked variable (ADR
+// 26-11-03-329 §4).
+func TestUseDeletesAdditionsAndNeverKeepsOne(t *testing.T) {
+	standing := []Binding{
+		{ID: "added", Use: true, Adds: true, EnvName: "GH_TOKEN", Created: at(0)},
+		{ID: "plain", Use: true, EnvName: "GITHUB_TOKEN", Created: at(1)},
+	}
+	p := Use(standing, "GH_TOKEN")
+	if p.Keep != "plain" || fates(p)["added"] != Deleted {
+		t.Fatalf("plan %+v, want the plain one kept and the addition gone", p)
+	}
+	if p := Use([]Binding{{ID: "added", Use: true, Adds: true, EnvName: "GH_TOKEN"}}, "GH_TOKEN"); p.Keep != "" || fates(p)["added"] != Deleted {
+		t.Fatalf("plan %+v, want a new binding and the addition gone", p)
+	}
+}
+
+// An addition touches nothing that stands, and a delegate part after it is
+// planned against everything as it stood.
+func TestAnswerAddingTouchesNothing(t *testing.T) {
+	standing := []Binding{
+		{ID: "plain", Use: true, EnvName: "GH_TOKEN", Created: at(0)},
+		{ID: "both", Use: true, Delegate: true, EnvName: "GH_B", Created: at(1)},
+	}
+	use, delegate := Answer(standing, "GH_TOKEN", Add, true)
+	if !use.Adds || len(use.Steps) != 0 || use.Keep != "" {
+		t.Fatalf("use plan %+v, want an addition touching nothing", use)
+	}
+	if delegate.Keep != "both" || fates(delegate)["both"] != Split {
+		t.Fatalf("delegate plan %+v, want the combined binding split, its use untouched by the addition", delegate)
+	}
+}
+
+// A replacement removes every addition held, cuts the discobox's own binding
+// short only when it had longer, and shadows a harness config's or project's
+// (ADR 26-11-03-329 §5); what it leaves as it was is not listed.
+func TestReplacingSaysWhatBecomesOfEachGrantHeld(t *testing.T) {
+	until := at(60)
+	held := []Held{
+		{ID: "own-forever", Own: true},
+		{ID: "own-sooner", Own: true, Expires: at(30)},
+		{ID: "inherited"},
+		{ID: "added", Own: true, Adds: true, Expires: at(90)},
+	}
+	got := map[string]HeldFate{}
+	for _, step := range Replacing(held, until) {
+		got[step.Held.ID] = step.Fate
+	}
+	want := map[string]HeldFate{"own-forever": Shortened, "inherited": Shadowed, "added": Goes}
+	if len(got) != len(want) {
+		t.Fatalf("fates %v, want %v", got, want)
+	}
+	for id, fate := range want {
+		if got[id] != fate {
+			t.Fatalf("fates %v, want %v", got, want)
+		}
+	}
+	if steps := Replacing([]Held{{ID: "own-forever", Own: true}}, time.Time{}); len(steps) != 0 {
+		t.Fatalf("a replacement made forever = %+v, want nothing cut short", steps)
+	}
+}
+
+func TestNewRoutesAreTheOnesNoGrantNames(t *testing.T) {
+	got := NewRoutes([]string{"GET a", "POST a", "DELETE a"}, [][]string{{"GET a"}, {"DELETE a"}})
+	if len(got) != 1 || got[0] != "POST a" {
+		t.Fatalf("new routes %v, want POST a alone", got)
 	}
 }

@@ -318,7 +318,7 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 		// env delivery with the pool's handle (ADR 26-10-27-840 §3).
 		secretEnv = map[string]string{}
 	}
-	sentinelRoutes, err := s.store.SentinelRouteLists(ctx, sandboxModel.ProjectID, assignments)
+	sentinelGrants, err := s.store.SentinelGrants(ctx, sandboxModel, assignments, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -326,10 +326,10 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	if err != nil {
 		return err
 	}
-	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, UpdateOptions{Sentinels: sentinels, SentinelRoutes: sentinelRoutes, RawSecrets: rawSecrets, SecretEnv: secretEnv}); err != nil {
+	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, UpdateOptions{Sentinels: sentinels, SentinelGrants: sentinelGrants, RawSecrets: rawSecrets, SecretEnv: secretEnv}); err != nil {
 		return err
 	}
-	return markSentinelsIfStale(ctx, s.store, s.engine, sandboxModel, sentinelRoutes)
+	return markSentinelsIfStale(ctx, s.store, s.engine, sandboxModel, sentinelGrants)
 }
 
 // sentinelDelivery splits a sandbox's rows into what its pool is sent: the

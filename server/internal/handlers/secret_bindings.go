@@ -128,6 +128,12 @@ func (h *Handler) ListBoundSecrets(ctx context.Context, params serverapi.ListBou
 		if item.Binding.Use {
 			out.EnvVar = serverapi.NewOptString(item.Binding.EnvName)
 		}
+		if item.Binding.Adds {
+			out.Adds = serverapi.NewOptBool(true)
+		}
+		if item.NotApplied != "" {
+			out.NotApplied = serverapi.NewOptString(item.NotApplied)
+		}
 		if item.ExpiresAt != nil {
 			out.ExpiresAt = serverapi.NewOptDateTime(*item.ExpiresAt)
 		}

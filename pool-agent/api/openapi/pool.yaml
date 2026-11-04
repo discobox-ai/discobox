@@ -573,6 +573,24 @@ components:
                 - envName
                 - delivery
             type: object
+        SentinelGrant:
+            additionalProperties: false
+            description: One binding's say over a sentinel (ADR 26-11-03-329 §3) - its route lists, every one of which a request must pass, and when it lapses. Grants are never merged into one list, so a blocked route refuses only within its own grant.
+            properties:
+                lists:
+                    description: The route lists, the secret's first; an empty list allows nothing
+                    items:
+                        items:
+                            $ref: '#/components/schemas/SentinelRoute'
+                        type: array
+                    type: array
+                expiresAt:
+                    description: When the grant lapses; the agent refuses it from then by its own clock. Absent lasts until a delivery removes it.
+                    format: date-time
+                    type: string
+            required:
+                - lists
+            type: object
         SentinelRoute:
             additionalProperties: false
             description: "Where a secret may be sent (ADR 26-10-02-924, ADR 26-10-27-880 §4). A request falls on the route when its host, method, path and protocol block all match; the most specific route of a list a request falls on decides it, host first, then path, and a blocked one among the most specific refuses."
@@ -1052,6 +1070,14 @@ components:
                             items:
                                 $ref: '#/components/schemas/SentinelRoute'
                             type: array
+                        type: array
+                    nullable: true
+                    type: object
+                sentinelGrants:
+                    description: The grants each stable sentinel is held to, keyed by sentinel (ADR 26-11-03-329 §3), sent in place of sentinelRoutes to an agent that declared sentinelGrants. A request carrying the sentinel passes when some grant that has not expired allows it, as every one of that grant's lists must; a sentinel with no grants is sent nowhere.
+                    additionalProperties:
+                        items:
+                            $ref: '#/components/schemas/SentinelGrant'
                         type: array
                     nullable: true
                     type: object
@@ -1692,6 +1718,14 @@ components:
                             items:
                                 $ref: '#/components/schemas/SentinelRoute'
                             type: array
+                        type: array
+                    nullable: true
+                    type: object
+                sentinelGrants:
+                    description: Replacement grants keyed by stable sentinel, sent with sentinels in place of sentinelRoutes and replacing the sandbox's whole map (ADR 26-11-03-329 §3).
+                    additionalProperties:
+                        items:
+                            $ref: '#/components/schemas/SentinelGrant'
                         type: array
                     nullable: true
                     type: object
