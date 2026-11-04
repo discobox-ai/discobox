@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Required Docker UX smoke: isolated stack, no skips, bounded subprocesses."""
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import signal
 import socket
 import subprocess
 import tarfile
+import threading
 import time
 import urllib.request
 import uuid
@@ -36,21 +38,24 @@ SERVER = None
 BUILDER_CREATED = False
 CLI = []
 COMMAND_COUNT = 0
+COMMAND_LOCK = threading.Lock()
 
 
 def command(args, *, limit=120, expected=0, input=None):
     global COMMAND_COUNT
-    COMMAND_COUNT += 1
-    print("+", " ".join(str(a) if len(str(a)) < 180 else str(a)[:160] + "..." for a in args), flush=True)
+    started = time.monotonic()
+    with COMMAND_LOCK:
+        COMMAND_COUNT += 1
+        output_path = ARTIFACTS / f"command-{COMMAND_COUNT:04}.log"
+        print("+", " ".join(str(a) if len(str(a)) < 180 else str(a)[:160] + "..." for a in args), flush=True)
     # Write while the command runs so bootstrap failures/timeouts retain output.
-    output_path = ARTIFACTS / f"command-{COMMAND_COUNT:04}.log"
     with output_path.open("w") as output:
         result = subprocess.run(list(map(str, args)), cwd=ROOT, env=ENV,
                                 input=input, stdout=output, stderr=subprocess.STDOUT,
                                 text=True, timeout=limit)
     result.stdout = output_path.read_text()
-    with (ARTIFACTS / "commands.log").open("a") as log:
-        log.write(f"$ {args!r}\n{result.stdout}\nexit={result.returncode}\n")
+    with COMMAND_LOCK, (ARTIFACTS / "commands.log").open("a") as log:
+        log.write(f"$ {args!r}\n{result.stdout}\nexit={result.returncode} duration={time.monotonic()-started:.2f}s\n")
     if result.returncode != expected:
         raise RuntimeError(f"exit {result.returncode}, expected {expected}: {args}\n{result.stdout}")
     return result.stdout
@@ -103,6 +108,40 @@ def bundle(name, dockerfile, context=".", target=None, metadata=None):
             "digest": index["manifests"][0]["digest"], "layout": str(layout)}
 
 
+def build_stack():
+    started = time.monotonic()
+    # A single Go invocation shares compilation across both binaries. Overlap it
+    # with image builds; three workers bound CPU/memory on the four-core CI host.
+    # ENV remains read-only until every build has joined. BuildKit still owns
+    # stage deduplication and its Dockerfiles' locked Go cache mounts.
+    with ThreadPoolExecutor(max_workers=3) as builds:
+        prerequisites = [
+            builds.submit(command, ["go", "build", "-o", ARTIFACTS,
+                                    "./server/cmd/discobox-server", "./cli/cmd/discobox"], limit=300),
+            builds.submit(command, ["go", "tool", "task", "build:sandbox-base-image", "BASE_IMAGE=" + BASE], limit=600),
+        ]
+        bundles = [
+            builds.submit(bundle, "pool", "pool-agent/Dockerfile"),
+            builds.submit(bundle, "agent", "sandbox-agent/Dockerfile", target="agent"),
+            builds.submit(bundle, "platform", "sandbox-agent/Dockerfile", target="platform",
+                          metadata="IMAGE_LAYER_METADATA=" + json.dumps(json.loads((ROOT / "sandbox-agent/image.json").read_text()))),
+            builds.submit(bundle, "harness", "test/ux-smoke/image/Dockerfile", context="test/ux-smoke/image",
+                          metadata="HARNESS_METADATA=" + json.dumps(json.loads((ROOT / "test/ux-smoke/image/image.json").read_text()))),
+        ]
+        try:
+            for build in as_completed(prerequisites + bundles):
+                build.result()
+        except BaseException:
+            for build in prerequisites + bundles:
+                build.cancel()
+            # The executor joins running builds before cleanup can remove their
+            # builder, image tag or output files, including on interruption.
+            raise
+        result = [build.result() for build in bundles]
+    print(f"TIMING builds {time.monotonic()-started:.1f}s", flush=True)
+    return result
+
+
 def create_box(name, **kwargs):
     # Record the ID before waiting so a failed provisioning still has diagnostics.
     args = ["admin", "box", "create", "--name", name, "--harness", "ux-smoke"]
@@ -124,7 +163,7 @@ def wait_box(box_id):
 
 
 def smoke():
-    primary = create_box("ux-primary")
+    primary = create_box("ux-primary", requester=True)
     marker = "UX-" + RUN
     # Split the marker in the input: seeing the echoed command cannot pass capture.
     cli("send", primary, f"printf '%s%s\\n' UX- {RUN}")
@@ -167,7 +206,7 @@ def smoke():
     assert json.loads(cli("exec", fresh, "--", "sh", "-c", 'cat "$HOME/.ux-smoke.json"'))["model"] == "bundle"
     print("PASS harness candidate review/save/reset preserves personal override", flush=True)
 
-    requester = create_box("ux-requester", requester=True)
+    requester = primary
     created = json.loads(cli("exec", fresh, "--", "discobox", "--output", "json",
                              "admin", "box", "create", "--name", "ux-adoptee", "--harness", "ux-smoke"))
     child = created["id"]
@@ -225,17 +264,7 @@ def main():
     else:
         command(["docker", "buildx", "create", "--name", BUILDER, "--driver", "docker-container"])
         BUILDER_CREATED = True
-    command(["go", "build", "-o", ARTIFACTS / "discobox-server", "./server/cmd/discobox-server"], limit=300)
-    command(["go", "build", "-o", ARTIFACTS / "discobox", "./cli/cmd/discobox"], limit=300)
-    command(["go", "tool", "task", "build:sandbox-base-image", "BASE_IMAGE=" + BASE], limit=600)
-    bundles = [
-        bundle("pool", "pool-agent/Dockerfile"),
-        bundle("agent", "sandbox-agent/Dockerfile", target="agent"),
-        bundle("platform", "sandbox-agent/Dockerfile", target="platform",
-               metadata="IMAGE_LAYER_METADATA=" + json.dumps(json.loads((ROOT / "sandbox-agent/image.json").read_text()))),
-        bundle("harness", "test/ux-smoke/image/Dockerfile", context="test/ux-smoke/image",
-               metadata="HARNESS_METADATA=" + json.dumps(json.loads((ROOT / "test/ux-smoke/image/image.json").read_text()))),
-    ]
+    bundles = build_stack()
     image_id = command(["docker", "image", "inspect", BASE, "--format", "{{.Id}}"]).strip()
     manifest = ARTIFACTS / "manifest.json"
     manifest.write_text(json.dumps({"version": 1, "images": [{"reference": BASE, "id": image_id}], "bundles": bundles}))
@@ -276,10 +305,13 @@ def main():
     eventually("pool ready", lambda: any(p.get("ready") and p.get("schedulable")
                                          for p in obj("admin", "pool", "ls")["pools"]), seconds=180)
     cli("admin", "harness", "create", "--bundle", bundles[3]["reference"], "--slug", "ux-smoke")
+    started = time.monotonic()
     smoke()
+    print(f"TIMING flows {time.monotonic()-started:.1f}s", flush=True)
 
 
 def cleanup(failed):
+    started = time.monotonic()
     errors = []
     # Discover only IDs in this run's private database, including bootstrap failures.
     db = ARTIFACTS / "db.sqlite"
@@ -360,6 +392,7 @@ def cleanup(failed):
         (ARTIFACTS / "cleanup-errors.log").write_text("\n".join(errors))
         if not failed:
             raise RuntimeError("cleanup failed: " + "; ".join(errors))
+    print(f"TIMING cleanup {time.monotonic()-started:.1f}s", flush=True)
     print("Artifacts:", ARTIFACTS, flush=True)
 
 
