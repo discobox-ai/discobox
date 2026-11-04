@@ -206,6 +206,16 @@ type machineRecord struct {
 	// answered once (snapshotProvenName) drops the snapshot and is made again
 	// fresh (ADR 26-11-03-986 §6).
 	Snapshot string `json:"snapshot,omitempty"`
+	// NewRoot asks that the machine be given a fresh root from the driver's
+	// base before it next boots, by a rebuild of a machine that keeps its
+	// data on a volume (remakeOnNewRoot). It is recorded before the driver
+	// is asked and dropped once the driver has given the root, so an upgrade
+	// cut short is finished by the next start (disco-vm ADR 26-11-03-782 §3).
+	NewRoot bool `json:"newRoot,omitempty"`
+	// DataOnVolume is that the machine's sandbox agent keeps the sandbox's
+	// data on the machine's data volume, as the pool read from the volume
+	// (recordDataOnVolume): only then is it given a new root.
+	DataOnVolume bool `json:"dataOnVolume,omitempty"`
 }
 
 // snapshotProvenName marks, in a sandbox's tree, that the agent of its
@@ -609,8 +619,13 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 	}
 	if record.Instance != inst.ID {
 		// Made just now, or found by name after a create that was lost: this
-		// machine has not been started by this record.
-		record = machineRecord{Instance: inst.ID, Snapshot: snapshot}
+		// machine has not been started by this record. An upgrade it asked
+		// for stays asked for: a driver may give the machine a new ID part
+		// way through one.
+		record = machineRecord{Instance: inst.ID, Snapshot: snapshot, NewRoot: record.NewRoot}
+	}
+	if existing != nil {
+		r.remakeOnNewRoot(ctx, inst, &record)
 	}
 	listen, err := r.agentListenAddress(ctx, inst)
 	if err != nil {
@@ -672,28 +687,155 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 }
 
 // keepsDataOnVolume reports whether a sandbox's machine keeps its data on a
-// volume of its own, apart from its disk, so that making it again can destroy
-// the machine and make a new one on the same volume. No disco-vm driver gives
-// an instance a volume yet (discobox-ai/vm#23), so every machine is made again
-// in place: its disk is all the sandbox has.
-func (r *MachineSandboxRuntime) keepsDataOnVolume() bool { return false }
+// volume of its own, apart from its root, so that making it again gives it a
+// new root and keeps the volume (disco-vm ADR 26-11-03-782): the machine has
+// a data volume, and the pool read from it, at the machine's last start,
+// that its sandbox agent wired the sandbox's declared volumes and sources onto
+// it (record.DataOnVolume, read at every start by recordDataOnVolume; the
+// data contract, pool-agent/DESIGN.md). It is the machine's, not the driver's: a machine
+// made before its driver attached a data volume, or whose pinned agent
+// predates the wiring, has its data on its root, and is made again in place.
+func (r *MachineSandboxRuntime) keepsDataOnVolume(inst machine.Instance, record machineRecord) bool {
+	return record.DataOnVolume && inst.Data != nil && r.engine.Driver.Capabilities().Attaches(machine.VolumeData)
+}
+
+// recordDataOnVolume reads, from the running machine, whether its sandbox
+// agent keeps the sandbox's data on its data volume this start
+// (sandboxconfig.MachineDataWiredFile, naming this sandbox and the token of
+// the start the machine is on, sandboxconfig.MachineWiredFile), and records
+// the answer in machine.json at every start, either way: the agent is the
+// sandbox's pin, and the start that placed it may have moved it to one that
+// wires nothing, which leaves the last start's line on the volume. Only a
+// sandbox's own agent writes them, and saying so falsely costs that sandbox
+// alone: what it keeps off the volume goes with its next root.
+func (r *MachineSandboxRuntime) recordDataOnVolume(ctx context.Context, sandboxID string, inst machine.Instance) error {
+	record, ok, err := r.readMachineRecord(sandboxID)
+	if err != nil || !ok {
+		return err
+	}
+	onVolume := false
+	if inst.Data != nil {
+		if onVolume, err = r.wiredThisStart(ctx, sandboxID, inst); err != nil {
+			return err
+		}
+	}
+	if onVolume == record.DataOnVolume {
+		return nil
+	}
+	record.DataOnVolume = onVolume
+	return r.writeMachineRecord(sandboxID, record)
+}
+
+// wiredThisStart reports whether the running machine's data volume says its
+// agent wired it for sandboxID on the start the machine is on: the volume's
+// line names the token this start's /run holds. Both are read as files,
+// bounded, and nothing is run in the guest, whose commands are the box's.
+func (r *MachineSandboxRuntime) wiredThisStart(ctx context.Context, sandboxID string, inst machine.Instance) (bool, error) {
+	guest, err := r.engine.Guest(ctx, inst)
+	if err != nil {
+		return false, err
+	}
+	token, ok := readGuestFile(ctx, guest, sandboxconfig.MachineWiredFile)
+	if !ok || token == "" {
+		// None this start: an agent that wires nothing.
+		return false, nil
+	}
+	wired, ok := readGuestFile(ctx, guest, sandboxconfig.MachineDataWiredFile)
+	return ok && wired == sandboxID+" "+token, nil
+}
+
+// guestRecordReadTimeout bounds a read of one of the agent's records from
+// its guest, which the box could hold open.
+const guestRecordReadTimeout = 30 * time.Second
+
+// readGuestFile is a small record file of the guest at path, trimmed, read
+// through the guest's copy with its size and time bounded: the box writes it
+// and can make it anything. Not there, or not a small regular file, is not
+// ok.
+func readGuestFile(ctx context.Context, guest machine.Guest, path string) (string, bool) {
+	ctx, cancel := context.WithTimeout(ctx, guestRecordReadTimeout)
+	defer cancel()
+	rc, err := guest.CopyFrom(ctx, path)
+	if err != nil {
+		return "", false
+	}
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+	header, err := tr.Next()
+	if err != nil || header.Typeflag != tar.TypeReg || header.Size > 256 {
+		return "", false
+	}
+	data, err := io.ReadAll(io.LimitReader(tr, 256))
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(data)), true
+}
+
+// remakeOnNewRoot records that a sandbox's machine being made again is given
+// a new root at its next start (upgradeMachine) when it keeps its data on a
+// volume: a fresh one from the driver's base, as a container is built again
+// from its image. One that does not keeps its root, which is all the sandbox
+// has, and is placed again on it.
+func (r *MachineSandboxRuntime) remakeOnNewRoot(ctx context.Context, inst machine.Instance, record *machineRecord) {
+	if record.NewRoot || !r.keepsDataOnVolume(inst, *record) {
+		return
+	}
+	slog.InfoContext(ctx, "giving a sandbox machine a new root at its next start, keeping its volumes", "machine", inst.Name)
+	record.NewRoot = true
+}
 
 // rebuildInPlace makes a running sandbox's machine again on the bootstrap
-// now recorded for it. A machine that keeps its data on a volume is destroyed
-// and made anew on it; one that does not, which is every machine today
-// (keepsDataOnVolume), keeps its disk, is placed again — sandbox.json, the
-// agent, its units and pins — and restarted, so its agent boots on what was
-// placed. The caller holds the sandbox's power lock.
+// now recorded for it: it is stopped and started, and its start gives it the
+// new root its record asks for (remakeOnNewRoot), or places again on the
+// root it has — sandbox.json, the agent, its units and pins — so its agent
+// boots on what was placed. The caller holds the sandbox's power lock.
 func (r *MachineSandboxRuntime) rebuildInPlace(ctx context.Context, sandboxID string) error {
 	if err := r.stopLocked(ctx, sandboxID); err != nil {
 		return err
 	}
-	if r.keepsDataOnVolume() {
-		if err := r.remakeMachine(ctx, sandboxID); err != nil {
-			return err
-		}
-	}
 	return r.startLocked(ctx, sandboxID)
+}
+
+// upgradeMachine gives the stopped machine the new root its record asks for
+// (disco-vm ADR 26-11-03-782): it keeps its name, its settings and its data
+// and cache volumes, and its old root is gone. The pool's record of what it
+// placed goes with that root, so the start that follows places everything
+// again, the agent layer with it. An upgrade that fails part way fails the
+// start and is finished by the next, since the record still asks for it. One
+// the driver refuses outright (ErrUnsupported: a driver that attaches no data
+// volume now, or has no base) is dropped, and the machine is placed again on
+// the root it has, as a machine without a volume is.
+func (r *MachineSandboxRuntime) upgradeMachine(ctx context.Context, sandboxID string, inst machine.Instance, record *machineRecord) (machine.Instance, error) {
+	upgraded, err := r.engine.Upgrade(ctx, inst.Name, engine.UpgradeOptions{})
+	switch {
+	case errors.Is(err, machine.ErrUnsupported):
+		slog.WarnContext(ctx, "the driver gives a sandbox machine no new root; placing it again on the one it has", "sandboxId", sandboxID, "error", err)
+		upgraded = inst
+	case err != nil:
+		return inst, fmt.Errorf("give sandbox %s's machine a new root: %w", sandboxID, err)
+	default:
+		slog.InfoContext(ctx, "gave a sandbox machine a new root, keeping its volumes", "sandboxId", sandboxID)
+		if err := os.Remove(r.placedRecordPath(sandboxID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return inst, err
+		}
+		// The driver keeps a machine's service across a stop and start, and
+		// need not across a new root: the bootstrap placed on it names the
+		// one the machine has now.
+		listen, err := r.agentListenAddress(ctx, upgraded)
+		if err != nil {
+			return inst, err
+		}
+		record.Bootstrap.Runtime.AgentRuntime.ListenAddress = listen
+		// A fresh root is no snapshot's: nothing of a snapshot is left to
+		// blame or prove.
+		if err := os.Remove(r.snapshotProvenPath(sandboxID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return inst, err
+		}
+		record.Snapshot = ""
+	}
+	record.Instance, record.NewRoot = upgraded.ID, false
+	return upgraded, r.writeMachineRecord(sandboxID, *record)
 }
 
 // remakeMachine destroys the sandbox's machine and makes a new one, fresh
@@ -723,6 +865,8 @@ func (r *MachineSandboxRuntime) remakeMachine(ctx context.Context, sandboxID str
 		return err
 	}
 	record.Instance, record.Started, record.Snapshot = inst.ID, false, ""
+	// A new machine: nothing of the old one's root or volume is left.
+	record.NewRoot, record.DataOnVolume = false, false
 	record.Bootstrap.Runtime.AgentRuntime.ListenAddress = listen
 	return r.writeMachineRecord(sandboxID, record)
 }
@@ -743,6 +887,11 @@ func (r *MachineSandboxRuntime) rebuildForProjectLayer(ctx context.Context, sb *
 		return err
 	}
 	record.Bootstrap.Project = layer.Project
+	inst, err := r.instance(ctx, sb.SandboxID)
+	if err != nil {
+		return err
+	}
+	r.remakeOnNewRoot(ctx, inst, &record)
 	if err := r.writeMachineRecord(sb.SandboxID, record); err != nil {
 		return err
 	}
@@ -788,6 +937,18 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 		return machine.Instance{}, "", err
 	}
 	opts := r.createOptions(name)
+	// Where the driver attaches them, the sandbox's data and its cache are
+	// on volumes of the machine's own, which a new root keeps
+	// (keepsDataOnVolume). The cache is the machine's alone, under a key of
+	// its name that nothing saves: no machine shares a cache. A snapshot
+	// build is made with neither: a committed VM holds no volume.
+	caps := r.engine.Driver.Capabilities()
+	if caps.Attaches(machine.VolumeData) {
+		opts.Data = &machine.DataVolume{}
+	}
+	if caps.Attaches(machine.VolumeCache) {
+		opts.Cache = &machine.CacheVolume{Key: name}
+	}
 	from, snapshot, release := r.snapshotFor(ctx, req)
 	defer release()
 	if from != "" {
