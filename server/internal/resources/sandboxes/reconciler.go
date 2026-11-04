@@ -710,6 +710,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 				ConfigCommand:    cfg.ConfigCommand,
 				Files:            cfg.Files,
 				ConfiguredFiles:  cfg.ConfiguredFiles,
+				FileOverrides:    cfg.FileOverrides,
 				Secrets:          cfg.Secrets,
 				Env:              cfg.Env,
 				Volumes:          cfg.Volumes,

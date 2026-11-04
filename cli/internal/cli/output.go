@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -845,7 +846,43 @@ func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) 
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tCONFIGURED\tRUN COMMAND\tSECRETS\tUPDATED")
 	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatConfigured(harness), strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	files := harnessEffectiveFiles(harness)
+	if len(files) == 0 {
+		return nil
+	}
+	// Each path once, as a discobox is given it, and which set it comes from:
+	// what --remove-file can take back is what says "yours". A configured
+	// file's path is what a configure command inside a discobox wrote.
+	fmt.Fprintln(cmd.OutOrStdout())
+	tw = tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FILE\tFROM\tCREATE-ONLY")
+	for _, file := range files {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", terminalSafe(file.Path), formatHarnessFileSource(file), formatRequired(file.CreateOnly.Or(false)))
+	}
 	return tw.Flush()
+}
+
+// formatHarnessFileSource names the set a harness file comes from, and the
+// one beneath it that it overrides.
+func formatHarnessFileSource(file harnessFile) string {
+	name := func(source tui.HarnessFileSource) string {
+		switch source {
+		case tui.HarnessFileOverride:
+			return "yours"
+		case tui.HarnessFileConfigured:
+			return "configure"
+		default:
+			return "bundle"
+		}
+	}
+	from := name(file.Source)
+	if len(file.Shadows) > 0 {
+		from += " (over " + name(file.Shadows[0]) + ")"
+	}
+	return from
 }
 
 func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessConfig, defaultHarnessConfigID ...string) error {

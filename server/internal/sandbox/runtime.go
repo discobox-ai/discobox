@@ -354,6 +354,9 @@ type ResolvedHarnessConfig struct {
 	// separate from the image baseline so a reconfigure never has to
 	// reconstruct or duplicate it.
 	ConfiguredFiles []model.HarnessConfigFile
+	// FileOverrides are a person's files (ADR 26-11-04-028), overlaying both
+	// sets above by path.
+	FileOverrides []model.HarnessConfigFile
 	// Secrets are the harness's declared credentials, carried for their
 	// Delivery: a file-delivered secret must not also be exported into the
 	// harness's environment (harness.SecretDeliveryFile).

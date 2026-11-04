@@ -6747,10 +6747,12 @@ func (s *RawSentinelDelivery) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/ResolvedHarnessConfig
 type ResolvedHarnessConfig struct {
-	SaveBack         OptHarnessConfigSaveBack       `json:"saveBack"`
-	CaptureBaseline  OptHarnessCaptureBaseline      `json:"captureBaseline"`
-	Files            OptNilHarnessConfigFileArray   `json:"files"`
-	ConfiguredFiles  OptNilHarnessConfigFileArray   `json:"configuredFiles"`
+	SaveBack        OptHarnessConfigSaveBack     `json:"saveBack"`
+	CaptureBaseline OptHarnessCaptureBaseline    `json:"captureBaseline"`
+	Files           OptNilHarnessConfigFileArray `json:"files"`
+	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
+	// A person's files (ADR 26-11-04-028). Each wins by path over configuredFiles and files.
+	FileOverrides    OptNilHarnessConfigFileArray   `json:"fileOverrides"`
 	ID               string                         `json:"id"`
 	Name             string                         `json:"name"`
 	Description      OptString                      `json:"description"`
@@ -6781,6 +6783,11 @@ func (s *ResolvedHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
 // GetConfiguredFiles returns the value of ConfiguredFiles.
 func (s *ResolvedHarnessConfig) GetConfiguredFiles() OptNilHarnessConfigFileArray {
 	return s.ConfiguredFiles
+}
+
+// GetFileOverrides returns the value of FileOverrides.
+func (s *ResolvedHarnessConfig) GetFileOverrides() OptNilHarnessConfigFileArray {
+	return s.FileOverrides
 }
 
 // GetID returns the value of ID.
@@ -6851,6 +6858,11 @@ func (s *ResolvedHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
 // SetConfiguredFiles sets the value of ConfiguredFiles.
 func (s *ResolvedHarnessConfig) SetConfiguredFiles(val OptNilHarnessConfigFileArray) {
 	s.ConfiguredFiles = val
+}
+
+// SetFileOverrides sets the value of FileOverrides.
+func (s *ResolvedHarnessConfig) SetFileOverrides(val OptNilHarnessConfigFileArray) {
+	s.FileOverrides = val
 }
 
 // SetID sets the value of ID.

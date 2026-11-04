@@ -99,11 +99,18 @@ func TestToTUIHarness(t *testing.T) {
 	if len(harness.Files) != 2 {
 		t.Fatalf("files = %+v, want both sets", harness.Files)
 	}
-	if harness.Files[0].Path != ".claude.json" || !harness.Files[0].Configured || !harness.Files[0].CreateOnly {
+	if harness.Files[0].Path != ".claude.json" || harness.Files[0].Source != tui.HarnessFileConfigured || !harness.Files[0].CreateOnly {
 		t.Fatalf("first file = %+v, want the configured .claude.json", harness.Files[0])
 	}
-	if harness.Files[1].Path != "settings.json" || harness.Files[1].Configured {
+	if harness.Files[1].Path != "settings.json" || harness.Files[1].Source != tui.HarnessFileFromBundle {
 		t.Fatalf("second file = %+v, want the image-declared settings.json", harness.Files[1])
+	}
+
+	// A person's override of a path leads, naming the file it hides.
+	cfg.FileOverrides = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{{Path: "settings.json", Content: "mine"}})
+	if files := toTUIHarness(cfg, "hc_1").Files; len(files) != 2 || files[0].Path != "settings.json" ||
+		files[0].Source != tui.HarnessFileOverride || len(files[0].Shadows) != 1 || files[0].Shadows[0] != tui.HarnessFileFromBundle {
+		t.Fatalf("files = %+v, want the override of settings.json first, over the bundle's", files)
 	}
 
 	if other := toTUIHarness(cfg, "hc_other"); other.Default {

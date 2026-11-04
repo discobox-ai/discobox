@@ -611,8 +611,9 @@ func (s *CompleteSandboxSourcePushBodySources) init() CompleteSandboxSourcePushB
 type CreateHarnessConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Optional non-secret configured file values to associate with the registered harness.
-	Files OptNilHarnessConfigFileArray `json:"files"`
+	// Files to add to the harness, or to override the bundle's file at the same path. They become the
+	// harness's fileOverrides.
+	FileOverrides OptNilHarnessConfigFileArray `json:"fileOverrides"`
 	// The harness bundle to register. It is a FROM scratch OCI image built FROM nothing or FROM another
 	// harness's bundle, never the platform's. The server composes its io.discobox.image.v1 manifest
 	// labels on its platform bundle's and snapshots the result into the HarnessConfig.
@@ -629,9 +630,9 @@ func (s *CreateHarnessConfigBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetFiles returns the value of Files.
-func (s *CreateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
-	return s.Files
+// GetFileOverrides returns the value of FileOverrides.
+func (s *CreateHarnessConfigBody) GetFileOverrides() OptNilHarnessConfigFileArray {
+	return s.FileOverrides
 }
 
 // GetBundle returns the value of Bundle.
@@ -654,9 +655,9 @@ func (s *CreateHarnessConfigBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetFiles sets the value of Files.
-func (s *CreateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
-	s.Files = val
+// SetFileOverrides sets the value of FileOverrides.
+func (s *CreateHarnessConfigBody) SetFileOverrides(val OptNilHarnessConfigFileArray) {
+	s.FileOverrides = val
 }
 
 // SetBundle sets the value of Bundle.
@@ -5351,14 +5352,18 @@ type HarnessConfig struct {
 	// True once the configure flow completed successfully. Only configured harnesses can be selected to
 	// run.
 	Configured bool `json:"configured"`
-	// Files written by the configure flow. These overlay the image-declared files when resolving a
-	// sandbox.
+	// Files written by the configure flow. These overlay the bundle-declared files by path when
+	// resolving a sandbox, beneath fileOverrides.
 	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Default environment variables declared by the registered image label.
 	Env OptNilHarnessConfigEnv `json:"env"`
-	// Non-secret files declared by the registered image label.
+	// Files a person added or overrode. Each wins by path over the configure flow's file and the
+	// bundle's, and survives a bundle refresh, configure, and deconfigure.
+	FileOverrides OptNilHarnessConfigFileArray `json:"fileOverrides"`
+	// Non-secret files declared by the registered bundle's label. Rewritten whenever the bundle is
+	// re-read; no request writes them.
 	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Stable harness config ID.
 	ID string `json:"id"`
@@ -5478,6 +5483,11 @@ func (s *HarnessConfig) GetCreatedAt() time.Time {
 // GetEnv returns the value of Env.
 func (s *HarnessConfig) GetEnv() OptNilHarnessConfigEnv {
 	return s.Env
+}
+
+// GetFileOverrides returns the value of FileOverrides.
+func (s *HarnessConfig) GetFileOverrides() OptNilHarnessConfigFileArray {
+	return s.FileOverrides
 }
 
 // GetFiles returns the value of Files.
@@ -5628,6 +5638,11 @@ func (s *HarnessConfig) SetCreatedAt(val time.Time) {
 // SetEnv sets the value of Env.
 func (s *HarnessConfig) SetEnv(val OptNilHarnessConfigEnv) {
 	s.Env = val
+}
+
+// SetFileOverrides sets the value of FileOverrides.
+func (s *HarnessConfig) SetFileOverrides(val OptNilHarnessConfigFileArray) {
+	s.FileOverrides = val
 }
 
 // SetFiles sets the value of Files.
@@ -33529,8 +33544,10 @@ type UpdateHarnessConfigBody struct {
 	Schema OptURI `json:"$schema"`
 	// Configure-flow files to write into the harness's home directory, replacing the current set.
 	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
-	// Files to write into the harness's home directory when the harness is installed.
-	Files OptNilHarnessConfigFileArray `json:"files"`
+	// A person's files, replacing the current set. Each adds a path to the harness's home directory or
+	// overrides the configure flow's or the bundle's file at it; the bundle's own files are never
+	// written.
+	FileOverrides OptNilHarnessConfigFileArray `json:"fileOverrides"`
 	// Registers the harness bundle the config's manifest is read from, re-snapshotting the manifest from
 	// it. How a harness registered before bundles gets one.
 	Bundle OptString `json:"bundle"`
@@ -33558,9 +33575,9 @@ func (s *UpdateHarnessConfigBody) GetConfiguredFiles() OptNilHarnessConfigFileAr
 	return s.ConfiguredFiles
 }
 
-// GetFiles returns the value of Files.
-func (s *UpdateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
-	return s.Files
+// GetFileOverrides returns the value of FileOverrides.
+func (s *UpdateHarnessConfigBody) GetFileOverrides() OptNilHarnessConfigFileArray {
+	return s.FileOverrides
 }
 
 // GetBundle returns the value of Bundle.
@@ -33593,9 +33610,9 @@ func (s *UpdateHarnessConfigBody) SetConfiguredFiles(val OptNilHarnessConfigFile
 	s.ConfiguredFiles = val
 }
 
-// SetFiles sets the value of Files.
-func (s *UpdateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
-	s.Files = val
+// SetFileOverrides sets the value of FileOverrides.
+func (s *UpdateHarnessConfigBody) SetFileOverrides(val OptNilHarnessConfigFileArray) {
+	s.FileOverrides = val
 }
 
 // SetBundle sets the value of Bundle.

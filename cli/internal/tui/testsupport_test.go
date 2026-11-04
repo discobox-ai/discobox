@@ -413,8 +413,8 @@ func testHarnesses() []Harness {
 			Run:     []string{"claude"},
 			Secrets: []HarnessSecret{{Name: "ANTHROPIC_API_KEY", Required: true, Declared: true}},
 			Files: []HarnessFile{
-				{Path: ".claude.json", Content: "{}", Configured: true},
-				{Path: "settings.json", Content: "{}"},
+				{Path: ".claude.json", Content: "{}", Source: HarnessFileConfigured},
+				{Path: "settings.json", Content: "{}", Source: HarnessFileFromBundle},
 			},
 			Updated: now.Add(-2 * time.Hour),
 		},
@@ -423,7 +423,7 @@ func testHarnesses() []Harness {
 			BuiltIn: true, Configurable: true, Bundle: "ghcr.io/example/codex:latest",
 			ConfigReminder: "Use /login, then /exit when sign-in is complete.", Run: []string{"codex"},
 			Secrets: []HarnessSecret{{Name: "OPENAI_API_KEY", Required: true, Declared: true}},
-			Files:   []HarnessFile{{Path: "config.toml", Content: "{}", Configured: true}},
+			Files:   []HarnessFile{{Path: "config.toml", Content: "{}", Source: HarnessFileConfigured}},
 			Updated: now.Add(-30 * time.Minute),
 		},
 		{

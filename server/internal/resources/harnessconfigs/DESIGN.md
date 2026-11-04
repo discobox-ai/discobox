@@ -352,29 +352,50 @@ This is why the OAuth path uses `/login` rather than `claude setup-token`: only
 `/login` yields a rotating refresh token; `setup-token` mints a single
 long-lived token with nothing to refresh.
 
-## Delivering configured files to a sandbox
+## Three file sets, each with one owner
 
-`ConfiguredFiles` and `ConfiguredSecretIDs` record what the configure flow
-produced, deliberately kept **separate** from the bundle-declared `Files`/`Secrets`
-baseline. This package only stores that split; a later sandbox create resolves
-it back into one effective set by path, mirroring ADR 0012's `Files` overlay
-rule (image and runtime entries merge by path, a matching path replaces):
+A config's files are three sets, kept **separate** so each writer can replace
+its own without reconstructing another's (ADR 26-11-04-028):
 
-- `reconciler.createOptionsFromSandbox` reads both `cfg.Files` and
-  `cfg.ConfiguredFiles` off the stored `HarnessConfig` onto
-  `sandbox.ResolvedHarnessConfig`'s two matching fields.
-- `poolruntime.agent_client` forwards both across the server→pool-agent
-  boundary as two fields on the wire (`pool-agent/api/openapi/pool.yaml`'s
+| Set | Owner | Written by | Never written by |
+| --- | --- | --- | --- |
+| `Files` | the bundle | `snapshotImageMetadata` (create, seed, refresh) | any request |
+| `ConfiguredFiles` | the configure flow | configure (authoritative), save-back, `harness edit` of a configured file; cleared by deconfigure | seed, refresh |
+| `FileOverrides` | a person | `fileOverrides` on create/update, `harness edit` of a bundle file, save-back of a path it holds | seed, refresh, configure, deconfigure |
+
+At each path a sandbox is given the override, else the configured file, else
+the bundle's. The CLI sends a person's whole set back with only the named
+paths changed (`--file`, `--remove-file`, `--clear-file`), under the revision
+it read.
+
+`FileOverrides` is NULL only on a config from before the set existed, whose
+person-added files may still sit in `Files`. `splitFileOverrides` moves every
+`Files` path the freshly read bundle doesn't declare into it, once, at the
+first re-snapshot: `SeedBuiltIns` re-snapshots a built-in whose set is NULL
+even when its digests haven't moved, and a refresh splits a config registered
+by hand. Until then a write of the set is refused (409, naming the refresh),
+since it would end the split. Every config created since holds a non-nil set,
+so code that writes one must never write nil.
+
+## Delivering a config's files to a sandbox
+
+This package only stores the split; a later sandbox create resolves it into
+one effective set by path, mirroring ADR 0012's `Files` overlay rule (image and
+runtime entries merge by path, a matching path replaces):
+
+- `reconciler.createOptionsFromSandbox` reads all three sets off the stored
+  `HarnessConfig` onto `sandbox.ResolvedHarnessConfig`'s matching fields.
+- `poolruntime.agent_client` forwards them across the server→pool-agent
+  boundary as three fields on the wire (`pool-agent/api/openapi/pool.yaml`'s
   `ResolvedHarnessConfig` schema), since that boundary is an independently
   generated OpenAPI contract, not a shared Go type.
 - `pool-agent/sandboxruntime.buildSandboxDocument` assigns the bundle baseline to
-  `sandboxconfig.Document.Image.Files` and the configured overlay to
-  `Document.Runtime.Files` — **not** the same field — so `sandboxconfig.Effective`'s
-  existing `mergeFiles(image, runtime, project)` does the actual overlay-by-path,
-  the same function that already merges a project's `.discobox/settings.json`
-  `filesAdd` in (`pkg/sandboxconfig/effective.go`). No merge logic lives in this
-  package; it only owns getting the two inputs to the one function that merges
-  them.
+  `sandboxconfig.Document.Image.Files`, and the configured files followed by the
+  overrides to `Document.Runtime.Files`, so `sandboxconfig.Effective`'s
+  existing `mergeFiles(image, runtime, project)` does the actual overlay-by-path
+  — a later runtime entry wins at a path — the same function that already
+  merges a project's `.discobox/settings.json` `filesAdd` in
+  (`pkg/sandboxconfig/effective.go`). No merge logic lives in this package.
 
 ## Routes on configured secrets
 
@@ -401,11 +422,12 @@ bindings), removes every remaining use binding on the config — a
 hand-bound secret survives, its binding does not — clears `ConfiguredFiles` and
 `ConfigureError`, and sets `Configured=false`, leaving the bundle baseline intact
 so the harness can simply be configured again.
-`UpdateHarnessConfig` can replace either file set (`files`, `configuredFiles`),
-which is how the CLI's file editing (`harness edit`, and `f` on the console's
-harnesses screen) applies hand edits without a reconfigure; edited configured
-files remain owned by the configure lifecycle and are still cleared on
-deconfigure.
+`UpdateHarnessConfig` can replace a person's set (`fileOverrides`) or the
+configure flow's (`configuredFiles`), never the bundle's; that is how the CLI's
+file editing (`harness edit`, and `f` on the console's harnesses screen)
+applies hand edits without a reconfigure. An edited configured file remains
+owned by the configure lifecycle and is still cleared on deconfigure; an
+edited bundle file becomes an override, which deconfigure keeps.
 
 Deconfigure is also **refused for a harness with nothing to configure** (409):
 configure is what would undo it, and configure refuses that harness too, so
@@ -467,8 +489,10 @@ proxied as user routes.
 
 A preview's file changes are described from the stored config, never from the
 sandbox (`describeCapturePreview`): `previous` is the file a save replaces —
-the configured file over the bundle's, at the current revision — and a
-removal's `file` is the bundle's own file it falls back to. Clients diff the
+the override over the configured file over the bundle's, at the current
+revision — and a removal's `file` is the one beneath the topmost set holding
+the path (`fileBeneath`). A save of a path an override holds patches the
+override; any other path patches `ConfiguredFiles`. Clients diff the
 two; the agent's candidate and its size limits are untouched by them.
 
 `commitCapture` locks the config and bound secret rows, checks the candidate's

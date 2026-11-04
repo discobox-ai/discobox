@@ -1186,9 +1186,9 @@ func (s *CreateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Files.Set {
-			e.FieldStart("files")
-			s.Files.Encode(e)
+		if s.FileOverrides.Set {
+			e.FieldStart("fileOverrides")
+			s.FileOverrides.Encode(e)
 		}
 	}
 	{
@@ -1213,7 +1213,7 @@ func (s *CreateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 
 var jsonFieldsNameOfCreateHarnessConfigBody = [5]string{
 	0: "$schema",
-	1: "files",
+	1: "fileOverrides",
 	2: "bundle",
 	3: "name",
 	4: "slug",
@@ -1237,15 +1237,15 @@ func (s *CreateHarnessConfigBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "files":
+		case "fileOverrides":
 			if err := func() error {
-				s.Files.Reset()
-				if err := s.Files.Decode(d); err != nil {
+				s.FileOverrides.Reset()
+				if err := s.FileOverrides.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"files\"")
+				return errors.Wrap(err, "decode field \"fileOverrides\"")
 			}
 		case "bundle":
 			if err := func() error {
@@ -10165,6 +10165,12 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.FileOverrides.Set {
+			e.FieldStart("fileOverrides")
+			s.FileOverrides.Encode(e)
+		}
+	}
+	{
 		if s.Files.Set {
 			e.FieldStart("files")
 			s.Files.Encode(e)
@@ -10238,7 +10244,7 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessConfig = [30]string{
+var jsonFieldsNameOfHarnessConfig = [31]string{
 	0:  "saveBack",
 	1:  "revision",
 	2:  "egress",
@@ -10256,19 +10262,20 @@ var jsonFieldsNameOfHarnessConfig = [30]string{
 	14: "configuredFiles",
 	15: "createdAt",
 	16: "env",
-	17: "files",
-	18: "id",
-	19: "bundle",
-	20: "bundleDigest",
-	21: "manifestDigest",
-	22: "name",
-	23: "projectId",
-	24: "relaunchCommand",
-	25: "runCommand",
-	26: "secrets",
-	27: "slug",
-	28: "updatedAt",
-	29: "volumes",
+	17: "fileOverrides",
+	18: "files",
+	19: "id",
+	20: "bundle",
+	21: "bundleDigest",
+	22: "manifestDigest",
+	23: "name",
+	24: "projectId",
+	25: "relaunchCommand",
+	26: "runCommand",
+	27: "secrets",
+	28: "slug",
+	29: "updatedAt",
+	30: "volumes",
 }
 
 // Decode decodes HarnessConfig from json.
@@ -10456,6 +10463,16 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"env\"")
 			}
+		case "fileOverrides":
+			if err := func() error {
+				s.FileOverrides.Reset()
+				if err := s.FileOverrides.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"fileOverrides\"")
+			}
 		case "files":
 			if err := func() error {
 				s.Files.Reset()
@@ -10467,7 +10484,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"files\"")
 			}
 		case "id":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -10509,7 +10526,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"manifestDigest\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -10521,7 +10538,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[3] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -10572,7 +10589,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secrets\"")
 			}
 		case "slug":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Slug = string(v)
@@ -10584,7 +10601,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "updatedAt":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -10617,8 +10634,8 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	for i, mask := range [4]uint8{
 		0b10000000,
 		0b10100000,
-		0b11000100,
-		0b00011000,
+		0b10001000,
+		0b00110001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -57336,9 +57353,9 @@ func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Files.Set {
-			e.FieldStart("files")
-			s.Files.Encode(e)
+		if s.FileOverrides.Set {
+			e.FieldStart("fileOverrides")
+			s.FileOverrides.Encode(e)
 		}
 	}
 	{
@@ -57360,7 +57377,7 @@ var jsonFieldsNameOfUpdateHarnessConfigBody = [7]string{
 	1: "egress",
 	2: "$schema",
 	3: "configuredFiles",
-	4: "files",
+	4: "fileOverrides",
 	5: "bundle",
 	6: "name",
 }
@@ -57416,15 +57433,15 @@ func (s *UpdateHarnessConfigBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"configuredFiles\"")
 			}
-		case "files":
+		case "fileOverrides":
 			if err := func() error {
-				s.Files.Reset()
-				if err := s.Files.Decode(d); err != nil {
+				s.FileOverrides.Reset()
+				if err := s.FileOverrides.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"files\"")
+				return errors.Wrap(err, "decode field \"fileOverrides\"")
 			}
 		case "bundle":
 			if err := func() error {

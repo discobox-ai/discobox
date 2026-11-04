@@ -319,6 +319,25 @@ func TestHarnessesConfigCard(t *testing.T) {
 	}
 }
 
+// A file says which set it comes from, and the one beneath it that it
+// overrides.
+func TestHarnessFileDetailNamesItsSource(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		file HarnessFile
+		want string
+	}{
+		{HarnessFile{Content: "{}", Source: HarnessFileFromBundle, CreateOnly: true}, "2 B · from the image · create-only"},
+		{HarnessFile{Content: "{}", Source: HarnessFileConfigured, Shadows: []HarnessFileSource{HarnessFileFromBundle}}, "2 B · written by its setup · over the image's"},
+		{HarnessFile{Content: "{}", Source: HarnessFileOverride}, "2 B · yours"},
+		{HarnessFile{Content: "{}", Source: HarnessFileOverride, Shadows: []HarnessFileSource{HarnessFileConfigured, HarnessFileFromBundle}}, "2 B · yours · over its setup's"},
+	} {
+		if got := harnessFileDetail(tc.file); got != tc.want {
+			t.Errorf("detail = %q, want %q", got, tc.want)
+		}
+	}
+}
+
 // f picks a file and hands it to the editor, which reports back whether the
 // file changed.
 func TestHarnessesEditFile(t *testing.T) {
