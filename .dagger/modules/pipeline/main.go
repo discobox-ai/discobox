@@ -175,7 +175,7 @@ func (m *Pipeline) Verify(ctx context.Context) error {
 			return run(ctx, ctr, "bash", "-ec", `scripts/go-mod-tidy.sh; git diff --exit-code; test -z "$(git ls-files --others --exclude-standard)"`)
 		},
 		func() error {
-			return run(ctx, ctr, "bash", "-ec", `pnpm install --frozen-lockfile; node scripts/build-harness-settings.mjs; mapfile -t modules < <(go work edit -json | jq -r '.Use[].DiskPath'); for mod in "${modules[@]}"; do (cd "$mod" && go generate ./...); done; git diff --exit-code; test -z "$(git ls-files --others --exclude-standard)"`)
+			return run(ctx, ctr, "bash", "-ec", `pnpm install --frozen-lockfile; node scripts/build-harness-settings.mjs; go run ./cli/internal/cmd/discobox-docs; mapfile -t modules < <(go work edit -json | jq -r '.Use[].DiskPath'); for mod in "${modules[@]}"; do (cd "$mod" && go generate ./...); done; git diff --exit-code; test -z "$(git ls-files --others --exclude-standard)"`)
 		},
 		func() error {
 			return run(ctx, ctr.WithMountedCache("/root/.local/share/pnpm/store", dag.CacheVolume("discobox-pnpm")), "bash", "-ec", "pnpm install --frozen-lockfile && pnpm run check:mermaid")

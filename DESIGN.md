@@ -254,6 +254,12 @@ not listed here.
 
 Dagger owns CI and release orchestration (ADR 26-10-26-225).
 
+The required Linux `ci:ux-smoke` job boots an isolated Docker stack and drives
+the terminal, harness save/reset and adoption flows through real boxes. Its
+fixtures, bounds, ownership and failure evidence are described in
+[`test/ux-smoke/README.md`](test/ux-smoke/README.md). Portable `ci:test` stays
+independent of Docker.
+
 ```mermaid
 flowchart TD
     local["Local Dagger CLI"] --> pipeline[".dagger/modules/pipeline<br/>checks, builds, release policy"]
@@ -280,7 +286,7 @@ flowchart TD
   such as `task dev`, native development binaries, and the local image watcher.
   No Dagger operation calls Task; file-change hooks use the same shortcuts.
 - `.github/workflows` supplies events, source refs, and credentials for Dagger,
-  plus conventional native macOS/Windows jobs. It transfers portable helpers
+  plus conventional native macOS/Windows and host Docker UX smoke jobs. It transfers portable helpers
   and cross-built Windows executables to native CI and signed macOS artifacts
   back to Linux release assembly. Native commands are repository-owned and
   locally runnable. There is no Depot build service or tap dispatch.

@@ -16,7 +16,7 @@ implicit credential lookup in the graph.
   digests, rootfs diff IDs, config and manifest references before import.
 - `publish.go`: publication gates and explicit credentials, direct Homebrew
   updates, stable promotion, manual winget submission, and local preview.
-- `generate.go`: Go contracts and bundled harness settings parsers/licenses,
+- `generate.go`: Go contracts, the public CLI reference and bundled harness settings parsers/licenses,
   with installed Node dependencies excluded from returned Changesets; checks never mutate the
   developer's checkout. SDK generation is a separate `go-sdk` operation.
 - `trust.go`: inspects the base image's saved public roots and runs the actual
@@ -31,6 +31,10 @@ A synthetic Git repository inside the container lets existing tracked-file
 checks run without mounting the operator's Git configuration or credentials.
 The real source revision is supplied separately by Workspace.git and appears
 in manifests and receipts. Publishing rejects dirty source snapshots.
+
+Real-box Docker UX smoke stays in the host `ci:ux-smoke` target and its own
+Actions job, retaining run-owned resources, bounds and failure artifacts
+(`test/ux-smoke/README.md`). Portable tests remain independent of Docker.
 
 Native execution belongs to conventional Actions jobs or the same local Go
 command on macOS/Windows (`internal/cmd/discobox-native-ci`). Dagger exports

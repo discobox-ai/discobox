@@ -233,10 +233,24 @@ dagger api call --repository=OWNER/REPO ci-artifacts export --path=build/ci
 ```
 
 Actions triggers Dagger and native repository commands, supplies credentials,
-and transports native artifacts. CI jobs are `pipeline`, `native-macos`, and
-`native-windows`. The first includes portable checks and cross-builds.
+and transports native artifacts. CI jobs are `pipeline`, `ux-smoke`,
+`native-macos`, and `native-windows`. The first includes portable checks and
+cross-builds; `ux-smoke` drives real Docker boxes on its host runner.
 A green job therefore does not establish native coverage. Verify locally first;
 use GitHub's run status only as evidence that its event adapter also ran.
+
+## Documentation gate
+
+Before tagging, run `go tool task docs:check` and review `docs/public/`
+against the exact release CLI and console (including workflows and keys).
+After publication creates the tag, follow `docs/public-import.md`: resolve
+that docs-containing release tag to its full SHA and require a reviewed site
+import PR recording the allowlist, file mapping and exporter version/command
+before promoting its docs as current. Normal site builds consume committed
+snapshots only. Keep prerelease labels until stable promotion is explicitly
+approved; do not move the site stable target just because a tag exists.
+Before marking a release stable, require that reviewed site import and confirm
+its exact product version and SHA match the release being promoted.
 
 ## 3. Build and assemble
 

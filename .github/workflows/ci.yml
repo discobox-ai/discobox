@@ -9,6 +9,27 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  ux-smoke:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Install Nix for host Docker smoke
+        uses: cachix/install-nix-action@v31.11.1
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Exercise real-box UX flows
+        run: nix develop -c go tool task ci:ux-smoke
+      - uses: actions/upload-artifact@v7.0.1
+        if: failure()
+        with:
+          name: ux-smoke
+          path: |
+            build/ux-smoke/*/*.log
+            build/ux-smoke/*/*.json
+          retention-days: 7
+
   pipeline:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60

@@ -1,7 +1,7 @@
 # CI and release with Dagger
 
 Dagger owns the portable pipeline. GitHub Actions supplies events, credentials,
-and conventional native macOS/Windows jobs;
+conventional native macOS/Windows jobs, and a host Docker UX smoke job;
 Taskfile targets are shortcuts to the same local commands. Host development
 (`task dev`, development binaries, and the image watcher) remains in Task.
 
@@ -25,7 +25,7 @@ dagger api call ci-artifacts export --path=build/ci
 `dagger check` runs the registered `pipeline/ci` check: workspace Go tests,
 lint across all workspace modules, Windows cross-typechecking, cross-platform
 deadcode, shellcheck, Dockerfile source/import coverage, formatting, standalone
-module tidy, Go/Node generators, Mermaid, pipeline unit tests, Linux/Windows
+module tidy, Go/Node generators (including the public CLI reference), Mermaid, pipeline unit tests, Linux/Windows
 release binaries for amd64/arm64, image trust/HTTPS validation, and revision-bound
 native helper inputs. The Go SDK's generated-binding staleness check also runs.
 Component functions remain available for focused runs; they are not separately
@@ -60,6 +60,15 @@ dagger generate --module=go-sdk -y
 The first three apply workspace Changesets. The last regenerates the pipeline's
 own SDK bindings. Dagger never invokes Task, so these operations are also safe
 behind file-change hooks that invoke the Task shortcuts.
+
+## Host Docker UX smoke
+
+The required `ux-smoke` job runs `nix develop -c go tool task ci:ux-smoke`
+on its Docker host. It exercises terminal input/wait/capture, harness save/reset,
+and adoption through isolated real boxes. It remains separate from the portable
+Dagger graph and retains its bounded run, cleanup, and failure artifacts. See
+[`test/ux-smoke/README.md`](../test/ux-smoke/README.md) for the same local command
+and resource ownership.
 
 ## Dagger Cloud execution and cache
 

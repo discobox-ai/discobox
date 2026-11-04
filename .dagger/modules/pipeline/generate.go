@@ -16,6 +16,6 @@ func (m *Pipeline) Tidy() *dagger.Changeset {
 
 // Regenerate application contracts and schemas and return an applicable diff.
 func (m *Pipeline) Generate() *dagger.Changeset {
-	ctr := m.work().WithExec([]string{"bash", "-ec", `pnpm install --frozen-lockfile; node scripts/build-harness-settings.mjs; mapfile -t modules < <(go work edit -json | jq -r '.Use[].DiskPath'); for mod in "${modules[@]}"; do (cd "$mod" && go generate ./...); done`})
+	ctr := m.work().WithExec([]string{"bash", "-ec", `pnpm install --frozen-lockfile; node scripts/build-harness-settings.mjs; go run ./cli/internal/cmd/discobox-docs; mapfile -t modules < <(go work edit -json | jq -r '.Use[].DiskPath'); for mod in "${modules[@]}"; do (cd "$mod" && go generate ./...); done`})
 	return ctr.Directory("/src/discobox").WithoutDirectory(".git").WithoutDirectory("node_modules").Changes(m.Source)
 }
