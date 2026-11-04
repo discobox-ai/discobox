@@ -1,6 +1,7 @@
 # 26-11-03-618 — A discobox owed its delivery is never started, and an attach repairs a failed one to deliver it
 
 - **Status**: Accepted
+- **Narrowed by**: [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) — explicit starts refused by an unreachable pool wait within the request (§6 of 26-10-12-711; §2 of 26-11-03-618). Source-delivery refusals remain.
 - **Date**: 2026-11-03
   Accepted by the owner by merging #466, 2026-11-03.
 - **§2 amended**: 2026-11-03, before anything shipped against it. A start or

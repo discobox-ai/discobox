@@ -1,7 +1,9 @@
 # 26-11-04-167 — An explicit start waits for its pool to return
 
-- **Status**: Proposed (would supersede [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6 only for an explicit start refused with `ErrPoolNotReachable`; narrows [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) §2's statement that a start instruction waits for nothing, without changing its source-delivery refusal)
+- **Status**: Accepted (supersedes [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6 only for an explicit start refused with `ErrPoolNotReachable`; narrows [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) §2's statement that a start instruction waits for nothing, without changing its source-delivery refusal)
 - **Date**: 2026-11-04
+
+Accepted by the owner by merging #585, 2026-11-04.
 - **Issue**: [#569](https://github.com/discobox-ai/discobox/issues/569), following [#544](https://github.com/discobox-ai/discobox/issues/544) and [#567](https://github.com/discobox-ai/discobox/pull/567)
 - **Preserves**: [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) §9's power instructions, and [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §6's single-send scheduled wake and cancellation by outside instructions.
 
