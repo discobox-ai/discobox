@@ -900,13 +900,17 @@ Between ticks the poller **waits on each running sandbox's ports**
 (`statuswait.go`, [ADR 26-11-03-815](../docs/adr/26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md)):
 one held `GET .../status/wait` per sandbox, with the same token. A waiter is
 started the moment the state watch reports a sandbox running (and stopped when
-it leaves running), and the tick starts and prunes them as a backstop. The
+it leaves running), and the tick starts and prunes them as a backstop — except
+for a sandbox whose state changed after the tick listed, which its list is
+older than. The
 first call names no version and is answered at once; each after names the
 last one seen and is held by the agent until the ports change or its 25s hold
 is up. A changed version — the first answer included, since a port may have
 been bound before the waiter connected — wakes the loop, which polls and
 pushes that sandbox's status then, on the same loop as the tick so reports
-stay ordered; queued wakes are drained into one batch. A waiter never pushes
+stay ordered; queued wakes are drained into one batch. Wakes for one sandbox
+are at least 2s apart, since the box decides what its version is; a change
+inside that is answered at once by the next wait. A waiter never pushes
 anything itself. An agent answering 404 or no version predates the route and
 is asked again every five minutes; a failed wait retries after 2s, and a
 quick answer with the version named backs off rather than spin.

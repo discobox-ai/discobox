@@ -3,9 +3,11 @@ package poolagent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -50,8 +52,11 @@ func TestTheWaiterWakesTheLoopWhenThePortsChange(t *testing.T) {
 	var mu sync.Mutex
 	var afters []string
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only the wait is this test's: another test's leftover dial can land
+		// on a port this server reused.
 		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/status/wait" {
-			t.Errorf("path = %q", r.URL.Path)
+			http.NotFound(w, r)
+			return
 		}
 		after := r.URL.Query().Get("after")
 		mu.Lock()
@@ -129,8 +134,8 @@ func TestWaitersFollowTheSandboxesThatAreRunning(t *testing.T) {
 		t.Fatalf("waiters = %d after sandbox-1 stopped, want 0", got)
 	}
 
-	poller.waitOn(ctx, []string{"sandbox-1", "sandbox-2"})
-	poller.waitOn(ctx, []string{"sandbox-2"})
+	poller.waitOn(ctx, []string{"sandbox-1", "sandbox-2"}, time.Now())
+	poller.waitOn(ctx, []string{"sandbox-2"}, time.Now())
 	poller.mu.Lock()
 	_, one := poller.waiters["sandbox-1"]
 	_, two := poller.waiters["sandbox-2"]
@@ -189,5 +194,67 @@ func TestTheWaiterDoesNotSpinOnAnAgentThatDoesNotHold(t *testing.T) {
 	defer mu.Unlock()
 	if calls > 3 {
 		t.Fatalf("asked %d times in half a second, want a back-off", calls)
+	}
+}
+
+// A tick's list is read before it is acted on, and a sandbox can start or stop
+// in between. The list is older than that change and does not undo it: a box
+// that started while the tick was listing keeps the waiter its start gave it,
+// and one that stopped is not given one back.
+func TestATicksOlderListDoesNotUndoAStartOrStop(t *testing.T) {
+	poller := statusWaitTestPoller(t, nil)
+	ctx := t.Context()
+	poller.sandboxStateChanged(ctx, "sandbox-2", sandboxruntime.StateRunning)
+	listedAt := time.Now()
+	poller.sandboxStateChanged(ctx, "sandbox-1", sandboxruntime.StateRunning)
+	poller.sandboxStateChanged(ctx, "sandbox-2", sandboxruntime.StateStopping)
+
+	// Listed before sandbox-1 started and before sandbox-2 stopped.
+	poller.waitOn(ctx, []string{"sandbox-2"}, listedAt)
+	poller.mu.Lock()
+	_, one := poller.waiters["sandbox-1"]
+	_, two := poller.waiters["sandbox-2"]
+	poller.mu.Unlock()
+	if !one || two {
+		t.Fatalf("waiters on sandbox-1 %v and sandbox-2 %v, want sandbox-1's kept and none on the stopped sandbox-2", one, two)
+	}
+
+	// A list taken after both changes is the truth again.
+	poller.waitOn(ctx, []string{"sandbox-2"}, time.Now())
+	poller.mu.Lock()
+	_, one = poller.waiters["sandbox-1"]
+	_, two = poller.waiters["sandbox-2"]
+	poller.mu.Unlock()
+	if one || !two {
+		t.Fatalf("waiters on sandbox-1 %v and sandbox-2 %v, want the newer list followed", one, two)
+	}
+}
+
+// What moves the version is the box's, and a box that moves it on every
+// answer — a hostile agent, or a test run starting servers — does not get a
+// check-in per answer: wakes for one sandbox are spaced by the pool.
+func TestWakesForOneSandboxAreSpaced(t *testing.T) {
+	var mu sync.Mutex
+	calls := 0
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/status/wait") {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+		_, _ = fmt.Fprintf(w, `{"portsVersion":"v%d"}`, n)
+	}))
+	defer agent.Close()
+	poller := statusWaitTestPoller(t, map[string]*httptest.Server{"sandbox-1": agent})
+	ctx, cancel := context.WithTimeout(t.Context(), sandboxAgentStatusWakeSpacing/2)
+	defer cancel()
+	poller.waitForPorts(ctx, "sandbox-1")
+	mu.Lock()
+	defer mu.Unlock()
+	if wakes := len(poller.wake); wakes != 1 || calls != 1 {
+		t.Fatalf("%d wakes from %d answers inside one spacing, want one of each", wakes, calls)
 	}
 }
