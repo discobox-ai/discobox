@@ -1,8 +1,9 @@
 # 26-11-03-970 — A discobox adopts another as its child when a person approves
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-03
-- **Would supersede**, in each, only that the authority it gives is read from
+- Accepted by the owner by merging #494, 2026-11-04
+- **Supersedes**, in each, only that the authority it gives is read from
   the record of who created a discobox; what each route allows stands:
   - [26-09-24-630](26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
     §2 (source delivery);

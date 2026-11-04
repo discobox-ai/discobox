@@ -1,6 +1,7 @@
 # 26-11-03-724 — A discobox archives the discoboxes it created
 
 - **Status**: Accepted (§1 amended before implementation landed: no intent is recorded over a delete still converging)
+- Creator-scoped authority superseded by [26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md): read the parent instead of the creator.
 - **Date**: 2026-11-03
 
   Accepted by the owner by merging #463, 2026-11-03.
