@@ -241,7 +241,8 @@ func TestStatusBoundsTheWholeExchange(t *testing.T) {
 	for _, body := range []string{"", "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"} {
 		t.Run(fmt.Sprint(len(body)), func(t *testing.T) {
 			socket := filepath.Join(shorttmp.Dir(t), "status.sock")
-			listener, err := net.Listen("unix", socket)
+			listenConfig := net.ListenConfig{}
+			listener, err := listenConfig.Listen(context.Background(), "unix", socket)
 			if err != nil {
 				t.Fatal(err)
 			}
