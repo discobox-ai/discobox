@@ -1,6 +1,7 @@
 # 26-10-27-939 — A route may name any host
 
 - **Status**: Accepted (narrows [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §4's hosts and §8's migration of a secret's host, of a harness config's uncovered binding, and of several grants on one variable)
+- Narrowed by [26-11-04-772](26-11-04-772-built-in-harness-credentials-have-explicit-provider-destinations.md) for built-in harness credential collection and policy updates.
 - **Date**: 2026-10-27
 
 ## Context

@@ -1,7 +1,8 @@
 # 26-11-04-772 — Built-in harness credentials have explicit provider destinations
 
-- **Status**: Proposed (would extend [26-10-02-924](26-10-02-924-a-secret-may-carry-routes-and-every-request-it-is-sent-in-must-fall-on-one.md) §2 to save-back providers and narrow its replacement of harness-owned routes; would narrow [26-10-27-939](26-10-27-939-a-route-may-name-any-host.md) §2's host/anywhere fallback for built-in harness-collected credentials)
+- **Status**: Accepted (extends [26-10-02-924](26-10-02-924-a-secret-may-carry-routes-and-every-request-it-is-sent-in-must-fall-on-one.md) §2 to save-back providers and narrows its replacement of harness-owned routes; narrows [26-10-27-939](26-10-27-939-a-route-may-name-any-host.md) §2's host/anywhere fallback for built-in harness-collected credentials)
 - **Date**: 2026-11-04
+- Accepted by the owner by merging #577, 2026-11-04
 - **Issue**: [#576](https://github.com/discobox-ai/discobox/issues/576)
 
 ## Context
