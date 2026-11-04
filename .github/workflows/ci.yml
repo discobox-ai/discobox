@@ -22,7 +22,7 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: '**/go.sum'
       - name: Observe the terminal session and exercise hangup delivery
-        run: go test -v ./sandbox-agent/execs -run TestSupervisorPassesTheUnitManagerContract/StopATerminal -count=1
+        run: go test -v ./sandbox-agent/execs -count=1
   pipeline:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60

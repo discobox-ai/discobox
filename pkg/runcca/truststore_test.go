@@ -6,14 +6,63 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+// The trust-store tests control the optional hash command. Finding a host's
+// openssl does not guarantee it can finish within the boot deadline under
+// load. Use a real subprocess with predictable
+// success/failure instead of coupling link assertions to the runner's tools.
+func TestMain(m *testing.M) {
+	if mode := os.Getenv("DISCOBOX_TEST_SUBJECT_HASH"); mode != "" && strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe") == "openssl" {
+		if mode == "fail" {
+			os.Exit(1)
+		}
+		if len(os.Args) != 6 || strings.Join(os.Args[1:5], " ") != "x509 -hash -noout -in" {
+			os.Exit(2)
+		}
+		body, err := os.ReadFile(os.Args[5])
+		if err != nil {
+			os.Exit(3)
+		}
+		block, _ := pem.Decode(body)
+		if block == nil || block.Type != "CERTIFICATE" {
+			os.Exit(4)
+		}
+		fmt.Println("cafe1234")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func useSubjectHasher(t *testing.T, mode string) {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	name := "openssl"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), body, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("DISCOBOX_TEST_SUBJECT_HASH", mode)
+}
 
 // selfSignedPEM builds a CA certificate with the given common name.
 func selfSignedPEM(t *testing.T, commonName string) []byte {
@@ -78,6 +127,7 @@ func readBundle(t *testing.T, storeDir string) string {
 // The ordinary case, a container from Discobox's image: an empty store is
 // seeded from the image and the sandbox's own CA is added to it.
 func TestMaterializeSeedsPrebuiltAndAddsAnchor(t *testing.T) {
+	useSubjectHasher(t, "hash")
 	system := selfSignedPEM(t, "system root")
 	mitm := selfSignedPEM(t, "discobox mitm")
 	store := t.TempDir()
@@ -104,13 +154,8 @@ func TestMaterializeSeedsPrebuiltAndAddsAnchor(t *testing.T) {
 	if target, err := os.Readlink(filepath.Join(store, "discobox-mitm-aaaa.pem")); err != nil || target != filepath.Join(anchors, "discobox-mitm-aaaa.crt") {
 		t.Errorf("anchor pem link = %q, %v; want the anchor path", target, err)
 	}
-	// The hash itself is OpenSSL's to compute, so this asserts the link only
-	// where openssl exists to compute it. Its absence degrades the store to
-	// bundle-only trust by design, rather than failing the boot.
-	if _, err := exec.LookPath("openssl"); err == nil {
-		if !hasHashLinkTo(t, store, "discobox-mitm-aaaa.pem") {
-			t.Error("anchor has no subject-hash link")
-		}
+	if !hasHashLinkTo(t, store, "discobox-mitm-aaaa.pem") {
+		t.Error("anchor has no subject-hash link")
 	}
 }
 
@@ -282,6 +327,7 @@ func hasHashLinkTo(t *testing.T, dir, name string) bool {
 // snapshot's build trusted its proxy CA, which no box made from the snapshot
 // should (ADR 26-10-16-423 §8).
 func TestUntrustAnchorUndoesMaterializingIt(t *testing.T) {
+	useSubjectHasher(t, "hash")
 	system := selfSignedPEM(t, "system root")
 	build := selfSignedPEM(t, "build mitm")
 	other := selfSignedPEM(t, "host mitm")
@@ -314,12 +360,30 @@ func TestUntrustAnchorUndoesMaterializingIt(t *testing.T) {
 		t.Error("its subject-hash link is left")
 	}
 	if !hasHashLinkTo(t, store, "discobox-mitm-host.pem") {
-		if _, err := exec.LookPath("openssl"); err == nil {
-			t.Error("another anchor's hash link went with it")
-		}
+		t.Error("another anchor's hash link went with it")
 	}
 	// Untrusting again changes nothing.
 	if err := UntrustAnchor(store, []string{anchors}, build); err != nil {
 		t.Fatalf("untrust again: %v", err)
+	}
+}
+
+// A failing optional hash command must preserve bundle trust and PEM links.
+func TestMaterializeWithoutSubjectHash(t *testing.T) {
+	useSubjectHasher(t, "fail")
+	cert := selfSignedPEM(t, "sandbox root")
+	anchors := anchorDir(t, map[string][]byte{"sandbox.crt": cert})
+	store := t.TempDir()
+	if err := MaterializeTrustStore(store, t.TempDir(), []string{anchors}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readBundle(t, store), string(cert)) {
+		t.Fatal("bundle lost the anchor when hashing failed")
+	}
+	if target, err := os.Readlink(filepath.Join(store, "sandbox.pem")); err != nil || target != filepath.Join(anchors, "sandbox.crt") {
+		t.Fatalf("anchor PEM link = %q, %v", target, err)
+	}
+	if hasHashLinkTo(t, store, "sandbox.pem") {
+		t.Fatal("a failed hash command created a hash link")
 	}
 }
