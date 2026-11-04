@@ -63,7 +63,7 @@ its workspace, and the work in it, is kept.`,
 // discobox answers to the name it is listed under.
 //
 // A discobox can run these: the sandbox role allows start, stop, and restart
-// on the discoboxes it created, and the listing (ADR 26-10-02-478 §1, ADR
+// on the discoboxes it leads, and the listing (ADR 26-10-02-478 §1, ADR
 // 26-10-27-880 §9). A command given only full IDs — which name a discobox
 // outright — makes no listing call at all: `discobox stop sbx_…` is the one
 // call it needs, as `admin box stop` was.

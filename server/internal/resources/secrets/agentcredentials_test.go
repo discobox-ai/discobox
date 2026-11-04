@@ -562,7 +562,7 @@ func newAgentCredentialService(t *testing.T) (*resourcesecrets.Service, *store.S
 		t.Fatalf("create lead sandbox: %v", err)
 	}
 	lead := leadID
-	if err := write.Create(&model.Sandbox{ID: testSandboxID, ProjectID: "project-1", Name: "sandbox", PoolID: testPoolID, CreatedBySandboxID: &lead}).Error; err != nil {
+	if err := write.Create(&model.Sandbox{ID: testSandboxID, ProjectID: "project-1", Name: "sandbox", PoolID: testPoolID, CreatedBySandboxID: &lead, ParentSandboxID: &lead}).Error; err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
 	st := store.New(db.Write, db.Read)

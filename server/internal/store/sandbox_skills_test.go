@@ -23,7 +23,7 @@ func TestListingsCarrySkillNamesAndSavesKeepTheSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listed, err := st.ListSandboxes(ctx, "project-1", "", nil)
+	listed, err := st.ListSandboxes(ctx, "project-1", "", nil, "")
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("ListSandboxes() = %d, %v", len(listed), err)
 	}

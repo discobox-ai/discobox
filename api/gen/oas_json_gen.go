@@ -14,6 +14,381 @@ import (
 )
 
 // Encode implements json.Marshaler.
+func (s *AdoptionRequest) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AdoptionRequest) encodeFields(e *jx.Encoder) {
+	{
+		if s.CurrentParentSandboxId.Set {
+			e.FieldStart("currentParentSandboxId")
+			s.CurrentParentSandboxId.Encode(e)
+		}
+	}
+	{
+		if s.ChildName.Set {
+			e.FieldStart("childName")
+			s.ChildName.Encode(e)
+		}
+	}
+	{
+		if s.RequesterName.Set {
+			e.FieldStart("requesterName")
+			s.RequesterName.Encode(e)
+		}
+	}
+	{
+		if s.ReadOnly.Set {
+			e.FieldStart("readOnly")
+			s.ReadOnly.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("id")
+		e.Str(s.ID)
+	}
+	{
+		e.FieldStart("projectId")
+		e.Str(s.ProjectId)
+	}
+	{
+		e.FieldStart("requesterSandboxId")
+		e.Str(s.RequesterSandboxId)
+	}
+	{
+		e.FieldStart("childSandboxId")
+		e.Str(s.ChildSandboxId)
+	}
+	{
+		e.FieldStart("justification")
+		e.Str(s.Justification)
+	}
+	{
+		if s.ReplacedParentSandboxId.Set {
+			e.FieldStart("replacedParentSandboxId")
+			s.ReplacedParentSandboxId.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("status")
+		s.Status.Encode(e)
+	}
+	{
+		if s.DecidedBy.Set {
+			e.FieldStart("decidedBy")
+			s.DecidedBy.Encode(e)
+		}
+	}
+	{
+		if s.DecidedAt.Set {
+			e.FieldStart("decidedAt")
+			s.DecidedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		e.FieldStart("createdAt")
+		json.EncodeDateTime(e, s.CreatedAt)
+	}
+	{
+		e.FieldStart("updatedAt")
+		json.EncodeDateTime(e, s.UpdatedAt)
+	}
+}
+
+var jsonFieldsNameOfAdoptionRequest = [15]string{
+	0:  "currentParentSandboxId",
+	1:  "childName",
+	2:  "requesterName",
+	3:  "readOnly",
+	4:  "id",
+	5:  "projectId",
+	6:  "requesterSandboxId",
+	7:  "childSandboxId",
+	8:  "justification",
+	9:  "replacedParentSandboxId",
+	10: "status",
+	11: "decidedBy",
+	12: "decidedAt",
+	13: "createdAt",
+	14: "updatedAt",
+}
+
+// Decode decodes AdoptionRequest from json.
+func (s *AdoptionRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AdoptionRequest to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "currentParentSandboxId":
+			if err := func() error {
+				s.CurrentParentSandboxId.Reset()
+				if err := s.CurrentParentSandboxId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentParentSandboxId\"")
+			}
+		case "childName":
+			if err := func() error {
+				s.ChildName.Reset()
+				if err := s.ChildName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"childName\"")
+			}
+		case "requesterName":
+			if err := func() error {
+				s.RequesterName.Reset()
+				if err := s.RequesterName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"requesterName\"")
+			}
+		case "readOnly":
+			if err := func() error {
+				s.ReadOnly.Reset()
+				if err := s.ReadOnly.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"readOnly\"")
+			}
+		case "id":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.ID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"id\"")
+			}
+		case "projectId":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Str()
+				s.ProjectId = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"projectId\"")
+			}
+		case "requesterSandboxId":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := d.Str()
+				s.RequesterSandboxId = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"requesterSandboxId\"")
+			}
+		case "childSandboxId":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Str()
+				s.ChildSandboxId = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"childSandboxId\"")
+			}
+		case "justification":
+			requiredBitSet[1] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Justification = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"justification\"")
+			}
+		case "replacedParentSandboxId":
+			if err := func() error {
+				s.ReplacedParentSandboxId.Reset()
+				if err := s.ReplacedParentSandboxId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"replacedParentSandboxId\"")
+			}
+		case "status":
+			requiredBitSet[1] |= 1 << 2
+			if err := func() error {
+				if err := s.Status.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		case "decidedBy":
+			if err := func() error {
+				s.DecidedBy.Reset()
+				if err := s.DecidedBy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"decidedBy\"")
+			}
+		case "decidedAt":
+			if err := func() error {
+				s.DecidedAt.Reset()
+				if err := s.DecidedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"decidedAt\"")
+			}
+		case "createdAt":
+			requiredBitSet[1] |= 1 << 5
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.CreatedAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"createdAt\"")
+			}
+		case "updatedAt":
+			requiredBitSet[1] |= 1 << 6
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.UpdatedAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"updatedAt\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AdoptionRequest")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b11110000,
+		0b01100101,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAdoptionRequest) {
+					name = jsonFieldsNameOfAdoptionRequest[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AdoptionRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AdoptionRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AdoptionRequestStatus as json.
+func (s AdoptionRequestStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AdoptionRequestStatus from json.
+func (s *AdoptionRequestStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AdoptionRequestStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AdoptionRequestStatus(v) {
+	case AdoptionRequestStatusPending:
+		*s = AdoptionRequestStatusPending
+	case AdoptionRequestStatusApproved:
+		*s = AdoptionRequestStatusApproved
+	case AdoptionRequestStatusDenied:
+		*s = AdoptionRequestStatusDenied
+	default:
+		*s = AdoptionRequestStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AdoptionRequestStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AdoptionRequestStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ApprovalRequest) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -22,6 +397,12 @@ func (s *ApprovalRequest) Encode(e *jx.Encoder) {
 
 // encodeFields encodes fields.
 func (s *ApprovalRequest) encodeFields(e *jx.Encoder) {
+	{
+		if s.Adoption.Set {
+			e.FieldStart("adoption")
+			s.Adoption.Encode(e)
+		}
+	}
 	{
 		if s.Credential.Set {
 			e.FieldStart("credential")
@@ -46,11 +427,12 @@ func (s *ApprovalRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfApprovalRequest = [4]string{
-	0: "credential",
-	1: "kind",
-	2: "refresh",
-	3: "trust",
+var jsonFieldsNameOfApprovalRequest = [5]string{
+	0: "adoption",
+	1: "credential",
+	2: "kind",
+	3: "refresh",
+	4: "trust",
 }
 
 // Decode decodes ApprovalRequest from json.
@@ -62,6 +444,16 @@ func (s *ApprovalRequest) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "adoption":
+			if err := func() error {
+				s.Adoption.Reset()
+				if err := s.Adoption.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"adoption\"")
+			}
 		case "credential":
 			if err := func() error {
 				s.Credential.Reset()
@@ -73,7 +465,7 @@ func (s *ApprovalRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"credential\"")
 			}
 		case "kind":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				if err := s.Kind.Decode(d); err != nil {
 					return err
@@ -112,7 +504,7 @@ func (s *ApprovalRequest) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000010,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -180,6 +572,8 @@ func (s *ApprovalRequestKind) Decode(d *jx.Decoder) error {
 		*s = ApprovalRequestKindTrust
 	case ApprovalRequestKindRefresh:
 		*s = ApprovalRequestKindRefresh
+	case ApprovalRequestKindAdoption:
+		*s = ApprovalRequestKindAdoption
 	default:
 		*s = ApprovalRequestKind(v)
 	}
@@ -1166,6 +1560,119 @@ func (s CompleteSandboxSourcePushBodySources) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CompleteSandboxSourcePushBodySources) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *CreateAdoptionRequestBody) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *CreateAdoptionRequestBody) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("childSandboxId")
+		e.Str(s.ChildSandboxId)
+	}
+	{
+		e.FieldStart("justification")
+		e.Str(s.Justification)
+	}
+}
+
+var jsonFieldsNameOfCreateAdoptionRequestBody = [2]string{
+	0: "childSandboxId",
+	1: "justification",
+}
+
+// Decode decodes CreateAdoptionRequestBody from json.
+func (s *CreateAdoptionRequestBody) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateAdoptionRequestBody to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "childSandboxId":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.ChildSandboxId = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"childSandboxId\"")
+			}
+		case "justification":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Justification = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"justification\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode CreateAdoptionRequestBody")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfCreateAdoptionRequestBody) {
+					name = jsonFieldsNameOfCreateAdoptionRequestBody[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateAdoptionRequestBody) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateAdoptionRequestBody) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -14430,6 +14937,112 @@ func (s *JobStatus) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *ListAdoptionRequestsBody) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ListAdoptionRequestsBody) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("adoptionRequests")
+		e.ArrStart()
+		for _, elem := range s.AdoptionRequests {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+}
+
+var jsonFieldsNameOfListAdoptionRequestsBody = [1]string{
+	0: "adoptionRequests",
+}
+
+// Decode decodes ListAdoptionRequestsBody from json.
+func (s *ListAdoptionRequestsBody) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ListAdoptionRequestsBody to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "adoptionRequests":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				s.AdoptionRequests = make([]AdoptionRequest, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem AdoptionRequest
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.AdoptionRequests = append(s.AdoptionRequests, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"adoptionRequests\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ListAdoptionRequestsBody")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfListAdoptionRequestsBody) {
+					name = jsonFieldsNameOfListAdoptionRequestsBody[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ListAdoptionRequestsBody) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ListAdoptionRequestsBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ListApprovalRequestsBody) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -18118,6 +18731,39 @@ func (s *ObservedCertificate) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *ObservedCertificate) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AdoptionRequest as json.
+func (o OptAdoptionRequest) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes AdoptionRequest from json.
+func (o *OptAdoptionRequest) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptAdoptionRequest to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptAdoptionRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptAdoptionRequest) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -32918,6 +33564,12 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ParentSandboxId.Set {
+			e.FieldStart("parentSandboxId")
+			s.ParentSandboxId.Encode(e)
+		}
+	}
+	{
 		if s.CreatedBySandboxId.Set {
 			e.FieldStart("createdBySandboxId")
 			s.CreatedBySandboxId.Encode(e)
@@ -32991,7 +33643,7 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandbox = [21]string{
+var jsonFieldsNameOfSandbox = [22]string{
 	0:  "discoboxApi",
 	1:  "egress",
 	2:  "$schema",
@@ -32999,20 +33651,21 @@ var jsonFieldsNameOfSandbox = [21]string{
 	4:  "config",
 	5:  "createdAt",
 	6:  "createdBy",
-	7:  "createdBySandboxId",
-	8:  "createdByUserId",
-	9:  "displayName",
-	10: "id",
-	11: "origin",
-	12: "originKey",
-	13: "platform",
-	14: "projectId",
-	15: "pool",
-	16: "poolId",
-	17: "runtime",
-	18: "meta",
-	19: "metaObservedAt",
-	20: "updatedAt",
+	7:  "parentSandboxId",
+	8:  "createdBySandboxId",
+	9:  "createdByUserId",
+	10: "displayName",
+	11: "id",
+	12: "origin",
+	13: "originKey",
+	14: "platform",
+	15: "projectId",
+	16: "pool",
+	17: "poolId",
+	18: "runtime",
+	19: "meta",
+	20: "metaObservedAt",
+	21: "updatedAt",
 }
 
 // Decode decodes Sandbox from json.
@@ -33096,6 +33749,16 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"createdBy\"")
 			}
+		case "parentSandboxId":
+			if err := func() error {
+				s.ParentSandboxId.Reset()
+				if err := s.ParentSandboxId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parentSandboxId\"")
+			}
 		case "createdBySandboxId":
 			if err := func() error {
 				s.CreatedBySandboxId.Reset()
@@ -33107,7 +33770,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdBySandboxId\"")
 			}
 		case "createdByUserId":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.CreatedByUserId = string(v)
@@ -33119,7 +33782,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdByUserId\"")
 			}
 		case "displayName":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.DisplayName = string(v)
@@ -33131,7 +33794,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"displayName\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -33173,7 +33836,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platform\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -33205,7 +33868,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"poolId\"")
 			}
 		case "runtime":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				if err := s.Runtime.Decode(d); err != nil {
 					return err
@@ -33235,7 +33898,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"metaObservedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -33257,8 +33920,8 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00110000,
-		0b01000111,
-		0b00010010,
+		0b10001110,
+		0b00100100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

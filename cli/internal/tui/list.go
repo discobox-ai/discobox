@@ -328,7 +328,7 @@ func (l *sandboxList) shown(s Sandbox) bool {
 
 // nest is the rows in the order they are drawn, as trees: the discoboxes in
 // the folder the header names, in the order they arrived, and under each the
-// discoboxes it created, their own creations under those in turn. Each row is
+// discoboxes it leads, their own creations under those in turn. Each row is
 // given the branch it draws (Sandbox.tree) and the row its tree hangs from
 // (Sandbox.under).
 //

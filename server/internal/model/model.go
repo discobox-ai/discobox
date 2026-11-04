@@ -1063,7 +1063,9 @@ type Sandbox struct {
 	// (ADR 26-09-24-630 §1). The sandbox role delivers source only into a sandbox the
 	// caller created; nothing else reads it for authority.
 	CreatedBySandboxID *string `gorm:"column:created_by_sandbox_id;type:text;index" json:"createdBySandboxId,omitempty" doc:"Sandbox that created this one, when a sandbox did (ADR 26-09-24-630). Immutable after create."`
-	PoolID             string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
+	// ParentSandboxID alone confers authority; the creator remains immutable.
+	ParentSandboxID *string `gorm:"column:parent_sandbox_id;type:text;index" json:"parentSandboxId,omitempty" doc:"Sandbox leading this one (ADR 26-11-03-970)."`
+	PoolID          string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
 	// Platform is what the sandbox runs on (ADR 0145 §1): its pool's, which
 	// its harness rules nothing out of (ADR 26-11-01-122). A sandbox created before its
 	// pool's agent declared a platform, or before platforms were recorded, has
@@ -1090,11 +1092,11 @@ type Sandbox struct {
 	// the container: a policy change converges at the pool proxy.
 	Egress egress.Policy `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The discobox's own egress policy level"`
 	// DiscoboxAPI lets the discobox call the discobox API through its pool,
-	// in the sandbox role, on the discoboxes it created (ADR 26-10-27-880 §9).
+	// in the sandbox role, on the discoboxes it leads (ADR 26-10-27-880 §9).
 	// Like Egress it has its own setter (store.SetSandboxDiscoboxAPI) and is
 	// never written by a whole-row save: a person changes it while the
 	// reconciler holds a copy of the row.
-	DiscoboxAPI bool `gorm:"column:discobox_api;not null;default:false" json:"discoboxApi,omitempty" doc:"The discobox may call the discobox API through its pool, acting only on the discoboxes it created"`
+	DiscoboxAPI bool `gorm:"column:discobox_api;not null;default:false" json:"discoboxApi,omitempty" doc:"The discobox may call the discobox API through its pool, acting only on the discoboxes it leads"`
 	// AttachedHarnessConfigIDs are the harness configs, beside its own, whose
 	// credentials the discobox was given to run a second harness in it
 	// (POST .../harness-secrets): their bindings apply to it, after its own
@@ -1440,7 +1442,7 @@ const (
 
 	// SecretPurposeUse and SecretPurposeDelegate are what a binding lets a
 	// sandbox do with a credential, as its list of credentials reports it: use
-	// it, delivered in a variable, or give it to the discoboxes it creates
+	// it, delivered in a variable, or give it to the discoboxes it leads
 	// (ADR 26-10-27-880 §3). A request asks for either or both as its parts
 	// (ADR 26-11-02-022 §1).
 	SecretPurposeUse      = "use"
@@ -1976,7 +1978,7 @@ type SecretBinding struct {
 	TargetKind string `gorm:"column:target_kind;not null;type:text;index:idx_secret_binding_target,priority:1;uniqueIndex:idx_secret_binding_use,priority:1,where:use;uniqueIndex:idx_secret_binding_delegate,priority:1,where:delegate" json:"targetKind" doc:"What the binding is for" enum:"project,harnessConfig,sandbox"`
 	TargetID   string `gorm:"column:target_id;not null;type:text;index:idx_secret_binding_target,priority:2;uniqueIndex:idx_secret_binding_use,priority:2,where:use;uniqueIndex:idx_secret_binding_delegate,priority:2,where:delegate" json:"targetId" doc:"The project, harness config or discobox ID the binding is for"`
 	Use        bool   `gorm:"column:use;not null;default:false" json:"use" doc:"The target may send the credential: it is delivered in envVar"`
-	Delegate   bool   `gorm:"column:delegate;not null;default:false" json:"delegate" doc:"A discobox the binding covers may give the credential, to use, to the discoboxes it creates"`
+	Delegate   bool   `gorm:"column:delegate;not null;default:false" json:"delegate" doc:"A discobox the binding covers may give the credential, to use, to the discoboxes it leads"`
 	EnvName    string `gorm:"column:env_name;not null;type:text;default:'';uniqueIndex:idx_secret_binding_use,priority:3,where:use" json:"envVar,omitempty" doc:"Environment variable the credential's sentinel is delivered in; set when use is"`
 	// Routes narrow the secret's for this binding; none inherits them.
 	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Routes that narrow the secret's for this binding; empty inherits the secret's"`
@@ -2206,6 +2208,7 @@ func AllModels() []any {
 		&Peer{},
 		&SecretRejection{},
 		&HostTrustRequest{},
+		&AdoptionRequest{},
 		&HostTrust{},
 		&SandboxEvent{},
 		&SandboxEventLog{},

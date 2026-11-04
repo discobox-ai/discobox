@@ -107,7 +107,7 @@ func settingsDialog(box Sandbox, was BoxSettings, harnesses []Harness) *dialog {
 
 	api := pickRow("api", "discobox API",
 		choice{key: "no", label: "no", hint: "the box cannot call the discobox API"},
-		choice{key: "yes", label: "yes", hint: "the box may call the discobox API through its pool, acting only on the discoboxes it created"})
+		choice{key: "yes", label: "yes", hint: "the box may call the discobox API through its pool, acting only on the discoboxes it leads"})
 	api.section = "Access"
 
 	f := newForm(name, harness, deny, allow, passthrough, api)

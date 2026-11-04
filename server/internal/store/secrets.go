@@ -604,7 +604,7 @@ func (s *Store) ListSecretRequests(ctx context.Context, projectID, status string
 	}
 	if options.owner != "" {
 		query = query.Where("sandbox_id IN (?)", read.Model(&model.Sandbox{}).Select("id").
-			Where("project_id = ? AND created_by_sandbox_id = ?", projectID, options.owner))
+			Where("project_id = ? AND parent_sandbox_id = ?", projectID, options.owner))
 	}
 	var out []model.SecretRequest
 	err = query.Order("created_at ASC").Find(&out).Error

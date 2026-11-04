@@ -95,6 +95,7 @@ type sandboxEventData struct {
 	// DisplayState, Tags and CreatedBySandboxID are ADR 26-11-01-560 §2's.
 	DisplayState       string            `json:"displayState,omitempty"`
 	Tags               map[string]string `json:"tags,omitempty"`
+	ParentSandboxID    string            `json:"parentSandboxId,omitempty"`
 	CreatedBySandboxID string            `json:"createdBySandboxId,omitempty"`
 }
 

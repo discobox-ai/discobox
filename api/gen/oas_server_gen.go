@@ -14,6 +14,10 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
 	AcknowledgeSandboxHarnessConfig(ctx context.Context, req *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (AcknowledgeSandboxHarnessConfigRes, error)
+	// ApproveAdoptionRequest implements approve-adoption-request operation.
+	//
+	// POST /projects/{projectId}/adoption-requests/{requestId}/approve
+	ApproveAdoptionRequest(ctx context.Context, params ApproveAdoptionRequestParams) (ApproveAdoptionRequestRes, error)
 	// ApproveSecretRequest implements approve-secret-request operation.
 	//
 	// Approve a secret request.
@@ -100,6 +104,10 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
 	CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (CopySandboxFileRes, error)
+	// CreateAdoptionRequest implements create-adoption-request operation.
+	//
+	// POST /projects/{projectId}/adoption-requests
+	CreateAdoptionRequest(ctx context.Context, req *CreateAdoptionRequestBody, params CreateAdoptionRequestParams) (CreateAdoptionRequestRes, error)
 	// CreateHarnessConfig implements create-harness-config operation.
 	//
 	// Create a harness config.
@@ -258,6 +266,10 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/secret-bindings/{bindingId}
 	DeleteSecretBinding(ctx context.Context, params DeleteSecretBindingParams) (DeleteSecretBindingRes, error)
+	// DenyAdoptionRequest implements deny-adoption-request operation.
+	//
+	// POST /projects/{projectId}/adoption-requests/{requestId}/deny
+	DenyAdoptionRequest(ctx context.Context, params DenyAdoptionRequestParams) (DenyAdoptionRequestRes, error)
 	// DenySecretRequest implements deny-secret-request operation.
 	//
 	// Deny a secret request.
@@ -288,6 +300,10 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/jobs/{jobId}/force
 	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
+	// GetAdoptionRequest implements get-adoption-request operation.
+	//
+	// GET /projects/{projectId}/adoption-requests/{requestId}
+	GetAdoptionRequest(ctx context.Context, params GetAdoptionRequestParams) (GetAdoptionRequestRes, error)
 	// GetHTTPAudit implements get-http-audit operation.
 	//
 	// One audited HTTP exchange in full, read from the pool that recorded it. The pool is in the path
@@ -483,6 +499,10 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/trust-requests/{requestId}
 	GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (GetTrustRequestRes, error)
+	// ListAdoptionRequests implements list-adoption-requests operation.
+	//
+	// GET /projects/{projectId}/adoption-requests
+	ListAdoptionRequests(ctx context.Context, params ListAdoptionRequestsParams) (ListAdoptionRequestsRes, error)
 	// ListApprovalRequests implements list-approval-requests operation.
 	//
 	// List the project's credential and trust requests as one inbox.
@@ -825,6 +845,10 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secrets/{secretId}/refresh
 	RefreshSecret(ctx context.Context, req *RefreshSecretBody, params RefreshSecretParams) (RefreshSecretRes, error)
+	// ReleaseSandbox implements release-sandbox operation.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/release
+	ReleaseSandbox(ctx context.Context, params ReleaseSandboxParams) (ReleaseSandboxRes, error)
 	// RemoveSandboxFile implements remove-sandbox-file operation.
 	//
 	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory

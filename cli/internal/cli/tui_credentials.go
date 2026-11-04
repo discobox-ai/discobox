@@ -105,6 +105,11 @@ func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialReque
 	}
 	out := make([]tui.CredentialRequest, 0, len(body.GetApprovalRequests()))
 	for _, item := range body.GetApprovalRequests() {
+		if adoption, ok := item.Adoption.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindAdoption {
+			out = append(out, tui.CredentialRequest{ID: adoption.ID, SandboxID: adoption.RequesterSandboxId, Created: adoption.CreatedAt, Justification: terminalSafe(adoption.Justification), Adoption: &tui.AdoptionAsk{
+				ChildID: terminalSafe(adoption.ChildSandboxId), ChildName: terminalSafe(adoption.ChildName.Or("")), RequesterID: terminalSafe(adoption.RequesterSandboxId), RequesterName: terminalSafe(adoption.RequesterName.Or("")), CurrentParentID: terminalSafe(adoption.CurrentParentSandboxId.Or("none")), ReadOnly: adoption.ReadOnly.Or(false),
+			}})
+		}
 		if credential, ok := item.Credential.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindCredential {
 			out = append(out, toTUICredentialRequest(credential))
 		}
@@ -833,4 +838,31 @@ func (d *apiDataSource) DeleteSecret(ctx context.Context, server, secretID strin
 		return err
 	}
 	return expectNoContent[apiclientgen.DeleteSecretNoContent](res)
+}
+
+func (d *apiDataSource) DecideAdoptionRequest(ctx context.Context, server, requestID string, approve bool) error {
+	window := d
+	source, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	if approve {
+		res, err := source.client.ApproveAdoptionRequest(ctx, apiclientgen.ApproveAdoptionRequestParams{ProjectId: source.projectID, RequestId: requestID})
+		if err != nil {
+			return err
+		}
+		if _, err := expectResponse[apimodel.AdoptionRequest](res); err != nil {
+			return err
+		}
+	} else {
+		res, err := source.client.DenyAdoptionRequest(ctx, apiclientgen.DenyAdoptionRequestParams{ProjectId: source.projectID, RequestId: requestID})
+		if err != nil {
+			return err
+		}
+		if err := expectNoContent[apiclientgen.DenyAdoptionRequestNoContent](res); err != nil {
+			return err
+		}
+	}
+	window.answered(server, requestID)
+	return nil
 }

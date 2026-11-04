@@ -101,7 +101,7 @@ func transferFixture(t *testing.T) (context.Context, *Service, *store.Store, *tr
 	}
 	provider := &treeProvider{recordingProvider: &recordingProvider{}}
 	provider.countRows = func() int {
-		sandboxes, err := appStore.ListSandboxes(ctx, "project-1", "", nil)
+		sandboxes, err := appStore.ListSandboxes(ctx, "project-1", "", nil, "")
 		if err != nil {
 			return -1
 		}
@@ -411,7 +411,7 @@ func TestImportRefusesAnArchiveWithoutItsChecksums(t *testing.T) {
 	if !strings.Contains(err.Error(), "SHA256SUMS") {
 		t.Errorf("err = %q; it should say what was missing", err)
 	}
-	sandboxes, err := st.ListSandboxes(ctx, "project-1", "", nil)
+	sandboxes, err := st.ListSandboxes(ctx, "project-1", "", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

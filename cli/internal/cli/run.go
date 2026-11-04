@@ -233,7 +233,7 @@ creates instead. In --from-json, "bindings" lists them. A discobox creating one
 binds only what it may delegate, and delegates nothing.
 
 --discobox-api lets the new discobox call the discobox API through its pool,
-acting only on the discoboxes it creates. A discobox creating one may set it
+acting only on the discoboxes it leads. A discobox creating one may set it
 only when it has it itself.
 
 --from-json reads the whole request from stdin as one JSON object instead,
@@ -488,8 +488,8 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one")
 	flags.BoolVar(&opts.includeDirty, "include-dirty", false, "Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says")
 	flags.StringArrayVar(&opts.bind, "bind", nil, "Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; or SECRET[:VAR],policy=FILE,NAME=VALUE (repeat policy=FILE to merge files, arguments follow each file). Repeat for more. A discobox creating one binds only what it may delegate")
-	flags.StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it creates, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
-	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates. A discobox creating one may set it only when it has it itself")
+	flags.StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it leads, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
+	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself")
 	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
 	opts.flags = flags

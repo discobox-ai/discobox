@@ -77,7 +77,7 @@ func (s *Store) sandboxDeleted(sandbox *model.Sandbox) {
 // The generations and the error are what Sandbox.DisplayState reads besides
 // the two axes.
 var sandboxEventColumns = []string{
-	"id", "project_id", "name", "desired_state", "state", "runtime_state", "agent_status", "tags", "created_by_sandbox_id",
+	"id", "project_id", "name", "desired_state", "state", "runtime_state", "agent_status", "tags", "created_by_sandbox_id", "parent_sandbox_id",
 	"generation", "observed_generation", "repair_generation", "error_message", "event_seq",
 }
 
@@ -306,6 +306,9 @@ func sandboxEventData(sandbox *model.Sandbox, at time.Time) model.SandboxEventDa
 	}
 	if len(data.Tags) == 0 {
 		data.Tags = nil
+	}
+	if sandbox.ParentSandboxID != nil {
+		data.ParentSandboxID = *sandbox.ParentSandboxID
 	}
 	if sandbox.CreatedBySandboxID != nil {
 		data.CreatedBySandboxID = *sandbox.CreatedBySandboxID

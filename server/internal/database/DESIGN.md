@@ -246,3 +246,10 @@ bindings. Unknown executable content leaves the stored documents intact and
 fails migration explicitly.
 
 Literal settings and explicit credential references follow [ADR 26-10-30-457](../../../docs/adr/26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md).
+
+`addSandboxParents` adds `sandboxes.parent_sandbox_id` and backfills it from
+`created_by_sandbox_id` in one pre-AutoMigrate transaction, clearing parents
+whose creator has already been purged or is outside the project; creation
+history stays intact. Column presence is
+the marker; later starts preserve a release or adoption. AutoMigrate adds its
+index and the adoption-request table, then the event backfill projects parents.

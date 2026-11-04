@@ -379,7 +379,7 @@ and the recoverable one. `recordSandboxIntent` records no intent but a delete
 on a sandbox already being deleted, so no archive, upgrade or other `present`
 takes back a purge or a retention expiry still converging: an archive of one is
 accepted and records nothing, and the rest are refused (409); discoboxes
-reach those routes for the discoboxes they created
+reach those routes for the discoboxes they lead
 ([ADR 26-11-03-724](../../../../docs/adr/26-11-03-724-a-discobox-archives-the-discoboxes-it-created.md)
 §2). `archive.go` holds the archive branch and retention; `reconciler.go` holds
 the rest.
@@ -606,7 +606,7 @@ stops reporting on an archived sandbox, so until its next complete sync puts
 it down the row's last value is from before it), and the primary session's program state (`state`, `kind`, `app`),
 while the sandbox is running, chosen by the
 rule `discobox ls` uses (`programstatus.PrimaryPosted`), its `tags`, and
-`createdBySandboxId`
+`createdBySandboxId` and `parentSandboxId`
 ([ADR 26-11-01-560](../../../../docs/adr/26-11-01-560-discobox-box-watches-other-boxes-through-the-sandbox-event-stream.md)
 §2), and `displayState`, the row's display state by the one rule
 (`Sandbox.DisplayState`), so no client combines the axes itself. The name is the configured handle, not the display name, which moves
@@ -730,22 +730,36 @@ and each runs with that harness config's credentials. Like the egress level it
 has its own setter (`store.SetSandboxDiscoboxAPI`) and is never written by a
 whole-row save.
 
-The new discobox records its creator (`CreatedBySandboxID`, immutable after
-create). The creator authorizes one thing by it: reading and answering the
-secret requests the new discobox files, within what the creator was delegated
-([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
-§§2–3), and everything else the role does to a discobox: it acts only on the
-discoboxes it created (ADR 26-10-27-880 §9):
-delivering its source; reading and typing into its terminals, and reading an
-exec's record, transcript and events; starting, stopping, restarting,
-repairing and upgrading it, which are the same instructions a person sends and
-need nothing of the service beyond the role; reading its services and their
-logs and starting, stopping and restarting them; reaching its ports over HTTP;
-and changing its name, description and tags, whose write into the discobox
-leases the `exec:write` its terminal input already does. A sandbox's calls
-lease only `sandbox:write`, `exec:read`, `exec:write` and `sandbox:http`
-(`authorizeRequestedScopes`), and never attach. Nothing cascades by the
-creator: no archive, no purge, no inherited binding.
+The new discobox records its immutable creator (`CreatedBySandboxID`) and
+starts with it as its parent (`ParentSandboxID`). Authority reads the parent
+(ADR 26-11-03-970): source delivery, terminals, power, repair, upgrade, archive,
+meta, services, ports and answering the child's credential requests within the
+parent's delegations. Authority is one level deep; credentials never move with
+it. Every write or send still requires the child's effective egress to be
+covered by the parent's. Parent and creator are outside the manifest and a
+whole-row save writes neither.
+
+### Adoption and release
+
+`adopt <box> --reason` files an `AdoptionRequest` through the sandbox role and
+waits. Only a person approves or denies it, through the inbox. Requests retain
+the requester, child, justification, replaced parent, decision, decider and time
+even after a sandbox is purged. One pending request per requester and child is
+returned on repeated filing.
+
+The store holds the project's row lock across validation and parent writes,
+including release and purge cleanup. Filing and approval refuse self, ancestors,
+cross-project targets, archived or deleting children, a requester without
+`DiscoboxAPI`, and a child already led by it. Approval failures leave the request
+pending with 409. Re-parenting needs only the person's approval, with the old
+parent named. Release clears the parent, by that parent without an egress
+check or by a person. Purging a parent clears its children in the same transaction;
+archiving it does not. Each parent change records a sandbox event.
+
+The approval read projects the current parent, child and requester names and
+whether effective egress makes the child read-only. The dialog names every
+capability and says when writes and sends will be refused. No binding, grant,
+secret or passthrough policy changes in adoption or release.
 
 It may not create one that can reach a destination it cannot
 (`refuseWiderThanCreator`, [Proxy policy](#proxy-policy)): the new discobox's effective
@@ -788,7 +802,7 @@ one a discobox created (`CreatedBySandboxID`), restricted or not
 - **A discobox holds passthrough to its own.** A create from the sandbox role
   may give the new discobox only passthrough hosts the creator's own covers
   (`refuseWiderThanCreator`), and an update from it — which the sandbox role
-  reaches for a discobox it created and does not reach less than — may change
+  reaches for a discobox it leads and does not reach less than — may change
   that discobox's passthrough and nothing else, within the caller's
   (`refuseSandboxRoleUpdate`). A person sets any level to anything.
 - **Passthrough is sent only when there is some.** A pool agent that predates

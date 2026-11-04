@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/proxy/egress"
@@ -341,4 +342,86 @@ func TestSandboxRoleReadsItsProjectsEventStream(t *testing.T) {
 		{"read another project's events", roleLead, http.MethodGet, "/api/projects/proj-2/events", http.StatusForbidden},
 		{"write to the stream", roleLead, http.MethodPost, "/api/projects/default/events", http.StatusForbidden},
 	})
+}
+
+func TestAdoptionTransfersEveryChildRouteAndNoSecretValues(t *testing.T) {
+	st := roleStore(t)
+	ctx := context.Background()
+	// A person's sandbox has no creator. Adoption alone gives the lead authority.
+	req := &model.AdoptionRequest{ProjectID: "proj-1", RequesterSandboxID: "sbx-lead", ChildSandboxID: "sbx-persons", Justification: "manage work"}
+	if err := st.CreateAdoptionRequest(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DecideAdoptionRequest(ctx, "proj-1", req.ID, "user-1", true); err != nil {
+		t.Fatal(err)
+	}
+	authorizer := SandboxRoleAuthorizer{Store: st}
+	call := func(principal Principal, method, path string, want bool) {
+		t.Helper()
+		r := httptest.NewRequestWithContext(WithPrincipal(ctx, principal), method, "/projects/proj-1/"+path, nil)
+		ok, err := authorizer.Authorize(r)
+		if ok != want || (want && err != nil) {
+			t.Fatalf("%s %s: %v %v", method, path, ok, err)
+		}
+	}
+	for _, route := range sandboxRole {
+		if route.names != childDiscobox && route.names != withinCaller {
+			continue
+		}
+		path := strings.Replace(route.path, "*", "sbx-persons", 1)
+		path = strings.ReplaceAll(path, "*", "primary")
+		if route.service != "" {
+			path += "?service=" + route.service
+		}
+		method := route.method
+		if method == anyMethod {
+			method = http.MethodPost
+		}
+		call(roleLead, method, path, true)
+	}
+	for _, path := range []string{"sandboxes/sbx-persons/secrets", "secrets/secret/value", "adoption-requests/" + req.ID + "/approve", "adoption-requests/" + req.ID + "/deny"} {
+		call(roleLead, http.MethodPost, path, false)
+	}
+	// Answering the child's requests follows the parent; values never join it.
+	call(roleLead, http.MethodPost, "secret-requests/sreq-persons/approve", true)
+	owned, err := st.ListSecretRequests(ctx, "proj-1", "", store.OwnedBy("sbx-lead"))
+	if err != nil || len(owned) != 2 {
+		t.Fatalf("parent request listing: %v %v", owned, err)
+	}
+	if err := st.ReleaseSandbox(ctx, "proj-1", "sbx-persons", "sbx-lead"); err != nil {
+		t.Fatal(err)
+	}
+	call(roleLead, http.MethodGet, "sandboxes/sbx-persons", false)
+	call(roleLead, http.MethodPost, "secret-requests/sreq-persons/approve", false)
+}
+
+func TestAdoptionAwayRevokesCreatorAndRestrictedParentCanRelease(t *testing.T) {
+	st := roleStore(t)
+	ctx := context.Background()
+	req := &model.AdoptionRequest{ProjectID: "proj-1", RequesterSandboxID: "sbx-sealed", ChildSandboxID: "sbx-worker", Justification: "read the work"}
+	if err := st.CreateAdoptionRequest(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DecideAdoptionRequest(ctx, "proj-1", req.ID, "user-1", true); err != nil {
+		t.Fatal(err)
+	}
+	authorizer := SandboxRoleAuthorizer{Store: st}
+	for _, tc := range []struct {
+		caller       string
+		method, path string
+		allowed      bool
+	}{
+		{"sbx-lead", "GET", "sandboxes/sbx-worker", false},
+		{"sbx-sealed", "GET", "sandboxes/sbx-worker", true},
+		{"sbx-sealed", "POST", "sandboxes/sbx-worker/start", false},
+		{"sbx-sealed", "POST", "sandboxes/sbx-worker/release", true},
+		{"sbx-sealed", "GET", "adoption-requests/" + req.ID, true},
+		{"sbx-lead", "GET", "adoption-requests/" + req.ID, false},
+	} {
+		r := httptest.NewRequestWithContext(WithPrincipal(ctx, Principal{Type: PrincipalTypeSandbox, ProjectID: "proj-1", SandboxID: tc.caller}), tc.method, "/projects/proj-1/"+tc.path, nil)
+		ok, err := authorizer.Authorize(r)
+		if ok != tc.allowed || (tc.allowed && err != nil) {
+			t.Fatalf("%+v: %v %v", tc, ok, err)
+		}
+	}
 }

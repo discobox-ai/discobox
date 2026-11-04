@@ -189,7 +189,7 @@ binding and then updates the delegation left in place, with no split.
 
 Deleting a sandbox closes its open requests as denied, each part with it: the
 agent waiting on the answer is gone. A discobox sees and answers only the
-requests filed by a discobox it created: the sandbox role decides that for one
+requests filed by a discobox it leads: the sandbox role decides that for one
 request by its ID, and `ListSecretRequests` filters the listing with
 `store.OwnedBy`
 ([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md) §2).
@@ -200,13 +200,13 @@ included, so one answer is never split between two answerers.
 ## Delegation
 
 A delegate binding lets a discobox it covers hand the secret, for use, to the
-discoboxes it creates (ADR 26-10-27-880 §3). It authorizes nothing its holder
+discoboxes it leads (ADR 26-10-27-880 §3). It authorizes nothing its holder
 sends.
 
 - **Only a person makes one**, and only a person answers a request with a
   delegate part.
 - **What is handed on is a child.** A discobox approving a request from a
-  discobox it created, or binding at a create, does it under a live delegate
+  discobox it leads, or binding at a create, does it under a live delegate
   binding covering it — at any level — of the secret it answers with
   (`delegationsFor`: among what it was delegated, never the project's
   secrets; its `ListSecrets` holds only those, `store.DelegatedTo`). The child
@@ -592,3 +592,8 @@ the recipe `recipe.go` reads.
   (`refusedStatus`): it says nothing about the credential.
 - **A refused exchange is `refresh-failed`**: the key is dead and a person
   replaces it. A refused token whose exchange then succeeds is recovered.
+
+The approval inbox also composes the sandbox service's adoption requests
+(ADR 26-11-03-970). Their lifecycle belongs to sandboxes, not credentials.
+Secret request ownership reads the requester's current parent; adoption and
+release never change credentials, bindings or delegations.

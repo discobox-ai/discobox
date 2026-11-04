@@ -65,7 +65,7 @@ func TestCreateKeepsItsSkillsAndRefusesBadOnes(t *testing.T) {
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
 		t.Fatalf("err = %v, want a 400", err)
 	}
-	all, err := st.ListSandboxes(ctx, "project-1", "", nil)
+	all, err := st.ListSandboxes(ctx, "project-1", "", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

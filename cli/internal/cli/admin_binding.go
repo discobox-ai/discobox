@@ -298,7 +298,7 @@ secret's routes for this binding; left out, it goes where the secret's go.
 	cmd.Flags().StringVar(&envVar, "as", "", "The variable a use binding is delivered in")
 	cmd.Flags().Var(&raw, "raw", "Hand over the value itself: env, or file for a file whose path is in the variable; left out, a sentinel")
 	cmd.Flags().BoolVar(&use, "use", true, "Deliver it to use (default true unless --delegate)")
-	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the target give it to the discoboxes it creates")
+	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the target give it to the discoboxes it leads")
 	cmd.Flags().Var(&policyValue{references: &policies}, "policy", "A credential policy FILE; repeat to merge routes. Following --policy-arg flags belong to this file")
 	cmd.Flags().Var(&policyValue{references: &policies, argument: true}, "policy-arg", "An argument NAME=VALUE for the preceding --policy; repeat for more")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "A route narrowing the secret's, as "+secretroute.Syntax+"; one per flag, repeat for more")

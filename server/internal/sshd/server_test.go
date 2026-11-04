@@ -81,7 +81,7 @@ func (f *fakeSandboxService) UpgradeBasis(context.Context, string) (services.San
 func (f *fakeSandboxService) PurgeSandbox(context.Context, string, string) error {
 	panic("not implemented")
 }
-func (f *fakeSandboxService) ListSandboxes(context.Context, string, string, []string, []sandboxmeta.Selector) ([]model.Sandbox, error) {
+func (f *fakeSandboxService) ListSandboxes(context.Context, string, string, []string, []sandboxmeta.Selector, string) ([]model.Sandbox, error) {
 	panic("not implemented")
 }
 func (f *fakeSandboxService) CreateSandbox(context.Context, string, services.CreateSandboxBody) (*model.Sandbox, error) {
@@ -391,3 +391,17 @@ func (*fakeSandboxService) OpenSandboxEvents(context.Context, string, *int64) (s
 func (f *fakeSandboxService) PullSandboxSource(context.Context, string, string, string, services.PullSandboxSourceBody) (*model.Sandbox, error) {
 	panic("not implemented")
 }
+
+func (*fakeSandboxService) CreateAdoptionRequest(context.Context, string, services.CreateAdoptionRequestBody) (*model.AdoptionRequest, error) {
+	return nil, nil
+}
+func (*fakeSandboxService) ListAdoptionRequests(context.Context, string, string) ([]model.AdoptionRequest, error) {
+	return []model.AdoptionRequest{}, nil
+}
+func (*fakeSandboxService) GetAdoptionRequest(context.Context, string, string) (*model.AdoptionRequest, error) {
+	return nil, nil
+}
+func (*fakeSandboxService) DecideAdoptionRequest(context.Context, string, string, bool) (*model.AdoptionRequest, error) {
+	return nil, nil
+}
+func (*fakeSandboxService) ReleaseSandbox(context.Context, string, string) error { return nil }

@@ -221,7 +221,7 @@ over its harness config's, and that over the project's.
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent for this binding, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(lasts, "for", bindingLifetimeFlagUsage)
 	cmd.Flags().Var(&raw, "raw", "Hand over the value itself: env (in the variable) or file (a file whose path is in it); left out, a sentinel")
-	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the discobox give the secret to the discoboxes it creates; a person's to set")
+	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the discobox give the secret to the discoboxes it leads; a person's to set")
 	target.add(cmd, "bind it to")
 	return cmd
 }
@@ -254,7 +254,7 @@ func writeBound(w io.Writer, binding *apimodel.SecretBinding, secret *apimodel.S
 		fmt.Fprintln(w, "The value leaves the pool: it is held in memory and refused off its routes, but a discobox holding it can send it anywhere.")
 	}
 	if binding.Delegate {
-		fmt.Fprintf(w, "%s may give %s to the discoboxes it creates, sent to %s; it %s.\n", holder, name, sentTo, lasts)
+		fmt.Fprintf(w, "%s may give %s to the discoboxes it leads, sent to %s; it %s.\n", holder, name, sentTo, lasts)
 	}
 	switch {
 	case binding.Use && isRaw && raw == apiclientgen.SecretBindingRawEnv && t.kind == apiclientgen.CreateSecretBindingBodyTargetKindSandbox:

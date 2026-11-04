@@ -397,6 +397,9 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 	if sandbox.CreatedBy != nil {
 		fields["createdBy"] = sandbox.CreatedBy
 	}
+	if sandbox.ParentSandboxID != nil {
+		fields["parentSandboxId"] = *sandbox.ParentSandboxID
+	}
 	if sandbox.CreatedBySandboxID != nil {
 		fields["createdBySandboxId"] = *sandbox.CreatedBySandboxID
 	}

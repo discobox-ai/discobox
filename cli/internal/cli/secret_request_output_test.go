@@ -55,7 +55,7 @@ func TestARequestShowsItsRolesBesideWhatTheyGrant(t *testing.T) {
 	for _, want := range []string{
 		"USE ROLE", "github-submit", "repo=web; repo=api", "(the discobox's words)",
 		"POST · /repos/acme/web/pulls",
-		"DELEGATE", "to give the credential to the discoboxes it creates",
+		"DELEGATE", "to give the credential to the discoboxes it leads",
 		"/[**]",
 		"also named \"github-submit\" but is a different document",
 		"args not used by any route: repo",

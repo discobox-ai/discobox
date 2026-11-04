@@ -168,7 +168,7 @@ func TestCreateRefusesAHarnessItCannotPin(t *testing.T) {
 			if !errors.As(err, &status) || status.StatusCode() != tc.status || !strings.Contains(err.Error(), tc.says) {
 				t.Fatalf("err = %v, want a %d saying %q", err, tc.status, tc.says)
 			}
-			if listed, err := st.ListSandboxes(ctx, "project-1", "", nil); err != nil || len(listed) != 0 {
+			if listed, err := st.ListSandboxes(ctx, "project-1", "", nil, ""); err != nil || len(listed) != 0 {
 				t.Fatalf("listed %d sandboxes (%v), want the refused create to leave none", len(listed), err)
 			}
 		})

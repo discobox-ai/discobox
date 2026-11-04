@@ -102,7 +102,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	if serverOf != nil {
 		header = append(header, "SERVER")
 	}
-	header = append(header, "STATE", "AGENT", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "TAGS", "ERROR", "CREATED", "SOURCE")
+	header = append(header, "STATE", "AGENT", "HARNESS", "GIT", "CHANGES", "DIFF", "UPGRADE", "TAGS", "ERROR", "CREATED", "SOURCE", "PARENT")
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
 	for _, sandbox := range sandboxes {
 		git := sandboxGitStatus(sandbox)
@@ -110,7 +110,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		if serverOf != nil {
 			fmt.Fprintf(tw, "%s\t", serverOf[sandbox.ID])
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sandboxDisplayState(sandbox),
 			programStatusColumn(sandbox),
 			sandboxHarness(sandbox),
@@ -122,6 +122,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 			truncateTableValue(sandboxMessage(sandbox), 80),
 			formatTime(sandbox.CreatedAt),
 			sandboxSource(sandbox),
+			terminalSafe(sandbox.ParentSandboxId.Or("-")),
 		)
 	}
 	return tw.Flush()
@@ -743,7 +744,7 @@ func (p requestPart) statusText(requestStatus apiclientgen.SecretRequestStatus) 
 		}
 	}
 	if p.delegate {
-		return status + " · to give the credential to the discoboxes it creates, not to use it"
+		return status + " · to give the credential to the discoboxes it leads, not to use it"
 	}
 	return status + " · to use the credential itself"
 }

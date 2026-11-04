@@ -2201,3 +2201,14 @@ func readySandboxes() []Sandbox {
 	all[0].Diff = DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7}
 	return all
 }
+
+func (f *fakeSource) DecideAdoptionRequest(_ context.Context, server, requestID string, _ bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "DecideAdoptionRequest@"+server)
+	if f.approveErr != nil {
+		return f.approveErr
+	}
+	f.dropRequestLocked(requestID)
+	return nil
+}

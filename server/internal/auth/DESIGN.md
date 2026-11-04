@@ -142,13 +142,13 @@ Current authorizers:
   [ADR 26-10-14-320](../../../docs/adr/26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md)
   §3 added to the role stay under ADR 26-10-27-880 §9; only their reach
   changed, from any discobox in the project to the discoboxes the caller
-  created. It is decided by the route; no grant is read
+  leads. It is decided by the route; no grant is read
   ([ADR 0140](../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)
   §4). The role is:
   - discobox create and list, and the project's sandbox event stream, whole
     as the list is
     ([ADR 26-11-01-560](../../../docs/adr/26-11-01-560-discobox-box-watches-other-boxes-through-the-sandbox-event-stream.md)
-    §1); on a discobox the caller created: get;
+    §1); on a discobox the caller leads: get;
     source delivery — the pin and the push into its `git-origins`, and
     `complete-source-push`
     ([ADR 26-09-24-630](../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
@@ -170,9 +170,9 @@ Current authorizers:
     ([ADR 26-10-14-894](../../../docs/adr/26-10-14-894-a-project-names-skills-repositories-every-discobox-is-created-with.md)
     §1).
 
-  A route naming a discobox (`createdDiscobox`) takes only one the caller
-  created (`Sandbox.CreatedBySandboxID`, ADR 26-10-27-880 §9); a discobox is
-  not its own creator, so it never acts on itself. Not in the role: purge
+  A route naming a discobox (`childDiscobox`) takes only one the caller
+  leads (`Sandbox.ParentSandboxID`, ADR 26-10-27-880 §9); a discobox is
+  not its own parent, so it never acts on itself. Not in the role: purge
   and unarchive, on any discobox (ADR 26-11-03-724 §§2, 4), `attach`,
   creating, starting, or ending an exec, TCP and UDP tunnels, and fetching an
   origin or what a pool's cache remembers of a remote (`git-caches`)
@@ -196,9 +196,9 @@ Current authorizers:
   the caller, never out of it, and are not held to it.
 
   A secret request's get, approve, and deny (`ownedRequest`) are allowed only
-  when a discobox the caller created filed it — the request's owner. A request
+  when a discobox the caller leads filed it — the request's owner. A request
   filed by no discobox, or by one that is gone, has no owner and is a person's
-  to answer. A discobox is never its own creator, so it never approves its own
+  to answer. A discobox is never its own parent, so it never approves its own
   request and two discoboxes never approve each other's, which keeps a
   delegation from becoming a use.
   The request and secret listings cannot be decided by their routes, so the
@@ -312,3 +312,13 @@ Rules:
   the operation scope names those tokens carry. Pool-to-control-plane
   assertions are the root module's `pkg/poolauth`, verified by
   `PoolAuthenticator`.
+
+## Adoption (ADR 26-11-03-970)
+
+`childDiscobox` and `ownedRequest` read the parent, never the immutable creator.
+The sandbox role files adoption requests and reads only its own; it cannot
+approve or deny any. The listing is requester-filtered in the service.
+`release` is a child check without `withinCaller`, since giving up authority
+sends nothing into the child. Approval is exclusively a user principal's.
+The ancestor check forbids cycles, so parents cannot approve one another's
+credential requests. Create-time bounds and passthrough keep reading the creator.

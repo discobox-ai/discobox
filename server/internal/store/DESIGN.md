@@ -77,7 +77,8 @@ are rows the store writes in the transaction of the change (`sandbox_events.go`)
   writes), `UpdateSandboxAgentStatus`, `UpdateSandboxMeta`, `DeleteSandbox`.
   One called outside a transaction opens one (`inSandboxTx`). A new writer of
   `desired_state`, `state`, `runtime_state`, `agent_status` or `tags` must do
-  the same. `created_by_sandbox_id` is projected too, and written only at
+  the same. `parent_sandbox_id` is projected and written by adoption, release
+  and purge cleanup. `created_by_sandbox_id` is projected too, and written only at
   create. `displayState` is `Sandbox.DisplayState` of the row, so its error
   and generations are read for it, and `UpdateSandbox`, their writer, notes
   them.
@@ -299,3 +300,12 @@ as a fallback. `CaptureBaseline` records config revision and the identity plus
 binding replacement and an OAuth refresh invalidate an earlier candidate.
 `HarnessCaptureReceipt` records the accepted baseline under project, sandbox,
 config and opaque candidate ID; it retains no exported credential material.
+
+## Parent changes
+
+`adoptions.go` owns parent writes and adoption-request persistence. Filing,
+approval, release and purge cleanup take the project's row lock before sandbox
+locks, which are taken in ID order. This serializes ancestor walks against every
+parent change. Requests remain after purge as audit records. `UpdateSandbox`
+omits both parent and creator; create starts with the creator as parent.
+The secret request owner filter reads `parent_sandbox_id`.

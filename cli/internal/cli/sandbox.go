@@ -237,7 +237,7 @@ discobox, an update may change only --egress-passthrough of a discobox it
 created, and only to hosts its own passthrough covers.
 
 --discobox-api lets the discobox call the discobox API through its pool, in the
-sandbox role, acting only on the discoboxes it created; --discobox-api=false
+sandbox role, acting only on the discoboxes it leads; --discobox-api=false
 takes that away. It is a person's to change.
 
 ` + egressHelp,
@@ -616,8 +616,8 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringArrayVar(&opts.prompt, "prompt", nil, "Prompt argument the harness should run; repeat to pass multiple argv tokens, preserving the caller's exact tokens")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	cmd.Flags().StringArrayVar(&opts.bind, "bind", nil, "Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; repeat for more. A discobox creating one binds only what it may delegate")
-	cmd.Flags().StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it creates, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
-	cmd.Flags().BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates. A discobox creating one may set it only when it has it itself")
+	cmd.Flags().StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it leads, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
+	cmd.Flags().BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself")
 	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "A secret to store and bind as KEY: KEY reads $KEY from this shell, KEY=@FILE reads a file, KEY=VALUE takes the value itself (it then sits in shell history and the process list); add @HOST to send it to HOST alone, else it is sent anywhere. A value or path holding an @ ends with one. Repeat for more. A stored secret is bound with --bind")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
@@ -641,7 +641,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVarP(&opts.harness, "harness", "H", "", "Harness `HARNESS` (slug, name or ID); requires a stopped discobox")
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
-	cmd.Flags().BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the discobox call the discobox API through its pool, acting only on the discoboxes it created; --discobox-api=false takes it away")
+	cmd.Flags().BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the discobox call the discobox API through its pool, acting only on the discoboxes it leads; --discobox-api=false takes it away")
 	addEgressUpdateFlags(cmd, &opts.egress, "the discobox")
 }
 

@@ -139,11 +139,11 @@ type SandboxProviderCatalogItem struct {
 }
 
 // ListSandboxes answers with the project's discoboxes.
-func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector) ([]model.Sandbox, error) {
+func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, parent string) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	sandboxes, err := s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys)
+	sandboxes, err := s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys, parent)
 	if err != nil {
 		return nil, err
 	}

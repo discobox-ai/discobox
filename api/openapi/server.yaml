@@ -8,7 +8,7 @@ components:
                     description: The binding that applies
                     type: string
                 delegate:
-                    description: The target may give it to the discoboxes it creates
+                    description: The target may give it to the discoboxes it leads
                     type: boolean
                 envVar:
                     description: Variable it is delivered in, for a use binding
@@ -63,7 +63,7 @@ components:
                     readOnly: true
                     type: string
                 delegate:
-                    description: Let a discobox the binding covers give the credential to the discoboxes it creates. Only a person binds with delegate.
+                    description: Let a discobox the binding covers give the credential to the discoboxes it leads. Only a person binds with delegate.
                     type: boolean
                 envVar:
                     description: Environment variable to deliver the credential's sentinel in; required with use
@@ -915,7 +915,7 @@ components:
                     readOnly: true
                     type: string
                 discoboxApi:
-                    description: Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates (ADR 26-10-27-880 §9). A discobox creating one may set it only when it has it itself.
+                    description: Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads (ADR 26-10-27-880 §9). A discobox creating one may set it only when it has it itself.
                     type: boolean
                 harnessName:
                     description: Harness config to resolve at create time, by slug, name or ID
@@ -1046,7 +1046,7 @@ components:
             description: A secret to bind to the new discobox, in the transaction that creates it.
             properties:
                 delegate:
-                    description: Let the new discobox give the credential to the discoboxes it creates. A discobox creating one may not set it.
+                    description: Let the new discobox give the credential to the discoboxes it leads. A discobox creating one may not set it.
                     type: boolean
                 envVar:
                     description: Environment variable the credential's sentinel is delivered in; required with use
@@ -2703,6 +2703,9 @@ components:
                         type: string
                     description: The sandbox's tags, key to value, as its listing serves them (ADR 26-11-01-560). Absent when it has none. A change to them is an event.
                     type: object
+                parentSandboxId:
+                    description: Sandbox leading this one; authority follows this parent (ADR 26-11-03-970).
+                    type: string
                 createdBySandboxId:
                     description: The sandbox that created this one, when a sandbox did. It never changes.
                     type: string
@@ -2775,7 +2778,7 @@ components:
             type: object
         SecretBinding:
             additionalProperties: false
-            description: "A secret made available to a target (ADR 26-10-27-880 §1): existing and unexpired, it is the whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a discobox the binding covers give the credential to the discoboxes it creates."
+            description: "A secret made available to a target (ADR 26-10-27-880 §1): existing and unexpired, it is the whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a discobox the binding covers give the credential to the discoboxes it leads."
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -2791,7 +2794,7 @@ components:
                     description: 'Principal that made the binding: a person, or the discobox that handed it on'
                     type: string
                 delegate:
-                    description: A discobox the binding covers may give the credential, to use, to the discoboxes it creates (ADR 26-10-27-880 §3)
+                    description: A discobox the binding covers may give the credential, to use, to the discoboxes it leads (ADR 26-10-27-880 §3)
                     type: boolean
                 envVar:
                     description: Environment variable the credential's sentinel is delivered in; set when use is
@@ -4264,7 +4267,7 @@ components:
                     readOnly: true
                     type: string
                 delegate:
-                    description: Whether a discobox the binding covers may give the credential to the discoboxes it creates. Only a person sets it; turning it off removes every binding handed on under this one.
+                    description: Whether a discobox the binding covers may give the credential to the discoboxes it leads. Only a person sets it; turning it off removes every binding handed on under this one.
                     type: boolean
                 envVar:
                     description: A new environment variable for a use binding
@@ -4621,7 +4624,7 @@ components:
                     description: Credential name
                     type: string
                 purpose:
-                    description: What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets the sandbox give it to the discoboxes it creates and delivers nothing.
+                    description: What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets the sandbox give it to the discoboxes it leads and delivers nothing.
                     enum:
                         - use
                         - delegate
@@ -5545,7 +5548,7 @@ components:
             additionalProperties: false
             properties:
                 discoboxApi:
-                    description: The discobox may call the discobox API through its pool, in the sandbox role, acting only on the discoboxes it created (ADR 26-10-27-880 §9).
+                    description: The discobox may call the discobox API through its pool, in the sandbox role, acting only on the discoboxes it leads (ADR 26-10-27-880 §9).
                     type: boolean
                 egress:
                     $ref: '#/components/schemas/EgressPolicy'
@@ -5569,6 +5572,9 @@ components:
                 createdBy:
                     $ref: '#/components/schemas/User'
                     description: Creating user
+                parentSandboxId:
+                    description: Sandbox leading this one; authority follows this parent (ADR 26-11-03-970).
+                    type: string
                 createdBySandboxId:
                     description: Sandbox that created this one, when a sandbox did (ADR 26-09-24-630). Immutable after create.
                     type: string
@@ -7948,10 +7954,72 @@ components:
             required:
                 - hostKey
             type: object
+        AdoptionRequest:
+            additionalProperties: false
+            type: object
+            required: [id, projectId, requesterSandboxId, childSandboxId, justification, status, createdAt, updatedAt]
+            properties:
+                currentParentSandboxId:
+                    type: string
+                childName:
+                    type: string
+                requesterName:
+                    type: string
+                readOnly:
+                    type: boolean
+                    description: The child has wider effective egress; the parent can only read it.
+                id:
+                    type: string
+                projectId:
+                    type: string
+                requesterSandboxId:
+                    type: string
+                childSandboxId:
+                    type: string
+                justification:
+                    type: string
+                replacedParentSandboxId:
+                    type: string
+                status:
+                    type: string
+                    enum: [pending, approved, denied]
+                decidedBy:
+                    type: string
+                decidedAt:
+                    type: string
+                    format: date-time
+                createdAt:
+                    type: string
+                    format: date-time
+                updatedAt:
+                    type: string
+                    format: date-time
+        CreateAdoptionRequestBody:
+            additionalProperties: false
+            type: object
+            required: [childSandboxId, justification]
+            properties:
+                childSandboxId:
+                    type: string
+                    minLength: 1
+                justification:
+                    type: string
+                    minLength: 1
+        ListAdoptionRequestsBody:
+            additionalProperties: false
+            type: object
+            required: [adoptionRequests]
+            properties:
+                adoptionRequests:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/AdoptionRequest'
         ApprovalRequest:
             additionalProperties: false
-            description: One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential, trust or refresh is set, as kind says. A credential or trust request is answered on its own resource's approve and deny routes; a refresh by writing the secret's value, or dismissing it.
+            description: One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential, trust, refresh or adoption is set, as kind says. A credential or trust request is answered on its own resource's approve and deny routes; a refresh by writing the secret's value, or dismissing it.
             properties:
+                adoption:
+                    $ref: '#/components/schemas/AdoptionRequest'
                 credential:
                     $ref: '#/components/schemas/SecretRequest'
                 kind:
@@ -7960,6 +8028,7 @@ components:
                         - credential
                         - trust
                         - refresh
+                        - adoption
                     type: string
                 refresh:
                     $ref: '#/components/schemas/SecretRefreshRequest'
@@ -10422,6 +10491,11 @@ paths:
                     items:
                         type: string
                     type: array
+                - in: query
+                  name: parent
+                  schema:
+                    type: string
+                  description: Only list sandboxes led by this sandbox ID
             responses:
                 200:
                     content:
@@ -14848,3 +14922,162 @@ paths:
             summary: List the live host trusts of every sandbox on the pool
             tags:
                 - Pools
+    /projects/{projectId}/adoption-requests:
+        post:
+            operationId: create-adoption-request
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                    default: default
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateAdoptionRequestBody'
+            responses:
+                200:
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdoptionRequest'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+        get:
+            operationId: list-adoption-requests
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                    default: default
+                - in: query
+                  name: status
+                  schema:
+                    type: string
+            responses:
+                200:
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListAdoptionRequestsBody'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+    /projects/{projectId}/adoption-requests/{requestId}:
+        get:
+            operationId: get-adoption-request
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                    default: default
+                - in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdoptionRequest'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+    /projects/{projectId}/adoption-requests/{requestId}/approve:
+        post:
+            operationId: approve-adoption-request
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                    default: default
+                - in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AdoptionRequest'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+    /projects/{projectId}/adoption-requests/{requestId}/deny:
+        post:
+            operationId: deny-adoption-request
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                    default: default
+                - in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+    /projects/{projectId}/sandboxes/{sandboxId}/release:
+        post:
+            operationId: release-sandbox
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                    default: default
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'

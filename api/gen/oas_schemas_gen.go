@@ -11,16 +11,244 @@ import (
 	"github.com/go-faster/jx"
 )
 
-// One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential, trust or refresh
-// is set, as kind says. A credential or trust request is answered on its own resource's approve and
-// deny routes; a refresh by writing the secret's value, or dismissing it.
+// Ref: #/components/schemas/AdoptionRequest
+type AdoptionRequest struct {
+	CurrentParentSandboxId OptString `json:"currentParentSandboxId"`
+	ChildName              OptString `json:"childName"`
+	RequesterName          OptString `json:"requesterName"`
+	// The child has wider effective egress; the parent can only read it.
+	ReadOnly                OptBool               `json:"readOnly"`
+	ID                      string                `json:"id"`
+	ProjectId               string                `json:"projectId"`
+	RequesterSandboxId      string                `json:"requesterSandboxId"`
+	ChildSandboxId          string                `json:"childSandboxId"`
+	Justification           string                `json:"justification"`
+	ReplacedParentSandboxId OptString             `json:"replacedParentSandboxId"`
+	Status                  AdoptionRequestStatus `json:"status"`
+	DecidedBy               OptString             `json:"decidedBy"`
+	DecidedAt               OptDateTime           `json:"decidedAt"`
+	CreatedAt               time.Time             `json:"createdAt"`
+	UpdatedAt               time.Time             `json:"updatedAt"`
+}
+
+// GetCurrentParentSandboxId returns the value of CurrentParentSandboxId.
+func (s *AdoptionRequest) GetCurrentParentSandboxId() OptString {
+	return s.CurrentParentSandboxId
+}
+
+// GetChildName returns the value of ChildName.
+func (s *AdoptionRequest) GetChildName() OptString {
+	return s.ChildName
+}
+
+// GetRequesterName returns the value of RequesterName.
+func (s *AdoptionRequest) GetRequesterName() OptString {
+	return s.RequesterName
+}
+
+// GetReadOnly returns the value of ReadOnly.
+func (s *AdoptionRequest) GetReadOnly() OptBool {
+	return s.ReadOnly
+}
+
+// GetID returns the value of ID.
+func (s *AdoptionRequest) GetID() string {
+	return s.ID
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *AdoptionRequest) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRequesterSandboxId returns the value of RequesterSandboxId.
+func (s *AdoptionRequest) GetRequesterSandboxId() string {
+	return s.RequesterSandboxId
+}
+
+// GetChildSandboxId returns the value of ChildSandboxId.
+func (s *AdoptionRequest) GetChildSandboxId() string {
+	return s.ChildSandboxId
+}
+
+// GetJustification returns the value of Justification.
+func (s *AdoptionRequest) GetJustification() string {
+	return s.Justification
+}
+
+// GetReplacedParentSandboxId returns the value of ReplacedParentSandboxId.
+func (s *AdoptionRequest) GetReplacedParentSandboxId() OptString {
+	return s.ReplacedParentSandboxId
+}
+
+// GetStatus returns the value of Status.
+func (s *AdoptionRequest) GetStatus() AdoptionRequestStatus {
+	return s.Status
+}
+
+// GetDecidedBy returns the value of DecidedBy.
+func (s *AdoptionRequest) GetDecidedBy() OptString {
+	return s.DecidedBy
+}
+
+// GetDecidedAt returns the value of DecidedAt.
+func (s *AdoptionRequest) GetDecidedAt() OptDateTime {
+	return s.DecidedAt
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *AdoptionRequest) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *AdoptionRequest) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetCurrentParentSandboxId sets the value of CurrentParentSandboxId.
+func (s *AdoptionRequest) SetCurrentParentSandboxId(val OptString) {
+	s.CurrentParentSandboxId = val
+}
+
+// SetChildName sets the value of ChildName.
+func (s *AdoptionRequest) SetChildName(val OptString) {
+	s.ChildName = val
+}
+
+// SetRequesterName sets the value of RequesterName.
+func (s *AdoptionRequest) SetRequesterName(val OptString) {
+	s.RequesterName = val
+}
+
+// SetReadOnly sets the value of ReadOnly.
+func (s *AdoptionRequest) SetReadOnly(val OptBool) {
+	s.ReadOnly = val
+}
+
+// SetID sets the value of ID.
+func (s *AdoptionRequest) SetID(val string) {
+	s.ID = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *AdoptionRequest) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRequesterSandboxId sets the value of RequesterSandboxId.
+func (s *AdoptionRequest) SetRequesterSandboxId(val string) {
+	s.RequesterSandboxId = val
+}
+
+// SetChildSandboxId sets the value of ChildSandboxId.
+func (s *AdoptionRequest) SetChildSandboxId(val string) {
+	s.ChildSandboxId = val
+}
+
+// SetJustification sets the value of Justification.
+func (s *AdoptionRequest) SetJustification(val string) {
+	s.Justification = val
+}
+
+// SetReplacedParentSandboxId sets the value of ReplacedParentSandboxId.
+func (s *AdoptionRequest) SetReplacedParentSandboxId(val OptString) {
+	s.ReplacedParentSandboxId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *AdoptionRequest) SetStatus(val AdoptionRequestStatus) {
+	s.Status = val
+}
+
+// SetDecidedBy sets the value of DecidedBy.
+func (s *AdoptionRequest) SetDecidedBy(val OptString) {
+	s.DecidedBy = val
+}
+
+// SetDecidedAt sets the value of DecidedAt.
+func (s *AdoptionRequest) SetDecidedAt(val OptDateTime) {
+	s.DecidedAt = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *AdoptionRequest) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *AdoptionRequest) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*AdoptionRequest) approveAdoptionRequestRes() {}
+func (*AdoptionRequest) createAdoptionRequestRes()  {}
+func (*AdoptionRequest) getAdoptionRequestRes()     {}
+
+type AdoptionRequestStatus string
+
+const (
+	AdoptionRequestStatusPending  AdoptionRequestStatus = "pending"
+	AdoptionRequestStatusApproved AdoptionRequestStatus = "approved"
+	AdoptionRequestStatusDenied   AdoptionRequestStatus = "denied"
+)
+
+// AllValues returns all AdoptionRequestStatus values.
+func (AdoptionRequestStatus) AllValues() []AdoptionRequestStatus {
+	return []AdoptionRequestStatus{
+		AdoptionRequestStatusPending,
+		AdoptionRequestStatusApproved,
+		AdoptionRequestStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AdoptionRequestStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case AdoptionRequestStatusPending:
+		return []byte(s), nil
+	case AdoptionRequestStatusApproved:
+		return []byte(s), nil
+	case AdoptionRequestStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AdoptionRequestStatus) UnmarshalText(data []byte) error {
+	switch AdoptionRequestStatus(data) {
+	case AdoptionRequestStatusPending:
+		*s = AdoptionRequestStatusPending
+		return nil
+	case AdoptionRequestStatusApproved:
+		*s = AdoptionRequestStatusApproved
+		return nil
+	case AdoptionRequestStatusDenied:
+		*s = AdoptionRequestStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential, trust, refresh
+// or adoption is set, as kind says. A credential or trust request is answered on its own resource's
+// approve and deny routes; a refresh by writing the secret's value, or dismissing it.
 // Ref: #/components/schemas/ApprovalRequest
 type ApprovalRequest struct {
-	Credential OptSecretRequest `json:"credential"`
+	Adoption   OptAdoptionRequest `json:"adoption"`
+	Credential OptSecretRequest   `json:"credential"`
 	// Which kind of ask this is.
 	Kind    ApprovalRequestKind     `json:"kind"`
 	Refresh OptSecretRefreshRequest `json:"refresh"`
 	Trust   OptHostTrustRequest     `json:"trust"`
+}
+
+// GetAdoption returns the value of Adoption.
+func (s *ApprovalRequest) GetAdoption() OptAdoptionRequest {
+	return s.Adoption
 }
 
 // GetCredential returns the value of Credential.
@@ -41,6 +269,11 @@ func (s *ApprovalRequest) GetRefresh() OptSecretRefreshRequest {
 // GetTrust returns the value of Trust.
 func (s *ApprovalRequest) GetTrust() OptHostTrustRequest {
 	return s.Trust
+}
+
+// SetAdoption sets the value of Adoption.
+func (s *ApprovalRequest) SetAdoption(val OptAdoptionRequest) {
+	s.Adoption = val
 }
 
 // SetCredential sets the value of Credential.
@@ -70,6 +303,7 @@ const (
 	ApprovalRequestKindCredential ApprovalRequestKind = "credential"
 	ApprovalRequestKindTrust      ApprovalRequestKind = "trust"
 	ApprovalRequestKindRefresh    ApprovalRequestKind = "refresh"
+	ApprovalRequestKindAdoption   ApprovalRequestKind = "adoption"
 )
 
 // AllValues returns all ApprovalRequestKind values.
@@ -78,6 +312,7 @@ func (ApprovalRequestKind) AllValues() []ApprovalRequestKind {
 		ApprovalRequestKindCredential,
 		ApprovalRequestKindTrust,
 		ApprovalRequestKindRefresh,
+		ApprovalRequestKindAdoption,
 	}
 }
 
@@ -89,6 +324,8 @@ func (s ApprovalRequestKind) MarshalText() ([]byte, error) {
 	case ApprovalRequestKindTrust:
 		return []byte(s), nil
 	case ApprovalRequestKindRefresh:
+		return []byte(s), nil
+	case ApprovalRequestKindAdoption:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -106,6 +343,9 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 		return nil
 	case ApprovalRequestKindRefresh:
 		*s = ApprovalRequestKindRefresh
+		return nil
+	case ApprovalRequestKindAdoption:
+		*s = ApprovalRequestKindAdoption
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -298,7 +538,7 @@ func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 type BoundSecret struct {
 	// The binding that applies.
 	BindingId string `json:"bindingId"`
-	// The target may give it to the discoboxes it creates.
+	// The target may give it to the discoboxes it leads.
 	Delegate bool `json:"delegate"`
 	// Variable it is delivered in, for a use binding.
 	EnvVar OptString `json:"envVar"`
@@ -600,6 +840,32 @@ func (s *CompleteSandboxSourcePushBodySources) init() CompleteSandboxSourcePushB
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/CreateAdoptionRequestBody
+type CreateAdoptionRequestBody struct {
+	ChildSandboxId string `json:"childSandboxId"`
+	Justification  string `json:"justification"`
+}
+
+// GetChildSandboxId returns the value of ChildSandboxId.
+func (s *CreateAdoptionRequestBody) GetChildSandboxId() string {
+	return s.ChildSandboxId
+}
+
+// GetJustification returns the value of Justification.
+func (s *CreateAdoptionRequestBody) GetJustification() string {
+	return s.Justification
+}
+
+// SetChildSandboxId sets the value of ChildSandboxId.
+func (s *CreateAdoptionRequestBody) SetChildSandboxId(val string) {
+	s.ChildSandboxId = val
+}
+
+// SetJustification sets the value of Justification.
+func (s *CreateAdoptionRequestBody) SetJustification(val string) {
+	s.Justification = val
 }
 
 // Ref: #/components/schemas/CreateHarnessConfigBody
@@ -1005,7 +1271,7 @@ type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Let the new discobox call the discobox API through its pool, acting only on the discoboxes it
-	// creates (ADR 26-10-27-880 §9). A discobox creating one may set it only when it has it itself.
+	// leads (ADR 26-10-27-880 §9). A discobox creating one may set it only when it has it itself.
 	DiscoboxApi OptBool `json:"discoboxApi"`
 	// Harness config to resolve at create time, by slug, name or ID.
 	HarnessName OptString `json:"harnessName"`
@@ -1604,7 +1870,7 @@ func (s *CreateSandboxTrustRequestBody) SetSuppliedCA(val OptObservedCertificate
 type CreateSecretBindingBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Let a discobox the binding covers give the credential to the discoboxes it creates. Only a person
+	// Let a discobox the binding covers give the credential to the discoboxes it leads. Only a person
 	// binds with delegate.
 	Delegate OptBool `json:"delegate"`
 	// Environment variable to deliver the credential's sentinel in; required with use.
@@ -2258,6 +2524,11 @@ type DeleteSecretNoContent struct{}
 
 func (*DeleteSecretNoContent) deleteSecretRes() {}
 
+// DenyAdoptionRequestNoContent is response for DenyAdoptionRequest operation.
+type DenyAdoptionRequestNoContent struct{}
+
+func (*DenyAdoptionRequestNoContent) denyAdoptionRequestRes() {}
+
 // DenySecretRequestNoContent is response for DenySecretRequest operation.
 type DenySecretRequestNoContent struct{}
 
@@ -2474,11 +2745,13 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 	s.Response = val
 }
 
+func (*ErrorModelStatusCode) approveAdoptionRequestRes()                {}
 func (*ErrorModelStatusCode) approveSecretRequestRes()                  {}
 func (*ErrorModelStatusCode) approveTrustRequestRes()                   {}
 func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()           {}
 func (*ErrorModelStatusCode) clearPoolCacheRes()                        {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()             {}
+func (*ErrorModelStatusCode) createAdoptionRequestRes()                 {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()                   {}
 func (*ErrorModelStatusCode) createPeerRes()                            {}
 func (*ErrorModelStatusCode) createPoolRes()                            {}
@@ -2503,10 +2776,12 @@ func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()         {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                         {}
 func (*ErrorModelStatusCode) deleteSecretBindingRes()                   {}
 func (*ErrorModelStatusCode) deleteSecretRes()                          {}
+func (*ErrorModelStatusCode) denyAdoptionRequestRes()                   {}
 func (*ErrorModelStatusCode) denySecretRequestRes()                     {}
 func (*ErrorModelStatusCode) denyTrustRequestRes()                      {}
 func (*ErrorModelStatusCode) dismissSecretRefreshRequestRes()           {}
 func (*ErrorModelStatusCode) forceJobRes()                              {}
+func (*ErrorModelStatusCode) getAdoptionRequestRes()                    {}
 func (*ErrorModelStatusCode) getHTTPAuditRes()                          {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                      {}
 func (*ErrorModelStatusCode) getJobRes()                                {}
@@ -2526,6 +2801,7 @@ func (*ErrorModelStatusCode) getSecretRes()                             {}
 func (*ErrorModelStatusCode) getServerInfoRes()                         {}
 func (*ErrorModelStatusCode) getServerPeerRes()                         {}
 func (*ErrorModelStatusCode) getTrustRequestRes()                       {}
+func (*ErrorModelStatusCode) listAdoptionRequestsRes()                  {}
 func (*ErrorModelStatusCode) listApprovalRequestsRes()                  {}
 func (*ErrorModelStatusCode) listBoundSecretsRes()                      {}
 func (*ErrorModelStatusCode) listDNSAuditRes()                          {}
@@ -2562,6 +2838,7 @@ func (*ErrorModelStatusCode) reconcileSandboxRes()                      {}
 func (*ErrorModelStatusCode) reconsiderSandboxHarnessConfigChangesRes() {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()             {}
 func (*ErrorModelStatusCode) refreshSecretRes()                         {}
+func (*ErrorModelStatusCode) releaseSandboxRes()                        {}
 func (*ErrorModelStatusCode) repairSandboxRes()                         {}
 func (*ErrorModelStatusCode) reportPoolResourcesRes()                   {}
 func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()               {}
@@ -7282,6 +7559,23 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/ListAdoptionRequestsBody
+type ListAdoptionRequestsBody struct {
+	AdoptionRequests []AdoptionRequest `json:"adoptionRequests"`
+}
+
+// GetAdoptionRequests returns the value of AdoptionRequests.
+func (s *ListAdoptionRequestsBody) GetAdoptionRequests() []AdoptionRequest {
+	return s.AdoptionRequests
+}
+
+// SetAdoptionRequests sets the value of AdoptionRequests.
+func (s *ListAdoptionRequestsBody) SetAdoptionRequests(val []AdoptionRequest) {
+	s.AdoptionRequests = val
+}
+
+func (*ListAdoptionRequestsBody) listAdoptionRequestsRes() {}
+
 // Ref: #/components/schemas/ListApprovalRequestsBody
 type ListApprovalRequestsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -8729,6 +9023,52 @@ func (s *ObservedCertificate) SetSpkiSha256(val string) {
 // SetSubject sets the value of Subject.
 func (s *ObservedCertificate) SetSubject(val string) {
 	s.Subject = val
+}
+
+// NewOptAdoptionRequest returns new OptAdoptionRequest with value set to v.
+func NewOptAdoptionRequest(v AdoptionRequest) OptAdoptionRequest {
+	return OptAdoptionRequest{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAdoptionRequest is optional AdoptionRequest.
+type OptAdoptionRequest struct {
+	Value AdoptionRequest
+	Set   bool
+}
+
+// IsSet returns true if OptAdoptionRequest was set.
+func (o OptAdoptionRequest) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAdoptionRequest) Reset() {
+	var v AdoptionRequest
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAdoptionRequest) SetTo(v AdoptionRequest) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAdoptionRequest) Get() (v AdoptionRequest, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAdoptionRequest) Or(d AdoptionRequest) AdoptionRequest {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
 }
 
 // NewOptBool returns new OptBool with value set to v.
@@ -19851,6 +20191,11 @@ func (s *RefreshSecretBodyVia) UnmarshalText(data []byte) error {
 	}
 }
 
+// ReleaseSandboxNoContent is response for ReleaseSandbox operation.
+type ReleaseSandboxNoContent struct{}
+
+func (*ReleaseSandboxNoContent) releaseSandboxRes() {}
+
 // RemoveSandboxFileNoContent is response for RemoveSandboxFile operation.
 type RemoveSandboxFileNoContent struct{}
 
@@ -21123,7 +21468,7 @@ func (*SSHKey) createSSHKeyRes() {}
 // Ref: #/components/schemas/Sandbox
 type Sandbox struct {
 	// The discobox may call the discobox API through its pool, in the sandbox role, acting only on the
-	// discoboxes it created (ADR 26-10-27-880 §9).
+	// discoboxes it leads (ADR 26-10-27-880 §9).
 	DiscoboxApi OptBool `json:"discoboxApi"`
 	// The discobox's own egress policy level (ADR 26-10-01-032). It is restricted when this or its
 	// project, pool, or harness level sets denyByDefault, and then reaches the union of their allow
@@ -21139,6 +21484,8 @@ type Sandbox struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Creating user.
 	CreatedBy OptUser `json:"createdBy"`
+	// Sandbox leading this one; authority follows this parent (ADR 26-11-03-970).
+	ParentSandboxId OptString `json:"parentSandboxId"`
 	// Sandbox that created this one, when a sandbox did (ADR 26-09-24-630). Immutable after create.
 	CreatedBySandboxId OptString `json:"createdBySandboxId"`
 	// Creating user ID.
@@ -21218,6 +21565,11 @@ func (s *Sandbox) GetCreatedAt() time.Time {
 // GetCreatedBy returns the value of CreatedBy.
 func (s *Sandbox) GetCreatedBy() OptUser {
 	return s.CreatedBy
+}
+
+// GetParentSandboxId returns the value of ParentSandboxId.
+func (s *Sandbox) GetParentSandboxId() OptString {
+	return s.ParentSandboxId
 }
 
 // GetCreatedBySandboxId returns the value of CreatedBySandboxId.
@@ -21323,6 +21675,11 @@ func (s *Sandbox) SetCreatedAt(val time.Time) {
 // SetCreatedBy sets the value of CreatedBy.
 func (s *Sandbox) SetCreatedBy(val OptUser) {
 	s.CreatedBy = val
+}
+
+// SetParentSandboxId sets the value of ParentSandboxId.
+func (s *Sandbox) SetParentSandboxId(val OptString) {
+	s.ParentSandboxId = val
 }
 
 // SetCreatedBySandboxId sets the value of CreatedBySandboxId.
@@ -23887,7 +24244,7 @@ func (*SandboxAutostopResumption) resumeSandboxAutostopRes() {}
 // A secret to bind to the new discobox, in the transaction that creates it.
 // Ref: #/components/schemas/SandboxBindingInput
 type SandboxBindingInput struct {
-	// Let the new discobox give the credential to the discoboxes it creates. A discobox creating one may
+	// Let the new discobox give the credential to the discoboxes it leads. A discobox creating one may
 	// not set it.
 	Delegate OptBool `json:"delegate"`
 	// Environment variable the credential's sentinel is delivered in; required with use.
@@ -24801,7 +25158,7 @@ type SandboxCredential struct {
 	// Credential name.
 	Name string `json:"name"`
 	// What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets
-	// the sandbox give it to the discoboxes it creates and delivers nothing.
+	// the sandbox give it to the discoboxes it leads and delivers nothing.
 	Purpose OptSandboxCredentialPurpose `json:"purpose"`
 	// The discobox holds the value itself (ADR 26-10-27-840): in envVar (env), or in a file whose path
 	// is in envVar (file).
@@ -24945,7 +25302,7 @@ func (s *SandboxCredentialPolicyArgs) init() SandboxCredentialPolicyArgs {
 }
 
 // What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets
-// the sandbox give it to the discoboxes it creates and delivers nothing.
+// the sandbox give it to the discoboxes it leads and delivers nothing.
 type SandboxCredentialPurpose string
 
 const (
@@ -30435,7 +30792,7 @@ func (*Secret) updateSecretRes()  {}
 
 // A secret made available to a target (ADR 26-10-27-880 §1): existing and unexpired, it is the
 // whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a
-// discobox the binding covers give the credential to the discoboxes it creates.
+// discobox the binding covers give the credential to the discoboxes it leads.
 // Ref: #/components/schemas/SecretBinding
 type SecretBinding struct {
 	// A URL to the JSON Schema for this object.
@@ -30444,7 +30801,7 @@ type SecretBinding struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Principal that made the binding: a person, or the discobox that handed it on.
 	CreatedBy OptString `json:"createdBy"`
-	// A discobox the binding covers may give the credential, to use, to the discoboxes it creates (ADR
+	// A discobox the binding covers may give the credential, to use, to the discoboxes it leads (ADR
 	// 26-10-27-880 §3).
 	Delegate bool `json:"delegate"`
 	// Environment variable the credential's sentinel is delivered in; set when use is.
@@ -34038,7 +34395,7 @@ func (s *UpdateSandboxProviderInstanceBody) SetName(val OptString) {
 type UpdateSecretBindingBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Whether a discobox the binding covers may give the credential to the discoboxes it creates. Only a
+	// Whether a discobox the binding covers may give the credential to the discoboxes it leads. Only a
 	// person sets it; turning it off removes every binding handed on under this one.
 	Delegate OptBool `json:"delegate"`
 	// A new environment variable for a use binding.

@@ -33,6 +33,10 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
 	AcknowledgeSandboxHarnessConfig(ctx context.Context, request *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (AcknowledgeSandboxHarnessConfigRes, error)
+	// ApproveAdoptionRequest invokes approve-adoption-request operation.
+	//
+	// POST /projects/{projectId}/adoption-requests/{requestId}/approve
+	ApproveAdoptionRequest(ctx context.Context, params ApproveAdoptionRequestParams) (ApproveAdoptionRequestRes, error)
 	// ApproveSecretRequest invokes approve-secret-request operation.
 	//
 	// Approve a secret request.
@@ -119,6 +123,10 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
 	CopySandboxFile(ctx context.Context, request *SandboxFileTransferRequest, params CopySandboxFileParams) (CopySandboxFileRes, error)
+	// CreateAdoptionRequest invokes create-adoption-request operation.
+	//
+	// POST /projects/{projectId}/adoption-requests
+	CreateAdoptionRequest(ctx context.Context, request *CreateAdoptionRequestBody, params CreateAdoptionRequestParams) (CreateAdoptionRequestRes, error)
 	// CreateHarnessConfig invokes create-harness-config operation.
 	//
 	// Create a harness config.
@@ -277,6 +285,10 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/secret-bindings/{bindingId}
 	DeleteSecretBinding(ctx context.Context, params DeleteSecretBindingParams) (DeleteSecretBindingRes, error)
+	// DenyAdoptionRequest invokes deny-adoption-request operation.
+	//
+	// POST /projects/{projectId}/adoption-requests/{requestId}/deny
+	DenyAdoptionRequest(ctx context.Context, params DenyAdoptionRequestParams) (DenyAdoptionRequestRes, error)
 	// DenySecretRequest invokes deny-secret-request operation.
 	//
 	// Deny a secret request.
@@ -307,6 +319,10 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/jobs/{jobId}/force
 	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
+	// GetAdoptionRequest invokes get-adoption-request operation.
+	//
+	// GET /projects/{projectId}/adoption-requests/{requestId}
+	GetAdoptionRequest(ctx context.Context, params GetAdoptionRequestParams) (GetAdoptionRequestRes, error)
 	// GetHTTPAudit invokes get-http-audit operation.
 	//
 	// One audited HTTP exchange in full, read from the pool that recorded it. The pool is in the path
@@ -502,6 +518,10 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/trust-requests/{requestId}
 	GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (GetTrustRequestRes, error)
+	// ListAdoptionRequests invokes list-adoption-requests operation.
+	//
+	// GET /projects/{projectId}/adoption-requests
+	ListAdoptionRequests(ctx context.Context, params ListAdoptionRequestsParams) (ListAdoptionRequestsRes, error)
 	// ListApprovalRequests invokes list-approval-requests operation.
 	//
 	// List the project's credential and trust requests as one inbox.
@@ -844,6 +864,10 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/secrets/{secretId}/refresh
 	RefreshSecret(ctx context.Context, request *RefreshSecretBody, params RefreshSecretParams) (RefreshSecretRes, error)
+	// ReleaseSandbox invokes release-sandbox operation.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/release
+	ReleaseSandbox(ctx context.Context, params ReleaseSandboxParams) (ReleaseSandboxRes, error)
 	// RemoveSandboxFile invokes remove-sandbox-file operation.
 	//
 	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
@@ -1339,6 +1363,116 @@ func (c *Client) sendAcknowledgeSandboxHarnessConfig(ctx context.Context, reques
 
 	stage = "DecodeResponse"
 	result, err := decodeAcknowledgeSandboxHarnessConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ApproveAdoptionRequest invokes approve-adoption-request operation.
+//
+// POST /projects/{projectId}/adoption-requests/{requestId}/approve
+func (c *Client) ApproveAdoptionRequest(ctx context.Context, params ApproveAdoptionRequestParams) (ApproveAdoptionRequestRes, error) {
+	res, err := c.sendApproveAdoptionRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendApproveAdoptionRequest(ctx context.Context, params ApproveAdoptionRequestParams) (res ApproveAdoptionRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("approve-adoption-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/adoption-requests/{requestId}/approve"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ApproveAdoptionRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/adoption-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/approve"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeApproveAdoptionRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -2654,6 +2788,100 @@ func (c *Client) sendCopySandboxFile(ctx context.Context, request *SandboxFileTr
 
 	stage = "DecodeResponse"
 	result, err := decodeCopySandboxFileResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// CreateAdoptionRequest invokes create-adoption-request operation.
+//
+// POST /projects/{projectId}/adoption-requests
+func (c *Client) CreateAdoptionRequest(ctx context.Context, request *CreateAdoptionRequestBody, params CreateAdoptionRequestParams) (CreateAdoptionRequestRes, error) {
+	res, err := c.sendCreateAdoptionRequest(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateAdoptionRequest(ctx context.Context, request *CreateAdoptionRequestBody, params CreateAdoptionRequestParams) (res CreateAdoptionRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-adoption-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/adoption-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateAdoptionRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/adoption-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateAdoptionRequestRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateAdoptionRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -5356,6 +5584,116 @@ func (c *Client) sendDeleteSecretBinding(ctx context.Context, params DeleteSecre
 	return result, nil
 }
 
+// DenyAdoptionRequest invokes deny-adoption-request operation.
+//
+// POST /projects/{projectId}/adoption-requests/{requestId}/deny
+func (c *Client) DenyAdoptionRequest(ctx context.Context, params DenyAdoptionRequestParams) (DenyAdoptionRequestRes, error) {
+	res, err := c.sendDenyAdoptionRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDenyAdoptionRequest(ctx context.Context, params DenyAdoptionRequestParams) (res DenyAdoptionRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("deny-adoption-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/adoption-requests/{requestId}/deny"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DenyAdoptionRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/adoption-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/deny"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDenyAdoptionRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DenySecretRequest invokes deny-secret-request operation.
 //
 // Deny a secret request.
@@ -5912,6 +6250,115 @@ func (c *Client) sendForceJob(ctx context.Context, params ForceJobParams) (res F
 
 	stage = "DecodeResponse"
 	result, err := decodeForceJobResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetAdoptionRequest invokes get-adoption-request operation.
+//
+// GET /projects/{projectId}/adoption-requests/{requestId}
+func (c *Client) GetAdoptionRequest(ctx context.Context, params GetAdoptionRequestParams) (GetAdoptionRequestRes, error) {
+	res, err := c.sendGetAdoptionRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetAdoptionRequest(ctx context.Context, params GetAdoptionRequestParams) (res GetAdoptionRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-adoption-request"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/adoption-requests/{requestId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetAdoptionRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/adoption-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetAdoptionRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -9262,6 +9709,118 @@ func (c *Client) sendGetTrustRequest(ctx context.Context, params GetTrustRequest
 
 	stage = "DecodeResponse"
 	result, err := decodeGetTrustRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListAdoptionRequests invokes list-adoption-requests operation.
+//
+// GET /projects/{projectId}/adoption-requests
+func (c *Client) ListAdoptionRequests(ctx context.Context, params ListAdoptionRequestsParams) (ListAdoptionRequestsRes, error) {
+	res, err := c.sendListAdoptionRequests(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListAdoptionRequests(ctx context.Context, params ListAdoptionRequestsParams) (res ListAdoptionRequestsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-adoption-requests"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/adoption-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListAdoptionRequestsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/adoption-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "status" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "status",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Status.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListAdoptionRequestsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -13020,6 +13579,23 @@ func (c *Client) sendListSandboxes(ctx context.Context, params ListSandboxesPara
 			return res, errors.Wrap(err, "encode query")
 		}
 	}
+	{
+		// Encode "parent" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "parent",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Parent.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
 	u.RawQuery = q.Values().Encode()
 
 	stage = "EncodeRequest"
@@ -15781,6 +16357,116 @@ func (c *Client) sendRefreshSecret(ctx context.Context, request *RefreshSecretBo
 
 	stage = "DecodeResponse"
 	result, err := decodeRefreshSecretResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ReleaseSandbox invokes release-sandbox operation.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/release
+func (c *Client) ReleaseSandbox(ctx context.Context, params ReleaseSandboxParams) (ReleaseSandboxRes, error) {
+	res, err := c.sendReleaseSandbox(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendReleaseSandbox(ctx context.Context, params ReleaseSandboxParams) (res ReleaseSandboxRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("release-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/release"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ReleaseSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/release"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeReleaseSandboxResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

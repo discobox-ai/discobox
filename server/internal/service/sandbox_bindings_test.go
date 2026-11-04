@@ -190,7 +190,7 @@ func TestACreateThatCannotMakeItsBindingsCreatesNothing(t *testing.T) {
 				Bindings:    tc.bindings,
 			})
 			requireStatus(t, err, tc.want)
-			sandboxes, err := svc.ListSandboxes(ctx, projectID, "", nil, nil)
+			sandboxes, err := svc.ListSandboxes(ctx, projectID, "", nil, nil, "")
 			if err != nil || len(sandboxes) != 0 {
 				t.Fatalf("sandboxes = %d, %v; want none created", len(sandboxes), err)
 			}
@@ -300,7 +300,7 @@ func TestADiscoboxGivesOnACreateOnlyWhatItWasDelegated(t *testing.T) {
 		return err
 	}
 	created := func(name string) bool {
-		list, err := st.ListSandboxes(ctx, projectID, "", nil)
+		list, err := st.ListSandboxes(ctx, projectID, "", nil, "")
 		if err != nil {
 			t.Fatalf("list sandboxes: %v", err)
 		}

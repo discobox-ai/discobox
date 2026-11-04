@@ -16,3 +16,8 @@
   that it is meant to save, with a test that it round-trips. `raw` was added
   without joining it, so a raw approval over a sentinel binding and `admin
   binding update --raw` reported success and saved nothing.
+
+- Every parent write takes the project row lock before sandbox locks, including
+  creation and purge cleanup. A create authorized before its creator is purged
+  can otherwise insert a child after cleanup, leaving a dangling parent. Recheck
+  the creator's existence under that lock before inserting.

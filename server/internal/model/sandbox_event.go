@@ -56,6 +56,7 @@ type SandboxEventData struct {
 	// CreatedBySandboxID is the sandbox that created this one, when one did.
 	// It never changes.
 	CreatedBySandboxID string `json:"createdBySandboxId,omitempty"`
+	ParentSandboxID    string `json:"parentSandboxId,omitempty"`
 }
 
 // SandboxEventProgram is the part of the primary session's OSC 7501 status an

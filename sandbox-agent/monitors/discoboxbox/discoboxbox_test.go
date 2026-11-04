@@ -174,7 +174,7 @@ func (f *fakeAPI) create(id, name, program string, tags map[string]string, creat
 		box["tags"] = tags
 	}
 	if createdBy != "" {
-		box["createdBySandboxId"] = createdBy
+		box["parentSandboxId"] = createdBy
 	}
 	f.boxes[id] = box
 	f.record("sandbox.created", id)
@@ -774,5 +774,52 @@ func TestTheImageDeclaresThisMonitor(t *testing.T) {
 	}
 	if len(def.Options) != len(known) {
 		t.Errorf("declares %d options, the monitor reads %d", len(def.Options), len(known))
+	}
+}
+
+func TestAdoptionAndReleaseReportSelectionChangesOnce(t *testing.T) {
+	f := newFake(t)
+	workers(f)
+	in := newInstance(t, f, map[string]string{"created-by": "me", "watch": "terminal"})
+	in.poll()
+	f.at(time.Minute)
+	f.boxes["sbx_c"]["parentSandboxId"] = "sbx_lead"
+	f.record(eventUpdated, "sbx_c")
+	got := in.poll()
+	if !slices.Equal(kinds(got), []string{"box.adopted"}) {
+		t.Fatalf("adoption: %+v", got)
+	}
+	f.at(2 * time.Minute)
+	f.boxes["sbx_c"]["parentSandboxId"] = "another-lead"
+	f.record(eventUpdated, "sbx_c")
+	got = in.poll()
+	if !slices.Equal(kinds(got), []string{"box.gone"}) {
+		t.Fatalf("adopted away: %+v", got)
+	}
+	if got = in.poll(); len(got) != 0 {
+		t.Fatalf("repeated gone: %+v", got)
+	}
+}
+
+func TestAdoptionConsumesNewBoxBeforeTagToggle(t *testing.T) {
+	f := newFake(t)
+	workers(f)
+	in := newInstance(t, f, map[string]string{"created-by": "me", "tag": "role=worker"})
+	in.poll()
+	f.at(time.Minute)
+	f.create("sbx_new", "new child", "", map[string]string{"role": "worker"}, "other-lead")
+	in.poll()
+	f.at(2 * time.Minute)
+	f.update("sbx_new", func(box map[string]any) { box["parentSandboxId"] = "sbx_lead" })
+	if got := in.poll(); !slices.Equal(kinds(got), []string{"box.adopted"}) {
+		t.Fatalf("adoption: %+v", got)
+	}
+	f.at(3 * time.Minute)
+	f.update("sbx_new", func(box map[string]any) { delete(box, "tags") })
+	in.poll()
+	f.at(4 * time.Minute)
+	f.update("sbx_new", func(box map[string]any) { box["tags"] = map[string]string{"role": "worker"} })
+	if got := in.poll(); len(got) != 0 {
+		t.Fatalf("tag toggle reported adoption again: %+v", got)
 	}
 }

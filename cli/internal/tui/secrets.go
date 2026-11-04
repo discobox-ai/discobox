@@ -548,7 +548,7 @@ func (m *Model) askForBinding() tea.Cmd {
 			"only when it is bound to one discobox"),
 		withSection(what, pickRow("purpose", "purpose",
 			choice{key: "use", label: "to use it", hint: "the discobox finds a sentinel for it in the variable below"},
-			choice{key: "delegate", label: "to give it on", hint: "the discobox may bind it to the discoboxes it creates, and never uses it itself"},
+			choice{key: "delegate", label: "to give it on", hint: "the discobox may bind it to the discoboxes it leads, and never uses it itself"},
 			choice{key: "both", label: "to use it and give it on", hint: "both of the above"})),
 		unless(envVar, uses, "a credential only given on is in no variable"),
 	}

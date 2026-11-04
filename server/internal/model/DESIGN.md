@@ -318,3 +318,8 @@ harness config's, then the harness configs attached to it
 (`Sandbox.AttachedHarnessConfigIDs`), then the project's. A harness change
 re-resolves: the new config's bindings apply where the sandbox binds nothing
 itself.
+
+`Sandbox.ParentSandboxID` is current, one-level authority; `CreatedBySandboxID`
+is immutable creation history. Neither belongs in the manifest fingerprint.
+`AdoptionRequest` is the person's decision record, kept after sandbox purge;
+its current parent, display names and read-only warning are unmigrated read fields.

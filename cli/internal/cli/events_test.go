@@ -111,7 +111,7 @@ func TestWriteSandboxEventAsJSON(t *testing.T) {
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	event := sandboxEvent{ID: "7", Event: "sandbox.deleted", Data: sandboxEventData{SandboxID: "sbx_a", State: "archived", DesiredState: "deleted"}}
+	event := sandboxEvent{ID: "7", Event: "sandbox.deleted", Data: sandboxEventData{SandboxID: "sbx_a", State: "archived", DesiredState: "deleted", ParentSandboxID: "sbx_lead"}}
 	if err := app.writeSandboxEvent(cmd, event); err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +121,9 @@ func TestWriteSandboxEventAsJSON(t *testing.T) {
 	}
 	if got["id"] != "7" || got["event"] != "sandbox.deleted" || got["data"].(map[string]any)["sandboxId"] != "sbx_a" {
 		t.Fatalf("json = %v", got)
+	}
+	if got["data"].(map[string]any)["parentSandboxId"] != "sbx_lead" {
+		t.Fatalf("parent dropped from JSON: %s", out.String())
 	}
 	if strings.Count(out.String(), "\n") != 1 {
 		t.Fatalf("json spans lines: %q", out.String())

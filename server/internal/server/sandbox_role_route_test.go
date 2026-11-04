@@ -165,7 +165,7 @@ func TestASandboxPowersTheDiscoboxesItCreated(t *testing.T) {
 	lead := routeTestSandboxID
 	archived := model.ResourceLifecycle{DesiredState: model.DesiredStateArchived}
 	for _, sandbox := range []*model.Sandbox{
-		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead, ResourceLifecycle: archived},
+		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead, ParentSandboxID: &lead, ResourceLifecycle: archived},
 		{ID: "sbx-persons", Name: "persons", ResourceLifecycle: archived},
 	} {
 		sandbox.ProjectID, sandbox.PoolID = projectID, routeTestPoolID
@@ -206,8 +206,8 @@ func TestASandboxArchivesTheDiscoboxesItCreated(t *testing.T) {
 	lead := routeTestSandboxID
 	deleting := model.ResourceLifecycle{DesiredState: model.DesiredStateDeleted}
 	for _, sandbox := range []*model.Sandbox{
-		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead},
-		{ID: "sbx-purging", Name: "purging", CreatedBySandboxID: &lead, ResourceLifecycle: deleting},
+		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead, ParentSandboxID: &lead},
+		{ID: "sbx-purging", Name: "purging", CreatedBySandboxID: &lead, ParentSandboxID: &lead, ResourceLifecycle: deleting},
 		{ID: "sbx-persons", Name: "persons"},
 	} {
 		sandbox.ProjectID, sandbox.PoolID = projectID, routeTestPoolID
@@ -277,7 +277,7 @@ func TestASandboxTagsTheDiscoboxesItCreated(t *testing.T) {
 	token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
 	lead := routeTestSandboxID
 	for _, sandbox := range []*model.Sandbox{
-		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead},
+		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead, ParentSandboxID: &lead},
 		{ID: "sbx-persons", Name: "persons"},
 	} {
 		sandbox.ProjectID, sandbox.PoolID = projectID, routeTestPoolID
