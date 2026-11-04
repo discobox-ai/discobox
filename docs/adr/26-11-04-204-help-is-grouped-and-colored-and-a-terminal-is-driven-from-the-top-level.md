@@ -175,7 +175,7 @@ Resources:
   trust         Manage the hosts discoboxes trust by a pinned certificate
 
 Setup:
-  configure     Enable, disable, and set the default harness
+  configure     Set the default harness and manage what is saved to each
   admin         Manage advanced Discobox configuration
 
 Other:
