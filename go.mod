@@ -126,7 +126,7 @@ require (
 	github.com/dave/dst v0.28.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/denis-tingaikin/go-header v0.5.0 // indirect
-	github.com/discobox-ai/hooks v0.0.0-20261002233137-6a9cf2d0f23a // indirect
+	github.com/discobox-ai/hooks v0.0.0-20261104212035-41d925d8be72 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.4.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.4.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.4.0 // indirect

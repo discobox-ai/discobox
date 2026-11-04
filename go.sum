@@ -221,8 +221,8 @@ github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260926040046-9d904b1c7255 h1:d0Z
 github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260926040046-9d904b1c7255/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
 github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8 h1:lFJ79i3hZemgcTAIDZUs4yeeTMEx4XWzbm3wvSDWim0=
 github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8/go.mod h1:THdE5ix2clxX9lZzcICPpZ67d6CdrPZxdOYsNgU5e30=
-github.com/discobox-ai/hooks v0.0.0-20261002233137-6a9cf2d0f23a h1:MFayb2nwxlsOt9PsvWmA0lhaJ+pIzO2qkk1GGgwrifA=
-github.com/discobox-ai/hooks v0.0.0-20261002233137-6a9cf2d0f23a/go.mod h1:7d0f2wr0FrIVLVhzyapt1P2oiYkGxxG4iOl9Mbrwwyo=
+github.com/discobox-ai/hooks v0.0.0-20261104212035-41d925d8be72 h1:4Ylj0F8y/ohIYm0kNpfUDcUK+LvOrUzjxuCVZDEUjak=
+github.com/discobox-ai/hooks v0.0.0-20261104212035-41d925d8be72/go.mod h1:7d0f2wr0FrIVLVhzyapt1P2oiYkGxxG4iOl9Mbrwwyo=
 github.com/discobox-ai/iroh-go v0.4.0 h1:ogqDwo1cxUY08s6n3dBKg48iQlZ7rHtLLRWO4Ps8lhQ=
 github.com/discobox-ai/iroh-go v0.4.0/go.mod h1:iRfJfbqYtoGA2DUeEeqpEnk9lOIjP2ZuSULSiqL3/74=
 github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.4.0 h1:SUSrjNv1Q2hl8OWbGmqM1U/HN5hhP0pw/tzKQJIrH24=
