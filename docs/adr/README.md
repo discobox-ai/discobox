@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-04-538](26-11-04-538-saving-a-harness-candidate-overwrites-without-a-revision-conflict.md) | Saving a harness candidate overwrites without a revision conflict | Proposed (would supersede 26-10-30-775's ordinary-save conflict and explicit-force policy and narrow 26-10-26-573 §3's save-back revision conflicts and mandatory reconsideration) |
 | [26-11-04-028](26-11-04-028-a-persons-harness-files-are-their-own-layer-and-a-bundle-refresh-never-writes-it.md) | A person's harness files are their own layer, and a bundle refresh never writes it | Accepted (narrows [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md) §3's save-back target for a path a person overrode) |
 | [26-10-30-584](26-10-30-584-a-credential-policy-file-supplies-a-bindings-routes.md) | A credential policy file supplies a binding's routes | Accepted (§2's CLI-side resolution narrowed to bindings by [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md)) |
 | [26-10-30-457](26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md) | Harness settings are literal and credentials use JSON bindings | Accepted (supersedes 26-10-26-573 §§1, 4, 6, 7 only for executable credential/config file templates and Codex trust templating; 0059's sandbox credential-file rendering mechanism; 26-10-14-718 §2, 26-10-15-259 §2, and 26-10-15-848 §3 only for templated credential interchange documents) |
