@@ -20,12 +20,12 @@ steps:
   - name: hook-extension
     file: {path: /usr/local/libexec/discobox/omp-hook-extension.js, source: hook-extension.js}
   # The settings overlay the manifest's env names in PI_CONFIG_FILES: the
-  # policy baseline a configure capture cannot replace (ADR 26-10-14-718 §4).
+  # policy baseline save-back's capture cannot replace (ADR 26-10-14-718 §4).
   - name: settings
     file: {path: /etc/omp/discobox.yml, source: discobox.yml}
   # PI_PROXY from HTTPS_PROXY, for omp's Anthropic transport, which reads no
   # other proxy variable (ADR 26-10-14-718 §4). A login shell sources it; the
-  # launcher and configure command source it themselves.
+  # launcher sources it itself.
   - name: proxy-env
     file: {path: /etc/profile.d/omp-proxy.sh, source: proxy-env.sh}
   # The agent this harness installs, for the pool-cached version store
@@ -33,8 +33,6 @@ steps:
   # harness-specific part of it.
   - name: agent-conf
     file: {path: /usr/local/libexec/discobox/agent.conf, source: agent.conf}
-  - name: configure
-    file: {path: /usr/local/libexec/discobox/configure-omp, source: configure.sh, mode: "0755"}
   # The harness-run convention (ADR 0086 §3): the harness installs its agent
   # under this name, over core's no-op, and the runtime types it. On PATH,
   # not in libexec, because the runtime resolves it by name.

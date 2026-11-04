@@ -509,131 +509,6 @@ func decodeAssignSandboxHarnessSecretsParams(args [2]string, argsEscaped bool, r
 	return params, nil
 }
 
-// AttachHarnessConfigConfigureParams is parameters of attach-harness-config-configure operation.
-type AttachHarnessConfigConfigureParams struct {
-	// Project ID.
-	ProjectId string
-	// Harness config ID.
-	HarnessConfigId string
-}
-
-func unpackAttachHarnessConfigConfigureParams(packed middleware.Parameters) (params AttachHarnessConfigConfigureParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "harnessConfigId",
-			In:   "path",
-		}
-		params.HarnessConfigId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeAttachHarnessConfigConfigureParams(args [2]string, argsEscaped bool, r *http.Request) (params AttachHarnessConfigConfigureParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: harnessConfigId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "harnessConfigId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.HarnessConfigId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "harnessConfigId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
 // AttachSandboxExecParams is parameters of attach-sandbox-exec operation.
 type AttachSandboxExecParams struct {
 	// Project that owns the sandbox.
@@ -1345,131 +1220,6 @@ func decodeClearSandboxCacheParams(args [2]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
-// CommitHarnessConfigConfigureParams is parameters of commit-harness-config-configure operation.
-type CommitHarnessConfigConfigureParams struct {
-	// Project ID.
-	ProjectId string
-	// Harness config ID.
-	HarnessConfigId string
-}
-
-func unpackCommitHarnessConfigConfigureParams(packed middleware.Parameters) (params CommitHarnessConfigConfigureParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "harnessConfigId",
-			In:   "path",
-		}
-		params.HarnessConfigId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeCommitHarnessConfigConfigureParams(args [2]string, argsEscaped bool, r *http.Request) (params CommitHarnessConfigConfigureParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: harnessConfigId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "harnessConfigId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.HarnessConfigId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "harnessConfigId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
 // CompleteSandboxSourcePushParams is parameters of complete-sandbox-source-push operation.
 type CompleteSandboxSourcePushParams struct {
 	// Project ID.
@@ -1588,131 +1338,6 @@ func decodeCompleteSandboxSourcePushParams(args [2]string, argsEscaped bool, r *
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "sandboxId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// ConfigureHarnessConfigParams is parameters of configure-harness-config operation.
-type ConfigureHarnessConfigParams struct {
-	// Project ID.
-	ProjectId string
-	// Harness config ID.
-	HarnessConfigId string
-}
-
-func unpackConfigureHarnessConfigParams(packed middleware.Parameters) (params ConfigureHarnessConfigParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "harnessConfigId",
-			In:   "path",
-		}
-		params.HarnessConfigId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeConfigureHarnessConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params ConfigureHarnessConfigParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: harnessConfigId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "harnessConfigId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.HarnessConfigId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "harnessConfigId",
 			In:   "path",
 			Err:  err,
 		}
@@ -2842,131 +2467,6 @@ func decodeCreateSecretBindingParams(args [1]string, argsEscaped bool, r *http.R
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// DeconfigureHarnessConfigParams is parameters of deconfigure-harness-config operation.
-type DeconfigureHarnessConfigParams struct {
-	// Project ID.
-	ProjectId string
-	// Harness config ID.
-	HarnessConfigId string
-}
-
-func unpackDeconfigureHarnessConfigParams(packed middleware.Parameters) (params DeconfigureHarnessConfigParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "harnessConfigId",
-			In:   "path",
-		}
-		params.HarnessConfigId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeDeconfigureHarnessConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params DeconfigureHarnessConfigParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: harnessConfigId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "harnessConfigId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.HarnessConfigId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "harnessConfigId",
 			In:   "path",
 			Err:  err,
 		}
@@ -18540,6 +18040,185 @@ func decodeReportSandboxSecretRejectionParams(args [1]string, argsEscaped bool, 
 		return params, &ogenerrors.DecodeParamError{
 			Name: "poolId",
 			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ResetHarnessConfigParams is parameters of reset-harness-config operation.
+type ResetHarnessConfigParams struct {
+	// Project ID.
+	ProjectId string
+	// Harness config ID.
+	HarnessConfigId string
+	// Also remove a person's fileOverrides, for a config with nothing but its bundle. By default a reset
+	// keeps them.
+	IncludeOverrides OptBool `json:",omitempty,omitzero"`
+}
+
+func unpackResetHarnessConfigParams(packed middleware.Parameters) (params ResetHarnessConfigParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "harnessConfigId",
+			In:   "path",
+		}
+		params.HarnessConfigId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "includeOverrides",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.IncludeOverrides = v.(OptBool)
+		}
+	}
+	return params
+}
+
+func decodeResetHarnessConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params ResetHarnessConfigParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: harnessConfigId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "harnessConfigId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.HarnessConfigId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "harnessConfigId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: includeOverrides.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "includeOverrides",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotIncludeOverridesVal bool
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToBool(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotIncludeOverridesVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.IncludeOverrides.SetTo(paramsDotIncludeOverridesVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "includeOverrides",
+			In:   "query",
 			Err:  err,
 		}
 	}

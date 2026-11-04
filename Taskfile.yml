@@ -514,12 +514,12 @@ tasks:
       - dev:docker-image-watch
 
   dev:nested-claude-auth:
-    desc: "Inside a discobox, configure the running dev server's claude-code harness with this sandbox's own Claude Code login (`-- --test` proves it works first)"
+    desc: "Inside a discobox, give the running dev server's claude-code harness this sandbox's own Claude Code login (`-- --test` proves it works after)"
     cmds:
       - scripts/nested-claude-auth.sh {{.CLI_ARGS}}
 
   dev:nested-codex-auth:
-    desc: "Configure the running dev server's Codex harness with the local API key or ChatGPT login (`-- --test` proves it works first)"
+    desc: "Give the running dev server's Codex harness the local API key or ChatGPT login (`-- --test` proves it works after)"
     cmds:
       - scripts/nested-codex-auth.sh {{.CLI_ARGS}}
 

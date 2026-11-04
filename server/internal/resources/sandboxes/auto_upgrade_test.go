@@ -27,7 +27,7 @@ func eligibleSandbox(t *testing.T, st *store.Store, configID, bundle, digest str
 		CreatedByUserID: "user-1",
 		PoolID:          "pool-1",
 		Name:            fmt.Sprintf("sandbox-%d", pinnedSandboxSeq.Add(1)),
-		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Bundle: bundle, BundleDigest: digest},
+		SandboxManifest: model.SandboxManifest{Bundle: bundle, BundleDigest: digest},
 		RuntimeState:    model.SandboxRuntimeStateStopped,
 	}
 	sb.DesiredState = model.DesiredStatePresent
@@ -165,9 +165,6 @@ func TestAutomaticUpgradeSkipsAnythingButAStoppedSettledSandbox(t *testing.T) {
 		{"unsettled", func(sb *model.Sandbox) { sb.Generation = 4; sb.ObservedGeneration = 3 }},
 		{"being archived", func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateArchived }},
 		{"being deleted", func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateDeleted }},
-		// A config-mode sandbox runs the configure flow and is thrown
-		// away, and the shared rule is what says so.
-		{"in config mode", func(sb *model.Sandbox) { sb.HarnessMode = "config" }},
 	}
 
 	for _, tc := range cases {

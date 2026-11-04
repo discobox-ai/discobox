@@ -14,7 +14,7 @@ steps:
   - name: cli
     run: install-cli.sh
   # Codex's system config layer: below the user's ~/.codex/config.toml, so these
-  # are defaults a user (or the configure flow's captured settings) can
+  # are defaults a user (or a saved harness change's settings) can
   # override. The sandbox is itself the isolation boundary, so Codex's own
   # approval prompts and inner sandbox would only ask about a machine that
   # exists to be written to.
@@ -27,8 +27,6 @@ steps:
   # harness-specific part of it.
   - name: agent-conf
     file: {path: /usr/local/libexec/discobox/agent.conf, source: agent.conf}
-  - name: configure
-    file: {path: /usr/local/libexec/discobox/configure-codex, source: configure.sh, mode: "0755"}
   # The harness-run convention (ADR 0086 §3): the harness installs its agent
   # under this name, over core's no-op, and the runtime types it. On PATH,
   # not in libexec, because the runtime resolves it by name.

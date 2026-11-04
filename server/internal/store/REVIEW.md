@@ -9,7 +9,7 @@
 - Every transaction that locks more than one sandbox row locks them in sandbox ID order. A state report locks its pool's sandboxes in ID order (`listSandboxesForPool`); `ApplySandboxProgressReports` updated rows in the order the agent listed them, so a progress batch naming B then A and a state batch on the same pool could each hold one row and wait for the other, and Postgres fails one with a deadlock (40P01). It now writes in ID order. The event counter stays the last lock of all.
 - A column `UpdateSecretBinding` saves is one every caller must carry
   forward: once `raw` was saved, a writer that built its binding from
-  scratch (configure's `PutTargetUseBinding`) would have reset a person's raw
+  scratch (a saved harness change's `PutTargetUseBinding`) would have reset a person's raw
   delivery to a sentinel. A writer that does not decide a field copies it from
   the standing binding. The list itself is the first thing to check: an
   update that writes through `Select(...)` gets every column the model gains

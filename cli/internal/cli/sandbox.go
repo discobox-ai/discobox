@@ -227,7 +227,7 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 		Short: "Update a discobox",
 		Long: `Update a discobox.
 
---harness selects a configured harness by slug, name or ID. Stop the discobox
+--harness selects a harness by slug, name or ID. Stop the discobox
 first; the update leaves it stopped. The new harness provisions on its next start.
 Conversation state is not transferred between harnesses.
 

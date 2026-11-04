@@ -13,7 +13,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
-	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -264,10 +263,6 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, err
 	}
-	harnessMode := sandboxconfig.HarnessModeRun
-	if mode, ok := config.HarnessMode.Get(); ok {
-		harnessMode = string(mode)
-	}
 	harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
@@ -284,16 +279,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err := validateSourceDirectories(source, sourceCodeReferences, sandboxPlatform); err != nil {
 		return nil, err
 	}
-	// A harness is only selectable once its configure flow has succeeded.
-	// harnessMode "config" is exempt: that is the configure flow itself.
-	if harnessMode != sandboxconfig.HarnessModeConfig && !harnessConfig.Configured {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("harness %q is not configured; run `discobox admin harness configure %s` first", harnessConfig.Slug, harnessConfig.Slug))
-	}
-	// A run and the configure flow alike are pinned to the harness config's
-	// bundle, by digest: the tag is rebuilt in place by dev workflows, so it
-	// alone does not say which bundle this sandbox applies (ADR 0016 §1), and
-	// the configure command a configure flow runs is delivered in it.
+	// Every registered harness can run (ADR 26-11-02-152 §1). A sandbox is
+	// pinned to its harness config's bundle, by digest: the tag is rebuilt in
+	// place by dev workflows, so it alone does not say which bundle this
+	// sandbox applies (ADR 0016 §1).
 	harnessPins, err := createHarnessPins(harnessConfig)
 	if err != nil {
 		return nil, err
@@ -324,7 +313,6 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		Description:        services.OptStringPtr(config.Description),
 		SandboxManifest: model.SandboxManifest{
 			HarnessConfigID:       &harnessConfigID,
-			HarnessMode:           harnessMode,
 			Model:                 services.OptStringPtr(config.Model),
 			ModelServiceTier:      services.OptStringPtr(config.ModelServiceTier),
 			ModelReasoningLevel:   services.OptStringPtr(config.ModelReasoningLevel),
@@ -402,12 +390,6 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
 				fmt.Sprintf("%s is given to the new discobox twice; one environment variable carries one credential", env))
 		}
-	}
-	for _, in := range config.Secrets {
-		ownEnvs[strings.TrimSpace(in.Env)] = struct{}{}
-	}
-	if err := checkRequiredSecrets(ctx, s.store, sandbox, harnessConfigID, ownEnvs); err != nil {
-		return nil, err
 	}
 	inlineSecrets, inline, err := inlineSandboxBindings(ctx, projectID, sandbox, config.Secrets)
 	if err != nil {
@@ -1246,7 +1228,7 @@ func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
 	}
 	for i := range candidates {
 		sb := &candidates[i]
-		if sb.HarnessMode == sandboxconfig.HarnessModeConfig || awaitingSourcePush(sb) {
+		if awaitingSourcePush(sb) {
 			continue
 		}
 		repin, err := s.currentRepin(ctx, sb)

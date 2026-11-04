@@ -29,6 +29,16 @@ func harnessChangeAction(f api.HarnessCaptureFileChange) string {
 	return "update"
 }
 
+// harnessChangeShadowNote says when a person's override holds the path: a save
+// keeps the change beneath it, and boxes go on being given the person's file
+// (ADR 26-11-04-028 §5).
+func harnessChangeShadowNote(f api.HarnessCaptureFileChange) string {
+	if f.Shadowed.Or(false) {
+		return " (shadowed by your override, which boxes keep getting)"
+	}
+	return ""
+}
+
 // harnessDiffLines is the most lines, both sides together, compared line by
 // line. The comparison's memory grows with the lines times the edits, and the
 // file comes from a box; past this it is shown replaced whole, in linear time.
@@ -184,7 +194,7 @@ func (a *App) newHarnessChangesCommand() *cobra.Command {
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "%s (candidate %s, revision %d)\n", terminalSafe(response.State), terminalSafe(response.CandidateId.Or("none")), response.ConfigRevision)
 		for _, f := range response.Files {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", harnessChangeAction(f), terminalSafe(f.Path))
+			fmt.Fprintf(cmd.OutOrStdout(), "%s %s%s\n", harnessChangeAction(f), terminalSafe(f.Path), harnessChangeShadowNote(f))
 			if diff := harnessChangeDiff(f); diff != "" {
 				fmt.Fprintln(cmd.OutOrStdout(), diff)
 			}

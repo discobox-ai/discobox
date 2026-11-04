@@ -39,7 +39,7 @@ func preparePromptCreateSSHSync(t *testing.T) func(http.ResponseWriter, *http.Re
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
-			_, _ = w.Write([]byte(`{"id":"project-1","name":"P","ownerUserId":"user-1","default":false,"welcomed":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"project-1","name":"P","ownerUserId":"user-1","default":false,"welcomed":true,"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/ssh":
 			_, _ = w.Write([]byte(sshConfigEnabledIngress))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/ssh-keys":

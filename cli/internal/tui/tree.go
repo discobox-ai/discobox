@@ -85,12 +85,6 @@ func (m *Model) pageOpen() bool {
 	return m.harnessesOpen || m.secretsOpen || m.skillsOpen || m.newOpen
 }
 
-// pageUp reports whether a page is what is drawn right of the tree. A pane a
-// page opened (a harness configure) is drawn over it.
-func (m *Model) pageUp() bool {
-	return m.pageOpen() && m.overlay == nil
-}
-
 // closePages puts every page away.
 func (m *Model) closePages() {
 	m.harnessesOpen, m.secretsOpen, m.skillsOpen, m.optionsOpen = false, false, false, false
@@ -120,9 +114,7 @@ func (m *Model) closeNew() {
 }
 
 // openPage opens the page a tree entry names, the keys going with it. The
-// audit screen it is opened over goes: a page that opens a pane of its own
-// (a harness configure) would otherwise have the audit drawn in front of that
-// pane and taking its keys.
+// audit screen it is opened over goes, so the page is what is in front.
 func (m *Model) openPage(a treeAction) tea.Cmd {
 	m.closeAudit()
 	m.listFront, m.treeExpanded = false, false
@@ -192,7 +184,7 @@ func (m *Model) treeEntry(a treeAction) (tea.Cmd, bool) {
 
 // pageShowing is the tree entry whose page is up, if any.
 func (m *Model) pageShowing() (treeAction, bool) {
-	if !m.pageUp() {
+	if !m.pageOpen() {
 		return 0, false
 	}
 	switch {
@@ -236,7 +228,7 @@ func (m *Model) treeAct(a treeAction) tea.Cmd {
 		return status("list hidden — %s h from the leftmost pane brings it back", m.leader())
 	case treeBack:
 		// From a page that has the keys, back is putting it away.
-		if !m.listFront && m.pageUp() {
+		if !m.listFront && m.pageOpen() {
 			m.closePages()
 		}
 		m.backToPanes()
@@ -278,13 +270,13 @@ func (m *Model) treeControls(edge lipgloss.Style, width, left int) string {
 // hasWorkspace reports whether a workspace is open, whether or not the list is
 // in front of it.
 func (m *Model) hasWorkspace() bool {
-	return m.terminals.len() > 0 || m.overlay != nil || m.toolShown != nil
+	return m.terminals.len() > 0 || m.toolShown != nil
 }
 
 // workspaceShown reports whether the workspace is drawn: open, and not covered
 // by the expanded list.
 func (m *Model) workspaceShown() bool {
-	return (m.hasWorkspace() || (m.wsOpening && m.attach == nil)) && !m.treeExpanded && !m.pageUp()
+	return (m.hasWorkspace() || (m.wsOpening && m.attach == nil)) && !m.treeExpanded && !m.pageOpen()
 }
 
 // focusTree gives the keys to the list in the tree, its cursor on the box on
@@ -374,13 +366,13 @@ func (m *Model) treeKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	// The pages' keys open them right of the tree, from the list compact or
 	// expanded, and from a page — they are the way between the pages.
 	for _, p := range treePages[1:] {
-		if keyName(msg) == p.key && (m.listFront || m.treeExpanded || m.pageUp()) {
+		if keyName(msg) == p.key && (m.listFront || m.treeExpanded || m.pageOpen()) {
 			return m.treeEntry(p.act)
 		}
 	}
 	// The new discobox card is modal: Esc puts it away, and Tab, which would
 	// walk off the composer to the list, goes nowhere.
-	if m.newOpen && m.pageUp() && !m.listFront {
+	if m.newOpen && m.pageOpen() && !m.listFront {
 		switch keyName(msg) {
 		case "esc":
 			m.closeNew()
@@ -410,7 +402,7 @@ func (m *Model) treeKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case "enter":
 		// The box a page covers is still the live one: choosing it puts the
 		// page away rather than attaching again.
-		if cur := m.list.current(); cur != nil && cur.ID == m.paneBox.ID && m.pageUp() && m.hasWorkspace() {
+		if cur := m.list.current(); cur != nil && cur.ID == m.paneBox.ID && m.pageOpen() && m.hasWorkspace() {
 			m.showLive()
 			return nil, true
 		}
@@ -537,7 +529,7 @@ func (m *Model) landOn(box Sandbox) tea.Cmd {
 // and otherwise a fresh attach — refused, with the reason, on a box the list
 // would not attach to either.
 func (m *Model) switchTo(box Sandbox) tea.Cmd {
-	if box.ID == m.paneBox.ID && m.hasWorkspace() && m.pageUp() {
+	if box.ID == m.paneBox.ID && m.hasWorkspace() && m.pageOpen() {
 		m.showLive()
 		return nil
 	}
@@ -761,7 +753,7 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 				}
 				return nil, m.switchTo(box), true
 			}
-			if box.ID == m.paneBox.ID && m.pageUp() && m.hasWorkspace() {
+			if box.ID == m.paneBox.ID && m.pageOpen() && m.hasWorkspace() {
 				m.showLive()
 				return nil, nil, true
 			}
@@ -824,7 +816,7 @@ func (m *Model) viewTree() string {
 	// on screen, and with the list it is where the list is.
 	// A page up is what the right side shows, so the box under it is not
 	// picked out unless the list has the keys.
-	body := m.list.view(m.st, &m.zones, m.listFront || !m.pageUp())
+	body := m.list.view(m.st, &m.zones, m.listFront || !m.pageOpen())
 	m.zones.pop()
 	lines := strings.Split(body, "\n")
 	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
@@ -867,7 +859,7 @@ func (m *Model) viewTree() string {
 		}
 		// A key is shown only where it works: all of them with the list's
 		// keys, and the function keys from a page too. See treeKey.
-		if !m.listFront && (!m.pageUp() || p.act == treeNew) {
+		if !m.listFront && (!m.pageOpen() || p.act == treeNew) {
 			k = ""
 		}
 		key := m.st.dimText.Render(k)
@@ -887,7 +879,7 @@ func (m *Model) viewTree() string {
 	if m.listFront {
 		offers = []offer{{"esc", "back", treeBack}, {m.leader() + " z", "expand", treeToggleExpand}}
 	}
-	if m.newOpen && m.pageUp() && !m.listFront {
+	if m.newOpen && m.pageOpen() && !m.listFront {
 		offers = []offer{{"esc", "close", treeBack}}
 	}
 	hint, x := " ", 2

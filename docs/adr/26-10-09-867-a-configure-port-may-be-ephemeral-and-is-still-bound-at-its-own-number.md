@@ -1,6 +1,6 @@
 # 26-10-09-867 — A configure port may be ephemeral, and is still bound at its own number
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md)
 - **Date**: 2026-10-09
 
 ## Context

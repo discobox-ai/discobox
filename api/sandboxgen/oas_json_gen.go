@@ -1581,13 +1581,20 @@ func (s *HarnessCaptureFileChange) encodeFields(e *jx.Encoder) {
 			s.Remove.Encode(e)
 		}
 	}
+	{
+		if s.Shadowed.Set {
+			e.FieldStart("shadowed")
+			s.Shadowed.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfHarnessCaptureFileChange = [4]string{
+var jsonFieldsNameOfHarnessCaptureFileChange = [5]string{
 	0: "file",
 	1: "path",
 	2: "previous",
 	3: "remove",
+	4: "shadowed",
 }
 
 // Decode decodes HarnessCaptureFileChange from json.
@@ -1640,6 +1647,16 @@ func (s *HarnessCaptureFileChange) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"remove\"")
+			}
+		case "shadowed":
+			if err := func() error {
+				s.Shadowed.Reset()
+				if err := s.Shadowed.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"shadowed\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

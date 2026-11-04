@@ -20,8 +20,8 @@ candidate against current revisions. `admin harness discard` leaves local files 
 The console reports a pending candidate from agent status; `H` opens its review
 card with explicit save and discard actions. CLI previews print the commands for
 the exact displayed candidate and identify diagnostic-only candidates as having
-no saveable changes. The configure commands
-remain available; save-back does not depend on a configure session.
+no saveable changes. Save-back is the only way a harness's settings and
+logins reach its config (ADR 26-11-02-152).
 
 Harness update requests carry the revision read before editing. The editor keeps
 that revision while open and does not reload it at save time; a concurrent

@@ -17,7 +17,7 @@ func contentDigest(name string) string {
 }
 
 func sandboxWithHarness(configID string, bundle, digest string) *model.Sandbox {
-	sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Bundle: bundle, BundleDigest: digest, HarnessMode: "run"}}
+	sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Bundle: bundle, BundleDigest: digest}}
 	if configID != "" {
 		sb.HarnessConfigID = &configID
 	}
@@ -29,7 +29,7 @@ const shellBundle = "ghcr.io/discobox-ai/discobox-harness-shell:v2"
 // shellConfig stands in for the reserved built-in a project seeds.
 func shellConfig() *model.HarnessConfig {
 	return &model.HarnessConfig{
-		ID: "harness-shell", Slug: "shell", BuiltIn: true, Configured: true,
+		ID: "harness-shell", Slug: "shell", BuiltIn: true,
 		Bundle: shellBundle, BundleDigest: contentDigest("shell-new"),
 	}
 }
@@ -142,16 +142,6 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 				t.Fatalf("rendered a target image %v for a bundle harness", rendered["targetImageDigest"])
 			}
 		})
-	}
-}
-
-// TestSandboxUpgradeTargetIgnoresConfigMode: a config-mode sandbox runs the
-// configure flow and is thrown away.
-func TestSandboxUpgradeTargetIgnoresConfigMode(t *testing.T) {
-	sb := sandboxWithHarness("", shellBundle, contentDigest("shell-old"))
-	sb.HarnessMode = "config"
-	if target, available := SandboxUpgradeTarget(sb, shellConfig(), ReleasePins{}); target != (SandboxPinTarget{}) || available {
-		t.Fatalf("target = %+v available = %v, want nothing to move to", target, available)
 	}
 }
 
@@ -284,9 +274,5 @@ func TestThePlatformIsATargetWithoutAHarnessOne(t *testing.T) {
 	target.Apply(sb)
 	if sb.BundleDigest != contentDigest("codex-old") || sb.PlatformBundleDigest != platform.Digest {
 		t.Fatalf("applied bundle %q platform %q, want the bundle kept and the platform moved", sb.BundleDigest, sb.PlatformBundleDigest)
-	}
-	sb.HarnessMode = "config"
-	if target, available := SandboxUpgradeTarget(sb, nil, ReleasePins{Platform: platform}); !target.Empty() || available {
-		t.Fatalf("config-mode target = %+v available = %v, want nothing", target, available)
 	}
 }

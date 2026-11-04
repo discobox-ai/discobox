@@ -76,12 +76,11 @@ func (a *App) newProjectCreateCommand() *cobra.Command {
 
 A project is the ownership boundary every discobox, pool, provider instance,
 harness config, and secret lives inside. Every new project is seeded with the
-built-in harnesses, unconfigured.
+built-in harnesses, with nothing saved to them.
 
 --from seeds the rest of it from an existing project: its provider instances
 are duplicated, its pools are recreated against those copies as new hosts, and
-its configured harnesses come across with the files, secrets, and bindings their
-configure flow produced. Pools imply providers, since a pool binds to a
+its harnesses come across with the files, secrets, and bindings saved to them. Pools imply providers, since a pool binds to a
 provider instance in its own project.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -124,6 +123,7 @@ func (a *App) newProjectUpdateCommand() *cobra.Command {
 	var archiveRetention time.Duration
 	var upgradePolicy string
 	var welcomed bool
+	var harnessChangesExplained bool
 	var egressOpts egressFlags
 	cmd := &cobra.Command{Use: "update PROJECT", Short: "Update a project", Long: `Update a project.
 
@@ -146,6 +146,10 @@ outside them -- which is the reason to hold one back.
 --welcomed=false shows the console's welcome screen again on this project's
 next "discobox" or "discobox console": it is otherwise shown once, the first time
 the console opens on the project.
+
+--harness-changes-explained=false shows the console's explanation of saving a
+discobox's harness changes again: it is otherwise shown once, the first time the
+console sees a discobox on the project with settings or a login to save.
 
 --egress-allow, --egress-deny-by-default and --egress-passthrough set the project's
 egress level, which every discobox in the project converges onto, running
@@ -187,6 +191,9 @@ ones included.
 		if cmd.Flags().Changed("welcomed") {
 			body.SetWelcomed(apiclientgen.NewOptBool(welcomed))
 		}
+		if cmd.Flags().Changed("harness-changes-explained") {
+			body.SetHarnessChangesExplained(apiclientgen.NewOptBool(harnessChangesExplained))
+		}
 		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
 			project, err := a.getProject(cmd.Context(), client, projectID)
 			if err != nil {
@@ -216,6 +223,7 @@ ones included.
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
 		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))
 	cmd.Flags().BoolVar(&welcomed, "welcomed", false, `Whether this project has shown its welcome screen; pass --welcomed=false to have the console show it again`)
+	cmd.Flags().BoolVar(&harnessChangesExplained, "harness-changes-explained", false, `Whether this project has explained saving a discobox's harness changes; pass --harness-changes-explained=false to have the console explain it again`)
 	addEgressUpdateFlags(cmd, &egressOpts, "the project")
 	return cmd
 }

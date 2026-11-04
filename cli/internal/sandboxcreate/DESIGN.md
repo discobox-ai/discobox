@@ -178,8 +178,7 @@ sandbox create requests.
   ([ADR 0077](../../../docs/adr/0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md)).
   An empty directory is a different case — it is not asked about and becomes an
   empty source, placed by the same rule as any other local one.
-- `PromptOptions.NoSource` builds a request with no `config.source` at all —
-  the shape the harness configure sandbox already had, reached deliberately.
+- `PromptOptions.NoSource` builds a request with no `config.source` at all.
   `Source` is then only what the origin and the Git authorship are read from, so
   a sourceless sandbox is still one you started here and listed here. A ref is
   refused rather than dropped, since there is nothing to check it out of; extra

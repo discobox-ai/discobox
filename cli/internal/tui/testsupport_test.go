@@ -21,7 +21,6 @@ import (
 
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
-	"github.com/discobox-ai/discobox/termpane"
 
 	"github.com/discobox-ai/discobox/pkg/tools"
 )
@@ -125,13 +124,9 @@ type fakeSource struct {
 	total    DirectoryTotal
 	stopped  int
 
-	harnesses    []Harness
-	pools        []Pool
-	harnessErr   error
-	configureErr error
-	// portsInUse is what LocalPortsInUse answers: the local ports a test says
-	// something else on this machine already holds.
-	portsInUse  map[int]bool
+	harnesses   []Harness
+	pools       []Pool
+	harnessErr  error
 	secrets     []HarnessSecret
 	editChanged bool
 
@@ -182,6 +177,10 @@ type fakeSource struct {
 	// shown, and welcomeErr fails the write.
 	welcomed   int
 	welcomeErr error
+	// explained counts the times the window said saving harness changes had
+	// been explained, and explainErr fails the write.
+	explained  int
+	explainErr error
 
 	// runSteps is what Run reports as it goes, and provisionLines what the
 	// provisioning watch reports; watched records which discoboxes the window
@@ -348,7 +347,6 @@ type fakeSource struct {
 	editedTools   []string // "tool/name" handed to $EDITOR
 	ended         []string // exec ids ended by EndExec
 	didHarness    []string // "verb id"
-	configured    []string // harness id
 	editedFiles   []string // "id path"
 }
 
@@ -400,46 +398,44 @@ func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 }
 
 // testHarnesses is what a project usually looks like: the two harnesses the
-// server ships, both set up and one of them the default, plus two the project
-// registered itself — one never set up, one whose setup did not finish. The
-// second row is what makes every action apply somewhere: `s` applies only to a
-// harness that is enabled and not already the default.
+// server ships, one of them the default, plus two the project registered
+// itself, and the reserved shell. The second row is what makes every action
+// apply somewhere: `s` applies only to a harness that is not already the
+// default.
 func testHarnesses() []Harness {
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
 	return []Harness{
 		{
-			ID: "hc_claude", Name: "Claude", Slug: "claude", State: HarnessEnabled,
-			Default: true, BuiltIn: true, Configurable: true, Bundle: "ghcr.io/example/claude:latest",
+			ID: "hc_claude", Name: "Claude", Slug: "claude",
+			Default: true, BuiltIn: true, Bundle: "ghcr.io/example/claude:latest",
 			Run:     []string{"claude"},
 			Secrets: []HarnessSecret{{Name: "ANTHROPIC_API_KEY", Required: true, Declared: true}},
 			Files: []HarnessFile{
-				{Path: ".claude.json", Content: "{}", Source: HarnessFileConfigured},
+				{Path: ".claude.json", Content: "{}", Source: HarnessFileSaved},
 				{Path: "settings.json", Content: "{}", Source: HarnessFileFromBundle},
 			},
 			Updated: now.Add(-2 * time.Hour),
 		},
 		{
-			ID: "hc_codex", Name: "Codex", Slug: "codex", State: HarnessEnabled,
-			BuiltIn: true, Configurable: true, Bundle: "ghcr.io/example/codex:latest",
-			ConfigReminder: "Use /login, then /exit when sign-in is complete.", Run: []string{"codex"},
+			ID: "hc_codex", Name: "Codex", Slug: "codex",
+			BuiltIn: true, Bundle: "ghcr.io/example/codex:latest",
+			Run:     []string{"codex"},
 			Secrets: []HarnessSecret{{Name: "OPENAI_API_KEY", Required: true, Declared: true}},
-			Files:   []HarnessFile{{Path: "config.toml", Content: "{}", Source: HarnessFileConfigured}},
+			Files:   []HarnessFile{{Path: "config.toml", Content: "{}", Source: HarnessFileSaved}},
 			Updated: now.Add(-30 * time.Minute),
 		},
 		{
-			ID: "hc_custom", Name: "Custom", Slug: "custom", State: HarnessDisabled,
-			Configurable: true, Bundle: "ghcr.io/example/custom:latest", Run: []string{"custom"},
+			ID: "hc_custom", Name: "Custom", Slug: "custom",
+			Bundle: "ghcr.io/example/custom:latest", Run: []string{"custom"},
 			Updated: now.Add(-72 * time.Hour),
 		},
 		{
-			ID: "hc_scratch", Name: "Scratch", Slug: "scratch", State: HarnessFailed,
-			Configurable: true,
-			Error:        "the setup exited before it finished", Updated: now.Add(-time.Minute),
+			ID: "hc_scratch", Name: "Scratch", Slug: "scratch",
+			Updated: now.Add(-time.Minute),
 		},
 		{
-			// The reserved built-in: no setup to run, so neither enabling nor
-			// disabling applies to it. Born enabled because it needs nothing.
-			ID: "hc_shell", Name: "Shell", Slug: "shell", State: HarnessEnabled,
+			// The reserved built-in: a login shell, never offered as a default.
+			ID: "hc_shell", Name: "Shell", Slug: "shell",
 			BuiltIn: true, Shell: true, Bundle: "ghcr.io/example/shell:latest",
 			Updated: now.Add(-96 * time.Hour),
 		},
@@ -463,6 +459,13 @@ func (f *fakeSource) MarkWelcomed(context.Context) error {
 	defer f.mu.Unlock()
 	f.welcomed++
 	return f.welcomeErr
+}
+
+func (f *fakeSource) MarkHarnessChangesExplained(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.explained++
+	return f.explainErr
 }
 
 // SaveDraft records what the window handed the store, in order, so a test can
@@ -1388,38 +1391,6 @@ func (f *fakeSource) DoHarness(_ context.Context, server string, verb HarnessVer
 	return nil
 }
 
-func (f *fakeSource) OpenHarnessConfigure(_ context.Context, server, id string, _, _ int) (Terminal, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.onServer = append(f.onServer, "OpenHarnessConfigure@"+server)
-	f.configured = append(f.configured, id)
-	if f.configureErr != nil {
-		return nil, f.configureErr
-	}
-	term := newFakeTerminal()
-	f.terminals = append(f.terminals, term)
-	return term, nil
-}
-
-// configuredHarnesses is which harnesses had their setup opened, in order.
-func (f *fakeSource) configuredHarnesses() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.configured...)
-}
-
-func (f *fakeSource) LocalPortsInUse(_ context.Context, ports []int) []int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	var inUse []int
-	for _, port := range ports {
-		if f.portsInUse[port] {
-			inUse = append(inUse, port)
-		}
-	}
-	return inUse
-}
-
 func (f *fakeSource) EditHarnessFile(_ context.Context, server, id, path string, _ io.Reader, _, _ io.Writer) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1440,21 +1411,6 @@ type fakeTerminal struct {
 	input    []byte
 	sizes    [][2]int
 	repaints int
-	// exit is the command's exit code, for a terminal standing in for a local
-	// command. Nil is a terminal that is not one and has no result to give.
-	exit *int
-}
-
-// ExitStatus makes this terminal an [ExitReporter] when a test has given it a
-// result to report, and not one otherwise — the same split the real terminals
-// have between a local command and a session in a discobox.
-func (f *fakeTerminal) ExitStatus() (int, bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.exit == nil {
-		return 0, false
-	}
-	return *f.exit, true
 }
 
 func newFakeTerminal() *fakeTerminal {
@@ -1588,20 +1544,6 @@ func newOpeningModel(t *testing.T, ds DataSource) *Model {
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	drain(t, m, m.Init(), 0)
 	return m
-}
-
-// finishConfigure ends the configuration pane's terminal, which is what
-// carries a setup flow's follow-up: the default the prompt promised to set,
-// and the run that was waiting on the answer. Opening the pane is where
-// configureHarnessThen stops, so a test asserting on either has to close
-// it first.
-func finishConfigure(t *testing.T, m *Model) *Model {
-	t.Helper()
-	p := m.overlay
-	if p == nil || p.configure == nil {
-		t.Fatalf("no configuration pane is open to finish")
-	}
-	return send(t, m, paneMsg{id: p.id, msg: termpane.ClosedMsg{}})
 }
 
 // send drives the model the way the runtime would, feeding back the messages the

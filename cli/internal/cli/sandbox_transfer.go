@@ -119,7 +119,7 @@ restored onto this server's pool, then built the way an unarchived discobox is.
 It gets a new ID here; the name comes from the archive unless --name says
 otherwise, and a name this project already uses is refused.
 
-The harness is resolved by name. This project must already have one configured
+The harness is resolved by name. This project must already have one registered
 under the same name, or --harness must name the one to use instead: the harness
 is what the discobox runs, so a substitute is not chosen for you.
 

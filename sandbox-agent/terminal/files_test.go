@@ -24,16 +24,3 @@ func TestFileInstallerKeepsSettingsLiteral(t *testing.T) {
 		t.Fatalf("literal changed: %q", data)
 	}
 }
-
-func TestConfigureInstallerLeavesCredentialSeedingToTheHarness(t *testing.T) {
-	home := t.TempDir()
-	installer := credentialsInstaller(home)
-	installer.Configure = true
-	h := credentialsHarness()
-	if err := installer.EnsureInstalled(t.Context(), h, "", nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(home, credentialsPath)); !os.IsNotExist(err) {
-		t.Fatalf("configure installed a run credential: %v", err)
-	}
-}

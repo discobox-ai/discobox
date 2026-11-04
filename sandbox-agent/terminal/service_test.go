@@ -281,22 +281,33 @@ func TestPrimaryCreateRequest(t *testing.T) {
 // the sandbox was asked to do.
 func TestReviveStartupCommandCarriesThePrompt(t *testing.T) {
 	harness := config.Harness{ID: "codex", Command: []string{"codex"}, RelaunchCommand: []string{"codex", "resume"}}
-	got := reviveStartupCommand(harness, "codex", "", []string{"do a thing"})
+	got := reviveStartupCommand(harness, "codex", []string{"do a thing"})
 	want := []string{"codex", "resume", "do a thing"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("revive = %v, want %v", got, want)
 	}
 	// With no relaunch command, the bare command takes the prompt.
-	got = reviveStartupCommand(config.Harness{ID: "codex", Command: []string{"codex"}}, "codex", "", []string{"p"})
+	got = reviveStartupCommand(config.Harness{ID: "codex", Command: []string{"codex"}}, "codex", []string{"p"})
 	if want := []string{"codex", "p"}; !slices.Equal(got, want) {
 		t.Fatalf("revive without relaunch = %v, want %v", got, want)
 	}
-	// The shell types nothing, and neither does a configure flow, whose command
-	// is the exec's own.
-	if got := reviveStartupCommand(harness, ShellHarnessID, "", []string{"p"}); got != nil {
+	// The shell types nothing: it is the terminal.
+	if got := reviveStartupCommand(harness, ShellHarnessID, []string{"p"}); got != nil {
 		t.Fatalf("shell revive = %v, want nothing typed", got)
 	}
-	if got := reviveStartupCommand(harness, "codex", config.HarnessModeConfig, []string{"p"}); got != nil {
-		t.Fatalf("configure revive = %v, want nothing typed", got)
+}
+
+// A harness terminal is typed into a login shell, so it has the shell's job
+// control.
+func TestAHarnessRunsInsideALoginShell(t *testing.T) {
+	svc, _ := newTestService(t, &noopInstaller{})
+
+	created, err := svc.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if !slices.Equal(created.StartupCommand, []string{"codex"}) {
+		t.Fatalf("startup command = %v, want the harness typed into the shell", created.StartupCommand)
 	}
 }

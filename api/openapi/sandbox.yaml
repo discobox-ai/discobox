@@ -179,7 +179,7 @@ components:
             type: object
         HarnessCaptureFileChange:
             additionalProperties: false
-            description: One file a candidate writes (file) or removes (remove). A sandbox never sends previous, nor file on a removal. On a preview the server serves, previous is the file a save replaces (the configured file over the bundle's, at the current revision), and a removal's file is the bundle's own file it falls back to, when it ships one; both are for display and never applied.
+            description: 'One file a candidate writes (file) or removes (remove). A sandbox never sends previous, shadowed, nor file on a removal. On a preview the server serves, previous is the file a box is given at the path now (a person''s override over the saved file over the bundle''s, at the current revision), a removal''s file is what it falls back to, and shadowed says a person''s override holds the path: a save keeps the change beneath it, and boxes go on being given the override. All are for display and never applied.'
             properties:
                 file:
                     $ref: '#/components/schemas/HarnessCaptureFile'
@@ -188,6 +188,8 @@ components:
                 previous:
                     $ref: '#/components/schemas/HarnessCaptureFile'
                 remove:
+                    type: boolean
+                shadowed:
                     type: boolean
             required:
                 - path
@@ -988,7 +990,7 @@ components:
             properties:
                 autostop:
                     $ref: '#/components/schemas/SandboxAgentAutostopStatus'
-                    description: The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode sandbox is always.
+                    description: The sandbox's idle-stop policy. Absent while the policy is not running.
                 harnessConfigCandidate:
                     type: string
                 harnessConfigState:

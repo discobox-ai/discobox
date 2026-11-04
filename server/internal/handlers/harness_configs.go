@@ -8,47 +8,10 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
-// ConfigureHarnessConfig starts the harness's configure flow and returns the
-// sandbox running it, which the caller attaches to. The server watches that
-// sandbox and applies the result; see harnessconfigs.ConfigureHarnessConfig.
-func (h *Handler) ConfigureHarnessConfig(ctx context.Context, params serverapi.ConfigureHarnessConfigParams) (serverapi.ConfigureHarnessConfigRes, error) {
-	sandbox, err := h.services.HarnessConfigs.ConfigureHarnessConfig(ctx, params.ProjectId, params.HarnessConfigId)
-	if err != nil {
-		return apiError(err), nil
-	}
-	// Sandbox needs its dedicated mapper, not a raw Convert: the API shape embeds
-	// the harness config rather than carrying the model's harnessConfigId.
-	body, err := services.SandboxToAPI(sandbox, h.upgradeBasis(ctx, params.ProjectId))
-	if err != nil {
-		return nil, err
-	}
-	return &body, nil
-}
-
-// AttachHarnessConfigConfigure seeds the configure sandbox with the previous
-// configuration. The caller then attaches to the virtual "primary" exec, which is
-// what launches the configure command.
-func (h *Handler) AttachHarnessConfigConfigure(ctx context.Context, params serverapi.AttachHarnessConfigConfigureParams) (serverapi.AttachHarnessConfigConfigureRes, error) {
-	if err := h.services.HarnessConfigs.AttachHarnessConfigConfigure(ctx, params.ProjectId, params.HarnessConfigId); err != nil {
-		return apiError(err), nil
-	}
-	return &serverapi.AttachHarnessConfigConfigureNoContent{}, nil
-}
-
-func (h *Handler) CommitHarnessConfigConfigure(ctx context.Context, params serverapi.CommitHarnessConfigConfigureParams) (serverapi.CommitHarnessConfigConfigureRes, error) {
-	config, err := h.services.HarnessConfigs.CommitHarnessConfigConfigure(ctx, params.ProjectId, params.HarnessConfigId)
-	if err != nil {
-		return apiError(err), nil
-	}
-	body, err := services.Convert[apimodel.HarnessConfig](config)
-	if err != nil {
-		return nil, err
-	}
-	return &body, nil
-}
-
-func (h *Handler) DeconfigureHarnessConfig(ctx context.Context, params serverapi.DeconfigureHarnessConfigParams) (serverapi.DeconfigureHarnessConfigRes, error) {
-	config, err := h.services.HarnessConfigs.DeconfigureHarnessConfig(ctx, params.ProjectId, params.HarnessConfigId)
+// ResetHarnessConfig returns a harness config to its bundle's defaults
+// (ADR 26-11-02-152 §3).
+func (h *Handler) ResetHarnessConfig(ctx context.Context, params serverapi.ResetHarnessConfigParams) (serverapi.ResetHarnessConfigRes, error) {
+	config, err := h.services.HarnessConfigs.ResetHarnessConfig(ctx, params.ProjectId, params.HarnessConfigId, params.IncludeOverrides.Or(false))
 	if err != nil {
 		return apiError(err), nil
 	}

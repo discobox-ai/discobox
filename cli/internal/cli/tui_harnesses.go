@@ -4,14 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"sort"
-	"strconv"
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/portforward"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/harness"
 )
@@ -51,32 +48,17 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 
 func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 	harness := tui.Harness{
-		ID:      cfg.ID,
-		Name:    strings.TrimSpace(cfg.Name),
-		Slug:    strings.TrimSpace(cfg.Slug),
-		State:   harnessState(cfg),
-		Default: cfg.ID == defaultID,
-		BuiltIn: cfg.BuiltIn,
-		Shell:   strings.TrimSpace(cfg.Slug) == harness.ShellSlug,
-		// What the server decides both enable and disable on: a harness that
-		// declares no configure command has neither to offer.
-		Configurable:   len(cfg.ConfigCommand.Or(nil)) > 0,
-		ConfigReminder: strings.TrimSpace(cfg.ConfigReminder.Or("")),
-		Error:          strings.TrimSpace(cfg.ConfigureError.Or("")),
-		Bundle:         cfg.Bundle.Or(""),
-		Digest:         cfg.BundleDigest.Or(""),
-		Run:            cfg.RunCommand,
-		Relaunch:       cfg.RelaunchCommand.Or(nil),
-		Updated:        cfg.UpdatedAt,
-	}
-	for _, port := range cfg.ConfigPorts.Or(nil) {
-		// The fallback is resolved here so the window never has to know
-		// there was one: the same words the configure command prints.
-		harness.ConfigPorts = append(harness.ConfigPorts, tui.HarnessConfigPort{
-			Port:        int(port.Port),
-			Ephemeral:   port.Ephemeral.Or(false),
-			Unavailable: configPortUnavailable(port),
-		})
+		ID:       cfg.ID,
+		Name:     strings.TrimSpace(cfg.Name),
+		Slug:     strings.TrimSpace(cfg.Slug),
+		Default:  cfg.ID == defaultID,
+		BuiltIn:  cfg.BuiltIn,
+		Shell:    strings.TrimSpace(cfg.Slug) == harness.ShellSlug,
+		Bundle:   cfg.Bundle.Or(""),
+		Digest:   cfg.BundleDigest.Or(""),
+		Run:      cfg.RunCommand,
+		Relaunch: cfg.RelaunchCommand.Or(nil),
+		Updated:  cfg.UpdatedAt,
 	}
 	for _, secret := range cfg.Secrets.Or(nil) {
 		harness.Secrets = append(harness.Secrets, tui.HarnessSecret{
@@ -87,7 +69,7 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 		})
 	}
 	// Each path once, as a discobox is given it: a person's files lead, then
-	// the configure flow's, then the bundle's.
+	// the saved ones, then the bundle's.
 	for _, file := range harnessEffectiveFiles(&cfg) {
 		harness.Files = append(harness.Files, tui.HarnessFile{
 			Path:       file.Path,
@@ -98,40 +80,6 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 		})
 	}
 	return harness
-}
-
-// harnessState narrows the config to the three states the screen draws. A
-// configure error is only worth reporting while the harness is not configured:
-// a reconfigure that failed after one that worked leaves the working
-// configuration in place.
-func harnessState(cfg apimodel.HarnessConfig) tui.HarnessState {
-	switch {
-	case cfg.Configured:
-		return tui.HarnessEnabled
-	case strings.TrimSpace(cfg.ConfigureError.Or("")) != "":
-		return tui.HarnessFailed
-	default:
-		return tui.HarnessDisabled
-	}
-}
-
-// harnessUncredentialed is a harness that runs signed out: it has a configure
-// flow to collect credentials, and nothing is bound. The image's declared
-// secrets are not the test — opencode declares none and binds one per provider
-// its flow connects (OPENCODE_<PROVIDER>_CREDENTIAL). A harness with no flow,
-// `shell`, has nothing to collect and no remedy the window could offer.
-//
-// Nor is whether it can run without any: opencode works out of the box on its
-// free tier, and is flagged anyway, on purpose. Working by default is exactly
-// why nobody would otherwise learn it is meant to be configured, so the band is
-// what tells them. A sandbox with nothing bound is still allowed; this only
-// says so.
-//
-// A server that predates the count does not send it, and absent is not zero:
-// it says nothing rather than claiming every harness is signed out.
-func harnessUncredentialed(cfg apimodel.HarnessConfig) bool {
-	bound, ok := cfg.BoundSecrets.Get()
-	return ok && bound == 0 && len(cfg.ConfigCommand.Or(nil)) > 0
 }
 
 // HarnessSecrets is what actually answers each environment variable the harness
@@ -214,28 +162,10 @@ func (d *apiDataSource) DoHarness(ctx context.Context, server string, verb tui.H
 	case tui.HarnessSetDefault:
 		return d.app.setDefaultHarnessConfig(ctx, d.client, d.projectID, harnessID)
 
-	case tui.HarnessDisable:
-		// The server refuses to deconfigure the project's default harness, so
-		// the default is released first when the target is it. That is the
-		// unset the user would otherwise have to do by hand before the verb
-		// they actually asked for would be accepted.
-		defaultID, err := d.app.defaultHarnessConfigID(ctx, d.client, d.projectID)
-		if err != nil {
-			return err
-		}
-		if defaultID == harnessID {
-			res, err := d.client.UnsetDefaultHarnessConfig(ctx, apiclientgen.UnsetDefaultHarnessConfigParams{
-				ProjectId: d.projectID, HarnessConfigId: harnessID,
-			})
-			if err != nil {
-				return err
-			}
-			if _, err := expectResponse[apimodel.Project](res); err != nil {
-				return err
-			}
-		}
-		res, err := d.client.DeconfigureHarnessConfig(ctx, apiclientgen.DeconfigureHarnessConfigParams{
+	case tui.HarnessReset, tui.HarnessResetOverrides:
+		res, err := d.client.ResetHarnessConfig(ctx, apiclientgen.ResetHarnessConfigParams{
 			ProjectId: d.projectID, HarnessConfigId: harnessID,
+			IncludeOverrides: apiclientgen.NewOptBool(verb == tui.HarnessResetOverrides),
 		})
 		if err != nil {
 			return err
@@ -246,32 +176,6 @@ func (d *apiDataSource) DoHarness(ctx context.Context, server string, verb tui.H
 	default:
 		return fmt.Errorf("unknown harness action %q", verb)
 	}
-}
-
-func (d *apiDataSource) OpenHarnessConfigure(ctx context.Context, server, harnessID string, cols, rows int) (tui.Terminal, error) {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return nil, err
-	}
-	return d.openLocalHarnessConfigure(ctx, harnessID, cols, rows)
-}
-
-// LocalPortsInUse binds each port on loopback and lets it go again. That is
-// the same test the configure command's forward applies a moment later, on
-// the same address (portforward.DefaultBindAddress), so the two agree unless
-// something takes the port in between.
-func (d *apiDataSource) LocalPortsInUse(ctx context.Context, ports []int) []int {
-	var config net.ListenConfig
-	var inUse []int
-	for _, port := range ports {
-		listener, err := config.Listen(ctx, "tcp", net.JoinHostPort(portforward.DefaultBindAddress, strconv.Itoa(port)))
-		if err != nil {
-			inUse = append(inUse, port)
-			continue
-		}
-		_ = listener.Close()
-	}
-	return inUse
 }
 
 // EditHarnessFile opens one of the harness's files in the user's editor and

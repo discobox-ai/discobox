@@ -15,8 +15,11 @@ import (
 )
 
 // The harnesses screen is the project's harnesses and everything you do to
-// them: enable one — which runs the harness's own setup — disable it, make it
-// the project default, read what it is set to, and edit the files it carries.
+// them: make one the project default, read what it is set to, edit the files
+// it carries, and reset it to its bundle's defaults. Every harness can run;
+// there is no setup to pass first (ADR 26-11-02-152). A harness is signed in
+// inside a discobox, and what a box changes reaches the harness when somebody
+// saves it there (harness_changes.go).
 //
 // It is `discobox configure`, folded into the window. That command is this
 // screen opened directly (WithHarnesses), so there is one list of harnesses
@@ -64,7 +67,7 @@ type harnessList struct {
 func newHarnessList() *harnessList { return &harnessList{now: time.Now} }
 
 // setAll takes a refreshed listing, keeping the cursor on the harness it was on
-// rather than on the row number it was at: enabling one can reorder nothing
+// rather than on the row number it was at: nothing reorders the listing
 // today, but a cursor that follows the harness is the cursor that acts on the
 // one you were looking at.
 func (l *harnessList) setAll(all []Harness) {
@@ -129,46 +132,8 @@ func (l *harnessList) clamp() {
 	}
 }
 
-// enabled is how many harnesses can actually be run, which is what the title
-// bar says: a project full of harnesses none of which are set up is the case
-// the screen exists to fix.
-func (l *harnessList) enabled() int {
-	n := 0
-	for _, h := range l.all {
-		if h.State == HarnessEnabled {
-			n++
-		}
-	}
-	return n
-}
-
-func harnessDot(h Harness) string {
-	switch h.State {
-	case HarnessEnabled:
-		return "●"
-	case HarnessFailed:
-		return "✗"
-	default:
-		return "○"
-	}
-}
-
-func harnessStateStyle(st *styles, h Harness) lipgloss.Style {
-	switch h.State {
-	case HarnessEnabled:
-		return st.stateRun
-	case HarnessFailed:
-		return st.stateErr
-	default:
-		return st.stateOff
-	}
-}
-
 func (l *harnessList) view(st *styles, z *zones) string {
 	right := plural(len(l.all), "harness", "harnesses")
-	if n := l.enabled(); n != len(l.all) {
-		right = itoa(n) + " enabled  ·  " + right
-	}
 	blank := strings.Repeat(" ", max(l.width, 0))
 	out := []string{renderTitle(st.titleList, "Harnesses", right, l.width)}
 
@@ -191,10 +156,9 @@ func (l *harnessList) view(st *styles, z *zones) string {
 
 // row draws one harness, budgeted the way a discobox row is: the columns are
 // added in the order they matter and drop off the right end as the terminal
-// narrows. The name and the state never go.
+// narrows. The name never goes.
 func (l *harnessList) row(st *styles, h Harness, i int) string {
 	atCursor := i == l.cursor
-	glyph := st.color
 
 	tail := ""
 	addCol := func(text string, w int) {
@@ -202,12 +166,6 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 			return
 		}
 		tail += padANSI(text, w)
-	}
-
-	// Half of what the glyph carries is its color, so without one the state
-	// comes back as a word, exactly as it does in the discobox list.
-	if !glyph {
-		addCol("  "+pad(string(h.State), 8), 10)
 	}
 
 	def := ""
@@ -245,17 +203,7 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 		marker = st.key.Render("❯") + " "
 	}
 	head := marker
-	if glyph {
-		head += harnessStateStyle(st, h).Render(harnessDot(h)) + " "
-	}
-
-	// A failed harness's row says why under the cursor. It takes the whole row to
-	// say it: the columns beside the name describe a harness that works, and on
-	// one that does not the reason is worth more than all of them.
 	name := h.displayName()
-	if h.State == HarnessFailed && h.Error != "" && atCursor {
-		name, tail = h.Error, ""
-	}
 	nameW := max(l.width-lipgloss.Width(head)-lipgloss.Width(tail), 4)
 	nameStyle := st.name
 	if atCursor {
@@ -270,8 +218,7 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 }
 
 // harnessAge is how long ago the harness was last changed, in the discobox
-// list's own spelling. A harness nothing has ever configured has nothing to
-// say.
+// list's own spelling.
 func harnessAge(h Harness, now time.Time) string {
 	return ago(h.Updated, now)
 }
@@ -287,20 +234,6 @@ type harnessesLoadedMsg struct {
 	server    string
 	harnesses []Harness
 	err       error
-}
-
-// harnessSetupMsg carries a confirmed "set it up" back to the live model. The
-// prompt asks it when a run names a harness that has never been through its
-// setup; a dialog closed over the model by value and cannot run anything
-// against it.
-//
-// andDefault makes it the project default afterwards, which is what the prompt
-// asks for when the project had no default to run with in the first place.
-type harnessSetupMsg struct {
-	harness    Harness
-	andDefault bool
-	// resume is the run this interrupted, run once the harness can carry it.
-	resume *RunRequest
 }
 
 // harnessDefaultMsg carries a chosen default back to the live model.
@@ -330,15 +263,6 @@ type harnessFileMsg struct {
 type harnessDoneMsg struct {
 	text string
 	err  error
-	// canceled says the action was a setup its person chose to leave: no
-	// error, but nothing done either, so whatever was waiting on it does not
-	// go on.
-	canceled bool
-	// andDefault is a harness to make the project default once this action has
-	// succeeded. Setting up a harness because the project had no default is one
-	// intent, not two: a setup that left the project still without one would
-	// ask the same question again on the next prompt.
-	andDefault *Harness
 	// resume is the run that was waiting on this, once everything it was
 	// waiting for has happened.
 	resume *RunRequest
@@ -364,8 +288,8 @@ func (m *Model) loadHarnesses() tea.Cmd {
 }
 
 // harnessesLoaded takes a listing. It feeds the screen and the run options
-// both: what the panel offers as a harness to run is what this reports, so
-// enabling one makes it selectable without the window being reopened.
+// both: what the panel offers as a harness to run is what this reports, so a
+// harness registered while the window is up is selectable without reopening it.
 func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 	if m.serverName(msg.server) != m.configServer() {
 		// Read for a server the header has since moved off. The one it is on
@@ -433,7 +357,7 @@ func (m *Model) updateHarnesses(msg tea.KeyPressMsg) tea.Cmd {
 	case ".":
 		return m.harnessMenu()
 	case "enter":
-		return m.harnessAct("e")
+		return m.harnessAct("v")
 	default:
 		if harness := m.harnesses.current(); harness != nil {
 			for _, a := range harnessActions(*harness) {
@@ -464,39 +388,14 @@ func (m *Model) harnessMenu() tea.Cmd {
 // can actually take. An action that does not apply stays on the menu with the
 // reason, the way the discobox menu keeps upgrade.
 func harnessActions(h Harness) []action {
-	enable, detail := "enable", "run the harness's own setup, in this terminal"
-	if h.State != HarnessDisabled {
-		enable, detail = "reconfigure", "run its setup again, with what it has now"
-	}
-	defaultWhy := "enable it first — only a working harness can be the default"
-	if h.Default {
-		defaultWhy = "already the default"
-	}
-	// A harness whose image declares no setup — `shell` is the one that ships
-	// that way — has nothing to enable and nothing to turn off. The server
-	// refuses both, and disabling it would be a door that only opens one way,
-	// so neither is offered rather than offered and rejected.
-	nothingToSetUp := "it needs no setup — there is nothing to run"
 	return []action{
-		{key: "e", press: "e", label: enable, detail: detail, enabled: h.Configurable,
-			why: nothingToSetUp},
-		{key: "d", press: "d", label: "disable", detail: "delete its secrets and configuration",
-			enabled: h.Configurable && h.State == HarnessEnabled,
-			why:     disableWhy(h, nothingToSetUp)},
-		{key: "s", press: "s", label: "default", detail: "run it when a discobox says no harness", enabled: h.State == HarnessEnabled && !h.Default,
-			why: defaultWhy},
+		{key: "s", press: "s", label: "default", detail: "run it when a discobox says no harness", enabled: !h.Default,
+			why: "already the default"},
 		{key: "v", press: "v", label: "config", detail: "everything the harness is set to", enabled: true},
 		{key: "f", press: "f", label: "files", detail: "edit one of its files in $EDITOR", enabled: len(h.Files) > 0,
 			why: "it carries no files"},
+		{key: "r", press: "r", label: "reset", detail: "forget saved settings and saved logins, back to the bundle's defaults", enabled: true},
 	}
-}
-
-// disableWhy says which of the two reasons disable does not apply for.
-func disableWhy(h Harness, nothingToSetUp string) string {
-	if !h.Configurable {
-		return nothingToSetUp
-	}
-	return "not enabled, so there is nothing to take away"
 }
 
 // harnessAct runs an action against the harness under the cursor.
@@ -523,19 +422,30 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 	}
 
 	switch key {
-	case "e":
-		return m.configureHarness(m.configServer(), harness)
-	case "d":
-		// Disabling runs the harness's deconfigure flow, which deletes the secrets
-		// and files its setup created. Archiving a discobox is reversible and
-		// asks nothing; this is not, so it asks.
-		question := fmt.Sprintf("Disable %s? The secrets and configuration its setup created are deleted, and enabling it again means answering its questions again.",
+	case "r":
+		// Reset deletes what saves from discoboxes put on the harness —
+		// settings files and the logins they created. Nothing brings those
+		// back but signing in and saving again, so it asks.
+		question := fmt.Sprintf("Reset %s to its bundle's defaults? The settings and logins saved to it from discoboxes are deleted. New discoboxes on it start signed out until a login made in one is saved again; secrets you bound to it by hand are kept.",
 			harness.displayName())
-		if harness.Default {
-			question += " It is the project default, which is released first."
+		if !harness.hasOverrides() {
+			m.dialog = confirmDialog("Reset", question, func(string) tea.Cmd {
+				return func() tea.Msg { return harnessVerbMsg{verb: HarnessReset, harness: harness} }
+			})
+			return nil
 		}
-		m.dialog = confirmDialog("Disable", question, func(string) tea.Cmd {
-			return func() tea.Msg { return harnessVerbMsg{verb: HarnessDisable, harness: harness} }
+		// A person's own files are not what a box saved, so a reset keeps
+		// them unless asked, and keeping them comes first (ADR 26-11-04-028 §1).
+		items := []action{
+			{key: "r", press: "r", label: "Reset, keep your files", detail: "the files you added or overrode stay", enabled: true},
+			{key: "a", press: "a", label: "Reset your files too", detail: "nothing but the bundle's files is left", enabled: true},
+		}
+		m.dialog = actionsDialog("Reset", question+"\n\nIt has files you added or overrode yourself.", items, func(key string) tea.Cmd {
+			verb := HarnessReset
+			if key == "a" {
+				verb = HarnessResetOverrides
+			}
+			return func() tea.Msg { return harnessVerbMsg{verb: verb, harness: harness} }
 		})
 		return nil
 	case "s":
@@ -561,63 +471,6 @@ func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness, resume *RunReq
 		}
 		return harnessDoneMsg{text: verb.done(name), resume: resume}
 	}
-}
-
-// configureHarness opens the harness's own setup in a clearly named pane, on the
-// server named. The server is the caller's to say rather than read here: the
-// harnesses screen means the one its header names, and a refused credential's
-// band means the server the credential lives on — which need not be the same
-// one, and configuring the other server's harness of the same name is the
-// mistake ADR 0131 §2 exists to prevent.
-func (m *Model) configureHarness(server string, harness Harness) tea.Cmd {
-	return m.configureHarnessThen(server, harness, nil, nil)
-}
-
-// configureHarnessThen runs the setup and, when andDefault is set, makes that
-// harness the project default once it succeeds.
-func (m *Model) configureHarnessThen(server string, harness Harness, andDefault *Harness, resume *RunRequest) tea.Cmd {
-	name := harness.displayName()
-	m.busy = "configuring " + name + "…"
-	cols, rows := m.paneCells(m.width)
-	ctx, ds := m.ctx, m.ds
-	return func() tea.Msg {
-		// Asked before the flow starts, so the probe's own bind has let go of
-		// the port by the time the flow binds it for real.
-		warning := configurePortWarning(ctx, harness, ds)
-		term, err := ds.OpenHarnessConfigure(ctx, server, harness.ID, cols, rows)
-		return configurePaneOpenedMsg{harness: harness, andDefault: andDefault, resume: resume, term: term, err: err, warning: warning}
-	}
-}
-
-// configurePortWarning is what the configure pane's header says about the
-// ports the harness's flow needs and this machine cannot give it — each port's
-// own message, in declaration order — or nothing when it can.
-func configurePortWarning(ctx context.Context, harness Harness, ds DataSource) string {
-	if len(harness.ConfigPorts) == 0 {
-		return ""
-	}
-	// An ephemeral entry has no number until the sandbox listens on one, so
-	// only the configure command can tell whether it was free.
-	ports := make([]int, 0, len(harness.ConfigPorts))
-	for _, port := range harness.ConfigPorts {
-		if !port.Ephemeral {
-			ports = append(ports, port.Port)
-		}
-	}
-	if len(ports) == 0 {
-		return ""
-	}
-	inUse := map[int]bool{}
-	for _, port := range ds.LocalPortsInUse(ctx, ports) {
-		inUse[port] = true
-	}
-	var messages []string
-	for _, port := range harness.ConfigPorts {
-		if !port.Ephemeral && inUse[port.Port] {
-			messages = append(messages, port.Unavailable)
-		}
-	}
-	return strings.Join(messages, "  ·  ")
 }
 
 // editHarnessFile hands the terminal to $EDITOR on one of the harness's files,
@@ -659,18 +512,6 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 		}
 		return tea.Batch(m.loadHarnesses(), m.report(true, "%v", msg.err))
 	}
-	if msg.canceled {
-		return m.harnessSetupCanceled(msg)
-	}
-	if msg.andDefault != nil {
-		// The listing is re-read by the verb's own completion, so it is not
-		// asked for twice here. The run rides along with it: it is waiting on
-		// the default, not on the setup that earned it.
-		return m.runHarnessVerb(HarnessSetDefault, *msg.andDefault, msg.resume)
-	}
-	// The listing too: it carries whether each discobox's harness has
-	// credentials, and a setup that just bound some should take the band
-	// that asked for it down now rather than a poll from now.
 	done := tea.Batch(m.loadHarnesses(), m.refresh(), m.report(false, "%s", msg.text))
 	if msg.resume == nil {
 		return done
@@ -682,30 +523,8 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 	return tea.Batch(done, func() tea.Msg { return resumeRunMsg{req: req} })
 }
 
-// harnessSetupCanceled takes a setup its person left without finishing. A
-// run waiting on it is not made: the harness it needed still is not set up.
-// When the run was waiting on the choice of a project default, that question
-// is asked again, since leaving one harness's setup is not an answer to it —
-// another harness may be, and Esc there ends the run as it always does.
-// Otherwise the run ends, saying plainly that nothing was made.
-func (m *Model) harnessSetupCanceled(msg harnessDoneMsg) tea.Cmd {
-	said := m.report(false, "%s", msg.text)
-	if msg.resume == nil {
-		return tea.Batch(m.loadHarnesses(), said)
-	}
-	if msg.andDefault != nil {
-		if ask, asked := m.askForADefaultHarness(*msg.resume); asked {
-			return tea.Batch(m.loadHarnesses(), said, ask)
-		}
-	}
-	if m.oneShot() {
-		return m.exit(errNothingCreated)
-	}
-	return tea.Batch(m.loadHarnesses(), m.report(false, "%s, so no discobox was created", msg.text))
-}
-
-// harnessFilesDialog is the file picker: the harness's files, the ones its
-// setup wrote first, since those are the ones worth editing by hand.
+// harnessFilesDialog is the file picker: the harness's files, the ones saved
+// from discoboxes first, since those are the ones worth editing by hand.
 func (m *Model) harnessFilesDialog(harness Harness) *dialog {
 	items := make([]action, 0, len(harness.Files))
 	for i, file := range harness.Files {
@@ -734,11 +553,22 @@ func (m *Model) harnessFilesDialog(harness Harness) *dialog {
 	return menu
 }
 
+// hasOverrides is whether a person added or overrode any of the harness's
+// files, which a plain reset keeps.
+func (h Harness) hasOverrides() bool {
+	for _, file := range h.Files {
+		if file.Source == HarnessFileOverride {
+			return true
+		}
+	}
+	return false
+}
+
 func harnessFileDetail(file HarnessFile) string {
 	notes := []string{humanBytes(int64(len(file.Content)))}
 	switch file.Source {
-	case HarnessFileConfigured:
-		notes = append(notes, "written by its setup")
+	case HarnessFileSaved:
+		notes = append(notes, "saved from a discobox")
 	case HarnessFileOverride:
 		notes = append(notes, "yours")
 	default:
@@ -746,8 +576,8 @@ func harnessFileDetail(file HarnessFile) string {
 	}
 	if len(file.Shadows) > 0 {
 		switch file.Shadows[0] {
-		case HarnessFileConfigured:
-			notes = append(notes, "over its setup's")
+		case HarnessFileSaved:
+			notes = append(notes, "over the saved one")
 		default:
 			notes = append(notes, "over the image's")
 		}
@@ -798,21 +628,20 @@ func harnessCard(st *styles, h Harness, secrets []HarnessSecret) string {
 	indent := strings.Repeat(" ", harnessCardLabel+2)
 	var b strings.Builder
 
-	state := harnessStateStyle(st, h).Render(string(h.State))
+	var role []string
 	if h.Default {
-		state += st.chipOn.Render("  ★ default")
+		role = append(role, st.chipOn.Render("★ default"))
 	}
 	if h.BuiltIn {
-		state += st.dimText.Render("  built-in")
+		role = append(role, st.dimText.Render("built-in"))
 	}
-	fmt.Fprintln(&b, label("State"), state)
+	if len(role) > 0 {
+		fmt.Fprintln(&b, label("Role"), strings.Join(role, "  "))
+	}
 	if h.Slug != "" && h.Slug != h.displayName() {
 		fmt.Fprintln(&b, label("Run as"), h.Slug)
 	}
 	fmt.Fprintln(&b, label("ID"), h.ID)
-	if h.Error != "" {
-		fmt.Fprintln(&b, label("Error"), st.statusER.Render(h.Error))
-	}
 	if h.Bundle != "" {
 		fmt.Fprintln(&b, label("Bundle"), h.Bundle)
 	}
@@ -946,9 +775,7 @@ func (m *Model) harnessHints() []hint {
 // exec
 
 // harnessExec hands the terminal to an action that needs a real one: $EDITOR
-// on one of a harness's files, and $EDITOR on a tool's config (tools.go). A
-// harness's own setup is not one of them: it runs in a configuration pane
-// (OpenHarnessConfigure).
+// on one of a harness's files, and $EDITOR on a tool's config (tools.go).
 //
 // Bubble Tea releases the terminal — the alternate screen, raw mode, its own
 // input reader — for as long as the action runs and takes it back when it

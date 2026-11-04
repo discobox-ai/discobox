@@ -138,7 +138,7 @@ func useFixture(t *testing.T) (*Service, *containerProvider, *gorm.DB) {
 	failure := createFailure
 	if err := appStore.CreateSandbox(ctx, &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-1",
-		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Bundle: codexBundle, BundleDigest: codexBundleV1},
+		SandboxManifest: model.SandboxManifest{Bundle: codexBundle, BundleDigest: codexBundleV1},
 		ResourceLifecycle: model.ResourceLifecycle{
 			DesiredState: model.DesiredStatePresent, State: model.SandboxStateFailed,
 			Generation: 3, ObservedGeneration: 3, ErrorMessage: &failure,

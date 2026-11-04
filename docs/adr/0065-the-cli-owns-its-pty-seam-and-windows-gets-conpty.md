@@ -1,6 +1,6 @@
 # 0065 — The CLI owns its pty seam, and Windows gets ConPTY
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md)
 - **Date**: 2026-08-19
 
 ## Context

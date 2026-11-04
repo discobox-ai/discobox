@@ -57,7 +57,7 @@ flag the `default` alias resolves.
 ## Copying (`copy.go`)
 
 Creation seeds the built-in harnesses into every project, then optionally
-copies providers, pools, and configured harnesses from a source project the
+copies providers, pools, and harnesses from a source project the
 caller is a member of (for a person discobot asserted, the project their
 assertion names, and only that one). See
 [ADR 0023](../../../../docs/adr/0023-projects-are-created-by-copy-and-deleted-only-when-empty.md)
@@ -74,7 +74,7 @@ for what is copied and why.
   seeding goes through `HarnessConfigs.SeedBuiltIns`.
 - Harness config copies, their secrets, and the bindings on them and on the
   project are written through the store, each recorded as the system's copy. A seeded built-in takes only the
-  source's configured state, never its image; a user-created config is copied
+  source's saved overlay and egress level, never its bundle; a user-created config is copied
   whole. Each secret is opened and re-sealed under a new ID, once per copy.
   Reads come straight from the store.
 

@@ -63,6 +63,12 @@
   bytes.** A preview's `previous` is the stored file as the bundle shipped
   it and its `file` is exporter output; laid out differently, a one-setting
   change diffs as the whole file. The first fix compared them byte for byte.
+- **Nothing teaches configuring a harness.** A harness is signed in and set
+  up inside a discobox, and a box's change is saved with `admin harness save`
+  or the console's harness-changes band (ADR 26-11-02-152). Help, a hint or a
+  band that sends somebody to a setup out here, or warns them off signing in
+  inside the box, is the model that was removed. `admin harness reset` is the
+  one way back to a bundle's defaults.
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line
   comes out with the spinner glued to its front.
@@ -134,9 +140,8 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   exception to ADR 26-10-23-600 §1: `skills`, moved to `admin skills`, kept
   no root alias, by the owner's call on #490; a reference to `discobox skills`
   is a command that fails, and moves as a flag's does. Skills (`.agents/skills`, `sandbox-agent/features/*/skills`,
-  `access/skills`, and the discobox-ai/skills repository), bats tests, harness hints (`harness/*/image.json`,
-  `configure.sh`), design docs and the argv the console builds
-  (`tui_local.go`, `tui/options.go`) move with it. The `run` rename also
+  `access/skills`, and the discobox-ai/skills repository), bats tests, harness hints (`harness/*/image.json`),
+  design docs and the argv the console builds (`tui/options.go`) move with it. The `run` rename also
   missed, on a first pass:
   - format strings (`"%[1]s new"`, `"%s new %q"`);
   - the bare word in help prose ("By default new opens…").

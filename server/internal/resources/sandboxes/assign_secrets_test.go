@@ -2,9 +2,7 @@ package sandboxes
 
 import (
 	"context"
-	"errors"
 	"io"
-	"net/http"
 	"testing"
 	"time"
 
@@ -187,18 +185,19 @@ func TestAssignSandboxHarnessSecretsMintsPushesAndReuses(t *testing.T) {
 	}
 }
 
-func TestAssignSandboxHarnessSecretsBlocksUnboundRequired(t *testing.T) {
+// A second harness with no credential bound still runs: it starts signed out,
+// and is signed in inside the box (ADR 26-11-02-152 §1).
+func TestAssignSandboxHarnessSecretsRunsAnUnboundHarnessSignedOut(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newAssignFixture(t)
-	config := codexConfig(t, svc.store) // OPENAI_API_KEY required, no binding
+	config := codexConfig(t, svc.store) // OPENAI_API_KEY declared required, no binding
 
-	_, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID)
-	if err == nil {
-		t.Fatal("expected 400 for unbound required secret")
+	sentinels, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID)
+	if err != nil {
+		t.Fatalf("assign an unbound harness: %v", err)
 	}
-	var statusErr interface{ StatusCode() int }
-	if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest {
-		t.Fatalf("err = %v, want 400", err)
+	if _, ok := sentinels["OPENAI_API_KEY"]; ok {
+		t.Fatalf("sentinels = %v, want none for a variable nothing binds", sentinels)
 	}
 }
 

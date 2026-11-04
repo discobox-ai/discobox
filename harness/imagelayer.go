@@ -307,12 +307,6 @@ func mergeHarness(base, over *Image) *Image {
 	if len(over.RelaunchCommand) > 0 {
 		merged.RelaunchCommand = append([]string{}, over.RelaunchCommand...)
 	}
-	if over.Config != nil {
-		config := *over.Config
-		config.Command = append([]string(nil), over.Config.Command...)
-		config.Ports = append([]ConfigPort(nil), over.Config.Ports...)
-		merged.Config = &config
-	}
 	if over.SaveBack != nil {
 		merged.SaveBack = over.SaveBack
 	}

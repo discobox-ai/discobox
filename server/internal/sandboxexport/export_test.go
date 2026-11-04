@@ -67,7 +67,6 @@ func sampleManifest() *Manifest {
 			Manifest: model.SandboxManifest{
 				Image:       image,
 				ImageDigest: "sha256:abc",
-				HarnessMode: "run",
 				Env:         map[string]string{"TZ": "UTC"},
 			},
 			Secrets: []SecretBinding{{Env: "GITHUB_TOKEN", Secret: "github"}},

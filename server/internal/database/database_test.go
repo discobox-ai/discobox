@@ -954,8 +954,7 @@ func TestMigrateLiftsTheLimitOnConfiguredHarnessSecrets(t *testing.T) {
 		}
 	}
 	if err := db.Write.WithContext(ctx).Create(&model.HarnessConfig{
-		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", Bundle: "img:1",
-		Configured: true, ConfiguredSecretIDs: []string{configured.ID, chosen.ID},
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", Bundle: "img:1", ConfiguredSecretIDs: []string{configured.ID, chosen.ID},
 	}).Error; err != nil {
 		t.Fatalf("seed harness config: %v", err)
 	}
@@ -1012,7 +1011,7 @@ func TestMigrateHarnessTemplatesToLiteralSettingsAndCredentialBindings(t *testin
 
 	const oldTrust = "\n{{- if .workingDir }}\n[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n{{- end }}\n"
 	stamp := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	row := model.HarnessConfig{ID: "hc_legacy", ProjectID: "project-1", Slug: "legacy", Name: "Legacy", Bundle: "img:1", Configured: true}
+	row := model.HarnessConfig{ID: "hc_legacy", ProjectID: "project-1", Slug: "legacy", Name: "Legacy", Bundle: "img:1"}
 	if err := db.Write.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -1402,14 +1401,14 @@ func TestMigrateDropsHarnessImageColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	beforeBundles := model.HarnessConfig{
-		ID: "hc-1", ProjectID: project.ID, Slug: "acme", Name: "Acme", Configured: true,
+		ID: "hc-1", ProjectID: project.ID, Slug: "acme", Name: "Acme",
 		RunCommand: []string{"acme"}, Env: map[string]string{"ACME": "1"},
 	}
 	onBundle := model.HarnessConfig{
 		ID: "hc-2", ProjectID: project.ID, Slug: "codex", Name: "Codex",
 		Bundle: "example.com/codex:v1", BundleDigest: "sha256:bundle",
 	}
-	manifestFile := model.HarnessConfig{ID: "hc-3", ProjectID: project.ID, Slug: "mac", Name: "Mac", Configured: true}
+	manifestFile := model.HarnessConfig{ID: "hc-3", ProjectID: project.ID, Slug: "mac", Name: "Mac"}
 	for _, config := range []*model.HarnessConfig{&beforeBundles, &onBundle, &manifestFile} {
 		if err := db.Write.Create(config).Error; err != nil {
 			t.Fatal(err)
@@ -1457,13 +1456,13 @@ func TestMigrateDropsHarnessImageColumns(t *testing.T) {
 		}
 		return got
 	}
-	if got := read(beforeBundles.ID); !got.Configured || len(got.RunCommand) != 1 || got.Env["ACME"] != "1" || got.Bundle != "" {
+	if got := read(beforeBundles.ID); len(got.RunCommand) != 1 || got.Env["ACME"] != "1" || got.Bundle != "" {
 		t.Errorf("config from before bundles = %+v, want its manifest kept", got)
 	}
 	if got := read(onBundle.ID); got.Bundle != onBundle.Bundle || got.BundleDigest != onBundle.BundleDigest {
 		t.Errorf("config on a bundle = %+v, want its bundle kept", got)
 	}
-	if got := read(manifestFile.ID); got.Slug != "mac" || !got.Configured || got.Bundle != "" {
+	if got := read(manifestFile.ID); got.Slug != "mac" || got.Bundle != "" {
 		t.Errorf("manifest-file config = %+v, want its row kept with no bundle", got)
 	}
 	var gotSandbox model.Sandbox

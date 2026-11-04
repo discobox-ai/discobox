@@ -876,9 +876,6 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if opts.HarnessConfigID != nil {
 		config.HarnessConfigId = poolclient.NewOptString(*opts.HarnessConfigID)
 	}
-	if opts.HarnessMode != "" {
-		config.HarnessMode = poolclient.NewOptSandboxConfigHarnessMode(poolclient.SandboxConfigHarnessMode(opts.HarnessMode))
-	}
 	if opts.ResolvedHarnessConfig != nil {
 		rhc := opts.ResolvedHarnessConfig
 		resolved := poolapimodel.ResolvedHarnessConfig{
@@ -896,9 +893,6 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 		}
 		if len(rhc.RelaunchCommand) > 0 {
 			resolved.RelaunchCommand = poolclient.NewOptNilStringArray(rhc.RelaunchCommand)
-		}
-		if len(rhc.ConfigCommand) > 0 {
-			resolved.ConfigCommand = poolclient.NewOptNilStringArray(rhc.ConfigCommand)
 		}
 		if len(rhc.Env) > 0 {
 			resolved.Env = poolclient.NewOptNilResolvedHarnessConfigEnv(poolclient.ResolvedHarnessConfigEnv(rhc.Env))

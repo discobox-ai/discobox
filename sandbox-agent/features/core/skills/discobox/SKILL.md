@@ -20,7 +20,7 @@ case — that is the user's to answer, not yours.
 `/etc/discobox/sandbox.json` is world-readable and describes this box:
 
 ```bash
-jq '{sandboxId, user, git, sources, harnessMode, prompt, volumes,
+jq '{sandboxId, user, git, sources, prompt, volumes,
      image: ._provenance.runtime.image}' /etc/discobox/sandbox.json
 ```
 
@@ -501,7 +501,7 @@ discobox proxy      forward a box's ports without the window open
 discobox cp         copy files in and out
 discobox tools      run git, ssh, VS Code, or Zed against a box
 discobox secret     secrets, bindings, and approval requests
-discobox configure  enable, disable, and set the default harness
+discobox configure  set the default harness and reset what is saved to each
 discobox admin      pools, projects, harnesses, the server and its status;
                     admin id prints this machine's peer ID and the server's
 ```

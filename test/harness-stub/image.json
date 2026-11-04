@@ -4,10 +4,7 @@
   "harness": {
     "id": "stub",
     "name": "Stub",
-    "description": "Test-only harness whose configure flow succeeds instantly without credentials.",
-    "runCommand": ["sh"],
-    "config": {
-      "command": ["/usr/local/libexec/discobox/configure-stub"]
-    }
+    "description": "Test-only harness whose terminal is a plain sh, with no CLI to install and no credential to sign in with.",
+    "runCommand": ["sh"]
   }
 }

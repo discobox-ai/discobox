@@ -44,40 +44,19 @@ flowchart LR
     WS -->|leader ↑↓| Tree["workspace tree → park / unpark a workspace"]
     WS -->|leader .| Menu["box actions menu → the list's verbs, tools, audit"]
     WS -->|leader i, issue #N · leader p, PR #N| Iss["issue tab → Issue / CommentOnIssue / SetIssueState / MergePullRequest"]
-    A -->|d s| AVerb["DataSource.DoHarness"]
-    A -->|v| ACard["config card → HarnessSecrets"]
-    A -->|e| ACfg["configuration overlay pane → OpenHarnessConfigure"]
+    A -->|s r| AVerb["DataSource.DoHarness"]
+    A -->|v enter| ACard["config card → HarnessSecrets"]
     A -->|f| AExec["tea.Exec → EditHarnessFile"]
+    WS -->|leader H, the green band| HC["harness changes review → HarnessChanges / SaveHarnessChanges / DiscardHarnessChanges"]
 ```
 
-Harness configuration is a local PTY-backed overlay pane running the same
-`discobox admin harness configure` command available from a shell. Its border
-names the flow as harness configuration, while the header outside the terminal
-shows the harness bundle's optional configuration reminder. This keeps prompts
-drawn by the harness visually inside a setup flow rather than presenting them
-as an ordinary harness session.
-
-The pane reads the command's exit status when it closes. 0 is a setup that
-worked; `harness.ConfigureCanceledExitCode` is one its person left on purpose,
-reported as a cancellation, not an error (`harnessSetupCanceled`). Neither
-makes a run that was waiting on the setup: a run waiting on the choice of a
-project default gets that question again, since leaving one harness's setup does
-not answer it, and any other run ends saying no discobox was created. Every
-other status is the failure it reports.
-
-The same header carries a **warning about the ports the flow declared and this
-machine cannot give it** (`Harness.ConfigPorts`, `configurePortWarning`), in the
-harness bundle's own words — Codex's says to sign in by device code instead,
-since its browser sign-in redirects to a `localhost:1455` that was not there to
-forward. The command in the pane binds those ports and prints the same words,
-but a full-screen sign-in paints over its terminal within seconds; the header
-is where the words survive the session. The window does not bind anything: it
-asks `DataSource.LocalPortsInUse` just before opening the flow, so the probe has
-let go by the time the command binds for real, and draws the answer in the
-header's error color. An ephemeral entry is not probed: its port is whatever the
-sandbox listens on later, so only the command can say it was taken. On a row too narrow for both, the warning outranks the
-reminder — the reminder says how the flow goes, the warning says why it will
-not.
+The harnesses screen has no setup to run: every harness can run, and is signed
+in and set up inside a discobox the way it is on anybody's own machine
+(ADR 26-11-02-152). What a box changes reaches the harness config when somebody
+saves it (see **The harness-changes band**); the screen keeps the project
+default (`s`), the config card (`v`, Enter), file edits (`f`), and reset (`r`,
+`HarnessReset`), which asks first and forgets the settings and logins saved to
+the harness, back to its bundle's defaults.
 
 
 ## The workspace tree
@@ -217,7 +196,7 @@ flowchart LR
 - **The box's actions are a menu** (`boxMenu`, `leader .`): the list's verbs
   for the box on screen — attach dropped, since it is on screen — with the
   tools and the audit after the shell. It is not offered over a screen that
-  has the leader's keys for itself (an overlay, a tool). A pane's key line
+  has the leader's keys for itself (a tool). A pane's key line
   opens with this key, so
   stop, rename and archive are found where the reader is already looking.
 - **Maximizing a column hides the tree**, so a maximized column still has the
@@ -231,7 +210,7 @@ brand, the box's source, the desktop and ports muted in the middle as links —
 and the two keys there are, `leader .` and `leader d`. It is still the
 window underneath, so the leader, the mouse and selection work as they always
 do. The chrome comes back the moment there is something for it to arrange — a
-second terminal, a shell, a tool, an overlay, the audit, a band — and the
+second terminal, a shell, a tool, the audit, a band — and the
 primary is resized each way (`bareShown`). The status line is the one row
 the box cannot draw, and so the one thing that tells a dialog the window puts
 up from a copy the box draws: every dialog stands in place of the whole
@@ -632,8 +611,8 @@ reach. `banner.go` owns it; each band supplies only its own sentence.
 
 There are three, in this order of precedence, and **only one is ever on screen**
 (`bannerShowing`): a credential an upstream has refused (`rejections.go`), then
-a harness with no credentials bound (`uncredentialed.go`), then a credential
-request waiting on this discobox (`credentials.go`). A screen carrying two
+a credential request waiting on this discobox (`credentials.go`), then a
+harness change to save (`harness_changes.go`). A screen carrying two
 exception bars has a second header rather than an exception. Work that is ready
 ahead of spawn gets no band: the header and the list already say `ready`, and the band
 is for something that needs somebody.
@@ -653,8 +632,11 @@ The band is **painted, and the text keeps its own colors over it** (`bannerRow`,
 `attentionMark`/`attentionText`/`attentionHint`): a field of color,
 a mark, the subject in bold, the call to action in the middle, and the key in
 dim grey on the right. Reversed video puts the terminal's own background on a
-colored field — a slab at a glance, and a struggle to read at a sentence. The
-field, `colAlertBG`, is a dark red under an amber `⚠`. The key is pinned to the
+colored field — a slab at a glance, and a struggle to read at a sentence. Its
+paint is a `bannerPalette`: the alert's (`alertPalette`) is a dark red field,
+`colAlertBG`, under an amber `⚠`, for every band that is something to deal
+with; the offer's (`offerPalette`) is a dark green field, `colOfferBG`, under a
+green `✎`, for the harness change, which is something to take or leave. The key is pinned to the
 right and the subject is what gives way when the window narrows: a bar that says
 a credential is waiting but not what to press about it has said the less useful
 half.
@@ -662,7 +644,7 @@ half.
 **Any band can be dismissed** — its `✕`, pinned after the key, or leader+`b` —
 and **a dismissal is of one occurrence, never of the band** (`banner.go`). Each
 band names what it is about (`bannerInstance`): the refusal by credential, host
-and when it was first seen; the signed-out harness by the harness; the request
+and when it was first seen; the harness change by its candidate; the request
 by the requests waiting (a set: answering one leaves the rest dismissed, a new
 one shows). A dismissal holds its band down only while it covers everything the
 band would say, and every read that feeds a band — the listing, the refusals,
@@ -686,43 +668,44 @@ chip reading `click to ap…` is a button with a typo on it.
 credential was refused and where, because that sentence is the one thing nobody
 inside a discobox can work out: from in there, a credential the upstream refuses
 looks exactly like Discobox failing to deliver one. Its call is the remedy that
-fits the credential — a harness's own is re-configured (the setup opens as an
-overlay over the box, and ends back on it), and any other secret's value is
-replaced from the same card the secrets screen opens. Nothing on it may read as
-an invitation to sign in *inside* the box: that cannot work and cannot stick,
-since the sandbox agent restores the delivered sentinel within 30 seconds
-(ADR 0059). The rejections it draws from are polled beside the credential inbox
-and also mark the secrets screen's rows, so one read answers both.
+fits the credential. A harness's shared login is replaced the way it was made
+(ADR 26-11-02-152): the press says to sign in again in the box with the
+harness's own login and save the change, which replaces the refused login in
+place for every box on the harness (`signInAgainDialog`). Any other secret's
+value is replaced out here, from the same card the secrets screen opens, and
+its call says *on this machine*. Once the box has a harness change to save, a
+refused harness login stands aside for the harness-changes band (`bannerWanted`):
+saving that change is the fix in progress, and a band telling somebody to do
+what they just did would hide it. The rejections it draws from are polled
+beside the credential inbox and also mark the secrets screen's rows, so one
+read answers both.
 
-**The signed-out harness's band** (`uncredentialed.go`) says the harness has a
-configure flow and no credentials bound — it was configured without signing in,
-or what it signed in with was deleted. It is about the harness not being set up,
-not about anything failing, and it means one of two things. For a harness that
-needs a credential (Claude Code, Codex) what it sends goes out bare and fails,
-from inside the box, exactly like a refusal — the same problem one step
-earlier. For one with a free tier (opencode) nothing fails: it runs, just not
-on anything the user chose, and is flagged on purpose, because working by
-default is why nobody would otherwise know it is meant to be configured. Not a
-false positive to fix. A discobox with nothing bound is allowed; the band only
-says so.
-It shares the refusal's paint, its key (`rejectedKey`, which answers whichever
-of the two is up), its remedy (the harness's setup, on the discobox's own
-server) and its rule against pointing inside the box. It sits under the refusal,
-which is the more specific sentence, and over the request, which is the symptom.
-It costs no poll: the listing carries each harness's bound-secret count
-(`HarnessConfig.boundSecrets`), so the band reads the listing's row rather than
-the one the workspace was opened from, and a configure that binds something
-takes it down on the refresh its completion asks for. It steps aside while that
-harness's own setup is the screen.
+**The harness-changes band** (`harness_changes.go`) says the box's harness
+changed its settings or signed in, and that the change can be saved. It is read
+off the listing (`Sandbox.HarnessConfigPending`, `HarnessConfigCandidate`, from
+the box's reported `harnessConfigCandidate`), so it costs no poll. It is green
+and last: an offer, not a problem, with nothing waiting on it. Its occurrence is
+the candidate, so a dismissal holds until the box captures a different change.
+A press, or leader+`H`, opens the review card, where Save takes it.
+
+**The first harness change a project's console sees is explained once**
+(`explainHarnessChangesIfOwed`): a dialog saying that saving makes the change —
+settings and login — the shared default for every discobox on that harness in
+the project, and that nothing is shared until somebody saves. It offers the
+review or Not now, and either way records it on the project
+(`Project.harnessChangesExplained`, `MarkHarnessChangesExplained`), the way the
+welcome is recorded: per project, not per machine. The window reads the flag
+when it opens (`WithHarnessChangesUnexplained`), and checks after every listing,
+so it waits for a screen with no welcome, dialog or run options in front.
 
 **The request's chip throbs** (`armBannerPulse`): the field under `click to
 answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,
 four beats of 400ms — a heartbeat rather than a blink, and never down to the
 band's own color, because a bar that flashes on and off is one the eye learns to
 look past. It is the only thing in the window that moves without somebody having
-done something. The refused and signed-out bands' chips are deliberately still:
-a credential that has been dead a while, or a harness with none, will still be
-so in a minute, and an animation spent on them is attention the waiting agent
+done something. The refused and harness-changes bands' chips are deliberately
+still: a credential that has been dead a while, or a change nobody has saved,
+will still be so in a minute, and an animation spent on them is attention the waiting agent
 does not get. The clock is armed and disarmed from `Model.Update`, where every
 way the band can come and go is seen at once, and each beat names the run it
 belongs to so a band that goes and comes back is one clock rather than two.
@@ -737,8 +720,8 @@ go the moment the band does, so a stale hit test cannot act on something nobody
 is looking at.
 
 **A click opens what the band is about** (`pressBanner`): the credential
-dialog, or the remedy for a refused or missing credential — the same place the
-band's leader key goes.
+dialog, the remedy for a refused credential, or the harness-changes review —
+the same place the band's leader key goes.
 
 Because the bands take their rows from the panes rather than adding them to the
 frame, the panes are re-laid out when one appears or goes — and the geometry is
@@ -1866,8 +1849,7 @@ now.
 looked at** (`tools.go`, ADR-26-08-27-302, ADR-0134). A tool's pane lives in the shells
 column, sorted after every shell (`execBefore`), and `Model.toolShown` is the one
 with the whole window, if any; `screenPane` is the one pane with the whole
-screen, the configuration pane or the showing tool, and every place that asked
-`overlay != nil` asks it instead.
+screen, the showing tool.
 
 - The catalog is not this package's (ADR 0125): `DataSource.Tools` merges the
   CLI's, the discobox's image and primary source, and the user's declarations,
@@ -2003,7 +1985,7 @@ Pressing a button therefore also focuses its box, and `leader ←/→` or a digi
 moves the maximized view rather than typing into something off-screen. The last
 tab closing drops the maximize, since there is then nothing to maximize over.
 `onScreen` is what is actually drawn, and the mouse routes against it: the
-overlay alone, the two columns of a split, or the single maximized box.
+showing tool alone, the two columns of a split, or the single maximized box.
 
 **A pane you opened is one you can end** (`endPane`, `endablePane`). Beside the
 maximize button, a column box wears an `[x]` when the pane it is showing is
@@ -2560,7 +2542,7 @@ The title an application sets goes two places: its own pane's top border
 (`titledEdge`), which says what that terminal is running unless a given name
 takes its place (below), and the real terminal's own title bar (`windowTitle` → `View.WindowTitle`), which is how you
 find the window among the others you have open. The title bar follows the
-primary terminal — never the focused tab or the overlay — because it is read
+primary terminal — never the focused tab — because it is read
 from outside the window, where what matters is which discobox this is and what
 its agent is doing; a tab or a report is something you are doing inside the
 window and already looking at. What the box is called (`primaryTitle`) comes
@@ -2922,26 +2904,24 @@ a picture, so the block moves, not the lines within it.
 **The harnesses are the window's, not another program's** (`harnesses.go`).
 `discobox configure` is this screen — `WithHarnesses()` opens the window
 straight onto it — rather than a menu of its own over the same harnesses, because
-choosing a harness to run and setting one up are the same job from two ends, and
+choosing a harness to run and managing one are the same job from two ends, and
 two lists of harnesses with two sets of keys is one too many. `F3` opens it from
 anywhere in the window, including from the run options, whose harness row names
 `F3` in its hint.
 
 It is drawn as the discobox list is drawn and acts as it does — chevron cursor,
-colored state glyph, a letter per action, the same modal layer for the file
-picker, the confirmation and the card — because it is the same kind of screen.
-`e` enables or reconfigures, `d` disables (asking first, since deconfigure
-deletes what the setup wrote, and releasing the project default when the target
-holds it), `s` makes it the default, `v` reads the whole configuration, `f`
-edits one of its files.
+a letter per action, the same modal layer for the file picker, the confirmation
+and the card — because it is the same kind of screen. There is no state to
+draw: every harness can run (ADR 26-11-02-152). `s` makes it the default, `v`
+reads the whole configuration, `f` edits one of its files, and `r` resets it to
+its bundle's defaults, asking first since it deletes the settings and logins
+saved to it. Unlike the list, `r` is not a refresh here: the screen re-reads
+itself on the tick while it is up, and after every action.
 
-`.` — and the right button on a row — opens those five as a menu
+`.` — and the right button on a row — opens those four as a menu
 (`harnessMenu`), each one that does not apply kept on it with the reason, and
-Enter is `e`. It stops short of one of the list's keys: there is no `r` — the
-screen re-reads itself on the tick while it is up, and after every action, so a
-key for it would ask for what is already happening.
+Enter is `v`.
 
-The setup runs in the configuration pane described at the top of this doc.
 `$EDITOR` — on one of a harness's files, and on a tool's config (`tools.go`) —
 goes through `tea.Exec` (`harnessExec`) rather than a pane: it is a local
 program that draws its own screen, and is not one of this CLI's own commands. `F3` is a function key because the prompt takes every
@@ -2949,8 +2929,8 @@ letter as text and the list has spent them on its own actions, and it is inert
 inside a pane, where every key is the sandbox's.
 
 The listing is read at startup, not when the screen is opened, because the run
-options' harness choices are built from it (`optionSet.setHarnesses`): enabling
-one makes it selectable without the window being reopened, and the default leads
+options' harness choices are built from it (`optionSet.setHarnesses`): one
+registered while the window is up is selectable without reopening it, and the default leads
 the list so an unchanged option emits no `--harness` at all. Every harness is
 offered: a harness names no platform and no image kind, which are its pool's
 (ADR 26-11-01-122), so no pool rules one out. It is the one source

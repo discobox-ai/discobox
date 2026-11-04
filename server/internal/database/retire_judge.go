@@ -10,7 +10,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/x/id"
@@ -179,7 +178,9 @@ const retiredJudgeHarnessMode = "judge"
 // the API's harness mode is run or config, and a row the API serves while its
 // purge waits on a pool that may never answer must read as one of them.
 func retireJudgeSandboxes(db *gorm.DB) error {
-	if !db.Migrator().HasTable("sandboxes") {
+	// The mode lived in sandboxes.harness_mode, which retireConfigureFlow
+	// drops after this has run; without it there is no judge left to find.
+	if !db.Migrator().HasTable("sandboxes") || !db.Migrator().HasColumn("sandboxes", "harness_mode") {
 		return nil
 	}
 	var judges []sandboxRef
@@ -190,7 +191,7 @@ func retireJudgeSandboxes(db *gorm.DB) error {
 		log.Printf("removing judge discobox %s of project %s: nothing judges credential use any more (ADR 26-10-27-880)", judge.ID, judge.ProjectID)
 		if err := db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Table("sandboxes").Where("id = ?", judge.ID).UpdateColumns(map[string]any{
-				"harness_mode":  sandboxconfig.HarnessModeRun,
+				"harness_mode":  "run",
 				"desired_state": model.DesiredStateDeleted,
 				"generation":    gorm.Expr("generation + 1"),
 				"error_message": nil,

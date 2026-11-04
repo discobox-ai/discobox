@@ -5529,39 +5529,6 @@ func (s *OptSandboxConfigFeatures) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes SandboxConfigHarnessMode as json.
-func (o OptSandboxConfigHarnessMode) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	e.Str(string(o.Value))
-}
-
-// Decode decodes SandboxConfigHarnessMode from json.
-func (o *OptSandboxConfigHarnessMode) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptSandboxConfigHarnessMode to nil")
-	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptSandboxConfigHarnessMode) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptSandboxConfigHarnessMode) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes SandboxConfigSkills as json.
 func (o OptSandboxConfigSkills) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -11146,12 +11113,6 @@ func (s *ResolvedHarnessConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.ConfigCommand.Set {
-			e.FieldStart("configCommand")
-			s.ConfigCommand.Encode(e)
-		}
-	}
-	{
 		if s.Env.Set {
 			e.FieldStart("env")
 			s.Env.Encode(e)
@@ -11177,7 +11138,7 @@ func (s *ResolvedHarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfResolvedHarnessConfig = [15]string{
+var jsonFieldsNameOfResolvedHarnessConfig = [14]string{
 	0:  "saveBack",
 	1:  "captureBaseline",
 	2:  "files",
@@ -11188,11 +11149,10 @@ var jsonFieldsNameOfResolvedHarnessConfig = [15]string{
 	7:  "description",
 	8:  "runCommand",
 	9:  "relaunchCommand",
-	10: "configCommand",
-	11: "env",
-	12: "volumes",
-	13: "secrets",
-	14: "additionalGroups",
+	10: "env",
+	11: "volumes",
+	12: "secrets",
+	13: "additionalGroups",
 }
 
 // Decode decodes ResolvedHarnessConfig from json.
@@ -11307,16 +11267,6 @@ func (s *ResolvedHarnessConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"relaunchCommand\"")
-			}
-		case "configCommand":
-			if err := func() error {
-				s.ConfigCommand.Reset()
-				if err := s.ConfigCommand.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"configCommand\"")
 			}
 		case "env":
 			if err := func() error {
@@ -11487,12 +11437,6 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.HarnessMode.Set {
-			e.FieldStart("harnessMode")
-			s.HarnessMode.Encode(e)
-		}
-	}
-	{
 		if s.Model.Set {
 			e.FieldStart("model")
 			s.Model.Encode(e)
@@ -11598,25 +11542,24 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [18]string{
+var jsonFieldsNameOfSandboxConfig = [17]string{
 	0:  "harnessConfigId",
-	1:  "harnessMode",
-	2:  "model",
-	3:  "modelReasoningLevel",
-	4:  "modelServiceTier",
-	5:  "description",
-	6:  "env",
-	7:  "git",
-	8:  "skills",
-	9:  "skillsSources",
-	10: "features",
-	11: "start",
-	12: "specFingerprint",
-	13: "name",
-	14: "prompt",
-	15: "source",
-	16: "sourceCodeReferences",
-	17: "user",
+	1:  "model",
+	2:  "modelReasoningLevel",
+	3:  "modelServiceTier",
+	4:  "description",
+	5:  "env",
+	6:  "git",
+	7:  "skills",
+	8:  "skillsSources",
+	9:  "features",
+	10: "start",
+	11: "specFingerprint",
+	12: "name",
+	13: "prompt",
+	14: "source",
+	15: "sourceCodeReferences",
+	16: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -11636,16 +11579,6 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"harnessConfigId\"")
-			}
-		case "harnessMode":
-			if err := func() error {
-				s.HarnessMode.Reset()
-				if err := s.HarnessMode.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"harnessMode\"")
 			}
 		case "model":
 			if err := func() error {
@@ -11953,46 +11886,6 @@ func (s SandboxConfigFeatures) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxConfigFeatures) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SandboxConfigHarnessMode as json.
-func (s SandboxConfigHarnessMode) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes SandboxConfigHarnessMode from json.
-func (s *SandboxConfigHarnessMode) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SandboxConfigHarnessMode to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch SandboxConfigHarnessMode(v) {
-	case SandboxConfigHarnessModeRun:
-		*s = SandboxConfigHarnessModeRun
-	case SandboxConfigHarnessModeConfig:
-		*s = SandboxConfigHarnessModeConfig
-	default:
-		*s = SandboxConfigHarnessMode(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s SandboxConfigHarnessMode) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxConfigHarnessMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

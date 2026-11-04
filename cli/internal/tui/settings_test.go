@@ -19,9 +19,9 @@ func settingsSandboxes() []Sandbox {
 func settingsSource() *fakeSource {
 	ds := newFakeSource(settingsSandboxes()...)
 	ds.harnesses = []Harness{
-		{ID: "hc_claude", Name: "Claude Code", Slug: "claude", State: HarnessEnabled},
-		{ID: "hc_codex", Name: "Codex", Slug: "codex", State: HarnessEnabled},
-		{ID: "hc_off", Name: "Off", Slug: "off", State: HarnessDisabled},
+		{ID: "hc_claude", Name: "Claude Code", Slug: "claude"},
+		{ID: "hc_codex", Name: "Codex", Slug: "codex"},
+		{ID: "hc_other", Name: "Other", Slug: "other"},
 	}
 	stored := BoxSettings{Name: "gen-name", HarnessID: "hc_claude",
 		Egress: Egress{Allow: []string{"github.com"}}}
@@ -115,10 +115,13 @@ func TestSettingsChangesTheHarnessOnlyWhenStopped(t *testing.T) {
 	if !f.answerable(1) || harness.choices[0].key != "hc_claude" {
 		t.Fatalf("the stopped box's row should open on its harness, got %+v", harness.choices)
 	}
+	// Every harness can run, so every one is offered.
+	offered := false
 	for _, c := range harness.choices {
-		if c.key == "hc_off" {
-			t.Fatal("a disabled harness should not be offered")
-		}
+		offered = offered || c.key == "hc_other"
+	}
+	if !offered {
+		t.Fatalf("every harness should be offered, got %+v", harness.choices)
 	}
 	f.choose("harness", "hc_codex")
 	send(t, m, keyPress("enter"))

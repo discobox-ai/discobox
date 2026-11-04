@@ -68,23 +68,19 @@
   a modal (`modalUp` — the introduction, a dialog, the run options), then a
   pane (`inPanes`), then the harnesses/secrets screens, then the console.
   `updateKey`, `updatePaste` and `hints()` must follow the same order.
-  The harnesses and secrets screens are the trap: they open panes of their own
-  and stay open behind them, so a check on `harnessesOpen`/`secretsOpen` that
+  The harnesses and secrets screens are the trap: they stay open behind a
+  workspace drawn over them, so a check on `harnessesOpen`/`secretsOpen` that
   is not guarded by `!m.inPanes()` steals every key from the terminal drawn
-  over it — and on that screen the stolen keys are commands: Enter in a
-  harness's configure terminal becomes "reconfigure the highlighted harness"
-  and restarts the flow it was typed into.
+  over it — and on those screens the stolen keys are commands.
   The list in the workspace tree is the same trap from the other side: while
   it has the keys beside a page (`listHasKeys`), the page's keys, hints and
   paste are not the page's, and every one of the three asks it — a page
   whose key line kept offering its own keys offered Enter as "bind" while
   Enter attached the box under the list's cursor.
-  The audit screen is the trap a third way: it is drawn over the panes and
-  ahead of an overlay, so anything that reaches a page from it — the leader's
-  F3, say, to the harnesses page, where Enter on a harness opens a configure
-  pane of its own — closes it first (`openPage`), or the audit comes back in
-  front of that pane, takes its keys into the audit search, and leaves nothing
-  to click.
+  The audit screen is the trap a third way: it is drawn over the panes, so
+  anything that reaches a page from it — the leader's F3, say, to the
+  harnesses page — closes it first (`openPage`), or the audit comes back in
+  front, takes its keys into the audit search, and leaves nothing to click.
 
 - **A dialog opened by a slow read waits behind a card of its own, and
   replaces only that card.** The answer arrives whenever the server gives it;
@@ -155,7 +151,7 @@
   a window is the list; they go through `Model.runFailed`. Leaving the setup a
   run stopped for, and answering a question put up over the wait, were missed
   the same way. This is the third time: check every path a new modal or
-  overlay closes by — key, click, detach, failure — for what it uncovers.
+  pane closes by — key, click, detach, failure — for what it uncovers.
   A box link pressed in a bare attach was the fourth: `landOn` would have
   parked the attached box and opened another, while `m.attach` and `made()`
   went on naming the first. A path reachable inside such a window that
@@ -178,7 +174,7 @@
   Parking moves the whole value aside and unparking moves it back, so a field
   added beside it on `Model` is one that silently belongs to whichever box is
   on screen after a switch. What is the screen's alone — the generation, the
-  opens in flight, the overlay — is ended in `endLiveScreen`, the one teardown
+  opens in flight, the audit — is ended in `endLiveScreen`, the one teardown
   closing and parking share.
 - **The busy line is the screen's to end only when the screen owns it.** A
   create's narration is the window's: it keeps reporting into the workspace
@@ -299,3 +295,18 @@
   accepts any Ctrl or Alt letter, so a key taken first is one some user's
   leader is, and a leader that cannot be pressed in a harness terminal leaves
   no way out of it.
+
+## Harnesses
+
+- **Nothing offers to set a harness up.** Every harness runs (ADR
+  26-11-02-152); a harness is signed in inside a discobox and its change saved
+  from the harness-changes band. A new action, card or band that sends somebody
+  to configure a harness out here, or tells them not to sign in inside the box,
+  is the model this replaced.
+- **The harness-changes band's occurrence is its candidate.** Keyed on the box
+  alone, a dismissal would hide every later change; keyed on nothing, it would
+  come back on every listing.
+- **The explainer is recorded whichever way it is answered**, and only shown
+  with nothing else in front (`explainHarnessChangesIfOwed`). A path that opens
+  it over the welcome or another dialog, or that records it without showing
+  it, loses the one explanation the project gets.

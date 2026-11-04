@@ -54,7 +54,7 @@ func TestLoadDecodesTheOneResolvedHarness(t *testing.T) {
 				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
 			}
 		},
-		"harnessMode": "config",
+		"harnessMode": "run",
 		"env": {
 			"BASE": "sandbox"
 		},
@@ -77,42 +77,17 @@ func TestLoadDecodesTheOneResolvedHarness(t *testing.T) {
 	if cfg.Harness.ID != "claude" || len(cfg.Harness.Files) != 1 {
 		t.Fatalf("harness = %#v, want claude with one file", cfg.Harness)
 	}
-	if cfg.HarnessMode != "config" {
-		t.Fatalf("harness mode = %q, want config", cfg.HarnessMode)
-	}
-	if len(cfg.Harness.Command) != 1 || cfg.Harness.Command[0] != "configure-claude" {
-		t.Fatalf("harness command = %#v, want config command", cfg.Harness.Command)
+	// A bootstrap written before configure was removed still names a harness
+	// mode and a configure command (ADR 26-11-02-152); both are ignored, and
+	// the harness runs its run command.
+	if len(cfg.Harness.Command) != 1 || cfg.Harness.Command[0] != "claude" {
+		t.Fatalf("harness command = %#v, want the run command", cfg.Harness.Command)
 	}
 	if cfg.Env["BASE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox config env", cfg.Env)
 	}
 	if len(cfg.Prompt) != 2 || cfg.Prompt[0] != "fix" || cfg.Prompt[1] != "the bug" {
 		t.Fatalf("prompt = %#v, want [fix, the bug]", cfg.Prompt)
-	}
-}
-
-func TestConfigFromEffectiveSelectsHarnessCommandForMode(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		mode string
-		want string
-	}{
-		{name: "run", mode: "run", want: "run-harness"},
-		{name: "config", mode: "config", want: "configure-harness"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			cfg := configFromEffective(sandboxconfig.Config{
-				HarnessMode: test.mode,
-				Harness: sandboxconfig.Harness{
-					ID:            "test",
-					RunCommand:    []string{"run-harness"},
-					ConfigCommand: []string{"configure-harness"},
-				},
-			})
-			if len(cfg.Harness.Command) != 1 || cfg.Harness.Command[0] != test.want {
-				t.Fatalf("harness command = %#v, want %q", cfg.Harness.Command, test.want)
-			}
-		})
 	}
 }
 

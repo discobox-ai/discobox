@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
-
-	"github.com/discobox-ai/discobox/termpane"
 )
 
 // The windows that are one command's own: `discobox run`, which is the window
@@ -344,32 +342,6 @@ func TestEscOnARunsHarnessQuestionEndsTheCommand(t *testing.T) {
 		d.wait("the window to close", func() bool { return m.quit })
 		if !errors.Is(m.exitErr, errNothingCreated) || len(ds.runRequests()) != 0 {
 			t.Fatalf("exitErr = %v runs = %+v, want nothing created", m.exitErr, ds.runRequests())
-		}
-	})
-}
-
-// A harness setup the run stopped for that fails ends the run, and with it the
-// window.
-func TestARunWindowsFailedSetupEndsWithTheError(t *testing.T) {
-	t.Parallel()
-	synctest.Test(t, func(t *testing.T) {
-		ds := noDefaultSource(t)
-		ds.configureErr = errors.New("the setup exited before it finished")
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
-		d.wait("the harness question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
-
-		for i, item := range m.dialog.items {
-			if item.label == "Custom" {
-				d.key(itoa(i + 1))
-				break
-			}
-		}
-		d.wait("the window to close", func() bool { return m.quit })
-		if m.exitErr == nil || !strings.Contains(m.exitErr.Error(), "the setup exited before it finished") {
-			t.Fatalf("exitErr = %v, want the setup's failure", m.exitErr)
-		}
-		if len(ds.runRequests()) != 0 {
-			t.Fatalf("runs = %+v, want nothing created", ds.runRequests())
 		}
 	})
 }
@@ -716,31 +688,6 @@ func TestStoppingFromAnAttachKeepsTheWindow(t *testing.T) {
 		}
 		if m.primary() == nil {
 			t.Fatal("the workspace should still be open")
-		}
-	})
-}
-
-// Leaving a setup the run stopped for, before it has finished, is turning the
-// run down: the window goes with nothing made rather than landing on the list
-// with the run dropped.
-func TestDetachingARunsSetupEndsTheCommand(t *testing.T) {
-	t.Parallel()
-	synctest.Test(t, func(t *testing.T) {
-		ds := noDefaultSource(t)
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
-		d.wait("the harness question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
-
-		for i, item := range m.dialog.items {
-			if item.label == "Custom" {
-				d.key(itoa(i + 1))
-				break
-			}
-		}
-		d.wait("the setup", func() bool { return m.overlay != nil && m.overlay.configure != nil })
-		d.dispatch(paneMsg{id: m.overlay.id, msg: termpane.DetachMsg{}})
-		d.wait("the window to close", func() bool { return m.quit })
-		if !errors.Is(m.exitErr, errNothingCreated) || len(ds.runRequests()) != 0 {
-			t.Fatalf("exitErr = %v runs = %+v, want nothing created", m.exitErr, ds.runRequests())
 		}
 	})
 }

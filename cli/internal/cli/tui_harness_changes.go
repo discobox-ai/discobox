@@ -25,7 +25,7 @@ func (d *apiDataSource) HarnessChanges(ctx context.Context, sandboxID string) (t
 func toTUIHarnessChanges(p *api.HarnessConfigChanges) tui.HarnessChanges {
 	c := tui.HarnessChanges{CandidateID: p.CandidateId.Or(""), State: terminalSafe(p.State), Revision: p.ConfigRevision}
 	for _, f := range p.Files {
-		c.Files = append(c.Files, tui.HarnessChangedFile{Path: terminalSafe(f.Path), Action: harnessChangeAction(f), Diff: harnessChangeDiff(f)})
+		c.Files = append(c.Files, tui.HarnessChangedFile{Path: terminalSafe(f.Path), Action: harnessChangeAction(f), Diff: harnessChangeDiff(f), Shadowed: f.Shadowed.Or(false)})
 	}
 	for _, credential := range p.Credentials {
 		text := fmt.Sprintf("%s %s (%s)", credential.Provider, credential.EnvName, credential.Type)

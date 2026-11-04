@@ -60,7 +60,6 @@ type HarnessConfigCandidate = apigen.HarnessConfigCandidate
 type HarnessConfigCandidateRequest = apigen.HarnessConfigCandidateRequest
 type HarnessConfigChanges = apigen.HarnessConfigChanges
 type HarnessConfigFile = apigen.HarnessConfigFile
-type HarnessConfigPort = apigen.HarnessConfigPort
 type HarnessConfigReconsideration = apigen.HarnessConfigReconsideration
 type HarnessConfigSaveBack = apigen.HarnessConfigSaveBack
 type HarnessConfigSaveResult = apigen.HarnessConfigSaveResult

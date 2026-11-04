@@ -38,7 +38,6 @@ setup_file() {
   export DISCOBOX_BATS_DB="${DISCOBOX_BATS_DB:-$DISCOBOX_BATS_TMP/discobox.sqlite}"
   export DISCOBOX_BATS_SERVER_LOG="${DISCOBOX_BATS_SERVER_LOG:-$DISCOBOX_BATS_TMP/server.log}"
   export DISCOBOX_BATS_POOL_FILE="$DISCOBOX_BATS_TMP/pool-id"
-  export DISCOBOX_BATS_CONFIGURE_LOG="${DISCOBOX_BATS_CONFIGURE_LOG:-$DISCOBOX_BATS_TMP/configure.log}"
   mkdir -p "$DISCOBOX_BATS_DATA_DIR" "$DISCOBOX_BATS_CONFIG_DIR" "$DISCOBOX_BATS_CACHE_DIR" "$DISCOBOX_BATS_STATE_DIR"
 
   DISCOBOX_BATS_PORT="$(python3 - <<'PY'
@@ -223,8 +222,8 @@ PY
 
 # ensure_pool waits for the pool the server seeds at startup and remembers its
 # id for teardown. Nothing here picks a pool: a sandbox goes on the pool it names
-# or on the project's default pool, and the configure flow names none, so the
-# project default is where the configure sandbox lands. That makes the seeded
+# or on the project's default pool, and this file's boxes name none, so the
+# project default is where they land. That makes the seeded
 # default pool the one that has to be healthy, so this file uses it rather than
 # creating a second provider. Its provider already binds the host Docker socket
 # (so the locally built sandbox base image is visible) and reads PORT for its
@@ -246,19 +245,6 @@ ensure_pool() {
   wait_for_pool_ready "$pool_id" || return 1
   printf '%s' "$pool_id" >"$DISCOBOX_BATS_POOL_FILE"
   cat "$DISCOBOX_BATS_POOL_FILE"
-}
-
-# configure_stub runs one full configure of a harness. A harness is only
-# selectable for a sandbox once its configure flow has succeeded, so this is a
-# precondition for having a harness-backed (and therefore bundle-pinned) sandbox
-# at all, not something this file is testing.
-configure_stub() {
-  local harness="$1" raw status
-  raw="$("$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default \
-    admin harness configure "$harness" </dev/null 2>&1)"
-  status=$?
-  printf '===== configure %s =====\n%s\n' "$harness" "$raw" >>"$DISCOBOX_BATS_CONFIGURE_LOG"
-  return "$status"
 }
 
 # build_upgrade_stub builds the stub's bundle under this file's own tag, with a
@@ -340,9 +326,6 @@ wait_for_sandbox_running() {
   [ -n "$harness_id" ]
   before_digest="$(printf '%s' "$output" | json_get bundleDigest)"
   [ -n "$before_digest" ]
-
-  run configure_stub upgrade-stub
-  [ "$status" -eq 0 ]
 
   run cli admin box create --name "upgrade-e2e" --harness upgrade-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
@@ -430,9 +413,6 @@ wait_for_sandbox_running() {
   [ "$status" -eq 0 ]
   harness_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$harness_id" ]
-
-  run configure_stub power-stub
-  [ "$status" -eq 0 ]
 
   run cli admin box create --name "upgrade-power-e2e" --harness power-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]

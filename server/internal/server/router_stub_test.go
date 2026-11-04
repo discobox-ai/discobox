@@ -395,36 +395,7 @@ func (s *routerTestServices) AssignSandboxHarnessSecrets(_ context.Context, proj
 	return map[string]string{}, nil
 }
 
-func (s *routerTestServices) ConfigureHarnessConfig(_ context.Context, projectID, configID string) (*model.Sandbox, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if projectID != s.project.ID {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	if _, ok := s.harnessConfigs[configID]; !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
-	}
-	now := time.Now().UTC()
-	return &model.Sandbox{
-		ID: id.NewString(id.PrefixSandbox), ProjectID: projectID, Name: "configure-test",
-		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStatePending, Generation: 1},
-		CreatedAt:         now, UpdatedAt: now,
-	}, nil
-}
-
-func (s *routerTestServices) AttachHarnessConfigConfigure(_ context.Context, projectID, configID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if projectID != s.project.ID {
-		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	if _, ok := s.harnessConfigs[configID]; !ok {
-		return apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
-	}
-	return nil
-}
-
-func (s *routerTestServices) CommitHarnessConfigConfigure(_ context.Context, projectID, configID string) (*model.HarnessConfig, error) {
+func (s *routerTestServices) ResetHarnessConfig(_ context.Context, projectID, configID string, _ bool) (*model.HarnessConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
@@ -434,22 +405,7 @@ func (s *routerTestServices) CommitHarnessConfigConfigure(_ context.Context, pro
 	if !ok {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
-	config.Configured = true
-	s.harnessConfigs[configID] = config
-	return &config, nil
-}
-
-func (s *routerTestServices) DeconfigureHarnessConfig(_ context.Context, projectID, configID string) (*model.HarnessConfig, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if projectID != s.project.ID {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	config, ok := s.harnessConfigs[configID]
-	if !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
-	}
-	config.Configured = false
+	config.ConfiguredFiles, config.ConfiguredSecretIDs = nil, nil
 	s.harnessConfigs[configID] = config
 	return &config, nil
 }

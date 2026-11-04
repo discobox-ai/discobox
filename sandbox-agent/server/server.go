@@ -66,7 +66,6 @@ type Config struct {
 	Prompt                []string
 	// Description seeds the meta file when the sandbox has none (ADR 0136).
 	Description string
-	HarnessMode string
 	Resources   config.ResourceConfig
 	// PoolPublicKey verifies the tokens the pool signs to deliver runtime
 	// config, and nothing else (ADR 26-10-08-127 §3). Empty accepts none.
@@ -131,7 +130,6 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Env:                   cfg.Env,
 		Prompt:                cfg.Prompt,
 		Description:           cfg.Description,
-		HarnessMode:           cfg.HarnessMode,
 		Resources:             cfg.Resources,
 		PoolPublicKey:         cfg.PoolPublicKey,
 		AwaitsRuntimeConfig:   cfg.AwaitsRuntimeConfig,
@@ -263,7 +261,6 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		Units:              cfg.ExecUnitManager,
 		Installer:          cfg.Installer,
 		PrimaryState:       localStore,
-		HarnessMode:        cfg.HarnessMode,
 		Prompt:             cfg.Prompt,
 		Skills:             cfg.Skills,
 		SkillsSources:      cfg.SkillsSources,
@@ -489,13 +486,6 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 		UID:             uid,
 		ExcludeTCPPorts: agentListenPorts(cfg.ListenAddress),
 	}
-	// A configure sandbox's sign-in may listen on a callback port the user's
-	// browser is about to be redirected to, which the CLI can forward only once
-	// it is reported (ADR 26-10-09-867). The sandbox is short-lived and runs
-	// little else, so it scans far more often than a working one.
-	if cfg.HarnessMode == config.HarnessModeConfig {
-		watcher.Interval = ports.ConfigureInterval
-	}
 	// One seam, two directories behind it: the image's declarations and the
 	// repository's, which services.Discover already merges. A declaration that
 	// states a protocol keeps its port out of the probe queue entirely, which
@@ -684,52 +674,35 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		return err
 	}
 	manager, execManager, localStore := built.terminals, built.execs, built.store
-	if cfg.HarnessMode == config.HarnessModeConfig {
-		// Before anything can be seeded: the configure command runs as the
-		// sandbox user, and this is the only part of root-owned /run/discobox
-		// it may write.
-		if err := ensureConfigureDir(execManager.DefaultUser()); err != nil {
-			return err
-		}
+	// The wakes that fell due while the sandbox was down are handed to the
+	// harness this boot launches, and nowhere else (ADR 26-10-16-337 §7).
+	// They are taken before the launch starts, so an attach that beats
+	// boot to the primary carries them as well as boot would.
+	if paths, err := built.autostop.TakeDueWakes(); err != nil {
+		logger.Warn("hand due wakes to the primary terminal", "error", err)
+	} else if len(paths) > 0 {
+		logger.Info("sandbox woken", "wakes", paths)
+		manager.HandWake(paths)
 	}
-	// Config mode defers the primary terminal to the first attach. The configure
-	// command is interactive and reads inputs seeded into the sandbox after it is
-	// running, so launching it at boot would race that seeding. Attaching to the
-	// virtual primary exec id launches it (see terminal.ResolvePrimary).
-	if config.WorkedIn(cfg.HarnessMode) {
-		// The wakes that fell due while the sandbox was down are handed to the
-		// harness this boot launches, and nowhere else (ADR 26-10-16-337 §7).
-		// They are taken before the launch starts, so an attach that beats
-		// boot to the primary carries them as well as boot would.
-		if paths, err := built.autostop.TakeDueWakes(); err != nil {
-			logger.Warn("hand due wakes to the primary terminal", "error", err)
-		} else if len(paths) > 0 {
-			logger.Info("sandbox woken", "wakes", paths)
-			manager.HandWake(paths)
+	go func() {
+		switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
+		case err == nil, errors.Is(err, context.Canceled):
+		default:
+			logger.Error("launch primary terminal", "error", err)
 		}
-		go func() {
-			switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
-			case err == nil, errors.Is(err, context.Canceled):
-			default:
-				logger.Error("launch primary terminal", "error", err)
-			}
-		}()
-	}
+	}()
 	// The repository's declared services come up alongside the primary
 	// terminal (ADR 0070 §5). Like the primary launch this runs from a
 	// goroutine started before the server serves, so a slow service script
-	// cannot hold up the agent answering — and a config-mode sandbox starts
-	// none, since it exists to run one setup command and end, not to be worked
-	// in.
-	if config.WorkedIn(cfg.HarnessMode) && built.services != nil {
+	// cannot hold up the agent answering.
+	if built.services != nil {
 		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
 	}
 	// The monitors an agent enabled resume with the box (ADR 26-10-31-073
 	// §5), once the working tree a monitor runs in is there and the whole
-	// provisioning run, async features included, is over. A configure sandbox
-	// is not worked in, and runs none; nor does a Windows one, which cannot run
-	// a monitor's script (monitors.Supported).
-	if config.WorkedIn(cfg.HarnessMode) && monitors.Supported {
+	// provisioning run, async features included, is over. A Windows box runs
+	// none: it cannot run a monitor's script (monitors.Supported).
+	if monitors.Supported {
 		if reconciler, err := newMonitorReconciler(execManager, logger); err != nil {
 			logger.Warn("sandbox agent monitors disabled", "error", err)
 		} else {
@@ -752,11 +725,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	go built.portsWatch.Run(ctx)
 	// The sandbox powers itself off once nothing has happened in it for the
 	// idle timeout, and the pool agent's auto-start brings it back (ADR 0108).
-	// A configure-mode sandbox runs one setup command for a flow the control
-	// plane drives, so its lifetime belongs to that flow and not to this.
-	if config.WorkedIn(cfg.HarnessMode) {
-		go built.autostop.Run(ctx)
-	}
+	go built.autostop.Run(ctx)
 	go func() {
 		if err := harnesshooks.Serve(ctx, harnesshooks.SocketPath(cfg.RuntimeDir), localStore); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Debug("sandbox agent hook collector stopped", "error", err)

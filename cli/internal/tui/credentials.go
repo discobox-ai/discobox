@@ -1230,7 +1230,7 @@ func (m *Model) viewCredentialBanner(width int) string {
 	body := st.attentionText.Render(what) +
 		st.attentionHint.Render("  ·  ") + st.attentionText.Render(subject)
 	call := bannerChip(st, "click to answer", bannerPulseHues[m.pulse%len(bannerPulseHues)])
-	return bannerRow(st, width, body, call, m.leader()+" "+credentialsLeaderKey)
+	return bannerRow(st, alertPalette, width, body, call, m.leader()+" "+credentialsLeaderKey)
 }
 
 // credentialErrorSection says which request is still waiting, under the

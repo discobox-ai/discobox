@@ -37,7 +37,7 @@ func editTestConfig() *apimodel.HarnessConfig {
 func TestFindHarnessFileIsTheEffectiveFile(t *testing.T) {
 	cfg := editTestConfig()
 	file, ok := findHarnessFile(cfg, "settings.json")
-	if !ok || file.Source != tui.HarnessFileConfigured || file.Content != "configured overlay" ||
+	if !ok || file.Source != tui.HarnessFileSaved || file.Content != "configured overlay" ||
 		len(file.Shadows) != 1 || file.Shadows[0] != tui.HarnessFileFromBundle {
 		t.Fatalf("findHarnessFile(settings.json) = %+v, %v; want the configured overlay over the bundle's", file, ok)
 	}
@@ -47,7 +47,7 @@ func TestFindHarnessFileIsTheEffectiveFile(t *testing.T) {
 	cfg.FileOverrides = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{{Path: "settings.json", Content: "mine"}})
 	file, _ = findHarnessFile(cfg, "settings.json")
 	if file.Source != tui.HarnessFileOverride || file.Content != "mine" ||
-		len(file.Shadows) != 2 || file.Shadows[0] != tui.HarnessFileConfigured {
+		len(file.Shadows) != 2 || file.Shadows[0] != tui.HarnessFileSaved {
 		t.Fatalf("findHarnessFile(settings.json) = %+v; want the override over both", file)
 	}
 	if n := len(harnessEffectiveFiles(cfg)); n != 2 {
@@ -138,7 +138,7 @@ func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
 			t.Fatalf("decode update body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"hc_1","projectId":"project-1","slug":"claude","name":"Claude","runCommand":["claude"],"configured":true,"builtIn":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"hc_1","projectId":"project-1","slug":"claude","name":"Claude","runCommand":["claude"],"builtIn":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 	client, err := apiclientgen.NewClient(server.URL)
@@ -188,7 +188,7 @@ func TestEditHarnessFileSavesABundleFileAsAnOverride(t *testing.T) {
 			t.Fatalf("decode update body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"hc_1","projectId":"project-1","slug":"claude","name":"Claude","runCommand":["claude"],"configured":true,"builtIn":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"hc_1","projectId":"project-1","slug":"claude","name":"Claude","runCommand":["claude"],"builtIn":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 	client, err := apiclientgen.NewClient(server.URL)

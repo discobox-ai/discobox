@@ -28,10 +28,6 @@ type imageManifest struct {
 		Secrets         []any          `json:"secrets"`
 		RunCommand      []string       `json:"runCommand"`
 		RelaunchCommand []string       `json:"relaunchCommand"`
-		Config          struct {
-			Ports   []harness.ConfigPort `json:"ports"`
-			Command []string             `json:"command"`
-		} `json:"config"`
 	} `json:"harness"`
 }
 
@@ -61,47 +57,6 @@ func writeExecutable(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil { //nolint:gosec // A stub the script under test executes.
 		t.Fatal(err)
-	}
-}
-
-func TestDefinitionConfigure(t *testing.T) {
-	script := readFile(t, "configure.sh") + readFile(t, "pi-normalize.cjs") + readFile(t, "image.json")
-	for _, required := range []string{
-		harness.ConfigureOutputPath,
-		harness.ConfigurePreviousConfigPath,
-		// Reuse goes through the PREV_ sentinel and comes back as usePrevious,
-		// so no credential is read or re-emitted when the existing one is kept.
-		`sentinels[envName]`,
-		"usePrevious",
-		// auth.json is JSON, so a quote inside a template action arrives at
-		// the renderer backslash-escaped and the parser rejects it.
-		"$secret: envName",
-		// Every retry is a person asking for one.
-		"confirm_retry",
-	} {
-		if !strings.Contains(script, required) {
-			t.Errorf("configure script is missing %q", required)
-		}
-	}
-	if strings.Contains(script, "index .secrets") {
-		t.Fatal("configure script quotes a key inside a template action, which cannot survive JSON encoding")
-	}
-	loopStart := strings.Index(script, "while :; do")
-	if loopStart < 0 {
-		t.Fatal("configure script has no configuration loop")
-	}
-	loop := script[loopStart:]
-	if loopEnd := strings.Index(loop, "\ndone\n"); loopEnd >= 0 {
-		loop = loop[:loopEnd]
-	}
-	// Split on `continue`: every segment but the last is the code leading up to
-	// one, and each has to have asked before taking it. An attempt that fails
-	// without reaching the user fails again the instant it is retried.
-	segments := strings.Split(loop, "continue")
-	for _, leadingUpToAContinue := range segments[:len(segments)-1] {
-		if !strings.Contains(leadingUpToAContinue, "confirm_retry") {
-			t.Fatal("configure script's loop continues without confirm_retry, so it can spin")
-		}
 	}
 }
 
@@ -137,25 +92,6 @@ func TestImageManifest(t *testing.T) {
 	if len(image.Harness.RunCommand) != 0 || len(image.Harness.RelaunchCommand) != 0 {
 		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
 			image.Harness.RunCommand, image.Harness.RelaunchCommand)
-	}
-	// Browser sign-ins end at localhost ports, which only a forward from the
-	// user's machine can reach — Anthropic's, OpenAI's and Radius's fixed, and
-	// OpenRouter's picked fresh each run. Each says what to do when it cannot
-	// be forwarded.
-	var ports []int
-	ephemeral := 0
-	for _, port := range image.Harness.Config.Ports {
-		if port.Ephemeral {
-			ephemeral++
-		} else {
-			ports = append(ports, port.Port)
-		}
-		if port.Unavailable == "" {
-			t.Errorf("port %d says nothing when it cannot be forwarded", port.Port)
-		}
-	}
-	if !slices.Equal(ports, []int{53692, 1455, 1456}) || ephemeral != 1 {
-		t.Fatalf("config ports = %v (+%d ephemeral)", ports, ephemeral)
 	}
 }
 
@@ -197,9 +133,8 @@ func TestImagePolicy(t *testing.T) {
 	}
 	feature := featuretest.Load(t, ".")
 	for source, want := range map[string]string{
-		"launch.sh":    "/usr/local/bin/" + harness.RunCommand,
-		"configure.sh": image.Harness.Config.Command[0],
-		"agent.conf":   "/usr/local/libexec/discobox/agent.conf",
+		"launch.sh":  "/usr/local/bin/" + harness.RunCommand,
+		"agent.conf": "/usr/local/libexec/discobox/agent.conf",
 	} {
 		if got := feature.Installs(source); got != want {
 			t.Errorf("the feature installs %s at %q, want %q", source, got, want)

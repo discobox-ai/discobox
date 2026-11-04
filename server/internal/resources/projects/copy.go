@@ -227,13 +227,13 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 	return nil
 }
 
-// copyHarnessConfigs carries the source project's configured harnesses across
+// copyHarnessConfigs carries the source project's harnesses across
 // and returns the copy of its default harness config, if it had one.
 //
 // The built-in harnesses are already seeded in the new project against the
-// server's current images, so a built-in copy overlays only what the configure
-// flow produced — files, the secrets it minted, and the Configured flag — and
-// the egress level a person set, and
+// server's current images, so a built-in copy overlays only what saved
+// harness changes produced — files and the secrets they minted — and the
+// egress level a person set, and
 // never the image or its snapshotted label metadata, which would otherwise pin
 // the new project to whatever image the source happened to be seeded from.
 func (s *Service) copyHarnessConfigs(ctx context.Context, source *model.Project, projectID string) (string, error) {
@@ -285,14 +285,11 @@ func (s *Service) copyHarnessConfig(ctx context.Context, sourceConfig *model.Har
 		*config = *sourceConfig
 		config.ID = id.NewString(id.PrefixHarnessConfig)
 		config.ProjectID = projectID
-		config.ConfigureSandboxID = ""
-		config.ConfigureError = ""
 		config.ConfiguredSecretIDs = configuredSecretIDs
 		if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 			return nil, err
 		}
 	} else {
-		config.Configured = sourceConfig.Configured
 		config.ConfiguredFiles = sourceConfig.ConfiguredFiles
 		config.ConfiguredSecretIDs = configuredSecretIDs
 		// A person's files are theirs, like the configure flow's result. A
@@ -304,8 +301,7 @@ func (s *Service) copyHarnessConfig(ctx context.Context, sourceConfig *model.Har
 		if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
 			return nil, err
 		}
-		// The egress level a person set is theirs, like the configure flow's
-		// result; the hosts the image declares come with the new project's own
+		// The egress level a person set is theirs, like its saved changes; the hosts the image declares come with the new project's own
 		// seeding.
 		if err := s.store.SetHarnessConfigEgress(ctx, projectID, config.ID, sourceConfig.Egress); err != nil {
 			return nil, err

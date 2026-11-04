@@ -43,11 +43,8 @@ func (s *Service) prepareHarnessChange(ctx context.Context, sb *model.Sandbox, c
 	if sb.HarnessConfigID != nil && *sb.HarnessConfigID == target.ID {
 		return nil, nil
 	}
-	if sb.DesiredState != model.DesiredStatePresent || sb.State != model.SandboxStateReady || !sb.Converged() || sb.PendingHarnessChange != nil || sb.HarnessMode == "config" {
+	if sb.DesiredState != model.DesiredStatePresent || sb.State != model.SandboxStateReady || !sb.Converged() || sb.PendingHarnessChange != nil {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "harness changes require a settled, stopped sandbox; stop it with `discobox stop DISCOBOX` first")
-	}
-	if !target.Configured {
-		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("harness %q is not configured; run `discobox admin harness configure %s` first", target.Slug, target.Slug))
 	}
 	pins, err := createHarnessPins(target)
 	if err != nil {
@@ -57,13 +54,6 @@ func (s *Service) prepareHarnessChange(ctx context.Context, sb *model.Sandbox, c
 	services.SandboxPinTarget{Harness: pins}.Apply(&candidate)
 	candidate.HarnessConfigID = &target.ID
 	candidate.Prompt = nil
-	own, err := ownBindingEnvs(ctx, s.store, sb)
-	if err != nil {
-		return nil, err
-	}
-	if err := checkRequiredSecrets(ctx, s.store, &candidate, target.ID, own); err != nil {
-		return nil, err
-	}
 	changeID, err := id.New("hchange")
 	if err != nil {
 		return nil, err
@@ -139,19 +129,4 @@ func (r *SandboxReconciler) applyHarnessChange(ctx context.Context, sb *model.Sa
 		return reconcile.Result{}, err
 	}
 	return r.ensure(ctx, sb, sb.Generation)
-}
-
-// ownBindingEnvs are the variables a sandbox's own use bindings deliver.
-func ownBindingEnvs(ctx context.Context, st *store.Store, sb *model.Sandbox) (map[string]struct{}, error) {
-	bindings, err := st.ListSecretBindings(ctx, sb.ProjectID, store.SecretBindingFilter{TargetKind: model.SecretBindingTargetSandbox, TargetID: sb.ID})
-	if err != nil {
-		return nil, err
-	}
-	own := map[string]struct{}{}
-	for _, binding := range bindings {
-		if binding.Use {
-			own[binding.EnvName] = struct{}{}
-		}
-	}
-	return own, nil
 }

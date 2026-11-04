@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), the sandbox event stream (`discobox events` and its SSE route: resume, reset, a forced prune), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), the sandbox event stream (`discobox events` and its SSE route: resume, reset, a forced prune), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
 ---
 
 # Verifying the console
@@ -65,8 +65,8 @@ so filter it out). Ctrl-C at the welcome screen quits it normally.
 
 # Verifying harness save-back (`admin harness changes`, the console's `H` card)
 
-The dev server's `claude-code` harness is usually configured already
-(`d admin harness list`). `d run -d -H claude-code --no-source` makes a box
+The dev server's `claude-code` harness usually has a login saved already
+(`go tool task dev:nested-claude-auth` gives it this box's own). `d run -d -H claude-code --no-source` makes a box
 (no `--name`); run commands in it with `d exec <sbx> -- sh -c '...'`. Edit `~/.claude/settings.json` there, wait
 ~10s for the watcher, then `d admin harness changes <sbx>` (`-o json` shows
 the preview's `previous` and `file`). In the console the list starts on the
@@ -214,12 +214,9 @@ and that the process started after the build (no `ps` in the image: walk
   it, `*` any host; `d secret create --help` explains it) and the
   binding's (`--route`) are what refuse it — every list must allow a request.
 - A harness credential's 401 (the refused-credential band, a harness secret's
-  `rejectionScope`) needs a box of a harness that declares secrets, which is
-  refused until the harness is configured, and configuring needs a real
-  sign-in. Bind a fake `d secret create` token with `d secret bind <secret>
-  --harness <slug> --as <ENV>`, set `configured=1` on the
-  harness's row in `.tmp/discobox/discobox.db` (`sqlite3`; set it back after),
-  then `d run -d -H <slug> --no-source -p x`. A `-s ENV=value` secret is
+  `rejectionScope`) needs a box of a harness that declares secrets, holding
+  one. Bind a fake `d secret create` token with `d secret bind <secret>
+  --harness <slug> --as <ENV>`, then `d run -d -H <slug> --no-source -p x`. A `-s ENV=value` secret is
   bound to the box at create with the route `*` (ADR 26-10-27-939), and
   `-s ENV=value@HOST` with that host's (the create's output says which); an
   unswapped sentinel also gets a 401, so check the audit row's secret
@@ -396,12 +393,11 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
   isolated server below with the dev loop's `DISCOBOX_POOL_AGENT_BUNDLE`,
   `DISCOBOX_AGENT_BUNDLE` and `DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE` from `.env`.
 - With no `shell` harness bundle, `go tool task build:harness-stub-bundle`,
-  then `admin harness create --bundle discobox-harness-stub:local` and
-  `admin harness configure stub`; `new -d -H stub`. A bundle only the host's
-  daemon holds is not one the asset API can serve a pool (it reads the dev
-  manifest's layouts, or a registry), so point the server at a dev manifest
-  whose `bundles` list the stub's exported layout. Configuring it stores a
-  `stub-token` secret: delete it with the harness.
+  then `admin harness create --bundle discobox-harness-stub:local`;
+  `new -d -H stub`. A bundle only the host's daemon holds is not one the
+  asset API can serve a pool (it reads the dev manifest's layouts, or a
+  registry), so point the server at a dev manifest whose `bundles` list the
+  stub's exported layout.
 - File one from inside the box with `discobox-access request` (the box's
   `discobox-access` is the platform bundle's, so a rebuilt platform bundle
   carries a change to it, at the box's next start). To send the server a body
@@ -976,8 +972,8 @@ d exec <box> -- cat /run/discobox/provision.json
   diff the two. It catches what feature order changes: a package's conffile
   written before the package, `ldconfig` from a later install undoing a link,
   apt resolving an alternative another feature used to satisfy.
-- `admin harness configure <id>` in a tmux pane reaches a login harness's CLI
-  in a box of its image without credentials; answer `n` to leave it.
+- `new -d -H <id> --no-source` reaches a login harness's CLI, signed out, in
+  a box of its bundle without credentials.
 
 # Verifying a feature's Ubuntu path
 
@@ -1100,12 +1096,7 @@ d exec <sbx_id> -- sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user,
   needs `</dev/null` from a tool shell.
 - The CLI's callers: a user tool script (`$XDG_CONFIG_HOME/discobox/tools/<n>.sh`,
   `tools <n> <id>`), a tool's `files:` (a `.yaml` tool with the
-  default under `tools/<id>/`), a pasted image (console recipe above), and
-  harness configure (`go tool task build:harness-stub-bundle`, `admin harness
-  create --bundle discobox-harness-stub:local`, served as above, `admin
-  harness configure stub` twice in
-  tmux: the second run prints the seeded previous config). Delete the stub
-  harness after purging its archived `configure-*` boxes, which hold it.
+  default under `tools/<id>/`), and a pasted image (console recipe above).
 
 
 # Verifying a sandbox agent's TLS (`disableAgentEndpointTls`, `agent-tls`)

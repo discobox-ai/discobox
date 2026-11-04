@@ -9,7 +9,6 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/discobox-ai/discobox/cli/internal/localpty"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
@@ -126,52 +125,4 @@ func truncateForLog(s string) string {
 		return s[:200] + "…"
 	}
 	return s
-}
-
-// TestLocalCommandPaneE2E runs `discobox list` on a pty of its own and reads
-// what comes back, which is the whole of what a pane would draw.
-//
-// It is the same opt-in as the pane terminals above, and for the same reason:
-// only a real command on a real pty shows whether the child inherited the
-// server, project and token it needs, and whether it believes it is on a
-// terminal.
-func TestLocalCommandPaneE2E(t *testing.T) {
-	if os.Getenv(paneE2EEnv) != "1" {
-		t.Skip("set " + paneE2EEnv + "=1 against a running server")
-	}
-
-	app := &App{
-		serverURL: envOrDefault("DISCOBOX_PANE_E2E_SERVER", endpoint.DefaultEndpoint()),
-		projectID: envOrDefault("DISCOBOX_PANE_E2E_PROJECT", defaultProjectAlias),
-		token:     os.Getenv("DISCOBOX_TOKEN"),
-		autoStart: autoStartServerFalse,
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancel()
-
-	// The real binary, not this test's: os.Executable() under `go test` is the
-	// test binary, which would prove the pty works and nothing about the
-	// command that is meant to run on it.
-	binary := strings.TrimSpace(os.Getenv("DISCOBOX_PANE_E2E_BINARY"))
-	if binary == "" {
-		t.Skip("set DISCOBOX_PANE_E2E_BINARY to a built discobox")
-	}
-	pty, err := localpty.Start(ctx, localpty.Command{
-		Path: binary,
-		Args: append(app.globalFlags(), "list"),
-		Env:  append(os.Environ(), "DISCOBOX_TOKEN="+app.token),
-	}, 100, 30)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	// Wrapped the way the launcher wraps it, so what is read here is what a
-	// pane would be drawing.
-	term := &localCommand{PTY: pty, events: make(chan tui.TerminalEvent)}
-	defer term.Close()
-
-	out := readFor(ctx, term, 20*time.Second)
-	if strings.TrimSpace(stripEscapes(out)) == "" {
-		t.Fatal("the command produced no output at all")
-	}
-	t.Logf("list: %q", truncateForLog(out))
 }

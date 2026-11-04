@@ -6,13 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -109,79 +106,6 @@ func anonymousSecret(projectID, value, host string) (*model.Secret, error) {
 	return secret, nil
 }
 
-// checkRequiredSecrets refuses a sandbox whose harness config declares a
-// required secret nothing delivers: no use binding on the harness config or
-// the project, none the create gives the sandbox itself (ownEnvs), and no
-// literal environment variable. OneOfGroup members are satisfied
-// collectively. harnessMode "config" is exempt: the configure flow is how a
-// harness's secrets come to exist.
-func checkRequiredSecrets(ctx context.Context, st *store.Store, sandbox *model.Sandbox, harnessConfigID string, ownEnvs map[string]struct{}) error {
-	if harnessConfigID == "" || sandbox.HarnessMode == sandboxconfig.HarnessModeConfig {
-		return nil
-	}
-	config, err := st.GetHarnessConfig(ctx, sandbox.ProjectID, harnessConfigID)
-	if err != nil {
-		return apperrors.NotFound(err, "harness config not found")
-	}
-	effective, err := st.ResolveBindings(ctx, sandbox.ProjectID,
-		store.BindingTargetsAt(sandbox.ProjectID, model.SecretBindingTargetHarnessConfig, harnessConfigID), time.Now().UTC())
-	if err != nil {
-		return err
-	}
-	missing := missingRequiredSecrets(config.Secrets, func(name string) bool {
-		if _, ok := ownEnvs[name]; ok {
-			return true
-		}
-		if _, ok := effective.UseFor(name); ok {
-			return true
-		}
-		_, ok := sandbox.Env[name]
-		return ok
-	})
-	if len(missing) > 0 {
-		return apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("harness config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
-	}
-	return nil
-}
-
-// missingRequiredSecrets reports the unsatisfied required secret requirements of
-// a harness config, given a predicate that reports whether a single env var is
-// satisfied. Ungrouped required secrets each must be satisfied. Required secrets
-// sharing a OneOfGroup form an at-least-one requirement: the group is satisfied
-// when any member is present, otherwise it is reported as "one of: A, B". The
-// returned list is deterministically ordered.
-func missingRequiredSecrets(decls []model.HarnessConfigSecret, satisfied func(name string) bool) []string {
-	var missing []string
-	groupMembers := map[string][]string{}
-	var groupOrder []string
-	for _, decl := range decls {
-		if !decl.Required {
-			continue
-		}
-		if decl.OneOfGroup == "" {
-			if !satisfied(decl.Name) {
-				missing = append(missing, decl.Name)
-			}
-			continue
-		}
-		if _, seen := groupMembers[decl.OneOfGroup]; !seen {
-			groupOrder = append(groupOrder, decl.OneOfGroup)
-		}
-		groupMembers[decl.OneOfGroup] = append(groupMembers[decl.OneOfGroup], decl.Name)
-	}
-	sort.Strings(missing)
-	for _, group := range groupOrder {
-		members := groupMembers[group]
-		if slices.ContainsFunc(members, satisfied) {
-			continue
-		}
-		sort.Strings(members)
-		missing = append(missing, "one of: "+strings.Join(members, ", "))
-	}
-	return missing
-}
-
 // materializeSandboxSecrets makes a sandbox's sentinel rows its effective use
 // bindings, reporting whether any row changed.
 //
@@ -202,29 +126,9 @@ func materializeSandboxSecrets(ctx context.Context, st *store.Store, sb *model.S
 	if err != nil {
 		return false, err
 	}
-	configMode := sb.HarnessMode == sandboxconfig.HarnessModeConfig
-	configured := map[string]bool{}
-	if configMode && sb.HarnessConfigID != nil && *sb.HarnessConfigID != "" {
-		config, err := st.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID)
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			return false, err
-		}
-		if config != nil {
-			for _, secretID := range config.ConfiguredSecretIDs {
-				configured[strings.TrimSpace(secretID)] = true
-			}
-		}
-	}
 	desired := map[string]model.SecretBinding{}
 	for _, applied := range effective.Use {
-		env := applied.Binding.EnvName
-		if configMode && applied.Binding.TargetKind == model.SecretBindingTargetHarnessConfig {
-			if !configured[applied.Binding.SecretID] {
-				continue
-			}
-			env = harness.ConfigurePreviousEnvPrefix + env
-		}
-		desired[env] = applied.Binding
+		desired[applied.Binding.EnvName] = applied.Binding
 	}
 	rows, err := st.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID)
 	if err != nil {
@@ -321,8 +225,8 @@ func (s *Service) MaterializeSandboxSecretsTx(ctx context.Context, txStore *stor
 // reaches every sandbox running the config. Attaching is a person's: a
 // discobox may only use a harness config already attached. The sandbox is
 // materialized and its sentinels pushed in place, so they resolve without a
-// restart. Required declared secrets nothing delivers are refused, before
-// anything is attached.
+// restart. A declared secret nothing delivers is not refused: the harness
+// starts signed out, and is signed in inside the box (ADR 26-11-02-152 §1).
 func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error) {
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
@@ -337,21 +241,6 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 		store.BindingTargetsAt(projectID, model.SecretBindingTargetHarnessConfig, config.ID), now)
 	if err != nil {
 		return nil, err
-	}
-	held, err := s.store.ResolveSandboxBindings(ctx, sandboxModel, now)
-	if err != nil {
-		return nil, err
-	}
-	missing := missingRequiredSecrets(config.Secrets, func(name string) bool {
-		if _, ok := held.UseFor(name); ok {
-			return true
-		}
-		_, ok := harnessBindings.UseFor(name)
-		return ok
-	})
-	if len(missing) > 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("harness config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
 	}
 	alreadyCovered := false
 	for _, target := range store.SandboxBindingTargets(sandboxModel) {

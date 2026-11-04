@@ -17,12 +17,12 @@ import (
 // the window, under the header and again above the keys, that says one thing and
 // does that one thing when it is pressed. A credential request is a person
 // being waited on (credentials.go); a refused credential is one that has to be
-// replaced out here (rejections.go), and a harness with none bound is one that
-// has to be configured out here (uncredentialed.go). What they share is the
-// geometry, the paint, and the rule that the key is pinned and the subject
-// gives way, so they share the code for all three: bars that drift apart in
-// where they sit are bars that put the hardware cursor in different wrong
-// places.
+// replaced (rejections.go); and a harness change is settings or a login this
+// box made that can be saved for every box on its harness
+// (harness_changes.go). What they share is the geometry, the rule that the
+// key is pinned and the subject gives way, and everything but the color, so
+// they share the code for all three: bars that drift apart in where they sit
+// are bars that put the hardware cursor in different wrong places.
 
 // bannerKind is which band the workspace is showing. The order is the
 // precedence, and only one is ever on screen: a screen with two exception bars
@@ -45,11 +45,14 @@ import (
 // the secrets screen still lists them. Only the bar prioritizes.
 type bannerKind int
 
+// **A harness change is last.** It is an offer, not a problem: nothing stops
+// while it waits, and it is still there to save once whatever outranks it is
+// dealt with.
 const (
 	bannerNone bannerKind = iota
 	bannerRejected
-	bannerUncredentialed
 	bannerCredential
+	bannerHarnessChanges
 )
 
 // bannerSpan is where the band sits on screen, in absolute cells, both ends
@@ -74,7 +77,7 @@ type bannerSpan struct {
 }
 
 // bannerKinds is every band, in the order of precedence bannerKind states.
-var bannerKinds = []bannerKind{bannerRejected, bannerUncredentialed, bannerCredential}
+var bannerKinds = []bannerKind{bannerRejected, bannerCredential, bannerHarnessChanges}
 
 // bannerShowing is the band the workspace has, if any: the first that has
 // something to say and has not been dismissed. Dismissing one shows what was
@@ -93,17 +96,28 @@ func (m *Model) bannerShowing() bannerKind {
 }
 
 // bannerWanted is whether a band has something to say about this discobox on
-// the screen as it is now — which, beyond whether it is true, can depend on
-// what is drawn: the signed-out harness does not speak over the flow that is
-// already answering it.
+// the screen as it is now.
+//
+// A refused harness login stands aside while the box has a harness change to
+// save: signing in again in the box is that refusal's remedy, and the change
+// it made is what replaces the refused login once saved (rejections.go). A
+// refusal of anything else stays up over it.
 func (m *Model) bannerWanted(kind bannerKind, box Sandbox) bool {
 	switch kind {
 	case bannerRejected:
+		if box.HarnessConfigPending {
+			for _, rejection := range m.rejectionsFor(box) {
+				if !rejection.harnessOwned() {
+					return true
+				}
+			}
+			return false
+		}
 		return m.hasRejection(box)
-	case bannerUncredentialed:
-		return m.uncredentialed(box)
 	case bannerCredential:
 		return len(m.requests[box.ID]) > 0
+	case bannerHarnessChanges:
+		return box.HarnessConfigPending
 	}
 	return false
 }
@@ -114,15 +128,15 @@ func (m *Model) bannerWanted(kind bannerKind, box Sandbox) bool {
 // refused credential must not hide the next one, nor a request the one that
 // arrives after it. So each band names its occurrence (bannerInstance) — the
 // refusal by the credential, host and when it was first seen; a request by the
-// requests waiting; the signed-out harness by the harness — and a dismissal holds the band down only while
-// that is still what it would say.
+// requests waiting; a harness change by the candidate the box captured — and a
+// dismissal holds the band down only while that is still what it would say. A
+// box that captures another change has a new candidate, and the band comes
+// back for it.
 //
 // What it covered is forgotten the moment the window reads that it is over
-// (pruneDismissed), which is what makes the signed-out harness's safe: its
-// name for itself cannot change, but a harness configured and signed out again
-// is read as over in between, and comes back. What is read once a poll can
-// miss a change and its reversal inside one poll; nothing that is shorter than
-// that is anything a person saw.
+// (pruneDismissed). What is read once a poll can miss a change and its
+// reversal inside one poll; nothing that is shorter than that is anything a
+// person saw.
 //
 // Dismissals are the window's own. Nothing is sent to the server, and a new
 // window shows every band that still applies.
@@ -168,9 +182,9 @@ func (m *Model) bannerInstance(kind bannerKind, box Sandbox) []string {
 			names = append(names, rejection.occurrence())
 		}
 		return names
-	case bannerUncredentialed:
-		if box.HarnessUncredentialed && box.HarnessID != "" {
-			return []string{box.HarnessID}
+	case bannerHarnessChanges:
+		if box.HarnessConfigCandidate != "" {
+			return []string{box.HarnessConfigCandidate}
 		}
 	case bannerCredential:
 		var ids []string
@@ -305,8 +319,8 @@ func (m *Model) viewBanner(width int) string {
 	switch kind {
 	case bannerRejected:
 		row = m.viewRejectedBanner(width)
-	case bannerUncredentialed:
-		row = m.viewUncredentialedBanner(width)
+	case bannerHarnessChanges:
+		row = m.viewHarnessChangesBanner(width)
 	case bannerCredential:
 		row = m.viewCredentialBanner(width)
 	}
@@ -330,8 +344,8 @@ func (m *Model) pressBanner() tea.Cmd {
 	switch m.banner.kind {
 	case bannerRejected:
 		return m.openRejectedRemedy(m.currentBox())
-	case bannerUncredentialed:
-		return m.openUncredentialedRemedy(m.currentBox())
+	case bannerHarnessChanges:
+		return m.reviewHarnessChanges(m.currentBox())
 	case bannerCredential:
 		return m.openCredentialDialog(m.currentBox().ID)
 	}
@@ -402,11 +416,26 @@ func (m *Model) advanceBannerPulse(msg bannerPulseMsg) tea.Cmd {
 	return bannerPulseTick(m.pulseGen)
 }
 
+// bannerPalette is a band's paint: its mark, the mark's color and the field the
+// bar is painted in. The alert's is every band that is something to deal with;
+// the offer's is the harness change, which is something to take or leave.
+type bannerPalette struct {
+	mark      string
+	markStyle func(*styles) lipgloss.Style
+	bg        string
+}
+
+var (
+	alertPalette = bannerPalette{mark: "⚠", markStyle: func(st *styles) lipgloss.Style { return st.attentionMark }, bg: colAlertBG}
+	offerPalette = bannerPalette{mark: "✎", markStyle: func(st *styles) lipgloss.Style { return st.offerMark }, bg: colOfferBG}
+)
+
 // bannerRow paints one band: the mark and its sentence on the left, the call to
 // action centered in the window, the key that acts pinned to the right.
 //
-// Every band is drawn alike — the amber ⚠ on colAlertBG — because every band
-// is something to deal with; which one it is, the sentence says. The bar is
+// The alert bands are drawn alike — the amber ⚠ on colAlertBG — because each
+// is something to deal with; which one it is, the sentence says. The harness
+// change is the offer's green, because it is not (offerPalette). The bar is
 // painted and the text keeps its own colors over it — the mark that catches the
 // eye, the subject, the call, and the key — because a whole bar drawn in
 // reverse video is a slab at a glance and a struggle to read at a sentence.
@@ -426,8 +455,8 @@ func (m *Model) advanceBannerPulse(msg bannerPulseMsg) tea.Cmd {
 // The key's "or" goes with it, because it is the chip the key is the other way
 // of doing. The two cells of band in front of the key are part of the right, so
 // the gap survives a subject long enough to be cut back against it.
-func bannerRow(st *styles, width int, subject, call, key string) string {
-	head := st.attentionMark.Render(" ⚠  ")
+func bannerRow(st *styles, palette bannerPalette, width int, subject, call, key string) string {
+	head := palette.markStyle(st).Render(" " + palette.mark + "  ")
 	keyed := st.attentionText.Render(key) + st.attentionHint.Render(" ") + st.attentionText.Render(bannerClose)
 	right := st.attentionHint.Render("  or  ") + keyed
 	// The mark whole, two cells of air, the chip, and a cell before the key's
@@ -436,7 +465,7 @@ func bannerRow(st *styles, width int, subject, call, key string) string {
 	if call == "" || lipgloss.Width(head)+3+lipgloss.Width(call)+lipgloss.Width(right) > width {
 		call, right = "", st.attentionHint.Render("  ")+keyed
 	}
-	return highlight(st, padANSI(spreadCenterPin(head+subject, call, right, width), width), colAlertBG)
+	return highlight(st, padANSI(spreadCenterPin(head+subject, call, right, width), width), palette.bg)
 }
 
 // bannerChip is a call to action drawn as a button: bold text in a field of its

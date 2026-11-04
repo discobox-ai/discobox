@@ -261,6 +261,11 @@ type Project struct {
 	// state because a person meets Discobox once, not once per machine they
 	// reach the same project from.
 	Welcomed bool `gorm:"column:welcomed;not null;default:false" json:"welcomed" doc:"Whether this project has already shown its introduction"`
+	// HarnessChangesExplained records that this project has explained saving a
+	// discobox's harness changes (ADR 26-11-02-152 §4): the console shows it the
+	// first time it sees a discobox with changes to save, once per project, for
+	// Welcomed's reason.
+	HarnessChangesExplained bool `gorm:"column:harness_changes_explained;not null;default:false" json:"harnessChangesExplained" doc:"Whether this project has already explained saving a discobox's harness changes"`
 	// Egress is the project's level of every one of its discoboxes' egress
 	// policy (ADR 26-10-01-032). The effective policy is merged whenever it is
 	// delivered, never stored, so a change here reaches each discobox by
@@ -355,22 +360,18 @@ type ProjectUserKey = SandboxAccessIssuerKey
 
 // HarnessConfig stores a project-scoped harness runtime configuration.
 //
-// A harness config is the single harness concept: the three included harnesses
-// are seeded as built-in configs rather than surfaced as separate definitions.
-// A config is only selectable once Configured is true, which happens when its
-// configure flow completes successfully; Deconfigure reverses that by removing
-// the assets the flow created.
+// A harness config is the single harness concept: the included harnesses are
+// seeded as built-in configs rather than surfaced as separate definitions.
+// Every registered config can run (ADR 26-11-02-152 §1); what discoboxes save
+// back to it overlays its bundle's defaults, and Reset removes that overlay.
 type HarnessConfig struct {
-	Revision                 int64                      `gorm:"not null;default:1" json:"revision"`
-	SaveBack                 *harnesscapture.Definition `gorm:"type:text;serializer:json" json:"saveBack,omitempty"`
-	ConfigureRevision        int64                      `gorm:"not null;default:0" json:"-"`
-	ConfigureSecretRevisions map[string]string          `gorm:"type:text;serializer:json" json:"-"`
-	ID                       string                     `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
-	ProjectID                string                     `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Slug                     string                     `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
-	BuiltIn                  bool                       `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the included harnesses seeded by the server. Built-in configs track their bundle and cannot be deleted."`
-	Configured               bool                       `gorm:"column:configured;not null;default:false" json:"configured" doc:"True once the configure flow completed successfully. Only configured harnesses can be selected to run."`
-	Name                     string                     `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
+	Revision  int64                      `gorm:"not null;default:1" json:"revision"`
+	SaveBack  *harnesscapture.Definition `gorm:"type:text;serializer:json" json:"saveBack,omitempty"`
+	ID        string                     `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
+	ProjectID string                     `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Slug      string                     `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
+	BuiltIn   bool                       `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the included harnesses seeded by the server. Built-in configs track their bundle and cannot be deleted."`
+	Name      string                     `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
 	// Bundle is the harness bundle the manifest is read from and every box on
 	// the harness applies (ADR 26-10-16-423 §2); a harness is nothing else
 	// (ADR 26-11-01-122). A config registered before bundles has none, and
@@ -386,10 +387,7 @@ type HarnessConfig struct {
 	ManifestDigest   string                `gorm:"column:manifest_digest;not null;type:text;default:''" json:"manifestDigest,omitempty" doc:"Digest of the manifest composed from the harness bundle's labels on the platform's layer, which moves when either does"`
 	RunCommand       []string              `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Run argv snapshotted from the registered bundle's label."`
 	RelaunchCommand  []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Relaunch argv snapshotted from the registered bundle's label."`
-	ConfigCommand    []string              `gorm:"column:config_command;type:text;serializer:json" json:"configCommand,omitempty" doc:"Config-mode argv snapshotted from the registered bundle's label."`
-	ConfigReminder   string                `gorm:"column:config_reminder;not null;type:text;default:''" json:"configReminder,omitempty" doc:"Reminder shown outside the interactive configuration terminal, snapshotted from the registered bundle's label."`
-	ConfigPorts      []harness.ConfigPort  `gorm:"column:config_ports;type:text;serializer:json" json:"configPorts,omitempty" doc:"Local ports the configure flow forwards into the configure sandbox at the same port number, snapshotted from the registered bundle's label."`
-	Files            []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Non-secret files declared by the bundle's label. Baseline only, rewritten whenever the bundle is re-read; the configure flow's files live in ConfiguredFiles and a person's in FileOverrides."`
+	Files            []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Non-secret files declared by the bundle's label. Baseline only, rewritten whenever the bundle is re-read; files saved back from discoboxes live in ConfiguredFiles and a person's in FileOverrides."`
 	Secrets          []HarnessConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Environment-variable secret declarations snapshotted from the image label."`
 	Env              map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Default environment variables snapshotted from the image label."`
 	Volumes          []harness.Volume      `gorm:"column:volumes;type:text;serializer:json" json:"volumes,omitempty" doc:"Declarative volumes snapshotted from the image label."`
@@ -399,31 +397,27 @@ type HarnessConfig struct {
 	// apart from ImageEgressHosts so registering a new bundle replaces what the
 	// bundle declares and leaves what a person chose alone.
 	Egress egress.Policy `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The harness config's egress policy level"`
-	// ConfiguredFiles and ConfiguredSecretIDs record what the configure flow
-	// produced, kept separate from the image-declared baseline so Deconfigure can
-	// remove exactly what it created and leave the baseline intact.
-	ConfiguredFiles     []HarnessConfigFile `gorm:"column:configured_files;type:text;serializer:json" json:"configuredFiles,omitempty" doc:"Files written by the configure flow. Overlay the bundle-declared Files by path when resolving a sandbox, beneath FileOverrides."`
-	ConfiguredSecretIDs []string            `gorm:"column:configured_secret_ids;type:text;serializer:json" json:"-" doc:"Secrets created by the configure flow, deleted on deconfigure."`
+	// ConfiguredFiles and ConfiguredSecretIDs record what discoboxes' saved
+	// harness changes produced (ADR 26-10-26-573), kept separate from the
+	// bundle-declared baseline so Reset can remove exactly what they created and
+	// leave the baseline intact.
+	ConfiguredFiles     []HarnessConfigFile `gorm:"column:configured_files;type:text;serializer:json" json:"configuredFiles,omitempty" doc:"Files saved from discoboxes' harness changes. Overlay the bundle-declared Files by path when resolving a sandbox, beneath FileOverrides."`
+	ConfiguredSecretIDs []string            `gorm:"column:configured_secret_ids;type:text;serializer:json" json:"-" doc:"Secrets created by saved harness changes, deleted on reset."`
 	// FileOverrides are the files a person wrote (ADR 26-11-04-028): each adds
-	// a path or replaces the configured or bundle file at it. Only a person's
-	// request writes it; a bundle re-snapshot, configure and deconfigure leave
-	// it alone.
+	// a path or replaces the saved or bundle file at it. Only a person's
+	// request writes it; a bundle re-snapshot and a saved harness change leave
+	// it alone, and a reset keeps it unless asked to clear it too.
 	//
 	// nil (a NULL column) marks a config from before the set existed, whose
 	// person-added files may still sit in Files; splitFileOverrides moves them
 	// out once, and every config it has seen, or created since, holds a non-nil
 	// set, even an empty one.
-	FileOverrides []HarnessConfigFile `gorm:"column:file_overrides;type:text;serializer:json" json:"fileOverrides,omitempty" doc:"Files a person added or overrode. Each wins by path over the configure flow's and the bundle's file, and survives a bundle refresh, configure and deconfigure."`
-	// ConfigureSandboxID names the in-flight configure sandbox. It is the durable
-	// handle the harness-config reconciler watches, so a configure that is running
-	// when the server restarts is still picked up and finished.
-	ConfigureSandboxID string `gorm:"column:configure_sandbox_id;type:text;default:''" json:"configureSandboxId,omitempty" doc:"Sandbox running the configure flow, while one is in flight."`
-	ConfigureError     string `gorm:"column:configure_error;type:text;default:''" json:"configureError,omitempty" doc:"Why the last configure attempt failed. Cleared when a configure starts or succeeds."`
+	FileOverrides []HarnessConfigFile `gorm:"column:file_overrides;type:text;serializer:json" json:"fileOverrides,omitempty" doc:"Files a person added or overrode. Each wins by path over a saved file and the bundle's, and survives a bundle refresh, a saved harness change and a plain reset."`
 	// BoundSecrets is not a column: the store counts the config's secret
 	// bindings into it on every read (store.withBoundSecrets), so a client can
 	// tell a harness that runs with no credentials at all from one that has
 	// them without a request per harness.
-	BoundSecrets int       `gorm:"column:bound_secrets;->;-:migration" json:"boundSecrets" doc:"How many of the harness's environment variables have a project secret bound. Zero on a harness with a configure command means every discobox on it runs without credentials until it is configured."`
+	BoundSecrets int       `gorm:"column:bound_secrets;->;-:migration" json:"boundSecrets" doc:"How many of the harness's environment variables have a project secret bound. Zero means every discobox on it starts its harness signed out, until a sign-in made in one is saved."`
 	CreatedAt    time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
@@ -808,7 +802,6 @@ func (p *Pool) EverCreated() bool {
 // change that should rebuild it.
 type SandboxManifest struct {
 	HarnessConfigID     *string  `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
-	HarnessMode         string   `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
 	Model               *string  `gorm:"column:model;type:text" json:"model,omitempty" doc:"Model the harness should use"`
 	ModelServiceTier    *string  `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
 	ModelReasoningLevel *string  `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
@@ -891,7 +884,7 @@ type SandboxManifest struct {
 // it cannot read them.
 func (m SandboxManifest) Fingerprint() string {
 	m.AgentBundle, m.AgentBundleDigest = "", ""
-	encoded, err := json.Marshal(m)
+	encoded, err := json.Marshal(m.fingerprinted())
 	if err != nil {
 		// Marshaling a manifest cannot fail for the types it holds. If it ever
 		// does, a fingerprint that matches nothing is the safe answer: it forces
@@ -923,13 +916,30 @@ func (m SandboxManifest) DeliveredFingerprint() string {
 	m.Bundles = nil
 	m.AgentBundle, m.AgentBundleDigest = "", ""
 	encoded, err := json.Marshal(struct {
-		Delivered SandboxManifest `json:"delivered"`
-	}{m})
+		Delivered fingerprintedManifest `json:"delivered"`
+	}{m.fingerprinted()})
 	if err != nil {
 		return "unfingerprintable"
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
+}
+
+// fingerprintedManifest is what a fingerprint digests: the manifest, with the
+// harness mode it carried until configure was removed (ADR 26-11-02-152 §2)
+// in the place it had. Every sandbox's mode was "run" once there was no other,
+// and the digests are recorded on containers that outlive the field, so it
+// stays in what is hashed — and at its old position, second — so that removing
+// it rebuilds no container. encoding/json orders the outer fields before the
+// embedded ones, and the outer harnessConfigId shadows the manifest's own.
+type fingerprintedManifest struct {
+	HarnessConfigID *string `json:"harnessConfigId,omitempty"`
+	HarnessMode     string  `json:"harnessMode"`
+	SandboxManifest
+}
+
+func (m SandboxManifest) fingerprinted() fingerprintedManifest {
+	return fingerprintedManifest{HarnessConfigID: m.HarnessConfigID, HarnessMode: "run", SandboxManifest: m}
 }
 
 // BundlePin is a bundle by reference and the manifest digest it is pinned to
@@ -2160,7 +2170,7 @@ type SecretRejection struct {
 	SecretName        string `gorm:"-" json:"secretName,omitempty" doc:"Name of the refused secret"`
 	SecretType        string `gorm:"-" json:"secretType,omitempty" doc:"Type of the refused secret" enum:"token,oauth,exchange"`
 	EnvName           string `gorm:"-" json:"envName,omitempty" doc:"Environment variable the credential is delivered in, when one names it"`
-	HarnessConfigID   string `gorm:"-" json:"harnessConfigId,omitempty" doc:"Harness config whose configure flow owns this credential, when one does"`
+	HarnessConfigID   string `gorm:"-" json:"harnessConfigId,omitempty" doc:"Harness config whose saved harness changes own this credential, when one does"`
 	HarnessConfigName string `gorm:"-" json:"harnessConfigName,omitempty" doc:"Display name of that harness config"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`

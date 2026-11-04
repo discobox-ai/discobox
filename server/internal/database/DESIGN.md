@@ -94,15 +94,25 @@ by what it is looking for and is idempotent:
    becomes a pending request from it, naming the secret, variable, hosts and
    purpose it had, and any other is deleted — with its agent binding; a live
    host trust that carried uses is deleted, since only the judge read them; a
-   judge discobox gets the `run` harness mode, is marked for deletion and its
-   `sandbox` reconcile marked dirty, so no response names the retired `judge`
-   mode whether or not its pool is online; the discobox API's gate secret goes
+   judge discobox is marked for deletion and its `sandbox` reconcile marked
+   dirty, whether or not its pool is online (it is found by
+   `sandboxes.harness_mode`, so this runs before `retireConfigureFlow` drops
+   that column); the discobox API's gate secret goes
    with its grants and bindings, and no sandbox is given the `discobox_api`
    flag that replaces it; the remaining agent bindings go, and the
    `agent_requested` column with the variable's uniqueness index, which is made
    again over the sandbox and variable alone; then the `judge` and
    `ruleRequest` reconcile marks, the `credential_verdicts` and
    `approval_rules` tables, and the columns only the judge read are dropped.
+   Then retiring configure (`retireConfigureFlow`, ADR 26-11-02-152): each
+   unfinished configure sandbox (`harness_mode = 'config'`) is marked for
+   deletion with its `sandbox` dirty mark in one transaction, the
+   `sandboxes.harness_mode` column is dropped, and so are the
+   `harness_configs` columns only configure used (`configured`,
+   `configure_error`, `configure_sandbox_id`, `configure_revision`,
+   `configure_secret_revisions`, `config_command`, `config_reminder`,
+   `config_ports`); the saved overlay (`configured_files`,
+   `configured_secret_ids`) stays.
    Both retirements read and write routes in the shape they were stored in
    (`legacyRoute`: a host covering the hosts beneath it, a path prefix), and
    write a binding's or a request's in the shape routes have now; then

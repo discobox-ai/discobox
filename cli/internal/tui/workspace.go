@@ -100,7 +100,7 @@ type workspaceForwardChangedMsg struct{ gen int }
 // live one; the parked ones are kept whole beside it (Model.parked).
 //
 // What is not here is the live screen's alone and goes with the generation
-// that ran it — the opens in flight, the polls, the overlay, the audit.
+// that ran it — the opens in flight, the polls, the audit.
 type workspace struct {
 	// paneBox is the discobox the workspace is showing. Every pane on it is
 	// that one, and so is everything the leader's keys act on.
@@ -605,7 +605,7 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 	m.nextPaneID++
 	p := &pane{
 		id:     m.nextPaneID,
-		term:   termpane.New(m.paneOptions(paneWorkspace, true)...),
+		term:   termpane.New(m.paneOptions(true)...),
 		stream: msg.term,
 		// A service is never typed at, so its pane is read-only whether it is
 		// drawing a live process or a card.
@@ -814,7 +814,7 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 		primary: primary,
 		service: msg.exec.Service,
 	}
-	opts := m.paneOptions(paneWorkspace, service)
+	opts := m.paneOptions(service)
 	if primary {
 		// The primary is the box's agent, whose status the window speaks
 		// for while this box is the one it is on (programstatus.go).
@@ -1024,7 +1024,7 @@ func (m *Model) endExecFailed(msg endExecFailedMsg) tea.Cmd {
 }
 
 // closeWorkspace leaves the workspace: every stream is closed at once — the
-// overlay, the terminal, every tab — and every session keeps running. Bumping
+// terminal and every tab — and every session keeps running. Bumping
 // the generation is what ends the poll and orphans any open still in flight.
 func (m *Model) closeWorkspace() {
 	m.wsOpening = false
@@ -1039,7 +1039,7 @@ func (m *Model) closeWorkspace() {
 
 // endLiveScreen ends what only the workspace on screen runs, whether it is
 // being closed or parked: its generation, which ends its polls and orphans its
-// opens, and the overlay, audit and wait drawn over it.
+// opens, and the audit and wait drawn over it.
 func (m *Model) endLiveScreen() {
 	m.wsGen++
 	m.connecting = nil
@@ -1051,10 +1051,6 @@ func (m *Model) endLiveScreen() {
 	if !m.createNarrating {
 		m.endNarration()
 		m.busy = ""
-	}
-	if m.overlay != nil {
-		_ = m.overlay.term.Close()
-		m.overlay = nil
 	}
 	if m.dialog != nil && m.dialog.over != nil {
 		// Every pane goes with the workspace, and a question about one of

@@ -396,39 +396,6 @@ func validateImageMetadata(metadata harness.ImageMetadata, source string) error 
 	if len(h.RunCommand) > 0 && strings.TrimSpace(h.RunCommand[0]) == "" {
 		return fmt.Errorf("%s has a blank runCommand", source)
 	}
-	if h.Config != nil {
-		if len(h.Config.Command) == 0 || strings.TrimSpace(h.Config.Command[0]) == "" {
-			return fmt.Errorf("%s config mode requires command", source)
-		}
-		// A declared port is forwarded at its own number or not at all, so a
-		// number no listener can hold is a broken image rather than a forward
-		// that quietly lands elsewhere. Duplicates are rejected for the same
-		// reason: the second declaration could only ever contradict the first
-		// about what to say when the port is unavailable. An ephemeral entry
-		// names no number — the sandbox's listening ports supply them — and
-		// there is one at most, for the same reason.
-		ports := map[int]struct{}{}
-		ephemeral := false
-		for _, port := range h.Config.Ports {
-			if port.Ephemeral {
-				if port.Port != 0 {
-					return fmt.Errorf("%s ephemeral config port also names port %d", source, port.Port)
-				}
-				if ephemeral {
-					return fmt.Errorf("%s has duplicate ephemeral config port", source)
-				}
-				ephemeral = true
-				continue
-			}
-			if port.Port < 1 || port.Port > 65535 {
-				return fmt.Errorf("%s config port %d is out of range", source, port.Port)
-			}
-			if _, ok := ports[port.Port]; ok {
-				return fmt.Errorf("%s has duplicate config port %d", source, port.Port)
-			}
-			ports[port.Port] = struct{}{}
-		}
-	}
 	// A host the proxy could not match would be a harness that never reaches
 	// what it said it needs once a level restricts it, failing far from here.
 	if err := (egress.Policy{Allow: h.EgressHosts}).Validate(); err != nil {

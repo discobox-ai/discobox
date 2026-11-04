@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"slices"
 	"sort"
 	"strings"
@@ -16,15 +15,16 @@ import (
 // exactly like Discobox failing to deliver a credential — the variable is set,
 // the request went out, something on the other side said no — and the most
 // useful sentence anybody can be handed is which credential was refused, and
-// where. The second job is the remedy, and there are two: a credential a
-// harness's configure flow made is replaced by configuring that harness again,
-// and any other secret by replacing its value.
+// where. The second job is the remedy, and there are two. A harness's shared
+// login is replaced the way it was made (ADR 26-11-02-152): sign in again with
+// the harness's own login inside a discobox, and save that box's harness
+// change, which replaces the refused login in place for every box on the
+// harness. Any other secret is replaced by giving it a new value out here.
 //
-// The one thing the band must never read as is an invitation to sign in inside
-// the discobox. That cannot work and cannot stick: the sandbox agent puts the
-// delivered sentinel file back within thirty seconds (ADR 0059), and a real
-// credential typed into a sandbox is what the whole sentinel design exists to
-// prevent.
+// A harness sign-in in progress outranks the refusal of the login it replaces:
+// once the box has a harness change to save, the refused login's band stands
+// aside for the harness-changes band (bannerWanted), since saving that change
+// is the fix and a band telling somebody to do what they just did hides it.
 //
 // It outranks every other band, including a credential request (see
 // bannerKind), because an agent that has just taken a 401 asks for a credential
@@ -34,9 +34,7 @@ import (
 // rejectedKey is the band's key behind the leader: K, for the key that is not
 // working — capital, because k and j move along the workspace tree. The
 // letters this window already spends are elsewhere — g is the credential
-// request. The
-// signed-out harness's band (uncredentialed.go) answers to it too: a key that
-// is not there is a key that is not working.
+// request.
 const rejectedKey = "K"
 
 // openRejectedMsg is the leader plus that key inside a pane.
@@ -48,11 +46,10 @@ type secretRejectionsLoadedMsg struct {
 	err        error
 }
 
-// rejectionRemedyMsg carries what a press needs to act: the harness to
-// configure again, or the secret to replace.
+// rejectionRemedyMsg carries what a press needs to act: the secret to
+// replace. A harness's login needs nothing read to say how to replace it.
 type rejectionRemedyMsg struct {
 	rejection SecretRejection
-	harness   *Harness
 	secret    *Secret
 	err       error
 }
@@ -167,7 +164,7 @@ func (m *Model) viewRejectedBanner(width int) string {
 		subject += st.attentionHint.Render("  ·  " + plural(waiting, "request", "requests") + " waiting behind it")
 	}
 	call := bannerChip(st, rejectionCall(rejection), colAlertChip)
-	return bannerRow(st, width, subject, call, m.leader()+" "+rejectedKey)
+	return bannerRow(st, alertPalette, width, subject, call, m.leader()+" "+rejectedKey)
 }
 
 // rejectionHeadline is the bar's sentence: what was refused, and by whom.
@@ -188,41 +185,35 @@ func rejectionHeadline(rejection SecretRejection) string {
 // rather than of a button, so the sentence still says it with no color to draw
 // a chip with.
 //
-// It names *where*, and that is the load-bearing half. This bar is drawn across
-// a screen that is otherwise the discobox's own terminal, to a reader who is
-// mid-session in it, and "sign in again" on its own reads as the thing they
-// were already about to try: the harness's own `/login`, in the box, which
-// cannot work and cannot stick (ADR 0059, ADR 0132 §5). "on this machine" is
-// the whole difference between sending somebody to the fix and sending them
-// round the loop again.
+// A harness's login is replaced in the box, so its call says how; any other
+// secret is replaced out here, and its call says that.
 func rejectionCall(rejection SecretRejection) string {
 	if rejection.harnessOwned() {
-		return "click to sign in on this machine"
+		return "click to sign in again"
 	}
 	return "click to replace it on this machine"
 }
 
-// openRejectedRemedy answers a press on the band: the harness's own setup for a
-// credential its configure flow made, and the secret's card for anything else.
+// openRejectedRemedy answers a press on the band: how to sign in again for a
+// harness's shared login, and the secret's card for anything else.
 //
 // Both open over the workspace rather than taking you to another screen, and
-// both end back on the discobox you were watching — which is the whole shape of
-// this: the fix is out here, it takes a minute, and the session you were in the
+// both end back on the discobox you were watching: the session you were in the
 // middle of is still there when it is done.
 func (m *Model) openRejectedRemedy(box Sandbox) tea.Cmd {
 	rejection, ok := m.shownRejection(box)
 	if !ok {
 		return m.report(false, "nothing refused on this discobox")
 	}
+	if rejection.harnessOwned() {
+		m.dialog = signInAgainDialog(rejection)
+		return nil
+	}
 	m.busy = "reading " + rejection.name() + "…"
 	// The credential's own server, not the one the header names: the fix goes
 	// where the credential lives (ADR 0131 §2).
 	ctx, ds, server := m.ctx, m.ds, m.serverName(rejection.Server)
 	return func() tea.Msg {
-		if rejection.harnessOwned() {
-			harness, err := findHarness(ctx, ds, server, rejection.HarnessConfigID)
-			return rejectionRemedyMsg{rejection: rejection, harness: harness, err: err}
-		}
 		secrets, err := ds.Secrets(ctx, server)
 		if err != nil {
 			return rejectionRemedyMsg{rejection: rejection, err: err}
@@ -236,19 +227,20 @@ func (m *Model) openRejectedRemedy(box Sandbox) tea.Cmd {
 	}
 }
 
-// findHarness reads one harness off its server's listing, which is what the
-// configure flow is opened with.
-func findHarness(ctx context.Context, ds DataSource, server, id string) (*Harness, error) {
-	harnesses, err := ds.Harnesses(ctx, server)
-	if err != nil {
-		return nil, err
+// signInAgainDialog says how a harness's refused shared login is replaced:
+// in a discobox, by the harness's own sign-in, and then saved. It is a message
+// rather than an action because the action is the person's, in the terminal
+// behind it.
+func signInAgainDialog(rejection SecretRejection) *dialog {
+	name := rejection.HarnessConfigName
+	if name == "" {
+		name = "the harness"
 	}
-	for _, harness := range harnesses {
-		if harness.ID == id {
-			return &harness, nil
-		}
-	}
-	return nil, errNoHarness
+	body := name + "'s shared login was refused, and could not be renewed. Every discobox on " + name + " uses it.\n\n" +
+		"Sign in again in this discobox, the way " + name + " signs in anywhere — its own login command, in its terminal. " +
+		"The new login shows up as a harness change on this box: save it, and it replaces the refused login for every discobox on " + name + "."
+	d := &dialog{kind: dlgMessage, title: name + " sign-in refused", body: body}
+	return d
 }
 
 // rejectionRemedy opens whichever remedy came back.
@@ -257,8 +249,6 @@ func (m *Model) rejectionRemedy(msg rejectionRemedyMsg) tea.Cmd {
 	switch {
 	case msg.err != nil:
 		return m.report(true, "%s: %v", msg.rejection.name(), msg.err)
-	case msg.harness != nil:
-		return m.configureHarness(m.serverName(msg.rejection.Server), *msg.harness)
 	case msg.secret != nil:
 		return m.editSecretForm(m.serverName(msg.rejection.Server), *msg.secret)
 	}
@@ -270,12 +260,10 @@ type rejectionError string
 func (e rejectionError) Error() string { return string(e) }
 
 const (
-	// The two ways the remedy can have nothing to open: a harness or a secret
-	// the listing no longer holds. Both mean the same thing to a reader — the
-	// thing that was refused is gone — and both are reported rather than
-	// swallowed, since the band is still on screen saying otherwise.
-	errNoHarness = rejectionError("the harness that owns it is gone")
-	errNoSecret  = rejectionError("the credential is gone")
+	// The remedy has nothing to open when the listing no longer holds the
+	// secret: the thing that was refused is gone, which is reported rather
+	// than swallowed, since the band is still on screen saying otherwise.
+	errNoSecret = rejectionError("the credential is gone")
 )
 
 // rejectionSummary is one line about a refused credential for the secrets

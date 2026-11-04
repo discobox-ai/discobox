@@ -42,7 +42,7 @@ func egressFixture(t *testing.T, st *store.Store, project, pool, harnessLevel, o
 		t.Fatal(err)
 	}
 	config := &model.HarnessConfig{
-		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", Configured: true,
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code",
 		Egress: harnessLevel, ImageEgressHosts: imageHosts,
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
@@ -375,7 +375,7 @@ func TestAFailedCreateStillQueuesTheEgressPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-t", CreatedByUserID: "user-1", Name: "failing",
-		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Image: "image"}}
+		SandboxManifest: model.SandboxManifest{Image: "image"}}
 	sb.DesiredState = model.DesiredStatePresent
 	if err := st.CreateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)

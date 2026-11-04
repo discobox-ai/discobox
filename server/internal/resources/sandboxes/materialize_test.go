@@ -2,12 +2,8 @@ package sandboxes
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"testing"
 
-	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -141,63 +137,5 @@ func TestMaterializeMakesTheSentinelsTheEffectiveBindings(t *testing.T) {
 	}
 	if rows = materialized(t, st, "sb-1"); len(rows) != 0 {
 		t.Fatalf("rows = %+v, want none once nothing binds the variable", rows)
-	}
-}
-
-// A configure sandbox is handed, of its harness config's bindings, the
-// secrets a previous configure made, under the PREV_ prefix, and nothing a
-// person bound by hand.
-func TestAConfigureSandboxGetsOnlyThePreviousConfiguration(t *testing.T) {
-	svc, _ := newAssignFixture(t)
-	st := svc.store
-	ctx := context.Background()
-	config := codexConfig(t, st)
-	configured := bearerSecret(t, st, "configured", "")
-	byHand := bearerSecret(t, st, "by-hand", "")
-	config.ConfiguredSecretIDs = []string{configured.ID}
-	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
-		t.Fatal(err)
-	}
-	bindUse(t, st, configured.ID, model.SecretBindingTargetHarnessConfig, config.ID, "OPENAI_API_KEY")
-	bindUse(t, st, byHand.ID, model.SecretBindingTargetHarnessConfig, config.ID, "OTHER_KEY")
-	sb, err := st.GetSandbox(ctx, "project-1", "sb-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	sb.HarnessConfigID = &config.ID
-	sb.HarnessMode = sandboxconfig.HarnessModeConfig
-	if err := st.UpdateSandbox(ctx, sb); err != nil {
-		t.Fatal(err)
-	}
-	rows := materialized(t, st, "sb-1")
-	if _, ok := rows[harness.ConfigurePreviousEnvPrefix+"OPENAI_API_KEY"]; len(rows) != 1 || !ok {
-		t.Fatalf("rows = %+v, want the configured secret alone, prefixed", rows)
-	}
-}
-
-// A harness config's required secret is satisfied by a binding on it or the
-// project, the create's own, or a literal variable; with none the create is
-// refused, and a configure sandbox is exempt.
-func TestRequiredSecretsAreDeliveredSomehow(t *testing.T) {
-	_, st := newBindingFixture(t)
-	ctx := context.Background()
-	config := codexConfig(t, st)
-	sb := &model.Sandbox{ProjectID: "project-1"}
-	err := checkRequiredSecrets(ctx, st, sb, config.ID, nil)
-	var status interface{ StatusCode() int }
-	if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest {
-		t.Fatalf("no binding = %v, want 400", err)
-	}
-	if err := checkRequiredSecrets(ctx, st, sb, config.ID, map[string]struct{}{"OPENAI_API_KEY": {}}); err != nil {
-		t.Fatalf("the create's own = %v", err)
-	}
-	configure := &model.Sandbox{ProjectID: "project-1", SandboxManifest: model.SandboxManifest{HarnessMode: sandboxconfig.HarnessModeConfig}}
-	if err := checkRequiredSecrets(ctx, st, configure, config.ID, nil); err != nil {
-		t.Fatalf("configure mode = %v", err)
-	}
-	sec := bearerSecret(t, st, "openai", "")
-	bindUse(t, st, sec.ID, model.SecretBindingTargetProject, "project-1", "OPENAI_API_KEY")
-	if err := checkRequiredSecrets(ctx, st, sb, config.ID, nil); err != nil {
-		t.Fatalf("the project's binding = %v", err)
 	}
 }

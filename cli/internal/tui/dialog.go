@@ -174,8 +174,8 @@ type dialog struct {
 	onCancel func() tea.Cmd
 
 	// over is the pane a question stands over and is about, such as the
-	// issue a close is asked about. The question goes when that pane does — the overlay
-	// closing, its tab closing, the workspace closing — because every answer
+	// issue a close is asked about. The question goes when that pane does — its
+	// tab closing, the workspace closing — because every answer
 	// it offers is about something no longer on screen.
 	over *pane
 

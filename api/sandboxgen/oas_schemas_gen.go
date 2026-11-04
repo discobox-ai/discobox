@@ -702,16 +702,19 @@ func (s *HarnessCaptureFile) SetPath(val string) {
 	s.Path = val
 }
 
-// One file a candidate writes (file) or removes (remove). A sandbox never sends previous, nor file
-// on a removal. On a preview the server serves, previous is the file a save replaces (the configured
-// file over the bundle's, at the current revision), and a removal's file is the bundle's own file it
-// falls back to, when it ships one; both are for display and never applied.
+// One file a candidate writes (file) or removes (remove). A sandbox never sends previous, shadowed,
+// nor file on a removal. On a preview the server serves, previous is the file a box is given at the
+// path now (a person's override over the saved file over the bundle's, at the current revision), a
+// removal's file is what it falls back to, and shadowed says a person's override holds the path: a
+// save keeps the change beneath it, and boxes go on being given the override. All are for display
+// and never applied.
 // Ref: #/components/schemas/HarnessCaptureFileChange
 type HarnessCaptureFileChange struct {
 	File     OptHarnessCaptureFile `json:"file"`
 	Path     string                `json:"path"`
 	Previous OptHarnessCaptureFile `json:"previous"`
 	Remove   OptBool               `json:"remove"`
+	Shadowed OptBool               `json:"shadowed"`
 }
 
 // GetFile returns the value of File.
@@ -734,6 +737,11 @@ func (s *HarnessCaptureFileChange) GetRemove() OptBool {
 	return s.Remove
 }
 
+// GetShadowed returns the value of Shadowed.
+func (s *HarnessCaptureFileChange) GetShadowed() OptBool {
+	return s.Shadowed
+}
+
 // SetFile sets the value of File.
 func (s *HarnessCaptureFileChange) SetFile(val OptHarnessCaptureFile) {
 	s.File = val
@@ -752,6 +760,11 @@ func (s *HarnessCaptureFileChange) SetPrevious(val OptHarnessCaptureFile) {
 // SetRemove sets the value of Remove.
 func (s *HarnessCaptureFileChange) SetRemove(val OptBool) {
 	s.Remove = val
+}
+
+// SetShadowed sets the value of Shadowed.
+func (s *HarnessCaptureFileChange) SetShadowed(val OptBool) {
+	s.Shadowed = val
 }
 
 // Ref: #/components/schemas/HarnessConfigAcknowledgment
@@ -5369,8 +5382,7 @@ func (s *SandboxAgentSourceStateWaitingOn) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/SandboxAgentStatusResponse
 type SandboxAgentStatusResponse struct {
-	// The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode
-	// sandbox is always.
+	// The sandbox's idle-stop policy. Absent while the policy is not running.
 	Autostop               OptSandboxAgentAutostopStatus `json:"autostop"`
 	HarnessConfigCandidate OptString                     `json:"harnessConfigCandidate"`
 	HarnessConfigState     OptString                     `json:"harnessConfigState"`

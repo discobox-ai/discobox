@@ -74,7 +74,7 @@ func TestDeletedHarnessConfigBindingFreesItsEnvName(t *testing.T) {
 	}
 
 	// Deleting the secret takes its binding with it. Rebinding the same env
-	// name afterwards is the configure/deconfigure/configure path.
+	// name afterwards is the save/reset/save path.
 	if err := bind(sec.ID); err != nil {
 		t.Fatalf("bind: %v", err)
 	}

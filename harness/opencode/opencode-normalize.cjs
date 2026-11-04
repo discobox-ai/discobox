@@ -1,4 +1,4 @@
-// Shared by interactive configure and background save-back.
+// Background save-back's normalization of opencode's credentials.
 "use strict";
 exports.normalize = function (
   stored,
@@ -151,7 +151,7 @@ exports.normalize = function (
         };
         const expires = Number(value.expires) || 0;
         if (expires > 0 && expires < farFuture) {
-          item.notice = `${provider}'s sign-in expires ${new Date(expires).toISOString().slice(0, 10)}, and Discobox cannot renew it. Configure again after that, or connect it with an API key.`;
+          item.notice = `${provider}'s sign-in expires ${new Date(expires).toISOString().slice(0, 10)}, and Discobox cannot renew it. Connect it again and save the change after that, or connect it with an API key.`;
         }
       }
     }

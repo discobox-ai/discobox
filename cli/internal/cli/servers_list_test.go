@@ -72,7 +72,7 @@ func fakePeerServerHandler(name, peerID string, sandboxIDs ...string) http.Handl
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/projects/") && strings.Count(r.URL.Path, "/") == 2:
 			// Whatever project was asked for, this server's own: the files a
 			// sync writes are named by what the server says it is.
-			_, _ = fmt.Fprintf(w, `{"id":%q,"name":"P","ownerUserId":"user-1","default":false,"welcomed":true,`+
+			_, _ = fmt.Fprintf(w, `{"id":%q,"name":"P","ownerUserId":"user-1","default":false,"welcomed":true,"harnessChangesExplained":true,`+
 				`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, fakeProjectID(name))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/approval-requests"):
 			// One request waiting on each discobox, named for the server, so a

@@ -37,7 +37,7 @@ func harnessEffectiveFiles(cfg *apimodel.HarnessConfig) []harnessFile {
 		files  []apimodel.HarnessConfigFile
 	}{
 		{tui.HarnessFileOverride, cfg.FileOverrides.Or(nil)},
-		{tui.HarnessFileConfigured, cfg.ConfiguredFiles.Or(nil)},
+		{tui.HarnessFileSaved, cfg.ConfiguredFiles.Or(nil)},
 		{tui.HarnessFileFromBundle, cfg.Files.Or(nil)},
 	} {
 		for _, file := range set.files {
@@ -70,8 +70,8 @@ func (a *App) newHarnessEditCommand() *cobra.Command {
 
 PATH is the file's path as shown by "harnesses get" or the console's harnesses
 screen, which is what "discobox configure" opens. The file edited is the one a
-discobox is given at PATH. A file the configure flow wrote is edited in place,
-and stays the configure flow's. A file from the harness's bundle is saved as
+discobox is given at PATH. A file saved from a discobox's harness change is
+edited in place, and stays a saved file. A file from the harness's bundle is saved as
 your override of it, so the edit survives the bundle being updated; remove it
 with "harnesses update HARNESS --remove-file PATH".`,
 		Args:              cobra.ExactArgs(2),
@@ -132,11 +132,11 @@ func (a *App) editHarnessFile(ctx context.Context, client *apiclientgen.Client, 
 	}
 	file.Content = edited
 
-	// The configure flow's file is edited in its own set, which it still owns.
+	// A saved file is edited in the saved set, and stays a saved file.
 	// A bundle's file is the bundle's, re-read whenever it moves, so an edit
 	// to it is the person's override, as an edit to their own file is.
 	body := &apimodel.UpdateHarnessConfigBody{Revision: cfg.Revision.Or(0)}
-	if file.Source == tui.HarnessFileConfigured {
+	if file.Source == tui.HarnessFileSaved {
 		body.SetConfiguredFiles(apiclientgen.NewOptNilHarnessConfigFileArray(withHarnessFile(cfg.ConfiguredFiles.Or(nil), file.HarnessConfigFile)))
 	} else {
 		body.SetFileOverrides(apiclientgen.NewOptNilHarnessConfigFileArray(withHarnessFile(cfg.FileOverrides.Or(nil), file.HarnessConfigFile)))

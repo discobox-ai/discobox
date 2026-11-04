@@ -245,7 +245,6 @@ type CreateOptions struct {
 	Name                 string
 	Description          *string
 	HarnessConfigID      *string
-	HarnessMode          string
 	Model                *string
 	ModelServiceTier     *string
 	ModelReasoningLevel  *string
@@ -347,7 +346,6 @@ type ResolvedHarnessConfig struct {
 	Description     string
 	RunCommand      []string
 	RelaunchCommand []string
-	ConfigCommand   []string
 	Files           []model.HarnessConfigFile
 	// ConfiguredFiles overlays Files by path (docs/adr/0012 §1's Files
 	// overlay rule): files captured by the harness's configure flow, kept

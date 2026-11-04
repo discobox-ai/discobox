@@ -1,6 +1,7 @@
 package sandboxconfig
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -86,13 +87,19 @@ func TestEffective_RelaunchCommandOverrideGrant(t *testing.T) {
 	}
 }
 
-func TestEffective_ConfigCommandIsImageOnly(t *testing.T) {
-	doc := Document{
-		Image: ImageLayer{ConfigCommand: []string{"configure"}},
+// A document written before configure was removed (ADR 26-11-02-152) still
+// carries a harness mode and an image configure command. A box upgraded onto
+// an agent from after it reads that document again, so both keys are ignored
+// rather than refused.
+func TestDocumentFromBeforeConfigureWasRemovedStillDecodes(t *testing.T) {
+	var doc Document
+	legacy := `{"image":{"runCommand":["claude"],"configCommand":["configure-claude-code"]},"runtime":{"harnessMode":"run"}}`
+	if err := json.Unmarshal([]byte(legacy), &doc); err != nil {
+		t.Fatalf("decode legacy document: %v", err)
 	}
 	cfg, _ := Effective(doc)
-	if !reflect.DeepEqual(cfg.Harness.ConfigCommand, []string{"configure"}) {
-		t.Errorf("ConfigCommand = %v", cfg.Harness.ConfigCommand)
+	if !reflect.DeepEqual(cfg.Harness.RunCommand, []string{"claude"}) {
+		t.Errorf("RunCommand = %v, want the legacy document's", cfg.Harness.RunCommand)
 	}
 }
 
@@ -178,13 +185,5 @@ func TestEffective_WorkingDirectorySubpathIsProjectOnly(t *testing.T) {
 	cfgNoProject, _ := Effective(docNoProject)
 	if cfgNoProject.WorkingDirectorySubpath != "" {
 		t.Errorf("WorkingDirectorySubpath = %q, want empty", cfgNoProject.WorkingDirectorySubpath)
-	}
-}
-
-func TestEffective_HarnessModeIsRuntimeOnly(t *testing.T) {
-	doc := Document{Runtime: RuntimeLayer{HarnessMode: "config"}}
-	cfg, _ := Effective(doc)
-	if cfg.HarnessMode != "config" {
-		t.Errorf("HarnessMode = %q", cfg.HarnessMode)
 	}
 }

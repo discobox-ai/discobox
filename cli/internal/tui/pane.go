@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +10,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/cli/internal/keys"
-	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/termpane"
 )
@@ -111,7 +109,7 @@ type pane struct {
 
 	// execID keys the pane to the server session it is drawing, which is what
 	// lets the workspace's poll tell a session it already shows from one it
-	// has to open. Empty for the overlay, which is no session at all.
+	// has to open.
 	execID string
 	// title is what to call the tab until the application names itself.
 	title string
@@ -175,22 +173,6 @@ type pane struct {
 	// exited is set when what was running in the pane finished and the pane
 	// was kept anyway, so its last screen can be read.
 	exited bool
-
-	// notice is guidance drawn in the window header, outside this pane.
-	notice string
-	// warning is drawn beside it, in the header's error color: something
-	// about this machine the configure flow could not get, said where the
-	// flow's own full-screen sign-in cannot paint over it.
-	warning string
-	// configure identifies a configure command whose completion advances the
-	// harness workflow rather than leaving a finished report open.
-	configure *configurePane
-}
-
-type configurePane struct {
-	harness    Harness
-	andDefault *Harness
-	resume     *RunRequest
 }
 
 // close ends what the pane is drawing from: its stream, and for a pull
@@ -205,9 +187,9 @@ func (p *pane) close() {
 // name is what to call a pane: what the application inside it says it is,
 // else what was asked for when it was opened.
 func (p *pane) name() string {
-	// A configure command may set an application title identical to a normal
-	// session. Keep the pane's purpose visible throughout this special flow.
-	if p.configure != nil || p.issue != nil {
+	// An issue's tab keeps the name it was opened with: the issue, not
+	// whatever the reader inside it reports.
+	if p.issue != nil {
 		return p.title
 	}
 	if title := strings.TrimSpace(p.term.Title()); title != "" {
@@ -312,17 +294,6 @@ type endPaneMsg struct{}
 // leader because inside a pane Ctrl-C belongs to the application.
 type quitPaneMsg struct{}
 
-type configurePaneOpenedMsg struct {
-	harness    Harness
-	andDefault *Harness
-	resume     *RunRequest
-	term       Terminal
-	err        error
-	// warning is what the header carries about the ports the flow declared
-	// and could not have; see configurePortWarning.
-	warning string
-}
-
 // paneEventMsg is a connection state change under an open pane.
 type paneEventMsg struct{ event TerminalEvent }
 
@@ -360,12 +331,9 @@ func tagCmd(cmd tea.Cmd, tag func(tea.Msg) tea.Msg) tea.Cmd {
 	}
 }
 
-// paneByID finds the pane a message came from: the overlay, the terminal, or
-// one of the shell tabs.
+// paneByID finds the pane a message came from: the terminal, or one of the
+// shell tabs.
 func (m *Model) paneByID(id int) *pane {
-	if m.overlay != nil && m.overlay.id == id {
-		return m.overlay
-	}
 	for _, p := range m.allPanes() {
 		if p.id == id {
 			return p
@@ -399,25 +367,20 @@ func (m *Model) allPanes() []*pane {
 func (m *Model) inPanes() bool {
 	// The list in front of an open workspace has the keys, and the window is
 	// its screen for as long as it does. See tree.go.
-	return m.hasWorkspace() && !m.listFront && !m.pageUp()
+	return m.hasWorkspace() && !m.listFront && !m.pageOpen()
 }
 
 // screenPane is the pane with the whole window, or nil when the workspace
-// itself is on screen: the command running over it, or the tool showing over
-// it. The two differ in what leaving them means — a command is over when it is
-// over, a tool is put away — and in nothing else the screen has to know.
+// itself is on screen: the tool showing over it.
 func (m *Model) screenPane() *pane {
-	if m.overlay != nil {
-		return m.overlay
-	}
 	return m.showingTool()
 }
 
 // hasScreen reports whether a pane is the one with the whole window.
 func (m *Model) hasScreen(p *pane) bool { return p != nil && p == m.screenPane() }
 
-// focusedPane is the pane every key goes to: the overlay while one is up, since
-// it has the screen, and otherwise the terminal or the visible shell tab.
+// focusedPane is the pane every key goes to: the tool while one has the
+// screen, and otherwise the terminal or the visible shell tab.
 func (m *Model) focusedPane() *pane {
 	if p := m.screenPane(); p != nil {
 		return p
@@ -439,7 +402,7 @@ func (m *Model) columnFor(shells bool) *column {
 }
 
 // paneColumn is the column a pane is in and where it sits in it, or nil and -1
-// for one that is in neither — the overlay, or a pane already closed.
+// for one that is in neither — a pane already closed.
 func (m *Model) paneColumn(p *pane) (*column, int) {
 	if i := m.terminals.index(p); i >= 0 {
 		return &m.terminals, i
@@ -492,44 +455,6 @@ func (m *Model) boxByID(id string) Sandbox {
 	return Sandbox{ID: id}
 }
 
-func (m *Model) configurePaneOpened(msg configurePaneOpenedMsg) tea.Cmd {
-	m.busy = ""
-	if msg.err != nil {
-		// The same outcome as a setup that ran and failed (paneClosed), so
-		// harnessDone decides for both what it ends.
-		err := fmt.Errorf("configure %s: %w", msg.harness.displayName(), msg.err)
-		return func() tea.Msg { return harnessDoneMsg{err: err, resume: msg.resume} }
-	}
-	m.nextPaneID++
-	p := &pane{
-		id: m.nextPaneID, term: termpane.New(m.paneOptions(paneOverlay, false)...),
-		stream: msg.term, action: Interaction("configure"),
-		title:     "Harness configuration · " + msg.harness.displayName(),
-		notice:    msg.harness.ConfigReminder,
-		warning:   msg.warning,
-		configure: &configurePane{harness: msg.harness, andDefault: msg.andDefault, resume: msg.resume},
-	}
-	m.overlay = p
-	m.focus = focusPane
-	m.prompt.Blur()
-	m.layout()
-	return tea.Batch(fromPane(p.id, p.term.Attach(msg.term)), fromPane(p.id, m.paneEvents(msg.term)))
-}
-
-// paneKind is what a pane is, as far as the keys it keeps are concerned.
-type paneKind int
-
-const (
-	// paneWorkspace is a terminal, a shell or a tool in the strip. A tool
-	// keeps the whole key map while it has the window, because it is in the
-	// strip whether or not it is showing; the keys that would move or open
-	// something underneath it are answered as such (see updatePaneMsg).
-	paneWorkspace paneKind = iota
-	// paneOverlay is a command of this CLI's own, running to completion over
-	// whatever it was started from.
-	paneOverlay
-)
-
 // paneKeymap is the keymap the panes this window opens are given, and it is
 // this window's decision rather than the pane's.
 //
@@ -552,16 +477,15 @@ var paneKeymap = map[string]string{
 
 // paneOptions are the keys a pane keeps for the window rather than passing on.
 //
-// A workspace terminal carries the whole key map, because every one of them is
-// about the discobox on screen and the screen is where you are. The overlay
-// carries only its way out and the mouse: it is one command running to
-// completion, and a key that opened something else over it would be a key that
-// lost it. A tool carries the workspace's, since put away it is a tab like any
-// other.
+// Every pane carries the whole key map, because every one of them is about the
+// discobox on screen and the screen is where you are. A tool keeps it too while
+// it has the window, because it is in the strip whether or not it is showing;
+// the keys that would move or open something underneath it are answered as
+// such (see updatePaneMsg).
 //
 // readOnly is the other axis: a pane onto something with no input side — a
-// service — is drawn and navigated but never typed at, whichever kind it is.
-func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
+// service — is drawn and navigated but never typed at.
+func (m *Model) paneOptions(readOnly bool) []termpane.Option {
 	opts := []termpane.Option{
 		// No bare detach key: nothing the window reserves stands between a
 		// program and its own interrupt. The way out is behind the leader, and
@@ -582,9 +506,6 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	}
 	if readOnly {
 		opts = append(opts, termpane.WithReadOnly())
-	}
-	if kind == paneOverlay {
-		return opts
 	}
 	opts = append(opts,
 		// Moving between the terminal and the tabs is something you do in
@@ -683,27 +604,6 @@ func (m *Model) paneEvents(term Terminal) tea.Cmd {
 			return paneEventMsg{event: event}
 		}
 	})
-}
-
-// closeOverlay ends the command that had the screen and gives it back to what
-// was under it: the workspace, which has been running the whole time, or the
-// list it was opened from.
-func (m *Model) closeOverlay() {
-	if m.overlay == nil {
-		return
-	}
-	_ = m.overlay.term.Close()
-	if m.dialog != nil && m.dialog.over == m.overlay {
-		m.dialog = nil
-	}
-	m.overlay = nil
-	if m.terminals.len() > 0 {
-		m.layout()
-		return
-	}
-	// It was opened from the list rather than over anything, so there is
-	// nothing to come back to.
-	m.leavePanes()
 }
 
 // leavePanes returns focus to where the screen was opened from.
@@ -870,7 +770,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.boxMenu(m.paneBox)
 
 	case switchBoxMsg:
-		if m.overlay != nil && p == m.overlay {
+		if m.hasScreen(p) {
 			return m.underScreen(p)
 		}
 		// A leaderless chord in a window with no tree to walk was never the
@@ -975,24 +875,21 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 	case openCredentialsMsg:
 		return m.openCredentialDialog(m.paneBox.ID)
 
+	// The band's other two keys. A binding's message comes back tagged with
+	// its pane, and one this switch does not name is handed to the terminal,
+	// which drops it: the band would name a key that does nothing.
+	case openRejectedMsg:
+		return m.openRejectedRemedy(m.currentBox())
+
+	case dismissBannerMsg:
+		return m.dismissBanner()
+
 	case termpane.DetachMsg:
 		if p.tool != "" && m.hasScreen(p) {
 			// A tool is put away rather than closed: its session keeps running
 			// and its stream stays attached, so choosing it again shows where
 			// it has got to. Ending it is the other key. See tools.go.
 			return m.minimizeTool()
-		}
-		if p == m.overlay {
-			// The overlay is this CLI's own command, so leaving it closes it.
-			m.closeOverlay()
-			m.layout()
-			if p.configure != nil && p.configure.resume != nil && m.oneShot() {
-				// A setup a run stopped for, left unfinished, is that run
-				// turned down: the window is the run, and there is no list
-				// behind the setup to go back to.
-				return m.exit(errNothingCreated)
-			}
-			return tea.Batch(m.refresh(), status("%s closed", p.action))
 		}
 		// Beside the tree there is nothing to detach to: the list is already
 		// on screen, and leaving a box is switching to another.
@@ -1093,36 +990,6 @@ func (m *Model) isOnScreen(p *pane) bool {
 func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 	action := p.action
 	switch {
-	case p.configure != nil:
-		flow := p.configure
-		m.closeOverlay()
-		m.layout()
-		err := msg.Err
-		name := flow.harness.displayName()
-		if err == nil {
-			code, done := exitCode(p.stream)
-			switch {
-			case done && code == harness.ConfigureCanceledExitCode:
-				// The person running setup chose to stop, and the command
-				// has already deleted its sandbox: an answer, not an error.
-				return func() tea.Msg {
-					return harnessDoneMsg{
-						text: "setup of " + name + " canceled; nothing was saved", canceled: true,
-						andDefault: flow.andDefault, resume: flow.resume,
-					}
-				}
-			case done && code != 0:
-				err = fmt.Errorf("configure command exited with code %d", code)
-			}
-		}
-		if err != nil {
-			return func() tea.Msg {
-				return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err), resume: flow.resume}
-			}
-		}
-		return func() tea.Msg {
-			return harnessDoneMsg{text: "configured " + name, andDefault: flow.andDefault, resume: flow.resume}
-		}
 	case p.primary:
 		m.closeWorkspace()
 		if m.attach != nil {
@@ -1158,23 +1025,10 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		p.status = "finished"
 		return m.refresh()
 
-	case p == m.overlay:
-		m.closeOverlay()
-		m.layout()
-		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
-
 	default:
 		m.closeTab(p)
 		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
 	}
-}
-
-func exitCode(stream Terminal) (int, bool) {
-	reporter, ok := stream.(ExitReporter)
-	if !ok {
-		return 0, false
-	}
-	return reporter.ExitStatus()
 }
 
 // paneReserved reports whether a key is one of the window's own a pane
@@ -1243,14 +1097,9 @@ func (m *Model) readFinished(p *pane, key tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// dismissPane takes a finished pane off the screen: the overlay back to the
-// workspace, a shell tab out of the strip.
+// dismissPane takes a finished pane off the screen: a shell tab out of the
+// strip.
 func (m *Model) dismissPane(p *pane) tea.Cmd {
-	if p == m.overlay {
-		m.closeOverlay()
-		m.layout()
-		return nil
-	}
 	m.closeTab(p)
 	return nil
 }
@@ -1367,7 +1216,7 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 }
 
 // paneAt is the pane whose grid is under a screen position, with the origin
-// that grid was drawn at. The overlay owns the whole screen while it is up;
+// that grid was drawn at. A tool showing owns the whole screen while it is up;
 // otherwise the terminal is on the left and the visible shell tab on the
 // right, or the one maximized box owns the screen alone. The chrome between and
 // around them belongs to no pane.
@@ -1393,7 +1242,7 @@ func (m *Model) paneAt(x, y int) (*pane, int, int) {
 	return nil, 0, 0
 }
 
-// onScreen is the panes actually drawn: the overlay alone while one is up, the
+// onScreen is the panes actually drawn: a tool alone while one is up, the
 // two columns of a split, and otherwise the single box the screen is — the
 // terminal with no tabs beside it, or whichever side was maximized.
 //
@@ -1530,7 +1379,7 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 	if span, ok := m.buttonAt(x, y); ok {
 		return m.pressButton(span)
 	}
-	if m.showingTool() != nil || m.overlay != nil {
+	if m.showingTool() != nil {
 		// One box with the whole window and nothing beside it; a press
 		// anywhere else on its chrome chooses nothing.
 		return nil, false
@@ -1678,11 +1527,10 @@ func (m *Model) columns(tabs int) (term, shells int) {
 	return max(m.width/2, 4), max(m.width-m.width/2, 4)
 }
 
-// paneWidthOf is the width of the box a pane is drawn in. The overlay has the
-// whole window whatever the workspace under it is doing; everything else takes
-// its side's column.
+// paneWidthOf is the width of the box a pane is drawn in. A tool with the
+// screen has the whole window; everything else takes its side's column.
 func (m *Model) paneWidthOf(p *pane) int {
-	if p == m.overlay || m.hasScreen(p) {
+	if m.hasScreen(p) {
 		// A tool put away is a tab like any other, drawn at its column's
 		// width; given the window, it is resized to the window.
 		return max(m.width, 4)
@@ -1772,20 +1620,15 @@ func (m *Model) viewPaneWindow() string {
 		rows = append(rows, bannerIndent+banner+pad+" ")
 	}
 
-	// The overlay has the screen while it is up. What is under it is not drawn
-	// half-covered or dimmed behind it: it is not there, and it is all still
-	// there when the command exits.
 	// The list in the tree beside the workspace takes focus from every pane
 	// here: none of them is the one keys go to, so none wears the bright edge.
 	live := !m.listFront
 	var body string
 	switch {
-	case m.terminals.len() == 0 && m.overlay == nil && m.wsOpening:
+	case m.terminals.len() == 0 && m.wsOpening:
 		body = m.viewOpening(m.width, m.paneRows()+2)
 	case m.audit != nil:
 		body = m.viewAuditBox(m.width)
-	case m.overlay != nil:
-		body = m.viewOverlayBox(m.width)
 	case m.showingTool() != nil:
 		body = m.viewToolBox(m.showingTool(), m.width)
 	case m.split():
@@ -1811,9 +1654,9 @@ func (m *Model) viewPaneWindow() string {
 	if last := len(bodyRows) - 1; last > 0 {
 		edge := bodyRows[last]
 		switch half := m.width / 2; {
-		case m.split() && m.onShells && m.overlay == nil && m.showingTool() == nil:
+		case m.split() && m.onShells && m.showingTool() == nil:
 			bodyRows[last] = ansi.Truncate(edge, half, "") + m.edgeMessage(ansi.TruncateLeft(edge, half, ""), m.width-half)
-		case m.split() && m.overlay == nil && m.showingTool() == nil:
+		case m.split() && m.showingTool() == nil:
 			bodyRows[last] = m.edgeMessage(ansi.Truncate(edge, half, ""), half) + ansi.TruncateLeft(edge, half, "")
 		default:
 			bodyRows[last] = m.edgeMessage(edge, m.width)
@@ -1869,22 +1712,6 @@ func (m *Model) viewPaneWindow() string {
 // are not in the middle: they ride the right edge, inside the keys, in whatever
 // room the row has left once everything above has its place (withResources).
 func (m *Model) viewPaneHeader(w int) string {
-	if p := m.overlay; p != nil && p.configure != nil {
-		// The warning outranks the reminder on a row too narrow for both:
-		// the reminder says how the flow goes, the warning says why it will
-		// not, and a row that keeps the first and cuts the second has kept
-		// the wrong one.
-		lead := "Configuring " + p.configure.harness.displayName()
-		warning := ""
-		if p.warning != "" {
-			warning = m.st.statusWA.Render("  ·  ") + m.st.statusER.Render(p.warning)
-		}
-		rendered := m.st.statusWA.Render(lead+"  ·  "+p.notice) + warning
-		if p.notice == "" || lipgloss.Width(rendered) > w {
-			rendered = m.st.statusWA.Render(lead) + warning
-		}
-		return padANSI(rendered, w)
-	}
 	// The tree beside the workspace carries the filter, and a window opened
 	// on one box has no list for it to narrow; the header says it on neither.
 	filter := ""
@@ -2332,18 +2159,8 @@ func (m *Model) viewColumnBox(col *column, shells bool, left, width int, focused
 	return m.viewPaneBox(p, top, edge, width)
 }
 
-// viewOverlayBox draws the command that has the screen over the workspace. It
-// is one pane with the window to itself, so it wears its own name and no
-// control: there is nothing beside it to maximize over.
-func (m *Model) viewOverlayBox(width int) string {
-	edge := m.focusEdge()
-	inner := max(width-2, 1)
-	return m.viewPaneBox(m.overlay, titledEdge(m.st, edge, m.overlay.name(), "", inner), edge, width)
-}
-
 // viewToolBox draws the tool that has the screen. It is one pane with the
-// window to itself like the overlay, and unlike the overlay it wears the two
-// buttons that say what can be done to a window that outlives being looked at:
+// window to itself, and it wears the two buttons that say what can be done to a window that outlives being looked at:
 // put it away, or end it. See toolControls.
 func (m *Model) viewToolBox(p *pane, width int) string {
 	edge := m.focusEdge()
@@ -2417,7 +2234,7 @@ func (m *Model) viewPaneBox(p *pane, top string, edge lipgloss.Style, width int)
 //
 //   - `[+]` takes the window for this column and `[-]` gives it back. It is
 //     drawn only when there are two columns to choose between: with a single
-//     box on screen — an overlay, or a terminal with no tabs beside it — there
+//     box on screen — a terminal with no tabs beside it — there
 //     is nothing to maximize over, and a button whose two states look the same
 //     is a button that lies about what it does. On a tool's tab in the split
 //     it gives the tool its own window back; maximized, it restores like any

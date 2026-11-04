@@ -15,7 +15,7 @@ func TestTheBandCentresItsCallToAction(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
 	const width = 120
-	row := ansi.Strip(bannerRow(st, width, "credential request  ·  gh", "click to answer", "ctrl+a g"))
+	row := ansi.Strip(bannerRow(st, alertPalette, width, "credential request  ·  gh", "click to answer", "ctrl+a g"))
 
 	if got := lipgloss.Width(row); got != width {
 		t.Fatalf("band is %d cells wide, want %d: %q", got, width, row)
@@ -45,7 +45,7 @@ func TestANarrowBandDropsTheCallRatherThanCuttingIt(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
 	const width = 34
-	row := ansi.Strip(bannerRow(st, width, "credential request  ·  gh", "click to answer", "ctrl+a g"))
+	row := ansi.Strip(bannerRow(st, alertPalette, width, "credential request  ·  gh", "click to answer", "ctrl+a g"))
 
 	if got := lipgloss.Width(row); got != width {
 		t.Fatalf("band is %d cells wide, want %d: %q", got, width, row)
@@ -72,7 +72,7 @@ func TestACutSubjectKeepsItsDistanceFromTheCall(t *testing.T) {
 	st := newStyles(false)
 	const width = 50
 	subject := "credential request  ·  a token with a very long name for somewhere"
-	row := ansi.Strip(bannerRow(st, width, subject, "click to answer", "ctrl+a g"))
+	row := ansi.Strip(bannerRow(st, alertPalette, width, subject, "click to answer", "ctrl+a g"))
 
 	if got := lipgloss.Width(row); got != width {
 		t.Fatalf("band is %d cells wide, want %d: %q", got, width, row)

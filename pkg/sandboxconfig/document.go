@@ -63,10 +63,6 @@ type RuntimeLayer struct {
 	// the wrapper never hardcodes env var names itself.
 	ProxyEnvs []string `json:"proxyEnvs,omitempty"`
 
-	// HarnessMode is what this sandbox exists for (HarnessMode* below); it is
-	// a selection, not a capability grant, so it stays runtime-owned.
-	HarnessMode string `json:"harnessMode,omitempty"`
-
 	// Files overlays onto the image's declared files, by path.
 	Files []File `json:"files,omitempty"`
 
@@ -325,8 +321,6 @@ type ImageLayer struct {
 	// may replace them wholesale.
 	RunCommand      []string `json:"runCommand,omitempty"`
 	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
-	// ConfigCommand is image-owned only; no other layer may set it.
-	ConfigCommand []string `json:"configCommand,omitempty"`
 
 	Files   []File            `json:"files,omitempty"`
 	Volumes []harness.Volume  `json:"volumes,omitempty"`
@@ -531,22 +525,3 @@ func SourcesAwaitDelivery(sources []Source) bool {
 // AwaitsSourceDelivery reports whether the sandbox is waiting on its client for
 // any of its sources.
 func (c Config) AwaitsSourceDelivery() bool { return SourcesAwaitDelivery(c.Sources) }
-
-// What a sandbox exists for. The control plane writes one of these into a
-// sandbox's document, the pool carries it, and the sandbox agent reads it —
-// three modules whose only agreement is this document, which is why the words
-// live here rather than in any one of them.
-const (
-	// HarnessModeRun is the ordinary discobox: a harness terminal to work in,
-	// the repository's services, and an idle timeout. The empty mode is this.
-	HarnessModeRun = "run"
-	// HarnessModeConfig exists to run a harness's setup command once, driven
-	// by the control plane, rather than to be worked in.
-	HarnessModeConfig = "config"
-)
-
-// WorkedIn reports whether a sandbox in this harness mode exists to be worked
-// in. A configure sandbox exists to run its harness's setup once instead.
-func WorkedIn(harnessMode string) bool {
-	return harnessMode != HarnessModeConfig
-}

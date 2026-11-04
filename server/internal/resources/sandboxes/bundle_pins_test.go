@@ -175,30 +175,30 @@ func TestCreateRefusesAHarnessItCannotPin(t *testing.T) {
 	}
 }
 
-// A configure box runs the harness's configure command, which the harness
-// bundle delivers: it is pinned to its harness config's bundle and the
-// platform exactly as a run is, not to the platform alone.
-func TestConfigModeCreatePinsTheHarnessBundle(t *testing.T) {
+// A harness that declares a credential nothing delivers still runs: the box
+// starts its harness signed out, and is signed in inside it (ADR 26-11-02-152
+// §1). It is pinned to its harness config's bundle and the platform like any
+// other box.
+func TestASignedOutHarnessCreatesAndPinsItsBundle(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	config := configuredHarness(t, st, "codex", "Codex")
-	config.Configured = false
+	config.Secrets = []model.HarnessConfigSecret{{Name: "OPENAI_API_KEY", Required: true}}
 	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
 		t.Fatal(err)
 	}
 	svc.SetReleaseBundles(release(platformOld))
-	body := services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "configure"}}
+	body := services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "signed-out"}}
 	body.Config.SetHarnessConfigId(serverapi.NewOptString(config.ID))
-	body.Config.SetHarnessMode(serverapi.NewOptSandboxCreateConfigHarnessMode(serverapi.SandboxCreateConfigHarnessModeConfig))
 	created, err := svc.CreateSandbox(ctx, "project-1", body)
 	if err != nil {
-		t.Fatalf("create configure box: %v", err)
+		t.Fatalf("create a box on a signed-out harness: %v", err)
 	}
 	sb, err := st.GetSandbox(ctx, "project-1", created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if harness := sb.HarnessPin(); sb.Image != "" || harness.Reference != codexBundle || harness.Digest != codexBundleV1 {
-		t.Fatalf("configure box pins = %q, %+v, want the harness config's bundle alone", sb.Image, harness)
+		t.Fatalf("box pins = %q, %+v, want the harness config's bundle alone", sb.Image, harness)
 	}
 	want := []BundlePin{{Name: "discobox-platform", Digest: platformOld}, {Name: "discobox-harness-codex", Digest: codexBundleV1}}
 	if got := sandboxDelivery(sb).Bundles; !slices.Equal(got, want) {
@@ -328,7 +328,7 @@ func TestUndeliveredSandboxesArePinned(t *testing.T) {
 	// Registered before bundles: the upgrade dropped the runnable image it
 	// named (database.dropHarnessImageColumns), and no bundle is registered yet.
 	unregistered := &model.HarnessConfig{
-		ProjectID: "project-1", Slug: "legacy", Name: "Legacy", RunCommand: []string{"legacy"}, Configured: true,
+		ProjectID: "project-1", Slug: "legacy", Name: "Legacy", RunCommand: []string{"legacy"},
 	}
 	if err := st.CreateHarnessConfig(ctx, unregistered); err != nil {
 		t.Fatal(err)

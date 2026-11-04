@@ -65,16 +65,6 @@ func (s *Service) WatchSecretFiles(ctx context.Context, logger *slog.Logger) {
 	if len(s.harness.Files) == 0 && s.capture == nil {
 		return
 	}
-	// Not in a config sandbox. There, the credentials file is not a delivery to
-	// be kept intact — it is the flow's output: the user logs in inside the
-	// session and the configure script reads the real credential back out of
-	// that file to capture it (harness/claude-code/configure.sh,
-	// extract_oauth_payload). Restoring the sentinel over it would overwrite
-	// the login being captured, breaking the one flow that produces a
-	// credential in the first place.
-	if s.harnessMode == config.HarnessModeConfig {
-		return
-	}
 	ticker := time.NewTicker(secretFilesInterval)
 	defer ticker.Stop()
 	for {

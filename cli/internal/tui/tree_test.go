@@ -1000,17 +1000,6 @@ func TestTheLeaderOpensTheTreesEntriesFromAnywhereBesideIt(t *testing.T) {
 		if m.audit != nil {
 			t.Fatal("the page opened over the audit left it open behind the page")
 		}
-		// A pane the page opens of its own is what is in front, with the keys:
-		// no audit comes back over it.
-		d.key("j")
-		d.key("e")
-		d.wait("the configure pane", func() bool { return m.overlay != nil })
-		if m.audit != nil || !m.inPanes() || m.focusedPane() != m.overlay {
-			t.Fatalf("audit %v, inPanes %v; want the configure pane in front with the keys", m.audit != nil, m.inPanes())
-		}
-		if frame := plainFrame(m); !strings.Contains(frame, "Configuring Codex") {
-			t.Fatalf("the configure pane is not what is drawn:\n%s", frame)
-		}
 
 		d.settle()
 		if got := term.inputSoFar(); strings.Contains(got, "n") {
@@ -1579,7 +1568,7 @@ func TestAParkedIssueTabTakesItsRead(t *testing.T) {
 	})
 }
 
-// The box's actions are not offered while an overlay or a tool has the
+// The box's actions are not offered while a tool has the
 // screen: the leader there means the screen's way out, not the menu.
 func TestTheActionsAreNotOfferedOverAScreen(t *testing.T) {
 	t.Parallel()

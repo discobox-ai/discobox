@@ -43,7 +43,6 @@ type Config struct {
 	// Description is the one the sandbox was created with, which seeds its
 	// meta file when it has none (ADR 0136).
 	Description string `json:"description,omitempty"`
-	HarnessMode string `json:"harnessMode,omitempty"`
 	// Harness is the sandbox's one resolved harness. A zero-value Harness
 	// (empty ID) means the sandbox has no harness configured.
 	Harness Harness                `json:"harness"`
@@ -168,24 +167,8 @@ func unmarshalConfig(data []byte, cfg *Config) error {
 	return nil
 }
 
-// What a sandbox exists for, which decides what starts in it. The words are
-// sandboxconfig's, because the document they arrive in is.
-const (
-	HarnessModeRun    = sandboxconfig.HarnessModeRun
-	HarnessModeConfig = sandboxconfig.HarnessModeConfig
-)
-
-// WorkedIn reports whether a sandbox in this harness mode exists to be worked
-// in: a harness terminal comes up, the repository's services start, and an idle
-// one powers itself off. The agent reads this rather than naming a mode at each
-// of the three places that would otherwise have to agree.
-func WorkedIn(harnessMode string) bool { return sandboxconfig.WorkedIn(harnessMode) }
-
 func configFromEffective(effective sandboxconfig.Config) Config {
 	harnessCommand := effective.Harness.RunCommand
-	if effective.HarnessMode == HarnessModeConfig {
-		harnessCommand = effective.Harness.ConfigCommand
-	}
 	cfg := Config{
 		Identity: Identity{
 			SandboxID: effective.SandboxID,
@@ -204,7 +187,6 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		Env:                   effective.Env,
 		Prompt:                cloneCommand(effective.Prompt),
 		Description:           effective.Description,
-		HarnessMode:           effective.HarnessMode,
 		Volumes:               effective.Volumes,
 		Sources:               effective.Sources,
 		Skills:                effective.Skills,
@@ -312,11 +294,6 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.ControlPlanePublicKey) == "" {
 		return fmt.Errorf("provider.publicKeys.%s is required", sandboxconfig.ControlPlanePublicKeyName)
-	}
-	switch c.HarnessMode {
-	case "", HarnessModeRun, HarnessModeConfig:
-	default:
-		return fmt.Errorf("unsupported harnessMode %q", c.HarnessMode)
 	}
 	// A harness with no command is legal and means the run user's login shell,
 	// resolved here rather than named by the control plane, which cannot know

@@ -77,7 +77,7 @@ func TestCreateKeepsItsSkillsAndRefusesBadOnes(t *testing.T) {
 // A sandbox created without skills keeps the fingerprint it had before skills
 // existed, so no container is rebuilt for them (ADR 26-10-09-395 §2).
 func TestSkillsLeaveTheFingerprintOfASandboxWithoutThem(t *testing.T) {
-	manifest := model.SandboxManifest{HarnessMode: "run", Image: "img"}
+	manifest := model.SandboxManifest{Image: "img"}
 	before := manifest.Fingerprint()
 	manifest.Skills = sandboxconfig.Skills{}
 	if manifest.Fingerprint() != before {

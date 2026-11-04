@@ -71,7 +71,7 @@ func TestEnsureHarnessAvailableAcceptsAConfigItDidNotSeed(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "mine", Name: "Mine",
-		Bundle: "example.com/mine:v1", BundleDigest: "sha256:mine", Configured: true,
+		Bundle: "example.com/mine:v1", BundleDigest: "sha256:mine",
 	}); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestReleaseManifestPreservesCustomHarnessOnSlugCollision(t *testing.T) {
 	custom := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "other-agent", Name: "My agent",
 		Bundle: "example.com/mine:v1", BundleDigest: "sha256:mine",
-		RunCommand: []string{"mine"}, Configured: true,
+		RunCommand:      []string{"mine"},
 		ConfiguredFiles: []model.HarnessConfigFile{{Path: "auth.json", Content: "secret"}},
 	}
 	if err := st.CreateHarnessConfig(ctx, custom); err != nil {

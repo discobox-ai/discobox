@@ -741,7 +741,7 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 	m.nextPaneID++
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(paneWorkspace, false)...),
+		term:    termpane.New(m.paneOptions(false)...),
 		stream:  msg.term,
 		action:  Interaction(label),
 		sandbox: m.paneBox,

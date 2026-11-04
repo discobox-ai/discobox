@@ -234,35 +234,6 @@ func (c *countingInstaller) RestoreSecretFiles(context.Context, config.Harness, 
 	return nil, nil
 }
 
-// A config sandbox's credentials file is the configure flow's output, not a
-// delivery: the user logs in inside the session and the script reads the real
-// credential back out of that file. Restoring a sentinel over it would
-// overwrite the login being captured.
-func TestWatchSecretFilesSkipsConfigSandboxes(t *testing.T) {
-	installer := &countingInstaller{}
-	svc := &Service{
-		harness:     credentialsHarness(),
-		installer:   installer,
-		harnessMode: config.HarnessModeConfig,
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	done := make(chan struct{})
-	go func() {
-		svc.WatchSecretFiles(ctx, slog.New(slog.DiscardHandler))
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("WatchSecretFiles did not return for a config sandbox")
-	}
-	if n := installer.calls.Load(); n != 0 {
-		t.Fatalf("restore calls = %d, want none in a config sandbox", n)
-	}
-}
-
 // Outside config mode it reconciles immediately rather than waiting a tick.
 func TestWatchSecretFilesReconcilesOnStart(t *testing.T) {
 	installer := &countingInstaller{}

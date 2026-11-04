@@ -58,9 +58,8 @@ setup_file() {
   go tool task build:sandbox-base-image
   go tool task build:pool-agent-bundle
   go tool task build:agent-bundle
-  # A discobox cannot be created without a harness, and a harness is not
-  # selectable until its configure flow has run, so this suite needs the shared
-  # stub bundle the other end-to-end files use. Nothing here tests harnesses; it
+  # A discobox cannot be created without a harness, so this suite needs the
+  # shared stub bundle the other end-to-end files use. Nothing here tests harnesses; it
   # is the price of having a real sandbox to reach over SSH. The platform bundle
   # is what the server composes the stub's bundle on, and what the sandbox agent
   # applies first in every box.
@@ -107,8 +106,6 @@ setup_file() {
 
   run cli admin harness create --bundle discobox-harness-stub:local \
     --slug ssh-stub --name "SSH Stub"
-  [ "$status" -eq 0 ]
-  run cli admin harness configure ssh-stub </dev/null
   [ "$status" -eq 0 ]
 
   run cli admin box create --name ssh-e2e --harness ssh-stub --wait --wait-timeout 120s

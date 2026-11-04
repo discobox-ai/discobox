@@ -704,7 +704,7 @@ func bundleHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, pro
 	t.Helper()
 	clearSeededHarnessConfigs(ctx, t, st, projectID)
 	config := &model.HarnessConfig{
-		ProjectID: projectID, Slug: "bundled", Name: "Bundled", Configured: true,
+		ProjectID: projectID, Slug: "bundled", Name: "Bundled",
 		Bundle:       "example.invalid/discobox-harness-bundled@" + testBundleDigest,
 		BundleDigest: testBundleDigest,
 	}

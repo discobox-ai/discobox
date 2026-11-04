@@ -3866,52 +3866,6 @@ func (o OptSandboxConfigFeatures) Or(d SandboxConfigFeatures) SandboxConfigFeatu
 	return d
 }
 
-// NewOptSandboxConfigHarnessMode returns new OptSandboxConfigHarnessMode with value set to v.
-func NewOptSandboxConfigHarnessMode(v SandboxConfigHarnessMode) OptSandboxConfigHarnessMode {
-	return OptSandboxConfigHarnessMode{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSandboxConfigHarnessMode is optional SandboxConfigHarnessMode.
-type OptSandboxConfigHarnessMode struct {
-	Value SandboxConfigHarnessMode
-	Set   bool
-}
-
-// IsSet returns true if OptSandboxConfigHarnessMode was set.
-func (o OptSandboxConfigHarnessMode) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSandboxConfigHarnessMode) Reset() {
-	var v SandboxConfigHarnessMode
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSandboxConfigHarnessMode) SetTo(v SandboxConfigHarnessMode) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxConfigHarnessMode) Get() (v SandboxConfigHarnessMode, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSandboxConfigHarnessMode) Or(d SandboxConfigHarnessMode) SandboxConfigHarnessMode {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptSandboxConfigSkills returns new OptSandboxConfigSkills with value set to v.
 func NewOptSandboxConfigSkills(v SandboxConfigSkills) OptSandboxConfigSkills {
 	return OptSandboxConfigSkills{
@@ -6758,7 +6712,6 @@ type ResolvedHarnessConfig struct {
 	Description      OptString                      `json:"description"`
 	RunCommand       OptNilStringArray              `json:"runCommand"`
 	RelaunchCommand  OptNilStringArray              `json:"relaunchCommand"`
-	ConfigCommand    OptNilStringArray              `json:"configCommand"`
 	Env              OptNilResolvedHarnessConfigEnv `json:"env"`
 	Volumes          OptNilHarnessVolumeArray       `json:"volumes"`
 	Secrets          OptNilHarnessSecretArray       `json:"secrets"`
@@ -6813,11 +6766,6 @@ func (s *ResolvedHarnessConfig) GetRunCommand() OptNilStringArray {
 // GetRelaunchCommand returns the value of RelaunchCommand.
 func (s *ResolvedHarnessConfig) GetRelaunchCommand() OptNilStringArray {
 	return s.RelaunchCommand
-}
-
-// GetConfigCommand returns the value of ConfigCommand.
-func (s *ResolvedHarnessConfig) GetConfigCommand() OptNilStringArray {
-	return s.ConfigCommand
 }
 
 // GetEnv returns the value of Env.
@@ -6890,11 +6838,6 @@ func (s *ResolvedHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
 	s.RelaunchCommand = val
 }
 
-// SetConfigCommand sets the value of ConfigCommand.
-func (s *ResolvedHarnessConfig) SetConfigCommand(val OptNilStringArray) {
-	s.ConfigCommand = val
-}
-
 // SetEnv sets the value of Env.
 func (s *ResolvedHarnessConfig) SetEnv(val OptNilResolvedHarnessConfigEnv) {
 	s.Env = val
@@ -6928,16 +6871,14 @@ func (s *ResolvedHarnessConfigEnv) init() ResolvedHarnessConfigEnv {
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
-	HarnessConfigId OptString `json:"harnessConfigId"`
-	// What this sandbox exists for, carried through to its sandbox configuration.
-	HarnessMode         OptSandboxConfigHarnessMode `json:"harnessMode"`
-	Model               OptString                   `json:"model"`
-	ModelReasoningLevel OptString                   `json:"modelReasoningLevel"`
-	ModelServiceTier    OptString                   `json:"modelServiceTier"`
-	Description         OptString                   `json:"description"`
-	Env                 OptSandboxConfigEnv         `json:"env"`
-	Git                 OptSandboxGitIdentity       `json:"git"`
-	Skills              OptSandboxConfigSkills      `json:"skills"`
+	HarnessConfigId     OptString              `json:"harnessConfigId"`
+	Model               OptString              `json:"model"`
+	ModelReasoningLevel OptString              `json:"modelReasoningLevel"`
+	ModelServiceTier    OptString              `json:"modelServiceTier"`
+	Description         OptString              `json:"description"`
+	Env                 OptSandboxConfigEnv    `json:"env"`
+	Git                 OptSandboxGitIdentity  `json:"git"`
+	Skills              OptSandboxConfigSkills `json:"skills"`
 	// Directories of skills sources whose skills the sandbox links into the harness's skill directories
 	// on its first launch, in order (ADR 26-10-14-294). Each names a sourceCodeReferences key.
 	SkillsSources []SandboxSkillsSource `json:"skillsSources"`
@@ -6964,11 +6905,6 @@ type SandboxConfig struct {
 // GetHarnessConfigId returns the value of HarnessConfigId.
 func (s *SandboxConfig) GetHarnessConfigId() OptString {
 	return s.HarnessConfigId
-}
-
-// GetHarnessMode returns the value of HarnessMode.
-func (s *SandboxConfig) GetHarnessMode() OptSandboxConfigHarnessMode {
-	return s.HarnessMode
 }
 
 // GetModel returns the value of Model.
@@ -7054,11 +6990,6 @@ func (s *SandboxConfig) GetUser() OptSandboxUser {
 // SetHarnessConfigId sets the value of HarnessConfigId.
 func (s *SandboxConfig) SetHarnessConfigId(val OptString) {
 	s.HarnessConfigId = val
-}
-
-// SetHarnessMode sets the value of HarnessMode.
-func (s *SandboxConfig) SetHarnessMode(val OptSandboxConfigHarnessMode) {
-	s.HarnessMode = val
 }
 
 // SetModel sets the value of Model.
@@ -7163,48 +7094,6 @@ func (s *SandboxConfigFeatures) init() SandboxConfigFeatures {
 		*s = m
 	}
 	return m
-}
-
-// What this sandbox exists for, carried through to its sandbox configuration.
-type SandboxConfigHarnessMode string
-
-const (
-	SandboxConfigHarnessModeRun    SandboxConfigHarnessMode = "run"
-	SandboxConfigHarnessModeConfig SandboxConfigHarnessMode = "config"
-)
-
-// AllValues returns all SandboxConfigHarnessMode values.
-func (SandboxConfigHarnessMode) AllValues() []SandboxConfigHarnessMode {
-	return []SandboxConfigHarnessMode{
-		SandboxConfigHarnessModeRun,
-		SandboxConfigHarnessModeConfig,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxConfigHarnessMode) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxConfigHarnessModeRun:
-		return []byte(s), nil
-	case SandboxConfigHarnessModeConfig:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
-	switch SandboxConfigHarnessMode(data) {
-	case SandboxConfigHarnessModeRun:
-		*s = SandboxConfigHarnessModeRun
-		return nil
-	case SandboxConfigHarnessModeConfig:
-		*s = SandboxConfigHarnessModeConfig
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 type SandboxConfigSkills map[string]SandboxSkill

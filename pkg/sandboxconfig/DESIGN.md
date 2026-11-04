@@ -37,9 +37,9 @@ control plane's resolved harness config.
   features as its client read them from `.discobox/settings.json`, which the
   box's provisioning turns off by name; ADR 26-10-16-423 §4), the create-time
   `Description` (only a seed for the
-  sandbox's meta file, ADR 0136), `HarnessMode`, and per-sandbox env/files. `Env`
+  sandbox's meta file, ADR 0136), and per-sandbox env/files. `Env`
   includes pool-agent's proxy-trust env, and `ProxyEnvs` names those keys for
-  sandbox-agent's runc wrapper. `Files` is the harness config's configured-file
+  sandbox-agent's runc wrapper. `Files` is the harness config's saved-file
   overlay. Each `Source` carries its ownership (`UID`/`GID`, absent when the
   pool cannot know them), the `BaseCommit`/`UpstreamRef` the agent's diff stat
   measures from, `AwaitsDelivery` (see Readiness), and how the sandbox agent

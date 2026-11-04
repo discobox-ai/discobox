@@ -38,8 +38,8 @@ setup_file() {
   : >"$BATS_SUITE_TMPDIR/sandboxes"
   : >"$BATS_SUITE_TMPDIR/work"
 
-  cli admin harness ls -o json 2>/dev/null | jq -e '.harnessConfigs[] | select(.slug == "shell" and .configured)' >/dev/null ||
-    skip "the shell harness is not configured on the development server"
+  cli admin harness ls -o json 2>/dev/null | jq -e '.harnessConfigs[] | select(.slug == "shell")' >/dev/null ||
+    skip "the shell harness is not registered on the development server"
 
   # The developer's repository: a checkout of a remote nothing here can
   # reach, one commit ahead of where it last saw that remote, with a branch

@@ -273,7 +273,6 @@ func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 		Bundle:       "example.invalid/discobox-harness-codex@" + testBundleDigest,
 		BundleDigest: testBundleDigest,
 		// Only configured harnesses are selectable, so a sandbox can pin this one.
-		Configured: true,
 		RunCommand: []string{
 			"codex",
 		},
@@ -507,14 +506,8 @@ func testServiceOptions() service.Options {
 func seedTestHarnessConfig(ctx context.Context, t *testing.T, appStore *store.Store, projectID string) {
 	t.Helper()
 	// Idempotent: on a machine that does have the images built, SeedBuiltIns got
-	// there first and this only has to guarantee the config is selectable.
+	// there first.
 	if existing, err := appStore.GetHarnessConfigBySlug(ctx, projectID, harnessdefs.ShellSlug); err == nil && existing != nil {
-		if !existing.Configured {
-			existing.Configured = true
-			if err := appStore.UpdateHarnessConfig(ctx, existing); err != nil {
-				t.Fatalf("configure seeded harness config: %v", err)
-			}
-		}
 		return
 	}
 	config := &model.HarnessConfig{
@@ -522,7 +515,6 @@ func seedTestHarnessConfig(ctx context.Context, t *testing.T, appStore *store.St
 		Slug:         harnessdefs.ShellSlug,
 		Name:         "Shell",
 		BuiltIn:      true,
-		Configured:   true,
 		Bundle:       "example.invalid/discobox-harness-shell@" + testBundleDigest,
 		BundleDigest: testBundleDigest,
 		RunCommand:   []string{"sh"},

@@ -248,8 +248,8 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 // can never move — so no sandbox created from it could ever report an
 // available upgrade (ADR 0016 §7).
 //
-// Configured is never flipped: re-snapshotting the bundle's baseline leaves
-// whatever the configure flow produced intact, exactly as seeding does.
+// Re-snapshotting the bundle's baseline leaves the saved overlay intact,
+// exactly as seeding does.
 func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
@@ -357,17 +357,13 @@ func (s *Service) UnsetDefaultHarnessConfig(ctx context.Context, projectID, conf
 }
 
 // builtInDeleteHint is what to do instead of deleting a built-in, when there is
-// anything to do. A harness already off has nothing to turn off, and one whose
-// image declares no configure command cannot be turned off at all.
+// anything to do: one with saved harness changes can be reset to its bundle's
+// defaults (ADR 26-11-02-152 §3); one with none is already there.
 func builtInDeleteHint(config *model.HarnessConfig) string {
-	switch {
-	case !config.Configured:
-		return "; it is already off"
-	case len(config.ConfigCommand) == 0:
+	if len(config.ConfiguredFiles) == 0 && len(config.ConfiguredSecretIDs) == 0 {
 		return ""
-	default:
-		return fmt.Sprintf("; run `discobox admin harness deconfigure %s` to turn it off", config.Slug)
 	}
+	return fmt.Sprintf("; run `discobox admin harness reset %s` to return it to its bundle's defaults", config.Slug)
 }
 
 func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {
@@ -417,8 +413,8 @@ func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID s
 // detection compares digests (ADR 0016 §7), so a digest that never moves
 // reports every sandbox as current forever.
 //
-// Seeding never flips Configured — a rebuilt harness keeps whatever the
-// configure flow produced. Best-effort per harness: one whose bundle cannot be
+// Seeding leaves the saved overlay alone — a rebuilt harness keeps whatever
+// discoboxes saved to it. Best-effort per harness: one whose bundle cannot be
 // inspected is logged and skipped so an unavailable bundle never blocks startup.
 func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 	if s.inspector == nil {
@@ -466,12 +462,6 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				FileOverrides: []model.HarnessConfigFile{},
 			}
 			snapshotImageMetadata(config, metadata)
-			// Born configured when there is nothing to collect. `shell` is the
-			// harness that lands here, but by declaring no secrets rather than
-			// by being itself: a fresh project has to be usable before anyone
-			// configures anything, and a bundle with no credentials already is.
-			// Only set at creation — reseeding never revisits Configured.
-			config.Configured = len(config.Secrets) == 0
 			if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 				return err
 			}
@@ -748,7 +738,7 @@ func conventionCommands(slug string, image harness.Image) (runCommand, relaunchC
 // It takes the config rather than returning the fields because every caller
 // wants exactly this set on exactly one config, and a snapshot that grows a
 // field should not have to grow a return value at three call sites to reach
-// them. Identity — id, slug, bundle, digests, Configured — is the caller's;
+// them. Identity — id, slug, bundle, digests — is the caller's;
 // this is only what the labels say.
 func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata) {
 	config.ManifestDigest = manifestDigest(inspected)
@@ -759,12 +749,6 @@ func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata)
 	}
 	config.SaveBack = image.SaveBack
 	config.RunCommand, config.RelaunchCommand = conventionCommands(config.Slug, *image)
-	config.ConfigCommand, config.ConfigReminder, config.ConfigPorts = nil, "", nil
-	if image.Config != nil {
-		config.ConfigCommand = append([]string{}, image.Config.Command...)
-		config.ConfigReminder = strings.TrimSpace(image.Config.Reminder)
-		config.ConfigPorts = append([]harness.ConfigPort{}, image.Config.Ports...)
-	}
 	config.Files = bundleFiles(inspected)
 	config.Secrets = declaredSecrets(image)
 	config.Env = nil

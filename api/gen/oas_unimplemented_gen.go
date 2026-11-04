@@ -49,20 +49,6 @@ func (UnimplementedHandler) AssignSandboxHarnessSecrets(ctx context.Context, req
 	return r, ht.ErrNotImplemented
 }
 
-// AttachHarnessConfigConfigure implements attach-harness-config-configure operation.
-//
-// Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
-// This seeds the previous configuration into the sandbox at a well-known path so the harness's
-// configure command may pre-fill from it; only the secrets a previous configure of this harness
-// config created, bound on it, are included. The configure command is not launched until the primary
-// terminal is attached, so
-// seeding always precedes it. Call this before attaching to exec id "primary".
-//
-// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach
-func (UnimplementedHandler) AttachHarnessConfigConfigure(ctx context.Context, params AttachHarnessConfigConfigureParams) (r AttachHarnessConfigConfigureRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // AttachSandboxExec implements attach-sandbox-exec operation.
 //
 // Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -121,20 +107,6 @@ func (UnimplementedHandler) ClearSandboxCache(ctx context.Context, params ClearS
 	return r, ht.ErrNotImplemented
 }
 
-// CommitHarnessConfigConfigure implements commit-harness-config-configure operation.
-//
-// Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the
-// result it wrote, applies the declared secrets and files to the harness config, and marks it
-// configured. A non-zero exit leaves the harness unconfigured with configureError set, except the
-// canceled status (10: the person running it chose to stop), which applies nothing, records no
-// error, and answers with the harness as it was. The ephemeral configure sandbox is deleted
-// whichever way the command ended, so a client commits after every finished flow.
-//
-// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit
-func (UnimplementedHandler) CommitHarnessConfigConfigure(ctx context.Context, params CommitHarnessConfigConfigureParams) (r CommitHarnessConfigConfigureRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // CompleteSandboxSourcePush implements complete-sandbox-source-push operation.
 //
 // Report that the client finished pushing a push-delivered source into the sandbox's Git repository,
@@ -143,21 +115,6 @@ func (UnimplementedHandler) CommitHarnessConfigConfigure(ctx context.Context, pa
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/complete-source-push
 func (UnimplementedHandler) CompleteSandboxSourcePush(ctx context.Context, req *CompleteSandboxSourcePushBody, params CompleteSandboxSourcePushParams) (r CompleteSandboxSourcePushRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ConfigureHarnessConfig implements configure-harness-config operation.
-//
-// Launch the harness's interactive configure flow and return the ephemeral sandbox running it.
-// The caller attaches to the returned sandbox's primary terminal. The server watches that terminal:
-// on exit 0 it reads /run/discobox/configure/harness-configure.json from the sandbox, applies the
-// secrets and
-// files it declares, and marks the harness configured; on a non-zero exit the harness is left
-// unconfigured and configureError is set. The sandbox is deleted either way.
-// Re-running configure on an already configured harness is allowed.
-//
-// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure
-func (UnimplementedHandler) ConfigureHarnessConfig(ctx context.Context, params ConfigureHarnessConfigParams) (r ConfigureHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -299,18 +256,6 @@ func (UnimplementedHandler) CreateSecret(ctx context.Context, req *CreateSecretB
 //
 // POST /projects/{projectId}/secret-bindings
 func (UnimplementedHandler) CreateSecretBinding(ctx context.Context, req *CreateSecretBindingBody, params CreateSecretBindingParams) (r CreateSecretBindingRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// DeconfigureHarnessConfig implements deconfigure-harness-config operation.
-//
-// Remove the assets the configure flow created for this harness — the secrets it created and their
-// bindings, plus the files it wrote — and mark the harness unconfigured. The image-declared
-// baseline
-// is left intact.
-//
-// POST /projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure
-func (UnimplementedHandler) DeconfigureHarnessConfig(ctx context.Context, params DeconfigureHarnessConfigParams) (r DeconfigureHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1239,7 +1184,7 @@ func (UnimplementedHandler) ReconsiderSandboxHarnessConfigChanges(ctx context.Co
 // metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
 // config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
 // and its sandboxes can never report an available upgrade. Built-in configs get this
-// automatically on server start; user-registered ones need this call. Never flips configured.
+// automatically on server start; user-registered ones need this call.
 //
 // POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
 func (UnimplementedHandler) RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (r RefreshHarnessConfigImageRes, _ error) {
@@ -1328,6 +1273,19 @@ func (UnimplementedHandler) ReportSandboxInventories(ctx context.Context, req *R
 //
 // POST /api/pools/{poolId}/sandbox-secret-rejections
 func (UnimplementedHandler) ReportSandboxSecretRejection(ctx context.Context, req *ReportSandboxSecretRejectionBody, params ReportSandboxSecretRejectionParams) (r ReportSandboxSecretRejectionRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ResetHarnessConfig implements reset-harness-config operation.
+//
+// Return the harness config to its bundle's defaults: remove the files saved from discoboxes'
+// harness changes, and the secrets those saves created along with their bindings (ADR 26-11-02-152
+// §3).
+// The bundle-declared baseline, and secrets a person bound by hand, are left intact, and so are a
+// person's fileOverrides unless includeOverrides is set (ADR 26-11-04-028).
+//
+// POST /projects/{projectId}/harness-configs/{harnessConfigId}/reset
+func (UnimplementedHandler) ResetHarnessConfig(ctx context.Context, params ResetHarnessConfigParams) (r ResetHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

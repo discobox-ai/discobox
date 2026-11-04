@@ -421,8 +421,8 @@ func TestPressingAConfirmationAnswersIt(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	slowClock(m)
-	// Disabling a harness is the confirmation nearest to hand.
-	send(t, m, keyPress("f3"), keyPress("d"))
+	// Resetting a harness is the confirmation nearest to hand.
+	send(t, m, keyPress("f3"), keyPress("r"))
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatalf("dialog = %v, want a confirmation to answer", m.dialog)
 	}
