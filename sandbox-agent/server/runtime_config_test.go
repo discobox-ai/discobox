@@ -55,7 +55,7 @@ func runtimeConfigRouterWithPoolConfig(t *testing.T, configure func(*Config)) (h
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := testConfig(publicKey)
+	cfg := testConfig(t, publicKey)
 	cfg.PoolPublicKey = poolKey
 	cfg.RuntimeConfig = in
 	if configure != nil {
@@ -231,7 +231,7 @@ func TestRuntimeConfigTakesThePoolsOwnToken(t *testing.T) {
 func TestRuntimeConfigRefusesAPoolTokenWithoutAPoolKey(t *testing.T) {
 	publicKey, _ := sandboxAgentTestSigner(t)
 	_, signPoolToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestRuntimeConfigRefusesAPoolTokenWithoutAPoolKey(t *testing.T) {
 
 func TestRuntimeConfigWithoutAnIntake(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatal(err)
 	}

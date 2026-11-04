@@ -34,7 +34,7 @@ func newGitRoute(t *testing.T) *gitRoute {
 	writeAndCommit(t, worktree, "one\n", "one")
 
 	publicKey, sign := sandboxAgentTestSigner(t)
-	cfg := testConfig(publicKey)
+	cfg := testConfig(t, publicKey)
 	cfg.Sources = []sandboxconfig.Source{{Slug: "primary", Target: worktree}}
 	router, err := NewRouter(cfg)
 	if err != nil {
@@ -163,7 +163,7 @@ func TestTheGitRouteCannotBeReachedThroughAnEscapedPath(t *testing.T) {
 // directory holds.
 func TestTheGitRouteDoesNotServeACheckoutThatHasNotArrived(t *testing.T) {
 	publicKey, sign := sandboxAgentTestSigner(t)
-	cfg := testConfig(publicKey)
+	cfg := testConfig(t, publicKey)
 	cfg.Sources = []sandboxconfig.Source{{Slug: "primary", Target: t.TempDir(), AwaitsDelivery: true}}
 	router, err := NewRouter(cfg)
 	if err != nil {

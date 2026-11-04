@@ -61,9 +61,12 @@ type Config struct {
 	WorkingRoot           string
 	ExecDefaults          config.ExecDefaults
 	RuntimeDir            string
-	DatabasePath          string
-	Env                   map[string]string
-	Prompt                []string
+	// CaptureStateDir overrides the ephemeral capture directory; empty uses
+	// terminal.CaptureStateDirectory.
+	CaptureStateDir string
+	DatabasePath    string
+	Env             map[string]string
+	Prompt          []string
 	// Description seeds the meta file when the sandbox has none (ADR 0136).
 	Description string
 	Resources   config.ResourceConfig
@@ -181,6 +184,9 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	if cfg.RuntimeDir == "" {
 		cfg.RuntimeDir = "/run/discobox/harness-terminals"
 	}
+	if cfg.CaptureStateDir == "" {
+		cfg.CaptureStateDir = terminal.CaptureStateDirectory
+	}
 	if cfg.Resources.SampleInterval <= 0 {
 		cfg.Resources.SampleInterval = time.Second
 	}
@@ -250,7 +256,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		awaitProvision = cfg.Provision.AwaitReady
 	}
 	manager, err := terminal.NewService(terminal.ServiceConfig{
-		CaptureStateDir:    terminal.CaptureStateDirectory,
+		CaptureStateDir:    cfg.CaptureStateDir,
 		CaptureRecoveryDir: config.CaptureRecoveryDir(cfg.DatabasePath),
 		Execs:              execManager,
 		Harness:            cfg.Harness,

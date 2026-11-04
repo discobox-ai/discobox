@@ -42,7 +42,7 @@ func filesRequest(t *testing.T, router http.Handler, token, method, target strin
 // answers a refusal with the status it says.
 func TestFilesAPIRoundTrip(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestFilesAPIRoundTrip(t *testing.T) {
 // even one named "files" (ADR 26-10-22-499 §3).
 func TestFilesAPIHasItsOwnScopes(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}

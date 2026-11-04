@@ -14,7 +14,7 @@ import (
 
 func TestAttachTCPTunnelRequiresTCPConnectScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestAttachTCPTunnelRequiresTCPConnectScope(t *testing.T) {
 
 func TestAttachTCPTunnelRejectsMissingQueryParams(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestAttachTCPTunnelRejectsMissingQueryParams(t *testing.T) {
 
 func TestAttachTCPTunnelRejectsUnreachableTarget(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
+	router, err := NewRouter(testConfig(t, publicKey))
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}

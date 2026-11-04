@@ -21,7 +21,7 @@ func TestWaitAnswersWithTheNamedHook(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	st := openAgentStore(t)
 	runner := &sandboxAgentFakeRunner{}
-	cfg := testConfigWithRunner(publicKey, runner)
+	cfg := testConfigWithRunner(t, publicKey, runner)
 	cfg.Store = st
 	cfg.ExecAuditRecorder = nil
 	cfg.Resources.SampleInterval = time.Hour
