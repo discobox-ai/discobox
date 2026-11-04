@@ -88,8 +88,11 @@ type sandboxAgentStatusPoller struct {
 	runtime   sandboxruntime.Runtime
 	client    SandboxAgentStatusClient
 
-	mu     sync.Mutex
-	tokens map[string]cachedSandboxAgentToken
+	// tokenMu serializes cache fills from ticks and port waiters without
+	// holding mu across the control-plane request. Acquire it before mu.
+	tokenMu sync.Mutex
+	mu      sync.Mutex
+	tokens  map[string]cachedSandboxAgentToken
 	// samples is the newest resource counters seen for each sandbox, handed to
 	// the resource reporter so the two loops share one poll of each sandbox
 	// rather than each making its own (ADR 0071 resource accounting §2).
@@ -291,6 +294,8 @@ func (p *sandboxAgentStatusPoller) convergeRuntimeConfig(ctx context.Context, sa
 // just means those sandboxes are skipped this tick — the next tick tries
 // again, since the ticker itself is the retry.
 func (p *sandboxAgentStatusPoller) ensureTokens(ctx context.Context, sandboxIDs []string) map[string]string {
+	p.tokenMu.Lock()
+	defer p.tokenMu.Unlock()
 	now := time.Now()
 	p.mu.Lock()
 	var need []string

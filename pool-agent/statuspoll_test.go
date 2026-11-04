@@ -272,6 +272,54 @@ func TestSandboxAgentStatusPollerCachesTokensAcrossTicks(t *testing.T) {
 	}
 }
 
+// Hold the first mint while the concurrent callers are launched, so they
+// contend for the same initially empty cache.
+type heldStatusTokenClient struct {
+	fakeSandboxAgentStatusClient
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (c *heldStatusTokenClient) MintSandboxAgentStatusTokens(ctx context.Context, req MintSandboxAgentStatusTokensRequest) (*MintSandboxAgentStatusTokensResponse, error) {
+	resp, err := c.fakeSandboxAgentStatusClient.MintSandboxAgentStatusTokens(ctx, req)
+	c.once.Do(func() { close(c.started) })
+	<-c.release
+	return resp, err
+}
+
+func TestSandboxAgentStatusPollerSharesConcurrentTokenMint(t *testing.T) {
+	client := &heldStatusTokenClient{started: make(chan struct{}), release: make(chan struct{})}
+	poller := &sandboxAgentStatusPoller{
+		logger:   slog.New(slog.DiscardHandler),
+		identity: statusPollTestIdentity(t),
+		client:   client,
+		tokens:   map[string]cachedSandboxAgentToken{},
+	}
+	const callers = 32
+	results := make(chan map[string]string, callers)
+	go func() { results <- poller.ensureTokens(t.Context(), []string{"sandbox-1"}) }()
+	<-client.started
+	var launched sync.WaitGroup
+	launched.Add(callers - 1)
+	for range callers - 1 {
+		go func() {
+			launched.Done()
+			results <- poller.ensureTokens(t.Context(), []string{"sandbox-1"})
+		}()
+	}
+	launched.Wait()
+	close(client.release)
+	for range callers {
+		if got := (<-results)["sandbox-1"]; got != "token-sandbox-1" {
+			t.Fatalf("token = %q, want token-sandbox-1", got)
+		}
+	}
+	if client.mints != 1 {
+		t.Fatalf("mint calls = %d, want 1 for concurrent cache misses", client.mints)
+	}
+}
+
 // TestSandboxAgentStatusPollerRefreshesExpiringToken confirms a token within
 // the refresh margin of expiry is re-minted rather than reused.
 func TestSandboxAgentStatusPollerRefreshesExpiringToken(t *testing.T) {
