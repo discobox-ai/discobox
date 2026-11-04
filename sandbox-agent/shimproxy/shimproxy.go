@@ -22,10 +22,11 @@ import (
 
 const defaultDialTimeout = 5 * time.Second
 
-// statusDialTimeout bounds a status probe's dial. Status reads are best-effort
+// statusTimeout bounds the entire status exchange, including response reads.
+// Status reads are best-effort
 // refresh inputs on hot paths (exec list/get), so an unreachable shim must fail
 // fast rather than ride the generous retry used for start/attach.
-const statusDialTimeout = 250 * time.Millisecond
+const statusTimeout = 250 * time.Millisecond
 
 // StatusJSON reads the shim's authoritative view of its exec. While the shim is
 // alive it is the source of truth for the command's status: the systemd unit
@@ -33,12 +34,20 @@ const statusDialTimeout = 250 * time.Millisecond
 // lingers so late attachers can replay output), so unit liveness says nothing
 // about command liveness.
 func StatusJSON[T any](ctx context.Context, socketPath string) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
+	defer cancel()
 	var zero T
-	shimConn, err := Dial(ctx, socketPath, statusDialTimeout)
+	shimConn, err := Dial(ctx, socketPath, statusTimeout)
 	if err != nil {
 		return zero, err
 	}
 	defer shimConn.Close()
+	deadline, _ := ctx.Deadline()
+	if err := shimConn.SetDeadline(deadline); err != nil {
+		return zero, err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = shimConn.Close() })
+	defer stop()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/status", nil)
 	if err != nil {
 		return zero, err

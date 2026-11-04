@@ -1075,6 +1075,35 @@ wake_at, wake_epoch from sandboxes where id='<sbx>'"` every 10s.
 - Idle is the same path with `reason=idle`, but the dev pool's 30-minute
   timeout cannot be shortened in place (see the runtime-config section).
 
+## Sleep grace and OSC 7501 deferral (ADR 26-11-04-746)
+
+Use a fresh shell box after the agent bundle rebuild. Run a foreground bash
+job in its primary via `admin terminal input`: emit
+`printf '\033]7501;state=working:app=sleep-probe\033\\'`, start a
+background loop that appends `date -u +%s.%N` once per second, record the request
+clock in a file, then `touch /run/discobox/sleep/agent`. Keep the foreground job
+alive with `wait`. Report `idle` after 40 seconds for the transition case;
+keep `working` for more than two minutes for the ceiling case.
+
+Observe **Docker's actual pause event**, not only the control-plane row:
+`docker exec <dev-pool> docker events --since <request-epoch> --until <end-epoch>
+--filter container=<sandbox-container> --format '{{json .}}'`. `timeNano` is the
+pause time. Polling the container's `.State.Status` does not auto-start it.
+After thaw, read the request and tick files with `d exec` as the run user;
+`docker cp` may not see the primary's mount namespace. The tick gap demonstrates
+real process suspension. Do not claim the last sampled status proves what the
+shim held at confirmation; correlate it with the primary's own emitted reports.
+
+For actual **local shutdown**, in a disposable dev box only, block its inbound
+agent port with `iptables`, set `document.agent.controlPlanePower` to false in
+`/var/lib/discobox/runtime-config.json`, and restart the sandbox-agent service
+through Docker. This prevents the pool from immediately handing power back.
+Drive the same primary job and observe Docker `die`, plus agent journal lines
+confirming sleep and invoking local power-off. Remove the rule if the box is
+kept; archive the test box when finished. This is a real shutdown, without a
+stubbed PowerOff callback. Its 30-second local evaluation cadence can make
+power-off later than the 15-second grace or two-minute ceiling.
+
 # Verifying the files API (`sandbox-agent/files`, `.../files/*`)
 
 Drive it through the dev loop's server with curl, as the default user

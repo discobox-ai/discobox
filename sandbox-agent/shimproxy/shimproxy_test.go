@@ -2,6 +2,8 @@ package shimproxy
 
 import (
 	"bufio"
+	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -230,5 +232,42 @@ func waitHalfCloseResult(t *testing.T, name string, result <-chan error) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("%s did not finish after both directions half-closed", name)
+	}
+}
+
+// A shim may accept a connection but stall before headers or in its JSON body.
+// Both must return so autostop can eventually honor its working ceiling.
+func TestStatusBoundsTheWholeExchange(t *testing.T) {
+	for _, body := range []string{"", "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"} {
+		t.Run(fmt.Sprint(len(body)), func(t *testing.T) {
+			socket := filepath.Join(shorttmp.Dir(t), "status.sock")
+			listener, err := net.Listen("unix", socket)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			release := make(chan struct{})
+			defer close(release)
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				_, _ = http.ReadRequest(bufio.NewReader(conn))
+				_, _ = io.WriteString(conn, body)
+				<-release
+			}()
+			result := make(chan error, 1)
+			go func() { _, err := StatusJSON[map[string]any](context.Background(), socket); result <- err }()
+			select {
+			case err := <-result:
+				if err == nil {
+					t.Fatal("stalled status succeeded")
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("status exchange exceeded its timeout")
+			}
+		})
 	}
 }

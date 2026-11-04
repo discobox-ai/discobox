@@ -109,10 +109,12 @@ type Invoker interface {
 	// ConfirmSandboxAutostop invokes confirm-sandbox-autostop operation.
 	//
 	// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
-	// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now;
-	// sleep only if a sleep request is pending now, and confirming it consumes every pending request.
-	// The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token
-	// carrying the pool-only autostop scope may call it.
+	// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now
+	// and no sleep request is pending; sleep only after rechecking the latest request mtime, minimum
+	// grace, and live primary OSC 7501 status against the two-minute ceiling (ADR 26-11-04-746).
+	// Successful sleep confirmation consumes every pending request. The answer carries the sandbox's
+	// earliest pending wake. 409 refuses the power-down. Only a token carrying the pool-only autostop
+	// scope may call it.
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
 	ConfirmSandboxAutostop(ctx context.Context, request *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (ConfirmSandboxAutostopRes, error)
@@ -2562,10 +2564,12 @@ func (c *Client) sendCompleteSandboxSourcePush(ctx context.Context, request *Com
 // ConfirmSandboxAutostop invokes confirm-sandbox-autostop operation.
 //
 // Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
-// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now;
-// sleep only if a sleep request is pending now, and confirming it consumes every pending request.
-// The answer carries the sandbox's earliest pending wake. 409 refuses the power-down. Only a token
-// carrying the pool-only autostop scope may call it.
+// per-sandbox power lock (ADR 26-10-16-337 §5). idle is confirmed only if the sandbox is idle now
+// and no sleep request is pending; sleep only after rechecking the latest request mtime, minimum
+// grace, and live primary OSC 7501 status against the two-minute ceiling (ADR 26-11-04-746).
+// Successful sleep confirmation consumes every pending request. The answer carries the sandbox's
+// earliest pending wake. 409 refuses the power-down. Only a token carrying the pool-only autostop
+// scope may call it.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/confirm
 func (c *Client) ConfirmSandboxAutostop(ctx context.Context, request *SandboxAutostopConfirmRequest, params ConfirmSandboxAutostopParams) (ConfirmSandboxAutostopRes, error) {

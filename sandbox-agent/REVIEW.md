@@ -734,3 +734,13 @@ user waits on every single start.
   missed it would decode the file without error and dial
   `discobox-pool-proxy`, which nothing on a machine resolves — a bridge that
   fails on machine pools alone.
+
+- **Pending sleep gates both sleep and idle power-down.** Recheck minimum grace,
+  effective primary OSC 7501 working, and status-read failure at confirmation
+  and on the local fallback. Preserve request timestamps across restart; only
+  the two-minute ceiling bypasses working/read failure. Display-oriented exec
+  lists can hide shim errors, so use the error-preserving status read for this
+  decision (ADR 26-11-04-746).
+
+- Bound the entire shim status exchange, not only the dial. An accepting but
+  unresponsive shim must fail status reads so sleep can reach its ceiling.

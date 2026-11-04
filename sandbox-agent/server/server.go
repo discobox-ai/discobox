@@ -313,7 +313,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	// to outlive the stop they ask to come back from (ADR 26-10-16-337 §2). A
 	// sandbox whose run user does not resolve reads none and still stops.
 	appliedAgent := appliedRuntimeAgent(cfg.RuntimeConfig)
-	idleStopConfig := autostop.Config{Execs: execManager.List, IdleTimeout: appliedAgent.IdleTimeoutDuration()}
+	idleStopConfig := autostop.Config{Execs: execManager.List, PrimaryStatus: manager.PrimaryProgramStatus, IdleTimeout: appliedAgent.IdleTimeoutDuration()}
 	if home, owner, err := runUserHome(execManager); err != nil {
 		slog.Default().Warn("sandbox agent wakes disabled", "error", err)
 	} else {
