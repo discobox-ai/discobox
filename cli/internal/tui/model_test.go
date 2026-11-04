@@ -363,6 +363,33 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 	}
 }
 
+func TestEscOnDirectoryCopyQuestionCancelsCreation(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("enter"), keyPress("enter"))
+	if m.dialog == nil || m.dialog.title != "Copy this directory?" {
+		t.Fatal("want the directory copy question")
+	}
+	send(t, m, keyPress("esc"), directorySizeMsg{})
+	if len(ds.runs) != 0 || m.dialog != nil || m.quit {
+		t.Fatalf("runs = %+v dialog = %+v quit = %v, want the console with nothing created", ds.runs, m.dialog, m.quit)
+	}
+	if ds.stoppedCount() != 1 {
+		t.Fatalf("directory walk stopped %d times, want once", ds.stoppedCount())
+	}
+	// The prompt is ready for another run after canceling.
+	send(t, m, keyPress("enter"), keyPress("enter"))
+	if m.dialog == nil || m.dialog.title != "Copy this directory?" {
+		t.Fatal("want to be able to start another run")
+	}
+	send(t, m, keyPress("n"), directorySizeMsg{})
+	if len(ds.runs) != 1 || ds.runs[0].CopyDirectory != "false" {
+		t.Fatalf("runs = %+v, want n to create an empty discobox", ds.runs)
+	}
+}
+
 // The size arrives while the question is up: it is asked immediately, with a
 // number that climbs, and only the final one is stated as fact.
 func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
