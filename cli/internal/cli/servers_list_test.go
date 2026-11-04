@@ -1429,6 +1429,40 @@ func TestShellTargetFindsADiscoboxOnARegisteredServer(t *testing.T) {
 	}
 }
 
+// A renamed discobox on a registered server is reached by the NAME `discobox
+// ls` shows for it (#545), the same as one on the primary: its meta name alone
+// and the whole listed name, neither of which is its configured name.
+func TestShellTargetFindsARenamedDiscoboxOnARegisteredServer(t *testing.T) {
+	useTempServersFile(t)
+	primary := fakeServer(t, "alpha", sandboxA)
+	listed := fakeServerHandler("beta", sandboxB)
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/projects/") || !strings.HasSuffix(r.URL.Path, "/sandboxes") {
+			listed.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"sandboxes":[{"id":%q,"projectId":"project-1","createdByUserId":"user-1",`+
+			`"displayName":"validate-running: checking CI","meta":{"name":"validate-running"},`+
+			`"config":{"name":"box-b","image":""},"runtime":{"state":"ready","runtimeState":"running","displayState":"running",`+
+			`"desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`, sandboxB)
+	}))
+	t.Cleanup(other.Close)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
+
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+	for _, reference := range []string{"validate-running", "validate-running: checking CI"} {
+		cmd, _ := commandForTest()
+		target, _, sandboxID, _, args, err := app.selectDiscoboxCommand(cmd, []string{reference, "--", "true"})
+		if err != nil {
+			t.Fatalf("selectDiscoboxCommand(%q) error = %v", reference, err)
+		}
+		if target.serverURL != other.URL || sandboxID != sandboxB || !reflect.DeepEqual(args, []string{"true"}) {
+			t.Fatalf("selectDiscoboxCommand(%q) = %s %s %v, want beta's discobox running true", reference, target.serverURL, sandboxID, args)
+		}
+	}
+}
+
 // cp resolves what stands before the colon across every server too, and the
 // copy runs against the server the discobox is on.
 func TestCPFindsADiscoboxOnARegisteredServer(t *testing.T) {

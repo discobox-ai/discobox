@@ -672,6 +672,65 @@ func TestShellTakesTheListedNameAsItsDiscobox(t *testing.T) {
 	}
 }
 
+// With several discoboxes listed, `discobox shell` runs the command in the one
+// named by what `discobox ls` shows for it (#545): a box renamed with
+// `discobox rename`, listed by that name and its program's msg, and a box its
+// agent titled. Neither is the generated name the discobox was created with,
+// and neither is asked to be picked from the others.
+func TestShellRunsInTheDiscoboxNamedAsListedAmongSeveral(t *testing.T) {
+	const (
+		renamedID = "sbx_h1ssjzhp60emtc2n"
+		titledID  = "sbx_k7mqz2r9x4c8v1bn"
+		otherID   = "sbx_p3wd6t0y5e2g9j4s"
+	)
+	renamed := `{"id":"` + renamedID + `","projectId":"project-1","createdByUserId":"user-1",` +
+		`"displayName":"validate-running: checking CI","meta":{"name":"validate-running"},` +
+		`"config":{"name":"capable_mccarthy","image":""},"runtime":{"state":"ready","runtimeState":"running","displayState":"running","desiredState":"present","generation":1,"observedGeneration":1},` +
+		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
+	listing := `{"sandboxes":[` + renamed + `,` +
+		namedSandboxJSON(titledID, "brave-otter", "OpenCode", "present") + `,` +
+		namedSandboxJSON(otherID, "quiet-heron", "Claude Code", "present") + `]}`
+
+	for reference, wantID := range map[string]string{
+		"validate-running":              renamedID,
+		"validate-running: checking CI": renamedID,
+		"OpenCode":                      titledID,
+	} {
+		var execPath string
+		server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(listing))
+			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs"):
+				execPath = r.URL.Path
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"exec":{"id":"ex_1","status":"starting","command":["true"],"workdir":"","tty":false,"createdAt":"2026-01-01T00:00:00Z"}}`))
+			case strings.HasSuffix(r.URL.Path, "/attach"):
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"error":"sandbox exec ex_1 has ended with exit code 0 and its session is no longer available to attach"}`))
+			default:
+				t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+
+		cmd := NewRootCommand()
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", reference, "--", "true"})
+		err := cmd.Execute()
+		server.Close()
+		if err == nil || !strings.Contains(err.Error(), "has ended with exit code 0") {
+			t.Fatalf("shell %q -- true error = %v, want the exec to have run", reference, err)
+		}
+		if want := "/api/projects/project-1/sandboxes/" + wantID + "/execs"; execPath != want {
+			t.Fatalf("shell %q ran in %q, want %q", reference, execPath, want)
+		}
+	}
+}
+
 // The first positional selects the discobox; its separator is optional,
 // and later separators are kept for the command.
 func TestSplitDiscoboxCommand(t *testing.T) {
