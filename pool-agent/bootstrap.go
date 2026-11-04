@@ -257,15 +257,19 @@ type StatusRequest struct {
 	// Platform is declared on every report, not only at registration: an
 	// agent whose key survives a restart does not register again, and the
 	// control plane learns what a pool from before platforms hosts from this.
-	Platform              platform.Platform  `json:"platform"`
-	ImageKind             platform.ImageKind `json:"imageKind"`
-	Ready                 bool               `json:"ready"`
-	Schedulable           bool               `json:"schedulable"`
-	Degraded              bool               `json:"degraded"`
-	AvailableCPUVCPUs     float64            `json:"availableCpuVcpus"`
-	AvailableMemoryBytes  int64              `json:"availableMemoryBytes"`
-	AvailableStorageBytes int64              `json:"availableStorageBytes"`
-	Conditions            any                `json:"conditions,omitempty"`
+	Platform  platform.Platform  `json:"platform"`
+	ImageKind platform.ImageKind `json:"imageKind"`
+	// SentinelGrants declares that this agent holds each sentinel to grants
+	// and takes them as sentinelGrants (ADR 26-11-03-329 §3). Always true
+	// from an agent that has them; one from before sends none.
+	SentinelGrants        bool    `json:"sentinelGrants"`
+	Ready                 bool    `json:"ready"`
+	Schedulable           bool    `json:"schedulable"`
+	Degraded              bool    `json:"degraded"`
+	AvailableCPUVCPUs     float64 `json:"availableCpuVcpus"`
+	AvailableMemoryBytes  int64   `json:"availableMemoryBytes"`
+	AvailableStorageBytes int64   `json:"availableStorageBytes"`
+	Conditions            any     `json:"conditions,omitempty"`
 }
 
 // SandboxState is one observation about one sandbox.

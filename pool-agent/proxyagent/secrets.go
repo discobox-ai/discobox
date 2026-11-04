@@ -43,13 +43,15 @@ type secretsDoc struct {
 	// Version is the document's shape; see secretsDocVersion.
 	Version int                 `json:"version,omitempty"`
 	Clients map[string][]string `json:"clients"`
-	// Routes are, per sandbox, the route lists each injected sentinel is held
-	// to (ADR 26-10-27-880 §4): its secret's, its binding's when the binding
-	// has any, and its parent's. Every request it is sent in must be allowed
-	// by every list (secretroute.Decide). A sentinel with no lists is sent
-	// nowhere.
-	Routes map[string]map[string][][]secretroute.Route `json:"routes,omitempty"`
-	Egress map[string][]string                         `json:"egress,omitempty"`
+	// Routes are, per sandbox, the grants each injected sentinel is held to
+	// (ADR 26-11-03-329 §3): one for the binding its row was made for, then
+	// one for each addition stacking on it, each its route lists — its
+	// secret's, its binding's when the binding has any, and its parent's —
+	// and its expiry. A request it is sent in passes when some grant that has
+	// not lapsed allows it in every one of its lists
+	// (secretroute.DecideGrants). A sentinel with no grants is sent nowhere.
+	Routes map[string]map[string][]secretroute.Grant `json:"routes,omitempty"`
+	Egress map[string][]string                       `json:"egress,omitempty"`
 	// Passthrough is, per sandbox, the hosts whose CONNECT the proxy splices
 	// unread (ADR 26-10-31-819), restricted or not. A sandbox absent from it
 	// has none.
@@ -89,23 +91,24 @@ type resolveContext struct {
 // pool-agent process. The proxy unit only reads the file.
 var secretsFileMu sync.Mutex
 
-// secretsDocVersion is the shape this pool agent writes SecretsFile in. 3 is
-// a sentinel held to route lists of the route shape of ADR 26-10-27-880 §4:
+// secretsDocVersion is the shape this pool agent writes SecretsFile in. 4 is
+// a sentinel held to grants (ADR 26-11-03-329 §3), each route lists and an
+// expiry. 3 held it to route lists of the route shape of ADR 26-10-27-880 §4:
 // host patterns, methods, path globs and protocol blocks. 2 held it to route
 // lists of one host covering the hosts beneath it and one path prefix, and a
 // sentinel with no lists was sent nowhere. A document with no version was
 // written before that: one route list a sentinel, and a sentinel with none
 // held to no route at all. readSecretsDoc reads each as its writer meant it.
-const secretsDocVersion = 3
+const secretsDocVersion = 4
 
 // UpsertSandboxSentinels registers a sandbox's sentinel set with the proxy by
 // updating SecretsFile, with its raw bindings' sentinels (raw, ADR
-// 26-10-27-840) and the route lists each sentinel of either is held to (ADR
-// 26-10-27-880 §4). Passing empty sets removes the sandbox entry. A sentinel
-// routes names no lists for is sent nowhere. Each route is written normalized
+// 26-10-27-840) and the grants each sentinel of either is held to (ADR
+// 26-11-03-329 §3). Passing empty sets removes the sandbox entry. A sentinel
+// grants names none for is sent nowhere. Each route is written normalized
 // (secretroute.Normalize), and one that does not normalize is held as heldList
 // says: never as anything wider than it was.
-func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, raw map[string]RawSentinel, routes map[string][][]secretroute.Route) error {
+func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, raw map[string]RawSentinel, grants map[string][]secretroute.Grant) error {
 	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
 		if len(sentinels) == 0 {
 			delete(doc.Clients, sandboxID)
@@ -117,16 +120,20 @@ func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxI
 		} else {
 			doc.Raw[sandboxID] = maps.Clone(raw)
 		}
-		held := map[string][][]secretroute.Route{}
+		held := map[string][]secretroute.Grant{}
 		hold := func(sentinel string) {
-			if len(routes[sentinel]) == 0 {
+			if len(grants[sentinel]) == 0 {
 				return
 			}
-			lists := make([][]secretroute.Route, 0, len(routes[sentinel]))
-			for _, list := range routes[sentinel] {
-				lists = append(lists, heldList(list))
+			out := make([]secretroute.Grant, 0, len(grants[sentinel]))
+			for _, grant := range grants[sentinel] {
+				lists := make([][]secretroute.Route, 0, len(grant.Lists))
+				for _, list := range grant.Lists {
+					lists = append(lists, heldList(list))
+				}
+				out = append(out, secretroute.Grant{Lists: lists, ExpiresAt: grant.ExpiresAt})
 			}
-			held[sentinel] = lists
+			held[sentinel] = out
 		}
 		for _, sentinel := range sentinels {
 			hold(sentinel)
@@ -138,7 +145,7 @@ func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxI
 			delete(doc.Routes, sandboxID)
 		} else {
 			if doc.Routes == nil {
-				doc.Routes = map[string]map[string][][]secretroute.Route{}
+				doc.Routes = map[string]map[string][]secretroute.Grant{}
 			}
 			doc.Routes[sandboxID] = held
 		}
@@ -301,14 +308,32 @@ type legacyRoute struct {
 	UseID   string `json:"useId,omitempty"`
 }
 
-// persistedLists reads one sentinel's routes as the document's version wrote
-// them: route lists from version 3; legacy route lists from version 2, and
-// one legacy list before it, each read through secretroute.FromLegacyList as
-// the control plane reads its own stored routes, so a list reads the same on
-// either side (ADR 26-10-27-880 §8). Notes say what of a legacy list was not
-// converted exactly.
-func persistedLists(version int, raw json.RawMessage) ([][]secretroute.Route, []string, error) {
+// persistedGrants reads one sentinel's routes as the document's version
+// wrote them: grants from version 4; before it, the route lists of one grant
+// with no expiry, which is what they meant — route lists from version 3,
+// legacy route lists from version 2, and one legacy list before it, each read
+// through secretroute.FromLegacyList as the control plane reads its own
+// stored routes, so a list reads the same on either side (ADR 26-10-27-880
+// §8). Notes say what of a legacy list was not converted exactly.
+func persistedGrants(version int, raw json.RawMessage) ([]secretroute.Grant, []string, error) {
 	if version >= secretsDocVersion {
+		var grants []secretroute.Grant
+		if err := json.Unmarshal(raw, &grants); err != nil {
+			return nil, nil, err
+		}
+		return grants, nil, nil
+	}
+	lists, notes, err := persistedLists(version, raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return []secretroute.Grant{{Lists: lists}}, notes, nil
+}
+
+// persistedLists reads one sentinel's route lists as a document before
+// grants wrote them (persistedGrants).
+func persistedLists(version int, raw json.RawMessage) ([][]secretroute.Route, []string, error) {
+	if version == 3 {
 		var lists [][]secretroute.Route
 		if err := json.Unmarshal(raw, &lists); err != nil {
 			return nil, nil, err
@@ -353,7 +378,7 @@ func persistedLists(version int, raw json.RawMessage) ([][]secretroute.Route, []
 // to none, so it reads as held to any host (ADR 26-10-27-939) until the
 // control plane pushes its lists, rather than as sent nowhere. The control
 // plane still hands its value out only for a host its routes allow.
-var anyHost = [][]secretroute.Route{{{Hosts: []string{secretroute.AnyHost}}}}
+var anyHost = []secretroute.Grant{{Lists: [][]secretroute.Route{{{Hosts: []string{secretroute.AnyHost}}}}}}
 
 func readSecretsDoc(path string) (secretsDoc, error) {
 	data, err := os.ReadFile(path)
@@ -369,25 +394,25 @@ func readSecretsDoc(path string) (secretsDoc, error) {
 	}
 	doc := onDisk.secretsDoc
 	doc.Routes = nil
-	set := func(sandboxID, sentinel string, lists [][]secretroute.Route) {
+	set := func(sandboxID, sentinel string, grants []secretroute.Grant) {
 		if doc.Routes == nil {
-			doc.Routes = map[string]map[string][][]secretroute.Route{}
+			doc.Routes = map[string]map[string][]secretroute.Grant{}
 		}
 		if doc.Routes[sandboxID] == nil {
-			doc.Routes[sandboxID] = map[string][][]secretroute.Route{}
+			doc.Routes[sandboxID] = map[string][]secretroute.Grant{}
 		}
-		doc.Routes[sandboxID][sentinel] = lists
+		doc.Routes[sandboxID][sentinel] = grants
 	}
 	for sandboxID, sentinels := range onDisk.Routes {
 		for sentinel, raw := range sentinels {
-			lists, notes, err := persistedLists(doc.Version, raw)
+			grants, notes, err := persistedGrants(doc.Version, raw)
 			if err != nil {
 				return secretsDoc{}, fmt.Errorf("parse %s: routes of a sentinel of %s: %w", path, sandboxID, err)
 			}
 			for _, note := range notes {
 				slog.Warn("a legacy route of a sentinel did not convert exactly (ADR 26-10-27-880 §8)", "file", path, "sandbox", sandboxID, "note", note)
 			}
-			set(sandboxID, sentinel, lists)
+			set(sandboxID, sentinel, grants)
 		}
 	}
 	if doc.Version < 2 {
@@ -426,13 +451,13 @@ type secretResolver struct {
 	// gateClient carries a sandbox's calls to the discobox API (gate.go).
 	gateClient *http.Client
 
-	// sentinelRoutes are the route lists a sentinel is held to, by sandbox,
-	// as SecretsFile last said (secretsDoc.Routes).
+	// sentinelRoutes are the grants a sentinel is held to, by sandbox, as
+	// SecretsFile last said (secretsDoc.Routes).
 	routesMu       sync.RWMutex
-	sentinelRoutes map[string]map[string][][]secretroute.Route
+	sentinelRoutes map[string]map[string][]secretroute.Grant
 }
 
-func (r *secretResolver) setSentinelRoutes(routes map[string]map[string][][]secretroute.Route) {
+func (r *secretResolver) setSentinelRoutes(routes map[string]map[string][]secretroute.Grant) {
 	r.routesMu.Lock()
 	defer r.routesMu.Unlock()
 	r.sentinelRoutes = routes
@@ -441,10 +466,10 @@ func (r *secretResolver) setSentinelRoutes(routes map[string]map[string][][]secr
 // stageSentinelRoutes installs next while keeping the current routes of every
 // sentinel next does not name, for the moment the sentinel set takes to catch
 // up with it. setSentinelRoutes(next) then drops them.
-func (r *secretResolver) stageSentinelRoutes(next map[string]map[string][][]secretroute.Route) {
+func (r *secretResolver) stageSentinelRoutes(next map[string]map[string][]secretroute.Grant) {
 	r.routesMu.Lock()
 	defer r.routesMu.Unlock()
-	staged := make(map[string]map[string][][]secretroute.Route, len(next)+len(r.sentinelRoutes))
+	staged := make(map[string]map[string][]secretroute.Grant, len(next)+len(r.sentinelRoutes))
 	for sandboxID, sentinels := range next {
 		staged[sandboxID] = maps.Clone(sentinels)
 	}
@@ -454,7 +479,7 @@ func (r *secretResolver) stageSentinelRoutes(next map[string]map[string][][]secr
 				continue
 			}
 			if staged[sandboxID] == nil {
-				staged[sandboxID] = map[string][][]secretroute.Route{}
+				staged[sandboxID] = map[string][]secretroute.Grant{}
 			}
 			staged[sandboxID][sentinel] = routes
 		}
@@ -462,7 +487,7 @@ func (r *secretResolver) stageSentinelRoutes(next map[string]map[string][][]secr
 	r.sentinelRoutes = staged
 }
 
-func (r *secretResolver) heldRoutes(sandboxID, sentinel string) [][]secretroute.Route {
+func (r *secretResolver) heldGrants(sandboxID, sentinel string) []secretroute.Grant {
 	r.routesMu.RLock()
 	defer r.routesMu.RUnlock()
 	return r.sentinelRoutes[sandboxID][sentinel]
@@ -731,14 +756,18 @@ func (r *secretResolver) Report(ctx context.Context, req proxy.SecretReportReque
 
 // Authorize decides whether a request may carry the credentials its sentinels
 // stand for, before any of them is resolved. Every sentinel holds the request
-// to each route list it was sent with (ADR 26-10-27-880 §4,
-// secretroute.Decide): in each, it must fall on a route, and the most specific
-// routes it falls on must not be blocked. A sentinel with no lists is sent
-// nowhere. The first refusal is the answer; nothing is asked of the control
-// plane.
+// to the grants it was sent with (ADR 26-11-03-329 §3,
+// secretroute.DecideGrants): some grant that has not lapsed by this pool's
+// clock must allow it, as each of that grant's route lists must (ADR
+// 26-10-27-880 §4) — in each, it must fall on a route, and the most specific
+// routes it falls on must not be blocked. An addition therefore stops
+// allowing at its expiry, whether or not the delivery that removes it has
+// landed. A sentinel with no grants is sent nowhere. The first refusal is the
+// answer; nothing is asked of the control plane.
 func (r *secretResolver) Authorize(_ context.Context, req proxy.SecretAuthorizeRequest) (proxy.SecretVerdict, error) {
+	now := time.Now()
 	for _, sentinel := range req.Sentinels {
-		if allowed, reason := secretroute.Decide(r.heldRoutes(req.ClientID, sentinel), secretroute.Request{
+		if allowed, reason := secretroute.DecideGrants(r.heldGrants(req.ClientID, sentinel), now, secretroute.Request{
 			Method: req.Method,
 			Host:   req.Host,
 			URL:    req.URL,

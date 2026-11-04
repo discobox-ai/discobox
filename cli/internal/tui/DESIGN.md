@@ -584,6 +584,20 @@ there is no row that approves one and leaves the other unsaid. The answer is
 one `Approval` naming a decision for every part (`Approval.Use`,
 `Approval.Delegate`), raw delivery offered only when the use part is approved.
 
+**A use part may be granted as an addition** (ADR 26-11-03-329 §§4–5).
+Choosing a secret also reads what applies in the use part's variable now,
+from whichever level (`HeldGrants`), and when the discobox holds anything a
+use part could replace or stack on (`approval.holdsUse`), a card asks how it
+is granted (`askUseAs`): as an addition, for its own lifetime beside what it
+holds, or as a replacement, the way the request asked first. The card shows
+both outcomes at once (`heldSection`): each grant held with its lifetime and
+level, what replacing would do to it — go, last only the approval's lifetime,
+or be shadowed — and the routes asked that none names, as written. With
+nothing held the two would make the same binding, so the card is skipped and
+the part granted as asked. An addition is delivered by sentinel, so the
+delivery card is not asked for one; `Approval.UseAs` is always sent for an
+approved use part, so the binding made is the one the card showed.
+
 **A lifetime the credential does not allow is not offered** (`withinLimit`).
 A secret's binding limit is a ceiling the server enforces, so the request card
 names it on each secret's row, the lifetime step dims every choice over it and

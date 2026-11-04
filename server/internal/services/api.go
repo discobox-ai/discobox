@@ -549,7 +549,20 @@ type SandboxCredential struct {
 	Purpose   string
 	// Raw is the binding's raw delivery, when it hands the value over (ADR
 	// 26-10-27-840).
-	Raw       string
+	Raw string
+	// ExpiresAt is the latest of the grants' expiries, and Hosts their
+	// union: until when, and where, the credential may be sent at all.
+	ExpiresAt *time.Time
+	// Grants are, for a use, each grant its sentinel is held to: the
+	// binding's, then each addition stacking on it (ADR 26-11-03-329 §3).
+	Grants []SandboxCredentialGrant
+}
+
+// SandboxCredentialGrant is one grant a credential in a variable is held to.
+type SandboxCredentialGrant struct {
+	BindingID string
+	Adds      bool
+	Hosts     []string
 	ExpiresAt *time.Time
 }
 
@@ -580,6 +593,9 @@ type BoundSecret struct {
 	// ExpiresAt is when it stops applying: the earlier of the binding's
 	// expiry and its parent's.
 	ExpiresAt *time.Time
+	// NotApplied is why an addition does not apply, when it does not (ADR
+	// 26-11-03-329 §2).
+	NotApplied string
 }
 
 // SecretRefreshFilter is the store's filter for the refresh trail, named here

@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -66,9 +67,22 @@ func sentinelRoutes(t *testing.T, st *store.Store) map[string][][]secretroute.Ro
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := st.SentinelRouteLists(ctx, "project-1", assignments)
+	sandbox, err := st.GetSandbox(ctx, "project-1", "sb-1")
 	if err != nil {
 		t.Fatal(err)
+	}
+	grants, err := st.SentinelGrants(ctx, sandbox, assignments, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fixture holds no additions: each sentinel's one grant is its
+	// binding's route lists.
+	out := make(map[string][][]secretroute.Route, len(grants))
+	for sentinel, held := range grants {
+		if len(held) != 1 {
+			t.Fatalf("sentinel %s has %d grants, want its binding's alone", sentinel, len(held))
+		}
+		out[sentinel] = held[0].Lists
 	}
 	return out
 }

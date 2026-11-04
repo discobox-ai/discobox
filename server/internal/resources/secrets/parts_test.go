@@ -240,7 +240,7 @@ func TestBothPartsOverACombinedBindingMakeOneUseBinding(t *testing.T) {
 	combined := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID,
 		Use: true, Delegate: true, EnvName: "GH_LEAD", Routes: []model.SecretRoute{{Hosts: []string{"uploads.github.com"}}}})
 	child := handOnTo(t, st, secret.ID, combined.ID)
-	use, delegate := bindingplan.Answer([]bindingplan.Binding{{ID: combined.ID, Use: true, Delegate: true, EnvName: "GH_LEAD"}}, "GH_TOKEN", true, true)
+	use, delegate := bindingplan.Answer([]bindingplan.Binding{{ID: combined.ID, Use: true, Delegate: true, EnvName: "GH_LEAD"}}, "GH_TOKEN", bindingplan.Replace, true)
 	req := askBoth(ctx, t, svc)
 	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(secret.ID), Use: decide(true), Delegate: decide(true),

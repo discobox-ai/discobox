@@ -413,9 +413,13 @@ func (a *App) newSecretBoundCommand() *cobra.Command {
 		Short: "Show what a discobox, a harness config or the project can use, and why",
 		Long: `Show what a discobox, a harness config (--harness) or the project (--project-wide,
 the default) can use: each variable and the secret in it, which binding it comes
-from, where it may be sent, and for how long — the narrowest binding per
-variable, with every route list a request carrying it is held to. Delegations
-it may give on are listed too.`,
+from, where it may be sent, and for how long — the narrowest plain binding per
+variable, with every route list a request carrying it is held to. An addition
+(ADR 26-11-03-329) is listed after the binding it stacks on, marked "+ added":
+a request carrying the variable is sent when that binding or any addition
+allows it, and each lasts as long as its own row says. One that does not apply
+— its variable is another secret's — is marked so, with why. Delegations it may
+give on are listed too.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			box := ""
@@ -455,8 +459,11 @@ it may give on are listed too.`,
 
 // writeBoundSecrets is the resolved view a person reads: variable, secret,
 // where the binding comes from, where it may be sent, and how long it lasts.
+//
+// Additions are kept after the binding they stack on, as the server lists
+// them; one that does not apply is said so, and why, under the table.
 func writeBoundSecrets(w io.Writer, bound []apimodel.BoundSecret, names map[string]string, now time.Time) error {
-	slices.SortFunc(bound, func(x, y apimodel.BoundSecret) int {
+	slices.SortStableFunc(bound, func(x, y apimodel.BoundSecret) int {
 		return strings.Compare(boundVariable(x), boundVariable(y))
 	})
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -469,11 +476,33 @@ func writeBoundSecrets(w io.Writer, bound []apimodel.BoundSecret, names map[stri
 		// The variable can be a discobox's own word — a child's binding takes
 		// it from the discobox that asked or delegated — so it is escaped as
 		// the secret's name is (cli/REVIEW.md); routesText escapes the routes.
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", terminalSafe(boundVariable(b)), terminalSafe(b.SecretName.Or(b.SecretId)), terminalSafe(boundFrom(b, names)), routeListsText(b.Routes), lasts)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", terminalSafe(boundVariable(b)+boundAddition(b)), terminalSafe(b.SecretName.Or(b.SecretId)), terminalSafe(boundFrom(b, names)), routeListsText(b.Routes), lasts)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	for _, b := range bound {
+		if why := b.NotApplied.Or(""); why != "" {
+			fmt.Fprintf(w, "addition %s does not apply: %s\n", b.BindingId, terminalSafe(why))
+		}
+	}
+	return nil
 }
 
+// boundAddition marks an addition beside its variable, and one that does
+// not apply (ADR 26-11-03-329 §2).
+func boundAddition(b apimodel.BoundSecret) string {
+	switch {
+	case !b.Adds.Or(false):
+		return ""
+	case b.NotApplied.Or("") != "":
+		return " (+ added, not applied)"
+	}
+	return " (+ added)"
+}
+
+// boundVariable is the variable a bound secret is delivered in, as the
+// listing sorts and shows it.
 func boundVariable(b apimodel.BoundSecret) string {
 	if b.Use {
 		if b.Delegate {

@@ -2010,14 +2010,19 @@ flowchart LR
   request and before anything in it is resolved, whether the request may carry
   what its sentinels stand for
   (see [`proxy/DESIGN.md`](../proxy/DESIGN.md#sentinel-secret-swapping)). The
-  answer is the sentinels' route lists and nothing else; no control-plane call
-  is made. The control plane still hands a value out only for a host every
-  list allows (`secretroute.HostAllowed`).
-- **A sentinel is held to route lists** (ADR 26-10-27-880 §4): its secret's,
-  its binding's when the binding has any, and its parent's. The control plane
-  sends them with the sentinel set (`sentinelRoutes`, a list of lists per
-  sentinel, kept in SecretsFile) on every create and update; a change to any
-  of them reaches a sandbox as an update. A raw binding's sentinel
+  answer is the sentinels' grants and nothing else; no control-plane call
+  is made. The control plane still hands a value out only for a host some
+  live grant allows in every list (`secretroute.GrantsAllowingHost`).
+- **A sentinel is held to grants** (ADR 26-11-03-329 §3): one for the binding
+  its row was made for and one for each addition stacking on it, each its
+  route lists (ADR 26-10-27-880 §4: its secret's, its binding's when the
+  binding has any, and its parent's) and its expiry. The control plane sends
+  them with the sentinel set (`sentinelGrants`, kept in SecretsFile) on every
+  create and update; a change to any of them reaches a sandbox as an update.
+  This agent declares `sentinelGrants` on every status report, which is what
+  makes the control plane send them; to an agent that has not, it sends each
+  sentinel's first grant as `sentinelRoutes`, which this agent still takes, as
+  one grant with no expiry, from a control plane that predates grants. A raw binding's sentinel
   (`rawSecrets`, ADR 26-10-27-840) rides beside the set with its variable and
   delivery, kept in SecretsFile's `raw` (`UpsertSandboxSentinels`) and never
   in the runtime-config document; its lists are among the others, and an
@@ -2025,22 +2030,28 @@ flowchart LR
   beside those of any sentinel leaving before it moves the sentinel set, so no
   sentinel is ever swappable without its lists. `Authorize` holds the request
   — its method, host, URL, headers (for the method overrides they carry) and
-  the body the proxy hands it — to every list of
-  every sentinel with `secretroute.Decide`: in each list, every reading of its
+  the body the proxy hands it, read once across them — to the grants of every
+  sentinel with `secretroute.DecideGrants`: some grant not lapsed by this
+  pool's clock must allow it, so an addition stops at its expiry whether or
+  not the delivery removing it has landed; and a grant allows it with
+  `secretroute.Decide` over every one of its lists: in each list, every reading of its
   path (`secretroute.RequestPaths`: decoded, and with an encoded `/` kept in
   its segment) must fall on a route whose hosts, methods (every one the
   request names, overrides included), paths and GraphQL or MCP block all
   match, and the most specific routes it falls on must not be
-  blocked. A list never unblocks what another blocks, `*` covers every host
-  (ADR 26-10-27-939), and a sentinel with no lists is sent nowhere.
+  blocked. A list never unblocks what another blocks, a grant is decided whole
+  and never merged with another, so a blocked route refuses only within its
+  own grant, `*` covers every host (ADR 26-10-27-939), and a sentinel with no
+  grants is sent nowhere.
 - **Routes are written normalized** (`UpsertSandboxSentinels`,
   `secretroute.Normalize`). One that does not normalize — the control plane
   validates every route, so only a pool of another version meets one — fails
   closed: an open one is left out, and a blocked one, or a list left with
   none, makes the list a blocked `*` alone, which refuses everything.
-- **SecretsFile is versioned** (`secretsDoc.Version`, 3 since routes took ADR
-  26-10-27-880 §4's shape), and `readSecretsDoc` reads each version as its
-  writer meant it. Before 3 a route was one host covering the hosts beneath
+- **SecretsFile is versioned** (`secretsDoc.Version`, 4 since a sentinel is
+  held to grants; 3 when routes took ADR 26-10-27-880 §4's shape), and
+  `readSecretsDoc` reads each version as its writer meant it: before 4 a
+  sentinel's route lists are one grant with no expiry. Before 3 a route was one host covering the hosts beneath
   it and one path prefix, read through `secretroute.FromLegacyList` (§8),
   as the control plane reads its own stored routes: a route `FromLegacy`
   refuses — a path holding `*`, literal then and a glob now, or `=` — fails

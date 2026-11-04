@@ -666,7 +666,7 @@ func (a *App) writePeers(cmd *cobra.Command, ids []apimodel.Peer) error {
 
 // replacements, when given, are what approving each part would do to what
 // the asking discobox already holds of the secret (ADR 26-11-02-022 §5).
-func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretRequest, replacements []partReplacement) error {
+func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretRequest, replacements []partReplacement, grants *useGrants) error {
 	if request == nil {
 		return nil
 	}
@@ -706,10 +706,17 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 				fmt.Fprintf(tw, "  NOTE\t%s\n", terminalSafe(note))
 			}
 		}
+		if !part.delegate {
+			fmt.Fprintf(tw, "%s ASKED AS\t%s\n", label, askedAsText(part.part))
+			if approvedAs := part.part.ApprovedAs.Or(""); approvedAs != "" {
+				fmt.Fprintf(tw, "%s GRANTED AS\t%s\n", label, approvedAs)
+			}
+		}
 		if bindingID := part.part.BindingId.Or(""); bindingID != "" {
 			fmt.Fprintf(tw, "%s BINDING\t%s\n", label, bindingID)
 		}
 	}
+	writeUseGrants(tw, grants, askedAs(request), approvalLifetime(request), time.Now())
 	writeReplacements(tw, replacements, false)
 	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
 		fmt.Fprintf(tw, "SECRET\t%s\n", secretID)
@@ -720,6 +727,14 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(request.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(request.UpdatedAt))
 	return tw.Flush()
+}
+
+// askedAsText is how a use part asks to be granted (ADR 26-11-03-329 §4).
+func askedAsText(part apimodel.SecretRequestPart) string {
+	if part.Add.Or(false) {
+		return "add · in addition to what the discobox holds, for its own lifetime"
+	}
+	return "replace · the discobox's whole use of the credential"
 }
 
 // requestPart is one part of a request, as the CLI says it.

@@ -48,7 +48,7 @@ func TestARequestShowsItsRolesBesideWhatTheyGrant(t *testing.T) {
 	var out bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&out)
-	if err := (&App{}).writeSecretRequest(cmd, request, nil); err != nil {
+	if err := (&App{}).writeSecretRequest(cmd, request, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	text := out.String()
@@ -141,6 +141,12 @@ func TestARequestSaysWhatApprovingItReplaces(t *testing.T) {
 				t.Errorf("bindings listed with %s, want the asking discobox's own", r.URL.RawQuery)
 			}
 			_, _ = w.Write([]byte(held))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/bound-secrets":
+			// What applies in GH_TOKEN now: the discobox's own binding, for
+			// good, and an addition stacking on it for an hour.
+			_, _ = w.Write([]byte(`{"boundSecrets":[` +
+				`{"bindingId":"bnd_asked","secretId":"sec_1","from":"sandbox","fromId":"sbx-1","use":true,"delegate":false,"envVar":"GH_TOKEN","routes":[[{"hosts":["api.github.com"]}],[{"hosts":["api.github.com"],"methods":["GET"]}]]},` +
+				`{"bindingId":"bnd_added","secretId":"sec_1","from":"sandbox","fromId":"sbx-1","use":true,"delegate":false,"adds":true,"envVar":"GH_TOKEN","expiresAt":"2099-01-01T00:00:00Z","routes":[[{"hosts":["api.github.com"]}],[{"hosts":["api.github.com"],"methods":["POST"]}]]}]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -158,6 +164,16 @@ func TestARequestSaysWhatApprovingItReplaces(t *testing.T) {
 		"USE REPLACES", "bnd_asked in GH_TOKEN (sent to the secret's routes) is kept and takes the approval",
 		"bnd_old in GITHUB_TOKEN (sent to the secret's routes) goes",
 		"bnd_both in GH_LEAD (sent to the secret's routes) loses its use; its delegation stays",
+		// What applies in the variable now, and what each way of granting
+		// the use part would do (ADR 26-11-03-329 §5).
+		"USE ASKED AS", "replace · the discobox's whole use of the credential",
+		"USE HOLDS", "binding bnd_asked → GET api.github.com, with no expiry",
+		"addition bnd_added → POST api.github.com, until",
+		"USE NEW ROUTES", "api.github.com (compared as written, not as what they allow)",
+		"USE AS ADD", "an addition: these routes for 1 hour; what it holds in GH_TOKEN stays as it is",
+		"USE AS REPLACE (asked)",
+		"IF REPLACED", "bnd_asked held with no expiry, takes the approval's routes and lasts only 1 hour",
+		"bnd_added goes",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("get --secret lacks %q:\n%s", want, text)
@@ -182,7 +198,7 @@ func TestAReplacementSaysANewBindingAndASplit(t *testing.T) {
 	}
 	// Both approved: the delegate part reads what the use part left — the
 	// delegation alone, updated, with one new use binding in all.
-	usePlan, delegatePlan := bindingplan.Answer(standing, "GH_TOKEN", true, true)
+	usePlan, delegatePlan := bindingplan.Answer(standing, "GH_TOKEN", bindingplan.Replace, true)
 	answered := strings.Join(append(partReplacement{label: "use", plan: usePlan, held: held}.lines(false),
 		partReplacement{label: "delegate", plan: delegatePlan, held: held}.lines(false)...), "\n")
 	if strings.Count(answered, "a new binding is made") != 1 || strings.Contains(answered, "moves") ||

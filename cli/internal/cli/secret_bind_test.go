@@ -12,6 +12,8 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/pkg/bindingplan"
 )
 
 const bindTestSecretJSON = `{"id":"sec_1github","projectId":"project-1","name":"github","type":"token","maxBindingTTLSeconds":0,` +
@@ -462,5 +464,81 @@ func TestWriteBoundEscapesTheDiscoboxName(t *testing.T) {
 	}
 	if strings.ContainsRune(out.String(), 0x1b) || strings.Count(out.String(), `box\x1b[2J`) != 3 {
 		t.Fatalf("output = %q, want the name escaped in all three sentences", out.String())
+	}
+}
+
+// --use-as says how an approved use part is granted (ADR 26-11-03-329 §4):
+// sent only when given, so left out the server grants it as the request
+// asked; refused on a use part denied or a request with none.
+func TestApproveUseAsSaysHowTheUsePartIsGranted(t *testing.T) {
+	ask := func(add bool, parts ...string) *apimodel.SecretRequest {
+		request := &apimodel.SecretRequest{ID: "request-1"}
+		for _, part := range parts {
+			switch part {
+			case "use":
+				request.Use = apiclientgen.NewOptSecretRequestPart(apimodel.SecretRequestPart{Add: apiclientgen.NewOptBool(add)})
+			case "delegate":
+				request.Delegate = apiclientgen.NewOptSecretRequestPart(apimodel.SecretRequestPart{})
+			}
+		}
+		return request
+	}
+	answer := func(use string, as bindingplan.As) approvalAnswer {
+		a := approvalAnswer{lifetime: lifetime.NewFlag(), useAs: asFlag{value: as}}
+		if use != "" {
+			_ = a.use.Set(use)
+		}
+		return a
+	}
+	body, err := approvalBody(ask(true, "use"), answer("", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if part, _ := body.Use.Get(); part.As.Set {
+		t.Fatalf("use part = %+v, want no way sent when none is given", part)
+	}
+	if got := grantedAs(ask(true, "use"), body.Use); got != bindingplan.Add {
+		t.Fatalf("granted as %q, want what the request asked, add", got)
+	}
+	body, err = approvalBody(ask(true, "use"), answer("", bindingplan.Replace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if part, _ := body.Use.Get(); part.As.Or("") != apiclientgen.SecretRequestPartDecisionAsReplace {
+		t.Fatalf("use part = %+v, want it sent as a replacement", part)
+	}
+	if got := grantedAs(ask(true, "use"), body.Use); got != bindingplan.Replace {
+		t.Fatalf("granted as %q, want the answer's way, replace", got)
+	}
+	if _, err := approvalBody(ask(false, "use"), answer("deny", bindingplan.Add)); err == nil || !strings.Contains(err.Error(), "--use-as") {
+		t.Fatalf("--use-as on a denied use part = %v, want it refused naming the flag", err)
+	}
+	if _, err := approvalBody(ask(false, "delegate"), answer("", bindingplan.Add)); err == nil || !strings.Contains(err.Error(), "--use-as") {
+		t.Fatalf("--use-as on a request only to delegate = %v, want it refused naming the flag", err)
+	}
+}
+
+// The bound listing marks an addition after the binding it stacks on, and
+// one that does not apply with why (ADR 26-11-03-329 §2).
+func TestBoundListsAdditionsAfterWhatTheyStackOn(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	route := [][]apimodel.SecretRoute{{{Hosts: []string{"api.github.com"}}}}
+	bound := []apimodel.BoundSecret{
+		{BindingId: "sbd_base", SecretId: "sec_1", SecretName: apiclientgen.NewOptString("github"), From: apiclientgen.BoundSecretFromHarnessConfig, FromId: "hc-1", Use: true, EnvVar: apiclientgen.NewOptString("GH_TOKEN"), Routes: route},
+		{BindingId: "sbd_add", SecretId: "sec_1", SecretName: apiclientgen.NewOptString("github"), From: apiclientgen.BoundSecretFromSandbox, FromId: "sbx-1", Use: true, Adds: apiclientgen.NewOptBool(true), EnvVar: apiclientgen.NewOptString("GH_TOKEN"), Routes: route, ExpiresAt: apiclientgen.NewOptDateTime(now.Add(time.Hour))},
+		{BindingId: "sbd_npm", SecretId: "sec_2", SecretName: apiclientgen.NewOptString("npm"), From: apiclientgen.BoundSecretFromSandbox, FromId: "sbx-1", Use: true, Adds: apiclientgen.NewOptBool(true), EnvVar: apiclientgen.NewOptString("GH_TOKEN"), Routes: route,
+			NotApplied: apiclientgen.NewOptString("GH_TOKEN is delivered by a binding of another secret")},
+	}
+	var out bytes.Buffer
+	if err := writeBoundSecrets(&out, bound, map[string]string{"hc-1": "codex", "sbx-1": "box"}, now); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	base, added, unapplied := strings.Index(text, "GH_TOKEN  "), strings.Index(text, "GH_TOKEN (+ added)"), strings.Index(text, "GH_TOKEN (+ added, not applied)")
+	if base < 0 || added < base || unapplied < added {
+		t.Fatalf("listing:\n%s\nwant the base, then its addition, then the one not applied", text)
+	}
+	if !strings.Contains(text, "addition sbd_npm does not apply: GH_TOKEN is delivered by a binding of another secret") {
+		t.Fatalf("listing:\n%s\nwant why the addition does not apply", text)
 	}
 }

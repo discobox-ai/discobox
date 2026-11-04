@@ -39,6 +39,16 @@ type poolAgentClient struct {
 	poolID      string
 	tokenIssuer poolAgentTokenIssuer
 	lease       *transport.HTTPClientLease
+	// holdsGrants is whether the pool's agent declared it holds sentinels
+	// to grants (model.Pool.SentinelGrants, ADR 26-11-03-329 §3): it is sent
+	// sentinelGrants, and any other is sent sentinelRoutes.
+	holdsGrants bool
+}
+
+// newPoolAgentClient is a client of one pool's agent over lease, speaking
+// what that agent last declared it takes.
+func newPoolAgentClient(pool *model.Pool, issuer poolAgentTokenIssuer, lease *transport.HTTPClientLease) *poolAgentClient {
+	return &poolAgentClient{poolID: pool.ID, tokenIssuer: issuer, lease: lease, holdsGrants: pool.SentinelGrants}
 }
 
 type poolAgentTokenIssuer interface {
@@ -52,7 +62,7 @@ func (p *poolAgentClient) Create(ctx context.Context, ref sandbox.SandboxRef, st
 		return nil, state, err
 	}
 	defer release()
-	request := poolCreateRequestFromOptions(ref.SandboxID, opts)
+	request := poolCreateRequestFromOptions(ref.SandboxID, opts, p.holdsGrants)
 	if opts.ResolvedHarnessConfig != nil {
 		resolved := request.ResolvedHarnessConfig.Value
 		if value := opts.ResolvedHarnessConfig.SaveBack; value != nil {
@@ -435,8 +445,12 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	}
 	// The pool reads a sentinel with no route lists as sent nowhere, so the
 	// lists ride with every sentinel push, never left out or null.
-	if opts.Sentinels != nil || opts.SentinelRoutes != nil {
-		req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
+	if opts.Sentinels != nil || opts.SentinelGrants != nil {
+		if p.holdsGrants {
+			req.SentinelGrants = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelGrants(poolSentinelGrants(opts.SentinelGrants))
+		} else {
+			req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelGrants))
+		}
 	}
 	// Raw bindings ride with the sentinels and are sent only when there are
 	// any, so a pool that predates them is not sent a field it refuses; one
@@ -829,7 +843,7 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 	return out
 }
 
-func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *poolapimodel.PoolSandboxCreateRequest {
+func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions, holdsGrants bool) *poolapimodel.PoolSandboxCreateRequest {
 	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID, PullSources: poolclient.NewOptBool(opts.PullSources)}
 	if opts.HarnessChangeID != "" {
 		out.HarnessChangeId = poolclient.NewOptString(opts.HarnessChangeID)
@@ -853,8 +867,12 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if len(opts.Sentinels) > 0 {
 		out.Sentinels = poolclient.NewOptNilStringArray(opts.Sentinels)
 	}
-	if len(opts.Sentinels) > 0 || len(opts.SentinelRoutes) > 0 {
-		out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
+	if len(opts.Sentinels) > 0 || len(opts.SentinelGrants) > 0 {
+		if holdsGrants {
+			out.SentinelGrants = poolclient.NewOptNilPoolSandboxCreateRequestSentinelGrants(poolSentinelGrants(opts.SentinelGrants))
+		} else {
+			out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelGrants))
+		}
 	}
 	if len(opts.RawSecrets) > 0 {
 		out.RawSecrets = poolclient.NewOptNilPoolSandboxCreateRequestRawSecrets(poolclient.PoolSandboxCreateRequestRawSecrets(poolRawSecrets(opts.RawSecrets)))
@@ -1250,37 +1268,70 @@ func poolRawSecrets(in map[string]sandbox.RawSecret) map[string]poolclient.RawSe
 	return out
 }
 
-// poolSentinelRoutes states each sentinel's route lists (ADR 26-10-27-880
-// §4) the way the pool agent reads them; never nil, and an empty list stays
-// empty, refusing everything.
-func poolSentinelRoutes(in map[string][][]secretroute.Route) map[string][][]poolclient.SentinelRoute {
-	out := make(map[string][][]poolclient.SentinelRoute, len(in))
-	for sentinel, lists := range in {
-		poolLists := make([][]poolclient.SentinelRoute, 0, len(lists))
-		for _, routes := range lists {
-			list := make([]poolclient.SentinelRoute, 0, len(routes))
-			for _, route := range routes {
-				item := poolclient.SentinelRoute{Hosts: route.Hosts, Methods: route.Methods, Paths: route.Paths}
-				if route.GraphQL != nil {
-					block := poolclient.SentinelRouteGraphQL{Fields: route.GraphQL.Fields}
-					for _, operation := range route.GraphQL.Operations {
-						block.Operations = append(block.Operations, poolclient.SentinelRouteGraphQLOperationsItem(operation))
-					}
-					item.Graphql = poolclient.NewOptSentinelRouteGraphQL(block)
-				}
-				if route.MCP != nil {
-					item.Mcp = poolclient.NewOptSentinelRouteMCP(poolclient.SentinelRouteMCP{Tools: route.MCP.Tools})
-				}
-				if route.Blocked {
-					item.Blocked = poolclient.NewOptBool(true)
-				}
-				list = append(list, item)
+// poolSentinelGrants states each sentinel's grants (ADR 26-11-03-329 §3)
+// the way an agent that declared sentinelGrants reads them; never nil, and an
+// empty list stays empty, refusing everything.
+func poolSentinelGrants(in map[string][]secretroute.Grant) map[string][]poolclient.SentinelGrant {
+	out := make(map[string][]poolclient.SentinelGrant, len(in))
+	for sentinel, grants := range in {
+		poolGrants := make([]poolclient.SentinelGrant, 0, len(grants))
+		for _, grant := range grants {
+			item := poolclient.SentinelGrant{Lists: poolRouteLists(grant.Lists)}
+			if grant.ExpiresAt != nil {
+				item.ExpiresAt = poolclient.NewOptDateTime(*grant.ExpiresAt)
 			}
-			poolLists = append(poolLists, list)
+			poolGrants = append(poolGrants, item)
 		}
-		out[sentinel] = poolLists
+		out[sentinel] = poolGrants
 	}
 	return out
+}
+
+// poolSentinelRoutes states each sentinel's first grant as the route lists
+// an agent from before grants holds it to (ADR 26-10-27-880 §4): the plain
+// binding its row was materialized for. Every addition is left out, so there
+// it is not in effect and allows nothing (ADR 26-11-03-329, "Open for
+// implementation"): one beside the plain binding, and one that is the row's
+// binding because the variable has nothing else, which goes as one empty
+// list, sent nowhere, since such an agent would hold it with no expiry.
+// Never nil, and an empty list stays empty.
+func poolSentinelRoutes(in map[string][]secretroute.Grant) map[string][][]poolclient.SentinelRoute {
+	out := make(map[string][][]poolclient.SentinelRoute, len(in))
+	for sentinel, grants := range in {
+		if len(grants) == 0 || grants[0].Adds {
+			out[sentinel] = [][]poolclient.SentinelRoute{{}}
+			continue
+		}
+		out[sentinel] = poolRouteLists(grants[0].Lists)
+	}
+	return out
+}
+
+// poolRouteLists states route lists the way the pool agent reads them.
+func poolRouteLists(lists [][]secretroute.Route) [][]poolclient.SentinelRoute {
+	poolLists := make([][]poolclient.SentinelRoute, 0, len(lists))
+	for _, routes := range lists {
+		list := make([]poolclient.SentinelRoute, 0, len(routes))
+		for _, route := range routes {
+			item := poolclient.SentinelRoute{Hosts: route.Hosts, Methods: route.Methods, Paths: route.Paths}
+			if route.GraphQL != nil {
+				block := poolclient.SentinelRouteGraphQL{Fields: route.GraphQL.Fields}
+				for _, operation := range route.GraphQL.Operations {
+					block.Operations = append(block.Operations, poolclient.SentinelRouteGraphQLOperationsItem(operation))
+				}
+				item.Graphql = poolclient.NewOptSentinelRouteGraphQL(block)
+			}
+			if route.MCP != nil {
+				item.Mcp = poolclient.NewOptSentinelRouteMCP(poolclient.SentinelRouteMCP{Tools: route.MCP.Tools})
+			}
+			if route.Blocked {
+				item.Blocked = poolclient.NewOptBool(true)
+			}
+			list = append(list, item)
+		}
+		poolLists = append(poolLists, list)
+	}
+	return poolLists
 }
 
 // poolGateways is the pool's shape of a sandbox's gateways; never nil, so an

@@ -701,16 +701,22 @@ type Pool struct {
 	// declares it beside the platform; an agent from before kinds declares
 	// none and runs OCI images, which is what is recorded for it. Empty until
 	// the agent first reports.
-	ImageKind             platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:''" json:"imageKind,omitzero" doc:"The kind of image the pool runs: oci, or vm/<driver> for VM images of that driver. Declared by its agent; empty until the agent first reports."`
-	PublicKey             string             `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
-	KeyType               string             `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
-	Ready                 bool               `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
-	Schedulable           bool               `gorm:"column:schedulable;not null;default:false;index" json:"schedulable" doc:"Whether the pool accepts new sandboxes"`
-	Degraded              bool               `gorm:"column:degraded;not null;default:false;index" json:"degraded" doc:"Whether the pool should be used only as fallback capacity"`
-	AvailableCPUVCPUs     float64            `gorm:"column:available_cpu_vcpus;not null;default:0" json:"availableCpuVcpus" doc:"Agent-reported available CPU capacity in vCPUs"`
-	AvailableMemoryBytes  int64              `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
-	AvailableStorageBytes int64              `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
-	Conditions            RawJSON            `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
+	ImageKind platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:''" json:"imageKind,omitzero" doc:"The kind of image the pool runs: oci, or vm/<driver> for VM images of that driver. Declared by its agent; empty until the agent first reports."`
+	// SentinelGrants is whether the pool's agent holds a sentinel to grants
+	// (ADR 26-11-03-329 §3), declared on every status report. A pool whose
+	// agent has not declared it is sent each sentinel's first grant as route
+	// lists, as before grants: an addition is not in effect there, and no
+	// delivery it would refuse whole is sent.
+	SentinelGrants        bool    `gorm:"column:sentinel_grants;not null;default:false" json:"-"`
+	PublicKey             string  `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
+	KeyType               string  `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
+	Ready                 bool    `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
+	Schedulable           bool    `gorm:"column:schedulable;not null;default:false;index" json:"schedulable" doc:"Whether the pool accepts new sandboxes"`
+	Degraded              bool    `gorm:"column:degraded;not null;default:false;index" json:"degraded" doc:"Whether the pool should be used only as fallback capacity"`
+	AvailableCPUVCPUs     float64 `gorm:"column:available_cpu_vcpus;not null;default:0" json:"availableCpuVcpus" doc:"Agent-reported available CPU capacity in vCPUs"`
+	AvailableMemoryBytes  int64   `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
+	AvailableStorageBytes int64   `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
+	Conditions            RawJSON `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
 	// ProvisionProgress is what the provider driver is doing to bring this host
 	// up, for a client whose sandbox is waiting for a pool to take it. Unlike
 	// Conditions it is not agent-reported: the phases it names — fetching a VM
@@ -1843,7 +1849,19 @@ type SecretRequestPart struct {
 	Policies  []SecretRequestPolicy `gorm:"column:policies;type:text;serializer:json" json:"policies,omitempty" doc:"The policy files the part was asked by, for display"`
 	Outcome   string                `gorm:"column:outcome;not null;type:text;default:''" json:"outcome,omitempty" doc:"The part's answer" enum:"approved,denied"`
 	BindingID string                `gorm:"column:binding_id;not null;type:text;default:''" json:"bindingId,omitempty" doc:"The binding approving the part made or replaced"`
+	// Add and ApprovedAs are the use part's alone (ADR 26-11-03-329 §4): a
+	// delegate part is always a replacement, and its columns stay unset.
+	// Add is what the discobox asked — its routes in addition to what it
+	// holds — and ApprovedAs what the person granted, which they may change.
+	Add        bool   `gorm:"column:add;not null;default:false" json:"add,omitempty" doc:"Use part only: the discobox asks for these routes in addition to what it holds, as an addition, rather than as its whole use of the credential"`
+	ApprovedAs string `gorm:"column:approved_as;not null;type:text;default:''" json:"approvedAs,omitempty" doc:"Use part only: how an approved part was granted, as an addition beside what the discobox held or replacing it" enum:"add,replace"`
 }
+
+// How an approved use part was granted (ADR 26-11-03-329 §4).
+const (
+	SecretRequestApprovedAsAdd     = "add"
+	SecretRequestApprovedAsReplace = "replace"
+)
 
 // SecretRequestPolicy is one policy file a part was asked by, as the server
 // resolved it (ADR 26-11-02-022 §3). Name and Description are the asking
@@ -1969,17 +1987,23 @@ const PrefixSecretBinding = "bind"
 // Delegate lets those discoboxes give it, to use, to the discoboxes they
 // create (§3). Routes narrow the secret's for this binding; a binding handed
 // on under a delegation records it as ParentID, is held to its routes and its
-// expiry too, and goes with it.
+// expiry too, and goes with it. An addition (Adds) stacks on the plain use
+// binding of its variable rather than shadowing it (ADR 26-11-03-329).
 type SecretBinding struct {
 	ID         string `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
 	ProjectID  string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	SecretID   string `gorm:"column:secret_id;not null;type:text;index;uniqueIndex:idx_secret_binding_delegate,priority:3,where:delegate" json:"secretId" doc:"Bound secret ID"`
 	SecretName string `gorm:"-" json:"secretName,omitempty" doc:"Bound secret's name"`
-	TargetKind string `gorm:"column:target_kind;not null;type:text;index:idx_secret_binding_target,priority:1;uniqueIndex:idx_secret_binding_use,priority:1,where:use;uniqueIndex:idx_secret_binding_delegate,priority:1,where:delegate" json:"targetKind" doc:"What the binding is for" enum:"project,harnessConfig,sandbox"`
-	TargetID   string `gorm:"column:target_id;not null;type:text;index:idx_secret_binding_target,priority:2;uniqueIndex:idx_secret_binding_use,priority:2,where:use;uniqueIndex:idx_secret_binding_delegate,priority:2,where:delegate" json:"targetId" doc:"The project, harness config or discobox ID the binding is for"`
+	TargetKind string `gorm:"column:target_kind;not null;type:text;index:idx_secret_binding_target,priority:1;uniqueIndex:idx_secret_binding_plain_use,priority:1,where:use AND NOT adds;uniqueIndex:idx_secret_binding_delegate,priority:1,where:delegate" json:"targetKind" doc:"What the binding is for" enum:"project,harnessConfig,sandbox"`
+	TargetID   string `gorm:"column:target_id;not null;type:text;index:idx_secret_binding_target,priority:2;uniqueIndex:idx_secret_binding_plain_use,priority:2,where:use AND NOT adds;uniqueIndex:idx_secret_binding_delegate,priority:2,where:delegate" json:"targetId" doc:"The project, harness config or discobox ID the binding is for"`
 	Use        bool   `gorm:"column:use;not null;default:false" json:"use" doc:"The target may send the credential: it is delivered in envVar"`
 	Delegate   bool   `gorm:"column:delegate;not null;default:false" json:"delegate" doc:"A discobox the binding covers may give the credential, to use, to the discoboxes it leads"`
-	EnvName    string `gorm:"column:env_name;not null;type:text;default:'';uniqueIndex:idx_secret_binding_use,priority:3,where:use" json:"envVar,omitempty" doc:"Environment variable the credential's sentinel is delivered in; set when use is"`
+	EnvName    string `gorm:"column:env_name;not null;type:text;default:'';uniqueIndex:idx_secret_binding_plain_use,priority:3,where:use AND NOT adds" json:"envVar,omitempty" doc:"Environment variable the credential's sentinel is delivered in; set when use is"`
+	// Adds makes the binding an addition (ADR 26-11-03-329 §1): a use, on a
+	// sandbox, by sentinel, with an expiry, that stacks on the plain use
+	// binding applying in EnvName instead of shadowing it. A target holds
+	// one plain use binding per variable and any number of additions.
+	Adds bool `gorm:"column:adds;not null;default:false" json:"adds,omitempty" doc:"An addition: a use on a discobox, with an expiry, that stacks on the binding delivering envVar instead of replacing or shadowing it (ADR 26-11-03-329)"`
 	// Routes narrow the secret's for this binding; none inherits them.
 	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Routes that narrow the secret's for this binding; empty inherits the secret's"`
 	// Raw hands the discobox the value itself rather than a sentinel (ADR

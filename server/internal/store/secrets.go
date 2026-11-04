@@ -547,8 +547,8 @@ func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, ask *mod
 		return nil, err
 	}
 	var found []model.SecretRequest
-	err = read.Where("project_id = ? AND sandbox_id = ? AND name = ? AND env_name = ? AND ttl_seconds = ? AND use_asked = ? AND delegate_asked = ? AND status = ?",
-		ask.ProjectID, ask.SandboxID, ask.Name, ask.EnvName, ask.TTL, ask.Use.Asked, ask.Delegate.Asked, model.SecretRequestStatusPending).
+	err = read.Where("project_id = ? AND sandbox_id = ? AND name = ? AND env_name = ? AND ttl_seconds = ? AND use_asked = ? AND use_add = ? AND delegate_asked = ? AND status = ?",
+		ask.ProjectID, ask.SandboxID, ask.Name, ask.EnvName, ask.TTL, ask.Use.Asked, ask.Use.Add, ask.Delegate.Asked, model.SecretRequestStatusPending).
 		Order("created_at DESC").Find(&found).Error
 	if err != nil {
 		return nil, err

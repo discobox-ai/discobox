@@ -77,7 +77,7 @@ func newAgentServiceTestFixture(t *testing.T) (*Service, *poolagentauth.Manager)
 		t.Fatalf("create sandbox-b: %v", err)
 	}
 
-	return NewService(appStore, nil, controlPlane, &recordedEgress{}), agentAuth
+	return NewService(appStore, nil, controlPlane, &recordedDelivery{}), agentAuth
 }
 
 // TestMintSandboxAgentStatusTokensScopeIsAlwaysStatusRead is the load-bearing
@@ -797,5 +797,39 @@ func TestListPoolHeldSandboxesRequiresThePoolsOwnPrincipal(t *testing.T) {
 		if err == nil || !errors.As(err, &statusErr) || statusErr.StatusCode() != 403 {
 			t.Fatalf("%+v: list held sandboxes = %v, want 403 forbidden", principal, err)
 		}
+	}
+}
+
+// An agent's report that it now holds sentinels to grants, or no longer
+// does, marks its pool's sandboxes' sentinel delivery in the transaction
+// that records it, so they are sent again in the shape it takes; a report
+// that changes nothing marks nothing (ADR 26-11-03-329 §3).
+func TestAReportThatChangesWhatAnAgentTakesResendsItsSentinels(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	recorded := svc.sandboxes.(*recordedDelivery)
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"})
+	report := func(grants bool) {
+		t.Helper()
+		if _, err := svc.UpdatePoolStatus(ctx, "pool-a", services.UpdatePoolStatusBody{
+			Ready: true, Schedulable: true, SentinelGrants: serverapi.NewOptBool(grants),
+		}); err != nil {
+			t.Fatalf("report: %v", err)
+		}
+	}
+	report(false)
+	if len(recorded.sentinels) != 0 {
+		t.Fatalf("marked %v, want nothing for an agent that still takes route lists", recorded.sentinels)
+	}
+	report(true)
+	report(true)
+	if len(recorded.sentinels) != 1 || recorded.sentinels[0] != "project-1/pool-a" {
+		t.Fatalf("marked %v, want pool-a's sentinels once, when its agent first declared grants", recorded.sentinels)
+	}
+	if pool, err := svc.store.GetPoolByID(context.Background(), "pool-a"); err != nil || !pool.SentinelGrants {
+		t.Fatalf("pool = %+v, %v; want it recorded as holding grants", pool, err)
+	}
+	report(false)
+	if len(recorded.sentinels) != 2 {
+		t.Fatalf("marked %v, want them again when the agent is rolled back", recorded.sentinels)
 	}
 }

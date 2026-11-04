@@ -137,7 +137,13 @@ by what it is looking for and is idempotent:
    binding and answer as its outcome, and drops `purpose`, `routes` and
    `binding_id`. Those three are the shape the retirements above still write,
    so `prepareSecretRequestParts`, before `AutoMigrate`, gives a table not yet
-   split any of them it lacks; bindings are not touched.
+   split any of them it lacks; bindings are not touched. After it
+   `recordReplacingApprovals` records every approved use part as granted to
+   replace, which every approval then was (ADR 26-11-03-329 §4). Before
+   `AutoMigrate`, `dropRetiredPlainUseIndex` drops `idx_secret_binding_use`,
+   whose partial condition cannot change in place, so `AutoMigrate` makes
+   `idx_secret_binding_plain_use` over the use bindings that are not
+   additions; no row is rewritten, since every binding from before is plain.
    Each step is logged per row and finds nothing once done,
    dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows, and the pool bootstrap token table,

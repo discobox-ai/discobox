@@ -211,14 +211,16 @@ type CreateOptions struct {
 	// Sentinels are the placeholder secret values injected into the sandbox that
 	// the pool agent registers with the proxy for runtime swapping.
 	Sentinels []string
-	// SentinelRoutes are, for every sentinel, the route lists a request
-	// carrying it must pass: one per binding layer, each of which must allow
-	// (ADR 26-10-27-880 §4). A sentinel with no lists is sent nowhere.
-	SentinelRoutes map[string][][]secretroute.Route
+	// SentinelGrants are, for every sentinel, the grants a request carrying
+	// it is held to (ADR 26-11-03-329 §3): one for the binding its row was
+	// materialized for, then one for each addition that stacks on it. A
+	// request passes when some live grant's lists all allow it (ADR
+	// 26-10-27-880 §4). A sentinel with no grants is sent nowhere.
+	SentinelGrants map[string][]secretroute.Grant
 	// RawSecrets are the sandbox's raw bindings (ADR 26-10-27-840), keyed by
 	// the sentinel that is the pool's handle for the value. A raw binding's
 	// sentinel is in neither Sentinels nor SecretEnv, since it is never
-	// delivered into the sandbox; its route lists are in SentinelRoutes.
+	// delivered into the sandbox; its grants are in SentinelGrants.
 	RawSecrets map[string]RawSecret
 	// SecretEnv maps each secret-bound environment variable name to its
 	// sentinel placeholder value. Unlike Env, these never ride in the static
@@ -315,10 +317,10 @@ type UpdateOptions struct {
 	// runtime swapping. It mirrors CreateOptions.Sentinels. Nil leaves the set as
 	// it is; an empty, non-nil set removes it.
 	Sentinels []string
-	// SentinelRoutes replaces the sentinels' route lists along with
-	// Sentinels, and is sent whenever Sentinels is. It mirrors
-	// CreateOptions.SentinelRoutes.
-	SentinelRoutes map[string][][]secretroute.Route
+	// SentinelGrants replaces the sentinels' grants along with Sentinels,
+	// and is sent whenever Sentinels is. It mirrors
+	// CreateOptions.SentinelGrants.
+	SentinelGrants map[string][]secretroute.Grant
 	// RawSecrets replaces the raw bindings along with Sentinels, and is sent
 	// whenever Sentinels is. It mirrors CreateOptions.RawSecrets.
 	RawSecrets map[string]RawSecret

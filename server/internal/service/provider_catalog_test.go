@@ -181,7 +181,7 @@ func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
 		t.Fatal(err)
 	}
 	poolID := createPoolForInstance(ctx, t, svc, projectID, instance.ID)
-	if _, err := st.UpdatePoolStatus(ctx, poolID, platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+	if _, _, err := st.UpdatePoolStatus(ctx, poolID, platform.Pool(), platform.OCI, false, true, true, false, 1, 1, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.BeginPoolHealthChecks(ctx); err != nil {

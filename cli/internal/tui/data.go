@@ -1501,6 +1501,25 @@ type AdoptionAsk struct {
 type RequestPart struct {
 	Routes []secretroute.Route
 	Roles  []requestrole.Role
+	// Add is, on the use part, an ask for its routes in addition to what
+	// the discobox holds rather than as its whole use (ADR 26-11-03-329 §4).
+	Add bool
+}
+
+// HeldGrant is one grant that applies in a discobox's variable now (ADR
+// 26-11-03-329 §§2, 5): the binding that delivers it, from whichever level,
+// or an addition stacking on it, with the routes it was given and when it
+// lapses.
+type HeldGrant struct {
+	BindingID string
+	Adds      bool
+	// From is the level the binding is on: BindingSandbox, or a harness
+	// config's or the project's, which a replacement shadows rather than
+	// replaces.
+	From   string
+	Routes []secretroute.Route
+	// Expires is when it lapses; zero never does.
+	Expires time.Time
 }
 
 // asksBoth reports whether a request asks both to use the credential and to
@@ -1683,7 +1702,10 @@ type SecretBinding struct {
 	// a discobox the binding covers creates.
 	Use      bool
 	Delegate bool
-	EnvVar   string
+	// Adds is an addition: a use stacking on the binding that delivers
+	// EnvVar, for its own lifetime (ADR 26-11-03-329 §1).
+	Adds   bool
+	EnvVar string
 	// RawDelivery is how the value itself is handed over, "env" or "file",
 	// when it is rather than a sentinel (ADR 26-10-27-840).
 	RawDelivery string
@@ -1836,6 +1858,9 @@ type Approval struct {
 	// empty for a part the request does not have. An approval names one for
 	// every part it has (ADR 26-11-02-022 §4).
 	Use, Delegate string
+	// UseAs is how an approved use part is granted, "add" or "replace"
+	// (ADR 26-11-03-329 §4); empty sends nothing, which is what was asked.
+	UseAs string
 }
 
 // A part's answer.
@@ -2464,6 +2489,11 @@ type DataSource interface {
 	// Bindings lists the bindings the filter names: of one secret, or — with
 	// an empty filter — every one the server holds for the project.
 	Bindings(ctx context.Context, server string, filter BindingFilter) ([]SecretBinding, error)
+
+	// HeldGrants are the grants that apply in one variable of a discobox
+	// now (ADR 26-11-03-329 §5): the binding that delivers it, whichever
+	// level it is on, then each addition stacking on it.
+	HeldGrants(ctx context.Context, server, sandboxID, envVar string) ([]HeldGrant, error)
 
 	// CreateBinding binds a secret without a request behind it: the binding
 	// an operator makes because they already know the answer.

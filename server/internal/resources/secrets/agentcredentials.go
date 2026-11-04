@@ -70,9 +70,46 @@ func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID 
 }
 
 // sandboxCredential is a binding as the protocol lists it: the hosts are
-// those the open routes name of the narrowest list it is held to — the binding's when it has
-// any, else its parent's, else the secret's.
+// those the open routes name of the narrowest list it is held to — the
+// binding's when it has any, else its parent's, else the secret's. A use
+// lists each grant its sentinel is held to, the binding's and each
+// addition's (ADR 26-11-03-329 §6), and its hosts and expiry are their union
+// and the latest of them, so a reader from before grants is still told
+// truly where and until when the credential may go.
 func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, purpose string) services.SandboxCredential {
+	credential := services.SandboxCredential{
+		Name:      secret.Name,
+		SecretID:  secret.ID,
+		BindingID: applied.Binding.ID,
+		Hosts:     credentialHosts(secret, applied),
+		Purpose:   purpose,
+		ExpiresAt: store.BindingExpiry(&applied.Binding, applied.Parent),
+	}
+	if purpose != model.SecretPurposeUse {
+		return credential
+	}
+	credential.EnvName = applied.Binding.EnvName
+	credential.Raw = applied.Binding.Raw
+	for _, grant := range append([]store.EffectiveBinding{applied}, applied.Additions...) {
+		credential.Grants = append(credential.Grants, services.SandboxCredentialGrant{
+			BindingID: grant.Binding.ID,
+			Adds:      grant.Binding.Adds,
+			Hosts:     credentialHosts(secret, grant),
+			ExpiresAt: store.BindingExpiry(&grant.Binding, grant.Parent),
+		})
+	}
+	for _, grant := range credential.Grants[1:] {
+		credential.Hosts = hostscope.List(append(credential.Hosts, grant.Hosts...)...)
+		if credential.ExpiresAt != nil && (grant.ExpiresAt == nil || grant.ExpiresAt.After(*credential.ExpiresAt)) {
+			credential.ExpiresAt = grant.ExpiresAt
+		}
+	}
+	return credential
+}
+
+// credentialHosts are the hosts the open routes name of the narrowest list
+// one binding is held to.
+func credentialHosts(secret *model.Secret, applied store.EffectiveBinding) []string {
 	routes := secret.Routes
 	switch {
 	case len(applied.Binding.Routes) > 0:
@@ -80,19 +117,7 @@ func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, pur
 	case applied.Parent != nil && len(applied.Parent.Routes) > 0:
 		routes = applied.Parent.Routes
 	}
-	credential := services.SandboxCredential{
-		Name:      secret.Name,
-		SecretID:  secret.ID,
-		BindingID: applied.Binding.ID,
-		Hosts:     model.OpenRouteHosts(routes),
-		Purpose:   purpose,
-		ExpiresAt: bindingExpiry(&applied.Binding, applied.Parent),
-	}
-	if purpose == model.SecretPurposeUse {
-		credential.EnvName = applied.Binding.EnvName
-		credential.Raw = applied.Binding.Raw
-	}
-	return credential
+	return model.OpenRouteHosts(routes)
 }
 
 // CreateSandboxCredentialRequest records an agent's ask as a pending
@@ -129,6 +154,10 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		return nil, err
 	}
 	use.Asked = use.Asked || envName != ""
+	if use.Add = input.Add.Or(false); use.Add && !use.Asked {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"an ask to add routes is of its use part: name the routes to use it on and its variable")
+	}
 	var delegate model.SecretRequestPart
 	if part, ok := input.Delegate.Get(); ok {
 		if delegate, err = requestedPart("delegate", nil, part.Routes, part.Policies, &budget); err != nil {

@@ -11,11 +11,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// recordedEgress stands in for the sandbox service, recording which pools an
+// recordedDelivery stands in for the sandbox service, recording which pools an
 // egress change was converged for.
-type recordedEgress struct{ marked []string }
+type recordedDelivery struct{ marked, sentinels []string }
 
-func (r *recordedEgress) MarkProxyPolicyChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID, harnessConfigID string) error {
+func (r *recordedDelivery) MarkPoolSentinelsTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID string) error {
+	r.sentinels = append(r.sentinels, projectID+"/"+poolID)
+	return nil
+}
+
+func (r *recordedDelivery) MarkProxyPolicyChangedTx(_ context.Context, _ *store.Store, _ *gorm.DB, projectID, poolID, harnessConfigID string) error {
 	r.marked = append(r.marked, projectID+"/"+poolID+"/"+harnessConfigID)
 	return nil
 }
@@ -25,7 +30,7 @@ func (r *recordedEgress) MarkProxyPolicyChangedTx(_ context.Context, _ *store.St
 func TestUpdatePoolSetsTheEgressLevel(t *testing.T) {
 	svc := newSizeFixture(t)
 	ctx := context.Background()
-	recorded := svc.sandboxEgress.(*recordedEgress)
+	recorded := svc.sandboxes.(*recordedDelivery)
 	if err := svc.store.CreatePool(ctx, &model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{
 		Name: "pool-1", ProviderInstanceID: "prov-unsized",
 	}}); err != nil {

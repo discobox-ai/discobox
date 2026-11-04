@@ -57,6 +57,17 @@ type credentialDoc struct {
 	// than a sentinel (ADR 26-10-27-840).
 	Raw       string     `json:"raw,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	// Grants are, for a use, each grant its sentinel is held to (ADR
+	// 26-11-03-329 §3); a control plane from before grants sends none.
+	Grants []credentialGrantDoc `json:"grants,omitempty"`
+}
+
+// credentialGrantDoc is one grant of a credential as the control plane lists
+// it.
+type credentialGrantDoc struct {
+	Hosts     []string   `json:"hosts"`
+	Adds      bool       `json:"adds,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 type listCredentialsDoc struct {
@@ -72,6 +83,7 @@ type createCredentialRequestDoc struct {
 	SandboxID       string                   `json:"sandboxId"`
 	Name            string                   `json:"name"`
 	EnvVar          string                   `json:"envVar,omitempty"`
+	Add             bool                     `json:"add,omitempty"`
 	Hosts           []string                 `json:"hosts,omitempty"`
 	Routes          []string                 `json:"routes,omitempty"`
 	Policies        []agentcreds.Policy      `json:"policies,omitempty"`
@@ -102,6 +114,9 @@ type credentialRequestPartStatusDoc struct {
 	// the approver chose (ADR 26-10-27-840 §2), so the agent is told it holds
 	// the value.
 	Raw string `json:"raw,omitempty"`
+	// GrantedAs is, once the use part is granted, whether as an addition or
+	// a replacement (ADR 26-11-03-329 §4).
+	GrantedAs string `json:"grantedAs,omitempty"`
 }
 
 func (c *controlPlaneCredentials) list(ctx context.Context, sandboxID string) ([]credentialDoc, error) {
@@ -226,14 +241,18 @@ func (b *credentialBroker) List(ctx context.Context) ([]agentcreds.Credential, e
 	}
 	out := make([]agentcreds.Credential, 0, len(docs))
 	for _, doc := range docs {
-		out = append(out, agentcreds.Credential{
+		credential := agentcreds.Credential{
 			Name:      doc.Name,
 			EnvVar:    doc.EnvVar,
 			Hosts:     doc.Hosts,
 			Purpose:   doc.Purpose,
 			Raw:       doc.Raw,
 			ExpiresAt: doc.ExpiresAt,
-		})
+		}
+		for _, grant := range doc.Grants {
+			credential.Grants = append(credential.Grants, agentcreds.CredentialGrant{Hosts: grant.Hosts, Adds: grant.Adds, ExpiresAt: grant.ExpiresAt})
+		}
+		out = append(out, credential)
 	}
 	return out, nil
 }
@@ -272,6 +291,7 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 		SandboxID:       b.sandboxID,
 		Name:            body.Name,
 		EnvVar:          body.EnvVar,
+		Add:             body.Add,
 		Hosts:           body.Hosts,
 		Routes:          body.Routes,
 		Policies:        body.Policies,
@@ -310,6 +330,7 @@ func (d *credentialRequestPartStatusDoc) protocol(purpose string) *agentcreds.Pa
 	}
 	part := &agentcreds.PartStatus{Status: d.Status}
 	if d.Status == agentcreds.StatusGranted {
+		part.GrantedAs = d.GrantedAs
 		part.Credential = &agentcreds.Credential{
 			Name:      d.Name,
 			EnvVar:    d.EnvVar,

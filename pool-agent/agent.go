@@ -342,6 +342,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			PrivateKey:           identity.PrivateKey,
 			Platform:             hostedPlatform(),
 			ImageKind:            status.imageKind,
+			SentinelGrants:       true,
 			Ready:                true,
 			Schedulable:          status.schedulable,
 			Degraded:             false,

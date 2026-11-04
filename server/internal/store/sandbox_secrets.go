@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -186,57 +187,117 @@ func (s *Store) ListSandboxIDsForHarnessConfig(ctx context.Context, projectID, h
 	return out, err
 }
 
-// SentinelRouteLists are the route lists a pool holds each of a sandbox's
-// injected sentinels to (ADR 26-10-27-880 §4): the secret's, the binding's
-// when it has any, and its parent's when it has one with any. Every sentinel
-// has an entry, since the pool sends a sentinel with none nowhere; one whose
-// binding or secret is gone gets a single empty list, which allows nothing.
-func (s *Store) SentinelRouteLists(ctx context.Context, projectID string, assignments []model.SandboxSecret) (map[string][][]secretroute.Route, error) {
-	out := make(map[string][][]secretroute.Route, len(assignments))
+// SentinelGrants are the grants a pool holds each of a sandbox's sentinels
+// to (ADR 26-11-03-329 §3): first the one for the binding its row was
+// materialized for — the secret's route lists, the binding's when it has
+// any, and its parent's when it has one with any (ADR 26-10-27-880 §4) — and
+// then one for each addition that stacks on that binding in its variable,
+// each with its expiry. A request passes when some grant passes it. Every
+// sentinel has an entry, since the pool sends a sentinel with none nowhere;
+// one whose binding or secret is gone gets a single grant of one empty list,
+// which allows nothing.
+//
+// The additions are read from the sandbox's resolved bindings, the reading
+// materialization makes its rows from, so a grant is never sent for an
+// addition the row's binding does not stand under.
+func (s *Store) SentinelGrants(ctx context.Context, sandbox *model.Sandbox, assignments []model.SandboxSecret, now time.Time) (map[string][]secretroute.Grant, error) {
+	out := make(map[string][]secretroute.Grant, len(assignments))
+	if len(assignments) == 0 {
+		return out, nil
+	}
+	effective, err := s.ResolveSandboxBindings(ctx, sandbox, now)
+	if err != nil {
+		return nil, err
+	}
 	for _, assignment := range assignments {
-		lists, err := s.bindingRouteLists(ctx, projectID, assignment.BindingID, assignment.SecretID)
+		grants, err := s.sentinelGrants(ctx, sandbox.ProjectID, &assignment, effective)
 		if err != nil {
 			return nil, err
 		}
-		out[assignment.Sentinel] = lists
+		out[assignment.Sentinel] = grants
 	}
 	return out, nil
 }
 
+// SentinelGrantsFor are the grants one row's sentinel is held to, as
+// SentinelGrants reads them: what a resolve of it checks.
+func (s *Store) SentinelGrantsFor(ctx context.Context, sandbox *model.Sandbox, assignment *model.SandboxSecret, now time.Time) ([]secretroute.Grant, error) {
+	effective, err := s.ResolveSandboxBindings(ctx, sandbox, now)
+	if err != nil {
+		return nil, err
+	}
+	return s.sentinelGrants(ctx, sandbox.ProjectID, assignment, effective)
+}
+
+func (s *Store) sentinelGrants(ctx context.Context, projectID string, assignment *model.SandboxSecret, effective EffectiveBindings) ([]secretroute.Grant, error) {
+	lists, expires, adds, err := s.bindingRouteLists(ctx, projectID, assignment.BindingID, assignment.SecretID)
+	if err != nil {
+		return nil, err
+	}
+	grants := []secretroute.Grant{{Lists: lists, ExpiresAt: expires, Adds: adds}}
+	applied, ok := effective.UseFor(assignment.EnvName)
+	// A raw row's sentinel is the handle the pool watches the value itself
+	// by: nothing stacks on it (ADR 26-11-03-329 Deferred). resolveBindings
+	// already leaves an addition beside a raw binding unapplied; the row's
+	// own delivery is checked too, since a row may lag its binding.
+	if !ok || applied.Binding.ID != assignment.BindingID || assignment.Raw != "" || applied.Binding.Raw != "" {
+		return grants, nil
+	}
+	if len(applied.Additions) == 0 {
+		return grants, nil
+	}
+	secret, err := s.GetSecret(ctx, projectID, assignment.SecretID)
+	if errors.Is(err, ErrNotFound) {
+		return grants, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, addition := range applied.Additions {
+		grants = append(grants, secretroute.Grant{
+			Lists:     RouteLists(secret, &addition.Binding, addition.Parent),
+			ExpiresAt: BindingExpiry(&addition.Binding, addition.Parent),
+			Adds:      true,
+		})
+	}
+	return grants, nil
+}
+
 // bindingRouteLists are the route lists a credential delivered under a
-// binding is held to. Nowhere, as one empty list, when the binding or its
-// secret is gone, or the binding is of another secret than the row says.
-func (s *Store) bindingRouteLists(ctx context.Context, projectID, bindingID, secretID string) ([][]secretroute.Route, error) {
+// binding is held to, when the binding stops authorizing, and whether it is
+// an addition. Nowhere, as one empty list, when the binding or its secret is
+// gone, or the binding is of another secret than the row says.
+func (s *Store) bindingRouteLists(ctx context.Context, projectID, bindingID, secretID string) ([][]secretroute.Route, *time.Time, bool, error) {
 	nowhere := [][]secretroute.Route{{}}
 	if bindingID == "" {
-		return nowhere, nil
+		return nowhere, nil, false, nil
 	}
 	binding, err := s.SecretBindingByExactID(ctx, projectID, bindingID)
 	if errors.Is(err, ErrNotFound) {
-		return nowhere, nil
+		return nowhere, nil, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, false, err
 	}
 	if binding.SecretID != secretID {
-		return nowhere, nil
+		return nowhere, nil, false, nil
 	}
 	secret, err := s.GetSecret(ctx, projectID, binding.SecretID)
 	if errors.Is(err, ErrNotFound) {
-		return nowhere, nil
+		return nowhere, nil, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, false, err
 	}
 	var parent *model.SecretBinding
 	if binding.ParentID != "" {
 		if parent, err = s.SecretBindingByExactID(ctx, projectID, binding.ParentID); errors.Is(err, ErrNotFound) {
-			return nowhere, nil
+			return nowhere, nil, false, nil
 		} else if err != nil {
-			return nil, err
+			return nil, nil, false, err
 		}
 	}
-	return RouteLists(secret, binding, parent), nil
+	return RouteLists(secret, binding, parent), BindingExpiry(binding, parent), binding.Adds, nil
 }
 
 // RouteLists are the route lists a credential is held to under binding, and

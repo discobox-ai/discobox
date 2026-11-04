@@ -261,6 +261,19 @@ func (h *Handler) ListSandboxCredentials(ctx context.Context, params serverapi.L
 		if credential.ExpiresAt != nil {
 			item.SetExpiresAt(serverapi.NewOptDateTime(*credential.ExpiresAt))
 		}
+		for _, grant := range credential.Grants {
+			held := apimodel.SandboxCredentialGrant{BindingId: grant.BindingID, Hosts: grant.Hosts}
+			if held.Hosts == nil {
+				held.Hosts = []string{}
+			}
+			if grant.Adds {
+				held.Adds = serverapi.NewOptBool(true)
+			}
+			if grant.ExpiresAt != nil {
+				held.ExpiresAt = serverapi.NewOptDateTime(*grant.ExpiresAt)
+			}
+			item.Grants = append(item.Grants, held)
+		}
 		resp.Credentials = append(resp.Credentials, item)
 	}
 	return &resp, nil
@@ -359,6 +372,11 @@ func agentCredentialPartStatus(req *model.SecretRequest, part model.SecretReques
 	}
 	if binding.Use && binding.Raw != "" {
 		status.SetRaw(serverapi.NewOptSandboxCredentialRequestPartStatusRaw(serverapi.SandboxCredentialRequestPartStatusRaw(binding.Raw)))
+	}
+	// An agent that asked to add and was given a replacement has lost what
+	// it did not restate, so how it was granted is said (ADR 26-11-03-329 §4).
+	if binding.Use && part.ApprovedAs != "" {
+		status.SetGrantedAs(serverapi.NewOptSandboxCredentialRequestPartStatusGrantedAs(serverapi.SandboxCredentialRequestPartStatusGrantedAs(part.ApprovedAs)))
 	}
 	if binding.ExpiresAt != nil {
 		status.SetExpiresAt(serverapi.NewOptDateTime(*binding.ExpiresAt))

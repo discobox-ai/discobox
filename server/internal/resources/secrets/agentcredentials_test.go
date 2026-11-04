@@ -266,7 +266,8 @@ func TestGrantedCredentialIsListedForItsSandbox(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 	want := []services.SandboxCredential{
-		{Name: "github", EnvName: "GH_TOKEN", SecretID: secret.ID, BindingID: project.ID, Hosts: []string{"github.com"}, Purpose: model.SecretPurposeUse},
+		{Name: "github", EnvName: "GH_TOKEN", SecretID: secret.ID, BindingID: project.ID, Hosts: []string{"github.com"}, Purpose: model.SecretPurposeUse,
+			Grants: []services.SandboxCredentialGrant{{BindingID: project.ID, Hosts: []string{"github.com"}}}},
 		{Name: "github", SecretID: secret.ID, BindingID: delegate.ID, Hosts: []string{"api.github.com"}, Purpose: model.SecretPurposeDelegate},
 	}
 	if !reflect.DeepEqual(credentials, want) {

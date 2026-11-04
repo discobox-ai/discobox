@@ -23,10 +23,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// SandboxEgress converges a pool's discoboxes onto its changed egress level
-// (ADR 26-10-01-032 §5), in the transaction that changes it.
-type SandboxEgress interface {
+// SandboxDelivery converges a pool's discoboxes onto what changed about the
+// pool, in the transaction that changes it: its egress level (ADR
+// 26-10-01-032 §5), and whether its agent holds sentinels to grants, which
+// changes what each discobox's sentinels are sent as (ADR 26-11-03-329 §3).
+type SandboxDelivery interface {
 	MarkProxyPolicyChangedTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID, harnessConfigID string) error
+	MarkPoolSentinelsTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, poolID string) error
 }
 
 type Service struct {
@@ -34,11 +37,11 @@ type Service struct {
 	providers       *sandbox.ProviderManager
 	pools           *ControlPlane
 	sandboxReporter SandboxStateReporter
-	sandboxEgress   SandboxEgress
+	sandboxes       SandboxDelivery
 }
 
-func NewService(appStore *store.Store, providerManager *sandbox.ProviderManager, controlPlane *ControlPlane, sandboxEgress SandboxEgress) *Service {
-	return &Service{store: appStore, providers: providerManager, pools: controlPlane, sandboxEgress: sandboxEgress}
+func NewService(appStore *store.Store, providerManager *sandbox.ProviderManager, controlPlane *ControlPlane, sandboxes SandboxDelivery) *Service {
+	return &Service{store: appStore, providers: providerManager, pools: controlPlane, sandboxes: sandboxes}
 }
 
 func (s *Service) ListPools(ctx context.Context, projectID string) ([]model.Pool, error) {
@@ -148,7 +151,7 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 		if !egressChanged {
 			return nil
 		}
-		return s.sandboxEgress.MarkProxyPolicyChangedTx(ctx, txStore, txDB, projectID, pool.ID, "")
+		return s.sandboxes.MarkProxyPolicyChangedTx(ctx, txStore, txDB, projectID, pool.ID, "")
 	}); err != nil {
 		return nil, err
 	}

@@ -241,6 +241,23 @@ func TestAGrantedRequestSaysItWasGrantedRaw(t *testing.T) {
 	}
 }
 
+// How a granted use part was granted reaches the agent (ADR 26-11-03-329
+// §4), and nothing is said of it before it is granted.
+func TestAGrantedRequestSaysHowItWasGranted(t *testing.T) {
+	granted := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Use: &credentialRequestPartStatusDoc{
+		Status: agentcreds.StatusGranted, Name: "github", EnvVar: "GH_TOKEN", GrantedAs: agentcreds.GrantedAsAdd,
+	}}.protocol()
+	if granted.Use == nil || granted.Use.GrantedAs != agentcreds.GrantedAsAdd {
+		t.Fatalf("granted = %+v, want it said to be an addition", granted)
+	}
+	pending := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusPending, Use: &credentialRequestPartStatusDoc{
+		Status: agentcreds.StatusPending, GrantedAs: agentcreds.GrantedAsAdd,
+	}}.protocol()
+	if pending.Use == nil || pending.Use.GrantedAs != "" {
+		t.Fatalf("pending = %+v, want nothing said of how before it is granted", pending)
+	}
+}
+
 // A refusal reaches the sandbox as a refusal, in the control plane's words,
 // rather than as an outage two hops away.
 func TestAControlPlaneRefusalIsADenial(t *testing.T) {

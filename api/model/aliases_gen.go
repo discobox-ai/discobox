@@ -183,6 +183,7 @@ type SandboxCloneProgress = apigen.SandboxCloneProgress
 type SandboxConfig = apigen.SandboxConfig
 type SandboxCreateConfig = apigen.SandboxCreateConfig
 type SandboxCredential = apigen.SandboxCredential
+type SandboxCredentialGrant = apigen.SandboxCredentialGrant
 type SandboxCredentialPolicy = apigen.SandboxCredentialPolicy
 type SandboxCredentialRequestDelegate = apigen.SandboxCredentialRequestDelegate
 type SandboxCredentialRequestPartStatus = apigen.SandboxCredentialRequestPartStatus

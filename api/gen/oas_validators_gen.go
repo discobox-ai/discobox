@@ -6810,6 +6810,54 @@ func (s *SandboxCredential) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		var failures []validate.FieldError
+		for i, elem := range s.Grants {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "grants",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *SandboxCredentialGrant) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Hosts == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "hosts",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -6863,6 +6911,24 @@ func (s *SandboxCredentialRequestPartStatus) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.GrantedAs.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "grantedAs",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Status.Validate(); err != nil {
 			return err
 		}
@@ -6877,6 +6943,17 @@ func (s *SandboxCredentialRequestPartStatus) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s SandboxCredentialRequestPartStatusGrantedAs) Validate() error {
+	switch s {
+	case "add":
+		return nil
+	case "replace":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s SandboxCredentialRequestPartStatusRaw) Validate() error {
@@ -9259,6 +9336,24 @@ func (s *SecretRequestPart) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.ApprovedAs.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "approvedAs",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Outcome.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -9332,12 +9427,41 @@ func (s *SecretRequestPart) Validate() error {
 	return nil
 }
 
+func (s SecretRequestPartApprovedAs) Validate() error {
+	switch s {
+	case "add":
+		return nil
+	case "replace":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *SecretRequestPartDecision) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.As.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "as",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if err := s.Decision.Validate(); err != nil {
 			return err
@@ -9424,6 +9548,17 @@ func (s *SecretRequestPartDecision) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s SecretRequestPartDecisionAs) Validate() error {
+	switch s {
+	case "add":
+		return nil
+	case "replace":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s SecretRequestPartDecisionDecision) Validate() error {

@@ -83,7 +83,7 @@ func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 	if err != nil {
 		return "", err
 	}
-	client := &poolAgentClient{poolID: pool.ID, tokenIssuer: p.manager, lease: lease}
+	client := newPoolAgentClient(pool, p.manager, lease)
 	if err := client.ImportTree(ctx, ref, tree); err != nil {
 		return "", err
 	}

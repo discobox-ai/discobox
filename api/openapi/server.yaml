@@ -2,10 +2,16 @@ components:
     schemas:
         BoundSecret:
             additionalProperties: false
-            description: 'One credential a target holds, resolved: the binding that applies (the narrowest per variable), and every route list a request carrying it is held to.'
+            description: 'One credential a target holds, resolved: the binding that applies (the narrowest per variable), each addition stacking on it (ADR 26-11-03-329 §2), and every route list a request carrying it is held to.'
             properties:
+                adds:
+                    description: An addition, stacking on the binding that delivers envVar as a grant of its own; a request passes when this or that allows it
+                    type: boolean
                 bindingId:
                     description: The binding that applies
+                    type: string
+                notApplied:
+                    description: Why this addition does not apply, when it does not; it stands, and applies again should that change within its lifetime
                     type: string
                 delegate:
                     description: The target may give it to the discoboxes it leads
@@ -2778,7 +2784,7 @@ components:
             type: object
         SecretBinding:
             additionalProperties: false
-            description: "A secret made available to a target (ADR 26-10-27-880 §1): existing and unexpired, it is the whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a discobox the binding covers give the credential to the discoboxes it leads."
+            description: "A secret made available to a target (ADR 26-10-27-880 §1): existing and unexpired, it is the whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a discobox the binding covers give the credential to the discoboxes it leads. An addition (adds) stacks on the binding delivering envVar instead of replacing or shadowing it (ADR 26-11-03-329)."
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -2786,6 +2792,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                adds:
+                    description: "An addition: a use on a discobox, with an expiry, that stacks on the binding delivering envVar instead of replacing or shadowing it (ADR 26-11-03-329)"
+                    type: boolean
                 createdAt:
                     description: Creation timestamp
                     format: date-time
@@ -4638,12 +4647,40 @@ components:
                 secretId:
                     description: Secret backing the credential
                     type: string
+                grants:
+                    description: "For a use, each grant the variable's sentinel is held to (ADR 26-11-03-329 §3): the binding's first, then each addition stacking on it, with the hosts it may be sent to and when it lapses. A request passes when some grant allows it. hosts and expiresAt are their union and the latest of them."
+                    items:
+                        $ref: '#/components/schemas/SandboxCredentialGrant'
+                    type: array
             required:
                 - name
                 - envVar
                 - hosts
                 - secretId
                 - bindingId
+            type: object
+        SandboxCredentialGrant:
+            additionalProperties: false
+            description: One grant a credential delivered in a variable is held to (ADR 26-11-03-329 §3).
+            properties:
+                bindingId:
+                    description: The binding the grant is
+                    type: string
+                adds:
+                    description: An addition, stacking on the binding that delivers the variable
+                    type: boolean
+                expiresAt:
+                    description: When the grant lapses; empty never
+                    format: date-time
+                    type: string
+                hosts:
+                    description: Host patterns of the routes it may be sent on
+                    items:
+                        type: string
+                    type: array
+            required:
+                - bindingId
+                - hosts
             type: object
         ListSandboxCredentialsResponse:
             additionalProperties: false
@@ -4671,6 +4708,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                add:
+                    description: The use part's routes are asked in addition to what the sandbox holds, as an addition beside its binding, rather than as its whole use of the credential (ADR 26-11-03-329 §4). Needs a use part.
+                    type: boolean
                 envVar:
                     description: Environment variable the credential is wanted in. Required for the use part, the ask to use it; a request with only a delegate part names none, since a delegation delivers nothing to the asking sandbox.
                     type: string
@@ -4766,6 +4806,12 @@ components:
                     enum:
                         - env
                         - file
+                    type: string
+                grantedAs:
+                    description: "Once the use part is granted, how (ADR 26-11-03-329 §4): add, an addition beside what the sandbox held in envVar, which stays as it was; replace, its whole use of the credential, in place of what it held. It may differ from what was asked."
+                    enum:
+                        - add
+                        - replace
                     type: string
                 status:
                     description: The part's status
@@ -5913,8 +5959,14 @@ components:
             additionalProperties: false
             description: The decision on one part of a request.
             properties:
+                as:
+                    description: "Use part only: how an approved part is granted (ADR 26-11-03-329 §4). add makes an addition beside what the discobox holds, replacing nothing; replace makes it the discobox's whole use of the secret. Omitted takes what the request asked, which is replace unless it asked to add."
+                    enum:
+                        - add
+                        - replace
+                    type: string
                 decision:
-                    description: approve makes the part's binding, replacing the discobox's sandbox-level bindings of that kind for the secret (ADR 26-11-02-022 §5); deny leaves them as they are.
+                    description: approve makes the part's binding, replacing the discobox's sandbox-level bindings of that kind for the secret (ADR 26-11-02-022 §5), or for a use part granted as add, an addition beside them (ADR 26-11-03-329 §4); deny leaves them as they are.
                     enum:
                         - approve
                         - deny
@@ -6512,6 +6564,15 @@ components:
             additionalProperties: false
             description: One part of a request (ADR 26-11-02-022 §1). The use part asks to use the credential, delivered in envName; the delegate part asks to give it to the discoboxes the asking one creates.
             properties:
+                add:
+                    description: "Use part only: the discobox asks for these routes in addition to what it holds, as an addition, rather than as its whole use of the credential (ADR 26-11-03-329 §4)"
+                    type: boolean
+                approvedAs:
+                    description: "Use part only: how an approved part was granted, as an addition beside what the discobox held or replacing it"
+                    enum:
+                        - add
+                        - replace
+                    type: string
                 bindingId:
                     description: The binding approving the part made or replaced
                     type: string
@@ -6911,6 +6972,9 @@ components:
                 ready:
                     type: boolean
                 schedulable:
+                    type: boolean
+                sentinelGrants:
+                    description: The agent holds each sentinel to grants, any one of which may allow a request, each with its own expiry (ADR 26-11-03-329 §3), and takes them as sentinelGrants. Declared on every report; an agent from before grants sends none, and is sent each sentinel's first grant's route lists as sentinelRoutes.
                     type: boolean
             required:
                 - ready

@@ -147,8 +147,9 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 }
 
 // checkBindingShape refuses a binding that does not hold together: one that
-// does nothing, a use with no valid variable, or a delegation alone naming
-// one.
+// does nothing, a use with no valid variable, a delegation alone naming one,
+// or an addition that is not a use on a discobox, by sentinel, with an
+// expiry (ADR 26-11-03-329 §1).
 func checkBindingShape(binding *model.SecretBinding) error {
 	switch {
 	case !binding.Use && !binding.Delegate:
@@ -157,6 +158,19 @@ func checkBindingShape(binding *model.SecretBinding) error {
 		return apperrors.NewStatusError(http.StatusBadRequest, "a binding for use names the environment variable the credential is delivered in")
 	case !binding.Use && binding.EnvName != "":
 		return apperrors.NewStatusError(http.StatusBadRequest, "a binding for delegation alone delivers nothing, so it names no environment variable")
+	}
+	if !binding.Adds {
+		return nil
+	}
+	switch {
+	case !binding.Use || binding.Delegate:
+		return apperrors.NewStatusError(http.StatusBadRequest, "an addition is a use alone: it adds routes beside the binding delivering its variable, and delegates nothing")
+	case binding.TargetKind != model.SecretBindingTargetSandbox:
+		return apperrors.NewStatusError(http.StatusBadRequest, "an addition is on a discobox, beside the binding that delivers its variable there")
+	case binding.Raw != "":
+		return apperrors.NewStatusError(http.StatusBadRequest, "an addition is delivered by sentinel; a raw value is handed over by a plain binding")
+	case binding.ExpiresAt == nil:
+		return apperrors.NewStatusError(http.StatusBadRequest, "an addition is for a time; give it a lifetime")
 	}
 	return nil
 }
@@ -240,9 +254,6 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			"a binding for neither use nor delegation does nothing; remove it instead")
 	}
-	if err := checkBindingShape(binding); err != nil {
-		return nil, err
-	}
 	if err := checkRawBinding(ctx, binding, secret); err != nil {
 		return nil, err
 	}
@@ -264,6 +275,11 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 			}
 		}
 		binding.ExpiresAt = expiryAt(now, ttl)
+	}
+	// After the lifetime, so an addition made forever is refused as it
+	// would be stored.
+	if err := checkBindingShape(binding); err != nil {
+		return nil, err
 	}
 	change := store.BindingChange{Actor: auth.ActorFromContext(ctx)}
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
@@ -349,9 +365,10 @@ func (s *Service) ListSecretBindingEvents(ctx context.Context, projectID string,
 }
 
 // ListBoundSecrets resolves what applies at a target (ADR 26-10-27-880 §2):
-// per variable the use binding on the narrowest level that has one, and every
-// live delegate binding, each with the route lists a request carrying it must
-// pass.
+// per variable the use binding on the narrowest level that has one, followed
+// by each addition stacking on it (ADR 26-11-03-329 §2), and every live
+// delegate binding, each with the route lists a request carrying it must
+// pass; then the additions that do not apply, with why.
 func (s *Service) ListBoundSecrets(ctx context.Context, projectID, targetKind, target string) ([]services.BoundSecret, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
@@ -372,20 +389,33 @@ func (s *Service) ListBoundSecrets(ctx context.Context, projectID, targetKind, t
 	if err != nil {
 		return nil, err
 	}
+	var listed []store.EffectiveBinding
+	for _, applied := range effective.Use {
+		listed = append(listed, applied)
+		listed = append(listed, applied.Additions...)
+	}
+	listed = append(listed, effective.Delegate...)
 	var out []services.BoundSecret
 	seen := map[string]bool{}
-	for _, applied := range append(effective.Use, effective.Delegate...) {
+	add := func(applied store.EffectiveBinding, notApplied string) {
 		if seen[applied.Binding.ID] {
-			continue
+			return
 		}
 		seen[applied.Binding.ID] = true
 		secret, err := s.store.GetSecret(ctx, projectID, applied.Binding.SecretID)
 		if err != nil {
-			continue
+			return
 		}
 		out = append(out, services.BoundSecret{Binding: applied.Binding, SecretName: secret.Name,
 			RouteLists: store.RouteLists(secret, &applied.Binding, applied.Parent),
-			ExpiresAt:  bindingExpiry(&applied.Binding, applied.Parent)})
+			ExpiresAt:  store.BindingExpiry(&applied.Binding, applied.Parent),
+			NotApplied: notApplied})
+	}
+	for _, applied := range listed {
+		add(applied, "")
+	}
+	for _, unapplied := range effective.Unapplied {
+		add(unapplied, unapplied.NotApplied)
 	}
 	return out, nil
 }
@@ -453,7 +483,7 @@ func bindingConflict(err error) error {
 		return apperrors.NotFound(err, "the binding's target was not found")
 	}
 	return apperrors.NewStatusError(http.StatusConflict,
-		"that target already has a binding for this variable, or already delegates this secret; change or remove that one")
+		"that target already has a plain binding for this variable, or already delegates this secret; change or remove that one")
 }
 
 // SandboxBindings are the bindings a discobox is created with, built and

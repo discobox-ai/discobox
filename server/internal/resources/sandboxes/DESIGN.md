@@ -1064,8 +1064,8 @@ options, catching what changed while the sandbox was down.
 A raw binding ([ADR 26-10-27-840](../../../../docs/adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md))
 materializes the same way, its row carrying the delivery (`SandboxSecret.Raw`).
 Its sentinel is only the pool's handle for the value: every send of the set
-(`sentinelDelivery`) puts it in `RawSecrets`, with its route lists in
-`SentinelRoutes`, never among the sentinels or in the secret environment, and
+(`sentinelDelivery`) puts it in `RawSecrets`, with its grants in
+`SentinelGrants`, never among the sentinels or in the secret environment, and
 neither a harness run in the sandbox (`AssignSandboxHarnessSecrets`) nor a
 harness capture is handed it. `RawSecrets` is sent only when there are any, so
 a pool that predates them is not sent a field it would refuse.
@@ -1075,9 +1075,16 @@ delivered level-triggered by a reconciler of its own, `SentinelReconciler`
 (`sandboxSentinels`, keyed like the sandbox): the write marks every sandbox it
 reaches in its transaction (`MarkBindingHoldersDirtyTx`,
 `MarkSecretHoldersDirtyTx`), and the reconciler materializes the sandbox's
-bindings and sends its sentinel set with each sentinel's route lists — every
-sentinel has some, an empty list sending it nowhere — as a provider
-`Update`. The set and the secret environment are each sent empty, never left
+bindings and sends its sentinel set with each sentinel's grants
+(`store.SentinelGrants`, ADR 26-11-03-329 §3) — one for the binding its row
+was made for, then one for each addition stacking on it, each its route lists
+and its expiry; every sentinel has one, an empty list sending it nowhere — as
+a provider `Update`. A row is made for the variable's plain binding, else the
+addition that lapses last, so an addition coming or going repoints the row and
+keeps its sentinel. The pool provider sends the grants to a pool whose agent
+declared it holds them (`Pool.SentinelGrants`) and each sentinel's first
+grant's lists, as `sentinelRoutes`, to one that has not: an addition is not in
+effect there, and nothing it would refuse whole is sent. The set and the secret environment are each sent empty, never left
 out, when nothing is in them: the pool keeps what it was last sent of a field
 left out, so the last sentinel removed, or turned raw, would otherwise stay in
 the sandbox — where an `env` raw delivery's variable would still hold the

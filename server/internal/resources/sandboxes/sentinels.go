@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -78,14 +79,14 @@ func (r *SentinelReconciler) Reconcile(ctx context.Context, id string) (reconcil
 	return reconcile.Result{}, err
 }
 
-// markSentinelsIfStale marks a sandbox's sentinel delivery when the route
-// lists a send carried to its pool are no longer its sentinels'. A send reads the
-// routes when it starts and lands when its pool answers — for a create that
+// markSentinelsIfStale marks a sandbox's sentinel delivery when the grants a
+// send carried to its pool are no longer its sentinels'. A send reads the
+// grants when it starts and lands when its pool answers — for a create that
 // rebuilds a container, minutes later — so a route change committed in between
 // can be delivered first and then overwritten by the send. Every send checks
 // after it lands, so the last delivery always follows the last send that read
-// the routes.
-func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcile.Engine, sb *model.Sandbox, sent map[string][][]secretroute.Route) error {
+// the grants. An addition that lapsed in between is a change too.
+func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcile.Engine, sb *model.Sandbox, sent map[string][]secretroute.Grant) error {
 	if engine == nil {
 		return nil
 	}
@@ -93,11 +94,11 @@ func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcil
 	if err != nil {
 		return err
 	}
-	current, err := st.SentinelRouteLists(ctx, sb.ProjectID, assignments)
+	current, err := st.SentinelGrants(ctx, sb, assignments, time.Now().UTC())
 	if err != nil {
 		return err
 	}
-	if maps.EqualFunc(sent, current, func(a, b [][]secretroute.Route) bool { return slices.EqualFunc(a, b, model.SameRoutes) }) {
+	if maps.EqualFunc(sent, current, func(a, b []secretroute.Grant) bool { return slices.EqualFunc(a, b, sameGrant) }) {
 		return nil
 	}
 	return engine.MarkDirty(ctx, SentinelsResourceType, SandboxDirtyID(sb.ProjectID, sb.ID))
@@ -108,4 +109,13 @@ func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcil
 // kept until a delivery succeeds, so no change goes unmarked.
 func (r *SentinelReconciler) ScanDirty(context.Context) ([]string, error) {
 	return nil, nil
+}
+
+// sameGrant reports whether two grants hold a sentinel alike: the same route
+// lists and the same expiry.
+func sameGrant(a, b secretroute.Grant) bool {
+	if (a.ExpiresAt == nil) != (b.ExpiresAt == nil) || (a.ExpiresAt != nil && !a.ExpiresAt.Equal(*b.ExpiresAt)) {
+		return false
+	}
+	return slices.EqualFunc(a.Lists, b.Lists, model.SameRoutes)
 }

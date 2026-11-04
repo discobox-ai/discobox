@@ -216,7 +216,7 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 // a role is the asking discobox's, escaped here as its routes are
 // (cli/REVIEW.md).
 func tuiRequestPart(part apimodel.SecretRequestPart) *tui.RequestPart {
-	out := &tui.RequestPart{Routes: tuiRoutes(part.Routes)}
+	out := &tui.RequestPart{Routes: tuiRoutes(part.Routes), Add: part.Add.Or(false)}
 	for _, role := range partRoles(part) {
 		role.Name = terminalSafe(role.Name)
 		role.Description = terminalSafe(role.Description)
@@ -582,6 +582,44 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID strin
 	return err
 }
 
+// HeldGrants are the grants applying in one variable of a discobox, from its
+// resolved bindings (ADR 26-11-03-329 §5).
+func (d *apiDataSource) HeldGrants(ctx context.Context, server, sandboxID, envVar string) ([]tui.HeldGrant, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	res, err := d.client.ListBoundSecrets(ctx, apiclientgen.ListBoundSecretsParams{
+		ProjectId:  d.projectID,
+		TargetKind: apiclientgen.ListBoundSecretsTargetKindSandbox,
+		Target:     apiclientgen.NewOptString(sandboxID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListBoundSecretsBody](res)
+	if err != nil {
+		return nil, err
+	}
+	var out []tui.HeldGrant
+	for _, bound := range body.BoundSecrets {
+		if !bound.Use || bound.EnvVar.Or("") != envVar || bound.NotApplied.Or("") != "" {
+			continue
+		}
+		grant := tui.HeldGrant{
+			BindingID: bound.BindingId,
+			Adds:      bound.Adds.Or(false),
+			From:      string(bound.From),
+			Routes:    tuiRoutes(grantRoutes(bound)),
+		}
+		if expires, ok := bound.ExpiresAt.Get(); ok {
+			grant.Expires = expires
+		}
+		out = append(out, grant)
+	}
+	return out, nil
+}
+
 // ApproveCredentialRequest makes the binding that answers a request.
 func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server string, approval tui.Approval) error {
 	window := d
@@ -596,21 +634,24 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	// Each part the request has is answered, approve or deny: the server
 	// refuses an answer that leaves one out (ADR 26-11-02-022 §4).
 	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
-	decide := func(answer string, raw string) apiclientgen.OptSecretRequestPartDecision {
+	decide := func(answer, raw, as string) apiclientgen.OptSecretRequestPartDecision {
 		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(answer)}
 		if answer == tui.PartApprove {
 			part.TtlSeconds = apiclientgen.NewOptInt64(approval.TTLSeconds)
 			if raw != "" {
 				part.Raw = apiclientgen.NewOptSecretRequestPartDecisionRaw(apiclientgen.SecretRequestPartDecisionRaw(raw))
 			}
+			if as != "" {
+				part.As = apiclientgen.NewOptSecretRequestPartDecisionAs(apiclientgen.SecretRequestPartDecisionAs(as))
+			}
 		}
 		return apiclientgen.NewOptSecretRequestPartDecision(part)
 	}
 	if approval.Use != "" {
-		body.Use = decide(approval.Use, approval.Raw)
+		body.Use = decide(approval.Use, approval.Raw, approval.UseAs)
 	}
 	if approval.Delegate != "" {
-		body.Delegate = decide(approval.Delegate, "")
+		body.Delegate = decide(approval.Delegate, "", "")
 	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
@@ -752,6 +793,7 @@ func toTUIBinding(b apimodel.SecretBinding) tui.SecretBinding {
 		TargetID:    b.TargetId,
 		Use:         b.Use,
 		Delegate:    b.Delegate,
+		Adds:        b.Adds.Or(false),
 		RawDelivery: string(b.Raw.Or("")),
 		// A child binding's variable and routes are the asking or delegating
 		// discobox's words, escaped as every string the window draws is.

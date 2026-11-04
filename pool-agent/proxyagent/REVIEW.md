@@ -15,7 +15,14 @@
   nowhere": without a version an old file's unrouted sentinel would have read
   as refused on every running sandbox until the control plane pushed again,
   and a new file's could not be told from it. An old file's reads as `*`, as
-  it was enforced (ADR 26-10-27-939).
+  it was enforced (ADR 26-10-27-939). When route lists became grants (version
+  4, ADR 26-11-03-329), a version 3 sentinel's lists became one grant with no
+  expiry: what they meant, never a grant that lapses or allows more.
+- Grants are decided apart (`secretroute.DecideGrants`), never merged into
+  one list: a union would let one binding's blocked route cut into another
+  grant, or its broad route outrank another's block. A grant's expiry is
+  read by this pool's clock at every request, so an addition stops at its
+  time even when the delivery that removes it is late.
 - A route of an older SecretsFile the new shape cannot say is converted to
   something that refuses at least what it refused, never dropped if it was
   blocked. A blocked route is a carve-out: dropped, or replaced by a block less

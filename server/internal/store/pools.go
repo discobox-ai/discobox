@@ -230,11 +230,11 @@ func (s *Store) EnrollPool(ctx context.Context, poolID, publicKey string) (*mode
 // that recovers is returned to `active` by the reconcile that proves it, not by
 // the heartbeat — the service layer marks an offline pool dirty when its agent
 // reports back in, which is what makes that reconcile prompt.
-func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platform.Platform, runs platform.ImageKind, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Pool, error) {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return nil, err
-	}
+//
+// holdsGrants is whether the agent declared it holds sentinels to grants
+// (ADR 26-11-03-329 §3); grantsChanged reports that it differs from what was
+// recorded, which the caller, holding the transaction, acts on.
+func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platform.Platform, runs platform.ImageKind, holdsGrants, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (pool *model.Pool, grantsChanged bool, err error) {
 	if availableCPUVCPUs < 0 {
 		availableCPUVCPUs = 0
 	}
@@ -245,34 +245,39 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		availableStorageBytes = 0
 	}
 	now := time.Now().UTC()
-	var pool model.Pool
-	err = write.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pool, "id = ?", poolID).Error; err != nil {
+	var stored model.Pool
+	err = s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&stored, "id = ?", poolID).Error; err != nil {
 			return mapNotFound(err)
 		}
-		recordPoolPlatform(&pool, hosts)
-		recordPoolImageKind(&pool, runs)
-		pool.Ready = ready
-		pool.Schedulable = schedulable
-		pool.Degraded = degraded
-		pool.AvailableCPUVCPUs = availableCPUVCPUs
-		pool.AvailableMemoryBytes = availableMemoryBytes
-		pool.AvailableStorageBytes = availableStorageBytes
-		pool.Conditions = conditions
-		pool.LastSeenAt = &now
-		pool.StatusReportedAt = &now
+		recordPoolPlatform(&stored, hosts)
+		recordPoolImageKind(&stored, runs)
+		// Declared on every report, so an agent rolled back to one from
+		// before grants is sent route lists again from its next report, and
+		// one upgraded in place is sent its grants from its first.
+		grantsChanged = stored.SentinelGrants != holdsGrants
+		stored.SentinelGrants = holdsGrants
+		stored.Ready = ready
+		stored.Schedulable = schedulable
+		stored.Degraded = degraded
+		stored.AvailableCPUVCPUs = availableCPUVCPUs
+		stored.AvailableMemoryBytes = availableMemoryBytes
+		stored.AvailableStorageBytes = availableStorageBytes
+		stored.Conditions = conditions
+		stored.LastSeenAt = &now
+		stored.StatusReportedAt = &now
 		// The first heartbeat is the agent first heard from: its key was
 		// enrolled before it started (EnrollPool), and this is what says it
 		// runs on it.
-		if pool.RegisteredAt == nil {
-			pool.RegisteredAt = &now
+		if stored.RegisteredAt == nil {
+			stored.RegisteredAt = &now
 		}
-		return tx.Save(&pool).Error
+		return tx.Save(&stored).Error
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return &pool, nil
+	return &stored, grantsChanged, nil
 }
 
 // RecordPoolProvisionProgress stores what a provider driver is doing to bring a

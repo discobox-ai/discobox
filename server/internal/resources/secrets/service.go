@@ -515,9 +515,9 @@ func partDecision(which string, part *model.SecretRequestPart, input apigen.OptS
 	}
 	switch decision.Decision {
 	case apigen.SecretRequestPartDecisionDecisionDeny:
-		if decision.Routes != nil || decision.TtlSeconds.Set || decision.Raw.Set {
+		if decision.Routes != nil || decision.TtlSeconds.Set || decision.Raw.Set || decision.As.Set {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				fmt.Sprintf("the %s part is denied, so it takes no routes, lifetime or delivery", which))
+				fmt.Sprintf("the %s part is denied, so it takes no routes, lifetime, delivery or way of granting it", which))
 		}
 		return nil, nil
 	case apigen.SecretRequestPartDecisionDecisionApprove:
@@ -545,6 +545,20 @@ func partDecision(which string, part *model.SecretRequestPart, input apigen.OptS
 				"the value itself is the use part's delivery; a delegation delivers nothing")
 		}
 		approval.raw = string(raw)
+	}
+	// How a use part is granted is the ask's unless the approver says
+	// otherwise (ADR 26-11-03-329 §4); a delegate part always replaces.
+	approval.adds = part.Add
+	if as, ok := decision.As.Get(); ok {
+		if approval.delegate {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"a delegate part is granted as the discobox's whole delegation of the secret; only a use part may be granted as an addition")
+		}
+		approval.adds = as == apigen.SecretRequestPartDecisionAsAdd
+	}
+	if approval.adds && approval.raw != "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"an addition is delivered by sentinel; grant the value itself as a replacement")
 	}
 	return approval, nil
 }
@@ -575,7 +589,10 @@ type partApproval struct {
 	// ttl is the lifetime the approver named, read only when ttlNamed.
 	ttl      int64
 	ttlNamed bool
-	binding  *model.SecretBinding
+	// adds grants a use part as an addition beside what the discobox
+	// holds, replacing nothing (ADR 26-11-03-329 §4).
+	adds    bool
+	binding *model.SecretBinding
 }
 
 // commitApproval makes every write an answer makes as one act: each approved
@@ -611,13 +628,24 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 			if err != nil {
 				return err
 			}
-			made, err := s.replaceBindings(ctx, txStore, txDB, binding, part.approval.raw, change)
+			var made *model.SecretBinding
+			if part.approval.adds {
+				made, err = s.addBinding(ctx, txStore, txDB, binding, now, change)
+			} else {
+				made, err = s.replaceBindings(ctx, txStore, txDB, binding, part.approval.raw, change)
+			}
 			if err != nil {
 				return err
 			}
 			part.approval.binding = made
 			part.asked.Outcome = model.SecretRequestPartApproved
 			part.asked.BindingID = made.ID
+			if !part.approval.delegate {
+				part.asked.ApprovedAs = model.SecretRequestApprovedAsReplace
+				if part.approval.adds {
+					part.asked.ApprovedAs = model.SecretRequestApprovedAsAdd
+				}
+			}
 			req.SecretID = secret.ID
 		}
 		req.Status = model.SecretRequestStatusDenied
@@ -652,6 +680,7 @@ func (a *approvalWrite) binding(ctx context.Context, txStore *store.Store, secre
 		Delegate:   part.delegate,
 		Routes:     part.routes,
 		Raw:        part.raw,
+		Adds:       part.adds,
 		RequestID:  a.req.ID,
 		CreatedBy:  a.actor,
 	}
@@ -675,7 +704,43 @@ func (a *approvalWrite) binding(ctx context.Context, txStore *store.Store, secre
 		return nil, err
 	}
 	binding.ExpiresAt = expiryAt(now, ttl)
+	if err := checkBindingShape(binding); err != nil {
+		return nil, err
+	}
 	return binding, nil
+}
+
+// addBinding stores want, an addition, beside the discobox's bindings and
+// touches none of them (ADR 26-11-03-329 §4): it stacks on the binding that
+// delivers its variable. A variable delivered by a binding of another secret
+// is refused, as a replacement refuses it, since the addition would never
+// apply there. So is one whose binding hands over the value itself: the
+// proxy holds that value to its sentinel's grants, so an addition would widen
+// where the value goes on a sentinel ask nobody read as one (ADR
+// 26-11-03-329 Deferred; checkReplaced's raw refusal).
+func (s *Service) addBinding(ctx context.Context, txStore *store.Store, txDB *gorm.DB, want *model.SecretBinding, now time.Time, change store.BindingChange) (*model.SecretBinding, error) {
+	sandbox, err := txStore.GetSandbox(ctx, want.ProjectID, want.TargetID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "sandbox not found")
+	}
+	effective, err := txStore.ResolveSandboxBindings(ctx, sandbox, now)
+	if err != nil {
+		return nil, err
+	}
+	if applied, ok := effective.UseFor(want.EnvName); ok {
+		if applied.Binding.SecretID != want.SecretID {
+			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+				"%s already holds another credential in this discobox, so an addition of this one would never apply there; approve with that secret, or ask for another variable", want.EnvName))
+		}
+		if applied.Binding.Raw != "" {
+			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+				"%s holds this credential's value itself in this discobox (binding %s), and an addition would widen where that value may go; grant the value again as a replacement, or change the binding", want.EnvName, applied.Binding.ID))
+		}
+	}
+	if err := txStore.CreateSecretBinding(ctx, want, change); err != nil {
+		return nil, bindingConflict(err)
+	}
+	return want, s.markBindingHolders(ctx, txStore, txDB, *want)
 }
 
 // replaceBindings makes want the discobox's one sandbox-level binding of its
@@ -856,7 +921,10 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 // sentinel names the binding that delivered it; the value is handed out only
 // while that binding stands — live, of this secret, on a level covering the
 // sandbox, and under a live parent when it was handed on — and only for a
-// host every one of its route lists allows (ADR 26-10-27-880 §4). Anything
+// host some grant the sentinel is held to allows, in every one of that
+// grant's route lists (ADR 26-10-27-880 §4, ADR 26-11-03-329 §3): the
+// binding's own, or an addition's stacking on it. The pool may hold the
+// value until the latest of the grants allowing the host lapses. Anything
 // else is refused: no request is opened, since a sentinel exists only because
 // a binding does.
 func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error) {
@@ -866,10 +934,19 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 	}
 	// A raw binding's sentinel is the pool's handle for the value, never
 	// swapped: its value is handed out only by ResolveSandboxRawSecret.
-	if !r.ok || r.assignment.Raw != "" || r.binding.Raw != "" ||
-		!secretroute.HostAllowed(store.RouteLists(r.secret, r.binding, r.parent), normalizeHost(host)) {
+	if !r.ok || r.assignment.Raw != "" || r.binding.Raw != "" {
 		return deniedResolution(), nil
 	}
+	now := time.Now().UTC()
+	grants, err := s.store.SentinelGrantsFor(ctx, r.sandbox, r.assignment, now)
+	if err != nil {
+		return nil, err
+	}
+	allowing := secretroute.GrantsAllowingHost(grants, now, normalizeHost(host))
+	if len(allowing) == 0 {
+		return deniedResolution(), nil
+	}
+	r.expiresAt = secretroute.LatestExpiry(allowing)
 	out, err := s.handOut(ctx, r)
 	if err != nil {
 		return nil, err
@@ -923,6 +1000,10 @@ type resolved struct {
 	binding    *model.SecretBinding
 	parent     *model.SecretBinding
 	ok         bool
+	// expiresAt is how long the value may be held for what it resolves:
+	// the binding's expiry, or for a swap the latest of the grants allowing
+	// its host (ADR 26-11-03-329 §3).
+	expiresAt *time.Time
 }
 
 func deniedResolution() *model.SandboxSecretResolution {
@@ -952,12 +1033,16 @@ func (s *Service) resolution(ctx context.Context, poolID, sandboxID, sentinel st
 	if err != nil {
 		return resolved{}, err
 	}
-	return resolved{assignment: assignment, sandbox: sandbox, secret: secret, binding: binding, parent: parent, ok: ok}, nil
+	r := resolved{assignment: assignment, sandbox: sandbox, secret: secret, binding: binding, parent: parent, ok: ok}
+	if ok {
+		r.expiresAt = store.BindingExpiry(binding, parent)
+	}
+	return r, nil
 }
 
 // handOut is the value a standing binding resolves to, renewed first when it
-// renews, with how long the pool may hold it: the binding's expiry, capped by
-// the token's own and by its staleness. Revision is the secret's revision the
+// renews, with how long the pool may hold it: r.expiresAt, capped by the
+// token's own and by its staleness. Revision is the secret's revision the
 // value is of.
 func (s *Service) handOut(ctx context.Context, r resolved) (*model.SandboxSecretResolution, error) {
 	secret := r.secret
@@ -965,7 +1050,7 @@ func (s *Service) handOut(ctx context.Context, r resolved) (*model.SandboxSecret
 	if err != nil {
 		return nil, fmt.Errorf("decrypt secret: %w", err)
 	}
-	expiresAt := bindingExpiry(r.binding, r.parent)
+	expiresAt := r.expiresAt
 	if renews(secret.Type) {
 		// Renew a near-expired token before handing it out, and cap the
 		// cache lifetime the proxy honors by the token's own expiry so it
@@ -1022,16 +1107,6 @@ func (s *Service) standingBinding(ctx context.Context, sandbox *model.Sandbox, a
 		return nil, nil, false, nil
 	}
 	return binding, parent, true, nil
-}
-
-// bindingExpiry is when a binding stops authorizing: its own expiry, or its
-// parent's when that comes first.
-func bindingExpiry(binding, parent *model.SecretBinding) *time.Time {
-	expires := binding.ExpiresAt
-	if parent != nil && parent.ExpiresAt != nil && (expires == nil || parent.ExpiresAt.Before(*expires)) {
-		expires = parent.ExpiresAt
-	}
-	return expires
 }
 
 // guardBindingTTL refuses a binding that would outlive what the secret
@@ -1189,5 +1264,5 @@ func sentinelFormat(in apigen.OptString) (string, bool, error) {
 
 // planBinding is a binding as bindingplan reads it.
 func planBinding(binding *model.SecretBinding) bindingplan.Binding {
-	return bindingplan.Binding{ID: binding.ID, Use: binding.Use, Delegate: binding.Delegate, EnvName: binding.EnvName, Created: binding.CreatedAt}
+	return bindingplan.Binding{ID: binding.ID, Use: binding.Use, Delegate: binding.Delegate, Adds: binding.Adds, EnvName: binding.EnvName, Created: binding.CreatedAt}
 }

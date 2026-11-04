@@ -512,12 +512,12 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 	if err != nil && !errors.Is(err, ErrAlreadyExists) {
 		return secretState, err
 	}
-	// The create carried the routes as they were when it started. A route
+	// The create carried the grants as they were when it started. A route
 	// change since may have been delivered before it landed and overwritten by
 	// it; the check marks the delivery again. A check that cannot be made is
 	// logged rather than failing a sandbox whose container is in place.
-	if markErr := markSentinelsIfStale(ctx, r.store, r.engine, sb, createOpts.SentinelRoutes); markErr != nil {
-		slog.WarnContext(ctx, "check delivered sentinel routes", "sandboxId", sb.ID, "error", markErr)
+	if markErr := markSentinelsIfStale(ctx, r.store, r.engine, sb, createOpts.SentinelGrants); markErr != nil {
+		slog.WarnContext(ctx, "check delivered sentinel grants", "sandboxId", sb.ID, "error", markErr)
 	}
 	if len(state) > 0 || secretState != nil {
 		sb.SecretState = state
@@ -655,8 +655,8 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			return CreateOptions{}, fmt.Errorf("list sandbox secret assignments: %w", err)
 		}
 		opts.Sentinels, opts.SecretEnv, opts.RawSecrets = sentinelDelivery(assignments)
-		if opts.SentinelRoutes, err = r.store.SentinelRouteLists(ctx, sb.ProjectID, assignments); err != nil {
-			return CreateOptions{}, fmt.Errorf("list sentinel routes: %w", err)
+		if opts.SentinelGrants, err = r.store.SentinelGrants(ctx, sb, assignments, time.Now().UTC()); err != nil {
+			return CreateOptions{}, fmt.Errorf("list sentinel grants: %w", err)
 		}
 		// Merged from the levels as they stand, so a new container is restricted
 		// from its first request (ADR 26-10-01-032 §5). A failed read fails the

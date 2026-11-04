@@ -158,8 +158,10 @@ type fakeSource struct {
 	revalued        []string
 	// projectBindings are the project's bindings; handedOn is how many
 	// bindings a delete takes with it, by binding ID.
-	projectBindings  []SecretBinding
-	bindingsErr      error
+	projectBindings []SecretBinding
+	bindingsErr     error
+	// heldGrants are what applies in a variable of the asking discobox.
+	heldGrants       []HeldGrant
 	unbindings       []string
 	handedOn         map[string]int
 	createdBindings  []NewBinding
@@ -2020,6 +2022,17 @@ func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdat
 			f.projectSecrets[i].Routes = *update.Routes
 		}
 	}
+}
+
+func (f *fakeSource) HeldGrants(_ context.Context, server, sandboxID, envVar string) ([]HeldGrant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "HeldGrants@"+server)
+	var out []HeldGrant
+	for _, grant := range f.heldGrants {
+		out = append(out, grant)
+	}
+	return out, nil
 }
 
 func (f *fakeSource) Bindings(_ context.Context, server string, filter BindingFilter) ([]SecretBinding, error) {
