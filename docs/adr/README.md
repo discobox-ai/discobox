@@ -81,7 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [26-11-04-270](26-11-04-270-an-addition-may-be-granted-without-expiry.md) | An addition may be granted without expiry | Proposed (amends 26-11-03-329 §§1–2 for optional expiry and §5 for its preview) |
+| [26-11-04-270](26-11-04-270-an-addition-may-be-granted-without-expiry.md) | An addition may be granted without expiry | Accepted (amends 26-11-03-329 §§1–2 for optional expiry and §5 for its preview) |
 | [26-11-04-616](26-11-04-616-whole-credential-is-an-explicit-approval-scope.md) | A credential approval restricts its grant to requested routes, requested hosts, or anywhere | Proposed (amends 26-11-02-022 §§3–4 and 6) |
 | [26-11-04-074](26-11-04-074-local-server-discovery-is-independent-of-shell-temporary-directories.md) | Local server discovery is independent of shell temporary directories | Proposed (narrows 0019 §3: bounded failure for an unreachable incumbent; preserves reachable startup and known shutdown handoffs) |
 | [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) | An explicit start waits for its pool to return | Proposed (would supersede 26-10-12-711 §6 for explicit-start pool-unreachable waits and narrow 26-11-03-618 §2's no-wait statement; source-delivery refusals remain) |
