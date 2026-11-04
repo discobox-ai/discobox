@@ -751,7 +751,7 @@ const (
 	// harness to its bundle's defaults (ADR 26-11-02-152 §3).
 	HarnessReset HarnessVerb = "reset"
 	// HarnessResetOverrides is a reset that also removes the files a person
-	// added or overrode, leaving nothing but the bundle's (ADR 26-11-04-028 §1).
+	// added or overrode, leaving nothing but the bundle's (ADR 26-11-04-711 §1).
 	HarnessResetOverrides HarnessVerb = "reset with your files"
 	HarnessSetDefault     HarnessVerb = "set default"
 )

@@ -56,7 +56,12 @@ in and set up inside a discobox the way it is on anybody's own machine
 saves it (see **The harness-changes band**); the screen keeps the project
 default (`s`), the config card (`v`, Enter), file edits (`f`), and reset (`r`,
 `HarnessReset`), which asks first and forgets the settings and logins saved to
-the harness, back to its bundle's defaults.
+the harness, back to its bundle's defaults. A person's own files (overrides)
+are kept: on a harness that has any, the question offers "Reset, keep your
+files" first and "Reset your files too" (`HarnessResetOverrides`) second
+(ADR 26-11-04-711 §1). A change the review shows at a path a person overrode
+is marked shadowed: saving keeps it beneath the override, and boxes go on
+being given the person's file (§2).
 
 
 ## The workspace tree
@@ -688,7 +693,10 @@ off the listing (`Sandbox.HarnessConfigPending`, `HarnessConfigCandidate`, from
 the box's reported `harnessConfigCandidate`), so it costs no poll. It is green
 and last: an offer, not a problem, with nothing waiting on it. Its occurrence is
 the candidate, so a dismissal holds until the box captures a different change.
-A press, or leader+`H`, opens the review card, where Save takes it.
+A press, or leader+`H`, opens the review card, where Save takes it. The card
+labels a file at a path a person overrode "shadowed by your override, which
+boxes keep getting" (`HarnessChangedFile.Shadowed`, from the server's preview):
+a save keeps that change beneath the person's file (ADR 26-11-04-711 §2).
 
 **The first harness change a project's console sees is explained once**
 (`explainHarnessChangesIfOwed`): a dialog saying that saving makes the change —
@@ -2921,7 +2929,8 @@ and the card — because it is the same kind of screen. There is no state to
 draw: every harness can run (ADR 26-11-02-152). `s` makes it the default, `v`
 reads the whole configuration, `f` edits one of its files, and `r` resets it to
 its bundle's defaults, asking first since it deletes the settings and logins
-saved to it. Unlike the list, `r` is not a refresh here: the screen re-reads
+saved to it — and, on a harness with files a person added or overrode, which
+reset is meant: keeping those files, first, or removing them too. Unlike the list, `r` is not a refresh here: the screen re-reads
 itself on the tick while it is up, and after every action.
 
 `.` — and the right button on a row — opens those four as a menu

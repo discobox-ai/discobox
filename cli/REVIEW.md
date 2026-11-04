@@ -68,8 +68,9 @@
   or the console's harness-changes band (ADR 26-11-02-152). Help, a hint or a
   band that sends somebody to a setup out here is the model that was removed.
   Saying what signing in and saving expose — a login typed in a box is
-  readable there, a save shares settings that can run commands — is not. `admin harness reset` is the
-  one way back to a bundle's defaults.
+  readable there, a save shares settings that can run commands — is not.
+  `admin harness reset --include-overrides` is the one way back to a config
+  with nothing but its bundle's files; a plain reset keeps a person's own.
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line
   comes out with the spinner glued to its front.

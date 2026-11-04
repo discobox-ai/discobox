@@ -328,7 +328,7 @@ func TestCapturePreviewIsDescribedFromStoredConfig(t *testing.T) {
 
 // At a path a person overrode, a save is kept beneath the override and boxes
 // go on being given it, so the preview says the change is shadowed, from the
-// stored overrides and never from the sandbox (ADR 26-11-04-028 §5).
+// stored overrides and never from the sandbox (ADR 26-11-04-711 §2).
 func TestCapturePreviewMarksAChangeAnOverrideShadows(t *testing.T) {
 	s, cfg, _ := captureFixture(t)
 	ctx := context.Background()

@@ -33,7 +33,7 @@ type HarnessChangedFile struct {
 	Diff string
 	// Shadowed is a change at a path a person overrode: a save keeps it
 	// beneath the override, and boxes go on being given the person's file
-	// (ADR 26-11-04-028 §5).
+	// (ADR 26-11-04-711 §2).
 	Shadowed bool
 }
 

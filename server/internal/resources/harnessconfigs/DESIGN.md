@@ -269,7 +269,7 @@ its own without reconstructing another's (ADR 26-11-04-028):
 | `FileOverrides` | a person | `fileOverrides` on create/update, `harness edit` of a bundle file; cleared only by `reset --include-overrides` | seed, refresh, save-back, a plain reset |
 
 At each path a sandbox is given the override, else the saved file, else the
-bundle's. A save never writes an override (ADR 26-11-04-028 §5): what a box
+bundle's. A save never writes an override (ADR 26-11-04-711 §2): what a box
 wrote stays undoable by a plain reset, and at a path an override holds it is
 shadowed until the person removes or edits theirs. The CLI sends a person's whole set back with only the named
 paths changed (`--file`, `--remove-file`, `--clear-file`), under the revision
@@ -329,7 +329,7 @@ config to its bundle's defaults: it deletes the secrets saved changes created
 clears `ConfiguredFiles`, leaving the bundle baseline and any secret a person
 bound to the config by hand. A person's `FileOverrides` are kept too, unless
 the caller asks for them to go (`includeOverrides`, `admin harness reset
---include-overrides`; ADR 26-11-04-028 §1). It claims the row's revision first, so a save in
+--include-overrides`; ADR 26-11-04-711 §1). It claims the row's revision first, so a save in
 flight against the old overlay conflicts. Nothing about whether the harness can
 run changes, so reset is allowed on the project default and on a harness with
 nothing saved, which it leaves as it is. The refusal to delete a built-in
@@ -379,7 +379,7 @@ sandbox (`describeCapturePreview`): `previous` is the file a save replaces —
 the override over the saved file over the bundle's, at the current revision —
 and a removal's `file` is the one beneath the topmost set holding the path
 (`fileBeneath`). A save always patches `ConfiguredFiles`, never an override
-(ADR 26-11-04-028 §5): at a path an override holds the saved file is shadowed,
+(ADR 26-11-04-711 §2): at a path an override holds the saved file is shadowed,
 and the preview says so. Clients diff the
 two; the agent's candidate and its size limits are untouched by them.
 

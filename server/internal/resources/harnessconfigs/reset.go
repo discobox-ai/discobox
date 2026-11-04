@@ -22,7 +22,7 @@ import (
 //
 // A person's FileOverrides are theirs, not something a box saved, so a reset
 // keeps them unless includeOverrides asks for a config with nothing but its
-// bundle (ADR 26-11-04-028 §1). Cleared, the set is empty, never nil: nil
+// bundle (ADR 26-11-04-711 §1). Cleared, the set is empty, never nil: nil
 // means a config not yet split.
 func (s *Service) ResetHarnessConfig(ctx context.Context, projectID, configID string, includeOverrides bool) (*model.HarnessConfig, error) {
 	if _, err := s.store.GetHarnessConfig(ctx, projectID, configID); err != nil {
