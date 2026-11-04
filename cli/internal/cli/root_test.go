@@ -897,7 +897,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 			t.Fatalf("request = %s %s, want create harness config path", r.Method, r.URL.Path)
 		}
 		var body struct {
-			Files []apimodel.HarnessConfigFile `json:"files"`
+			Files []apimodel.HarnessConfigFile `json:"fileOverrides"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode create body: %v", err)
@@ -950,7 +950,7 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 			t.Fatalf("request = %s %s, want create harness config path", r.Method, r.URL.Path)
 		}
 		var body struct {
-			Files []apimodel.HarnessConfigFile `json:"files"`
+			Files []apimodel.HarnessConfigFile `json:"fileOverrides"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode create body: %v", err)

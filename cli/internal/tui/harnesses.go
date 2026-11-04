@@ -707,10 +707,21 @@ func (m *Model) harnessFilesDialog(harness Harness) *dialog {
 
 func harnessFileDetail(file HarnessFile) string {
 	notes := []string{humanBytes(int64(len(file.Content)))}
-	if file.Configured {
+	switch file.Source {
+	case HarnessFileConfigured:
 		notes = append(notes, "written by its setup")
-	} else {
+	case HarnessFileOverride:
+		notes = append(notes, "yours")
+	default:
 		notes = append(notes, "from the image")
+	}
+	if len(file.Shadows) > 0 {
+		switch file.Shadows[0] {
+		case HarnessFileConfigured:
+			notes = append(notes, "over its setup's")
+		default:
+			notes = append(notes, "over the image's")
+		}
 	}
 	if file.CreateOnly {
 		notes = append(notes, "create-only")

@@ -576,6 +576,43 @@ func TestBuildSandboxDocumentOverlaysConfiguredFilesOntoRuntimeLayer(t *testing.
 	}
 }
 
+func TestBuildSandboxDocumentOverlaysFileOverridesOverConfiguredFiles(t *testing.T) {
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerapimodel.ResolvedHarnessConfig{
+			ID: "claude", Name: "Claude",
+			Files: workerclient.NewOptNilHarnessConfigFileArray([]workerapimodel.HarnessConfigFile{
+				{Path: ".claude/settings.json", Content: `{"theme":"dark"}`},
+				{Path: ".claude.json", Content: `{}`, CreateOnly: workerclient.NewOptBool(true)},
+			}),
+			ConfiguredFiles: workerclient.NewOptNilHarnessConfigFileArray([]workerapimodel.HarnessConfigFile{
+				{Path: ".claude/settings.json", Content: `{"theme":"light"}`},
+			}),
+			FileOverrides: workerclient.NewOptNilHarnessConfigFileArray([]workerapimodel.HarnessConfigFile{
+				{Path: ".claude/settings.json", Content: `{"theme":"mine"}`},
+				{Path: ".config/x.txt", Content: "x"},
+			}),
+		}),
+	}
+
+	doc, buildErr := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", proxyagent.PoolEndpoints(""), req, nil, nil)
+	if buildErr != nil {
+		t.Fatal(buildErr)
+	}
+	cfg, _ := sandboxconfig.Effective(doc)
+	got := map[string]sandboxconfig.File{}
+	for _, file := range cfg.Files {
+		got[file.Path] = file
+	}
+	want := map[string]sandboxconfig.File{
+		".claude/settings.json": {Path: ".claude/settings.json", Content: `{"theme":"mine"}`},
+		".claude.json":          {Path: ".claude.json", Content: `{}`, CreateOnly: true},
+		".config/x.txt":         {Path: ".config/x.txt", Content: "x"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("effective files = %+v, want %+v", got, want)
+	}
+}
+
 func TestWriteSandboxManifestIsWorldReadable(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sandbox.json")

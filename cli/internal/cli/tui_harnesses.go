@@ -86,24 +86,18 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 			Declared: true,
 		})
 	}
-	// The files its configure flow wrote lead, because they overlay the
-	// image-declared file of the same path and are the ones worth editing.
-	for _, file := range cfg.ConfiguredFiles.Or(nil) {
-		harness.Files = append(harness.Files, toTUIHarnessFile(file, true))
-	}
-	for _, file := range cfg.Files.Or(nil) {
-		harness.Files = append(harness.Files, toTUIHarnessFile(file, false))
+	// Each path once, as a discobox is given it: a person's files lead, then
+	// the configure flow's, then the bundle's.
+	for _, file := range harnessEffectiveFiles(&cfg) {
+		harness.Files = append(harness.Files, tui.HarnessFile{
+			Path:       file.Path,
+			Content:    file.Content,
+			Source:     file.Source,
+			Shadows:    file.Shadows,
+			CreateOnly: file.CreateOnly.Or(false),
+		})
 	}
 	return harness
-}
-
-func toTUIHarnessFile(file apimodel.HarnessConfigFile, configured bool) tui.HarnessFile {
-	return tui.HarnessFile{
-		Path:       file.Path,
-		Content:    file.Content,
-		Configured: configured,
-		CreateOnly: file.CreateOnly.Or(false),
-	}
 }
 
 // harnessState narrows the config to the three states the screen draws. A

@@ -1488,9 +1488,11 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 			if files, ok := resolved.Files.Get(); ok {
 				doc.Image.Files = documentFiles(files)
 			}
-			if configuredFiles, ok := resolved.ConfiguredFiles.Get(); ok {
-				doc.Runtime.Files = documentFiles(configuredFiles)
-			}
+			// The runtime layer overlays the bundle's files by path, and a
+			// later entry wins over an earlier one at the same path
+			// (sandboxconfig.mergeFiles), so a person's files follow the
+			// configure flow's and win over them (ADR 26-11-04-028 §2).
+			doc.Runtime.Files = append(documentFiles(resolved.ConfiguredFiles.Or(nil)), documentFiles(resolved.FileOverrides.Or(nil))...)
 			if secrets, ok := resolved.Secrets.Get(); ok {
 				doc.Image.Secrets = documentHarnessSecrets(secrets)
 			}

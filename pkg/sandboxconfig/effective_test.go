@@ -135,6 +135,28 @@ func TestEffective_FilesOverlayByPath(t *testing.T) {
 	}
 }
 
+// The runtime layer carries a harness's configured files and then a person's
+// overrides of them (ADR 26-11-04-028 §2), so a later runtime entry at a path
+// wins over an earlier one.
+func TestEffective_LaterRuntimeFileWinsAtAPath(t *testing.T) {
+	doc := Document{
+		Image: ImageLayer{Files: []File{{Path: ".a", Content: "image"}}},
+		Runtime: RuntimeLayer{Files: []File{
+			{Path: ".a", Content: "configured"},
+			{Path: ".b", Content: "configured-b"},
+			{Path: ".a", Content: "override", CreateOnly: true},
+		}},
+	}
+	cfg, _ := Effective(doc)
+	want := []File{
+		{Path: ".a", Content: "override", CreateOnly: true},
+		{Path: ".b", Content: "configured-b"},
+	}
+	if !reflect.DeepEqual(cfg.Files, want) {
+		t.Errorf("Files = %+v, want %+v", cfg.Files, want)
+	}
+}
+
 func TestEffective_VolumesAreImageOnly(t *testing.T) {
 	doc := Document{
 		Image: ImageLayer{Volumes: []harness.Volume{{Path: "/data", Volume: harness.VolumeData}}},

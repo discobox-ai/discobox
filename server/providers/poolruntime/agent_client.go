@@ -871,6 +871,7 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 			ID: rhc.ID, Name: rhc.Name,
 			Files:           poolHarnessConfigFiles(rhc.Files),
 			ConfiguredFiles: poolHarnessConfigFiles(rhc.ConfiguredFiles),
+			FileOverrides:   poolHarnessConfigFiles(rhc.FileOverrides),
 			Secrets:         poolHarnessConfigSecrets(rhc.Secrets),
 		}
 		if rhc.Description != "" {

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
@@ -112,6 +113,10 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if slug == "" || name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config name or slug is required")
 	}
+	overrides, err := fileOverridesFromAPI(input.FileOverrides.Or(nil))
+	if err != nil {
+		return nil, err
+	}
 	if err := harnessdefs.ValidateSlug(slug); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
@@ -126,20 +131,21 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		return nil, err
 	}
 
-	// The label is the whole snapshot, `input.Files` included: the bundle owns
-	// its seed files at registration, and `UpdateHarnessConfig` is where a
-	// caller changes them afterward.
+	// The label is the whole snapshot of the bundle's files. A person's files
+	// given beside it are the config's first overrides (ADR 26-11-04-028 §3):
+	// the bundle owns Files, and nothing a caller sends writes it.
 	//
 	// No check that a run command came back, either: a bundle that declares
 	// none is taken to install the conventional harness.RunCommand, which
 	// conventionCommands supplies (ADR 0086 §3). The label validator already
 	// rejects a blank one.
 	config := &model.HarnessConfig{
-		ProjectID:    projectID,
-		Slug:         slug,
-		Name:         name,
-		Bundle:       bundle,
-		BundleDigest: inspected.BundleDigest,
+		ProjectID:     projectID,
+		Slug:          slug,
+		Name:          name,
+		Bundle:        bundle,
+		BundleDigest:  inspected.BundleDigest,
+		FileOverrides: overrides,
 	}
 	snapshotImageMetadata(config, inspected)
 	if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
@@ -174,7 +180,7 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 	// takes rewrites the files and the egress hosts a person would be setting
 	// beside it, and one request saved as two writes could keep half of it.
 	if bundle, ok := input.Bundle.Get(); ok {
-		if input.Name.Set || input.Files.Set || input.ConfiguredFiles.Set || input.Egress.Set {
+		if input.Name.Set || input.FileOverrides.Set || input.ConfiguredFiles.Set || input.Egress.Set {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a harness bundle is registered on its own, with no other change beside it")
 		}
 		if strings.TrimSpace(bundle) == "" {
@@ -196,8 +202,20 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 		}
 		config.Name = name
 	}
-	if apiFiles, ok := input.Files.Get(); ok {
-		config.Files = services.HarnessConfigFilesToModel(apiFiles)
+	if apiFiles, ok := input.FileOverrides.Get(); ok {
+		overrides, err := fileOverridesFromAPI(apiFiles)
+		if err != nil {
+			return nil, err
+		}
+		// A config from before the set existed may still hold a person's
+		// files in Files, shown to the caller as the bundle's. Writing the set
+		// would end the split that moves them out, so it waits for the
+		// re-snapshot that does it (ADR 26-11-04-028 §6). A built-in is split
+		// by the first seed; a config registered by hand, by a refresh.
+		if config.FileOverrides == nil {
+			return nil, unsplitConflict(config)
+		}
+		config.FileOverrides = overrides
 	}
 	if apiFiles, ok := input.ConfiguredFiles.Get(); ok {
 		config.ConfiguredFiles = services.HarnessConfigFilesToModel(apiFiles)
@@ -271,6 +289,7 @@ func (s *Service) resnapshot(ctx context.Context, config *model.HarnessConfig, b
 	previous := configPins(config)
 	previousHosts := config.ImageEgressHosts
 	config.Bundle, config.BundleDigest = bundle, metadata.BundleDigest
+	splitFileOverrides(config, bundleFiles(metadata))
 	snapshotImageMetadata(config, metadata)
 	// The snapshot and the routes it declares onto configured secrets commit
 	// together, so a failed refresh leaves the old digest for a retry to move.
@@ -430,8 +449,12 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		// The secret declarations are compared too: one snapshotted by a
 		// server that did not read a field of them yet (a rejection scope, ADR
 		// 26-10-13-595) carries the digest and not the field, and would
-		// otherwise be skipped for good.
-		if existing != nil && existing.Bundle == bundle && existing.BundleDigest == metadata.BundleDigest &&
+		// otherwise be skipped for good. So is the split of a person's files
+		// out of Files (ADR 26-11-04-028 §6): a built-in from before it is
+		// re-snapshotted on the first pass, against the bundle it is on, so
+		// none is left waiting on a bundle that may not move for a while.
+		if existing != nil && existing.FileOverrides != nil &&
+			existing.Bundle == bundle && existing.BundleDigest == metadata.BundleDigest &&
 			existing.ManifestDigest == manifestDigest(metadata) &&
 			sameSecretDeclarations(existing.Secrets, declaredSecrets(metadata.Harness)) {
 			continue
@@ -440,6 +463,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 			config := &model.HarnessConfig{
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
 				BuiltIn: true, Bundle: bundle, BundleDigest: metadata.BundleDigest,
+				FileOverrides: []model.HarnessConfigFile{},
 			}
 			snapshotImageMetadata(config, metadata)
 			// Born configured when there is nothing to collect. `shell` is the
@@ -458,6 +482,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		previous := configPins(existing)
 		previousHosts := existing.ImageEgressHosts
 		existing.Bundle, existing.BundleDigest = bundle, metadata.BundleDigest
+		splitFileOverrides(existing, bundleFiles(metadata))
 		snapshotImageMetadata(existing, metadata)
 		// As at refresh: the snapshot and its routes commit together, so a
 		// seed that fails leaves the config for the next one to find unequal.
@@ -740,11 +765,7 @@ func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata)
 		config.ConfigReminder = strings.TrimSpace(image.Config.Reminder)
 		config.ConfigPorts = append([]harness.ConfigPort{}, image.Config.Ports...)
 	}
-	files := make([]model.HarnessConfigFile, 0, len(image.Files))
-	for _, file := range image.Files {
-		files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly})
-	}
-	config.Files = files
+	config.Files = bundleFiles(inspected)
 	config.Secrets = declaredSecrets(image)
 	config.Env = nil
 	if len(metadata.Env) > 0 {
@@ -757,6 +778,81 @@ func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata)
 	config.Volumes = append([]harness.Volume{}, metadata.Volumes...)
 	config.AdditionalGroups = append([]string{}, metadata.AdditionalGroups...)
 	config.ImageEgressHosts = egress.Normalize(image.EgressHosts)
+}
+
+// bundleFiles is the file set a bundle's manifest declares, as Files
+// snapshots it.
+func bundleFiles(inspected imageMetadata) []model.HarnessConfigFile {
+	var declared []harness.File
+	if image := inspected.Harness; image != nil {
+		declared = image.Files
+	}
+	files := make([]model.HarnessConfigFile, 0, len(declared))
+	for _, file := range declared {
+		files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly})
+	}
+	return files
+}
+
+// splitFileOverrides moves a person's files out of Files, once, for a config
+// from before FileOverrides existed (ADR 26-11-04-028 §6), so the re-snapshot
+// about to rewrite Files keeps them. A person's file is told from the bundle's
+// only by its path: every entry whose path the bundle being read doesn't
+// declare is moved. A config already split, or created since, is left alone.
+//
+// An edit to a path the bundle declares is not recovered, since it looks the
+// same as the bundle changing that file; a file an older bundle declared and
+// this one dropped is moved as though a person had added it, where it is
+// visible and can be removed.
+func splitFileOverrides(config *model.HarnessConfig, declared []model.HarnessConfigFile) {
+	if config.FileOverrides != nil {
+		return
+	}
+	paths := make(map[string]struct{}, len(declared))
+	for _, file := range declared {
+		paths[file.Path] = struct{}{}
+	}
+	overrides := []model.HarnessConfigFile{}
+	files := make([]model.HarnessConfigFile, 0, len(config.Files))
+	for _, file := range config.Files {
+		if _, ok := paths[file.Path]; ok {
+			files = append(files, file)
+		} else {
+			overrides = append(overrides, file)
+		}
+	}
+	config.Files, config.FileOverrides = files, overrides
+}
+
+// unsplitConflict refuses a person's file set on a config whose files from
+// before the set existed have not been split out yet, naming what splits them.
+func unsplitConflict(config *model.HarnessConfig) error {
+	next := fmt.Sprintf("refresh it first (harness refresh %s)", config.Slug)
+	if strings.TrimSpace(config.Bundle) == "" {
+		next = fmt.Sprintf("register its bundle first (harness update %s --bundle REF)", config.Slug)
+	}
+	return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+		"harness %s holds files from before your files were kept apart from its bundle's, so they can't be changed until they are split: %s", config.Slug, next))
+}
+
+// fileOverridesFromAPI is a person's file set as the request gave it. It is
+// never nil, since nil marks a config whose set was never written, and a path
+// appears in it once.
+func fileOverridesFromAPI(files []apimodel.HarnessConfigFile) ([]model.HarnessConfigFile, error) {
+	overrides := make([]model.HarnessConfigFile, 0, len(files))
+	seen := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		path := strings.TrimSpace(file.Path)
+		if path == "" {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a harness file needs a path")
+		}
+		if _, ok := seen[path]; ok {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness file %q is given twice", path))
+		}
+		seen[path] = struct{}{}
+		overrides = append(overrides, model.HarnessConfigFile{Path: path, Content: file.Content, CreateOnly: file.CreateOnly.Or(false)})
+	}
+	return overrides, nil
 }
 
 // manifestDigest is the digest of the composed manifest a config snapshots:

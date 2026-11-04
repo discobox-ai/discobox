@@ -14,6 +14,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 func editTestConfig() *apimodel.HarnessConfig {
@@ -31,16 +32,26 @@ func editTestConfig() *apimodel.HarnessConfig {
 	}
 }
 
-// The configured overlay is what a sandbox actually gets, so a path present in
-// both buckets must resolve to the configured entry.
-func TestFindHarnessFilePrefersConfigured(t *testing.T) {
+// Each path is listed once, as a sandbox is given it: a person's override
+// over the configured overlay over the bundle's file.
+func TestFindHarnessFileIsTheEffectiveFile(t *testing.T) {
 	cfg := editTestConfig()
-	ref, ok := findHarnessFile(cfg, "settings.json")
-	if !ok || ref.Bucket != harnessFileBucketConfigured {
-		t.Fatalf("findHarnessFile(settings.json) = %+v, %v; want configured bucket", ref, ok)
+	file, ok := findHarnessFile(cfg, "settings.json")
+	if !ok || file.Source != tui.HarnessFileConfigured || file.Content != "configured overlay" ||
+		len(file.Shadows) != 1 || file.Shadows[0] != tui.HarnessFileFromBundle {
+		t.Fatalf("findHarnessFile(settings.json) = %+v, %v; want the configured overlay over the bundle's", file, ok)
 	}
 	if _, ok := findHarnessFile(cfg, "missing"); ok {
 		t.Fatal("findHarnessFile should miss unknown paths")
+	}
+	cfg.FileOverrides = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{{Path: "settings.json", Content: "mine"}})
+	file, _ = findHarnessFile(cfg, "settings.json")
+	if file.Source != tui.HarnessFileOverride || file.Content != "mine" ||
+		len(file.Shadows) != 2 || file.Shadows[0] != tui.HarnessFileConfigured {
+		t.Fatalf("findHarnessFile(settings.json) = %+v; want the override over both", file)
+	}
+	if n := len(harnessEffectiveFiles(cfg)); n != 2 {
+		t.Fatalf("effective files = %d, want each path once", n)
 	}
 }
 
@@ -147,8 +158,8 @@ func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
 	if gotBody["revision"] != float64(7) {
 		t.Fatalf("lost original editor revision: %v", gotBody["revision"])
 	}
-	if _, ok := gotBody["files"]; ok {
-		t.Fatalf("editing a configured file must not touch the declared files: %v", gotBody)
+	if _, ok := gotBody["fileOverrides"]; ok {
+		t.Fatalf("editing a configured file must not touch a person's files: %v", gotBody)
 	}
 	files, ok := gotBody["configuredFiles"].([]any)
 	if !ok || len(files) != 2 {
@@ -163,6 +174,48 @@ func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
 	}
 	if other := files[1].(map[string]any); other["content"] != "configured overlay" {
 		t.Fatalf("sibling file content changed: %v", other)
+	}
+}
+
+// A bundle's file is re-read whenever the bundle moves, so an edit to it is
+// saved as the person's override, beside the overrides they already have.
+func TestEditHarnessFileSavesABundleFileAsAnOverride(t *testing.T) {
+	fakeEditor(t, "edited")
+
+	var gotBody map[string]any
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode update body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"hc_1","projectId":"project-1","slug":"claude","name":"Claude","runCommand":["claude"],"configured":true,"builtIn":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := apiclientgen.NewClient(server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	cfg := editTestConfig()
+	cfg.Files = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{
+		{Path: "bundle.json", Content: "bundle", CreateOnly: apiclientgen.NewOptBool(true)},
+	})
+	cfg.FileOverrides = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{{Path: "mine.txt", Content: "mine"}})
+
+	if _, err := (&App{}).editHarnessFile(context.Background(), client, "project-1", cfg, "bundle.json", nil, os.Stdout, os.Stderr); err != nil {
+		t.Fatalf("editHarnessFile: %v", err)
+	}
+	for _, key := range []string{"files", "configuredFiles"} {
+		if _, ok := gotBody[key]; ok {
+			t.Fatalf("editing a bundle file sent %s: %v", key, gotBody)
+		}
+	}
+	files, ok := gotBody["fileOverrides"].([]any)
+	if !ok || len(files) != 2 {
+		t.Fatalf("fileOverrides = %v, want the person's file and the edited one", gotBody["fileOverrides"])
+	}
+	edited := files[1].(map[string]any)
+	if edited["path"] != "bundle.json" || edited["content"] != "edited" || edited["createOnly"] != true {
+		t.Fatalf("edited entry = %v, want bundle.json as an override, still create-only", edited)
 	}
 }
 

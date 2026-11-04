@@ -15,46 +15,51 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
-// harnessFileBucket names which HarnessConfig file set a file lives in, since
-// the update API replaces each set wholesale and the edit must go back into
-// the set it came from.
-type harnessFileBucket string
-
-const (
-	harnessFileBucketDeclared   harnessFileBucket = "declared"
-	harnessFileBucketConfigured harnessFileBucket = "configured"
-)
-
-// harnessFileRef identifies one editable file of a harness config.
-type harnessFileRef struct {
-	Path   string
-	Bucket harnessFileBucket
+// harnessFile is the file a sandbox is given at one path, with the set it
+// comes from and the sets beneath it that it hides there, topmost first.
+type harnessFile struct {
+	apimodel.HarnessConfigFile
+	Source  tui.HarnessFileSource
+	Shadows []tui.HarnessFileSource
 }
 
-// harnessFileRefs lists a config's editable files, configure-flow files first
-// since those overlay the image-declared set when a sandbox is resolved.
-func harnessFileRefs(cfg *apimodel.HarnessConfig) []harnessFileRef {
-	var refs []harnessFileRef
-	for _, file := range cfg.ConfiguredFiles.Or(nil) {
-		refs = append(refs, harnessFileRef{Path: file.Path, Bucket: harnessFileBucketConfigured})
-	}
-	for _, file := range cfg.Files.Or(nil) {
-		refs = append(refs, harnessFileRef{Path: file.Path, Bucket: harnessFileBucketDeclared})
-	}
-	return refs
-}
-
-// findHarnessFile resolves path to the file entry that is effective for the
-// sandbox: the configured overlay wins over the image-declared set.
-func findHarnessFile(cfg *apimodel.HarnessConfig, path string) (harnessFileRef, bool) {
-	for _, ref := range harnessFileRefs(cfg) {
-		if ref.Path == path {
-			return ref, true
+// harnessEffectiveFiles lists every path of a config once, as a sandbox is
+// given it (ADR 26-11-04-028 §2): a person's files first, then the configure
+// flow's, then the bundle's.
+func harnessEffectiveFiles(cfg *apimodel.HarnessConfig) []harnessFile {
+	var files []harnessFile
+	index := map[string]int{}
+	for _, set := range []struct {
+		source tui.HarnessFileSource
+		files  []apimodel.HarnessConfigFile
+	}{
+		{tui.HarnessFileOverride, cfg.FileOverrides.Or(nil)},
+		{tui.HarnessFileConfigured, cfg.ConfiguredFiles.Or(nil)},
+		{tui.HarnessFileFromBundle, cfg.Files.Or(nil)},
+	} {
+		for _, file := range set.files {
+			if i, ok := index[file.Path]; ok {
+				files[i].Shadows = append(files[i].Shadows, set.source)
+				continue
+			}
+			index[file.Path] = len(files)
+			files = append(files, harnessFile{HarnessConfigFile: file, Source: set.source})
 		}
 	}
-	return harnessFileRef{}, false
+	return files
+}
+
+// findHarnessFile is the file a sandbox is given at path.
+func findHarnessFile(cfg *apimodel.HarnessConfig, path string) (harnessFile, bool) {
+	for _, file := range harnessEffectiveFiles(cfg) {
+		if file.Path == path {
+			return file, true
+		}
+	}
+	return harnessFile{}, false
 }
 
 func (a *App) newHarnessEditCommand() *cobra.Command {
@@ -64,9 +69,11 @@ func (a *App) newHarnessEditCommand() *cobra.Command {
 		Long: `Open one of a harness config's files in $VISUAL/$EDITOR and save the result back.
 
 PATH is the file's path as shown by "harnesses get" or the console's harnesses
-screen, which is what "discobox configure" opens.
-Files written by the configure flow are edited in place of the configured set;
-image-declared files are edited in the declared set.`,
+screen, which is what "discobox configure" opens. The file edited is the one a
+discobox is given at PATH. A file the configure flow wrote is edited in place,
+and stays the configure flow's. A file from the harness's bundle is saved as
+your override of it, so the edit survives the bundle being updated; remove it
+with "harnesses update HARNESS --remove-file PATH".`,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: a.completeHarnessConfigs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -103,51 +110,36 @@ image-declared files are edited in the declared set.`,
 func (a *App) editHarnessFile(ctx context.Context, client *apiclientgen.Client, projectID string, cfg *apimodel.HarnessConfig, path string,
 	stdin io.Reader, stdout, stderr io.Writer,
 ) (bool, error) {
-	ref, ok := findHarnessFile(cfg, path)
+	file, ok := findHarnessFile(cfg, path)
 	if !ok {
-		refs := harnessFileRefs(cfg)
-		if len(refs) == 0 {
+		files := harnessEffectiveFiles(cfg)
+		if len(files) == 0 {
 			return false, fmt.Errorf("%s has no files to edit", harnessDisplayName(*cfg))
 		}
-		paths := make([]string, 0, len(refs))
-		for _, r := range refs {
-			paths = append(paths, r.Path)
+		paths := make([]string, 0, len(files))
+		for _, f := range files {
+			paths = append(paths, f.Path)
 		}
 		return false, fmt.Errorf("no file %q; available: %s", path, strings.Join(paths, ", "))
 	}
 
-	files := cfg.Files.Or(nil)
-	if ref.Bucket == harnessFileBucketConfigured {
-		files = cfg.ConfiguredFiles.Or(nil)
-	}
-	index := -1
-	for i := range files {
-		if files[i].Path == ref.Path {
-			index = i
-			break
-		}
-	}
-	if index < 0 {
-		return false, fmt.Errorf("no file %q", path)
-	}
-
-	edited, changed, err := editInEditor(ctx, ref.Path, files[index].Content, stdin, stdout, stderr)
+	edited, changed, err := editInEditor(ctx, file.Path, file.Content, stdin, stdout, stderr)
 	if err != nil {
 		return false, err
 	}
 	if !changed {
 		return false, nil
 	}
+	file.Content = edited
 
-	updated := make([]apimodel.HarnessConfigFile, len(files))
-	copy(updated, files)
-	updated[index].Content = edited
-
+	// The configure flow's file is edited in its own set, which it still owns.
+	// A bundle's file is the bundle's, re-read whenever it moves, so an edit
+	// to it is the person's override, as an edit to their own file is.
 	body := &apimodel.UpdateHarnessConfigBody{Revision: cfg.Revision.Or(0)}
-	if ref.Bucket == harnessFileBucketConfigured {
-		body.SetConfiguredFiles(apiclientgen.NewOptNilHarnessConfigFileArray(updated))
+	if file.Source == tui.HarnessFileConfigured {
+		body.SetConfiguredFiles(apiclientgen.NewOptNilHarnessConfigFileArray(withHarnessFile(cfg.ConfiguredFiles.Or(nil), file.HarnessConfigFile)))
 	} else {
-		body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(updated))
+		body.SetFileOverrides(apiclientgen.NewOptNilHarnessConfigFileArray(withHarnessFile(cfg.FileOverrides.Or(nil), file.HarnessConfigFile)))
 	}
 	res, err := client.UpdateHarnessConfig(ctx, body, apiclientgen.UpdateHarnessConfigParams{ProjectId: projectID, HarnessConfigId: cfg.ID})
 	if err != nil {
@@ -157,6 +149,19 @@ func (a *App) editHarnessFile(ctx context.Context, client *apiclientgen.Client, 
 		return false, err
 	}
 	return true, nil
+}
+
+// withHarnessFile is set with file in place of the entry at its path, or
+// added after the others.
+func withHarnessFile(set []apimodel.HarnessConfigFile, file apimodel.HarnessConfigFile) []apimodel.HarnessConfigFile {
+	updated := append([]apimodel.HarnessConfigFile{}, set...)
+	for i := range updated {
+		if updated[i].Path == file.Path {
+			updated[i] = file
+			return updated
+		}
+	}
+	return append(updated, file)
 }
 
 // editInEditor runs the user's editor on content in a temp file and returns

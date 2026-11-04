@@ -11114,6 +11114,12 @@ func (s *ResolvedHarnessConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.FileOverrides.Set {
+			e.FieldStart("fileOverrides")
+			s.FileOverrides.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("id")
 		e.Str(s.ID)
 	}
@@ -11171,21 +11177,22 @@ func (s *ResolvedHarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfResolvedHarnessConfig = [14]string{
+var jsonFieldsNameOfResolvedHarnessConfig = [15]string{
 	0:  "saveBack",
 	1:  "captureBaseline",
 	2:  "files",
 	3:  "configuredFiles",
-	4:  "id",
-	5:  "name",
-	6:  "description",
-	7:  "runCommand",
-	8:  "relaunchCommand",
-	9:  "configCommand",
-	10: "env",
-	11: "volumes",
-	12: "secrets",
-	13: "additionalGroups",
+	4:  "fileOverrides",
+	5:  "id",
+	6:  "name",
+	7:  "description",
+	8:  "runCommand",
+	9:  "relaunchCommand",
+	10: "configCommand",
+	11: "env",
+	12: "volumes",
+	13: "secrets",
+	14: "additionalGroups",
 }
 
 // Decode decodes ResolvedHarnessConfig from json.
@@ -11237,8 +11244,18 @@ func (s *ResolvedHarnessConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"configuredFiles\"")
 			}
+		case "fileOverrides":
+			if err := func() error {
+				s.FileOverrides.Reset()
+				if err := s.FileOverrides.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"fileOverrides\"")
+			}
 		case "id":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -11250,7 +11267,7 @@ func (s *ResolvedHarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -11351,7 +11368,7 @@ func (s *ResolvedHarnessConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00110000,
+		0b01100000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

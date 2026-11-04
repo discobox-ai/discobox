@@ -358,7 +358,7 @@ func (s *CreateHarnessConfigBody) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.Files.Get(); ok {
+		if value, ok := s.FileOverrides.Get(); ok {
 			if err := func() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
@@ -371,7 +371,7 @@ func (s *CreateHarnessConfigBody) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "files",
+			Name:  "fileOverrides",
 			Error: err,
 		})
 	}
@@ -1969,6 +1969,24 @@ func (s *HarnessConfig) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "configuredFiles",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.FileOverrides.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "fileOverrides",
 			Error: err,
 		})
 	}
@@ -9634,7 +9652,7 @@ func (s *UpdateHarnessConfigBody) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.Files.Get(); ok {
+		if value, ok := s.FileOverrides.Get(); ok {
 			if err := func() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
@@ -9647,7 +9665,7 @@ func (s *UpdateHarnessConfigBody) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "files",
+			Name:  "fileOverrides",
 			Error: err,
 		})
 	}

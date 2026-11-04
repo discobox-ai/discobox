@@ -592,7 +592,7 @@ components:
                     description: True once the configure flow completed successfully. Only configured harnesses can be selected to run.
                     type: boolean
                 configuredFiles:
-                    description: Files written by the configure flow. These overlay the image-declared files when resolving a sandbox.
+                    description: Files written by the configure flow. These overlay the bundle-declared files by path when resolving a sandbox, beneath fileOverrides.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
@@ -607,8 +607,14 @@ components:
                     description: Default environment variables declared by the registered image label.
                     nullable: true
                     type: object
+                fileOverrides:
+                    description: Files a person added or overrode. Each wins by path over the configure flow's file and the bundle's, and survives a bundle refresh, configure, and deconfigure.
+                    items:
+                        $ref: '#/components/schemas/HarnessConfigFile'
+                    nullable: true
+                    type: array
                 files:
-                    description: Non-secret files declared by the registered image label.
+                    description: Non-secret files declared by the registered bundle's label. Rewritten whenever the bundle is re-read; no request writes them.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
@@ -826,8 +832,8 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                files:
-                    description: Optional non-secret configured file values to associate with the registered harness.
+                fileOverrides:
+                    description: Files to add to the harness, or to override the bundle's file at the same path. They become the harness's fileOverrides.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
@@ -6801,8 +6807,8 @@ components:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
-                files:
-                    description: Files to write into the harness's home directory when the harness is installed
+                fileOverrides:
+                    description: A person's files, replacing the current set. Each adds a path to the harness's home directory or overrides the configure flow's or the bundle's file at it; the bundle's own files are never written.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true

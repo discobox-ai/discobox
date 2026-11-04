@@ -18,7 +18,7 @@ func (s *Store) CaptureBaseline(ctx context.Context, projectID, configID string)
 	}
 	b := harnesscapture.Baseline{HarnessConfigID: cfg.ID, ConfigRevision: cfg.Revision, ManifestDigest: cfg.ManifestDigest, SecretRevisions: map[string]string{}}
 	indexes := map[string]int{}
-	for _, files := range [][]model.HarnessConfigFile{cfg.Files, cfg.ConfiguredFiles} {
+	for _, files := range [][]model.HarnessConfigFile{cfg.Files, cfg.ConfiguredFiles, cfg.FileOverrides} {
 		for _, f := range files {
 			file := harnesscapture.File{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
 			if i, ok := indexes[f.Path]; ok {

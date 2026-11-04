@@ -389,7 +389,7 @@ type HarnessConfig struct {
 	ConfigCommand    []string              `gorm:"column:config_command;type:text;serializer:json" json:"configCommand,omitempty" doc:"Config-mode argv snapshotted from the registered bundle's label."`
 	ConfigReminder   string                `gorm:"column:config_reminder;not null;type:text;default:''" json:"configReminder,omitempty" doc:"Reminder shown outside the interactive configuration terminal, snapshotted from the registered bundle's label."`
 	ConfigPorts      []harness.ConfigPort  `gorm:"column:config_ports;type:text;serializer:json" json:"configPorts,omitempty" doc:"Local ports the configure flow forwards into the configure sandbox at the same port number, snapshotted from the registered bundle's label."`
-	Files            []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Non-secret files declared by the bundle's label. Baseline only; the configure flow's files live in ConfiguredFiles."`
+	Files            []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Non-secret files declared by the bundle's label. Baseline only, rewritten whenever the bundle is re-read; the configure flow's files live in ConfiguredFiles and a person's in FileOverrides."`
 	Secrets          []HarnessConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Environment-variable secret declarations snapshotted from the image label."`
 	Env              map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Default environment variables snapshotted from the image label."`
 	Volumes          []harness.Volume      `gorm:"column:volumes;type:text;serializer:json" json:"volumes,omitempty" doc:"Declarative volumes snapshotted from the image label."`
@@ -402,8 +402,18 @@ type HarnessConfig struct {
 	// ConfiguredFiles and ConfiguredSecretIDs record what the configure flow
 	// produced, kept separate from the image-declared baseline so Deconfigure can
 	// remove exactly what it created and leave the baseline intact.
-	ConfiguredFiles     []HarnessConfigFile `gorm:"column:configured_files;type:text;serializer:json" json:"configuredFiles,omitempty" doc:"Files written by the configure flow. Overlay the image-declared Files when resolving a sandbox."`
+	ConfiguredFiles     []HarnessConfigFile `gorm:"column:configured_files;type:text;serializer:json" json:"configuredFiles,omitempty" doc:"Files written by the configure flow. Overlay the bundle-declared Files by path when resolving a sandbox, beneath FileOverrides."`
 	ConfiguredSecretIDs []string            `gorm:"column:configured_secret_ids;type:text;serializer:json" json:"-" doc:"Secrets created by the configure flow, deleted on deconfigure."`
+	// FileOverrides are the files a person wrote (ADR 26-11-04-028): each adds
+	// a path or replaces the configured or bundle file at it. Only a person's
+	// request writes it; a bundle re-snapshot, configure and deconfigure leave
+	// it alone.
+	//
+	// nil (a NULL column) marks a config from before the set existed, whose
+	// person-added files may still sit in Files; splitFileOverrides moves them
+	// out once, and every config it has seen, or created since, holds a non-nil
+	// set, even an empty one.
+	FileOverrides []HarnessConfigFile `gorm:"column:file_overrides;type:text;serializer:json" json:"fileOverrides,omitempty" doc:"Files a person added or overrode. Each wins by path over the configure flow's and the bundle's file, and survives a bundle refresh, configure and deconfigure."`
 	// ConfigureSandboxID names the in-flight configure sandbox. It is the durable
 	// handle the harness-config reconciler watches, so a configure that is running
 	// when the server restarts is still picked up and finished.

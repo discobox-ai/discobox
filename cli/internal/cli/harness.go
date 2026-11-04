@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -27,6 +28,7 @@ type harnessUpdateOptions struct {
 	bundle         string
 	files          []string
 	createOnlyFile []string
+	removeFiles    []string
 }
 
 func (a *App) newHarnessCommand() *cobra.Command {
@@ -197,7 +199,7 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this harness (e.g. codex); defaults to the definition ID or a slug derived from the name")
 	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Harness bundle to register: a FROM scratch image of its features, built FROM nothing or another harness's bundle, whose labels are its manifest")
-	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
+	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "Add a file to the harness's home directory, or override the bundle's file at PATH, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	return cmd
 }
@@ -407,10 +409,6 @@ are part of this level already and need not be listed.
 		if err != nil {
 			return err
 		}
-		body, err := updateHarnessBody(cmd, opts)
-		if err != nil {
-			return err
-		}
 		currentRes, err := client.GetHarnessConfig(cmd.Context(), apiclientgen.GetHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
 		if err != nil {
 			return err
@@ -419,7 +417,10 @@ are part of this level already and need not be listed.
 		if err != nil {
 			return err
 		}
-		body.Revision = current.Revision.Or(0)
+		body, err := updateHarnessBody(cmd, opts, current)
+		if err != nil {
+			return err
+		}
 		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
 			return current.Egress.Value, nil
 		})
@@ -441,9 +442,10 @@ are part of this level already and need not be listed.
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Register the harness bundle its manifest is read from, as a harness registered before bundles needs to refresh")
-	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
+	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "Add a file to the harness's home directory, or override the harness's own file at PATH, as PATH=CONTENT or PATH=@LOCALFILE; the harness's other files are kept (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
-	addClearFlag(cmd, "file", "Remove every file the harness writes into its home directory")
+	cmd.Flags().StringArrayVar(&opts.removeFiles, "remove-file", nil, "Remove the file you added or overrode at PATH, which brings back the harness's own file there, if it has one (repeatable)")
+	addClearFlag(cmd, "file", "Remove every file you added or overrode; the harness's own files are kept")
 	addEgressUpdateFlags(cmd, &egressOpts, "the harness")
 	return cmd
 }
@@ -600,29 +602,56 @@ func createHarnessBody(opts harnessCreateOptions) (*apimodel.CreateHarnessConfig
 		if err != nil {
 			return nil, err
 		}
-		body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(files))
+		body.SetFileOverrides(apiclientgen.NewOptNilHarnessConfigFileArray(files))
 	}
 	return body, nil
 }
 
-func updateHarnessBody(cmd *cobra.Command, opts harnessUpdateOptions) (*apimodel.UpdateHarnessConfigBody, error) {
-	body := &apimodel.UpdateHarnessConfigBody{}
+// updateHarnessBody builds the update of current. A person's files are one set
+// the server replaces whole (ADR 26-11-04-028 §4), so --file and
+// --remove-file change the paths they name in the set current holds and send
+// the rest back as it was, under the revision read with it.
+func updateHarnessBody(cmd *cobra.Command, opts harnessUpdateOptions, current *apimodel.HarnessConfig) (*apimodel.UpdateHarnessConfigBody, error) {
+	body := &apimodel.UpdateHarnessConfigBody{Revision: current.Revision.Or(0)}
 	if cmd.Flags().Changed("name") {
 		body.SetName(apiclientgen.NewOptString(opts.name))
 	}
 	if cmd.Flags().Changed("bundle") {
 		body.SetBundle(apiclientgen.NewOptString(opts.bundle))
 	}
-	if cmd.Flags().Changed("file") {
-		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
-		if err != nil {
-			return nil, err
-		}
-		body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(files))
-	}
 	if listCleared(cmd.Flags(), "file") {
-		body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{}))
+		if len(opts.removeFiles) > 0 {
+			return nil, fmt.Errorf("--clear-file and --remove-file cannot be used together")
+		}
+		body.SetFileOverrides(apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{}))
+		return body, nil
 	}
+	if !cmd.Flags().Changed("file") && len(opts.removeFiles) == 0 {
+		return body, nil
+	}
+	added, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
+	if err != nil {
+		return nil, err
+	}
+	overrides := append([]apimodel.HarnessConfigFile{}, current.FileOverrides.Or(nil)...)
+	for _, path := range opts.removeFiles {
+		n := slices.IndexFunc(overrides, func(f apimodel.HarnessConfigFile) bool { return f.Path == path })
+		if n < 0 {
+			return nil, fmt.Errorf("--remove-file %q: %s has no file you added or overrode there", path, harnessDisplayName(*current))
+		}
+		overrides = slices.Delete(overrides, n, n+1)
+	}
+	for _, file := range added {
+		if slices.Contains(opts.removeFiles, file.Path) {
+			return nil, fmt.Errorf("--file and --remove-file both name %q", file.Path)
+		}
+		if n := slices.IndexFunc(overrides, func(f apimodel.HarnessConfigFile) bool { return f.Path == file.Path }); n >= 0 {
+			overrides[n] = file
+		} else {
+			overrides = append(overrides, file)
+		}
+	}
+	body.SetFileOverrides(apiclientgen.NewOptNilHarnessConfigFileArray(overrides))
 	return body, nil
 }
 

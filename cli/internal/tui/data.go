@@ -741,11 +741,27 @@ type HarnessFile struct {
 	Path    string
 	Content string
 
-	// Configured marks a file the configure flow wrote. It overlays the
-	// image-declared file of the same path, which is why it is listed first.
-	Configured bool
+	// Source is the file set this file comes from. A harness lists each path
+	// once, as a discobox is given it: a person's override over the
+	// configure flow's file over the bundle's.
+	Source HarnessFileSource
+	// Shadows are the sets beneath it that have a file at this path too, which
+	// it hides, topmost first.
+	Shadows    []HarnessFileSource
 	CreateOnly bool
 }
+
+// HarnessFileSource names one of a harness's file sets.
+type HarnessFileSource string
+
+const (
+	// HarnessFileFromBundle is a file the harness's bundle declares.
+	HarnessFileFromBundle HarnessFileSource = "bundle"
+	// HarnessFileConfigured is a file its configure flow wrote.
+	HarnessFileConfigured HarnessFileSource = "configured"
+	// HarnessFileOverride is a file a person added or overrode.
+	HarnessFileOverride HarnessFileSource = "override"
+)
 
 // ServiceVerb is a lifecycle action against one of a discobox's declared
 // services. Like a HarnessVerb it runs against the API and returns, leaving the
