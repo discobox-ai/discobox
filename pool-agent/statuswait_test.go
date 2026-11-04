@@ -134,8 +134,8 @@ func TestWaitersFollowTheSandboxesThatAreRunning(t *testing.T) {
 		t.Fatalf("waiters = %d after sandbox-1 stopped, want 0", got)
 	}
 
-	poller.waitOn(ctx, []string{"sandbox-1", "sandbox-2"}, time.Now())
-	poller.waitOn(ctx, []string{"sandbox-2"}, time.Now())
+	poller.waitOn(ctx, []string{"sandbox-1", "sandbox-2"}, poller.stateChangesSoFar())
+	poller.waitOn(ctx, []string{"sandbox-2"}, poller.stateChangesSoFar())
 	poller.mu.Lock()
 	_, one := poller.waiters["sandbox-1"]
 	_, two := poller.waiters["sandbox-2"]
@@ -205,12 +205,12 @@ func TestATicksOlderListDoesNotUndoAStartOrStop(t *testing.T) {
 	poller := statusWaitTestPoller(t, nil)
 	ctx := t.Context()
 	poller.sandboxStateChanged(ctx, "sandbox-2", sandboxruntime.StateRunning)
-	listedAt := time.Now()
+	listedAfter := poller.stateChangesSoFar()
 	poller.sandboxStateChanged(ctx, "sandbox-1", sandboxruntime.StateRunning)
 	poller.sandboxStateChanged(ctx, "sandbox-2", sandboxruntime.StateStopping)
 
 	// Listed before sandbox-1 started and before sandbox-2 stopped.
-	poller.waitOn(ctx, []string{"sandbox-2"}, listedAt)
+	poller.waitOn(ctx, []string{"sandbox-2"}, listedAfter)
 	poller.mu.Lock()
 	_, one := poller.waiters["sandbox-1"]
 	_, two := poller.waiters["sandbox-2"]
@@ -220,7 +220,7 @@ func TestATicksOlderListDoesNotUndoAStartOrStop(t *testing.T) {
 	}
 
 	// A list taken after both changes is the truth again.
-	poller.waitOn(ctx, []string{"sandbox-2"}, time.Now())
+	poller.waitOn(ctx, []string{"sandbox-2"}, poller.stateChangesSoFar())
 	poller.mu.Lock()
 	_, one = poller.waiters["sandbox-1"]
 	_, two = poller.waiters["sandbox-2"]
