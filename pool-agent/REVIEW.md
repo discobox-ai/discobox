@@ -401,6 +401,39 @@ changed. A step added that lays a binary needs it there too.
   bounded, drained pipe with data disabled and redaction enabled. Never send
   it to stderr or a file: a lent request may carry real credentials.
 
+## A machine's new root
+
+- **What the pool placed is the old root's.** A new root (`upgradeMachine`)
+  removes the placement record, since a driver may keep the instance's ID
+  across it and the record would then say the agent layer is still there,
+  and reads the service's listen address again, since a driver keeps a
+  service across a stop and start but need not across a new root. Anything
+  else the pool records about what is in a machine's root goes with it too.
+- **Whether a rebuild gives a new root is the machine's, not the driver's.**
+  A machine made before its driver attached a data volume has its data on
+  its root; giving it a new root would delete the sandbox.
+- **A volume attached is not the sandbox's data on it.** A new root keeps
+  only what the data contract puts on the data volume (pool-agent/DESIGN.md,
+  Machine Sandboxes): the declared volumes and the sources, which the
+  sandbox agent wires there at every boot. The pool gives one only to a
+  machine whose volume says so for the start it is on (`dataOnVolume`, read
+  from `sandboxconfig.MachineDataWiredFile` and this start's token after
+  every start, never kept from an earlier one), never on the driver's
+  volume alone:
+  the agent is the sandbox's pin, and may predate the wiring or run on a
+  guest that wires nothing. Something new a machine sandbox keeps goes on a
+  declared path or is wired onto the volume in the same change. Why: the
+  first version of the new root gave one to machines whose home and
+  checkouts were on their root.
+
+- **What the pool reads from a guest is bounded, and it runs nothing there
+  to learn it.** A record the agent leaves in a machine is read with the
+  guest's copy, its size and time capped (`readGuestFile`), never by a
+  command: the guest's binaries are the box's, and an unbounded read is the
+  pool's memory. Why: the first per-start check ran the guest's `cat` and
+  buffered its output whole, so a box could swap `cat` and take down the pool
+  agent every sandbox of the pool shares.
+
 ## Removing a machine
 
 A machine's disk is its sandbox's only copy, so nothing removes one on a single

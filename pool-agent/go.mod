@@ -9,7 +9,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/containerd/errdefs v1.0.0
 	github.com/discobox-ai/discobox v0.0.0-00010101000000-000000000000
-	github.com/discobox-ai/vm v0.0.0-20261103194310-e33a525f3be1
+	github.com/discobox-ai/vm v0.0.0-20261103201738-d267f6c63381
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fsnotify/fsnotify v1.10.1

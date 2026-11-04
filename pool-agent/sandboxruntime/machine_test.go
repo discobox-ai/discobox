@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -43,6 +44,8 @@ const machineTestProject = "pool-machine-test"
 // (ADR 26-10-23-551 §4), and the sandbox agents its machines run.
 type machineFixture struct {
 	runtime *MachineSandboxRuntime
+	// driver is the pool's driver, which a test changes what it can do on.
+	driver *agentDriver
 	// owner is the driver as the account's owner, which a test reads the
 	// machines through behind the pool's back.
 	owner  machine.Driver
@@ -91,7 +94,7 @@ func newMachineFixture(t *testing.T) *machineFixture {
 		}
 		agents.closeAll()
 	})
-	return &machineFixture{runtime: r, owner: owner, agents: agents, key: identity}
+	return &machineFixture{runtime: r, driver: driver, owner: owner, agents: agents, key: identity}
 }
 
 func machineCreate(sandboxID string) *workerapimodel.PoolSandboxCreateRequest {
@@ -132,6 +135,9 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	}
 	if inst.From != "" {
 		t.Fatalf("machine %+v, want one made fresh from the driver's base", inst)
+	}
+	if inst.Data == nil || inst.Cache == nil || inst.Cache.Key != "sbx-1" {
+		t.Fatalf("machine volumes = %+v, %+v; want a data volume and a cache of its own", inst.Data, inst.Cache)
 	}
 	// The credentials broker is told the sandbox's variables from the pool's
 	// own record of its file secrets, as for a container.
@@ -263,6 +269,7 @@ func TestMachineCreateFindsALostCreatesMachineByName(t *testing.T) {
 // same machine, its disk kept, a new bootstrap, and a restart onto it.
 func TestMachineSpecChangeRebuildsInPlace(t *testing.T) {
 	f := newMachineFixture(t)
+	f.driver.noVolumes = true
 	ctx := context.Background()
 	r := f.runtime
 	first, err := r.CreateSandbox(ctx, machineCreate("sbx_3"))
@@ -305,6 +312,302 @@ func TestMachineSpecChangeRebuildsInPlace(t *testing.T) {
 	if bootstrap.Description != "moved" {
 		t.Fatalf("bootstrap description = %q, want the new spec's", bootstrap.Description)
 	}
+}
+
+// writeMachineFiles writes a file to the sandbox's data volume, its cache
+// volume, and its root outside every declared volume and source, which the
+// data contract does not keep (pool-agent/DESIGN.md).
+func writeMachineFiles(t *testing.T, r *MachineSandboxRuntime, inst machine.Instance) {
+	t.Helper()
+	ctx := context.Background()
+	guest, err := r.engine.Guest(ctx, inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for dir, content := range map[string]string{"/.discobox/data": "the sandbox's data", "/.discobox/cache": "a warm cache", "/opt": "the old root's"} {
+		if err := guest.CopyTo(ctx, dir, fileTree(t, "kept.txt", content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// machineHasFile reports whether the running machine has path.
+func machineHasFile(t *testing.T, r *MachineSandboxRuntime, inst machine.Instance, path string) bool {
+	t.Helper()
+	guest, err := r.engine.Guest(context.Background(), inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc, err := guest.CopyFrom(context.Background(), path)
+	if err != nil {
+		return false
+	}
+	defer rc.Close()
+	_, err = tar.NewReader(rc).Next()
+	return err == nil
+}
+
+// assertNewRootKeptVolumes checks the running machine was given a new root
+// with its volumes kept, and placed again on it.
+func assertNewRootKeptVolumes(t *testing.T, r *MachineSandboxRuntime, inst machine.Instance) {
+	t.Helper()
+	guest, err := r.engine.Guest(context.Background(), inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readMachineFile(t, guest, "/.discobox/data/kept.txt"); got != "the sandbox's data" {
+		t.Fatalf("data volume file = %q, want it kept", got)
+	}
+	if got := readMachineFile(t, guest, "/.discobox/cache/kept.txt"); got != "a warm cache" {
+		t.Fatalf("cache volume file = %q, want it kept", got)
+	}
+	if machineHasFile(t, r, inst, "/opt/kept.txt") {
+		t.Fatal("the old root's file is in the machine, want a new root")
+	}
+	if got := readMachineFile(t, guest, agentlayer.AgentPath); got != "agent-v1" {
+		t.Fatalf("agent on the new root = %q, want the layer placed again", got)
+	}
+	if record, _, err := r.readMachineRecord(strings.ReplaceAll(inst.Name, "-", "_")); err != nil || record.NewRoot || !record.DataOnVolume {
+		t.Fatalf("machine record = %+v, %v; want no upgrade left to do, and its data on its volume", record, err)
+	}
+}
+
+// A spec that moves under a running machine that keeps its data on a volume
+// gives it a new root from the driver's base (disco-vm ADR 26-11-03-782):
+// the same machine, its data and cache volumes kept, what was on its old root
+// gone, and everything placed again on the new one.
+func TestMachineSpecChangeGivesANewRootAndKeepsItsVolumes(t *testing.T) {
+	f := newMachineFixture(t)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_7")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineFiles(t, r, inst)
+
+	req := machineCreate("sbx_7")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	req.Config.Description = workerclient.NewOptString("moved")
+	sb, err := r.CreateSandbox(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Status != StatusRunning || f.driver.upgrades != 1 {
+		t.Fatalf("rebuilt sandbox = %+v after %d upgrades, want it running on one", sb, f.driver.upgrades)
+	}
+	if inst, err = f.owner.Instance(ctx, "sbx-7"); err != nil {
+		t.Fatal(err)
+	}
+	assertNewRootKeptVolumes(t, r, inst)
+	guest, err := r.engine.Guest(ctx, inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bootstrap sandboxconfig.Config
+	if err := json.Unmarshal([]byte(readMachineFile(t, guest, "/etc/discobox/sandbox.json")), &bootstrap); err != nil {
+		t.Fatal(err)
+	}
+	if bootstrap.Description != "moved" {
+		t.Fatalf("bootstrap description = %q, want the new spec's", bootstrap.Description)
+	}
+	if err := sandboxAgentHealthy(ctx, mustDialer(t, r, "sbx_7")); err != nil {
+		t.Fatalf("the agent on the new root: %v", err)
+	}
+
+	// The same spec again is no rebuild.
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d after a create of the same spec, want still one", f.driver.upgrades)
+	}
+}
+
+// A stopped machine whose spec moves stays stopped, and is given its new
+// root at its next start.
+func TestMachineStoppedSpecChangeGivesANewRootAtItsStart(t *testing.T) {
+	f := newMachineFixture(t)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_8")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineFiles(t, r, inst)
+	if err := r.StopSandbox(ctx, "sbx_8", nil); err != nil {
+		t.Fatal(err)
+	}
+	req := machineCreate("sbx_8")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	req.Config.Start = workerclient.NewOptBool(false)
+	sb, err := r.CreateSandbox(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.Status != StatusStopped || f.driver.upgrades != 0 {
+		t.Fatalf("sandbox = %+v after %d upgrades, want it stopped on none", sb, f.driver.upgrades)
+	}
+	if err := r.StartSandbox(ctx, "sbx_8", nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 1 {
+		t.Fatalf("upgrades = %d after the start, want one", f.driver.upgrades)
+	}
+	assertNewRootKeptVolumes(t, r, inst)
+}
+
+// An upgrade cut short fails its start, and the next start finishes it: the
+// pool's record asks for it until the driver has given the root.
+func TestMachineUpgradeCutShortIsFinishedByTheNextStart(t *testing.T) {
+	f := newMachineFixture(t)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_9")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMachineFiles(t, r, inst)
+	f.driver.upgradeFailures = 1
+	req := machineCreate("sbx_9")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err == nil || !strings.Contains(err.Error(), "cut short") {
+		t.Fatalf("create on an upgrade cut short = %v, want it failed", err)
+	}
+	if record, _, err := r.readMachineRecord("sbx_9"); err != nil || !record.NewRoot {
+		t.Fatalf("machine record = %+v, %v; want the upgrade still asked for", record, err)
+	}
+	if sb, err := r.GetSandbox(ctx, "sbx_9"); err != nil || sb.Status != StatusStopped {
+		t.Fatalf("sandbox after the failed upgrade = %+v, %v; want it stopped", sb, err)
+	}
+	if err := r.StartSandbox(ctx, "sbx_9", nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 2 {
+		t.Fatalf("upgrades = %d, want the one cut short and the one that finished it", f.driver.upgrades)
+	}
+	assertNewRootKeptVolumes(t, r, inst)
+}
+
+// A machine made before its driver attached a data volume keeps its data on
+// its root, so it is made again in place, never given a new root.
+func TestMachineWithoutADataVolumeIsRebuiltInPlace(t *testing.T) {
+	f := newMachineFixture(t)
+	ctx := context.Background()
+	r := f.runtime
+	e := &engine.Engine{Driver: f.owner, Project: machineTestProject}
+	if _, err := e.Create(ctx, engine.CreateOptions{Name: "sbx-10"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_10")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guest, err := r.engine.Guest(ctx, inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := guest.CopyTo(ctx, "/home", fileTree(t, "kept.txt", "the sandbox's own")); err != nil {
+		t.Fatal(err)
+	}
+	req := machineCreate("sbx_10")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 0 {
+		t.Fatalf("upgrades = %d, want none of a machine with no data volume", f.driver.upgrades)
+	}
+	if guest, err = r.engine.Guest(ctx, inst); err != nil {
+		t.Fatal(err)
+	}
+	if got := readMachineFile(t, guest, "/home/kept.txt"); got != "the sandbox's own" {
+		t.Fatalf("kept file = %q, want the root kept", got)
+	}
+}
+
+// A machine whose agent keeps the sandbox's data on its root, as one pinned
+// to an agent that predates wiring a data volume does, is made again in
+// place, though it has a data volume: the pool gives a new root only to a
+// machine whose volume says its data is there.
+func TestMachineWhoseAgentKeepsItsDataOnItsRootIsRebuiltInPlace(t *testing.T) {
+	f := newMachineFixture(t)
+	f.driver.rootData = true
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_11")); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-11")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record, _, err := r.readMachineRecord("sbx_11"); err != nil || record.DataOnVolume {
+		t.Fatalf("machine record = %+v, %v; want no data on its volume recorded", record, err)
+	}
+	writeMachineFiles(t, r, inst)
+	req := machineCreate("sbx_11")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 0 {
+		t.Fatalf("upgrades = %d, want none of a machine whose data is on its root", f.driver.upgrades)
+	}
+	if !machineHasFile(t, r, inst, "/opt/kept.txt") {
+		t.Fatal("the root's file is gone, want the root kept")
+	}
+}
+
+// A machine whose agent wired its data volume once, then is placed an agent
+// that does not (a pin moved back), is rebuilt in place: the volume's line
+// names a start that is over, and the pool reads it again at every start.
+func TestMachineAgentThatStopsWiringIsRebuiltInPlace(t *testing.T) {
+	f := newMachineFixture(t)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_12")); err != nil {
+		t.Fatal(err)
+	}
+	if record, _, err := r.readMachineRecord("sbx_12"); err != nil || !record.DataOnVolume {
+		t.Fatalf("machine record = %+v, %v; want its data on its volume", record, err)
+	}
+	f.driver.rootData = true
+	if err := r.RestartSandbox(ctx, "sbx_12", nil); err != nil {
+		t.Fatal(err)
+	}
+	if record, _, err := r.readMachineRecord("sbx_12"); err != nil || record.DataOnVolume {
+		t.Fatalf("machine record = %+v, %v; want its data on its volume no longer recorded", record, err)
+	}
+	req := machineCreate("sbx_12")
+	req.Config.SpecFingerprint = workerclient.NewOptString("spec-2")
+	if _, err := r.CreateSandbox(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if f.driver.upgrades != 0 {
+		t.Fatalf("upgrades = %d, want none once the agent stopped wiring", f.driver.upgrades)
+	}
+}
+
+func mustDialer(t *testing.T, r *MachineSandboxRuntime, sandboxID string) Dialer {
+	t.Helper()
+	dial, err := r.SandboxDialer(context.Background(), sandboxID, SandboxAgentPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dial
 }
 
 // Archiving keeps the machine, stopped, and its unarchiving create starts the
@@ -422,7 +725,9 @@ func readMachineFile(t *testing.T, guest machine.Guest, path string) string {
 }
 
 func fileTree(t *testing.T, name, content string) io.Reader {
-	t.Helper()
+	if t != nil {
+		t.Helper()
+	}
 	pr, pw := io.Pipe()
 	go func() {
 		tw := tar.NewWriter(pw)
@@ -442,11 +747,44 @@ func fileTree(t *testing.T, name, content string) io.Reader {
 type agentDriver struct {
 	machine.Driver
 	agents *fakeMachineAgents
+	// noVolumes is a driver that attaches no volume, and so upgrades no
+	// machine, as boxd is.
+	noVolumes bool
+	// rootData is an agent that keeps the sandbox's data on the machine's
+	// root, as one that predates wiring a data volume does: it records
+	// nothing on the volume (sandboxconfig.MachineDataWiredFile).
+	rootData bool
+	// upgradeFailures is how many upgrades to fail, as one cut short by the
+	// pool agent going away, or by the provider, fails.
+	upgradeFailures int
+	upgrades        int
+}
+
+func (d *agentDriver) Capabilities() machine.Capabilities {
+	caps := d.Driver.Capabilities()
+	if d.noVolumes {
+		caps.Volumes = nil
+	}
+	return caps
+}
+
+func (d *agentDriver) Upgrade(ctx context.Context, inst machine.Instance, from *machine.Instance) (machine.Instance, error) {
+	d.upgrades++
+	if d.upgradeFailures > 0 {
+		d.upgradeFailures--
+		return machine.Instance{}, errors.New("the upgrade was cut short")
+	}
+	return d.Driver.Upgrade(ctx, inst, from)
 }
 
 func (d *agentDriver) Start(ctx context.Context, inst machine.Instance, opts machine.BootOptions) (machine.Machine, error) {
 	m, err := d.Driver.Start(ctx, inst, opts)
 	if err != nil {
+		return nil, err
+	}
+	// A fake guest's root is a directory that outlives a start, so the new
+	// tmpfs a real start mounts at /run is stood in for: no start's token.
+	if err := m.CopyTo(ctx, "/run/discobox", fileTree(nil, "machine-wired", "")); err != nil {
 		return nil, err
 	}
 	return &agentMachine{Machine: m, driver: d, inst: inst}, nil
@@ -516,6 +854,19 @@ func (p *applyProcess) Wait(_, stderr io.Writer) (int, error) {
 	var cfg sandboxconfig.Config
 	if err := json.Unmarshal([]byte(bootstrap.String()), &cfg); err != nil {
 		return 1, err
+	}
+	// The agent's provisioning wires a data volume and says so on it.
+	if !p.machine.driver.rootData && p.machine.inst.Data != nil {
+		// As the agent does: a token of this start in /run, and the line
+		// naming it on the volume.
+		token := fmt.Sprintf("start-%d", time.Now().UnixNano())
+		if err := p.machine.CopyTo(context.Background(), "/run/discobox", fileTree(nil, "machine-wired", token+"\n")); err != nil {
+			return 1, err
+		}
+		line := cfg.SandboxID + " " + token + "\n"
+		if err := p.machine.CopyTo(context.Background(), "/.discobox/data", fileTree(nil, ".discobox-wired", line)); err != nil {
+			return 1, err
+		}
 	}
 	p.machine.driver.agents.start(p.machine.inst.Name, cfg)
 	return 0, nil

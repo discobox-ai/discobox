@@ -944,7 +944,10 @@ error. Only boxd is linked.
 ```mermaid
 flowchart LR
     create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom its plan's snapshot, or the driver's base\n(isolated, on the pool's network,\nfenced to the pool)"]
-    inst --> start["startLocked: engine.Start"]
+    inst --> newroot{"machine.json asks\na new root?"}
+    newroot -->|yes| upgrade["upgradeMachine:\nengine.Upgrade, keeping\nits data and cache volumes"]
+    newroot -->|no| start["startLocked: engine.Start"]
+    upgrade --> start
     start --> place["place: sandbox.json,\nagentlayer.Archive, then\ndiscobox-provision apply"]
     place -->|"placed before with something else"| restart["restart the machine"]
     restart --> place
@@ -977,11 +980,51 @@ flowchart LR
   asked for keeps the state last seen, since a lost connection is not a stop.
   The state channel polls (no event stream), and a poll that cannot read every
   machine publishes nothing rather than a sync that would report one gone.
+- **Volumes.** A sandbox's machine, made from its plan's snapshot or fresh
+  from the driver's base, has a data volume at `/.discobox/data` and a cache
+  volume at `/.discobox/cache` where the driver attaches them (a snapshot's
+  own VM has neither: a committed VM holds no volume)
+  (`Capabilities.Volumes`). Of the drivers linked here, boxd attaches
+  neither, so every machine of a boxd pool has its data on its disk and is
+  rebuilt in place; disco-vm's fake and docker drivers attach both. The cache
+  is the machine's own, under a key of its name that nothing saves, since no
+  machine shares a cache.
+- **The data contract.** What a machine with a data volume keeps across a
+  new root is what a container keeps across a rebuild: its declared volumes
+  (the platform's home, a harness's paths), wired from its data and cache
+  volumes as `volumeDir` lays them out, and its sources, each kept at its
+  target's own path on the data volume. The sandbox agent makes those mounts
+  at every boot (`discobox-wire.service`, and its own start where that
+  could not; [sandbox-agent `boot`](../sandbox-agent/DESIGN.md)), and says
+  so on the volume (`sandboxconfig.MachineDataWiredFile`: the sandbox's ID
+  and a random token of this start, kept in the start's own `/run`,
+  `sandboxconfig.MachineWiredFile`). The pool reads both, as bounded file
+  copies, after every start into `machine.json` (`dataOnVolume`,
+  `recordDataOnVolume`), true only when the line names this start's token:
+  the agent is the sandbox's pin, which any start may move, and one that
+  predates the wiring, or a guest that wires nothing, keeps its data on its
+  root and leaves `/run` without a token. A boot ID would not do: a
+  container's guest has its host's. Anything
+  else on the root — a package installed by hand, a file outside every
+  declared path — is the root's, and goes with it, as a container's layer
+  does. It is a convention: nothing stops a sandbox writing elsewhere.
 - **Rebuilding** — a spec that moved, or a project layer settling reads that
-  the bootstrap was not made with — happens in place
-  ([ADR 26-10-27-345](../docs/adr/26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md)):
-  a new bootstrap, the same disk, a restart if it ran, since the disk is all
-  the sandbox has. The pool keeps the bootstrap whole in `machine.json`, so the
+  the bootstrap was not made with — is one of two modes, by whether the
+  machine keeps its data on a data volume of its own: it has one, and
+  `machine.json` says its agent keeps the data there (`keepsDataOnVolume`; ADR 26-10-27-345
+  §1, its volume mode as disco-vm ADR 26-11-03-782 gives it):
+
+  | the machine | a rebuild |
+  | --- | --- |
+  | keeps its data on its data volume | a new root, fresh from the base, never the plan's snapshot (a snapshot root that did not come up would be blamed and remade, and that remake destroys the machine with its volume): stopped, `Engine.Upgrade` to a fresh root from the base, started, and everything placed again; its data and cache volumes, name and settings kept |
+  | does not (boxd; one made before its driver attached a volume; an agent that does not wire it) | in place: a new bootstrap, the same disk, a restart if it ran, since the disk is all the sandbox has |
+
+  The new root is asked for in `machine.json` (`newRoot`) before the driver
+  is called, and done by the next start, so a stopped machine gets it when
+  it starts and an upgrade cut short is finished by the start after (disco-vm
+  ADR 26-11-03-782 §3). A new root drops the placement record, so the agent
+  layer is placed again, and re-reads the service's listen address into the
+  bootstrap. The pool keeps the bootstrap whole in `machine.json`, so the
   status poll's convergence rebuilds with no create request.
 - **Archive** stops the machine and keeps it: its disk is the tree. The
   machine is found by its name, as delete finds it, so a sandbox whose

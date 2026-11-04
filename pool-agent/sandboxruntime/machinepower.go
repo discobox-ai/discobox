@@ -186,24 +186,32 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	if err != nil {
 		return err
 	}
-	// A running machine is started already only once what it boots on is
-	// placed in it: one whose start stopped short of that — the pool agent
-	// gone mid-start, or the stop after a failed placement failing too — runs
-	// with no agent, and is placed now.
-	running := sb.Status == StatusRunning
-	if running {
-		current, err := r.placementCurrent(ctx, sandboxID, sb.ID)
-		if err != nil || current {
-			return err
-		}
-		slog.InfoContext(ctx, "placing what a running sandbox machine boots on, which its start did not finish", "sandboxId", sandboxID)
-	}
 	record, ok, err := r.readMachineRecord(sandboxID)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return ErrNoContainer
+	}
+	// A running machine is started already only once what it boots on is
+	// placed in it: one whose start stopped short of that — the pool agent
+	// gone mid-start, or the stop after a failed placement failing too — runs
+	// with no agent, and is placed now. One still to be given a new root
+	// (upgradeMachine) is stopped for it: a root is given only to a stopped
+	// machine.
+	running := sb.Status == StatusRunning
+	if running && !record.NewRoot {
+		current, err := r.placementCurrent(ctx, sandboxID, sb.ID)
+		if err != nil || current {
+			return err
+		}
+		slog.InfoContext(ctx, "placing what a running sandbox machine boots on, which its start did not finish", "sandboxId", sandboxID)
+	}
+	if running && record.NewRoot {
+		if err := r.stopLocked(ctx, sandboxID); err != nil {
+			return err
+		}
+		running = false
 	}
 	inst, err := r.instance(ctx, sandboxID)
 	if err != nil {
@@ -216,7 +224,6 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 	// boot, the pool agent gone), and then holds the sandbox's work.
 	firstFromSnapshot := record.Snapshot != "" && !record.Started && !r.snapshotProven(sandboxID)
 	r.publishSandboxState(ctx, sandboxID, StateStarting)
-	r.publishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
 	r.urls.Delete(sandboxID)
 	boot := r.beginBoot(sandboxID)
 	started := running
@@ -239,6 +246,15 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 		r.endBoot(sandboxID, boot, err)
 		return err
 	}
+	if record.NewRoot {
+		r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
+		if inst, err = r.upgradeMachine(ctx, sandboxID, inst, &record); err != nil {
+			return fail(err)
+		}
+		// Its root is no snapshot's now, so nothing blames one.
+		firstFromSnapshot = firstFromSnapshot && record.Snapshot != ""
+	}
+	r.publishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
 	if !running {
 		if err := r.engine.Start(ctx, inst, engine.StartOptions{Timeout: machineStartTimeout}); err != nil {
 			// A start that fails part way may leave the machine up.
@@ -281,6 +297,11 @@ func (r *MachineSandboxRuntime) startLocked(ctx context.Context, sandboxID strin
 			return r.remakeFresh(ctx, sandboxID, record.Snapshot, err)
 		}
 		return err
+	}
+	// The agent is up, so its provisioning has wired what it wires this
+	// start.
+	if err := r.recordDataOnVolume(ctx, sandboxID, inst); err != nil {
+		slog.WarnContext(ctx, "read whether a sandbox machine keeps its data on its volume", "sandboxId", sandboxID, "error", err)
 	}
 	return nil
 }

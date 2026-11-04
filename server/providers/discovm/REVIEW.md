@@ -43,7 +43,11 @@
   `unreachable` reads as a fault, so a guest that never boots would be
   waited on forever. Nor an exec or file placement in the guest: its error
   is the guest's.
-- A base, or anything else the provider boots from a driver's account, is
-  named by the driver's ID for it, never by a name. Why: a name can be given to
-  another base after an operator chose it (a boxd snapshot's), and the next
-  machine would boot a disk somebody else wrote.
+- The provider's `base` is disco-vm's (`machine.Config.Base`), passed to the
+  driver as it is, never resolved, listed or matched here: what it names is
+  the driver's to say. Do not grow per-driver handling of it in this package.
+  Why: a lookup of the driver's bases here was a second owner of what disco-vm
+  owns, and went when disco-vm stopped listing bases (disco-vm ADR
+  26-11-03-606). Its description says it is trusted with the pool: a base a
+  name can be repointed under boots whatever it is repointed to, with the
+  pool's keys in it, so an operator names one only their account controls.
