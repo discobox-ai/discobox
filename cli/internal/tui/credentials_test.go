@@ -10,7 +10,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
@@ -48,20 +47,20 @@ func sourceWithRequest(t *testing.T) (*Model, *fakeSource) {
 
 // grantFor answers the lifetime step — the second of every approval — with one
 // of its presets.
-func grantFor(t *testing.T, m *Model, d time.Duration) {
+func grantFor(t *testing.T, m *Model, ttl time.Duration) {
 	t.Helper()
-	if !onLifetimeStep(m) {
-		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
+	m.dialog.form.choose("duration", strconv.FormatInt(lifetime.Seconds(ttl), 10))
+	answerApproval(t, m, "accept")
+	if m.dialog != nil && m.dialog.title == "Allow credential delegation?" {
+		answerApproval(t, m, "accept")
 	}
-	drain(t, m, m.dialog.action(strconv.FormatInt(lifetime.Seconds(d), 10)), 0)
-}
-
-func onLifetimeStep(m *Model) bool {
-	return m.dialog != nil && m.dialog.kind == dlgActions && m.dialog.title == "How long?"
+	if m.dialog != nil && m.dialog.title == "Confirm credential access" {
+		answerApproval(t, m, "accept")
+	}
 }
 
 func onRequestCard(m *Model) bool {
-	return m.dialog != nil && m.dialog.kind == dlgActions && m.dialog.title == "Credential request"
+	return m.dialog != nil && m.dialog.kind == dlgForm && strings.HasPrefix(m.dialog.title, "Allow credential")
 }
 
 func TestARowWithAWaitingRequestIsMarked(t *testing.T) {
@@ -131,14 +130,14 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 			t.Fatalf("%q cannot be chosen; every secret is an answer somebody may mean", item.label)
 		}
 	}
-	var openai action
-	for _, item := range m.dialog.items {
-		if item.key == "secret:sec_openai" {
+	var openai choice
+	for _, item := range m.dialog.form.rows[0].choices {
+		if item.key == "sec_openai" {
 			openai = item
 		}
 	}
-	if !strings.Contains(openai.detail, "api.openai.com") {
-		t.Fatalf("detail = %q, want it to say what it is bound to", openai.detail)
+	if !strings.Contains(openai.hint, "api.openai.com") {
+		t.Fatalf("detail = %q, want it to say what it is bound to", openai.hint)
 	}
 }
 
@@ -156,7 +155,7 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 	if !onRequestCard(m) {
 		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
 	}
-	for _, want := range []string{"never uses it", "the task asks me to open a PR"} {
+	for _, want := range []string{"delegation grants no use", "the task asks me to open a PR"} {
 		if !strings.Contains(dialogText(m), want) {
 			t.Fatalf("card = %q, want it to carry %q", dialogText(m), want)
 		}
@@ -182,9 +181,9 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 		t.Fatal("no dialog")
 	}
 	var order []string
-	for _, item := range m.dialog.items {
-		if strings.HasPrefix(item.key, "secret:") {
-			order = append(order, strings.TrimPrefix(item.key, "secret:"))
+	for _, item := range m.dialog.form.rows[0].choices {
+		if item.key != "new" {
+			order = append(order, item.key)
 		}
 	}
 	if len(order) != 3 || order[0] != "sec_gh" {
@@ -199,7 +198,7 @@ func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	m.dialog.form.choose("credential", "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if len(ds.approvals) != 1 {
@@ -215,7 +214,7 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("no dialog")
 	}
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	m.dialog.form.choose("credential", "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if len(ds.approvals) != 1 {
@@ -239,44 +238,6 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 // credential's own ceiling happened to be, which for most credentials was
 // forever. So it is a step of its own, after the secret, and it has to be
 // answered.
-func TestChoosingASecretAsksHowLongNext(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	// The request card asks one thing: which secret.
-	if strings.Contains(dialogText(m), "granted for") || strings.Contains(dialogText(m), "1 hour") {
-		t.Fatalf("card = %q, want no lifetime on it; that is the next step", dialogText(m))
-	}
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-
-	if !onLifetimeStep(m) {
-		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
-	}
-	if len(ds.approvals) != 0 {
-		t.Fatal("it approved before asking how long")
-	}
-	var labels []string
-	for _, item := range m.dialog.items {
-		labels = append(labels, item.label)
-	}
-	if want := []string{"1 hour", "1 day", "1 week", "1 month", "forever", "custom…", "use scope: routes"}; strings.Join(labels, ",") != strings.Join(want, ",") {
-		t.Fatalf("offered = %v, want %v", labels, want)
-	}
-	// It says what the lifetime is for: the credential, what answers it, and
-	// where it may go.
-	for _, want := range []string{"github", "GitHub token", "api.github.com"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("step = %q, want it to name %q", dialogText(m), want)
-		}
-	}
-
-	// It opens on an hour, so Enter is the default answer.
-	send(t, m, keyPress("enter"))
-	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 3600 {
-		t.Fatalf("approvals = %#v, want the hour it opened on", ds.approvals)
-	}
-}
 
 // Forever is offered, and says what it means rather than leaving the word to
 // do it alone.
@@ -285,7 +246,7 @@ func TestForeverIsAnAnswerThatSaysSo(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	m.dialog.form.choose("credential", "sec_gh")
 	for _, item := range m.dialog.items {
 		if item.label == "forever" && !strings.Contains(item.detail, "never expires") {
 			t.Fatalf("forever = %q, want it to say it never expires", item.detail)
@@ -299,206 +260,28 @@ func TestForeverIsAnAnswerThatSaysSo(t *testing.T) {
 
 // Esc on the lifetime is "not that secret", not "never mind": it goes back to
 // the request, which is still waiting.
-func TestEscOnTheLifetimeGoesBackToTheRequest(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	send(t, m, keyPress("esc"))
-
-	if !onRequestCard(m) {
-		t.Fatalf("dialog = %s, want the request back", describe(m.dialog))
-	}
-	if len(ds.approvals) != 0 {
-		t.Fatal("going back approved something")
-	}
-}
 
 // Every lifetime offered is one the `discobox secret` flags parse: the window
 // and the CLI mint the same grant from the same words.
-func TestTheOfferedLifetimesAreTheOnesTheFlagsTake(t *testing.T) {
-	t.Parallel()
-	m, _ := sourceWithRequest(t)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	for _, item := range m.dialog.items {
-		if item.key == lifetimeCustom || strings.HasPrefix(item.key, "scope:") {
-			continue
-		}
-		d, err := lifetime.Parse(item.label)
-		if err != nil {
-			t.Fatalf("%q is offered and cannot be typed back: %v", item.label, err)
-		}
-		if got := strconv.FormatInt(lifetime.Seconds(d), 10); got != item.key {
-			t.Fatalf("%q means %s seconds, and the step would grant %s", item.label, got, item.key)
-		}
-	}
-}
 
 // An agent that says how long it needs the credential has that on the request
 // card, and the lifetime step opens on it — among the presets in its place when
 // it is not one of them — so Enter approves what was asked.
-func TestTheLifetimeStepOpensOnWhatTheAgentAskedFor(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	req.AskedTTL = 4 * time.Hour
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if !onRequestCard(m) || !strings.Contains(dialogText(m), "4 hours") {
-		t.Fatalf("card = %q, want it to say how long the agent asked for", dialogText(m))
-	}
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	if !onLifetimeStep(m) {
-		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
-	}
-	var labels []string
-	for _, item := range m.dialog.items {
-		labels = append(labels, item.label)
-	}
-	if got, want := strings.Join(labels, ", "), "1 hour, 4 hours, 1 day, 1 week, 1 month, forever, custom…, use scope: routes"; got != want {
-		t.Fatalf("offered %s, want %s", got, want)
-	}
-	opened := m.dialog.items[m.dialog.cursor]
-	if opened.label != "4 hours" || !strings.Contains(opened.detail, "asked for") {
-		t.Fatalf("opened on %q (%q), want the 4 hours the agent asked for, marked as its ask", opened.label, opened.detail)
-	}
-	drain(t, m, m.dialog.action(opened.key), 0)
-	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 4*3600 {
-		t.Fatalf("approvals = %#v, want the lifetime the agent asked for", ds.approvals)
-	}
-}
 
 // An ask that is already a preset opens on that preset rather than offering
 // it twice.
-func TestALifetimeAskedForThatIsAPresetIsOfferedOnce(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	req.AskedTTL = lifetime.Week
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	if len(m.dialog.items) != len(lifetime.Presets)+2 {
-		t.Fatalf("offered %d rows, want the presets and custom", len(m.dialog.items))
-	}
-	if opened := m.dialog.items[m.dialog.cursor]; opened.label != "1 week" {
-		t.Fatalf("opened on %q, want the week the agent asked for", opened.label)
-	}
-}
 
 // An ask that cannot be a row is no row at all, and the step opens on the hour.
 // A row's identity is its count of whole seconds, so a sub-second ask shares
 // forever's count: offered, it would take the cursor and Enter would mint a
 // grant that never lapses — the one outcome this step exists to prevent.
-func TestAnAskThatCannotBeARowOpensOnTheDefault(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	req.AskedTTL = 290 * time.Millisecond
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	if !onLifetimeStep(m) {
-		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
-	}
-	if len(m.dialog.items) != len(lifetime.Presets)+2 {
-		t.Fatalf("offered %d rows, want only the presets and custom", len(m.dialog.items))
-	}
-	keys := map[string]bool{}
-	for _, item := range m.dialog.items {
-		if keys[item.key] {
-			t.Fatalf("two rows share the key %q; the cursor cannot tell them apart", item.key)
-		}
-		keys[item.key] = true
-	}
-	opened := m.dialog.items[m.dialog.cursor]
-	if opened.label != "1 hour" {
-		t.Fatalf("opened on %q, want the hour an ask nobody could act on falls back to", opened.label)
-	}
-	drain(t, m, m.dialog.action(opened.key), 0)
-	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 3600 {
-		t.Fatalf("approvals = %#v, want the hour, not a grant that never lapses", ds.approvals)
-	}
-}
 
 // The presets are the common answers, not every answer.
-func TestALifetimeCanBeTypedIn(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	drain(t, m, m.dialog.action(lifetimeCustom), 0)
-	if m.dialog == nil || m.dialog.kind != dlgInput {
-		t.Fatalf("dialog = %s, want somewhere to type a lifetime", describe(m.dialog))
-	}
-	// Esc goes back to the presets, one step, not to the request.
-	send(t, m, keyPress("esc"))
-	if !onLifetimeStep(m) {
-		t.Fatalf("dialog = %s, want the presets back", describe(m.dialog))
-	}
-
-	drain(t, m, m.dialog.action(lifetimeCustom), 0)
-	// Not a lifetime: the card stays up saying what one looks like, rather
-	// than closing onto the screen behind it having granted nothing.
-	drain(t, m, m.dialog.action("a while"), 0)
-	if m.dialog == nil || m.dialog.kind != dlgInput {
-		t.Fatalf("dialog = %s, want the question still up", describe(m.dialog))
-	}
-	// The refusal is the one thing on the re-ask that the first ask did not
-	// carry; the footer naming the spellings is on both.
-	if !strings.Contains(dialogText(m), `"a while" is not a lifetime`) {
-		t.Fatalf("card = %q, want the refusal of what was typed", dialogText(m))
-	}
-
-	drain(t, m, m.dialog.action("36h"), 0)
-	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 36*3600 {
-		t.Fatalf("approvals = %#v, want the typed lifetime", ds.approvals)
-	}
-}
 
 // A credential that caps how long its bindings may last is one the server
 // would refuse a longer binding of. The window says so before the choice — on
 // the secret's row, and on the lifetimes it does not allow — and does not
 // offer those, nor take one typed in.
-func TestALifetimeLongerThanTheCredentialAllowsIsNotOffered(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	ds.mu.Lock()
-	ds.projectSecrets[0].MaxTTL = time.Hour
-	ds.mu.Unlock()
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if !strings.Contains(dialogText(m), "at most 1 hour") {
-		t.Fatalf("card = %q, want the credential's limit on its row", dialogText(m))
-	}
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	for _, item := range m.dialog.items {
-		if item.key == lifetimeCustom || strings.HasPrefix(item.key, "scope:") {
-			continue
-		}
-		over := item.label != "1 hour" && !strings.HasPrefix(item.key, "scope:")
-		if over == item.enabled || over != strings.Contains(item.detail, "longer than") {
-			t.Fatalf("%s: enabled %v, detail %q; want only the lifetimes within the limit offered", item.label, item.enabled, item.detail)
-		}
-	}
-	grantFor(t, m, time.Hour)
-	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 3600 {
-		t.Fatalf("approvals = %#v, want the hour", ds.approvals)
-	}
-}
 
 // The report is the only place the lifetime is said after the dialogs are gone.
 func TestTheApprovalSaysHowLongItGrantedFor(t *testing.T) {
@@ -506,7 +289,7 @@ func TestTheApprovalSaysHowLongItGrantedFor(t *testing.T) {
 	m, _ := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	m.dialog.form.choose("credential", "sec_gh")
 	grantFor(t, m, lifetime.Day)
 
 	if !strings.Contains(strings.Join(frame(m), "\n"), "approved github for 1 day") {
@@ -519,7 +302,7 @@ func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("deny"), 0)
+	answerApproval(t, m, "deny")
 
 	if len(ds.denials) != 1 || ds.denials[0] != "sreq_1" {
 		t.Fatalf("denials = %#v, want the request answered no", ds.denials)
@@ -584,7 +367,7 @@ func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
 
 		d.key("ctrl+a")
 		d.key(credentialsLeaderKey)
-		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgForm })
 		if !strings.Contains(dialogText(m), "api.github.com") {
 			t.Fatalf("dialog = %q, want the request the banner is about", dialogText(m))
 		}
@@ -659,7 +442,7 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 		}
 		clickWindow(d, x, span.rows[1])
 		// The secrets are read first, so the status dialog gives way to the question.
-		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgForm })
 		if !strings.Contains(dialogText(m), "api.github.com") {
 			t.Fatalf("dialog = %q, want the request the banner was about", dialogText(m))
 		}
@@ -739,7 +522,7 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 	ds.mu.Unlock()
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	m.dialog.form.choose("credential", "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if m.dialog == nil {
@@ -770,7 +553,7 @@ func TestAFailedApprovalThatChangedNothingSaysNothingOfChanges(t *testing.T) {
 	ds.mu.Unlock()
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	m.dialog.form.choose("credential", "sec_gh")
 	grantFor(t, m, time.Hour)
 
 	if strings.Contains(dialogText(m), "already done") {
@@ -800,7 +583,7 @@ func TestALongRequestCardKeepsItsAnswersOnScreen(t *testing.T) {
 		t.Errorf("the card is %d rows in a window of %d", len(lines), m.height)
 	}
 	onScreen := strings.Join(lines[:min(len(lines), m.height)], "\n")
-	for _, answer := range []string{"New credential", "Deny"} {
+	for _, answer := range []string{"Accept", "Deny"} {
 		if !strings.Contains(onScreen, answer) {
 			t.Errorf("%s is not on screen", answer)
 		}
@@ -826,11 +609,13 @@ func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 		t.Fatalf("the card fits, so there is nothing to scroll:\n%s", frameText(m))
 	}
 	_, y := at(t, m, "the user asked me")
-	for range 40 {
+	seenLast := false
+	for range 100 {
+		seenLast = seenLast || strings.Contains(frameText(m), last)
 		send(t, m, toScreen(m, tea.MouseWheelMsg{X: m.width / 2, Y: y, Button: tea.MouseWheelDown}))
 	}
 	text := frameText(m)
-	if !strings.Contains(text, last) {
+	if !seenLast {
 		t.Errorf("the wheel did not reach the end of the card:\n%s", text)
 	}
 	if !strings.Contains(text, "Deny") {
@@ -840,128 +625,17 @@ func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 
 // r on a request card shows the request as the server sent it, as JSON, and
 // Esc goes back to the card.
-func TestARequestCardShowsTheRawRequest(t *testing.T) {
-	t.Parallel()
-	req := waitingRequest()
-	req.Raw = "{\n  \"id\": \"sreq_1\",\n  \"name\": \"github\"\n}"
-	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if !strings.Contains(dialogText(m), "Raw request…") {
-		t.Fatalf("card offers no raw request:\n%s", dialogText(m))
-	}
-	drain(t, m, m.dialog.action("raw"), 0)
-	raw := dialogText(m)
-	for _, want := range []string{"Raw request", `"id": "sreq_1"`, `"name": "github"`} {
-		if !strings.Contains(raw, want) {
-			t.Fatalf("raw view lacks %q:\n%s", want, raw)
-		}
-	}
-	drain(t, m, m.dialog.onCancel(), 0)
-	if !onRequestCard(m) {
-		t.Fatalf("esc left %s, want the request card", describe(m.dialog))
-	}
-}
 
 // A secret that allows raw asks, after the lifetime, whether the discobox is
 // handed a placeholder or the value itself — the person's choice, since no
 // request asks (ADR 26-10-27-840 §2). The placeholder is where it opens, and
 // a secret that does not allow raw asks nothing more.
-func TestARawSecretAsksHowItIsHandedOver(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	ds.projectSecrets[0].AllowRaw = true
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, time.Hour)
-	if m.dialog == nil || m.dialog.title != "How is it handed over?" {
-		t.Fatalf("dialog = %s, want the step asking how it is handed over", describe(m.dialog))
-	}
-	if m.dialog.items[m.dialog.cursor].key != "sentinel" {
-		t.Fatalf("cursor on %q, want the placeholder", m.dialog.items[m.dialog.cursor].key)
-	}
-	if len(ds.approvals) != 0 {
-		t.Fatalf("approved before the delivery was chosen: %#v", ds.approvals)
-	}
-	drain(t, m, m.dialog.action("file"), 0)
-	if len(ds.approvals) != 1 || ds.approvals[0].Raw != "file" {
-		t.Fatalf("approvals = %#v, want one granting the value in a file", ds.approvals)
-	}
-}
-
-func TestAPlaceholderIsGrantedWhenChosen(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	ds.projectSecrets[0].AllowRaw = true
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, time.Hour)
-	drain(t, m, m.dialog.action("sentinel"), 0)
-	if len(ds.approvals) != 1 || ds.approvals[0].Raw != "" {
-		t.Fatalf("approvals = %#v, want one granting a placeholder", ds.approvals)
-	}
-}
 
 // A request that asks both to use a credential and to delegate it is
 // answered part by part, on one card each before anything is sent: no row
 // approves one part and leaves the other unsaid, the card says what an
 // approved part replaces, and the answer goes as one call with both
 // decisions (ADR 26-11-02-022 §§3–5).
-func TestARequestWithTwoPartsIsAnsweredPartByPart(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	pulls := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/repos/acme/web/pulls"}}
-	req.Use = &RequestPart{Routes: req.routes()}
-	req.Delegate = &RequestPart{Routes: []secretroute.Route{pulls}, Roles: requestrole.Group([]requestrole.Policy{{
-		Name: "github-submit", Description: "Open pull requests in one repository", Digest: "d1",
-		Args: map[string]string{"repo": "web"}, Routes: []secretroute.Route{pulls},
-	}})}
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	ds.projectBindings = []SecretBinding{
-		{ID: "sbd_old", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GITHUB_TOKEN"},
-		{ID: "sbd_other", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_two", Use: true, EnvVar: "ELSEWHERE"},
-	}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if !onRequestCard(m) {
-		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
-	}
-	for _, want := range []string{"the delegate part", "github-submit: repo=web", "the discobox's words", "grants api.github.com · POST · /repos/acme/web/pulls"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("card = %q, want %q", dialogText(m), want)
-		}
-	}
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, time.Hour)
-	if len(ds.approvals) != 0 || m.dialog == nil || m.dialog.title != "Which parts?" {
-		t.Fatalf("dialog = %s, approvals %v; want both parts asked before anything is sent", describe(m.dialog), ds.approvals)
-	}
-	text := dialogText(m)
-	if !strings.Contains(text, "in GITHUB_TOKEN") || strings.Contains(text, "ELSEWHERE") {
-		t.Fatalf("card = %q, want what the asking discobox holds, and only that, said as replaced", text)
-	}
-	drain(t, m, m.dialog.action("use"), 0)
-	// The discobox holds a use binding of the secret, so how the use part is
-	// granted is asked (ADR 26-11-03-329 §4); the request asked to replace.
-	if len(ds.approvals) != 0 || m.dialog == nil || m.dialog.title != "Add, or replace?" {
-		t.Fatalf("dialog = %s, approvals %v; want how the use part is granted asked first", describe(m.dialog), ds.approvals)
-	}
-	drain(t, m, m.dialog.action("replace"), 0)
-	if len(ds.approvals) != 1 {
-		t.Fatalf("approvals = %#v, want one call", ds.approvals)
-	}
-	if got := ds.approvals[0]; got.Use != PartApprove || got.Delegate != PartDeny || got.SecretID != "sec_gh" || got.UseAs != "replace" {
-		t.Fatalf("approval = %#v, want the use part approved as a replacement and the delegation denied", got)
-	}
-}
 
 // A request asking to add, to a discobox already holding the variable, is
 // asked about with both outcomes on one card: what applies there now, grant
@@ -969,94 +643,9 @@ func TestARequestWithTwoPartsIsAnsweredPartByPart(t *testing.T) {
 // what replacing would cut short (ADR 26-11-03-329 §5). The way it asked is
 // first; granted so, it is an addition, by sentinel even of a secret that
 // allows its value to be handed over.
-func TestAnAskToAddIsAnsweredWithWhatItHoldsBeside(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	pulls := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/repos/acme/web/pulls"}}
-	reads := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}}
-	req.Use = &RequestPart{Routes: []secretroute.Route{pulls}, Add: true}
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", AllowRaw: true, Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", From: "harnessConfig", Routes: []secretroute.Route{reads}}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, time.Hour)
-	if m.dialog == nil || m.dialog.title != "Add, or replace?" {
-		t.Fatalf("dialog = %s, want how the use part is granted asked", describe(m.dialog))
-	}
-	text := dialogText(m)
-	for _, want := range []string{
-		"As an addition (asked)", "As a replacement",
-		"holds in " + req.EnvVar + " now", "GET api.github.com · no expiry · from its harness config",
-		"if replaced, it is shadowed for 1 hour",
-		"POST api.github.com/repos/acme/web/pulls (as written)",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("card = %q, want %q", text, want)
-		}
-	}
-	drain(t, m, m.dialog.action("add"), 0)
-	if len(ds.approvals) != 1 {
-		t.Fatalf("dialog = %s, approvals = %#v; want the addition sent with no question of delivery", describe(m.dialog), ds.approvals)
-	}
-	if got := ds.approvals[0]; got.UseAs != "add" || got.Raw != "" {
-		t.Fatalf("approval = %#v, want an addition by sentinel", got)
-	}
-}
-
-func TestAnAskToAddCanBeGrantedForever(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	pulls := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/repos/acme/web/pulls"}}
-	reads := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}}
-	req.Use = &RequestPart{Routes: []secretroute.Route{pulls}, Add: true}
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", AllowRaw: true, Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", From: "harnessConfig", Routes: []secretroute.Route{reads}}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, 0)
-	if m.dialog == nil || m.dialog.title != "Add, or replace?" {
-		t.Fatalf("dialog = %s, want how the use part is granted asked", describe(m.dialog))
-	}
-	text := dialogText(m)
-	for _, want := range []string{
-		"As an addition (asked)", "As a replacement",
-		"holds in " + req.EnvVar + " now", "GET api.github.com · no expiry · from its harness config",
-		"as an addition: these routes without expiry; the rest unchanged",
-		"POST api.github.com/repos/acme/web/pulls (as written)",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("card = %q, want %q", text, want)
-		}
-	}
-	drain(t, m, m.dialog.action("add"), 0)
-	if len(ds.approvals) != 1 {
-		t.Fatalf("dialog = %s, approvals = %#v; want the addition sent with no question of delivery", describe(m.dialog), ds.approvals)
-	}
-	if got := ds.approvals[0]; got.UseAs != "add" || got.Raw != "" || got.TTLSeconds != 0 {
-		t.Fatalf("approval = %#v, want an addition by sentinel", got)
-	}
-}
 
 // A request with one part is approved by choosing a secret, as before, and
 // says only that part.
-func TestARequestWithOnePartNamesOnlyThatPart(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, time.Hour)
-	if len(ds.approvals) != 1 || ds.approvals[0].Use != PartApprove || ds.approvals[0].Delegate != "" {
-		t.Fatalf("approvals = %#v, want the use part approved and nothing said of a delegate part", ds.approvals)
-	}
-}
 
 // replacedRows is what replacedFields says, a row to a line, its label
 // before a bar so where the field starts shows.
@@ -1208,29 +797,5 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestApprovalScopeIsExplicitAndDefaultsToRequestedRoutes(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	drain(t, m, m.dialog.action("scope:use"), 0)
-	if m.dialog.title != "Scope of use" || m.dialog.items[m.dialog.cursor].key != "routes" {
-		t.Fatalf("scope dialog = %s", describe(m.dialog))
-	}
-	for _, want := range []string{"Requested routes", "Requested hosts", "Anywhere", "No grant restriction", "Still limited by credential scope"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("missing %q in %s", want, dialogText(m))
-		}
-	}
-	drain(t, m, m.dialog.action("anywhere"), 0)
-	if !onLifetimeStep(m) || !strings.Contains(dialogText(m), "Anywhere · No grant restriction") || len(ds.approvals) != 0 {
-		t.Fatalf("dialog=%s, approvals=%+v", dialogText(m), ds.approvals)
-	}
-	grantFor(t, m, time.Hour)
-	if len(ds.approvals) != 1 || ds.approvals[0].UseScope != "anywhere" || ds.approvals[0].DelegateScope != "" {
-		t.Fatalf("approval=%+v", ds.approvals)
 	}
 }

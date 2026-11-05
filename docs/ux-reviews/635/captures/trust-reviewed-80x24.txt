@@ -1,0 +1,24 @@
+
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  Trust 172.19.0.2:18443?                                             │
+    │                                                                      │
+    │                                                                      │
+    │  ── What accepting changes ────────────────────────────────────────  │
+    │  This box may connect to 172.19.0.2:18443 using this trust for 1     │
+    │  hour.                                                               │
+    │  Trust always expires. Deny leaves this host refused; other hosts    │
+    │  and boxes are unaffected.                                           │
+    │    … PgUp/PgDn to scroll                                             │
+    │                                                                      │
+    │  ❯ Trust by  ‹ Trust by its key ›                                    │
+    │    Duration  ‹ 1 hour ›                                              │
+    │                                                                      │
+    │  breaks when the host rotates its key · 2883c8f2…f2f7b96d            │
+    │  [ Accept ]  [ Deny ]                                                │
+    │                                                                      │
+    │  Tab / arrows move · Enter selects · Esc leaves waiting              │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+
+

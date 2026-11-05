@@ -60,6 +60,7 @@ const (
 	hitFormRow
 	// hitFormChoice is one option of a picker opened as a list.
 	hitFormChoice
+	hitFormAction
 
 	// hitInput is a text field on a card: the dialog's own when idx is
 	// negative, and otherwise the form row's. A press in one puts the caret

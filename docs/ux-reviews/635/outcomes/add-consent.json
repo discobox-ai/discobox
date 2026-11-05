@@ -1,0 +1,77 @@
+{
+  "createdAt": "2026-11-05T23:26:20Z",
+  "decidedAt": "2026-11-05T23:26:55Z",
+  "decidedBy": "user_default",
+  "envName": "NEW_635",
+  "id": "sreq_bnvry8vjbpbwpjkb",
+  "justification": "Verify forever addition preserves the existing grant",
+  "name": "approval-635-new",
+  "projectId": "proj_0pynj1t7mw6pz876",
+  "requestedBy": "agent:sbx_7tcdygf3e5eqpg47",
+  "sandboxId": "sbx_7tcdygf3e5eqpg47",
+  "secretId": "sec_d1ejfxtt01twx7eg",
+  "status": "approved",
+  "updatedAt": "2026-11-05T23:26:55Z",
+  "use": {
+    "add": true,
+    "approvedAs": "add",
+    "approvedScope": "routes",
+    "grant": {
+      "secretId": "sec_d1ejfxtt01twx7eg",
+      "secretRevision": 1,
+      "delivery": "sentinel",
+      "mode": "add",
+      "routeLists": [
+        {
+          "sourceId": "sec_d1ejfxtt01twx7eg",
+          "source": "secret",
+          "routes": [
+            {
+              "hosts": [
+                "example.com"
+              ],
+              "methods": [
+                "GET"
+              ],
+              "paths": [
+                "/635"
+              ]
+            }
+          ]
+        },
+        {
+          "sourceId": "bind_0x2gyhgp7fsqepe6",
+          "source": "binding",
+          "routes": [
+            {
+              "hosts": [
+                "example.com"
+              ],
+              "methods": [
+                "GET"
+              ],
+              "paths": [
+                "/635"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "bindingId": "bind_0x2gyhgp7fsqepe6",
+    "outcome": "approved",
+    "routes": [
+      {
+        "hosts": [
+          "example.com"
+        ],
+        "methods": [
+          "GET"
+        ],
+        "paths": [
+          "/635"
+        ]
+      }
+    ]
+  }
+}

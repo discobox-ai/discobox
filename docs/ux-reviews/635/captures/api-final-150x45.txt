@@ -1,0 +1,45 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│  machine  cpu 0.0/64               │
+│ Discoboxes                 2 boxes │
+│ no source                  2 boxes │
+│  determined_ritchie   running  ↑ ! │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  └ relaxed_clarke     running      │      │                                                                                                  │
+│                                    │      │  Allow discobox API access?                                                                      │
+│                                    │      │                                                                                                  │
+│                                    │      │  Box                   sbx_7tcdygf3e5eqpg47                                                      │
+│                                    │      │  Server                                                                                          │
+│                                    │      │  Reason (box's words)  Verify re-request after access revocation                                 │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Project access ────────────────────────────────────────────────────────────────────────────  │
+│                                    │      │  Discovery             List boxes and watch project events                                       │
+│                                    │      │  Create                Launch boxes within its allowed egress, using project harness configs     │
+│                                    │      │                        and their credentials                                                     │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Authority over boxes it leads ─────────────────────────────────────────────────────────────  │
+│                                    │      │  Terminals/files       Run commands; read and write files; read output and type input            │
+│                                    │      │  Lifecycle             Start, stop, restart, repair, upgrade and archive                         │
+│                                    │      │  Source/settings       Deliver source and edit metadata                                          │
+│                                    │      │  Services/ports        Inspect and control services; reach HTTP ports                            │
+│                                    │      │  Credentials           Answer eligible requests within its delegation                            │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Limits ────────────────────────────────────────────────────────────────────────────────────  │
+│                                    │      │  Management covers direct children in this project. Wider-egress children are read-only.         │
+│                                    │      │  Enabling API access grants no credential. Credential and egress restrictions still apply.       │
+│                                    │      │  Access stays on until a person turns it off in Settings. Deny leaves access unchanged.          │
+│                                    │      │                                                                                                  │
+│                                    │      │                                                                                                  │
+│                                    │      │  Enter selects Accept                                                                            │
+│                                    │      │  [ Accept ]  [ Deny ]                                                                            │
+│                                    │      │                                                                                                  │
+│                                    │      │  Tab / arrows move · Enter selects · Esc leaves waiting                                          │
+│                                    │      │                                                                                                  │
+│                                    │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+├────────────────────────────────────┤
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

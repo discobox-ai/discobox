@@ -3952,6 +3952,124 @@ Examples:
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
+## discobox api-access
+
+~~~~text
+Request and answer discobox API access
+~~~~
+
+```text
+discobox api-access [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for api-access Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox api-access approve
+
+~~~~text
+Enable the requesting box's API access
+~~~~
+
+```text
+discobox api-access approve REQUEST_ID [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for approve Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox api-access deny
+
+~~~~text
+Deny an API access request
+~~~~
+
+```text
+discobox api-access deny REQUEST_ID [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for deny Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox api-access get
+
+~~~~text
+Show an API access request
+~~~~
+
+```text
+discobox api-access get REQUEST_ID [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for get Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox api-access ls
+
+~~~~text
+List API access requests and consent history
+~~~~
+
+```text
+discobox api-access ls [flags]
+```
+
+Aliases: list.
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for ls Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --quiet, -q | bool | false | Only display resource IDs Value when passed without an argument: true. |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
+## discobox api-access request
+
+~~~~text
+Ask a person to enable this box's API access and wait
+~~~~
+
+```text
+discobox api-access request [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
+| --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --help, -h | bool | false | help for request Value when passed without an argument: true. |
+| --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --reason | string |  | Why this box needs API access (shown to the person) |
+| --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
+| --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+
 ## discobox attach
 
 ~~~~text

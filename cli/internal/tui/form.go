@@ -74,8 +74,13 @@ type formRow struct {
 
 // form is the rows and where the cursor is in them.
 type form struct {
-	rows   []formRow
-	cursor int
+	// listRoom bounds an open picker when its dialog must retain decisions. Zero is unbounded.
+	listRoom     int
+	rowRoom      int
+	windowCursor int
+	choiceRow    int
+	rows         []formRow
+	cursor       int
 	// listing is a picker row opened as a list, every option on its own line
 	// under the row, with listAt the one highlighted. Enter opens it, so the
 	// options can be read together rather than met one at a time by ←→.
@@ -359,6 +364,8 @@ func (f *form) paste(msg tea.PasteMsg) tea.Cmd {
 // view draws the rows: the label column, the values beside it, and a rule
 // wherever the section changes.
 func (f *form) view(st *styles, z *zones, top, inner int) string {
+	markStart := z.count()
+	focusRow := 0
 	labelW := 0
 	for _, row := range f.rows {
 		labelW = max(labelW, lipgloss.Width(row.label))
@@ -366,48 +373,76 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 	labelW = min(labelW, max(inner/3, 8))
 	valueW := max(inner-labelW-4, 8)
 
-	var b strings.Builder
-	section := ""
-	for i, row := range f.rows {
-		if row.section != section {
-			section = row.section
-			if b.Len() > 0 {
-				b.WriteString("\n")
+	draw := func(hoverOffset int) string {
+		var b strings.Builder
+		section := ""
+		for i, row := range f.rows {
+			if row.section != section {
+				section = row.section
+				if b.Len() > 0 {
+					b.WriteString("\n")
+				}
+				if section != "" {
+					b.WriteString(sectionRule(st, section, inner))
+					b.WriteString("\n")
+				}
 			}
-			if section != "" {
-				b.WriteString(sectionRule(st, section, inner))
-				b.WriteString("\n")
+			// A row is answered where it is drawn: the sections mean a row's place
+			// on the card is not its place in the form, so the mark is made here,
+			// against the line the builder is actually on. See zones.go.
+			y := top + strings.Count(b.String(), "\n")
+			if i == f.cursor || (f.cursor < 0 && i == f.windowCursor) {
+				focusRow = y - top
 			}
-		}
-		// A row is answered where it is drawn: the sections mean a row's place
-		// on the card is not its place in the form, so the mark is made here,
-		// against the line the builder is actually on. See zones.go.
-		y := top + strings.Count(b.String(), "\n")
-		z.markRow(hit{kind: hitFormRow, idx: i}, y, inner+2*dialogPadLeft)
+			z.markRow(hit{kind: hitFormRow, idx: i}, y, inner+2*dialogPadLeft)
 
-		mark := "  "
-		label := st.dimText
-		switch {
-		case i == f.cursor:
-			mark, label = st.key.Render("❯")+" ", st.cursorName
-		case f.answerable(i) && z.hovering(0, y, inner+2*dialogPadLeft, 1):
-			// Under the pointer, and answerable: a row you can press says so.
-			label = st.hover
+			mark := "  "
+			label := st.dimText
+			switch {
+			case i == f.cursor:
+				mark, label = st.key.Render("❯")+" ", st.cursorName
+			case f.answerable(i) && z.hovering(0, y-hoverOffset, inner+2*dialogPadLeft, 1):
+				// Under the pointer, and answerable: a row you can press says so.
+				label = st.hover
+			}
+			// A row that is typed into takes a caret from a press, so the value
+			// column is marked as the field it is. A picker's ‹ › are the cursor
+			// row's own keys and the row mark under them is enough.
+			if f.answerable(i) && len(row.choices) == 0 {
+				z.mark(hit{kind: hitInput, idx: i}, dialogPadLeft+labelW+4, y, valueW, 1)
+			}
+			b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.label, labelW)), labelW)+"  "+
+				f.viewValue(st, i, valueW), inner))
+			b.WriteString("\n")
+			if f.listing && i == f.cursor {
+				b.WriteString(f.viewList(st, z, top+strings.Count(b.String(), "\n"), labelW, inner))
+				focusRow = f.choiceRow - top
+			}
 		}
-		// A row that is typed into takes a caret from a press, so the value
-		// column is marked as the field it is. A picker's ‹ › are the cursor
-		// row's own keys and the row mark under them is enough.
-		if f.answerable(i) && len(row.choices) == 0 {
-			z.mark(hit{kind: hitInput, idx: i}, dialogPadLeft+labelW+4, y, valueW, 1)
-		}
-		b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.label, labelW)), labelW)+"  "+
-			f.viewValue(st, i, valueW), inner))
-		b.WriteString("\n")
-		if f.listing && i == f.cursor {
-			b.WriteString(f.viewList(st, z, top+strings.Count(b.String(), "\n"), labelW, inner))
-		}
+		return b.String()
 	}
-	return b.String()
+	output := draw(0)
+	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	if f.rowRoom > 0 && len(lines) > f.rowRoom {
+		start := min(max(focusRow-f.rowRoom/2, 0), len(lines)-f.rowRoom)
+		if start > 0 {
+			// The first draw measured the viewport. Render hover against the same
+			// translated rectangle that the retained text and mouse regions use.
+			z.drop(markStart)
+			output = draw(start)
+			lines = strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+		}
+		marks := append([]zone(nil), z.marks[markStart:]...)
+		z.drop(markStart)
+		for _, mark := range marks {
+			if mark.y >= z.oy+top+start && mark.y < z.oy+top+start+f.rowRoom {
+				mark.y -= start
+				z.marks = append(z.marks, mark)
+			}
+		}
+		return strings.Join(lines[start:start+f.rowRoom], "\n") + "\n"
+	}
+	return output
 }
 
 // viewList draws an open picker's options under it, in the value column: each
@@ -417,7 +452,14 @@ func (f *form) viewList(st *styles, z *zones, top, labelW, inner int) string {
 	indent := strings.Repeat(" ", labelW+4)
 	width := max(inner-len(indent)-2, 8)
 	var b strings.Builder
-	for j, c := range row.choices {
+	start, end := 0, len(row.choices)
+	if f.listRoom > 0 && end > f.listRoom {
+		start = max(0, min(f.listAt-f.listRoom/2, end-f.listRoom))
+		end = start + f.listRoom
+	}
+	f.choiceRow = top + f.listAt - start
+	for j := start; j < end; j++ {
+		c := row.choices[j]
 		mark, style := "  ", st.name
 		if j == f.listAt {
 			mark, style = st.key.Render("›")+" ", st.cursorName
@@ -428,7 +470,7 @@ func (f *form) viewList(st *styles, z *zones, top, labelW, inner int) string {
 				text += st.dimText.Render(" · " + truncate(c.hint, room))
 			}
 		}
-		z.markRow(hit{kind: hitFormChoice, idx: j}, top+j, inner+2*dialogPadLeft)
+		z.markRow(hit{kind: hitFormChoice, idx: j}, top+j-start, inner+2*dialogPadLeft)
 		b.WriteString(padANSI(indent+mark+text, inner))
 		b.WriteString("\n")
 	}

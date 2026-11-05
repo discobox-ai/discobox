@@ -3,11 +3,9 @@ package tui
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/pkg/agentcreds"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -35,78 +33,68 @@ type trustAnswer struct {
 // the server's default first.
 func (m *Model) askAboutTrust(req CredentialRequest) tea.Cmd {
 	options := trustPinOptions(*req.Trust)
-	items := make([]action, 0, len(options)+1)
-	for _, option := range options {
-		items = append(items, action{
-			key:     "pin:" + option.pin.Kind + ":" + option.pin.SHA256,
-			label:   option.label,
-			detail:  option.detail,
-			enabled: true,
-		})
+	var pins []choice
+	for i, opt := range options {
+		pins = append(pins, choice{key: strconv.Itoa(i), label: opt.label, hint: opt.detail})
 	}
-	items = append(items, action{key: "deny", press: "d", label: "Deny", detail: "answer no; the agent is waiting on one", enabled: true})
-
-	d := actionsDialog("Trust request", "", items, func(result string) tea.Cmd {
-		if result == "deny" {
+	var durations []choice
+	offered := false
+	for _, ttl := range trustLifetimes {
+		if ttl == req.AskedTTL {
+			offered = true
+		}
+		durations = append(durations, choice{key: strconv.FormatInt(lifetime.Seconds(ttl), 10), label: lifetime.Label(ttl)})
+	}
+	if !offered && req.AskedTTL > 0 && req.AskedTTL <= lifetime.Month && req.AskedTTL%time.Second == 0 {
+		durations = append(durations, choice{key: strconv.FormatInt(lifetime.Seconds(req.AskedTTL), 10), label: lifetime.Label(req.AskedTTL)})
+	}
+	f := newForm(pickRow("pin", "Trust by", pins...), pickRow("duration", "Duration", durations...))
+	if req.AskedTTL > 0 {
+		f.choose("duration", strconv.FormatInt(lifetime.Seconds(req.AskedTTL), 10))
+	}
+	var d *dialog
+	d = approvalDialog("Trust "+req.Host+"?", f, func(*form) tea.Cmd {
+		if d.formActions[d.formActionAt].key == "deny" {
 			return m.denyCredential(req)
 		}
-		kind, sha, ok := strings.Cut(strings.TrimPrefix(result, "pin:"), ":")
-		if !ok {
+		index, err := strconv.Atoi(f.chosen("pin"))
+		if err != nil || index < 0 || index >= len(options) {
+			f.err = "Choose a certificate to trust."
 			return nil
 		}
-		return m.askTrustLifetime(trustAnswer{req: req, pin: TrustPin{Kind: kind, SHA256: sha}}, func() tea.Cmd { return m.askAboutTrust(req) })
+		seconds, _ := strconv.ParseInt(f.chosen("duration"), 10, 64)
+		return m.finishTrustApproval(trustAnswer{req: req, pin: options[index].pin, ttl: time.Duration(seconds) * time.Second})
 	})
-	d.sections = trustAskSections(req, m.secrets.now())
-	d.answerLabel = "trust " + req.Host + " by which certificate?"
-	d.footer = "the pin makes this certificate acceptable for " + req.Host + " alone, for this discobox"
-	d.keys = []hint{pressing("enter chooses the highlighted pin", "enter"), pressing("esc leaves it waiting", "esc")}
-	m.dialog = d
-	return nil
-}
-
-// askTrustLifetime is the second step: how long the trust lasts.
-func (m *Model) askTrustLifetime(a trustAnswer, back func() tea.Cmd) tea.Cmd {
-	asked := a.req.AskedTTL
-	items := make([]action, 0, len(trustLifetimes)+1)
-	offered := false
-	for _, d := range trustLifetimes {
-		detail := ""
-		if d == asked {
-			detail, offered = "what the agent asked for", true
+	d.refreshSections = func() {
+		index, _ := strconv.Atoi(f.chosen("pin"))
+		if index < 0 || index >= len(options) {
+			return
 		}
-		items = append(items, action{key: strconv.FormatInt(lifetime.Seconds(d), 10), label: lifetime.Label(d), detail: detail, enabled: true})
-	}
-	if asked > 0 && asked <= lifetime.Month && asked%time.Second == 0 && !offered {
-		items = append([]action{{key: strconv.FormatInt(lifetime.Seconds(asked), 10), label: lifetime.Label(asked), detail: "what the agent asked for", enabled: true}}, items...)
-	}
-	d := actionsDialog("How long?", "", items, func(result string) tea.Cmd {
-		seconds, err := strconv.ParseInt(result, 10, 64)
-		if err != nil {
-			return nil
+		pin := options[index].pin
+		var cert TrustCertificate
+		if req.Trust.SuppliedCA != nil && req.Trust.SuppliedCA.SHA256 == pin.SHA256 {
+			cert = *req.Trust.SuppliedCA
+		} else {
+			for _, c := range req.Trust.Chain {
+				if c.SHA256 == pin.SHA256 || c.SPKISHA256 == pin.SHA256 {
+					cert = c
+					break
+				}
+			}
 		}
-		next := a
-		next.ttl = time.Duration(seconds) * time.Second
-		return m.finishTrustApproval(next)
-	})
-	opens := strconv.FormatInt(lifetime.Seconds(agentcreds.DefaultGrantTTL), 10)
-	if asked > 0 && asked <= lifetime.Month {
-		opens = strconv.FormatInt(lifetime.Seconds(asked), 10)
-	}
-	for i, item := range items {
-		if item.key == opens {
-			d.cursor = i
-			break
+		meaning := "Trust certificates verified by this CA for this host and box only."
+		hash := "CA SHA-256"
+		if pin.Kind == TrustPinLeafSPKI {
+			meaning = "Trust this host's public key only. Key rotation requires new consent."
+			hash = "Key SHA-256"
+		}
+		d.sections = []section{
+			{fields: []field{{label: "Box", value: req.SandboxID, tone: toneAccent}, {label: "Server", value: req.Server}, {label: "Host", value: req.Host, tone: toneAccent}, {label: "Reason (box's words)", value: req.Justification}}},
+			{label: "Selected certificate", fields: []field{{label: "Subject", value: cert.Subject}, {label: "Issuer", value: cert.Issuer}, {label: "Valid", value: fmt.Sprintf("%s to %s", cert.NotBefore.Format(time.DateOnly), cert.NotAfter.Format(time.DateOnly))}, {label: hash, value: pin.SHA256, tone: toneAccent}}, lines: []line{{text: meaning}}},
+			{label: "What accepting changes", lines: []line{{text: "This box may connect to " + req.Host + " using this trust for " + f.chosenLabel("duration") + "."}, {text: "Trust always expires. Deny leaves this host refused; other hosts and boxes are unaffected."}}},
 		}
 	}
-	d.sections = []section{{label: "the trust", fields: []field{
-		{label: "host", value: a.req.Host, tone: toneAccent},
-		{label: "pinned by", value: pinLabel(a.pin)},
-		{label: "for", value: "this discobox alone"},
-	}}}
-	d.answerLabel = "how long may this discobox trust " + a.req.Host + "?"
-	d.footer = "when it lapses the host is refused again, and the agent asks again"
-	d.keys = []hint{pressing("enter chooses the highlighted lifetime", "enter"), pressing("esc goes back", "esc")}
-	d.onCancel = back
+	d.refreshSections()
 	m.dialog = d
 	return nil
 }
@@ -178,61 +166,6 @@ func trustPinOptions(ask TrustAsk) []trustPinOption {
 		}
 	}
 	return options
-}
-
-// trustAskSections is the trust request as a person needs to read it.
-func trustAskSections(req CredentialRequest, now time.Time) []section {
-	asked := "the agent in this discobox"
-	if when := ago(req.Created, now); when != "" {
-		asked = when + " by " + asked
-	}
-	fields := []field{
-		{label: "trust", value: req.Host, tone: toneAccent},
-		{label: "for", value: "this discobox alone"},
-	}
-	if req.AskedTTL > 0 {
-		fields = append(fields, field{label: "wanted for", value: lifetime.Label(req.AskedTTL)})
-	}
-	fields = append(fields, field{label: "asked", value: asked, tone: toneDim})
-	if req.Server != "" {
-		fields = append(fields, field{label: "on server", value: req.Server, tone: toneDim})
-	}
-	sections := []section{{label: "asked for", fields: fields}}
-
-	if req.Justification != "" {
-		sections = append(sections, section{label: "why", lines: []line{{text: req.Justification, tone: toneDim}}})
-	}
-
-	shown := section{label: "what the pool was shown"}
-	for i, cert := range req.Trust.Chain {
-		tone := toneDim
-		if i == 0 {
-			tone = toneAccent
-		}
-		shown.lines = append(shown.lines, line{text: cert.Subject, tone: tone, bullet: true})
-		detail := "issued by " + cert.Issuer
-		if cert.SelfSigned {
-			detail = "self-signed"
-		}
-		if len(cert.Names) > 0 {
-			detail += " · for " + strings.Join(cert.Names, ", ")
-		}
-		shown.lines = append(shown.lines,
-			line{text: "  " + detail, tone: toneDim},
-			line{text: fmt.Sprintf("  valid %s to %s · sha256 %s", cert.NotBefore.Format(time.DateOnly), cert.NotAfter.Format(time.DateOnly), shortFingerprint(cert.SHA256)), tone: toneDim})
-	}
-	if ca := req.Trust.SuppliedCA; ca != nil {
-		shown.lines = append(shown.lines, line{},
-			line{text: "the agent also supplied " + ca.Subject + ", which this chain verifies against", tone: toneDim})
-	}
-	return append(sections, shown)
-}
-
-func pinLabel(pin TrustPin) string {
-	if pin.Kind == TrustPinLeafSPKI {
-		return "its key · " + shortFingerprint(pin.SHA256)
-	}
-	return "its CA · " + shortFingerprint(pin.SHA256)
 }
 
 // shortFingerprint is a hash at a width a person compares by eye: the head and

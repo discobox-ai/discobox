@@ -225,6 +225,7 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			&model.SecretBindingEvent{},
 			&model.SecretRequest{},
 			&model.AdoptionRequest{},
+			&model.APIAccessRequest{},
 			&model.SecretRefreshRequest{},
 			&model.Secret{},
 			&model.SandboxProviderInstance{},

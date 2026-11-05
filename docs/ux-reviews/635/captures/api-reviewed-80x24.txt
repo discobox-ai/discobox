@@ -1,0 +1,24 @@
+
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  Allow discobox API access?                                          │
+    │                                                                      │
+    │                                                                      │
+    │  ── Limits ────────────────────────────────────────────────────────  │
+    │  Management covers direct children in this project. Wider-egress     │
+    │  children are read-only.                                             │
+    │  Enabling API access grants no credential. Credential and egress     │
+    │  restrictions still apply.                                           │
+    │  Access stays on until a person turns it off in Settings. Deny       │
+    │  leaves access unchanged.                                            │
+    │    … PgUp/PgDn to scroll                                             │
+    │                                                                      │
+    │                                                                      │
+    │  Enter selects Accept                                                │
+    │  [ Accept ]  [ Deny ]                                                │
+    │                                                                      │
+    │  Tab / arrows move · Enter selects · Esc leaves waiting              │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+
+

@@ -538,8 +538,13 @@ Do not invent flags for them. Name the command and say to check `--help`.
 
 The `discobox` CLI is installed in this box too, pointed at the discobox API
 through this box's pool (`DISCOBOX_SERVER`). It works only in a box a person
-has given API access; without it every call is refused, and only a person can
-turn it on — ask the user in chat (ADR 26-10-27-880 §9).
+has given API access. Without it, ask through the approval inbox:
+`discobox api-access request --reason "why this task needs API access"`.
+The command waits for a person's decision; Ctrl-C stops waiting but leaves the
+request pending. `discobox api-access ls/get` reads only this box's requests
+until access is enabled. Only a person can approve or deny; a parent cannot
+answer for it. Approval enables access until a person turns it off in Settings.
+Every other API call is refused while access is off.
 
 With it, you may create discoboxes with `discobox run`, cut from the SOURCE
 you give it — `.` for this box's own checkout; list and read them (`admin box

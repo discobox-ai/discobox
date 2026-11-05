@@ -356,3 +356,10 @@ original requested routes/policies stay intact. Old approved parts carry
 `SecretGrantReceipt` is a JSON decision snapshot on a handed-on binding and its
 approved request part: stable actor, effective routes and lifetime, with no
 credential material. Nullable additive columns preserve existing records.
+
+## API access consent
+
+`APIAccessRequest` retains requester, reason, status, deciding person and time
+after sandbox purge. It is a separate consent record; the current permission
+remains `Sandbox.DiscoboxAPI`. Adding its table through `AllModels` preserves
+existing sandboxes and their settings without a backfill.

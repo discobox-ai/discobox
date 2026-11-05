@@ -11,6 +11,161 @@ import (
 	"github.com/go-faster/jx"
 )
 
+// Ref: #/components/schemas/APIAccessRequest
+type APIAccessRequest struct {
+	ID                 string                 `json:"id"`
+	ProjectId          string                 `json:"projectId"`
+	RequesterSandboxId string                 `json:"requesterSandboxId"`
+	Justification      string                 `json:"justification"`
+	Status             APIAccessRequestStatus `json:"status"`
+	DecidedBy          OptString              `json:"decidedBy"`
+	DecidedAt          OptDateTime            `json:"decidedAt"`
+	CreatedAt          time.Time              `json:"createdAt"`
+	UpdatedAt          time.Time              `json:"updatedAt"`
+}
+
+// GetID returns the value of ID.
+func (s *APIAccessRequest) GetID() string {
+	return s.ID
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *APIAccessRequest) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRequesterSandboxId returns the value of RequesterSandboxId.
+func (s *APIAccessRequest) GetRequesterSandboxId() string {
+	return s.RequesterSandboxId
+}
+
+// GetJustification returns the value of Justification.
+func (s *APIAccessRequest) GetJustification() string {
+	return s.Justification
+}
+
+// GetStatus returns the value of Status.
+func (s *APIAccessRequest) GetStatus() APIAccessRequestStatus {
+	return s.Status
+}
+
+// GetDecidedBy returns the value of DecidedBy.
+func (s *APIAccessRequest) GetDecidedBy() OptString {
+	return s.DecidedBy
+}
+
+// GetDecidedAt returns the value of DecidedAt.
+func (s *APIAccessRequest) GetDecidedAt() OptDateTime {
+	return s.DecidedAt
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *APIAccessRequest) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *APIAccessRequest) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetID sets the value of ID.
+func (s *APIAccessRequest) SetID(val string) {
+	s.ID = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *APIAccessRequest) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRequesterSandboxId sets the value of RequesterSandboxId.
+func (s *APIAccessRequest) SetRequesterSandboxId(val string) {
+	s.RequesterSandboxId = val
+}
+
+// SetJustification sets the value of Justification.
+func (s *APIAccessRequest) SetJustification(val string) {
+	s.Justification = val
+}
+
+// SetStatus sets the value of Status.
+func (s *APIAccessRequest) SetStatus(val APIAccessRequestStatus) {
+	s.Status = val
+}
+
+// SetDecidedBy sets the value of DecidedBy.
+func (s *APIAccessRequest) SetDecidedBy(val OptString) {
+	s.DecidedBy = val
+}
+
+// SetDecidedAt sets the value of DecidedAt.
+func (s *APIAccessRequest) SetDecidedAt(val OptDateTime) {
+	s.DecidedAt = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *APIAccessRequest) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *APIAccessRequest) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*APIAccessRequest) approveAPIAccessRequestRes() {}
+func (*APIAccessRequest) createAPIAccessRequestRes()  {}
+func (*APIAccessRequest) getAPIAccessRequestRes()     {}
+
+type APIAccessRequestStatus string
+
+const (
+	APIAccessRequestStatusPending  APIAccessRequestStatus = "pending"
+	APIAccessRequestStatusApproved APIAccessRequestStatus = "approved"
+	APIAccessRequestStatusDenied   APIAccessRequestStatus = "denied"
+)
+
+// AllValues returns all APIAccessRequestStatus values.
+func (APIAccessRequestStatus) AllValues() []APIAccessRequestStatus {
+	return []APIAccessRequestStatus{
+		APIAccessRequestStatusPending,
+		APIAccessRequestStatusApproved,
+		APIAccessRequestStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s APIAccessRequestStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case APIAccessRequestStatusPending:
+		return []byte(s), nil
+	case APIAccessRequestStatusApproved:
+		return []byte(s), nil
+	case APIAccessRequestStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *APIAccessRequestStatus) UnmarshalText(data []byte) error {
+	switch APIAccessRequestStatus(data) {
+	case APIAccessRequestStatusPending:
+		*s = APIAccessRequestStatusPending
+		return nil
+	case APIAccessRequestStatusApproved:
+		*s = APIAccessRequestStatusApproved
+		return nil
+	case APIAccessRequestStatusDenied:
+		*s = APIAccessRequestStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/AdoptionRequest
 type AdoptionRequest struct {
 	CurrentParentSandboxId OptString `json:"currentParentSandboxId"`
@@ -233,17 +388,23 @@ func (s *AdoptionRequestStatus) UnmarshalText(data []byte) error {
 	}
 }
 
-// One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential, trust, refresh
-// or adoption is set, as kind says. A credential or trust request is answered on its own resource's
+// One item in a project's approval inbox. Exactly one of credential, trust, refresh, adoption or
+// apiAccess is set, as kind says. A credential or trust request is answered on its own resource's
 // approve and deny routes; a refresh by writing the secret's value, or dismissing it.
 // Ref: #/components/schemas/ApprovalRequest
 type ApprovalRequest struct {
-	Adoption   OptAdoptionRequest `json:"adoption"`
-	Credential OptSecretRequest   `json:"credential"`
+	ApiAccess  OptAPIAccessRequest `json:"apiAccess"`
+	Adoption   OptAdoptionRequest  `json:"adoption"`
+	Credential OptSecretRequest    `json:"credential"`
 	// Which kind of ask this is.
 	Kind    ApprovalRequestKind     `json:"kind"`
 	Refresh OptSecretRefreshRequest `json:"refresh"`
 	Trust   OptHostTrustRequest     `json:"trust"`
+}
+
+// GetApiAccess returns the value of ApiAccess.
+func (s *ApprovalRequest) GetApiAccess() OptAPIAccessRequest {
+	return s.ApiAccess
 }
 
 // GetAdoption returns the value of Adoption.
@@ -269,6 +430,11 @@ func (s *ApprovalRequest) GetRefresh() OptSecretRefreshRequest {
 // GetTrust returns the value of Trust.
 func (s *ApprovalRequest) GetTrust() OptHostTrustRequest {
 	return s.Trust
+}
+
+// SetApiAccess sets the value of ApiAccess.
+func (s *ApprovalRequest) SetApiAccess(val OptAPIAccessRequest) {
+	s.ApiAccess = val
 }
 
 // SetAdoption sets the value of Adoption.
@@ -304,6 +470,7 @@ const (
 	ApprovalRequestKindTrust      ApprovalRequestKind = "trust"
 	ApprovalRequestKindRefresh    ApprovalRequestKind = "refresh"
 	ApprovalRequestKindAdoption   ApprovalRequestKind = "adoption"
+	ApprovalRequestKindApiAccess  ApprovalRequestKind = "apiAccess"
 )
 
 // AllValues returns all ApprovalRequestKind values.
@@ -313,6 +480,7 @@ func (ApprovalRequestKind) AllValues() []ApprovalRequestKind {
 		ApprovalRequestKindTrust,
 		ApprovalRequestKindRefresh,
 		ApprovalRequestKindAdoption,
+		ApprovalRequestKindApiAccess,
 	}
 }
 
@@ -326,6 +494,8 @@ func (s ApprovalRequestKind) MarshalText() ([]byte, error) {
 	case ApprovalRequestKindRefresh:
 		return []byte(s), nil
 	case ApprovalRequestKindAdoption:
+		return []byte(s), nil
+	case ApprovalRequestKindApiAccess:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -346,6 +516,9 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 		return nil
 	case ApprovalRequestKindAdoption:
 		*s = ApprovalRequestKindAdoption
+		return nil
+	case ApprovalRequestKindApiAccess:
+		*s = ApprovalRequestKindApiAccess
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -876,6 +1049,21 @@ func (s *CompleteSandboxSourcePushBodySources) init() CompleteSandboxSourcePushB
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/CreateAPIAccessRequestBody
+type CreateAPIAccessRequestBody struct {
+	Justification string `json:"justification"`
+}
+
+// GetJustification returns the value of Justification.
+func (s *CreateAPIAccessRequestBody) GetJustification() string {
+	return s.Justification
+}
+
+// SetJustification sets the value of Justification.
+func (s *CreateAPIAccessRequestBody) SetJustification(val string) {
+	s.Justification = val
 }
 
 // Ref: #/components/schemas/CreateAdoptionRequestBody
@@ -2736,6 +2924,11 @@ type DeleteSecretNoContent struct{}
 
 func (*DeleteSecretNoContent) deleteSecretRes() {}
 
+// DenyAPIAccessRequestNoContent is response for DenyAPIAccessRequest operation.
+type DenyAPIAccessRequestNoContent struct{}
+
+func (*DenyAPIAccessRequestNoContent) denyAPIAccessRequestRes() {}
+
 // DenyAdoptionRequestNoContent is response for DenyAdoptionRequest operation.
 type DenyAdoptionRequestNoContent struct{}
 
@@ -2957,6 +3150,7 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 	s.Response = val
 }
 
+func (*ErrorModelStatusCode) approveAPIAccessRequestRes()               {}
 func (*ErrorModelStatusCode) approveAdoptionRequestRes()                {}
 func (*ErrorModelStatusCode) approveSecretRequestRes()                  {}
 func (*ErrorModelStatusCode) approveTrustRequestRes()                   {}
@@ -2965,6 +3159,7 @@ func (*ErrorModelStatusCode) authorizePoolSandboxStartRes()             {}
 func (*ErrorModelStatusCode) clearPoolCacheRes()                        {}
 func (*ErrorModelStatusCode) completePoolSandboxSuspendRes()            {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()             {}
+func (*ErrorModelStatusCode) createAPIAccessRequestRes()                {}
 func (*ErrorModelStatusCode) createAdoptionRequestRes()                 {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()                   {}
 func (*ErrorModelStatusCode) createPeerRes()                            {}
@@ -2991,11 +3186,13 @@ func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()         {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                         {}
 func (*ErrorModelStatusCode) deleteSecretBindingRes()                   {}
 func (*ErrorModelStatusCode) deleteSecretRes()                          {}
+func (*ErrorModelStatusCode) denyAPIAccessRequestRes()                  {}
 func (*ErrorModelStatusCode) denyAdoptionRequestRes()                   {}
 func (*ErrorModelStatusCode) denySecretRequestRes()                     {}
 func (*ErrorModelStatusCode) denyTrustRequestRes()                      {}
 func (*ErrorModelStatusCode) dismissSecretRefreshRequestRes()           {}
 func (*ErrorModelStatusCode) forceJobRes()                              {}
+func (*ErrorModelStatusCode) getAPIAccessRequestRes()                   {}
 func (*ErrorModelStatusCode) getAdoptionRequestRes()                    {}
 func (*ErrorModelStatusCode) getHTTPAuditRes()                          {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                      {}
@@ -3016,6 +3213,7 @@ func (*ErrorModelStatusCode) getSecretRes()                             {}
 func (*ErrorModelStatusCode) getServerInfoRes()                         {}
 func (*ErrorModelStatusCode) getServerPeerRes()                         {}
 func (*ErrorModelStatusCode) getTrustRequestRes()                       {}
+func (*ErrorModelStatusCode) listAPIAccessRequestsRes()                 {}
 func (*ErrorModelStatusCode) listAdoptionRequestsRes()                  {}
 func (*ErrorModelStatusCode) listApprovalRequestsRes()                  {}
 func (*ErrorModelStatusCode) listBoundSecretsRes()                      {}
@@ -7857,6 +8055,23 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/ListAPIAccessRequestsBody
+type ListAPIAccessRequestsBody struct {
+	ApiAccessRequests []APIAccessRequest `json:"apiAccessRequests"`
+}
+
+// GetApiAccessRequests returns the value of ApiAccessRequests.
+func (s *ListAPIAccessRequestsBody) GetApiAccessRequests() []APIAccessRequest {
+	return s.ApiAccessRequests
+}
+
+// SetApiAccessRequests sets the value of ApiAccessRequests.
+func (s *ListAPIAccessRequestsBody) SetApiAccessRequests(val []APIAccessRequest) {
+	s.ApiAccessRequests = val
+}
+
+func (*ListAPIAccessRequestsBody) listAPIAccessRequestsRes() {}
+
 // Ref: #/components/schemas/ListAdoptionRequestsBody
 type ListAdoptionRequestsBody struct {
 	AdoptionRequests []AdoptionRequest `json:"adoptionRequests"`
@@ -9321,6 +9536,52 @@ func (s *ObservedCertificate) SetSpkiSha256(val string) {
 // SetSubject sets the value of Subject.
 func (s *ObservedCertificate) SetSubject(val string) {
 	s.Subject = val
+}
+
+// NewOptAPIAccessRequest returns new OptAPIAccessRequest with value set to v.
+func NewOptAPIAccessRequest(v APIAccessRequest) OptAPIAccessRequest {
+	return OptAPIAccessRequest{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAPIAccessRequest is optional APIAccessRequest.
+type OptAPIAccessRequest struct {
+	Value APIAccessRequest
+	Set   bool
+}
+
+// IsSet returns true if OptAPIAccessRequest was set.
+func (o OptAPIAccessRequest) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAPIAccessRequest) Reset() {
+	var v APIAccessRequest
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAPIAccessRequest) SetTo(v APIAccessRequest) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAPIAccessRequest) Get() (v APIAccessRequest, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAPIAccessRequest) Or(d APIAccessRequest) APIAccessRequest {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
 }
 
 // NewOptAdoptionRequest returns new OptAdoptionRequest with value set to v.

@@ -1,0 +1,45 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│  machine  cpu 0.2/64               │
+│ Discoboxes                 2 boxes │
+│ no source                  2 boxes │
+│  determined_ritchie   running  ↑ ! │
+│  └ relaxed_clarke     running      │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                    │      │                                                                                                  │
+│                                    │      │  Let determined_ritchie (sbx_7tcdygf3e5eqpg47) lead relaxed_clarke (sbx_r1b56q644p508w70)?       │
+│                                    │      │                                                                                                  │
+│                                    │      │  Requesting box        determined_ritchie (sbx_7tcdygf3e5eqpg47)                                 │
+│                                    │      │  Target box            relaxed_clarke (sbx_r1b56q644p508w70)                                     │
+│                                    │      │  Current parent        none                                                                      │
+│                                    │      │  Reason (box's words)  Verify parent-replacement consent                                         │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Authority over this box ───────────────────────────────────────────────────────────────────  │
+│                                    │      │  Terminals/files       Run commands; read and write files; attach to and end execs; read and     │
+│                                    │      │                        type into terminals                                                       │
+│                                    │      │  Lifecycle             Start, stop, restart, repair, upgrade and archive                         │
+│                                    │      │  Settings/source       Change metadata and deliver its source                                    │
+│                                    │      │  Services/ports        Inspect and control services; reach ports                                 │
+│                                    │      │  Credentials           Answer requests within the parent's delegation                            │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── What accepting changes ────────────────────────────────────────────────────────────────────  │
+│                                    │      │  determined_ritchie (sbx_7tcdygf3e5eqpg47) replaces none as this box's parent.                   │
+│                                    │      │  The child's credentials stay its own. Commands and file reads may expose existing files and     │
+│                                    │      │  credential sentinels. Authority covers this child alone.                                        │
+│                                    │      │  Deny keeps the current parent. Esc leaves the request waiting.                                  │
+│                                    │      │                                                                                                  │
+│                                    │      │                                                                                                  │
+│                                    │      │  Enter selects Accept                                                                            │
+│                                    │      │  [ Accept ]  [ Deny ]                                                                            │
+│                                    │      │                                                                                                  │
+│                                    │      │  Tab / arrows move · Enter selects · Esc leaves waiting                                          │
+│                                    │      │                                                                                                  │
+│                                    │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                    │
+├────────────────────────────────────┤
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

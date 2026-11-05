@@ -359,3 +359,12 @@ Whole-row sandbox writes omit `upgrade_generation` and
 records its marker in the intent transaction; successful reconciliation and
 legacy success capture use a monotonic success writer. Additive zero defaults
 give old rows no wait entitlement until normal upgrade admission proves it.
+
+## API access requests
+
+`api_access.go` serializes filing and decisions under the project lock, with
+request and sandbox rows locked before writes. Filing returns the existing
+pending request unchanged. Approval rechecks sandbox existence and lifecycle,
+then sets `discobox_api` and records the person's decision in one transaction.
+Denial changes no setting and remains possible after purge. Records are retained
+with consent history and deleted only with their project.

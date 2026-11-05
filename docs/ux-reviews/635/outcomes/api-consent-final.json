@@ -1,0 +1,26 @@
+{
+  "apiAccessRequests": [
+    {
+      "id": "apireq_ev8fmyr1fqxtcfcz",
+      "projectId": "proj_0pynj1t7mw6pz876",
+      "requesterSandboxId": "sbx_7tcdygf3e5eqpg47",
+      "justification": "Verify re-request after access revocation",
+      "status": "denied",
+      "decidedBy": "user_default",
+      "decidedAt": "2026-11-05T23:26:00Z",
+      "createdAt": "2026-11-05T23:25:02Z",
+      "updatedAt": "2026-11-05T23:26:00Z"
+    },
+    {
+      "id": "apireq_81t0v3fj0srz2238",
+      "projectId": "proj_0pynj1t7mw6pz876",
+      "requesterSandboxId": "sbx_7tcdygf3e5eqpg47",
+      "justification": "Coordinate workers for approval verification",
+      "status": "approved",
+      "decidedBy": "user_default",
+      "decidedAt": "2026-11-05T23:10:37Z",
+      "createdAt": "2026-11-05T23:10:01Z",
+      "updatedAt": "2026-11-05T23:10:37Z"
+    }
+  ]
+}

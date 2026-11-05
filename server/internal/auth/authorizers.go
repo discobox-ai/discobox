@@ -123,6 +123,7 @@ const (
 	ownedRequest
 	// ownAdoption is a request filed by the caller itself.
 	ownAdoption
+	ownAPIAccess
 	// withinCaller: the path names a discobox the caller leads, as
 	// childDiscobox does, that reaches nothing the caller cannot
 	// (ADR 26-10-01-032 §4). It marks every route that writes to a discobox or
@@ -234,6 +235,9 @@ var sandboxRole = []sandboxRoleRoute{
 	// copies into each create as a person's client does (ADR 26-10-14-894
 	// §1). Adding and removing them are a member's.
 	{method: http.MethodGet, path: "skills-sources"},
+	{method: http.MethodPost, path: "api-access-requests"},
+	{method: http.MethodGet, path: "api-access-requests"},
+	{method: http.MethodGet, path: "api-access-requests/*", names: ownAPIAccess},
 	{method: http.MethodPost, path: "adoption-requests"},
 	{method: http.MethodGet, path: "adoption-requests"},
 	{method: http.MethodGet, path: "adoption-requests/*", names: ownAdoption},
@@ -283,6 +287,15 @@ func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 				return false, denied
 			}
 			return true, nil
+		case ownAPIAccess:
+			req, err := a.Store.GetAPIAccessRequest(r.Context(), principal.ProjectID, segment[0])
+			if err != nil {
+				return false, err
+			}
+			if req.RequesterSandboxID != principal.SandboxID {
+				return false, denied
+			}
+			return true, nil
 		case ownedRequest:
 			return a.authorizeOwnedRequest(r, principal, segment[0])
 		}
@@ -302,7 +315,9 @@ func (a SandboxRoleAuthorizer) authorizeDiscoboxAPI(r *http.Request, principal P
 		}
 		return false, authorizationError{status: http.StatusInternalServerError, err: err}
 	}
-	if !caller.DiscoboxAPI || caller.DesiredState == model.DesiredStateDeleted {
+	_, rest, _ := projectRoute(r.URL.Path)
+	requestAccess := (rest == "api-access-requests" && (r.Method == http.MethodPost || r.Method == http.MethodGet)) || (matchRolePath("api-access-requests/*", rest) && r.Method == http.MethodGet)
+	if (!caller.DiscoboxAPI && !requestAccess) || caller.DesiredState == model.DesiredStateDeleted {
 		return false, authorizationError{status: http.StatusForbidden,
 			err: errors.New("this discobox may not call the discobox API; a person allows it by setting discoboxApi on it")}
 	}

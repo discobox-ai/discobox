@@ -1,0 +1,45 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│  machine  cpu 0.0/64               │
+│ Discoboxes                 2 boxes │
+│ no source                  2 boxes │
+│  determined_ritchie   running  ↑ ! │
+│  └ relaxed_clarke     running      │
+│                                    │
+│                                    │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                    │      │                                                                                                  │
+│                                    │      │  Let determined_ritchie (sbx_7tcdygf3e5eqpg47) lead relaxed_clarke (sbx_r1b56q644p508w70)?       │
+│                                    │      │                                                                                                  │
+│                                    │      │  Requesting box        determined_ritchie (sbx_7tcdygf3e5eqpg47)                                 │
+│                                    │      │  Target box            relaxed_clarke (sbx_r1b56q644p508w70)                                     │
+│                                    │      │  Current parent        none                                                                      │
+│                                    │      │  Reason (box's words)  Verify read-only authority for a wider-egress child                       │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Read-only authority ───────────────────────────────────────────────────────────────────────  │
+│                                    │      │  The target has wider egress. The requesting box may only read it.                               │
+│                                    │      │  All writes and sends into it will be refused.                                                   │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── What accepting changes ────────────────────────────────────────────────────────────────────  │
+│                                    │      │  determined_ritchie (sbx_7tcdygf3e5eqpg47) replaces none as this box's parent.                   │
+│                                    │      │  The child's credentials stay its own. Commands and file reads may expose existing files and     │
+│                                    │      │  credential sentinels. Authority covers this child alone.                                        │
+│                                    │      │  Deny keeps the current parent. Esc leaves the request waiting.                                  │
+│                                    │      │                                                                                                  │
+│                                    │      │                                                                                                  │
+│                                    │      │  Enter selects Accept                                                                            │
+│                                    │      │  [ Accept ]  [ Deny ]                                                                            │
+│                                    │      │                                                                                                  │
+│                                    │      │  Tab / arrows move · Enter selects · Esc leaves waiting                                          │
+│                                    │      │                                                                                                  │
+│                                    │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                    │
+│                                    │
+│                                    │
+├────────────────────────────────────┤
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

@@ -14,6 +14,10 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
 	AcknowledgeSandboxHarnessConfig(ctx context.Context, req *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (AcknowledgeSandboxHarnessConfigRes, error)
+	// ApproveAPIAccessRequest implements approve-api-access-request operation.
+	//
+	// POST /projects/{projectId}/api-access-requests/{requestId}/approve
+	ApproveAPIAccessRequest(ctx context.Context, params ApproveAPIAccessRequestParams) (ApproveAPIAccessRequestRes, error)
 	// ApproveAdoptionRequest implements approve-adoption-request operation.
 	//
 	// POST /projects/{projectId}/adoption-requests/{requestId}/approve
@@ -119,6 +123,10 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
 	CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (CopySandboxFileRes, error)
+	// CreateAPIAccessRequest implements create-api-access-request operation.
+	//
+	// POST /projects/{projectId}/api-access-requests
+	CreateAPIAccessRequest(ctx context.Context, req *CreateAPIAccessRequestBody, params CreateAPIAccessRequestParams) (CreateAPIAccessRequestRes, error)
 	// CreateAdoptionRequest implements create-adoption-request operation.
 	//
 	// POST /projects/{projectId}/adoption-requests
@@ -287,6 +295,10 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/secret-bindings/{bindingId}
 	DeleteSecretBinding(ctx context.Context, params DeleteSecretBindingParams) (DeleteSecretBindingRes, error)
+	// DenyAPIAccessRequest implements deny-api-access-request operation.
+	//
+	// POST /projects/{projectId}/api-access-requests/{requestId}/deny
+	DenyAPIAccessRequest(ctx context.Context, params DenyAPIAccessRequestParams) (DenyAPIAccessRequestRes, error)
 	// DenyAdoptionRequest implements deny-adoption-request operation.
 	//
 	// POST /projects/{projectId}/adoption-requests/{requestId}/deny
@@ -329,6 +341,10 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/jobs/{jobId}/force
 	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
+	// GetAPIAccessRequest implements get-api-access-request operation.
+	//
+	// GET /projects/{projectId}/api-access-requests/{requestId}
+	GetAPIAccessRequest(ctx context.Context, params GetAPIAccessRequestParams) (GetAPIAccessRequestRes, error)
 	// GetAdoptionRequest implements get-adoption-request operation.
 	//
 	// GET /projects/{projectId}/adoption-requests/{requestId}
@@ -538,6 +554,10 @@ type Handler interface {
 	//
 	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
 	ImportSandboxFiles(ctx context.Context, req ImportSandboxFilesReq, params ImportSandboxFilesParams) (ImportSandboxFilesRes, error)
+	// ListAPIAccessRequests implements list-api-access-requests operation.
+	//
+	// GET /projects/{projectId}/api-access-requests
+	ListAPIAccessRequests(ctx context.Context, params ListAPIAccessRequestsParams) (ListAPIAccessRequestsRes, error)
 	// ListAdoptionRequests implements list-adoption-requests operation.
 	//
 	// GET /projects/{projectId}/adoption-requests

@@ -1,0 +1,14 @@
+FIELD     VALUE
+ID        treq_c2vm5zjr31ar2myk
+HOST      172.19.0.2:18443
+DISCOBOX  sbx_7tcdygf3e5eqpg47
+STATUS    pending
+WHY       Verify a local self-signed host approval
+
+Chain the pool was shown, leaf first:
+  [0] CN=approval-635-local
+      issuer   CN=approval-635-local
+      names    127.0.0.1
+      valid    2026-11-05 to 2026-11-06
+      pin      ca:3995fb24d7b38c93711b3e5b855b36c5b80556606f4cb0b7e46c4135b2dbe053
+      pin      leaf-spki:2883c8f2e582fe7b1f2de91656aa35a9ecb27c559a00591a8266138af2f7b96d

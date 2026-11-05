@@ -105,6 +105,9 @@ func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialReque
 	}
 	out := make([]tui.CredentialRequest, 0, len(body.GetApprovalRequests()))
 	for _, item := range body.GetApprovalRequests() {
+		if req, ok := item.ApiAccess.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindApiAccess {
+			out = append(out, tui.CredentialRequest{ID: req.ID, SandboxID: req.RequesterSandboxId, Created: req.CreatedAt, Justification: terminalSafe(req.Justification), APIAccess: true})
+		}
 		if adoption, ok := item.Adoption.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindAdoption {
 			out = append(out, tui.CredentialRequest{ID: adoption.ID, SandboxID: adoption.RequesterSandboxId, Created: adoption.CreatedAt, Justification: terminalSafe(adoption.Justification), Adoption: &tui.AdoptionAsk{
 				ChildID: terminalSafe(adoption.ChildSandboxId), ChildName: terminalSafe(adoption.ChildName.Or("")), RequesterID: terminalSafe(adoption.RequesterSandboxId), RequesterName: terminalSafe(adoption.RequesterName.Or("")), CurrentParentID: terminalSafe(adoption.CurrentParentSandboxId.Or("none")), ReadOnly: adoption.ReadOnly.Or(false),
@@ -954,4 +957,31 @@ func (d *apiDataSource) BindingHistory(ctx context.Context, server, secretID str
 		out = append(out, decision)
 	}
 	return out, nil
+}
+
+func (d *apiDataSource) DecideAPIAccessRequest(ctx context.Context, server, requestID string, approve bool) error {
+	window := d
+	source, err := d.on(ctx, server)
+	if err != nil {
+		return err
+	}
+	if approve {
+		res, err := source.client.ApproveAPIAccessRequest(ctx, apiclientgen.ApproveAPIAccessRequestParams{ProjectId: source.projectID, RequestId: requestID})
+		if err != nil {
+			return err
+		}
+		if _, err := expectResponse[apimodel.APIAccessRequest](res); err != nil {
+			return err
+		}
+	} else {
+		res, err := source.client.DenyAPIAccessRequest(ctx, apiclientgen.DenyAPIAccessRequestParams{ProjectId: source.projectID, RequestId: requestID})
+		if err != nil {
+			return err
+		}
+		if err := expectNoContent[apiclientgen.DenyAPIAccessRequestNoContent](res); err != nil {
+			return err
+		}
+	}
+	window.answered(server, requestID)
+	return nil
 }

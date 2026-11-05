@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
@@ -22,7 +20,7 @@ func onNewCredentialForm(m *Model) bool {
 func toNewCredential(t *testing.T, m *Model, ttl time.Duration) {
 	t.Helper()
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("new"), 0)
+	m.dialog.form.choose("credential", "new")
 	grantFor(t, m, ttl)
 	if !onNewCredentialForm(m) {
 		t.Fatalf("dialog = %s, want the new-secret form", describe(m.dialog))
@@ -99,10 +97,10 @@ func TestEscFromTheNewCredentialFormLeavesTheRequestWaiting(t *testing.T) {
 		t.Fatalf("dialog = %s, created %d, approved %d; want the request back, waiting", describe(m.dialog), len(ds.createdSecrets), len(ds.approvals))
 	}
 	// And the lifetime's Esc is the request too.
-	drain(t, m, m.dialog.action("new"), 0)
+	m.dialog.form.choose("credential", "new")
 	send(t, m, keyPress("esc"))
-	if !onRequestCard(m) {
-		t.Fatalf("dialog = %s, want the request back", describe(m.dialog))
+	if m.dialog != nil || len(ds.approvals) != 0 {
+		t.Fatalf("dialog = %s, want the request left waiting", describe(m.dialog))
 	}
 }
 
@@ -133,32 +131,31 @@ func TestTheNewCredentialFormSaysEscAtNinetyColumns(t *testing.T) {
 }
 
 func TestANewCredentialApprovalCanChooseWiderScope(t *testing.T) {
-	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("new"), 0)
-	drain(t, m, m.dialog.action("scope:use"), 0)
-	drain(t, m, m.dialog.action("anywhere"), 0)
+	m.dialog.form.choose("credential", "new")
+	m.dialog.form.choose("scope", "anywhere")
 	grantFor(t, m, time.Hour)
-	if !onNewCredentialForm(m) {
-		t.Fatalf("dialog=%s", describe(m.dialog))
-	}
-	m.dialog.form.set("token", "dummy-629")
+	m.dialog.form.set("token", "dummy-token")
 	send(t, m, keyPress("enter"))
 	if len(ds.approvals) != 1 || ds.approvals[0].UseScope != "anywhere" {
-		t.Fatalf("approvals=%+v", ds.approvals)
+		t.Fatalf("approvals=%#v", ds.approvals)
 	}
 }
 
 func TestWiderScopeShowsIndependentCredentialConstraints(t *testing.T) {
-	t.Parallel()
 	m, _ := sourceWithRequest(t)
 	a := newApproval(waitingRequest(), nil)
-	a.secret = Secret{Name: "test", Routes: []secretroute.Route{{Hosts: []string{"*"}}}, RouteConstraints: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Paths: []string{"/one"}}}, {{Hosts: []string{"api.github.com"}, Paths: []string{"/blocked"}, Blocked: true}}}}
-	m.askScope(a, false, func() tea.Cmd { return nil })
-	for _, want := range []string{"constraint 1", "constraint 2", "api.github.com/one", "api.github.com/blocked=blocked"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("missing %q in %s", want, dialogText(m))
+	a.secrets = []Secret{{ID: "test", Name: "test", Routes: []secretroute.Route{{Hosts: []string{"*"}}}, RouteConstraints: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Paths: []string{"/one"}}}, {{Hosts: []string{"api.github.com"}, Paths: []string{"/blocked"}, Blocked: true}}}}}
+	m.approvalPart(a, false)
+	var text strings.Builder
+	for range 20 {
+		text.WriteString(dialogText(m))
+		m.dialog.update(keyPress("pgdown"))
+	}
+	for _, want := range []string{"Constraint 1", "Constraint 2", "api.github.com/one", "api.github.com/blocked=blocked"} {
+		if !strings.Contains(text.String(), want) {
+			t.Fatalf("missing %q", want)
 		}
 	}
 }

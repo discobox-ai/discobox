@@ -15,24 +15,15 @@ func (m *Model) askAboutAdoption(req CredentialRequest) tea.Cmd {
 	if ask.RequesterName != "" {
 		requester = fmt.Sprintf("%s (%s)", ask.RequesterName, ask.RequesterID)
 	}
-	authority := line{text: "Run commands and login shells; read and write files; attach to and end existing execs; read and type into terminals; start, stop, repair, upgrade and archive the child; change its meta; deliver its source; reach its ports; answer credential requests within what the parent may delegate."}
+	var d *dialog
+	d = approvalDialog("Let "+requester+" lead "+child+"?", newForm(), func(*form) tea.Cmd { return m.answerAdoption(req, d.formActions[d.formActionAt].key == "accept") })
+	d.sections = []section{{fields: []field{{label: "Requesting box", value: requester, tone: toneAccent}, {label: "Target box", value: child, tone: toneAccent}, {label: "Current parent", value: ask.CurrentParentID}, {label: "Reason (box's words)", value: req.Justification}}}}
 	if ask.ReadOnly {
-		authority = line{text: "The child has wider egress. Every write and send into it will be refused; this parent may only read it.", tone: toneAlert}
+		d.sections = append(d.sections, section{label: "Read-only authority", lines: []line{{text: "The target has wider egress. The requesting box may only read it.", tone: toneAlert}, {text: "All writes and sends into it will be refused."}}})
+	} else {
+		d.sections = append(d.sections, section{label: "Authority over this box", fields: []field{{label: "Terminals/files", value: "Run commands; read and write files; attach to and end execs; read and type into terminals"}, {label: "Lifecycle", value: "Start, stop, restart, repair, upgrade and archive"}, {label: "Settings/source", value: "Change metadata and deliver its source"}, {label: "Services/ports", value: "Inspect and control services; reach ports"}, {label: "Credentials", value: "Answer requests within the parent's delegation"}}})
 	}
-	d := actionsDialog("Adoption request", "", []action{
-		{key: "approve", label: "Approve adoption", enabled: true},
-		{key: "deny", press: "d", label: "Deny", enabled: true},
-	}, func(result string) tea.Cmd { return m.answerAdoption(req, result == "approve") })
-	d.sections = []section{{label: "who leads this discobox", fields: []field{
-		{label: "child", value: child, tone: toneAccent},
-		{label: "requester", value: requester},
-		{label: "current parent", value: ask.CurrentParentID},
-		{label: "reason (the discobox's words)", value: req.Justification},
-	}}, {label: "approval allows the parent to", lines: []line{
-		authority,
-		{text: "The child's credentials stay its own. Commands and file reads may expose its existing files and credential sentinels. Authority covers this child alone."},
-	}}}
-	d.footer = "Approval replaces the current parent. Esc leaves the request waiting."
+	d.sections = append(d.sections, section{label: "What accepting changes", lines: []line{{text: requester + " replaces " + ask.CurrentParentID + " as this box's parent.", tone: toneAccent}, {text: "The child's credentials stay its own. Commands and file reads may expose existing files and credential sentinels. Authority covers this child alone."}, {text: "Deny keeps the current parent. Esc leaves the request waiting."}}})
 	m.dialog = d
 	return nil
 }

@@ -147,6 +147,17 @@ func (h *Handler) ListApprovalRequests(ctx context.Context, params serverapi.Lis
 		}
 		items = append(items, dated{at: req.CreatedAt, item: apimodel.ApprovalRequest{Kind: serverapi.ApprovalRequestKindAdoption, Adoption: serverapi.NewOptAdoptionRequest(adoption)}})
 	}
+	apiRequests, err := h.services.Sandboxes.ListAPIAccessRequests(ctx, params.ProjectId, status)
+	if err != nil {
+		return apiError(err), nil
+	}
+	for _, req := range apiRequests {
+		apiAccess, err := services.Convert[apimodel.APIAccessRequest](req)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, dated{at: req.CreatedAt, item: apimodel.ApprovalRequest{Kind: serverapi.ApprovalRequestKindApiAccess, ApiAccess: serverapi.NewOptAPIAccessRequest(apiAccess)}})
+	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].at.After(items[j].at) })
 	body := &apimodel.ListApprovalRequestsBody{ApprovalRequests: make([]apimodel.ApprovalRequest, 0, len(items))}
 	for _, item := range items {

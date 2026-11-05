@@ -1,0 +1,45 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  machine  cpu 0.0/64               │      │                                                                                                  │
+│ Discoboxes                 2 boxes │      │  Allow credential use?                                                                   1 of 1  │
+│ no source                  2 boxes │      │                                                                                                  │
+│  determined_ritchie   running  ↑ ! │      │  Box                   sbx_7tcdygf3e5eqpg47                                                      │
+│  └ relaxed_clarke     running      │      │  Reason (box's words)  Verify bounded route-table rendering without granting access              │
+│                                    │      │  Server                                                                                          │
+│                                    │      │  Variable              LARGE_635                                                                 │
+│                                    │      │                                                                                                  │
+│                                    │      │  This box may use the credential.                                                                │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Grant restriction · Requested routes ──────────────────────────────────────────────────────  │
+│                                    │      │  Large route set · compact notation preserves every host, path and protocol restriction.         │
+│                                    │      │  GET host0.example.com,host1.example.com,host10.example.com,host11.example.com,host12.example    │
+│                                    │      │  .com,host13.example.com,host14.example.com,host15.example.com,host16.example.com,host17.exam    │
+│                                    │      │  ple.com,host18.example.com,host19.example.com,host2.example.com,host20.example.com,host21.ex    │
+│                                    │      │  ample.com,host22.example.com,host23.example.com,host24.example.com,host25.example.com,host26    │
+│                                    │      │  .example.com,host27.example.com,host28.example.com,host29.example.com,host3.example.com,host    │
+│                                    │      │  30.example.com,host31.example.com,host32.example.com,host33.example.com,host34.example.com,h    │
+│                                    │      │  ost35.example.com,host36.example.com,host37.example.com,host38.example.com,host39.example.co    │
+│                                    │      │  m,host4.example.com,host40.example.com,host41.example.com,host42.example.com,host43.example.    │
+│                                    │      │  com,host44.example.com,host45.example.com,host46.example.com,host47.example.com,host48.examp    │
+│                                    │      │  le.com,host49.example.com,host5.example.com,host6.example.com,host7.example.com,host8.exampl    │
+│                                    │      │  e.com,host9.example.com/path0,/path1,/path10,/path11,/path12,/path13,/path14,/path15,/path16    │
+│                                    │      │  ,/path17,/path18,/path19,/path2,/path20,/path21,/path22,/path23,/path24,/path25,/path26,/pat    │
+│                                    │      │    … PgUp/PgDn to scroll                                                                         │
+│                                    │      │                                                                                                  │
+│                                    │      │  ❯ Credential       ‹ approval-635-new ›                                                         │
+│                                    │      │    Duration         ‹ 1 hour ›                                                                   │
+│                                    │      │    Custom duration  Choose Custom to type a duration                                             │
+│                                    │      │    Scope            ‹ Requested routes ›                                                         │
+│                                    │      │    Grant as         ‹ Replacement ›                                                              │
+│                                    │      │    Delivery         ‹ Placeholder ›                                                              │
+│                                    │      │                                                                                                  │
+│                                    │      │  Scroll to the end to enable both decisions                                                      │
+│                                    │      │  [ Accept ]  [ Deny ]                                                                            │
+├────────────────────────────────────┤      │                                                                                                  │
+│ + new discobox                     │      │  Tab / arrows move · Enter selects · Esc leaves waiting                                          │
+│   harnesses                     F3 │      │                                                                                                  │
+│   secrets                       F4 │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

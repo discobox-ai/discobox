@@ -763,7 +763,7 @@ func TestARequestOnAnotherServerIsAnsweredThere(t *testing.T) {
 	if body := dialogText(m); !strings.Contains(body, "beta") {
 		t.Fatalf("card = %q, want it to name the server", body)
 	}
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	m.dialog.form.choose("credential", "sec_gh")
 	grantFor(t, m, time.Hour)
 	calls := ds.calls()
 	for _, want := range []string{"Secrets@beta", "ApproveCredentialRequest@beta"} {

@@ -1,0 +1,45 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  machine  cpu 0.2/64               │      │                                                                                                  │
+│ Discoboxes                 2 boxes │      │  Allow credential use?                                                                   1 of 1  │
+│ no source                  2 boxes │      │                                                                                                  │
+│  determined_ritchie   running  ↑ ! │      │  Box                   sbx_7tcdygf3e5eqpg47                                                      │
+│  └ relaxed_clarke     running      │      │  Reason (box's words)  Verify forever addition preserves the existing grant                      │
+│                                    │      │  Server                                                                                          │
+│                                    │      │  Variable              NEW_635                                                                   │
+│                                    │      │                                                                                                  │
+│                                    │      │  This box may use the credential.                                                                │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Grant restriction · Requested routes ──────────────────────────────────────────────────────  │
+│                                    │      │  HTTP example.com                                                                                │
+│                                    │      │    METHOD  PATH                                                                                  │
+│                                    │      │    GET     /635                                                                                  │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Credential and parent ceilings ────────────────────────────────────────────────────────────  │
+│                                    │      │  approval-635-new      GET example.com/635                                                       │
+│                                    │      │                                                                                                  │
+│                                    │      │  Every independent restriction still applies. Approval cannot widen a parent delegation.         │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── What accepting changes ────────────────────────────────────────────────────────────────────  │
+│                                    │      │  Variable              NEW_635                                                                   │
+│                                    │      │                                                                                                  │
+│                                    │      │  Add these routes for forever. Existing grants keep their routes and lifetimes.                  │
+│                                    │      │  Placeholder delivery: the box never receives the credential value.                              │
+│                                    │      │                                                                                                  │
+│                                    │      │    Credential       ‹ approval-635-new ›                                                         │
+│                                    │      │  ❯ Duration         ‹ forever ›                                                                  │
+│                                    │      │    Custom duration  Choose Custom to type a duration                                             │
+│                                    │      │    Scope            ‹ Requested routes ›                                                         │
+│                                    │      │    Grant as         ‹ Addition ›                                                                 │
+│                                    │      │    Delivery         ‹ Placeholder ›                                                              │
+│                                    │      │                                                                                                  │
+│                                    │      │                                                                                                  │
+│                                    │      │  [ Accept ]  [ Deny ]                                                                            │
+├────────────────────────────────────┤      │                                                                                                  │
+│ + new discobox                     │      │  Tab / arrows move · Enter selects · Esc leaves waiting                                          │
+│   harnesses                     F3 │      │                                                                                                  │
+│   secrets                       F4 │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

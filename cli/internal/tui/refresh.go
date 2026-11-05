@@ -65,41 +65,61 @@ func (m *Model) askAboutRefresh(req CredentialRequest, secrets []Secret) tea.Cmd
 		m.dialog = errorDialog("Refresh request", "The token this request is about is no longer in the project.")
 		return nil
 	}
-	var items []action
-	if len(secret.RefreshCommand) > 0 {
-		items = append(items,
-			action{key: "once", press: "r", label: "Run once", detail: "run it here and send what it prints", enabled: true},
-			action{key: "session", press: "s", label: "Run for this session", detail: "and run it again, unasked, whenever this token needs it while this window is open", enabled: true},
-		)
+	source := pickRow("source", "New value", choice{key: "command", label: "Run saved command", hint: "Run locally as you, without a shell"}, choice{key: "manual", label: "Paste a value", hint: "Enter a replacement token; the field stays masked"})
+	if len(secret.RefreshCommand) == 0 {
+		source.choices = source.choices[1:]
 	}
-	items = append(items,
-		action{key: "enter", press: "e", label: "Enter a value…", detail: "type or paste the new token", enabled: true},
-		action{key: "dismiss", press: "d", label: "Dismiss", detail: "keep serving the value on hand; it is asked for again when next needed", enabled: true},
-	)
-	d := actionsDialog("Refresh request", "", items, func(result string) tea.Cmd {
-		switch result {
-		case "once":
-			return m.renew(req, secret.Name, Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand}, false, "")
-		case "session":
-			key := sessionKey(m.serverName(req.Server), secret.ID, secret.RefreshCommand)
+	permission := pickRow("permission", "Run permission", choice{key: "once", label: "Once"}, choice{key: "session", label: "While this window is open", hint: "Run again without asking for this exact credential and command"})
+	permission.when = func(f *form) bool { return f.chosen("source") == "command" }
+	permission.why = "No command runs for a pasted value"
+	value := textRow("value", "Token", "Paste the replacement token", "")
+	value.masked = true
+	value.when = func(f *form) bool { return f.chosen("source") == "manual" }
+	value.why = "The command supplies the value"
+	f := newForm(source, permission, value)
+	var d *dialog
+	d = approvalDialog("Refresh "+secret.Name+"?", f, func(*form) tea.Cmd {
+		if d.formActions[d.formActionAt].key == "dismiss" {
+			f.set("value", "")
+			return m.denyCredential(req)
+		}
+		if f.chosen("source") == "manual" {
+			token := strings.TrimSpace(f.value("value"))
+			if token == "" {
+				f.err = "Enter a replacement token."
+				return nil
+			}
+			f.set("value", "")
+			return m.renew(req, secret.Name, Renewal{RequestID: req.ID, SecretID: secret.ID, Value: token}, false, "")
+		}
+		renewal := Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand}
+		key := ""
+		if f.chosen("permission") == "session" {
+			key = sessionKey(m.serverName(req.Server), secret.ID, secret.RefreshCommand)
 			if m.renewSession == nil {
 				m.renewSession = map[string]bool{}
 			}
 			m.renewSession[key] = true
-			return m.renew(req, secret.Name, Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand, Session: true}, false, key)
-		case "enter":
-			return m.askForRenewalValue(req, secret, func() tea.Cmd { return m.askAboutRefresh(req, secrets) })
-		case "dismiss":
-			return m.denyCredential(req)
+			renewal.Session = true
 		}
-		return nil
+		return m.renew(req, secret.Name, renewal, false, key)
 	})
-	d.sections = refreshAsk(req, secret, m.secrets.now())
-	d.answerLabel = "how should it get a new value?"
-	if len(secret.RefreshCommand) > 0 {
-		d.footer = "the command runs on this machine, as you, with no shell"
+	d.formActions = []action{{key: "refresh", label: "Refresh", enabled: true}, {key: "dismiss", label: "Dismiss", enabled: true}}
+	d.onCancel = func() tea.Cmd { f.set("value", ""); return nil }
+	d.refreshSections = func() {
+		d.sections = refreshAsk(req, secret, m.secrets.now())
+		if f.chosen("source") == "manual" {
+			d.sections = append(d.sections, section{label: "Paste a replacement", lines: []line{{text: "No command will run. The masked value replaces the project token."}}})
+		} else {
+			permission := "Run once, then ask again next time."
+			if f.chosen("permission") == "session" {
+				permission = "Run this exact command again without asking while this console window stays open."
+			}
+			d.sections = append(d.sections, section{label: "Command permission", lines: []line{{text: "Runs locally as you, without a shell."}, {text: permission, tone: toneAccent}}})
+		}
+		d.sections = append(d.sections, section{label: "What refreshing changes", lines: []line{{text: "Replaces the project credential's value. Existing grants keep their routes and lifetimes."}, {text: "Dismiss keeps the current value; the request may return when the credential is needed again."}}})
 	}
-	d.keys = []hint{pressing("enter chooses", "enter"), pressing("esc leaves it waiting", "esc")}
+	d.refreshSections()
 	m.dialog = d
 	return nil
 }
@@ -138,26 +158,6 @@ func refreshAsk(req CredentialRequest, secret Secret, now time.Time) []section {
 		})
 	}
 	return sections
-}
-
-// askForRenewalValue collects a value typed in, masked, as a new credential's
-// is.
-func (m *Model) askForRenewalValue(req CredentialRequest, secret Secret, back func() tea.Cmd) tea.Cmd {
-	d := inputDialog("New value", "", "token", "", func(value string) tea.Cmd {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return m.report(true, "no value entered; the request is still waiting")
-		}
-		return m.renew(req, secret.Name, Renewal{RequestID: req.ID, SecretID: secret.ID, Value: value}, false, "")
-	})
-	d.sections = []section{{label: "the token", fields: []field{{label: "token", value: secret.Name, tone: toneAccent}}}}
-	d.answerLabel = "paste the new value"
-	d.footer = "it replaces the value on hand, and the request is answered with it"
-	d.keys = []hint{pressing("Enter accepts", "enter"), pressing("Esc goes back", "esc")}
-	d.input.EchoMode = 1 // textinput.EchoPassword: a credential is not drawn back.
-	d.onCancel = back
-	m.dialog = d
-	return nil
 }
 
 // renew sends a renewal. A prompted one says what it is doing while the
