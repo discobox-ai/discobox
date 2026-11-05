@@ -23,7 +23,7 @@ func TestPackagesRequireSuccessfulIndexRefresh(t *testing.T) {
 	if _, err := exec.LookPath("apt-get"); err != nil {
 		t.Skip("requires apt-get")
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "repository unavailable", http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
