@@ -213,8 +213,9 @@ go tool task prototype:approvals:api -- --compact
 
 ## Implementation handoff (owner approved)
 
-The owner accepted the complete screen set and requested another box implement
-it using draft PR #653 as the reference for #635. Keep this reference PR a draft;
+The owner accepted the complete screen set and asked the manager to orchestrate
+a separate implementation box using draft PR #653 as the reference for #635.
+No implementation worker was launched by this prototype session. Keep this reference PR a draft;
 open a separate implementation PR. Its branch must differ from the reference's
 `discobox/issue-635` (use `discobox/issue-635-implementation`).
 
