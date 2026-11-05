@@ -334,6 +334,9 @@ target and their project/pool/config dependencies, ordered deterministically.
 Read streams omit egress versions; write streams include them.
 It never reads a replica. The database owns notification triggers; the sandboxes
 service owns registration, revalidation and cancellation of transport bodies.
+
+## Harness bundle relationships
+
 Harness bundle relationships use nullable indexed `harness_configs.extends_id`.
 Existing rows remain standalone. `HarnessConfigsTransaction` takes the project
 row lock before reading parent snapshots, serializing publication, conversion,
