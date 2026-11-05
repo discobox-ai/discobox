@@ -1063,6 +1063,7 @@ tasks:
     desc: Run required Docker terminal, harness save/reset and adoption smoke flows
     platforms: [linux]
     cmds:
+      - python3 -B test/ux-smoke/test_runner.py
       - timeout --signal=TERM --kill-after=60s 25m python3 test/ux-smoke/run.py
 
   ci:test:

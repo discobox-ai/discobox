@@ -264,6 +264,9 @@ def main():
     else:
         command(["docker", "buildx", "create", "--name", BUILDER, "--driver", "docker-container"])
         BUILDER_CREATED = True
+    # Bootstrap once before concurrent clients connect. A running container is
+    # not necessarily ready to serve its BuildKit socket yet.
+    command(["docker", "buildx", "inspect", "--bootstrap", BUILDER], limit=180)
     bundles = build_stack()
     image_id = command(["docker", "image", "inspect", BASE, "--format", "{{.Id}}"]).strip()
     manifest = ARTIFACTS / "manifest.json"
@@ -376,6 +379,16 @@ def cleanup(failed):
         except Exception as exc:
             errors.append(str(exc))
     if BUILDER_CREATED:
+        if failed:
+            # Preserve daemon state before removing our builder. In particular,
+            # inspect retains OOMKilled/ExitCode and logs retain startup errors.
+            container = "buildx_buildkit_" + BUILDER + "0"
+            for args in (["docker", "inspect", container],
+                         ["docker", "logs", "--tail", "300", container]):
+                try:
+                    command(args, limit=20)
+                except Exception as exc:
+                    errors.append(str(exc))
         try:
             command(["docker", "buildx", "rm", BUILDER], limit=60)
         except Exception as exc:

@@ -11,6 +11,9 @@ checkout. Each run has its own image tag, database, directories,
 port and socket under `build/ux-smoke/<run>`. It never joins `task dev` or
 uses the enclosing box's API identity. OCI builds use the host builder with
 the containerd image store, or a run-owned fallback builder on classic Docker.
+The selected builder is bootstrapped before concurrent builds connect, so a
+new fallback container must have a ready BuildKit socket first. On failure its
+container state and daemon logs are retained before the builder is removed.
 The synthetic shell harness exports a
 JSON settings file and a fake token scoped to `ux-smoke.invalid`; it has no
 login or external credential requirement. Save and reset assert creation and
