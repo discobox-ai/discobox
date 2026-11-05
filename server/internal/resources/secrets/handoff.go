@@ -34,7 +34,7 @@ func lockHandoff(ctx context.Context, txStore *store.Store, projectID, holderID,
 			target = &rows[i]
 		}
 	}
-	if holder == nil || target == nil || !holder.DiscoboxAPI || holder.ID == target.ID || target.ParentSandboxID == nil || *target.ParentSandboxID != holderID || target.DesiredState == model.DesiredStateArchived || target.DesiredState == model.DesiredStateDeleted || target.State == model.SandboxStateArchived || target.State == model.SandboxStateDeleted {
+	if holder == nil || target == nil || !holder.DiscoboxAPI || holder.DesiredState == model.DesiredStateDeleted || holder.ID == target.ID || target.ParentSandboxID == nil || *target.ParentSandboxID != holderID || target.DesiredState == model.DesiredStateArchived || target.DesiredState == model.DesiredStateDeleted || target.State == model.SandboxStateArchived || target.State == model.SandboxStateDeleted {
 		return apperrors.NewStatusError(http.StatusForbidden, "a discobox grants credentials only to a live discobox it currently leads, with API access enabled")
 	}
 	return nil
