@@ -636,10 +636,8 @@ func TestTheMarkIsCenteredAcrossItsColumn(t *testing.T) {
 	}
 }
 
-// Over the introduction it is centered across the whole card instead of across
-// its own column: there it is the thing being introduced, not the thing beside
-// a list.
-func TestTheMarkIsCenteredAcrossTheWelcomeCard(t *testing.T) {
+// Above the workspace tree the whole mark is centered, keeping its rows aligned.
+func TestTheMarkIsCenteredAcrossACard(t *testing.T) {
 	t.Parallel()
 	mark := logo{rows: []string{"aaaa", "bb"}, width: 4}
 

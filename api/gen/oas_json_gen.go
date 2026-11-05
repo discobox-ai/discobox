@@ -29143,16 +29143,12 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 		json.EncodeDateTime(e, s.UpdatedAt)
 	}
 	{
-		e.FieldStart("welcomed")
-		e.Bool(s.Welcomed)
-	}
-	{
 		e.FieldStart("harnessChangesExplained")
 		e.Bool(s.HarnessChangesExplained)
 	}
 }
 
-var jsonFieldsNameOfProject = [20]string{
+var jsonFieldsNameOfProject = [19]string{
 	0:  "egress",
 	1:  "$schema",
 	2:  "harnessConfigs",
@@ -29171,8 +29167,7 @@ var jsonFieldsNameOfProject = [20]string{
 	15: "sandboxProviderInstances",
 	16: "sandboxes",
 	17: "updatedAt",
-	18: "welcomed",
-	19: "harnessChangesExplained",
+	18: "harnessChangesExplained",
 }
 
 // Decode decodes Project from json.
@@ -29376,20 +29371,8 @@ func (s *Project) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
 			}
-		case "welcomed":
-			requiredBitSet[2] |= 1 << 2
-			if err := func() error {
-				v, err := d.Bool()
-				s.Welcomed = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"welcomed\"")
-			}
 		case "harnessChangesExplained":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.HarnessChangesExplained = bool(v)
@@ -29412,7 +29395,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 	for i, mask := range [3]uint8{
 		0b00011000,
 		0b00101010,
-		0b00001110,
+		0b00000110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -60160,12 +60143,6 @@ func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Welcomed.Set {
-			e.FieldStart("welcomed")
-			s.Welcomed.Encode(e)
-		}
-	}
-	{
 		if s.HarnessChangesExplained.Set {
 			e.FieldStart("harnessChangesExplained")
 			s.HarnessChangesExplained.Encode(e)
@@ -60173,14 +60150,13 @@ func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateProjectBody = [7]string{
+var jsonFieldsNameOfUpdateProjectBody = [6]string{
 	0: "egress",
 	1: "$schema",
 	2: "name",
 	3: "archiveRetentionSeconds",
 	4: "sandboxUpgradePolicy",
-	5: "welcomed",
-	6: "harnessChangesExplained",
+	5: "harnessChangesExplained",
 }
 
 // Decode decodes UpdateProjectBody from json.
@@ -60240,16 +60216,6 @@ func (s *UpdateProjectBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sandboxUpgradePolicy\"")
-			}
-		case "welcomed":
-			if err := func() error {
-				s.Welcomed.Reset()
-				if err := s.Welcomed.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"welcomed\"")
 			}
 		case "harnessChangesExplained":
 			if err := func() error {

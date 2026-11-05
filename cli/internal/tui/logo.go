@@ -146,9 +146,7 @@ func (l logo) view(height int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
-// centeredRows is the mark set in the middle of a width, for the one place it
-// stands over text rather than beside it: the introduction, where the mark is
-// the thing being introduced rather than the thing beside the list.
+// centeredRows sets the mark over the workspace tree when there is room.
 //
 // The rows keep their alignment to each other and the block moves — it is a
 // picture, not a stack of centered lines. Nothing is drawn where the width

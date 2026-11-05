@@ -65,7 +65,7 @@
 ## Key routing
 
 - **What draws in front takes the keys.** `View`'s precedence is the contract:
-  a modal (`modalUp` — the introduction, a dialog, the run options), then a
+  a modal (`modalUp` — a dialog, the run options), then a
   pane (`inPanes`), then the harnesses/secrets screens, then the console.
   `updateKey`, `updatePaste` and `hints()` must follow the same order.
   The harnesses and secrets screens are the trap: they stay open behind a
@@ -326,7 +326,7 @@
   come back on every listing.
 - **The explainer is recorded whichever way it is answered**, and only shown
   with nothing else in front (`explainHarnessChangesIfOwed`). A path that opens
-  it over the welcome, another dialog or a focused terminal — where the person
+  it over another dialog or a focused terminal — where the person
   is likely still typing their sign-in, and a typed letter answers it — or
   that records it without showing it, loses the one explanation the project
   gets.

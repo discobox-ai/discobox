@@ -190,18 +190,16 @@ func (m *Model) viewHarnessChangesBanner(width int) string {
 // the diff.
 //
 // Once is per project, and the project is what remembers
-// (Project.harnessChangesExplained), for the reason the welcome's is: a file
-// on this machine would explain again on a second machine and never to the
-// second person on the project. The window reads the flag when it opens
+// (Project.harnessChangesExplained): a file on this machine would explain again
+// on a second machine and never to the second person on the project. The window reads the flag when it opens
 // (WithHarnessChangesUnexplained) and sets it the moment it shows the
 // explainer, whichever way it is answered: explaining twice because somebody
 // pressed Not now would be the explainer outstaying its one job.
 //
-// It waits for a screen with nothing in front of it — no welcome, no dialog,
+// It waits for a screen with nothing in front of it — no dialog,
 // no run options, no terminal with the keys and no prompt being written —
-// and is checked again on
-// every listing, so a box that captured a change while something else was up
-// is explained once that is gone. The terminal matters most: the change is
+// and is checked again on every listing, so a box that captured a change while
+// something else was up is explained once that is gone. The terminal matters most: the change is
 // made by signing in there, so the explainer would otherwise come up while
 // the person is still typing, and its actions are single letters.
 
@@ -226,7 +224,7 @@ func harnessChangesExplainBody(name string) string {
 // explainHarnessChangesIfOwed opens the explainer when the project owes it, a
 // listed box has a change to save, and nothing else has the screen.
 func (m *Model) explainHarnessChangesIfOwed() tea.Cmd {
-	if !m.explainHarnessChanges || m.welcoming || m.dialog != nil || m.optionsOpen || m.inPanes() || m.writingPrompt() {
+	if !m.explainHarnessChanges || m.dialog != nil || m.optionsOpen || m.inPanes() || m.writingPrompt() {
 		return nil
 	}
 	box, ok := m.harnessChangesToExplain()
@@ -278,7 +276,7 @@ func (m *Model) harnessChangesToExplain() (Sandbox, bool) {
 }
 
 // markHarnessChangesExplained tells the server the explainer has been shown,
-// behind the dialog, as markWelcomed does: the explainer has been read whether
+// behind the dialog: the explainer has been read whether
 // or not the write lands, and losing it costs one repeated explanation.
 func (m *Model) markHarnessChangesExplained() tea.Cmd {
 	return func() tea.Msg {

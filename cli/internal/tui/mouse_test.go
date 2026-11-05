@@ -490,21 +490,6 @@ func TestTheRightButtonOpensTheHarnessMenu(t *testing.T) {
 	}
 }
 
-// The introduction takes one key, and the line that says so is a button for it.
-func TestPressingTheWelcomeFooterDismissesIt(t *testing.T) {
-	t.Parallel()
-	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	slowClock(m)
-	m.welcoming = true
-
-	x, y := at(t, m, welcomeFooter)
-	tap(t, m, x, y)
-
-	if m.welcoming {
-		t.Fatalf("pressing the footer should take the introduction down")
-	}
-}
-
 // The secrets screen is two tables read as one, so a press has to say which of
 // them it landed in as well as which row.
 func TestPressingASecretRowMovesItsCursor(t *testing.T) {
@@ -590,11 +575,6 @@ func TestEveryMarkLandsOnSomethingDrawn(t *testing.T) {
 		"a card": func(t *testing.T) *Model {
 			m, _ := secretsFixture(t)
 			return send(t, m, keyPress("n"))
-		},
-		"the introduction": func(t *testing.T) *Model {
-			m := newTestModel(t, newFakeSource(testSandboxes()...))
-			m.welcoming = true
-			return m
 		},
 	}
 

@@ -4142,9 +4142,6 @@ components:
                         - automatic
                         - manual
                     type: string
-                welcomed:
-                    description: Whether this project has already shown its introduction. The launcher sets it once, the first time it welcomes someone to the project; clearing it shows the welcome again.
-                    type: boolean
                 harnessChangesExplained:
                     description: Whether this project has already explained saving a discobox's harness changes. The console sets it once, the first time it sees a discobox with harness changes to save; clearing it explains again.
                     type: boolean
@@ -4231,9 +4228,6 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
-                welcomed:
-                    description: Whether this project has already shown its introduction
-                    type: boolean
                 harnessChangesExplained:
                     description: Whether this project has already explained saving a discobox's harness changes
                     type: boolean
@@ -4242,7 +4236,6 @@ components:
                 - ownerUserId
                 - name
                 - default
-                - welcomed
                 - harnessChangesExplained
                 - createdAt
                 - updatedAt

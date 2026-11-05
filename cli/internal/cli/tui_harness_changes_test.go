@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -265,5 +266,36 @@ func TestHarnessOfferDoesNotWakeStoppedBoxesOrSurvivePreviewFailure(t *testing.T
 		if box.HarnessConfigPending {
 			t.Fatalf("unverified offer: %+v", box)
 		}
+	}
+}
+
+// Showing the harness-changes explainer records it on the project and sends
+// nothing else.
+func TestMarkHarnessChangesExplainedUpdatesTheProject(t *testing.T) {
+	var got map[string]any
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects/project-1" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,` +
+			`"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := api.NewClient(server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	ds := &apiDataSource{app: &App{}, client: client, projectID: "project-1"}
+	if err := ds.MarkHarnessChangesExplained(context.Background()); err != nil {
+		t.Fatalf("mark explained: %v", err)
+	}
+	if len(got) != 1 || got["harnessChangesExplained"] != true {
+		t.Fatalf("body = %v, want harnessChangesExplained set and nothing else", got)
 	}
 }
