@@ -24,6 +24,9 @@
   reads are answered with is unchanged).
 - **Issue**: [#154](https://github.com/discobox-ai/discobox/issues/154)
 
+The pending-upgrade start wait and pool-transition ceiling are narrowed by
+[26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md).
+
 ## Context
 
 On 2026-10-10 a harness config change auto-upgraded three stopped discoboxes

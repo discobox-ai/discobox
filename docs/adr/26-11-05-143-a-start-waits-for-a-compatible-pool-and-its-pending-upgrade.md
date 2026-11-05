@@ -1,7 +1,8 @@
 # 26-11-05-143 — A start waits for a compatible pool and its pending upgrade
 
-- **Status**: Proposed (would narrow [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) §1's missing-runtime exclusion and its statement that restored connectivity does not authorize further waits, and extend §2's ceiling to compatibility waits; would further narrow [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6's instruction wait and [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) §2's no-wait statement only for that upgrade case; source-delivery refusals remain)
+- **Status**: Accepted (narrows [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) §1's missing-runtime exclusion and its statement that restored connectivity does not authorize further waits, and extends §2's ceiling to compatibility waits; further narrows [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6's instruction wait and [26-11-03-618](26-11-03-618-a-discobox-owed-its-delivery-is-never-started-and-attach-repairs-it-to-deliver.md) §2's no-wait statement only for that upgrade case; source-delivery refusals remain)
 - **Date**: 2026-11-05
+- Accepted by the owner by merging #688, 2026-11-05
 - **Issue**: [#684](https://github.com/discobox-ai/discobox/issues/684)
 - **Preserves**: 26-11-04-167 §§2–4's request budgets, fencing and visible progress except for the additional ceiling trigger below; 0017 §9's power instructions; 0021 §§3–4's replacement power rules; 26-11-03-618's owed-source boundary; scheduled wakes and restart remain single-send outside their existing repair policy.
 

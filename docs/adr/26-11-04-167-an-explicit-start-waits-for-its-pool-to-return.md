@@ -7,6 +7,9 @@ Accepted by the owner by merging #585, 2026-11-04.
 - **Issue**: [#569](https://github.com/discobox-ai/discobox/issues/569), following [#544](https://github.com/discobox-ai/discobox/issues/544) and [#567](https://github.com/discobox-ai/discobox/pull/567)
 - **Preserves**: [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) §9's power instructions, and [26-10-16-337](26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §6's single-send scheduled wake and cancellation by outside instructions.
 
+The pending-upgrade start wait and pool-transition ceiling are narrowed by
+[26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md).
+
 ## Context
 
 A server upgrade replaces pool agents. A person starting a stopped box during
