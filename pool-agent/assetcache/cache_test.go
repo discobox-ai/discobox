@@ -39,6 +39,9 @@ type fakeServer struct {
 }
 
 func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+		return // Ignore the sandbox agent's port probe; see REVIEW.md.
+	}
 	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 		f.t.Errorf("request %s carried no pool assertion", r.URL.Path)
 	}
@@ -190,6 +193,12 @@ const serverPrefix = "/api/pools/pool_1/assets"
 // from the server, and every one of them is answered the blob.
 func TestConcurrentSandboxesShareOneFetch(t *testing.T) {
 	f := newFixture(t)
+	probe := httptest.NewRequest(http.MethodHead, "/", nil)
+	probe.Header.Set("User-Agent", "discobox-sandbox-agent (port probe)")
+	f.server.ServeHTTP(httptest.NewRecorder(), probe)
+	if got := f.server.total(); got != 0 {
+		t.Fatalf("port probe counted as %d asset requests", got)
+	}
 	harness := newBundle(t, "harness")
 	f.server.add(harness.config, harness.layer, harness.manifest)
 	pin := Pin{Name: "discobox-harness-claude-code", Digest: digestOf(harness.manifest)}
