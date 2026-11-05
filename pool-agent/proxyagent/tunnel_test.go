@@ -116,7 +116,8 @@ func TestSpliceTunnelStreamCarriesBothWays(t *testing.T) {
 	defer cancel()
 	target := service.Addr().String()
 	// The sandbox agent probes newly opened ports before the tunnel may dial.
-	probe, err := net.Dial("tcp", target)
+	var dialer net.Dialer
+	probe, err := dialer.DialContext(t.Context(), "tcp", target)
 	if err != nil {
 		t.Fatal(err)
 	}
