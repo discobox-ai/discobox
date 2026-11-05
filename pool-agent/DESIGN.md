@@ -34,7 +34,7 @@ from the in-sandbox `sandbox-agent` API.
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs, and `NotifyReady` (`sd_notify` for a Type=notify unit). |
-| `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`, and a machine pool's `ProvisioningKeyFile`). See [The Pool Bundle](#the-pool-bundle). |
+| `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-builder-units`, `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`, and a machine pool's `ProvisioningKeyFile`). See [The Pool Bundle](#the-pool-bundle). |
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
 | `provisioner` | The box provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §3): given a box's guest operations (`machine.Guest`: a disco-vm machine's, or a container's as `ContainerGuest`, with the daemon's platform from `ContainerPlatform`), a tar tree, a command and its stdin, it places the tree with the guest's copy and runs the command with its exec, returning its exit code and the tail of its output. No per-driver code beyond that container's guest, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a credential), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree — or on `Plan.Stdin` where they must never touch the box's disk, as a snapshot build's plan (ADR 26-11-03-986 §1). It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
 | `vmtest` | Test support for code that drives disco-vm machines: `RunFakeGuestIfInvoked` lets a test binary be the guest agent of disco-vm's fake driver and the shim that holds a fake machine, and `FakeDriver` is that driver, with one base and any key source, so a test boots fake machines through the engine. Only tests import it, here and in the server's `vm` provider. |
@@ -1505,20 +1505,25 @@ This bundle is what makes a box a pool's
 bundle. `bundle` names the files its maker places beside it.
 
 - **What it is**: `pool-agent/Dockerfile`'s `bundle` target, `FROM scratch`,
-  holding two features (`bundle/features`):
-  - `pool-agent`: `discobox-pool-agent`, `git` where absent, the units `discobox-pool-agent.service`
+  holding three features (`bundle/features`):
+  - `pool-builder-units` lays the builder units and reloads systemd before
+    `pool-agent` can restart. On an existing pool this removes the old
+    `Requires=` graph first; any unit upgrade drains while egress still runs.
+    It enables nothing: binaries and configuration are installed later.
+  - `pool-agent`, which requires `pool-builder-units`: `discobox-pool-agent`,
+    `git` where absent, the units `discobox-pool-agent.service`
     and `discobox-proxy.service`, and a journald drop-in keeping the
     journal on disk, bounded at 256M: it is what says why the agent did not
     come up, and a boxd base keeps none;
   - `pool-builder`, which requires it: the pool-shared builder of ADR 0044 —
     BuildKit's binaries and the registry's from their upstream images,
-    `discobox-pool-runc` as `/opt/discobox/bin/runc`, `registry.yml`, the
-    builder's, registry's and mediator's units. It runs no `dockerd`: the
+    `discobox-pool-runc` as `/opt/discobox/bin/runc`, `registry.yml`, and the
+    step enabling the builder, registry and mediator. It runs no `dockerd`: the
     pool's container has its daemon's socket bound in, which its sandboxes
-    run on. `apply` applies both on every pool, a machine pool's included:
+    run on. `apply` applies all three on every pool, a machine pool's included:
     what a pool runs does not follow from its host (ADR 26-10-27-767).
 
-  Each runs its binaries from its feature's directory under the bundle's
+  The agent and builder run their binaries from their feature's directory under the bundle's
   stable link (`agentlayer.BundleTree`), and restarts its units from a step
   whose inputs are those binaries, so a new bundle restarts exactly what it
   moved.
@@ -1529,11 +1534,16 @@ bundle. `bundle` names the files its maker places beside it.
   bundle's blobs, read from the server's own asset store, under
   `agentlayer.PlacedDir`; then runs `discobox-provision apply --pool`, which
   applies what was placed, dialing nothing and signing nothing (ADR
-  26-10-30-875 §5), both features, every step blocking.
+  26-10-30-875 §5), all three features, every step blocking.
 - **Ordering**: the agent's unit is `Type=notify`, ready once the proxy's
   environment, CA and control key — and on a Docker pool the builder's and
   registry's configuration — are written; the proxy, builder, registry and
-  mediator units `Requires=` and are `After=` it.
+  mediator units are `After=` it. The proxy `Requires=` it; all three builder
+  units only `Wants=` it, so an agent-only restart leaves builds and the
+  registry running and cannot pull the mediator's drain into the proxy's
+  restart transaction. Explicit builder upgrades still restart their units.
+  A moved pool-agent binary restarts the agent and proxy first, then restarts
+  the mediator separately to pick up that binary without holding egress down.
 - **Nested egress**: the agent's unit uses `PassEnvironment` for the upstream
   proxy and CA variables injected into the container's systemd environment.
   The agent forwards them into the proxy, builder and registry environment

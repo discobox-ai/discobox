@@ -16,13 +16,6 @@ steps:
   - name: registry-config
     file: {path: /etc/discobox/registry.yml, source: registry.yml, restart: [discobox-registry.service]}
 
-  - name: unit-buildkitd
-    file: {path: /etc/systemd/system/discobox-buildkitd.service, source: systemd/discobox-buildkitd.service, restart: [discobox-buildkitd.service]}
-  - name: unit-registry
-    file: {path: /etc/systemd/system/discobox-registry.service, source: systemd/discobox-registry.service, restart: [discobox-registry.service]}
-  - name: unit-mediator
-    file: {path: /etc/systemd/system/discobox-buildkit-mediator.service, source: systemd/discobox-buildkit-mediator.service, restart: [discobox-buildkit-mediator.service]}
-
   - name: restart
     run: restart.sh
     inputs: [bin]
