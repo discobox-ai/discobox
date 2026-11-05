@@ -1,7 +1,9 @@
 # 26-11-04-426 — A harness config follows its parent's bundle and keeps its own account
 
-- **Status**: Proposed (would amend [0002](0002-harness-config-is-the-only-harness-concept.md)'s Decision, “Built-ins clobber their image”, and its rejection of a thin pointer resolved live; and [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §7's harness bundle named by its config, to allow a config to follow another config's bundle)
+- **Status**: Accepted (amends [0002](0002-harness-config-is-the-only-harness-concept.md)'s Decision, “Built-ins clobber their image”, and its rejection of a thin pointer resolved live; and [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §7's harness bundle named by its config, to allow a config to follow another config's bundle)
 - **Date**: 2026-11-04
+
+Accepted by the owner by merging #637, 2026-11-05.
 - **Issue**: [#625](https://github.com/discobox-ai/discobox/issues/625), following [#71](https://github.com/discobox-ai/discobox/issues/71)
 
 ## Context
