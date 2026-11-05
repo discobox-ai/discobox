@@ -27,3 +27,9 @@
 - Recheck the caller's desired-deleted state under the handoff lock, as the
   sandbox authorizer does. Purge is asynchronous; a deleted lead may still
   have a row, API permission and live delegations while its deletion converges.
+
+- Redact every historical grant snapshot from sandbox request reads, including
+  consent snapshots and mutation receipts. Adding a second history field must
+  not reopen the adopted-child binding privacy boundary. Build approval history
+  from the secret reloaded under the final handoff locks, not the earlier
+  preparation read: an intervening edit must record its current revision.

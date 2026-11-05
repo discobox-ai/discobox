@@ -419,7 +419,9 @@ func (s *Service) ListSecretRequests(ctx context.Context, projectID, status stri
 	if principal, _ := auth.PrincipalFromContext(ctx); principal.Type == auth.PrincipalTypeSandbox {
 		for i := range requests {
 			requests[i].Use.Receipt = nil
+			requests[i].Use.Grant = nil
 			requests[i].Delegate.Receipt = nil
+			requests[i].Delegate.Grant = nil
 		}
 	}
 	return requests, err
@@ -432,7 +434,9 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 	}
 	if principal, _ := auth.PrincipalFromContext(ctx); principal.Type == auth.PrincipalTypeSandbox {
 		req.Use.Receipt = nil
+		req.Use.Grant = nil
 		req.Delegate.Receipt = nil
+		req.Delegate.Grant = nil
 	}
 	return req, nil
 }
@@ -772,7 +776,8 @@ func (a *approvalWrite) binding(ctx context.Context, txStore *store.Store, secre
 		if err != nil {
 			return nil, err
 		}
-		ttl, secret = fitted, current
+		ttl = fitted
+		*secret = *current
 	}
 	if err := guardBindingTTL(secret, ttl); err != nil {
 		return nil, err

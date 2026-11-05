@@ -529,13 +529,16 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 		}
 		if a.usesSandboxRole() {
 			fmt.Fprintf(cmd.OutOrStdout(), "Request %s %s\n", terminalSafe(request.ID), request.Status)
-			for _, part := range []apiclientgen.OptSecretRequestPart{request.Use, request.Delegate} {
-				if p, ok := part.Get(); ok {
-					if receipt, ok := p.Receipt.Get(); ok {
-						if err := writeGrantReceipt(cmd.OutOrStdout(), receipt); err != nil {
-							return err
-						}
+			for _, part := range requestParts(request) {
+				if scope := part.part.ApprovedScope.Or(""); scope != "" {
+					fmt.Fprintf(cmd.OutOrStdout(), "The %s scope is %s (still limited by credential and parent scope).\n", part.label, scope)
+				}
+				if receipt, ok := part.part.Receipt.Get(); ok {
+					if err := writeGrantReceipt(cmd.OutOrStdout(), receipt); err != nil {
+						return err
 					}
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "The %s part is %s.\n", part.label, part.statusText(request.Status))
 				}
 			}
 			return nil

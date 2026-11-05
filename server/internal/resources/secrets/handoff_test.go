@@ -230,11 +230,11 @@ func TestReceiptsAreMutationResultsAndPrivateHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approved.Use.Receipt == nil {
+	if approved.Use.Receipt == nil || approved.Use.Grant == nil {
 		t.Fatal("mutation returned no receipt")
 	}
 	person, err := svc.GetSecretRequest(ctx, "project-1", req.ID)
-	if err != nil || person.Use.Receipt == nil {
+	if err != nil || person.Use.Receipt == nil || person.Use.Grant == nil {
 		t.Fatalf("person history = %+v, %v", person, err)
 	}
 	for _, lead := range []string{leadID, "sbx-adopter"} {
@@ -245,11 +245,11 @@ func TestReceiptsAreMutationResultsAndPrivateHistory(t *testing.T) {
 		}
 		caller := auth.WithPrincipal(ctx, auth.Principal{Type: auth.PrincipalTypeSandbox, SandboxID: lead, ProjectID: "project-1"})
 		got, err := svc.GetSecretRequest(caller, "project-1", req.ID)
-		if err != nil || got.Use.Receipt != nil {
+		if err != nil || got.Use.Receipt != nil || got.Use.Grant != nil {
 			t.Fatalf("sandbox get disclosed receipt: %+v %v", got, err)
 		}
 		listed, err := svc.ListSecretRequests(caller, "project-1", "")
-		if err != nil || len(listed) != 1 || listed[0].Use.Receipt != nil {
+		if err != nil || len(listed) != 1 || listed[0].Use.Receipt != nil || listed[0].Use.Grant != nil {
 			t.Fatalf("sandbox list disclosed receipt: %+v %v", listed, err)
 		}
 	}
