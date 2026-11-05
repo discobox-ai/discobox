@@ -20,6 +20,10 @@ steps:
   # exists to be written to.
   - name: system-config
     file: {path: /etc/codex/config.toml, source: system-config.toml}
+  - name: trust-baseline
+    file: {path: /usr/local/libexec/discobox/codex-system-config.toml, source: system-config.toml}
+  - name: trust-runtime
+    file: {path: /usr/local/libexec/discobox/codex-trust.cjs, source: trust.cjs}
   - name: hooks
     file: {path: /etc/codex/hooks.json, source: hooks.json}
   # The agent this harness installs, for the pool-cached version store

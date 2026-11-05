@@ -126,9 +126,11 @@ Write these down before writing scripts; most become ADR sections.
 4. **Policy baseline**: auto-approve and trust, in a layer save-back cannot
    replace — a system config, an image env var, or a launcher flag. Not the
    user's settings file: a saved harness change replaces that.
-   Codex splits `-c` keys on dots without parsing quoted keys: pass
-   workspace trust as `projects={"/path"={trust_level="trusted"}}`, with the
-   path quoted inside the TOML value, and verify it in the real TUI.
+   Codex folder trust belongs in the sandbox's system config so later direct
+   CLI starts see it too. It needs exact folder entries: trusting `/` does
+   not cover child repositories. Use an inline TOML `projects` map, with
+   paths quoted as data. Test the pinned binary's TUI with an untrusted
+   control; explicit approval/sandbox policies can hide the trust dialog.
 5. **Hooks**: which system layer, and which events. With none (omp), a
    harness file in the CLI's user extension directory that re-exports a
    module the image installs keeps the code the image's; never a settings

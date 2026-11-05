@@ -26,11 +26,11 @@ else
 	fi
 fi
 
-# Workspace trust is process-local; portable user settings contain no paths.
-# Codex splits override keys on dots without parsing TOML key quotes. Put the
-# quoted workspace path in the TOML value instead, where quotes are parsed.
-TRUST_KEY=$(node -e 'process.stdout.write(JSON.stringify(process.cwd()))')
-set -- -c "projects={$TRUST_KEY={trust_level=\"trusted\"}}" "$@"
+# Trust the actual cwd in the sandbox's system layer, including restarts and
+# source-less boxes. A later direct codex start sees the same trust. Serialize
+# starts from different folders so neither loses the other's system entry.
+sudo -n flock /run/lock/discobox-codex-trust.lock \
+	node /usr/local/libexec/discobox/codex-trust.cjs "$PWD"
 
 # Codex copies to the native clipboard first and writes OSC 52 to its terminal
 # only when it sees an SSH (or tmux) session. The image's DISPLAY=:0 gives it a
@@ -53,7 +53,7 @@ export SSH_CONNECTION="${SSH_CONNECTION:-127.0.0.1 0 127.0.0.1 0}"
 # write the other's files nor take them over. The mount's root is chowned to
 # whoever created a sandbox last, so the partition is made through sudo rather
 # than depending on who owns its parent.
-SOURCE_DATA=/.discobox/data-per-source/primary
+SOURCE_DATA="/.discobox/data-per-source/primary"
 USER_DATA="$SOURCE_DATA/users/$(id -u)"
 SHARED_MEMORIES="$USER_DATA/harnesses/codex/memories"
 # Where memories lived before they were keyed by uid. They are carried over

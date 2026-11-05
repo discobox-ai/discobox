@@ -43,6 +43,15 @@ jobs:
         with:
           target: ci:test
 
+  codex-trust:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: test:codex-trust
+
   ux-smoke:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
