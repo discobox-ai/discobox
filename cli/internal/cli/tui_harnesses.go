@@ -48,6 +48,7 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 
 func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 	harness := tui.Harness{
+		Parent:   cfg.Extends.Or(""),
 		ID:       cfg.ID,
 		Name:     strings.TrimSpace(cfg.Name),
 		Slug:     strings.TrimSpace(cfg.Slug),

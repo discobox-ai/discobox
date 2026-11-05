@@ -4,7 +4,7 @@
 
 A harness config is the **only** harness concept — there is no separate
 definition. Every harness in the registry is seeded as a built-in config
-(`SeedBuiltIns`); everything else is a user-registered bundle.
+(`SeedBuiltIns`); other roots are user-registered bundles, and variants follow a root.
 
 `shell` is one of those registry harnesses, not a different kind of thing
 (ADR 0043): `harness/shell`, a bundle like its siblings, inspected and seeded
@@ -35,8 +35,9 @@ true of it, and true *by rule* rather than by slug:
   runs its provider's image — on the Docker driver, the sandbox base image —
   and its agent applies its platform and harness bundles at every start (§7).
   A config records it with its digest (`Bundle`/`BundleDigest`), and nothing
-  else: there is no other registration (ADR 26-11-01-122), and the create
-  body has no field for one.
+  else for a standalone config (ADR 26-11-01-122). A variant names a parent
+  instead (see Bundle variants below). The create body has no runnable image
+  field.
 - The bundle's manifest **labels** are authoritative. `resolveHarness`
   inspects the bundle **once** (local Docker daemon first, registry fallback;
   a development bundle from its OCI image layout, which no daemon holds) and
@@ -437,3 +438,24 @@ remain enforced. Manual bindings are unchanged. A provider marked `manualRoutes`
 refuses new automatic capture and adds an empty denying list to an old owned
 credential on refresh. The fixed diagnostic directs the person to bind a secret
 with explicit endpoint routes. See [the inventory](../../../../harness/credential-destinations.md).
+
+## Bundle variants
+
+A non-built-in config may extend one standalone config in its project through
+`ExtendsID` (ADR 26-11-04-426). Its materialized bundle snapshot follows the
+parent; `HarnessConfig.InheritBundle` copies the complete bundle metadata,
+including resolved shell commands, without copying account files, overrides,
+bindings, secret ownership or personal egress. Read paths use the snapshot.
+
+`publishSnapshot` publishes root and changed children, credential route
+synchronization and proxy dirty marks atomically. `HarnessConfigsTransaction`
+holds the project row lock, shared with relationship creation/conversion and
+deletion. Revisions reject stale edits; unchanged child snapshots are not
+written. The existing `applyResolvedPins` fan-out runs per changed config after
+commit under the project's existing upgrade policy. Running boxes keep their
+pins. A child cannot refresh independently; refresh its parent instead.
+
+Conversion and reparenting preserve identity and personal state. Legacy files
+are split against the old bundle before conversion, refusing if it cannot be
+read. A bundle update explicitly detaches a child. Parents with children cannot
+be deleted or converted into children. Relationships never cross projects.

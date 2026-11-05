@@ -81,3 +81,8 @@ for what is copied and why.
 Ordering is load-bearing: providers and harnesses are database-only and roll
 the project back on failure, so pools — which schedule real hosts — run last. A
 pool failure leaves the project and the pools already created in place.
+
+Harness roots are copied before variants, remapping parent IDs into the
+destination project. Variant insertion reads the current destination parent's
+snapshot inside `HarnessConfigsTransaction`, under the same project lock as
+publication and deletion. It never copies the source parent's personal state.

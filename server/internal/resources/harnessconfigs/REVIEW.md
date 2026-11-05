@@ -24,3 +24,6 @@
   a stop; an action would wake the box again.
 - Compare settings without converting JSON numbers to float64. Adjacent large
   integers can collapse to one float, hiding a real change from the save offer.
+- Refuse inheritance from a parent whose `FileOverrides` is nil until it has
+  refreshed. Its legacy `Files` may still mix personal account files with the
+  bundle baseline; copying them would leak personal state into another config.

@@ -17,6 +17,7 @@ type harnessCreateOptions struct {
 	name           string
 	slug           string
 	bundle         string
+	extends        string
 	files          []string
 	createOnlyFile []string
 }
@@ -24,6 +25,7 @@ type harnessCreateOptions struct {
 type harnessUpdateOptions struct {
 	name           string
 	bundle         string
+	extends        string
 	files          []string
 	createOnlyFile []string
 	removeFiles    []string
@@ -179,6 +181,12 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if opts.extends != "" {
+			opts.extends, err = a.resolveHarnessConfigID(cmd.Context(), client, projectID, opts.extends)
+			if err != nil {
+				return err
+			}
+		}
 		body, err := createHarnessBody(opts)
 		if err != nil {
 			return err
@@ -195,6 +203,7 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this harness (e.g. codex); defaults to the definition ID or a slug derived from the name")
+	cmd.Flags().StringVar(&opts.extends, "extends", "", "Follow this parent harness config (slug or ID) for its bundle; keep an independent account")
 	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Harness bundle to register: a FROM scratch image of its features, built FROM nothing or another harness's bundle, whose labels are its manifest")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "Add a file to the harness's home directory, or override the bundle's file at PATH, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
@@ -298,6 +307,13 @@ are part of this level already and need not be listed.
 		if err != nil {
 			return err
 		}
+		if cmd.Flags().Changed("extends") {
+			opts.extends, err = a.resolveHarnessConfigID(cmd.Context(), client, projectID, opts.extends)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "Account data is retained; harness %s will supply the bundle.\n", opts.extends)
+		}
 		body, err := updateHarnessBody(cmd, opts, current)
 		if err != nil {
 			return err
@@ -322,6 +338,7 @@ are part of this level already and need not be listed.
 		return a.writeHarness(cmd, harness)
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
+	cmd.Flags().StringVar(&opts.extends, "extends", "", "Follow this parent harness config (slug or ID) for its bundle; keep an independent account")
 	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Register the harness bundle its manifest is read from, as a harness registered before bundles needs to refresh")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "Add a file to the harness's home directory, or override the harness's own file at PATH, as PATH=CONTENT or PATH=@LOCALFILE; the harness's other files are kept (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
@@ -478,6 +495,7 @@ func createHarnessBody(opts harnessCreateOptions) (*apimodel.CreateHarnessConfig
 	body.SetName(optString(opts.name))
 	body.SetSlug(optString(opts.slug))
 	body.SetBundle(optString(opts.bundle))
+	body.SetExtends(optString(opts.extends))
 	if len(opts.files) > 0 {
 		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
 		if err != nil {
@@ -494,6 +512,9 @@ func createHarnessBody(opts harnessCreateOptions) (*apimodel.CreateHarnessConfig
 // the rest back as it was, under the revision read with it.
 func updateHarnessBody(cmd *cobra.Command, opts harnessUpdateOptions, current *apimodel.HarnessConfig) (*apimodel.UpdateHarnessConfigBody, error) {
 	body := &apimodel.UpdateHarnessConfigBody{Revision: current.Revision.Or(0)}
+	if cmd.Flags().Changed("extends") {
+		body.SetExtends(apiclientgen.NewOptString(opts.extends))
+	}
 	if cmd.Flags().Changed("name") {
 		body.SetName(apiclientgen.NewOptString(opts.name))
 	}

@@ -906,6 +906,10 @@ func (s *CreateAdoptionRequestBody) SetJustification(val string) {
 
 // Ref: #/components/schemas/CreateHarnessConfigBody
 type CreateHarnessConfigBody struct {
+	// ID of the standalone harness config in this project supplying the bundle and its metadata. Account
+	// files, personal overrides and secrets remain independent. Supply either bundle or extends when
+	// creating or changing the bundle source.
+	Extends OptString `json:"extends"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Files to add to the harness, or to override the bundle's file at the same path. They become the
@@ -920,6 +924,11 @@ type CreateHarnessConfigBody struct {
 	// Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to the id
 	// declared by the bundle's label, or a slug derived from name. Unique within the project.
 	Slug OptString `json:"slug"`
+}
+
+// GetExtends returns the value of Extends.
+func (s *CreateHarnessConfigBody) GetExtends() OptString {
+	return s.Extends
 }
 
 // GetSchema returns the value of Schema.
@@ -945,6 +954,11 @@ func (s *CreateHarnessConfigBody) GetName() OptString {
 // GetSlug returns the value of Slug.
 func (s *CreateHarnessConfigBody) GetSlug() OptString {
 	return s.Slug
+}
+
+// SetExtends sets the value of Extends.
+func (s *CreateHarnessConfigBody) SetExtends(val OptString) {
+	s.Extends = val
 }
 
 // SetSchema sets the value of Schema.
@@ -5706,6 +5720,10 @@ func (s *HarnessCaptureSettingFields) init() HarnessCaptureSettingFields {
 
 // Ref: #/components/schemas/HarnessConfig
 type HarnessConfig struct {
+	// ID of the standalone harness config in this project supplying the bundle and its metadata. Account
+	// files, personal overrides and secrets remain independent. Supply either bundle or extends when
+	// creating or changing the bundle source.
+	Extends  OptString                `json:"extends"`
 	SaveBack OptHarnessConfigSaveBack `json:"saveBack"`
 	Revision OptInt64                 `json:"revision"`
 	// The harness config's egress policy level, as a person set it (ADR 26-10-01-032). Its denyByDefault
@@ -5773,6 +5791,11 @@ type HarnessConfig struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Declarative volumes declared by the registered image label.
 	Volumes OptNilHarnessVolumeArray `json:"volumes"`
+}
+
+// GetExtends returns the value of Extends.
+func (s *HarnessConfig) GetExtends() OptString {
+	return s.Extends
 }
 
 // GetSaveBack returns the value of SaveBack.
@@ -5898,6 +5921,11 @@ func (s *HarnessConfig) GetUpdatedAt() time.Time {
 // GetVolumes returns the value of Volumes.
 func (s *HarnessConfig) GetVolumes() OptNilHarnessVolumeArray {
 	return s.Volumes
+}
+
+// SetExtends sets the value of Extends.
+func (s *HarnessConfig) SetExtends(val OptString) {
+	s.Extends = val
 }
 
 // SetSaveBack sets the value of SaveBack.
@@ -34448,6 +34476,10 @@ func (s *UnavailableAuditPool) SetReason(val string) {
 
 // Ref: #/components/schemas/UpdateHarnessConfigBody
 type UpdateHarnessConfigBody struct {
+	// ID of the standalone harness config in this project supplying the bundle and its metadata. Account
+	// files, personal overrides and secrets remain independent. Supply either bundle or extends when
+	// creating or changing the bundle source.
+	Extends OptString `json:"extends"`
 	// Revision the caller read before editing. A stale revision returns 409.
 	Revision int64 `json:"revision"`
 	// Replaces the harness config's egress policy level. Every live discobox on the harness converges
@@ -34465,6 +34497,11 @@ type UpdateHarnessConfigBody struct {
 	Bundle OptString `json:"bundle"`
 	// Harness config name.
 	Name OptString `json:"name"`
+}
+
+// GetExtends returns the value of Extends.
+func (s *UpdateHarnessConfigBody) GetExtends() OptString {
+	return s.Extends
 }
 
 // GetRevision returns the value of Revision.
@@ -34500,6 +34537,11 @@ func (s *UpdateHarnessConfigBody) GetBundle() OptString {
 // GetName returns the value of Name.
 func (s *UpdateHarnessConfigBody) GetName() OptString {
 	return s.Name
+}
+
+// SetExtends sets the value of Extends.
+func (s *UpdateHarnessConfigBody) SetExtends(val OptString) {
+	s.Extends = val
 }
 
 // SetRevision sets the value of Revision.

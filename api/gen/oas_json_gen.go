@@ -1721,6 +1721,12 @@ func (s *CreateHarnessConfigBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *CreateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.Extends.Set {
+			e.FieldStart("extends")
+			s.Extends.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -1752,12 +1758,13 @@ func (s *CreateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateHarnessConfigBody = [5]string{
-	0: "$schema",
-	1: "fileOverrides",
-	2: "bundle",
-	3: "name",
-	4: "slug",
+var jsonFieldsNameOfCreateHarnessConfigBody = [6]string{
+	0: "extends",
+	1: "$schema",
+	2: "fileOverrides",
+	3: "bundle",
+	4: "name",
+	5: "slug",
 }
 
 // Decode decodes CreateHarnessConfigBody from json.
@@ -1768,6 +1775,16 @@ func (s *CreateHarnessConfigBody) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "extends":
+			if err := func() error {
+				s.Extends.Reset()
+				if err := s.Extends.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"extends\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -10745,6 +10762,12 @@ func (s *HarnessConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	{
+		if s.Extends.Set {
+			e.FieldStart("extends")
+			s.Extends.Encode(e)
+		}
+	}
+	{
 		if s.SaveBack.Set {
 			e.FieldStart("saveBack")
 			s.SaveBack.Encode(e)
@@ -10886,32 +10909,33 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessConfig = [25]string{
-	0:  "saveBack",
-	1:  "revision",
-	2:  "egress",
-	3:  "imageEgressHosts",
-	4:  "$schema",
-	5:  "additionalGroups",
-	6:  "boundSecrets",
-	7:  "builtIn",
-	8:  "configuredFiles",
-	9:  "createdAt",
-	10: "env",
-	11: "fileOverrides",
-	12: "files",
-	13: "id",
-	14: "bundle",
-	15: "bundleDigest",
-	16: "manifestDigest",
-	17: "name",
-	18: "projectId",
-	19: "relaunchCommand",
-	20: "runCommand",
-	21: "secrets",
-	22: "slug",
-	23: "updatedAt",
-	24: "volumes",
+var jsonFieldsNameOfHarnessConfig = [26]string{
+	0:  "extends",
+	1:  "saveBack",
+	2:  "revision",
+	3:  "egress",
+	4:  "imageEgressHosts",
+	5:  "$schema",
+	6:  "additionalGroups",
+	7:  "boundSecrets",
+	8:  "builtIn",
+	9:  "configuredFiles",
+	10: "createdAt",
+	11: "env",
+	12: "fileOverrides",
+	13: "files",
+	14: "id",
+	15: "bundle",
+	16: "bundleDigest",
+	17: "manifestDigest",
+	18: "name",
+	19: "projectId",
+	20: "relaunchCommand",
+	21: "runCommand",
+	22: "secrets",
+	23: "slug",
+	24: "updatedAt",
+	25: "volumes",
 }
 
 // Decode decodes HarnessConfig from json.
@@ -10923,6 +10947,16 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "extends":
+			if err := func() error {
+				s.Extends.Reset()
+				if err := s.Extends.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"extends\"")
+			}
 		case "saveBack":
 			if err := func() error {
 				s.SaveBack.Reset()
@@ -10994,7 +11028,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"boundSecrets\"")
 			}
 		case "builtIn":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Bool()
 				s.BuiltIn = bool(v)
@@ -11016,7 +11050,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"configuredFiles\"")
 			}
 		case "createdAt":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -11058,7 +11092,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"files\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -11100,7 +11134,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"manifestDigest\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -11112,7 +11146,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -11163,7 +11197,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secrets\"")
 			}
 		case "slug":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Slug = string(v)
@@ -11175,7 +11209,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[3] |= 1 << 0
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -11206,10 +11240,10 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [4]uint8{
-		0b10000000,
-		0b00100010,
-		0b11000110,
 		0b00000000,
+		0b01000101,
+		0b10001100,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -58864,6 +58898,12 @@ func (s *UpdateHarnessConfigBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.Extends.Set {
+			e.FieldStart("extends")
+			s.Extends.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("revision")
 		e.Int64(s.Revision)
 	}
@@ -58905,14 +58945,15 @@ func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateHarnessConfigBody = [7]string{
-	0: "revision",
-	1: "egress",
-	2: "$schema",
-	3: "configuredFiles",
-	4: "fileOverrides",
-	5: "bundle",
-	6: "name",
+var jsonFieldsNameOfUpdateHarnessConfigBody = [8]string{
+	0: "extends",
+	1: "revision",
+	2: "egress",
+	3: "$schema",
+	4: "configuredFiles",
+	5: "fileOverrides",
+	6: "bundle",
+	7: "name",
 }
 
 // Decode decodes UpdateHarnessConfigBody from json.
@@ -58924,8 +58965,18 @@ func (s *UpdateHarnessConfigBody) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "extends":
+			if err := func() error {
+				s.Extends.Reset()
+				if err := s.Extends.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"extends\"")
+			}
 		case "revision":
-			requiredBitSet[0] |= 1 << 0
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.Revision = int64(v)
@@ -59006,7 +59057,7 @@ func (s *UpdateHarnessConfigBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000001,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
