@@ -342,6 +342,16 @@ func encodeDiscardSandboxHarnessConfigChangesRequest(
 	return nil
 }
 
+func encodeImportSandboxFilesRequest(
+	req ImportSandboxFilesReq,
+	r *http.Request,
+) error {
+	const contentType = "application/x-tar"
+	body := req
+	ht.SetBody(r, body, contentType)
+	return nil
+}
+
 func encodeMakeSandboxDirectoryRequest(
 	req *SandboxFileMkdirRequest,
 	r *http.Request,
@@ -624,6 +634,20 @@ func encodeSaveSandboxHarnessConfigChangesRequest(
 
 func encodeSendSandboxExecInputRequest(
 	req *SandboxExecInputBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeSetSandboxFileMetadataRequest(
+	req *SandboxFileMetadataRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

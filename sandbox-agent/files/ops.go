@@ -1,6 +1,7 @@
 package files
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -10,18 +11,20 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/discobox-ai/discobox/pkg/copyarchive"
 )
 
 // Do performs one operation as whoever this process is. A read's content is
 // the returned reader, which the caller closes; every other operation returns
 // none. body is a write's content, read to its end: a body that fails before
 // then leaves the file as it was.
-func Do(req Request, body io.Reader) (Result, io.ReadCloser, error) {
-	result, content, err := do(req, body)
+func Do(ctx context.Context, req Request, body io.Reader) (Result, io.ReadCloser, error) {
+	result, content, err := do(ctx, req, body)
 	return result, content, classify(err)
 }
 
-func do(req Request, body io.Reader) (Result, io.ReadCloser, error) {
+func do(ctx context.Context, req Request, body io.Reader) (Result, io.ReadCloser, error) {
 	if req.Path == "" || !filepath.IsAbs(req.Path) {
 		return Result{}, nil, errorf(KindInvalid, "path %q is not absolute", req.Path)
 	}
@@ -29,6 +32,23 @@ func do(req Request, body io.Reader) (Result, io.ReadCloser, error) {
 		return Result{}, nil, errorf(KindInvalid, "destination %q is not absolute", req.To)
 	}
 	switch req.Op {
+	case OpMetadata:
+		if err := copyarchive.SetMetadata(req.Path, req.Mode, req.AccessedAt, req.ModifiedAt); err != nil {
+			return Result{}, nil, err
+		}
+		stat, err := lstat(req.Path)
+		return Result{Stat: stat}, nil, err
+	case OpImport:
+		if err := copyarchive.Import(ctx, body, req.Path, req.Preserve); err != nil {
+			return Result{}, nil, errorf(KindInvalid, "%s", err)
+		}
+		stat, err := lstat(req.Path)
+		return Result{Stat: stat}, nil, err
+	case OpExport:
+		reader, writer := io.Pipe()
+		go func() { err := copyarchive.Export(ctx, writer, req.Path); writer.CloseWithError(err) }()
+		return Result{}, reader, nil
+
 	case OpStat:
 		stat, err := lstat(req.Path)
 		return Result{Stat: stat}, nil, err
@@ -48,6 +68,27 @@ func do(req Request, body io.Reader) (Result, io.ReadCloser, error) {
 		content, err := read(req.Path, req.Offset, req.Length)
 		return Result{}, content, err
 	case OpWrite:
+		if req.Copy {
+			if req.FailIfExists || req.FailIfMissing || req.IfVersion != "" {
+				return Result{}, nil, errorf(KindInvalid, "copy mode cannot be combined with ifExists=fail, ifMissing=fail, or ifVersion")
+			}
+
+			parent, err := copyarchive.OpenDirectory(filepath.Dir(req.Path), req.Parents)
+			if err != nil {
+				return Result{}, nil, err
+			}
+			defer parent.Close()
+			mode := uint32(0666)
+			if req.Mode != nil {
+				mode = *req.Mode & 0777
+			}
+			err = copyarchive.WriteFile(ctx, parent, filepath.Base(req.Path), body, copyarchive.Metadata{Mode: fs.FileMode(mode)}, false)
+			if err != nil {
+				return Result{}, nil, err
+			}
+			stat, err := lstat(req.Path)
+			return Result{Stat: stat}, nil, err
+		}
 		stat, err := write(req, body)
 		return Result{Stat: stat}, nil, err
 	case OpMkdir:
@@ -81,6 +122,7 @@ func statOf(path string, info fs.FileInfo) (*Stat, error) {
 		Size:       info.Size(),
 		Mode:       unixMode(info.Mode()),
 		ModifiedAt: info.ModTime().UTC(),
+		AccessedAt: copyarchive.Info(info).AccessedAt.UTC(),
 		Version:    version(info),
 	}
 	if stat.Type == TypeSymlink {
@@ -93,6 +135,16 @@ func statOf(path string, info fs.FileInfo) (*Stat, error) {
 		// version is that file's: the one a write through it compares.
 		if followed, err := os.Stat(path); err == nil {
 			stat.Version = version(followed)
+		}
+	}
+
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		stat.ResolvedPath = resolved
+		if target, err := os.Stat(resolved); err == nil && (target.Mode().IsRegular() || target.IsDir()) {
+			stat.FileIdentity, err = copyarchive.FileIdentity(resolved, target)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return stat, nil

@@ -1472,6 +1472,28 @@ components:
                 - path
                 - entries
             type: object
+        SandboxFileMetadataRequest:
+            additionalProperties: false
+            properties:
+                accessedAt:
+                    format: date-time
+                    type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                mode:
+                    description: Ordinary permission bits only, without ownership or privileged bits.
+                    format: int64
+                    maximum: 511
+                    minimum: 0
+                    type: integer
+                modifiedAt:
+                    format: date-time
+                    type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                path:
+                    type: string
+            required:
+                - path
+            type: object
         SandboxFileMkdirRequest:
             additionalProperties: false
             properties:
@@ -1506,6 +1528,14 @@ components:
             additionalProperties: false
             description: One path in a discobox, as its default user sees it.
             properties:
+                accessedAt:
+                    description: Last access time, captured before content is read.
+                    format: date-time
+                    type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                fileIdentity:
+                    description: Opaque filesystem object identity for detecting same-file and hard-link aliases within this sandbox.
+                    type: string
                 linkTarget:
                     description: What a symbolic link points to, as written in it. Set only for a symlink.
                     type: string
@@ -1516,11 +1546,15 @@ components:
                 modifiedAt:
                     format: date-time
                     type: string
+                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
                 name:
                     description: The last element of the path.
                     type: string
                 path:
                     description: The absolute path, cleaned.
+                    type: string
+                resolvedPath:
+                    description: The canonical path with source symlinks resolved, when its target exists.
                     type: string
                 size:
                     description: Size in bytes.
@@ -2787,6 +2821,95 @@ paths:
             summary: Wait for something to happen in a terminal.
             tags:
                 - Sandbox Execs
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive:
+        get:
+            description: Streams regular files and directories under a files/ prefix, starting with the root directory metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the selected source root. Ownership and special files are excluded.
+            operationId: export-sandbox-files
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The path. Absolute, or relative to the default user's home; a leading `~` is that home.
+                  in: query
+                  name: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/x-tar:
+                            schema:
+                                format: binary
+                                type: string
+                    description: The path's stat.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Export a directory as a copy archive.
+            tags:
+                - Sandbox Files
+        put:
+            description: Merges a restricted copy archive below the selected directory. Completed files remain after a failed batch. Each file publishes atomically. Requires the final SHA256SUMS manifest and complete body; rejects links, special entries, duplicate names and paths outside the root. Directory metadata is finalized after children. preserve applies ordinary permissions and access and modification times, never ownership or privileged bits.
+            operationId: import-sandbox-files
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: The path. Absolute, or relative to the default user's home; a leading `~` is that home.
+                  in: query
+                  name: path
+                  required: true
+                  schema:
+                    type: string
+                - in: query
+                  name: preserve
+                  schema:
+                    type: boolean
+            requestBody:
+                content:
+                    application/x-tar:
+                        schema:
+                            format: binary
+                            type: string
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxFileStat'
+                    description: The path's stat.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Import a directory copy archive.
+            tags:
+                - Sandbox Files
     /api/projects/{projectId}/sandboxes/{sandboxId}/files/content:
         get:
             description: Streams a file's content, or a byte range of it. 404 for a path that does not exist, 409 for a directory.
@@ -2897,6 +3020,11 @@ paths:
                   name: parents
                   schema:
                     type: boolean
+                - description: Use rooted copy semantics; refuse destination symlinks and special files, retain existing ordinary modes, and apply the receiving umask to new modes. Cannot be combined with ifExists=fail, ifMissing=fail, or ifVersion.
+                  in: query
+                  name: copy
+                  schema:
+                    type: boolean
             requestBody:
                 content:
                     application/octet-stream:
@@ -2996,6 +3124,45 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: List a directory in a discobox.
+            tags:
+                - Sandbox Files
+    /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata:
+        post:
+            description: Sets optional ordinary permission bits and access and modification times on an existing pinned file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or privileged bits.
+            operationId: set-sandbox-file-metadata
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SandboxFileMetadataRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxFileStat'
+                    description: The updated path.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Set file permissions and timestamps in a discobox.
             tags:
                 - Sandbox Files
     /api/projects/{projectId}/sandboxes/{sandboxId}/files/mkdir:

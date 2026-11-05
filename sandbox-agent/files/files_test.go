@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
+	"time"
 )
 
 // The helper is this test binary, as it is the agent's binary in a sandbox.
@@ -35,7 +36,7 @@ func mustDo(t *testing.T, req Request, body ...io.Reader) Result {
 	if len(body) > 0 {
 		in = body[0]
 	}
-	result, content, err := Do(req, in)
+	result, content, err := Do(t.Context(), req, in)
 	if err != nil {
 		t.Fatalf("%s %s: %v", req.Op, req.Path, err)
 	}
@@ -47,7 +48,7 @@ func mustDo(t *testing.T, req Request, body ...io.Reader) Result {
 
 func readAll(t *testing.T, req Request) string {
 	t.Helper()
-	_, content, err := Do(req, nil)
+	_, content, err := Do(t.Context(), req, nil)
 	if err != nil {
 		t.Fatalf("read %s: %v", req.Path, err)
 	}
@@ -89,7 +90,7 @@ func TestResolveTakesPathsAgainstTheHome(t *testing.T) {
 func TestWriteCreatesReplacesAndKeepsPermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a", "b", "f.txt")
-	if _, _, err := Do(Request{Op: OpWrite, Path: path}, strings.NewReader("x")); kindOf(err) != KindNotFound {
+	if _, _, err := Do(t.Context(), Request{Op: OpWrite, Path: path}, strings.NewReader("x")); kindOf(err) != KindNotFound {
 		t.Fatalf("write without parents into a missing directory = %v, want not found", err)
 	}
 	mode := uint32(0o750)
@@ -129,7 +130,7 @@ func TestWriteRefusesWhatItWasToldTo(t *testing.T) {
 		"no file":       {Request{Op: OpWrite, Path: filepath.Join(dir, "g"), IfVersion: first.Stat.Version}, KindPrecondition},
 		"a directory":   {Request{Op: OpWrite, Path: dir}, KindConflict},
 	} {
-		if _, _, err := Do(tc.req, strings.NewReader("two")); kindOf(err) != tc.want {
+		if _, _, err := Do(t.Context(), tc.req, strings.NewReader("two")); kindOf(err) != tc.want {
 			t.Errorf("%s: %v, want %s", name, err, tc.want)
 		}
 	}
@@ -155,7 +156,7 @@ func TestWriteRefusalNamesThePath(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 	path := filepath.Join(dir, "f")
-	_, _, err := Do(Request{Op: OpWrite, Path: path}, strings.NewReader("x"))
+	_, _, err := Do(t.Context(), Request{Op: OpWrite, Path: path}, strings.NewReader("x"))
 	if kindOf(err) != KindPermission || !strings.Contains(err.Error(), path) || strings.Contains(err.Error(), ".discobox-") {
 		t.Fatalf("refused write = %v, want a permission error naming %s", err, path)
 	}
@@ -165,7 +166,7 @@ func TestWriteCutShortChangesNothing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "f")
 	mustDo(t, Request{Op: OpWrite, Path: path}, strings.NewReader("whole"))
 	cut := io.MultiReader(strings.NewReader("par"), iotest.ErrReader(io.ErrUnexpectedEOF))
-	if _, _, err := Do(Request{Op: OpWrite, Path: path}, cut); err == nil {
+	if _, _, err := Do(t.Context(), Request{Op: OpWrite, Path: path}, cut); err == nil {
 		t.Fatal("a body cut short was written")
 	}
 	if got := readAll(t, Request{Op: OpRead, Path: path, Length: -1}); got != "whole" {
@@ -198,7 +199,7 @@ func TestWriteGoesThroughALink(t *testing.T) {
 	// The link's version is its target's, so a write through it at the
 	// version its stat gave is made, and one at a stale version is not.
 	mustDo(t, Request{Op: OpWrite, Path: link, IfVersion: stat.Version}, strings.NewReader("three"))
-	if _, _, err := Do(Request{Op: OpWrite, Path: link, IfVersion: stat.Version}, strings.NewReader("four")); kindOf(err) != KindPrecondition {
+	if _, _, err := Do(t.Context(), Request{Op: OpWrite, Path: link, IfVersion: stat.Version}, strings.NewReader("four")); kindOf(err) != KindPrecondition {
 		t.Fatalf("write at a stale version through a link = %v, want a refused precondition", err)
 	}
 	// A link to nothing is written through too: the file appears where it
@@ -225,10 +226,10 @@ func TestReadARange(t *testing.T) {
 	if got := readAll(t, Request{Op: OpRead, Path: path, Offset: 7, Length: -1}); got != "789" {
 		t.Fatalf("to the end = %q", got)
 	}
-	if _, _, err := Do(Request{Op: OpRead, Path: filepath.Dir(path), Length: -1}, nil); kindOf(err) != KindConflict {
+	if _, _, err := Do(t.Context(), Request{Op: OpRead, Path: filepath.Dir(path), Length: -1}, nil); kindOf(err) != KindConflict {
 		t.Fatalf("read of a directory = %v, want conflict", err)
 	}
-	if _, _, err := Do(Request{Op: OpRead, Path: path + "x", Length: -1}, nil); kindOf(err) != KindNotFound {
+	if _, _, err := Do(t.Context(), Request{Op: OpRead, Path: path + "x", Length: -1}, nil); kindOf(err) != KindNotFound {
 		t.Fatalf("read of nothing = %v, want not found", err)
 	}
 }
@@ -236,7 +237,7 @@ func TestReadARange(t *testing.T) {
 func TestListMkdirAndRemove(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "x", "y")
-	if _, _, err := Do(Request{Op: OpMkdir, Path: sub}, nil); kindOf(err) != KindNotFound {
+	if _, _, err := Do(t.Context(), Request{Op: OpMkdir, Path: sub}, nil); kindOf(err) != KindNotFound {
 		t.Fatalf("mkdir without parents = %v, want not found", err)
 	}
 	mode := uint32(0o700)
@@ -245,7 +246,7 @@ func TestListMkdirAndRemove(t *testing.T) {
 		t.Fatalf("made = %+v", made.Stat)
 	}
 	mustDo(t, Request{Op: OpMkdir, Path: sub, Parents: true})
-	if _, _, err := Do(Request{Op: OpMkdir, Path: sub}, nil); kindOf(err) != KindExists {
+	if _, _, err := Do(t.Context(), Request{Op: OpMkdir, Path: sub}, nil); kindOf(err) != KindExists {
 		t.Fatalf("mkdir of a directory there = %v, want exists", err)
 	}
 	mustDo(t, Request{Op: OpWrite, Path: filepath.Join(dir, "x", "f")}, strings.NewReader("f"))
@@ -253,14 +254,14 @@ func TestListMkdirAndRemove(t *testing.T) {
 	if listed.Stat.Path != filepath.Join(dir, "x") || len(listed.Entries) != 2 || listed.Entries[0].Name != "f" || listed.Entries[1].Name != "y" || listed.Entries[1].Type != TypeDirectory {
 		t.Fatalf("listed = %+v", listed)
 	}
-	if _, _, err := Do(Request{Op: OpList, Path: filepath.Join(dir, "x", "f")}, nil); kindOf(err) != KindConflict {
+	if _, _, err := Do(t.Context(), Request{Op: OpList, Path: filepath.Join(dir, "x", "f")}, nil); kindOf(err) != KindConflict {
 		t.Fatalf("list of a file = %v, want conflict", err)
 	}
-	if _, _, err := Do(Request{Op: OpRemove, Path: filepath.Join(dir, "x")}, nil); kindOf(err) != KindConflict {
+	if _, _, err := Do(t.Context(), Request{Op: OpRemove, Path: filepath.Join(dir, "x")}, nil); kindOf(err) != KindConflict {
 		t.Fatalf("remove of a full directory = %v, want conflict", err)
 	}
 	mustDo(t, Request{Op: OpRemove, Path: filepath.Join(dir, "x"), Recursive: true})
-	if _, _, err := Do(Request{Op: OpRemove, Path: filepath.Join(dir, "x")}, nil); kindOf(err) != KindNotFound {
+	if _, _, err := Do(t.Context(), Request{Op: OpRemove, Path: filepath.Join(dir, "x")}, nil); kindOf(err) != KindNotFound {
 		t.Fatalf("remove of nothing = %v, want not found", err)
 	}
 }
@@ -286,14 +287,14 @@ func TestMoveAndCopy(t *testing.T) {
 	if stat := mustDo(t, Request{Op: OpStat, Path: filepath.Join(dir, "copy", "link")}).Stat; stat.Type != TypeSymlink || stat.LinkTarget != "bin/run" {
 		t.Fatalf("copied link = %+v, want a link", stat)
 	}
-	if _, _, err := Do(Request{Op: OpCopy, Path: src, To: filepath.Join(dir, "copy")}, nil); kindOf(err) != KindExists {
+	if _, _, err := Do(t.Context(), Request{Op: OpCopy, Path: src, To: filepath.Join(dir, "copy")}, nil); kindOf(err) != KindExists {
 		t.Fatalf("copy onto a path there = %v, want exists", err)
 	}
-	if _, _, err := Do(Request{Op: OpCopy, Path: src, To: filepath.Join(src, "inside")}, nil); kindOf(err) != KindInvalid {
+	if _, _, err := Do(t.Context(), Request{Op: OpCopy, Path: src, To: filepath.Join(src, "inside")}, nil); kindOf(err) != KindInvalid {
 		t.Fatalf("copy into itself = %v, want invalid", err)
 	}
 	mustDo(t, Request{Op: OpWrite, Path: filepath.Join(dir, "f")}, strings.NewReader("f"))
-	if _, _, err := Do(Request{Op: OpMove, Path: filepath.Join(dir, "f"), To: filepath.Join(dir, "copy")}, nil); kindOf(err) != KindExists {
+	if _, _, err := Do(t.Context(), Request{Op: OpMove, Path: filepath.Join(dir, "f"), To: filepath.Join(dir, "copy")}, nil); kindOf(err) != KindExists {
 		t.Fatalf("move onto a path there = %v, want exists", err)
 	}
 	moved := mustDo(t, Request{Op: OpMove, Path: filepath.Join(dir, "f"), To: filepath.Join(dir, "g")})
@@ -315,10 +316,10 @@ func TestMoveAndCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
-		if _, _, err := Do(Request{Op: OpMove, Path: filepath.Join(locked, "f"), To: filepath.Join(dir, "copy", "bin"), Replace: true}, nil); kindOf(err) != KindPermission {
+		if _, _, err := Do(t.Context(), Request{Op: OpMove, Path: filepath.Join(locked, "f"), To: filepath.Join(dir, "copy", "bin"), Replace: true}, nil); kindOf(err) != KindPermission {
 			t.Fatalf("move out of a directory the user may not write = %v, want permission", err)
 		}
-		if _, _, err := Do(Request{Op: OpStat, Path: filepath.Join(dir, "copy", "bin")}, nil); err != nil {
+		if _, _, err := Do(t.Context(), Request{Op: OpStat, Path: filepath.Join(dir, "copy", "bin")}, nil); err != nil {
 			t.Fatalf("the destination of a refused move is gone: %v", err)
 		}
 	}
@@ -374,5 +375,95 @@ func TestHelperRunsTheOperation(t *testing.T) {
 	}
 	if stat, _, err := h.do(ctx, nil, Request{Op: OpStat, Path: path}, nil); err != nil || stat.Stat.Size != int64(len(content)) {
 		t.Fatalf("after a write cut short: %+v, %v; want the file as it was", stat.Stat, err)
+	}
+}
+
+func TestCopyWritesRefuseConditionalOptionsBeforeWriting(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "file")
+	if err := os.WriteFile(path, []byte("before"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, req := range []Request{{Op: OpWrite, Path: path, Copy: true, FailIfExists: true}, {Op: OpWrite, Path: path, Copy: true, IfVersion: "stale"}, {Op: OpWrite, Path: filepath.Join(root, "missing"), Copy: true, FailIfMissing: true}} {
+		if _, _, err := Do(t.Context(), req, strings.NewReader("after")); kindOf(err) != KindInvalid {
+			t.Fatalf("conditional copy accepted: %+v %v", req, err)
+		}
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "before" {
+		t.Fatal("refused write changed file")
+	}
+	if _, err := os.Stat(filepath.Join(root, "missing")); !os.IsNotExist(err) {
+		t.Fatal("refused write created missing file")
+	}
+}
+
+func TestHelperCancellationCleansTemporaryUpload(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := helper{argv: []string{exe, HelperCommand}}
+	root := t.TempDir()
+	target := filepath.Join(root, "file")
+	if err := os.WriteFile(target, []byte("before"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := h.do(ctx, nil, Request{Op: OpWrite, Path: target, Copy: true}, reader)
+		done <- err
+	}()
+	if _, err := writer.Write([]byte("incomplete upload")); err != nil {
+		t.Fatal(err)
+	}
+	temporaryExists := func() bool {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".discobox-copy-") {
+				return true
+			}
+		}
+		return false
+	}
+	await := func(want bool) {
+		t.Helper()
+		deadline := time.NewTimer(3 * time.Second)
+		defer deadline.Stop()
+		tick := time.NewTicker(10 * time.Millisecond)
+		defer tick.Stop()
+		for temporaryExists() != want {
+			select {
+			case <-deadline.C:
+				t.Fatalf("temporary exists=%t, want %t", !want, want)
+			case <-tick.C:
+			}
+		}
+	}
+	await(true)
+	cancel()
+	// Keep the source blocked: cancellation must tell the helper that the framed
+	// body is incomplete, without waiting for another source byte or killing it.
+	await(false)
+	writer.CloseWithError(context.Canceled)
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("canceled upload succeeded")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("canceled helper did not return")
+	}
+	got, _ := os.ReadFile(target)
+	if string(got) != "before" {
+		t.Fatal("canceled upload changed target")
 	}
 }

@@ -11,6 +11,7 @@ COPY pkg/agentlayer ./pkg/agentlayer
 COPY access ./access
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid
+COPY pkg/copyarchive ./pkg/copyarchive
 COPY pkg/declared ./pkg/declared
 COPY pkg/execstream ./pkg/execstream
 COPY pkg/fsdurable ./pkg/fsdurable
@@ -97,6 +98,7 @@ COPY go.mod go.sum ./
 COPY pkg/agentcreds ./pkg/agentcreds
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid
+COPY pkg/copyarchive ./pkg/copyarchive
 COPY pkg/bindingplan ./pkg/bindingplan
 COPY pkg/configfile ./pkg/configfile
 COPY pkg/controlplane ./pkg/controlplane
@@ -128,6 +130,7 @@ COPY pkg/sourcecache ./pkg/sourcecache
 COPY pkg/sourceref ./pkg/sourceref
 COPY pkg/requestprogress ./pkg/requestprogress
 COPY pkg/sse ./pkg/sse
+COPY pkg/tarsums ./pkg/tarsums
 COPY pkg/tools ./pkg/tools
 COPY pkg/version ./pkg/version
 COPY pkg/wsrecord ./pkg/wsrecord

@@ -525,15 +525,45 @@ func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (
 // the pool start it, and repairs it once if it failed and has no container.
 // Nothing has been forwarded at that point, so nothing has to be replayed.
 func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
-	// A discobox reads and types into another's terminal one call at a time,
-	// and does not attach to it (ADR 26-10-01-397 §2).
-	if principal, ok := auth.PrincipalFromContext(ctx); ok && use.Attach && principal.Type == auth.PrincipalTypeSandbox {
-		return nil, nil, apperrors.NewStatusError(http.StatusForbidden, "a discobox does not attach to another")
-	}
 	if err := authorizeRequestedScopes(ctx, scopes); err != nil {
 		return nil, nil, err
 	}
-	return s.acquireForUse(ctx, projectID, sandboxID, scopes, use)
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
+		if projectID != principal.ProjectID {
+			return nil, nil, apperrors.NewStatusError(http.StatusForbidden, "a discobox may only act in its own project")
+		}
+		write := use.Attach
+		for _, scope := range scopes {
+			switch scope {
+			case poolagentauth.ScopeExecWrite, poolagentauth.ScopeFilesWrite, poolagentauth.ScopeSandboxWrite, poolagentauth.ScopeSandboxHTTP:
+				write = true
+			}
+		}
+		if _, err := (auth.SandboxRoleAuthorizer{Store: s.store}).AuthorizeChild(ctx, principal, sandboxID, write, strings.Join(scopes, ", ")); err != nil {
+			return nil, nil, err
+		}
+	}
+	lease, sb, err := s.acquireForUse(ctx, projectID, sandboxID, scopes, use)
+	if err != nil {
+		return lease, sb, err
+	}
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox && lease != nil && lease.Client != nil {
+		write := use.Attach
+		for _, scope := range scopes {
+			switch scope {
+			case poolagentauth.ScopeExecWrite, poolagentauth.ScopeFilesWrite, poolagentauth.ScopeSandboxWrite, poolagentauth.ScopeSandboxHTTP:
+				write = true
+			}
+		}
+		client := *lease.Client
+		base := client.Transport
+		if base == nil {
+			base = http.DefaultTransport
+		}
+		client.Transport = &childTransport{base: base, service: s, principal: principal, target: sandboxID, write: write}
+		lease.Client = &client
+	}
+	return lease, sb, nil
 }
 
 // AcquireSandboxHTTPClientForServer is the same acquire for a call Discobox
@@ -628,7 +658,7 @@ func authorizeRequestedScopes(ctx context.Context, scopes []string) error {
 		// Attaching is refused before this (AcquireSandboxHTTPClient).
 		for _, scope := range scopes {
 			switch scope {
-			case poolagentauth.ScopeSandboxWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite, poolagentauth.ScopeSandboxHTTP:
+			case poolagentauth.ScopeSandboxWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite, poolagentauth.ScopeSandboxHTTP, poolagentauth.ScopeFilesRead, poolagentauth.ScopeFilesWrite:
 			default:
 				return apperrors.NewStatusError(http.StatusForbidden, "a discobox may only push source into another, drive its terminals and services, change its meta, or reach its ports over HTTP: "+scope)
 			}

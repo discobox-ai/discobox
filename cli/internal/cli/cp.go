@@ -15,55 +15,33 @@ import (
 	idpkg "github.com/discobox-ai/x/id"
 )
 
-// newCPCommand implements `discobox cp`: scp(1), pointed at the same SSH
-// ingress `discobox tools ssh` uses, through the same ProxyCommand.
-//
-// Nothing here copies bytes. The server's sshd already answers the `sftp`
-// subsystem by running the sandbox's `sftp-server` as an exec
-// (`server/internal/sshd/session.go`), which is exactly what a modern scp
-// speaks, so the whole transfer — recursion, permissions, resumed directories —
-// is scp's and the sandbox's business. What this command owns is the one thing
-// scp cannot work out for itself: which proxy, key and host key reach a
-// discobox, and which discobox a `NAME:PATH` argument means.
 func (a *App) newCPCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "cp [SCP_ARG...] SRC... DST",
+		Use:     "cp [-r] [-p] [-q] [--] SRC... DST",
 		Aliases: []string{"scp"},
 		Short:   "Copy files to and from a discobox",
-		Long: `Copy files between this machine and a discobox, with scp.
+		Long: `Copy files through the discobox files API, as the discobox's default user.
 
-A path is inside a discobox when it is written DISCOBOX:PATH — the discobox's
-ID, a short prefix of it, or the name the discobox was created with. That name
-is the NAME "discobox ls" prints only until the discobox's agent titles its
-terminal and the title takes the column, so the ID is what always resolves; the
-title itself is a name "discobox rm" takes, not this one. A bare :PATH means the
-only discobox there is, or a prompt to pick one when there is more than one. A discobox on another server is written by its address,
-DISCOBOX_ADDRESS:PATH — discobox://<server>/<discobox>, where <server> is what
-"discobox admin remote" prints in its ADDRESS column: a peer ID, or a host.
-discobox:///<discobox>, with no server, is that discobox on the primary server.
-The SERVER column "discobox ls" prints is the name this machine registered that
-server under, and names nothing anywhere else. Everything without a colon is a
-local path.
+Write a remote path as DISCOBOX:PATH, :PATH to select a discobox, or
+DISCOBOX_ADDRESS:PATH. Relative remote paths start at the user's home.
+Both ends may name discoboxes on the same server. Local paths follow the
+usual colon and Windows drive rules; use ./ before an ambiguous local name.
 
-Both ends may name a discobox, and they need not be the same discobox — but
-they must be on the same server, since one copy runs over one connection. An
-address says which server that is, and a name or a bare :PATH beside one is
-looked up there rather than on the primary. Without an address, each one is
-looked for on every server "discobox ls" lists.
+Use -r for directories, -p to preserve ordinary permissions and access and
+modification times, and -q for quiet operation. Multiple sources need an
+existing destination directory. Existing directories receive each source's
+basename; a missing destination takes its content. A trailing slash requires
+a directory. Unrelated destination entries remain in place.
 
-Relative remote paths are resolved from the discobox user's home directory, not
-from a source working tree.
+Remote paths are literal: spaces, Unicode, colons and shell characters are
+filenames, without shell or glob expansion. -- ends options. Source links are
+followed; links inside a recursive tree must stay within that tree. Destination
+links and special files are refused. A failed recursive copy may leave completed
+files, but never publishes a truncated current file.
 
-The server needs no SSH port for this: scp reaches it over the same endpoint
-the API uses, by running this CLI as its ProxyCommand. Key and host
-verification are supplied here, so nothing is written to your ssh_config; the
-key is enrolled in the project and reused on later runs.
-
-Every other argument is passed to scp untouched, so its own flags — -r, -p, -C,
--o — mean what they always mean. That includes the ones this CLI otherwise
-takes: -p is scp's preserve here, not --project. To point a copy somewhere
-else, write the flag in front of the command — discobox --server ... cp — or
-set DISCOBOX_SERVER and DISCOBOX_PROJECT in the environment.`,
+Copy no longer uses SSH or scp. SSH/transport flags and other unsupported scp
+options are errors; supported flags are -r, -p and -q. Set global options before
+cp, such as discobox --project PROJECT cp ...`,
 		Example: `  discobox cp ./config.yaml mybox:/tmp/config.yaml
   discobox cp -r mybox:/workspace/dist ./dist
   discobox cp :notes.md .
@@ -84,7 +62,10 @@ set DISCOBOX_SERVER and DISCOBOX_PROJECT in the environment.`,
 }
 
 func (a *App) runCP(cmd *cobra.Command, args []string) error {
-	options, paths := splitSCPArgs(args)
+	options, paths, err := parseCopyArgs(args)
+	if err != nil {
+		return err
+	}
 	if len(paths) < 2 {
 		return fmt.Errorf("cp needs at least one source and a destination; see `discobox cp --help`")
 	}
@@ -99,23 +80,11 @@ func (a *App) runCP(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	rewritten, err := target.app.resolveCPOperands(cmd, target.client, target.projectID, operands, target.resolved)
+	operands, err = target.app.resolveCPOperands(cmd, target.client, target.projectID, operands, target.resolved)
 	if err != nil {
 		return err
 	}
-
-	session, err := target.app.startSSHClientSession(cmd, target.client, target.projectID)
-	if err != nil {
-		return err
-	}
-	defer session.close()
-
-	return runSSHClient(cmd, "scp", scpArgs(scpInvocation{
-		session:  session.options,
-		options:  options,
-		operands: rewritten,
-		remote:   cpOperandsAreRemote(operands),
-	}), session.env)
+	return target.app.copyOperands(cmd.Context(), target.client, target.projectID, operands, options)
 }
 
 // cpTarget is the server a copy runs against and what it took to decide: the
@@ -311,81 +280,6 @@ func parseCPOperands(paths []string) []cpOperand {
 	return operands
 }
 
-func cpOperandsAreRemote(operands []cpOperand) []bool {
-	remote := make([]bool, len(operands))
-	for i, operand := range operands {
-		remote[i] = operand.remote
-	}
-	return remote
-}
-
-// scpInvocation is everything the argument list is assembled from: what points
-// scp at the server (sshClientSession.options), the user's own options, the
-// rewritten operands, and which of those operands are inside a discobox.
-type scpInvocation struct {
-	session  []string
-	options  []string
-	operands []string
-	remote   []bool
-}
-
-// scpArgs assembles the argument list in the order `scp [options] source ...
-// target` requires.
-func scpArgs(invocation scpInvocation) []string {
-	// Cloned, not appended to in place: appending into a caller's slice
-	// would write past what it thinks it owns.
-	args := slices.Clone(invocation.session)
-	last := len(invocation.remote) - 1
-	if last >= 0 && invocation.remote[last] && slices.Contains(invocation.remote[:last], true) {
-		// Discobox to discobox, routed through this process — the only place
-		// both ends are reachable from, since each is a host alias whose
-		// ProxyCommand runs on this machine and means nothing inside a
-		// sandbox; each end runs its own. Current OpenSSH already routes an
-		// sftp-mode copy this way and -3 changes nothing there; it is pinned
-		// because the direct path is one `-R`, one older client, or one
-		// ssh_config default away, and it cannot work here — the source would
-		// look up the destination's alias inside its own sandbox and fail.
-		args = append(args, "-3")
-	}
-	args = append(args, invocation.options...)
-	// `--` ends scp's options for good: a rewritten remote operand is
-	// `sbx_…@sbx_….discobox.internal:…` and can never look like a flag, but a
-	// local one the user wrote as `-x` still would, and scp reads options after
-	// operands the way glibc's getopt permutes them.
-	args = append(args, "--")
-	return append(args, invocation.operands...)
-}
-
-// resolveCPOperands turns each remote operand into the `USER@HOST:PATH` scp
-// takes, leaving local ones alone.
-//
-// Each distinct reference is resolved once. Repeating the resolution would cost
-// a round trip per operand, and — for the bare `:PATH` form, which has no
-// reference to resolve — would open the picker again for every argument that
-// used it.
-func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client, projectID string, operands []cpOperand, resolved map[string]string) ([]string, error) {
-	if resolved == nil {
-		resolved = map[string]string{}
-	}
-	rewritten := make([]string, 0, len(operands))
-	for _, operand := range operands {
-		if !operand.remote {
-			rewritten = append(rewritten, operand.path)
-			continue
-		}
-		sandboxID, seen := resolved[operand.reference]
-		if !seen {
-			var err error
-			if sandboxID, err = a.resolveCPSandbox(cmd, client, projectID, operand.reference); err != nil {
-				return nil, err
-			}
-			resolved[operand.reference] = sandboxID
-		}
-		rewritten = append(rewritten, sandboxID+"@"+sshClientHost(sandboxID)+":"+operand.path)
-	}
-	return rewritten, nil
-}
-
 // resolveCPSandbox turns what stood before the colon into a sandbox ID.
 //
 // It resolves through resolveSandboxReference over the candidates it lists,
@@ -554,52 +448,57 @@ func windowsDrivePath(operand string) bool {
 	return (letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z')
 }
 
-// scpOptionsWithValue are scp(1)'s options that consume a value, either
-// attached (`-l1024`) or as the next argument (`-l 1024`). Everything else scp
-// accepts is a boolean flag.
-//
-// The table exists because the operands have to be found: this command rewrites
-// them, and `-o ProxyJump=x` must not be mistaken for a path.
-var scpOptionsWithValue = map[rune]bool{
-	'c': true, 'D': true, 'F': true, 'i': true, 'J': true,
-	'l': true, 'o': true, 'P': true, 'S': true, 'X': true,
-}
+type copyOptions struct{ recursive, preserve, quiet bool }
 
-// splitSCPArgs divides the user's arguments into scp's options and the paths to
-// copy.
-//
-// Options are collected wherever they appear and emitted before the operands,
-// which is where scp's usage puts them. Placing them after happens to work on
-// glibc, whose getopt permutes argv, and is read as a filename anywhere else.
-//
-// `--` ends the options and is not forwarded: this command appends its own
-// separator once the operands are rewritten.
-func splitSCPArgs(args []string) (options, paths []string) {
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
+func parseCopyArgs(args []string) (copyOptions, []string, error) {
+	var options copyOptions
+	var paths []string
+	for i, arg := range args {
 		if arg == "--" {
-			return options, append(paths, args[i+1:]...)
+			return options, append(paths, args[i+1:]...), nil
 		}
 		if !strings.HasPrefix(arg, "-") || arg == "-" {
 			paths = append(paths, arg)
 			continue
 		}
-		options = append(options, arg)
-
-		// Walk the bundle: -rp is two booleans, -rl 1024 ends in an option
-		// whose value is the next argument, and -rl1024 carries it inline.
-		// Anything after a value-taking letter belongs to that value, which is
-		// why the scan stops there — the `r` in `-o r=1` is not a flag.
-		runes := []rune(arg[1:])
-		for index, letter := range runes {
-			if scpOptionsWithValue[letter] {
-				if index == len(runes)-1 && i+1 < len(args) {
-					i++
-					options = append(options, args[i])
-				}
-				break
+		for _, flag := range arg[1:] {
+			switch flag {
+			case 'r':
+				options.recursive = true
+			case 'p':
+				options.preserve = true
+			case 'q':
+				options.quiet = true
+			default:
+				return options, nil, fmt.Errorf("unsupported copy option %q: copy uses the files API; supported syntax: cp [-r] [-p] [-q] [--] SRC... DST", arg)
 			}
 		}
 	}
-	return options, paths
+	return options, paths, nil
+}
+
+func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client, projectID string, operands []cpOperand, resolved map[string]string) ([]cpOperand, error) {
+	operands = slices.Clone(operands)
+	if resolved == nil {
+		resolved = map[string]string{}
+	}
+	for i := range operands {
+		if !operands[i].remote {
+			continue
+		}
+		id, seen := resolved[operands[i].reference]
+		if !seen {
+			var err error
+			id, err = a.resolveCPSandbox(cmd, client, projectID, operands[i].reference)
+			if err != nil {
+				return nil, err
+			}
+			resolved[operands[i].reference] = id
+		}
+		operands[i].reference = id
+		if operands[i].path == "" {
+			operands[i].path = "~"
+		}
+	}
+	return operands, nil
 }

@@ -753,3 +753,7 @@ user waits on every single start.
   precedes source waiting and first record creation; that record precedes
   installation and shim launch. Return preparation guidance in both windows,
   keeping concrete unknown IDs as 404 and real ended sessions as ended.
+
+- Cancel an in-flight files upload by closing the helper's framed stdin before
+  a bounded kill fallback. Killing it immediately skips the atomic writer's
+  cleanup defers and leaves temporary siblings after child access is revoked.

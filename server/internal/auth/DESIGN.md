@@ -153,7 +153,7 @@ Current authorizers:
     `complete-source-push`
     ([ADR 26-09-24-630](../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)
     §2); its terminals — the exec listing, one exec, its `logs`, `events`,
-    `screen`, `wait`, and `input`
+    `screen`, `wait`, and `input`, plus exec create/start/attach/delete and the complete files API
     ([ADR 26-10-01-397](../../../docs/adr/26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md));
     its power — `start`, `stop`, `restart`, `repair`, and `upgrade`
     ([ADR 26-10-02-478](../../../docs/adr/26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md));
@@ -173,8 +173,7 @@ Current authorizers:
   A route naming a discobox (`childDiscobox`) takes only one the caller
   leads (`Sandbox.ParentSandboxID`, ADR 26-10-27-880 §9); a discobox is
   not its own parent, so it never acts on itself. Not in the role: purge
-  and unarchive, on any discobox (ADR 26-11-03-724 §§2, 4), `attach`,
-  creating, starting, or ending an exec, TCP and UDP tunnels, and fetching an
+  and unarchive, on any discobox (ADR 26-11-03-724 §§2, 4), TCP and UDP tunnels, and fetching an
   origin or what a pool's cache remembers of a remote (`git-caches`)
   ([ADR 26-10-10-545](../../../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
   §7). No role path matches a segment that is empty, `.`, or `..`, so a path
@@ -322,3 +321,10 @@ approve or deny any. The listing is requester-filtered in the service.
 sends nothing into the child. Approval is exclusively a user principal's.
 The ancestor check forbids cycles, so parents cannot approve one another's
 credential requests. Create-time bounds and passthrough keep reading the creator.
+
+`SandboxRoleAuthorizer.AuthorizeChild` is shared with service acquire. It reads
+API access, direct parenthood and effective egress from the primary database,
+never a lagging replica. Files reads/export are child reads, while exec attach
+(including GET), create/start/delete and files writes/import/metadata require
+egress coverage. Created and adopted children have identical permissions;
+refusals name that provenance only after verifying current parenthood.

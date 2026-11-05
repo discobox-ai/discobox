@@ -456,6 +456,17 @@ func (UnimplementedHandler) DismissSecretRefreshRequest(ctx context.Context, par
 	return r, ht.ErrNotImplemented
 }
 
+// ExportSandboxFiles implements export-sandbox-files operation.
+//
+// Streams regular files and directories under a files/ prefix, starting with the root directory
+// metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
+// selected source root. Ownership and special files are excluded.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+func (UnimplementedHandler) ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (r ExportSandboxFilesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ForceJob implements force-job operation.
 //
 // Force a pending, scheduled, or backoff job to run immediately.
@@ -751,6 +762,19 @@ func (UnimplementedHandler) GetServerPeer(ctx context.Context) (r GetServerPeerR
 //
 // GET /projects/{projectId}/trust-requests/{requestId}
 func (UnimplementedHandler) GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (r GetTrustRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ImportSandboxFiles implements import-sandbox-files operation.
+//
+// Merges a restricted copy archive below the selected directory. Completed files remain after a
+// failed batch. Each file publishes atomically. Requires the final SHA256SUMS manifest and complete
+// body; rejects links, special entries, duplicate names and paths outside the root. Directory
+// metadata is finalized after children. preserve applies ordinary permissions and access and
+// modification times, never ownership or privileged bits.
+//
+// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+func (UnimplementedHandler) ImportSandboxFiles(ctx context.Context, req ImportSandboxFilesReq, params ImportSandboxFilesParams) (r ImportSandboxFilesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1473,6 +1497,17 @@ func (UnimplementedHandler) SetDefaultPool(ctx context.Context, params SetDefaul
 //
 // PUT /projects/{projectId}/default
 func (UnimplementedHandler) SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (r SetDefaultProjectRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// SetSandboxFileMetadata implements set-sandbox-file-metadata operation.
+//
+// Sets optional ordinary permission bits and access and modification times on an existing pinned
+// file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
+// privileged bits.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+func (UnimplementedHandler) SetSandboxFileMetadata(ctx context.Context, req *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (r SetSandboxFileMetadataRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

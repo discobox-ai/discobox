@@ -336,3 +336,14 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   comments and heredocs otherwise become headings and HTML. Generate from the
   command tree without loading user tools or exposing machine paths. User tool
   declarations may contain private names and descriptions.
+
+- File-copy preservation uses nanosecond timestamps on both stat responses and
+  metadata requests. Set the canonical time-format extensions and exercise
+  generated codecs: plain encoding/json time.Time fixtures hide ogen's default
+  whole-second RFC3339 encoding and once let single-file -p lose precision.
+
+- Check single-file copy streams against the stat size before publishing, even
+  when HTTP reaches EOF without an error. The pool proxy can finish a chunked
+  response cleanly after upstream revocation; runtime verification once showed
+  curl succeeding with only 22 MiB of a 32 MiB file. Archive transfers already
+  require their final checksum manifest; raw files need their extent checked.

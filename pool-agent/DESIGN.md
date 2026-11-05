@@ -2514,3 +2514,14 @@ unperformed attempt. Power transitions drain pending completion before changing
 that evidence. Completion carries the dispatch wake epoch; a first callback
 delayed past a newer admission records its receipt without canceling that newer
 instruction.
+
+## Child exec and file transfers
+
+The API gate preserves websocket upgrade headers only for exec attach routes,
+while replacing all caller identity and authorization headers with the pool's
+assertion and verified sandbox identity. The same gate streams files content
+and archive requests. These routes have a two-minute setup/stall bound reset
+by progress; other API requests retain the ordinary two-minute total timeout.
+The response retains `io.ReadWriteCloser` for upgraded streams. The control
+plane owns live child revocation; closing its response closes the gate stream.
+Files archive GET uses `files:read`; import and metadata use `files:write`.

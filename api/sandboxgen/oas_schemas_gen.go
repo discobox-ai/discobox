@@ -396,6 +396,20 @@ func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
 
+type ExportSandboxFilesOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ExportSandboxFilesOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
 // Ref: #/components/schemas/HarnessCaptureBaseline
 type HarnessCaptureBaseline struct {
 	ConfigRevision  int64                                    `json:"configRevision"`
@@ -1189,6 +1203,20 @@ func (s *HarnessHookLogsResponse) GetHooks() []HarnessHookLog {
 // SetHooks sets the value of Hooks.
 func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
 	s.Hooks = val
+}
+
+type ImportSandboxFilesReq struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ImportSandboxFilesReq) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
 }
 
 type ListExecEventsOrder string
@@ -6903,6 +6931,55 @@ func (s *SandboxFileList) SetPath(val string) {
 	s.Path = val
 }
 
+// Ref: #/components/schemas/SandboxFileMetadataRequest
+type SandboxFileMetadataRequest struct {
+	AccessedAt OptDateTime `json:"accessedAt"`
+	// Ordinary permission bits only, without ownership or privileged bits.
+	Mode       OptInt64    `json:"mode"`
+	ModifiedAt OptDateTime `json:"modifiedAt"`
+	Path       string      `json:"path"`
+}
+
+// GetAccessedAt returns the value of AccessedAt.
+func (s *SandboxFileMetadataRequest) GetAccessedAt() OptDateTime {
+	return s.AccessedAt
+}
+
+// GetMode returns the value of Mode.
+func (s *SandboxFileMetadataRequest) GetMode() OptInt64 {
+	return s.Mode
+}
+
+// GetModifiedAt returns the value of ModifiedAt.
+func (s *SandboxFileMetadataRequest) GetModifiedAt() OptDateTime {
+	return s.ModifiedAt
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxFileMetadataRequest) GetPath() string {
+	return s.Path
+}
+
+// SetAccessedAt sets the value of AccessedAt.
+func (s *SandboxFileMetadataRequest) SetAccessedAt(val OptDateTime) {
+	s.AccessedAt = val
+}
+
+// SetMode sets the value of Mode.
+func (s *SandboxFileMetadataRequest) SetMode(val OptInt64) {
+	s.Mode = val
+}
+
+// SetModifiedAt sets the value of ModifiedAt.
+func (s *SandboxFileMetadataRequest) SetModifiedAt(val OptDateTime) {
+	s.ModifiedAt = val
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxFileMetadataRequest) SetPath(val string) {
+	s.Path = val
+}
+
 // Ref: #/components/schemas/SandboxFileMkdirRequest
 type SandboxFileMkdirRequest struct {
 	// Permission bits for a directory this creates, before the umask. Defaults to 0777 (511).
@@ -6975,6 +7052,11 @@ func (s *SandboxFileRemoveRequest) SetRecursive(val OptBool) {
 // One path in a discobox, as its default user sees it.
 // Ref: #/components/schemas/SandboxFileStat
 type SandboxFileStat struct {
+	// Last access time, captured before content is read.
+	AccessedAt OptDateTime `json:"accessedAt"`
+	// Opaque filesystem object identity for detecting same-file and hard-link aliases within this
+	// sandbox.
+	FileIdentity OptString `json:"fileIdentity"`
 	// What a symbolic link points to, as written in it. Set only for a symlink.
 	LinkTarget OptString `json:"linkTarget"`
 	// The permission bits with setuid, setgid and sticky, as chmod takes them (0755 is 493).
@@ -6984,12 +7066,24 @@ type SandboxFileStat struct {
 	Name string `json:"name"`
 	// The absolute path, cleaned.
 	Path string `json:"path"`
+	// The canonical path with source symlinks resolved, when its target exists.
+	ResolvedPath OptString `json:"resolvedPath"`
 	// Size in bytes.
 	Size int64           `json:"size"`
 	Type SandboxFileType `json:"type"`
 	// An opaque tag that changes whenever the content does. A write may name it to replace only what was
 	// read. A link's is the version of what it points to, which a read or a write of it reaches.
 	Version string `json:"version"`
+}
+
+// GetAccessedAt returns the value of AccessedAt.
+func (s *SandboxFileStat) GetAccessedAt() OptDateTime {
+	return s.AccessedAt
+}
+
+// GetFileIdentity returns the value of FileIdentity.
+func (s *SandboxFileStat) GetFileIdentity() OptString {
+	return s.FileIdentity
 }
 
 // GetLinkTarget returns the value of LinkTarget.
@@ -7017,6 +7111,11 @@ func (s *SandboxFileStat) GetPath() string {
 	return s.Path
 }
 
+// GetResolvedPath returns the value of ResolvedPath.
+func (s *SandboxFileStat) GetResolvedPath() OptString {
+	return s.ResolvedPath
+}
+
 // GetSize returns the value of Size.
 func (s *SandboxFileStat) GetSize() int64 {
 	return s.Size
@@ -7030,6 +7129,16 @@ func (s *SandboxFileStat) GetType() SandboxFileType {
 // GetVersion returns the value of Version.
 func (s *SandboxFileStat) GetVersion() string {
 	return s.Version
+}
+
+// SetAccessedAt sets the value of AccessedAt.
+func (s *SandboxFileStat) SetAccessedAt(val OptDateTime) {
+	s.AccessedAt = val
+}
+
+// SetFileIdentity sets the value of FileIdentity.
+func (s *SandboxFileStat) SetFileIdentity(val OptString) {
+	s.FileIdentity = val
 }
 
 // SetLinkTarget sets the value of LinkTarget.
@@ -7055,6 +7164,11 @@ func (s *SandboxFileStat) SetName(val string) {
 // SetPath sets the value of Path.
 func (s *SandboxFileStat) SetPath(val string) {
 	s.Path = val
+}
+
+// SetResolvedPath sets the value of ResolvedPath.
+func (s *SandboxFileStat) SetResolvedPath(val OptString) {
+	s.ResolvedPath = val
 }
 
 // SetSize sets the value of Size.

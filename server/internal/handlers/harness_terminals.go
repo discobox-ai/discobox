@@ -226,3 +226,13 @@ func (h *Handler) MoveSandboxFile(context.Context, *serverapi.SandboxFileTransfe
 func (h *Handler) CopySandboxFile(context.Context, *serverapi.SandboxFileTransferRequest, serverapi.CopySandboxFileParams) (serverapi.CopySandboxFileRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
+
+func (h *Handler) ExportSandboxFiles(context.Context, serverapi.ExportSandboxFilesParams) (serverapi.ExportSandboxFilesRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+func (h *Handler) ImportSandboxFiles(context.Context, serverapi.ImportSandboxFilesReq, serverapi.ImportSandboxFilesParams) (serverapi.ImportSandboxFilesRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+func (h *Handler) SetSandboxFileMetadata(context.Context, *serverapi.SandboxFileMetadataRequest, serverapi.SetSandboxFileMetadataParams) (serverapi.SetSandboxFileMetadataRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}

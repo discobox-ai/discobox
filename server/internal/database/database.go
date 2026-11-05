@@ -137,6 +137,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 		return err
 	}
 
+	if err := migrateChildAuthority(write); err != nil {
+		return err
+	}
+
 	// The engine's dirty set, which a binding written with an expiry marks in
 	// its own transaction (store.recordBindingEventTx).
 	if err := reconcile.Migrate(write); err != nil {

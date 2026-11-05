@@ -131,8 +131,8 @@ type SandboxUse struct {
 	// leads to an automatic repair: "exec attach", "ssh", "http". Reads and
 	// observes repair nothing and leave it empty.
 	Trigger string
-	// Attach marks a terminal attach, which a discobox may not make to
-	// another (ADR 26-10-01-397 §2).
+	// Attach marks a bidirectional terminal attach, always a write for child
+	// authorization, including when opened with GET (ADR 26-11-04-684).
 	Attach bool
 }
 

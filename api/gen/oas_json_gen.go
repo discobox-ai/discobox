@@ -45272,6 +45272,153 @@ func (s *SandboxFileList) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *SandboxFileMetadataRequest) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxFileMetadataRequest) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("path")
+		e.Str(s.Path)
+	}
+	{
+		if s.Mode.Set {
+			e.FieldStart("mode")
+			s.Mode.Encode(e)
+		}
+	}
+	{
+		if s.AccessedAt.Set {
+			e.FieldStart("accessedAt")
+			s.AccessedAt.Encode(e, json.NewTimeEncoder("2006-01-02T15:04:05.999999999Z07:00"))
+		}
+	}
+	{
+		if s.ModifiedAt.Set {
+			e.FieldStart("modifiedAt")
+			s.ModifiedAt.Encode(e, json.NewTimeEncoder("2006-01-02T15:04:05.999999999Z07:00"))
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxFileMetadataRequest = [4]string{
+	0: "path",
+	1: "mode",
+	2: "accessedAt",
+	3: "modifiedAt",
+}
+
+// Decode decodes SandboxFileMetadataRequest from json.
+func (s *SandboxFileMetadataRequest) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxFileMetadataRequest to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "path":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Path = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "mode":
+			if err := func() error {
+				s.Mode.Reset()
+				if err := s.Mode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mode\"")
+			}
+		case "accessedAt":
+			if err := func() error {
+				s.AccessedAt.Reset()
+				if err := s.AccessedAt.Decode(d, json.NewTimeDecoder("2006-01-02T15:04:05.999999999Z07:00")); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"accessedAt\"")
+			}
+		case "modifiedAt":
+			if err := func() error {
+				s.ModifiedAt.Reset()
+				if err := s.ModifiedAt.Decode(d, json.NewTimeDecoder("2006-01-02T15:04:05.999999999Z07:00")); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"modifiedAt\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxFileMetadataRequest")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxFileMetadataRequest) {
+					name = jsonFieldsNameOfSandboxFileMetadataRequest[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxFileMetadataRequest) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxFileMetadataRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *SandboxFileMkdirRequest) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -45544,12 +45691,30 @@ func (s *SandboxFileStat) encodeFields(e *jx.Encoder) {
 		e.Int64(s.Mode)
 	}
 	{
+		if s.AccessedAt.Set {
+			e.FieldStart("accessedAt")
+			s.AccessedAt.Encode(e, json.NewTimeEncoder("2006-01-02T15:04:05.999999999Z07:00"))
+		}
+	}
+	{
 		e.FieldStart("modifiedAt")
-		json.EncodeDateTime(e, s.ModifiedAt)
+		json.EncodeTimeFormat(e, s.ModifiedAt, "2006-01-02T15:04:05.999999999Z07:00")
 	}
 	{
 		e.FieldStart("version")
 		e.Str(s.Version)
+	}
+	{
+		if s.ResolvedPath.Set {
+			e.FieldStart("resolvedPath")
+			s.ResolvedPath.Encode(e)
+		}
+	}
+	{
+		if s.FileIdentity.Set {
+			e.FieldStart("fileIdentity")
+			s.FileIdentity.Encode(e)
+		}
 	}
 	{
 		if s.LinkTarget.Set {
@@ -45559,15 +45724,18 @@ func (s *SandboxFileStat) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxFileStat = [8]string{
-	0: "path",
-	1: "name",
-	2: "type",
-	3: "size",
-	4: "mode",
-	5: "modifiedAt",
-	6: "version",
-	7: "linkTarget",
+var jsonFieldsNameOfSandboxFileStat = [11]string{
+	0:  "path",
+	1:  "name",
+	2:  "type",
+	3:  "size",
+	4:  "mode",
+	5:  "accessedAt",
+	6:  "modifiedAt",
+	7:  "version",
+	8:  "resolvedPath",
+	9:  "fileIdentity",
+	10: "linkTarget",
 }
 
 // Decode decodes SandboxFileStat from json.
@@ -45575,7 +45743,7 @@ func (s *SandboxFileStat) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxFileStat to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -45637,10 +45805,20 @@ func (s *SandboxFileStat) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"mode\"")
 			}
-		case "modifiedAt":
-			requiredBitSet[0] |= 1 << 5
+		case "accessedAt":
 			if err := func() error {
-				v, err := json.DecodeDateTime(d)
+				s.AccessedAt.Reset()
+				if err := s.AccessedAt.Decode(d, json.NewTimeDecoder("2006-01-02T15:04:05.999999999Z07:00")); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"accessedAt\"")
+			}
+		case "modifiedAt":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := json.DecodeTimeFormat(d, "2006-01-02T15:04:05.999999999Z07:00")
 				s.ModifiedAt = v
 				if err != nil {
 					return err
@@ -45650,7 +45828,7 @@ func (s *SandboxFileStat) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"modifiedAt\"")
 			}
 		case "version":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Version = string(v)
@@ -45660,6 +45838,26 @@ func (s *SandboxFileStat) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"version\"")
+			}
+		case "resolvedPath":
+			if err := func() error {
+				s.ResolvedPath.Reset()
+				if err := s.ResolvedPath.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"resolvedPath\"")
+			}
+		case "fileIdentity":
+			if err := func() error {
+				s.FileIdentity.Reset()
+				if err := s.FileIdentity.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"fileIdentity\"")
 			}
 		case "linkTarget":
 			if err := func() error {
@@ -45680,8 +45878,9 @@ func (s *SandboxFileStat) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b01111111,
+	for i, mask := range [2]uint8{
+		0b11011111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

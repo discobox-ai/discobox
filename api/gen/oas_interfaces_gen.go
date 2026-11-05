@@ -189,6 +189,10 @@ type DismissSecretRefreshRequestRes interface {
 	dismissSecretRefreshRequestRes()
 }
 
+type ExportSandboxFilesRes interface {
+	exportSandboxFilesRes()
+}
+
 type ForceJobRes interface {
 	forceJobRes()
 }
@@ -311,6 +315,10 @@ type GetServerPeerRes interface {
 
 type GetTrustRequestRes interface {
 	getTrustRequestRes()
+}
+
+type ImportSandboxFilesRes interface {
+	importSandboxFilesRes()
 }
 
 type ListAdoptionRequestsRes interface {
@@ -603,6 +611,10 @@ type SetDefaultPoolRes interface {
 
 type SetDefaultProjectRes interface {
 	setDefaultProjectRes()
+}
+
+type SetSandboxFileMetadataRes interface {
+	setSandboxFileMetadataRes()
 }
 
 type StartSandboxExecRes interface {

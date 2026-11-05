@@ -1359,3 +1359,13 @@ These reads never launch or wait. Command and login-shell creation wait for
 blocking provisioning on the request context before making an exec record;
 cancellation leaves no record. Existing terminals remain readable during a new
 provisioning run.
+
+## Files copy extensions
+
+The default-user files helper also serves access-time stat, metadata updates,
+and streamed copy-archive export/import. Import content uses the helper's
+existing complete-body framing; export errors terminate the helper stream.
+The shared codec is [`pkg/copyarchive`](../pkg/copyarchive/DESIGN.md), separate
+from sandbox restore archives. Content writes with `copy=true` use its rooted
+atomic single-file publication and ordinary-mode/umask rules. Metadata updates
+pin the target and reject symlinks; no operation selects another user.

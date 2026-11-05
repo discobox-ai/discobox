@@ -262,3 +262,14 @@ index and the adoption-request table, then the event backfill projects parents.
 
 `SandboxSuspendReceipt` is an additive table migration. Existing sandboxes
 start with no receipts and retain their wake epochs; no backfill is needed.
+
+## Child authority notifications
+
+`migrateChildAuthority` installs an additive `child_authority_versions` table
+and SQLite/Postgres triggers. Parent/API/lifecycle/egress/placement changes to
+sandboxes, egress changes to project/pool/config, and resource deletion advance
+separate per-resource access and egress versions in the same transaction.
+Reads observe access/deletion versions; writes also observe egress versions. Versions survive deletion and
+recreation. Status/heartbeat updates do not invalidate streams. This is a
+durable notification channel for child access; readers poll the primary, and
+failure to read it invalidates ongoing access. No database is recreated.

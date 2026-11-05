@@ -112,3 +112,12 @@ func mapNotFound(err error) error {
 	}
 	return err
 }
+
+// WithPrimaryRead binds security decisions to the authoritative database. A
+// configured read replica may lag a release, API disable, or egress change.
+func (s *Store) WithPrimaryRead() *Store {
+	current := *s
+	current.read = s.write
+	current.txRead = s.txWrite
+	return &current
+}

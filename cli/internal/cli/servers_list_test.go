@@ -1484,8 +1484,8 @@ func TestCPFindsADiscoboxOnARegisteredServer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolveCPOperands(%s) error = %v", reference, err)
 		}
-		if !strings.HasPrefix(rewritten[0], sandboxB+"@") || !strings.HasSuffix(rewritten[0], ":/tmp/x") {
-			t.Fatalf("operand = %q, want it rewritten for beta's discobox", rewritten[0])
+		if rewritten[0].reference != sandboxB || rewritten[0].path != "/tmp/x" {
+			t.Fatalf("operand = %+v, want it rewritten for beta's discobox", rewritten[0])
 		}
 	}
 
@@ -1573,8 +1573,8 @@ func TestCPRoutesAnAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveCPOperands() error = %v", err)
 	}
-	if !strings.HasPrefix(rewritten[0], sandboxB+"@") || !strings.HasSuffix(rewritten[0], ":/tmp/x") {
-		t.Fatalf("operand = %q, want it rewritten for scp against that discobox", rewritten[0])
+	if rewritten[0].reference != sandboxB || rewritten[0].path != "/tmp/x" {
+		t.Fatalf("operand = %+v, want it rewritten for scp against that discobox", rewritten[0])
 	}
 	reg, err := loadServerRegistry()
 	if err != nil {
@@ -1662,8 +1662,8 @@ func TestCPAddressTrailingColonIsTheHomeDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveCPOperands() error = %v", err)
 	}
-	if want := sandboxB + "@" + sshClientHost(sandboxB) + ":"; rewritten[1] != want {
-		t.Fatalf("operand = %q, want %q", rewritten[1], want)
+	if want := (cpOperand{remote: true, reference: sandboxB, path: "~"}); rewritten[1] != want {
+		t.Fatalf("operand = %+v, want %+v", rewritten[1], want)
 	}
 }
 

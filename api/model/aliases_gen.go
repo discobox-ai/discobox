@@ -204,6 +204,7 @@ type SandboxExecWaitUntil = apigen.SandboxExecWaitUntil
 type SandboxExecsResponse = apigen.SandboxExecsResponse
 type SandboxFeature = apigen.SandboxFeature
 type SandboxFileList = apigen.SandboxFileList
+type SandboxFileMetadataRequest = apigen.SandboxFileMetadataRequest
 type SandboxFileMkdirRequest = apigen.SandboxFileMkdirRequest
 type SandboxFileRemoveRequest = apigen.SandboxFileRemoveRequest
 type SandboxFileStat = apigen.SandboxFileStat
