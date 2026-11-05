@@ -1,7 +1,8 @@
 # 26-11-04-616 — A credential approval restricts its grant to requested routes, requested hosts, or anywhere
 
-- **Status**: Proposed (amends 26-11-02-022 §§3–4 for wider approval scope and its display, and §6 for the decision record)
+- **Status**: Accepted (amends 26-11-02-022 §§3–4 for wider approval scope and its display, and §6 for the decision record)
 - **Date**: 2026-11-04
+- Accepted by the owner by merging #638, 2026-11-04
 - **Issue**: [#629](https://github.com/discobox-ai/discobox/issues/629)
 - **Amends**: [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §§3–4: an approved part may explicitly restrict its grant to requested routes, requested hosts, or anywhere; §6: retain that consent and the scope actually granted.
 - **Leaves standing**: [26-11-03-329](26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md) §§1–6: scope and addition/replacement are independent; [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §§3–4 and 6: parent bounds, route-list enforcement and binding history; [26-11-03-970](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md) §2: authority follows the current parent.
