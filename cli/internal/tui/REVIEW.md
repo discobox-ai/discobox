@@ -349,3 +349,7 @@
   from the initial Session. Replaying sessionLoaded restores drafts and filters
   over current edits; freezing saved Git consent left a preview authorizing
   lend after the delivery had correctly reread a revoked preference.
+
+- Observe an exec through its live fake attachment, not simply its newest one.
+  Shell creation and exec listing can attach concurrently; the workspace closes
+  the losing duplicate, which may be the last attachment the fake created.
