@@ -1007,6 +1007,44 @@ func TestAnAskToAddIsAnsweredWithWhatItHoldsBeside(t *testing.T) {
 	}
 }
 
+func TestAnAskToAddCanBeGrantedForever(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	pulls := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/repos/acme/web/pulls"}}
+	reads := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}}
+	req.Use = &RequestPart{Routes: []secretroute.Route{pulls}, Add: true}
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", AllowRaw: true, Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", From: "harnessConfig", Routes: []secretroute.Route{reads}}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, 0)
+	if m.dialog == nil || m.dialog.title != "Add, or replace?" {
+		t.Fatalf("dialog = %s, want how the use part is granted asked", describe(m.dialog))
+	}
+	text := dialogText(m)
+	for _, want := range []string{
+		"As an addition (asked)", "As a replacement",
+		"holds in " + req.EnvVar + " now", "GET api.github.com · no expiry · from its harness config",
+		"as an addition: these routes without expiry; the rest unchanged",
+		"POST api.github.com/repos/acme/web/pulls (as written)",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("card = %q, want %q", text, want)
+		}
+	}
+	drain(t, m, m.dialog.action("add"), 0)
+	if len(ds.approvals) != 1 {
+		t.Fatalf("dialog = %s, approvals = %#v; want the addition sent with no question of delivery", describe(m.dialog), ds.approvals)
+	}
+	if got := ds.approvals[0]; got.UseAs != "add" || got.Raw != "" || got.TTLSeconds != 0 {
+		t.Fatalf("approval = %#v, want an addition by sentinel", got)
+	}
+}
+
 // A request with one part is approved by choosing a secret, as before, and
 // says only that part.
 func TestARequestWithOnePartNamesOnlyThatPart(t *testing.T) {

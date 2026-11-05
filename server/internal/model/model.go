@@ -2022,7 +2022,7 @@ type SecretBinding struct {
 	// sandbox, by sentinel, with an expiry, that stacks on the plain use
 	// binding applying in EnvName instead of shadowing it. A target holds
 	// one plain use binding per variable and any number of additions.
-	Adds bool `gorm:"column:adds;not null;default:false" json:"adds,omitempty" doc:"An addition: a use on a discobox, with an expiry, that stacks on the binding delivering envVar instead of replacing or shadowing it"`
+	Adds bool `gorm:"column:adds;not null;default:false" json:"adds,omitempty" doc:"An addition: a use on a discobox, with or without expiry, that stacks on the binding delivering envVar instead of replacing or shadowing it"`
 	// Routes narrow the secret's for this binding; none inherits them.
 	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Routes that narrow the secret's for this binding; empty inherits the secret's"`
 	// Raw hands the discobox the value itself rather than a sentinel (ADR

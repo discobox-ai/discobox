@@ -114,7 +114,8 @@ rather than a placeholder; no request asks for that, it is the approver's choice
 ([ADR 26-10-27-840](adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md)).
 
 A credential in a variable may be held under several grants: the binding that
-delivers it and each addition stacking on it, granted for a time of its own
+delivers it and each addition stacking on it, granted with its own lifetime,
+finite or without expiry
 ([ADR 26-11-03-329](adr/26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md)).
 `grants` lists them, each with its `hosts`, `expiresAt` and, for an addition,
 `adds`; a request is sent when some grant allows it, so when an addition lapses

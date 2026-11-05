@@ -2803,7 +2803,7 @@ components:
                     readOnly: true
                     type: string
                 adds:
-                    description: "An addition: a use on a discobox, with an expiry, that stacks on the binding delivering envVar instead of replacing or shadowing it"
+                    description: "An addition: a use on a discobox, with or without expiry, that stacks on the binding delivering envVar instead of replacing or shadowing it"
                     type: boolean
                 createdAt:
                     description: Creation timestamp

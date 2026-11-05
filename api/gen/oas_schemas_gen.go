@@ -31195,8 +31195,8 @@ func (*Secret) updateSecretRes()  {}
 type SecretBinding struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// An addition: a use on a discobox, with an expiry, that stacks on the binding delivering envVar
-	// instead of replacing or shadowing it.
+	// An addition: a use on a discobox, with or without expiry, that stacks on the binding delivering
+	// envVar instead of replacing or shadowing it.
 	Adds OptBool `json:"adds"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`

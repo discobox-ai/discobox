@@ -206,3 +206,43 @@ func TestAReplacementSaysANewBindingAndASplit(t *testing.T) {
 		t.Errorf("both parts:\n%s", answered)
 	}
 }
+
+func TestTheConsoleSubmitsAnAdditionWithoutExpiry(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/secret-requests/sreq_1/approve" {
+			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"approved","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := apiclientgen.NewClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &apiDataSource{app: &App{serverURL: server.URL}, client: client, projectID: "project-1"}
+	err = d.ApproveCredentialRequest(t.Context(), "", tui.Approval{
+		RequestID: "sreq_1", SecretID: "sec_1", TTLSeconds: 0, UseAs: "add",
+		Use: tui.PartApprove, Delegate: tui.PartDeny,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("calls = %d, want one", len(bodies))
+	}
+	use, _ := bodies[0]["use"].(map[string]any)
+	delegate, _ := bodies[0]["delegate"].(map[string]any)
+	if use["decision"] != "approve" || use["ttlSeconds"] != float64(0) || use["as"] != "add" {
+		t.Fatalf("use = %#v", use)
+	}
+	if delegate["decision"] != "deny" || len(delegate) != 1 {
+		t.Fatalf("delegate = %#v, want a bare deny", delegate)
+	}
+}

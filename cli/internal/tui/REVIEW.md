@@ -330,3 +330,7 @@
   is likely still typing their sign-in, and a typed letter answers it — or
   that records it without showing it, loses the one explanation the project
   gets.
+
+- Scope addition-preview promises to the addition action. The add-or-replace
+  dialog offers both outcomes; an unqualified footer saying the rest stays
+  unchanged misstates replacement, which clears the existing use grants.

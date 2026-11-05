@@ -744,8 +744,12 @@ func (m *Model) lifetimeChosen(a approval, again func() tea.Cmd) tea.Cmd {
 func (m *Model) askUseAs(a approval, back func() tea.Cmd) tea.Cmd {
 	variable := variableOf(a.req)
 	until := lifetime.Label(a.ttl)
+	addedLifetime := "for " + until
+	if a.ttl == 0 {
+		addedLifetime = "without expiry"
+	}
 	add := action{key: string(bindingplan.Add), press: "a", label: "As an addition",
-		detail: "these routes for " + until + "; what it holds in " + variable + " stays as it is", enabled: true}
+		detail: "these routes " + addedLifetime + "; what it holds in " + variable + " stays as it is", enabled: true}
 	replace := action{key: string(bindingplan.Replace), press: "r", label: "As a replacement",
 		detail: "its whole use of the credential, for " + until + ", in place of what it holds", enabled: true}
 	items := []action{replace, add}
@@ -762,6 +766,9 @@ func (m *Model) askUseAs(a approval, back func() tea.Cmd) tea.Cmd {
 	d.sections = []section{heldSection(a), bindingSection(a)}
 	d.answerLabel = "does it get these routes beside what it holds, or in place of it?"
 	d.footer = "an addition alone goes when it lapses; the rest keeps working"
+	if a.ttl == 0 {
+		d.footer = "as an addition: these routes without expiry; the rest unchanged"
+	}
 	d.onCancel = back
 	m.dialog = d
 	return nil

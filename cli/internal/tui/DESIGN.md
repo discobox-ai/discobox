@@ -565,7 +565,9 @@ there is no row that approves one and leaves the other unsaid. The answer is
 one `Approval` naming a decision for every part (`Approval.Use`,
 `Approval.Delegate`), raw delivery offered only when the use part is approved.
 
-**A use part may be granted as an addition** (ADR 26-11-03-329 §§4–5).
+**A use part may be granted as an addition** (ADR 26-11-03-329 §§4–5,
+amended by 26-11-04-270). Forever previews the added routes without expiry,
+with the rest unchanged; finite additions show their own lifetime.
 Choosing a secret also reads what applies in the use part's variable now,
 from whichever level (`HeldGrants`), and when the discobox holds anything a
 use part could replace or stack on (`approval.holdsUse`), a card asks how it
