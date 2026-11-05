@@ -477,6 +477,16 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case dlgForm:
 		if len(d.formActions) > 0 && !d.form.listing {
 			key := keyName(msg)
+			if len(d.form.rows) == 0 && d.formActionAt >= 0 {
+				switch key {
+				case "up", "shift+tab":
+					d.formActionAt = (d.formActionAt + len(d.formActions) - 1) % len(d.formActions)
+					return nil, false
+				case "down", "tab":
+					d.formActionAt = (d.formActionAt + 1) % len(d.formActions)
+					return nil, false
+				}
+			}
 			if d.formActionAt >= 0 {
 				switch key {
 				case "left":

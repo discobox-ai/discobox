@@ -15,8 +15,11 @@ import (
 
 // RunApprovalPreview is a local design workbench. It never creates a data source
 // or calls an API. The prototype build tag keeps it out of the product binary.
-func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height int, requestPath, policyRoot string) error {
-	p := &approvalPreview{width: width, height: height, current: current, st: newStyles(true)}
+func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height int, requestPath, policyRoot, screen string) error {
+	if screen != "credential" && screen != "adoption" {
+		return fmt.Errorf("unknown screen %q", screen)
+	}
+	p := &approvalPreview{screen: screen, width: width, height: height, current: current, st: newStyles(true)}
 	if requestPath != "" {
 		req, err := loadApprovalPreviewRequest(requestPath, policyRoot)
 		if err != nil {
@@ -36,6 +39,8 @@ func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height
 type approvalPreview struct {
 	width, height int
 	current       bool
+	screen        string
+	readOnly      bool
 	fixture       *CredentialRequest
 	st            *styles
 	d             *dialog
@@ -55,6 +60,12 @@ func (p *approvalPreview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f2":
 			p.current = !p.current
 			p.open()
+			return p, nil
+		case "f3":
+			if p.screen == "adoption" {
+				p.readOnly = !p.readOnly
+				p.open()
+			}
 			return p, nil
 		case "f5":
 			p.open()
@@ -84,6 +95,9 @@ func (p *approvalPreview) render() string {
 		mode = "CURRENT"
 	}
 	subject := "Credential use"
+	if p.screen == "adoption" {
+		subject = "Adoption · F3 full/read-only"
+	}
 	if p.fixture != nil {
 		subject = fmt.Sprintf("Manager · %d use / %d delegate routes", previewRouteCount(p.fixture.Use), previewRouteCount(p.fixture.Delegate))
 	}
@@ -98,6 +112,10 @@ func (p *approvalPreview) receipt(result string) tea.Cmd {
 }
 func (p *approvalPreview) open() {
 	p.refreshGrant = nil
+	if p.screen == "adoption" {
+		p.openAdoption()
+		return
+	}
 	now := time.Now()
 	req := CredentialRequest{ID: "sreq_sample", SandboxID: "sbx_123", Name: "github", EnvVar: "GH_TOKEN", Justification: "The task asks me to open a PR", AskedTTL: time.Hour, Created: now.Add(-2 * time.Minute), Use: &RequestPart{Routes: []secretroute.Route{
 		{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: []string{"/repos/discobox-ai/discobox/issues/**"}},

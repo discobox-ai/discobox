@@ -75,8 +75,8 @@ and its Go toolchain; it is not a standalone snippet.
   consent. The current backend expects one answer covering the request;
   this prototype's two visual steps do not decide transaction timing.
 - Implement creation of a new credential; its preview option is a placeholder.
-- Exercise the remaining approval kinds (trust, adoption, refresh, API access)
-  separately with the owner. They are not designed by this prototype.
+- Exercise the remaining approval kinds (trust, refresh, API access) separately
+  with the owner. Adoption is now a second draft for discussion below.
 
 ## Fixture and limitations
 
@@ -98,3 +98,25 @@ form-button support is enabled only by the preview; ordinary forms keep their
 controls. The default go-lsp hook does not understand the preview tag and reports
 an unresolved preview entrypoint; the tagged binary builds and runs. Full SDLC
 review and runtime verification of real approvals were intentionally skipped.
+
+## Next screen: adoption (draft for owner review)
+
+```sh
+go tool task prototype:approvals:adoption
+```
+
+Starts CURRENT; F2 compares the proposed screen. F3 switches between full and
+read-only authority in either layout. Tab/arrows choose Accept/Deny; Enter
+activates; Esc leaves the sample waiting. No real relationship changes occur.
+
+The proposal identifies requesting box, target box, current parent and the
+box-supplied reason first. Full authority is an aligned table of terminals,
+lifecycle, metadata/source, ports and bounded credential decisions. A separate
+consequence section explicitly names the parent being replaced and says the
+child's credentials stay its own. The read-only variant instead explains wider
+egress and refusal of all writes/sends, without promising management authority.
+
+The original screen comes from `askAboutAdoption`, with its action callback
+replaced. The new design uses the same themed form/dialog components and modal
+buttons as credential approval. This layout is a proposal, not yet accepted by
+the owner. The mouse and scroll-to-end requirements above also apply here.

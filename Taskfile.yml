@@ -150,6 +150,11 @@ vars:
   DEADCODE_BIN: deadcode{{.EXE}}
 
 tasks:
+  prototype:approvals:adoption:
+    desc: Compare current and proposed adoption approval screens
+    cmds:
+      - go run -tags prototype ./cli/internal/cmd/approval-preview --screen adoption --current {{.CLI_ARGS}}
+
   prototype:approvals:manager:
     desc: Reproduce the manager's full use and delegation approval request
     cmds:
