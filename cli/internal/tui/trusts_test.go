@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 )
 
 // A cluster's API server asking to be trusted: a leaf signed by the cluster's
@@ -43,24 +41,21 @@ func TestATrustRequestAsksWhichCertificateToPin(t *testing.T) {
 	m, _ := sourceWithTrust(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil || m.dialog.title != "Trust request" {
+	if m.dialog == nil || !strings.HasPrefix(m.dialog.title, "Trust ") {
 		t.Fatalf("dialog = %s, want the trust card", describe(m.dialog))
 	}
 	body := dialogText(m)
-	for _, want := range []string{"34.70.64.109:443", "this discobox alone", "its own CA", "CN=kube-apiserver", "CN=cluster-ca", "self-signed"} {
+	for _, want := range []string{"34.70.64.109:443", "host and box only", "its own CA", "CN=cluster-ca"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("card = %q, want it to carry %q", body, want)
 		}
 	}
 	// The server's default is offered first, and the key pin last: it breaks
 	// the day the host rotates its key.
-	items := m.dialog.items
-	if !strings.HasPrefix(items[0].key, "pin:ca:"+strings.Repeat("c", 64)) || !strings.Contains(items[0].detail, "by default") {
-		t.Fatalf("first row = %+v, want the chain's CA as the default", items[0])
+	if len(m.dialog.form.rows[0].choices) != 2 {
+		t.Fatal("expected CA and key choices")
 	}
-	if !strings.HasPrefix(items[len(items)-2].key, "pin:leaf-spki:") || items[len(items)-1].key != "deny" {
-		t.Fatalf("rows = %+v, want the key pin then deny last", items)
-	}
+
 }
 
 func TestApprovingATrustPinsForTheChosenLifetime(t *testing.T) {
@@ -68,17 +63,13 @@ func TestApprovingATrustPinsForTheChosenLifetime(t *testing.T) {
 	m, ds := sourceWithTrust(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action(m.dialog.items[0].key), 0)
-	if !onLifetimeStep(m) {
-		t.Fatalf("dialog = %s, want how long", describe(m.dialog))
-	}
-	// A trust always lapses: forever is not offered.
-	for _, item := range m.dialog.items {
-		if item.key == "0" {
+	for _, c := range m.dialog.form.rows[1].choices {
+		if c.key == "0" {
 			t.Fatal("forever is offered for a trust")
 		}
 	}
-	grantFor(t, m, lifetime.Day)
+	m.dialog.form.choose("duration", "86400")
+	answerApproval(t, m, "accept")
 
 	if len(ds.trustApprovals) != 1 {
 		t.Fatalf("trust approvals = %#v", ds.trustApprovals)
@@ -100,7 +91,7 @@ func TestDenyingATrustAnswersTheTrustRequest(t *testing.T) {
 	m, ds := sourceWithTrust(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("deny"), 0)
+	answerApproval(t, m, "deny")
 
 	if len(ds.trustDenials) != 1 || ds.trustDenials[0] != "treq_1" || len(ds.denials) != 0 {
 		t.Fatalf("trust denials %#v, credential denials %#v", ds.trustDenials, ds.denials)

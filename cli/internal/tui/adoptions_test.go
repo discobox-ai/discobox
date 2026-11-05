@@ -61,7 +61,7 @@ func TestReadOnlyAdoptionOffersOnlyReadAuthority(t *testing.T) {
 	if strings.Contains(card, "start, stop") || strings.Contains(card, "deliver its source") {
 		t.Fatalf("read-only approval promises writes: %s", card)
 	}
-	for _, want := range []string{"only read", "wider egress", "credentials stay its own", "Approve adoption", "Deny"} {
+	for _, want := range []string{"only read", "wider egress", "credentials stay its own", "Accept", "Deny"} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card missing %q: %s", want, card)
 		}
@@ -79,7 +79,11 @@ func TestAdoptionDecisionFromInbox(t *testing.T) {
 			ds.requests = []CredentialRequest{req}
 			m := newTestModel(t, ds)
 			drain(t, m, m.openCredentialRequest(req), 0)
-			send(t, m, keyPress(tc.key))
+			decision := "accept"
+			if !tc.approve {
+				decision = "deny"
+			}
+			answerApproval(t, m, decision)
 			if got := fmt.Sprint(ds.adoptionDecisions); got != fmt.Sprintf("[adopt_1=%t]", tc.approve) {
 				t.Fatalf("decisions = %s", got)
 			}
@@ -100,7 +104,7 @@ func TestFailedAdoptionStaysInInboxAndSaysWhatFailed(t *testing.T) {
 	ds.approveErr = errors.New("child is archived; restore it before adopting")
 	m := newTestModel(t, ds)
 	drain(t, m, m.openCredentialRequest(req), 0)
-	send(t, m, keyPress("enter"))
+	answerApproval(t, m, "accept")
 	if len(ds.requests) != 1 {
 		t.Fatal("failed adoption disappeared")
 	}
@@ -130,7 +134,7 @@ func TestAdoptionCardKeepsActionsWhileReadingOnASmallTerminal(t *testing.T) {
 		var seen strings.Builder
 		for range 12 {
 			card := dialogText(m)
-			for _, want := range []string{"Approve adoption", "Deny", "Esc"} {
+			for _, want := range []string{"Accept", "Deny", "Esc"} {
 				if !strings.Contains(card, want) {
 					t.Fatalf("missing %q at 80x24:\n%s", want, card)
 				}

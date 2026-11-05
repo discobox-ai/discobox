@@ -2210,3 +2210,15 @@ func (f *fakeSource) GitCredentialPolicy(context.Context) (string, error) {
 func (f *fakeSource) BindingHistory(context.Context, string, string) ([]BindingDecision, error) {
 	return nil, nil
 }
+
+func (f *fakeSource) DecideAPIAccessRequest(_ context.Context, server, requestID string, approve bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "DecideAPIAccessRequest@"+server)
+	f.adoptionDecisions = append(f.adoptionDecisions, fmt.Sprintf("%s=%t", requestID, approve))
+	if f.approveErr != nil {
+		return f.approveErr
+	}
+	f.dropRequestLocked(requestID)
+	return nil
+}

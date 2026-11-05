@@ -22,6 +22,13 @@ func (UnimplementedHandler) AcknowledgeSandboxHarnessConfig(ctx context.Context,
 	return r, ht.ErrNotImplemented
 }
 
+// ApproveAPIAccessRequest implements approve-api-access-request operation.
+//
+// POST /projects/{projectId}/api-access-requests/{requestId}/approve
+func (UnimplementedHandler) ApproveAPIAccessRequest(ctx context.Context, params ApproveAPIAccessRequestParams) (r ApproveAPIAccessRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ApproveAdoptionRequest implements approve-adoption-request operation.
 //
 // POST /projects/{projectId}/adoption-requests/{requestId}/approve
@@ -167,6 +174,13 @@ func (UnimplementedHandler) ConfirmSandboxAutostop(ctx context.Context, req *San
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
 func (UnimplementedHandler) CopySandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params CopySandboxFileParams) (r CopySandboxFileRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CreateAPIAccessRequest implements create-api-access-request operation.
+//
+// POST /projects/{projectId}/api-access-requests
+func (UnimplementedHandler) CreateAPIAccessRequest(ctx context.Context, req *CreateAPIAccessRequestBody, params CreateAPIAccessRequestParams) (r CreateAPIAccessRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -422,6 +436,13 @@ func (UnimplementedHandler) DeleteSecretBinding(ctx context.Context, params Dele
 	return r, ht.ErrNotImplemented
 }
 
+// DenyAPIAccessRequest implements deny-api-access-request operation.
+//
+// POST /projects/{projectId}/api-access-requests/{requestId}/deny
+func (UnimplementedHandler) DenyAPIAccessRequest(ctx context.Context, params DenyAPIAccessRequestParams) (r DenyAPIAccessRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DenyAdoptionRequest implements deny-adoption-request operation.
 //
 // POST /projects/{projectId}/adoption-requests/{requestId}/deny
@@ -482,6 +503,13 @@ func (UnimplementedHandler) ExportSandboxFiles(ctx context.Context, params Expor
 //
 // POST /projects/{projectId}/jobs/{jobId}/force
 func (UnimplementedHandler) ForceJob(ctx context.Context, params ForceJobParams) (r ForceJobRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetAPIAccessRequest implements get-api-access-request operation.
+//
+// GET /projects/{projectId}/api-access-requests/{requestId}
+func (UnimplementedHandler) GetAPIAccessRequest(ctx context.Context, params GetAPIAccessRequestParams) (r GetAPIAccessRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -784,6 +812,13 @@ func (UnimplementedHandler) GetTrustRequest(ctx context.Context, params GetTrust
 //
 // PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
 func (UnimplementedHandler) ImportSandboxFiles(ctx context.Context, req ImportSandboxFilesReq, params ImportSandboxFilesParams) (r ImportSandboxFilesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListAPIAccessRequests implements list-api-access-requests operation.
+//
+// GET /projects/{projectId}/api-access-requests
+func (UnimplementedHandler) ListAPIAccessRequests(ctx context.Context, params ListAPIAccessRequestsParams) (r ListAPIAccessRequestsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

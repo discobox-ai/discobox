@@ -484,7 +484,7 @@ func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("the key did not open the waiting request")
 	}
-	if m.dialog.title != "Refresh request" {
+	if !strings.HasPrefix(m.dialog.title, "Refresh ") {
 		t.Fatalf("dialog = %q, want the orphan request", dialogText(m))
 	}
 }

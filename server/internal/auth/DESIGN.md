@@ -133,7 +133,7 @@ Current authorizers:
   only those: it allows the routes of the sandbox role (`sandboxRole`) in the
   sandbox's own project, resolving `default` to it, and refuses everything
   else — including the any-authenticated routes below, which is why it runs
-  first. A sandbox whose `DiscoboxAPI` is off is refused every route
+  first. A sandbox whose `DiscoboxAPI` is off is refused every ordinary route
   (`authorizeDiscoboxAPI`): the pool forwards any sandbox's call to the API's
   host and does not read the flag, so the control plane is where one without
   it is turned away
@@ -331,3 +331,13 @@ never a lagging replica. Files reads/export are child reads, while exec attach
 (including GET), create/start/delete and files writes/import/metadata require
 egress coverage. Created and adopted children have identical permissions;
 refusals name that provenance only after verifying current parenthood.
+
+## API access request bootstrap
+
+Only POST/GET `api-access-requests` and GET `api-access-requests/{id}` bypass
+the off-setting gate for an existing, non-deleting sandbox in its own project.
+The ordinary role allowlist still runs; individual reads check requester
+ownership and the service filters lists to that requester. Approve and deny
+never bypass the gate and are absent from the sandbox role, even for a parent.
+A service-level person check protects decisions as well. The new request
+contract reuses the fixed API role and persistent on/off setting.

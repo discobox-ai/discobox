@@ -1236,3 +1236,13 @@ runtime, with no start requested. Convergence retries the original fenced
 start. New unrelated intent conflicts; a settled failure returns its reason.
 The original admission, wake epoch, stall budget and absolute five-minute
 ceiling survive every phase. Progress is cleared on every exit.
+
+## API access consent
+
+A sandbox may file an `APIAccessRequest` for itself with a required reason,
+including while its API access is off. The requester identity comes from the
+authenticated principal. Sandbox reads are limited to its own requests; only a
+person may approve or deny. Approval enables the existing `DiscoboxAPI` setting
+and grants no credential or new role. Settings still changes access directly.
+The fixed role, direct-parent authority, egress limits and credential delegation
+checks apply on every subsequent call. Consent records outlive sandbox purge.

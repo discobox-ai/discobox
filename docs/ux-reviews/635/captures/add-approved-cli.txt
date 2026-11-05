@@ -1,0 +1,21 @@
+FIELD                                      VALUE
+ID                                         sreq_bnvry8vjbpbwpjkb
+REQUESTED BY                               agent:sbx_7tcdygf3e5eqpg47
+STATUS                                     approved
+CREDENTIAL                                 approval-635-new
+ENV VAR                                    NEW_635
+WHY                                        Verify forever addition preserves the existing grant
+USE                                        approved · to use the credential itself
+USE ROUTES                                 GET example.com/635
+USE APPROVED SCOPE                         routes
+USE CREDENTIAL REVISION                    sec_d1ejfxtt01twx7eg / 1
+USE DELIVERY / MODE                        sentinel / add
+USE GRANTED secret sec_d1ejfxtt01twx7eg    GET example.com/635
+USE GRANTED binding bind_0x2gyhgp7fsqepe6  GET example.com/635
+USE ASKED AS                               add · in addition to what the discobox holds, for its own lifetime
+USE GRANTED AS                             add
+USE BINDING                                bind_0x2gyhgp7fsqepe6
+SECRET                                     sec_d1ejfxtt01twx7eg
+DECIDED BY                                 user_default
+CREATED                                    3 minutes ago
+UPDATED                                    2 minutes ago

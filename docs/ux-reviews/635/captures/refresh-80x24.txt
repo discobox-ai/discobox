@@ -1,0 +1,24 @@
+
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  Refresh approval-635-github?                                        │
+    │                                                                      │
+    │  ── wants a new value ─────────────────────────────────────────────  │
+    │  token          approval-635-github                                  │
+    │  why            its value is past the lifetime it was given          │
+    │  sent to        api.github.com                                       │
+    │  a value lasts  1 second                                             │
+    │    … PgUp/PgDn to scroll                                             │
+    │                                                                      │
+    │    New value       ‹ Run saved command ›                             │
+    │  ❯ Run permission  ‹ While this window is open ›                     │
+    │    Token           The command supplies the value                    │
+    │                                                                      │
+    │  Scroll to the end to enable both decisions                          │
+    │  [ Refresh ]  [ Dismiss ]                                            │
+    │                                                                      │
+    │  Tab / arrows move · Enter selects · Esc leaves waiting              │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+
+

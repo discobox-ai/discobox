@@ -1,0 +1,134 @@
+{
+  "boundSecrets": [
+    {
+      "bindingId": "bind_fw0z90gaj7h41z1k",
+      "delegate": false,
+      "envVar": "GH_635",
+      "expiresAt": "2026-11-06T00:18:37Z",
+      "from": "sandbox",
+      "fromId": "sbx_7tcdygf3e5eqpg47",
+      "routes": [
+        [
+          {
+            "hosts": [
+              "api.github.com"
+            ]
+          }
+        ],
+        [
+          {
+            "hosts": [
+              "api.github.com"
+            ],
+            "methods": [
+              "GET"
+            ],
+            "paths": [
+              "/repos/discobox-ai/discobox/issues/**"
+            ]
+          }
+        ]
+      ],
+      "secretId": "sec_2rej4psecrc566fc",
+      "secretName": "approval-635-github",
+      "use": true
+    },
+    {
+      "bindingId": "bind_3tdqp03ez2x5fbjh",
+      "delegate": false,
+      "envVar": "NEW_635",
+      "expiresAt": "2026-11-06T00:23:24Z",
+      "from": "sandbox",
+      "fromId": "sbx_7tcdygf3e5eqpg47",
+      "routes": [
+        [
+          {
+            "hosts": [
+              "example.com"
+            ],
+            "methods": [
+              "GET"
+            ],
+            "paths": [
+              "/635"
+            ]
+          }
+        ],
+        [
+          {
+            "hosts": [
+              "example.com"
+            ],
+            "methods": [
+              "GET"
+            ],
+            "paths": [
+              "/635"
+            ]
+          }
+        ]
+      ],
+      "secretId": "sec_d1ejfxtt01twx7eg",
+      "secretName": "approval-635-new",
+      "use": true
+    },
+    {
+      "adds": true,
+      "bindingId": "bind_0x2gyhgp7fsqepe6",
+      "delegate": false,
+      "envVar": "NEW_635",
+      "from": "sandbox",
+      "fromId": "sbx_7tcdygf3e5eqpg47",
+      "routes": [
+        [
+          {
+            "hosts": [
+              "example.com"
+            ],
+            "methods": [
+              "GET"
+            ],
+            "paths": [
+              "/635"
+            ]
+          }
+        ],
+        [
+          {
+            "hosts": [
+              "example.com"
+            ],
+            "methods": [
+              "GET"
+            ],
+            "paths": [
+              "/635"
+            ]
+          }
+        ]
+      ],
+      "secretId": "sec_d1ejfxtt01twx7eg",
+      "secretName": "approval-635-new",
+      "use": true
+    },
+    {
+      "bindingId": "bind_afps2t03ea1cv48c",
+      "delegate": true,
+      "expiresAt": "2026-11-06T00:18:37Z",
+      "from": "sandbox",
+      "fromId": "sbx_7tcdygf3e5eqpg47",
+      "routes": [
+        [
+          {
+            "hosts": [
+              "api.github.com"
+            ]
+          }
+        ]
+      ],
+      "secretId": "sec_2rej4psecrc566fc",
+      "secretName": "approval-635-github",
+      "use": false
+    }
+  ]
+}

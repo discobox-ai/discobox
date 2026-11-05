@@ -1,0 +1,40 @@
+
+
+
+
+
+
+
+
+      ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+      │                                                                                                          │
+      │  Settings · determined_ritchie                                                                           │
+      │                                                                                                          │
+      │  what `discobox admin box update` changes · egress here is the box's own level, one of four with its     │
+      │  project, pool and harness                                                                               │
+      │                                                                                                          │
+      │  ❯ name          determined_ritchie                                                                      │
+      │    harness       stop the box to change its harness                                                      │
+      │                                                                                                          │
+      │  ── Egress ────────────────────────────────────────────────────────────────────────────────────────────  │
+      │    restrict      ‹ no ›                                                                                  │
+      │    allow         hosts, *.wildcards, IPs or CIDRs, comma-separated                                       │
+      │    passthrough   hosts whose HTTPS is passed through unread                                              │
+      │                                                                                                          │
+      │  ── Access ────────────────────────────────────────────────────────────────────────────────────────────  │
+      │    discobox API  ‹ yes ›                                                                                 │
+      │                                                                                                          │
+      │  the handle it was created with, which commands take · the list shows the name rename gives it, or its   │
+      │  agent's title                                                                                           │
+      │                                                                                                          │
+      │  ↑↓ moves · enter saves · esc leaves it alone                                                            │
+      │                                                                                                          │
+      ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+

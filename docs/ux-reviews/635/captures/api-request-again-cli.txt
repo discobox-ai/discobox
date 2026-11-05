@@ -1,0 +1,10 @@
+Request: apireq_ev8fmyr1fqxtcfcz
+Box: sbx_7tcdygf3e5eqpg47
+Reason (box's words): Verify re-request after access revocation
+Status: pending
+Decided by: 
+
+Approval enables API access until a person turns it off in Settings.
+It permits project discovery and creation using project harness configs and their credentials,
+and bounded management of direct children. Wider-egress children are read-only.
+Existing credential and egress restrictions still apply.

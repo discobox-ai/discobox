@@ -449,7 +449,7 @@ trust asks together, so each beat is still one inbox call per server. A trust
 ask is a `CredentialRequest` with `Trust` set — marked, bannered, and listed
 like any other — whose dialog (`trusts.go`) asks which certificate from the
 chain the pool was shown to pin, the server's default first and the leaf's key
-last, then how long, from an hour to a month: a trust always lapses.
+last, alongside a duration from an hour to a month: a trust always lapses.
 
 **It holds refresh requests too** ([ADR 26-09-25-122](../../../docs/adr/26-09-25-122-a-token-may-expire-and-suggest-the-command-that-renews-it.md)).
 A token whose value went stale or was refused asks for a new one. A refresh
@@ -509,102 +509,43 @@ and reached for in a hurry, on a screen whose banner is asking you to hurry.
 There is no list in the workspace for `g` to be the top of, so it is free, and
 it is the letter of the thing it does.
 
-**The dialog decides nothing.** It shows what was asked — the credential, the
-env var, the routes it asks to be sent to, and why the agent says it needs it —
-and collects two answers, one per step: which secret answers it (a project
-secret, a credential typed in on the spot, or a denial), then how long the
-binding lasts — and, for a secret that allows raw, a third: a placeholder,
-which the cursor opens on, or the value itself in the variable or a file
-(`askDelivery`, ADR 26-10-27-840 §2). No request asks for the value, so it is
-only ever the person's choice. Other defaults follow the request on the server, which is what
-keeps this and `discobox secret request approve` the same act: approving an ask
-to use binds the secret to the discobox in the variable it asked for, held to
-the requested routes by default, or its explicit hosts/anywhere restriction,
-within the secret's own ceilings (ADR 26-11-04-616). `r` shows
-the request as the server sent it, as JSON highlighted as a code block is
-(`showRawRequest`), for when the rendering is not enough; Esc goes back to the
-card. Every secret is offered, the one named as asked first
-(`secretsForRequest`): the binding is held to the secret's live ceilings and the
-selected grant restriction (requested routes by default), so none has to be refused here, and nothing about the secret
-is changed on the way through.
+**Approval cards collect consent; the server enforces it.** Each credential
+part has a separate form (`credential_approval.go`) for credential, duration,
+scope, and Accept/Deny. Use also chooses addition/replacement and delivery.
+Scope starts at requested routes independently for each part; hosts and anywhere
+show the wider restriction without flattening credential constraints. Route
+rows group by protocol and host and sort by path/method for display only.
+Role descriptions remain attributed to the box. Request JSON opens the original
+request; returning restores the selected choices.
 
+Accepting use locks credential and duration on delegation; denying use leaves
+them editable. These are staged decisions: no server mutation occurs until both
+parts are reviewed. Existing credentials then get a final confirmation, after
+reading their current bindings and grants. `bindingplan` supplies the replacement
+diff and the fate of each held grant, including independent additions. One
+`Approval` commits both parts together, with independent scopes, explicit duration
+(zero is forever), use mode, and eligible raw delivery. Escape abandons staged
+decisions. New credentials use the existing creation form after part review.
 
-The shared console/attach credential lifetime card offers a scope action for
-each approved part. Each new approval defaults to requested routes; choosing
-requested hosts or anywhere explicitly shows the wider restriction and the live
-credential ceiling, then returns to the lifetime card. Scope is never remembered
-for a box. Replacement previews compare the selected grant routes, while roles
-continue to describe only the original ask.
+Duration defaults to the valid whole-second ask or one hour. Presets include
+forever, and custom input uses the same lifetime parser as CLI flags. A
+credential's maximum is shown and an over-limit answer is refused before
+submission; the server rechecks live credential and parent limits.
 
-**How long is a required second step** (`askLifetime`, through
-`askDuration`). Choosing a secret opens
-a card of its own — 1 hour, 1 day, 1 week, 1 month, forever, and `custom…` for a
-typed one — with the cursor on the lifetime the agent asked for
-(`CredentialRequest.AskedTTL`, shown on the request card as "wanted for"), else
-on **1 hour**, so Enter is the default answer. An ask that is not a preset is
-added in its place among them (`lifetimeChoices`) and marked as the agent's. It
-is a step rather than a field on the request card because it is the half of an
-approval nobody thinks to look for: a window that did not ask would hand out
-whatever the server defaults to without anyone having read it. A card that has
-to be answered is one that gets read.
-`Approval.TTLSeconds` is always sent, zero included, and zero means forever
-rather than "whatever the secret allows". The hour is
-`agentcreds.DefaultGrantTTL`, and the server binds for the same lifetime — the
-agent's ask, else the hour, within the secret's limit — on an approval that
-names none, which is what `discobox secret request approve` sends when
-`--for` is left out, so approving a request makes the same binding from
-either side. An agent cannot ask
-for forever, nor for longer than thirty days (`agentcreds.MaxGrantTTLSeconds`,
-enforced at the ask and again in `agentcreds.AskedGrantTTL`), so the default is
-never a binding that does not lapse. An ask that is not a whole positive number of
-seconds is no row at all (`lifetimeChoices`) and the step opens on the hour:
-a row's identity is its second count, and one that shared forever's count would
-otherwise take the cursor.
+All approval cards use `approvalDialog` and explicit modal buttons, with mouse
+hit regions for fields, picker choices and buttons. Buttons remain visible on
+compact terminals. Both decisions are disabled until the current upper summary
+has been scrolled to its end. Rendering tracks the full wrapped content;
+changing it resets the gate and scroll. Submission also compares form state with
+the last rendered state so queued input cannot approve unseen choices.
 
-**A request with two parts is answered part by part** (ADR 26-11-02-022).
-The request card shows each part a request has and its roles: each role's
-name and arguments, its description marked as the discobox's words, and
-beside it what its routes grant (`requestrole.Summary`), never the label
-alone. Choosing a secret reads what the asking discobox already holds of it
-(`standingLoadedMsg`), so the cards that follow say what an approved part
-does to each of those bindings — kept, gone, losing its use, split — by
-`pkg/bindingplan`, the rule the server applies (`replacedFields`). Each
-binding's routes are shown as a diff against the part's (`routeDiff`): `- ` for
-each it loses, `+ ` for each the binding kept gains, and the routes both name
-counted rather than listed again, since the card lists them under "may be sent
-to"; a side with no routes of its own is the secret's. A request asking both to use and to delegate gets a step of its own
-after the lifetime (`askParts`): approve both, or one with the other denied —
-there is no row that approves one and leaves the other unsaid. The answer is
-one `Approval` naming a decision for every part (`Approval.Use`,
-`Approval.Delegate`), raw delivery offered only when the use part is approved.
-
-**A use part may be granted as an addition** (ADR 26-11-03-329 §§4–5,
-amended by 26-11-04-270). Forever previews the added routes without expiry,
-with the rest unchanged; finite additions show their own lifetime.
-Choosing a secret also reads what applies in the use part's variable now,
-from whichever level (`HeldGrants`), and when the discobox holds anything a
-use part could replace or stack on (`approval.holdsUse`), a card asks how it
-is granted (`askUseAs`): as an addition, for its own lifetime beside what it
-holds, or as a replacement, the way the request asked first. The card shows
-both outcomes at once (`heldSection`): each grant held with its lifetime and
-level, what replacing would do to it — go, last only the approval's lifetime,
-or be shadowed — and the routes asked that none names, as written. With
-nothing held the two would make the same binding, so the card is skipped and
-the part granted as asked. An addition is delivered by sentinel, so the
-delivery card is not asked for one; `Approval.UseAs` is always sent for an
-approved use part, so the binding made is the one the card showed.
-
-**A lifetime the credential does not allow is not offered** (`withinLimit`).
-A secret's binding limit is a ceiling the server enforces, so the request card
-names it on each secret's row, the lifetime step dims every choice over it and
-says why, and a typed one over it is refused on the spot. Raising the limit is a
-decision about the credential, made on the secrets screen, not something an
-approval does in passing.
-
-The steps run: request → lifetime → approve; for a new credential, request →
-lifetime → the new-secret form → store and approve. A new credential takes its
-lifetime *before* its token, so going back never has to hold a token that was
-already typed.
+Adoption names both boxes, the parent replaced, authority, and read-only egress
+limits. Trust combines pin and finite duration with the selected certificate's
+full fingerprint. Refresh combines masked manual entry or a saved command with
+once/window permission; it changes the project value, never grant routes or
+lifetimes. API access uses its own inbox card and durable request record;
+Settings remains the direct on/off control. See the server's sandbox and auth
+design docs for request intake and the bounded API role.
 
 **A new credential is the secrets screen's form, filled from the request**
 (`askNewCredentialForm`, `fillFromRequest`, `secretForm`, `secretFromForm`).
@@ -617,11 +558,11 @@ the data source, and a refusal after the store says what was already done); a
 binding limit shorter than that lifetime is refused on the form, before
 anything is stored. Esc from the form is the request, still waiting. The
 request card has no separate "From a command…" row: the form's source row takes
-one. **Esc goes back exactly one step**: from the lifetime to the request; from
-a typed lifetime to the presets; from the new-credential form to the request.
-The answers so far travel as one `approval` value, copied rather than changed at
-each step, so the dialog before is rebuilt from the approval as it stood when
-that dialog was asked.
+one. Escape from the new-credential form returns to the first part card without
+storing a credential. Escape from a part card or final confirmation abandons the
+staged answer and leaves the server request pending. Request JSON returns to the
+same card with all input, including incomplete custom duration text, preserved.
+
 
 ## The attention band
 

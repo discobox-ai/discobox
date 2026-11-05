@@ -83,6 +83,17 @@ type dialog struct {
 	// values: what it holds is typed by the rows themselves.
 	form   *form
 	submit func(f *form) tea.Cmd
+	// formActions renders explicit modal buttons below an editable form.
+	// A negative index leaves focus on the fields.
+	formActions  []action
+	formActionAt int
+	// Approval decisions remain disabled until the current summary has been shown through its end.
+	requireEnd       bool
+	readEnd          bool
+	readContent      string
+	reviewState      string
+	decisionsBlocked bool
+	refreshSections  func()
 
 	// filter is the choices of a dlgFilter, which answers with what they
 	// have marked.
@@ -473,10 +484,71 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, false
 
 	case dlgForm:
+		if len(d.formActions) > 0 && !d.form.listing {
+			key := keyName(msg)
+			if len(d.form.rows) == 0 && d.formActionAt >= 0 {
+				switch key {
+				case "up", "shift+tab":
+					d.formActionAt = (d.formActionAt + len(d.formActions) - 1) % len(d.formActions)
+					return nil, false
+				case "down", "tab":
+					d.formActionAt = (d.formActionAt + 1) % len(d.formActions)
+					return nil, false
+				}
+			}
+			if d.formActionAt >= 0 {
+				switch key {
+				case "left":
+					d.formActionAt = max(0, d.formActionAt-1)
+					return nil, false
+				case "right":
+					d.formActionAt = min(len(d.formActions)-1, d.formActionAt+1)
+					return nil, false
+				case "up", "shift+tab":
+					if key == "shift+tab" && d.formActionAt > 0 {
+						d.formActionAt--
+						return nil, false
+					}
+					d.formActionAt = -1
+					d.form.moveTo(len(d.form.rows) - 1)
+					return nil, false
+				case "tab", "down":
+					if key == "tab" && d.formActionAt < len(d.formActions)-1 {
+						d.formActionAt++
+						return nil, false
+					}
+					d.formActionAt = -1
+					d.form.moveTo(0)
+					return nil, false
+				case "enter":
+					if d.decisionsBlocked || (d.requireEnd && d.reviewState != d.formState()) || !d.formActions[d.formActionAt].enabled {
+						return nil, false
+					}
+					if d.submit != nil {
+						d.form.err = ""
+						cmd := d.submit(d.form)
+						return cmd, d.form.err == ""
+					}
+					return nil, true
+				}
+				return nil, false
+			}
+			if (key == "down" || key == "tab") && d.form.next(d.form.cursor+1, 1) == d.form.cursor {
+				d.formActionAt = 0
+				return nil, false
+			}
+			if key == "enter" && !d.form.onPicker() {
+				d.formActionAt = 0
+				return nil, false
+			}
+			if key == "ctrl+s" {
+				return nil, false
+			}
+		}
 		// Enter on a picker lists its options; ctrl+s accepts the card from
 		// any row, so a card whose cursor rests on a picker can still be
 		// answered without walking to a field.
-		accept := keyName(msg) == "ctrl+s" || (keyName(msg) == "enter" && !d.form.listing && !d.form.onPicker())
+		accept := len(d.formActions) == 0 && (keyName(msg) == "ctrl+s" || (keyName(msg) == "enter" && !d.form.listing && !d.form.onPicker()))
 		if accept {
 			d.form.closeList()
 			// A form that is not answered stays up with the reason on it: the
@@ -708,6 +780,9 @@ const (
 )
 
 func (d *dialog) view(st *styles, z *zones, width, height int) string {
+	if d.refreshSections != nil {
+		d.refreshSections()
+	}
 	boxWidth := dialogWidth(width)
 	inner := max(boxWidth-dialogChromeWidth, 16)
 
@@ -764,6 +839,26 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 	measure := func() int {
 		return rowsOf(d.viewFoot(st, &zones{hoverX: -1, hoverY: -1}, 0, inner, avail, itemRoom, len(lines) > 0), inner)
 	}
+	if d.kind == dlgForm {
+		d.form.rowRoom = 1
+		d.form.listRoom = 1
+		base := measure() - 1
+		summary := min(len(lines), dialogMinRows)
+		if len(lines) > summary {
+			summary++
+		}
+		d.form.rowRoom = max(1, avail-base-summary)
+		d.form.listRoom = max(1, d.form.rowRoom/2)
+	}
+	if len(d.formActions) > 0 && d.form.listing {
+		d.form.listRoom = 1
+		base := measure() - 1
+		summary := min(len(lines), dialogMinRows)
+		if len(lines) > summary {
+			summary++
+		}
+		d.form.listRoom = max(1, avail-base-summary)
+	}
 	foot := measure()
 	if wrapped > len(d.items) {
 		itemRoom = wrapped
@@ -799,6 +894,19 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		maxBody = max(avail-foot-1, dialogMinRows)
 	}
 	d.page = maxBody
+	if d.requireEnd {
+		content := strings.Join(lines, "\n")
+		if content != d.readContent {
+			d.readContent = content
+			d.readEnd = false
+			d.offset = 0
+		}
+		if len(lines) <= maxBody || d.offset+maxBody >= len(lines) {
+			d.readEnd = true
+		}
+		d.decisionsBlocked = !d.readEnd
+		d.reviewState = d.formState()
+	}
 
 	if d.choiceDescriptions != nil {
 		subject := wrap(d.body, inner)
@@ -978,18 +1086,64 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 		keys(pressing("Enter runs the highlighted action", "enter"), pressing("Esc cancels", "esc"))
 	case dlgForm:
 		answer()
-		b.WriteString(d.form.view(st, z, row(), inner))
-		// The hint keeps its rows whether or not it has anything to say, so
-		// moving down the form does not resize the card under the cursor.
+		drawForm := *d.form
+		drawForm.windowCursor = d.form.cursor
+		if len(d.formActions) > 0 && d.formActionAt >= 0 {
+			drawForm.cursor = -1
+		}
+		b.WriteString(drawForm.view(st, z, row(), inner))
 		b.WriteString("\n")
-		b.WriteString(d.form.hint(st, inner))
-		b.WriteString("\n")
+		if len(d.formActions) > 0 {
+			hint := "Scroll to the end to enable both decisions"
+			if !d.decisionsBlocked {
+				if d.formActionAt >= 0 {
+					hint = "Enter selects " + d.formActions[d.formActionAt].label
+				} else {
+					hint = strings.Split(d.form.hint(st, inner), "\n")[0]
+					if d.form.listing {
+						hint = fmt.Sprintf("%d of %d · ↑↓ or wheel moves · Enter chooses", d.form.listAt+1, len(d.form.rows[d.form.cursor].choices))
+					}
+				}
+			}
+			if d.form.err != "" {
+				hint = d.form.err
+			}
+			b.WriteString(st.dimText.Render(truncate(hint, inner)))
+			b.WriteByte('\n')
+		} else {
+			b.WriteString(d.form.hint(st, inner))
+			b.WriteByte('\n')
+		}
+
+		if len(d.formActions) > 0 {
+			for i, a := range d.formActions {
+				if i > 0 {
+					b.WriteString("  ")
+				}
+				text := "[ " + a.label + " ]"
+				style := st.name
+				if d.decisionsBlocked || !a.enabled {
+					style = st.dimText
+				} else if i == d.formActionAt {
+					style = st.cursorName.Background(lipgloss.Color(colHighlightBG))
+				}
+				last := b.String()
+				column := lipgloss.Width(last[strings.LastIndex(last, "\n")+1:])
+				z.mark(hit{kind: hitFormAction, idx: i}, dialogPadLeft+column, row(), lipgloss.Width(text), 1)
+				b.WriteString(style.Render(text))
+			}
+			b.WriteString("\n")
+		}
 		footer()
 		line := d.keys
 		if len(line) == 0 {
 			line = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter accepts", "enter"), pressing("esc cancels", "esc")}
 		}
-		drawHints(formHints(d.form, line))
+		if len(d.formActions) > 0 {
+			drawHints(line)
+		} else {
+			drawHints(formHints(d.form, line))
+		}
 
 	case dlgFilter:
 		// The picker is the card, and windows its own rows: what it may take
@@ -1531,4 +1685,17 @@ func emphasized(st *styles, detail, part string) string {
 		return st.dimText.Render(detail)
 	}
 	return st.dimText.Render(detail[:i]) + st.emphasis.Render(part) + st.dimText.Render(detail[i+len(part):])
+}
+
+// formState catches input queued after the last frame. A decision can only
+// use the choices that the person has had a chance to see in its summary.
+func (d *dialog) formState() string {
+	if d.form == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range d.form.rows {
+		fmt.Fprintf(&b, "%s:%d:%q;", r.key, r.at, r.input.Value())
+	}
+	return b.String()
 }

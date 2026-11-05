@@ -26,6 +26,7 @@ type CreateSandboxCredentialRequestBody = apimodel.CreateSandboxCredentialReques
 type SandboxCredentialPolicy = apimodel.SandboxCredentialPolicy
 type SandboxCredentialRequestDelegate = apimodel.SandboxCredentialRequestDelegate
 type CreateAdoptionRequestBody = apimodel.CreateAdoptionRequestBody
+type CreateAPIAccessRequestBody = apimodel.CreateAPIAccessRequestBody
 type CreateSandboxTrustRequestBody = apimodel.CreateSandboxTrustRequestBody
 type ApproveTrustRequestBody = apimodel.ApproveTrustRequestBody
 type CreateSandboxSecretBindingBody = apimodel.CreateSandboxSecretBindingBody
@@ -165,6 +166,10 @@ type SandboxService interface {
 	ListAdoptionRequests(context.Context, string, string) ([]model.AdoptionRequest, error)
 	GetAdoptionRequest(context.Context, string, string) (*model.AdoptionRequest, error)
 	DecideAdoptionRequest(context.Context, string, string, bool) (*model.AdoptionRequest, error)
+	CreateAPIAccessRequest(context.Context, string, CreateAPIAccessRequestBody) (*model.APIAccessRequest, error)
+	ListAPIAccessRequests(context.Context, string, string) ([]model.APIAccessRequest, error)
+	GetAPIAccessRequest(context.Context, string, string) (*model.APIAccessRequest, error)
+	DecideAPIAccessRequest(context.Context, string, string, bool) (*model.APIAccessRequest, error)
 	ReleaseSandbox(context.Context, string, string) error
 
 	// UpgradeBasis is what the API mappers report a sandbox's available

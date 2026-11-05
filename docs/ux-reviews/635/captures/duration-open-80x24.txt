@@ -1,0 +1,24 @@
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  Allow credential use?                                       1 of 2  │
+    │                                                                      │
+    │  Box                   sbx_7tcdygf3e5eqpg47                          │
+    │  Reason (box's words)  Review issue and delegate a comment route     │
+    │  Server                                                              │
+    │    … PgUp/PgDn to scroll                                             │
+    │                                                                      │
+    │    Credential       ‹ approval-635-github ›                          │
+    │  ❯ Duration         ‹ 1 hour ›                                       │
+    │                     › 1 hour                                         │
+    │    Custom duration  Choose Custom to type a duration                 │
+    │    Scope            ‹ Requested routes ›                             │
+    │    Grant as         ‹ Replacement ›                                  │
+    │    Delivery         ‹ Placeholder ›                                  │
+    │                                                                      │
+    │  Scroll to the end to enable both decisions                          │
+    │  [ Accept ]  [ Deny ]                                                │
+    │                                                                      │
+    │  Tab / arrows move · Enter selects · Esc leaves waiting              │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+

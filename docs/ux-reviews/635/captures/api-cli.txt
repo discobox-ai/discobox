@@ -1,0 +1,10 @@
+Request: apireq_81t0v3fj0srz2238
+Box: sbx_7tcdygf3e5eqpg47
+Reason (box's words): Coordinate workers for approval verification
+Status: pending
+Decided by: 
+
+Approval enables API access until a person turns it off in Settings.
+It permits project discovery and creation using project harness configs and their credentials,
+and bounded management of direct children. Wider-egress children are read-only.
+Existing credential and egress restrictions still apply.

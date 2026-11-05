@@ -1,0 +1,45 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│  machine  cpu 0.2/64               │
+│ Discoboxes                 2 boxes │
+│ no source                  2 boxes │
+│  determined_ritchie   running  ↑ ! │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  └ relaxed_clarke     running      │      │                                                                                                  │
+│                                    │      │  Refresh approval-635-github?                                                                    │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── wants a new value ─────────────────────────────────────────────────────────────────────────  │
+│                                    │      │  token          approval-635-github                                                              │
+│                                    │      │  why            its value is past the lifetime it was given                                      │
+│                                    │      │  sent to        api.github.com                                                                   │
+│                                    │      │  a value lasts  1 second                                                                         │
+│                                    │      │  needed by      sbx_7tcdygf3e5eqpg47                                                             │
+│                                    │      │  asked          just now                                                                         │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── would run ─────────────────────────────────────────────────────────────────────────────────  │
+│                                    │      │  printf dummy-renewed-635                                                                        │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Command permission ────────────────────────────────────────────────────────────────────────  │
+│                                    │      │  Runs locally as you, without a shell.                                                           │
+│                                    │      │  Run this exact command again without asking while this console window stays open.               │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── What refreshing changes ───────────────────────────────────────────────────────────────────  │
+│                                    │      │  Replaces the project credential's value. Existing grants keep their routes and lifetimes.       │
+│                                    │      │  Dismiss keeps the current value; the request may return when the credential is needed again.    │
+│                                    │      │                                                                                                  │
+│                                    │      │    New value       ‹ Run saved command ›                                                         │
+│                                    │      │  ❯ Run permission  ‹ While this window is open ›                                                 │
+│                                    │      │    Token           The command supplies the value                                                │
+│                                    │      │                                                                                                  │
+│                                    │      │  Run again without asking for this exact credential and command                                  │
+│                                    │      │  [ Refresh ]  [ Dismiss ]                                                                        │
+│                                    │      │                                                                                                  │
+│                                    │      │  Tab / arrows move · Enter selects · Esc leaves waiting                                          │
+│                                    │      │                                                                                                  │
+├────────────────────────────────────┤      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

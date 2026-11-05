@@ -1,0 +1,24 @@
+
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  Trust 172.19.0.2:18443?                                             │
+    │                                                                      │
+    │  Box                   sbx_7tcdygf3e5eqpg47                          │
+    │  Server                                                              │
+    │  Host                  172.19.0.2:18443                              │
+    │  Reason (box's words)  Verify a local self-signed host approval      │
+    │                                                                      │
+    │  ── Selected certificate ──────────────────────────────────────────  │
+    │    … PgUp/PgDn to scroll                                             │
+    │                                                                      │
+    │  ❯ Trust by  ‹ Trust by its CA ›                                     │
+    │    Duration  ‹ 1 hour ›                                              │
+    │                                                                      │
+    │  Scroll to the end to enable both decisions                          │
+    │  [ Accept ]  [ Deny ]                                                │
+    │                                                                      │
+    │  Tab / arrows move · Enter selects · Esc leaves waiting              │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+
+

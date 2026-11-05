@@ -167,3 +167,12 @@ GETs on this endpoint and renders each committed part's receipt instead. A
 person's connection retains full previews and inspection (ADR 26-11-04-389).
 Sandbox mutation output also names each part's approved scope beside its receipt,
 without fetching child bindings.
+
+## API access requests
+
+`api-access request --reason` files the calling sandbox's request and waits for
+a person's answer without sandbox discovery (which is refused before consent).
+Cancellation leaves the request pending. `api-access ls/get` read current and
+historical decisions; `approve/deny` answer them as a person. The console uses
+the same resources through its approval inbox. Approval enables the existing
+setting until a person turns it off in Settings.

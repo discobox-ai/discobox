@@ -1,0 +1,45 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│  machine  cpu 0.0/64               │
+│ Discoboxes                 2 boxes │
+│ no source                  2 boxes │
+│  determined_ritchie   running  ↑ ! │
+│  └ relaxed_clarke     running      │
+│                                    │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                    │      │                                                                                                  │
+│                                    │      │  Refresh approval-635-github?                                                                    │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── wants a new value ─────────────────────────────────────────────────────────────────────────  │
+│                                    │      │  token          approval-635-github                                                              │
+│                                    │      │  why            its value is past the lifetime it was given                                      │
+│                                    │      │  sent to        api.github.com                                                                   │
+│                                    │      │  a value lasts  1 second                                                                         │
+│                                    │      │  needed by      sbx_7tcdygf3e5eqpg47                                                             │
+│                                    │      │  asked          just now                                                                         │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── Paste a replacement ───────────────────────────────────────────────────────────────────────  │
+│                                    │      │  No command will run. The masked value replaces the project token.                               │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── What refreshing changes ───────────────────────────────────────────────────────────────────  │
+│                                    │      │  Replaces the project credential's value. Existing grants keep their routes and lifetimes.       │
+│                                    │      │  Dismiss keeps the current value; the request may return when the credential is needed again.    │
+│                                    │      │                                                                                                  │
+│                                    │      │  ❯ New value       Paste a value                                                                 │
+│                                    │      │    Run permission  No command runs for a pasted value                                            │
+│                                    │      │    Token           Paste the replacement token                                                   │
+│                                    │      │                                                                                                  │
+│                                    │      │  Enter a replacement token; the field stays masked                                               │
+│                                    │      │  [ Refresh ]  [ Dismiss ]                                                                        │
+│                                    │      │                                                                                                  │
+│                                    │      │  Tab / arrows move · Enter selects · Esc leaves waiting                                          │
+│                                    │      │                                                                                                  │
+│                                    │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                    │
+├────────────────────────────────────┤
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

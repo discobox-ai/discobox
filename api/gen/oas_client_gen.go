@@ -33,6 +33,10 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
 	AcknowledgeSandboxHarnessConfig(ctx context.Context, request *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (AcknowledgeSandboxHarnessConfigRes, error)
+	// ApproveAPIAccessRequest invokes approve-api-access-request operation.
+	//
+	// POST /projects/{projectId}/api-access-requests/{requestId}/approve
+	ApproveAPIAccessRequest(ctx context.Context, params ApproveAPIAccessRequestParams) (ApproveAPIAccessRequestRes, error)
 	// ApproveAdoptionRequest invokes approve-adoption-request operation.
 	//
 	// POST /projects/{projectId}/adoption-requests/{requestId}/approve
@@ -138,6 +142,10 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/copy
 	CopySandboxFile(ctx context.Context, request *SandboxFileTransferRequest, params CopySandboxFileParams) (CopySandboxFileRes, error)
+	// CreateAPIAccessRequest invokes create-api-access-request operation.
+	//
+	// POST /projects/{projectId}/api-access-requests
+	CreateAPIAccessRequest(ctx context.Context, request *CreateAPIAccessRequestBody, params CreateAPIAccessRequestParams) (CreateAPIAccessRequestRes, error)
 	// CreateAdoptionRequest invokes create-adoption-request operation.
 	//
 	// POST /projects/{projectId}/adoption-requests
@@ -306,6 +314,10 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/secret-bindings/{bindingId}
 	DeleteSecretBinding(ctx context.Context, params DeleteSecretBindingParams) (DeleteSecretBindingRes, error)
+	// DenyAPIAccessRequest invokes deny-api-access-request operation.
+	//
+	// POST /projects/{projectId}/api-access-requests/{requestId}/deny
+	DenyAPIAccessRequest(ctx context.Context, params DenyAPIAccessRequestParams) (DenyAPIAccessRequestRes, error)
 	// DenyAdoptionRequest invokes deny-adoption-request operation.
 	//
 	// POST /projects/{projectId}/adoption-requests/{requestId}/deny
@@ -348,6 +360,10 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/jobs/{jobId}/force
 	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
+	// GetAPIAccessRequest invokes get-api-access-request operation.
+	//
+	// GET /projects/{projectId}/api-access-requests/{requestId}
+	GetAPIAccessRequest(ctx context.Context, params GetAPIAccessRequestParams) (GetAPIAccessRequestRes, error)
 	// GetAdoptionRequest invokes get-adoption-request operation.
 	//
 	// GET /projects/{projectId}/adoption-requests/{requestId}
@@ -557,6 +573,10 @@ type Invoker interface {
 	//
 	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
 	ImportSandboxFiles(ctx context.Context, request ImportSandboxFilesReq, params ImportSandboxFilesParams) (ImportSandboxFilesRes, error)
+	// ListAPIAccessRequests invokes list-api-access-requests operation.
+	//
+	// GET /projects/{projectId}/api-access-requests
+	ListAPIAccessRequests(ctx context.Context, params ListAPIAccessRequestsParams) (ListAPIAccessRequestsRes, error)
 	// ListAdoptionRequests invokes list-adoption-requests operation.
 	//
 	// GET /projects/{projectId}/adoption-requests
@@ -1412,6 +1432,116 @@ func (c *Client) sendAcknowledgeSandboxHarnessConfig(ctx context.Context, reques
 
 	stage = "DecodeResponse"
 	result, err := decodeAcknowledgeSandboxHarnessConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ApproveAPIAccessRequest invokes approve-api-access-request operation.
+//
+// POST /projects/{projectId}/api-access-requests/{requestId}/approve
+func (c *Client) ApproveAPIAccessRequest(ctx context.Context, params ApproveAPIAccessRequestParams) (ApproveAPIAccessRequestRes, error) {
+	res, err := c.sendApproveAPIAccessRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendApproveAPIAccessRequest(ctx context.Context, params ApproveAPIAccessRequestParams) (res ApproveAPIAccessRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("approve-api-access-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/api-access-requests/{requestId}/approve"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ApproveAPIAccessRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/api-access-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/approve"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeApproveAPIAccessRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -3104,6 +3234,100 @@ func (c *Client) sendCopySandboxFile(ctx context.Context, request *SandboxFileTr
 
 	stage = "DecodeResponse"
 	result, err := decodeCopySandboxFileResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// CreateAPIAccessRequest invokes create-api-access-request operation.
+//
+// POST /projects/{projectId}/api-access-requests
+func (c *Client) CreateAPIAccessRequest(ctx context.Context, request *CreateAPIAccessRequestBody, params CreateAPIAccessRequestParams) (CreateAPIAccessRequestRes, error) {
+	res, err := c.sendCreateAPIAccessRequest(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateAPIAccessRequest(ctx context.Context, request *CreateAPIAccessRequestBody, params CreateAPIAccessRequestParams) (res CreateAPIAccessRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-api-access-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/api-access-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateAPIAccessRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/api-access-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateAPIAccessRequestRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateAPIAccessRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -6015,6 +6239,116 @@ func (c *Client) sendDeleteSecretBinding(ctx context.Context, params DeleteSecre
 	return result, nil
 }
 
+// DenyAPIAccessRequest invokes deny-api-access-request operation.
+//
+// POST /projects/{projectId}/api-access-requests/{requestId}/deny
+func (c *Client) DenyAPIAccessRequest(ctx context.Context, params DenyAPIAccessRequestParams) (DenyAPIAccessRequestRes, error) {
+	res, err := c.sendDenyAPIAccessRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDenyAPIAccessRequest(ctx context.Context, params DenyAPIAccessRequestParams) (res DenyAPIAccessRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("deny-api-access-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/api-access-requests/{requestId}/deny"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DenyAPIAccessRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/api-access-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/deny"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDenyAPIAccessRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DenyAdoptionRequest invokes deny-adoption-request operation.
 //
 // POST /projects/{projectId}/adoption-requests/{requestId}/deny
@@ -6813,6 +7147,115 @@ func (c *Client) sendForceJob(ctx context.Context, params ForceJobParams) (res F
 
 	stage = "DecodeResponse"
 	result, err := decodeForceJobResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetAPIAccessRequest invokes get-api-access-request operation.
+//
+// GET /projects/{projectId}/api-access-requests/{requestId}
+func (c *Client) GetAPIAccessRequest(ctx context.Context, params GetAPIAccessRequestParams) (GetAPIAccessRequestRes, error) {
+	res, err := c.sendGetAPIAccessRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetAPIAccessRequest(ctx context.Context, params GetAPIAccessRequestParams) (res GetAPIAccessRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-api-access-request"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/api-access-requests/{requestId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetAPIAccessRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/api-access-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetAPIAccessRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -10426,6 +10869,118 @@ func (c *Client) sendImportSandboxFiles(ctx context.Context, request ImportSandb
 
 	stage = "DecodeResponse"
 	result, err := decodeImportSandboxFilesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListAPIAccessRequests invokes list-api-access-requests operation.
+//
+// GET /projects/{projectId}/api-access-requests
+func (c *Client) ListAPIAccessRequests(ctx context.Context, params ListAPIAccessRequestsParams) (ListAPIAccessRequestsRes, error) {
+	res, err := c.sendListAPIAccessRequests(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListAPIAccessRequests(ctx context.Context, params ListAPIAccessRequestsParams) (res ListAPIAccessRequestsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-api-access-requests"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/api-access-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListAPIAccessRequestsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/api-access-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "status" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "status",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Status.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListAPIAccessRequestsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

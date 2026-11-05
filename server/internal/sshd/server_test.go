@@ -405,3 +405,16 @@ func (*fakeSandboxService) DecideAdoptionRequest(context.Context, string, string
 	return nil, nil
 }
 func (*fakeSandboxService) ReleaseSandbox(context.Context, string, string) error { return nil }
+
+func (*fakeSandboxService) CreateAPIAccessRequest(context.Context, string, services.CreateAPIAccessRequestBody) (*model.APIAccessRequest, error) {
+	return nil, nil
+}
+func (*fakeSandboxService) ListAPIAccessRequests(context.Context, string, string) ([]model.APIAccessRequest, error) {
+	return []model.APIAccessRequest{}, nil
+}
+func (*fakeSandboxService) GetAPIAccessRequest(context.Context, string, string) (*model.APIAccessRequest, error) {
+	return nil, nil
+}
+func (*fakeSandboxService) DecideAPIAccessRequest(context.Context, string, string, bool) (*model.APIAccessRequest, error) {
+	return nil, nil
+}

@@ -1494,8 +1494,9 @@ type CredentialRequest struct {
 	// rather than for a credential (ADR 0149). Host is then the endpoint,
 	// Justification is why the agent says it needs it, and Name and EnvVar
 	// are empty: the answer is not a secret but which certificate to pin.
-	Adoption *AdoptionAsk
-	Trust    *TrustAsk
+	APIAccess bool
+	Adoption  *AdoptionAsk
+	Trust     *TrustAsk
 }
 
 // AdoptionAsk names the child, its current lead, and the authority requested.
@@ -2506,6 +2507,7 @@ type DataSource interface {
 	// ApproveTrustRequest answers a trust request yes, pinning the chosen
 	// certificate for the asking discobox alone (ADR 0149).
 	DecideAdoptionRequest(ctx context.Context, server, requestID string, approve bool) error
+	DecideAPIAccessRequest(ctx context.Context, server, requestID string, approve bool) error
 	ApproveTrustRequest(ctx context.Context, server string, approval TrustApproval) error
 
 	// DenyTrustRequest answers a trust request no.

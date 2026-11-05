@@ -1,0 +1,24 @@
+
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  Allow credential use?                                       1 of 2  │
+    │                                                                      │
+    │  review shows each affected grant.                                   │
+    │  Placeholder delivery: the box never receives the credential         │
+    │  value.                                                              │
+    │    … PgUp/PgDn to scroll                                             │
+    │                                                                      │
+    │    Credential       ‹ approval-635-github ›                          │
+    │    Duration         ‹ 1 hour ›                                       │
+    │    Custom duration  Choose Custom to type a duration                 │
+    │    Scope            ‹ Requested routes ›                             │
+    │    Grant as         ‹ Replacement ›                                  │
+    │    Delivery         ‹ Placeholder ›                                  │
+    │                                                                      │
+    │  Enter selects Accept                                                │
+    │  [ Accept ]  [ Deny ]                                                │
+    │                                                                      │
+    │  Tab / arrows move · Enter selects · Esc leaves waiting              │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+

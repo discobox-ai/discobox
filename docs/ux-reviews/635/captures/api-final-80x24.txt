@@ -1,0 +1,24 @@
+
+    ╭──────────────────────────────────────────────────────────────────────╮
+    │                                                                      │
+    │  Allow discobox API access?                                          │
+    │                                                                      │
+    │  Box                   sbx_7tcdygf3e5eqpg47                          │
+    │  Server                                                              │
+    │  Reason (box's words)  Verify re-request after access revocation     │
+    │                                                                      │
+    │  ── Project access ────────────────────────────────────────────────  │
+    │  Discovery             List boxes and watch project events           │
+    │  Create                Launch boxes within its allowed egress,       │
+    │                        using project harness configs and their       │
+    │    … PgUp/PgDn to scroll                                             │
+    │                                                                      │
+    │                                                                      │
+    │  Scroll to the end to enable both decisions                          │
+    │  [ Accept ]  [ Deny ]                                                │
+    │                                                                      │
+    │  Tab / arrows move · Enter selects · Esc leaves waiting              │
+    │                                                                      │
+    ╰──────────────────────────────────────────────────────────────────────╯
+
+

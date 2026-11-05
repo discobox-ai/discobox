@@ -1,0 +1,45 @@
+ discobox
+╭───────[ discoboxes ]────────[+][x]─╮
+│ all discoboxes ▾                   │
+│  machine  cpu 0.2/64               │
+│ Discoboxes                 2 boxes │
+│ no source                  2 boxes │
+│  determined_ritchie   running  ↑ ! │
+│  └ relaxed_clarke     running      │
+│                                    │
+│                                    │      ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                    │      │                                                                                                  │
+│                                    │      │  Confirm credential access                                                                       │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── the binding ───────────────────────────────────────────────────────────────────────────────  │
+│                                    │      │  credential      approval-635-new                                                                │
+│                                    │      │  answered with   approval-635-new                                                                │
+│                                    │      │  may be sent to  GET example.com/635                                                             │
+│                                    │      │  use scope       Requested routes                                                                │
+│                                    │      │                  Still limited by credential scope                                               │
+│                                    │      │  replaces        nothing: an addition beside what it holds                                       │
+│                                    │      │                                                                                                  │
+│                                    │      │  ── holds in NEW_635 now ──────────────────────────────────────────────────────────────────────  │
+│                                    │      │  binding         GET example.com/635 · until Nov 6 00:23                                         │
+│                                    │      │  new routes      none, as written                                                                │
+│                                    │      │                                                                                                  │
+│                                    │      │  This submits the use and delegation decisions together. Deny refuses the entire request; Esc    │
+│                                    │      │  leaves it waiting.                                                                              │
+│                                    │      │                                                                                                  │
+│                                    │      │                                                                                                  │
+│                                    │      │  Enter selects Accept                                                                            │
+│                                    │      │  [ Accept ]  [ Deny ]                                                                            │
+│                                    │      │                                                                                                  │
+│                                    │      │  Tab / arrows move · Enter selects · Esc leaves waiting                                          │
+│                                    │      │                                                                                                  │
+│                                    │      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                    │
+│                                    │
+│                                    │
+├────────────────────────────────────┤
+│ + new discobox                     │
+│   harnesses                     F3 │
+│   secrets                       F4 │
+│ ctrl+a h list · ctrl+a ↑↓ switch   │
+╰────────────────────────────────────╯
+

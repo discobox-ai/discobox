@@ -1,0 +1,18 @@
+{
+  "hostTrusts": [
+    {
+      "createdAt": "2026-11-05T23:19:02Z",
+      "expiresAt": "2026-11-06T00:19:02Z",
+      "grantedBy": "user_default",
+      "host": "172.19.0.2:18443",
+      "id": "trust_f0d9wf5fp5r082ye",
+      "pin": {
+        "kind": "leaf-spki",
+        "sha256": "2883c8f2e582fe7b1f2de91656aa35a9ecb27c559a00591a8266138af2f7b96d"
+      },
+      "projectId": "proj_0pynj1t7mw6pz876",
+      "requestId": "treq_c2vm5zjr31ar2myk",
+      "sandboxId": "sbx_7tcdygf3e5eqpg47"
+    }
+  ]
+}

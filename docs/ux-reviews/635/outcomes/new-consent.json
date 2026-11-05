@@ -1,0 +1,77 @@
+{
+  "createdAt": "2026-11-05T23:20:20Z",
+  "decidedAt": "2026-11-05T23:23:24Z",
+  "decidedBy": "user_default",
+  "envName": "NEW_635",
+  "id": "sreq_9p6s83w02ywck2p2",
+  "justification": "Verify creation from an approval card",
+  "name": "approval-635-new",
+  "projectId": "proj_0pynj1t7mw6pz876",
+  "requestedBy": "agent:sbx_7tcdygf3e5eqpg47",
+  "sandboxId": "sbx_7tcdygf3e5eqpg47",
+  "secretId": "sec_d1ejfxtt01twx7eg",
+  "status": "approved",
+  "updatedAt": "2026-11-05T23:23:24Z",
+  "use": {
+    "approvedAs": "replace",
+    "approvedScope": "routes",
+    "grant": {
+      "secretId": "sec_d1ejfxtt01twx7eg",
+      "secretRevision": 1,
+      "expiresAt": "2026-11-06T00:23:24Z",
+      "delivery": "sentinel",
+      "mode": "replace",
+      "routeLists": [
+        {
+          "sourceId": "sec_d1ejfxtt01twx7eg",
+          "source": "secret",
+          "routes": [
+            {
+              "hosts": [
+                "example.com"
+              ],
+              "methods": [
+                "GET"
+              ],
+              "paths": [
+                "/635"
+              ]
+            }
+          ]
+        },
+        {
+          "sourceId": "bind_3tdqp03ez2x5fbjh",
+          "source": "binding",
+          "routes": [
+            {
+              "hosts": [
+                "example.com"
+              ],
+              "methods": [
+                "GET"
+              ],
+              "paths": [
+                "/635"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "bindingId": "bind_3tdqp03ez2x5fbjh",
+    "outcome": "approved",
+    "routes": [
+      {
+        "hosts": [
+          "example.com"
+        ],
+        "methods": [
+          "GET"
+        ],
+        "paths": [
+          "/635"
+        ]
+      }
+    ]
+  }
+}

@@ -2273,6 +2273,7 @@ func AllModels() []any {
 		&SecretRejection{},
 		&HostTrustRequest{},
 		&AdoptionRequest{},
+		&APIAccessRequest{},
 		&HostTrust{},
 		&SandboxEvent{},
 		&SandboxEventLog{},

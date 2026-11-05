@@ -324,6 +324,13 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 	case hitDialogItem:
 		return m.pressDialogItem(what.idx), true
 
+	case hitFormAction:
+		if d := m.dialog; d != nil && d.kind == dlgForm && what.idx >= 0 && what.idx < len(d.formActions) {
+			d.form.closeList()
+			d.formActionAt = what.idx
+			return m.updateKey(keyPress("enter")), true
+		}
+		return nil, true
 	case hitFormRow:
 		// The row is answered where the keyboard is: a press moves the cursor
 		// to it and focuses its field, which is what ↑ and ↓ do. A press on
@@ -335,6 +342,7 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 			} else if d.form.cursor == what.idx {
 				d.form.openList()
 			}
+			d.formActionAt = -1
 			d.form.moveTo(what.idx)
 		}
 		return nil, true
@@ -601,6 +609,7 @@ func (m *Model) pressInput(idx, col int) {
 		if d.kind != dlgForm || idx >= len(d.form.rows) {
 			return
 		}
+		d.formActionAt = -1
 		d.form.moveTo(idx)
 		if d.form.cursor != idx {
 			// The row refused the cursor — it is not one that can be answered.
@@ -751,8 +760,12 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 		// wheel that wrapped would jump from the last row to the first on the
 		// way past the end.
 		m.opts.moveTo(m.opts.cursor - lines)
-	case hitFormRow:
+	case hitFormRow, hitFormChoice:
 		if d := m.dialog; d != nil && d.kind == dlgForm {
+			if d.form.listing {
+				d.form.listAt = min(max(d.form.listAt-lines, 0), len(d.form.rows[d.form.cursor].choices)-1)
+				return nil
+			}
 			d.form.move(-sign(lines))
 		}
 	case hitFilterRow:

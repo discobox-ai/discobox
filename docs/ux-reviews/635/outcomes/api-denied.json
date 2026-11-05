@@ -1,0 +1,11 @@
+{
+  "id": "apireq_ev8fmyr1fqxtcfcz",
+  "projectId": "proj_0pynj1t7mw6pz876",
+  "requesterSandboxId": "sbx_7tcdygf3e5eqpg47",
+  "justification": "Verify re-request after access revocation",
+  "status": "denied",
+  "decidedBy": "user_default",
+  "decidedAt": "2026-11-05T23:26:00Z",
+  "createdAt": "2026-11-05T23:25:02Z",
+  "updatedAt": "2026-11-05T23:26:00Z"
+}
