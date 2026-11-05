@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-05-240](26-11-05-240-runtime-directory-permission-repair-requires-human-consent.md) | Runtime-directory permission repair requires human consent | Proposed (would narrow 26-11-04-074 §1's prohibition on repair; private-directory requirement remains) |
 | [26-11-04-389](26-11-04-389-a-lead-binds-secrets-within-its-delegation.md) | A lead binds secrets within its delegation | Proposed (would amend 26-10-27-880 §§3, 5 for direct handoff and write-time containment; would narrow 26-11-02-022 §5 for sandbox replacement previews only; further delegation stays person-only) |
 | [26-11-04-270](26-11-04-270-an-addition-may-be-granted-without-expiry.md) | An addition may be granted without expiry | Accepted (amends 26-11-03-329 §§1–2 for optional expiry and §5 for its preview) |
 | [26-11-04-616](26-11-04-616-whole-credential-is-an-explicit-approval-scope.md) | A credential approval restricts its grant to requested routes, requested hosts, or anywhere | Accepted (amends 26-11-02-022 §§3–4 and 6) |
