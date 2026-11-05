@@ -1,7 +1,8 @@
 # 26-11-04-684 — A lead runs child commands and copies files through the files API
 
-- **Status**: Proposed (would supersede 0140 §4's refusal and deferral of execs for a child; 26-10-01-397 §1's refusal of waiting acquire and §2's exclusion of create, start, delete and attach; extends 26-11-03-970 §§2–3's unchanged route set and adoption disclosure; supersedes 26-10-22-499 §4's keeping of cp on scp/SFTP and its Trees deferral)
+- **Status**: Accepted (supersedes 0140 §4's refusal and deferral of execs for a child; 26-10-01-397 §1's refusal of waiting acquire and §2's exclusion of create, start, delete and attach; extends 26-11-03-970 §§2–3's unchanged route set and adoption disclosure; supersedes 26-10-22-499 §4's keeping of cp on scp/SFTP and its Trees deferral)
 - **Date**: 2026-11-04
+- Accepted by the owner by merging #613, 2026-11-05
 - **Issue**: [#609](https://github.com/discobox-ai/discobox/issues/609)
 - **Relates to**: [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md), [26-10-01-397](26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md), [26-11-03-970](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md), [26-10-01-032](26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md) §4, and [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §9.
 
