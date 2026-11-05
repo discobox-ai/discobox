@@ -23,3 +23,7 @@
   may expire while waiting for a row lock; the pre-lock timestamp must not
   authorize a grant or calculate its receipt. Receipts are mutation results:
   remove them from sandbox request GET/list, preserving person history.
+
+- Recheck the caller's desired-deleted state under the handoff lock, as the
+  sandbox authorizer does. Purge is asynchronous; a deleted lead may still
+  have a row, API permission and live delegations while its deletion converges.

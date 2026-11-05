@@ -115,7 +115,7 @@ func TestHandoffAuthorityMatrix(t *testing.T) {
 func ptrString(s string) *string { return &s }
 
 func TestHandoffRechecksPreparedAuthority(t *testing.T) {
-	for _, change := range []string{"reparent", "api off", "delegate routes", "expiry", "revoke"} {
+	for _, change := range []string{"reparent", "api off", "lead deleting", "delegate routes", "expiry", "revoke"} {
 		t.Run(change, func(t *testing.T) {
 			ctx := testPrincipalContext()
 			svc, st := newAgentCredentialService(t)
@@ -133,6 +133,10 @@ func TestHandoffRechecksPreparedAuthority(t *testing.T) {
 				})
 			case "api off":
 				err = st.SetSandboxDiscoboxAPI(ctx, "project-1", leadID, false)
+			case "lead deleting":
+				err = st.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error {
+					return tx.Model(&model.Sandbox{}).Where("id = ?", leadID).Update("desired_state", model.DesiredStateDeleted).Error
+				})
 			case "delegate routes":
 				p.Routes = []model.SecretRoute{{Hosts: []string{"other.example"}}}
 				err = st.UpdateSecretBinding(ctx, p, store.BindingChange{Actor: "person"})

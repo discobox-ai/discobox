@@ -261,7 +261,8 @@ sends.
   never a union. Further delegation and raw delivery remain person-only.
 - **Authority is current at commit.** The project lock precedes sandbox locks,
   serializing with adoption, release and purge. `lockHandoff` rechecks the
-  holder's API flag, immediate parent relationship and target eligibility;
+  holder's API flag and desired-deleted state, immediate parent relationship
+  and target eligibility;
   secret and delegation rows are locked while checking routes and lifetime.
   A rejected create or answer rolls back every binding, event and dirty mark.
 - **Decisions return receipts.** The new endpoint returns `SecretGrantReceipt`;
