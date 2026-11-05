@@ -181,8 +181,8 @@ func sortAdditions(added []EffectiveBinding) {
 }
 
 // latestLapsing is the index of the addition that stops authorizing last,
-// the first of those that tie: one with no expiry, which an addition is
-// never given but a write could leave, lapses after every one that has.
+// the first of those that tie: one with no effective expiry outlasts every
+// addition with a deadline (ADR 26-11-04-270).
 func latestLapsing(added []EffectiveBinding) int {
 	best := 0
 	for i := 1; i < len(added); i++ {

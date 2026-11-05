@@ -227,7 +227,7 @@ func TestAReplacementClearsAdditionsAndTheApproverChoosesTheWay(t *testing.T) {
 }
 
 // What an addition may not be is refused before anything is written: the
-// value itself, forever, a delegate part granted as one, a variable another
+// value itself, a delegate part granted as one, a variable another
 // secret delivers, and an ask to add with nothing to use.
 func TestWhatAnAdditionMayNotBeIsRefused(t *testing.T) {
 	ctx := testPrincipalContext()
@@ -249,12 +249,6 @@ func TestWhatAnAdditionMayNotBeIsRefused(t *testing.T) {
 		t.Errorf("a delegate part granted as an addition = %v, want 400", err)
 	}
 	add := askToAdd(ctx, t, svc)
-	forever := services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID), Use: serverapi.NewOptSecretRequestPartDecision(serverapi.SecretRequestPartDecision{
-		Decision: serverapi.SecretRequestPartDecisionDecisionApprove, TtlSeconds: serverapi.NewOptInt64(0),
-	})}
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", add.ID, forever); !isStatus(err, http.StatusBadRequest) {
-		t.Errorf("an addition made forever = %v, want 400", err)
-	}
 	raw := services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID), Use: decideRaw(serverapi.SecretRequestPartDecisionRawEnv)}
 	if _, err := svc.ApproveSecretRequest(ctx, "project-1", add.ID, raw); !isStatus(err, http.StatusBadRequest) {
 		t.Errorf("an addition of the value itself = %v, want 400", err)

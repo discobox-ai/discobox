@@ -148,8 +148,8 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 
 // checkBindingShape refuses a binding that does not hold together: one that
 // does nothing, a use with no valid variable, a delegation alone naming one,
-// or an addition that is not a use on a discobox, by sentinel, with an
-// expiry (ADR 26-11-03-329 §1).
+// or an addition that is not a use on a discobox, by sentinel
+// (ADR 26-11-03-329 §1, amended by 26-11-04-270).
 func checkBindingShape(binding *model.SecretBinding) error {
 	switch {
 	case !binding.Use && !binding.Delegate:
@@ -169,8 +169,6 @@ func checkBindingShape(binding *model.SecretBinding) error {
 		return apperrors.NewStatusError(http.StatusBadRequest, "an addition is on a discobox, beside the binding that delivers its variable there")
 	case binding.Raw != "":
 		return apperrors.NewStatusError(http.StatusBadRequest, "an addition is delivered by sentinel; a raw value is handed over by a plain binding")
-	case binding.ExpiresAt == nil:
-		return apperrors.NewStatusError(http.StatusBadRequest, "an addition is for a time; give it a lifetime")
 	}
 	return nil
 }
@@ -276,8 +274,6 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 		}
 		binding.ExpiresAt = expiryAt(now, ttl)
 	}
-	// After the lifetime, so an addition made forever is refused as it
-	// would be stored.
 	if err := checkBindingShape(binding); err != nil {
 		return nil, err
 	}

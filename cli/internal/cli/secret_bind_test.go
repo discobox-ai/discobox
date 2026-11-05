@@ -542,3 +542,25 @@ func TestBoundListsAdditionsAfterWhatTheyStackOn(t *testing.T) {
 		t.Fatalf("listing:\n%s\nwant why the addition does not apply", text)
 	}
 }
+
+// Explicit forever must be sent as zero, rather than omitted (which defaults
+// to a finite grant), for either an explicit addition or the request's default.
+func TestApproveAdditionForeverSendsExplicitZero(t *testing.T) {
+	for _, as := range []bindingplan.As{"", bindingplan.Add} {
+		t.Run(string(as), func(t *testing.T) {
+			request := &apimodel.SecretRequest{ID: "request-1", Use: apiclientgen.NewOptSecretRequestPart(apimodel.SecretRequestPart{Add: apiclientgen.NewOptBool(true)})}
+			answer := approvalAnswer{lifetime: lifetime.NewFlag(), useAs: asFlag{value: as}}
+			if err := answer.lifetime.Set("forever"); err != nil {
+				t.Fatal(err)
+			}
+			body, err := approvalBody(request, answer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			part := body.Use.Value
+			if !part.TtlSeconds.Set || part.TtlSeconds.Value != 0 || grantedAs(request, body.Use) != bindingplan.Add {
+				t.Fatalf("use = %+v, want an addition with explicit zero lifetime", part)
+			}
+		})
+	}
+}

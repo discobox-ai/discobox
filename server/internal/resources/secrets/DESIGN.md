@@ -49,7 +49,7 @@ flowchart LR
   lapsed, is not there. `ListBoundSecrets` is that view, with each binding's
   route lists and the earlier of its and its parent's expiry.
 - **An addition stacks; nothing else does** ([ADR 26-11-03-329](../../../../docs/adr/26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md)).
-  `SecretBinding.Adds` is a use on a sandbox, by sentinel, with an expiry,
+  `SecretBinding.Adds` is a use on a sandbox, by sentinel, with or without expiry,
   that applies beside the plain binding delivering its variable at whatever
   level, and of the same secret only (`EffectiveBinding.Additions`); with no
   plain binding there, the addition that lapses last delivers the variable
@@ -73,7 +73,7 @@ flowchart LR
   approving a request or at a create, under a delegate binding.
 - **Shaped for what it does** (`checkBindingShape`): a use names a variable
   matching `services.EnvVarNamePattern`, a delegation alone names none, and an
-  addition is a use alone, on a sandbox, by sentinel, with an expiry, however
+  addition is a use alone, on a sandbox, by sentinel, with or without expiry, however
   it is written. One plain use binding per target and variable, any number of
   additions beside it, one delegate binding per target and secret — unique
   indexes (`idx_secret_binding_plain_use`, `idx_secret_binding_delegate`), a
@@ -186,8 +186,11 @@ held for good, inherited from a harness config or project, or handed on
 under another discobox's delegation keeps its routes and lifetime; it is
 refused (409) where the variable is delivered by another secret, since it
 would never apply there, or by a binding that hands over the value itself,
-since it would widen where that value goes on a sentinel ask, and an addition of the value itself, or forever, is
-a 400. A delegate part is always a replacement.
+since it would widen where that value goes on a sentinel ask. An addition
+of the value itself is a 400. An explicit zero lifetime grants an addition without expiry, subject
+to the secret maximum and parent delegation bounds (ADR 26-11-04-270).
+Omitting the lifetime retains the requested-or-default finite lifetime.
+A delegate part is always a replacement.
 
 Otherwise an approved part **replaces** the discobox's own bindings of its kind for the
 secret (`replaceBindings`, §5); a request states the whole access of that
