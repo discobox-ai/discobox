@@ -121,6 +121,10 @@ type previewDecision struct {
 	answer, credential, duration, scope string
 }
 
+// Implementation requirements recorded with the owner (not built in this sketch):
+// All controls must be mouse clickable. When the grant list overflows, both
+// Accept and Deny must stay disabled until its end has been reached. Re-evaluate
+// that gate when the displayed list changes. See docs/ux-reviews/635/README.md.
 func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first previewDecision) {
 	credential := pickRow("credential", "Credential",
 		choice{key: "github", label: "GitHub token", hint: "bearer · api.github.com, github.com"},
