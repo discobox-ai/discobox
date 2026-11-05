@@ -1,5 +1,12 @@
 # Pool Agent Review Notes
 
+## Create stream shutdown
+
+Keep the create-protocol WebSocket alive until the pipe bridge's response
+copy finishes. Closing the single HTTP connection also releases its listener,
+so `http.Server.Serve` returning does not prove the final response reached the
+WebSocket. Closing it then can lose headers or truncate a response body (#703).
+
 ## Ownership of host-backed roots
 
 `prepareSandboxVolumes` provisions the roots that become container binds. The

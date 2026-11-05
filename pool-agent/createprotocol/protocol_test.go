@@ -90,6 +90,68 @@ func TestReconnectRequiresFreshDiscovery(t *testing.T) {
 	}
 }
 
+func TestClosingResponseDrainsBody(t *testing.T) {
+	// Span many bridge copies so closing HTTP must drain both the response
+	// headers and the final body bytes before the WebSocket is torn down.
+	body := strings.Repeat("create result\n", 1<<16)
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Serve(w, r, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Connection", "close")
+			_, _ = io.WriteString(w, body)
+		}))
+	}))
+	defer agent.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	client, release, _, err := Dial(ctx, agent.Client(), agent.URL, "p", "pool", "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://pool/create", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read closing response (%d/%d bytes): %v", len(got), len(body), err)
+	}
+	if resp.StatusCode != http.StatusOK || string(got) != body {
+		t.Fatalf("closing response: status=%s bytes=%d, want %d", resp.Status, len(got), len(body))
+	}
+}
+
+func TestServeReturnsOnClientDisconnect(t *testing.T) {
+	returned := make(chan struct{})
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+			return
+		}
+		defer close(returned)
+		Serve(w, r, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			t.Error("unexpected create")
+		}))
+	}))
+	defer agent.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	_, release, _, err := Dial(ctx, agent.Client(), agent.URL, "p", "pool", "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	select {
+	case <-returned:
+	case <-ctx.Done():
+		t.Fatal("Serve did not return after the client disconnected")
+	}
+}
+
 func TestDiscoveryRefusesInvalidRevisions(t *testing.T) {
 	for _, tc := range []struct {
 		name, answer string
