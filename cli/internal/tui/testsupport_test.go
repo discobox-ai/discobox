@@ -336,8 +336,8 @@ type fakeSource struct {
 	toolLookups []string     // the sandboxes whose tools were asked for
 	execOpens   []string     // "id execID colsxrows"
 	terminals   []*fakeTerminal
-	// execTerminals is the terminal serving each exec attach, by exec id.
-	execTerminals map[string]*fakeTerminal
+	// execTerminals records every attachment to each exec, in creation order.
+	execTerminals map[string][]*fakeTerminal
 	toolRuns      []string // "tool argv"
 	installed     []string // "tool/name → home" per file put into a discobox
 	editedTools   []string // "tool/name" handed to $EDITOR
@@ -1308,17 +1308,30 @@ func (f *fakeSource) newExecTerminal(execID string) *fakeTerminal {
 	term := newFakeTerminal()
 	f.terminals = append(f.terminals, term)
 	if f.execTerminals == nil {
-		f.execTerminals = map[string]*fakeTerminal{}
+		f.execTerminals = map[string][]*fakeTerminal{}
 	}
-	f.execTerminals[execID] = term
+	f.execTerminals[execID] = append(f.execTerminals[execID], term)
 	return term
 }
 
-// execTerm is the terminal serving one exec id's attach.
+// execTerm returns the newest live attachment to an exec. A duplicate attach
+// can be closed while an earlier one still serves the pane. If all attachments
+// have closed, retain the last one for assertions about an exited terminal.
 func (f *fakeSource) execTerm(execID string) *fakeTerminal {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.execTerminals[execID]
+	terms := f.execTerminals[execID]
+	for i := len(terms) - 1; i >= 0; i-- {
+		select {
+		case <-terms[i].closed:
+		default:
+			return terms[i]
+		}
+	}
+	if len(terms) == 0 {
+		return nil
+	}
+	return terms[len(terms)-1]
 }
 
 // addExec puts a session into the listing, as one started elsewhere would be.
