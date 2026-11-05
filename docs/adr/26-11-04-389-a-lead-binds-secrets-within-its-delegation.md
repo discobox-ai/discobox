@@ -1,7 +1,8 @@
 # 26-11-04-389 — A lead binds secrets within its delegation
 
-- **Status**: Proposed (would amend [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §3's approval-or-create-only handoff and its decision not to require route containment at approval; §5's direct-write authorization, extended to bounded sandbox writes; would narrow [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §5's replacement preview requirement for sandbox approvers only)
+- **Status**: Accepted (amends [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §3's approval-or-create-only handoff and its decision not to require route containment at approval; §5's direct-write authorization, extended to bounded sandbox writes; narrows [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §5's replacement preview requirement for sandbox approvers only)
 - **Date**: 2026-11-04
+- Accepted by the owner by merging #645, 2026-11-05
 - **Issue**: [#616](https://github.com/discobox-ai/discobox/issues/616)
 - **Keeps**: [26-11-03-970](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md) §§2, 9's immediate-parent authority and private child credentials; [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md) §5's replacement protections and person-facing replacement preview.
 
