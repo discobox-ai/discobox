@@ -699,6 +699,26 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 		label := strings.ToUpper(part.label)
 		fmt.Fprintf(tw, "%s\t%s\n", label, part.statusText(request.Status))
 		fmt.Fprintf(tw, "%s ROUTES\t%s\n", label, routesText(part.part.Routes))
+		if scope := part.part.ApprovedScope.Or(""); scope != "" {
+			fmt.Fprintf(tw, "%s APPROVED SCOPE\t%s\n", label, scope)
+		}
+		if grant, ok := part.part.Grant.Get(); ok {
+			fmt.Fprintf(tw, "%s CREDENTIAL REVISION\t%s / %d\n", label, terminalSafe(grant.SecretId), grant.SecretRevision)
+			fmt.Fprintf(tw, "%s DELIVERY / MODE\t%s / %s\n", label, terminalSafe(grant.Delivery), terminalSafe(grant.Mode))
+			if parent := grant.ParentBindingId.Or(""); parent != "" {
+				fmt.Fprintf(tw, "%s PARENT\t%s\n", label, terminalSafe(parent))
+			}
+			if expiry, ok := grant.ExpiresAt.Get(); ok {
+				fmt.Fprintf(tw, "%s GRANTED UNTIL\t%s\n", label, formatTime(expiry))
+			}
+			for _, list := range grant.RouteLists {
+				restriction := routesText(list.Routes)
+				if len(list.Routes) == 0 && (list.Source == "binding" || list.Source == "parent") {
+					restriction = "No grant restriction"
+				}
+				fmt.Fprintf(tw, "%s GRANTED %s %s\t%s\n", label, terminalSafe(list.Source), terminalSafe(list.SourceId), restriction)
+			}
+		}
 		for _, role := range partRoles(part.part) {
 			fmt.Fprintf(tw, "%s ROLE\t%s\n", label, roleText(role))
 			fmt.Fprintf(tw, "  GRANTS\t%s\n", terminalSafe(requestrole.Summary(role.Routes)))

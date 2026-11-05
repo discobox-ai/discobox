@@ -515,7 +515,7 @@ func partDecision(which string, part *model.SecretRequestPart, input apigen.OptS
 	}
 	switch decision.Decision {
 	case apigen.SecretRequestPartDecisionDecisionDeny:
-		if decision.Routes != nil || decision.TtlSeconds.Set || decision.Raw.Set || decision.As.Set {
+		if decision.Routes != nil || decision.TtlSeconds.Set || decision.Raw.Set || decision.As.Set || decision.Scope.Set {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
 				fmt.Sprintf("the %s part is denied, so it takes no routes, lifetime, delivery or way of granting it", which))
 		}
@@ -525,7 +525,24 @@ func partDecision(which string, part *model.SecretRequestPart, input apigen.OptS
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			fmt.Sprintf("the %s part's decision is approve or deny, not %q", which, decision.Decision))
 	}
-	approval := &partApproval{delegate: which == "delegate", routes: part.Routes}
+	scope := decision.Scope.Or(apigen.SecretRequestPartDecisionScopeRoutes)
+	approval := &partApproval{delegate: which == "delegate", routes: part.Routes, scope: string(scope)}
+	switch scope {
+	case apigen.SecretRequestPartDecisionScopeRoutes:
+	case apigen.SecretRequestPartDecisionScopeHosts:
+		hosts := secretroute.OpenRouteHosts(part.Routes)
+		if len(hosts) == 0 {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "requested hosts scope requires an open requested host")
+		}
+		approval.routes = []model.SecretRoute{{Hosts: hosts}}
+	case apigen.SecretRequestPartDecisionScopeAnywhere:
+		approval.routes = nil
+	default:
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "approval scope must be routes, hosts or anywhere")
+	}
+	if scope != apigen.SecretRequestPartDecisionScopeRoutes && decision.Routes != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "route overrides require routes scope")
+	}
 	if decision.Routes != nil {
 		routes, err := routesFrom(decision.Routes)
 		if err != nil {
@@ -581,6 +598,7 @@ type approvalWrite struct {
 // chose, and for the use part the delivery. binding is what the approval
 // made or replaced.
 type partApproval struct {
+	scope    string
 	delegate bool
 	routes   []model.SecretRoute
 	// raw is the delivery the approver chose for the value itself, empty for
@@ -640,6 +658,12 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 			part.approval.binding = made
 			part.asked.Outcome = model.SecretRequestPartApproved
 			part.asked.BindingID = made.ID
+			part.asked.ApprovedScope = part.approval.scope
+			grant, err := approvalGrant(ctx, txStore, secret, made)
+			if err != nil {
+				return err
+			}
+			part.asked.Grant = grant
 			if !part.approval.delegate {
 				part.asked.ApprovedAs = model.SecretRequestApprovedAsReplace
 				if part.approval.adds {
@@ -660,6 +684,40 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 		return apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
 	}
 	return err
+}
+
+// approvalGrant snapshots the independent authorization lists, never the value.
+func approvalGrant(ctx context.Context, st *store.Store, secret *model.Secret, binding *model.SecretBinding) (*model.SecretRequestGrant, error) {
+	grant := &model.SecretRequestGrant{SecretID: secret.ID, SecretRevision: secret.Revision,
+		ParentBindingID: binding.ParentID, ExpiresAt: binding.ExpiresAt, Delivery: "sentinel", Mode: "replace"}
+	if binding.Delegate {
+		grant.Delivery = "none"
+	}
+	if binding.Raw != "" {
+		grant.Delivery = binding.Raw
+	}
+	if binding.Adds {
+		grant.Mode = "add"
+	}
+	grant.RouteLists = append(grant.RouteLists, model.SecretRequestGrantRouteList{Source: "secret", SourceID: secret.ID, Routes: secret.Routes})
+	for _, routes := range secret.RouteConstraints {
+		grant.RouteLists = append(grant.RouteLists, model.SecretRequestGrantRouteList{Source: "secret-constraint", SourceID: secret.ID, Routes: routes})
+	}
+	grant.RouteLists = append(grant.RouteLists, model.SecretRequestGrantRouteList{Source: "binding", SourceID: binding.ID, Routes: binding.Routes})
+	if binding.ParentID != "" {
+		parent, err := st.GetSecretBinding(ctx, binding.ProjectID, binding.ParentID)
+		if err != nil {
+			return nil, err
+		}
+		grant.RouteLists = append(grant.RouteLists, model.SecretRequestGrantRouteList{Source: "parent", SourceID: parent.ID, Routes: parent.Routes})
+	}
+	// Empty restrictions are meaningful and must encode as arrays, not null.
+	for i := range grant.RouteLists {
+		if grant.RouteLists[i].Routes == nil {
+			grant.RouteLists[i].Routes = []model.SecretRoute{}
+		}
+	}
+	return grant, nil
 }
 
 // binding is the binding approving one part asks for: on the discobox that

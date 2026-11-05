@@ -564,3 +564,21 @@ func TestApproveAdditionForeverSendsExplicitZero(t *testing.T) {
 		})
 	}
 }
+
+func TestApprovalScopesAreIndependentAndRejectConflictingFlags(t *testing.T) {
+	request := &apimodel.SecretRequest{Use: apiclientgen.NewOptSecretRequestPart(apimodel.SecretRequestPart{}), Delegate: apiclientgen.NewOptSecretRequestPart(apimodel.SecretRequestPart{})}
+	answer := approvalAnswer{use: decisionFlag{value: "approve"}, delegate: decisionFlag{value: "deny"}, useScope: scopeFlag{value: "anywhere"}, lifetime: lifetime.NewFlag()}
+	body, err := approvalBody(request, answer)
+	if err != nil || body.Use.Value.Scope.Or("") != "anywhere" || body.Delegate.Value.Scope.Set {
+		t.Fatalf("body=%+v, %v", body, err)
+	}
+	answer.useRoutes = []apimodel.SecretRouteInput{{Hosts: []string{"github.com"}}}
+	if _, err := approvalBody(request, answer); err == nil || !strings.Contains(err.Error(), "--use-scope routes") {
+		t.Fatalf("conflict = %v", err)
+	}
+	answer.useRoutes = nil
+	answer.delegateScope = scopeFlag{value: "hosts"}
+	if _, err := approvalBody(request, answer); err == nil {
+		t.Fatal("scope on denied delegate accepted")
+	}
+}

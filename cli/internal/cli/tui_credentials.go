@@ -447,6 +447,9 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 			}
 		}
 		row.Routes = apiroute.Routes(s.Routes.Or(nil))
+		for _, routes := range s.RouteConstraints {
+			row.RouteConstraints = append(row.RouteConstraints, tuiRoutes(routes))
+		}
 		row.Format = s.Format.Or("")
 		row.FormatSet = s.FormatSet.Or(false)
 		row.RefreshCommand = s.RefreshCommand.Or(nil)
@@ -634,10 +637,13 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	// Each part the request has is answered, approve or deny: the server
 	// refuses an answer that leaves one out (ADR 26-11-02-022 §4).
 	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
-	decide := func(answer, raw, as string) apiclientgen.OptSecretRequestPartDecision {
+	decide := func(answer, raw, as, scope string) apiclientgen.OptSecretRequestPartDecision {
 		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(answer)}
 		if answer == tui.PartApprove {
 			part.TtlSeconds = apiclientgen.NewOptInt64(approval.TTLSeconds)
+			if scope != "" {
+				part.Scope = apiclientgen.NewOptSecretRequestPartDecisionScope(apiclientgen.SecretRequestPartDecisionScope(scope))
+			}
 			if raw != "" {
 				part.Raw = apiclientgen.NewOptSecretRequestPartDecisionRaw(apiclientgen.SecretRequestPartDecisionRaw(raw))
 			}
@@ -648,10 +654,10 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 		return apiclientgen.NewOptSecretRequestPartDecision(part)
 	}
 	if approval.Use != "" {
-		body.Use = decide(approval.Use, approval.Raw, approval.UseAs)
+		body.Use = decide(approval.Use, approval.Raw, approval.UseAs, approval.UseScope)
 	}
 	if approval.Delegate != "" {
-		body.Delegate = decide(approval.Delegate, "", "")
+		body.Delegate = decide(approval.Delegate, "", "", approval.DelegateScope)
 	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,

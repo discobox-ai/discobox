@@ -6020,6 +6020,10 @@ components:
                         - approve
                         - deny
                     type: string
+                scope:
+                    description: "Restriction on this grant: routes retains requested routes, hosts allows any method, path and protocol on the requested open hosts, anywhere adds no grant restriction. Still limited by the live credential and parent delegation. Omitted means routes. Wider scopes cannot include route overrides."
+                    enum: [routes, hosts, anywhere]
+                    type: string
                 raw:
                     description: "Use part only: grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the variable the request named, file the path of a file holding it there. A person's choice alone, and only of a secret that allows raw. Absent grants a sentinel."
                     enum:
@@ -6630,6 +6634,12 @@ components:
                         - add
                         - replace
                     type: string
+                approvedScope:
+                    description: The explicitly approved restriction; legacy-unknown means the historic decision predates scope recording.
+                    enum: [routes, hosts, anywhere, legacy-unknown]
+                    type: string
+                grant:
+                    $ref: '#/components/schemas/SecretRequestGrant'
                 bindingId:
                     description: The binding approving the part made or replaced
                     type: string
@@ -6649,6 +6659,46 @@ components:
                     items:
                         $ref: '#/components/schemas/SecretRoute'
                     type: array
+            type: object
+        SecretRequestGrant:
+            additionalProperties: false
+            description: Immutable consent record at approval time, independent of later edits or deletion. Route lists are independent ceilings, all of which must allow an operation.
+            properties:
+                secretId:
+                    type: string
+                secretRevision:
+                    type: integer
+                    format: int64
+                parentBindingId:
+                    type: string
+                expiresAt:
+                    type: string
+                    format: date-time
+                delivery:
+                    type: string
+                    description: sentinel, env, file, or none for a delegation
+                mode:
+                    type: string
+                    description: add or replace
+                routeLists:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/SecretRequestGrantRouteList'
+            required: [secretId, secretRevision, delivery, mode, routeLists]
+            type: object
+        SecretRequestGrantRouteList:
+            additionalProperties: false
+            properties:
+                sourceId:
+                    type: string
+                source:
+                    type: string
+                    description: secret, secret-constraint, binding, or parent
+                routes:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/SecretRoute'
+            required: [sourceId, source, routes]
             type: object
         SecretRequestPolicy:
             additionalProperties: false

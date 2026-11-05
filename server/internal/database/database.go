@@ -231,6 +231,13 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := splitSecretRequestParts(write); err != nil {
 		return err
 	}
+	// Older approvals may have edited routes: never infer their consent from a live binding.
+	for _, part := range []string{"use", "delegate"} {
+		if err := write.Model(&model.SecretRequest{}).Where(part+"_outcome = ? AND "+part+"_approved_scope = ?", model.SecretRequestPartApproved, "").Update(part+"_approved_scope", "legacy-unknown").Error; err != nil {
+			return err
+		}
+	}
+
 	// After the split, which makes the use parts this records.
 	if err := recordReplacingApprovals(write); err != nil {
 		return err

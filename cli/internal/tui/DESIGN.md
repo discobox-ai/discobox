@@ -512,16 +512,25 @@ secret, a credential typed in on the spot, or a denial), then how long the
 binding lasts — and, for a secret that allows raw, a third: a placeholder,
 which the cursor opens on, or the value itself in the variable or a file
 (`askDelivery`, ADR 26-10-27-840 §2). No request asks for the value, so it is
-only ever the person's choice. Everything else follows the request on the server, which is what
+only ever the person's choice. Other defaults follow the request on the server, which is what
 keeps this and `discobox secret request approve` the same act: approving an ask
 to use binds the secret to the discobox in the variable it asked for, held to
-the routes it asked for within the secret's own (ADR 26-10-27-880). `r` shows
+the requested routes by default, or its explicit hosts/anywhere restriction,
+within the secret's own ceilings (ADR 26-11-04-616). `r` shows
 the request as the server sent it, as JSON highlighted as a code block is
 (`showRawRequest`), for when the rendering is not enough; Esc goes back to the
 card. Every secret is offered, the one named as asked first
-(`secretsForRequest`): the binding is held to the secret's routes and the
-request's both, so none has to be refused here, and nothing about the secret
+(`secretsForRequest`): the binding is held to the secret's live ceilings and the
+selected grant restriction (requested routes by default), so none has to be refused here, and nothing about the secret
 is changed on the way through.
+
+
+The shared console/attach credential lifetime card offers a scope action for
+each approved part. Each new approval defaults to requested routes; choosing
+requested hosts or anywhere explicitly shows the wider restriction and the live
+credential ceiling, then returns to the lifetime card. Scope is never remembered
+for a box. Replacement previews compare the selected grant routes, while roles
+continue to describe only the original ask.
 
 **How long is a required second step** (`askLifetime`, through
 `askDuration`). Choosing a secret opens

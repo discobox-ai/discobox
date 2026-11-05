@@ -1627,9 +1627,10 @@ type Secret struct {
 	// Routes are where it may be sent, whoever holds it (ADR 26-10-27-880
 	// §4): every request it is sent in must fall on one, the most specific
 	// deciding. Empty sends it nowhere; `*` is any host (ADR 26-10-27-939).
-	Routes  []secretroute.Route
-	Created time.Time
-	Updated time.Time
+	Routes           []secretroute.Route
+	RouteConstraints [][]secretroute.Route
+	Created          time.Time
+	Updated          time.Time
 
 	// OAuth is what an oauth credential is, without being it. Nil for a token,
 	// and never the tokens themselves.
@@ -1844,7 +1845,8 @@ type Approval struct {
 	Use, Delegate string
 	// UseAs is how an approved use part is granted, "add" or "replace"
 	// (ADR 26-11-03-329 §4); empty sends nothing, which is what was asked.
-	UseAs string
+	UseAs                   string
+	UseScope, DelegateScope string
 }
 
 // A part's answer.

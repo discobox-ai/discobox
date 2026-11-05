@@ -9468,6 +9468,86 @@ func (s *SecretRequest) Validate() error {
 	return nil
 }
 
+func (s *SecretRequestGrant) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.RouteLists == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.RouteLists {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "routeLists",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *SecretRequestGrantRouteList) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Routes == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.Routes {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "routes",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *SecretRequestPart) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -9489,6 +9569,42 @@ func (s *SecretRequestPart) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "approvedAs",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ApprovedScope.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "approvedScope",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Grant.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "grant",
 			Error: err,
 		})
 	}
@@ -9577,6 +9693,21 @@ func (s SecretRequestPartApprovedAs) Validate() error {
 	}
 }
 
+func (s SecretRequestPartApprovedScope) Validate() error {
+	switch s {
+	case "routes":
+		return nil
+	case "hosts":
+		return nil
+	case "anywhere":
+		return nil
+	case "legacy-unknown":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *SecretRequestPartDecision) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -9609,6 +9740,24 @@ func (s *SecretRequestPartDecision) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "decision",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Scope.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "scope",
 			Error: err,
 		})
 	}
@@ -9716,6 +9865,19 @@ func (s SecretRequestPartDecisionRaw) Validate() error {
 	case "env":
 		return nil
 	case "file":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SecretRequestPartDecisionScope) Validate() error {
+	switch s {
+	case "routes":
+		return nil
+	case "hosts":
+		return nil
+	case "anywhere":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

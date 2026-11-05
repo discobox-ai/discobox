@@ -273,3 +273,10 @@ Reads observe access/deletion versions; writes also observe egress versions. Ver
 recreation. Status/heartbeat updates do not invalidate streams. This is a
 durable notification channel for child access; readers poll the primary, and
 failure to read it invalidates ongoing access. No database is recreated.
+
+## Credential approval scope
+
+Credential approval scope adds per-part scope and JSON grant columns in place.
+After splitting legacy requests into parts, approved parts with no recorded
+scope become `legacy-unknown`; no historic consent is inferred from mutable
+bindings. The backfill is idempotent and preserves pending requests and grants.

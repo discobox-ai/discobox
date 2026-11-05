@@ -16234,6 +16234,52 @@ func (o OptSecretRequest) Or(d SecretRequest) SecretRequest {
 	return d
 }
 
+// NewOptSecretRequestGrant returns new OptSecretRequestGrant with value set to v.
+func NewOptSecretRequestGrant(v SecretRequestGrant) OptSecretRequestGrant {
+	return OptSecretRequestGrant{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestGrant is optional SecretRequestGrant.
+type OptSecretRequestGrant struct {
+	Value SecretRequestGrant
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestGrant was set.
+func (o OptSecretRequestGrant) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestGrant) Reset() {
+	var v SecretRequestGrant
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestGrant) SetTo(v SecretRequestGrant) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestGrant) Get() (v SecretRequestGrant, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestGrant) Or(d SecretRequestGrant) SecretRequestGrant {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSecretRequestPart returns new OptSecretRequestPart with value set to v.
 func NewOptSecretRequestPart(v SecretRequestPart) OptSecretRequestPart {
 	return OptSecretRequestPart{
@@ -16320,6 +16366,52 @@ func (o OptSecretRequestPartApprovedAs) Get() (v SecretRequestPartApprovedAs, ok
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSecretRequestPartApprovedAs) Or(d SecretRequestPartApprovedAs) SecretRequestPartApprovedAs {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestPartApprovedScope returns new OptSecretRequestPartApprovedScope with value set to v.
+func NewOptSecretRequestPartApprovedScope(v SecretRequestPartApprovedScope) OptSecretRequestPartApprovedScope {
+	return OptSecretRequestPartApprovedScope{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestPartApprovedScope is optional SecretRequestPartApprovedScope.
+type OptSecretRequestPartApprovedScope struct {
+	Value SecretRequestPartApprovedScope
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestPartApprovedScope was set.
+func (o OptSecretRequestPartApprovedScope) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestPartApprovedScope) Reset() {
+	var v SecretRequestPartApprovedScope
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestPartApprovedScope) SetTo(v SecretRequestPartApprovedScope) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestPartApprovedScope) Get() (v SecretRequestPartApprovedScope, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestPartApprovedScope) Or(d SecretRequestPartApprovedScope) SecretRequestPartApprovedScope {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -16458,6 +16550,52 @@ func (o OptSecretRequestPartDecisionRaw) Get() (v SecretRequestPartDecisionRaw, 
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSecretRequestPartDecisionRaw) Or(d SecretRequestPartDecisionRaw) SecretRequestPartDecisionRaw {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestPartDecisionScope returns new OptSecretRequestPartDecisionScope with value set to v.
+func NewOptSecretRequestPartDecisionScope(v SecretRequestPartDecisionScope) OptSecretRequestPartDecisionScope {
+	return OptSecretRequestPartDecisionScope{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestPartDecisionScope is optional SecretRequestPartDecisionScope.
+type OptSecretRequestPartDecisionScope struct {
+	Value SecretRequestPartDecisionScope
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestPartDecisionScope was set.
+func (o OptSecretRequestPartDecisionScope) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestPartDecisionScope) Reset() {
+	var v SecretRequestPartDecisionScope
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestPartDecisionScope) SetTo(v SecretRequestPartDecisionScope) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestPartDecisionScope) Get() (v SecretRequestPartDecisionScope, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestPartDecisionScope) Or(d SecretRequestPartDecisionScope) SecretRequestPartDecisionScope {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -33076,6 +33214,129 @@ func (s *SecretRequest) SetUse(val OptSecretRequestPart) {
 func (*SecretRequest) approveSecretRequestRes() {}
 func (*SecretRequest) getSecretRequestRes()     {}
 
+// Immutable consent record at approval time, independent of later edits or deletion. Route lists are
+// independent ceilings, all of which must allow an operation.
+// Ref: #/components/schemas/SecretRequestGrant
+type SecretRequestGrant struct {
+	SecretId        string      `json:"secretId"`
+	SecretRevision  int64       `json:"secretRevision"`
+	ParentBindingId OptString   `json:"parentBindingId"`
+	ExpiresAt       OptDateTime `json:"expiresAt"`
+	// Sentinel, env, file, or none for a delegation.
+	Delivery string `json:"delivery"`
+	// Add or replace.
+	Mode       string                        `json:"mode"`
+	RouteLists []SecretRequestGrantRouteList `json:"routeLists"`
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SecretRequestGrant) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetSecretRevision returns the value of SecretRevision.
+func (s *SecretRequestGrant) GetSecretRevision() int64 {
+	return s.SecretRevision
+}
+
+// GetParentBindingId returns the value of ParentBindingId.
+func (s *SecretRequestGrant) GetParentBindingId() OptString {
+	return s.ParentBindingId
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SecretRequestGrant) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetDelivery returns the value of Delivery.
+func (s *SecretRequestGrant) GetDelivery() string {
+	return s.Delivery
+}
+
+// GetMode returns the value of Mode.
+func (s *SecretRequestGrant) GetMode() string {
+	return s.Mode
+}
+
+// GetRouteLists returns the value of RouteLists.
+func (s *SecretRequestGrant) GetRouteLists() []SecretRequestGrantRouteList {
+	return s.RouteLists
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SecretRequestGrant) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetSecretRevision sets the value of SecretRevision.
+func (s *SecretRequestGrant) SetSecretRevision(val int64) {
+	s.SecretRevision = val
+}
+
+// SetParentBindingId sets the value of ParentBindingId.
+func (s *SecretRequestGrant) SetParentBindingId(val OptString) {
+	s.ParentBindingId = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SecretRequestGrant) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetDelivery sets the value of Delivery.
+func (s *SecretRequestGrant) SetDelivery(val string) {
+	s.Delivery = val
+}
+
+// SetMode sets the value of Mode.
+func (s *SecretRequestGrant) SetMode(val string) {
+	s.Mode = val
+}
+
+// SetRouteLists sets the value of RouteLists.
+func (s *SecretRequestGrant) SetRouteLists(val []SecretRequestGrantRouteList) {
+	s.RouteLists = val
+}
+
+// Ref: #/components/schemas/SecretRequestGrantRouteList
+type SecretRequestGrantRouteList struct {
+	SourceId string `json:"sourceId"`
+	// Secret, secret-constraint, binding, or parent.
+	Source string        `json:"source"`
+	Routes []SecretRoute `json:"routes"`
+}
+
+// GetSourceId returns the value of SourceId.
+func (s *SecretRequestGrantRouteList) GetSourceId() string {
+	return s.SourceId
+}
+
+// GetSource returns the value of Source.
+func (s *SecretRequestGrantRouteList) GetSource() string {
+	return s.Source
+}
+
+// GetRoutes returns the value of Routes.
+func (s *SecretRequestGrantRouteList) GetRoutes() []SecretRoute {
+	return s.Routes
+}
+
+// SetSourceId sets the value of SourceId.
+func (s *SecretRequestGrantRouteList) SetSourceId(val string) {
+	s.SourceId = val
+}
+
+// SetSource sets the value of Source.
+func (s *SecretRequestGrantRouteList) SetSource(val string) {
+	s.Source = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *SecretRequestGrantRouteList) SetRoutes(val []SecretRoute) {
+	s.Routes = val
+}
+
 // One part of a request (ADR 26-11-02-022 §1). The use part asks to use the credential, delivered
 // in envName; the delegate part asks to give it to the discoboxes the asking one creates.
 // Ref: #/components/schemas/SecretRequestPart
@@ -33086,6 +33347,10 @@ type SecretRequestPart struct {
 	// Use part only: how an approved part was granted, as an addition beside what the discobox held or
 	// replacing it.
 	ApprovedAs OptSecretRequestPartApprovedAs `json:"approvedAs"`
+	// The explicitly approved restriction; legacy-unknown means the historic decision predates scope
+	// recording.
+	ApprovedScope OptSecretRequestPartApprovedScope `json:"approvedScope"`
+	Grant         OptSecretRequestGrant             `json:"grant"`
 	// The binding approving the part made or replaced.
 	BindingId OptString `json:"bindingId"`
 	// The part's answer; absent while the request is pending.
@@ -33105,6 +33370,16 @@ func (s *SecretRequestPart) GetAdd() OptBool {
 // GetApprovedAs returns the value of ApprovedAs.
 func (s *SecretRequestPart) GetApprovedAs() OptSecretRequestPartApprovedAs {
 	return s.ApprovedAs
+}
+
+// GetApprovedScope returns the value of ApprovedScope.
+func (s *SecretRequestPart) GetApprovedScope() OptSecretRequestPartApprovedScope {
+	return s.ApprovedScope
+}
+
+// GetGrant returns the value of Grant.
+func (s *SecretRequestPart) GetGrant() OptSecretRequestGrant {
+	return s.Grant
 }
 
 // GetBindingId returns the value of BindingId.
@@ -33135,6 +33410,16 @@ func (s *SecretRequestPart) SetAdd(val OptBool) {
 // SetApprovedAs sets the value of ApprovedAs.
 func (s *SecretRequestPart) SetApprovedAs(val OptSecretRequestPartApprovedAs) {
 	s.ApprovedAs = val
+}
+
+// SetApprovedScope sets the value of ApprovedScope.
+func (s *SecretRequestPart) SetApprovedScope(val OptSecretRequestPartApprovedScope) {
+	s.ApprovedScope = val
+}
+
+// SetGrant sets the value of Grant.
+func (s *SecretRequestPart) SetGrant(val OptSecretRequestGrant) {
+	s.Grant = val
 }
 
 // SetBindingId sets the value of BindingId.
@@ -33200,6 +33485,63 @@ func (s *SecretRequestPartApprovedAs) UnmarshalText(data []byte) error {
 	}
 }
 
+// The explicitly approved restriction; legacy-unknown means the historic decision predates scope
+// recording.
+type SecretRequestPartApprovedScope string
+
+const (
+	SecretRequestPartApprovedScopeRoutes        SecretRequestPartApprovedScope = "routes"
+	SecretRequestPartApprovedScopeHosts         SecretRequestPartApprovedScope = "hosts"
+	SecretRequestPartApprovedScopeAnywhere      SecretRequestPartApprovedScope = "anywhere"
+	SecretRequestPartApprovedScopeLegacyUnknown SecretRequestPartApprovedScope = "legacy-unknown"
+)
+
+// AllValues returns all SecretRequestPartApprovedScope values.
+func (SecretRequestPartApprovedScope) AllValues() []SecretRequestPartApprovedScope {
+	return []SecretRequestPartApprovedScope{
+		SecretRequestPartApprovedScopeRoutes,
+		SecretRequestPartApprovedScopeHosts,
+		SecretRequestPartApprovedScopeAnywhere,
+		SecretRequestPartApprovedScopeLegacyUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestPartApprovedScope) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestPartApprovedScopeRoutes:
+		return []byte(s), nil
+	case SecretRequestPartApprovedScopeHosts:
+		return []byte(s), nil
+	case SecretRequestPartApprovedScopeAnywhere:
+		return []byte(s), nil
+	case SecretRequestPartApprovedScopeLegacyUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestPartApprovedScope) UnmarshalText(data []byte) error {
+	switch SecretRequestPartApprovedScope(data) {
+	case SecretRequestPartApprovedScopeRoutes:
+		*s = SecretRequestPartApprovedScopeRoutes
+		return nil
+	case SecretRequestPartApprovedScopeHosts:
+		*s = SecretRequestPartApprovedScopeHosts
+		return nil
+	case SecretRequestPartApprovedScopeAnywhere:
+		*s = SecretRequestPartApprovedScopeAnywhere
+		return nil
+	case SecretRequestPartApprovedScopeLegacyUnknown:
+		*s = SecretRequestPartApprovedScopeLegacyUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // The decision on one part of a request.
 // Ref: #/components/schemas/SecretRequestPartDecision
 type SecretRequestPartDecision struct {
@@ -33211,6 +33553,11 @@ type SecretRequestPartDecision struct {
 	// the secret, or for a use part granted as add, an addition beside them; deny leaves them as they
 	// are.
 	Decision SecretRequestPartDecisionDecision `json:"decision"`
+	// Restriction on this grant: routes retains requested routes, hosts allows any method, path and
+	// protocol on the requested open hosts, anywhere adds no grant restriction. Still limited by the
+	// live credential and parent delegation. Omitted means routes. Wider scopes cannot include route
+	// overrides.
+	Scope OptSecretRequestPartDecisionScope `json:"scope"`
 	// Use part only: grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the
 	// variable the request named, file the path of a file holding it there. A person's choice alone, and
 	// only of a secret that allows raw. Absent grants a sentinel.
@@ -33231,6 +33578,11 @@ func (s *SecretRequestPartDecision) GetAs() OptSecretRequestPartDecisionAs {
 // GetDecision returns the value of Decision.
 func (s *SecretRequestPartDecision) GetDecision() SecretRequestPartDecisionDecision {
 	return s.Decision
+}
+
+// GetScope returns the value of Scope.
+func (s *SecretRequestPartDecision) GetScope() OptSecretRequestPartDecisionScope {
+	return s.Scope
 }
 
 // GetRaw returns the value of Raw.
@@ -33256,6 +33608,11 @@ func (s *SecretRequestPartDecision) SetAs(val OptSecretRequestPartDecisionAs) {
 // SetDecision sets the value of Decision.
 func (s *SecretRequestPartDecision) SetDecision(val SecretRequestPartDecisionDecision) {
 	s.Decision = val
+}
+
+// SetScope sets the value of Scope.
+func (s *SecretRequestPartDecision) SetScope(val OptSecretRequestPartDecisionScope) {
+	s.Scope = val
 }
 
 // SetRaw sets the value of Raw.
@@ -33399,6 +33756,58 @@ func (s *SecretRequestPartDecisionRaw) UnmarshalText(data []byte) error {
 		return nil
 	case SecretRequestPartDecisionRawFile:
 		*s = SecretRequestPartDecisionRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Restriction on this grant: routes retains requested routes, hosts allows any method, path and
+// protocol on the requested open hosts, anywhere adds no grant restriction. Still limited by the
+// live credential and parent delegation. Omitted means routes. Wider scopes cannot include route
+// overrides.
+type SecretRequestPartDecisionScope string
+
+const (
+	SecretRequestPartDecisionScopeRoutes   SecretRequestPartDecisionScope = "routes"
+	SecretRequestPartDecisionScopeHosts    SecretRequestPartDecisionScope = "hosts"
+	SecretRequestPartDecisionScopeAnywhere SecretRequestPartDecisionScope = "anywhere"
+)
+
+// AllValues returns all SecretRequestPartDecisionScope values.
+func (SecretRequestPartDecisionScope) AllValues() []SecretRequestPartDecisionScope {
+	return []SecretRequestPartDecisionScope{
+		SecretRequestPartDecisionScopeRoutes,
+		SecretRequestPartDecisionScopeHosts,
+		SecretRequestPartDecisionScopeAnywhere,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestPartDecisionScope) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestPartDecisionScopeRoutes:
+		return []byte(s), nil
+	case SecretRequestPartDecisionScopeHosts:
+		return []byte(s), nil
+	case SecretRequestPartDecisionScopeAnywhere:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestPartDecisionScope) UnmarshalText(data []byte) error {
+	switch SecretRequestPartDecisionScope(data) {
+	case SecretRequestPartDecisionScopeRoutes:
+		*s = SecretRequestPartDecisionScopeRoutes
+		return nil
+	case SecretRequestPartDecisionScopeHosts:
+		*s = SecretRequestPartDecisionScopeHosts
+		return nil
+	case SecretRequestPartDecisionScopeAnywhere:
+		*s = SecretRequestPartDecisionScopeAnywhere
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
