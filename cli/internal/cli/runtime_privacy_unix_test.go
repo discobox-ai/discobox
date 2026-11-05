@@ -88,7 +88,7 @@ func TestRuntimePermissionNoninteractiveCommands(t *testing.T) {
 }
 
 func TestRuntimePermissionOfflineCommands(t *testing.T) {
-	for _, args := range [][]string{{}, {"completion", "bash"}, {"admin", "remote"}, {"admin", "remote", "primary"}} {
+	for _, args := range [][]string{{"version", "--client"}, {}, {"completion", "bash"}, {"admin", "remote"}, {"admin", "remote", "primary"}} {
 		t.Run(strings.Join(args, "-"), func(t *testing.T) {
 			base := t.TempDir()
 			t.Setenv("XDG_RUNTIME_DIR", base)

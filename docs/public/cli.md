@@ -6136,6 +6136,7 @@ discobox version [flags]
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
+| --client | bool | false | Print only the client version without contacting the server Value when passed without an argument: true. |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --help, -h | bool | false | help for version Value when passed without an argument: true. |

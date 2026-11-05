@@ -364,13 +364,14 @@ function Install-Discobox {
         Move-Item -LiteralPath $staged -Destination $dest -Force
 
         try {
-            $out = (& $dest --version | Out-String).Trim()
+            $out = (& $dest version --client | Out-String).Trim()
         } catch {
             throw "installed $dest, but it does not run: $($_.Exception.Message)"
         }
         if ($LASTEXITCODE -ne 0) { throw "installed $dest, but it does not run: $out" }
         if (-not $out.Contains($release)) { throw "installed $dest, but it says it is '$out' rather than $release" }
         Write-DiscoboxOk "installed discobox $release to $dest"
+        Write-Host 'On first server use after an upgrade, run interactively to review any runtime permission repair.'
 
         if ($Stage) {
             # The install itself has already succeeded, so a failure here says
