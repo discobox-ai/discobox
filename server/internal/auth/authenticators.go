@@ -266,9 +266,11 @@ func bearerToken(authorization string) string {
 // The value is how many path segments after the action its routes take at
 // most: none for most, one for an action addressing a resource by its ID.
 var poolRuntimeActions = map[string]int{
-	"sandbox-states":         0,
-	"status":                 0,
-	"resolve-sandbox-secret": 0,
+	"sandbox-start-authorization": 0,
+	"sandbox-suspend-completion":  0,
+	"sandbox-states":              0,
+	"status":                      0,
+	"resolve-sandbox-secret":      0,
 	// A raw binding's value, by its sentinel (ADR 26-10-27-840).
 	"resolve-sandbox-raw-secret": 0,
 	// A gateway's header values from the server's environment (ADR

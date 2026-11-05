@@ -335,3 +335,8 @@ without a provision report retain the lifecycle/runtime projection.
 every destination. Harness policy changes only append normalized unique lists
 (ADR 26-11-04-772), preserving historical denials. The column is additive and
 API reads expose it as `routeConstraints`.
+
+Successful explicit suspends have `SandboxSuspendReceipt` rows keyed by
+sandbox and request ID. They deduplicate successful-freeze completion across
+lost callback responses and multiple server instances. They are deleted at
+sandbox purge and carry no desired power state.

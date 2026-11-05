@@ -538,3 +538,8 @@ answer is seen): after that its disk is the sandbox's work.
   read as the delta left it. Order them by a count of changes, never by
   `time.Now()`: Windows' clock gives a change and the listing the same time,
   and the first draft, comparing times, failed there.
+
+- A prepared suspend receipt is not evidence that freeze happened. Recovery
+  verifies runtime suspension before completing it; every power transition
+  drains pending completion before changing that evidence. A committed frozen
+  receipt remains evidence even after a later instruction changes runtime state.

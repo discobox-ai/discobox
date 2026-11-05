@@ -42,7 +42,7 @@ func (r *sandboxCore) sandboxLock(sandboxID string) *sync.Mutex {
 	return lock
 }
 
-func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
+func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
 	leave, err := r.starts.enter(ctx)
 	if err != nil {
 		return err
@@ -51,6 +51,9 @@ func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID strin
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.authorizeExplicitStart(ctx, sandboxID, req); err != nil {
+		return err
+	}
 	return r.startLocked(ctx, sandboxID)
 }
 
@@ -58,6 +61,9 @@ func (r *DockerSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return err
+	}
 	return r.stopLocked(ctx, sandboxID)
 }
 
@@ -70,6 +76,9 @@ func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return err
+	}
 	if err := r.stopLocked(ctx, sandboxID); err != nil {
 		return err
 	}
@@ -82,23 +91,26 @@ func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 //
 // A sandbox still booting is refused like a stopped one: its boot waits for an
 // agent the freeze would keep from ever answering.
-func (r *DockerSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID string) error {
+func (r *DockerSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return err
+	}
 	sb, err := r.powerTarget(ctx, sandboxID)
 	if err != nil {
 		return err
 	}
 	switch {
 	case sb.Status == StatusSuspended:
-		return nil
+		return r.suspendWithCompletion(ctx, sandboxID, req, func() error { return nil })
 	case sb.Status != StatusRunning:
 		return ErrNotRunning
 	case r.SandboxBooting(sandboxID):
 		return fmt.Errorf("%w: it is still starting", ErrNotRunning)
 	}
-	return r.pauseLocked(ctx, sb)
+	return r.suspendWithCompletion(ctx, sandboxID, req, func() error { return r.pauseLocked(ctx, sb) })
 }
 
 // pauseLocked freezes the sandbox's container. The pause event reports it
@@ -154,6 +166,9 @@ func (r *DockerSandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID s
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return Wake{}, err
+	}
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil {
 		return Wake{}, err
@@ -364,6 +379,9 @@ func (r *DockerSandboxRuntime) powerTarget(ctx context.Context, sandboxID string
 }
 
 func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string) error {
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return err
+	}
 	if err := r.harnessStartAllowed(sandboxID); err != nil {
 		return err
 	}
@@ -585,6 +603,9 @@ func (r *sandboxCore) SandboxBooting(sandboxID string) bool {
 }
 
 func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string) error {
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return err
+	}
 	sb, err := r.powerTarget(ctx, sandboxID)
 	if err != nil {
 		return err
@@ -596,3 +617,27 @@ func (r *DockerSandboxRuntime) stopLocked(ctx context.Context, sandboxID string)
 }
 
 const sandboxStopTimeoutSeconds = 10
+
+var ErrStartNotAuthorized = errors.New("explicit start is no longer authorized")
+
+// Called with the runtime power lock held, after queues and the start gate.
+// A lost HTTP response can leave an old request queued here after the server
+// admits a stop. The callback observes that stop even if it never reached us.
+func (r *sandboxCore) authorizeExplicitStart(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if req == nil || !req.StartEpoch.IsSet() {
+		return nil
+	}
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return fmt.Errorf("%w: %w", ErrStartNotAuthorized, err)
+	}
+	if r.authorizeStart == nil {
+		return fmt.Errorf("explicit start authorization is unavailable")
+	}
+	if err := r.authorizeStart(ctx, sandboxID, req.StartEpoch.Value); err != nil {
+		return fmt.Errorf("%w: %w", ErrStartNotAuthorized, err)
+	}
+	return nil
+}

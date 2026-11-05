@@ -58,6 +58,13 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceRes, error)
+	// AuthorizePoolSandboxStart implements authorize-pool-sandbox-start operation.
+	//
+	// Check that an explicit start is still current, immediately before execution under the pool's power
+	// lock.
+	//
+	// GET /api/pools/{poolId}/sandbox-start-authorization
+	AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (AuthorizePoolSandboxStartRes, error)
 	// CaptureSandboxHarnessConfig implements capture-sandbox-harness-config operation.
 	//
 	// Capture sandbox harness config.
@@ -79,6 +86,12 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear
 	ClearSandboxCache(ctx context.Context, params ClearSandboxCacheParams) (ClearSandboxCacheRes, error)
+	// CompletePoolSandboxSuspend implements complete-pool-sandbox-suspend operation.
+	//
+	// Record a successful suspend once, before releasing the pool's power lock.
+	//
+	// POST /api/pools/{poolId}/sandbox-suspend-completion
+	CompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (CompletePoolSandboxSuspendRes, error)
 	// CompleteSandboxSourcePush implements complete-sandbox-source-push operation.
 	//
 	// Report that the client finished pushing a push-delivered source into the sandbox's Git repository,
@@ -1006,6 +1019,8 @@ type Handler interface {
 	//
 	// Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source
 	// delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
+	//  While waiting for its pool to return, emits HTTP 102 responses with X-Discobox-Progress naming
+	// the current phase. The final JSON response is unchanged.
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/start
 	StartSandbox(ctx context.Context, req *StartSandboxBody, params StartSandboxParams) (StartSandboxRes, error)

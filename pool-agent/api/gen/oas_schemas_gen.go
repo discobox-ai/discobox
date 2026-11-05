@@ -6257,13 +6257,36 @@ func (s *PoolSandboxOperationAccepted) SetSandboxId(val string) {
 // Ref: #/components/schemas/PoolSandboxOperationRequest
 type PoolSandboxOperationRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI  `json:"$schema"`
-	Force  OptBool `json:"force"`
+	Schema OptURI `json:"$schema"`
+	// Wake epoch before this suspend was dispatched; a later instruction must not be canceled by delayed
+	// completion.
+	SuspendEpoch OptInt64 `json:"suspendEpoch"`
+	// Identity of the successful suspend completion, recorded once under the runtime power lock.
+	SuspendId OptString `json:"suspendId"`
+	// Admission epoch of an explicit start. The pool validates it with the control plane under its power
+	// lock before executing; omitted for scheduled wakes and actions.
+	StartEpoch OptInt64 `json:"startEpoch"`
+	Force      OptBool  `json:"force"`
 }
 
 // GetSchema returns the value of Schema.
 func (s *PoolSandboxOperationRequest) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetSuspendEpoch returns the value of SuspendEpoch.
+func (s *PoolSandboxOperationRequest) GetSuspendEpoch() OptInt64 {
+	return s.SuspendEpoch
+}
+
+// GetSuspendId returns the value of SuspendId.
+func (s *PoolSandboxOperationRequest) GetSuspendId() OptString {
+	return s.SuspendId
+}
+
+// GetStartEpoch returns the value of StartEpoch.
+func (s *PoolSandboxOperationRequest) GetStartEpoch() OptInt64 {
+	return s.StartEpoch
 }
 
 // GetForce returns the value of Force.
@@ -6274,6 +6297,21 @@ func (s *PoolSandboxOperationRequest) GetForce() OptBool {
 // SetSchema sets the value of Schema.
 func (s *PoolSandboxOperationRequest) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetSuspendEpoch sets the value of SuspendEpoch.
+func (s *PoolSandboxOperationRequest) SetSuspendEpoch(val OptInt64) {
+	s.SuspendEpoch = val
+}
+
+// SetSuspendId sets the value of SuspendId.
+func (s *PoolSandboxOperationRequest) SetSuspendId(val OptString) {
+	s.SuspendId = val
+}
+
+// SetStartEpoch sets the value of StartEpoch.
+func (s *PoolSandboxOperationRequest) SetStartEpoch(val OptInt64) {
+	s.StartEpoch = val
 }
 
 // SetForce sets the value of Force.

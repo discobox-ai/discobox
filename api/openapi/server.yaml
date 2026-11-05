@@ -9277,6 +9277,85 @@ paths:
             summary: Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts
             tags:
                 - Pools
+    /api/pools/{poolId}/sandbox-start-authorization:
+        get:
+            operationId: authorize-pool-sandbox-start
+            summary: Check that an explicit start is still current, immediately before execution under the pool's power lock
+            parameters:
+                - in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    type: string
+                - in: query
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - in: query
+                  name: epoch
+                  required: true
+                  schema:
+                    type: integer
+                    format: int64
+                - in: header
+                  name: Authorization
+                  schema:
+                    type: string
+            responses:
+                204:
+                    description: The start is still admitted
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-suspend-completion:
+        post:
+            operationId: complete-pool-sandbox-suspend
+            summary: Record a successful suspend once, before releasing the pool's power lock
+            parameters:
+                - in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    type: string
+                - in: query
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - in: query
+                  name: requestId
+                  required: true
+                  schema:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                - in: query
+                  name: epoch
+                  required: true
+                  schema:
+                    type: integer
+                    format: int64
+                - in: header
+                  name: Authorization
+                  schema:
+                    type: string
+            responses:
+                204:
+                    description: The successful suspend is recorded
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+            tags:
+                - Pools
     /api/pools/{poolId}/sandboxes:
         get:
             operationId: list-pool-held-sandboxes
@@ -11126,7 +11205,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}/start:
         post:
             operationId: start-sandbox
-            description: Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
+            description: Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it. While waiting for its pool to return, emits HTTP 102 responses with X-Discobox-Progress naming the current phase. The final JSON response is unchanged.
             parameters:
                 - description: Project ID
                   in: path

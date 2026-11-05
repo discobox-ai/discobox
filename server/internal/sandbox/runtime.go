@@ -126,8 +126,14 @@ type Provider interface {
 // ProjectID is required because many providers use project scope for placement,
 // shared caches, VM selection, resource settings, and cleanup.
 type SandboxRef struct {
-	SandboxID string
-	ProjectID string
+	// StartEpoch fences an explicit start at the pool execution boundary. Nil
+	// for single-send scheduled wakes and actions, which have their own policy.
+	StartEpoch *int64
+	// SuspendID identifies one successful-freeze completion across lost responses.
+	SuspendID    string
+	SuspendEpoch int64
+	SandboxID    string
+	ProjectID    string
 	// PoolID is the pool the control plane placed the sandbox in. It is how a
 	// sandbox is reached before its provider holds any state for it: a
 	// client delivers a new sandbox's source to its pool while the sandbox is

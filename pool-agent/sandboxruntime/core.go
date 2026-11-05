@@ -24,6 +24,8 @@ import (
 // (MachineSandboxRuntime) each embed one, and give it what only they know
 // through boxes.
 type sandboxCore struct {
+	completeSuspend func(context.Context, string, string, int64) error
+	authorizeStart  func(context.Context, string, int64) error
 	// boxes is the runtime this core is the shared half of.
 	boxes boxes
 	// paths judges every path this runtime names inside a sandbox: by the

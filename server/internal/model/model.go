@@ -2224,6 +2224,13 @@ type SecretRejection struct {
 
 func (SecretRejection) TableName() string { return "secret_rejections" }
 
+// SandboxSuspendReceipt makes completion idempotent even when a pool loses
+// its callback response. Receipts live until the sandbox is purged.
+type SandboxSuspendReceipt struct {
+	SandboxID string `gorm:"primaryKey"`
+	RequestID string `gorm:"primaryKey"`
+}
+
 // AllModels returns all persisted model types.
 func AllModels() []any {
 	return []any{
@@ -2245,6 +2252,7 @@ func AllModels() []any {
 		&SecretBindingEvent{},
 		&SandboxSecret{},
 		&SandboxInventory{},
+		&SandboxSuspendReceipt{},
 		&SSHKey{},
 		&ProjectSkillsSource{},
 		&ProjectGateway{},

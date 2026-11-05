@@ -22,6 +22,7 @@ type SandboxGetOption func(*sandboxGetOptions)
 
 type sandboxGetOptions struct {
 	generation *int64
+	primary    bool
 	// bindingsDeleted is told, in DeleteSandbox's transaction, the bindings
 	// the delete took with it.
 	bindingsDeleted BindingsDeletedFunc
@@ -31,6 +32,12 @@ func WithGeneration(generation int64) SandboxGetOption {
 	return func(opts *sandboxGetOptions) {
 		opts.generation = &generation
 	}
+}
+
+// SandboxFromPrimary reads ordering-sensitive state from the write database.
+// A replica may still carry a superseded wake epoch after a newer instruction.
+func SandboxFromPrimary() SandboxGetOption {
+	return func(opts *sandboxGetOptions) { opts.primary = true }
 }
 
 // OnBindingsDeleted has DeleteSandbox hand fn, in its transaction, the
@@ -321,6 +328,13 @@ func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, opt
 	if err != nil {
 		return nil, err
 	}
+	if opts.primary {
+		read, err = s.getWrite(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	query := read.
 		Preload("Project").
 		Preload("Pool").
@@ -740,6 +754,9 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		if err := deleteSandboxHostTrustsTx(tx, sandbox.ID); err != nil {
 			return err
 		}
+		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxSuspendReceipt{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxInventory{}).Error; err != nil {
 			return err
 		}
@@ -866,4 +883,24 @@ func (s *Store) ListPresentSandboxIDs(ctx context.Context, projectID, poolID, ha
 	var out []string
 	err = query.Order("id ASC").Pluck("id", &out).Error
 	return out, err
+}
+
+// CompleteSandboxSuspendTx moves the wake epoch exactly once for a successful
+// freeze. Called under the pool's power lock before it releases that freeze to
+// other instructions; a delayed or lost callback response is safe to resend.
+func (s *Store) CompleteSandboxSuspendTx(ctx context.Context, tx *gorm.DB, projectID, sandboxID, requestID string, epoch int64) (bool, error) {
+	var sb model.Sandbox
+	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND id = ?", projectID, sandboxID).First(&sb).Error; err != nil {
+		return false, mapNotFound(err)
+	}
+	receipt := model.SandboxSuspendReceipt{SandboxID: sandboxID, RequestID: requestID}
+	result := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&receipt)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	result = tx.WithContext(ctx).Model(&model.Sandbox{}).Where("project_id = ? AND id = ? AND wake_epoch = ?", projectID, sandboxID, epoch).UpdateColumns(map[string]any{"wake_at": nil, "wake_epoch": gorm.Expr("wake_epoch + 1")})
+	return result.RowsAffected > 0, result.Error
 }

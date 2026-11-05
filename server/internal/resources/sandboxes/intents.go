@@ -85,7 +85,12 @@ var errSandboxBeingDeleted = errors.New("sandbox is being deleted")
 // desired state) and marks it dirty, atomically. A spec edit passes the desired
 // state it already has: the generation is what versions the whole spec, so a
 // re-pin or a source change is the same kind of intent as a delete.
-func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID, desiredState string, mutate ...func(*model.Sandbox)) (*model.Sandbox, error) {
+func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID, desiredState string, supersedeStart bool, mutate ...func(*model.Sandbox)) (*model.Sandbox, error) {
+	lock := s.powerLock(projectID, sandboxID)
+	if err := lock.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	defer lock.Release(1)
 	if s.engine == nil {
 		return nil, errors.New("reconcile engine is required")
 	}
@@ -123,7 +128,7 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 		// An archive or a delete is an outside power instruction too: the
 		// sandbox will not come back on a wake it set before (ADR 26-10-16-337
 		// §6).
-		if desiredState != model.DesiredStatePresent {
+		if desiredState != model.DesiredStatePresent || supersedeStart {
 			if err := txStore.CancelSandboxWakeTx(ctx, txDB, projectID, sandboxID); err != nil {
 				return err
 			}

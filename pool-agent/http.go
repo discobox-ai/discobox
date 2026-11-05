@@ -3,11 +3,13 @@ package poolagent
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/poolauth"
@@ -386,4 +388,50 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// AuthorizeStart checks admission at execution, using the pool's own identity.
+// No cached answer: a newer instruction must be seen even after agent restart.
+func (c *HTTPClient) AuthorizeStart(ctx context.Context, projectID, poolID string, key ed25519.PrivateKey, sandboxID string, epoch int64) error {
+	token, err := poolauth.CreateToken(key, poolauth.Claims{ProjectID: projectID, PoolID: poolID})
+	if err != nil {
+		return err
+	}
+	query := url.Values{"sandboxId": {sandboxID}, "epoch": {strconv.FormatInt(epoch, 10)}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/pools/"+url.PathEscape(poolID)+"/sandbox-start-authorization?"+query.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("authorize explicit start: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("explicit start is no longer authorized (status %d)", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *HTTPClient) CompleteSuspend(ctx context.Context, projectID, poolID string, key ed25519.PrivateKey, sandboxID, requestID string, epoch int64) error {
+	token, err := poolauth.CreateToken(key, poolauth.Claims{ProjectID: projectID, PoolID: poolID})
+	if err != nil {
+		return err
+	}
+	query := url.Values{"sandboxId": {sandboxID}, "requestId": {requestID}, "epoch": {strconv.FormatInt(epoch, 10)}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/pools/"+url.PathEscape(poolID)+"/sandbox-suspend-completion?"+query.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("record successful suspend: status %d", resp.StatusCode)
+	}
+	return nil
 }

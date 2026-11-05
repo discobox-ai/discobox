@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/requestprogress"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -1362,6 +1364,7 @@ func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, rep
 // on success, and the window reports on its own status line instead.
 func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string, credentials tui.CredentialUI) (string, error) {
 	d = d.at(sandboxID)
+	ctx = requestprogress.Observe(ctx, credentials.Report)
 	switch verb {
 	case tui.VerbStart:
 		delivered, err := d.app.deliverInsteadOfStart(ctx, d.client, d.projectID, sandboxID, nil, sandboxcreate.DeliveryOptions{ConfirmCredential: credentials.Confirm, RunCredential: credentials.Run})

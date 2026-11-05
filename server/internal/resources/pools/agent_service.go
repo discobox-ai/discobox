@@ -27,6 +27,7 @@ import (
 // SandboxStateReporter records agent-observed sandbox states through the
 // sandbox control plane, which owns the sandbox rows.
 type SandboxStateReporter interface {
+	CompleteSandboxSuspend(context.Context, string, string, string, int64) error
 	ReportSandboxStates(ctx context.Context, batch store.SandboxStateReportBatch) error
 	// ReportSandboxProgress records provisioning progress on sandboxes this
 	// pool hosts (ADR 0060). It rides the same channel as state but is applied
@@ -150,7 +151,7 @@ func (s *Service) MintSandboxAgentStatusTokens(ctx context.Context, poolID strin
 		if sandboxID == "" {
 			continue
 		}
-		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID)
+		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID, store.SandboxFromPrimary())
 		if err != nil || strings.TrimSpace(sandboxModel.PoolID) != poolID {
 			// Skip sandboxes this pool doesn't host rather than failing the whole
 			// batch: a pool cannot obtain a token for a sandbox it does not own.
@@ -199,7 +200,7 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 		if sandboxID == "" {
 			continue
 		}
-		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID)
+		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID, store.SandboxFromPrimary())
 		if err != nil || strings.TrimSpace(sandboxModel.PoolID) != poolID {
 			continue
 		}
@@ -258,7 +259,7 @@ func (s *Service) ReportSandboxInventories(ctx context.Context, poolID string, i
 		if sandboxID == "" || digest == "" {
 			continue
 		}
-		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID)
+		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID, store.SandboxFromPrimary())
 		if err != nil || strings.TrimSpace(sandboxModel.PoolID) != poolID {
 			continue
 		}
@@ -374,7 +375,7 @@ func (s *Service) ReportPoolResources(ctx context.Context, poolID string, input 
 		if sandboxID == "" {
 			continue
 		}
-		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID)
+		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID, store.SandboxFromPrimary())
 		if err != nil || strings.TrimSpace(sandboxModel.PoolID) != poolID {
 			continue
 		}
@@ -569,4 +570,51 @@ func (s *Service) ReconcilePool(ctx context.Context, projectID, poolID string) (
 		return nil, err
 	}
 	return s.store.GetPool(ctx, pool.ProjectID, pool.ID)
+}
+
+// AuthorizePoolSandboxStart is read under the pool's power lock, immediately
+// before a fenced start executes. It never takes the service's admission lock:
+// the dispatch may still hold it while awaiting this callback.
+func (s *Service) AuthorizePoolSandboxStart(ctx context.Context, poolID, sandboxID string, epoch int64) error {
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypePool || principal.PoolID != poolID {
+		return apperrors.NewStatusError(http.StatusForbidden, "pool agent is not authorized for this pool")
+	}
+	pool, err := s.store.GetPoolByID(ctx, poolID)
+	if err != nil {
+		return apperrors.NotFound(err, "pool not found")
+	}
+	sb, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID, store.SandboxFromPrimary())
+	if err != nil {
+		return apperrors.NotFound(err, "sandbox not found")
+	}
+	if sb.PoolID != poolID {
+		return apperrors.NewStatusError(http.StatusForbidden, "sandbox is not on this pool")
+	}
+	if sb.WakeEpoch != epoch || sb.DesiredState != model.DesiredStatePresent {
+		return apperrors.NewStatusError(http.StatusConflict, "start was superseded by a later instruction")
+	}
+	return nil
+}
+
+func (s *Service) CompletePoolSandboxSuspend(ctx context.Context, poolID, sandboxID, requestID string, epoch int64) error {
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypePool || principal.PoolID != poolID {
+		return apperrors.NewStatusError(http.StatusForbidden, "pool agent is not authorized for this pool")
+	}
+	pool, err := s.store.GetPoolByID(ctx, poolID)
+	if err != nil {
+		return apperrors.NotFound(err, "pool not found")
+	}
+	sb, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID, store.SandboxFromPrimary())
+	if err != nil {
+		return apperrors.NotFound(err, "sandbox not found")
+	}
+	if sb.PoolID != poolID {
+		return apperrors.NewStatusError(http.StatusForbidden, "sandbox is not on this pool")
+	}
+	if s.sandboxReporter == nil {
+		return apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox service is unavailable")
+	}
+	return s.sandboxReporter.CompleteSandboxSuspend(ctx, pool.ProjectID, sb.ID, requestID, epoch)
 }

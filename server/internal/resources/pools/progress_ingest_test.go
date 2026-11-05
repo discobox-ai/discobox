@@ -154,3 +154,7 @@ func TestProgressIngestCarriesTheCloneAndItsPhase(t *testing.T) {
 		t.Fatalf("stored = %s, want the reported clone under materializing_source", reporter.progress[0].Progress)
 	}
 }
+
+func (c *capturingReporter) CompleteSandboxSuspend(context.Context, string, string, string, int64) error {
+	return nil
+}

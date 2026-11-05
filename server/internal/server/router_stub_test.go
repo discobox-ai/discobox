@@ -947,3 +947,11 @@ func (s *routerTestServices) OpenSandboxEvents(context.Context, string, *int64) 
 func (s *routerTestServices) PullSandboxSource(context.Context, string, string, string, services.PullSandboxSourceBody) (*model.Sandbox, error) {
 	panic("not implemented")
 }
+
+func (s *routerTestServices) AuthorizePoolSandboxStart(context.Context, string, string, int64) error {
+	return nil
+}
+
+func (s *routerTestServices) CompletePoolSandboxSuspend(context.Context, string, string, string, int64) error {
+	return nil
+}

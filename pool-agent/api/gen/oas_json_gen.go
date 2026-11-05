@@ -9591,6 +9591,24 @@ func (s *PoolSandboxOperationRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SuspendEpoch.Set {
+			e.FieldStart("suspendEpoch")
+			s.SuspendEpoch.Encode(e)
+		}
+	}
+	{
+		if s.SuspendId.Set {
+			e.FieldStart("suspendId")
+			s.SuspendId.Encode(e)
+		}
+	}
+	{
+		if s.StartEpoch.Set {
+			e.FieldStart("startEpoch")
+			s.StartEpoch.Encode(e)
+		}
+	}
+	{
 		if s.Force.Set {
 			e.FieldStart("force")
 			s.Force.Encode(e)
@@ -9598,9 +9616,12 @@ func (s *PoolSandboxOperationRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxOperationRequest = [2]string{
+var jsonFieldsNameOfPoolSandboxOperationRequest = [5]string{
 	0: "$schema",
-	1: "force",
+	1: "suspendEpoch",
+	2: "suspendId",
+	3: "startEpoch",
+	4: "force",
 }
 
 // Decode decodes PoolSandboxOperationRequest from json.
@@ -9620,6 +9641,36 @@ func (s *PoolSandboxOperationRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "suspendEpoch":
+			if err := func() error {
+				s.SuspendEpoch.Reset()
+				if err := s.SuspendEpoch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"suspendEpoch\"")
+			}
+		case "suspendId":
+			if err := func() error {
+				s.SuspendId.Reset()
+				if err := s.SuspendId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"suspendId\"")
+			}
+		case "startEpoch":
+			if err := func() error {
+				s.StartEpoch.Reset()
+				if err := s.StartEpoch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"startEpoch\"")
 			}
 		case "force":
 			if err := func() error {

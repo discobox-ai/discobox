@@ -291,3 +291,17 @@ func parsePoolCursors[ID ~uint64](values []string, prefix string, parse func(str
 	}
 	return after, nil
 }
+
+func (h *Handler) AuthorizePoolSandboxStart(ctx context.Context, params serverapi.AuthorizePoolSandboxStartParams) (serverapi.AuthorizePoolSandboxStartRes, error) {
+	if err := h.services.Pools.AuthorizePoolSandboxStart(ctx, params.PoolId, params.SandboxId, params.Epoch); err != nil {
+		return nil, err
+	}
+	return &serverapi.AuthorizePoolSandboxStartNoContent{}, nil
+}
+
+func (h *Handler) CompletePoolSandboxSuspend(ctx context.Context, params serverapi.CompletePoolSandboxSuspendParams) (serverapi.CompletePoolSandboxSuspendRes, error) {
+	if err := h.services.Pools.CompletePoolSandboxSuspend(ctx, params.PoolId, params.SandboxId, params.RequestId, params.Epoch); err != nil {
+		return nil, err
+	}
+	return &serverapi.CompletePoolSandboxSuspendNoContent{}, nil
+}

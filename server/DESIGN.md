@@ -57,6 +57,13 @@ Composition:
 New endpoints should prefer the contract-first generated path. Keep streaming
 transports hand-wired unless the generator can own them behavior-compatibly.
 
+Explicit start and repair can publish request progress before their final JSON
+response: `requestprogress.Middleware` attaches a synchronous phase reporter to
+the generated routes, emitting HTTP 102 with `X-Discobox-Progress`. Ordinary
+clients still receive the same final status/body. See the
+[sandbox service](internal/resources/sandboxes/DESIGN.md#power-is-not-orchestrated)
+for wait and ordering policy.
+
 ### Hand-Wired Sandbox Proxies
 
 Sandbox proxy routes are project-scoped control-plane routes and are authorized

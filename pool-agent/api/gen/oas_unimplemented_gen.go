@@ -153,6 +153,15 @@ func (UnimplementedHandler) PoolRestartSandbox(ctx context.Context, req *PoolSan
 	return r, ht.ErrNotImplemented
 }
 
+// PoolStartAdmittedSandbox implements pool-start-admitted-sandbox operation.
+//
+// Execute an admitted explicit start after checking its epoch.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start-admitted
+func (UnimplementedHandler) PoolStartAdmittedSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStartAdmittedSandboxParams) (r *PoolSandboxOperationAccepted, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolStartSandbox implements pool-start-sandbox operation.
 //
 // Start pool sandbox.

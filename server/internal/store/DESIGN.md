@@ -315,3 +315,13 @@ The secret request owner filter reads `parent_sandbox_id`.
 `RouteLists` includes the secret's persisted `RouteConstraints` between its
 original routes and binding/parent restrictions. These lists are enforced
 together on resolve and in pool publication; no flattening or union is safe.
+
+## Successful suspend receipts
+
+`CompleteSandboxSuspendTx` locks the sandbox, inserts one
+`SandboxSuspendReceipt` per successful suspend request, and cancels its wake
+only for a newly inserted receipt whose dispatch epoch is still current.
+A delayed first completion cannot cancel a newer outside instruction. The caller marks the power reconcile dirty
+in that same transaction. The additive receipt-table migration changes no
+existing state; purge removes receipts with their sandbox. These are delivery
+receipts for instructions, never desired power state.

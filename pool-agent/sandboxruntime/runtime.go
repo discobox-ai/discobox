@@ -274,7 +274,7 @@ type Runtime interface {
 	// It never stops it instead: a runtime that cannot freeze it errors and
 	// changes nothing. A suspended sandbox is accepted as it is, and one that
 	// is not running is ErrNotRunning. Every start thaws it.
-	SuspendSandbox(ctx context.Context, sandboxID string) error
+	SuspendSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
 	// PowerDownSandbox powers a sandbox down on its own request
 	// (ADR 26-10-16-337 §5): under the power lock it asks the sandbox to
 	// confirm reason, fresh, and refuses with ErrPowerDownRefused when the
@@ -369,6 +369,8 @@ type DockerSandboxRuntime struct {
 }
 
 type DockerSandboxRuntimeConfig struct {
+	CompleteSuspend       func(context.Context, string, string, int64) error
+	AuthorizeStart        func(context.Context, string, int64) error
 	ProjectID             string
 	PoolID                string
 	ControlPlanePublicKey string
@@ -416,6 +418,8 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 			projectID:             cfg.ProjectID,
 			poolID:                cfg.PoolID,
 			controlPlanePublicKey: cfg.ControlPlanePublicKey,
+			authorizeStart:        cfg.AuthorizeStart,
+			completeSuspend:       cfg.CompleteSuspend,
 			agentTLS:              cfg.AgentTLS,
 			sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
 			poolEndpoints:         cfg.PoolEndpoints,
@@ -515,6 +519,9 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.finishSuspend(ctx, sandboxID); err != nil {
+		return nil, err
+	}
 	if err := r.harnessCreateAllowed(sandboxID, req.HarnessChangeId.Or("")); err != nil {
 		return nil, err
 	}
@@ -2820,9 +2827,12 @@ func compactLogTail(logs string) string {
 
 // MemorySandboxRuntime is a lightweight runtime for tests and non-Docker embeds.
 type MemorySandboxRuntime struct {
-	harnessChanges map[string]harnessChangeFence
-	mu             sync.Mutex
-	sandboxes      map[string]*Sandbox
+	pendingSuspends map[string]suspendCompletion
+	CompleteSuspend func(context.Context, string, string, int64) error
+	AuthorizeStart  func(context.Context, string, int64) error
+	harnessChanges  map[string]harnessChangeFence
+	mu              sync.Mutex
+	sandboxes       map[string]*Sandbox
 	// archived stands in for the on-disk marker: an entry here has no sandbox
 	// in the map (archiving drops the container) but is still held as data.
 	archived   map[string]struct{}
@@ -3029,9 +3039,31 @@ func (r *MemorySandboxRuntime) ClearCache(context.Context) ([]string, error) {
 	return stopped, nil
 }
 
-func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
+func (r *MemorySandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if pending := r.pendingSuspends[sandboxID]; pending.RequestID != "" && req != nil && req.StartEpoch.IsSet() {
+		if r.CompleteSuspend == nil {
+			return ErrStartNotAuthorized
+		}
+		if err := r.CompleteSuspend(ctx, sandboxID, pending.RequestID, pending.Epoch); err != nil {
+			return fmt.Errorf("%w: %w", ErrStartNotAuthorized, err)
+		}
+		delete(r.pendingSuspends, sandboxID)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if req != nil && req.StartEpoch.IsSet() {
+		if r.AuthorizeStart == nil {
+			return ErrStartNotAuthorized
+		}
+		if err := r.AuthorizeStart(ctx, sandboxID, req.StartEpoch.Value); err != nil {
+			return fmt.Errorf("%w: %w", ErrStartNotAuthorized, err)
+		}
+	}
+
 	if f := r.harnessChanges[sandboxID]; f.ID != "" && !f.Applied {
 		return ErrHarnessChangeRefused
 	}
@@ -3066,21 +3098,33 @@ func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, 
 
 // SuspendSandbox marks a running memory sandbox suspended; a start runs it
 // again.
-func (r *MemorySandboxRuntime) SuspendSandbox(_ context.Context, sandboxID string) error {
+func (r *MemorySandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
 		return ErrNotFound
 	}
-	switch sb.Status {
-	case StatusSuspended:
-		return nil
-	case StatusRunning:
-		sb.Status = StatusSuspended
-		return nil
+	if sb.Status != StatusRunning && sb.Status != StatusSuspended {
+		return ErrNotRunning
 	}
-	return ErrNotRunning
+	if req != nil && req.SuspendId.IsSet() {
+		if r.CompleteSuspend == nil {
+			return fmt.Errorf("successful suspend completion is unavailable")
+		}
+		if r.pendingSuspends == nil {
+			r.pendingSuspends = map[string]suspendCompletion{}
+		}
+		r.pendingSuspends[sandboxID] = suspendCompletion{RequestID: req.SuspendId.Value, Epoch: req.SuspendEpoch.Value, Frozen: true}
+	}
+	sb.Status = StatusSuspended
+	if pending := r.pendingSuspends[sandboxID]; pending.RequestID != "" {
+		if err := r.CompleteSuspend(ctx, sandboxID, pending.RequestID, pending.Epoch); err != nil {
+			return err
+		}
+		delete(r.pendingSuspends, sandboxID)
+	}
+	return nil
 }
 
 // PowerDownSandbox powers down a running memory sandbox: there is no agent to
@@ -3098,7 +3142,7 @@ func (r *MemorySandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID s
 		return Wake{}, ErrPowerDownRefused
 	}
 	if reason == PowerDownSleep {
-		return Wake{}, r.SuspendSandbox(ctx, sandboxID)
+		return Wake{}, r.SuspendSandbox(ctx, sandboxID, nil)
 	}
 	return Wake{}, r.StopSandbox(ctx, sandboxID, nil)
 }

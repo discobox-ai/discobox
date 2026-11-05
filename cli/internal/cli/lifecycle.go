@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/discobox-ai/discobox/pkg/requestprogress"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -109,7 +111,9 @@ fails does not hide the rest.`,
 						return sandboxID, err
 					}
 				}
-				res, err := action.post(cmd.Context(), client, projectID, sandboxID)
+				status := newStatusLine(cmd.ErrOrStderr(), a.color)
+				defer status.clear()
+				res, err := action.post(requestprogress.Observe(cmd.Context(), status.set), client, projectID, sandboxID)
 				if err != nil {
 					return "", err
 				}

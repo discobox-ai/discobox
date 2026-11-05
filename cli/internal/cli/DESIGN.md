@@ -116,3 +116,11 @@ and line breaks. It emits sorted commands and flags without timestamps. Runtime 
 owned by the connected server catalog and are explicitly scoped out in the
 manual; the export includes the static create/update flags and explains how
 to obtain matching provider help. `docs:check` compares bytes without writing.
+
+## Lifecycle request progress
+
+Ordinary and administrative start, and typed repair, observe HTTP 102 request
+progress with `requestprogress.Observe`. The server's pool-wait phase is shown
+on the status line while the JSON response is pending; non-interactive status
+goes to stderr, preserving JSON stdout. The console passes its operation
+narration sink through `CredentialUI.Report`, sharing the busy status lifetime.

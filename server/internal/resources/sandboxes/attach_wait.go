@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/requestprogress"
+
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -128,16 +130,18 @@ func runtimeHasNoContainer(err error) bool {
 }
 
 // useWait is when a use of a sandbox starts waiting for it.
-type useWait bool
+type useWait int
 
 const (
 	// waitFromTheStart waits out every "not yet" from the first attempt: a
 	// request into the sandbox, which has nothing better to do than wait.
-	waitFromTheStart useWait = true
+	waitFromTheStart useWait = iota
 	// waitOnceRebuilding answers every refusal at once until the use finds
 	// the sandbox with no container and a rebuild coming, and waits from
 	// then: a power instruction, which is a command that wants an answer.
-	waitOnceRebuilding useWait = false
+	waitOnceRebuilding
+	// waitForStartPool adds only pool-unreachable to the instruction wait.
+	waitForStartPool
 )
 
 // awaitUsable runs attempt until it succeeds, waiting between attempts for the
@@ -159,9 +163,33 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 	// Whether this wait has already asked for the rebuild of a sandbox that
 	// lost its container without failing. Once is enough: the mark is durable.
 	var marked bool
+	hasRebuild := false
+	phase := ""
+	report := func(text string) {
+		if phase != text {
+			phase = text
+			requestprogress.Report(ctx, text)
+		}
+	}
 	for {
-		sandboxModel, err := attempt(ctx)
+		deadline := stallDeadline
+		if !hostDownSince.IsZero() {
+			if ceiling := hostDownSince.Add(sandboxPoolHostWaitCeiling); ceiling.Before(deadline) {
+				deadline = ceiling
+			}
+		}
+		if refusal != nil && !time.Now().Before(deadline) {
+			return nil, waitEnded(refusal)
+		}
+		attemptCtx, cancel := context.WithDeadline(ctx, deadline)
+		sandboxModel, err := attempt(attemptCtx)
+		expired := attemptCtx.Err() != nil
+		cancel()
+		if expired && err != nil && ctx.Err() == nil && refusal != nil {
+			return sandboxModel, waitEnded(refusal)
+		}
 		if err == nil {
+			report("")
 			return sandboxModel, nil
 		}
 		if ctx.Err() != nil {
@@ -184,12 +212,15 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 				return sandboxModel, err
 			}
 			waiting = true
+			hasRebuild = true
 			// The row this pass read may be one generation behind the intent
 			// just recorded, and the mark below has to see the new one.
 			if current, getErr := s.store.GetSandbox(ctx, projectID, sandboxID); getErr == nil {
 				sandboxModel = current
 			}
-		} else if !waiting || !sandboxCanBecomeReachable(err, sandboxModel) {
+		} else if wait == waitForStartPool && errors.Is(err, sandbox.ErrPoolNotReachable) && sandboxModel != nil && sandboxModel.DesiredState == model.DesiredStatePresent {
+			waiting = true
+		} else if !waiting || (wait == waitForStartPool && !hasRebuild) || !sandboxCanBecomeReachable(err, sandboxModel) {
 			return sandboxModel, err
 		}
 		// A host that is not there has its own ceiling, for the reason
@@ -199,10 +230,14 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 			if hostDownSince.IsZero() {
 				hostDownSince = time.Now()
 			} else if time.Since(hostDownSince) >= sandboxPoolHostWaitCeiling {
-				return sandboxModel, err
+				return sandboxModel, waitEnded(err)
 			}
+			report(fmt.Sprintf("%s (pool %s): waiting for the pool to come online", sandboxID, sandboxModel.PoolID))
 		} else {
-			hostDownSince = time.Time{}
+			if wait != waitForStartPool {
+				hostDownSince = time.Time{}
+			}
+			report("rebuilding " + sandboxID)
 		}
 		// The first pass always counts as progress, which only re-arms a budget
 		// armed a moment ago.
@@ -213,13 +248,16 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 		if !time.Now().Before(stallDeadline) {
 			// The last refusal names what never became true, which is more use
 			// than "timed out" on its own.
-			return sandboxModel, err
+			return sandboxModel, waitEnded(err)
+		}
+		if !hostDownSince.IsZero() && !time.Now().Before(hostDownSince.Add(sandboxPoolHostWaitCeiling)) {
+			return sandboxModel, waitEnded(err)
 		}
 		refusal = err
 		select {
 		case <-ctx.Done():
 			return sandboxModel, awaitEnded(ctx, refusal)
-		case <-time.After(sandboxReachablePollInterval):
+		case <-time.After(min(sandboxReachablePollInterval, max(time.Until(deadline), time.Duration(0)))):
 		}
 	}
 }
@@ -229,7 +267,7 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 // never cleared. A cancel is the caller leaving, and is told so.
 func awaitEnded(ctx context.Context, refusal error) error {
 	if refusal != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return refusal
+		return waitEnded(refusal)
 	}
 	return ctx.Err()
 }
@@ -351,4 +389,10 @@ func sandboxCanBecomeReachable(err error, sb *model.Sandbox) bool {
 		return false
 	}
 	return true
+}
+
+// waitEnded preserves the refusal classification and cause, including an
+// unanswered instruction's ambiguity, while explaining why the request ended.
+func waitEnded(refusal error) error {
+	return apperrors.StatusError{Status: http.StatusConflict, Message: "waiting ended: " + refusal.Error(), Cause: refusal}
 }

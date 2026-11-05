@@ -8,6 +8,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/requestprogress"
+
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
 
 	"github.com/go-chi/chi/v5"
@@ -151,7 +153,7 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	if err != nil {
 		return nil, err
 	}
-	router.Mount("/", boundInventoryReports(generated))
+	router.Mount("/", requestprogress.Middleware(boundInventoryReports(generated)))
 	return router, nil
 }
 
@@ -299,7 +301,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if err != nil {
 		return nil, services.Services{}, nil, nil, err
 	}
-	router.Mount("/", boundInventoryReports(generated))
+	router.Mount("/", requestprogress.Middleware(boundInventoryReports(generated)))
 	return router, svc, appStore, appServices.Stop, nil
 }
 

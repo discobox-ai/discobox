@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"time"
+
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 
 	"gorm.io/gorm"
 
@@ -142,7 +145,7 @@ func (r *sandboxPowerReconciler) wake(ctx context.Context, sb *model.Sandbox) er
 		attrs = append(attrs, "wakeAt", *sb.WakeAt)
 	}
 	slog.Default().Info("waking sandbox at the time it asked for", attrs...)
-	if err := instructSandbox(ctx, r.store, provider, sb, sandboxStart); err != nil {
+	if err := instructSandbox(ctx, r.store, provider, sb, sandboxStart, nil, ""); err != nil {
 		slog.Default().Warn("wake sandbox", "sandboxId", sb.ID, "error", err)
 	}
 	return nil
@@ -200,14 +203,36 @@ func (s *Service) SandboxAgentStatusReported(ctx context.Context, projectID, san
 // sandbox's scheduled start: cancels it, and moves the epoch whether or not
 // one was set, so a power reconcile in flight cannot write one back
 // (ADR 26-10-16-337 §6). The mark has the power reconcile drop its timer.
-func (s *Service) cancelSandboxWake(ctx context.Context, projectID, sandboxID string) error {
-	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+func (s *Service) cancelSandboxWake(ctx context.Context, projectID, sandboxID string) (int64, error) {
+	var epoch int64
+	err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		if err := txStore.CancelSandboxWakeTx(ctx, txDB, projectID, sandboxID); err != nil {
 			return err
 		}
+		sb, err := txStore.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			return err
+		}
+		epoch = sb.WakeEpoch
 		if s.engine == nil {
 			return nil
 		}
 		return s.engine.MarkDirtyTx(ctx, txDB, SandboxPowerResourceType, SandboxDirtyID(projectID, sandboxID))
+	})
+	return epoch, err
+}
+
+// CompleteSandboxSuspend records successful freeze completion, never admission.
+// It takes no service lock: a dispatch awaiting the pool's callback holds it.
+func (s *Service) CompleteSandboxSuspend(ctx context.Context, projectID, sandboxID, requestID string, epoch int64) error {
+	if requestID == "" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "suspend request ID is required")
+	}
+	return s.store.Transaction(ctx, func(st *store.Store, tx *gorm.DB) error {
+		changed, err := st.CompleteSandboxSuspendTx(ctx, tx, projectID, sandboxID, requestID, epoch)
+		if err != nil || !changed || s.engine == nil {
+			return err
+		}
+		return s.engine.MarkDirtyTx(ctx, tx, SandboxPowerResourceType, SandboxDirtyID(projectID, sandboxID))
 	})
 }

@@ -25,10 +25,13 @@ const (
 	machineStopTimeout = time.Minute
 )
 
-func (r *MachineSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
+func (r *MachineSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.authorizeExplicitStart(ctx, sandboxID, req); err != nil {
+		return err
+	}
 	return r.startLocked(ctx, sandboxID)
 }
 
@@ -51,7 +54,7 @@ func (r *MachineSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID st
 
 // SuspendSandbox is refused: disco-vm freezes no machine whole, and a
 // suspend is never turned into a stop (ADR 26-10-16-420 §3).
-func (r *MachineSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID string) error {
+func (r *MachineSandboxRuntime) SuspendSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()

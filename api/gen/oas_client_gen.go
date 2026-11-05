@@ -77,6 +77,13 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExecOnce(ctx context.Context, request AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceRes, error)
+	// AuthorizePoolSandboxStart invokes authorize-pool-sandbox-start operation.
+	//
+	// Check that an explicit start is still current, immediately before execution under the pool's power
+	// lock.
+	//
+	// GET /api/pools/{poolId}/sandbox-start-authorization
+	AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (AuthorizePoolSandboxStartRes, error)
 	// CaptureSandboxHarnessConfig invokes capture-sandbox-harness-config operation.
 	//
 	// Capture sandbox harness config.
@@ -98,6 +105,12 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear
 	ClearSandboxCache(ctx context.Context, params ClearSandboxCacheParams) (ClearSandboxCacheRes, error)
+	// CompletePoolSandboxSuspend invokes complete-pool-sandbox-suspend operation.
+	//
+	// Record a successful suspend once, before releasing the pool's power lock.
+	//
+	// POST /api/pools/{poolId}/sandbox-suspend-completion
+	CompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (CompletePoolSandboxSuspendRes, error)
 	// CompleteSandboxSourcePush invokes complete-sandbox-source-push operation.
 	//
 	// Report that the client finished pushing a push-delivered source into the sandbox's Git repository,
@@ -1025,6 +1038,8 @@ type Invoker interface {
 	//
 	// Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source
 	// delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
+	//  While waiting for its pool to return, emits HTTP 102 responses with X-Discobox-Progress naming
+	// the current phase. The final JSON response is unchanged.
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/start
 	StartSandbox(ctx context.Context, request *StartSandboxBody, params StartSandboxParams) (StartSandboxRes, error)
@@ -2102,6 +2117,132 @@ func (c *Client) sendAttachSandboxExecOnce(ctx context.Context, request AttachSa
 	return result, nil
 }
 
+// AuthorizePoolSandboxStart invokes authorize-pool-sandbox-start operation.
+//
+// Check that an explicit start is still current, immediately before execution under the pool's power
+// lock.
+//
+// GET /api/pools/{poolId}/sandbox-start-authorization
+func (c *Client) AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (AuthorizePoolSandboxStartRes, error) {
+	res, err := c.sendAuthorizePoolSandboxStart(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendAuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (res AuthorizePoolSandboxStartRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("authorize-pool-sandbox-start"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-start-authorization"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, AuthorizePoolSandboxStartOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-start-authorization"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "sandboxId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "epoch" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "epoch",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.Int64ToString(params.Epoch))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeAuthorizePoolSandboxStartResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // CaptureSandboxHarnessConfig invokes capture-sandbox-harness-config operation.
 //
 // Capture sandbox harness config.
@@ -2437,6 +2578,145 @@ func (c *Client) sendClearSandboxCache(ctx context.Context, params ClearSandboxC
 
 	stage = "DecodeResponse"
 	result, err := decodeClearSandboxCacheResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// CompletePoolSandboxSuspend invokes complete-pool-sandbox-suspend operation.
+//
+// Record a successful suspend once, before releasing the pool's power lock.
+//
+// POST /api/pools/{poolId}/sandbox-suspend-completion
+func (c *Client) CompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (CompletePoolSandboxSuspendRes, error) {
+	res, err := c.sendCompletePoolSandboxSuspend(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendCompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (res CompletePoolSandboxSuspendRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("complete-pool-sandbox-suspend"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-suspend-completion"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CompletePoolSandboxSuspendOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-suspend-completion"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "sandboxId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "requestId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "requestId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "epoch" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "epoch",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.Int64ToString(params.Epoch))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCompletePoolSandboxSuspendResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -18676,6 +18956,10 @@ func (c *Client) sendSetDefaultProject(ctx context.Context, params SetDefaultPro
 //
 // Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source
 // delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
+//
+//	While waiting for its pool to return, emits HTTP 102 responses with X-Discobox-Progress naming
+//
+// the current phase. The final JSON response is unchanged.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/start
 func (c *Client) StartSandbox(ctx context.Context, request *StartSandboxBody, params StartSandboxParams) (StartSandboxRes, error) {

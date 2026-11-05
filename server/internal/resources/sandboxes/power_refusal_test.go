@@ -66,3 +66,11 @@ func TestASuspendRefusalSaysWhy(t *testing.T) {
 		}
 	}
 }
+
+func TestExecutionAuthorizationRefusalRemainsAConflict(t *testing.T) {
+	err := runtimeRefusal(sandbox.ErrStartNotAuthorized, "start")
+	var status interface{ StatusCode() int }
+	if !errors.As(err, &status) || status.StatusCode() != 409 || !errors.Is(err, sandbox.ErrStartNotAuthorized) {
+		t.Fatalf("execution refusal: %v", err)
+	}
+}

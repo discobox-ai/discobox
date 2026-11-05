@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/semaphore"
 
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
 
@@ -34,6 +37,7 @@ import (
 // Service owns sandbox API behavior, orchestration, provider catalog state, and
 // sandbox auth dependencies.
 type Service struct {
+	powerLocks       sync.Map // Per-sandbox admission and retry dispatch, released between attempts.
 	store            *store.Store
 	engine           *reconcile.Engine
 	sandboxProviders *sandbox.ProviderManager
@@ -760,7 +764,7 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 // further than an archive would: the archive is accepted and records nothing,
 // since recorded over the delete it would take it back (recordSandboxIntent).
 func (s *Service) DeleteSandbox(ctx context.Context, projectID, sandboxID string) error {
-	_, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateArchived)
+	_, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateArchived, false)
 	if errors.Is(err, errSandboxBeingDeleted) {
 		return nil
 	}
@@ -783,7 +787,7 @@ func (s *Service) UnarchiveSandbox(ctx context.Context, projectID, sandboxID str
 	if sandbox.DesiredState != model.DesiredStateArchived {
 		return apperrors.NewStatusError(http.StatusConflict, "sandbox is not archived")
 	}
-	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent); err != nil {
+	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, false); err != nil {
 		return apperrors.NotFound(err, "sandbox not found")
 	}
 	return nil
@@ -803,7 +807,7 @@ func (s *Service) UnarchiveSandbox(ctx context.Context, projectID, sandboxID str
 // A 202 would have been a promise the server could not keep and could not later
 // verify: the row it would check against is the thing being deleted.
 func (s *Service) PurgeSandbox(ctx context.Context, projectID, sandboxID string) error {
-	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateDeleted); err != nil {
+	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateDeleted, false); err != nil {
 		return apperrors.NotFound(err, "sandbox not found")
 	}
 	// The Result is discarded rather than honored: a delete converges to the row
@@ -834,15 +838,15 @@ func (s *Service) PurgeSandbox(ctx context.Context, projectID, sandboxID string)
 // caller that needs to know the outcome re-reads the sandbox rather than
 // believing this response (ADR 0017 §§9–10).
 func (s *Service) StartSandbox(ctx context.Context, projectID, sandboxID string, _ services.StartSandboxBody) (*model.Sandbox, error) {
-	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStart)
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStart, nil)
 }
 
 func (s *Service) StopSandbox(ctx context.Context, projectID, sandboxID string, _ services.StopSandboxBody) (*model.Sandbox, error) {
-	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStop)
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStop, nil)
 }
 
 func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID string, _ services.RestartSandboxBody) (*model.Sandbox, error) {
-	return s.instructSandbox(ctx, projectID, sandboxID, sandboxRestart)
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxRestart, nil)
 }
 
 // SuspendSandbox has the pool freeze the sandbox whole (ADR 26-10-16-420 §3).
@@ -850,7 +854,7 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 // cannot freeze the sandbox refuses it, and nothing changes. Any start, or any
 // use, thaws it.
 func (s *Service) SuspendSandbox(ctx context.Context, projectID, sandboxID string, _ services.SuspendSandboxBody) (*model.Sandbox, error) {
-	return s.instructSandbox(ctx, projectID, sandboxID, sandboxSuspend)
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxSuspend, nil)
 }
 
 // RepairSandbox rebuilds the sandbox in place, on its harness config's current
@@ -893,10 +897,11 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
+	admitted, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, true, func(sb *model.Sandbox) {
 		sb.RepairGeneration = sb.Generation
 		repin.apply(sb)
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	// The Result is discarded rather than honored: this call is outside the
@@ -923,81 +928,85 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 	if awaitingSourcePush(sandbox) {
 		return sandbox, nil
 	}
-	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStart)
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStart, &admitted.WakeEpoch)
 }
 
-// instructSandbox forwards a power instruction and answers with the pool's
-// refusal, if any.
-//
-// A start or a restart is a use of the sandbox like any action, so one refused
-// for want of a container repairs the sandbox once, or waits for the rebuild
-// already coming, and is then sent again (ADR 26-10-12-711 §3). It waits for
-// nothing else: an instruction is a command that wants an answer, and a
-// sandbox still being created is still refused at once. A stop is not a use,
-// and nor is a suspend.
-func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID string, instruction sandboxInstruction) (*model.Sandbox, error) {
-	if instruction == sandboxStop || instruction == sandboxSuspend {
-		sandbox, err := s.instructSandboxOnce(ctx, projectID, sandboxID, instruction)
+// powerLock orders admission with retry dispatch and successful suspend. No
+// database transaction spans a runtime call. The pool checks admitted starts
+// again under its own power lock, covering an unanswered dispatch.
+func (s *Service) powerLock(projectID, sandboxID string) *semaphore.Weighted {
+	lock, _ := s.powerLocks.LoadOrStore(SandboxDirtyID(projectID, sandboxID), semaphore.NewWeighted(1))
+	gate, _ := lock.(*semaphore.Weighted)
+	return gate
+}
+
+func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID string, instruction sandboxInstruction, epoch *int64) (*model.Sandbox, error) {
+	suspendID := ""
+	if instruction == sandboxSuspend {
+		var err error
+		suspendID, err = id.New("suspend")
 		if err != nil {
 			return nil, err
 		}
-		return sandbox, nil
 	}
-	sandbox, err := s.awaitUsable(ctx, projectID, sandboxID, services.SandboxAction(instruction.String()), waitOnceRebuilding,
-		func(ctx context.Context) (*model.Sandbox, error) {
-			return s.instructSandboxOnce(ctx, projectID, sandboxID, instruction)
-		})
-	if err != nil {
-		return nil, err
+	policy := waitOnceRebuilding
+	if instruction == sandboxStart {
+		policy = waitForStartPool
 	}
-	return sandbox, nil
-}
-
-func (s *Service) instructSandboxOnce(ctx context.Context, projectID, sandboxID string, instruction sandboxInstruction) (*model.Sandbox, error) {
-	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "sandbox not found")
-	}
-	if sandbox.DesiredState == model.DesiredStateDeleted {
-		return sandbox, apperrors.NewStatusError(http.StatusConflict, "sandbox is being deleted")
-	}
-	if sandbox.DesiredState == model.DesiredStateArchived {
-		return sandbox, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived; unarchive it first")
-	}
-	if instruction == sandboxStart || instruction == sandboxRestart {
-		if err := owedSourceRefusal(sandbox); err != nil {
-			return sandbox, err
+	attempt := func(ctx context.Context) (*model.Sandbox, error) {
+		lock := s.powerLock(projectID, sandboxID)
+		if err := lock.Acquire(ctx, 1); err != nil {
+			return nil, err
 		}
-	}
-	provider, err := s.resolveProvider(ctx, sandbox)
-	if err != nil {
-		return sandbox, err
-	}
-	// A start, stop, restart or suspend from outside — a person's, a lead's,
-	// a repair's — overrides the wake the sandbox asked for: it does not get
-	// back the run time a stop took away (ADR 26-10-16-337 §6). Canceled
-	// before the instruction is sent, so a power reconcile already in flight
-	// cannot record the wake afterwards.
-	//
-	// A suspend cancels it only once the pool has frozen the sandbox: a
-	// refused one changes nothing (ADR 26-10-16-420 §3), and the likeliest
-	// refusal — a sandbox that is not running — is one a sleep stopped, which
-	// is the one with a wake to lose. Canceling after is as safe for it: a
-	// power reconcile reading the epoch once the sandbox is frozen finds it
-	// not running, and the pool refuses its power-down.
-	if instruction == sandboxSuspend {
-		if err := instructSandbox(ctx, s.store, provider, sandbox, instruction); err != nil {
-			return sandbox, runtimeRefusal(err, instruction.String())
+		defer lock.Release(1)
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		return sandbox, s.cancelSandboxWake(ctx, projectID, sandboxID)
+		sb, err := s.store.GetSandbox(ctx, projectID, sandboxID, store.SandboxFromPrimary())
+		if err != nil {
+			return nil, apperrors.NotFound(err, "sandbox not found")
+		}
+		if epoch != nil && sb.WakeEpoch != *epoch {
+			return sb, apperrors.NewStatusError(http.StatusConflict, "start was superseded by a later instruction")
+		}
+		if sb.DesiredState != model.DesiredStatePresent {
+			return sb, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived or being deleted")
+		}
+		if instruction == sandboxStart || instruction == sandboxRestart {
+			if err := owedSourceRefusal(sb); err != nil {
+				return sb, err
+			}
+		}
+		// Admission happens once, even when provider resolution finds an absent
+		// pool. A failed later stop still supersedes this request.
+		if epoch == nil && instruction != sandboxSuspend {
+			token, err := s.cancelSandboxWake(ctx, projectID, sandboxID)
+			if err != nil {
+				return sb, err
+			}
+			epoch = &token
+			sb.WakeEpoch = token
+		}
+		provider, err := s.resolveProvider(ctx, sb)
+		if err != nil {
+			return sb, err
+		}
+		var startEpoch *int64
+		if instruction == sandboxStart {
+			startEpoch = epoch
+		}
+		if err := instructSandbox(ctx, s.store, provider, sb, instruction, startEpoch, suspendID); err != nil {
+			return sb, runtimeRefusal(err, instruction.String())
+		}
+		if instruction == sandboxSuspend {
+			return sb, s.CompleteSandboxSuspend(ctx, projectID, sandboxID, suspendID, sb.WakeEpoch)
+		}
+		return sb, nil
 	}
-	if err := s.cancelSandboxWake(ctx, projectID, sandboxID); err != nil {
-		return sandbox, err
+	if instruction == sandboxStop || instruction == sandboxSuspend {
+		return attempt(ctx)
 	}
-	if err := instructSandbox(ctx, s.store, provider, sandbox, instruction); err != nil {
-		return sandbox, runtimeRefusal(err, instruction.String())
-	}
-	return sandbox, nil
+	return s.awaitUsable(ctx, projectID, sandboxID, services.SandboxAction(instruction.String()), policy, attempt)
 }
 
 // runtimeRefusal gives a refusal for want of a runtime the status it means,
@@ -1009,6 +1018,8 @@ func (s *Service) instructSandboxOnce(ctx context.Context, projectID, sandboxID 
 func runtimeRefusal(err error, verb string) error {
 	var message string
 	switch {
+	case errors.Is(err, sandbox.ErrStartNotAuthorized):
+		message = fmt.Sprintf("cannot %s sandbox: %v", verb, err)
 	case errors.Is(err, ErrNoContainer):
 		message = fmt.Sprintf("cannot %s sandbox: it has no container on its pool; it is being rebuilt, or repair it to give it one", verb)
 	case errors.Is(err, ErrArchived):
@@ -1025,7 +1036,7 @@ func runtimeRefusal(err error, verb string) error {
 		// The pool's agent is not there to ask: its container is being
 		// replaced or restarted, as every pool's is by a server upgrade, or
 		// its healthcheck has not passed yet. It comes back on its own, and
-		// the instruction does not wait for it (ADR 26-10-12-711 §6).
+		// explicit starts wait for it within their request (ADR 26-11-04-167).
 		message = fmt.Sprintf("cannot %s sandbox: its pool's agent is not answering, as while it is being replaced or restarted; try again shortly (%v)", verb, err)
 	case errors.Is(err, ErrNotFound):
 		// Not only the pool's 404: a sandbox whose create has not placed it on
@@ -1101,7 +1112,7 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	// The re-pin is the whole instruction: a changed pin changes the spec
 	// fingerprint, and the pool host rebuilds any container that does not
 	// match it (ADR 0017 §5). There is no restart counter to bump.
-	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, repin.apply)
+	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, false, repin.apply)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
@@ -1255,7 +1266,7 @@ func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
 		if sb.DesiredState == model.DesiredStateArchived {
 			_, err = s.updateSandboxMetadata(ctx, sb.ProjectID, sb.ID, pin)
 		} else {
-			_, err = s.recordSandboxIntent(ctx, sb.ProjectID, sb.ID, model.DesiredStatePresent, pin)
+			_, err = s.recordSandboxIntent(ctx, sb.ProjectID, sb.ID, model.DesiredStatePresent, false, pin)
 		}
 		if err != nil {
 			slog.WarnContext(ctx, "skip pinning a sandbox from before bundles; cannot record it",
@@ -1345,7 +1356,7 @@ func (s *Service) upgradeStoppedSandboxes(ctx context.Context, projectID, harnes
 		if !repin.Available {
 			continue
 		}
-		if _, err := s.recordSandboxIntent(ctx, projectID, sb.ID, model.DesiredStatePresent, repin.apply); err != nil {
+		if _, err := s.recordSandboxIntent(ctx, projectID, sb.ID, model.DesiredStatePresent, false, repin.apply); err != nil {
 			slog.WarnContext(ctx, "skip automatic sandbox upgrade; cannot record intent",
 				"projectId", projectID, "sandboxId", sb.ID, "error", err)
 			continue
@@ -1551,7 +1562,7 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 	if existing.SourceDeliveredAt != nil {
 		return existing, nil
 	}
-	return s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
+	return s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, false, func(sb *model.Sandbox) {
 		if sb.SourceDeliveries == nil {
 			sb.SourceDeliveries = map[string]sourcecache.Delivery{}
 		}
