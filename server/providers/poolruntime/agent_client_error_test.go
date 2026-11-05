@@ -136,7 +136,7 @@ func TestPoolAgentThatCannotDecodeTheRequestIsUnsupported(t *testing.T) {
 	}
 	proxy := httputil.NewSingleHostReverseProxy(agent)
 	proxy.Transport = runtimeProvider.client.Transport
-	newer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	newer := newCreateProtocolTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
 			body["fieldFromANewerServer"] = true

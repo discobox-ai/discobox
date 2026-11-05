@@ -1219,3 +1219,20 @@ cannot be deleted while reservation or promotion is outstanding. Terminal
 inventory and cached status sessions compose only the new `currentHarnessId`
 from the selected config, leaving historical fields and timestamps as posted.
 The original initial prompt is cleared when selecting another harness.
+
+### A start across a pending upgrade
+
+An explicit start also waits for its exact admitted upgrade generation (ADR
+26-11-05-143). `UpgradeGeneration == Generation > ObservedGeneration` must
+carry `LastSuccessfulCreate` evidence, a placement and no owed source, repair
+or harness change. Legacy ready, converged, error-free rows establish prior
+creation inside the upgrade-intent transaction before errors are cleared.
+Other generation gaps grant no start wait. Both columns default to zero.
+
+Before dispatch, start probes create compatibility without creating anything.
+A typed protocol transition reports the pool wait; a compatible pool reports
+"waiting for the sandbox upgrade". The reconciler alone creates the upgraded
+runtime, with no start requested. Convergence retries the original fenced
+start. New unrelated intent conflicts; a settled failure returns its reason.
+The original admission, wake epoch, stall budget and absolute five-minute
+ceiling survive every phase. Progress is cleared on every exit.

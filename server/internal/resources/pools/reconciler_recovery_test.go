@@ -782,3 +782,7 @@ func TestReconcilePersistsTheHostCredential(t *testing.T) {
 		t.Fatalf("host credential = %+v, want it cleared", got.HostCredential)
 	}
 }
+
+func (stubPoolProvider) CheckCreateCompatibility(context.Context, sandbox.SandboxRef) error {
+	return nil
+}

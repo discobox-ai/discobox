@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync/atomic"
@@ -37,7 +36,7 @@ func newDroppingRuntimeProvider(t *testing.T, projectID, poolID, route string, d
 		ControlPlanePublicKey: controlPlaneKey,
 	})
 	var sent atomic.Int32
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := newCreateProtocolTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, route) && sent.Add(1) <= drops {
 			conn, _, err := w.(http.Hijacker).Hijack()
 			if err != nil {
@@ -111,7 +110,7 @@ func TestPoolProviderCreateGivesUpOnAPoolAgentThatKeepsLeaving(t *testing.T) {
 // answered is sent again.
 func TestPoolProviderCreateDoesNotRetryAnAnsweredRefusal(t *testing.T) {
 	var creates atomic.Int32
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := newCreateProtocolTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only creates are counted: every listener opened in a discobox is
 		// probed once (root REVIEW.md), and a probe is not a create.
 		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/sandboxes") {

@@ -979,11 +979,12 @@ func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID stri
 			return nil, err
 		}
 	}
+	var upgradeGeneration int64
 	policy := waitOnceRebuilding
 	if instruction == sandboxStart {
 		policy = waitForStartPool
 	}
-	attempt := func(ctx context.Context) (*model.Sandbox, error) {
+	attempt := func(ctx context.Context, budget *useWaitBudget) (*model.Sandbox, error) {
 		lock := s.powerLock(projectID, sandboxID)
 		if err := lock.Acquire(ctx, 1); err != nil {
 			return nil, err
@@ -1021,6 +1022,28 @@ func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID stri
 		if err != nil {
 			return sb, err
 		}
+		if instruction == sandboxStart {
+			if upgradeGeneration != 0 && sb.Generation != upgradeGeneration {
+				return sb, apperrors.NewStatusError(http.StatusConflict, "sandbox upgrade was superseded by newer intent")
+			}
+			if pendingUpgradeStart(sb) {
+				ctx, cancel := budget.enterPoolTransition(ctx)
+				defer cancel()
+				upgradeGeneration = sb.Generation
+				if provider != nil {
+					if err := provider.CheckCreateCompatibility(ctx, sandboxRefFromSandbox(sb)); err != nil {
+						if ctx.Err() != nil {
+							err = fmt.Errorf("pool %s compatibility probe did not finish: %w: %w", sb.PoolID, sandbox.ErrPoolProtocolTransition, err)
+						}
+						return sb, runtimeRefusal(err, instruction.String())
+					}
+				}
+				return sb, apperrors.StatusError{Status: http.StatusConflict, Message: "sandbox upgrade is still being provisioned", Cause: ErrSandboxProvisioning}
+			}
+			if upgradeGeneration != 0 && sb.Converged() && sb.ErrorMessage != nil {
+				return sb, apperrors.NewStatusError(http.StatusConflict, "sandbox upgrade failed: "+*sb.ErrorMessage)
+			}
+		}
 		var startEpoch *int64
 		if instruction == sandboxStart {
 			startEpoch = epoch
@@ -1034,7 +1057,7 @@ func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID stri
 		return sb, nil
 	}
 	if instruction == sandboxStop || instruction == sandboxSuspend {
-		return attempt(ctx)
+		return attempt(ctx, &useWaitBudget{})
 	}
 	return s.awaitUsable(ctx, projectID, sandboxID, services.SandboxAction(instruction.String()), policy, attempt)
 }
@@ -1048,6 +1071,8 @@ func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID stri
 func runtimeRefusal(err error, verb string) error {
 	var message string
 	switch {
+	case errors.Is(err, sandbox.ErrPoolProtocolTransition):
+		message = fmt.Sprintf("cannot %s sandbox: %v", verb, err)
 	case errors.Is(err, sandbox.ErrStartNotAuthorized):
 		message = fmt.Sprintf("cannot %s sandbox: %v", verb, err)
 	case errors.Is(err, ErrNoContainer):
@@ -1142,7 +1167,7 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	// The re-pin is the whole instruction: a changed pin changes the spec
 	// fingerprint, and the pool host rebuilds any container that does not
 	// match it (ADR 0017 §5). There is no restart counter to bump.
-	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, false, repin.apply)
+	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, false, repin.applyUpgrade)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
@@ -1290,7 +1315,7 @@ func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
 			// Read again under the write: a sandbox pinned since is left.
 			if sb.PlatformPin().Digest == "" {
 				repin.Available = true
-				repin.apply(sb)
+				repin.applyUpgrade(sb)
 			}
 		}
 		if sb.DesiredState == model.DesiredStateArchived {
@@ -1386,7 +1411,7 @@ func (s *Service) upgradeStoppedSandboxes(ctx context.Context, projectID, harnes
 		if !repin.Available {
 			continue
 		}
-		if _, err := s.recordSandboxIntent(ctx, projectID, sb.ID, model.DesiredStatePresent, false, repin.apply); err != nil {
+		if _, err := s.recordSandboxIntent(ctx, projectID, sb.ID, model.DesiredStatePresent, false, repin.applyUpgrade); err != nil {
 			slog.WarnContext(ctx, "skip automatic sandbox upgrade; cannot record intent",
 				"projectId", projectID, "sandboxId", sb.ID, "error", err)
 			continue
@@ -1429,6 +1454,14 @@ type sandboxRepin struct {
 	// When it does not, an empty target is "nothing to move to", and any
 	// other "already applied".
 	Available bool
+}
+
+// applyUpgrade marks only upgrade admission, never a repair carrying the same pins.
+func (r sandboxRepin) applyUpgrade(sb *model.Sandbox) {
+	r.apply(sb)
+	if r.Available {
+		sb.UpgradeGeneration = sb.Generation
+	}
 }
 
 // apply writes the re-pin onto the sandbox being recorded. An unavailable

@@ -53,7 +53,8 @@ var (
 	// comes up and reports ready on its own, so a caller that can wait (the
 	// attach wait, ADR 0039) waits it out, and the wrapping error carries the
 	// reason for when the wait runs out.
-	ErrPoolNotReachable = errors.New("pool agent is not reachable")
+	ErrPoolNotReachable       = errors.New("pool agent is not reachable")
+	ErrPoolProtocolTransition = errors.New("pool agent create protocol is transitioning")
 
 	// ErrImageUnavailable indicates the pool cannot obtain the image a sandbox
 	// is pinned to: the pinned image is not on the pool and its reference no

@@ -13,6 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // ErrSandboxProvisioning marks a sandbox that can be reached but is not ready
@@ -82,7 +83,7 @@ var sandboxPoolHostWaitCeiling = 5 * time.Minute
 // on by the tiers that can see it.
 func (s *Service) acquireForAction(ctx context.Context, projectID, sandboxID string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
 	var lease *services.HTTPClientLease
-	sandboxModel, err := s.awaitUsable(ctx, projectID, sandboxID, use, waitFromTheStart, func(ctx context.Context) (*model.Sandbox, error) {
+	sandboxModel, err := s.awaitUsable(ctx, projectID, sandboxID, use, waitFromTheStart, func(ctx context.Context, _ *useWaitBudget) (*model.Sandbox, error) {
 		acquired, sandboxModel, err := s.acquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes, use.Kind)
 		if err != nil {
 			return sandboxModel, err
@@ -153,10 +154,10 @@ const (
 //
 // Every pass re-reads authoritative state and asks again, so there is no window
 // in which the transition that opens the gate can be missed.
-func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, use services.SandboxUse, wait useWait, attempt func(context.Context) (*model.Sandbox, error)) (*model.Sandbox, error) {
+func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, use services.SandboxUse, wait useWait, attempt func(context.Context, *useWaitBudget) (*model.Sandbox, error)) (*model.Sandbox, error) {
 	stallDeadline := time.Now().Add(sandboxReachableStallTimeout)
 	var observed provisioningMark
-	var hostDownSince time.Time
+	budget := &useWaitBudget{}
 	// The last "not yet", which is what a caller's deadline is answered with.
 	var refusal error
 	waiting := wait == waitFromTheStart
@@ -171,10 +172,11 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 			requestprogress.Report(ctx, text)
 		}
 	}
+	defer func() { report("") }()
 	for {
 		deadline := stallDeadline
-		if !hostDownSince.IsZero() {
-			if ceiling := hostDownSince.Add(sandboxPoolHostWaitCeiling); ceiling.Before(deadline) {
+		if !budget.poolSince.IsZero() {
+			if ceiling := budget.poolSince.Add(sandboxPoolHostWaitCeiling); ceiling.Before(deadline) {
 				deadline = ceiling
 			}
 		}
@@ -182,9 +184,12 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 			return nil, waitEnded(refusal)
 		}
 		attemptCtx, cancel := context.WithDeadline(ctx, deadline)
-		sandboxModel, err := attempt(attemptCtx)
+		sandboxModel, err := attempt(attemptCtx, budget)
 		expired := attemptCtx.Err() != nil
 		cancel()
+		if refusal == nil && (errors.Is(err, sandbox.ErrPoolProtocolTransition) || (errors.Is(err, ErrSandboxProvisioning) && pendingUpgradeStart(sandboxModel))) {
+			refusal = err
+		}
 		if expired && err != nil && ctx.Err() == nil && refusal != nil {
 			return sandboxModel, waitEnded(refusal)
 		}
@@ -201,7 +206,7 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 		// An attempt reports a provider-side refusal without the row it read,
 		// and the row carries half of the question of whether waiting can help.
 		if sandboxModel == nil {
-			sandboxModel, _ = s.store.GetSandbox(ctx, projectID, sandboxID)
+			sandboxModel, _ = s.store.GetSandbox(ctx, projectID, sandboxID, store.SandboxFromPrimary())
 		}
 		if sandboxModel != nil && runtimeHasNoContainer(err) {
 			rebuilding, rebuildErr := s.rebuildOnUse(ctx, sandboxModel, use, &marked)
@@ -215,8 +220,13 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 			hasRebuild = true
 			// The row this pass read may be one generation behind the intent
 			// just recorded, and the mark below has to see the new one.
-			if current, getErr := s.store.GetSandbox(ctx, projectID, sandboxID); getErr == nil {
+			if current, getErr := s.store.GetSandbox(ctx, projectID, sandboxID, store.SandboxFromPrimary()); getErr == nil {
 				sandboxModel = current
+			}
+		} else if wait == waitForStartPool && pendingUpgradeStart(sandboxModel) && (errors.Is(err, sandbox.ErrNotFound) || errors.Is(err, ErrSandboxProvisioning) || errors.Is(err, sandbox.ErrPoolProtocolTransition)) {
+			waiting = true
+			if budget.poolSince.IsZero() {
+				budget.poolSince = time.Now()
 			}
 		} else if wait == waitForStartPool && errors.Is(err, sandbox.ErrPoolNotReachable) && sandboxModel != nil && sandboxModel.DesiredState == model.DesiredStatePresent {
 			waiting = true
@@ -226,18 +236,22 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 		// A host that is not there has its own ceiling, for the reason
 		// sandboxPoolHostWaitCeiling gives: this wait stamps the progress that
 		// would otherwise re-arm the stall budget forever.
-		if errors.Is(err, sandbox.ErrPoolNotReachable) {
-			if hostDownSince.IsZero() {
-				hostDownSince = time.Now()
-			} else if time.Since(hostDownSince) >= sandboxPoolHostWaitCeiling {
+		if errors.Is(err, sandbox.ErrPoolNotReachable) || errors.Is(err, sandbox.ErrPoolProtocolTransition) {
+			if budget.poolSince.IsZero() {
+				budget.poolSince = time.Now()
+			} else if time.Since(budget.poolSince) >= sandboxPoolHostWaitCeiling {
 				return sandboxModel, waitEnded(err)
 			}
 			report(fmt.Sprintf("%s (pool %s): waiting for the pool to come online", sandboxID, sandboxModel.PoolID))
 		} else {
 			if wait != waitForStartPool {
-				hostDownSince = time.Time{}
+				budget.poolSince = time.Time{}
 			}
-			report("rebuilding " + sandboxID)
+			if wait == waitForStartPool && pendingUpgradeStart(sandboxModel) {
+				report(sandboxID + ": waiting for the sandbox upgrade")
+			} else {
+				report("rebuilding " + sandboxID)
+			}
 		}
 		// The first pass always counts as progress, which only re-arms a budget
 		// armed a moment ago.
@@ -250,7 +264,7 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 			// than "timed out" on its own.
 			return sandboxModel, waitEnded(err)
 		}
-		if !hostDownSince.IsZero() && !time.Now().Before(hostDownSince.Add(sandboxPoolHostWaitCeiling)) {
+		if !budget.poolSince.IsZero() && !time.Now().Before(budget.poolSince.Add(sandboxPoolHostWaitCeiling)) {
 			return sandboxModel, waitEnded(err)
 		}
 		refusal = err
@@ -395,4 +409,25 @@ func sandboxCanBecomeReachable(err error, sb *model.Sandbox) bool {
 // unanswered instruction's ambiguity, while explaining why the request ended.
 func waitEnded(refusal error) error {
 	return apperrors.StatusError{Status: http.StatusConflict, Message: "waiting ended: " + refusal.Error(), Cause: refusal}
+}
+
+// pendingUpgradeStart admits only existing, successfully created sandboxes whose
+// exact current intent is an upgrade, and never source delivery or a repair.
+func pendingUpgradeStart(sb *model.Sandbox) bool {
+	return sb != nil && sb.DesiredState == model.DesiredStatePresent && sb.PoolID != "" &&
+		sb.LastSuccessfulCreate > 0 && sb.UpgradeGeneration == sb.Generation && !sb.Converged() &&
+		sb.RepairGeneration != sb.Generation && sb.PendingHarnessChange == nil && sb.PendingHarnessConfigID == nil &&
+		sb.State != model.SandboxStateAwaitingSource && !awaitingSourcePush(sb)
+}
+
+// useWaitBudget belongs to one request. Admission can enter a pool transition
+// inside its authoritative read, before probing, and the outer wait carries
+// that same absolute deadline through all subsequent phases.
+type useWaitBudget struct{ poolSince time.Time }
+
+func (b *useWaitBudget) enterPoolTransition(ctx context.Context) (context.Context, context.CancelFunc) {
+	if b.poolSince.IsZero() {
+		b.poolSince = time.Now()
+	}
+	return context.WithDeadline(ctx, b.poolSince.Add(sandboxPoolHostWaitCeiling))
 }

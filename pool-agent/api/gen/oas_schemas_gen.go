@@ -4753,6 +4753,9 @@ func (s *PoolDNSAuditResponse) SetQueries(val []PoolDNSAuditQuery) {
 // PoolDeleteSandboxNoContent is response for PoolDeleteSandbox operation.
 type PoolDeleteSandboxNoContent struct{}
 
+// PoolDiscoverCreateProtocolSwitchingProtocols is response for PoolDiscoverCreateProtocol operation.
+type PoolDiscoverCreateProtocolSwitchingProtocols struct{}
+
 // One HTTP exchange the pool proxy audited. The URL, host and
 // method are what a sandbox sent; headers and bodies stay on the pool.
 // Ref: #/components/schemas/PoolHTTPAuditExchange

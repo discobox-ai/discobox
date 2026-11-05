@@ -285,3 +285,7 @@ func TestARawBindingIsPushedRawAndNeverAsASentinel(t *testing.T) {
 		t.Fatalf("pushed grants = %#v, want the raw sentinel's grant", pushed.SentinelGrants)
 	}
 }
+
+func (p *recordingProvider) CheckCreateCompatibility(context.Context, sandbox.SandboxRef) error {
+	return nil
+}
