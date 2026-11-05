@@ -75,8 +75,8 @@ and its Go toolchain; it is not a standalone snippet.
   consent. The current backend expects one answer covering the request;
   this prototype's two visual steps do not decide transaction timing.
 - Implement creation of a new credential; its preview option is a placeholder.
-- Review the new API-access proposal with the owner. Credential use/delegation,
-  adoption, host trust and refresh layouts have been accepted.
+- All demonstrated layouts and API-access behavior have owner acceptance.
+  Implement the deferred requirements below against the real product.
 
 ## Fixture and limitations
 
@@ -175,7 +175,7 @@ new request reason is illustrative, and transaction/intake design remains open.
 The proposed card covers project discovery/creation and bounded management of
 led boxes, with explicit credential/egress ceilings and persistent on/off state.
 F3 toggles between enabling and turning access off, with consequences and modal
-buttons. This proposal awaits owner review. No setting changes occur.
+buttons. The owner accepted this layout. No setting changes occur.
 
 Additional variants, in either CURRENT or PROPOSED:
 
@@ -210,3 +210,26 @@ preview starts PROPOSED. Example narrow-screen command:
 ```sh
 go tool task prototype:approvals:api -- --compact
 ```
+
+## Implementation handoff (owner approved)
+
+The owner accepted the complete screen set and requested another box implement
+it using draft PR #653 as the reference for #635. Keep this reference PR a draft;
+open a separate implementation PR. Its branch must differ from the reference's
+`discobox/issue-635` (use `discobox/issue-635-implementation`).
+
+Settings remains the place to inspect/change API access directly and turn it
+off later. The new API request card is an additional sandbox-requested consent
+flow, not a replacement Settings page. Its request intake and persistence need
+the real contract and server implementation; the sample invents neither.
+
+The runnable sketches establish the UX, not permission to bypass lifetime,
+credential/parent, adoption, egress or scope constraints. The implementer must
+complete mouse interaction, scroll-to-end gating, real decisions and API intake,
+new credential creation, compact layouts, review, meaningful tests and runtime
+verification. Coordinate #629 scopes and #650 lifetime behavior with current
+main and their implementation status. The prototype-tag go-lsp failure is a
+sample-program limitation, not acceptable for the production implementation.
+
+Use a checkout of current main for implementation; inspect the reference via
+this draft PR rather than merging the prototype commits into production.
