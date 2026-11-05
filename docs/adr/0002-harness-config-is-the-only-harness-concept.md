@@ -1,6 +1,6 @@
 # 0002 — Harness config is the only harness concept
 
-- **Status**: Accepted (the `Configured` enable flag, the server-side configure flow and the `harnessMode=config` sandbox superseded by [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md), where deconfigure becomes reset)
+- **Status**: Accepted (the `Configured` enable flag, the server-side configure flow and the `harnessMode=config` sandbox superseded by [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md), where deconfigure becomes reset; bundle ownership and re-pins amended by [26-11-04-426](26-11-04-426-a-harness-config-follows-its-parents-bundle-and-keeps-its-own-account.md))
 - **Date**: 2026-07-16
 
 ## Context

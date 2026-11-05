@@ -1,6 +1,6 @@
 # 26-10-16-423 — A harness is a provisioning bundle, and the sandbox agent provisions any box
 
-- **Status**: Accepted. It supersedes:
+- **Status**: Accepted. Section 7's config-owned bundle reference is amended by [26-11-04-426](26-11-04-426-a-harness-config-follows-its-parents-bundle-and-keeps-its-own-account.md). It supersedes:
   [0068](0068-container-images-share-one-base-image.md), whose Debian 13 and
   Docker CE base becomes the Docker driver's sandbox base image (§10);
   [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)
