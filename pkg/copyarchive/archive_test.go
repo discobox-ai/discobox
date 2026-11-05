@@ -48,7 +48,11 @@ func TestRoundTripMergeAndPreserve(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(filepath.Join(dest, ".file"))
-	if info.Mode().Perm() != 0640 || !info.ModTime().Equal(stamp) {
+	sourceInfo, err := os.Stat(filepath.Join(source, ".file"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != sourceInfo.Mode().Perm() || !info.ModTime().Equal(stamp) {
 		t.Fatalf("metadata %v %s", info.Mode(), info.ModTime())
 	}
 }
