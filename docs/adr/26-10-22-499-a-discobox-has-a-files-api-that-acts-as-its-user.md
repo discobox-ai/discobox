@@ -1,6 +1,6 @@
 # 26-10-22-499 — A discobox has a files API that acts as its user
 
-- **Status**: Accepted (supersedes in part [26-10-16-535](26-10-16-535-a-pasted-image-is-carried-into-the-discobox-as-a-file.md) §2's
+- **Status**: Accepted (supersedes in part [26-10-16-535](26-10-16-535-a-pasted-image-is-carried-into-the-discobox-as-a-file.md) §2's (§4's scp/SFTP choice and Trees deferral superseded by [26-11-04-684](26-11-04-684-a-lead-runs-child-commands-and-copies-files-through-the-files-api.md))
   exec of `sh -c 'cat > …'` and its directory under `${TMPDIR:-/tmp}`;
   decides what ADR 26-10-17-354 §6 put out of scope)
 - **Date**: 2026-10-22

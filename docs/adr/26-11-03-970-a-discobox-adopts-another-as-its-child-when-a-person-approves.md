@@ -1,6 +1,6 @@
 # 26-11-03-970 — A discobox adopts another as its child when a person approves
 
-- **Status**: Accepted
+- **Status**: Accepted (§§2–3's route set and adoption disclosure extended by [26-11-04-684](26-11-04-684-a-lead-runs-child-commands-and-copies-files-through-the-files-api.md))
 - **Date**: 2026-11-03
 - Accepted by the owner by merging #494, 2026-11-04
 - **Supersedes**, in each, only that the authority it gives is read from
