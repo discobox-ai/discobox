@@ -45,6 +45,9 @@ func (f *fakeGitHub) serve(t *testing.T) *httptest.Server {
 	t.Helper()
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+			return // Ignore the sandbox agent's port probe; see REVIEW.md.
+		}
 		f.mu.Lock()
 		f.auth = append(f.auth, r.Header.Get("Authorization"))
 		f.paths = append(f.paths, r.Method+" "+r.URL.Path)
@@ -124,6 +127,12 @@ func TestAnIssueIsReadWithItsWholeTimeline(t *testing.T) {
 	t.Parallel()
 	fake := &fakeGitHub{}
 	srv := fake.serve(t)
+	probe := httptest.NewRequestWithContext(t.Context(), http.MethodHead, "/", nil)
+	probe.Header.Set("User-Agent", "discobox-sandbox-agent (port probe)")
+	srv.Config.Handler.ServeHTTP(httptest.NewRecorder(), probe)
+	if paths := fake.requests(); len(paths) != 0 {
+		t.Fatalf("port probe recorded as GitHub requests: %v", paths)
+	}
 	issue, err := client(srv, "tok").Issue(t.Context(), "acme", "foo", 4, false)
 	if err != nil {
 		t.Fatal(err)
