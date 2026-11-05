@@ -1062,6 +1062,10 @@ type SandboxHarnessChange struct {
 
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
+	// UpgradeGeneration identifies a re-pin; prior success is recorded independently.
+	UpgradeGeneration    int64 `gorm:"not null;default:0" json:"-"`
+	LastSuccessfulCreate int64 `gorm:"not null;default:0" json:"-"`
+
 	PendingHarnessConfigID *string               `gorm:"type:text;index" json:"-"`
 	PendingHarnessConfig   *HarnessConfig        `gorm:"foreignKey:PendingHarnessConfigID" json:"-"`
 	HarnessChangeID        string                `gorm:"type:text;not null;default:''" json:"-"`

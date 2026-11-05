@@ -899,3 +899,7 @@ func (noopSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef,
 func (noopSandboxProvider) PullSource(context.Context, sandboxes.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
 	panic("unexpected source pull")
 }
+
+func (noopSandboxProvider) CheckCreateCompatibility(context.Context, sandboxes.SandboxRef) error {
+	return nil
+}

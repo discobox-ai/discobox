@@ -26,7 +26,8 @@ import (
 // the pool agent answers for the sandbox the incident behind ADR 26-10-12-711
 // left behind.
 type containerProvider struct {
-	startCall func(context.Context, sandbox.SandboxRef) error
+	compatibilityCall func(context.Context, sandbox.SandboxRef) error
+	startCall         func(context.Context, sandbox.SandboxRef) error
 	recordingProvider
 	container atomic.Bool
 	// createErr fails every create, so a rebuild never lands.
@@ -667,4 +668,11 @@ func waitFor(t *testing.T, done func() bool) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+func (p *containerProvider) CheckCreateCompatibility(ctx context.Context, ref sandbox.SandboxRef) error {
+	if p.compatibilityCall != nil {
+		return p.compatibilityCall(ctx, ref)
+	}
+	return nil
 }

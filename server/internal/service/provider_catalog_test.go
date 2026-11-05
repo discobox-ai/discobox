@@ -739,3 +739,7 @@ func (*recordingSandboxProvider) ImportTree(_ context.Context, _ sandboxes.Sandb
 func (p *recordingSandboxProvider) PullSource(context.Context, sandboxes.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
 	panic("unexpected source pull")
 }
+
+func (p *recordingSandboxProvider) CheckCreateCompatibility(context.Context, sandboxes.SandboxRef) error {
+	return nil
+}

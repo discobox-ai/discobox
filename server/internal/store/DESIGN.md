@@ -351,3 +351,11 @@ route containment. Lock order is project, sandbox IDs, secret, binding IDs.
 Revocation locks each parent binding before discovering children, so an insert
 that wins the lock is included in deletion and every child is marked dirty.
 The service refreshes its clock after these potentially blocking reads.
+
+## Upgrade provenance
+
+Whole-row sandbox writes omit `upgrade_generation` and
+`last_successful_create`, including generation-guarded writes. Upgrade intent
+records its marker in the intent transaction; successful reconciliation and
+legacy success capture use a monotonic success writer. Additive zero defaults
+give old rows no wait entitlement until normal upgrade admission proves it.

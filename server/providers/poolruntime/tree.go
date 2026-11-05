@@ -79,7 +79,7 @@ func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 	if err := pool.ImageKind.TakesContainerTree(); err != nil {
 		return "", fmt.Errorf("pool %q cannot take an imported discobox: %w", pool.Name, err)
 	}
-	lease, err := p.awaitPoolAgentClient(ctx, pool)
+	lease, err := p.awaitPoolAgentClient(ctx, pool, p.runtimeProvider.AcquirePoolAgentClient)
 	if err != nil {
 		return "", err
 	}

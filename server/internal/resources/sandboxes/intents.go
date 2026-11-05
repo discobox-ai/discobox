@@ -110,6 +110,10 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 			return apperrors.StatusError{Status: http.StatusConflict, Message: errSandboxBeingDeleted.Error(), Cause: errSandboxBeingDeleted}
 		}
 		previousGeneration := sandbox.Generation
+		// Capture legacy success before RecordIntent clears errors and advances intent.
+		if sandbox.LastSuccessfulCreate == 0 && sandbox.State == model.SandboxStateReady && sandbox.Converged() && sandbox.ErrorMessage == nil && !awaitingSourcePush(sandbox) {
+			sandbox.LastSuccessfulCreate = sandbox.Generation
+		}
 		sandbox.IncrementGeneration()
 		sandbox.RecordIntent(desiredState)
 		if desiredState != model.DesiredStatePresent {
@@ -121,6 +125,16 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 		}
 		if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(previousGeneration)); err != nil {
 			return err
+		}
+		if sandbox.LastSuccessfulCreate > 0 {
+			if err := txStore.RecordSuccessfulSandboxCreate(ctx, projectID, sandboxID, sandbox.LastSuccessfulCreate); err != nil {
+				return err
+			}
+		}
+		if sandbox.UpgradeGeneration == sandbox.Generation {
+			if err := txStore.RecordSandboxUpgradeProvenance(ctx, projectID, sandboxID, sandbox.Generation); err != nil {
+				return err
+			}
 		}
 		if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
 			return err

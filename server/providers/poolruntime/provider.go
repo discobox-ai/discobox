@@ -9,6 +9,11 @@
 package poolruntime
 
 import (
+	"net/http"
+
+	"github.com/discobox-ai/discobox/pool-agent/createprotocol"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -503,7 +508,9 @@ func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, sta
 	var lost error
 	for {
 		// One lease per attempt: the call it is made for consumes it.
-		lease, err := p.awaitPoolAgentClient(waitCtx, pool)
+		lease, err := p.awaitPoolAgentClient(waitCtx, pool, func(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
+			return p.acquireCreateClient(ctx, pool, ref)
+		})
 		if err != nil {
 			if lost != nil && ctx.Err() == nil && errors.Is(context.Cause(waitCtx), errPoolWaitExpired) {
 				// The host never came back in time; what the create was lost
@@ -514,7 +521,7 @@ func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, sta
 			return nil, state, err
 		}
 		client := newPoolAgentClient(pool, p.manager, lease)
-		runtimeSandbox, created, err := client.Create(ctx, ref, state, opts)
+		runtimeSandbox, created, err := client.Create(waitCtx, ref, state, opts)
 		if !poolAgentUnanswered(ctx, err) {
 			return runtimeSandbox, created, err
 		}
@@ -592,23 +599,31 @@ func poolAgentUnanswered(ctx context.Context, err error) bool {
 // reconcile it asks for; waiting on convergence returns at once. The wait is
 // bounded by poolAgentWaitCeiling, because progress stamps renew its stall
 // clock and a pool's routine reconciles stamp progress too.
-func (p *Provider) awaitPoolAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
-	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+func (p *Provider) awaitPoolAgentClient(ctx context.Context, pool *model.Pool, acquire func(context.Context, *model.Pool) (*transport.HTTPClientLease, error)) (*transport.HTTPClientLease, error) {
+	ctx, cancel := context.WithTimeoutCause(ctx, poolAgentWaitCeiling, errPoolWaitExpired)
+	defer cancel()
+	lease, err := acquire(ctx, pool)
 	if err == nil {
 		return lease, nil
 	}
-	if p.manager == nil || pool == nil || strings.TrimSpace(pool.ID) == "" {
+	var fatal *createDiscoveryFailure
+	if errors.As(err, &fatal) {
+		return nil, err
+	}
+	if ctx.Err() != nil || p.manager == nil || pool == nil || strings.TrimSpace(pool.ID) == "" {
 		return nil, err
 	}
 	if scheduleErr := p.manager.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); scheduleErr != nil {
 		return nil, scheduleErr
 	}
-	ctx, cancel := context.WithTimeoutCause(ctx, poolAgentWaitCeiling, errPoolWaitExpired)
-	defer cancel()
 	lastErr := err
 	err = p.waitForPool(ctx, pool.ProjectID, pool.ID, func(ctx context.Context, current *model.Pool) (bool, error) {
-		acquired, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, current)
+		acquired, err := acquire(ctx, current)
 		if err != nil {
+			var fatal *createDiscoveryFailure
+			if errors.As(err, &fatal) {
+				return false, err
+			}
 			// An attempt cut off by the wait ending has nothing to say about
 			// the host; keep the last one that did.
 			if ctx.Err() == nil {
@@ -1020,4 +1035,66 @@ func (p *Provider) PullSource(ctx context.Context, ref sandbox.SandboxRef, reque
 		return sourcecache.Delivery{}, err
 	}
 	return client.PullSource(ctx, ref, request)
+}
+
+// acquireCreateClient proves compatibility on a stream that cannot reconnect
+// underneath the create. The bootstrap path deliberately uses ordinary leases.
+func (p *Provider) acquireCreateClient(ctx context.Context, pool *model.Pool, ref sandbox.SandboxRef) (*transport.HTTPClientLease, error) {
+	lease, err := p.runtimeProvider.AcquirePoolAgentClient(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	token, err := lease.AuthorizationToken(ctx)
+	if err == nil && token == "" {
+		token, err = p.manager.CreateAgentToken(ctx, poolagentauth.TokenClaims{ProjectID: pool.ProjectID, PoolID: pool.ID, SandboxID: ref.SandboxID, Scopes: []string{poolagentauth.ScopeSandboxWrite}})
+	}
+	if err != nil {
+		lease.Release()
+		return nil, err
+	}
+	client, closeStream, status, err := createprotocol.Dial(ctx, lease.Client, leaseBaseURL(lease.BaseURL), pool.ProjectID, pool.ID, token)
+	if err != nil {
+		lease.Release()
+		var incompatible *createprotocol.Incompatible
+		var lost *createprotocol.ConnectionLost
+		if status == http.StatusNotFound || status == http.StatusServiceUnavailable || errors.As(err, &incompatible) || errors.As(err, &lost) {
+			return nil, fmt.Errorf("pool %s create protocol: %w: %w", pool.ID, sandbox.ErrPoolAgentUnsupported, err)
+		}
+		if poolAgentUnanswered(ctx, err) {
+			return nil, err
+		}
+		return nil, &createDiscoveryFailure{err: fmt.Errorf("pool %s create discovery: %w", pool.ID, err)}
+	}
+	bound := transport.NewHTTPClientLeaseWithBaseURL(client, "http://pool", func() { closeStream(); lease.Release() })
+	bound.AuthToken = token
+	bound.AuthTokenProvider = lease.AuthTokenProvider
+	return bound, nil
+}
+
+type createDiscoveryFailure struct{ err error }
+
+func (e *createDiscoveryFailure) Error() string { return e.err.Error() }
+func (e *createDiscoveryFailure) Unwrap() error { return e.err }
+
+// CheckCreateCompatibility is a single probe for an explicit start waiting on
+// an admitted upgrade. Its result is narration, never cached create authority.
+func (p *Provider) CheckCreateCompatibility(ctx context.Context, ref sandbox.SandboxRef) error {
+	pool, err := p.manager.GetPool(ctx, ref.ProjectID, ref.PoolID)
+	if err != nil {
+		return err
+	}
+	lease, err := p.acquireCreateClient(ctx, pool, ref)
+	if err == nil {
+		lease.Release()
+		return nil
+	}
+	if errors.Is(err, sandbox.ErrPoolAgentUnsupported) || errors.Is(err, sandbox.ErrPoolNotReachable) || poolAgentUnanswered(ctx, err) {
+		if p.markPoolForReconcile(pool.ID) {
+			if scheduleErr := p.manager.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); scheduleErr != nil {
+				return scheduleErr
+			}
+		}
+		return fmt.Errorf("pool %s: %w: %w", pool.ID, sandbox.ErrPoolProtocolTransition, err)
+	}
+	return err
 }

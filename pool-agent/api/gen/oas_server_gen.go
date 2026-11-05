@@ -35,6 +35,15 @@ type Handler interface {
 	//
 	// DELETE /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}
 	PoolDeleteSandbox(ctx context.Context, params PoolDeleteSandboxParams) error
+	// PoolDiscoverCreateProtocol implements pool-discover-create-protocol operation.
+	//
+	// Opens the discobox-create.v1 WebSocket. Its first text message is a stable JSON envelope with
+	// integer createRevision (currently 1). Subsequent binary messages carry HTTP/1.1 create requests
+	// and responses on this agent instance only. Reconnect requires fresh discovery. Unknown envelope
+	// members must be ignored.
+	//
+	// GET /api/project/{projectId}/pool/{poolId}/create-protocol
+	PoolDiscoverCreateProtocol(ctx context.Context, params PoolDiscoverCreateProtocolParams) error
 	// PoolEnsureSandboxRunning implements pool-ensure-sandbox-running operation.
 	//
 	// Starts the sandbox unless it is already running, and answers once the

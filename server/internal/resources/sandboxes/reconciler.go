@@ -329,6 +329,7 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	// before returning (ADR 0034 §4), so an unarchive that rebuilt a stopped
 	// container reads `stopped` by the time this lands, without waiting for a
 	// complete sync.
+	sandbox.LastSuccessfulCreate = generation
 	sandbox.SetState(model.SandboxStateReady)
 	sandbox.ObservedGeneration = generation
 	sandbox.ClearFailure()
@@ -409,12 +410,17 @@ func (r *SandboxReconciler) softDelete(ctx context.Context, sandbox *model.Sandb
 // earlier, it could run first, find no provider state, and settle as though
 // the sandbox were not yet built.
 func (r *SandboxReconciler) updateAfterCreate(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
-	if r.engine == nil {
-		return r.update(ctx, sandbox, generation)
-	}
 	if err := r.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(generation)); err != nil {
 			return err
+		}
+		if sandbox.LastSuccessfulCreate > 0 {
+			if err := txStore.RecordSuccessfulSandboxCreate(ctx, sandbox.ProjectID, sandbox.ID, sandbox.LastSuccessfulCreate); err != nil {
+				return err
+			}
+		}
+		if r.engine == nil {
+			return nil
 		}
 		return r.engine.MarkDirtyTx(ctx, txDB, SandboxProxyPolicyResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID))
 	}); err != nil {

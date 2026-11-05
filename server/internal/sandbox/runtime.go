@@ -34,6 +34,10 @@ type Provider interface {
 
 	List(ctx context.Context) ([]*Sandbox, error)
 
+	// CheckCreateCompatibility probes without creating or starting anything.
+	// The create itself must independently bind discovery and dispatch.
+	CheckCreateCompatibility(context.Context, SandboxRef) error
+
 	Create(ctx context.Context, ref SandboxRef, state []byte, opts CreateOptions) (*Sandbox, []byte, error)
 	// Update applies the mutable subset of a sandbox's configuration to a running
 	// instance in place. Only the fields present in UpdateOptions can change.

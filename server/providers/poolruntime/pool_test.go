@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pool-agent/createprotocol"
+
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	sandboxruntime "github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
@@ -825,4 +827,16 @@ func TestCaptureLeaseForwardsSandboxAgentAuthority(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A fault injector surrounds the inner HTTP request as well as ordinary API
+// requests, since creates now travel inside the discovery WebSocket.
+func newCreateProtocolTestServer(handler http.Handler) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/create-protocol") {
+			createprotocol.Serve(w, r, handler)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
 }

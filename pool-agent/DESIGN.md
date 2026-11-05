@@ -24,6 +24,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc) and the control-plane channel. |
 | `cpchannel` | Both ends of the control-plane channel the server opens to a remote pool with no `controlPlaneUrl` ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)): a binary WebSocket at `/api/project/{p}/pool/{p}/control-plane-channel` ([ADR 26-10-31-152](../docs/adr/26-10-31-152-the-control-plane-channel-is-a-websocket.md)), TLS 1.3 pinned to the pool's enrolled key and the server's issuer key, and the pool end (`Channel`) that serves the agent's control-plane socket over the latest channel's `cpmux` session. The server's end dials it (`Dial`) from `poolruntime`. |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
+| `createprotocol` | Instance-bound create revision discovery and the single WebSocket carrying the compatible create. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
 | `githttp` | Serves a source's origin through the shared [`gitbackend`](../pkg/gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
 | `gitcache` | The pool's cache of Git ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)): one bare repository per cache key under `layout.Root.PoolGitCache`, a namespace `refs/namespaces/<sandboxID>-<slug>/` per sandbox source, and the remote's own branches and tags under `refs/cache/`. Owns the pin, the configuration a push is received under, the pre-receive check a sandbox's push is held to (the agent binary run as `git-cache-pre-receive`), namespace export and import, and the sweep that removes namespaces, drops unused caches and collects the rest. It pulls remote sources over HTTPS (ADR 26-10-23-948). See [Git origins](#git-origins). |
@@ -2535,3 +2536,18 @@ by progress; other API requests retain the ordinary two-minute total timeout.
 The response retains `io.ReadWriteCloser` for upgraded streams. The control
 plane owns live child revocation; closing its response closes the gate stream.
 Files archive GET uses `files:read`; import and metadata use `files:write`.
+
+### Create protocol discovery
+
+`createprotocol` owns the `discobox-create.v1` WebSocket at the authenticated
+`.../create-protocol` route (sandbox:write). The first text frame reports the
+explicit create revision; every incompatible decoder or required semantic
+change advances it. Unknown discovery members are ignored. The Front exposes
+no discovery until its runtime router is ready.
+
+Binary frames then carry HTTP/1.1 against that same router, with independent
+request authentication. Only create and its existing-sandbox read-back are
+exposed. The single connection never reconnects, so replacing an agent or an
+edge's upstream cannot send a discovered create to another process. A fresh
+stream requires fresh discovery. Normal bootstrap uses ordinary HTTP and
+remains usable by legacy agents. See ADR 26-11-05-143.

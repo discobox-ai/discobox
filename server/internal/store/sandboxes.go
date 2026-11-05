@@ -468,7 +468,7 @@ const sandboxAttachedHarnessColumn = "attached_harness_config_ids"
 const sandboxEventSeqColumn = "event_seq"
 
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn, sandboxAttachedHarnessColumn, sandboxEventSeqColumn, "parent_sandbox_id", "created_by_sandbox_id")
+var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn, sandboxAttachedHarnessColumn, sandboxEventSeqColumn, "parent_sandbox_id", "created_by_sandbox_id", "upgrade_generation", "last_successful_create")
 
 // CancelSandboxWakeTx is what every power instruction from outside writes: no
 // scheduled start, and a new epoch, whether or not a wake was set — the race
@@ -903,4 +903,24 @@ func (s *Store) CompleteSandboxSuspendTx(ctx context.Context, tx *gorm.DB, proje
 	}
 	result = tx.WithContext(ctx).Model(&model.Sandbox{}).Where("project_id = ? AND id = ? AND wake_epoch = ?", projectID, sandboxID, epoch).UpdateColumns(map[string]any{"wake_at": nil, "wake_epoch": gorm.Expr("wake_epoch + 1")})
 	return result.RowsAffected > 0, result.Error
+}
+
+// RecordSandboxUpgradeProvenance is called by intent admission in its write
+// transaction. Whole-row writes never own these columns.
+func (s *Store) RecordSandboxUpgradeProvenance(ctx context.Context, projectID, id string, generation int64) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.WithContext(ctx).Model(&model.Sandbox{}).Where("project_id = ? AND id = ? AND generation = ?", projectID, id, generation).UpdateColumn("upgrade_generation", generation).Error
+}
+
+// RecordSuccessfulSandboxCreate is monotonic and safe against stale row saves.
+// It records completed create work, never inferred runtime power.
+func (s *Store) RecordSuccessfulSandboxCreate(ctx context.Context, projectID, id string, generation int64) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.WithContext(ctx).Model(&model.Sandbox{}).Where("project_id = ? AND id = ? AND last_successful_create < ?", projectID, id, generation).UpdateColumn("last_successful_create", generation).Error
 }

@@ -1163,3 +1163,18 @@ Expiry reports "timed out waiting for the pool agent to become ready" with the
 pool ID; settled runtime failures retain their concrete cause. A previous-run
 failure is not terminal during startup: its `ReconciledAt` must be at least the
 pool's `HealthCheckStartedAt` before it may end the wait.
+
+### Create compatibility
+
+Every create first opens `createprotocol` on the driver's ordinary lease,
+under the bounded pool wait. Legacy discovery 404, startup 503 and unknown
+revisions schedule pool reconciliation and wait without sending a create
+body. Authentication failures and malformed discovery fail immediately. The
+resulting inner HTTP lease stays on that WebSocket and cannot reconnect. Its
+logical URL is HTTP even when the outer driver reaches an HTTPS edge.
+Bootstrap and reads retain ordinary transport leases.
+
+`CheckCreateCompatibility` is a single probe for an explicit start awaiting
+an upgrade: it releases proof immediately and reports a typed pool protocol
+transition. It grants no authority to the reconciler's later create, which
+probes independently. See ADR 26-11-05-143.

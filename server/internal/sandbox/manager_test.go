@@ -414,3 +414,7 @@ func TestProviderManagerRefusesASecretFieldLeftInTheClear(t *testing.T) {
 		t.Error("the provider was built from a config with its key in the clear")
 	}
 }
+
+func (p *fakeProvider) CheckCreateCompatibility(context.Context, sandbox.SandboxRef) error {
+	return nil
+}

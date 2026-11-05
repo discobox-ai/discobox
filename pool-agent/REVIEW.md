@@ -552,3 +552,10 @@ answer is seen): after that its disk is the sandbox's work.
   verifies runtime suspension before completing it; every power transition
   drains pending completion before changing that evidence. A committed frozen
   receipt remains evidence even after a later instruction changes runtime state.
+
+- A protocol probe retains the intended sandbox ID in its token; discovery
+  must never widen sandbox-scoped mutation authority to the whole pool.
+- Serve HTTP inside a WebSocket on a stream with resettable deadlines.
+  `net/http` interrupts speculative reads with a temporary expired deadline;
+  `websocket.NetConn` permanently closes on that interruption. The create
+  stream uses `net.Pipe` between HTTP and the WebSocket bridge for this reason.

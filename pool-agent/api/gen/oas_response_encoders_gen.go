@@ -54,6 +54,13 @@ func encodePoolDeleteSandboxResponse(response *PoolDeleteSandboxNoContent, w htt
 	return nil
 }
 
+func encodePoolDiscoverCreateProtocolResponse(response *PoolDiscoverCreateProtocolSwitchingProtocols, w http.ResponseWriter, span trace.Span) error {
+	w.WriteHeader(101)
+	span.SetStatus(codes.Ok, http.StatusText(101))
+
+	return nil
+}
+
 func encodePoolEnsureSandboxRunningResponse(response *PoolSandboxRunning, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
