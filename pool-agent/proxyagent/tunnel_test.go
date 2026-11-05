@@ -96,9 +96,18 @@ func TestSpliceTunnelStreamCarriesBothWays(t *testing.T) {
 			if err != nil {
 				return
 			}
-			sources <- conn.RemoteAddr().(*net.TCPAddr).AddrPort().Addr()
 			go func() {
 				defer func() { _ = conn.Close() }()
+				// Only the test payload identifies a tunnel connection; port
+				// probes also connect, from an unrelated source address.
+				var payload [4]byte
+				if _, err := io.ReadFull(conn, payload[:]); err != nil || string(payload[:]) != "ping" {
+					return
+				}
+				sources <- conn.RemoteAddr().(*net.TCPAddr).AddrPort().Addr()
+				if _, err := conn.Write(payload[:]); err != nil {
+					return
+				}
 				_, _ = io.Copy(conn, conn)
 			}()
 		}
@@ -106,6 +115,15 @@ func TestSpliceTunnelStreamCarriesBothWays(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	target := service.Addr().String()
+	// The sandbox agent probes newly opened ports before the tunnel may dial.
+	probe, err := net.Dial("tcp", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(probe, "HEAD / HTTP/1.1\r\nHost: localhost\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = probe.Close()
 	edge := httptest.NewTLSServer(wstunnel.Handler(ctx, func(stream net.Conn) {
 		spliceTunnelStream(ctx, slog.Default(), stream, target)
 	}))
