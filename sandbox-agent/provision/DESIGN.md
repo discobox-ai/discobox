@@ -24,7 +24,8 @@ without a byte, and moved into place only once its sha256 matches; with
 `unpack`, a gzipped tar or a zip, told apart by its first bytes, unpacked
 beside its directory and swapped in whole, refusing an entry or link that would
 land outside it, and a zip whose entries carry no Unix modes), `packages`
-(`apt-get`, keeping a configuration file already in a package's way rather
+(`apt-get`, requiring every repository index fetch to succeed before installing,
+keeping a configuration file already in a package's way rather
 than asking; a list per distribution, the box's own os-release `ID`'s, else the
 first `ID_LIKE`'s that has one, and a box no list names fails the step), and `run` (whose `inputs` name the files and directories its script reads
 beside itself, so the digest covers them), each selected by `os`, `arch` and os-release

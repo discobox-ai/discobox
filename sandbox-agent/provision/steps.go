@@ -400,7 +400,7 @@ func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisi
 	defer r.apt.Unlock()
 	env := []string{"DEBIAN_FRONTEND=noninteractive"}
 	if !r.aptUpdated {
-		if err := r.command(ctx, out, "/", env, "apt-get", "update"); err != nil {
+		if err := r.command(ctx, out, "/", env, "apt-get", "update", "--error-on=any"); err != nil {
 			return err
 		}
 		r.aptUpdated = true
