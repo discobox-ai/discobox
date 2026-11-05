@@ -2551,3 +2551,7 @@ exposed. The single connection never reconnects, so replacing an agent or an
 edge's upstream cannot send a discovered create to another process. A fresh
 stream requires fresh discovery. Normal bootstrap uses ordinary HTTP and
 remains usable by legacy agents. See ADR 26-11-05-143.
+
+The HTTP server uses a pipe bridge for resettable read deadlines. When HTTP
+closes its single connection, the WebSocket handler waits for the response
+copy to drain before returning and closing the stream.

@@ -149,12 +149,20 @@ func Serve(w http.ResponseWriter, r *http.Request, handler http.Handler) {
 		_ = ws.CloseNow()
 	}
 	go copyStream(bridge, wire)
-	go copyStream(wire, bridge)
+	responseDone := make(chan struct{})
+	go func() {
+		defer close(responseDone)
+		copyStream(wire, bridge)
+	}()
 	listener := &singleListener{conn: conn, done: make(chan struct{})}
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	stop := context.AfterFunc(r.Context(), func() { _ = server.Close() })
 	defer stop()
 	_ = server.Serve(listener)
+	// Closing the HTTP connection also closes the listener, so Serve can
+	// return while the bridge is still forwarding the final response. Keep
+	// the WebSocket alive until that copy has drained or the peer fails.
+	<-responseDone
 }
 
 type singleListener struct {
