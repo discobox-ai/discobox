@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -69,6 +70,7 @@ func fitDelegation(ctx context.Context, txStore *store.Store, holderID string, b
 		}
 		return strings.Compare(a.ID, b.ID)
 	})
+	reason := "no live delegation of this secret covers the caller"
 	for i := range current {
 		parent := current[i]
 		if !parent.Delegate || parent.SecretID != secret.ID || !parent.Live(now) || !store.Covers(store.SandboxBindingTargets(holder), &parent, true) {
@@ -76,10 +78,12 @@ func fitDelegation(ctx context.Context, txStore *store.Store, holderID string, b
 		}
 		fitted, err := fitToParent(&parent, ttl, named, now)
 		if err != nil {
+			reason = fmt.Sprintf("delegation %s lifetime: %v", parent.ID, err)
 			continue
 		}
 		if len(binding.Routes) > 0 {
 			if err := secretroute.ProveContained(secret.Routes, binding.Routes, parent.Routes); err != nil {
+				reason = fmt.Sprintf("delegation %s routes: %v", parent.ID, err)
 				continue
 			}
 		}
@@ -89,7 +93,7 @@ func fitDelegation(ctx context.Context, txStore *store.Store, holderID string, b
 		binding.Receipt = &model.SecretGrantReceipt{BindingID: binding.ID, RequestID: binding.RequestID, SecretID: secret.ID, SecretName: secret.Name, SandboxID: binding.TargetID, EnvVar: binding.EnvName, ParentID: parent.ID, Actor: binding.CreatedBy, At: now, ExpiresAt: binding.ExpiresAt, RouteLists: store.RouteLists(secret, binding, &parent)}
 		return secret, fitted, nil
 	}
-	return nil, 0, apperrors.NewStatusError(http.StatusForbidden, "no live delegation covers this whole grant's routes and lifetime; use a provably narrower list or ask a person")
+	return nil, 0, apperrors.NewStatusError(http.StatusForbidden, "no live delegation covers this whole grant's routes and lifetime: "+reason)
 }
 
 // CreateSandboxSecretBinding addresses the target in the path. It grants

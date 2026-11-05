@@ -2,19 +2,27 @@ package secrets_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-faster/jx"
+	"gorm.io/gorm"
+
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/credentialpolicy"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"gorm.io/gorm"
 )
 
 // All handoff doors share the same final authority check. Changing creator
@@ -252,5 +260,87 @@ func TestReceiptsAreMutationResultsAndPrivateHistory(t *testing.T) {
 		if err != nil || len(listed) != 1 || listed[0].Use.Receipt != nil || listed[0].Use.Grant != nil {
 			t.Fatalf("sandbox list disclosed receipt: %+v %v", listed, err)
 		}
+	}
+}
+
+func TestHandoffFromPolicyUnion(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createRoutedSecret(ctx, t, svc, "github", "api.github.com", 0)
+	// Two roles across eight repositories, plus a labels role, as in the
+	// manager's delegation. Each policy keeps its own arguments and paths.
+	var policies []apigen.SandboxCredentialPolicy
+	var members [][]apimodel.SecretRouteInput
+	var refs []struct {
+		File string            `json:"file"`
+		Args map[string]string `json:"args"`
+	}
+	data, err := os.ReadFile("testdata/handoff/policies.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &refs); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		doc, err := os.ReadFile(filepath.Join("testdata/handoff", filepath.Base(ref.File)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		policies = append(policies, apigen.SandboxCredentialPolicy{File: ref.File, Document: jx.Raw(doc), Args: apigen.NewOptSandboxCredentialPolicyArgs(ref.Args)})
+		resolved, err := credentialpolicy.ResolveDocument(doc, ref.Args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inputs, err := services.Convert[[]apimodel.SecretRouteInput](resolved.Routes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		members = append(members, inputs)
+	}
+	request, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{SandboxId: leadID, Name: "github", Delegate: apigen.NewOptSandboxCredentialRequestDelegate(apigen.SandboxCredentialRequestDelegate{Policies: policies})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := svc.ApproveSecretRequest(ctx, "project-1", request.ID, services.ApproveSecretRequestBody{SecretId: apigen.NewOptString(secret.ID), Delegate: decideFor(0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, routes := range members {
+		for _, ttl := range []apigen.OptInt64{{}, apigen.NewOptInt64(60), apigen.NewOptInt64(0)} {
+			for _, narrow := range []bool{false, true} {
+				name := fmt.Sprintf("policy%d/ttl%v/narrow%v", i, ttl, narrow)
+				t.Run(name, func(t *testing.T) {
+					grant := routes
+					if narrow {
+						grant = []apimodel.SecretRouteInput{{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: []string{fmt.Sprintf("/repos/%s/%s/issues/699", refs[i].Args["owner"], refs[i].Args["repo"])}}}
+					}
+					target := &model.Sandbox{ID: fmt.Sprintf("sbx-policy-%d-%v-%v", i, ttl, narrow), ProjectID: "project-1", Name: fmt.Sprintf("policy-%d-%v-%v", i, ttl, narrow), PoolID: testPoolID, CreatedBySandboxID: ptrString(leadID)}
+					prepared, err := svc.PrepareSandboxBindings(asLead(), "project-1", target, []apimodel.SandboxBindingInput{{Secret: secret.ID, EnvVar: apigen.NewOptString("GH_TOKEN"), Routes: grant, TtlSeconds: ttl}})
+					if err == nil {
+						err = st.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+							if err := txStore.CreateSandbox(ctx, target); err != nil {
+								return err
+							}
+							return resourcesecrets.StoreSandboxBindingsTx(ctx, txStore, prepared)
+						})
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					receipt := prepared.Bindings[0].Receipt
+					if receipt.ParentID != answer.Delegate.BindingID {
+						t.Fatalf("parent=%s", receipt.ParentID)
+					}
+					if seconds, set := ttl.Get(); set && seconds == 0 && receipt.ExpiresAt != nil {
+						t.Fatal("unlimited delegation capped unlimited grant")
+					}
+				})
+			}
+		}
+	}
+	_, err = svc.CreateSandboxSecretBinding(asLead(), "project-1", testSandboxID, services.CreateSandboxSecretBindingBody{Secret: secret.ID, EnvVar: apigen.NewOptString("GH_TOKEN"), Routes: []apimodel.SecretRouteInput{{Hosts: []string{"api.github.com"}, Methods: []string{"DELETE"}, Paths: []string{"/repos/other/uncovered/**"}}}})
+	if !isStatus(err, 403) || !strings.Contains(err.Error(), "grant route") {
+		t.Fatalf("wider grant = %v", err)
 	}
 }
