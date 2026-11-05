@@ -3265,3 +3265,7 @@ Only changing the selected harness requires a stopped sandbox; name, egress and
 `--discobox-api` updates keep their existing rules. The command does not stop, start or attach.
 Terminal displays and completion prefer `currentHarnessId`, with `harnessId` as
 the fallback for an older agent; creation metadata remains historical.
+
+A privacy refusal while probing the default local endpoint still prints the
+known client version first, then fails with recovery information. It is not
+reported as an ordinary unavailable server (ADR 26-11-05-240).
