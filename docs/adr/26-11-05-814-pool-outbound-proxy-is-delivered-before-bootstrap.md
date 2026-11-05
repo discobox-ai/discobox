@@ -4,8 +4,10 @@
 - **Date**: 2026-11-05
 - **Issue**: [#683](https://github.com/discobox-ai/discobox/issues/683)
 - **Relates to**: 0096 (server configuration), 0020 §§5–7 and
-  26-10-01-425 (nested container forwarding). Their loopback and Docker
-  bridge decisions remain in force; this adds a separate VM transport.
+  26-10-01-425 (nested container forwarding). Would narrow 0020 §4's
+  unconditional injection and 26-10-01-425 §1's unconditional loopback rewrite
+  for an explicitly managed pool exec/container; their ordinary sandbox and
+  Docker bridge decisions remain in force. This also adds a VM transport.
 
 ## Context
 
@@ -55,7 +57,7 @@ pools:
         caFile: /etc/company/east-roots.pem
 ```
 
-`mode` is `inherit` (default), `explicit`, or `direct`. Environment equivalents
+`mode` is `direct` (default), `explicit`, or explicitly selected `inherit`. Environment equivalents
 are `DISCOBOX_POOLS_PROXY_MODE`, `DISCOBOX_POOLS_PROXY_HTTP`,
 `DISCOBOX_POOLS_PROXY_HTTPS`, `DISCOBOX_POOLS_PROXY_NO_PROXY`, and
 `DISCOBOX_POOLS_PROXY_CA_FILE`. Each environment value overrides its YAML
@@ -71,6 +73,25 @@ field, including an explicitly empty value.
   direct for that scheme. Both may be empty to configure extra trust alone.
 - `direct` clears inherited proxy and bypass variables at every managed
   consumer. Payload fields with this mode are rejected.
+
+The server's own proxy environment and a pool's outbound configuration are
+separate. An ordinary installation with no pool configuration uses direct
+pool egress even when the server has HTTP_PROXY set. Global defaults may
+explicitly select `inherit`; merely changing the server's environment must
+not change pools configured as direct or explicit.
+
+Zero-configuration nesting is a distinct bootstrap action, not implicit
+inheritance: when creating the initial pool inside a recognized Discobox,
+read the enclosing sandbox's delivered proxy material and record an explicit
+pool override with its trust material and a logical local-forwarder endpoint.
+Resolve that endpoint through the backend at boot, never persist a Docker
+bridge IP. Do this only when no pool-specific or global proxy configuration
+was supplied; an explicitly configured global direct must win too. Existing
+pools and later API-created pools are not silently rewritten. Show this
+bootstrap-created override as such in status and allow normal API replacement
+or removal. Removing it returns to YAML/global settings or direct, not another
+automatic detection. Arbitrary server HTTP_PROXY values do not qualify as
+recognized Discobox runtime material.
 
 Initially support `http://` forward proxies, including CONNECT for HTTPS
 origins, with optional URL userinfo for Basic authentication. Reject unsupported
@@ -100,7 +121,7 @@ on a redacted read is not an instruction to clear them. The write contract must
 provide explicit credential replacement/removal without requiring readback.
 
 Precedence is a persisted API pool override, then the pool-ID entry in
-`server.yaml`, then global `pools.proxy`, then its default `inherit` behavior.
+`server.yaml`, then global `pools.proxy`, then its default `direct` behavior.
 Select a whole object, without merging individual endpoint or trust fields
 across levels. Thus a pool's `direct` can disable a global proxy, and its
 `explicit` empty HTTPS never inherits the global HTTPS endpoint. Pool-level
@@ -143,9 +164,34 @@ Required delivery boundaries are:
 | External Docker daemon | Verify its registry access before pool creation; a remote or operator-owned daemon cannot be configured by container environment. Report how to configure its proxy/trust rather than claiming success. |
 | Managed VM guest | Deliver configuration over its existing host/guest boot channel, before starting dockerd or any network bootstrap. Include libkrun, vz and other managed VM drivers. |
 | Hosted pool machine | Include configuration/trust in initial machine delivery before package installation or image pulls; a server-loopback proxy is invalid unless a driver supplies a relay. |
-| Pool container | Place environment and anchors before starting its agent/bootstrap, covering apt refresh in #679. Do not retry direct when the proxy fails. |
+| Pool container and provisioning exec | Place anchors before any fetch and supply resolved environment explicitly to container creation, every Docker ExecConfig used for provisioning, and systemd services. The initial process environment does not configure a later `docker exec`. This includes apt refresh in #679; never retry direct on proxy failure. |
 | Pool proxy | Use separate HTTP/HTTPS upstreams and one NO_PROXY matcher for inspected requests and passthrough CONNECT, including pinned transports. |
 | Pool Docker and BuildKit | Configure daemon pulls, buildkitd registry requests and build execution through their existing environment/trust delivery. Build steps keep sandbox identity and the pool proxy. |
+
+For managed pool containers and provisioning execs, the resolved configuration
+is authoritative over enclosing `runcca` injection. Pass a reserved
+`DISCOBOX_PROXY_ENVIRONMENT=managed` marker in the container and every
+provisioning ExecConfig environment. The wrapper recognizes it in the OCI
+process environment before injection or loopback retargeting: retain the
+caller-supplied resolved proxy environment and do not inject or rewrite proxy
+or proxy-trust variables. Strip the marker before executing the target process.
+Supply it independently on exec, since removing it from the initial OCI spec
+must not determine later exec behavior. Docker labels are insufficient: the
+marker must reach the actual create and exec process specs. If a daemon cannot
+carry it, fail the managed operation with a capability diagnostic rather than
+claiming direct mode was applied. Exercise both paths on the supported daemon.
+
+In direct mode, supply no ambient HTTP_PROXY, HTTPS_PROXY, ALL_PROXY or
+NO_PROXY variables in either case, including lowercase and tool-specific proxy
+aliases that the outer manifest would inject. Clear inherited proxy-trust env
+references too; use only the destination's system roots and separately managed
+trust. In explicit mode, preserve exactly the resolved per-scheme settings,
+including an empty/direct scheme. Suppressing injection does not suppress the
+enclosing sandbox's firewall or confer direct network access: direct mode in
+a proxy-only sandbox may correctly fail. The marker is a routing ownership
+signal, not an authorization boundary; sandbox users already control nested
+container environment. Ordinary unmarked containers retain existing injection
+and retargeting behavior.
 
 The base-image pull belongs to the hosting daemon, before container creation.
 A Docker pool cannot repair that daemon from inside its own container. Managed
@@ -231,6 +277,10 @@ proof that every outbound route is impossible. No silent direct fallback.
 
 ## Alternatives rejected
 
+- **Implicitly inherit the server proxy for every pool.** The server and a
+  target pool can use different network paths. Default direct preserves that
+  separation; explicit inherit and recognized nested bootstrap cover deliberate
+  reuse without turning every ambient server variable into pool intent.
 - **Only pass server environment to the pool container.** Misses guest daemon
   pulls, trust placement and host loopback translation.
 - **Start the nested Docker bridge for all VM pools.** Adds dockerd as a VM
@@ -257,11 +307,13 @@ implementation, not with this proposal.
 
 Acceptance requires proxy-only fresh Docker and libkrun installs, a sandbox
 and ghcr.io pull in each, BuildKit pulls and RUN requests, apt refresh without
-direct retry (#679), and a zero-configuration nested libkrun run with enclosing
+direct retry (#679), and a zero-configuration nested libkrun run using the bootstrap-created explicit override with enclosing
 dockerd stopped. Cover two pools using different proxies on one provider, independent API and
 YAML pool overrides, API precedence and null removal, unchanged unrelated pools,
 redacted credential updates and durable migration. Also cover distinct scheme
-endpoints, explicit direct/empty values,
+endpoints, default direct despite a server proxy, explicitly selected inherit,
+explicit direct/empty values through both marked container create and provisioning
+exec under outer runcca, unchanged unmarked injection,
 a private enterprise CA, inherited outer and inner CAs together, internal
 control traffic, upstream refusal, and an existing pool configuration update
 preserving its sandbox/data volumes. Exercise vz and hosted delivery as well;
