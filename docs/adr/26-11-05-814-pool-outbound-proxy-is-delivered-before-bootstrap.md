@@ -33,7 +33,7 @@ must work without Docker running in its enclosing sandbox.
 
 ## Decision
 
-### 1. Resolve one server-owned outbound configuration
+### 1. Resolve outbound configuration for each pool
 
 Add `pools.proxy` to `server.yaml`, generated through the configuration tags
 and schema mechanism of 0096:
@@ -46,6 +46,13 @@ pools:
     https: http://proxy.example:3128
     noProxy: .example.internal
     caFile: /etc/company/roots.pem
+  overrides:
+    pool_east:
+      proxy:
+        mode: explicit
+        http: http://east-proxy.example:3128
+        https: http://east-proxy.example:3128
+        caFile: /etc/company/east-roots.pem
 ```
 
 `mode` is `inherit` (default), `explicit`, or `direct`. Environment equivalents
@@ -73,7 +80,40 @@ out of scope; revisit when a deployment needs them. Redact userinfo in all
 status, diagnostics and errors; deliver credentials only in private runtime
 material, never API responses or command arguments.
 
-Resolution happens once in the server, not independently in each process.
+The global `pools.proxy` is the default, not a restriction to one proxy for
+all pools. `pools.overrides` is a map keyed by immutable pool ID, with a
+`proxy` object using the same configuration shape. It may name a pool before
+creation; an unmatched entry does not create a pool. Names and provider IDs
+are not selectors, so renaming a pool or sharing a provider cannot retarget an
+override.
+
+Add an optional `proxy` object to pool create and update in the public API,
+and expose its redacted configured value and effective source on pool reads.
+The API object has the same modes, endpoints and bypass semantics, with
+`caPem` containing additional PEM anchors instead of a server-local `caFile`.
+The API must not allow callers to read arbitrary server files. Persist this
+object as pool intent through an additive database migration; existing rows
+have no override. Use the existing pool administration authorization for these
+writes. Proxy credentials are encrypted at rest through the server's existing
+secret encryption facility, never returned on reads; omission of credentials
+on a redacted read is not an instruction to clear them. The write contract must
+provide explicit credential replacement/removal without requiring readback.
+
+Precedence is a persisted API pool override, then the pool-ID entry in
+`server.yaml`, then global `pools.proxy`, then its default `inherit` behavior.
+Select a whole object, without merging individual endpoint or trust fields
+across levels. Thus a pool's `direct` can disable a global proxy, and its
+`explicit` empty HTTPS never inherits the global HTTPS endpoint. Pool-level
+`inherit` means use the server's standard proxy environment directly; removing
+the override means use the next configuration level. On create, omitted or
+null `proxy` leaves no API override. On update, omission preserves it and null
+removes it, revealing the YAML/global default. YAML reload never overwrites
+persisted API intent; status shows when an API override shadows a YAML entry.
+Global `DISCOBOX_POOLS_PROXY_*` variables change the global default only, not
+individual pool overrides. Per-pool configuration is available through YAML
+and the API without requiring per-pool environment variable names.
+
+Resolution happens once per pool in the server, not independently in each process.
 Extend the required provider/boot contracts with a domain-owned value carrying
 both schemes, bypasses and CA bytes. Consumers must distinguish resolved direct
 from unresolved: empty fields must not reactivate environment fallback in
@@ -82,7 +122,7 @@ for standalone callers, while managed pools always receive resolved settings.
 
 ### 2. Deliver trust and routing before the first fetch
 
-`caFile` is a server-local PEM file, read and validated by the server, then
+`caFile` in global or per-pool YAML is a server-local PEM file, read and validated by the server, then
 copied as bytes. Never hand its host path to a guest. In inherited mode,
 collect the server's effective PEM trust inputs (`SSL_CERT_FILE` and
 `SSL_CERT_DIR` where set), including the enclosing discobox's delivered CA.
@@ -159,7 +199,11 @@ remain handled locally by the pool proxy.
 
 ### 5. Changes converge without replacing durable state
 
-Server restart reloads and validates configuration and CA bytes. Publish a
+Server restart reloads and validates YAML configuration and CA bytes. API
+updates validate and persist pool intent in the same transaction as the pool's
+reconcile dirty mark. Recompute only pools whose effective configuration
+changed, including when an override is removed or a global default changes.
+Publish a
 content revision with each pool's desired runtime configuration and reconcile
 it through the existing engine. Running pools report desired and applied
 revisions. Apply environment/trust atomically, restart only affected consumers,
@@ -175,7 +219,7 @@ new pools must not bootstrap with stale or partially delivered material.
 
 ### 6. Diagnose each network hop
 
-Expose effective mode/source, redacted endpoints, CA fingerprints, revision and
+Expose each pool's effective mode/source (API override, YAML pool override, global default or environment), redacted endpoints, CA fingerprints, revision and
 restart-required state through server status/doctor. Run bounded probes from
 the actual server, guest and pool contexts where available: upstream connection,
 CONNECT/HTTP response, TLS verification and registry access. Distinguish proxy
@@ -193,6 +237,12 @@ proof that every outbound route is impossible. No silent direct fallback.
   dependency and does not solve host-to-guest address translation independently.
 - **A universal fixed-address bridge.** Reintroduces subnet/address collisions
   at each nesting level, the reason 0020 §7 removed the pinned Docker subnet.
+- **Global-only configuration or provider-level overrides.** A pool may need
+  a different network path from another pool using the same provider; neither
+  gives the owner the requested pool-specific API and YAML controls.
+- **Merge individual fields across levels.** Makes an omitted endpoint or CA
+  unexpectedly inherit a different pool default and weakens explicit direct
+  semantics. Whole-object selection gives an override one complete meaning.
 - **Configure each component independently.** Makes explicit direct mode and
   trust rotation inconsistent and lets environment fallback undo operator intent.
 - **Replace existing pools when settings change.** Risks durable state and
@@ -208,7 +258,10 @@ implementation, not with this proposal.
 Acceptance requires proxy-only fresh Docker and libkrun installs, a sandbox
 and ghcr.io pull in each, BuildKit pulls and RUN requests, apt refresh without
 direct retry (#679), and a zero-configuration nested libkrun run with enclosing
-dockerd stopped. Cover distinct scheme endpoints, explicit direct/empty values,
+dockerd stopped. Cover two pools using different proxies on one provider, independent API and
+YAML pool overrides, API precedence and null removal, unchanged unrelated pools,
+redacted credential updates and durable migration. Also cover distinct scheme
+endpoints, explicit direct/empty values,
 a private enterprise CA, inherited outer and inner CAs together, internal
 control traffic, upstream refusal, and an existing pool configuration update
 preserving its sandbox/data volumes. Exercise vz and hosted delivery as well;
