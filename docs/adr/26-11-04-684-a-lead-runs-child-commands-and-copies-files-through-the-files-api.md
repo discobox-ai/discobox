@@ -1,6 +1,6 @@
 # 26-11-04-684 — A lead runs child commands and copies files through the files API
 
-- **Status**: Proposed (would supersede 0140 §4's refusal and deferral of execs for a child; 26-10-01-397 §1's refusal of waiting acquire and §2's exclusion of create, start, delete and attach; extends 26-11-03-970 §§2–3's unchanged route set and adoption disclosure; supersedes 26-10-22-499 §4's keeping of cp on scp/SFTP and its Trees deferral for CLI recursive copy)
+- **Status**: Proposed (would supersede 0140 §4's refusal and deferral of execs for a child; 26-10-01-397 §1's refusal of waiting acquire and §2's exclusion of create, start, delete and attach; extends 26-11-03-970 §§2–3's unchanged route set and adoption disclosure; supersedes 26-10-22-499 §4's keeping of cp on scp/SFTP and its Trees deferral)
 - **Date**: 2026-11-04
 - **Issue**: [#609](https://github.com/discobox-ai/discobox/issues/609)
 - **Relates to**: [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md), [26-10-01-397](26-10-01-397-a-discobox-reads-and-types-into-the-terminals-of-the-discoboxes-it-creates.md), [26-11-03-970](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md), [26-10-01-032](26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md) §4, and [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §9.
@@ -105,6 +105,8 @@ Add the existing files routes, scoped to the caller's direct child:
 | PUT | `/files/content` | `withinCaller` (W) |
 | POST | `/files/mkdir`, `/files/remove`, `/files/move`, `/files/copy` | `withinCaller` (W) |
 | POST | `/files/metadata` (extension below) | `withinCaller` (W) |
+| GET | `/files/archive` (tree export below) | `childDiscobox` (R) |
+| PUT | `/files/archive` (tree import below) | `withinCaller` (W) |
 
 Add `files:read` and `files:write` to the sandbox service's supported scopes,
 with the corresponding live parent, project, API flag and egress checks at the
@@ -123,9 +125,9 @@ A box-to-box copy streams through the CLI with each endpoint authorized
 separately; neither child receives the other's credential. `/files/copy`
 operates within one box, not between boxes or between a box and the CLI.
 
-The CLI copies files with stat/read/write, and recursively walks directories
-with list/mkdir. Content stays out of exec input logs; no shell, SFTP server,
-archive format or new identity is involved. Use bounded buffers and stream
+The CLI copies individual files with stat/read/write and recursive directories
+with the batch archive routes in §3, avoiding an HTTP round trip per entry. Content stays out of exec input logs; no shell, SFTP server,
+external archiver or new identity is involved. Use bounded buffers and stream
 bodies rather than loading a file or tree into memory. Large transfers must
 work through the real pool API gate: its current two-minute ordinary-request
 timeout must not truncate an otherwise progressing files content transfer.
@@ -133,7 +135,70 @@ Keep bounded setup/stall/cancellation behavior; do not remove timeouts from
 unrelated calls. Exec/shell still needs the upgrade support in §1, but copy
 does not depend on that work.
 
-### 3. Copy has a defined contract, not arbitrary scp passthrough
+### 3. Recursive copy is a streamed batch with rooted overwrite semantics
+
+Add `GET /files/archive?path=SOURCE` and `PUT /files/archive?path=DESTINATION`,
+with `application/x-tar` bodies, to the canonical files contract and generated
+clients. Each path names a directory, absolute or relative to the default
+user's home as other file routes are. Export emits that directory's contents;
+import merges them beneath the named directory, creating it when needed. The
+CLI chooses DESTINATION according to its basename/directory rules in §4.
+A box-to-box recursive copy relays the export body directly into import,
+without staging the whole archive or giving either box the other's credential.
+Local upload/download uses the same archive writer/reader behavior.
+
+This is tar-like overwrite, not a mirror: overwrite existing regular files,
+merge existing directories and leave unrelated destination entries alone.
+File/directory conflicts fail. Do not delete a directory tree to replace it
+with a file. Use bounded buffers; neither sender nor receiver materializes the
+archive. Writes run in the existing files helper under the sandbox's default
+user, and local downloads run as the CLI user. No `tar` subprocess runs.
+
+Both sides open the caller-selected root once and do entry operations through
+`os.Root` or the receiving platform's equivalent, including temporary siblings,
+renames and metadata updates. Lexical checks alone do not confine extraction.
+Validate final decoded tar names, including PAX/long-name overrides: reject
+absolute, parent-traversing, drive/UNC, alternate-separator and unrepresentable
+names rather than cleaning them into acceptable paths. Reject colliding or
+duplicate entries, including destination-platform case aliases. Open the root
+without traversing a descendant symlink, and reject destination entry symlinks,
+including a symlink substituted during extraction. An existing destination
+symlink must never redirect either a write or a metadata operation outside the
+root, on a CLI download or a sandbox upload.
+
+The copy archive profile carries only regular files and directories. Reject
+symlink, hard-link, device, FIFO and socket members before acting on them; do
+not implement arbitrary tar extraction. The exporter dereferences source links
+with bounded depth/cycle checks, but nested links must stay within the selected
+source root. An explicitly named top-level source link is resolved first and
+its target defines that root; an escaping nested link is a clear failure.
+This intentionally narrows scp's source-link behavior to keep batch copying
+rooted. Source traversal/open is rooted too, so a source link swap cannot make
+the exporter read outside the chosen tree.
+
+Use a common copy-archive codec owned by a shared `pkg/` package for the CLI
+and files helper, not two extraction implementations. Keep the durable restore
+format's ownership and rules separate: `pkg/sandboxtree` admits hard links and
+fixed data/sources/origins subtrees which this API must not accept. Reuse the
+existing `pkg/tarsums` completion/integrity framing: user entries live under a
+`files/` prefix and its final checksum manifest is outside that namespace.
+Require and verify that final record and complete HTTP body before reporting
+success; a truncated tar or missing manifest must not look like a complete
+copy. The archive profile and framing are specified with the API, including
+how directory metadata and the selected root's metadata are represented.
+
+Each completed regular file publishes atomically through a temporary sibling;
+a truncated current member leaves its previous target intact. A batch is not
+transactional: completed entries remain on failure or cancellation, including
+when final integrity verification fails. Report partial failure and clean up
+temporary files. Bound nesting, metadata size and open resources; reject
+oversized/malformed headers without allocating their claimed sizes. Apply §4's
+mode/time rules, finalizing directory metadata after their children. Import's
+`preserve` option carries `-p`; it never applies ownership, ACLs or privileged
+mode bits from the archive. Old agents missing these routes fail recursive copy
+with an upgrade explanation; do not fall back to SSH or exec.
+
+### 4. Copy has a defined contract, not arbitrary scp passthrough
 
 Keep the core copy cases and test them explicitly:
 
@@ -147,8 +212,8 @@ Keep the core copy cases and test them explicitly:
   metacharacters. Local shell expansion happens before argv as today; do not
   add remote shell/glob expansion. `--` ends options. Explain this behavior in
   help rather than treating a filename as a command or pattern.
-- Match ordinary scp's dereferencing of source symlinks, including directory
-  links during recursion. Resolve link chains relative to their containing
+- Dereference explicit source symlinks and links within recursive source roots
+  under §3's confinement rule; reject escaping nested links. Resolve link chains relative to their containing
   directory with the source platform's path rules, detect ancestry cycles and
   bound link depth. Dangling links and special files (FIFO, socket, device)
   fail clearly; do not block by opening a FIFO. Read permission remains the
@@ -196,7 +261,7 @@ and supported syntax; there is no fallback to scp, SSH or exec. Document this
 compatibility change for all callers. Full OpenSSH CLI emulation is not a
 prerequisite for implementing file and recursive directory copy correctly.
 
-### 4. Parenthood and authority remain live during a stream
+### 5. Parenthood and authority remain live during a stream
 
 Check the live API flag and direct parent at every file request and exec
 create/start/attach/delete, not just when the CLI resolves a name. Check egress
@@ -214,7 +279,8 @@ records the concurrency contract in the owning design docs.
 
 Apply the same parent/API invalidation to in-flight file content transfers;
 loss of egress coverage invalidates file writes, not file reads. Revalidate on
-each request in a recursive copy and cancel invalidated bodies so interrupted
+each request and keep archive streams registered for the same live revocation;
+cancel invalidated bodies so interrupted
 writes cannot publish partial content. This is revocation of ongoing access,
 not rollback: an operation accepted before the change may already have committed,
 and completed files remain. Tests must cover release/reparent/API disable during
@@ -225,7 +291,7 @@ files, or promise to kill detached processes already launched. A person moving
 a child between leads must consider what the previous lead already ran. No
 blanket process kill or deletion of the child's work accompanies release.
 
-### 5. Created and adopted permissions are the same
+### 6. Created and adopted permissions are the same
 
 The following is the proposed policy, not a claim that new routes are already
 implemented. `W` means live parenthood plus `withinCaller`; `R` means live
@@ -236,8 +302,8 @@ boundary apply throughout.
 | --- | --- | --- |
 | Get child; terminal records, screen, logs, events and wait | R | R |
 | Command, login shell, exec lifecycle and stream input | W | W |
-| Files stat/list/read; cp download | R | R |
-| Files write/mkdir/remove/move/copy/metadata; cp upload | W | W |
+| Files stat/list/read/archive export; cp download | R | R |
+| Files write/mkdir/remove/move/copy/metadata/archive import; cp upload | W | W |
 | Source delivery; tag, name and description | W | W |
 | Start, stop, restart, repair and upgrade | W | W |
 | Service reads/logs; service start/stop/restart | R; W | R; W |
@@ -268,7 +334,7 @@ through file and existing read routes, including cp downloads; shell and file wr
 receive the expanded fixed role; there is no migration or new approval record.
 That broadening must be called out when the implementation ships.
 
-### 6. Refusals explain the failed check
+### 7. Refusals explain the failed check
 
 For a target verified to be a current child, a 403 identifies the operation and
 missing authority: API access disabled, operation outside the sandbox role, or
@@ -312,10 +378,13 @@ protocol can carry a reason; the CLI must surface failure rather than success.
 - **Keep SSH for people but use files API for sandbox callers.** Two copy
   implementations would give the same command different flag, path and failure
   behavior depending on caller identity. Use one files implementation.
-- **Tar over exec, or a new bulk archive API.** Adds an extraction protocol
-  and exec dependency or server surface while the files API already streams
-  content. Tree archives remain deferred; revisit only if measured per-file
-  overhead makes recursive copies impractical.
+- **One HTTP request per file for recursive copy.** Functional, but pays
+  repeated network and default-user helper setup for small files. A streamed
+  batch amortizes that work and matches the owner's overwrite-copy request.
+- **Tar over exec or generic tar extraction.** Exec would restore the shell,
+  external tool and logging dependencies this design removes. Arbitrary tar
+  semantics would admit links and special entries that the copy operation does
+  not need. Use the files API's restricted, rooted copy archive instead.
 - **Allow only adopted children, or only execs the lead created.** Parenthood
   already governs both kinds of child and all their terminals; extra provenance
   gates make the model inconsistent.
@@ -339,8 +408,13 @@ Exercise overwrite/type conflicts, multiple sources, destination directory and
 trailing-slash rules, literal names, source links/cycles, special files, `-p`,
 local download confinement, foreign path separators/collisions, same-file and
 copy-into-itself refusals, large/slow transfers, partial trees and cancellation.
-Include a malicious listing and a symlink swap targeting a file outside the
-chosen local download root. Verify unsupported options fail before any writes.
+Include hostile upload and download archives: traversal/absolute/drive/PAX
+names, duplicates/case aliases, link and special members, escaping source links,
+source and destination symlink swaps, truncated members/manifests and oversized
+headers. Assert that a sentinel outside either root is neither read nor changed.
+Verify recursive copies of many small files use streamed batch requests rather
+than one request per file, and that partial batches report failure without
+removing unrelated files. Verify unsupported options fail before any writes.
 
 Authorizer and service tests must cover all files operations and exec lifecycle
 calls, direct service invocation, self/unrelated/cross-project refusals, API
@@ -355,4 +429,5 @@ Metadata platform details, the shared revocation mechanism and concrete CLI
 copy decomposition remain implementation work. They may not relax the copy,
 authorization or confinement contract above. No filesystem migration is needed;
 existing boxes receive the expanded fixed role. Older agents missing the
-metadata extension fail `-p` with an upgrade explanation, without an exec fallback.
+metadata or archive extensions fail `-p` or recursive copy respectively with
+an upgrade explanation, without an exec fallback.
