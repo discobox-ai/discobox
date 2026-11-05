@@ -69,3 +69,13 @@ Multi-host/path routes expand to one row per host/path; method lists stay togeth
 `*` means any HTTP method. GraphQL, MCP and blocked markers appear in OPTIONS.
 Column widths are shared between the use and delegation lists. Long rows still
 wrap at the card edge on narrow terminals; this pass does not solve that layout.
+
+### Protocol and host grouping
+
+The latest proposed layout replaces the flat OPTIONS table with protocol groups
+in HTTP, GraphQL, MCP order inside each Use/Delegate section. Each protocol groups
+hosts alphabetically, showing the host once above its table. Rows sort by path,
+then method. GraphQL tables show operation and fields; MCP tables show tools.
+Unrestricted HTTP methods are omitted from GraphQL/MCP tables, while explicit
+method restrictions remain visible. If a host group contains blocked routes,
+its table includes ACCESS with ALLOW/DENY; deny rows use the alert color.

@@ -120,12 +120,12 @@ func (p *approvalPreview) open() {
 	d.titleRight = "2m ago"
 	d.sections = []section{
 		{fields: []field{{label: "Box", value: "Fix approval forms · sbx_123", tone: toneAccent}, {label: "Reason", value: "“" + req.Justification + "”"}}},
-		previewRouteSection("Requested routes", req.Use, req.routes()),
+		previewRouteSection("Requested routes", req.Use),
 		{fields: []field{{label: "Variable", value: "GH_TOKEN"}}},
 	}
 	if p.fixture != nil {
 		d.title = "Allow GitHub use and delegation?"
-		d.sections = []section{{fields: []field{{label: "Box", value: "Manager · sbx_manager", tone: toneAccent}, {label: "Reason", value: req.Justification}}}, previewRouteSection("Use", req.Use, req.routes()), previewRouteSection("Delegate", req.Delegate, req.routes()), {fields: []field{{label: "Variable", value: req.EnvVar}}}}
+		d.sections = []section{{fields: []field{{label: "Box", value: "Manager · sbx_manager", tone: toneAccent}, {label: "Reason", value: req.Justification}}}, previewRouteSection("Use", req.Use), previewRouteSection("Delegate", req.Delegate), {fields: []field{{label: "Variable", value: req.EnvVar}}}}
 		d.footer = "Manager fixture · all routes shown · PgUp/PgDn scroll the request"
 	}
 	d.keys = []hint{says("↑↓ move"), says("←→ change"), pressing("enter submits preview", "enter"), pressing("esc resets", "esc")}
