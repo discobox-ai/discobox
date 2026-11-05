@@ -1480,6 +1480,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case boxMenuChoiceMsg:
 		switch msg.key {
+		case paneServicesKey:
+			return m.openServices()
 		case auditKey:
 			return m.openAudit()
 		case allBoxesKey:
@@ -1520,6 +1522,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case serviceMenuMsg:
 		return m.showServiceMenu(msg.service)
+
+	case serviceOutputMsg:
+		if p := m.terminals.byExec(servicePaneID(msg.id)); p != nil {
+			m.focusPane(p)
+			return nil
+		}
+		return status("service output is no longer available")
 
 	case serviceVerbMsg:
 		return m.runServiceVerb(msg.verb, msg.service)

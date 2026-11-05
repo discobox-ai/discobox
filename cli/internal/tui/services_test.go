@@ -688,7 +688,7 @@ func TestTheServicesMenuRunsAVerb(t *testing.T) {
 		d.key(paneServicesMenuKey)
 		d.wait("the menu", func() bool { return m.dialog != nil })
 		d.key("1")
-		d.wait("the verbs", func() bool { return m.dialog != nil && len(m.dialog.items) == 3 })
+		d.wait("the verbs", func() bool { return m.dialog != nil && len(m.dialog.items) == 4 })
 		d.key("s")
 		d.wait("the report", func() bool { return strings.Contains(m.status, "started OTEL") })
 
@@ -717,8 +717,8 @@ func TestTheServicesMenuOnADiscoboxWithNone(t *testing.T) {
 	})
 }
 
-// A declaration that cannot run is listed with the reason, and cannot be
-// chosen: there is nothing to start.
+// A declaration that cannot run can still be inspected; its lifecycle verbs
+// stay disabled while its output card explains what to fix.
 func TestTheServicesMenuShowsUnrunnableDeclarations(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -734,8 +734,15 @@ func TestTheServicesMenuShowsUnrunnableDeclarations(t *testing.T) {
 		if !strings.Contains(plainFrame(m), "not executable") {
 			t.Fatalf("the menu should say why it cannot run:\n%s", plainFrame(m))
 		}
-		if m.dialog.items[0].enabled {
-			t.Error("a declaration that cannot run must not be selectable")
+		if !m.dialog.items[0].enabled {
+			t.Fatal("a broken declaration must be selectable for inspection")
+		}
+		d.key("1")
+		d.wait("service actions", func() bool { return m.dialog != nil && m.dialog.title == "Broken" })
+		for _, a := range m.dialog.items[1:] {
+			if a.enabled {
+				t.Errorf("broken service offers %q", a.label)
+			}
 		}
 	})
 }

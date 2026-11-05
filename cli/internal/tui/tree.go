@@ -995,6 +995,7 @@ func (m *Model) boxMenu(box Sandbox) tea.Cmd {
 	// The box is already on screen, so attaching to it is not on offer; what
 	// is, is what the workspace itself can open for it.
 	onScreen := []action{
+		{key: paneServicesKey, press: paneServicesKey, label: "services", detail: "view output, start, stop or restart a service", enabled: true},
 		{key: toolsKey, press: toolsKey, label: "tools", detail: "open a diff viewer, an editor or your IDE on the box", enabled: true},
 		{key: auditKey, press: auditKey, label: "audit", detail: "follow everything the box has done, as it happens", enabled: true},
 	}
@@ -1020,7 +1021,7 @@ func (m *Model) boxMenu(box Sandbox) tea.Cmd {
 	}
 	choose := chooseAction(targets)
 	m.dialog = actionsDialog(actionTitle(targets), "", items, func(key string) tea.Cmd {
-		if key == toolsKey || key == auditKey || key == allBoxesKey {
+		if key == toolsKey || key == auditKey || key == allBoxesKey || key == paneServicesKey {
 			return func() tea.Msg { return boxMenuChoiceMsg{key: key} }
 		}
 		return choose(key)
