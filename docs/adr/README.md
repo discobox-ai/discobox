@@ -82,6 +82,7 @@ duplicated number.
 | ADR | Title | Status |
 | --- | --- | --- |
 | [26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md) | A start waits for a compatible pool and its pending upgrade | Proposed (would narrow 26-11-04-167 §1 and extend §2; would further narrow 26-10-12-711 §6 and 26-11-03-618 §2 for an existing sandbox's pending upgrade; source-delivery refusals remain) |
+| [26-11-05-814](26-11-05-814-pool-outbound-proxy-is-delivered-before-bootstrap.md) | Pool outbound proxy is delivered before bootstrap | Proposed |
 | [26-11-05-240](26-11-05-240-runtime-directory-permission-repair-requires-human-consent.md) | Runtime-directory permission repair requires human consent | Accepted (narrows 26-11-04-074 §1's prohibition on repair; private-directory requirement remains) |
 | [26-11-05-719](26-11-05-719-a-repository-can-run-an-interactive-tour-before-its-primary-harness.md) | A repository can run an interactive tour before its primary harness | Proposed |
 | [26-11-04-389](26-11-04-389-a-lead-binds-secrets-within-its-delegation.md) | A lead binds secrets within its delegation | Accepted (amends 26-10-27-880 §§3, 5 for direct handoff and write-time containment; narrows 26-11-02-022 §5 for sandbox replacement previews only; further delegation stays person-only) |
