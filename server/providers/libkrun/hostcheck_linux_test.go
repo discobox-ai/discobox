@@ -11,8 +11,8 @@ import (
 )
 
 func TestHostCheckRejectsBrokenPasst(t *testing.T) {
-	// Exercise the actual launcher and KVM handshake; library loading comes
-	// after passt, so no native runtime is needed for these failure cases.
+	// Exercise the actual launcher and KVM handshake; software failures are
+	// reported together, so no native runtime is needed for these cases.
 	f, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0)
 	if err != nil {
 		t.Skipf("host has no usable KVM: %v", err)

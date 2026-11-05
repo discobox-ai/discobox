@@ -21,11 +21,12 @@ sets `LD_LIBRARY_PATH` for development.
 
 Provider construction re-executes the launcher with `--check` and a bounded
 context before resolving images or constructing the engine. That child dlopens
-and binds the required libkrun symbols and looks up passt, honoring both path
-overrides. Missing software rejects provider creation through the existing
+and binds the required libkrun symbols, verifies block/network features,
+and executes `passt --version`, honoring both path overrides. Missing software rejects provider creation through the existing
 resolve-and-rollback path; it never creates a failed pool. KVM remains a boot-time
-check. The probe never starts passt or a VM, and a native library fault stays in
-the child.
+check for configured providers. The probe never boots a VM, and a native
+library fault stays in the child. The passt version probe has its own three-second
+deadline; both subprocess waits bound inherited pipe shutdown.
 
 The library must be libkrun 1.19.7 or newer in the 1.x series, built with
 block-device and network support (`BLK=1 NET=1`). A recent version alone is
