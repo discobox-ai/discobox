@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -49,6 +50,35 @@ func RunLauncher(t *testing.T, agent string, paths map[string]string, args []str
 		rewritten = strings.ReplaceAll(rewritten, from, to)
 	}
 	var captureEnv []string
+	if agent == "codex" {
+		// Run the real system-trust writer against an isolated system layer.
+		trust, err := os.ReadFile("trust.cjs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		baseline, err := filepath.Abs("system-config.toml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		settings, err := filepath.Abs("../capture/settings.cjs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer := filepath.Join(dir, "trust.cjs")
+		config := filepath.Join(dir, "config.toml")
+		replace := strings.NewReplacer(
+			"'/usr/local/libexec/discobox/harness-capture/settings.cjs'", strconv.Quote(filepath.ToSlash(settings)),
+			"'/usr/local/libexec/discobox/codex-system-config.toml'", strconv.Quote(filepath.ToSlash(baseline)),
+			"'/etc/codex/config.toml'", strconv.Quote(filepath.ToSlash(config)),
+		)
+		if err := os.WriteFile(writer, []byte(replace.Replace(string(trust))), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// These paths are shell data, including Windows backslashes.
+		rewritten = strings.ReplaceAll(rewritten, "sudo -n flock /run/lock/discobox-codex-trust.lock", "")
+		rewritten = strings.ReplaceAll(rewritten, "/usr/local/libexec/discobox/codex-trust.cjs", "\"$DISCOBOX_TEST_CODEX_TRUST\"")
+		captureEnv = []string{"DISCOBOX_TEST_CODEX_TRUST=" + writer}
+	}
 	if agent == "claude" {
 		captureDir, err := filepath.Abs("../capture")
 		if err != nil {

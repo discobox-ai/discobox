@@ -3,7 +3,6 @@ package codexcli
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -11,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BurntSushi/toml"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
@@ -216,59 +214,8 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := launchertest.RunLauncher(t, "codex", nil, tc.args)
-			if len(got) < 2 || got[0] != "-c" || !strings.HasPrefix(got[1], `projects={`) || !slices.Equal(got[2:], tc.want) {
+			if !slices.Equal(got, tc.want) {
 				t.Fatalf("codex argv = %#v, want %#v", got, tc.want)
-			}
-		})
-	}
-}
-
-// Codex splits override keys on literal dots, so a quoted path must be in
-// the TOML value rather than the key. Exercise the launcher, including
-// paths whose punctuation must survive the shell and TOML parsing.
-func TestWorkspaceTrustOverride(t *testing.T) {
-	launcher, err := os.ReadFile("launch.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, name := range []string{"workspace", `workspace.with dots and "quotes" $dollars`} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			if runtime.GOOS == "windows" && strings.Contains(name, `"`) {
-				t.Skip("Windows paths cannot contain quotes")
-			}
-			dir := filepath.Join(t.TempDir(), name)
-			if err := os.Mkdir(dir, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(dir, "launch.sh"), launcher, 0o600); err != nil {
-				t.Fatal(err)
-			}
-			t.Chdir(dir)
-			got := launchertest.RunLauncher(t, "codex", nil, nil)
-			if len(got) != 2 || got[0] != "-c" {
-				t.Fatalf("codex argv = %#v", got)
-			}
-			cwd := exec.CommandContext(t.Context(), "node", "-e", "process.stdout.write(process.cwd())")
-			path, err := cwd.Output()
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, override := range []string{got[1]} {
-				key, value, ok := strings.Cut(override, "=")
-				if !ok || key != "projects" {
-					t.Fatalf("override key = %q, want projects", key)
-				}
-				var config struct {
-					Projects map[string]struct {
-						TrustLevel string `toml:"trust_level"`
-					}
-				}
-				if _, err := toml.Decode("projects="+value, &config); err != nil {
-					t.Fatal(err)
-				}
-				if len(config.Projects) != 1 || config.Projects[string(path)].TrustLevel != "trusted" {
-					t.Fatalf("override %q does not trust cwd %q: %#v", override, path, config.Projects)
-				}
 			}
 		})
 	}
@@ -293,7 +240,7 @@ func TestLaunchKeysMemoriesByUID(t *testing.T) {
 	}
 	memories := filepath.Join(sourceData, "users", strconv.Itoa(os.Getuid()), "harnesses", "codex", "memories")
 
-	if got, want := launchertest.RunLauncher(t, "codex", map[string]string{launchertest.SourceDataPath: sourceData}, []string{"hi"}), []string{"hi"}; !slices.Equal(got[2:], want) {
+	if got, want := launchertest.RunLauncher(t, "codex", map[string]string{launchertest.SourceDataPath: sourceData}, []string{"hi"}), []string{"hi"}; !slices.Equal(got, want) {
 		t.Fatalf("codex argv = %#v, want %#v", got, want)
 	}
 	carried, err := os.ReadFile(filepath.Join(memories, "memory.md"))

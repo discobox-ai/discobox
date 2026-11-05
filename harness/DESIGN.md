@@ -69,8 +69,8 @@ requires no package installation. Parse failures retain prior state. Older
 settings allowlist definitions require a harness metadata refresh; they are not
 silently treated as unrestricted documents.
 Portable settings are literal files. Codex excludes parsed local-project tables
-and supplies workspace trust as a process configuration override in its
-launcher. Claude's initializer takes the capture lock while merging onboarding and trust
+and records workspace trust in its sandbox-local system configuration before
+launching the CLI, so direct starts see the same trust. Claude's initializer takes the capture lock while merging onboarding and trust
 into local state, preserving other fields and serializing with credential handoff. Neither exports trust into shared settings.
 Credential documents use exact JSON objects `{"$secret":"ENV_NAME"}` at registered
 secret leaves. The installer substitutes current sentinels using JSON encoding;
@@ -759,9 +759,18 @@ machine.
     claude-code records scopes as.
 - There is no baseline auth.json: an empty one reads as signed in.
 - Literal user preferences in `~/.codex/config.toml` are exported, excluding
-  parsed `[projects]` tables. The launcher passes
-  `-c 'projects={<JSON-quoted cwd>={trust_level="trusted"}}'`, so trust never needs
-  to be appended to the user's file or persisted centrally.
+  parsed `[projects]` tables. Before every start the launcher records its
+  actual cwd in `/etc/codex/config.toml`, under a system-layer lock. The
+  system file combines the image's defaults with an inline TOML `projects`
+  map, retaining previously trusted folders. Restarts, source-less boxes and
+  alternate working directories use the same path. Later direct `codex`
+  starts in those folders see the same trust, without launch flags or edits
+  to portable user preferences. Trusting `/` does not trust child repositories.
+  The pinned-binary PTY test (`task test:codex-trust`) runs the old override
+  as an untrusted control, then launch, restart and direct starts. It removes
+  explicit approval/sandbox defaults from its fixture because those can hide
+  a broken trust entry. Its Codex version is pinned in
+  `test/codex-trust/version`; a vendor upgrade updates that contract test.
 - Existing stored trust suffixes and credential references are converted in
   place by the server migration. Old sandbox bootstraps and capture checkpoints
   use the same bounded conversion on read. Unknown executable templates fail
