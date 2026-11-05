@@ -143,9 +143,22 @@ func TestWiderScopeStaysUnderParentDelegation(t *testing.T) {
 			if err := st.UpdateSecretBinding(ctx, parent, store.BindingChange{Actor: "user-1"}); err != nil {
 				t.Fatal(err)
 			}
-			req := createAgentRequest(ctx, t, svc)
+			req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{SandboxId: testSandboxID, Name: "github", EnvVar: api.NewOptString("GH_TOKEN"), Routes: []string{"GET github.com", "github.com/private=blocked"}})
+			if err != nil {
+				t.Fatal(err)
+			}
 			part := api.SecretRequestPartDecision{Decision: api.SecretRequestPartDecisionDecisionApprove, Scope: api.NewOptSecretRequestPartDecisionScope(api.SecretRequestPartDecisionScope(scope))}
 			got, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: api.NewOptString(secret.ID), Use: api.NewOptSecretRequestPartDecision(part)})
+			if scope == "hosts" {
+				if !isStatus(err, http.StatusForbidden) {
+					t.Fatalf("hosts scope discards the delegation method/block limits: got %v, want403", err)
+				}
+				pending, e := st.GetSecretRequest(ctx, "project-1", req.ID)
+				if e != nil || pending.Status != model.SecretRequestStatusPending {
+					t.Fatalf("rejected scope changed request: %+v %v", pending, e)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -235,5 +248,30 @@ func TestAnywhereAdditionAndProtocolCeilings(t *testing.T) {
 		if ok != tc.want {
 			t.Fatalf("protocol ceiling=%v (%s), want %v", ok, why, tc.want)
 		}
+	}
+}
+
+func TestHostScopeFitsAHostOnlyDelegation(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	parent := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true, Routes: []model.SecretRoute{{Hosts: []string{"github.com"}}}})
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{SandboxId: testSandboxID, Name: "github", EnvVar: api.NewOptString("GH_TOKEN"), Routes: []string{"GET github.com/repos/acme/web/**"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{Use: api.NewOptSecretRequestPartDecision(api.SecretRequestPartDecision{Decision: api.SecretRequestPartDecisionDecisionApprove, Scope: api.NewOptSecretRequestPartDecisionScope(api.SecretRequestPartDecisionScopeHosts)})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := st.GetSecretBinding(ctx, "project-1", answer.Use.BindingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.ParentID != parent.ID || answer.Use.ApprovedScope != "hosts" || answer.Use.Grant == nil || answer.Use.Receipt == nil {
+		t.Fatalf("grant lacks scope, parent or snapshots: %+v", answer.Use)
+	}
+	if allowed, why := secretroute.Decide(store.RouteLists(secret, b, parent), secretroute.Request{Host: "github.com", URL: "https://github.com/other", Method: "GET"}); !allowed {
+		t.Fatalf("host-only delegation should allow another path: %s", why)
 	}
 }

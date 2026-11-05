@@ -163,3 +163,5 @@ Sandbox calls through `api.discobox.internal` use the target-addressed binding
 endpoint and render its receipt. Approval skips replacement previews and binding
 GETs on this endpoint and renders each committed part's receipt instead. A
 person's connection retains full previews and inspection (ADR 26-11-04-389).
+Sandbox mutation output also names each part's approved scope beside its receipt,
+without fetching child bindings.

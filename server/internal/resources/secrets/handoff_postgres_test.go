@@ -22,7 +22,7 @@ func TestPostgresHandoffLockRaces(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set DISCOBOX_TEST_POSTGRES_DSN for real row-lock races")
 	}
-	for _, scenario := range []string{"expiry", "revoke"} {
+	for _, scenario := range []string{"expiry", "revoke", "revision"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := context.Background()
 			admin, err := database.New(database.Config{DSN: dsn})
@@ -42,16 +42,28 @@ func TestPostgresHandoffLockRaces(t *testing.T) {
 			svc, st := newAgentCredentialService(t, dsn+sep+"search_path="+schema)
 			secret := createBearerSecret(testPrincipalContext(), t, svc)
 			parent := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true})
+			var req *model.SecretRequest
+			if scenario == "revision" {
+				req = createAgentRequest(testPrincipalContext(), t, svc)
+			}
 			locked, release := make(chan struct{}), make(chan struct{})
 			blocker := make(chan error, 1)
 			go func() {
 				blocker <- st.Transaction(ctx, func(txStore *store.Store, tx *gorm.DB) error {
-					var row model.SecretBinding
-					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, "id = ?", parent.ID).Error; err != nil {
+					var row any = &model.SecretBinding{}
+					id := parent.ID
+					if scenario == "revision" {
+						row = &model.Secret{}
+						id = secret.ID
+					}
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(row, "id = ?", id).Error; err != nil {
 						return err
 					}
 					close(locked)
 					<-release
+					if scenario == "revision" {
+						return tx.Model(&model.Secret{}).Where("id = ?", secret.ID).Update("revision", secret.Revision+1).Error
+					}
 					if scenario == "expiry" {
 						return tx.Model(&model.SecretBinding{}).Where("id = ?", parent.ID).Update("expires_at", time.Now().Add(-time.Millisecond)).Error
 					}
@@ -62,6 +74,14 @@ func TestPostgresHandoffLockRaces(t *testing.T) {
 			<-locked
 			result := make(chan error, 1)
 			go func() {
+				if scenario == "revision" {
+					answer, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{Use: decide(true)})
+					if err == nil && (answer.Use.Grant == nil || answer.Use.Grant.SecretRevision != secret.Revision+1) {
+						err = fmt.Errorf("approval grant revision = %+v, want %d", answer.Use.Grant, secret.Revision+1)
+					}
+					result <- err
+					return
+				}
 				if scenario == "expiry" {
 					_, err := svc.CreateSandboxSecretBinding(asLead(), "project-1", testSandboxID, services.CreateSandboxSecretBindingBody{Secret: secret.ID, EnvVar: apigen.NewOptString("GH")})
 					result <- err
@@ -78,7 +98,7 @@ func TestPostgresHandoffLockRaces(t *testing.T) {
 			waiting := false
 			for time.Now().Before(deadline) {
 				var count int64
-				err = admin.Read.Raw("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%secret_bindings%'").Scan(&count).Error
+				err = admin.Read.Raw("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%secret%'").Scan(&count).Error
 				if err != nil {
 					break
 				}

@@ -602,7 +602,7 @@ func TestSandboxApprovalNeedsNoChildBindingReads(t *testing.T) {
 			fmt.Fprint(w, `{"secrets":[`+bindTestSecretJSON+`]}`)
 		case "POST /projects/project-1/secret-requests/sreq_1/approve":
 			posted = true
-			fmt.Fprintf(w, `{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"approved","use":{"outcome":"approved","bindingId":"bind_1","receipt":%s},"createdAt":"2026-11-05T00:00:00Z","updatedAt":"2026-11-05T00:00:00Z"}`, receipt)
+			fmt.Fprintf(w, `{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"approved","use":{"outcome":"approved","bindingId":"bind_1","approvedScope":"hosts","receipt":%s},"createdAt":"2026-11-05T00:00:00Z","updatedAt":"2026-11-05T00:00:00Z"}`, receipt)
 		default:
 			t.Errorf("forbidden or unexpected read: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(403)
@@ -610,8 +610,8 @@ func TestSandboxApprovalNeedsNoChildBindingReads(t *testing.T) {
 		return w.Result(), nil
 	})
 	t.Cleanup(func() { http.DefaultTransport = original })
-	out, err := runBindCommand(t, &httptest.Server{URL: "https://api.discobox.internal"}, "request", "approve", "sreq_1", "--secret", "github")
-	if err != nil || !posted || !strings.Contains(out, "Approved by sbx_lead") || !strings.Contains(out, "bind_parent") {
+	out, err := runBindCommand(t, &httptest.Server{URL: "https://api.discobox.internal"}, "request", "approve", "sreq_1", "--secret", "github", "--use-scope", "hosts")
+	if err != nil || !posted || !strings.Contains(out, "Approved by sbx_lead") || !strings.Contains(out, "bind_parent") || !strings.Contains(out, "use scope is hosts") {
 		t.Fatalf("posted=%v output=%q err=%v", posted, out, err)
 	}
 }

@@ -660,3 +660,10 @@ The approval inbox also composes the sandbox service's adoption requests
 (ADR 26-11-03-970). Their lifecycle belongs to sandboxes, not credentials.
 Secret request ownership reads the requester's current parent; adoption and
 release never change credentials, bindings or delegations.
+
+Approval scope (`routes`, `hosts`, `anywhere`) changes the proposed use list
+before the handoff proof. Hosts that discard delegation method/path/block limits
+are refused; anywhere adds no binding restriction and inherits the chosen
+parent's effective limits. Consent history and mutation receipts both use the
+secret checked under the handoff locks. Person history retains both snapshots;
+sandbox request reads omit both to preserve private child bindings.
