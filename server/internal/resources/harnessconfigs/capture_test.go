@@ -278,6 +278,9 @@ func TestCapturePreviewIsDescribedFromStoredConfig(t *testing.T) {
 	if err := s.describeCapturePreview(ctx, cfg.ProjectID, "sbx-capture", &p); err != nil {
 		t.Fatal(err)
 	}
+	if len(p.Files) != 2 {
+		t.Fatalf("changes = %+v, want only the two real changes", p.Files)
+	}
 	content := func(f *harnesscapture.File) string {
 		if f == nil {
 			return "<none>"
@@ -290,8 +293,6 @@ func TestCapturePreviewIsDescribedFromStoredConfig(t *testing.T) {
 	}{
 		{p.Files[0], `{"theme":"dark"}`, `{"theme":"light"}`},
 		{p.Files[1], "<none>", `{}`},
-		{p.Files[2], `{"a":1}`, `{"a":1}`},
-		{p.Files[3], "<none>", "<none>"},
 	} {
 		if got := content(tc.change.Previous); got != tc.previous {
 			t.Errorf("%s previous = %s, want %s", tc.change.Path, got, tc.previous)
@@ -387,8 +388,8 @@ func TestReviewedCaptureUsesCurrentRowsAndDoesNotReplayCredentials(t *testing.T)
 			if err := s.describeCapturePreview(ctx, cfg.ProjectID, "sbx-capture", &preview); err != nil {
 				t.Fatal(err)
 			}
-			if preview.Files[0].Previous == nil {
-				t.Fatal("missing reviewed before state")
+			if len(preview.Files) != 0 {
+				t.Fatal("already saved settings should have no preview diff")
 			}
 			// Both shared settings and the credential move after the diff was read.
 			current.Name = "concurrent name"

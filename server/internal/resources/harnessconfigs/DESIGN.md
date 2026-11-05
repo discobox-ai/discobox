@@ -373,7 +373,8 @@ Delete is refused (409) while any sandbox still references the config.
 A registered bundle's `SaveBack` definition is snapshotted with its manifest.
 The agent reports a redacted preview and retains an immutable, bounded candidate;
 only an authenticated user can ask this service to fetch its credential payload.
-Private capture and acknowledgment calls use explicit agent scopes and are not
+Preview reads observe running boxes without starting or repairing them, including
+when a stop races a console listing. Private capture and acknowledgment calls use explicit agent scopes and are not
 proxied as user routes.
 
 A preview's file changes are described from the stored config, never from the
@@ -383,7 +384,12 @@ and a removal's `file` is the one beneath the topmost set holding the path
 (`fileBeneath`). A save always patches `ConfiguredFiles`, never an override
 (ADR 26-11-04-711 §2): at a path an override holds the saved file is shadowed,
 and the preview says so. Clients diff the
-two; the agent's candidate and its size limits are untouched by them.
+two; entries already present in the current saved state are omitted, comparing
+compact JSON so JSON layout alone is not a change, preserving numeric precision. At overridden paths this
+comparison uses the saved file over the bundle, so an override cannot hide a
+real saved-file change beneath it. File presence and create-only behavior
+remain meaningful. Credentials and pending handoffs are retained. The agent's
+immutable candidate and its size limits are untouched by this projection.
 
 `commitCapture` locks the config and bound secret rows, checks the candidate's
 identity, manifest and registered definition, then commits a

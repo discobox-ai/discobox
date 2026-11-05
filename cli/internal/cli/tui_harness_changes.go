@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	api "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
@@ -67,4 +69,38 @@ func (d *apiDataSource) DiscardHarnessChanges(ctx context.Context, sandboxID, ca
 		return "", fmt.Errorf("%s", terminalSafe(err.Error()))
 	}
 	return terminalSafe(result.State), nil
+}
+
+// refreshHarnessChanges checks current shared state before offering a save.
+// Recheck every listing: another box can save the same candidate, and a later
+// shared edit can make it relevant again. No candidate is discarded here.
+func (d *apiDataSource) refreshHarnessChanges(ctx context.Context, boxes []tui.Sandbox) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	slots := make(chan struct{}, 8)
+	var asked sync.WaitGroup
+	for i := range boxes {
+		box := &boxes[i]
+		// Preview reads the running agent. Skip stopped rows; the server
+		// also observes without waking if a stop races this listing.
+		if box.HarnessConfigCandidate == "" || box.State != tui.StateRunning {
+			continue
+		}
+		asked.Add(1)
+		go func() {
+			defer asked.Done()
+			select {
+			case slots <- struct{}{}:
+				defer func() { <-slots }()
+			case <-ctx.Done():
+				return
+			}
+			changes, err := d.HarnessChanges(ctx, box.ID)
+			if err == nil && changes.CandidateID == box.HarnessConfigCandidate {
+				box.HarnessConfigPending = changes.State == "saved-handoff-pending" ||
+					(changes.State == "pending" && len(changes.Files)+len(changes.Credentials) > 0)
+			}
+		}()
+	}
+	asked.Wait()
 }

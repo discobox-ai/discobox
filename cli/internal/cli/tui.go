@@ -724,6 +724,7 @@ func (d *apiDataSource) listHere(ctx context.Context) ([]tui.Sandbox, error) {
 	for _, sb := range sandboxes {
 		out = append(out, toTUISandbox(sb, hostID))
 	}
+	d.refreshHarnessChanges(ctx, out)
 	return out, nil
 }
 
@@ -988,7 +989,6 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		var candidate string
 		if json.Unmarshal(status["harnessConfigCandidate"], &candidate) == nil {
 			row.HarnessConfigCandidate = terminalSafe(strings.TrimSpace(candidate))
-			row.HarnessConfigPending = row.HarnessConfigCandidate != ""
 		}
 	}
 	row.AgentObservedAt = sb.Runtime.AgentStatusObservedAt.Or(time.Time{})

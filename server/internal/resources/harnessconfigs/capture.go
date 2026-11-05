@@ -45,7 +45,13 @@ func (s *Service) captureRequest(ctx context.Context, projectID, sandboxID, meth
 	} else if suffix == "/harness-config-capture" {
 		scope = harnesscapture.ScopeCapture
 	}
-	lease, box, err := s.sandboxes.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, []string{scope}, services.SandboxAction("save harness configuration"))
+	use := services.SandboxAction("save harness configuration")
+	if method == http.MethodGet {
+		// The console reads previews automatically. Observation must not undo
+		// a stop that raced the listing, or repair a box just to show an offer.
+		use = services.SandboxObserve
+	}
+	lease, box, err := s.sandboxes.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, []string{scope}, use)
 	if err != nil {
 		return err
 	}
@@ -122,6 +128,7 @@ func (s *Service) describeCapturePreview(ctx context.Context, projectID, sandbox
 	if err != nil {
 		return err
 	}
+	visible := p.Files[:0]
 	for i := range p.Files {
 		change := &p.Files[i]
 		change.Previous = nil
@@ -130,14 +137,58 @@ func (s *Service) describeCapturePreview(ctx context.Context, projectID, sandbox
 			change.Previous = &previous
 		}
 		change.Shadowed = slices.ContainsFunc(cfg.FileOverrides, func(f model.HarnessConfigFile) bool { return f.Path == change.Path })
-		if !change.Remove {
-			continue
+		if change.Remove {
+			change.File = nil
+			if f, ok := fileBeneath(cfg, change.Path); ok {
+				change.File = &harnesscapture.File{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
+			}
 		}
-		if f, ok := fileBeneath(cfg, change.Path); ok {
-			change.File = &harnesscapture.File{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
+		// Compare the set a save owns at overridden paths: an equal visible
+		// override must not hide a real change to the saved file beneath it.
+		before, after := change.Previous, change.File
+		if change.Shadowed {
+			before = nil
+			for _, set := range [][]model.HarnessConfigFile{cfg.Files, cfg.ConfiguredFiles} {
+				if n := slices.IndexFunc(set, func(f model.HarnessConfigFile) bool { return f.Path == change.Path }); n >= 0 {
+					f := set[n]
+					before = &harnesscapture.File{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
+				}
+			}
+			if change.Remove {
+				after = nil
+				if n := slices.IndexFunc(cfg.Files, func(f model.HarnessConfigFile) bool { return f.Path == change.Path }); n >= 0 {
+					f := cfg.Files[n]
+					after = &harnesscapture.File{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
+				}
+			}
+		}
+		if !captureFilesEqual(before, after) {
+			visible = append(visible, *change)
 		}
 	}
+	p.Files = visible
 	return nil
+}
+
+// captureFilesEqual ignores JSON layout, as exporters serialize settings
+// rather than preserving the bundle's formatting. Compact JSON preserves exact
+// numeric values and key order, matching the client's empty-diff comparison.
+// File presence and create-only behavior matter even with no textual diff.
+func captureFilesEqual(a, b *harnesscapture.File) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.CreateOnly != b.CreateOnly {
+		return false
+	}
+	if a.Content == b.Content {
+		return true
+	}
+	var left, right bytes.Buffer
+	if json.Compact(&left, []byte(a.Content)) != nil || json.Compact(&right, []byte(b.Content)) != nil {
+		return false
+	}
+	return bytes.Equal(left.Bytes(), right.Bytes())
 }
 
 // fileBeneath is what a box is given at path once a save-back removal takes
