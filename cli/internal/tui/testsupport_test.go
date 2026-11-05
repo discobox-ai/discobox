@@ -67,6 +67,8 @@ type timerMsg struct {
 // for, so a test can assert on the command a key press turned into rather than
 // on the frame it drew.
 type fakeSource struct {
+	createdVariants       []NewHarnessVariant
+	variantErr            error
 	harnessChanges        HarnessChanges
 	harnessChangesWrites  []string
 	harnessChangesSaveErr error
@@ -1379,6 +1381,23 @@ func (f *fakeSource) HarnessSecrets(_ context.Context, server, _ string) ([]Harn
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "HarnessSecrets@"+server)
 	return append([]HarnessSecret(nil), f.secrets...), nil
+}
+
+func (f *fakeSource) CreateHarnessVariant(_ context.Context, server string, variant NewHarnessVariant) (Harness, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "CreateHarnessVariant@"+server)
+	if f.variantErr != nil {
+		return Harness{}, f.variantErr
+	}
+	f.createdVariants = append(f.createdVariants, variant)
+	h := Harness{ID: "variant-created", Name: variant.Name, Slug: variant.Slug, Parent: variant.ParentID}
+	if on, ok := f.harnessesOn[server]; ok {
+		f.harnessesOn[server] = append(on, h)
+	} else {
+		f.harnesses = append(f.harnesses, h)
+	}
+	return h, nil
 }
 
 func (f *fakeSource) DoHarness(_ context.Context, server string, verb HarnessVerb, id string) error {

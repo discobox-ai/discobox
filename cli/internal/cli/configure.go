@@ -21,10 +21,15 @@ func (a *App) newConfigureCommand() *cobra.Command {
 		Short:   "Set the default harness and manage what is saved to each",
 		Long: `Open the console on its harnesses screen.
 
-Move with up/down, then make the highlighted harness the project default (s),
+Move with up/down, then create a variant of the highlighted standalone harness (c),
+make the highlighted harness the project default (s),
 read its whole configuration (v), edit one of its files in your editor (f), or
 reset it to its bundle's defaults (r), which forgets the settings and logins
 saved to it from discoboxes.
+
+A variant follows its parent's bundle updates with its own account. The create
+form asks for its name and slug; saved logins, bindings and personal files are
+not copied.
 
 Every harness can run without any setup here: sign in and change settings
 inside a discobox the way you would on your own machine, then save the change

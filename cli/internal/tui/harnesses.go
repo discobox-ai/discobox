@@ -232,6 +232,7 @@ type harnessesLoadedMsg struct {
 	// server is the server the listing was read from, so one that lands after
 	// the header has moved to another server is not drawn under its name.
 	server    string
+	selectID  string
 	harnesses []Harness
 	err       error
 }
@@ -304,6 +305,14 @@ func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 		return tea.Batch(m.report(true, "cannot list the harnesses: %v", msg.err), m.startPendingRun())
 	}
 	m.harnesses.setAll(msg.harnesses)
+	if msg.selectID != "" {
+		for i, h := range msg.harnesses {
+			if h.ID == msg.selectID {
+				m.harnesses.moveTo(i)
+				break
+			}
+		}
+	}
 	m.opts.setHarnesses(msg.harnesses)
 	m.layout()
 	// `discobox run` handed its request to this window, and this is the first
@@ -388,6 +397,8 @@ func (m *Model) harnessMenu() tea.Cmd {
 // reason, the way the discobox menu keeps upgrade.
 func harnessActions(h Harness) []action {
 	return []action{
+		{key: "c", press: "c", label: "create variant", detail: "follow this bundle with an independent account", enabled: h.Parent == "",
+			why: "a variant cannot be a parent; select its standalone parent instead"},
 		{key: "s", press: "s", label: "default", detail: "run it when a discobox says no harness", enabled: !h.Default,
 			why: "already the default"},
 		{key: "v", press: "v", label: "config", detail: "everything the harness is set to", enabled: true},
@@ -421,6 +432,8 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 	}
 
 	switch key {
+	case "c":
+		return m.newHarnessVariantForm(harness)
 	case "r":
 		// Reset deletes what saves from discoboxes put on the harness —
 		// settings files and the logins they created. Nothing brings those
@@ -456,6 +469,63 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 		return nil
 	}
 	return nil
+}
+
+type harnessVariantCreatedMsg struct {
+	server     string
+	harness    Harness
+	form, wait *dialog
+	err        error
+}
+
+func (m *Model) newHarnessVariantForm(parent Harness) tea.Cmd {
+	server := m.configServer()
+	parentRow := textRow("parent", "Parent", "", parent.displayName())
+	parentRow.locked, parentRow.why = true, parent.displayName()
+	name := textRow("name", "Name", parent.Name+" (work)", "")
+	name.required = "give the variant a name"
+	slug := textRow("slug", "Slug", parent.Slug+"-work", "")
+	slug.required = "give the variant a slug"
+	var d *dialog
+	d = formDialog("Create variant", newForm(parentRow, name, slug), func(f *form) tea.Cmd {
+		variant := NewHarnessVariant{ParentID: parent.ID, Name: strings.TrimSpace(f.value("name")), Slug: strings.TrimSpace(f.value("slug"))}
+		return m.createHarnessVariant(server, variant, d)
+	})
+	d.body = "Follows the parent's bundle updates. Starts with its own account: saved logins, secret bindings and personal files are not copied."
+	d.keys = []hint{says("↑↓ moves"), pressing("enter creates", "enter"), pressing("esc cancels", "esc")}
+	m.dialog = d
+	return nil
+}
+
+func (m *Model) createHarnessVariant(server string, variant NewHarnessVariant, form *dialog) tea.Cmd {
+	wait := statusDialog("Create variant", "creating…")
+	m.dialog = wait
+	return func() tea.Msg {
+		created, err := m.ds.CreateHarnessVariant(m.ctx, server, variant)
+		return harnessVariantCreatedMsg{server: server, harness: created, form: form, wait: wait, err: err}
+	}
+}
+
+func (m *Model) harnessVariantCreated(msg harnessVariantCreatedMsg) tea.Cmd {
+	waiting := m.dialog == msg.wait
+	if msg.err != nil {
+		if waiting && m.serverName(msg.server) == m.configServer() {
+			msg.form.form.err = fmt.Sprintf("not created: %v", msg.err)
+			m.dialog = msg.form
+			return nil
+		}
+		return m.report(true, "variant: %v", msg.err)
+	}
+	if waiting {
+		m.dialog = nil
+	}
+	if m.serverName(msg.server) != m.configServer() {
+		return nil
+	}
+	return tea.Batch(m.report(false, "created variant %q", msg.harness.Name), func() tea.Msg {
+		harnesses, err := m.ds.Harnesses(m.ctx, msg.server)
+		return harnessesLoadedMsg{server: msg.server, harnesses: harnesses, selectID: msg.harness.ID, err: err}
+	})
 }
 
 // runHarnessVerb sends one verb to the API. Nothing takes the terminal, so the

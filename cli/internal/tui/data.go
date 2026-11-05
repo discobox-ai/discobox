@@ -668,6 +668,13 @@ type Harness struct {
 	Updated time.Time
 }
 
+// NewHarnessVariant creates an independent account following a root's bundle.
+type NewHarnessVariant struct {
+	ParentID string
+	Name     string
+	Slug     string
+}
+
 // HarnessSecret is one environment variable a harness runs with.
 //
 // In a listing only the declaration is filled in: the name, whether it is
@@ -2244,6 +2251,10 @@ type DataSource interface {
 	// secret bound to each, for the config card. It is a request of its own, so it
 	// is made when the card is opened rather than for every row of a listing.
 	HarnessSecrets(ctx context.Context, server, harnessID string) ([]HarnessSecret, error)
+
+	// CreateHarnessVariant creates a config following a standalone parent in this
+	// server's project, without copying its account or personal files.
+	CreateHarnessVariant(ctx context.Context, server string, variant NewHarnessVariant) (Harness, error)
 
 	// DoHarness runs a lifecycle verb against one harness.
 	DoHarness(ctx context.Context, server string, verb HarnessVerb, harnessID string) error

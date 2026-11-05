@@ -334,3 +334,7 @@
 - Scope addition-preview promises to the addition action. The add-or-replace
   dialog offers both outcomes; an unqualified footer saying the rest stays
   unchanged misstates replacement, which clears the existing use grants.
+
+- A form submitting asynchronous work installs its wait dialog synchronously
+  before returning the command. An intermediate submit message leaves a gap
+  for queued input to open another dialog, which that submit would overwrite.
