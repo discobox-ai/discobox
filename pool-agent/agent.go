@@ -220,13 +220,13 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		Fetch:     assetClient.Fetch,
 	})
 	if machines != nil {
-		runtime, err := newMachineSandboxRuntime(root, bootstrap, hop, machines, identity.PrivateKey, assets)
+		runtime, err := newMachineSandboxRuntime(root, bootstrap, hop, machines, identity.PrivateKey, assets, client)
 		if err != nil {
 			return err
 		}
 		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front)
 	}
-	runtime, err := newDockerSandboxRuntime(root, bootstrap, hop, identity.PrivateKey, assets)
+	runtime, err := newDockerSandboxRuntime(root, bootstrap, hop, identity.PrivateKey, assets, client)
 	if err != nil {
 		return err
 	}
@@ -243,12 +243,18 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 // is why the runtime is built only once the key is known to be this pool's.
 // Its asset cache is where the agent layer it places in a delivered sandbox
 // comes from.
-func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, identityKey ed25519.PrivateKey, assets *assetcache.Cache) (*sandboxruntime.DockerSandboxRuntime, error) {
+func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, identityKey ed25519.PrivateKey, assets *assetcache.Cache, client *HTTPClient) (*sandboxruntime.DockerSandboxRuntime, error) {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
 		return nil, err
 	}
 	return sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
+		CompleteSuspend: func(ctx context.Context, id, requestID string, epoch int64) error {
+			return client.CompleteSuspend(ctx, bootstrap.ProjectID, bootstrap.PoolID, identityKey, id, requestID, epoch)
+		},
+		AuthorizeStart: func(ctx context.Context, id string, epoch int64) error {
+			return client.AuthorizeStart(ctx, bootstrap.ProjectID, bootstrap.PoolID, identityKey, id, epoch)
+		},
 		PoolEndpoints:         hop.endpoints,
 		AgentTLS:              hop.agentTLS,
 		ProjectID:             bootstrap.ProjectID,

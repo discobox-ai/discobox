@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	"aidanwoods.dev/go-paseto"
 	"github.com/go-faster/jx"
 
@@ -831,5 +833,34 @@ func TestAReportThatChangesWhatAnAgentTakesResendsItsSentinels(t *testing.T) {
 	report(false)
 	if len(recorded.sentinels) != 2 {
 		t.Fatalf("marked %v, want them again when the agent is rolled back", recorded.sentinels)
+	}
+}
+
+func TestStartAuthorizationUsesCurrentEpochAndPoolOwnership(t *testing.T) {
+	svc, _ := newAgentServiceTestFixture(t)
+	principal := auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-a"}
+	ctx := auth.WithPrincipal(context.Background(), principal)
+	sb, err := svc.store.GetSandbox(ctx, "project-1", "sandbox-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AuthorizePoolSandboxStart(ctx, "pool-a", sb.ID, sb.WakeEpoch); err != nil {
+		t.Fatal(err)
+	}
+	// Whole-row saves must not put back a superseded token.
+	if err := svc.store.Transaction(ctx, func(st *store.Store, tx *gorm.DB) error { return st.CancelSandboxWakeTx(ctx, tx, "project-1", sb.ID) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.store.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AuthorizePoolSandboxStart(ctx, "pool-a", sb.ID, sb.WakeEpoch); err == nil {
+		t.Fatal("stale start authorized")
+	}
+	if err := svc.AuthorizePoolSandboxStart(ctx, "pool-b", sb.ID, sb.WakeEpoch); err == nil {
+		t.Fatal("another pool authorized")
+	}
+	if err := svc.AuthorizePoolSandboxStart(auth.WithPrincipal(ctx, auth.Principal{Type: auth.PrincipalTypeUser, UserID: "user-1"}), "pool-a", sb.ID, sb.WakeEpoch); err == nil {
+		t.Fatal("user authorized as a pool")
 	}
 }

@@ -532,6 +532,11 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 
 func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 
+// AuthorizePoolSandboxStartNoContent is response for AuthorizePoolSandboxStart operation.
+type AuthorizePoolSandboxStartNoContent struct{}
+
+func (*AuthorizePoolSandboxStartNoContent) authorizePoolSandboxStartRes() {}
+
 // One credential a target holds, resolved: the binding that applies (the narrowest per variable),
 // each addition stacking on it, and every route list a request carrying it is held to.
 // Ref: #/components/schemas/BoundSecret
@@ -821,6 +826,11 @@ func (s *CloneProgressStage) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
+
+// CompletePoolSandboxSuspendNoContent is response for CompletePoolSandboxSuspend operation.
+type CompletePoolSandboxSuspendNoContent struct{}
+
+func (*CompletePoolSandboxSuspendNoContent) completePoolSandboxSuspendRes() {}
 
 // Ref: #/components/schemas/CompleteSandboxSourcePushBody
 type CompleteSandboxSourcePushBody struct {
@@ -2788,7 +2798,9 @@ func (*ErrorModelStatusCode) approveAdoptionRequestRes()                {}
 func (*ErrorModelStatusCode) approveSecretRequestRes()                  {}
 func (*ErrorModelStatusCode) approveTrustRequestRes()                   {}
 func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()           {}
+func (*ErrorModelStatusCode) authorizePoolSandboxStartRes()             {}
 func (*ErrorModelStatusCode) clearPoolCacheRes()                        {}
+func (*ErrorModelStatusCode) completePoolSandboxSuspendRes()            {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()             {}
 func (*ErrorModelStatusCode) createAdoptionRequestRes()                 {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()                   {}

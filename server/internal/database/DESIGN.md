@@ -259,3 +259,6 @@ whose creator has already been purged or is outside the project; creation
 history stays intact. Column presence is
 the marker; later starts preserve a release or adoption. AutoMigrate adds its
 index and the adoption-request table, then the event backfill projects parents.
+
+`SandboxSuspendReceipt` is an additive table migration. Existing sandboxes
+start with no receipts and retain their wake epochs; no backfill is needed.

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/requestprogress"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -413,7 +415,9 @@ func (a *App) newSandboxStartCommand() *cobra.Command {
 			if force {
 				body.SetForce(apiclientgen.NewOptBool(true))
 			}
-			sandboxRes, err := client.StartSandbox(cmd.Context(), body, apiclientgen.StartSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+			status := newStatusLine(cmd.ErrOrStderr(), a.color)
+			defer status.clear()
+			sandboxRes, err := client.StartSandbox(requestprogress.Observe(cmd.Context(), status.set), body, apiclientgen.StartSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 			if err != nil {
 				return err
 			}
@@ -546,7 +550,9 @@ but not started: it is left waiting for its source, and attaching to it or
 			if err != nil {
 				return err
 			}
-			sandboxRes, err := client.RepairSandbox(cmd.Context(), apiclientgen.RepairSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+			status := newStatusLine(cmd.ErrOrStderr(), a.color)
+			defer status.clear()
+			sandboxRes, err := client.RepairSandbox(requestprogress.Observe(cmd.Context(), status.set), apiclientgen.RepairSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 			if err != nil {
 				return err
 			}

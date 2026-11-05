@@ -104,3 +104,9 @@
   directory a VM may be booting from, and never publish a build that exported
   nothing — the resolver skips an incomplete local build silently and boots the
   published image instead, which looks like a build that did nothing.
+
+- A fenced explicit start refusal has its own pool problem type
+  (`sandbox-start-not-authorized`); never let it fall through to the generic
+  409 mapping for an already-existing sandbox. During an agent upgrade, a raw
+  missing `start-admitted` route is a pool wait, while a typed runtime 404
+  remains the runtime's refusal. Never fall back to sending an unfenced start.

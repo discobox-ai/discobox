@@ -84,6 +84,16 @@ func (UnimplementedHandler) AttachSandboxExecOnce(ctx context.Context, req Attac
 	return r, ht.ErrNotImplemented
 }
 
+// AuthorizePoolSandboxStart implements authorize-pool-sandbox-start operation.
+//
+// Check that an explicit start is still current, immediately before execution under the pool's power
+// lock.
+//
+// GET /api/pools/{poolId}/sandbox-start-authorization
+func (UnimplementedHandler) AuthorizePoolSandboxStart(ctx context.Context, params AuthorizePoolSandboxStartParams) (r AuthorizePoolSandboxStartRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CaptureSandboxHarnessConfig implements capture-sandbox-harness-config operation.
 //
 // Capture sandbox harness config.
@@ -111,6 +121,15 @@ func (UnimplementedHandler) ClearPoolCache(ctx context.Context, params ClearPool
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear
 func (UnimplementedHandler) ClearSandboxCache(ctx context.Context, params ClearSandboxCacheParams) (r ClearSandboxCacheRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CompletePoolSandboxSuspend implements complete-pool-sandbox-suspend operation.
+//
+// Record a successful suspend once, before releasing the pool's power lock.
+//
+// POST /api/pools/{poolId}/sandbox-suspend-completion
+func (UnimplementedHandler) CompletePoolSandboxSuspend(ctx context.Context, params CompletePoolSandboxSuspendParams) (r CompletePoolSandboxSuspendRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1461,6 +1480,10 @@ func (UnimplementedHandler) SetDefaultProject(ctx context.Context, params SetDef
 //
 // Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source
 // delivery - parked waiting for it, or failed before it arrived - since only that delivery starts it.
+//
+//	While waiting for its pool to return, emits HTTP 102 responses with X-Discobox-Progress naming
+//
+// the current phase. The final JSON response is unchanged.
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/start
 func (UnimplementedHandler) StartSandbox(ctx context.Context, req *StartSandboxBody, params StartSandboxParams) (r StartSandboxRes, _ error) {

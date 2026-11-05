@@ -11,6 +11,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -47,9 +48,11 @@ func TestMapPoolClientErrorSeparatesTheTwoConflicts(t *testing.T) {
 	}{
 		{"archived carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxArchived, sandbox.ErrArchived},
 		{"no container carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxNoContainer, sandbox.ErrNoContainer},
+		{"start authorization carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxStartNotAuthorized, sandbox.ErrStartNotAuthorized},
 		{"not running carries its type", http.StatusConflict, poolapimodel.ErrorTypeSandboxNotRunning, sandbox.ErrNotRunning},
 		{"a bare conflict is already-exists", http.StatusConflict, "", sandbox.ErrAlreadyExists},
 		{"an unrelated type is already-exists", http.StatusConflict, "https://discobox.ai/errors/other", sandbox.ErrAlreadyExists},
+		{"agent startup is pool unavailability", http.StatusServiceUnavailable, "", sandbox.ErrPoolNotReachable},
 		{"not found is unchanged", http.StatusNotFound, "", sandbox.ErrNotFound},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -214,5 +217,55 @@ func TestEnsureRunningStartsTheSandboxAndMapsItsRefusals(t *testing.T) {
 	runtimeProvider.client = old.Client()
 	if err := provider.EnsureRunning(ctx, ref, state); !errors.Is(err, sandbox.ErrPoolAgentUnsupported) || errors.Is(err, sandbox.ErrNotFound) {
 		t.Fatalf("ensure against an agent without the route = %v, want ErrPoolAgentUnsupported and not a missing sandbox", err)
+	}
+}
+
+func TestExplicitStartWaitsForOldAgentRouteWithoutSendingUnfenced(t *testing.T) {
+	ctx := context.Background()
+	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+	epoch := int64(8)
+	ref := sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1", StartEpoch: &epoch}
+	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
+	var starting atomic.Bool
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if starting.Load() {
+			http.Error(w, "the pool agent is starting", http.StatusServiceUnavailable)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/start") {
+			t.Error("sent an unfenced start")
+		}
+		http.NotFound(w, r)
+	}))
+	defer old.Close()
+	newURL, newClient := runtimeProvider.baseURL, runtimeProvider.client
+	runtimeProvider.baseURL, runtimeProvider.client = old.URL, old.Client()
+	if _, err := provider.Start(ctx, ref, state); !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("old agent: %v", err)
+	}
+	starting.Store(true)
+	if _, err := provider.Start(ctx, ref, state); !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("starting agent: %v", err)
+	}
+	runtimeProvider.baseURL, runtimeProvider.client = newURL, newClient
+	if _, err := runtimeProvider.runtime.CreateSandbox(ctx, &poolapimodel.PoolSandboxCreateRequest{SandboxId: ref.SandboxID}); err != nil {
+		t.Fatal(err)
+	}
+	runtimeProvider.runtime.AuthorizeStart = func(context.Context, string, int64) error { return nil }
+	if _, err := provider.Start(ctx, ref, state); err != nil {
+		t.Fatalf("replacement agent: %v", err)
+	}
+	runtimeProvider.runtime.AuthorizeStart = func(context.Context, string, int64) error { return errors.New("superseded") }
+	if _, err := provider.Start(ctx, ref, state); !errors.Is(err, sandbox.ErrStartNotAuthorized) {
+		t.Fatalf("execution refusal: %v", err)
+	}
+}
+
+func TestPlainAgentStartupRefusalIsPoolUnavailability(t *testing.T) {
+	err := mapPoolClientError(&unexpectedPoolAgentResponse{StatusCode: http.StatusServiceUnavailable, Body: "the pool agent is starting"})
+	if !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatal(err)
 	}
 }

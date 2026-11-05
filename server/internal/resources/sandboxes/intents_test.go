@@ -82,7 +82,7 @@ func TestNoIntentTakesBackASandboxBeingDeleted(t *testing.T) {
 	if err := svc.DeleteSandbox(ctx, sandbox.ProjectID, sandbox.ID); err != nil {
 		t.Fatalf("archive of a sandbox being deleted = %v, want it accepted", err)
 	}
-	_, err := svc.recordSandboxIntent(ctx, sandbox.ProjectID, sandbox.ID, model.DesiredStatePresent)
+	_, err := svc.recordSandboxIntent(ctx, sandbox.ProjectID, sandbox.ID, model.DesiredStatePresent, false)
 	var status interface{ StatusCode() int }
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict {
 		t.Fatalf("present over a sandbox being deleted = %v, want 409", err)

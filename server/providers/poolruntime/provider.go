@@ -557,6 +557,12 @@ func poolAgentUnanswered(ctx context.Context, err error) bool {
 	if !errors.As(err, &urlErr) || urlErr.Timeout() {
 		return false
 	}
+	// net/http's idle-close sentinel is unexported. It occurs when an agent
+	// restart races a reused connection and is the same unanswered transport
+	// condition as EOF, not an application refusal.
+	if urlErr.Err.Error() == "http: server closed idle connection" {
+		return true
+	}
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) {
 		return true

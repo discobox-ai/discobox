@@ -307,3 +307,16 @@ Two rules follow from it:
   state forward. The create reconcile converges the generation before the agent
   registers, so a drift re-check that preserved `State` would strand a
   registered pool in `registering`.
+
+## Explicit start authorization
+
+`authorize-pool-sandbox-start` is a pool-principal-only read. It checks pool
+ownership, presence and the current wake epoch on the primary database. The
+pool calls it under its runtime power lock before an explicit start executes;
+it acquires no sandbox service admission lock. The sandbox service owns
+admission and retry policy; this service owns authenticating the pool's read.
+
+`sandbox-suspend-completion` applies the same pool identity and sandbox
+ownership checks, then delegates successful-freeze bookkeeping to the sandbox
+service. It is invoked under the pool's power lock before another start can
+execute, including when different server instances dispatched the two calls.

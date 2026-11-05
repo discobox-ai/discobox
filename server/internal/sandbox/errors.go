@@ -7,6 +7,8 @@ import (
 )
 
 var (
+	// ErrStartNotAuthorized means execution rejected a stale or unverifiable explicit start.
+	ErrStartNotAuthorized = errors.New("explicit start is no longer authorized")
 	// ErrNotFound indicates the runtime sandbox does not exist.
 	ErrNotFound = errors.New("sandbox not found")
 

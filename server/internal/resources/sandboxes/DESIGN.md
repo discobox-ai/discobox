@@ -148,9 +148,44 @@ A `start` or `restart` is a use of the sandbox, so one refused with
 `ErrNoContainer` goes the way an action does (below): the sandbox is repaired
 once, or the rebuild already coming is waited for, and the instruction is sent
 again — including through the window in which the repair's teardown has the
-pool calling the sandbox archived, which is read as the same answer. It waits for nothing else — a sandbox still being created is refused at
-once — and a `stop` is not a use. This is the one place an instruction leads to
+pool calling the sandbox archived, which is read as the same answer. Restart waits for nothing else. Explicit start additionally waits for a
+pool-unreachable refusal (ADR 26-11-04-167); initial provisioning and owed
+source still refuse immediately. A `stop` is not a use. This is the one place an instruction leads to
 recorded intent, and what it records is existence, not power.
+
+An explicit start cancels the wake once at admission and retains that
+`WakeEpoch` for all retries. Typed repair admits in its intent transaction and
+retains that epoch through rebuilding and its final start. New outside power
+instructions, repair, archive and delete supersede older starts; a refused
+suspend changes nothing. Per-sandbox service serialization covers admission,
+dispatch and successful suspend, and is released between attempts. Each
+attempt reads from the primary database.
+
+A fenced start carries its epoch to the pool. Under its runtime power lock,
+after any queues, the pool asks `authorize-pool-sandbox-start` whether that
+epoch is still current and the sandbox still present on this pool. This closes
+the unanswered-dispatch race even when a newer stop never reaches the pool.
+The callback reads primary state without taking the service admission lock;
+no database transaction spans network I/O. Unfenced scheduled wakes and action
+starts keep their existing single-send policy.
+
+Successful explicit suspend is completed at the execution boundary too: while
+still holding the pool power lock, the pool calls `sandbox-suspend-completion`.
+The sandbox service cancels the wake and advances its epoch transactionally,
+once per request ID. `SandboxSuspendReceipt` makes lost callback responses
+idempotent across service instances and later completions; purge removes the
+receipts. Service return records the same receipt, covering providers that
+complete synchronously without an HTTP callback. A refused freeze records no
+completion. A pool's pending completion file prevents an agent restart from
+losing the fence; the next explicit start completes it before authorization.
+
+The wait uses the attach stall budget and caller context. Its first pool
+refusal starts a five-minute ceiling retained through subsequent rebuilds;
+attempt RPCs and sleeps fit within the remaining bounds. The last refusal
+survives deadline expiry as a conflict explaining that waiting ended.
+`requestprogress` emits phase changes, including the pool wait, through HTTP
+102 responses while the final JSON response retains its existing contract.
+This is request progress, never observed state or a provisioning heartbeat.
 
 ## Sleep, idle, and the scheduled start
 
@@ -283,8 +318,7 @@ from attach to every action).
   `rebuildOnUse` would repair it automatically, since a repair only parks it
   again and nothing but that delivery would then start it. An action reaches
   the refusal only once the wait above has let it through, so a parked or
-  converging one is waited on. A start or restart instruction waits for
-  nothing and is refused for any owed sandbox, parked included.
+  converging one is waited on. A start or restart instruction never waits for source delivery and is refused for any owed sandbox, parked included.
 - A caller's deadline also ends the wait, and is answered like the stall
   budget and the host ceiling: with the last refusal, which names what never
   became true. A cancel is the caller leaving, and gets the context's error.

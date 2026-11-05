@@ -29,6 +29,10 @@ type AttachSandboxExecRes interface {
 	attachSandboxExecRes()
 }
 
+type AuthorizePoolSandboxStartRes interface {
+	authorizePoolSandboxStartRes()
+}
+
 type CaptureSandboxHarnessConfigRes interface {
 	captureSandboxHarnessConfigRes()
 }
@@ -39,6 +43,10 @@ type ClearPoolCacheRes interface {
 
 type ClearSandboxCacheRes interface {
 	clearSandboxCacheRes()
+}
+
+type CompletePoolSandboxSuspendRes interface {
+	completePoolSandboxSuspendRes()
 }
 
 type CompleteSandboxSourcePushRes interface {

@@ -26,6 +26,7 @@ import (
 // the pool agent answers for the sandbox the incident behind ADR 26-10-12-711
 // left behind.
 type containerProvider struct {
+	startCall func(context.Context, sandbox.SandboxRef) error
 	recordingProvider
 	container atomic.Bool
 	// createErr fails every create, so a rebuild never lands.
@@ -78,8 +79,13 @@ func (p *containerProvider) EnsureRunning(context.Context, sandbox.SandboxRef, [
 	return nil
 }
 
-func (p *containerProvider) Start(_ context.Context, _ sandbox.SandboxRef, state []byte) ([]byte, error) {
+func (p *containerProvider) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	p.starts.Add(1)
+	if p.startCall != nil {
+		if err := p.startCall(ctx, ref); err != nil {
+			return state, err
+		}
+	}
 	if p.archived.Load() {
 		return state, sandbox.ErrArchived
 	}
@@ -262,7 +268,7 @@ func TestAFailedAutomaticRepairIsNotRepeated(t *testing.T) {
 	}
 
 	// Explicit intent moves the generation on, and with it the bound.
-	if _, err := service.recordSandboxIntent(ctx, "project-1", "sb-1", model.DesiredStatePresent); err != nil {
+	if _, err := service.recordSandboxIntent(ctx, "project-1", "sb-1", model.DesiredStatePresent, false); err != nil {
 		t.Fatalf("record intent: %v", err)
 	}
 	waitFor(t, func() bool { return storedSandbox(t, service).Converged() })

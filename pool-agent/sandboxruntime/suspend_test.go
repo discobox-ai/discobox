@@ -92,7 +92,7 @@ func TestSuspendPausesOnlyARunningSandbox(t *testing.T) {
 	} {
 		t.Run(tc.status, func(t *testing.T) {
 			r, daemon := newPausingRuntime(t, tc.status)
-			err := r.SuspendSandbox(context.Background(), "sbx_1")
+			err := r.SuspendSandbox(context.Background(), "sbx_1", nil)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("SuspendSandbox = %v, want %v", err, tc.wantErr)
 			}

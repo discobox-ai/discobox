@@ -45,7 +45,7 @@ func (i sandboxInstruction) String() string {
 // A sandbox with no resolvable provider is a no-op rather than an error: the
 // instruction has nowhere to go, and refusing it would turn a
 // provider-less configuration into a failure of the caller's request.
-func instructSandbox(ctx context.Context, st *store.Store, provider Provider, sb *model.Sandbox, instruction sandboxInstruction) error {
+func instructSandbox(ctx context.Context, st *store.Store, provider Provider, sb *model.Sandbox, instruction sandboxInstruction, startEpoch *int64, suspendID string) error {
 	if provider == nil {
 		return nil
 	}
@@ -54,6 +54,9 @@ func instructSandbox(ctx context.Context, st *store.Store, provider Provider, sb
 		return err
 	}
 	ref := sandboxRefFromSandbox(sb)
+	ref.StartEpoch = startEpoch
+	ref.SuspendID = suspendID
+	ref.SuspendEpoch = sb.WakeEpoch
 	var rotated []byte
 	switch instruction {
 	case sandboxStop:

@@ -479,7 +479,19 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 // channel (ADR 0017 §§9–10).
 func (p *poolAgentClient) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	return p.instruct(ctx, ref, state, func(ctx context.Context, client *poolclient.Client) error {
-		_, err := client.PoolStartSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolStartSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+		if ref.StartEpoch == nil {
+			_, err := client.PoolStartSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolStartSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+			return err
+		}
+		request := &poolapimodel.PoolSandboxOperationRequest{}
+		request.StartEpoch.SetTo(*ref.StartEpoch)
+		_, err := client.PoolStartAdmittedSandbox(ctx, request, poolclient.PoolStartAdmittedSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+		var unexpected *unexpectedPoolAgentResponse
+		if errors.As(err, &unexpected) && unexpected.StatusCode == http.StatusNotFound {
+			// The old agent cannot safely execute this instruction. Its replacement
+			// gains this route; never fall back to the unfenced start.
+			return fmt.Errorf("%w: waiting for pool %s to upgrade its agent for explicit starts", sandbox.ErrPoolNotReachable, p.poolID)
+		}
 		return err
 	})
 }
@@ -503,8 +515,13 @@ func (p *poolAgentClient) Restart(ctx context.Context, ref sandbox.SandboxRef, s
 // sandbox.ErrPoolAgentUnsupported: that pool cannot suspend, and nothing
 // changed.
 func (p *poolAgentClient) Suspend(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
+	request := &poolapimodel.PoolSandboxOperationRequest{}
+	if ref.SuspendID != "" {
+		request.SuspendId.SetTo(ref.SuspendID)
+		request.SuspendEpoch.SetTo(ref.SuspendEpoch)
+	}
 	return p.instruct(ctx, ref, state, func(ctx context.Context, client *poolclient.Client) error {
-		_, err := client.PoolSuspendSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolSuspendSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+		_, err := client.PoolSuspendSandbox(ctx, request, poolclient.PoolSuspendSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
 		return err
 	})
 }
@@ -539,7 +556,11 @@ func (p *poolAgentClient) instruct(ctx context.Context, ref sandbox.SandboxRef, 
 	}
 	defer release()
 	if err := call(ctx, client); err != nil {
-		return state, mapPoolClientError(err)
+		mapped := mapPoolClientError(err)
+		if errors.Is(mapped, sandbox.ErrPoolNotReachable) {
+			return state, fmt.Errorf("pool %s: %w", p.poolID, mapped)
+		}
+		return state, mapped
 	}
 	return state, nil
 }
@@ -1172,6 +1193,9 @@ func mapPoolClientError(err error) error {
 		return nil
 	}
 	var statusErr *poolclient.ErrorModelStatusCode
+	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusServiceUnavailable {
+		return fmt.Errorf("%w: %s", sandbox.ErrPoolNotReachable, poolClientErrorMessage(statusErr))
+	}
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
 		return sandbox.ErrNotFound
 	}
@@ -1181,6 +1205,11 @@ func mapPoolClientError(err error) error {
 	}
 	var unexpected *unexpectedPoolAgentResponse
 	if errors.As(err, &unexpected) {
+		// The front answers 503 while its agent is starting. The HTTP listener
+		// is reachable, but the pool cannot yet accept the instruction.
+		if unexpected.StatusCode == http.StatusServiceUnavailable {
+			return fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, unexpected)
+		}
 		if unexpected.StatusCode == http.StatusNotFound || unexpected.refusesAnUnknownField() {
 			return fmt.Errorf("%w: %w", sandbox.ErrPoolAgentUnsupported, unexpected)
 		}
@@ -1195,6 +1224,8 @@ func mapPoolClientError(err error) error {
 		// refused create settle as a converged, healthy sandbox that had no
 		// container at all.
 		switch poolErrorType(statusErr) {
+		case poolapimodel.ErrorTypeSandboxStartNotAuthorized:
+			return fmt.Errorf("%w: %s", sandbox.ErrStartNotAuthorized, poolClientErrorMessage(statusErr))
 		case poolapimodel.ErrorTypeHarnessChangeRefused:
 			return fmt.Errorf("%w: %s", sandbox.ErrHarnessChangeRefused, poolClientErrorMessage(statusErr))
 		case poolapimodel.ErrorTypeSandboxArchived:

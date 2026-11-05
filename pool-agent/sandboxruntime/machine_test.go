@@ -682,7 +682,7 @@ func TestMachineRefusesWhatItCannotDo(t *testing.T) {
 	if _, err := f.runtime.CreateSandbox(ctx, machineCreate("sbx_5")); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.runtime.SuspendSandbox(ctx, "sbx_5"); !errors.Is(err, ErrUnsupported) {
+	if err := f.runtime.SuspendSandbox(ctx, "sbx_5", nil); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("suspend = %v, want ErrUnsupported", err)
 	}
 	if _, err := f.runtime.ExportTree(ctx, "sbx_5", delivery(machineCreate("sbx_5"))); !errors.Is(err, ErrUnsupported) {

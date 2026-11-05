@@ -109,6 +109,12 @@ type Handler interface {
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart
 	PoolRestartSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolRestartSandboxParams) (*PoolSandboxOperationAccepted, error)
+	// PoolStartAdmittedSandbox implements pool-start-admitted-sandbox operation.
+	//
+	// Execute an admitted explicit start after checking its epoch.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start-admitted
+	PoolStartAdmittedSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStartAdmittedSandboxParams) (*PoolSandboxOperationAccepted, error)
 	// PoolStartSandbox implements pool-start-sandbox operation.
 	//
 	// Start pool sandbox.

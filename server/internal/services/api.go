@@ -451,6 +451,8 @@ type PoolService interface {
 	// any state: the set whose trees the pool agent may not reap
 	// (ADR 26-10-01-876).
 	ListPoolHeldSandboxes(ctx context.Context, poolID string) ([]string, error)
+	AuthorizePoolSandboxStart(ctx context.Context, poolID, sandboxID string, epoch int64) error
+	CompletePoolSandboxSuspend(ctx context.Context, poolID, sandboxID, requestID string, epoch int64) error
 }
 
 // JobService exposes a project's pending reconcile work as jobs: each is a

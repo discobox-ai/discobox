@@ -2486,3 +2486,31 @@ success, under the same power lock; retries keep the same ID. No timeout can
 release it after a pool or server restart. Archive publishes its archive marker before removing the fence along with
 the runtime; the durable workspace remains. Provisioning on the next boot is
 still the sandbox agent's readiness gate, and the switch itself starts nothing.
+
+## Fenced explicit starts
+
+An explicit start uses the separate `start-admitted` route and carries
+`startEpoch`. An old agent has no such route, so the service waits for its
+replacement without ever falling back to an unfenced start. After acquiring its per-sandbox power
+lock (and, for Docker, the start gate), either runtime checks the epoch with
+the control plane using the pool's signed identity. A missing validator or a
+failed check refuses the start. The check is never cached, so an unanswered
+request delayed across a stop or an agent restart cannot start afterwards.
+Scheduled wakes and actions omit the epoch and retain their existing policy.
+
+An explicit suspend carries `suspendId`. Under the power lock, the Docker
+runtime stages `.discobox-suspend-completion.json`, freezes, and calls the
+control plane to complete that receipt before releasing the lock. An answered
+freeze refusal removes the staged receipt. A lost response or process death
+leaves it pending; the next explicit start finishes it before authorization.
+Receipts are idempotent on the server, so repeating completion never cancels a
+newer wake twice. This also fences retries from another server instance during
+the suspend response gap. Unidentified power-down freezes keep their existing
+policy. No new running intent is recorded.
+
+Suspend receipt preparation and completed freeze are distinct phases. Recovery
+verifies a prepared receipt against runtime suspension and discards an
+unperformed attempt. Power transitions drain pending completion before changing
+that evidence. Completion carries the dispatch wake epoch; a first callback
+delayed past a newer admission records its receipt without canceling that newer
+instruction.

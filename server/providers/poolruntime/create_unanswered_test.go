@@ -148,6 +148,7 @@ func TestPoolAgentUnansweredIsOnlyAnAgentThatWasNotThere(t *testing.T) {
 		want bool
 	}{
 		{"closed under the request", post(io.EOF), true},
+		{"closed idle connection during agent restart", post(errors.New("http: server closed idle connection")), true},
 		{"closed mid-response", post(io.ErrUnexpectedEOF), true},
 		{"refused", post(&net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}), true},
 		{"reset", post(&net.OpError{Op: "read", Err: syscall.ECONNRESET}), true},

@@ -126,6 +126,7 @@ COPY pkg/secretroute ./pkg/secretroute
 COPY pkg/serverstage ./pkg/serverstage
 COPY pkg/sourcecache ./pkg/sourcecache
 COPY pkg/sourceref ./pkg/sourceref
+COPY pkg/requestprogress ./pkg/requestprogress
 COPY pkg/sse ./pkg/sse
 COPY pkg/tools ./pkg/tools
 COPY pkg/version ./pkg/version

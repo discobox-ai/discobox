@@ -59,3 +59,6 @@ const ErrorTypeSandboxNotRunning = "https://discobox.ai/errors/sandbox-not-runni
 
 // ErrorTypeHarnessChangeRefused identifies a stopped-only spec precondition failure.
 const ErrorTypeHarnessChangeRefused = "https://discobox.ai/errors/harness-change-refused"
+
+// ErrorTypeSandboxStartNotAuthorized identifies a fenced start refused at execution.
+const ErrorTypeSandboxStartNotAuthorized = "https://discobox.ai/errors/sandbox-start-not-authorized"

@@ -185,6 +185,23 @@ func (s *sandboxService) PoolStartSandbox(ctx context.Context, req *workerapimod
 	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
 }
 
+func (s *sandboxService) PoolStartAdmittedSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolStartAdmittedSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return nil, err
+	}
+	if !req.StartEpoch.IsSet() {
+		return nil, newStatusError(http.StatusBadRequest, "startEpoch is required")
+	}
+	converted, err := convert[workerapimodel.PoolSandboxOperationRequest](req)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.runtime.StartSandbox(ctx, params.SandboxId, &converted); err != nil {
+		return nil, mapRuntimeError(err)
+	}
+	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
+}
+
 // PoolEnsureSandboxRunning starts the sandbox unless it is running, and
 // answers once its agent does (ADR 26-10-12-711 §2). The control plane calls
 // it before forwarding an action, so that a sandbox with no container is
@@ -219,11 +236,15 @@ func (s *sandboxService) PoolStopSandbox(ctx context.Context, req *workerapimode
 // PoolSuspendSandbox freezes a running sandbox whole (ADR 26-10-16-420 §3).
 // It never stops one instead: a pause that fails is an error, and a sandbox
 // that is not running a typed 409.
-func (s *sandboxService) PoolSuspendSandbox(ctx context.Context, _ *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolSuspendSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
+func (s *sandboxService) PoolSuspendSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolSuspendSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
 	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
 		return nil, err
 	}
-	if err := s.runtime.SuspendSandbox(ctx, params.SandboxId); err != nil {
+	if req.SuspendId.IsSet() && !req.SuspendEpoch.IsSet() {
+		return nil, newStatusError(http.StatusBadRequest, "suspendEpoch is required with suspendId")
+	}
+
+	if err := s.runtime.SuspendSandbox(ctx, params.SandboxId, req); err != nil {
 		return nil, mapRuntimeError(err)
 	}
 	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
@@ -389,6 +410,9 @@ func mapRuntimeError(err error) error {
 	// move (unarchive) is not obvious from the status alone. It also carries a
 	// type, because the message is for a human and the control plane has to
 	// tell this 409 from the already-exists one above to act on it at all.
+	if errors.Is(err, sandboxruntime.ErrStartNotAuthorized) {
+		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxStartNotAuthorized)
+	}
 	if errors.Is(err, sandboxruntime.ErrArchived) {
 		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxArchived)
 	}

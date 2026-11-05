@@ -11,6 +11,7 @@ import (
 // CredentialUI asks on the active frontend and temporarily returns terminal
 // ownership to Git when no credential helper answers.
 type CredentialUI struct {
+	Report  func(string)
 	Confirm func(context.Context, string) (bool, error)
 	Run     func(context.Context, *exec.Cmd) error
 }
@@ -26,6 +27,7 @@ type credentialProcess struct {
 
 func (n narration) credentials() CredentialUI {
 	return CredentialUI{
+		Report: n.report,
 		Confirm: func(ctx context.Context, remote string) (bool, error) {
 			answer := make(chan bool, 1)
 			select {
