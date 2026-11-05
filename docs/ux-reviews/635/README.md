@@ -62,3 +62,10 @@ transport-only `wait` field.
 
 For other fixtures, pass `--request PATH --policy-root CHECKOUT` to
 `prototype:approvals`; policy paths in the JSON are relative to CHECKOUT.
+
+The proposed route lists now use aligned METHOD, PATH and OPTIONS columns.
+Each list sorts by host/path first, method second, options as a final tie-breaker.
+Multi-host/path routes expand to one row per host/path; method lists stay together.
+`*` means any HTTP method. GraphQL, MCP and blocked markers appear in OPTIONS.
+Column widths are shared between the use and delegation lists. Long rows still
+wrap at the card edge on narrow terminals; this pass does not solve that layout.
