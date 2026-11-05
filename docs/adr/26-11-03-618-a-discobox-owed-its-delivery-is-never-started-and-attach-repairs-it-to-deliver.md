@@ -30,6 +30,9 @@
   [ADR 0058](0058-a-push-delivered-source-has-a-pool-side-origin.md), the
   origin a delivery pushes into.
 
+The pending-upgrade start wait and pool-transition ceiling are narrowed by
+[26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md).
+
 ## Context
 
 A discobox whose source a client delivers parks in `awaiting_source` once it
