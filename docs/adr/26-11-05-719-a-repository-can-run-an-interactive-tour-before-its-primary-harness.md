@@ -1,7 +1,8 @@
 # 26-11-05-719 — A repository can run an interactive tour before its primary harness
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-05
+- Accepted by the owner by merging #671, 2026-11-05
 - **Issue**: [#633](https://github.com/discobox-ai/discobox/issues/633), including
   the owner's choice of `discobox-ai/tour` and a pre-harness program.
 - **Relates to**: [0027](0027-harness-terminals-run-as-a-shells-typed-in-job.md),
