@@ -678,9 +678,11 @@ func goModuleFiles(ctx context.Context, moduleRoot, repoRoot string, packages ..
 	args := append([]string{"list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}"}, packages...)
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = moduleRoot
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("go list deps in %s: %w", moduleRoot, err)
+		return nil, fmt.Errorf("go list deps in %s: %w: %s", moduleRoot, err, strings.TrimSpace(stderr.String()))
 	}
 	seen := map[string]struct{}{}
 	scanner := bufio.NewScanner(bytes.NewReader(out))
