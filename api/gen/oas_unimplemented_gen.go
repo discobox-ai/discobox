@@ -267,6 +267,15 @@ func (UnimplementedHandler) CreateSandboxProviderInstance(ctx context.Context, r
 	return r, ht.ErrNotImplemented
 }
 
+// CreateSandboxSecretBinding implements create-sandbox-secret-binding operation.
+//
+// Grant sentinel use of a secret to a led discobox.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/secret-bindings
+func (UnimplementedHandler) CreateSandboxSecretBinding(ctx context.Context, req *CreateSandboxSecretBindingBody, params CreateSandboxSecretBindingParams) (r CreateSandboxSecretBindingRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSandboxTrustRequest implements create-sandbox-trust-request operation.
 //
 // Record an agent's host trust request.

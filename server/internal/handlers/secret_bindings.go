@@ -173,3 +173,15 @@ func (h *Handler) DismissSecretRefreshRequest(ctx context.Context, params server
 	}
 	return &body, nil
 }
+
+func (h *Handler) CreateSandboxSecretBinding(ctx context.Context, req *apimodel.CreateSandboxSecretBindingBody, params serverapi.CreateSandboxSecretBindingParams) (serverapi.CreateSandboxSecretBindingRes, error) {
+	receipt, err := h.services.Secrets.CreateSandboxSecretBinding(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.SecretGrantReceipt](receipt)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}

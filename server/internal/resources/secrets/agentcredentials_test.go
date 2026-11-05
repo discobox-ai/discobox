@@ -530,10 +530,14 @@ func mustDeliverAs(t *testing.T, st *store.Store, sandboxID, secretID, env strin
 // newAgentCredentialService builds a service over a database holding one
 // project, one pool, the sandbox that asks, and the lead the delegation tests
 // act as, which created it.
-func newAgentCredentialService(t *testing.T) (*resourcesecrets.Service, *store.Store) {
+func newAgentCredentialService(t *testing.T, dsns ...string) (*resourcesecrets.Service, *store.Store) {
 	t.Helper()
 	ctx := context.Background()
-	db, err := database.New(database.Config{DSN: ":memory:"})
+	dsn := ":memory:"
+	if len(dsns) > 0 {
+		dsn = dsns[0]
+	}
+	db, err := database.New(database.Config{DSN: dsn})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -559,7 +563,7 @@ func newAgentCredentialService(t *testing.T) (*resourcesecrets.Service, *store.S
 	}).Error; err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	if err := write.Create(&model.Sandbox{ID: leadID, ProjectID: "project-1", Name: "lead", PoolID: testPoolID}).Error; err != nil {
+	if err := write.Create(&model.Sandbox{ID: leadID, ProjectID: "project-1", Name: "lead", PoolID: testPoolID, DiscoboxAPI: true}).Error; err != nil {
 		t.Fatalf("create lead sandbox: %v", err)
 	}
 	lead := leadID

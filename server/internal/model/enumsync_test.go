@@ -36,6 +36,7 @@ import (
 // the value set. Both sides must stay identical.
 var yamlEnumAliases = map[string]string{
 	"CreateSecretBody.type":                        "Secret.type",
+	"CreateSandboxSecretBindingBody.raw":           "SecretBinding.raw",
 	"CreateSecretBindingBody.raw":                  "SecretBinding.raw",
 	"SandboxBindingInput.raw":                      "SecretBinding.raw",
 	"SandboxCredential.raw":                        "SecretBinding.raw",

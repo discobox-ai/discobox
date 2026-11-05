@@ -1110,6 +1110,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// explainer waits for a screen with nothing else in front of it.
 		return tea.Batch(again, m.reportUnreachable(msg.listing.Unreachable), m.explainHarnessChangesIfOwed())
 
+	case bindingHistoryMsg:
+		return m.bindingHistoryLoaded(msg)
+
 	case secretsLoadedListMsg:
 		return m.secretsLoaded(msg)
 
@@ -5065,6 +5068,7 @@ func (m *Model) helpText() string {
 		"",
 		"    n              a new secret",
 		"    " + bindingCreateKey + "              bind it before anything asks",
+		"    h              binding history and answered requests",
 		"    e              edit it: its name, routes, limit, value",
 		"    d              delete it",
 		"    Enter          what is bound to it. There, Enter reads a binding,",

@@ -1851,6 +1851,7 @@ type SecretRequest struct {
 // request is pending, and BindingID the binding approving it made or
 // replaced.
 type SecretRequestPart struct {
+	Receipt       *SecretGrantReceipt   `gorm:"type:text;serializer:json" json:"receipt,omitempty"`
 	ApprovedScope string                `gorm:"column:approved_scope;not null;type:text;default:''" json:"approvedScope,omitempty" enum:"routes,hosts,anywhere,legacy-unknown"`
 	Grant         *SecretRequestGrant   `gorm:"column:grant;type:text;serializer:json" json:"grant,omitempty"`
 	Asked         bool                  `gorm:"column:asked;not null;default:false" json:"-"`
@@ -2016,15 +2017,16 @@ const PrefixSecretBinding = "bind"
 // expiry too, and goes with it. An addition (Adds) stacks on the plain use
 // binding of its variable rather than shadowing it (ADR 26-11-03-329).
 type SecretBinding struct {
-	ID         string `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
-	ProjectID  string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SecretID   string `gorm:"column:secret_id;not null;type:text;index;uniqueIndex:idx_secret_binding_delegate,priority:3,where:delegate" json:"secretId" doc:"Bound secret ID"`
-	SecretName string `gorm:"-" json:"secretName,omitempty" doc:"Bound secret's name"`
-	TargetKind string `gorm:"column:target_kind;not null;type:text;index:idx_secret_binding_target,priority:1;uniqueIndex:idx_secret_binding_plain_use,priority:1,where:use AND NOT adds;uniqueIndex:idx_secret_binding_delegate,priority:1,where:delegate" json:"targetKind" doc:"What the binding is for" enum:"project,harnessConfig,sandbox"`
-	TargetID   string `gorm:"column:target_id;not null;type:text;index:idx_secret_binding_target,priority:2;uniqueIndex:idx_secret_binding_plain_use,priority:2,where:use AND NOT adds;uniqueIndex:idx_secret_binding_delegate,priority:2,where:delegate" json:"targetId" doc:"The project, harness config or discobox ID the binding is for"`
-	Use        bool   `gorm:"column:use;not null;default:false" json:"use" doc:"The target may send the credential: it is delivered in envVar"`
-	Delegate   bool   `gorm:"column:delegate;not null;default:false" json:"delegate" doc:"A discobox the binding covers may give the credential, to use, to the discoboxes it leads"`
-	EnvName    string `gorm:"column:env_name;not null;type:text;default:'';uniqueIndex:idx_secret_binding_plain_use,priority:3,where:use AND NOT adds" json:"envVar,omitempty" doc:"Environment variable the credential's sentinel is delivered in; set when use is"`
+	Receipt    *SecretGrantReceipt `gorm:"type:text;serializer:json" json:"receipt,omitempty"`
+	ID         string              `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
+	ProjectID  string              `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SecretID   string              `gorm:"column:secret_id;not null;type:text;index;uniqueIndex:idx_secret_binding_delegate,priority:3,where:delegate" json:"secretId" doc:"Bound secret ID"`
+	SecretName string              `gorm:"-" json:"secretName,omitempty" doc:"Bound secret's name"`
+	TargetKind string              `gorm:"column:target_kind;not null;type:text;index:idx_secret_binding_target,priority:1;uniqueIndex:idx_secret_binding_plain_use,priority:1,where:use AND NOT adds;uniqueIndex:idx_secret_binding_delegate,priority:1,where:delegate" json:"targetKind" doc:"What the binding is for" enum:"project,harnessConfig,sandbox"`
+	TargetID   string              `gorm:"column:target_id;not null;type:text;index:idx_secret_binding_target,priority:2;uniqueIndex:idx_secret_binding_plain_use,priority:2,where:use AND NOT adds;uniqueIndex:idx_secret_binding_delegate,priority:2,where:delegate" json:"targetId" doc:"The project, harness config or discobox ID the binding is for"`
+	Use        bool                `gorm:"column:use;not null;default:false" json:"use" doc:"The target may send the credential: it is delivered in envVar"`
+	Delegate   bool                `gorm:"column:delegate;not null;default:false" json:"delegate" doc:"A discobox the binding covers may give the credential, to use, to the discoboxes it leads"`
+	EnvName    string              `gorm:"column:env_name;not null;type:text;default:'';uniqueIndex:idx_secret_binding_plain_use,priority:3,where:use AND NOT adds" json:"envVar,omitempty" doc:"Environment variable the credential's sentinel is delivered in; set when use is"`
 	// Adds makes the binding an addition (ADR 26-11-03-329 §1): a use, on a
 	// sandbox, by sentinel, with an expiry, that stacks on the plain use
 	// binding applying in EnvName instead of shadowing it. A target holds
@@ -2271,4 +2273,20 @@ func AllModels() []any {
 		&SandboxEvent{},
 		&SandboxEventLog{},
 	}
+}
+
+// SecretGrantReceipt is the immutable decision snapshot, with no credential
+// material. It preserves attribution and effective limits after later edits.
+type SecretGrantReceipt struct {
+	BindingID  string          `json:"bindingId"`
+	RequestID  string          `json:"requestId,omitempty"`
+	SecretID   string          `json:"secretId"`
+	SecretName string          `json:"secretName"`
+	SandboxID  string          `json:"sandboxId"`
+	EnvVar     string          `json:"envVar"`
+	ParentID   string          `json:"parentId"`
+	Actor      string          `json:"actor"`
+	At         time.Time       `json:"at"`
+	ExpiresAt  *time.Time      `json:"expiresAt,omitempty"`
+	RouteLists [][]SecretRoute `json:"routeLists"`
 }

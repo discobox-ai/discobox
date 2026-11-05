@@ -183,6 +183,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/providers
 	CreateSandboxProviderInstance(ctx context.Context, req *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (CreateSandboxProviderInstanceRes, error)
+	// CreateSandboxSecretBinding implements create-sandbox-secret-binding operation.
+	//
+	// Grant sentinel use of a secret to a led discobox.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/secret-bindings
+	CreateSandboxSecretBinding(ctx context.Context, req *CreateSandboxSecretBindingBody, params CreateSandboxSecretBindingParams) (CreateSandboxSecretBindingRes, error)
 	// CreateSandboxTrustRequest implements create-sandbox-trust-request operation.
 	//
 	// Record an agent's host trust request.

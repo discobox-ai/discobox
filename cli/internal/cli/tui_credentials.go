@@ -914,3 +914,44 @@ func (d *apiDataSource) DecideAdoptionRequest(ctx context.Context, server, reque
 	window.answered(server, requestID)
 	return nil
 }
+
+func (d *apiDataSource) BindingHistory(ctx context.Context, server, secretID string) ([]tui.BindingDecision, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	res, err := d.client.ListSecretBindingEvents(ctx, apiclientgen.ListSecretBindingEventsParams{ProjectId: d.projectID, Secret: apiclientgen.NewOptString(secretID), Limit: apiclientgen.NewOptInt64(100)})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListSecretBindingEventsBody](res)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tui.BindingDecision, 0, len(body.SecretBindingEvents))
+	for _, e := range body.SecretBindingEvents {
+		decision := tui.BindingDecision{ID: e.ID, Event: string(e.Event), Actor: terminalSafe(e.Actor), BindingID: e.BindingId, At: e.At}
+		{
+			b := e.Binding
+			decision.TargetID = terminalSafe(b.TargetId)
+			decision.EnvVar = terminalSafe(b.EnvVar.Or(""))
+			decision.ParentID = terminalSafe(b.ParentId.Or(""))
+			decision.RequestID = terminalSafe(b.RequestId.Or(""))
+			decision.Expires = b.ExpiresAt.Or(time.Time{})
+			if receipt, ok := b.Receipt.Get(); ok {
+				decision.GrantedBy = terminalSafe(receipt.Actor)
+				decision.GrantedAt = receipt.At
+				decision.Expires = receipt.ExpiresAt.Or(time.Time{})
+				decision.TargetID = terminalSafe(receipt.SandboxId)
+				decision.EnvVar = terminalSafe(receipt.EnvVar)
+				decision.ParentID = terminalSafe(receipt.ParentId)
+				decision.RequestID = terminalSafe(receipt.RequestId.Or(""))
+				for _, list := range receipt.RouteLists {
+					decision.RouteLists = append(decision.RouteLists, tuiRoutes(list))
+				}
+			}
+		}
+		out = append(out, decision)
+	}
+	return out, nil
+}

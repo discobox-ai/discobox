@@ -166,6 +166,9 @@ Current authorizers:
     its services — list, get, `logs`, `start`, `stop`, and `restart`; and
     HTTP to any of its ports, any method (`http/{port}`);
   - secret requests list, get, approve, and deny, and secrets list;
+  - `POST sandboxes/{id}/secret-bindings` on an immediate child, with
+    transactional delegation checks in the secrets service (ADR 26-11-04-389);
+    general binding reads and writes remain outside the role;
   - the project's skills sources list
     ([ADR 26-10-14-894](../../../docs/adr/26-10-14-894-a-project-names-skills-repositories-every-discobox-is-created-with.md)
     §1).

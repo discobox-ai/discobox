@@ -105,6 +105,10 @@ type CreateSandboxRes interface {
 	createSandboxRes()
 }
 
+type CreateSandboxSecretBindingRes interface {
+	createSandboxSecretBindingRes()
+}
+
 type CreateSandboxTrustRequestRes interface {
 	createSandboxTrustRequestRes()
 }

@@ -151,6 +151,7 @@ var sandboxRole = []sandboxRoleRoute{
 	// stream to the boxes it watches itself (ADR 26-11-01-560 §1).
 	{method: http.MethodGet, path: "events"},
 	{method: http.MethodGet, path: "sandboxes/*", names: childDiscobox},
+	{method: http.MethodPost, path: "sandboxes/*/secret-bindings", names: childDiscobox},
 	// Delivering a source into a discobox: the push into its origin, and the
 	// report that ends its wait (ADR 26-09-24-630 §2). Fetching from an origin
 	// is not delivery, and is not here.

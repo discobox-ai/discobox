@@ -2464,6 +2464,9 @@ type DataSource interface {
 	// an empty filter — every one the server holds for the project.
 	Bindings(ctx context.Context, server string, filter BindingFilter) ([]SecretBinding, error)
 
+	// BindingHistory includes answered requests and direct grants, as immutable events.
+	BindingHistory(ctx context.Context, server, secretID string) ([]BindingDecision, error)
+
 	// HeldGrants are the grants that apply in one variable of a discobox
 	// now (ADR 26-11-03-329 §5): the binding that delivers it, whichever
 	// level it is on, then each addition stacking on it.
@@ -2557,4 +2560,14 @@ func formatRoutes(routes []secretroute.Route) []string {
 		out = append(out, secretroute.Format(route))
 	}
 	return out
+}
+
+// BindingDecision is one historical grant decision. Routes are the complete
+// effective lists at the time; none are credential material.
+type BindingDecision struct {
+	GrantedBy                                                          string
+	GrantedAt                                                          time.Time
+	ID, Event, Actor, RequestID, BindingID, TargetID, EnvVar, ParentID string
+	At, Expires                                                        time.Time
+	RouteLists                                                         [][]secretroute.Route
 }

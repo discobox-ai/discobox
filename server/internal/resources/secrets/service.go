@@ -415,13 +415,24 @@ func (s *Service) ListSecretRequests(ctx context.Context, projectID, status stri
 	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
 		options = append(options, store.OwnedBy(principal.SandboxID))
 	}
-	return s.store.ListSecretRequests(ctx, projectID, status, options...)
+	requests, err := s.store.ListSecretRequests(ctx, projectID, status, options...)
+	if principal, _ := auth.PrincipalFromContext(ctx); principal.Type == auth.PrincipalTypeSandbox {
+		for i := range requests {
+			requests[i].Use.Receipt = nil
+			requests[i].Delegate.Receipt = nil
+		}
+	}
+	return requests, err
 }
 
 func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error) {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "secret request not found")
+	}
+	if principal, _ := auth.PrincipalFromContext(ctx); principal.Type == auth.PrincipalTypeSandbox {
+		req.Use.Receipt = nil
+		req.Delegate.Receipt = nil
 	}
 	return req, nil
 }
@@ -623,6 +634,11 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 	req, projectID := a.req, a.req.ProjectID
 	err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		now := time.Now().UTC()
+		if principal, _ := auth.PrincipalFromContext(ctx); principal.Type == auth.PrincipalTypeSandbox {
+			if err := lockHandoff(ctx, txStore, projectID, principal.SandboxID, req.SandboxID); err != nil {
+				return err
+			}
+		}
 		var secret *model.Secret
 		if a.use != nil || a.delegate != nil {
 			var err error
@@ -664,6 +680,8 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 				return err
 			}
 			part.asked.Grant = grant
+
+			part.asked.Receipt = made.Receipt
 			if !part.approval.delegate {
 				part.asked.ApprovedAs = model.SecretRequestApprovedAsReplace
 				if part.approval.adds {
@@ -677,7 +695,8 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 			req.Status = model.SecretRequestStatusApproved
 		}
 		req.DecidedBy = a.actor
-		req.DecidedAt = &now
+		decidedAt := time.Now().UTC()
+		req.DecidedAt = &decidedAt
 		return txStore.UpdateSecretRequestIfPending(ctx, req)
 	})
 	if errors.Is(err, store.ErrGenerationConflict) {
@@ -746,14 +765,14 @@ func (a *approvalWrite) binding(ctx context.Context, txStore *store.Store, secre
 		binding.EnvName = a.req.EnvName
 	}
 	if a.approverID != "" {
-		parent, err := heldParent(ctx, txStore, a.req.ProjectID, a.approverID, secret.ID, a.parents, now)
+		if err := binding.BeforeCreate(nil); err != nil {
+			return nil, err
+		}
+		current, fitted, err := fitDelegation(ctx, txStore, a.approverID, binding, a.parents, ttl, part.ttlNamed)
 		if err != nil {
 			return nil, err
 		}
-		if ttl, err = fitToParent(parent, ttl, part.ttlNamed, now); err != nil {
-			return nil, err
-		}
-		binding.ParentID = parent.ID
+		ttl, secret = fitted, current
 	}
 	if err := guardBindingTTL(secret, ttl); err != nil {
 		return nil, err
@@ -761,7 +780,9 @@ func (a *approvalWrite) binding(ctx context.Context, txStore *store.Store, secre
 	if err := checkRawBinding(ctx, binding, secret); err != nil {
 		return nil, err
 	}
-	binding.ExpiresAt = expiryAt(now, ttl)
+	if a.approverID == "" {
+		binding.ExpiresAt = expiryAt(now, ttl)
+	}
 	if err := checkBindingShape(binding); err != nil {
 		return nil, err
 	}
@@ -880,6 +901,10 @@ func (s *Service) replaceBindings(ctx context.Context, txStore *store.Store, txD
 	if keep := byID[plan.Keep]; keep != nil && want.Use {
 		before := *keep
 		keep.EnvName, keep.Routes, keep.ExpiresAt, keep.Raw = want.EnvName, want.Routes, want.ExpiresAt, want.Raw
+		keep.Receipt = want.Receipt
+		if keep.Receipt != nil {
+			keep.Receipt.BindingID = keep.ID
+		}
 		if err := txStore.UpdateSecretBinding(ctx, keep, change); err != nil {
 			return nil, bindingConflict(err)
 		}

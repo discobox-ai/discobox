@@ -423,6 +423,8 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 		m.secrets.moveTo(len(m.secrets.all) - 1)
 	case "n":
 		return m.newSecretForm()
+	case "h":
+		return m.loadBindingHistory()
 	case "enter", "v":
 		return m.showBindings()
 	case "e":
@@ -1850,5 +1852,96 @@ func (m *Model) secretHints() []hint {
 	if m.manyServers() {
 		hints = append(hints, says("←→ server"))
 	}
-	return append(hints, keyed("esc", "esc", "back"))
+	return append(hints, keyed("esc", "esc", "back"), keyed("h", "h", "history"))
+}
+
+type bindingHistoryMsg struct {
+	wait           *dialog
+	server, secret string
+	entries        []BindingDecision
+	err            error
+}
+
+func (m *Model) loadBindingHistory() tea.Cmd {
+	secret := m.secrets.current()
+	if secret == nil {
+		return nil
+	}
+	server, id := m.configServer(), secret.ID
+	wait := statusDialog("Binding history", "reading decisions…")
+	m.dialog = wait
+	return func() tea.Msg {
+		entries, err := m.ds.BindingHistory(m.ctx, server, id)
+		return bindingHistoryMsg{wait: wait, server: server, secret: id, entries: entries, err: err}
+	}
+}
+
+func (m *Model) bindingHistoryLoaded(msg bindingHistoryMsg) tea.Cmd {
+	if m.dialog != msg.wait || msg.server != m.configServer() || !m.secretsOpen {
+		return nil
+	}
+	m.dialog = nil
+	if msg.err != nil {
+		return m.report(true, "cannot read binding history: %v", msg.err)
+	}
+	return m.showBindingHistory(msg)
+}
+func (m *Model) showBindingHistory(msg bindingHistoryMsg) tea.Cmd {
+	if len(msg.entries) == 0 {
+		return m.report(false, "no binding history")
+	}
+	var items []action
+	for _, entry := range msg.entries {
+		items = append(items, action{key: entry.ID, enabled: true, label: entry.At.Format(time.RFC3339) + " · " + entry.Event + " · " + entry.Actor})
+	}
+	d := actionsDialog("Binding history and answered requests", "Latest 100 changes", items, func(id string) tea.Cmd {
+		for _, entry := range msg.entries {
+			if entry.ID == id {
+				return m.showBindingDecision(entry, func() tea.Cmd { return m.showBindingHistory(msg) })
+			}
+		}
+		return nil
+	})
+	d.keys = []hint{pressing("enter reads", "enter"), pressing("esc goes back", "esc")}
+	m.dialog = d
+	return nil
+}
+
+func (m *Model) showBindingDecision(e BindingDecision, back func() tea.Cmd) tea.Cmd {
+	label := "Bound by"
+	if e.RequestID != "" {
+		label = "Approved by"
+	}
+	expiry := "forever"
+	if !e.Expires.IsZero() {
+		expiry = e.Expires.Format(time.RFC3339)
+	}
+	grantor, grantedAt := e.GrantedBy, e.GrantedAt
+	if grantor == "" {
+		grantor, grantedAt = e.Actor, e.At
+	}
+	fields := []field{{label: "event", value: e.Event}, {label: "event actor", value: e.Actor}, {label: "event at", value: e.At.Format(time.RFC3339)}, {label: label, value: grantor}, {label: "granted at", value: grantedAt.Format(time.RFC3339)}, {label: "target ID", value: e.TargetID}, {label: "variable", value: e.EnvVar}, {label: "binding ID", value: e.BindingID}, {label: "delegation ID", value: e.ParentID}, {label: "expires", value: expiry}}
+	if e.RequestID != "" {
+		fields = append(fields, field{label: "answered request", value: e.RequestID})
+	}
+	if len(e.RouteLists) == 0 {
+		fields = append(fields, field{label: "effective limits", value: "not recorded for this historical change"})
+	}
+	for _, list := range e.RouteLists {
+		fields = append(fields, field{label: "within", value: routeRows(list), tone: toneAccent})
+	}
+	d := actionsDialog("Credential decision", "", nil, func(string) tea.Cmd { return back() })
+	d.sections = []section{{label: "the decision", fields: fields}}
+	d.wrapDetails = true
+	d.onCancel = back
+	d.keys = []hint{pressing("esc goes back", "esc")}
+	if parent, ok := m.secrets.binding(e.ParentID); ok {
+		d.altKey = "d"
+		d.alt = func(string) tea.Cmd {
+			return m.reviewBinding(parent.SecretName, parent, func() tea.Cmd { return m.showBindingDecision(e, back) })
+		}
+		d.keys = append(d.keys, keyed("d", "d", "reads delegation"))
+	}
+	m.dialog = d
+	return nil
 }

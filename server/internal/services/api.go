@@ -28,6 +28,8 @@ type SandboxCredentialRequestDelegate = apimodel.SandboxCredentialRequestDelegat
 type CreateAdoptionRequestBody = apimodel.CreateAdoptionRequestBody
 type CreateSandboxTrustRequestBody = apimodel.CreateSandboxTrustRequestBody
 type ApproveTrustRequestBody = apimodel.ApproveTrustRequestBody
+type CreateSandboxSecretBindingBody = apimodel.CreateSandboxSecretBindingBody
+
 type CreateSecretBindingBody = apimodel.CreateSecretBindingBody
 type UpdateSecretBindingBody = apimodel.UpdateSecretBindingBody
 type SandboxBindingInput = apimodel.SandboxBindingInput
@@ -488,6 +490,7 @@ type SecretService interface {
 	// Bindings are the authorization (ADR 26-10-27-880 §1): a person's to
 	// make, change and remove, each change recorded as an event.
 	ListSecretBindings(ctx context.Context, projectID string, filter SecretBindingQuery) ([]model.SecretBinding, error)
+	CreateSandboxSecretBinding(ctx context.Context, projectID, sandboxID string, input CreateSandboxSecretBindingBody) (*model.SecretGrantReceipt, error)
 	CreateSecretBinding(ctx context.Context, projectID string, input CreateSecretBindingBody) (*model.SecretBinding, error)
 	GetSecretBinding(ctx context.Context, projectID, bindingID string) (*model.SecretBinding, error)
 	UpdateSecretBinding(ctx context.Context, projectID, bindingID string, input UpdateSecretBindingBody) (*model.SecretBinding, error)

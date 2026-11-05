@@ -342,3 +342,12 @@ Existing rows remain standalone. `HarnessConfigsTransaction` takes the project
 row lock before reading parent snapshots, serializing publication, conversion,
 child creation and deletion. Deletion refuses dependent variants before any
 mutation. Revisions fence concurrent personal edits during snapshot publication.
+
+## Credential handoff locks
+
+Handoff locked reads live here (`LockHandoffSandboxes`,
+`LockHandoffDelegations`), while the secrets service decides authorization and
+route containment. Lock order is project, sandbox IDs, secret, binding IDs.
+Revocation locks each parent binding before discovering children, so an insert
+that wins the lock is included in deletion and every child is marked dirty.
+The service refreshes its clock after these potentially blocking reads.

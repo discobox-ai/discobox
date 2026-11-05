@@ -1378,3 +1378,36 @@ func TestTheRowStopsCountingABindingWhenItLapses(t *testing.T) {
 		t.Fatalf("the row still counts a lapsed binding:\n%s", body)
 	}
 }
+
+func TestGrantDecisionShowsStableAttributionAndLimits(t *testing.T) {
+	m := unloadedModel(t)
+	at := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	e := BindingDecision{ID: "event_1", Actor: "sbx_deleted", BindingID: "bind_1", RequestID: "sreq_1", TargetID: "sbx_child", EnvVar: "GH_TOKEN", ParentID: "bind_parent", At: at, Expires: at.Add(time.Hour), RouteLists: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/acme/**"}}}}}
+	m.showBindingDecision(e, func() tea.Cmd { return nil })
+	var text strings.Builder
+	for _, section := range m.dialog.sections {
+		for _, f := range section.fields {
+			text.WriteString(f.label)
+			text.WriteByte(' ')
+			text.WriteString(f.value)
+			text.WriteByte('\n')
+		}
+	}
+	for _, want := range []string{"Approved by sbx_deleted", "delegation ID bind_parent", "target ID sbx_child", "answered request sreq_1", "api.github.com/repos/acme/**", "2026-11-05T01:00:00Z"} {
+		if !strings.Contains(text.String(), want) {
+			t.Fatalf("decision misses %q: %s", want, text.String())
+		}
+	}
+}
+
+func TestLateBindingHistoryDoesNotReplaceNewerDialog(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	m.secretsOpen = true
+	old := statusDialog("History", "reading")
+	newer := statusDialog("Settings", "reading")
+	m.dialog = newer
+	m.bindingHistoryLoaded(bindingHistoryMsg{wait: old, server: m.configServer(), entries: []BindingDecision{{ID: "e"}}})
+	if m.dialog != newer {
+		t.Fatal("late history replaced the newer card")
+	}
+}

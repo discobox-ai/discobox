@@ -68,9 +68,10 @@ flowchart LR
   `sandboxSentinels` for each in the same transaction
   (`SecretHolders.MarkBindingHoldersDirtyTx`); the sandbox service
   materializes and pushes ([`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md)).
-- **A person's.** Binding CRUD and events refuse a sandbox principal
-  (`refuseSandboxPrincipal`); a discobox hands a credential on only by
-  approving a request or at a create, under a delegate binding.
+- **Private bindings.** General binding CRUD and events remain person-only.
+  A lead may create sentinel use through the target-addressed sandbox binding
+  endpoint, under one live delegation; it cannot inspect or take over other
+  bindings (ADR 26-11-04-389).
 - **Shaped for what it does** (`checkBindingShape`): a use names a variable
   matching `services.EnvVarNamePattern`, a delegation alone names none, and an
   addition is a use alone, on a sandbox, by sentinel, with or without expiry, however
@@ -251,16 +252,24 @@ sends.
 
 - **Only a person makes one**, and only a person answers a request with a
   delegate part.
-- **What is handed on is a child.** A discobox approving a request from a
-  discobox it leads, or binding at a create, does it under a live delegate
-  binding covering it — at any level — of the secret it answers with
-  (`delegationsFor`: among what it was delegated, never the project's
-  secrets; its `ListSecrets` holds only those, `store.DelegatedTo`). The child
-  is a use on the new discobox with `ParentID` set, the routes as asked — the
-  parent's list holds it as well — and a lifetime fitted to the parent's:
-  unnamed it is fitted, named longer it is refused (`fitToParent`). The
-  longest-lived parent is preferred; it is read again in the write's
-  transaction (`heldParent`), so one removed in between makes nothing.
+- **One whole delegation must fit.** Create, direct bind and approve all use
+  `fitDelegation` in the write transaction. Candidates are live delegations of
+  the same secret covering the caller, ordered by latest expiry then ID.
+  Explicit routes must pass `secretroute.ProveContained` under the secret;
+  omitted routes inherit the selected parent's effective limits. Explicit
+  lifetimes fit both ceilings; defaults are capped. Candidates are alternatives,
+  never a union. Further delegation and raw delivery remain person-only.
+- **Authority is current at commit.** The project lock precedes sandbox locks,
+  serializing with adoption, release and purge. `lockHandoff` rechecks the
+  holder's API flag, immediate parent relationship and target eligibility;
+  secret and delegation rows are locked while checking routes and lifetime.
+  A rejected create or answer rolls back every binding, event and dirty mark.
+- **Decisions return receipts.** The new endpoint returns `SecretGrantReceipt`;
+  approved parts carry theirs on the request. The binding and request persist
+  the immutable actor, delegation, effective lists and expiry snapshot, added
+  by nullable columns through `AutoMigrate`. Existing history stays intact.
+  No receipt contains credential material. Sandbox clients do not read child
+  bindings before or after mutation; person clients keep replacement previews.
 - **A child goes with its parent**, by delete or expiry, and is not live
   without it.
 

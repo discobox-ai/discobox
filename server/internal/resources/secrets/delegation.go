@@ -11,7 +11,6 @@ import (
 
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // A discobox approving a request, or binding a secret on a discobox it
@@ -72,7 +71,12 @@ func (s *Service) delegationsFor(ctx context.Context, projectID, approverID, cho
 		secret = only
 	}
 	parents := bySecret[secret.ID]
-	slices.SortStableFunc(parents, func(a, b model.SecretBinding) int { return -lifetimeOrder(&a, &b) })
+	slices.SortStableFunc(parents, func(a, b model.SecretBinding) int {
+		if c := -lifetimeOrder(&a, &b); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
 	return parents, secret, nil
 }
 
@@ -92,28 +96,6 @@ func (s *Service) delegateBindingsOf(ctx context.Context, projectID, sandboxID s
 		out = append(out, delegation.Binding)
 	}
 	return out, nil
-}
-
-// heldParent reads, in the transaction that hands a secret on, the first of
-// the chosen delegate bindings that still covers the discobox handing it on:
-// present, live, a delegation of the secret, on a level covering it. One
-// removed or lapsed since it was chosen is not one this is made under.
-func heldParent(ctx context.Context, txStore *store.Store, projectID, holderID, secretID string, chosen []model.SecretBinding, now time.Time) (*model.SecretBinding, error) {
-	holder, err := txStore.GetSandbox(ctx, projectID, holderID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "sandbox not found")
-	}
-	for i := range chosen {
-		parent, err := txStore.SecretBindingByExactID(ctx, projectID, chosen[i].ID)
-		if err != nil {
-			continue
-		}
-		if parent.Delegate && parent.SecretID == secretID && parent.Live(now) && store.Covers(store.SandboxBindingTargets(holder), parent, true) {
-			return parent, nil
-		}
-	}
-	return nil, apperrors.NewStatusError(http.StatusForbidden,
-		"the delegate binding this would be handed on under is gone or no longer covers this discobox; try again, or leave it for a person")
 }
 
 // fitToParent is the lifetime of a binding handed on under parent: one the
