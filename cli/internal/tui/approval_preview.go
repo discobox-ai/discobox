@@ -5,6 +5,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -106,32 +107,86 @@ func (p *approvalPreview) open() {
 		p.d.action = func(action string) tea.Cmd { return p.receipt(action) }
 		return
 	}
-	f := newForm(
-		pickRow("credential", "Credential", choice{key: "github", label: "GitHub token", hint: "bearer · api.github.com"}, choice{key: "new", label: "New credential…", hint: "Open the new credential form"}),
-		pickRow("duration", "Duration", choice{key: "1h", label: "1 hour", hint: "Requested by the box"}, choice{key: "8h", label: "8 hours"}, choice{key: "1d", label: "1 day"}),
-		pickRow("decision", "Decision", choice{key: "approve", label: "Approve"}, choice{key: "deny", label: "Deny"}),
+	p.showPart(req, req.Use == nil, previewDecision{})
+}
+
+type previewDecision struct {
+	answer, credential, duration string
+}
+
+func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first previewDecision) {
+	credential := pickRow("credential", "Credential",
+		choice{key: "github", label: "GitHub token", hint: "bearer · api.github.com, github.com"},
+		choice{key: "work", label: "Work GitHub token", hint: "Another sample credential"},
+		choice{key: "new", label: "New credential…", hint: "Placeholder: credential creation is outside this sketch"},
 	)
-	if req.asksBoth() {
-		f.rows = append(f.rows[:2], append([]formRow{pickRow("parts", "Permission", choice{key: "both", label: "Use and delegate"}, choice{key: "use", label: "Use only"}, choice{key: "delegate", label: "Delegate only"})}, f.rows[2:]...)...)
+	duration := pickRow("duration", "Duration", choice{key: "1h", label: "1 hour"}, choice{key: "8h", label: "8 hours"}, choice{key: "1d", label: "1 day"})
+	locked := delegate && first.answer == "accept"
+	credential.locked, duration.locked = locked, locked
+	f := newForm(credential, duration, pickRow("decision", "Decision", choice{key: "accept", label: "Accept"}, choice{key: "deny", label: "Deny"}))
+	if first.credential != "" {
+		f.choose("credential", first.credential)
+		f.choose("duration", first.duration)
 	}
-	d := formDialog("Allow GitHub access?", f, func(f *form) tea.Cmd {
-		return p.receipt(f.chosen("decision") + " · " + f.chosen("credential") + " · " + f.chosen("duration") + " · " + f.chosen("parts"))
+	title, explain := "Allow credential use?", "This box may use the credential on the routes below."
+	part := req.Use
+	step := "Use"
+	if delegate {
+		title, explain = "Allow credential delegation?", "This box may give access to boxes it leads, on the routes below. Delegation does not grant its own use."
+		part = req.Delegate
+		step = "Delegation"
+	}
+	d := formDialog(title, f, func(f *form) tea.Cmd {
+		answer := previewDecision{f.chosen("decision"), f.chosen("credential"), f.chosen("duration")}
+		if answer.answer == "accept" && answer.credential == "new" {
+			f.err = "New credential creation is a placeholder; choose either sample token."
+			return nil
+		}
+		if !delegate && req.Delegate != nil {
+			p.showPart(req, true, answer)
+			return nil
+		}
+		summary := []string{}
+		describe := func(label string, a previewDecision) {
+			if a.answer == "deny" {
+				summary = append(summary, label+": denied")
+				return
+			}
+			summary = append(summary, label+": accepted · "+a.credential+" · "+a.duration)
+		}
+		if delegate && req.Use != nil {
+			describe("Use", first)
+		}
+		describe(step, answer)
+		return p.receipt(strings.Join(summary, "; "))
 	})
-	d.titleRight = "2m ago"
-	d.sections = []section{
-		{fields: []field{{label: "Box", value: "Fix approval forms · sbx_123", tone: toneAccent}, {label: "Reason", value: "“" + req.Justification + "”"}}},
-		previewRouteSection("Requested routes", req.Use),
-		{fields: []field{{label: "Variable", value: "GH_TOKEN"}}},
+	d.titleRight = "1 of 1"
+	if req.asksBoth() {
+		d.titleRight = "1 of 2"
+		if delegate {
+			d.titleRight = "2 of 2"
+		}
 	}
+	box := "Fix approval forms · sbx_123"
 	if p.fixture != nil {
-		d.title = "Allow GitHub use and delegation?"
-		d.sections = []section{{fields: []field{{label: "Box", value: "Manager · sbx_manager", tone: toneAccent}, {label: "Reason", value: req.Justification}}}, previewRouteSection("Use", req.Use), previewRouteSection("Delegate", req.Delegate), {fields: []field{{label: "Variable", value: req.EnvVar}}}}
-		d.footer = "Manager fixture · all routes shown · PgUp/PgDn scroll the request"
+		box = "Manager · sbx_manager"
 	}
-	d.keys = []hint{says("↑↓ move"), says("←→ change"), pressing("enter submits preview", "enter"), pressing("esc resets", "esc")}
-	d.footer = "Design sketch · credential use · no existing grants in this example"
-	if p.fixture != nil {
-		d.footer = "Manager fixture · all routes shown · PgUp/PgDn scroll the request"
+	d.sections = []section{{fields: []field{{label: "Box", value: box, tone: toneAccent}, {label: "Reason", value: req.Justification}}, lines: []line{{text: explain}}}}
+	if delegate && req.Use != nil {
+		state := "Use denied. Choose a credential and duration for delegation."
+		if locked {
+			state = "Use accepted. Credential and duration are locked to that decision."
+		}
+		d.sections = append(d.sections, section{lines: []line{{text: state, tone: toneAccent}}})
+	}
+	d.sections = append(d.sections, previewRouteSection("Requested "+strings.ToLower(step), part))
+	if !delegate {
+		d.sections = append(d.sections, section{fields: []field{{label: "Variable", value: req.EnvVar}}})
+	}
+	d.keys = []hint{says("↑↓ move"), says("←→ change"), pressing("enter confirms decision", "enter"), pressing("esc resets", "esc")}
+	d.footer = "Sample only · PgUp/PgDn scroll the request"
+	if !delegate && req.Delegate != nil {
+		d.footer = "Accept or deny use, then review delegation · sample only"
 	}
 	p.d = d
 }

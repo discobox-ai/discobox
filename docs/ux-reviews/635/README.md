@@ -79,3 +79,15 @@ then method. GraphQL tables show operation and fields; MCP tables show tools.
 Unrestricted HTTP methods are omitted from GraphQL/MCP tables, while explicit
 method restrictions remain visible. If a host group contains blocked routes,
 its table includes ACCESS with ALLOW/DENY; deny rows use the alert color.
+
+### Separate use and delegation decisions
+
+The proposed combined request is now two screens: use (1 of 2), then delegation
+(2 of 2), with only that part's routes and an independent Accept/Deny picker.
+Ctrl-S confirms either decision and advances. Accepting use locks credential
+and duration on delegation; denying use carries the selections forward but
+leaves them editable. F5 or Esc resets the sample flow. The final receipt records
+both decisions. No live request is submitted at either step.
+
+Two sample credentials are available so the deny-use/edit-delegation path can be
+tried. New credential creation remains a placeholder and cannot be accepted.
