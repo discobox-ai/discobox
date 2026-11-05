@@ -1,15 +1,15 @@
 package secrets_test
 
 import (
-	"github.com/discobox-ai/discobox/pkg/secretroute"
-	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/services"
-	"github.com/discobox-ai/discobox/server/internal/store"
 	"net/http"
 	"testing"
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 func TestApprovalCanGrantForeverInEitherUseMode(t *testing.T) {
