@@ -1,6 +1,6 @@
 # 26-11-02-022 — A credential request names its policies, and asks to use and to delegate at once
 
-- **Status**: Accepted (§3 amended before implementation landed: the summary is computed by whatever shows the role, from the routes the server resolved it to and the request carries; §5 amended for a use part approved to add by [26-11-03-329](26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md); §§3–4 and 6 amended for approval scope and historical consent by [26-11-04-616](26-11-04-616-whole-credential-is-an-explicit-approval-scope.md))
+- **Status**: Accepted (§3 amended before implementation landed: the summary is computed by whatever shows the role, from the routes the server resolved it to and the request carries; §5 amended for a use part approved to add by [26-11-03-329](26-11-03-329-a-box-may-be-granted-routes-for-a-time-beside-its-binding-without-replacing-it.md); §§3–4 and 6 amended for approval scope and historical consent by [26-11-04-616](26-11-04-616-whole-credential-is-an-explicit-approval-scope.md); §5 narrowed for sandbox replacement previews by [26-11-04-389](26-11-04-389-a-lead-binds-secrets-within-its-delegation.md))
 - **Date**: 2026-11-02
 - **Amends**:
   - [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md):
