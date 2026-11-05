@@ -5,16 +5,19 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // ProveContained proves that every request allowed by grant under secret is
 // allowed by limit under secret. It is deliberately incomplete: identical
 // normalized lists (including exceptions) and restrictions of open-only lists
 // are supported. Other expressions fail closed, rather than using samples.
-// Work is bounded to 128 routes and 4096 list comparisons.
+// Inputs fit the credential-request route and byte bounds; pattern comparisons
+// are bounded separately so large policy unions stay cheap to prove.
 func ProveContained(secret, grant, limit []Route) error {
 	normalize := func(in []Route) ([]Route, error) {
-		if len(in) > 128 {
+		if len(in) > agentcreds.MaxPartRoutes {
 			return nil, fmt.Errorf("too many routes for containment proof")
 		}
 		out := make([]Route, 0, len(in))
@@ -28,7 +31,7 @@ func ProveContained(secret, grant, limit []Route) error {
 			if r.MCP != nil {
 				patterns += len(r.MCP.Tools)
 			}
-			if bytes > 65536 || patterns > 256 {
+			if bytes > agentcreds.MaxRequestRouteBytes || patterns > 16384 {
 				return nil, fmt.Errorf("route containment proof input exceeds its limit")
 			}
 			n, err := Normalize(r)
@@ -42,15 +45,15 @@ func ProveContained(secret, grant, limit []Route) error {
 	}
 	s, err := normalize(secret)
 	if err != nil {
-		return err
+		return fmt.Errorf("secret routes: %w", err)
 	}
 	g, err := normalize(grant)
 	if err != nil {
-		return err
+		return fmt.Errorf("grant routes: %w", err)
 	}
 	d, err := normalize(limit)
 	if err != nil {
-		return err
+		return fmt.Errorf("delegation routes: %w", err)
 	}
 	// An absent binding list inherits. Both effective grants include secret.
 	if len(g) == 0 {
@@ -62,14 +65,14 @@ func ProveContained(secret, grant, limit []Route) error {
 	if reflect.DeepEqual(g, d) || reflect.DeepEqual(s, d) {
 		return nil
 	}
-	if len(g)*len(d) > 4096 {
+	if containmentWork(g)*containmentWork(d) > 64<<20 {
 		return fmt.Errorf("route containment proof exceeds its comparison limit")
 	}
 	// Blocks participate in specificity selection and match unknown bodies.
 	// Never reason about them as independent negative rectangles.
 	for _, r := range d {
 		if r.Blocked {
-			return fmt.Errorf("containment with changed blocked-route lists cannot be proved")
+			return fmt.Errorf("containment against blocked delegation route %s cannot be proved", safe(Format(r)))
 		}
 	}
 	for _, r := range g {
@@ -84,7 +87,7 @@ func ProveContained(secret, grant, limit []Route) error {
 			}
 		}
 		if !fits {
-			return fmt.Errorf("route containment cannot be proved; use a provably narrower list or ask a person")
+			return fmt.Errorf("grant route %s is not covered by the delegation; use a provably narrower list or ask a person", safe(Format(r)))
 		}
 	}
 	return nil
@@ -147,4 +150,26 @@ func pathContained(g, d string) bool {
 		}
 	}
 	return len(gs) == len(ds)
+}
+
+// Weight every pattern by its bytes as well as counting each route. The
+// product bounds pair traversal, string comparisons and repeated path splitting:
+// a single long segmented path must not be split once per parent unbudgeted.
+func containmentWork(routes []Route) int {
+	n := len(routes)
+	for _, r := range routes {
+		groups := [][]string{r.Hosts, r.Methods, r.Paths}
+		if r.GraphQL != nil {
+			groups = append(groups, r.GraphQL.Operations, r.GraphQL.Fields)
+		}
+		if r.MCP != nil {
+			groups = append(groups, r.MCP.Tools)
+		}
+		for _, patterns := range groups {
+			for _, pattern := range patterns {
+				n += 1 + len(pattern)
+			}
+		}
+	}
+	return n
 }

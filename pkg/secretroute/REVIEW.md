@@ -69,3 +69,14 @@
   by the body limit, and a reason goes back to the sandbox, into the audit
   row, and onto every screen that shows it (t103). Never put request-derived
   text in a reason except through `safe`.
+
+- Keep containment input bounds aligned with credential-request route and byte
+  bounds. A delegation combines resolved policies, including repeated shared
+  routes: budget pairwise work after normalization and deduplication, and test
+  handing on every member of a realistic policy union. A proof limited to a
+  single role's size rejected existing manager delegations after approval.
+
+- Charge pattern bytes as well as counts against the containment work budget.
+  `pathContained` splits paths per candidate pair, so one long segmented grant
+  against hundreds of parent routes otherwise allocates nearly a gigabyte while
+  the handoff transaction holds its locks.

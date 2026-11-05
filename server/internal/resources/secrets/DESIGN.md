@@ -258,7 +258,9 @@ sends.
   Explicit routes must pass `secretroute.ProveContained` under the secret;
   omitted routes inherit the selected parent's effective limits. Explicit
   lifetimes fit both ceilings; defaults are capped. Candidates are alternatives,
-  never a union. Further delegation and raw delivery remain person-only.
+  never a union. Refusals identify the failing candidate's route proof or
+  lifetime check; no fitting candidate reports missing live authority.
+  Further delegation and raw delivery remain person-only.
 - **Authority is current at commit.** The project lock precedes sandbox locks,
   serializing with adoption, release and purge. `lockHandoff` rechecks the
   holder's API flag and desired-deleted state, immediate parent relationship
