@@ -193,7 +193,7 @@ const serverPrefix = "/api/pools/pool_1/assets"
 // from the server, and every one of them is answered the blob.
 func TestConcurrentSandboxesShareOneFetch(t *testing.T) {
 	f := newFixture(t)
-	probe := httptest.NewRequest(http.MethodHead, "/", nil)
+	probe := httptest.NewRequestWithContext(context.Background(), http.MethodHead, "/", nil)
 	probe.Header.Set("User-Agent", "discobox-sandbox-agent (port probe)")
 	f.server.ServeHTTP(httptest.NewRecorder(), probe)
 	if got := f.server.total(); got != 0 {
