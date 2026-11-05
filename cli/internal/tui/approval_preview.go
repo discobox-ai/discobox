@@ -13,8 +13,15 @@ import (
 
 // RunApprovalPreview is a local design workbench. It never creates a data source
 // or calls an API. The prototype build tag keeps it out of the product binary.
-func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height int) error {
+func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height int, requestPath, policyRoot string) error {
 	p := &approvalPreview{width: width, height: height, current: current, st: newStyles(true)}
+	if requestPath != "" {
+		req, err := loadApprovalPreviewRequest(requestPath, policyRoot)
+		if err != nil {
+			return err
+		}
+		p.fixture = req
+	}
 	p.open()
 	if capture {
 		_, err := fmt.Fprintln(out, p.render())
@@ -27,6 +34,7 @@ func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height
 type approvalPreview struct {
 	width, height int
 	current       bool
+	fixture       *CredentialRequest
 	st            *styles
 	d             *dialog
 	z             zones
@@ -69,7 +77,11 @@ func (p *approvalPreview) render() string {
 	if p.current {
 		mode = "CURRENT"
 	}
-	header := p.st.dimText.Render("Credential use · " + mode + " · F2 compare · F5 reset · q quit · sample data only")
+	subject := "Credential use"
+	if p.fixture != nil {
+		subject = fmt.Sprintf("Manager · %d use / %d delegate routes", previewRouteCount(p.fixture.Use), previewRouteCount(p.fixture.Delegate))
+	}
+	header := p.st.dimText.Render(subject + " · " + mode + " · F2 compare · F5 reset · q quit · sample data only")
 	card := p.d.view(p.st, &p.z, p.width, max(p.height-2, 10))
 	return header + "\n" + card
 }
@@ -83,6 +95,9 @@ func (p *approvalPreview) open() {
 		{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: []string{"/repos/discobox-ai/discobox/issues/**"}},
 		{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/repos/discobox-ai/discobox/issues/635/comments"}},
 	}}}
+	if p.fixture != nil {
+		req = *p.fixture
+	}
 	if p.current {
 		m := &Model{secrets: newSecretList()}
 		m.askAboutCredential(req, []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}, {ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}}})
@@ -96,8 +111,11 @@ func (p *approvalPreview) open() {
 		pickRow("duration", "Duration", choice{key: "1h", label: "1 hour", hint: "Requested by the box"}, choice{key: "8h", label: "8 hours"}, choice{key: "1d", label: "1 day"}),
 		pickRow("decision", "Decision", choice{key: "approve", label: "Approve"}, choice{key: "deny", label: "Deny"}),
 	)
+	if req.asksBoth() {
+		f.rows = append(f.rows[:2], append([]formRow{pickRow("parts", "Permission", choice{key: "both", label: "Use and delegate"}, choice{key: "use", label: "Use only"}, choice{key: "delegate", label: "Delegate only"})}, f.rows[2:]...)...)
+	}
 	d := formDialog("Allow GitHub access?", f, func(f *form) tea.Cmd {
-		return p.receipt(f.chosen("decision") + " · " + f.chosen("credential") + " · " + f.chosen("duration"))
+		return p.receipt(f.chosen("decision") + " · " + f.chosen("credential") + " · " + f.chosen("duration") + " · " + f.chosen("parts"))
 	})
 	d.titleRight = "2m ago"
 	d.sections = []section{
@@ -105,7 +123,28 @@ func (p *approvalPreview) open() {
 		{label: "Requested routes", lines: []line{{text: "GET  api.github.com/repos/discobox-ai/discobox/issues/**", tone: toneAccent}, {text: "POST api.github.com/repos/discobox-ai/discobox/issues/635/comments", tone: toneAccent}}},
 		{fields: []field{{label: "Variable", value: "GH_TOKEN"}}},
 	}
+	if p.fixture != nil {
+		d.title = "Allow GitHub use and delegation?"
+		d.sections = []section{{fields: []field{{label: "Box", value: "Manager · sbx_manager", tone: toneAccent}, {label: "Reason", value: req.Justification}}}, {label: "Requested routes", fields: []field{{label: "Use", value: previewRouteRows(req.Use), tone: toneAccent}, {label: "Delegate", value: previewRouteRows(req.Delegate), tone: toneAccent}}}, {fields: []field{{label: "Variable", value: req.EnvVar}}}}
+		d.footer = "Manager fixture · all routes shown · PgUp/PgDn scroll the request"
+	}
 	d.keys = []hint{says("↑↓ move"), says("←→ change"), pressing("enter submits preview", "enter"), pressing("esc resets", "esc")}
 	d.footer = "Design sketch · credential use · no existing grants in this example"
+	if p.fixture != nil {
+		d.footer = "Manager fixture · all routes shown · PgUp/PgDn scroll the request"
+	}
 	p.d = d
+}
+
+func previewRouteCount(part *RequestPart) int {
+	if part == nil {
+		return 0
+	}
+	return len(part.Routes)
+}
+func previewRouteRows(part *RequestPart) string {
+	if part == nil {
+		return "not requested"
+	}
+	return routeRows(part.Routes)
 }

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "description": "Git read and push to one repository. The manager binds it for discobox-ai/manager, its own repository.",
+  "parameters": {
+    "owner": {
+      "type": "pathSegment"
+    },
+    "repo": {
+      "type": "pathSegment"
+    }
+  },
+  "routes": [
+    {
+      "hosts": [
+        "github.com"
+      ],
+      "paths": [
+        "/${owner}/${repo}.git/**",
+        "/${owner}/${repo}/**"
+      ]
+    }
+  ]
+}

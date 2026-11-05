@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "description": "Triage worker: read one repository and comment on its issues. No pushes, no labels (the manager applies them). Files issues in its own repository (owner, 2026-11-04: flakes and other problems it finds).",
+  "parameters": {
+    "owner": {
+      "type": "pathSegment"
+    },
+    "repo": {
+      "type": "pathSegment"
+    }
+  },
+  "routes": [
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "GET"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}",
+        "/repos/${owner}/${repo}/**"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "GET"
+      ],
+      "paths": [
+        "/search/issues"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "paths": [
+        "/graphql"
+      ],
+      "graphql": {
+        "operations": [
+          "query"
+        ]
+      }
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/issues/*/comments"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/issues"
+      ]
+    }
+  ]
+}

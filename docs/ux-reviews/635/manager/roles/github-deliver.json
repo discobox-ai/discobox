@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "description": "Delivery worker (deliver-issue, propose-adr, fix-ci, rebase-pr): push branches, open and update its PR, reply to review, mark it ready. Re-running CI is the manager's (github-manager), not the worker's. No merge, no labels, no closing issues. Pushes go to the bot's fork (forkOwner); PRs are opened from it into the repository. Files issues in its own repository (owner, 2026-11-04: flakes and other problems it finds).",
+  "parameters": {
+    "owner": {
+      "type": "pathSegment"
+    },
+    "repo": {
+      "type": "pathSegment"
+    },
+    "forkOwner": {
+      "type": "pathSegment"
+    }
+  },
+  "routes": [
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "GET"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}",
+        "/repos/${owner}/${repo}/**"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "GET"
+      ],
+      "paths": [
+        "/search/issues"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "paths": [
+        "/graphql"
+      ],
+      "graphql": {
+        "operations": [
+          "query"
+        ]
+      }
+    },
+    {
+      "hosts": [
+        "github.com"
+      ],
+      "paths": [
+        "/${owner}/${repo}.git/**",
+        "/${owner}/${repo}/**"
+      ]
+    },
+    {
+      "hosts": [
+        "github.com"
+      ],
+      "paths": [
+        "/${forkOwner}/${repo}.git/**"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/issues/*/comments"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/pulls"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "PATCH"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/pulls/*"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/pulls/*/comments/*/replies"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "paths": [
+        "/graphql"
+      ],
+      "graphql": {
+        "operations": [
+          "mutation"
+        ],
+        "fields": [
+          "markPullRequestReadyForReview"
+        ]
+      }
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "GET"
+      ],
+      "paths": [
+        "/repos/${forkOwner}/${repo}",
+        "/repos/${forkOwner}/${repo}/**"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/forks"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/issues"
+      ]
+    }
+  ]
+}

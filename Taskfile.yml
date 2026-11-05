@@ -150,6 +150,11 @@ vars:
   DEADCODE_BIN: deadcode{{.EXE}}
 
 tasks:
+  prototype:approvals:manager:
+    desc: Reproduce the manager's full use and delegation approval request
+    cmds:
+      - go run -tags prototype ./cli/internal/cmd/approval-preview --current --request docs/ux-reviews/635/manager/roles/manager-request.json --policy-root docs/ux-reviews/635/manager {{.CLI_ARGS}}
+
   prototype:approvals:
     desc: Preview sandbox approval layouts with the console renderer (sample data)
     cmds:

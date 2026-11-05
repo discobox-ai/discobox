@@ -16,8 +16,10 @@ func main() {
 	current := flag.Bool("current", false, "Start with the current credential request")
 	width := flag.Int("width", 100, "Capture width")
 	height := flag.Int("height", 36, "Capture height")
+	request := flag.String("request", "", "discobox-access JSON request fixture")
+	root := flag.String("policy-root", ".", "Directory relative policy file names are resolved against")
 	flag.Parse()
-	if err := tui.RunApprovalPreview(os.Stdout, *capture, *current, *width, *height); err != nil {
+	if err := tui.RunApprovalPreview(os.Stdout, *capture, *current, *width, *height, *request, *root); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

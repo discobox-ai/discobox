@@ -1,0 +1,10 @@
+{
+  "roles/README.md": "8ab6b751c5f12bccb5058dace158b5057e9c0a43",
+  "roles/github-deliver.json": "aa53ef923d440c19a7844de521ffded179ed4fa1",
+  "roles/github-labels.json": "300d06b326aa6aaf217d9eff27de5ebe54175563",
+  "roles/github-manager.json": "f6c524f09bae31064390a689795af5df363530b6",
+  "roles/github-push.json": "dc1c834c2f6331571ac41c9bf812d4dcabd90cc9",
+  "roles/github-submit.json": "728e5fd4fb4eafe9e43435926b1bb9f8addf408f",
+  "roles/github-triage.json": "f31a12b0e1772c4a9d715b0f26bec0cc8fc5b72d",
+  "roles/manager-request.json": "d0d0ae8d985dc8733942d7c9e19c0c9499cb28da"
+}
