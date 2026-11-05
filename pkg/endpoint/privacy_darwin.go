@@ -45,7 +45,7 @@ var directoryACL = sync.OnceValues(func() (func(int) error, error) {
 			if *errno() == int32(unix.ENOENT) {
 				return nil
 			}
-			return fmt.Errorf("cannot inspect directory ACL: %v", unix.Errno(*errno()))
+			return fmt.Errorf("cannot inspect directory ACL: %w", unix.Errno(*errno()))
 		}
 		defer free(acl)
 		var entry uintptr

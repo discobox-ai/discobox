@@ -24,7 +24,7 @@ func TestDefaultSocketRejectsDarwinACLGrants(t *testing.T) {
 			} else if err := os.Mkdir(target, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if output, err := exec.Command("/bin/chmod", "+a", acl, target).CombinedOutput(); err != nil {
+			if output, err := exec.CommandContext(t.Context(), "/bin/chmod", "+a", acl, target).CombinedOutput(); err != nil {
 				t.Fatalf("set ACL: %v: %s", err, output)
 			}
 			if listener, _, cleanup, err := Listen(DefaultEndpoint()); err == nil {
