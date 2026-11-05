@@ -13,18 +13,25 @@ import (
 // and everything behind it work as they always do.
 //
 // The chrome comes back the moment there is something for it to arrange: a
-// second terminal, a shell, a tool, a band.
+// second terminal, a shell, a tool, a band, or a service chosen to view.
+// Background services alone do not restore the chrome.
 
 // bare reports whether the window is drawn without chrome.
 func (m *Model) bare() bool {
 	if m.attach == nil || m.screenPane() != nil || m.audit != nil || m.wsOpening {
 		return false
 	}
-	if m.terminals.len() != 1 || m.shells.len() != 0 || m.bannerShowing() != bannerNone {
+	if m.shells.len() != 0 || m.bannerShowing() != bannerNone {
 		return false
 	}
+	primary := m.primary()
+	for _, p := range m.terminals.all() {
+		if p != primary && p.service == "" {
+			return false
+		}
+	}
 	p := m.terminals.visible()
-	return p != nil && p == m.primary() && !p.exited && p.issue == nil
+	return p != nil && p == primary && !p.exited && p.issue == nil
 }
 
 // viewBare draws the primary terminal over the whole screen but its last row,

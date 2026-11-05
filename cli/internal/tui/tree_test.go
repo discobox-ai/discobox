@@ -1180,7 +1180,7 @@ func boxMenuLabels(t *testing.T, m *Model) []string {
 
 // The leader's . opens the box's actions: everything the list's menu offers
 // for it but attach, which it already is, with the workspace's own tools and
-// audit after shell.
+// services and audit after shell.
 func TestTheBoxMenuOffersTheWorkspacesOwnActions(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -1198,8 +1198,8 @@ func TestTheBoxMenuOffersTheWorkspacesOwnActions(t *testing.T) {
 				at = i
 			}
 		}
-		if at < 0 || at+2 >= len(labels) || labels[at+1] != "tools" || labels[at+2] != "audit" {
-			t.Fatalf("menu = %q, want tools and audit right after shell", labels)
+		if at < 0 || at+3 >= len(labels) || labels[at+1] != "services" || labels[at+2] != "tools" || labels[at+3] != "audit" {
+			t.Fatalf("menu = %q, want services, tools and audit right after shell", labels)
 		}
 		if labels[len(labels)-1] == "all discoboxes" {
 			t.Fatalf("menu = %q, want all discoboxes only in a window opened on one box", labels)

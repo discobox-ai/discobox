@@ -195,7 +195,8 @@ flowchart LR
   costing every terminal a row.
 - **The box's actions are a menu** (`boxMenu`, `leader .`): the list's verbs
   for the box on screen — attach dropped, since it is on screen — with the
-  tools and the audit after the shell. It is not offered over a screen that
+  services, tools and the audit after the shell. It is not offered over a screen
+  that
   has the leader's keys for itself (a tool). A pane's key line
   opens with this key, so
   stop, rename and archive are found where the reader is already looking.
@@ -204,14 +205,19 @@ flowchart LR
   over can hold him, and sits out otherwise.
 
 **A window that is one attach starts bare** (`bare`, `viewBare`). While its
-workspace is only the primary terminal it draws no header and no border: the
+workspace has no other interactive panes and the primary is selected, it draws
+no header and no border: the
 terminal has every row but the last, and that row says where you are — the
 brand, the box's source, the desktop and ports muted in the middle as links —
 and the two keys there are, `leader .` and `leader d`. It is still the
 window underneath, so the leader, the mouse and selection work as they always
 do. The chrome comes back the moment there is something for it to arrange — a
 second terminal, a shell, a tool, the audit, a band — and the
-primary is resized each way (`bareShown`). The status line is the one row
+primary is resized each way (`bareShown`). Background service panes do not
+restore chrome. The actions menu offers **services**, whose per-service menu
+offers **view output** when a pane exists, alongside start, stop and restart.
+Viewing a service restores chrome; returning to the primary hides it again
+when no other interactive panes or bands require it. The status line is the one row
 the box cannot draw, and so the one thing that tells a dialog the window puts
 up from a copy the box draws: every dialog stands in place of the whole
 window, that line included, and the credential band brings the chrome back. The menu there ends with **all
@@ -1717,14 +1723,15 @@ the carriage returns), and a column is not only TTY sessions, the one
 clause of ADR 0054 §2 this widens, and only for sessions the sandbox itself
 records as services.
 
-The running services are therefore already on screen, which is what decides
-what a key has to reach: the ones that are *not*. `leader S0` opens the menu of
+Service panes stay in the background of a minimal attach until selected.
+The actions menu's **services** entry and `leader S0` open the same menu of
 everything declared, read from the server each time rather than cached — a
 service stopped from another window, or one whose file was added a minute ago,
 is exactly what it is being opened to find out about. Choosing one offers
-start, stop and restart, all three always, because the sandbox settles what each
-means for the state the service is actually in and a menu that greys out the
-verb you came for is arguing with a service that has since moved on.
+**view output** when its pane is available, plus start, stop and restart.
+The lifecycle verbs stay enabled for runnable declarations regardless of their
+last observed state: the sandbox settles what each means now. Broken declarations
+remain selectable to inspect their diagnostic pane, with lifecycle verbs disabled.
 
 **The workspace screen is one discobox as the server has it** (`workspace.go`).
 Opening it attaches to the primary terminal — the virtual `ExecPrimary` id,

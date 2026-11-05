@@ -13,11 +13,9 @@ import (
 
 // The workspace's view of the discobox's declared services (ADR 0070).
 //
-// A running service is already on screen — it arrives in the exec listing like
-// any other session and is drawn as a tab on the right — so what this adds is
-// the half a tab cannot show: the services that are *not* running, and the
-// three verbs. Both live behind one leader key, because a service is something
-// you set going and then stop thinking about, not something you work in.
+// Service panes are kept in the terminals column without bringing back the
+// chrome in a minimal attach. The services menu offers their output and the
+// three lifecycle verbs, including declarations that have never run.
 //
 // The menu is opened from the server every time rather than cached. A service
 // stopped from another window, or one whose file was added to the repository a
@@ -87,6 +85,9 @@ type servicesMsg struct {
 // command is the only way one dialog can put another in its place.
 type serviceMenuMsg struct{ service Service }
 
+// serviceOutputMsg focuses the service pane after its menu has closed.
+type serviceOutputMsg struct{ id string }
+
 // serviceVerbMsg runs one verb against one service.
 type serviceVerbMsg struct {
 	verb    ServiceVerb
@@ -132,8 +133,7 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 			press:   n,
 			label:   service.displayName(),
 			detail:  service.detail(),
-			enabled: service.runnable(),
-			why:     service.Problem,
+			enabled: true,
 		})
 	}
 	services := msg.services
@@ -157,11 +157,15 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 // a service that has since moved on.
 func (m *Model) showServiceMenu(service Service) tea.Cmd {
 	items := []action{
-		{key: "s", press: "s", label: "start", detail: "run it, or leave it running", enabled: true},
-		{key: "t", press: "t", label: "stop", detail: "end its run and keep what it printed", enabled: true},
-		{key: "R", press: "R", label: "restart", detail: "stop it if it is running, then start it", enabled: true},
+		{key: "v", press: "v", label: "view output", detail: "show the service log", enabled: m.terminals.byExec(servicePaneID(service.ID)) != nil, why: "no output pane is available"},
+		{key: "s", press: "s", label: "start", detail: "run it, or leave it running", enabled: service.runnable(), why: service.Problem},
+		{key: "t", press: "t", label: "stop", detail: "end its run and keep what it printed", enabled: service.runnable(), why: service.Problem},
+		{key: "R", press: "R", label: "restart", detail: "stop it if it is running, then start it", enabled: service.runnable(), why: service.Problem},
 	}
 	m.dialog = actionsDialog(service.displayName(), service.detail(), items, func(key string) tea.Cmd {
+		if key == "v" {
+			return func() tea.Msg { return serviceOutputMsg{id: service.ID} }
+		}
 		verb := ServiceRestart
 		switch key {
 		case "s":
