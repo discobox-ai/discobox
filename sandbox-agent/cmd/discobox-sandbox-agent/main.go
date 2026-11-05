@@ -49,6 +49,7 @@ import (
 // discobox-access is not one: it is a client of a portable protocol and stays
 // its own binary (access/DESIGN.md).
 var personalities = map[string]func(args []string) int{
+	"discobox-primary-run":  runPrimary,
 	"discobox-hook-publish": runHookPublish,
 	"discobox-ca-anchor":    runCAAnchor,
 	"discobox-power":        runPower,

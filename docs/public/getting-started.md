@@ -42,6 +42,32 @@ ensure Docker is installed and accessible to the server user. First use can
 download the server, images and agent bundles, so allow time and network
 access. A remote server runs its pools on the server side.
 
+## Take the tour
+
+With a version supporting repository startup scripts, start the guided tour
+from your host:
+
+```sh
+discobox run discobox-ai/tour
+```
+
+Select a default harness if prompted. The menu runs in the Linux box before
+that harness starts, with chapters for shells, tools, access requests and
+leaving and returning. No agent account is needed for the menu; continuing
+into an agent may require its normal sign-in. You can choose the shell harness.
+The access chapter uses a disposable example value and can be denied or skipped.
+
+**Continue to my harness** completes the tour and skips it on subsequent
+primary launches in this box. **Exit tour** or Ctrl-C leaves a shell without
+starting the harness. To replay, open a shell in the tour checkout and run
+`.discobox/scripts/pre-harness --replay`; returning from replay starts no
+additional harness. Detach with Ctrl-A then d and reconnect from your host
+with `discobox attach BOX`. After collecting any work, archive with
+`discobox rm BOX`. Replace BOX with its name or identifier.
+
+The tour is ordinary source code running inside the sandbox. See
+[Repository startup scripts](repository-scripts.md) for the execution contract.
+
 ## Configure and run
 
 Open a terminal in a committed Git repository:

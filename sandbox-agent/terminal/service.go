@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -303,8 +304,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	// nothing. A child of the shell is not orphaned, so Ctrl-Z stops it and
 	// the shell is left to hand back a prompt, same as any local terminal. The
 	// shell fallback harness IS that shell, so it needs no command typed in.
-	if harnessID != ShellHarnessID {
+	if harnessID != ShellHarnessID && len(harness.Command) > 0 {
 		execReq.StartupCommand = command
+	}
+	if req.primary {
+		execReq.StartupCommand, err = s.primaryStartupCommand(execReq.StartupCommand)
+		if err != nil {
+			return execs.Exec{}, err
+		}
 	}
 	created, err := s.execs.Create(ctx, execReq)
 	if err != nil {
@@ -453,11 +460,19 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 			env[WakeEnv] = wake
 		}
 	}
+	startup := reviveStartupCommand(harness, harnessID, s.bootPrompt)
+	if IsPrimary(exec) {
+		startup, err = s.primaryStartupCommand(startup)
+		if err != nil {
+			s.returnWake(wake)
+			return execs.Exec{}, err
+		}
+	}
 	revived, err := s.execs.Relaunch(ctx, execs.RelaunchRequest{
 		ID:             id,
 		Env:            env,
 		User:           cloneUser(s.defaultUser),
-		StartupCommand: reviveStartupCommand(harness, harnessID, s.bootPrompt),
+		StartupCommand: startup,
 	})
 	if err != nil {
 		s.returnWake(wake)
@@ -470,13 +485,33 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 	return started, err
 }
 
+// primaryStartupCommand composes the source's gate with the resolved command.
+// Validation and interactive execution belong to the foreground runner, never
+// to readiness or the lifecycle lock (ADR 26-11-05-719).
+func (s *Service) primaryStartupCommand(command []string) ([]string, error) {
+	if runtime.GOOS != "linux" {
+		return command, nil
+	}
+	root, err := s.execs.SourceRoot()
+	if err != nil {
+		return nil, err
+	}
+	_, err = os.Lstat(filepath.Join(root, ".discobox", "scripts", "pre-harness"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return command, nil
+	}
+	// Include invalid and unreadable entries: the runner reports the failure
+	// in the terminal and leaves the login shell available for recovery.
+	return append([]string{"discobox-primary-run", root}, command...), nil
+}
+
 // reviveStartupCommand is the command a revived terminal types into its fresh
 // login shell: the harness's relaunch (resume) command when it has one, the
 // bare harness command otherwise — never the initial prompt, which belongs to
 // the terminal's first run only. The shell harness types nothing: the shell IS
 // the terminal, recorded as the exec's own command.
 func reviveStartupCommand(harness config.Harness, harnessID string, prompt []string) []string {
-	if harnessID == ShellHarnessID {
+	if harnessID == ShellHarnessID || len(harness.Command) == 0 {
 		return nil
 	}
 	return append(resumeStartupCommand(harness), prompt...)
@@ -860,7 +895,7 @@ func primaryCreateRequest(harness config.Harness, harnessID string, prompt []str
 	// A shell takes the prompt neither as arguments (it would try to run it as a
 	// command) nor as a session to resume; it is the same interactive shell on
 	// every start.
-	case harnessID == ShellHarnessID:
+	case harnessID == ShellHarnessID || len(harness.Command) == 0:
 	// A harness that has already launched comes back on its resume command, and
 	// still carries the prompt: the launch that was supposed to consume it is
 	// exactly the one that may have failed (ADR 0086 §4).
@@ -884,44 +919,13 @@ func (s *Service) resolveHarness(requested string) (config.Harness, string, erro
 		if requested != "" && requested != ShellHarnessID {
 			return config.Harness{}, "", fmt.Errorf("harness %q is not configured", requested)
 		}
-		harness, err := s.shellAgent()
-		if err != nil {
-			return config.Harness{}, "", err
-		}
-		return harness, ShellHarnessID, nil
+		return config.Harness{ID: ShellHarnessID, Name: "Shell"}, ShellHarnessID, nil
 	}
 	if requested != "" && requested != s.harness.ID {
 		return config.Harness{}, "", fmt.Errorf("harness %q is not configured", requested)
 	}
-	if len(s.harness.Command) == 0 {
-		// A declared harness with no command is the login shell: the control
-		// plane names the harness, and only the sandbox knows which shell the
-		// run user has. Its identity stays the declared one, so the terminal
-		// still reports the harness the sandbox was created with.
-		shell, err := s.shellAgent()
-		if err != nil {
-			return config.Harness{}, "", err
-		}
-		harness := s.harness
-		harness.Command = shell.Command
-		return harness, harness.ID, nil
-	}
-	return s.harness, s.harness.ID, nil
-}
 
-// shellAgent builds the fallback shell harness: the terminal user's interactive
-// login shell, resolved by `execs` so a shell terminal and a `shell: true` exec
-// land on the same shell.
-func (s *Service) shellAgent() (config.Harness, error) {
-	command, err := execs.ShellCommand(s.defaultUser, s.execs.Environment(nil, s.defaultUser))
-	if err != nil {
-		return config.Harness{}, err
-	}
-	return config.Harness{
-		ID:      ShellHarnessID,
-		Name:    "Shell",
-		Command: command,
-	}, nil
+	return s.harness, s.harness.ID, nil
 }
 
 // --- Installers ---
