@@ -5,6 +5,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func (p *approvalPreview) open() {
 }
 
 type previewDecision struct {
-	answer, credential, duration string
+	answer, credential, duration, scope string
 }
 
 func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first previewDecision) {
@@ -120,10 +121,32 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 		choice{key: "work", label: "Work GitHub token", hint: "Another sample credential"},
 		choice{key: "new", label: "New credential…", hint: "Placeholder: credential creation is outside this sketch"},
 	)
-	duration := pickRow("duration", "Duration", choice{key: "1h", label: "1 hour"}, choice{key: "8h", label: "8 hours"}, choice{key: "1d", label: "1 day"})
+	duration := pickRow("duration", "Duration", choice{key: "1h", label: "1 hour"}, choice{key: "8h", label: "8 hours"}, choice{key: "1d", label: "1 day"}, choice{key: "forever", label: "Forever", hint: "No expiry; credential and parent lifetime limits still apply"})
 	locked := delegate && first.answer == "accept"
 	credential.locked, duration.locked = locked, locked
-	f := newForm(credential, duration, pickRow("decision", "Decision", choice{key: "accept", label: "Accept"}, choice{key: "deny", label: "Deny"}))
+	partForScope := req.Use
+	if delegate {
+		partForScope = req.Delegate
+	}
+	hosts := []string{}
+	if partForScope != nil {
+		for _, r := range partForScope.Routes {
+			if !r.Blocked {
+				for _, host := range r.Hosts {
+					if !slices.Contains(hosts, host) {
+						hosts = append(hosts, host)
+					}
+				}
+			}
+		}
+	}
+	slices.Sort(hosts)
+	scope := pickRow("scope", "Scope",
+		choice{key: "routes", label: "Requested routes", hint: "Keep the requested method, path, GraphQL, MCP and blocked-route restrictions"},
+		choice{key: "hosts", label: "Requested hosts", hint: "Any method, path and protocol on: " + strings.Join(hosts, ", ") + ". Request-level blocks are dropped; credential restrictions still apply."},
+		choice{key: "anywhere", label: "Anywhere", hint: "No grant restriction. Still limited by credential scope and any parent delegation."},
+	)
+	f := newForm(credential, duration, scope, pickRow("decision", "Decision", choice{key: "accept", label: "Accept"}, choice{key: "deny", label: "Deny"}))
 	if first.credential != "" {
 		f.choose("credential", first.credential)
 		f.choose("duration", first.duration)
@@ -137,7 +160,11 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 		step = "Delegation"
 	}
 	d := formDialog(title, f, func(f *form) tea.Cmd {
-		answer := previewDecision{f.chosen("decision"), f.chosen("credential"), f.chosen("duration")}
+		answer := previewDecision{f.chosen("decision"), f.chosen("credential"), f.chosen("duration"), f.chosen("scope")}
+		if answer.answer == "accept" && answer.scope == "hosts" && len(hosts) == 0 {
+			f.err = "This part has no open requested hosts; choose Requested routes or Anywhere."
+			return nil
+		}
 		if answer.answer == "accept" && answer.credential == "new" {
 			f.err = "New credential creation is a placeholder; choose either sample token."
 			return nil
@@ -152,7 +179,7 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 				summary = append(summary, label+": denied")
 				return
 			}
-			summary = append(summary, label+": accepted · "+a.credential+" · "+a.duration)
+			summary = append(summary, label+": accepted · "+a.credential+" · "+a.duration+" · scope="+a.scope)
 		}
 		if delegate && req.Use != nil {
 			describe("Use", first)
@@ -188,6 +215,7 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 	if !delegate && req.Delegate != nil {
 		d.footer = "Accept or deny use, then review delegation · sample only"
 	}
+	d.sections = append(d.sections, section{lines: []line{{text: "Scope applies to this part only. Credential restrictions and any parent delegation still apply.", tone: toneDim}}})
 	p.d = d
 }
 

@@ -94,3 +94,16 @@ tried. New credential creation remains a placeholder and cannot be accepted.
 
 Protocol and host now share a heading line (for example `HTTP api.github.com`),
 with the table header immediately below it. The same applies to GraphQL and MCP.
+
+### Upcoming scope and lifetime choices
+
+PR #650 permits additions without expiry; the preview now offers Forever.
+The scope proposal in merged PR #638 defines Requested routes (default),
+Requested hosts, and Anywhere. Each proposed screen now has an independent Scope
+picker. Accepting use locks credential and duration on delegation, while scope
+starts again at Requested routes and remains editable. Requested hosts drops
+request-level method/path/protocol/blocked restrictions; credential and parent
+restrictions remain. Anywhere adds no grant restriction. Picker hints describe
+these effects. The displayed route tables remain the original requested access.
+This models the design choices only; backend integration and live ceiling,
+replacement and addition previews are still outside the sample program.
