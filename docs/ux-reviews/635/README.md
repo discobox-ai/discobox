@@ -75,8 +75,8 @@ and its Go toolchain; it is not a standalone snippet.
   consent. The current backend expects one answer covering the request;
   this prototype's two visual steps do not decide transaction timing.
 - Implement creation of a new credential; its preview option is a placeholder.
-- Exercise the remaining approval kinds (trust, refresh, API access) separately
-  with the owner. Adoption is now a second draft for discussion below.
+- Exercise the remaining approval kinds (refresh, API access) separately
+  with the owner. Adoption is accepted; host trust is the next draft below.
 
 ## Fixture and limitations
 
@@ -99,7 +99,7 @@ controls. The default go-lsp hook does not understand the preview tag and report
 an unresolved preview entrypoint; the tagged binary builds and runs. Full SDLC
 review and runtime verification of real approvals were intentionally skipped.
 
-## Next screen: adoption (draft for owner review)
+## Adoption (layout accepted by owner)
 
 ```sh
 go tool task prototype:approvals:adoption
@@ -118,5 +118,26 @@ egress and refusal of all writes/sends, without promising management authority.
 
 The original screen comes from `askAboutAdoption`, with its action callback
 replaced. The new design uses the same themed form/dialog components and modal
-buttons as credential approval. This layout is a proposal, not yet accepted by
-the owner. The mouse and scroll-to-end requirements above also apply here.
+buttons as credential approval. The owner accepted this layout. The mouse and scroll-to-end requirements
+above also apply here.
+
+## Next screen: host trust (draft for owner review)
+
+```sh
+go tool task prototype:approvals:trust
+```
+
+F2 compares current/proposed. The current initial card comes from askAboutTrust;
+its action callback is replaced and the later lifetime wizard is not included.
+The proposal combines pin and duration on one card. Host, box and box-supplied
+reason appear first, followed by dynamically selected certificate details
+(subject, issuer, validity and full CA or public-key SHA-256). The pin picker
+uses the real trustPinOptions ordering and server default. Changing it updates
+the displayed certificate. Duration is finite (1h/day/week/month); trust has no
+Forever option. Both decisions use the established modal buttons.
+
+The scope is explicit: this host and box only. The CA choice trusts a verifying
+chain to that CA; the host-key choice is tied to its public key and breaks on
+key rotation. Denial leaves the host refused; expiration requires trust again.
+All data and fingerprints are synthetic, and no host is contacted. This layout
+is for discussion, not yet accepted. Mouse and scroll-gate requirements apply.

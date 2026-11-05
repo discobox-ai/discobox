@@ -150,6 +150,11 @@ vars:
   DEADCODE_BIN: deadcode{{.EXE}}
 
 tasks:
+  prototype:approvals:trust:
+    desc: Compare current and proposed host trust approval screens
+    cmds:
+      - go run -tags prototype ./cli/internal/cmd/approval-preview --screen trust --current {{.CLI_ARGS}}
+
   prototype:approvals:adoption:
     desc: Compare current and proposed adoption approval screens
     cmds:

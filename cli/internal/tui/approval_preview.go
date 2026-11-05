@@ -16,7 +16,7 @@ import (
 // RunApprovalPreview is a local design workbench. It never creates a data source
 // or calls an API. The prototype build tag keeps it out of the product binary.
 func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height int, requestPath, policyRoot, screen string) error {
-	if screen != "credential" && screen != "adoption" {
+	if screen != "credential" && screen != "adoption" && screen != "trust" {
 		return fmt.Errorf("unknown screen %q", screen)
 	}
 	p := &approvalPreview{screen: screen, width: width, height: height, current: current, st: newStyles(true)}
@@ -95,6 +95,9 @@ func (p *approvalPreview) render() string {
 		mode = "CURRENT"
 	}
 	subject := "Credential use"
+	if p.screen == "trust" {
+		subject = "Host trust"
+	}
 	if p.screen == "adoption" {
 		subject = "Adoption · F3 full/read-only"
 	}
@@ -112,6 +115,10 @@ func (p *approvalPreview) receipt(result string) tea.Cmd {
 }
 func (p *approvalPreview) open() {
 	p.refreshGrant = nil
+	if p.screen == "trust" {
+		p.openTrust()
+		return
+	}
 	if p.screen == "adoption" {
 		p.openAdoption()
 		return
