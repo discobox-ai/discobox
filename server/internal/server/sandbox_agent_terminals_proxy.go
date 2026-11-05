@@ -155,12 +155,13 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService, use servi
 				}
 				return nil
 			}
+			poolErrorHandler := proxy.ErrorHandler
 			proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 				if errors.Is(err, errSandboxNotRunning) {
 					serveSandboxInventoryRead(w, r, service, projectID, sandboxID, scopes, inventoryRead)
 					return
 				}
-				sandboxPoolProxyError(w, r, err)
+				poolErrorHandler(w, r, err)
 			}
 		}
 		if createsExec && r.URL.Query().Get("wait") == "ready" {

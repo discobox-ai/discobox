@@ -203,24 +203,22 @@ func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease) *
 			req.Out.Host = target.Host
 			req.SetXForwarded()
 		},
-		ErrorHandler: sandboxPoolProxyError,
+	}
+	// A canceled request ended the exchange itself; logging it would bury
+	// real failures under one line per disconnected client.
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		if r.Context().Err() != nil {
+			return
+		}
+		logger := proxy.ErrorLog
+		if logger == nil {
+			logger = log.Default()
+		}
+		logger.Printf("http: proxy error: %v", err)
+		w.WriteHeader(http.StatusBadGateway)
 	}
 	proxy.Transport = sandboxagentclient.AuthTransport{Base: baseTransportFor(lease), Lease: lease}
 	return proxy
-}
-
-// sandboxPoolProxyError answers a request the pool could not be asked, as the
-// default handler does, except for a request whose client has already gone.
-// That one ended the exchange itself — a closed terminal, an abandoned fetch, a
-// server shutting down under every attached client at once — so there is
-// nobody to answer, and logging it would bury a real failure under one line
-// per connection.
-func sandboxPoolProxyError(w http.ResponseWriter, r *http.Request, err error) {
-	if r.Context().Err() != nil {
-		return
-	}
-	log.Printf("http: proxy error: %v", err)
-	w.WriteHeader(http.StatusBadGateway)
 }
 
 func baseTransportFor(lease *services.HTTPClientLease) http.RoundTripper {
