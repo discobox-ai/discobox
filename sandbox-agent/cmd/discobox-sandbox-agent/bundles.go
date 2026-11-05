@@ -38,9 +38,7 @@ func exportProxyEnv(configPath string) error {
 	return nil
 }
 
-// bundleAttempts bounds how often a box tries its bundles before its
-// readiness fails, each attempt after twice the wait of the one before.
-const bundleAttempts = 5
+const bundleRetryMaxWait = 30 * time.Second
 
 var bundleRetryWait = 2 * time.Second
 
@@ -85,7 +83,8 @@ func fetchBundles(ctx context.Context, runtimeConfig *intake.Intake) (bool, erro
 	if _, err := runtimeConfig.WaitApplied(ctx); err != nil {
 		return false, err
 	}
-	return true, applyBundles(ctx, pins)
+	store := &bundlestore.Store{Root: "/", Fetcher: bundlestore.HTTPFetcher{}, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
+	return true, applyBundles(ctx, pins, store)
 }
 
 // placedPins is agentlayer.PinsFile, which the box's maker placed, and false
@@ -103,16 +102,19 @@ func placedPins() (agentlayer.Pins, bool, error) {
 }
 
 // applyBundles brings pins into the box's content store from
-// assets.discobox.internal, trying again a few times before it fails.
-func applyBundles(ctx context.Context, pins agentlayer.Pins) error {
-	store := &bundlestore.Store{Root: "/", Fetcher: bundlestore.HTTPFetcher{}, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
+// assets.discobox.internal. Transient pool outages wait until recovery or
+// cancellation; invalid pins, content and local failures fail immediately.
+func applyBundles(ctx context.Context, pins agentlayer.Pins, store *bundlestore.Store) error {
 	wait := bundleRetryWait
 	for attempt := 1; ; attempt++ {
 		err := store.Apply(ctx, pins)
 		if err == nil {
 			return nil
 		}
-		if attempt == bundleAttempts || ctx.Err() != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !bundlestore.Retryable(err) {
 			return fmt.Errorf("fetch the box's bundles: %w", err)
 		}
 		slog.Warn("fetch the box's bundles; trying again", "attempt", attempt, "in", wait, "error", err)
@@ -121,6 +123,6 @@ func applyBundles(ctx context.Context, pins agentlayer.Pins) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		wait *= 2
+		wait = min(wait*2, bundleRetryMaxWait)
 	}
 }

@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -43,11 +45,23 @@ func (f HTTPFetcher) Fetch(ctx context.Context, path string) (io.ReadCloser, err
 			return nil, err
 		}
 		transport = &http.Transport{
+			// Each fetch builds fresh trust and owns its transport, so no
+			// connection should outlive the response. In particular retries
+			// must not accumulate idle transports during a long outage.
+			DisableKeepAlives:     true,
 			Proxy:                 http.ProxyFromEnvironment,
 			TLSClientConfig:       &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
 			ForceAttemptHTTP2:     true,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ResponseHeaderTimeout: stall,
+			// net/http otherwise turns a failed CONNECT into an untyped
+			// status string, losing whether the proxy is temporarily down.
+			OnProxyConnectResponse: func(_ context.Context, _ *url.URL, _ *http.Request, resp *http.Response) error {
+				if retryableStatus(resp.StatusCode) {
+					return transientError{fmt.Errorf("proxy CONNECT: %s", resp.Status)}
+				}
+				return nil
+			},
 		}
 	}
 	base := f.BaseURL
@@ -57,7 +71,7 @@ func (f HTTPFetcher) Fetch(ctx context.Context, path string) (io.ReadCloser, err
 	url := strings.TrimSuffix(base, "/") + path
 	ctx, cancel := context.WithCancelCause(ctx)
 	stalled := time.AfterFunc(stall, func() {
-		cancel(fmt.Errorf("GET %s: nothing received for %s", url, stall))
+		cancel(transientError{fmt.Errorf("GET %s: nothing received for %s", url, stall)})
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err == nil {
@@ -68,6 +82,9 @@ func (f HTTPFetcher) Fetch(ctx context.Context, path string) (io.ReadCloser, err
 			}
 			resp.Body.Close()
 			err = fmt.Errorf("GET %s: %s", url, resp.Status)
+			if retryableStatus(resp.StatusCode) {
+				err = transientError{err}
+			}
 		}
 	}
 	stalled.Stop()
@@ -75,7 +92,34 @@ func (f HTTPFetcher) Fetch(ctx context.Context, path string) (io.ReadCloser, err
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
 		return nil, cause
 	}
+	if retryableTransport(err) {
+		err = transientError{err}
+	}
 	return nil, err
+}
+
+// Retryable reports a transient asset transport or upstream failure. Pin,
+// digest, extraction and local filesystem failures are not retryable.
+func Retryable(err error) bool {
+	var transient transientError
+	return errors.As(err, &transient)
+}
+
+type transientError struct{ error }
+
+func (e transientError) Unwrap() error { return e.error }
+
+func retryableStatus(status int) bool {
+	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500
+}
+
+func retryableTransport(err error) bool {
+	var request *url.Error
+	if errors.As(err, &request) {
+		err = request.Err
+	}
+	var network net.Error
+	return errors.As(err, &network) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // roots is the system's roots and SSL_CERT_FILE's certificates.
@@ -116,6 +160,7 @@ func (s *stallReader) Read(p []byte) (int, error) {
 		if cause := context.Cause(s.ctx); cause != nil {
 			return n, cause
 		}
+		return n, transientError{err}
 	}
 	return n, err
 }
