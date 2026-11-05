@@ -137,3 +137,7 @@ to the API's parent ID. A source update retains account data; `--bundle` detache
 a variant. List/get expose the relationship, and get exposes effective bundle
 and manifest digests. Console adapters carry the parent into harness selectors
 without borrowing the parent's account state.
+
+The Harnesses screen's Create variant action uses `CreateHarnessVariant` on the
+data source, calling the same generated create API with `extends`, name and
+slug on the selected server/project. It never copies parent account state.

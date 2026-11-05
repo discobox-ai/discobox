@@ -2932,14 +2932,20 @@ anywhere in the window, including from the run options, whose harness row names
 It is drawn as the discobox list is drawn and acts as it does — chevron cursor,
 a letter per action, the same modal layer for the file picker, the confirmation
 and the card — because it is the same kind of screen. There is no state to
-draw: every harness can run (ADR 26-11-02-152). `s` makes it the default, `v`
+draw: every harness can run (ADR 26-11-02-152). `c` creates a variant of a
+standalone harness: a form fixes the selected parent and asks for name and slug,
+then submits `extends` through `DataSource.CreateHarnessVariant`. It starts with
+its own account and follows the parent's bundle. A refused create retains the
+form; success refreshes both selectors and focuses the new variant. The request
+and result retain their server, and a late response replaces only its own wait
+dialog. `s` makes it the default, `v`
 reads the whole configuration, `f` edits one of its files, and `r` resets it to
 its bundle's defaults, asking first since it deletes the settings and logins
 saved to it — and, on a harness with files a person added or overrode, which
 reset is meant: keeping those files, first, or removing them too. Unlike the list, `r` is not a refresh here: the screen re-reads
 itself on the tick while it is up, and after every action.
 
-`.` — and the right button on a row — opens those four as a menu
+`.` — and the right button on a row — opens those actions as a menu
 (`harnessMenu`), each one that does not apply kept on it with the reason, and
 Enter is `v`.
 

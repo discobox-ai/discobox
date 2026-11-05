@@ -1494,6 +1494,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.showHarnessChanges(msg)
 	case harnessChangesDoneMsg:
 		return m.harnessChangesDone(msg)
+	case harnessVariantCreatedMsg:
+		return m.harnessVariantCreated(msg)
 	case harnessDoneMsg:
 		return m.harnessDone(msg)
 

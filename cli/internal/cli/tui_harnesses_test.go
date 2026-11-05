@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -126,5 +127,40 @@ func TestDoHarnessResetCallsReset(t *testing.T) {
 	}
 	if want := "POST /projects/project-1/harness-configs/" + harnessID + "/reset"; len(gotPaths) != 1 || gotPaths[0] != want {
 		t.Fatalf("requests = %v, want only %s", gotPaths, want)
+	}
+}
+
+func TestCreateHarnessVariantUsesSelectedServersCreateAPI(t *testing.T) {
+	var calls int
+	httpServer := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/work-project/harness-configs" {
+			t.Errorf("request %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if len(body) != 3 || body["extends"] != "parent-id" || body["name"] != "Work" || body["slug"] != "work" {
+			t.Errorf("body %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"new-id","extends":"parent-id","projectId":"work-project","slug":"work","name":"Work","runCommand":["codex"],"builtIn":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+	}))
+	defer httpServer.Close()
+	client, err := apiclientgen.NewClient(httpServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := &apiDataSource{app: &App{}, client: client, projectID: "work-project"}
+	ds := &apiDataSource{app: &App{}, projectID: "wrong-project", servers: []*tuiServer{{server: &server{name: "work-server"}, source: work}}}
+	got, err := ds.CreateHarnessVariant(context.Background(), "work-server", tui.NewHarnessVariant{ParentID: "parent-id", Name: "Work", Slug: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || got.ID != "new-id" || got.Parent != "parent-id" {
+		t.Fatalf("calls=%d harness=%+v", calls, got)
 	}
 }

@@ -46,6 +46,27 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 	return harnesses, nil
 }
 
+// CreateHarnessVariant uses the same create contract as harness create --extends.
+func (d *apiDataSource) CreateHarnessVariant(ctx context.Context, server string, variant tui.NewHarnessVariant) (tui.Harness, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return tui.Harness{}, err
+	}
+	res, err := d.client.CreateHarnessConfig(ctx, &apimodel.CreateHarnessConfigBody{
+		Extends: apiclientgen.NewOptString(variant.ParentID),
+		Name:    apiclientgen.NewOptString(variant.Name),
+		Slug:    apiclientgen.NewOptString(variant.Slug),
+	}, apiclientgen.CreateHarnessConfigParams{ProjectId: d.projectID})
+	if err != nil {
+		return tui.Harness{}, err
+	}
+	cfg, err := expectResponse[apimodel.HarnessConfig](res)
+	if err != nil {
+		return tui.Harness{}, err
+	}
+	return toTUIHarness(*cfg, ""), nil
+}
+
 func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 	harness := tui.Harness{
 		Parent:   cfg.Extends.Or(""),
