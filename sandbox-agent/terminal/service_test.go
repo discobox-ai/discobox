@@ -311,3 +311,24 @@ func TestAHarnessRunsInsideALoginShell(t *testing.T) {
 		t.Fatalf("startup command = %v, want the harness typed into the shell", created.StartupCommand)
 	}
 }
+
+// A registered shell has a generated config ID, unlike the fallback's literal
+// shell ID. Its empty command is the contract for a single login shell.
+func TestRegisteredShellHasNoStartupCommand(t *testing.T) {
+	svc, _ := newTestService(t, &noopInstaller{})
+	svc.harness = config.Harness{ID: "registered-shell"}
+	ex, err := svc.Create(context.Background(), CreateRequest{primary: true, Args: []string{"not a shell command"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ex.StartupCommand) != 0 {
+		t.Fatalf("registered shell startup = %q", ex.StartupCommand)
+	}
+	if HarnessID(ex) != "registered-shell" {
+		t.Fatalf("harness identity = %q", HarnessID(ex))
+	}
+	req := primaryCreateRequest(svc.harness, svc.harness.ID, []string{"not a shell command"}, false)
+	if len(req.Args) != 0 {
+		t.Fatalf("shell received prompt: %q", req.Args)
+	}
+}

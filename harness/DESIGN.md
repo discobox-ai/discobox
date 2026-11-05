@@ -243,6 +243,13 @@ coding harnesses; shell carries no capture implementation.
   execs nothing, so a harness installing no agent lands the user at a prompt
   rather than at a `command not found`; a harness bundle's feature overwrites
   it. See ADR 0086 §3 and ADR 26-10-16-423 §4.
+- **A primary source can gate launch on Linux.** The terminal layer's
+  platform-owned `discobox-primary-run` runs the source's
+  `.discobox/scripts/pre-harness` before the resolved command, including
+  overrides and resume commands. Failure leaves the login shell for recovery;
+  auxiliary terminals bypass it. Harness bundles keep their existing launcher
+  contract. See [the sandbox launch gate](../sandbox-agent/DESIGN.md#primary-source-launch-gate)
+  and ADR 26-11-05-719.
 - **A wrapper joins its prompt words back into one prompt.** The command is
   *typed* (ADR 0027), so the login shell splits it before the wrapper runs:
   `discobox run . fix the failing tests` reaches `discobox-harness-run` as four

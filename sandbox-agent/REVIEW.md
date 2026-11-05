@@ -757,3 +757,12 @@ user waits on every single start.
 - Cancel an in-flight files upload by closing the helper's framed stdin before
   a bounded kill fallback. Killing it immediately skips the atomic writer's
   cleanup defers and leaves temporary siblings after child access is revoked.
+
+- Source pre-harness execution tests use Linux executables and must skip other
+  platforms. The shared command still compiles everywhere; Windows CI runs
+  the whole module test suite and cannot execute a POSIX shebang fixture.
+
+- Recognize a registered login-shell harness by its empty command, not its ID.
+  Registration assigns a generated config ID; only the no-harness fallback
+  uses the literal `shell`. Keep its startup argv empty, including after a
+  pre-harness gate, or it nests a second shell and can consume prompts.
