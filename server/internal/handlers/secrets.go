@@ -8,6 +8,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -362,7 +363,7 @@ func agentCredentialPartStatus(req *model.SecretRequest, part model.SecretReques
 	if len(routes) == 0 && secret != nil {
 		routes = secret.Routes
 	}
-	hosts := model.OpenRouteHosts(routes)
+	hosts := secretroute.OpenRouteHosts(routes)
 	if hosts == nil {
 		hosts = []string{}
 	}

@@ -141,3 +141,8 @@ without borrowing the parent's account state.
 The Harnesses screen's Create variant action uses `CreateHarnessVariant` on the
 data source, calling the same generated create API with `extends`, name and
 slug on the selected server/project. It never copies parent account state.
+
+Approval has independent `--use-scope` and `--delegate-scope` choices: routes
+(default), hosts, anywhere. Scope on an absent/denied part and wider scope with
+route overrides are refused before submission. Request history distinguishes
+the original routes from approved scope and immutable consent route lists.

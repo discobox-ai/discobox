@@ -414,6 +414,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	var routes, delegateRoutes []string
 	var useDecision, delegateDecision decisionFlag
 	var useAs asFlag
+	var useScope, delegateScope scopeFlag
 	lifetimeFlag := lifetime.NewFlag()
 	cmd := &cobra.Command{Use: "approve REQUEST_ID", Short: "Answer a secret request, binding the secret to the discobox that asked", Long: `Answer a secret request: each part approved binds the secret to the discobox
 that asked. A request has a use part — the secret in the variable it asked for
@@ -438,6 +439,11 @@ use part may send it, --delegate-route what the delegate part may hand on;
 left out, a part is held to the routes it asked for. --for is how long each
 part approved lasts; left out, what the request asked for, else an hour,
 within the secret's limit.
+
+--use-scope and --delegate-scope choose routes (requested routes, the default),
+hosts (any method, path and protocol on requested hosts), or anywhere (no grant
+restriction). Credential and parent scope still limit access. Route overrides
+require routes scope. Each part has its own choice.
 
 --raw grants the value itself rather than a sentinel, for a program that
 signs with it or sends it where an exchange cannot reach: env puts it in the
@@ -480,6 +486,8 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 		body, err := approvalBody(asked, approvalAnswer{
 			use:            useDecision,
 			useAs:          useAs,
+			useScope:       useScope,
+			delegateScope:  delegateScope,
 			delegate:       delegateDecision,
 			useRoutes:      useRoutes,
 			delegateRoutes: handedOn,
@@ -522,6 +530,8 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "The secret that answers the request, by name or ID")
 	cmd.Flags().Var(&useDecision, "use", "The use part's answer: approve or deny (required when the request also asks to delegate)")
+	cmd.Flags().Var(&useScope, "use-scope", "Grant restriction: routes (requested routes), hosts (any method, path and protocol on requested hosts), anywhere (no grant restriction); still limited by credential and parent scope")
+	cmd.Flags().Var(&delegateScope, "delegate-scope", "Delegation restriction: routes, hosts or anywhere; default requested routes")
 	cmd.Flags().Var(&useAs, "use-as", "How an approved use part is granted: add (an addition beside what the discobox holds, for its own lifetime) or replace (its whole use of the secret); default what the request asked")
 	cmd.Flags().Var(&delegateDecision, "delegate", "The delegate part's answer: approve or deny (required when the request also asks to use)")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where the use part may send it, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more (default the routes the part named)")
@@ -548,6 +558,20 @@ func (f *decisionFlag) Set(text string) error {
 func (f *decisionFlag) String() string { return f.value }
 
 func (f *decisionFlag) Type() string { return "answer" }
+
+// scopeFlag is an explicit per-part grant restriction.
+type scopeFlag struct{ value string }
+
+func (f *scopeFlag) Set(text string) error {
+	switch text {
+	case "routes", "hosts", "anywhere":
+		f.value = text
+		return nil
+	}
+	return fmt.Errorf("%q is not an approval scope: routes, hosts or anywhere", text)
+}
+func (f *scopeFlag) String() string { return f.value }
+func (f *scopeFlag) Type() string   { return "routes|hosts|anywhere" }
 
 // asFlag is --use-as: how an approved use part is granted.
 type asFlag struct{ value bindingplan.As }
@@ -584,6 +608,7 @@ func grantedAs(request *apimodel.SecretRequest, decision apiclientgen.OptSecretR
 type approvalAnswer struct {
 	use, delegate             decisionFlag
 	useAs                     asFlag
+	useScope, delegateScope   scopeFlag
 	useRoutes, delegateRoutes []apimodel.SecretRouteInput
 	raw                       rawFlag
 	lifetime                  *lifetime.Flag
@@ -625,6 +650,12 @@ func approvalBody(request *apimodel.SecretRequest, answer approvalAnswer) (*apim
 		decision := decide(answer.use.value)
 		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(decision)}
 		if decision == "approve" {
+			if answer.useScope.value != "" {
+				if answer.useScope.value != "routes" && answer.useRoutes != nil {
+					return nil, fmt.Errorf("--route requires --use-scope routes")
+				}
+				part.Scope = apiclientgen.NewOptSecretRequestPartDecisionScope(apiclientgen.SecretRequestPartDecisionScope(answer.useScope.value))
+			}
 			part.Routes = answer.useRoutes
 			// Sent only when given: left out, the server binds for what the
 			// request asked, else an hour, within the secret's limit — what
@@ -638,27 +669,33 @@ func approvalBody(request *apimodel.SecretRequest, answer approvalAnswer) (*apim
 			if answer.useAs.value != "" {
 				part.As = apiclientgen.NewOptSecretRequestPartDecisionAs(apiclientgen.SecretRequestPartDecisionAs(answer.useAs.value))
 			}
-		} else if len(answer.useRoutes) > 0 || answer.raw.set || answer.useAs.value != "" {
-			return nil, fmt.Errorf("--route, --raw and --use-as are for an approved use part; the use part is denied")
+		} else if len(answer.useRoutes) > 0 || answer.raw.set || answer.useAs.value != "" || answer.useScope.value != "" {
+			return nil, fmt.Errorf("--route, --raw, --use-as and --use-scope are for an approved use part; the use part is denied")
 		}
 		body.Use = apiclientgen.NewOptSecretRequestPartDecision(part)
-	} else if len(answer.useRoutes) > 0 || answer.raw.set || answer.useAs.value != "" {
-		return nil, fmt.Errorf("--route, --raw and --use-as are the use part's; request %s asks only to delegate (--delegate-route narrows what it hands on)", request.ID)
+	} else if len(answer.useRoutes) > 0 || answer.raw.set || answer.useAs.value != "" || answer.useScope.value != "" {
+		return nil, fmt.Errorf("--route, --raw, --use-as and --use-scope are the use part's; request %s asks only to delegate (--delegate-route narrows what it hands on)", request.ID)
 	}
 	if hasDelegate {
 		decision := decide(answer.delegate.value)
 		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(decision)}
 		if decision == "approve" {
+			if answer.delegateScope.value != "" {
+				if answer.delegateScope.value != "routes" && answer.delegateRoutes != nil {
+					return nil, fmt.Errorf("--delegate-route requires --delegate-scope routes")
+				}
+				part.Scope = apiclientgen.NewOptSecretRequestPartDecisionScope(apiclientgen.SecretRequestPartDecisionScope(answer.delegateScope.value))
+			}
 			part.Routes = answer.delegateRoutes
 			if timed {
 				part.TtlSeconds = apiclientgen.NewOptInt64(seconds)
 			}
-		} else if len(answer.delegateRoutes) > 0 {
-			return nil, fmt.Errorf("--delegate-route narrows an approved delegate part; the delegate part is denied")
+		} else if len(answer.delegateRoutes) > 0 || answer.delegateScope.value != "" {
+			return nil, fmt.Errorf("--delegate-route and --delegate-scope require an approved delegate part; the delegate part is denied")
 		}
 		body.Delegate = apiclientgen.NewOptSecretRequestPartDecision(part)
-	} else if len(answer.delegateRoutes) > 0 {
-		return nil, fmt.Errorf("--delegate-route is the delegate part's; request %s does not ask to delegate", request.ID)
+	} else if len(answer.delegateRoutes) > 0 || answer.delegateScope.value != "" {
+		return nil, fmt.Errorf("--delegate-route and --delegate-scope are the delegate part's; request %s does not ask to delegate", request.ID)
 	}
 	return body, nil
 }
@@ -674,6 +711,9 @@ func (a *App) writeApprovedParts(cmd *cobra.Command, client *apiclientgen.Client
 	fmt.Fprintf(cmd.OutOrStdout(), "Answered %s.\n", request.ID)
 	for _, part := range requestParts(request) {
 		bindingID := part.part.BindingId.Or("")
+		if scope := part.part.ApprovedScope.Or(""); scope != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "The %s scope is %s (still limited by credential and parent scope).\n", part.label, scope)
+		}
 		if part.outcome() != apiclientgen.SecretRequestPartOutcomeApproved || bindingID == "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "The %s part is %s.\n", part.label, part.statusText(request.Status))
 			continue

@@ -472,3 +472,21 @@ func FromLegacy(host, path string, blocked bool) (Route, error) {
 func hasControl(text string) bool {
 	return strings.ContainsFunc(text, func(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) })
 }
+
+// OpenRouteHosts are the host patterns the open routes of a list name, in
+// order, each once: where a credential held to the list may be sent, as the
+// agent credentials protocol speaks of it.
+func OpenRouteHosts(routes []Route) []string {
+	var out []string
+	for _, route := range routes {
+		if route.Blocked {
+			continue
+		}
+		for _, host := range route.Hosts {
+			if !slices.Contains(out, host) {
+				out = append(out, host)
+			}
+		}
+	}
+	return out
+}

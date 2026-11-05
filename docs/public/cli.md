@@ -5253,6 +5253,11 @@ left out, a part is held to the routes it asked for. --for is how long each
 part approved lasts; left out, what the request asked for, else an hour,
 within the secret's limit.
 
+--use-scope and --delegate-scope choose routes (requested routes, the default),
+hosts (any method, path and protocol on requested hosts), or anywhere (no grant
+restriction). Credential and parent scope still limit access. Route overrides
+require routes scope. Each part has its own choice.
+
 --raw grants the value itself rather than a sentinel, for a program that
 signs with it or sends it where an exchange cannot reach: env puts it in the
 variable, file the path of a file in memory holding it. It is yours to choose
@@ -5299,6 +5304,7 @@ discobox secret request approve REQUEST_ID [flags]
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --delegate | answer |  | The delegate part's answer: approve or deny (required when the request also asks to use) |
 | --delegate-route | stringArray | [] | What the delegate part may hand on, as a route like --route; one per flag (default the routes the part named) |
+| --delegate-scope | routes&#124;hosts&#124;anywhere |  | Delegation restriction: routes, hosts or anywhere; default requested routes |
 | --for | duration |  | How long the binding lasts: 1h, 90m, 3d, 2w, 1mo, or forever (default: what the request asked for, else 1h, within the secret's limit) |
 | --help, -h | bool | false | help for approve Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
@@ -5309,6 +5315,7 @@ discobox secret request approve REQUEST_ID [flags]
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 | --use | answer |  | The use part's answer: approve or deny (required when the request also asks to delegate) |
 | --use-as | add&#124;replace |  | How an approved use part is granted: add (an addition beside what the discobox holds, for its own lifetime) or replace (its whole use of the secret); default what the request asked |
+| --use-scope | routes&#124;hosts&#124;anywhere |  | Grant restriction: routes (requested routes), hosts (any method, path and protocol on requested hosts), anywhere (no grant restriction); still limited by credential and parent scope |
 
 ## discobox secret request deny
 

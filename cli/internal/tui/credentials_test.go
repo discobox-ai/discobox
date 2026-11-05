@@ -260,7 +260,7 @@ func TestChoosingASecretAsksHowLongNext(t *testing.T) {
 	for _, item := range m.dialog.items {
 		labels = append(labels, item.label)
 	}
-	if want := []string{"1 hour", "1 day", "1 week", "1 month", "forever", "custom…"}; strings.Join(labels, ",") != strings.Join(want, ",") {
+	if want := []string{"1 hour", "1 day", "1 week", "1 month", "forever", "custom…", "use scope: routes"}; strings.Join(labels, ",") != strings.Join(want, ",") {
 		t.Fatalf("offered = %v, want %v", labels, want)
 	}
 	// It says what the lifetime is for: the credential, what answers it, and
@@ -324,7 +324,7 @@ func TestTheOfferedLifetimesAreTheOnesTheFlagsTake(t *testing.T) {
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
 	for _, item := range m.dialog.items {
-		if item.key == lifetimeCustom {
+		if item.key == lifetimeCustom || strings.HasPrefix(item.key, "scope:") {
 			continue
 		}
 		d, err := lifetime.Parse(item.label)
@@ -361,7 +361,7 @@ func TestTheLifetimeStepOpensOnWhatTheAgentAskedFor(t *testing.T) {
 	for _, item := range m.dialog.items {
 		labels = append(labels, item.label)
 	}
-	if got, want := strings.Join(labels, ", "), "1 hour, 4 hours, 1 day, 1 week, 1 month, forever, custom…"; got != want {
+	if got, want := strings.Join(labels, ", "), "1 hour, 4 hours, 1 day, 1 week, 1 month, forever, custom…, use scope: routes"; got != want {
 		t.Fatalf("offered %s, want %s", got, want)
 	}
 	opened := m.dialog.items[m.dialog.cursor]
@@ -387,7 +387,7 @@ func TestALifetimeAskedForThatIsAPresetIsOfferedOnce(t *testing.T) {
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	if len(m.dialog.items) != len(lifetime.Presets)+1 {
+	if len(m.dialog.items) != len(lifetime.Presets)+2 {
 		t.Fatalf("offered %d rows, want the presets and custom", len(m.dialog.items))
 	}
 	if opened := m.dialog.items[m.dialog.cursor]; opened.label != "1 week" {
@@ -413,7 +413,7 @@ func TestAnAskThatCannotBeARowOpensOnTheDefault(t *testing.T) {
 	if !onLifetimeStep(m) {
 		t.Fatalf("dialog = %s, want the step asking how long", describe(m.dialog))
 	}
-	if len(m.dialog.items) != len(lifetime.Presets)+1 {
+	if len(m.dialog.items) != len(lifetime.Presets)+2 {
 		t.Fatalf("offered %d rows, want only the presets and custom", len(m.dialog.items))
 	}
 	keys := map[string]bool{}
@@ -486,10 +486,10 @@ func TestALifetimeLongerThanTheCredentialAllowsIsNotOffered(t *testing.T) {
 	}
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
 	for _, item := range m.dialog.items {
-		if item.key == lifetimeCustom {
+		if item.key == lifetimeCustom || strings.HasPrefix(item.key, "scope:") {
 			continue
 		}
-		over := item.label != "1 hour"
+		over := item.label != "1 hour" && !strings.HasPrefix(item.key, "scope:")
 		if over == item.enabled || over != strings.Contains(item.detail, "longer than") {
 			t.Fatalf("%s: enabled %v, detail %q; want only the lifetimes within the limit offered", item.label, item.enabled, item.detail)
 		}
@@ -1208,5 +1208,29 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestApprovalScopeIsExplicitAndDefaultsToRequestedRoutes(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	drain(t, m, m.dialog.action("scope:use"), 0)
+	if m.dialog.title != "Scope of use" || m.dialog.items[m.dialog.cursor].key != "routes" {
+		t.Fatalf("scope dialog = %s", describe(m.dialog))
+	}
+	for _, want := range []string{"Requested routes", "Requested hosts", "Anywhere", "No grant restriction", "Still limited by credential scope"} {
+		if !strings.Contains(dialogText(m), want) {
+			t.Fatalf("missing %q in %s", want, dialogText(m))
+		}
+	}
+	drain(t, m, m.dialog.action("anywhere"), 0)
+	if !onLifetimeStep(m) || !strings.Contains(dialogText(m), "Anywhere · No grant restriction") || len(ds.approvals) != 0 {
+		t.Fatalf("dialog=%s, approvals=%+v", dialogText(m), ds.approvals)
+	}
+	grantFor(t, m, time.Hour)
+	if len(ds.approvals) != 1 || ds.approvals[0].UseScope != "anywhere" || ds.approvals[0].DelegateScope != "" {
+		t.Fatalf("approval=%+v", ds.approvals)
 	}
 }

@@ -23981,6 +23981,39 @@ func (s *OptSecretRequest) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SecretRequestGrant as json.
+func (o OptSecretRequestGrant) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SecretRequestGrant from json.
+func (o *OptSecretRequestGrant) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretRequestGrant to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretRequestGrant) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretRequestGrant) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SecretRequestPart as json.
 func (o OptSecretRequestPart) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -24043,6 +24076,39 @@ func (s OptSecretRequestPartApprovedAs) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSecretRequestPartApprovedAs) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretRequestPartApprovedScope as json.
+func (o OptSecretRequestPartApprovedScope) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SecretRequestPartApprovedScope from json.
+func (o *OptSecretRequestPartApprovedScope) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretRequestPartApprovedScope to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretRequestPartApprovedScope) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretRequestPartApprovedScope) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -24142,6 +24208,39 @@ func (s OptSecretRequestPartDecisionRaw) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSecretRequestPartDecisionRaw) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretRequestPartDecisionScope as json.
+func (o OptSecretRequestPartDecisionScope) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SecretRequestPartDecisionScope from json.
+func (o *OptSecretRequestPartDecisionScope) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretRequestPartDecisionScope to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretRequestPartDecisionScope) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretRequestPartDecisionScope) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -56187,6 +56286,354 @@ func (s *SecretRequest) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *SecretRequestGrant) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SecretRequestGrant) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("secretId")
+		e.Str(s.SecretId)
+	}
+	{
+		e.FieldStart("secretRevision")
+		e.Int64(s.SecretRevision)
+	}
+	{
+		if s.ParentBindingId.Set {
+			e.FieldStart("parentBindingId")
+			s.ParentBindingId.Encode(e)
+		}
+	}
+	{
+		if s.ExpiresAt.Set {
+			e.FieldStart("expiresAt")
+			s.ExpiresAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		e.FieldStart("delivery")
+		e.Str(s.Delivery)
+	}
+	{
+		e.FieldStart("mode")
+		e.Str(s.Mode)
+	}
+	{
+		e.FieldStart("routeLists")
+		e.ArrStart()
+		for _, elem := range s.RouteLists {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+}
+
+var jsonFieldsNameOfSecretRequestGrant = [7]string{
+	0: "secretId",
+	1: "secretRevision",
+	2: "parentBindingId",
+	3: "expiresAt",
+	4: "delivery",
+	5: "mode",
+	6: "routeLists",
+}
+
+// Decode decodes SecretRequestGrant from json.
+func (s *SecretRequestGrant) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRequestGrant to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "secretId":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.SecretId = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretId\"")
+			}
+		case "secretRevision":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int64()
+				s.SecretRevision = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretRevision\"")
+			}
+		case "parentBindingId":
+			if err := func() error {
+				s.ParentBindingId.Reset()
+				if err := s.ParentBindingId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"parentBindingId\"")
+			}
+		case "expiresAt":
+			if err := func() error {
+				s.ExpiresAt.Reset()
+				if err := s.ExpiresAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"expiresAt\"")
+			}
+		case "delivery":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Delivery = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"delivery\"")
+			}
+		case "mode":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Str()
+				s.Mode = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mode\"")
+			}
+		case "routeLists":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				s.RouteLists = make([]SecretRequestGrantRouteList, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SecretRequestGrantRouteList
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.RouteLists = append(s.RouteLists, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"routeLists\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretRequestGrant")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b01110011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSecretRequestGrant) {
+					name = jsonFieldsNameOfSecretRequestGrant[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SecretRequestGrant) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRequestGrant) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SecretRequestGrantRouteList) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SecretRequestGrantRouteList) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("sourceId")
+		e.Str(s.SourceId)
+	}
+	{
+		e.FieldStart("source")
+		e.Str(s.Source)
+	}
+	{
+		e.FieldStart("routes")
+		e.ArrStart()
+		for _, elem := range s.Routes {
+			elem.Encode(e)
+		}
+		e.ArrEnd()
+	}
+}
+
+var jsonFieldsNameOfSecretRequestGrantRouteList = [3]string{
+	0: "sourceId",
+	1: "source",
+	2: "routes",
+}
+
+// Decode decodes SecretRequestGrantRouteList from json.
+func (s *SecretRequestGrantRouteList) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRequestGrantRouteList to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "sourceId":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.SourceId = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sourceId\"")
+			}
+		case "source":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Source = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
+		case "routes":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				s.Routes = make([]SecretRoute, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SecretRoute
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Routes = append(s.Routes, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"routes\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretRequestGrantRouteList")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSecretRequestGrantRouteList) {
+					name = jsonFieldsNameOfSecretRequestGrantRouteList[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SecretRequestGrantRouteList) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRequestGrantRouteList) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *SecretRequestPart) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -56205,6 +56652,18 @@ func (s *SecretRequestPart) encodeFields(e *jx.Encoder) {
 		if s.ApprovedAs.Set {
 			e.FieldStart("approvedAs")
 			s.ApprovedAs.Encode(e)
+		}
+	}
+	{
+		if s.ApprovedScope.Set {
+			e.FieldStart("approvedScope")
+			s.ApprovedScope.Encode(e)
+		}
+	}
+	{
+		if s.Grant.Set {
+			e.FieldStart("grant")
+			s.Grant.Encode(e)
 		}
 	}
 	{
@@ -56241,13 +56700,15 @@ func (s *SecretRequestPart) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretRequestPart = [6]string{
+var jsonFieldsNameOfSecretRequestPart = [8]string{
 	0: "add",
 	1: "approvedAs",
-	2: "bindingId",
-	3: "outcome",
-	4: "policies",
-	5: "routes",
+	2: "approvedScope",
+	3: "grant",
+	4: "bindingId",
+	5: "outcome",
+	6: "policies",
+	7: "routes",
 }
 
 // Decode decodes SecretRequestPart from json.
@@ -56277,6 +56738,26 @@ func (s *SecretRequestPart) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"approvedAs\"")
+			}
+		case "approvedScope":
+			if err := func() error {
+				s.ApprovedScope.Reset()
+				if err := s.ApprovedScope.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"approvedScope\"")
+			}
+		case "grant":
+			if err := func() error {
+				s.Grant.Reset()
+				if err := s.Grant.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"grant\"")
 			}
 		case "bindingId":
 			if err := func() error {
@@ -56396,6 +56877,50 @@ func (s *SecretRequestPartApprovedAs) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SecretRequestPartApprovedScope as json.
+func (s SecretRequestPartApprovedScope) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SecretRequestPartApprovedScope from json.
+func (s *SecretRequestPartApprovedScope) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRequestPartApprovedScope to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SecretRequestPartApprovedScope(v) {
+	case SecretRequestPartApprovedScopeRoutes:
+		*s = SecretRequestPartApprovedScopeRoutes
+	case SecretRequestPartApprovedScopeHosts:
+		*s = SecretRequestPartApprovedScopeHosts
+	case SecretRequestPartApprovedScopeAnywhere:
+		*s = SecretRequestPartApprovedScopeAnywhere
+	case SecretRequestPartApprovedScopeLegacyUnknown:
+		*s = SecretRequestPartApprovedScopeLegacyUnknown
+	default:
+		*s = SecretRequestPartApprovedScope(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SecretRequestPartApprovedScope) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRequestPartApprovedScope) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *SecretRequestPartDecision) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -56414,6 +56939,12 @@ func (s *SecretRequestPartDecision) encodeFields(e *jx.Encoder) {
 	{
 		e.FieldStart("decision")
 		s.Decision.Encode(e)
+	}
+	{
+		if s.Scope.Set {
+			e.FieldStart("scope")
+			s.Scope.Encode(e)
+		}
 	}
 	{
 		if s.Raw.Set {
@@ -56439,12 +56970,13 @@ func (s *SecretRequestPartDecision) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretRequestPartDecision = [5]string{
+var jsonFieldsNameOfSecretRequestPartDecision = [6]string{
 	0: "as",
 	1: "decision",
-	2: "raw",
-	3: "routes",
-	4: "ttlSeconds",
+	2: "scope",
+	3: "raw",
+	4: "routes",
+	5: "ttlSeconds",
 }
 
 // Decode decodes SecretRequestPartDecision from json.
@@ -56475,6 +57007,16 @@ func (s *SecretRequestPartDecision) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"decision\"")
+			}
+		case "scope":
+			if err := func() error {
+				s.Scope.Reset()
+				if err := s.Scope.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"scope\"")
 			}
 		case "raw":
 			if err := func() error {
@@ -56685,6 +57227,48 @@ func (s SecretRequestPartDecisionRaw) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SecretRequestPartDecisionRaw) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretRequestPartDecisionScope as json.
+func (s SecretRequestPartDecisionScope) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SecretRequestPartDecisionScope from json.
+func (s *SecretRequestPartDecisionScope) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRequestPartDecisionScope to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SecretRequestPartDecisionScope(v) {
+	case SecretRequestPartDecisionScopeRoutes:
+		*s = SecretRequestPartDecisionScopeRoutes
+	case SecretRequestPartDecisionScopeHosts:
+		*s = SecretRequestPartDecisionScopeHosts
+	case SecretRequestPartDecisionScopeAnywhere:
+		*s = SecretRequestPartDecisionScopeAnywhere
+	default:
+		*s = SecretRequestPartDecisionScope(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SecretRequestPartDecisionScope) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRequestPartDecisionScope) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

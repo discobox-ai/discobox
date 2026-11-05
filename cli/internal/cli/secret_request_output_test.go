@@ -246,3 +246,23 @@ func TestTheConsoleSubmitsAnAdditionWithoutExpiry(t *testing.T) {
 		t.Fatalf("delegate = %#v, want a bare deny", delegate)
 	}
 }
+
+func TestApprovalHistoryDistinguishesEmptyGrantRestrictions(t *testing.T) {
+	request := &apimodel.SecretRequest{Use: apiclientgen.NewOptSecretRequestPart(apimodel.SecretRequestPart{Grant: apiclientgen.NewOptSecretRequestGrant(apimodel.SecretRequestGrant{RouteLists: []apimodel.SecretRequestGrantRouteList{
+		{Source: "secret", SourceId: "s"}, {Source: "binding", SourceId: "b"}, {Source: "parent", SourceId: "p"},
+	}})})}
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	if err := (&App{}).writeSecretRequest(cmd, request, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"USE GRANTED secret s", "nowhere", "USE GRANTED binding b", "No grant restriction", "USE GRANTED parent p"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q: %s", want, out.String())
+		}
+	}
+	if strings.Count(out.String(), "No grant restriction") != 2 {
+		t.Fatalf("out=%s", out.String())
+	}
+}

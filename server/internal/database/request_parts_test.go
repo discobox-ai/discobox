@@ -72,7 +72,11 @@ func TestMigrateSplitsSecretRequestsIntoParts(t *testing.T) {
 	}
 	want := []model.SecretRoute{{Hosts: []string{"api.github.com"}}}
 	part := func(outcome, binding string) model.SecretRequestPart {
-		return model.SecretRequestPart{Asked: true, Routes: want, Outcome: outcome, BindingID: binding}
+		p := model.SecretRequestPart{Asked: true, Routes: want, Outcome: outcome, BindingID: binding}
+		if outcome == model.SecretRequestPartApproved {
+			p.ApprovedScope = "legacy-unknown"
+		}
+		return p
 	}
 	replaced := func(p model.SecretRequestPart) model.SecretRequestPart {
 		p.ApprovedAs = model.SecretRequestApprovedAsReplace

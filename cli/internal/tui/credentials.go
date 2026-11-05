@@ -329,6 +329,18 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 		allowed:      func(d time.Duration) bool { return withinLimit(a.secret, d) },
 		refusal:      a.secret.Name + " allows at most " + lifetime.Label(a.secret.MaxTTL),
 	}
+	for _, part := range []struct{ name, answer, scope string }{{"use", a.use, a.useScope}, {"delegate", a.delegate, a.delegateScope}} {
+		if part.answer != PartApprove {
+			continue
+		}
+		scope := part.scope
+		if scope == "" {
+			scope = "routes"
+		}
+		ask.extra = append(ask.extra, action{key: "scope:" + part.name, label: part.name + " scope: " + scope, detail: "change grant restriction", enabled: true})
+	}
+	ask.chooseExtra = func(key string, again func() tea.Cmd) tea.Cmd { return m.askScope(a, key == "scope:delegate", again) }
+
 	return m.askDuration(ask, func(d time.Duration, _ bool, again func() tea.Cmd) tea.Cmd {
 		next := a
 		next.ttl = d
@@ -341,6 +353,8 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 // what it says beyond its name are the asker's, since "forever" means
 // something different in each.
 type durationAsk struct {
+	extra                      []action
+	chooseExtra                func(string, func() tea.Cmd) tea.Cmd
 	title, answerLabel, footer string
 	// customFooter is what the field for one the presets lack says it takes.
 	customFooter string
@@ -388,8 +402,14 @@ func (m *Model) askDuration(ask durationAsk, chose func(d time.Duration, kept bo
 	}
 	items = append(items, action{key: lifetimeCustom, label: "custom…", detail: "type one: 90m, 3d, 6mo", enabled: true})
 
+	items = append(items, ask.extra...)
 	again := func() tea.Cmd { return m.askDuration(ask, chose, back) }
 	d := actionsDialog(ask.title, "", items, func(result string) tea.Cmd {
+		for _, extra := range ask.extra {
+			if result == extra.key {
+				return ask.chooseExtra(result, again)
+			}
+		}
 		switch result {
 		case lifetimeCustom:
 			return m.askCustomDuration(ask, chose, again, "")
@@ -523,14 +543,22 @@ func bindingSection(a approval) section {
 			fields = append(fields, field{label: kind.name + " part", value: "denied — what the discobox holds of it stays as it is", tone: toneDim})
 			continue
 		}
-		part := a.req.Use
+		asked := a.grantedRoutes(kind.delegate)
+		scope := a.useScope
 		if kind.delegate {
-			part = a.req.Delegate
+			scope = a.delegateScope
 		}
-		var asked []secretroute.Route
-		if part != nil {
-			asked = part.Routes
+		if scope == "" {
+			scope = "routes"
 		}
+		summary := "Requested routes"
+		switch scope {
+		case "hosts":
+			summary = "Requested hosts · Any method and path on these hosts; any protocol\n" + routeRows(asked)
+		case "anywhere":
+			summary = "Anywhere · No grant restriction"
+		}
+		fields = append(fields, field{label: kind.name + " scope", value: summary + "\nStill limited by credential scope", tone: toneAccent})
 		fields = append(fields, replacedFields(a.standing, kind.delegate, a.req.EnvVar, a.usePlanned(), asked, a.secret.Routes)...)
 	}
 	return section{label: "the binding", fields: fields}
@@ -733,6 +761,73 @@ func (m *Model) lifetimeChosen(a approval, again func() tea.Cmd) tea.Cmd {
 		return m.askDelivery(a, again)
 	}
 	return m.finishApproval(a)
+}
+
+// askScope asks each approved part independently. New approvals always open on routes.
+func (m *Model) askScope(a approval, delegate bool, back func() tea.Cmd) tea.Cmd {
+	name, part := "use", a.req.Use
+	if delegate {
+		name, part = "delegate", a.req.Delegate
+	}
+	var routes []secretroute.Route
+	if part != nil {
+		routes = part.Routes
+	} else {
+		routes = a.req.routes()
+	}
+	hosts := secretroute.OpenRouteHosts(routes)
+	items := []action{
+		{key: "routes", label: "Requested routes", detail: routeRows(routes), enabled: true},
+		{key: "hosts", label: "Requested hosts", detail: strings.Join(hosts, ", ") + " · Any method and path on these hosts; any protocol", enabled: len(hosts) > 0},
+		{key: "anywhere", label: "Anywhere", detail: "No grant restriction", enabled: true},
+	}
+	d := actionsDialog("Scope of "+name, "", items, func(key string) tea.Cmd {
+		next := a
+		if delegate {
+			next.delegateScope = key
+		} else {
+			next.useScope = key
+		}
+		return m.askLifetime(next, m.toRequest(next))
+	})
+	d.sections = []section{bindingSection(a), {label: "limits", fields: []field{
+		{label: "credential", value: routeRows(a.secret.Routes)},
+	}, lines: []line{{text: "Still limited by credential scope"}}}}
+	for i, routes := range a.secret.RouteConstraints {
+		d.sections[1].fields = append(d.sections[1].fields, field{label: fmt.Sprintf("constraint %d", i+1), value: routeRows(routes)})
+	}
+	if a.fresh {
+		d.sections[1].lines = append(d.sections[1].lines, line{text: "Credential scope is set on the new credential form"})
+	}
+	for _, binding := range a.standing {
+		if binding.ParentID != "" {
+			d.sections[1].lines = append(d.sections[1].lines, line{text: "Parent restriction: " + binding.ParentID})
+		}
+	}
+	d.onCancel = back
+	m.dialog = d
+	return nil
+}
+
+func (a approval) grantedRoutes(delegate bool) []secretroute.Route {
+	part, scope := a.req.Use, a.useScope
+	if delegate {
+		part, scope = a.req.Delegate, a.delegateScope
+	}
+	var routes []secretroute.Route
+	if part != nil {
+		routes = part.Routes
+	} else {
+		routes = a.req.routes()
+	}
+	if scope == "anywhere" {
+		return nil
+	}
+	if scope == "hosts" {
+		hosts := secretroute.OpenRouteHosts(routes)
+		return []secretroute.Route{{Hosts: hosts}}
+	}
+	return routes
 }
 
 // askUseAs asks how an approved use part is granted (ADR 26-11-03-329 §§4,
@@ -1153,11 +1248,13 @@ func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
 			return credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		}
 		err = m.ds.ApproveCredentialRequest(m.ctx, req.Server, Approval{
-			RequestID:  req.ID,
-			SecretID:   stored.ID,
-			TTLSeconds: lifetime.Seconds(ttl),
-			Use:        a.use,
-			Delegate:   a.delegate,
+			RequestID:     req.ID,
+			SecretID:      stored.ID,
+			TTLSeconds:    lifetime.Seconds(ttl),
+			Use:           a.use,
+			Delegate:      a.delegate,
+			UseScope:      a.useScope,
+			DelegateScope: a.delegateScope,
 		})
 		msg := credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		if err != nil {
@@ -1189,8 +1286,9 @@ type approval struct {
 	// for a part the request does not have. A request with one part is
 	// approved by choosing a secret; one with both is answered part by part
 	// (askParts), and partsChosen says it has been.
-	use, delegate string
-	partsChosen   bool
+	use, delegate           string
+	useScope, delegateScope string
+	partsChosen             bool
 	// standing is the asking discobox's own bindings of the chosen secret:
 	// what an approved part replaces.
 	standing []SecretBinding
@@ -1273,12 +1371,14 @@ func (m *Model) standingLoaded(msg standingLoadedMsg) tea.Cmd {
 func (m *Model) finishApproval(a approval) tea.Cmd {
 	what := "approving for " + lifetime.Label(a.ttl) + "…"
 	sent := Approval{
-		RequestID:  a.req.ID,
-		SecretID:   a.secret.ID,
-		TTLSeconds: lifetime.Seconds(a.ttl),
-		Raw:        a.raw,
-		Use:        a.use,
-		Delegate:   a.delegate,
+		RequestID:     a.req.ID,
+		SecretID:      a.secret.ID,
+		TTLSeconds:    lifetime.Seconds(a.ttl),
+		Raw:           a.raw,
+		Use:           a.use,
+		Delegate:      a.delegate,
+		UseScope:      a.useScope,
+		DelegateScope: a.delegateScope,
 	}
 	if a.use == PartApprove && a.req.Use != nil {
 		// Always said, so the binding made is the one the card showed.

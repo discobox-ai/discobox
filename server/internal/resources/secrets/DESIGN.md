@@ -171,12 +171,23 @@ part the request has, and no other (`partDecision`, §4): an answer that
 leaves one out is a 400, so a delegation is never granted by omission. Deny
 denies them all. A denied part changes nothing. An approved part makes a
 binding on the discobox that asked (`approvalWrite.binding`) with the routes
-the approver named, else the part's, and a lifetime the approver named, else
+the approver named, else the part's under default routes scope (wider scopes
+are defined below), and a lifetime the approver named, else
 `defaultApprovalTTL` (the ask, else `agentcreds.DefaultGrantTTL`, fitted
 within the secret's limit); the value itself is the use part's alone. The
 request is `approved` when any part was, `denied` when none was, and records
 each part's outcome and binding. Every binding, its events, the holders' marks
 and the decision are one transaction (`commitApproval`).
+
+Approval scope (ADR 26-11-04-616) is per approved part: `routes` (default) keeps
+the ask or explicit route edits, `hosts` extracts only open requested host
+patterns and drops method/path/protocol restrictions, `anywhere` writes an
+empty binding restriction. Secret, secret-constraint and parent route lists
+remain independent live ceilings. Wider scopes refuse route edits; denied
+parts refuse any scope. `commitApproval` stores the scope and an immutable
+`SecretRequestGrant` consent record in the same transaction, including source
+IDs, routes, credential revision, parent, expiry, delivery and mode.
+
 
 An approved use part is granted **as an addition** when the answer says
 `add`, or names no way and the request asked to add (`partApproval.adds`,
@@ -272,7 +283,7 @@ value.
 
 - **`ListSandboxCredentials`** — the sandbox's effective use bindings, each in
   its variable, with the host patterns the open routes of the narrowest list
-  it is held to name (`model.OpenRouteHosts`) and its expiry, and its live delegate bindings with no variable.
+  it is held to name (`secretroute.OpenRouteHosts`) and its expiry, and its live delegate bindings with no variable.
   A use lists each grant its sentinel is held to — its binding's, then each
   addition's — with its own hosts and expiry; its hosts and expiry are their
   union and the latest of them, which a reader from before grants takes.

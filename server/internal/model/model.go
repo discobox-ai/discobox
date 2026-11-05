@@ -1661,24 +1661,6 @@ func NormalizeRoutes(routes []SecretRoute) ([]SecretRoute, error) {
 	return out, nil
 }
 
-// OpenRouteHosts are the host patterns the open routes of a list name, in
-// order, each once: where a credential held to the list may be sent, as the
-// agent credentials protocol speaks of it.
-func OpenRouteHosts(routes []SecretRoute) []string {
-	var out []string
-	for _, route := range routes {
-		if route.Blocked {
-			continue
-		}
-		for _, host := range route.Hosts {
-			if !slices.Contains(out, host) {
-				out = append(out, host)
-			}
-		}
-	}
-	return out
-}
-
 // SameRouteSet reports whether two normalized route lists hold the same
 // routes, in any order.
 func SameRouteSet(a, b []SecretRoute) bool {
@@ -1874,17 +1856,36 @@ type SecretRequest struct {
 // request is pending, and BindingID the binding approving it made or
 // replaced.
 type SecretRequestPart struct {
-	Asked     bool                  `gorm:"column:asked;not null;default:false" json:"-"`
-	Routes    []SecretRoute         `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the part asks for the credential to be sent, resolved"`
-	Policies  []SecretRequestPolicy `gorm:"column:policies;type:text;serializer:json" json:"policies,omitempty" doc:"The policy files the part was asked by, for display"`
-	Outcome   string                `gorm:"column:outcome;not null;type:text;default:''" json:"outcome,omitempty" doc:"The part's answer" enum:"approved,denied"`
-	BindingID string                `gorm:"column:binding_id;not null;type:text;default:''" json:"bindingId,omitempty" doc:"The binding approving the part made or replaced"`
+	ApprovedScope string                `gorm:"column:approved_scope;not null;type:text;default:''" json:"approvedScope,omitempty" enum:"routes,hosts,anywhere,legacy-unknown"`
+	Grant         *SecretRequestGrant   `gorm:"column:grant;type:text;serializer:json" json:"grant,omitempty"`
+	Asked         bool                  `gorm:"column:asked;not null;default:false" json:"-"`
+	Routes        []SecretRoute         `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the part asks for the credential to be sent, resolved"`
+	Policies      []SecretRequestPolicy `gorm:"column:policies;type:text;serializer:json" json:"policies,omitempty" doc:"The policy files the part was asked by, for display"`
+	Outcome       string                `gorm:"column:outcome;not null;type:text;default:''" json:"outcome,omitempty" doc:"The part's answer" enum:"approved,denied"`
+	BindingID     string                `gorm:"column:binding_id;not null;type:text;default:''" json:"bindingId,omitempty" doc:"The binding approving the part made or replaced"`
 	// Add and ApprovedAs are the use part's alone (ADR 26-11-03-329 §4): a
 	// delegate part is always a replacement, and its columns stay unset.
 	// Add is what the discobox asked — its routes in addition to what it
 	// holds — and ApprovedAs what the person granted, which they may change.
 	Add        bool   `gorm:"column:add;not null;default:false" json:"add,omitempty" doc:"Use part only: the discobox asks for these routes in addition to what it holds, as an addition, rather than as its whole use of the credential"`
 	ApprovedAs string `gorm:"column:approved_as;not null;type:text;default:''" json:"approvedAs,omitempty" doc:"Use part only: how an approved part was granted, as an addition beside what the discobox held or replacing it" enum:"add,replace"`
+}
+
+// SecretRequestGrant retains consent independently of the mutable binding.
+type SecretRequestGrant struct {
+	SecretID        string                        `json:"secretId"`
+	SecretRevision  int64                         `json:"secretRevision"`
+	ParentBindingID string                        `json:"parentBindingId,omitempty"`
+	ExpiresAt       *time.Time                    `json:"expiresAt,omitempty"`
+	Delivery        string                        `json:"delivery"`
+	Mode            string                        `json:"mode"`
+	RouteLists      []SecretRequestGrantRouteList `json:"routeLists"`
+}
+
+type SecretRequestGrantRouteList struct {
+	SourceID string        `json:"sourceId"`
+	Source   string        `json:"source"`
+	Routes   []SecretRoute `json:"routes"`
 }
 
 // How an approved use part was granted (ADR 26-11-03-329 §4).

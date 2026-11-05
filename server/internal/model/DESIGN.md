@@ -346,3 +346,9 @@ project. `InheritBundle` copies only bundle-derived metadata into a materialized
 snapshot, preserving the child's identity, personal files, egress and account.
 The nullable indexed column is added in place by AutoMigrate; old rows remain
 standalone and keep their pins and personal state.
+
+`SecretRequestPart.ApprovedScope` and its JSON-serialized `Grant` retain the
+approval's restriction and independent source route lists, secret revision,
+parent, expiry, delivery and mode after a binding changes or disappears. The
+original requested routes/policies stay intact. Old approved parts carry
+`legacy-unknown`; pending parts have no decision scope.

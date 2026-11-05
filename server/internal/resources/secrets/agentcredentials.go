@@ -117,7 +117,7 @@ func credentialHosts(secret *model.Secret, applied store.EffectiveBinding) []str
 	case applied.Parent != nil && len(applied.Parent.Routes) > 0:
 		routes = applied.Parent.Routes
 	}
-	return model.OpenRouteHosts(routes)
+	return secretroute.OpenRouteHosts(routes)
 }
 
 // CreateSandboxCredentialRequest records an agent's ask as a pending

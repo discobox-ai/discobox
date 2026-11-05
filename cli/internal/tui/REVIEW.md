@@ -338,3 +338,9 @@
 - A form submitting asynchronous work installs its wait dialog synchronously
   before returning the command. An intermediate submit message leaves a gap
   for queued input to open another dialog, which that submit would overwrite.
+
+- Approval scope choices cover existing and newly created credentials, and each
+  approved part independently. Wider-scope previews expose every independent
+  credential constraint list, without flattening them; showing only the first
+  list hides a live ceiling. Keep the selected scope through create-and-approve
+  as well as ordinary approval.

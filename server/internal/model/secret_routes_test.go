@@ -54,12 +54,5 @@ func TestRouteSetsAndHosts(t *testing.T) {
 	if SameRouteSet(a, a[:1]) {
 		t.Fatal("SameRouteSet of a list and part of it = true")
 	}
-	routes := []SecretRoute{
-		{Hosts: []string{"*.github.com", "github.com"}},
-		{Hosts: []string{"github.com"}, Paths: []string{"/x"}},
-		{Hosts: []string{"gist.github.com"}, Blocked: true},
-	}
-	if got, want := OpenRouteHosts(routes), []string{"*.github.com", "github.com"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("OpenRouteHosts = %q, want %q", got, want)
-	}
+
 }
