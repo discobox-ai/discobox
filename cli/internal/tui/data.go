@@ -2096,14 +2096,9 @@ type DataSource interface {
 	// hands it back as Session.LastSource.
 	SaveLastSource(ctx context.Context, source string) error
 
-	// MarkWelcomed records that the project has shown its introduction, so no
-	// window on it opens on the welcome again. It is the project that
-	// remembers, not this machine: see welcome.go.
-	MarkWelcomed(ctx context.Context) error
-
 	// MarkHarnessChangesExplained records that the project has explained
 	// saving a discobox's harness changes, so no window on it explains again.
-	// The project remembers, as it does the welcome: see harness_changes.go.
+	// The project remembers: see harness_changes.go.
 	MarkHarnessChangesExplained(ctx context.Context) error
 
 	// List is the project's sandboxes, newest-created first, across every

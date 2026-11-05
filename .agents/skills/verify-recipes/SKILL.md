@@ -23,7 +23,7 @@ tmux -L verify capture-pane -p -t v
 
 The console is `pgrep -f '^./build/discobox --server'`; its guard is
 `pgrep -f 'admin console-guard'` (`pgrep -f` also matches your own tool shell,
-so filter it out). Ctrl-C at the welcome screen quits it normally.
+so filter it out). The leader followed by `q` quits it normally.
 
 ## Gotchas
 
@@ -855,9 +855,8 @@ shell's command line matches the pattern. Wait on the watcher's outputs
   clone goes through the dev pool proxy, which dials 172.17.0.1 directly.
 - **What the pool recorded:** poll `d admin box get <id> -o json | jq -c
   '.runtime | {state, provisionProgressAt, provisionProgress}'` every 2s.
-- **What the user sees:** `run` without `-d` in tmux. The first run in a fresh
-  `HOME` stops on the console's welcome screen until Enter, which hides the
-  whole create; dismiss it once, then run again.
+- **What the user sees:** `run` without `-d` in tmux opens directly on the
+  create progress and then the workspace, including on a fresh project.
 - **A clone cut short:** stop the origin by exact name (`pgrep -x`); a
   `pkill -f` naming it matches your own tool shell. The clone's error is in
   the box's `journalctl -u discobox-sandbox-agent` (`materialize source`).
@@ -956,8 +955,8 @@ d exec <box> -- cat /run/discobox/provision.json
 - Edit a script in the box to re-run its step (its digest changes); the rest
   report `how: snapshot`.
 - The status report is `d ls -o json | jq '.sandboxes[] | .runtime.agentStatus.provision'`;
-  the console shows it in place of the name under the cursor (Enter past the
-  welcome card, cursor on the row).
+  the console shows it in place of the name under the cursor (cursor on the
+  row).
 - A failing blocking step (core's) fails `d attach --raw <box>` with the
   readiness error naming the log; a failing background one fails only its
   placeholder (exit 127).

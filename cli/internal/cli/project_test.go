@@ -48,16 +48,9 @@ func TestProjectCreateRejectsCopyWithoutFrom(t *testing.T) {
 	}
 }
 
-// --welcomed=false is the way to see the launcher's welcome screen again on a
-// project that has already shown it: PATCHing welcomed back to false is the
-// server's own escape hatch for a screen that otherwise appears once (see
-// projects/service.go). Absent, the flag must not touch the field at all —
-// every other field on this command already tells "not given" from "given as
-// the type's zero value" through cmd.Flags().Changed, and welcomed must too.
-//
 // --harness-changes-explained is the same escape hatch for the console's
 // explanation of saving a discobox's harness changes.
-func TestProjectUpdateWelcomedFlag(t *testing.T) {
+func TestProjectUpdateHarnessChangesExplainedFlag(t *testing.T) {
 	const projectID = "proj_aaaaaaaaaaaaaaaa"
 	for _, tc := range []struct {
 		name  string
@@ -65,9 +58,6 @@ func TestProjectUpdateWelcomedFlag(t *testing.T) {
 		args  []string
 		want  *bool
 	}{
-		{"not given", "welcomed", nil, nil},
-		{"false", "welcomed", []string{"--welcomed=false"}, boolPtr(false)},
-		{"bare flag means true", "welcomed", []string{"--welcomed"}, boolPtr(true)},
 		{"explained not given", "harnessChangesExplained", nil, nil},
 		{"explained false", "harnessChangesExplained", []string{"--harness-changes-explained=false"}, boolPtr(false)},
 		{"explained bare flag means true", "harnessChangesExplained", []string{"--harness-changes-explained"}, boolPtr(true)},
@@ -83,7 +73,7 @@ func TestProjectUpdateWelcomedFlag(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				_, _ = w.Write([]byte(`{"id":"` + projectID + `","ownerUserId":"user-1","name":"Project",` +
-					`"default":false,"welcomed":true,"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+					`"default":false,"harnessChangesExplained":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 			}))
 			t.Cleanup(server.Close)
 

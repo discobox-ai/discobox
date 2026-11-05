@@ -125,27 +125,13 @@ func (a *App) runConsole(cmd *cobra.Command, leaderFlag string, options ...tui.O
 	// narrowed to (tui.Session.ServerChosen).
 	ds.serverChosen = cmd.Flags().Changed("server")
 	options = append([]tui.Option{tui.WithLeader(leaderKey)}, options...)
-	// Whether to introduce Discobox is settled before the window opens rather
-	// than when the session load comes back: a welcome that arrives a moment
-	// later would arrive over a prompt the user is already typing into, and the
-	// first run — the one this is for — is the slowest load there is. Whether
-	// it is actually shown from here is the window's own call — see
-	// tui.WithAttach and tui.WithRun — since a window opened on one discobox
-	// (`discobox attach`) has no screen behind the introduction to hand over
-	// to, while one opened on one run (`discobox run`) does.
-	//
-	// The harness-changes explainer is read with it, from the same project, for
-	// the same reason: it is once per project (ADR 26-11-02-152 §4), and the
-	// window has to know before its first listing whether a box with a change
-	// to save is the first one this project has seen.
-	intro, err := a.projectIntroductions(cmd.Context(), client, projectID)
+
+	// Read the once-per-project harness explainer state before the first listing.
+	project, err := a.getProject(cmd.Context(), client, projectID)
 	if err != nil {
 		return err
 	}
-	if !intro.welcomed {
-		options = append(options, tui.WithWelcome())
-	}
-	if !intro.harnessChangesExplained {
+	if !project.HarnessChangesExplained {
 		options = append(options, tui.WithHarnessChangesUnexplained())
 	}
 	// The window's own loop does not wait for the commands it has in flight
@@ -183,24 +169,6 @@ func canOpenWindow(cmd *cobra.Command) bool {
 // besides, which is where the picker draws.
 func canAskInline(cmd *cobra.Command) bool {
 	return canOpenWindow(cmd) && isTerminalStream(cmd.ErrOrStderr())
-}
-
-// projectIntroductions is what this project has already explained: its
-// welcome, and saving a discobox's harness changes. A project the server cannot
-// describe is an error worth stopping on: everything the window does needs the
-// project, and a launcher that opened anyway would fail again on its first
-// request.
-type projectIntroductions struct {
-	welcomed                bool
-	harnessChangesExplained bool
-}
-
-func (a *App) projectIntroductions(ctx context.Context, client *apiclientgen.Client, projectID string) (projectIntroductions, error) {
-	project, err := a.getProject(ctx, client, projectID)
-	if err != nil {
-		return projectIntroductions{}, err
-	}
-	return projectIntroductions{welcomed: project.Welcomed, harnessChangesExplained: project.HarnessChangesExplained}, nil
 }
 
 // apiDataSource is the launcher's one seam onto the rest of the CLI. Everything
@@ -478,22 +446,9 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	return session, nil
 }
 
-// MarkWelcomed records on the project that its introduction has been shown. It
-// is a project setting like any other, so it goes through the same update the
-// `discobox project` commands use rather than an endpoint of its own.
-func (d *apiDataSource) MarkWelcomed(ctx context.Context) error {
-	body := &apimodel.UpdateProjectBody{Welcomed: apiclientgen.NewOptBool(true)}
-	res, err := d.client.UpdateProject(ctx, body, apiclientgen.UpdateProjectParams{ProjectId: d.projectID})
-	if err != nil {
-		return err
-	}
-	_, err = expectResponse[apimodel.Project](res)
-	return err
-}
-
 // MarkHarnessChangesExplained records on the project that saving a discobox's
 // harness changes has been explained, through the same project update
-// MarkWelcomed uses.
+// project commands use.
 func (d *apiDataSource) MarkHarnessChangesExplained(ctx context.Context) error {
 	body := &apimodel.UpdateProjectBody{HarnessChangesExplained: apiclientgen.NewOptBool(true)}
 	res, err := d.client.UpdateProject(ctx, body, apiclientgen.UpdateProjectParams{ProjectId: d.projectID})

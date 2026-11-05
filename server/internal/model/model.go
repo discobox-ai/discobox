@@ -256,15 +256,10 @@ type Project struct {
 	// the bundle it was built with, since a rebuild discards whatever was
 	// written to the container's filesystem outside its durable volumes.
 	SandboxUpgradePolicy string `gorm:"column:sandbox_upgrade_policy;not null;type:text;default:''" json:"sandboxUpgradePolicy,omitempty" doc:"Whether this project's stopped and failed sandboxes follow their harness config's bundle. Empty means the server default, which is automatic." enum:"automatic,manual"`
-	// Welcomed records that this project has shown its introduction, so the
-	// launcher shows it once and never again. It is here rather than in client
-	// state because a person meets Discobox once, not once per machine they
-	// reach the same project from.
-	Welcomed bool `gorm:"column:welcomed;not null;default:false" json:"welcomed" doc:"Whether this project has already shown its introduction"`
 	// HarnessChangesExplained records that this project has explained saving a
 	// discobox's harness changes (ADR 26-11-02-152 §4): the console shows it the
-	// first time it sees a discobox with changes to save, once per project, for
-	// Welcomed's reason.
+	// first time it sees a discobox with changes to save, once per project across
+	// all client machines.
 	HarnessChangesExplained bool `gorm:"column:harness_changes_explained;not null;default:false" json:"harnessChangesExplained" doc:"Whether this project has already explained saving a discobox's harness changes"`
 	// Egress is the project's level of every one of its discoboxes' egress
 	// policy (ADR 26-10-01-032). The effective policy is merged whenever it is

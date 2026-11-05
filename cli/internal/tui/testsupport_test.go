@@ -173,10 +173,6 @@ type fakeSource struct {
 	runErr    error
 	createdID string
 
-	// welcomed counts the times the window said the introduction had been
-	// shown, and welcomeErr fails the write.
-	welcomed   int
-	welcomeErr error
 	// explained counts the times the window said saving harness changes had
 	// been explained, and explainErr fails the write.
 	explained  int
@@ -452,13 +448,6 @@ func (f *fakeSource) Session(context.Context) (Session, error) {
 		s.View = ListView{FolderKey: own.key, FolderLabel: own.label, FolderSource: own.source, FolderLocal: own.local}
 	}
 	return s, nil
-}
-
-func (f *fakeSource) MarkWelcomed(context.Context) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.welcomed++
-	return f.welcomeErr
 }
 
 func (f *fakeSource) MarkHarnessChangesExplained(context.Context) error {

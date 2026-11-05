@@ -451,10 +451,6 @@ type Model struct {
 	// out.
 	statusGen int
 
-	// welcoming is whether the introduction has the window. It is shown once
-	// per project and dismissed with Enter; see welcome.go.
-	welcoming bool
-
 	// explainHarnessChanges is whether the project has yet to explain saving a
 	// discobox's harness changes: the explainer is owed the first time a
 	// listed box has one. It goes false once the explainer is shown, and is
@@ -489,9 +485,7 @@ func WithHarnesses() Option {
 // WithAttach opens the window on one discobox's workspace, which is what
 // `discobox run` and `discobox attach` are: the window is that attach rather
 // than a launcher that happens to have one open. Leaving the workspace closes the window
-// instead of falling back to a list nobody asked for. The introduction never
-// stands in front of it, project unwelcomed or not — see New — because there
-// is nothing behind the workspace for it to hand over to.
+// instead of falling back to a list nobody asked for.
 func WithAttach(sandbox Sandbox) Option {
 	return func(m *Model) { m.attach = &sandbox }
 }
@@ -502,11 +496,6 @@ func WithAttach(sandbox Sandbox) Option {
 // uncommitted work it has already answered — is the window's own dialog, the wait is the
 // window's own screen, and what it lands on is the workspace. The window is
 // that run, so it closes when the workspace it opened is left.
-//
-// A project that has not been welcomed still gets the introduction here: it
-// opens over the wait for the discobox this run is making, the run proceeds
-// behind it exactly as everything else loads behind it, and Enter uncovers
-// however far that has gotten.
 //
 // askSource is a run whose source the command left unsaid: rather than cutting
 // it from the directory the command ran in, the window puts the create card up
@@ -583,16 +572,6 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	m.prompt.Placeholder = m.placeholder()
 	for _, option := range options {
 		option(m)
-	}
-	if m.attach != nil {
-		// `discobox attach` opens directly on the discobox it names, and
-		// dismissing the introduction here would only uncover that exact
-		// workspace again — there is nothing behind it the introduction is
-		// standing in front of. `discobox run` is left welcoming: it opens on
-		// a discobox that does not exist yet, and the introduction stands in
-		// front of the wait for it exactly as it stands in front of the list
-		// on every other first run. See WithRun.
-		m.welcoming = false
 	}
 	m.opts = newOptions(session)
 	return m
@@ -1613,14 +1592,14 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 // presses. It goes where typing would go: to the modal in front of everything
 // else, then to the pane that owns every key while one is focused, and
 // otherwise to the composer. On a screen drawn in place of the composer —
-// the introduction, the secrets and harnesses lists, the options — there is
+// the secrets and harnesses lists, the options — there is
 // nothing on screen a paste could land in, and text pushed into a composer
 // nobody can see is worse than a paste that does nothing.
 func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 	switch {
 	case m.dialog != nil:
 		return m.dialog.paste(msg)
-	case m.welcoming, m.optionsOpen:
+	case m.optionsOpen:
 		return nil
 	// The audit screen's only field is its search; the pane under it is not
 	// on screen to take a paste.
@@ -1772,11 +1751,6 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.closeWindow()
 	}
 
-	// The introduction stands in front of everything, including whatever screen
-	// the window was opened on, so it takes the keys first. See welcome.go.
-	if m.welcoming {
-		return m.updateWelcome(msg)
-	}
 	if m.dialog != nil {
 		// The dialog that was answered is the one taken down. An action may
 		// have put the next question up on its way out — a new secret asks for
@@ -2286,9 +2260,9 @@ func (m *Model) openOnList() {
 }
 
 // touched settles where the window opens as wherever it is now: a key, paste
-// or press has reached the prompt or the list. One a modal takes — the
-// introduction's Enter, a dialog's answer — or a screen over both — the
-// harnesses, the secrets, a workspace or its audit — went to that, not to
+// or press has reached the prompt or the list. A dialog's answer, or a
+// screen over both — the harnesses, the secrets, a workspace or its audit —
+// went to that, not to
 // either, and leaves the decision to the listing.
 func (m *Model) touched() {
 	if m.modalUp() || m.onConfigScreen() || m.inPanes() || m.audit != nil {
@@ -3773,7 +3747,7 @@ func (m *Model) View() tea.View {
 	//
 	// Stamped once because the alternative was tried and drifted: builders set
 	// AltScreen and nothing else, so every modal — the dialogs, the options
-	// panel, the introduction — asked the terminal for MouseModeNone, the zero
+	// panel — asked the terminal for MouseModeNone, the zero
 	// value, and went unclickable while its own key handling carried on
 	// working. A builder cannot forget what it does not set.
 	//
@@ -3800,12 +3774,6 @@ func (m *Model) view() tea.View {
 	}
 	if !m.ready {
 		return tea.NewView("Loading…")
-	}
-
-	// The introduction is the window until it is dismissed, ahead of the screen
-	// it was opened on and ahead of any modal. See welcome.go.
-	if m.welcoming {
-		return tea.NewView(m.withTree(m.place(m.viewWelcome)))
 	}
 
 	// A modal is drawn in place of the window rather than over it, and closing

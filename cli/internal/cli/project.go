@@ -122,7 +122,6 @@ func (a *App) newProjectUpdateCommand() *cobra.Command {
 	var name string
 	var archiveRetention time.Duration
 	var upgradePolicy string
-	var welcomed bool
 	var harnessChangesExplained bool
 	var egressOpts egressFlags
 	cmd := &cobra.Command{Use: "update PROJECT", Short: "Update a project", Long: `Update a project.
@@ -142,10 +141,6 @@ discobox on the image it was built with, and "discobox admin box upgrade" is
 then the only way one moves. Rebuilding a discobox keeps its volumes, sources
 and history, but discards whatever was written to its container filesystem
 outside them -- which is the reason to hold one back.
-
---welcomed=false shows the console's welcome screen again on this project's
-next "discobox console": it is otherwise shown once, the first time
-the console opens on the project.
 
 --harness-changes-explained=false shows the console's explanation of saving a
 discobox's harness changes again: it is otherwise shown once, the first time the
@@ -188,9 +183,6 @@ ones included.
 			}
 			body.SetSandboxUpgradePolicy(apiclientgen.NewOptUpdateProjectBodySandboxUpgradePolicy(policy))
 		}
-		if cmd.Flags().Changed("welcomed") {
-			body.SetWelcomed(apiclientgen.NewOptBool(welcomed))
-		}
 		if cmd.Flags().Changed("harness-changes-explained") {
 			body.SetHarnessChangesExplained(apiclientgen.NewOptBool(harnessChangesExplained))
 		}
@@ -222,7 +214,6 @@ ones included.
 	cmd.Flags().StringVar(&upgradePolicy, "sandbox-upgrade-policy", "", `Whether stopped and errored discoboxes follow their harness bundle: "automatic" or "manual"; empty restores the server default`)
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
 		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))
-	cmd.Flags().BoolVar(&welcomed, "welcomed", false, `Whether this project has shown its welcome screen; pass --welcomed=false to have the console show it again`)
 	cmd.Flags().BoolVar(&harnessChangesExplained, "harness-changes-explained", false, `Whether this project has explained saving a discobox's harness changes; pass --harness-changes-explained=false to have the console explain it again`)
 	addEgressUpdateFlags(cmd, &egressOpts, "the project")
 	return cmd

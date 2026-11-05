@@ -26,7 +26,7 @@ import (
 const clickRun = 500 * time.Millisecond
 
 // updateMouse routes an event to whatever the frame it was aimed at was
-// showing, in the order view() draws: the introduction and the modals stand in
+// showing, in the order view() draws: the modals stand in
 // place of the window, then the panes, then the window itself. Only the panes
 // route by their own geometry; everything else is a lookup in the hit map.
 func (m *Model) updateMouse(msg tea.MouseMsg) tea.Cmd {
@@ -63,11 +63,11 @@ func (m *Model) hover(ev tea.MouseMotionMsg) tea.Cmd {
 }
 
 // modalUp is whether something stands in place of the window rather than
-// inside it: the introduction, a dialog, or the run options. All three are
-// drawn over everything, panes included, so all three take the mouse as well
+// inside it: a dialog or the run options. Both are
+// drawn over everything, panes included, so both take the mouse as well
 // as the keys.
 func (m *Model) modalUp() bool {
-	return m.welcoming || m.dialog != nil || m.optionsOpen
+	return m.dialog != nil || m.optionsOpen
 }
 
 // windowMouse is the mouse on one of the window's own screens.

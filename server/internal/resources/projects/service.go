@@ -136,7 +136,7 @@ func (s *Service) CreateProject(ctx context.Context, input services.CreateProjec
 
 // UpdateProject edits a project's own settings — its name, how long its
 // archived sandboxes are kept, whether its stopped sandboxes follow their
-// harness image, its egress level, and whether it has shown its introduction.
+// harness image, its egress level, and whether saving harness changes was explained.
 // Membership and ownership are not editable here; they are their own resource.
 func (s *Service) UpdateProject(ctx context.Context, projectID string, input services.UpdateProjectBody) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
@@ -174,14 +174,8 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 		}
 		project.SandboxUpgradePolicy = value
 	}
-	if welcomed, ok := input.Welcomed.Get(); ok {
-		// Settable both ways. Setting it is the launcher saying it has done the
-		// welcoming; clearing it is how someone asks to be shown it again,
-		// which is worth having for a screen that otherwise appears once.
-		project.Welcomed = welcomed
-	}
 	if explained, ok := input.HarnessChangesExplained.Get(); ok {
-		// Settable both ways, as Welcomed is: the console sets it once it has
+		// Settable both ways: the console sets it once it has
 		// explained saving harness changes, and clearing it explains again.
 		project.HarnessChangesExplained = explained
 	}

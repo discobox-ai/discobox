@@ -19593,8 +19593,6 @@ type Project struct {
 	Sandboxes OptNilSandboxArray `json:"sandboxes"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
-	// Whether this project has already shown its introduction.
-	Welcomed bool `json:"welcomed"`
 	// Whether this project has already explained saving a discobox's harness changes.
 	HarnessChangesExplained bool `json:"harnessChangesExplained"`
 }
@@ -19687,11 +19685,6 @@ func (s *Project) GetSandboxes() OptNilSandboxArray {
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *Project) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
-}
-
-// GetWelcomed returns the value of Welcomed.
-func (s *Project) GetWelcomed() bool {
-	return s.Welcomed
 }
 
 // GetHarnessChangesExplained returns the value of HarnessChangesExplained.
@@ -19787,11 +19780,6 @@ func (s *Project) SetSandboxes(val OptNilSandboxArray) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Project) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
-}
-
-// SetWelcomed sets the value of Welcomed.
-func (s *Project) SetWelcomed(val bool) {
-	s.Welcomed = val
 }
 
 // SetHarnessChangesExplained sets the value of HarnessChangesExplained.
@@ -35232,9 +35220,6 @@ type UpdateProjectBody struct {
 	// `manual` holds every sandbox on the image it was built with. An empty string restores the server
 	// default, which the project then follows as it changes.
 	SandboxUpgradePolicy OptUpdateProjectBodySandboxUpgradePolicy `json:"sandboxUpgradePolicy"`
-	// Whether this project has already shown its introduction. The launcher sets it once, the first time
-	// it welcomes someone to the project; clearing it shows the welcome again.
-	Welcomed OptBool `json:"welcomed"`
 	// Whether this project has already explained saving a discobox's harness changes. The console sets
 	// it once, the first time it sees a discobox with harness changes to save; clearing it explains
 	// again.
@@ -35266,11 +35251,6 @@ func (s *UpdateProjectBody) GetSandboxUpgradePolicy() OptUpdateProjectBodySandbo
 	return s.SandboxUpgradePolicy
 }
 
-// GetWelcomed returns the value of Welcomed.
-func (s *UpdateProjectBody) GetWelcomed() OptBool {
-	return s.Welcomed
-}
-
 // GetHarnessChangesExplained returns the value of HarnessChangesExplained.
 func (s *UpdateProjectBody) GetHarnessChangesExplained() OptBool {
 	return s.HarnessChangesExplained
@@ -35299,11 +35279,6 @@ func (s *UpdateProjectBody) SetArchiveRetentionSeconds(val OptInt64) {
 // SetSandboxUpgradePolicy sets the value of SandboxUpgradePolicy.
 func (s *UpdateProjectBody) SetSandboxUpgradePolicy(val OptUpdateProjectBodySandboxUpgradePolicy) {
 	s.SandboxUpgradePolicy = val
-}
-
-// SetWelcomed sets the value of Welcomed.
-func (s *UpdateProjectBody) SetWelcomed(val OptBool) {
-	s.Welcomed = val
 }
 
 // SetHarnessChangesExplained sets the value of HarnessChangesExplained.

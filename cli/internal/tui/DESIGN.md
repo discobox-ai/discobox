@@ -20,8 +20,6 @@ flowchart LR
     M --> O["optionSet (Ctrl-O)"]
     M --> A["harnessList (F3)"]
     M --> D["dialog (menu, confirm, input, form, help, wait)"]
-    M --> W["welcome (once per project)"]
-    W -->|Enter| MW["DataSource.MarkWelcomed"]
     P -->|Enter| Card["create card (source, harness, server, skills, sources)"]
     Card -->|Enter| Run["DataSource.Run → accepted: workspace opening → attach"]
     L -->|u R t T x U P| Verb["DataSource.Do"]
@@ -719,10 +717,10 @@ settings and login — the shared default for every discobox on that harness in
 the project, that settings can carry hooks and commands that then run in every
 one, and that nothing is shared until somebody saves. It offers the
 review or Not now, and either way records it on the project
-(`Project.harnessChangesExplained`, `MarkHarnessChangesExplained`), the way the
-welcome is recorded: per project, not per machine. The window reads the flag
+(`Project.harnessChangesExplained`, `MarkHarnessChangesExplained`): per project,
+not per machine. The window reads the flag
 when it opens (`WithHarnessChangesUnexplained`), and checks after every listing,
-so it waits for a screen with no welcome, dialog, run options or terminal with
+so it waits for a screen with no dialog, run options or terminal with
 the keys in front: the change is made by signing in in that terminal, and the
 explainer's actions are single letters a person still typing there would
 answer it with.
@@ -1859,9 +1857,7 @@ streaming a terminal of its own.
   chosen (`showAllBoxes`), which clears `attach` and makes it the console:
   from there leaving the workspace no longer leaves the window.
 - The composer is unreachable in such a window, so the console's draft is
-  neither restored into it nor written over (`restoreDraft`, `draftToSave`), and
-  the introduction is not shown (`New`): there is no prompt for it to interrupt
-  and no screen for it to hand over to.
+  neither restored into it nor written over (`restoreDraft`, `draftToSave`).
 
 A tab strip is laid into its box's top border (`tabbedEdge`, a `titledEdge`
 with several titles), so it costs no grid row and both halves come out the same
@@ -2400,8 +2396,8 @@ next.
 place** (`View`). `AltScreen`, `MouseMode` and `WindowTitle` are the same on
 every frame, so `View` sets all three on the way out instead of each builder
 setting them for itself. This is a correction: the builders used to, and the
-one that drew every modal — the dialogs, the options panel and the
-introduction — set `AltScreen` alone. `MouseMode`'s zero
+one that drew every modal — the dialogs and the options panel —
+set `AltScreen` alone. `MouseMode`'s zero
 value is `MouseModeNone`, so each of those frames told the terminal to stop
 reporting the mouse, and every modal was unclickable while its own key handling
 went on working. Nothing in the hit map or the press handling was wrong, which
@@ -2435,8 +2431,7 @@ lists (`markList`), the header's filter, the workspace header's git summary
 (which opens discobox-review) and its links (the desktop and the forwarded web
 ports), the composer and the strip under it, the
 title band's two offers, a menu's rows and a card's, the run options and the
-arrows on them, the confirmation's two answers, and the introduction's one
-instruction. `.` opens the same menu the right button does, on the discobox
+arrows on them, and the confirmation's two answers. `.` opens the same menu the right button does, on the discobox
 list and on the harnesses — a menu the pointer can reach and the keyboard
 cannot would be half a feature.
 
@@ -2727,24 +2722,6 @@ What a paste names is often text a discobox wrote (a link it showed, or put on
 the clipboard over OSC 52), so `clipimage` reads only a file that is an image
 by its name and its bytes, and only from this machine's own drives: no `file://`
 link with a query or fragment, no Windows share.
-
-**The introduction is shown once, and the project is what remembers**
-(`welcome.go`, `WithWelcome`, `DataSource.MarkWelcomed`). Every other screen
-assumes you know what a discobox is; this one says so, and then never again. The
-flag lives on the project (`model.Project.Welcomed`) rather than beside the
-CLI's local state, so it does not re-welcome the same person on a second machine
-or skip the second person on a shared project. Whether to show it is settled
-before `tui.Run` rather than when the session load returns: the first run is the
-slowest load there is, and a welcome that arrived late would arrive over a
-prompt already being typed into. It takes every key — only Enter does anything —
-so a press aimed at the introduction cannot reach a screen the user has not seen.
-
-It stands in front of `discobox run`'s window too, when the project has not
-been welcomed: the run this window was opened to make proceeds behind it the
-same way every other load does, and Enter uncovers whatever it has gotten to —
-still waiting, or already the workspace. `discobox attach` is the one window it
-never covers (`New`): there is nothing behind the workspace it opens
-directly on for the introduction to hand over to.
 
 **A scrolling body is searched with `/`** (`updateText`, `viewBody`). The help
 is pages long and the config card is most of a screen, so the way to a line in
@@ -3378,8 +3355,8 @@ and the session have both landed — the rows that count are the ones the saved
 filters leave — and not at all once a key, a paste or a click has got there
 first: that has already said where the keys go, and a listing arriving a
 moment later must not take them out of a half-typed word. Only one that
-reached the prompt or the list counts (`touched`): the introduction's Enter, a
-dialog's answer, or a key on the harnesses or secrets screen or a workspace
+reached the prompt or the list counts (`touched`): a dialog's answer, or a key
+on the harnesses or secrets screen or a workspace
 went to that, and Ctrl-L to nobody. A listing with no rows that is still
 waiting on a server does not decide either — the rows may all be on the slow
 one. A window that opened in the prompt stays there when a discobox turns up
@@ -3515,7 +3492,6 @@ the newest one where the busy line goes.
 | `tui.go` | `Run`: the program the CLI starts against a `DataSource` |
 | `secrets.go` | the secrets screen (`F4`): the three tables' focus and frame, the secrets table, a secret's card and bindings, the secret and binding forms |
 | `requests.go` | the secrets screen's lower table: the credential, refresh and trust requests waiting on a person |
-| `welcome.go` | the once-per-project introduction |
 | `draft.go` | the unsent prompt, saved per machine and restored |
 | `mouse.go` | the mouse: mode, routing, presses, hover, the wheel |
 | `zones.go` | the hit map a frame records as it draws |

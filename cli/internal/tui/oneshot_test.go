@@ -393,48 +393,19 @@ func TestEscOnAOneShotWaitLeavesTheDiscoboxStarting(t *testing.T) {
 	})
 }
 
-// A project that has not been welcomed still gets the introduction on a run
-// window: it is not one of the two things New drops it for, and it stands in
-// front of the wait for the discobox this run is making, exactly as it would
-// stand in front of the list on the launcher's own first run.
-func TestARunWindowStillShowsTheIntroductionWhenUnwelcomed(t *testing.T) {
+// A run opens its new workspace without requiring a dismissal key.
+func TestARunOpensItsWorkspaceWithoutInput(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		m := New(t.Context(), ds, WithRun(RunRequest{Prompt: []string{"fix", "the", "tests"}}, false), WithWelcome())
-		m.logo = logo{}
-		m.copyOS = func(string) error { return nil }
-		d := newDriver(t, m)
-		d.start()
-
-		if !m.welcoming {
-			t.Fatal("the introduction should be showing")
+		d, m := openRun(t, ds, RunRequest{Prompt: []string{"fix", "the", "tests"}})
+		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		if m.paneBox.ID != ds.createdID {
+			t.Fatalf("opened %q, want the created discobox %q", m.paneBox.ID, ds.createdID)
 		}
-		// The run it was opened for proceeds behind the introduction the same way
-		// everything else loads behind it: no dirty workspace and a default
-		// harness mean nothing here for it to ask about.
-		d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
-
-		d.key("enter")
-		if m.welcoming {
-			t.Fatal("Enter did not dismiss the introduction")
-		}
-		if ds.welcomed != 1 {
-			t.Fatalf("the welcome was recorded %d times, want once", ds.welcomed)
-		}
+		ds.execTerm(ExecPrimary).send("hello from the new discobox")
+		d.wait("output", func() bool { return strings.Contains(frameText(m), "hello from the new discobox") })
 	})
-}
-
-// `discobox attach` never shows it, welcomed or not: there is no screen behind
-// the workspace it opens directly on for the introduction to hand over to.
-func TestAnAttachNeverShowsTheIntroduction(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	box := testSandboxes()[1]
-	m := New(t.Context(), ds, WithAttach(box), WithWelcome())
-	if m.welcoming {
-		t.Fatal("the introduction should not be showing over an attach")
-	}
 }
 
 // `discobox run` with no SOURCE asks where to cut from rather than taking the

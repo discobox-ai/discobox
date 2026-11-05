@@ -25,7 +25,7 @@ flag the `default` alias resolves.
   than an index violation. There is no slug (ADR 0023 §5).
 - `UpdateProject` edits only the project's own settings: name,
   `ArchiveRetentionSeconds`, `SandboxUpgradePolicy` (`automatic` or `manual`),
-  and `Welcomed`. Zero retention and an empty policy are values, not absence:
+  and `HarnessChangesExplained`. Zero retention and an empty policy are values, not absence:
   they restore the server default, which the project then tracks (ADR 0022 §4,
   ADR 0082 §3). Membership and ownership are not editable here.
 - `UpdateProject` also sets the project's egress level (`Project.Egress`,
@@ -46,10 +46,9 @@ flag the `default` alias resolves.
   sandboxes or pools; those own runtime that has to drain through its own
   reconcilers. Once empty, `store.DeleteProject` removes the project's own
   configuration rows.
-- `Project.Welcomed` records that the console has shown its introduction. It is
-  a project row rather than client-side state so the welcome does not repeat on
-  a second machine, and is settable both ways through `UpdateProject` — clearing
-  it is how someone asks to be shown it again.
+- `Project.HarnessChangesExplained` records that the console has explained saving
+  harness changes, once per project across client machines. `UpdateProject` can
+  set or clear it so the explanation can be shown again.
 - The default project itself is created by `internal/service`'s
   `InitializeDefaults`, which is startup policy: it also owns the one-time
   provider/pool installation gated on `server_state`.

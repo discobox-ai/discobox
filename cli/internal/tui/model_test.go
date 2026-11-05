@@ -1666,31 +1666,7 @@ func TestAPasteDecidesTheOpeningAndAMotionDoesNot(t *testing.T) {
 	}
 }
 
-// The introduction's Enter goes to the introduction, not the prompt, so it
-// leaves where the window opens to the listing.
-func TestDismissingTheWelcomeDoesNotDecideTheOpening(t *testing.T) {
-	t.Parallel()
-	m := New(t.Context(), newFakeSource(), WithWelcome())
-	m.logo = logo{}
-	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
-	if !m.welcoming {
-		t.Fatal("the introduction is not up")
-	}
-	send(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.welcoming || m.opened {
-		t.Fatalf("welcoming = %v opened = %v, want the introduction gone and the opening undecided", m.welcoming, m.opened)
-	}
-	send(t, m,
-		sessionLoadedMsg{session: Session{DefaultProject: "default"}},
-		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
-	)
-	if m.focus != focusList {
-		t.Fatalf("focus = %v, want the first discobox", m.focus)
-	}
-}
-
-// A key on the harnesses screen goes to that screen, not the prompt, so it
-// leaves where the window opens to the listing.
+// A key on the harnesses screen leaves the opening decision to the listing.
 func TestAKeyOnTheHarnessesScreenDoesNotDecideTheOpening(t *testing.T) {
 	t.Parallel()
 	m := unloadedModel(t)

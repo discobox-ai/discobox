@@ -2695,10 +2695,6 @@ then the only way one moves. Rebuilding a discobox keeps its volumes, sources
 and history, but discards whatever was written to its container filesystem
 outside them -- which is the reason to hold one back.
 
---welcomed=false shows the console's welcome screen again on this project's
-next "discobox console": it is otherwise shown once, the first time
-the console opens on the project.
-
 --harness-changes-explained=false shows the console's explanation of saving a
 discobox's harness changes again: it is otherwise shown once, the first time the
 console sees a discobox on the project with settings or a login to save.
@@ -2747,7 +2743,6 @@ discobox admin project update PROJECT [flags]
 | --sandbox-upgrade-policy | string |  | Whether stopped and errored discoboxes follow their harness bundle: "automatic" or "manual"; empty restores the server default |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
-| --welcomed | bool | false | Whether this project has shown its welcome screen; pass --welcomed=false to have the console show it again Value when passed without an argument: true. |
 
 ## discobox admin provider
 

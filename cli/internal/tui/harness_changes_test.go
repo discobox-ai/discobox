@@ -256,19 +256,13 @@ func TestTheExplainerWaitsForAReason(t *testing.T) {
 	}
 }
 
-// The explainer never goes up over the welcome or another dialog: it waits,
+// The explainer never goes up over another dialog: it waits,
 // and comes on the first listing once the screen is free.
 func TestTheExplainerWaitsForAFreeScreen(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(pendingSandboxes()...)
-	m := newWelcomeModel(t, ds)
+	m := newTestModel(t, ds)
 	m.explainHarnessChanges = true
-	send(t, m, tickMsg{})
-	if m.dialog != nil || ds.explained != 0 {
-		t.Fatalf("dialog = %s, want nothing over the welcome", describe(m.dialog))
-	}
-
-	send(t, m, keyPress("enter"))
 	m.dialog = errorDialog("Something else", "already up")
 	send(t, m, tickMsg{})
 	if m.dialog.title != "Something else" || ds.explained != 0 {

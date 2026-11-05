@@ -39,8 +39,8 @@ provenance and is not drawn directly. `go tool task logo:cells` runs
 `scripts/logo-cells.mjs`, which turns it into `cli/internal/tui/logo.json`: the
 indices become explicit brand RGB and the inverse runs become explicit
 backgrounds. `logo.json` is what the CLI embeds and draws beside the discobox
-list and on the welcome screen. It is dropped on a colorless terminal and on
-one narrower than 100 columns. See `cli/internal/tui/logo.go`.
+list and above the workspace tree. It is dropped on a colorless terminal and
+on one narrower than 100 columns. See `cli/internal/tui/logo.go`.
 
 To re-render it, rasterize `logo-purple.svg`, re-capture at the target width
 into `logo.chars`, and run `go tool task logo:cells`. `logo-80col.ansi` is a

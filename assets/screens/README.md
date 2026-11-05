@@ -5,7 +5,6 @@ The console, captured from a real run rather than mocked up. The root
 
 | File | Screen |
 | --- | --- |
-| `welcome.png` | the introduction, shown once per project — the mark and the three steps |
 | `launcher.png` | the discobox list, with the prompt a new one starts from |
 | `claude-code.png` | one discobox open: Claude Code, and a shell beside it |
 | `codex.png` | the same, running Codex |
@@ -44,7 +43,3 @@ Two crops, not one. The first `-trim` takes off the desktop around the terminal
 window; a second one takes off the terminal's own empty area, which is what a
 dialog like `tools.png` is mostly surrounded by. A screen that fills its window
 only needs the first.
-
-`discobox admin project update <project> --welcomed=false` shows the welcome
-screen again, which is otherwise a once-per-project screen and cannot be
-re-opened.
