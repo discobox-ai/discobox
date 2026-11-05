@@ -152,7 +152,7 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 		choice{key: "hosts", label: "Requested hosts", hint: "Any method, path and protocol on: " + strings.Join(hosts, ", ") + ". Request-level blocks are dropped; credential restrictions still apply."},
 		choice{key: "anywhere", label: "Anywhere", hint: "No grant restriction. Still limited by credential scope and any parent delegation."},
 	)
-	f := newForm(credential, duration, scope, pickRow("decision", "Decision", choice{key: "accept", label: "Accept"}, choice{key: "deny", label: "Deny"}))
+	f := newForm(credential, duration, scope)
 	if first.credential != "" {
 		f.choose("credential", first.credential)
 		f.choose("duration", first.duration)
@@ -165,8 +165,9 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 		part = req.Delegate
 		step = "Delegation"
 	}
-	d := formDialog(title, f, func(f *form) tea.Cmd {
-		answer := previewDecision{f.chosen("decision"), f.chosen("credential"), f.chosen("duration"), f.chosen("scope")}
+	var d *dialog
+	d = formDialog(title, f, func(f *form) tea.Cmd {
+		answer := previewDecision{d.formActions[d.formActionAt].key, f.chosen("credential"), f.chosen("duration"), f.chosen("scope")}
 		if answer.answer == "accept" && answer.scope == "hosts" && len(hosts) == 0 {
 			f.err = "This part has no open requested hosts; choose Requested routes or Anywhere."
 			return nil
@@ -193,6 +194,8 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 		describe(step, answer)
 		return p.receipt(strings.Join(summary, "; "))
 	})
+	d.formActions = []action{{key: "accept", label: "Accept", enabled: true}, {key: "deny", label: "Deny", enabled: true}}
+	d.formActionAt = -1
 	d.titleRight = "1 of 1"
 	if req.asksBoth() {
 		d.titleRight = "1 of 2"
@@ -229,7 +232,7 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 	if !delegate {
 		d.sections = append(d.sections, section{fields: []field{{label: "Variable", value: req.EnvVar}}})
 	}
-	d.keys = []hint{says("↑↓ move"), says("←→ change"), pressing("enter confirms decision", "enter"), pressing("esc resets", "esc")}
+	d.keys = []hint{says("Tab / ↑↓ move"), says("←→ change"), pressing("enter selects", "enter"), pressing("esc resets", "esc")}
 	d.footer = "Sample only · PgUp/PgDn scroll the request"
 	if !delegate && req.Delegate != nil {
 		d.footer = "Accept or deny use, then review delegation · sample only"

@@ -115,3 +115,14 @@ Changing scope resets body scrolling. Credential and parent ceilings remain
 separate and are called out below; the preview does not flatten them into the
 selected binding restriction. This supersedes the earlier static requested-list
 behavior.
+
+### Modal decision buttons
+
+Accept/Deny are now focusable buttons below the fields, replacing the Decision
+picker and Ctrl-S. Tab/Down moves from Scope to Accept; Left/Right selects a
+button; Enter activates it. Tab moves Accept -> Deny -> first editable field;
+Up returns to Scope. Enter on a field still opens its picker. Locked fields on
+the delegation screen are skipped. This supersedes the earlier Ctrl-S controls.
+The shared dialog renderer supports these buttons only when explicitly supplied;
+other forms retain their existing controls. Mouse input is not wired in this
+standalone design workbench.

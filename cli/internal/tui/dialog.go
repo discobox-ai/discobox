@@ -81,6 +81,10 @@ type dialog struct {
 	// values: what it holds is typed by the rows themselves.
 	form   *form
 	submit func(f *form) tea.Cmd
+	// formActions renders explicit modal buttons below an editable form.
+	// A negative index leaves focus on the fields.
+	formActions  []action
+	formActionAt int
 
 	// filter is the choices of a dlgFilter, which answers with what they
 	// have marked.
@@ -471,6 +475,49 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, false
 
 	case dlgForm:
+		if len(d.formActions) > 0 && !d.form.listing {
+			key := keyName(msg)
+			if d.formActionAt >= 0 {
+				switch key {
+				case "left":
+					d.formActionAt = max(0, d.formActionAt-1)
+					return nil, false
+				case "right":
+					d.formActionAt = min(len(d.formActions)-1, d.formActionAt+1)
+					return nil, false
+				case "up", "shift+tab":
+					if key == "shift+tab" && d.formActionAt > 0 {
+						d.formActionAt--
+						return nil, false
+					}
+					d.formActionAt = -1
+					d.form.moveTo(len(d.form.rows) - 1)
+					return nil, false
+				case "tab", "down":
+					if key == "tab" && d.formActionAt < len(d.formActions)-1 {
+						d.formActionAt++
+						return nil, false
+					}
+					d.formActionAt = -1
+					d.form.moveTo(0)
+					return nil, false
+				case "enter":
+					if d.submit != nil {
+						cmd := d.submit(d.form)
+						return cmd, d.form.err == ""
+					}
+					return nil, true
+				}
+				return nil, false
+			}
+			if (key == "down" || key == "tab") && d.form.next(d.form.cursor+1, 1) == d.form.cursor {
+				d.formActionAt = 0
+				return nil, false
+			}
+			if key == "ctrl+s" {
+				return nil, false
+			}
+		}
 		// Enter on a picker lists its options; ctrl+s accepts the card from
 		// any row, so a card whose cursor rests on a picker can still be
 		// answered without walking to a field.
@@ -958,18 +1005,42 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 		keys(pressing("Enter runs the highlighted action", "enter"), pressing("Esc cancels", "esc"))
 	case dlgForm:
 		answer()
-		b.WriteString(d.form.view(st, z, row(), inner))
-		// The hint keeps its rows whether or not it has anything to say, so
-		// moving down the form does not resize the card under the cursor.
+		drawForm := *d.form
+		if len(d.formActions) > 0 && d.formActionAt >= 0 {
+			drawForm.cursor = -1
+		}
+		b.WriteString(drawForm.view(st, z, row(), inner))
 		b.WriteString("\n")
-		b.WriteString(d.form.hint(st, inner))
+		if len(d.formActions) > 0 && d.formActionAt >= 0 && d.form.err == "" {
+			b.WriteString(st.dimText.Render("Enter selects "+d.formActions[d.formActionAt].label) + "\n")
+		} else {
+			b.WriteString(d.form.hint(st, inner))
+		}
 		b.WriteString("\n")
+		if len(d.formActions) > 0 {
+			for i, a := range d.formActions {
+				if i > 0 {
+					b.WriteString("  ")
+				}
+				text := "[ " + a.label + " ]"
+				style := st.name
+				if i == d.formActionAt {
+					style = st.cursorName.Background(lipgloss.Color(colHighlightBG))
+				}
+				b.WriteString(style.Render(text))
+			}
+			b.WriteString("\n")
+		}
 		footer()
 		line := d.keys
 		if len(line) == 0 {
 			line = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter accepts", "enter"), pressing("esc cancels", "esc")}
 		}
-		drawHints(formHints(d.form, line))
+		if len(d.formActions) > 0 {
+			drawHints(line)
+		} else {
+			drawHints(formHints(d.form, line))
+		}
 
 	case dlgFilter:
 		// The picker is the card, and windows its own rows: what it may take
