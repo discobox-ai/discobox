@@ -150,6 +150,11 @@ vars:
   DEADCODE_BIN: deadcode{{.EXE}}
 
 tasks:
+  prototype:approvals:
+    desc: Preview sandbox approval layouts with the console renderer (sample data)
+    cmds:
+      - go run -tags prototype ./cli/internal/cmd/approval-preview {{.CLI_ARGS}}
+
   default:
     desc: List available tasks
     cmds:
