@@ -139,3 +139,12 @@
   re-parked such a sandbox and started it anyway (#70), and a start
   instruction let a parked one through on the theory that a wait held it,
   which only an action has.
+
+- Keep access-revocation notifications separate from egress notifications.
+  File downloads remain authorized after an egress-only edit, while commands
+  and writes must lose authority on a coverage change. A single combined
+  version once canceled reads even though the policy explicitly permits them.
+- Revalidate deletion as well as API access and parenthood immediately before
+  forwarding a sandbox-authenticated lease. A caller may be deleted while a
+  waiting acquire is preparing its target; registering only after that deletion
+  must not turn the completed revocation into a fresh authorization baseline.

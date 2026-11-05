@@ -309,6 +309,14 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secret-refresh-requests/{requestId}/dismiss
 	DismissSecretRefreshRequest(ctx context.Context, params DismissSecretRefreshRequestParams) (DismissSecretRefreshRequestRes, error)
+	// ExportSandboxFiles implements export-sandbox-files operation.
+	//
+	// Streams regular files and directories under a files/ prefix, starting with the root directory
+	// metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
+	// selected source root. Ownership and special files are excluded.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (ExportSandboxFilesRes, error)
 	// ForceJob implements force-job operation.
 	//
 	// Force a pending, scheduled, or backoff job to run immediately.
@@ -514,6 +522,16 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/trust-requests/{requestId}
 	GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (GetTrustRequestRes, error)
+	// ImportSandboxFiles implements import-sandbox-files operation.
+	//
+	// Merges a restricted copy archive below the selected directory. Completed files remain after a
+	// failed batch. Each file publishes atomically. Requires the final SHA256SUMS manifest and complete
+	// body; rejects links, special entries, duplicate names and paths outside the root. Directory
+	// metadata is finalized after children. preserve applies ordinary permissions and access and
+	// modification times, never ownership or privileged bits.
+	//
+	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	ImportSandboxFiles(ctx context.Context, req ImportSandboxFilesReq, params ImportSandboxFilesParams) (ImportSandboxFilesRes, error)
 	// ListAdoptionRequests implements list-adoption-requests operation.
 	//
 	// GET /projects/{projectId}/adoption-requests
@@ -1015,6 +1033,14 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/default
 	SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (SetDefaultProjectRes, error)
+	// SetSandboxFileMetadata implements set-sandbox-file-metadata operation.
+	//
+	// Sets optional ordinary permission bits and access and modification times on an existing pinned
+	// file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
+	// privileged bits.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+	SetSandboxFileMetadata(ctx context.Context, req *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (SetSandboxFileMetadataRes, error)
 	// StartSandbox implements start-sandbox operation.
 	//
 	// Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source

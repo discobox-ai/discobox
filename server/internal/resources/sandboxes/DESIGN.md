@@ -265,8 +265,20 @@ that mark.
 | inspect | exec list and get; service list and get; tools | never started: the pool agent waits out a boot under way and refuses it otherwise, and the refusal is answered from the sandbox's last inventory ([below](#a-sandbox-that-is-not-running-is-read-from-its-inventory)) | answered at once | answered at once |
 | observe | terminal screen, exec wait, exec-events, harness-hooks | refused by the pool agent, a boot under way included; the screen is answered from the inventory | answered at once | answered at once |
 
-An acquire for an attach is refused for a sandbox principal: a discobox does
-not attach to another.
+A sandbox principal may acquire exec and files scopes only for a current direct
+child in its project, with API access enabled. Attach and write scopes also
+require effective egress coverage. The service rechecks the same boundary as
+the HTTP authorizer; waiting acquire never grants user scopes (ADR 26-11-04-684).
+Every sandbox-authenticated lease wraps its transport with `childTransport`.
+Before forwarding it reads the primary database's durable authority versions,
+validates live authority, registers cancellation, and rechecks the versions.
+It polls those notifications every 100ms, cancelling request and response bodies
+on a relevant change or validation-channel failure. Notifications commit with
+authority changes through database triggers (see database/store design docs),
+so other server instances and release followed immediately by readoption are
+covered. For writes and execs, a relevant egress edit conservatively ends the stream
+even if coverage would still hold. File reads omit the separate egress versions
+and remain open on policy-only edits. Completed writes and already launched processes are not undone.
 
 ### An action waits
 

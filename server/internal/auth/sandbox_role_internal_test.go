@@ -156,9 +156,9 @@ func TestSandboxRoleDrivesTheTerminalsOfTheDiscoboxesItCreated(t *testing.T) {
 		{"type into a person's discobox", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/execs/primary/input", http.StatusForbidden},
 		{"read its own screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-lead/execs/primary/screen", http.StatusForbidden},
 		{"read nothing's screen", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-none/execs/primary/screen", http.StatusNotFound},
-		{"attach to its worker", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/execs/primary/attach", http.StatusForbidden},
-		{"start an exec in its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/execs", http.StatusForbidden},
-		{"end its worker's exec", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-worker/execs/exec-1", http.StatusForbidden},
+		{"attach to its worker", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-worker/execs/primary/attach", http.StatusOK},
+		{"start an exec in its worker", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/execs", http.StatusOK},
+		{"end its worker's exec", roleLead, http.MethodDelete, "/projects/default/sandboxes/sbx-worker/execs/exec-1", http.StatusOK},
 	})
 }
 

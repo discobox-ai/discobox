@@ -76,13 +76,14 @@ func TestAuthorizeRequestedScopesAllowsASandboxOnlyAPushItsTerminalsAndHTTP(t *t
 // A discobox never attaches to another (ADR 26-10-01-397 §2): an acquire for an
 // attach refuses it before asking anything of the sandbox, whatever scopes it
 // names.
-func TestAcquireForAnAttachRefusesASandbox(t *testing.T) {
+func TestAcquireForAnAttachRefusesAMissingSandboxCaller(t *testing.T) {
+	service, _ := attachWaitFixture(t)
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
 		Type: auth.PrincipalTypeSandbox, SandboxID: "sbx-lead", ProjectID: "proj-1", UserID: "user-1",
 	})
 	attach := services.SandboxAction("exec attach")
 	attach.Attach = true
-	_, _, err := (&Service{}).AcquireSandboxHTTPClient(ctx, "proj-1", "sbx-worker", []string{poolagentauth.ScopeExecWrite, poolagentauth.ScopeExecRead}, attach)
+	_, _, err := service.AcquireSandboxHTTPClient(ctx, "proj-1", "sbx-worker", []string{poolagentauth.ScopeExecWrite, poolagentauth.ScopeExecRead}, attach)
 	var statusErr interface{ StatusCode() int }
 	if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusForbidden {
 		t.Fatalf("attach by a sandbox: err = %v, want forbidden", err)

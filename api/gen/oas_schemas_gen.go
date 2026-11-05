@@ -2975,6 +2975,7 @@ func (*ErrorResponseStatusCode) copySandboxFileRes()                    {}
 func (*ErrorResponseStatusCode) createSandboxExecRes()                  {}
 func (*ErrorResponseStatusCode) deleteSandboxExecRes()                  {}
 func (*ErrorResponseStatusCode) discardSandboxHarnessConfigChangesRes() {}
+func (*ErrorResponseStatusCode) exportSandboxFilesRes()                 {}
 func (*ErrorResponseStatusCode) getSandboxAgentInventoryRes()           {}
 func (*ErrorResponseStatusCode) getSandboxAgentStatusRes()              {}
 func (*ErrorResponseStatusCode) getSandboxExecRes()                     {}
@@ -2985,6 +2986,7 @@ func (*ErrorResponseStatusCode) getSandboxRuntimeConfigRes()            {}
 func (*ErrorResponseStatusCode) getSandboxServiceRes()                  {}
 func (*ErrorResponseStatusCode) getSandboxSourceProjectLayerRes()       {}
 func (*ErrorResponseStatusCode) getSandboxSourceStatesRes()             {}
+func (*ErrorResponseStatusCode) importSandboxFilesRes()                 {}
 func (*ErrorResponseStatusCode) listExecEventsRes()                     {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()                   {}
 func (*ErrorResponseStatusCode) listSandboxExecEventsRes()              {}
@@ -3004,6 +3006,7 @@ func (*ErrorResponseStatusCode) removeSandboxFileRes()                  {}
 func (*ErrorResponseStatusCode) restartSandboxServiceRes()              {}
 func (*ErrorResponseStatusCode) resumeSandboxAutostopRes()              {}
 func (*ErrorResponseStatusCode) sendSandboxExecInputRes()               {}
+func (*ErrorResponseStatusCode) setSandboxFileMetadataRes()             {}
 func (*ErrorResponseStatusCode) startSandboxExecRes()                   {}
 func (*ErrorResponseStatusCode) startSandboxServiceRes()                {}
 func (*ErrorResponseStatusCode) statSandboxFileRes()                    {}
@@ -3144,6 +3147,22 @@ func (s *ExchangeRecipeHeader) init() ExchangeRecipeHeader {
 	}
 	return m
 }
+
+type ExportSandboxFilesOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ExportSandboxFilesOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*ExportSandboxFilesOK) exportSandboxFilesRes() {}
 
 // One header a gateway sets or adds, with exactly one of value or valueFrom.
 // Ref: #/components/schemas/GatewayHeader
@@ -7304,6 +7323,20 @@ func (s *HostTrustRequestStatus) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+type ImportSandboxFilesReq struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s ImportSandboxFilesReq) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
 }
 
 // What this server's iroh listener is doing right now, as opposed to who it is. A listener that has
@@ -27336,6 +27369,55 @@ func (s *SandboxFileList) SetEntries(val []SandboxFileStat) {
 
 func (*SandboxFileList) listSandboxFilesRes() {}
 
+// Ref: #/components/schemas/SandboxFileMetadataRequest
+type SandboxFileMetadataRequest struct {
+	Path string `json:"path"`
+	// Ordinary permission bits only, without ownership or privileged bits.
+	Mode       OptInt64    `json:"mode"`
+	AccessedAt OptDateTime `json:"accessedAt"`
+	ModifiedAt OptDateTime `json:"modifiedAt"`
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxFileMetadataRequest) GetPath() string {
+	return s.Path
+}
+
+// GetMode returns the value of Mode.
+func (s *SandboxFileMetadataRequest) GetMode() OptInt64 {
+	return s.Mode
+}
+
+// GetAccessedAt returns the value of AccessedAt.
+func (s *SandboxFileMetadataRequest) GetAccessedAt() OptDateTime {
+	return s.AccessedAt
+}
+
+// GetModifiedAt returns the value of ModifiedAt.
+func (s *SandboxFileMetadataRequest) GetModifiedAt() OptDateTime {
+	return s.ModifiedAt
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxFileMetadataRequest) SetPath(val string) {
+	s.Path = val
+}
+
+// SetMode sets the value of Mode.
+func (s *SandboxFileMetadataRequest) SetMode(val OptInt64) {
+	s.Mode = val
+}
+
+// SetAccessedAt sets the value of AccessedAt.
+func (s *SandboxFileMetadataRequest) SetAccessedAt(val OptDateTime) {
+	s.AccessedAt = val
+}
+
+// SetModifiedAt sets the value of ModifiedAt.
+func (s *SandboxFileMetadataRequest) SetModifiedAt(val OptDateTime) {
+	s.ModifiedAt = val
+}
+
 // Ref: #/components/schemas/SandboxFileMkdirRequest
 type SandboxFileMkdirRequest struct {
 	// The directory to create. Absolute, or relative to the default user's home; a leading `~` is that
@@ -27416,11 +27498,18 @@ type SandboxFileStat struct {
 	// Size in bytes.
 	Size int64 `json:"size"`
 	// The permission bits with setuid, setgid and sticky, as chmod takes them (0755 is 493).
-	Mode       int64     `json:"mode"`
-	ModifiedAt time.Time `json:"modifiedAt"`
+	Mode int64 `json:"mode"`
+	// Last access time, captured before content is read.
+	AccessedAt OptDateTime `json:"accessedAt"`
+	ModifiedAt time.Time   `json:"modifiedAt"`
 	// An opaque tag that changes whenever the content does. A write may name it to replace only what was
 	// read. A link's is the version of what it points to, which a read or a write of it reaches.
 	Version string `json:"version"`
+	// The canonical path with source symlinks resolved, when its target exists.
+	ResolvedPath OptString `json:"resolvedPath"`
+	// Opaque filesystem object identity for detecting same-file and hard-link aliases within this
+	// sandbox.
+	FileIdentity OptString `json:"fileIdentity"`
 	// What a symbolic link points to, as written in it. Set only for a symlink.
 	LinkTarget OptString `json:"linkTarget"`
 }
@@ -27450,6 +27539,11 @@ func (s *SandboxFileStat) GetMode() int64 {
 	return s.Mode
 }
 
+// GetAccessedAt returns the value of AccessedAt.
+func (s *SandboxFileStat) GetAccessedAt() OptDateTime {
+	return s.AccessedAt
+}
+
 // GetModifiedAt returns the value of ModifiedAt.
 func (s *SandboxFileStat) GetModifiedAt() time.Time {
 	return s.ModifiedAt
@@ -27458,6 +27552,16 @@ func (s *SandboxFileStat) GetModifiedAt() time.Time {
 // GetVersion returns the value of Version.
 func (s *SandboxFileStat) GetVersion() string {
 	return s.Version
+}
+
+// GetResolvedPath returns the value of ResolvedPath.
+func (s *SandboxFileStat) GetResolvedPath() OptString {
+	return s.ResolvedPath
+}
+
+// GetFileIdentity returns the value of FileIdentity.
+func (s *SandboxFileStat) GetFileIdentity() OptString {
+	return s.FileIdentity
 }
 
 // GetLinkTarget returns the value of LinkTarget.
@@ -27490,6 +27594,11 @@ func (s *SandboxFileStat) SetMode(val int64) {
 	s.Mode = val
 }
 
+// SetAccessedAt sets the value of AccessedAt.
+func (s *SandboxFileStat) SetAccessedAt(val OptDateTime) {
+	s.AccessedAt = val
+}
+
 // SetModifiedAt sets the value of ModifiedAt.
 func (s *SandboxFileStat) SetModifiedAt(val time.Time) {
 	s.ModifiedAt = val
@@ -27500,16 +27609,28 @@ func (s *SandboxFileStat) SetVersion(val string) {
 	s.Version = val
 }
 
+// SetResolvedPath sets the value of ResolvedPath.
+func (s *SandboxFileStat) SetResolvedPath(val OptString) {
+	s.ResolvedPath = val
+}
+
+// SetFileIdentity sets the value of FileIdentity.
+func (s *SandboxFileStat) SetFileIdentity(val OptString) {
+	s.FileIdentity = val
+}
+
 // SetLinkTarget sets the value of LinkTarget.
 func (s *SandboxFileStat) SetLinkTarget(val OptString) {
 	s.LinkTarget = val
 }
 
-func (*SandboxFileStat) copySandboxFileRes()      {}
-func (*SandboxFileStat) makeSandboxDirectoryRes() {}
-func (*SandboxFileStat) moveSandboxFileRes()      {}
-func (*SandboxFileStat) statSandboxFileRes()      {}
-func (*SandboxFileStat) writeSandboxFileRes()     {}
+func (*SandboxFileStat) copySandboxFileRes()        {}
+func (*SandboxFileStat) importSandboxFilesRes()     {}
+func (*SandboxFileStat) makeSandboxDirectoryRes()   {}
+func (*SandboxFileStat) moveSandboxFileRes()        {}
+func (*SandboxFileStat) setSandboxFileMetadataRes() {}
+func (*SandboxFileStat) statSandboxFileRes()        {}
+func (*SandboxFileStat) writeSandboxFileRes()       {}
 
 // A move or a copy from one path in the discobox to another.
 // Ref: #/components/schemas/SandboxFileTransferRequest

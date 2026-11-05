@@ -68,6 +68,9 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	// The files API (ADR 26-10-22-499). The control plane marks a stat, a
 	// listing or a read with the read use, which starts a stopped sandbox and
 	// repairs nothing, and every write with the action use.
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/archive", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPut, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/archive", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/metadata", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/stat", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/list", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/files/content", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
@@ -189,7 +192,7 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 	// The files API is told by its whole route, before any test of a part of
 	// the path: an exec or a service named "files" is not one.
 	if op, ok := filesRoute(r.URL.EscapedPath()); ok {
-		if r.Method == http.MethodGet && (op == "stat" || op == "list" || op == "content") {
+		if r.Method == http.MethodGet && (op == "stat" || op == "list" || op == "content" || op == "archive") {
 			return ScopeFilesRead
 		}
 		return ScopeFilesWrite

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/poolauth"
@@ -64,15 +66,46 @@ func (r *secretResolver) Gate(ctx context.Context, req proxy.SecretGateRequest) 
 		out.Header.Del(name)
 	}
 	out.ContentLength = in.ContentLength
+	stream := gateStream(in)
+	client := r.gateClient
+	var lifetime *gateLifetime
+	if stream {
+		copyClient := *client
+		copyClient.Timeout = 0
+		client = &copyClient
+		streamCtx, cancel := context.WithCancel(ctx)
+		lifetime = &gateLifetime{cancel: cancel}
+		lifetime.timer = time.AfterFunc(gateHTTPTimeout, cancel)
+		out = out.WithContext(streamCtx)
+		if out.Body != nil {
+			out.Body = &gateBody{ReadCloser: out.Body, lifetime: lifetime}
+		}
+		if strings.EqualFold(in.Header.Get("Upgrade"), "websocket") {
+			out.Header.Set("Connection", "Upgrade")
+			out.Header.Set("Upgrade", "websocket")
+		}
+	}
+
 	out.Header.Set("Authorization", "Bearer "+rc.Token)
 	out.Header.Set(poolauth.ForwardingPoolHeader, rc.PoolID)
 	out.Header.Set(poolauth.ForwardedSandboxHeader, req.ClientID)
 	//nolint:bodyclose // Handed to the proxy, which writes it to the sandbox and closes it.
-	resp, err := r.gateClient.Do(out)
+	resp, err := client.Do(out)
 	if err != nil {
 		// Let in, and then the control plane did not answer: the request may
 		// have reached it.
+		if lifetime != nil {
+			lifetime.close()
+		}
 		return proxy.SecretGateAdmission{}, err
+	}
+	if lifetime != nil {
+		lifetime.touch()
+		if rw, ok := resp.Body.(io.ReadWriteCloser); ok && resp.StatusCode == http.StatusSwitchingProtocols {
+			resp.Body = &gateDuplex{rw, lifetime}
+		} else {
+			resp.Body = &gateResponseBody{gateBody{resp.Body, lifetime}}
+		}
 	}
 	return proxy.SecretGateAdmission{Response: resp}, nil
 }
@@ -114,3 +147,88 @@ func gateHTTPClient() *http.Client {
 	}
 	return client
 }
+
+// Only the files transfer and exec attach routes receive a progress-based
+// lifetime. All other API calls keep the ordinary bounded request timeout.
+func gateStream(r *http.Request) bool {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) > 0 && parts[0] == "api" {
+		parts = parts[1:]
+	}
+	if len(parts) != 6 && len(parts) != 7 {
+		return false
+	}
+	if parts[0] != "projects" || parts[2] != "sandboxes" {
+		return false
+	}
+	if len(parts) == 6 && parts[4] == "files" && (parts[5] == "content" || parts[5] == "archive") {
+		return r.Method == http.MethodGet || r.Method == http.MethodPut
+	}
+	return len(parts) == 7 && parts[4] == "execs" && parts[6] == "attach" && (r.Method == http.MethodGet || r.Method == http.MethodPost)
+}
+
+type gateLifetime struct {
+	mu     sync.Mutex
+	timer  *time.Timer
+	cancel context.CancelFunc
+	closed bool
+}
+
+func (l *gateLifetime) touch() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.closed {
+		l.timer.Reset(gateHTTPTimeout)
+	}
+}
+func (l *gateLifetime) close() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.closed {
+		l.closed = true
+		l.timer.Stop()
+		l.cancel()
+	}
+}
+
+type gateBody struct {
+	io.ReadCloser
+	lifetime *gateLifetime
+}
+
+func (b *gateBody) Read(p []byte) (int, error) {
+	n, e := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.lifetime.touch()
+	}
+	return n, e
+}
+
+// Closing the upload is not closing the response lifetime: net/http closes
+// request bodies as soon as sending finishes, before the response arrives.
+func (b *gateBody) Close() error { return b.ReadCloser.Close() }
+
+type gateDuplex struct {
+	io.ReadWriteCloser
+	lifetime *gateLifetime
+}
+
+func (b *gateDuplex) Read(p []byte) (int, error) {
+	n, e := b.ReadWriteCloser.Read(p)
+	if n > 0 {
+		b.lifetime.touch()
+	}
+	return n, e
+}
+func (b *gateDuplex) Write(p []byte) (int, error) {
+	n, e := b.ReadWriteCloser.Write(p)
+	if n > 0 {
+		b.lifetime.touch()
+	}
+	return n, e
+}
+func (b *gateDuplex) Close() error { b.lifetime.close(); return b.ReadWriteCloser.Close() }
+
+type gateResponseBody struct{ gateBody }
+
+func (b *gateResponseBody) Close() error { b.lifetime.close(); return b.ReadCloser.Close() }

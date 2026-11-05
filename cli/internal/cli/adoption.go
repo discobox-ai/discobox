@@ -23,7 +23,9 @@ screen (F4), or from the requester's row (C). --reason is required and is shown
 to that person. Ctrl-C stops waiting; the request stays in the inbox.
 
 Approval replaces the child's current parent. The child's credentials and
-creator stay its own. A child with wider egress can only be read: writes and
+creator stay its own. The parent may run commands and login shells, read and
+write files, and attach to or end existing execs. This may expose existing files
+and credential sentinels. A child with wider egress can only be read: writes and
 sends into it are refused. The child must be in the same project, cannot be
 this discobox or an ancestor, and cannot be archived or deleting.
 

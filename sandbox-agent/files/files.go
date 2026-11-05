@@ -23,14 +23,17 @@ import (
 type Op string
 
 const (
-	OpStat   Op = "stat"
-	OpList   Op = "list"
-	OpRead   Op = "read"
-	OpWrite  Op = "write"
-	OpMkdir  Op = "mkdir"
-	OpRemove Op = "remove"
-	OpMove   Op = "move"
-	OpCopy   Op = "copy"
+	OpStat     Op = "stat"
+	OpList     Op = "list"
+	OpRead     Op = "read"
+	OpWrite    Op = "write"
+	OpMkdir    Op = "mkdir"
+	OpRemove   Op = "remove"
+	OpMove     Op = "move"
+	OpCopy     Op = "copy"
+	OpMetadata Op = "metadata"
+	OpExport   Op = "export"
+	OpImport   Op = "import"
 )
 
 // Request is one operation on resolved, absolute paths (Resolve). It is also
@@ -58,7 +61,11 @@ type Request struct {
 	// Recursive removes a directory with what it holds.
 	Recursive bool `json:"recursive,omitempty"`
 	// Replace lets a move or a copy replace its destination.
-	Replace bool `json:"replace,omitempty"`
+	Replace    bool       `json:"replace,omitempty"`
+	Preserve   bool       `json:"preserve,omitempty"`
+	Copy       bool       `json:"copy,omitempty"`
+	AccessedAt *time.Time `json:"accessedAt,omitempty"`
+	ModifiedAt *time.Time `json:"modifiedAt,omitempty"`
 }
 
 // Type is what a path is.
@@ -73,14 +80,17 @@ const (
 
 // Stat is one path, as lstat sees it.
 type Stat struct {
-	Path       string    `json:"path"`
-	Name       string    `json:"name"`
-	Type       Type      `json:"type"`
-	Size       int64     `json:"size"`
-	Mode       uint32    `json:"mode"`
-	ModifiedAt time.Time `json:"modifiedAt"`
-	Version    string    `json:"version"`
-	LinkTarget string    `json:"linkTarget,omitempty"`
+	Path         string    `json:"path"`
+	Name         string    `json:"name"`
+	Type         Type      `json:"type"`
+	Size         int64     `json:"size"`
+	Mode         uint32    `json:"mode"`
+	ModifiedAt   time.Time `json:"modifiedAt"`
+	AccessedAt   time.Time `json:"accessedAt"`
+	Version      string    `json:"version"`
+	ResolvedPath string    `json:"resolvedPath,omitempty"`
+	FileIdentity string    `json:"fileIdentity,omitempty"`
+	LinkTarget   string    `json:"linkTarget,omitempty"`
 }
 
 // Result is what an operation answers, besides a read's content: the path it

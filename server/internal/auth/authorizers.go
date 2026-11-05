@@ -3,10 +3,12 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/discobox-ai/discobox/proxy/egress"
+	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -161,8 +163,7 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPost, path: "sandboxes/*/git-origins/*/pin", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/complete-source-push", names: withinCaller},
 	// Reading and typing into a discobox's terminals (ADR 26-10-01-397 §1),
-	// and reading one's record, transcript, and events. Attaching, and creating, starting or
-	// ending an exec, are not here (ADR 26-10-01-397 §2).
+	// and reading one's record, transcript, and events.
 	{method: http.MethodGet, path: "sandboxes/*/execs", names: childDiscobox},
 	{method: http.MethodGet, path: "sandboxes/*/execs/*", names: childDiscobox},
 	{method: http.MethodGet, path: "sandboxes/*/execs/*/logs", names: childDiscobox},
@@ -170,6 +171,23 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodGet, path: "sandboxes/*/execs/*/screen", names: childDiscobox},
 	{method: http.MethodPost, path: "sandboxes/*/execs/*/wait", names: childDiscobox},
 	{method: http.MethodPost, path: "sandboxes/*/execs/*/input", names: withinCaller},
+	// Child commands and files (ADR 26-11-04-684). Attach is a write.
+	{method: http.MethodPost, path: "sandboxes/*/execs", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/execs/*/start", names: withinCaller},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*/attach", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/execs/*/attach", names: withinCaller},
+	{method: http.MethodDelete, path: "sandboxes/*/execs/*", names: withinCaller},
+	{method: http.MethodGet, path: "sandboxes/*/files/stat", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/files/list", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/files/content", names: childDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/files/archive", names: childDiscobox},
+	{method: http.MethodPut, path: "sandboxes/*/files/content", names: withinCaller},
+	{method: http.MethodPut, path: "sandboxes/*/files/archive", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/files/mkdir", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/files/remove", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/files/move", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/files/copy", names: withinCaller},
+	{method: http.MethodPost, path: "sandboxes/*/files/metadata", names: withinCaller},
 	// Starting, stopping, and restarting a discobox (ADR 26-10-02-478 §1), and
 	// repairing or upgrading it onto the image its harness config resolves to.
 	{method: http.MethodPost, path: "sandboxes/*/start", names: withinCaller},
@@ -226,7 +244,7 @@ func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 	if !ok || principal.Type != PrincipalTypeSandbox {
 		return false, nil
 	}
-	denied := authorizationError{status: http.StatusForbidden, err: errors.New("not in the sandbox role")}
+	denied := authorizationError{status: http.StatusForbidden, err: fmt.Errorf("sandbox role permission required for %s %s", r.Method, r.URL.Path)}
 	projectID, rest, ok := projectRoute(r.URL.Path)
 	if !ok {
 		return false, denied
@@ -252,9 +270,9 @@ func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 		segment := strings.Split(rest, "/")[1:]
 		switch route.names {
 		case childDiscobox:
-			return a.authorizeChildDiscobox(r, principal, segment[0])
+			return a.AuthorizeChild(r.Context(), principal, segment[0], false, r.Method+" "+route.path)
 		case withinCaller:
-			return a.authorizeWithinCaller(r, principal, segment[0])
+			return a.AuthorizeChild(r.Context(), principal, segment[0], true, r.Method+" "+route.path)
 		case ownAdoption:
 			req, err := a.Store.GetAdoptionRequest(r.Context(), principal.ProjectID, segment[0])
 			if err != nil {
@@ -276,68 +294,58 @@ func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 // the discobox API (ADR 26-10-27-880 §9). The pool forwards any sandbox's call
 // to the API's host; this is where one without the flag is turned away.
 func (a SandboxRoleAuthorizer) authorizeDiscoboxAPI(r *http.Request, principal Principal) (bool, error) {
-	caller, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, principal.SandboxID)
+	caller, err := a.Store.WithPrimaryRead().GetSandbox(r.Context(), principal.ProjectID, principal.SandboxID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return false, authorizationError{status: http.StatusForbidden, err: errors.New("the calling discobox no longer exists")}
 		}
 		return false, authorizationError{status: http.StatusInternalServerError, err: err}
 	}
-	if !caller.DiscoboxAPI {
+	if !caller.DiscoboxAPI || caller.DesiredState == model.DesiredStateDeleted {
 		return false, authorizationError{status: http.StatusForbidden,
 			err: errors.New("this discobox may not call the discobox API; a person allows it by setting discoboxApi on it")}
 	}
 	return true, nil
 }
 
-// authorizeChildDiscobox allows a route on a discobox the caller leads
-// (ADR 26-10-27-880 §9), and no other.
-func (a SandboxRoleAuthorizer) authorizeChildDiscobox(r *http.Request, principal Principal, sandboxID string) (bool, error) {
-	target, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, sandboxID)
+// AuthorizeChild enforces the live sandbox boundary at HTTP and service entry.
+// Authority is current direct parenthood, regardless of immutable creator.
+func (a SandboxRoleAuthorizer) AuthorizeChild(ctx context.Context, principal Principal, sandboxID string, write bool, operation string) (bool, error) {
+	primary := a.Store.WithPrimaryRead()
+	caller, err := primary.GetSandbox(ctx, principal.ProjectID, principal.SandboxID)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return false, authorizationError{status: http.StatusNotFound, err: errors.New("sandbox not found")}
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("the calling discobox no longer exists")}
+	}
+	if caller.DesiredState == model.DesiredStateDeleted {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("the calling discobox has been deleted")}
+	}
+	if !caller.DiscoboxAPI {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("discobox API permission is disabled; a person must enable discoboxApi")}
+	}
+	target, err := primary.GetSandbox(ctx, principal.ProjectID, sandboxID)
+	if err != nil {
+		return false, authorizationError{status: http.StatusNotFound, err: errors.New("sandbox not found")}
+	}
+	if target.ID == caller.ID || target.ParentSandboxID == nil || *target.ParentSandboxID != caller.ID {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("direct parent permission required: this discobox is not currently led by the caller; creating it does not retain authority after release")}
+	}
+	if write {
+		outer, err := primary.EffectiveSandboxEgress(ctx, caller)
+		if err != nil {
+			return false, err
 		}
-		return false, authorizationError{status: http.StatusInternalServerError, err: err}
-	}
-	if target.ParentSandboxID == nil || *target.ParentSandboxID != principal.SandboxID {
-		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a discobox acts only on the discoboxes it leads")}
-	}
-	return true, nil
-}
-
-// authorizeWithinCaller allows a route on a discobox the caller leads, as
-// authorizeChildDiscobox does, only when the target's effective egress policy
-// is covered by the caller's (ADR 26-10-01-032 §4): an unrestricted caller
-// acts on any, and a restricted one only on discoboxes restricted at least as
-// tightly. The policies are read as they stand, so a level loosened on the
-// target after this call is the person's who loosened it.
-func (a SandboxRoleAuthorizer) authorizeWithinCaller(r *http.Request, principal Principal, sandboxID string) (bool, error) {
-	if ok, err := a.authorizeChildDiscobox(r, principal, sandboxID); !ok || err != nil {
-		return ok, err
-	}
-	caller, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, principal.SandboxID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return false, authorizationError{status: http.StatusForbidden, err: errors.New("the calling discobox no longer exists")}
+		inner, err := primary.EffectiveSandboxEgress(ctx, target)
+		if err != nil {
+			return false, err
 		}
-		return false, authorizationError{status: http.StatusInternalServerError, err: err}
-	}
-	target, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, sandboxID)
-	if err != nil {
-		return false, authorizationError{status: http.StatusInternalServerError, err: err}
-	}
-	outer, err := a.Store.EffectiveSandboxEgress(r.Context(), caller)
-	if err != nil {
-		return false, authorizationError{status: http.StatusInternalServerError, err: err}
-	}
-	inner, err := a.Store.EffectiveSandboxEgress(r.Context(), target)
-	if err != nil {
-		return false, authorizationError{status: http.StatusInternalServerError, err: err}
-	}
-	if !egress.Covers(outer, inner) {
-		return false, authorizationError{status: http.StatusForbidden,
-			err: errors.New("a discobox acts on another only when that one reaches nothing it cannot")}
+		if !egress.Covers(outer, inner) {
+			return false, authorizationError{status: http.StatusForbidden, err: fmt.Errorf("cannot %s: you lead this %s child, but its egress policy is wider than yours; egress coverage permission is required", operation, func() string {
+				if target.CreatedBySandboxID != nil && *target.CreatedBySandboxID == caller.ID {
+					return "created"
+				}
+				return "adopted"
+			}())}
+		}
 	}
 	return true, nil
 }

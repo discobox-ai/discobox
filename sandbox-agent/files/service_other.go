@@ -19,6 +19,6 @@ func New() (*Service, error) { return &Service{}, nil }
 
 // Do performs req. user is the one account the agent runs as, resolved to
 // check that it is; there is nobody else to be.
-func (s *Service) Do(_ context.Context, _ *execs.User, req Request, body io.Reader) (Result, io.ReadCloser, error) {
-	return Do(req, body)
+func (s *Service) Do(ctx context.Context, _ *execs.User, req Request, body io.Reader) (Result, io.ReadCloser, error) {
+	return Do(ctx, req, body)
 }

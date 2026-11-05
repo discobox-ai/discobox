@@ -325,7 +325,7 @@ func filesRoute(path string) (string, bool) {
 // the API does not have included: no route under files is reached with no
 // scope at all.
 func filesScope(method, op string) string {
-	if method == http.MethodGet && (op == "stat" || op == "list" || op == "content") {
+	if method == http.MethodGet && (op == "stat" || op == "list" || op == "content" || op == "archive") {
 		return ScopeFilesRead
 	}
 	return ScopeFilesWrite

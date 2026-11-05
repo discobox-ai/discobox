@@ -544,7 +544,8 @@ turn it on — ask the user in chat (ADR 26-10-27-880 §9).
 With it, you may create discoboxes with `discobox run`, cut from the SOURCE
 you give it — `.` for this box's own checkout; list and read them (`admin box
 ls`, `admin box get`). On the discoboxes **you lead** (created or adopted), and no others, you
-may read and type into their terminals (`discobox capture`, `send`,
+may run commands and login shells (`discobox exec`), copy files both ways
+(`discobox cp`, `scp` alias), attach to and end existing execs, and read and type into their terminals (`discobox capture`, `send`,
 `send-key`, and `wait --until finished --until blocked`, which counts from
 what you last sent) and read their logs (`admin terminal logs`); start, stop, and restart them (`discobox
 start`, `stop`, `restart`); repair and upgrade them (`admin box repair`,

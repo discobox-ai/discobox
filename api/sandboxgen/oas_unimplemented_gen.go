@@ -124,6 +124,17 @@ func (UnimplementedHandler) DiscardSandboxHarnessConfigChanges(ctx context.Conte
 	return r, ht.ErrNotImplemented
 }
 
+// ExportSandboxFiles implements export-sandbox-files operation.
+//
+// Streams regular files and directories under a files/ prefix, starting with the root directory
+// metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
+// selected source root. Ownership and special files are excluded.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+func (UnimplementedHandler) ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (r ExportSandboxFilesOK, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSandboxAgentInventory implements get-sandbox-agent-inventory operation.
 //
 // What the sandbox's exec, service and tool lists and its terminals' screens answer right now, in
@@ -225,6 +236,19 @@ func (UnimplementedHandler) GetSandboxSourceProjectLayer(ctx context.Context, pa
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources
 func (UnimplementedHandler) GetSandboxSourceStates(ctx context.Context, params GetSandboxSourceStatesParams) (r *SandboxSourceStates, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ImportSandboxFiles implements import-sandbox-files operation.
+//
+// Merges a restricted copy archive below the selected directory. Completed files remain after a
+// failed batch. Each file publishes atomically. Requires the final SHA256SUMS manifest and complete
+// body; rejects links, special entries, duplicate names and paths outside the root. Directory
+// metadata is finalized after children. preserve applies ordinary permissions and access and
+// modification times, never ownership or privileged bits.
+//
+// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+func (UnimplementedHandler) ImportSandboxFiles(ctx context.Context, req ImportSandboxFilesReq, params ImportSandboxFilesParams) (r *SandboxFileStat, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -420,6 +444,17 @@ func (UnimplementedHandler) ResumeSandboxAutostop(ctx context.Context, params Re
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
 func (UnimplementedHandler) SendSandboxExecInput(ctx context.Context, req *SandboxExecInputBody, params SendSandboxExecInputParams) (r *SandboxExecInputResult, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// SetSandboxFileMetadata implements set-sandbox-file-metadata operation.
+//
+// Sets optional ordinary permission bits and access and modification times on an existing pinned
+// file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
+// privileged bits.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+func (UnimplementedHandler) SetSandboxFileMetadata(ctx context.Context, req *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (r *SandboxFileStat, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

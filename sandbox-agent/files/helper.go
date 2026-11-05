@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // HelperCommand is the argument that makes this binary the helper.
@@ -54,10 +55,10 @@ func RunHelper(stdin io.Reader, stdout io.Writer) int {
 		return 2
 	}
 	var body io.Reader = bytes.NewReader(nil)
-	if req.Op == OpWrite {
+	if req.Op == OpWrite || req.Op == OpImport {
 		body = &frameReader{r: in}
 	}
-	result, content, err := Do(req, body)
+	result, content, err := Do(context.Background(), req, body)
 	if content != nil {
 		defer content.Close()
 	}
@@ -184,6 +185,11 @@ func (h helper) do(ctx context.Context, attr *syscall.SysProcAttr, req Request, 
 	if err != nil {
 		return Result{}, nil, err
 	}
+	// Closing stdin sends an incomplete framed body, allowing the helper's
+	// atomic writer to remove its temporary sibling. Immediate SIGKILL would
+	// skip that cleanup. Bound a helper stuck outside its protocol as well.
+	cmd.Cancel = func() error { _ = stdin.Close(); return nil }
+	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
 		return Result{}, nil, fmt.Errorf("start the files helper: %w", err)
 	}
@@ -193,7 +199,7 @@ func (h helper) do(ctx context.Context, attr *syscall.SysProcAttr, req Request, 
 			if _, err := stdin.Write(append(encoded, '\n')); err != nil {
 				return err
 			}
-			if req.Op == OpWrite {
+			if req.Op == OpWrite || req.Op == OpImport {
 				return writeFrames(stdin, body)
 			}
 			return nil
@@ -213,7 +219,7 @@ func (h helper) do(ctx context.Context, attr *syscall.SysProcAttr, req Request, 
 		<-sent //nolint:errcheck // Reap the writer; the response failure above is the cause reported.
 		return Result{}, nil, fmt.Errorf("the files helper did not answer: %w %s", readErr, strings.TrimSpace(stderr.String()))
 	}
-	if answer.Error != nil || req.Op != OpRead {
+	if answer.Error != nil || (req.Op != OpRead && req.Op != OpExport) {
 		_, _ = io.Copy(io.Discard, out)
 		waitErr := cmd.Wait()
 		sendErr := <-sent

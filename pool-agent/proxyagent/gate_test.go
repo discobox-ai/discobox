@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/proxy"
@@ -131,5 +132,91 @@ func TestAGateCallThatFailsIsNoRefusal(t *testing.T) {
 	var refusal *proxy.SecretGateRefusal
 	if err == nil || errors.As(err, &refusal) {
 		t.Fatalf("err = %v, want the gate failing, not refusing", err)
+	}
+}
+
+func TestGateExecUpgradePreservesDuplexAndPoolIdentity(t *testing.T) {
+	root := withTestRoot(t)
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Connection") != "Upgrade" || r.Header.Get("Upgrade") != "websocket" {
+			t.Error("upgrade stripped")
+		}
+		if r.Header.Get(poolauth.ForwardedSandboxHeader) != "lead" || r.Header.Get("Authorization") != "Bearer pool-token" {
+			t.Error("spoofed identity reached control plane")
+		}
+		conn, buffer, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.Close()
+		_, _ = buffer.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n")
+		buffer.Flush()
+		data := make([]byte, 4)
+		if _, err := io.ReadFull(buffer, data); err != nil {
+			return
+		}
+		buffer.Write(data)
+		buffer.Flush()
+	}))
+	defer controlPlane.Close()
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
+		t.Fatal(err)
+	}
+	resolver := newSecretResolver(root, testProjectID, testPoolID)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://"+GateHost+"/api/projects/default/sandboxes/child/execs/primary/attach", nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set(poolauth.ForwardedSandboxHeader, "someone-else")
+	admitted, err := resolver.Gate(t.Context(), proxy.SecretGateRequest{ClientID: "lead", Request: req})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admitted.Response.Body.Close()
+	stream, ok := admitted.Response.Body.(io.ReadWriteCloser)
+	if !ok {
+		t.Fatal("upgrade lost write direction")
+	}
+	if _, err := stream.Write([]byte("test")); err != nil {
+		t.Fatal(err)
+	}
+	reply := make([]byte, 4)
+	if _, err := io.ReadFull(stream, reply); err != nil {
+		t.Fatal(err)
+	}
+	if string(reply) != "test" {
+		t.Fatal("duplex bytes changed")
+	}
+}
+
+func TestFileGateDoesNotInheritOrdinaryClientTimeout(t *testing.T) {
+	root := withTestRoot(t)
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		for range 5 {
+			if _, err := w.Write([]byte("x")); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+			time.Sleep(10 * time.Millisecond)
+		}
+	}))
+	defer controlPlane.Close()
+	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlane.URL, "pool-token"); err != nil {
+		t.Fatal(err)
+	}
+	resolver := newSecretResolver(root, testProjectID, testPoolID)
+	resolver.gateClient.Timeout = 15 * time.Millisecond
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "https://"+GateHost+"/api/projects/default/sandboxes/child/files/content?path=x", nil)
+	admitted, err := resolver.Gate(t.Context(), proxy.SecretGateRequest{ClientID: "lead", Request: req})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admitted.Response.Body.Close()
+	data, err := io.ReadAll(admitted.Response.Body)
+	if err != nil || string(data) != "xxxxx" {
+		t.Fatalf("progressing body truncated: %q %v", data, err)
 	}
 }

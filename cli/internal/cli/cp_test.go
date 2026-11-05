@@ -2,81 +2,18 @@ package cli
 
 import (
 	"runtime"
-	"slices"
-	"strings"
 	"testing"
 )
 
-// TestSplitSCPArgsFindsTheOperands: the operands are rewritten, so a value that
-// happens to look like a path — `-o ProxyJump=x`, `-l 1024` — must not be
-// mistaken for one.
-func TestSplitSCPArgsFindsTheOperands(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		args    []string
-		options []string
-		paths   []string
-	}{
-		{
-			name:  "plain copy",
-			args:  []string{"a.txt", "mybox:/tmp/a.txt"},
-			paths: []string{"a.txt", "mybox:/tmp/a.txt"},
-		},
-		{
-			name:    "leading flags",
-			args:    []string{"-r", "-p", "mybox:/dist", "./dist"},
-			options: []string{"-r", "-p"},
-			paths:   []string{"mybox:/dist", "./dist"},
-		},
-		{
-			name:    "detached value",
-			args:    []string{"-l", "1024", "a.txt", "mybox:"},
-			options: []string{"-l", "1024"},
-			paths:   []string{"a.txt", "mybox:"},
-		},
-		{
-			name:    "attached value",
-			args:    []string{"-l1024", "a.txt", "mybox:"},
-			options: []string{"-l1024"},
-			paths:   []string{"a.txt", "mybox:"},
-		},
-		{
-			name:    "bundle ending in a value option",
-			args:    []string{"-rl", "1024", "a.txt", "mybox:"},
-			options: []string{"-rl", "1024"},
-			paths:   []string{"a.txt", "mybox:"},
-		},
-		{
-			// The `r` belongs to the -o value, not to scp.
-			name:    "value letters are not flags",
-			args:    []string{"-o", "Compression=yes", "a.txt", "mybox:"},
-			options: []string{"-o", "Compression=yes"},
-			paths:   []string{"a.txt", "mybox:"},
-		},
-		{
-			// Options after the operands are still options: scp's usage puts
-			// them first, and only glibc's permuting getopt forgives otherwise.
-			name:    "trailing flag",
-			args:    []string{"a.txt", "mybox:", "-v"},
-			options: []string{"-v"},
-			paths:   []string{"a.txt", "mybox:"},
-		},
-		{
-			name:    "separator ends the options",
-			args:    []string{"-r", "--", "-weird.txt", "mybox:"},
-			options: []string{"-r"},
-			paths:   []string{"-weird.txt", "mybox:"},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			options, paths := splitSCPArgs(tc.args)
-			if strings.Join(options, " ") != strings.Join(tc.options, " ") {
-				t.Errorf("options = %v, want %v", options, tc.options)
-			}
-			if strings.Join(paths, " ") != strings.Join(tc.paths, " ") {
-				t.Errorf("paths = %v, want %v", paths, tc.paths)
-			}
-		})
+func TestCopyOptions(t *testing.T) {
+	for _, flag := range []string{"-O", "-S", "-i", "-J", "-P", "-F", "-o", "-C", "-v", "--recursive"} {
+		if _, _, err := parseCopyArgs([]string{flag, "a", "box:b"}); err == nil {
+			t.Fatalf("accepted unsupported %s", flag)
+		}
+	}
+	opts, paths, err := parseCopyArgs([]string{"-rpq", "--", "-literal", "box:a"})
+	if err != nil || !opts.recursive || !opts.preserve || !opts.quiet || len(paths) != 2 || paths[0] != "-literal" {
+		t.Fatalf("parse: %+v %v %v", opts, paths, err)
 	}
 }
 
@@ -144,54 +81,4 @@ func TestWindowsDrivePathIsOnlyAPathOnWindows(t *testing.T) {
 	if want := runtime.GOOS != "windows"; remote != want {
 		t.Fatalf(`splitCPPath("C:\\src\\app") remote = %v on %s, want %v`, remote, runtime.GOOS, want)
 	}
-}
-
-// TestSCPArgsPlacesEverythingWhereSCPReadsIt: `scp [options] source ... target`
-// is positional, and this command supplies options of its own, so the assembled
-// list is what decides whether a path is read as a path.
-func TestSCPArgsPlacesEverythingWhereSCPReadsIt(t *testing.T) {
-	session := sshClientOptions("/state/id_ed25519", "/tmp/known_hosts", "prj_1.discobox.internal", "discobox admin ssh-proxy")
-
-	t.Run("upload", func(t *testing.T) {
-		args := scpArgs(scpInvocation{
-			session:  session,
-			options:  []string{"-r"},
-			operands: []string{"./dist", "sbx_devbox00000001@sbx_devbox00000001.discobox.internal:/tmp/dist"},
-			remote:   []bool{false, true},
-		})
-		joined := strings.Join(args, " ")
-		for _, want := range []string{"-o ProxyCommand=discobox admin ssh-proxy", "-i /state/id_ed25519", "-F none", "-r -- ./dist sbx_devbox00000001@sbx_devbox00000001.discobox.internal:/tmp/dist"} {
-			if !strings.Contains(joined, want) {
-				t.Errorf("args %v missing %q", args, want)
-			}
-		}
-		if strings.Contains(joined, " -3") {
-			t.Errorf("a copy with a local end must not be routed with -3: %v", args)
-		}
-	})
-
-	t.Run("discobox to discobox", func(t *testing.T) {
-		args := scpArgs(scpInvocation{
-			session:  session,
-			operands: []string{"sbx_a@sbx_a.discobox.internal:/tmp/a", "sbx_b@sbx_b.discobox.internal:/tmp/a"},
-			remote:   []bool{true, true},
-		})
-		// The direct remote-to-remote path has the source sandbox dial the
-		// destination, whose alias only this machine's ProxyCommand reaches.
-		// -3 is pinned so no client default can take it.
-		if !slices.Contains(args, "-3") {
-			t.Fatalf("args %v missing -3", args)
-		}
-	})
-
-	t.Run("two downloads are not a remote-to-remote copy", func(t *testing.T) {
-		args := scpArgs(scpInvocation{
-			session:  session,
-			operands: []string{"sbx_a@sbx_a.discobox.internal:/tmp/a", "sbx_b@sbx_b.discobox.internal:/tmp/b", "./here"},
-			remote:   []bool{true, true, false},
-		})
-		if slices.Contains(args, "-3") {
-			t.Fatalf("a local destination needs no -3: %v", args)
-		}
-	})
 }

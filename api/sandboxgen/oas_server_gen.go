@@ -88,6 +88,14 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
 	DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (*HarnessConfigChanges, error)
+	// ExportSandboxFiles implements export-sandbox-files operation.
+	//
+	// Streams regular files and directories under a files/ prefix, starting with the root directory
+	// metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
+	// selected source root. Ownership and special files are excluded.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (ExportSandboxFilesOK, error)
 	// GetSandboxAgentInventory implements get-sandbox-agent-inventory operation.
 	//
 	// What the sandbox's exec, service and tool lists and its terminals' screens answer right now, in
@@ -162,6 +170,16 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources
 	GetSandboxSourceStates(ctx context.Context, params GetSandboxSourceStatesParams) (*SandboxSourceStates, error)
+	// ImportSandboxFiles implements import-sandbox-files operation.
+	//
+	// Merges a restricted copy archive below the selected directory. Completed files remain after a
+	// failed batch. Each file publishes atomically. Requires the final SHA256SUMS manifest and complete
+	// body; rejects links, special entries, duplicate names and paths outside the root. Directory
+	// metadata is finalized after children. preserve applies ordinary permissions and access and
+	// modification times, never ownership or privileged bits.
+	//
+	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	ImportSandboxFiles(ctx context.Context, req ImportSandboxFilesReq, params ImportSandboxFilesParams) (*SandboxFileStat, error)
 	// ListExecEvents implements list-exec-events operation.
 	//
 	// Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),
@@ -298,6 +316,14 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/input
 	SendSandboxExecInput(ctx context.Context, req *SandboxExecInputBody, params SendSandboxExecInputParams) (*SandboxExecInputResult, error)
+	// SetSandboxFileMetadata implements set-sandbox-file-metadata operation.
+	//
+	// Sets optional ordinary permission bits and access and modification times on an existing pinned
+	// file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
+	// privileged bits.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+	SetSandboxFileMetadata(ctx context.Context, req *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (*SandboxFileStat, error)
 	// StartSandboxExec implements start-sandbox-exec operation.
 	//
 	// Starts a prepared sandbox exec after any desired attach stream has connected.

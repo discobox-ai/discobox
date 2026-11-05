@@ -178,6 +178,22 @@ func encodeDiscardSandboxHarnessConfigChangesResponse(response *HarnessConfigCha
 	return nil
 }
 
+func encodeExportSandboxFilesResponse(response ExportSandboxFilesOK, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	writer := w
+	if closer, ok := response.Data.(io.Closer); ok {
+		defer closer.Close()
+	}
+	if _, err := io.Copy(writer, response); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
 func encodeGetSandboxAgentInventoryResponse(response *SandboxAgentInventory, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
@@ -305,6 +321,20 @@ func encodeGetSandboxSourceProjectLayerResponse(response *SandboxSourceProjectLa
 }
 
 func encodeGetSandboxSourceStatesResponse(response *SandboxSourceStates, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
+func encodeImportSandboxFilesResponse(response *SandboxFileStat, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -566,6 +596,20 @@ func encodeResumeSandboxAutostopResponse(response *SandboxAutostopResumption, w 
 }
 
 func encodeSendSandboxExecInputResponse(response *SandboxExecInputResult, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
+func encodeSetSandboxFileMetadataResponse(response *SandboxFileStat, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))

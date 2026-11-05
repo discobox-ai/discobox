@@ -328,6 +328,14 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/secret-refresh-requests/{requestId}/dismiss
 	DismissSecretRefreshRequest(ctx context.Context, params DismissSecretRefreshRequestParams) (DismissSecretRefreshRequestRes, error)
+	// ExportSandboxFiles invokes export-sandbox-files operation.
+	//
+	// Streams regular files and directories under a files/ prefix, starting with the root directory
+	// metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
+	// selected source root. Ownership and special files are excluded.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (ExportSandboxFilesRes, error)
 	// ForceJob invokes force-job operation.
 	//
 	// Force a pending, scheduled, or backoff job to run immediately.
@@ -533,6 +541,16 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/trust-requests/{requestId}
 	GetTrustRequest(ctx context.Context, params GetTrustRequestParams) (GetTrustRequestRes, error)
+	// ImportSandboxFiles invokes import-sandbox-files operation.
+	//
+	// Merges a restricted copy archive below the selected directory. Completed files remain after a
+	// failed batch. Each file publishes atomically. Requires the final SHA256SUMS manifest and complete
+	// body; rejects links, special entries, duplicate names and paths outside the root. Directory
+	// metadata is finalized after children. preserve applies ordinary permissions and access and
+	// modification times, never ownership or privileged bits.
+	//
+	// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+	ImportSandboxFiles(ctx context.Context, request ImportSandboxFilesReq, params ImportSandboxFilesParams) (ImportSandboxFilesRes, error)
 	// ListAdoptionRequests invokes list-adoption-requests operation.
 	//
 	// GET /projects/{projectId}/adoption-requests
@@ -1034,6 +1052,14 @@ type Invoker interface {
 	//
 	// PUT /projects/{projectId}/default
 	SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (SetDefaultProjectRes, error)
+	// SetSandboxFileMetadata invokes set-sandbox-file-metadata operation.
+	//
+	// Sets optional ordinary permission bits and access and modification times on an existing pinned
+	// file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
+	// privileged bits.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+	SetSandboxFileMetadata(ctx context.Context, request *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (SetSandboxFileMetadataRes, error)
 	// StartSandbox invokes start-sandbox operation.
 	//
 	// Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source
@@ -6429,6 +6455,138 @@ func (c *Client) sendDismissSecretRefreshRequest(ctx context.Context, params Dis
 	return result, nil
 }
 
+// ExportSandboxFiles invokes export-sandbox-files operation.
+//
+// Streams regular files and directories under a files/ prefix, starting with the root directory
+// metadata, and ending with a required SHA256SUMS manifest. Links are dereferenced within the
+// selected source root. Ownership and special files are excluded.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+func (c *Client) ExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (ExportSandboxFilesRes, error) {
+	res, err := c.sendExportSandboxFiles(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendExportSandboxFiles(ctx context.Context, params ExportSandboxFilesParams) (res ExportSandboxFilesRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("export-sandbox-files"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/archive"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ExportSandboxFilesOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/files/archive"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "path" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "path",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.Path))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeExportSandboxFilesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ForceJob invokes force-job operation.
 //
 // Force a pending, scheduled, or backoff job to run immediately.
@@ -9993,6 +10151,160 @@ func (c *Client) sendGetTrustRequest(ctx context.Context, params GetTrustRequest
 
 	stage = "DecodeResponse"
 	result, err := decodeGetTrustRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ImportSandboxFiles invokes import-sandbox-files operation.
+//
+// Merges a restricted copy archive below the selected directory. Completed files remain after a
+// failed batch. Each file publishes atomically. Requires the final SHA256SUMS manifest and complete
+// body; rejects links, special entries, duplicate names and paths outside the root. Directory
+// metadata is finalized after children. preserve applies ordinary permissions and access and
+// modification times, never ownership or privileged bits.
+//
+// PUT /api/projects/{projectId}/sandboxes/{sandboxId}/files/archive
+func (c *Client) ImportSandboxFiles(ctx context.Context, request ImportSandboxFilesReq, params ImportSandboxFilesParams) (ImportSandboxFilesRes, error) {
+	res, err := c.sendImportSandboxFiles(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendImportSandboxFiles(ctx context.Context, request ImportSandboxFilesReq, params ImportSandboxFilesParams) (res ImportSandboxFilesRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("import-sandbox-files"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/archive"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ImportSandboxFilesOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/files/archive"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "path" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "path",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.Path))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "preserve" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "preserve",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Preserve.Get(); ok {
+				return e.EncodeValue(conv.BoolToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PUT", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeImportSandboxFilesRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeImportSandboxFilesResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -18952,6 +19264,123 @@ func (c *Client) sendSetDefaultProject(ctx context.Context, params SetDefaultPro
 	return result, nil
 }
 
+// SetSandboxFileMetadata invokes set-sandbox-file-metadata operation.
+//
+// Sets optional ordinary permission bits and access and modification times on an existing pinned
+// file or directory, as the default user. Refuses symlinks. Does not apply ownership, ACLs or
+// privileged bits.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata
+func (c *Client) SetSandboxFileMetadata(ctx context.Context, request *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (SetSandboxFileMetadataRes, error) {
+	res, err := c.sendSetSandboxFileMetadata(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendSetSandboxFileMetadata(ctx context.Context, request *SandboxFileMetadataRequest, params SetSandboxFileMetadataParams) (res SetSandboxFileMetadataRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("set-sandbox-file-metadata"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/files/metadata"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, SetSandboxFileMetadataOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/files/metadata"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeSetSandboxFileMetadataRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeSetSandboxFileMetadataResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // StartSandbox invokes start-sandbox operation.
 //
 // Start the sandbox. Conflicts if it is archived, or if it is still owed its client's source
@@ -22133,6 +22562,23 @@ func (c *Client) sendWriteSandboxFile(ctx context.Context, request WriteSandboxF
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.Parents.Get(); ok {
+				return e.EncodeValue(conv.BoolToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "copy" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "copy",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Copy.Get(); ok {
 				return e.EncodeValue(conv.BoolToString(val))
 			}
 			return nil

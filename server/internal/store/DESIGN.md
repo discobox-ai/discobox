@@ -325,3 +325,12 @@ A delayed first completion cannot cancel a newer outside instruction. The caller
 in that same transaction. The additive receipt-table migration changes no
 existing state; purge removes receipts with their sandbox. These are delivery
 receipts for instructions, never desired power state.
+
+## Child stream authority
+
+`WithPrimaryRead` selects the primary for live authorization, including inherited
+egress. `ChildAuthorityVersion` reads durable notifications for the caller,
+target and their project/pool/config dependencies, ordered deterministically.
+Read streams omit egress versions; write streams include them.
+It never reads a replica. The database owns notification triggers; the sandboxes
+service owns registration, revalidation and cancellation of transport bodies.

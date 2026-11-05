@@ -3923,7 +3923,9 @@ screen (F4), or from the requester's row (C). --reason is required and is shown
 to that person. Ctrl-C stops waiting; the request stays in the inbox.
 
 Approval replaces the child's current parent. The child's credentials and
-creator stay its own. A child with wider egress can only be read: writes and
+creator stay its own. The parent may run commands and login shells, read and
+write files, and attach to or end existing execs. This may expose existing files
+and credential sentinels. A child with wider egress can only be read: writes and
 sends into it are refused. The child must be in the same project, cannot be
 this discobox or an ancestor, and cannot be archived or deleting.
 
@@ -4170,44 +4172,32 @@ Examples:
 ## discobox cp
 
 ~~~~text
-Copy files between this machine and a discobox, with scp.
+Copy files through the discobox files API, as the discobox's default user.
 
-A path is inside a discobox when it is written DISCOBOX:PATH — the discobox's
-ID, a short prefix of it, or the name the discobox was created with. That name
-is the NAME "discobox ls" prints only until the discobox's agent titles its
-terminal and the title takes the column, so the ID is what always resolves; the
-title itself is a name "discobox rm" takes, not this one. A bare :PATH means the
-only discobox there is, or a prompt to pick one when there is more than one. A discobox on another server is written by its address,
-DISCOBOX_ADDRESS:PATH — discobox://<server>/<discobox>, where <server> is what
-"discobox admin remote" prints in its ADDRESS column: a peer ID, or a host.
-discobox:///<discobox>, with no server, is that discobox on the primary server.
-The SERVER column "discobox ls" prints is the name this machine registered that
-server under, and names nothing anywhere else. Everything without a colon is a
-local path.
+Write a remote path as DISCOBOX:PATH, :PATH to select a discobox, or
+DISCOBOX_ADDRESS:PATH. Relative remote paths start at the user's home.
+Both ends may name discoboxes on the same server. Local paths follow the
+usual colon and Windows drive rules; use ./ before an ambiguous local name.
 
-Both ends may name a discobox, and they need not be the same discobox — but
-they must be on the same server, since one copy runs over one connection. An
-address says which server that is, and a name or a bare :PATH beside one is
-looked up there rather than on the primary. Without an address, each one is
-looked for on every server "discobox ls" lists.
+Use -r for directories, -p to preserve ordinary permissions and access and
+modification times, and -q for quiet operation. Multiple sources need an
+existing destination directory. Existing directories receive each source's
+basename; a missing destination takes its content. A trailing slash requires
+a directory. Unrelated destination entries remain in place.
 
-Relative remote paths are resolved from the discobox user's home directory, not
-from a source working tree.
+Remote paths are literal: spaces, Unicode, colons and shell characters are
+filenames, without shell or glob expansion. -- ends options. Source links are
+followed; links inside a recursive tree must stay within that tree. Destination
+links and special files are refused. A failed recursive copy may leave completed
+files, but never publishes a truncated current file.
 
-The server needs no SSH port for this: scp reaches it over the same endpoint
-the API uses, by running this CLI as its ProxyCommand. Key and host
-verification are supplied here, so nothing is written to your ssh_config; the
-key is enrolled in the project and reused on later runs.
-
-Every other argument is passed to scp untouched, so its own flags — -r, -p, -C,
--o — mean what they always mean. That includes the ones this CLI otherwise
-takes: -p is scp's preserve here, not --project. To point a copy somewhere
-else, write the flag in front of the command — discobox --server ... cp — or
-set DISCOBOX_SERVER and DISCOBOX_PROJECT in the environment.
+Copy no longer uses SSH or scp. SSH/transport flags and other unsupported scp
+options are errors; supported flags are -r, -p and -q. Set global options before
+cp, such as discobox --project PROJECT cp ...
 ~~~~
 
 ```text
-discobox cp [SCP_ARG...] SRC... DST [flags]
+discobox cp [-r] [-p] [-q] [--] SRC... DST [flags]
 ```
 
 Aliases: scp.

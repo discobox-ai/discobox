@@ -53,6 +53,7 @@ func (h *handler) ReadSandboxFile(ctx context.Context, params sandboxapi.ReadSan
 func (h *handler) WriteSandboxFile(ctx context.Context, body sandboxapi.WriteSandboxFileReq, params sandboxapi.WriteSandboxFileParams) (*sandboxapi.SandboxFileStat, error) {
 	req := files.Request{
 		Op:            files.OpWrite,
+		Copy:          params.Copy.Or(false),
 		FailIfExists:  params.IfExists.Or(sandboxapi.WriteSandboxFileIfExistsReplace) == sandboxapi.WriteSandboxFileIfExistsFail,
 		FailIfMissing: params.IfMissing.Or(sandboxapi.WriteSandboxFileIfMissingCreate) == sandboxapi.WriteSandboxFileIfMissingFail,
 		IfVersion:     params.IfVersion.Or(""),
@@ -124,7 +125,7 @@ func (h *handler) doFiles(ctx context.Context, req files.Request, path, to strin
 	// keep it up forever.
 	release := func() {}
 	switch req.Op {
-	case files.OpStat, files.OpList, files.OpRead:
+	case files.OpStat, files.OpList, files.OpRead, files.OpExport:
 	default:
 		release = h.autostop.Hold("files " + string(req.Op) + " " + req.Path)
 	}
@@ -186,16 +187,45 @@ func fileStatToAPI(in *files.Stat) *sandboxapi.SandboxFileStat {
 		return &sandboxapi.SandboxFileStat{}
 	}
 	out := &sandboxapi.SandboxFileStat{
-		Path:       in.Path,
-		Name:       in.Name,
-		Type:       sandboxapi.SandboxFileType(in.Type),
-		Size:       in.Size,
-		Mode:       int64(in.Mode),
-		ModifiedAt: in.ModifiedAt,
-		Version:    in.Version,
+		Path:         in.Path,
+		Name:         in.Name,
+		Type:         sandboxapi.SandboxFileType(in.Type),
+		Size:         in.Size,
+		Mode:         int64(in.Mode),
+		ModifiedAt:   in.ModifiedAt,
+		AccessedAt:   sandboxapi.NewOptDateTime(in.AccessedAt),
+		Version:      in.Version,
+		ResolvedPath: sandboxapi.NewOptString(in.ResolvedPath),
+		FileIdentity: sandboxapi.NewOptString(in.FileIdentity),
 	}
 	if in.LinkTarget != "" {
 		out.LinkTarget = sandboxapi.NewOptString(in.LinkTarget)
 	}
 	return out
+}
+
+func (h *handler) ExportSandboxFiles(ctx context.Context, p sandboxapi.ExportSandboxFilesParams) (sandboxapi.ExportSandboxFilesOK, error) {
+	_, content, err := h.doFiles(ctx, files.Request{Op: files.OpExport}, p.Path, "", nil)
+	return sandboxapi.ExportSandboxFilesOK{Data: content}, err
+}
+func (h *handler) ImportSandboxFiles(ctx context.Context, b sandboxapi.ImportSandboxFilesReq, p sandboxapi.ImportSandboxFilesParams) (*sandboxapi.SandboxFileStat, error) {
+	result, _, err := h.doFiles(ctx, files.Request{Op: files.OpImport, Preserve: p.Preserve.Or(false)}, p.Path, "", b.Data)
+	if err != nil {
+		return nil, err
+	}
+	return fileStatToAPI(result.Stat), nil
+}
+func (h *handler) SetSandboxFileMetadata(ctx context.Context, b *sandboxapi.SandboxFileMetadataRequest, _ sandboxapi.SetSandboxFileMetadataParams) (*sandboxapi.SandboxFileStat, error) {
+	req := files.Request{Op: files.OpMetadata, Mode: fileMode(b.Mode)}
+	if t, ok := b.AccessedAt.Get(); ok {
+		req.AccessedAt = &t
+	}
+	if t, ok := b.ModifiedAt.Get(); ok {
+		req.ModifiedAt = &t
+	}
+	result, _, err := h.doFiles(ctx, req, b.Path, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	return fileStatToAPI(result.Stat), nil
 }

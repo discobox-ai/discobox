@@ -1104,55 +1104,27 @@ goes to the background only after the host key is verified and the user
 authenticated, which is all the temporary known_hosts removed on the way out
 was for.
 
-`discobox cp` is `scp`, pointed at the same ProxyCommand (`internal/cli/cp.go`). It is
-a root command rather than a `tools` subcommand because it is an everyday verb
-whose discobox is named inside each path rather than as DISCOBOX.
+`discobox cp` (alias `scp`) copies through the files API for every caller
+(ADR 26-11-04-684). `internal/cli/cp.go` owns option and operand resolution;
+`cp_transfer.go` owns the streaming transfer. It never starts scp, SSH, an
+exec, or a key-enrollment request. Only `-r`, `-p` and `-q` are supported;
+unsupported transport/scp flags fail before resolving or writing anything.
+Global flags still belong before `cp`.
 
-`cp` copies no bytes itself, and stays on sftp now that a discobox has a files
-API (ADR 26-10-22-499 §4), which carries what the CLI writes for its own
-purposes — a pasted image, a tool's script and files. The sshd already answers the `sftp` subsystem
-by running the sandbox's `sftp-server` as an exec
-(`server/internal/sshd/DESIGN.md`), which is what a modern `scp` speaks, so
-recursion, permissions and directory creation are scp's and the sandbox's
-business. A `cp` built on the exec primitive instead — a `tar` pipe, the way
-`docker cp` and `kubectl cp` work — would have reimplemented all of that against
-a sandbox image that may or may not have `tar`, to reach the same place.
+Operands retain `configuredName` resolution, IDs, bare `:`, explicit addresses,
+one server per command, and local colon/Windows-drive rules. Remote paths are
+literal and relative to the default user's home. Existing destination directories
+receive the source basename; multiple sources require an existing directory.
+Type conflicts, same-path copies and copying a tree into itself fail.
 
-What the command owns is the two things scp cannot work out: the proxy, key
-and pinned host key, and what a `DISCOBOX:PATH` operand means. The reference
-before the colon is matched against the candidates under `configuredName`
-(`resolveCPSandbox`), not `selectSandbox`'s listed names: what stands before a
-colon may be a local path's, so a free-form window title is not matched
-against it, while the name a discobox was created with and its IDs are.
-
-`splitSCPArgs` finds the operands — scp's option table is needed for that, so
-`-o ProxyJump=x` is not read as a path — and `resolveCPOperands` rewrites each
-one to `<sandbox id>@<sandbox id>.discobox.internal:<path>`. The sandbox travels in the operand
-rather than in a `-l`, so one command can name two different discoboxes; when it
-does, `-3` is added. Current OpenSSH already routes an sftp-mode copy through
-the local host and `-3` changes nothing there — it is pinned because the direct
-path is one `-R`, one older client, or one `ssh_config` default away, and it
-cannot work here: the source would look up the destination's alias inside its
-own sandbox, where no ProxyCommand reaches it. With `-3` each end runs its own.
-
-`splitCPPath` is scp's own `colon()` rule with one deliberate difference: a
-leading colon is a discobox reference, not part of a filename. scp has no use
-for the form and `:PATH` is the natural spelling for "the discobox I am already
-working in". The rule has to match scp's in every other respect, because scp
-applies it again to what this command emits — which is why a local relative
-operand containing a colon (`sub/dir:name`) is emitted as `./sub/dir:name`, and
-why a Windows drive letter is a path only on Windows.
-
-Relative remote paths land in the sandbox user's home, not in a source working
-tree: every SSH session channel asks for `workdir: "~"`
-(`server/internal/sshd/DESIGN.md`), which is what makes `discobox cp x mybox:`
-mean what it means everywhere else.
-
-Flag parsing is off here for the reason it is off for `tools ssh`: after the
-command name every flag is scp's, and `-o` (this CLI's `--output`) and `-p`
-(run's prompt) are scp options too, so they have to be. What stands *in front* of the command is
-still this CLI's, and is parsed by the root — see
-[Where a Global Flag Is Parsed](#where-a-global-flag-is-parsed).
+Single files use stat/content/write and optional metadata. Both upload and
+download bodies must match the stat size and reach their end before publication;
+a proxy reporting a truncated body as clean EOF still fails the copy. Recursive copies use
+one export and/or import archive request per tree, relayed through the CLI
+between boxes. Raw HTTP bodies use the normal authenticated client transport;
+the generated read client buffers content, so transfer bodies bypass its decoder.
+Both local and remote archive operations use root `pkg/copyarchive`; see its
+[format and confinement contract](../pkg/copyarchive/DESIGN.md).
 
 ## Declared Tools (ADR 0125)
 
@@ -1348,7 +1320,7 @@ finds the command first and hands it every flag, wherever it stood. The
 commands that hand their arguments to another program parse none, so under the
 default `discobox --server X cp …` reached the default endpoint and said
 nothing. Those are exactly the commands that cannot sort it out for themselves:
-`-o` is this CLI's `--output` and one of scp's and ssh's options, so which of
+`-o` is this CLI's `--output` and one of ssh's options, so which of
 the two a flag belongs to is a question only its position answers
 ([ADR 0103](../docs/adr/0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md)).
 
@@ -1393,7 +1365,7 @@ thing to type. A `-c` that meant `--clone` would take that command as a source
 path and run a login shell with the command dropped. Unclaimed, it says
 `unknown shorthand flag: 'c'` instead. The commands that turn flag parsing off outright (`cp`, `tools ssh`,
 `admin provider create|update`) are unaffected either way: a `-c` after those
-belongs to scp, to ssh, or to the provider catalog, and never reaches this flag
+is rejected by cp, or belongs to ssh or to the provider catalog, and never reaches this flag
 table.
 
 ## Listing Order
