@@ -40,6 +40,7 @@ type approvalPreview struct {
 	st            *styles
 	d             *dialog
 	z             zones
+	refreshGrant  func()
 }
 
 func (p *approvalPreview) Init() tea.Cmd { return nil }
@@ -74,6 +75,9 @@ func (p *approvalPreview) View() tea.View {
 	return v
 }
 func (p *approvalPreview) render() string {
+	if p.refreshGrant != nil {
+		p.refreshGrant()
+	}
 	p.z.reset()
 	mode := "PROPOSED"
 	if p.current {
@@ -88,10 +92,12 @@ func (p *approvalPreview) render() string {
 	return header + "\n" + card
 }
 func (p *approvalPreview) receipt(result string) tea.Cmd {
+	p.refreshGrant = nil
 	p.d = actionsDialog("Preview · "+result, "Sample only. No request was answered.", []action{{key: "back", label: "Back to the design", enabled: true}}, func(string) tea.Cmd { p.open(); return nil })
 	return nil
 }
 func (p *approvalPreview) open() {
+	p.refreshGrant = nil
 	now := time.Now()
 	req := CredentialRequest{ID: "sreq_sample", SandboxID: "sbx_123", Name: "github", EnvVar: "GH_TOKEN", Justification: "The task asks me to open a PR", AskedTTL: time.Hour, Created: now.Add(-2 * time.Minute), Use: &RequestPart{Routes: []secretroute.Route{
 		{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: []string{"/repos/discobox-ai/discobox/issues/**"}},
@@ -206,7 +212,20 @@ func (p *approvalPreview) showPart(req CredentialRequest, delegate bool, first p
 		}
 		d.sections = append(d.sections, section{lines: []line{{text: state, tone: toneAccent}}})
 	}
-	d.sections = append(d.sections, previewRouteSection("Requested "+strings.ToLower(step), part))
+	grantIndex := len(d.sections)
+	d.sections = append(d.sections, previewGrantSection(f.chosen("scope"), part, hosts))
+	previousScope := f.chosen("scope")
+	p.refreshGrant = func() {
+		if p.d != d {
+			return
+		}
+		scope := f.chosen("scope")
+		d.sections[grantIndex] = previewGrantSection(scope, part, hosts)
+		if scope != previousScope {
+			d.offset = 0
+			previousScope = scope
+		}
+	}
 	if !delegate {
 		d.sections = append(d.sections, section{fields: []field{{label: "Variable", value: req.EnvVar}}})
 	}

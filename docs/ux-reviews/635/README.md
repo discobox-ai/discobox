@@ -107,3 +107,11 @@ restrictions remain. Anywhere adds no grant restriction. Picker hints describe
 these effects. The displayed route tables remain the original requested access.
 This models the design choices only; backend integration and live ceiling,
 replacement and addition previews are still outside the sample program.
+
+Changing Scope now updates the upper grant restriction list immediately:
+Requested routes shows protocol/host tables, Requested hosts shows host-only
+access for any method/path/protocol, and Anywhere shows no grant restriction.
+Changing scope resets body scrolling. Credential and parent ceilings remain
+separate and are called out below; the preview does not flatten them into the
+selected binding restriction. This supersedes the earlier static requested-list
+behavior.
