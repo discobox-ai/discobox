@@ -1012,7 +1012,8 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 		b.WriteString(drawForm.view(st, z, row(), inner))
 		b.WriteString("\n")
 		if len(d.formActions) > 0 && d.formActionAt >= 0 && d.form.err == "" {
-			b.WriteString(st.dimText.Render("Enter selects "+d.formActions[d.formActionAt].label) + "\n")
+			b.WriteString(st.dimText.Render("Enter selects " + d.formActions[d.formActionAt].label))
+			b.WriteByte('\n')
 		} else {
 			b.WriteString(d.form.hint(st, inner))
 		}
