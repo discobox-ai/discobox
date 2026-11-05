@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -12,6 +14,22 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/devimage"
 )
+
+func TestGoModuleFilesReportsDependencyError(t *testing.T) {
+	t.Setenv("GOWORK", "off")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := goModuleFiles(context.Background(), root, root, "./missing")
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("want wrapped exit error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "go list deps in "+root) || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("dependency error lost its directory or stderr: %v", err)
+	}
+}
 
 func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 	t.Helper()

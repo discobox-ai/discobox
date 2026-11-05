@@ -146,27 +146,27 @@ func TestStampBuildModeImagesProducesBuildableManifest(t *testing.T) {
 // Stamping is content-addressed so an unchanged tree keeps the same references
 // and the server rebuilds nothing.
 func TestStampBuildModeImagesIsStableForUnchangedInputs(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("repository root not found: %v", err)
+	// Hash fixed inputs rather than discovering dependencies in the live
+	// checkout, which may be changing while background hooks run.
+	root := t.TempDir()
+	dockerfile := filepath.Join(root, "Dockerfile")
+	if err := os.WriteFile(dockerfile, []byte("FROM scratch\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	specs, err := dockerImageSpecs(context.Background(), repoRoot, "discobox")
-	if err != nil {
-		t.Fatalf("dockerImageSpecs: %v", err)
-	}
+	spec := imageSpec{devPrefix: "discobox-test:dev-", buildDir: root, files: []string{dockerfile}}
 
-	first, err := contentImageTag(specs[0])
+	first, err := contentImageTag(spec)
 	if err != nil {
 		t.Fatalf("contentImageTag: %v", err)
 	}
-	second, err := contentImageTag(specs[0])
+	second, err := contentImageTag(spec)
 	if err != nil {
 		t.Fatalf("contentImageTag: %v", err)
 	}
 	if first != second {
 		t.Fatalf("content tag is unstable: %q then %q", first, second)
 	}
-	if !strings.HasPrefix(first, specs[0].devPrefix) {
-		t.Fatalf("content tag %q does not use the spec's dev prefix %q", first, specs[0].devPrefix)
+	if !strings.HasPrefix(first, spec.devPrefix) {
+		t.Fatalf("content tag %q does not use the spec's dev prefix %q", first, spec.devPrefix)
 	}
 }
