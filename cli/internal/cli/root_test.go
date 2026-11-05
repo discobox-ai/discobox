@@ -2444,3 +2444,21 @@ func usePart(body map[string]any) map[string]any {
 	part, _ := body["use"].(map[string]any)
 	return part
 }
+
+func TestClientVersionDoesNotContactServer(t *testing.T) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("client-only version contacted the server")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "version", "--client"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if want := "client version " + version.String() + "\n"; out.String() != want {
+		t.Fatalf("got %q, want %q", out.String(), want)
+	}
+}

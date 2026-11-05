@@ -528,12 +528,13 @@ install_release() {
 	cp "$tmp/discobox" "$staged" 2>/dev/null || die "cannot write to $dir; choose another directory with --dir"
 	mv -f "$staged" "$dir/discobox"
 
-	out=$("$dir/discobox" --version </dev/null 2>&1) || die "installed $dir/discobox, but it does not run: $out"
+	out=$("$dir/discobox" version --client </dev/null 2>&1) || die "installed $dir/discobox, but it does not run: $out"
 	case $out in
 		*"$release"*) ;;
 		*) die "installed $dir/discobox, but it says it is '$out' rather than $release" ;;
 	esac
 	ok "installed discobox $release to $dir/discobox"
+	say "On first server use after an upgrade, run interactively to review any runtime permission repair."
 
 	if [ -n "$stage" ]; then
 		stage_server

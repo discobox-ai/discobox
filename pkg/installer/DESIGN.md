@@ -41,6 +41,9 @@ flowchart TD
 - **Downloads** try `assets.discobox.ai/discobox/<tag>/` and then the GitHub
   release URL, moving on when a source is missing or its bytes miss the digest
   (ADR 0106).
+- **Verification** runs `discobox version --client`, checking the installed
+  binary without contacting the server or prompting for runtime permission repair.
+  First server use retains the explicit interactive migration consent.
 - **The server is not part of the install.** Both scripts close by saying what
   the Homebrew formula's caveats say: the CLI fetches the server it was cut
   against on first use, checked against digests it carries (ADR 0099).

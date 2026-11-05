@@ -27,7 +27,7 @@ const versionServerTimeout = 5 * time.Second
 // nobody has to be told about. It is listed, as -v/--version is: a spelling
 // that works is one the help shows (cli/DESIGN.md, "Command Naming").
 func (a *App) newVersionCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print the client and server versions",
 		Args:  cobra.NoArgs,
@@ -46,6 +46,8 @@ func (a *App) newVersionCommand() *cobra.Command {
 			return a.printVersion(cmd)
 		},
 	}
+	cmd.Flags().Bool("client", false, "Print only the client version without contacting the server")
+	return cmd
 }
 
 // printVersion writes what `discobox --version` and `discobox version` write:
@@ -58,10 +60,6 @@ func (a *App) newVersionCommand() *cobra.Command {
 // succeeds: an unreachable server is often why somebody is asking.
 func (a *App) printVersion(cmd *cobra.Command) error {
 	out := cmd.OutOrStdout()
-	// The server is whichever the root's hook would have settled on, but a
-	// registry that does not parse is not a reason to withhold the answer: the
-	// server named as it was is asked instead.
-	_ = a.resolveServerName(serverChosen(cmd))
 	// The client's line first, on a write of its own. This half was known
 	// before the process started, and holding it back for a peer that is
 	// switched off would put five seconds of silence in front of the answer
@@ -69,6 +67,13 @@ func (a *App) printVersion(cmd *cobra.Command) error {
 	if _, err := fmt.Fprintf(out, "client version %s\n", version.String()); err != nil {
 		return err
 	}
+	if clientOnly, _ := cmd.Flags().GetBool("client"); clientOnly {
+		return nil
+	}
+	// The server is whichever the root's hook would have settled on, but a
+	// registry that does not parse is not a reason to withhold the answer: the
+	// server named as it was is asked instead.
+	_ = a.resolveServerName(serverChosen(cmd))
 	if err := a.prepareRuntimeDirectories(cmd); err != nil {
 		return err
 	}

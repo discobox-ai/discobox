@@ -15,6 +15,12 @@ var version = ""
 func main() {
 	switch strings.Join(os.Args[1:], " ") {
 	case "--version":
+		if os.Getenv("DISCOBOX_FAKE_UNSAFE_RUNTIME") != "" {
+			fmt.Fprintln(os.Stderr, "runtime permissions were not repaired; rerun interactively to approve")
+			os.Exit(1)
+		}
+		fmt.Printf("discobox version %s\n", version)
+	case "version --client":
 		fmt.Printf("discobox version %s\n", version)
 	case "admin server stage":
 		// What a cold mirror or a full disk does to the download the real
