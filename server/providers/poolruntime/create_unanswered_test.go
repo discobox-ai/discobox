@@ -285,3 +285,39 @@ func TestPoolProviderInstructionRefusalIsNotThePoolNotReachable(t *testing.T) {
 		t.Fatalf("start of a sandbox the agent does not hold = %v, want its refusal", err)
 	}
 }
+
+// A retry whose request is still in flight when the recovery budget expires
+// must report the same pool-level failure as expiry between attempts.
+func TestPoolProviderCreateReportsPoolWhenRetryExpiresInFlight(t *testing.T) {
+	oldInterval, oldCeiling := poolCapacityPollInterval, poolAgentWaitCeiling
+	poolCapacityPollInterval = time.Millisecond
+	poolAgentWaitCeiling = 100 * time.Millisecond
+	t.Cleanup(func() { poolCapacityPollInterval, poolAgentWaitCeiling = oldInterval, oldCeiling })
+
+	var creates atomic.Int32
+	agent := newCreateProtocolTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/sandboxes") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if creates.Add(1) > 1 {
+			// Hold the retry beyond its context deadline before dropping it.
+			time.Sleep(200 * time.Millisecond)
+		}
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}))
+	t.Cleanup(agent.Close)
+	runtimeProvider := &testRuntimeProvider{baseURL: agent.URL, client: agent.Client()}
+	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+	if creates.Load() < 2 {
+		t.Fatalf("creates sent = %d, want at least two", creates.Load())
+	}
+	if err == nil || !strings.Contains(err.Error(), "create sandbox on pool pool-1") || strings.Contains(err.Error(), "http://pool") {
+		t.Fatalf("create error = %q, want the pool named and the agent address left out", err)
+	}
+}
