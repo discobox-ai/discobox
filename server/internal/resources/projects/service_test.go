@@ -67,6 +67,7 @@ type stubHarnesses struct{ st *store.Store }
 func (s stubHarnesses) SeedBuiltIns(ctx context.Context, projectID string) error {
 	return s.st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: projectID, Slug: "codex", Name: "Codex", BuiltIn: true, Bundle: "codex:current",
+		FileOverrides: []model.HarnessConfigFile{},
 	})
 }
 
@@ -763,5 +764,39 @@ func TestUpdateProjectRecordsTheHarnessChangesExplainer(t *testing.T) {
 	}
 	if cleared.HarnessChangesExplained {
 		t.Fatal("the explainer could not be cleared")
+	}
+}
+
+func TestProjectCopyRemapsVariantAndTakesDestinationParentSnapshot(t *testing.T) {
+	svc, st, ctx := newService(t)
+	source := seedSourceProject(ctx, t, st)
+	root, err := st.GetHarnessConfigBySlug(ctx, source.ID, "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := &model.HarnessConfig{ProjectID: source.ID, Slug: "work", Name: "Work", ExtendsID: &root.ID, Bundle: "codex:stale", FileOverrides: []model.HarnessConfigFile{{Path: "mine", Content: "work"}}, ConfiguredFiles: []model.HarnessConfigFile{{Path: "account", Content: "work"}}}
+	if err := st.CreateHarnessConfig(ctx, child); err != nil {
+		t.Fatal(err)
+	}
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Variant copy", CopyFromProjectId: apigen.NewOptString(source.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied, err := st.GetHarnessConfigBySlug(ctx, project.ID, "work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := st.GetHarnessConfigBySlug(ctx, project.ID, "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copied.ExtendsID == nil || *copied.ExtendsID != parent.ID || *copied.ExtendsID == root.ID {
+		t.Fatal("parent identity not remapped")
+	}
+	if copied.Bundle != "codex:current" {
+		t.Fatal("copied stale source snapshot")
+	}
+	if len(copied.ConfiguredFiles) != 1 || copied.ConfiguredFiles[0].Content != "work" || len(copied.FileOverrides) != 1 || copied.FileOverrides[0].Content != "work" {
+		t.Fatal("lost independent personal state")
 	}
 }

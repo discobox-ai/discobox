@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -69,6 +71,17 @@ func (s *Store) ListHarnessConfigs(ctx context.Context, projectID string) ([]mod
 		Order("created_at ASC").
 		Find(&configs).Error
 	return configs, err
+}
+
+// HarnessConfigsTransaction serializes bundle publication, relationship writes and
+// deletion within a project. Take this lock before reading a parent's snapshot.
+func (s *Store) HarnessConfigsTransaction(ctx context.Context, projectID string, fn func(*Store, *gorm.DB) error) error {
+	return s.Transaction(ctx, func(tx *Store, db *gorm.DB) error {
+		if err := lockProject(db, projectID); err != nil {
+			return err
+		}
+		return fn(tx, db)
+	})
 }
 
 func (s *Store) CreateHarnessConfig(ctx context.Context, config *model.HarnessConfig) error {
@@ -148,11 +161,22 @@ func (s *Store) UpdateHarnessConfig(ctx context.Context, config *model.HarnessCo
 // bindings it took with it: the config's own, and those other discoboxes were
 // handed on under its delegate bindings, whose holders it marks.
 func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID string, onBindingsDeleted BindingsDeletedFunc) error {
-	return s.Transaction(ctx, func(txStore *Store, tx *gorm.DB) error {
+	return s.HarnessConfigsTransaction(ctx, projectID, func(txStore *Store, tx *gorm.DB) error {
 		// Locked before its bindings are deleted, as DeleteSandbox does.
 		config, err := firstByID[model.HarnessConfig](tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID), "id", configID)
 		if err != nil {
 			return err
+		}
+		var children []model.HarnessConfig
+		if err := tx.Where("project_id = ? AND extends_id = ?", projectID, configID).Order("slug").Find(&children).Error; err != nil {
+			return err
+		}
+		if len(children) > 0 {
+			names := make([]string, len(children))
+			for i := range children {
+				names[i] = children[i].Slug
+			}
+			return fmt.Errorf("%w: harness config has dependent variants: %s", ErrInUse, strings.Join(names, ", "))
 		}
 		if err := tx.Model(&model.Project{}).
 			Where("id = ? AND default_harness_config_id = ?", projectID, configID).
@@ -165,7 +189,7 @@ func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID str
 			return err
 		}
 		if liveRefs > 0 {
-			return ErrInUse
+			return fmt.Errorf("%w: harness config is in use by a sandbox", ErrInUse)
 		}
 		deleted, err := DeleteSecretBindingsForTargetTx(tx, projectID, model.SecretBindingTargetHarnessConfig, config.ID)
 		if err != nil {

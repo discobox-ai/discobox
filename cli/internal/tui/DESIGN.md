@@ -3570,3 +3570,7 @@ the displayed candidate once and overwrites its saved paths and captured
 credentials without a second confirmation (ADR 26-11-04-538). Validation and
 identity failures retain the server recovery instructions and send no retry.
 Nothing saves automatically.
+
+Harness variants retain their own selectable identity and account status.
+`Harness.Parent` annotates the display name as a variant of its parent; it does
+not participate in account availability or bindings.

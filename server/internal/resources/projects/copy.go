@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/go-faster/jx"
+	"gorm.io/gorm"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -245,12 +247,33 @@ func (s *Service) copyHarnessConfigs(ctx context.Context, source *model.Project,
 	// once so both bindings point at one credential in the new project.
 	secretIDs := map[string]string{}
 	defaultHarnessConfigID := ""
+	// Roots precede their one-level variants so every copied relationship names
+	// a config in the destination project, including freshly seeded built-ins.
+	slices.SortStableFunc(sourceConfigs, func(a, b model.HarnessConfig) int {
+		if a.ExtendsID == nil && b.ExtendsID != nil {
+			return -1
+		}
+		if a.ExtendsID != nil && b.ExtendsID == nil {
+			return 1
+		}
+		return 0
+	})
+	copied := map[string]*model.HarnessConfig{}
 	for i := range sourceConfigs {
 		sourceConfig := &sourceConfigs[i]
+		sourceID := sourceConfig.ID
+		if sourceConfig.ExtendsID != nil {
+			parent := copied[*sourceConfig.ExtendsID]
+			if parent == nil {
+				return "", fmt.Errorf("parent harness config missing for %s", sourceConfig.Slug)
+			}
+			sourceConfig.ExtendsID = &parent.ID
+		}
 		config, err := s.copyHarnessConfig(ctx, sourceConfig, projectID, secretIDs)
 		if err != nil {
 			return "", fmt.Errorf("%s: %w", sourceConfig.Slug, err)
 		}
+		copied[sourceID] = config
 		if source.DefaultHarnessConfigID == sourceConfig.ID {
 			defaultHarnessConfigID = config.ID
 		}
@@ -286,7 +309,22 @@ func (s *Service) copyHarnessConfig(ctx context.Context, sourceConfig *model.Har
 		config.ID = id.NewString(id.PrefixHarnessConfig)
 		config.ProjectID = projectID
 		config.ConfiguredSecretIDs = configuredSecretIDs
-		if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
+		if err := s.store.HarnessConfigsTransaction(ctx, projectID, func(tx *store.Store, _ *gorm.DB) error {
+			if config.ExtendsID != nil {
+				parent, err := tx.GetHarnessConfig(ctx, projectID, *config.ExtendsID)
+				if err != nil {
+					return err
+				}
+				if parent.ExtendsID != nil {
+					return fmt.Errorf("parent harness %s is no longer standalone", parent.Slug)
+				}
+				if parent.FileOverrides == nil {
+					return fmt.Errorf("parent harness %s must be refreshed before copying a variant", parent.Slug)
+				}
+				config.InheritBundle(parent)
+			}
+			return tx.CreateHarnessConfig(ctx, config)
+		}); err != nil {
 			return nil, err
 		}
 	} else {

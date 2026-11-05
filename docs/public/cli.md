@@ -1512,6 +1512,7 @@ discobox admin harness create [flags]
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --create-only-file | stringArray | [] | File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH. |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --extends | string |  | Follow this parent harness config (slug or ID) for its bundle; keep an independent account |
 | --file | stringArray | [] | Add a file to the harness's home directory, or override the bundle's file at PATH, as PATH=CONTENT or PATH=@LOCALFILE (repeatable) |
 | --help, -h | bool | false | help for create Value when passed without an argument: true. |
 | --name | string |  | Harness config name |
@@ -1854,6 +1855,7 @@ discobox admin harness update HARNESS [flags]
 | --egress-allow | stringSlice | [] | Destinations the harness adds to a restricted discobox's allow list (repeatable or comma-separated) |
 | --egress-deny-by-default | bool | false | Restrict the harness's discoboxes to the allow lists of their levels; --egress-deny-by-default=false lifts this level's restriction Value when passed without an argument: true. |
 | --egress-passthrough | stringSlice | [] | Hosts whose HTTPS CONNECT the harness passes through unread instead of intercepting (repeatable or comma-separated) |
+| --extends | string |  | Follow this parent harness config (slug or ID) for its bundle; keep an independent account |
 | --file | stringArray | [] | Add a file to the harness's home directory, or override the harness's own file at PATH, as PATH=CONTENT or PATH=@LOCALFILE; the harness's other files are kept (repeatable) |
 | --help, -h | bool | false | help for update Value when passed without an argument: true. |
 | --name | string |  | Harness config name |

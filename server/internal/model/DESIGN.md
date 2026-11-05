@@ -340,3 +340,9 @@ Successful explicit suspends have `SandboxSuspendReceipt` rows keyed by
 sandbox and request ID. They deduplicate successful-freeze completion across
 lost callback responses and multiple server instances. They are deleted at
 sandbox purge and carry no desired power state.
+
+`HarnessConfig.ExtendsID` names an optional standalone parent in the same
+project. `InheritBundle` copies only bundle-derived metadata into a materialized
+snapshot, preserving the child's identity, personal files, egress and account.
+The nullable indexed column is added in place by AutoMigrate; old rows remain
+standalone and keep their pins and personal state.

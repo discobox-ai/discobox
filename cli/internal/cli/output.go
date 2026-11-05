@@ -860,8 +860,8 @@ func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) 
 		return writeJSON(cmd.OutOrStdout(), harness)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tRUN COMMAND\tSECRETS\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tEXTENDS\tBUNDLE\tBUNDLE DIGEST\tMANIFEST DIGEST\tRUN COMMAND\tSECRETS\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, harness.Extends.Or(""), harness.Bundle.Or(""), harness.BundleDigest.Or(""), harness.ManifestDigest.Or(""), strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
 	if err := tw.Flush(); err != nil {
 		return err
 	}
@@ -916,9 +916,9 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 		defaultID = defaultHarnessConfigID[0]
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED\tEXTENDS")
 	for _, harness := range harnesses {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt), harness.Extends.Or(""))
 	}
 	return tw.Flush()
 }

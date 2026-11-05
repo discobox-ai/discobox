@@ -131,3 +131,9 @@ progress with `requestprogress.Observe`. The server's pool-wait phase is shown
 on the status line while the JSON response is pending; non-interactive status
 goes to stderr, preserving JSON stdout. The console passes its operation
 narration sink through `CredentialUI.Report`, sharing the busy status lifetime.
+
+Harness create and update accept `--extends` as a parent slug or ID, resolving it
+to the API's parent ID. A source update retains account data; `--bundle` detaches
+a variant. List/get expose the relationship, and get exposes effective bundle
+and manifest digests. Console adapters carry the parent into harness selectors
+without borrowing the parent's account state.

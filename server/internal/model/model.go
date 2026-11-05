@@ -365,6 +365,7 @@ type ProjectUserKey = SandboxAccessIssuerKey
 // Every registered config can run (ADR 26-11-02-152 §1); what discoboxes save
 // back to it overlays its bundle's defaults, and Reset removes that overlay.
 type HarnessConfig struct {
+	ExtendsID *string                    `gorm:"column:extends_id;type:text;index" json:"extends,omitempty"`
 	Revision  int64                      `gorm:"not null;default:1" json:"revision"`
 	SaveBack  *harnesscapture.Definition `gorm:"type:text;serializer:json" json:"saveBack,omitempty"`
 	ID        string                     `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
@@ -423,6 +424,16 @@ type HarnessConfig struct {
 
 	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
 	Sandboxes []Sandbox `gorm:"foreignKey:HarnessConfigID" json:"-"`
+}
+
+// InheritBundle deliberately excludes all identity and personal state. Commands
+// are already resolved against the parent's convention (including shell).
+func (a *HarnessConfig) InheritBundle(parent *HarnessConfig) {
+	a.Bundle, a.BundleDigest, a.ManifestDigest = parent.Bundle, parent.BundleDigest, parent.ManifestDigest
+	a.RunCommand, a.RelaunchCommand = parent.RunCommand, parent.RelaunchCommand
+	a.Files, a.Secrets, a.Env = parent.Files, parent.Secrets, parent.Env
+	a.Volumes, a.AdditionalGroups = parent.Volumes, parent.AdditionalGroups
+	a.SaveBack, a.ImageEgressHosts = parent.SaveBack, parent.ImageEgressHosts
 }
 
 func (HarnessConfig) TableName() string { return "harness_configs" }

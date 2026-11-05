@@ -640,9 +640,10 @@ type Pool struct {
 // its own, so the card asks for it when it is opened. See
 // DataSource.HarnessSecrets.
 type Harness struct {
-	ID   string
-	Name string
-	Slug string
+	Parent string
+	ID     string
+	Name   string
+	Slug   string
 
 	// Default is the harness a discobox is created on when nothing says otherwise.
 	Default bool
@@ -771,6 +772,9 @@ func (v HarnessVerb) done(name string) string {
 // run by, or failing both the id, which is the one thing it always has.
 func (h Harness) displayName() string {
 	if name := strings.TrimSpace(h.Name); name != "" {
+		if h.Parent != "" {
+			return name + " (variant of " + h.Parent + ")"
+		}
 		return name
 	}
 	if slug := strings.TrimSpace(h.Slug); slug != "" {

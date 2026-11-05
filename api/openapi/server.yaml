@@ -548,6 +548,9 @@ components:
         HarnessConfig:
             additionalProperties: false
             properties:
+                extends:
+                    type: string
+                    description: ID of the standalone harness config in this project supplying the bundle and its metadata. Account files, personal overrides and secrets remain independent. Supply either bundle or extends when creating or changing the bundle source.
                 saveBack:
                     $ref: '#/components/schemas/HarnessConfigSaveBack'
                     readOnly: true
@@ -802,6 +805,9 @@ components:
         CreateHarnessConfigBody:
             additionalProperties: false
             properties:
+                extends:
+                    type: string
+                    description: ID of the standalone harness config in this project supplying the bundle and its metadata. Account files, personal overrides and secrets remain independent. Supply either bundle or extends when creating or changing the bundle source.
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/CreateHarnessConfigBody.json
@@ -6903,6 +6909,9 @@ components:
             additionalProperties: false
             required: [revision]
             properties:
+                extends:
+                    type: string
+                    description: ID of the standalone harness config in this project supplying the bundle and its metadata. Account files, personal overrides and secrets remain independent. Supply either bundle or extends when creating or changing the bundle source.
                 revision:
                     type: integer
                     format: int64

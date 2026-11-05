@@ -76,6 +76,12 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
+	if input.Bundle.Set && input.Extends.Set {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "supply either bundle or extends, not both")
+	}
+	if input.Extends.Set {
+		return s.createVariant(ctx, projectID, input)
+	}
 	// A harness is its bundle (ADR 26-10-16-423 §2, ADR 26-11-01-122).
 	bundle := strings.TrimSpace(input.Bundle.Or(""))
 	if bundle == "" {
@@ -175,6 +181,12 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 		return nil, apperrors.NewStatusError(http.StatusConflict, "harness configuration changed; reload it before saving")
 	}
 
+	if input.Extends.Set {
+		if input.Bundle.Set || input.Name.Set || input.FileOverrides.Set || input.ConfiguredFiles.Set || input.Egress.Set {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a harness bundle source is changed on its own")
+		}
+		return s.extendConfig(ctx, config, input.Extends.Value)
+	}
 	// A bundle registered for the config is a new manifest, read and written
 	// the way a refresh does. It is registered on its own: the snapshot it
 	// takes rewrites the files and the egress hosts a person would be setting
@@ -193,6 +205,7 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 		if err != nil {
 			return nil, err
 		}
+		config.ExtendsID = nil
 		return s.resnapshot(ctx, config, bundle, metadata)
 	}
 	if nameValue, ok := input.Name.Get(); ok {
@@ -255,6 +268,13 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
+	if config.ExtendsID != nil {
+		parent, err := s.store.GetHarnessConfig(ctx, projectID, *config.ExtendsID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("harness follows %s; refresh that parent instead", parent.Slug))
+	}
 	metadata, err := s.reinspect(ctx, config, config.Bundle)
 	if err != nil {
 		return nil, err
@@ -286,28 +306,16 @@ func (s *Service) reinspect(ctx context.Context, config *model.HarnessConfig, bu
 // resnapshot writes what reinspect read of config's bundle onto it.
 func (s *Service) resnapshot(ctx context.Context, config *model.HarnessConfig, bundle string, metadata imageMetadata) (*model.HarnessConfig, error) {
 	bundle = strings.TrimSpace(bundle)
-	previous := configPins(config)
-	previousHosts := config.ImageEgressHosts
 	config.Bundle, config.BundleDigest = bundle, metadata.BundleDigest
 	splitFileOverrides(config, bundleFiles(metadata))
 	snapshotImageMetadata(config, metadata)
-	// The snapshot and the routes it declares onto configured secrets commit
-	// together, so a failed refresh leaves the old digest for a retry to move.
-	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		if err := txStore.UpdateHarnessConfig(ctx, config); err != nil {
-			return err
-		}
-		if err := s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config); err != nil {
-			return err
-		}
-		return s.markEgressChangedTx(ctx, txStore, txDB, config, !slices.Equal(previousHosts, config.ImageEgressHosts))
-	}); err != nil {
+	if err := s.publishSnapshot(ctx, config); err != nil {
 		return nil, err
 	}
+
 	slog.InfoContext(ctx, "refreshed harness config",
 		"harnessConfigId", config.ID, "bundle", bundle,
-		"previousBundleDigest", previous.bundle, "bundleDigest", metadata.BundleDigest)
-	s.applyResolvedPins(ctx, config.ProjectID, config.ID, previous, configPins(config))
+		"bundleDigest", metadata.BundleDigest)
 	stored, err := s.store.GetHarnessConfig(ctx, config.ProjectID, config.ID)
 	if err != nil {
 		return nil, err
@@ -393,7 +401,7 @@ func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID s
 	}
 	if err := s.store.DeleteHarnessConfig(ctx, projectID, configID, markHolders); err != nil {
 		if errors.Is(err, store.ErrInUse) {
-			return apperrors.NewStatusError(http.StatusConflict, "harness config is in use by a sandbox")
+			return apperrors.NewStatusError(http.StatusConflict, err.Error())
 		}
 		return apperrors.NotFound(err, "harness config not found")
 	}
@@ -469,28 +477,13 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				"harnessConfigId", config.ID, "slug", seed.Slug, "bundle", bundle)
 			continue
 		}
-		previous := configPins(existing)
-		previousHosts := existing.ImageEgressHosts
 		existing.Bundle, existing.BundleDigest = bundle, metadata.BundleDigest
 		splitFileOverrides(existing, bundleFiles(metadata))
 		snapshotImageMetadata(existing, metadata)
-		// As at refresh: the snapshot and its routes commit together, so a
-		// seed that fails leaves the config for the next one to find unequal.
-		if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-			if err := txStore.UpdateHarnessConfig(ctx, existing); err != nil {
-				return err
-			}
-			if err := s.syncConfiguredSecretRoutes(ctx, txStore, txDB, existing); err != nil {
-				return err
-			}
-			return s.markEgressChangedTx(ctx, txStore, txDB, existing, !slices.Equal(previousHosts, existing.ImageEgressHosts))
-		}); err != nil {
+		if err := s.publishSnapshot(ctx, existing); err != nil {
 			return err
 		}
-		slog.InfoContext(ctx, "updated built-in harness config bundle",
-			"harnessConfigId", existing.ID, "slug", seed.Slug, "bundle", bundle,
-			"previousBundleDigest", previous.bundle, "bundleDigest", metadata.BundleDigest)
-		s.applyResolvedPins(ctx, projectID, existing.ID, previous, configPins(existing))
+
 	}
 	return nil
 }

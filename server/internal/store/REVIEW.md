@@ -21,3 +21,8 @@
   creation and purge cleanup. A create authorized before its creator is purged
   can otherwise insert a child after cleanup, leaving a dangling parent. Recheck
   the creator's existence under that lock before inserting.
+
+- Every harness relationship writer, including project copy, takes the project
+  lock through `HarnessConfigsTransaction` before reading the destination parent
+  and inserting or converting its child. A cached parent snapshot can become
+  stale, or its row disappear, before a later unlocked insert commits.
