@@ -1,6 +1,6 @@
 # 26-11-04-074 — Local server discovery is independent of shell temporary directories
 
-- **Status**: Accepted (narrows ADR 0019 §3: an unreachable incumbent may fail startup with a diagnostic; reachable startup and known shutdown handoffs retain their waits)
+- **Status**: Accepted (§1's prohibition on repair narrowed by [26-11-05-240](26-11-05-240-runtime-directory-permission-repair-requires-human-consent.md)) (narrows ADR 0019 §3: an unreachable incumbent may fail startup with a diagnostic; reachable startup and known shutdown handoffs retain their waits)
 - **Date**: 2026-11-04
 
 Accepted by the owner by merging #599, 2026-11-04

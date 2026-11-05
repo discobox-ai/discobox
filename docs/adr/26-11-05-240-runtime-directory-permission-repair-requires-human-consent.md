@@ -1,7 +1,9 @@
 # 26-11-05-240 — Runtime-directory permission repair requires human consent
 
-- **Status**: Proposed (would narrow ADR 26-11-04-074 §1's prohibition on repairing unsafe runtime directories; its private-directory requirement remains)
+- **Status**: Accepted (narrows ADR 26-11-04-074 §1's prohibition on repairing unsafe runtime directories; its private-directory requirement remains)
 - **Date**: 2026-11-05
+
+Accepted by the owner by merging #680, 2026-11-05
 - **Issue**: [#677](https://github.com/discobox-ai/discobox/issues/677)
 
 ## Context
