@@ -1,7 +1,8 @@
 # 26-11-05-814 — Pool outbound proxy is delivered before bootstrap
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-05
+- Accepted by the owner by merging #686, 2026-11-05.
 - **Issue**: [#683](https://github.com/discobox-ai/discobox/issues/683)
 - **Relates to**: 0096 (server configuration), 0020 §§5–7 and
   26-10-01-425 (nested container forwarding). Would narrow 0020 §4's
