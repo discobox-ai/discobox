@@ -91,3 +91,6 @@ both decisions. No live request is submitted at either step.
 
 Two sample credentials are available so the deny-use/edit-delegation path can be
 tried. New credential creation remains a placeholder and cannot be accepted.
+
+Protocol and host now share a heading line (for example `HTTP api.github.com`),
+with the table header immediately below it. The same applies to GraphQL and MCP.

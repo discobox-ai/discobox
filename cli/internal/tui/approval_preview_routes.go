@@ -90,13 +90,11 @@ func previewRouteSection(label string, part *RequestPart) section {
 		}
 		group := rows[start:end]
 		protocol := group[0].protocol
-		if start == 0 || rows[start-1].protocol != protocol {
-			if len(sec.lines) > 0 {
-				sec.lines = append(sec.lines, line{})
-			}
-			sec.lines = append(sec.lines, line{text: protocols[protocol], tone: toneAccent})
+		if len(sec.lines) > 0 {
+			sec.lines = append(sec.lines, line{})
 		}
-		sec.lines = append(sec.lines, line{}, line{text: group[0].host, tone: toneAccent})
+		sec.lines = append(sec.lines, line{text: protocols[protocol] + " " + group[0].host, tone: toneAccent})
+
 		showMethod := protocol == 0 || slices.ContainsFunc(group, func(r previewRouteRow) bool { return r.method != "*" })
 		showEffect := slices.ContainsFunc(group, func(r previewRouteRow) bool { return r.blocked })
 		headers := []string{}
