@@ -693,8 +693,10 @@ read answers both.
 
 **The harness-changes band** (`harness_changes.go`) says the box's harness
 changed its settings or signed in, and that the change can be saved. It is read
-off the listing (`Sandbox.HarnessConfigPending`, `HarnessConfigCandidate`, from
-the box's reported `harnessConfigCandidate`), so it costs no poll. It is green
+off the listing (`Sandbox.HarnessConfigPending`, `HarnessConfigCandidate`). The
+CLI data source checks the reported candidate against a current server preview
+before setting pending; an empty diff suppresses both the band and explainer
+without dismissing the candidate. See [the data-source flow](../cli/DESIGN.md#harness-changes). It is green
 and last: an offer, not a problem, with nothing waiting on it. Its occurrence is
 the candidate, so a dismissal holds until the box captures a different change.
 A press, or leader+`H`, opens the review card, where Save takes it. The card

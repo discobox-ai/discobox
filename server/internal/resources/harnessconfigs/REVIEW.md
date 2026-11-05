@@ -18,3 +18,9 @@
   `io.discobox.image.v1` admits one of them as a bundle. Every image built
   `FROM` `discobox-sandbox-base` inherits `ReclaimLabel`; a bundle is `FROM
   scratch` and carries none. The shared label has misled a check twice.
+
+- Preview reads are observations: use `SandboxObserve`, never `SandboxAction`.
+  The console polls them automatically, and a stale running listing can race
+  a stop; an action would wake the box again.
+- Compare settings without converting JSON numbers to float64. Adjacent large
+  integers can collapse to one float, hiding a real change from the save offer.

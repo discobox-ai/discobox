@@ -319,3 +319,27 @@ func TestTheExplainerWaitsWhileAPromptIsBeingWritten(t *testing.T) {
 		t.Fatalf("dialog = %s, want the explainer once the composer is empty and quiet", describe(m.dialog))
 	}
 }
+
+func TestAnEmptyCurrentHarnessDiffSuppressesBandAndExplainer(t *testing.T) {
+	m, _ := workspaceWithHarnessChanges(t)
+	m.explainHarnessChanges = true
+	for _, pending := range []bool{false, true, false, true} {
+		boxes := m.list.all
+		boxes[0].HarnessConfigPending = pending
+		m.list.setAll(boxes)
+		m.paneBox = boxes[0]
+		want := bannerNone
+		if pending {
+			want = bannerHarnessChanges
+		}
+		if got := m.bannerShowing(); got != want {
+			t.Fatalf("pending=%v banner=%v want=%v", pending, got, want)
+		}
+		if _, got := m.harnessChangesToExplain(); got != pending {
+			t.Fatalf("pending=%v explainer=%v", pending, got)
+		}
+		if len(m.dismissed) != 0 {
+			t.Fatal("checking current diff dismissed the immutable candidate")
+		}
+	}
+}

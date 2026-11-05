@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	api "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 func TestHarnessPreviewEscapesUntrustedDisplayData(t *testing.T) {
@@ -171,5 +173,97 @@ func TestSaveHarnessChangesSendsCandidateOnce(t *testing.T) {
 				t.Fatalf("requests=%d", requests)
 			}
 		})
+	}
+}
+
+// A candidate is immutable, but whether it changes shared state is not. Every
+// listing checks again, without discarding it or recording a dismissal.
+func TestListingChecksHarnessChangesAgainstCurrentSavedState(t *testing.T) {
+	var response atomic.Value
+	response.Store(`{"candidateId":"candidate","harnessConfigId":"harness","configRevision":2,"state":"pending","files":[],"credentials":[]}`)
+	var previews atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+			w.WriteHeader(204)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/harness-config-changes"):
+			previews.Add(1)
+			fmt.Fprint(w, response.Load().(string))
+		case strings.HasSuffix(r.URL.Path, "/sandboxes"):
+			row := listedSandboxJSON(sandboxA, "2026-01-01T00:00:00Z")
+			row = strings.Replace(row, `"generation":1`, `"agentStatus":{"harnessConfigCandidate":"candidate"},"generation":1`, 1)
+			fmt.Fprintf(w, `{"sandboxes":[%s]}`, row)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	client, err := api.NewClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := &apiDataSource{client: client, projectID: "project-1"}
+	for _, tc := range []struct {
+		name, body string
+		pending    bool
+	}{
+		{"bundle upgraded", `"state":"pending","files":[],"credentials":[]`, false},
+		{"shared edit makes candidate relevant", `"state":"pending","files":[{"path":"settings.json","file":{"path":"settings.json","content":"changed"}}],"credentials":[]`, true},
+		{"another box saved", `"state":"pending","files":[],"credentials":[]`, false},
+		{"real credential", `"state":"pending","files":[],"credentials":[{"provider":"fixture","envName":"TOKEN","type":"token"}]`, true},
+		{"handoff pending", `"state":"saved-handoff-pending","files":[],"credentials":[]`, true},
+		{"candidate moved", `"state":"pending","files":[],"credentials":[]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := "candidate"
+			if tc.name == "candidate moved" {
+				candidate = "newer"
+			}
+			response.Store(fmt.Sprintf(`{"candidateId":%q,"harnessConfigId":"harness","configRevision":2,%s}`, candidate, tc.body))
+			listing, err := ds.List(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(listing.Sandboxes) != 1 {
+				t.Fatalf("listing=%+v", listing)
+			}
+			box := listing.Sandboxes[0]
+			if box.HarnessConfigPending != tc.pending || box.HarnessConfigCandidate != "candidate" {
+				t.Fatalf("pending=%v candidate=%q", box.HarnessConfigPending, box.HarnessConfigCandidate)
+			}
+		})
+	}
+	if previews.Load() != 6 {
+		t.Fatalf("previews=%d", previews.Load())
+	}
+}
+
+func TestHarnessOfferDoesNotWakeStoppedBoxesOrSurvivePreviewFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+			w.WriteHeader(204)
+			return
+		}
+		if strings.Contains(r.URL.Path, "stopped") {
+			t.Error("preview woke a stopped box")
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client, err := api.NewClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := &apiDataSource{client: client, projectID: "project-1"}
+	boxes := []tui.Sandbox{{ID: "stopped", State: tui.StateStopped, HarnessConfigCandidate: "candidate"}, {ID: "running", State: tui.StateRunning, HarnessConfigCandidate: "candidate"}}
+	ds.refreshHarnessChanges(context.Background(), boxes)
+	for _, box := range boxes {
+		if box.HarnessConfigPending {
+			t.Fatalf("unverified offer: %+v", box)
+		}
 	}
 }

@@ -17,7 +17,14 @@ the comparison cost the client unbounded memory.
 repeating it retries acknowledgment. `admin harness reconsider` requires explicit
 `--keep-file` and `--replace-credential` selections before creating a new
 candidate against current revisions. `admin harness discard` leaves local files alone.
-The console reports a pending candidate from agent status; `H` opens its review
+The console reads a candidate ID from agent status and checks its current
+server preview on every listing before offering a save. Empty settings diffs
+with no credential changes suppress the band and first-time explainer;
+pending credential handoffs remain visible. The checks run concurrently with
+a bounded deadline and concurrency; failed or mismatched previews offer
+nothing until a later successful check. Stopped boxes are never woken for the
+offer. Nothing is discarded or permanently dismissed by this check, so a
+shared edit can make the same candidate relevant again. `H` opens its review
 card with explicit save and discard actions. CLI previews print the commands for
 the exact displayed candidate and identify diagnostic-only candidates as having
 no saveable changes. Save-back is the only way a harness's settings and
