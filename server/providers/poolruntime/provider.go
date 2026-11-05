@@ -522,6 +522,12 @@ func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, sta
 		}
 		client := newPoolAgentClient(pool, p.manager, lease)
 		runtimeSandbox, created, err := client.Create(waitCtx, ref, state, opts)
+		if lost != nil && ctx.Err() == nil && errors.Is(context.Cause(waitCtx), errPoolWaitExpired) && errors.Is(err, errPoolWaitExpired) {
+			// The recovery budget can expire inside a retry as well as
+			// between attempts. Keep the last unanswered failure as its
+			// explanation, rather than exposing the request's internal URL.
+			return nil, state, poolAgentTransportError("create sandbox on", pool.ID, lost)
+		}
 		if !poolAgentUnanswered(ctx, err) {
 			return runtimeSandbox, created, err
 		}
