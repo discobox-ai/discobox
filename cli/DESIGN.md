@@ -13,7 +13,7 @@ transport helpers where OpenAPI does not model the stream.
 | `cmd/discobox-clipwatch` | The Windows clipboard helper the Linux CLI carries and runs from WSL (`internal/clipwatch`). Windows only. |
 | `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, console API adapter, and the attach transports and policy layered on `pkg/execstream/client`. Staging itself is the root module's `serverstage`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. See [`internal/sandboxcreate/DESIGN.md`](internal/sandboxcreate/DESIGN.md). |
-| `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create and push. |
+| `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create and push; owns Git authentication execution policy and process-tree cancellation for source ref lookup, delivery and lending. |
 | `internal/sandboxpush` | `discobox push`: sending a local source's commits into the origin on its pool that its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 26-09-05-008). |
 | `internal/origin` | Resolves the client host a sandbox is created from, and a directory's project root (its repository root). Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Used by create (ADR 0083). |
@@ -2361,14 +2361,36 @@ The pool also tries each remote anonymously over HTTPS while creating the
 sandbox (ADR 26-10-23-948). A client already holding the commit pushes at once.
 Otherwise it waits for the recorded result: a delivered source needs nothing;
 a failed pull falls back to the client fetch and push. For `needs_credential`,
-`DeliveryOptions` carries consent from an inline or console question, or the explicit
-`run --lend-git-credentials` flag. Only then does `git credential fill` run;
-a successful pull approves the credential, an authentication failure rejects
-it. Interactive consent and Git prompting are serialized across sources;
-the console's narration feed carries the question and hands terminal ownership
-to Git with Bubble Tea's `ExecProcess`. The same UI reaches later attach/start
-and push delivery. Sandbox clients always fetch and push. With no consent,
-nothing is lent.
+`DeliveryOptions` carries the resolved typed `ask`/`lend`/`local` client policy
+(ADR 26-11-04-253). `--git-credentials` overrides machine-wide
+`git.credentials` in `client.yaml`, whose default is `ask`; the deprecated
+`run --lend-git-credentials` input maps true to `lend` and false to `ask`,
+and conflicts with the new flag. The invocation context carries the resolved
+policy through run, attach, start, push and console (including configure and
+one-command windows). Explicit overrides stay fixed until exit; console
+delivering operations reread saved defaults, so revoking saved lend is effective.
+`admin box create` does not consume it. A console's command preview includes
+the effective policy, including an explicit ask override.
+
+At `needs_credential`, ask requires a question callback; without one it fails
+with the configuration path and an attach retry command before invoking any
+helper. Local fetches here; lend runs `git credential fill` and the synchronous
+pool request, approves on success and rejects on authentication failure. Retries
+are finite; an unavailable helper or unfinished pool pull reports its fallback
+to local fetch. Interactive questions and Git prompting are serialized across
+sources. Both frontends explain the highlighted choice before confirmation;
+cancel aborts, and console hover previews without confirming. Sandbox clients
+fetch and push for ask/local and reject lend. The server still refuses lending
+from a sandbox principal.
+
+Noninteractive invocations carry a shared execution policy through ref resolution,
+credential fill and local transfers. `sandboxgit.Command` suppresses terminal,
+askpass and GCM questions and runs SSH in batch mode with strict host-key checking;
+its cancellation kills the Git process tree. Interactive IDE helpers remain intact.
+Lending sends credentials through the control plane and pool for the request;
+it does not narrow or revoke the original credential, and the client's helper
+may save it locally. Server/pool resource intent, cache configuration and stores
+do not save the lent credential.
 Source completion is per slug; the server starts only after all sources arrive.
 
 A local source is delivered out of the `sandboxcreate.LocalSources` that create

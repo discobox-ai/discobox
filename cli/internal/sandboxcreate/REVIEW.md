@@ -19,7 +19,8 @@
   it at once cannot be answered. Turning git's prompt off is not enough: git
   runs an askpass program before it checks that setting (an IDE's terminal
   sets `GIT_ASKPASS` to a dialog), which the prefetch empties (`prefetchEnv`)
-  — and only the prefetch, since a lookup in its turn follows it: for a
+  — and, separately, a noninteractive operation's shared execution policy.
+  Interactive lookups in their turn preserve IDE helpers: for a
   person's own remote an askpass is often how the credential arrives, and
   emptying it in `sandboxgit.NoPromptEnv` broke cache delivery of a private
   https repository from an IDE's terminal; and
@@ -29,5 +30,6 @@
   go through git (`prefetchable`) — judging the URL as written let an https
   GitHub URL rewritten to ssh through — and only a failure to ask is looked up
   again in its turn (`lookInTurn`): retrying every failure waited out a dead
-  host twice. Cache delivery's own concurrent fetches (`cachedeliver.go`)
-  predate this and still run ssh as they find it.
+  host twice. Noninteractive cache delivery uses the same no-question executor, including
+  its best-effort fetch from the pool cache; an expired pool API token can
+  trigger Git askpass there too.

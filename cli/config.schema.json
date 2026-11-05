@@ -4,6 +4,26 @@
   "additionalProperties": false,
   "description": "Configuration for the discobox CLI: what its commands take when the command line does not say. A flag given on the command line wins over the setting it defaults.",
   "properties": {
+    "git": {
+      "additionalProperties": false,
+      "description": "Git authentication choices on this client, across servers and repositories.",
+      "properties": {
+        "credentials": {
+          "default": "ask",
+          "description": "How to answer a private source's pool credential request: ask each time, lend credentials through the control plane to the pool, or fetch locally and send objects. Saving lend authorizes future eligible pulls without another consent question. --git-credentials overrides this machine-wide preference. This is consent, not a forced fetch location; public and cached sources need none.",
+          "enum": [
+            "ask",
+            "lend",
+            "local"
+          ],
+          "type": "string"
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "run": {
       "additionalProperties": false,
       "description": "What discobox run, and the console's New Discobox panel, take when the command line does not say.",

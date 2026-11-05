@@ -51,6 +51,7 @@ const (
 
 // Model is the launcher window.
 type Model struct {
+	gitPolicyGen uint64
 	// reviewEnds counts the files changed sessions being ended in their
 	// discoboxes, which EndReviews waits for (pullreview.go).
 	reviewEnds sync.WaitGroup
@@ -1024,6 +1025,18 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.layout()
 		return reread
 
+	case gitCredentialPolicyMsg:
+		if msg.gen != m.gitPolicyGen {
+			return nil
+		}
+		m.opts.gitPolicyLoading = false
+		m.opts.gitPolicyError = msg.err != nil
+		if msg.err != nil {
+			return m.report(true, "cannot read Git credential preference: %v", msg.err)
+		}
+		m.session.GitCredentials = msg.policy
+		m.opts.session.GitCredentials = msg.policy
+		return nil
 	case sessionLoadedMsg:
 		if msg.err != nil {
 			m.sessionRead = true
@@ -1192,6 +1205,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case tickMsg:
 		cmds := []tea.Cmd{m.reread(), m.tick()}
+		if m.optionsOpen || m.dialog != nil && m.dialog.kind == dlgCreate {
+			cmds = append(cmds, m.refreshGitCredentialPreview())
+		}
 		// Harnesses change when somebody changes them, which is here — so they are
 		// re-read after every action rather than on a clock. The exception is
 		// the screen itself, where a listing going stale under the cursor is
@@ -1950,7 +1966,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if m.optionsOpen {
 			m.harnessesOpen, m.secretsOpen = false, false
 			m.layout()
-			return m.loadPools()
+			return tea.Batch(m.loadPools(), m.refreshGitCredentialPreview())
 		}
 		m.layout()
 		return nil
@@ -2195,6 +2211,7 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "shift+tab":
 		m.optionsOpen = true
+		return m.refreshGitCredentialPreview()
 	case "V":
 		m.list.toggleVisual()
 		if !m.list.visual {
@@ -2912,7 +2929,7 @@ func (m *Model) run() tea.Cmd {
 		return m.closeWindow()
 	}
 	if m.askHowToCreate() {
-		return nil
+		return m.refreshGitCredentialPreview()
 	}
 	return m.runRequest(m.opts.request(m.prompt.Value(), m.opts.opts[optSource].selected()))
 }
@@ -3096,7 +3113,7 @@ func (m *Model) startPendingRun() tea.Cmd {
 		// The window is this run, so leaving it any way at all before the
 		// card is answered — Ctrl-C included — is leaving with nothing made.
 		m.exitErr = errNothingCreated
-		return nil
+		return m.refreshGitCredentialPreview()
 	}
 	m.pendingRun = nil
 	return m.runRequest(req)
@@ -5131,4 +5148,22 @@ func sandboxLabel(sandbox Sandbox) string {
 		return name
 	}
 	return sandbox.ID
+}
+
+type gitCredentialPolicyMsg struct {
+	gen    uint64
+	policy string
+	err    error
+}
+
+// Refresh only consent defaults; replaying Session would reset the draft,
+// filters and options that the person is editing.
+func (m *Model) refreshGitCredentialPreview() tea.Cmd {
+	m.gitPolicyGen++
+	gen := m.gitPolicyGen
+	m.opts.gitPolicyLoading = true
+	return func() tea.Msg {
+		policy, err := m.ds.GitCredentialPolicy(m.ctx)
+		return gitCredentialPolicyMsg{gen: gen, policy: policy, err: err}
+	}
 }

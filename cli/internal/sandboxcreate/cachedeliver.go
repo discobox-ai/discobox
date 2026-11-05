@@ -267,7 +267,7 @@ func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSou
 		// fetch and not a sandbox's, and worth nothing but bytes saved, so a
 		// refusal is not a failure.
 		if poolURL, err := sandboxgit.CacheRemoteURL(d.serverURL, d.projectID, d.sandboxID, source); err == nil {
-			_, _ = gitutil.Output(ctx, cache, nil, sandboxgit.NoPromptEnv,
+			_, _ = sandboxgit.Output(ctx, cache, nil, sandboxgit.NoPromptEnv,
 				sandboxgit.AuthArgs(d.token, []string{"fetch", "--quiet", "--no-tags", poolURL, poolTrackingRefspec})...)
 		}
 		if err := fetchRemote(ctx, cache, remote, commit, d.report); err != nil {
@@ -492,7 +492,7 @@ func refsUnder(ctx context.Context, repoRoot, prefix string) (map[string]string,
 // in a source's namespace — branches under remoteTrackingPrefix, tags under
 // their own names — and, for each annotated tag, the commit it peels to.
 func listRemote(ctx context.Context, remote string) (refs, peeled map[string]string, err error) {
-	out, err := gitutil.Output(ctx, "", nil, sandboxgit.NoPromptEnv, "ls-remote", "--", remote)
+	out, err := sandboxgit.Output(ctx, "", nil, sandboxgit.NoPromptEnv, "ls-remote", "--", remote)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -571,7 +571,7 @@ func fetchRemote(ctx context.Context, cache, remote, commit string, report Repor
 	}
 	// Pinned at a commit no branch or tag reaches now: the remote is asked
 	// for it by name.
-	if _, err := gitutil.Output(ctx, cache, nil, sandboxgit.NoPromptEnv, "fetch", "--quiet", "--no-tags", remote, commit); err != nil {
+	if _, err := sandboxgit.Output(ctx, cache, nil, sandboxgit.NoPromptEnv, "fetch", "--quiet", "--no-tags", remote, commit); err != nil {
 		return fmt.Errorf("the remote no longer has commit %s: %w", commit, err)
 	}
 	return nil

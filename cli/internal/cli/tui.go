@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/cli/internal/origin"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
@@ -413,7 +414,13 @@ func (d *apiDataSource) waitForPushes(out io.Writer) {
 // Session is what the header, the origin filter and the run options are drawn
 // from: where the window is running and what the project offers.
 func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
+	ctx, err := resolveGitCredentials(ctx)
+	if err != nil {
+		return tui.Session{}, err
+	}
+	policy, _ := sandboxcreate.GitCredentialPolicy(ctx)
 	session := tui.Session{
+		GitCredentials: string(policy),
 		Project:        d.projectID,
 		DefaultProject: defaultProjectAlias,
 	}
@@ -1232,6 +1239,10 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, war
 
 // create is Run on this data source's own server.
 func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func(tui.Sandbox)) (tui.Sandbox, error) {
+	ctx, err := resolveGitCredentials(ctx)
+	if err != nil {
+		return tui.Sandbox{}, err
+	}
 	opts := sandboxcreate.PromptOptions{
 		Source:   strings.TrimSpace(req.Source),
 		NoSource: req.NoSource,
@@ -1246,7 +1257,6 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	}
 	// A Skills or User skills row left alone is nil, so what client.yaml says
 	// stands; one that was set, or `discobox run`'s own flags, replace it.
-	var err error
 	if opts.SkillDirs, opts.UserSkills, err = newSkills(req.SkillDirs, req.UserSkills); err != nil {
 		return tui.Sandbox{}, err
 	}
@@ -1318,13 +1328,13 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	// A server that cannot reach this directory waits for us to push it.
 	gitServerURL, releaseGitServerURL, err := d.app.gitServerURL(ctx)
 	if err != nil {
-		return made, err
+		return made, fmt.Errorf("discobox %s is awaiting source; retry with %s: %w", sandbox.ID, d.app.sourceRetryCommand(d.projectID, sandbox.ID), err)
 	}
-	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token, step, sandboxcreate.DeliveryOptions{LendCredentials: req.LendGitCredentials, ConfirmCredential: req.Credentials.Confirm, RunCredential: req.Credentials.Run})
+	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token, step, tuiCredentialDeliveryOptions(ctx, req.Credentials))
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
-		return made, err
+		return made, fmt.Errorf("discobox %s is awaiting source; retry with %s: %w", sandbox.ID, d.app.sourceRetryCommand(d.projectID, sandbox.ID), err)
 	}
 	if report != nil {
 		report("syncing SSH config")
@@ -1355,8 +1365,12 @@ func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string,
 // DeliverSource delivers the source a parked discobox is waiting for before
 // the workspace attaches to it (ADR 26-09-24-005); see deliverBeforeAttach.
 func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, report func(string), credentials tui.CredentialUI) error {
+	ctx, err := resolveGitCredentials(ctx)
+	if err != nil {
+		return err
+	}
 	d = d.at(sandboxID)
-	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, report, sandboxcreate.DeliveryOptions{ConfirmCredential: credentials.Confirm, RunCredential: credentials.Run})
+	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, report, tuiCredentialDeliveryOptions(ctx, credentials))
 }
 
 // Do runs a lifecycle verb against one sandbox. These go straight to the API
@@ -1367,7 +1381,12 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string,
 	ctx = requestprogress.Observe(ctx, credentials.Report)
 	switch verb {
 	case tui.VerbStart:
-		delivered, err := d.app.deliverInsteadOfStart(ctx, d.client, d.projectID, sandboxID, nil, sandboxcreate.DeliveryOptions{ConfirmCredential: credentials.Confirm, RunCredential: credentials.Run})
+		var err error
+		ctx, err = resolveGitCredentials(ctx)
+		if err != nil {
+			return "", err
+		}
+		delivered, err := d.app.deliverInsteadOfStart(ctx, d.client, d.projectID, sandboxID, nil, tuiCredentialDeliveryOptions(ctx, credentials))
 		if err != nil || delivered {
 			return "", err
 		}
@@ -1628,4 +1647,22 @@ func (d *apiDataSource) RunHostTool(ctx context.Context, sandboxID, toolID strin
 	target := toolTarget{app: d.app, client: d.client, projectID: d.projectID, sandboxID: sandboxID}
 	silent := noteFunc(func(string, ...any) {})
 	return d.app.runHostTool(ctx, def, target, "", nil, strings.NewReader(""), io.Discard, io.Discard, silent)
+}
+
+func tuiCredentialDeliveryOptions(ctx context.Context, ui tui.CredentialUI) sandboxcreate.DeliveryOptions {
+	policy, path := sandboxcreate.GitCredentialPolicy(ctx)
+	options := sandboxcreate.DeliveryOptions{Credentials: policy, ConfigPath: path}
+	if !sandboxgit.Noninteractive(ctx) {
+		options.ConfirmCredential, options.RunCredential = ui.Confirm, ui.Run
+	}
+	return options
+}
+
+func (d *apiDataSource) GitCredentialPolicy(ctx context.Context) (string, error) {
+	ctx, err := resolveGitCredentials(ctx)
+	if err != nil {
+		return "", err
+	}
+	policy, _ := sandboxcreate.GitCredentialPolicy(ctx)
+	return string(policy), nil
 }

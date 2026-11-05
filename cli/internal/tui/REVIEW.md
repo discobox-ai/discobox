@@ -344,3 +344,8 @@
   credential constraint list, without flattening them; showing only the first
   list hides a live ceiling. Keep the selected scope through create-and-approve
   as well as ordinary approval.
+
+- Refresh a mutable client preference used by a command preview separately
+  from the initial Session. Replaying sessionLoaded restores drafts and filters
+  over current edits; freezing saved Git consent left a preview authorizing
+  lend after the delivery had correctly reread a revoked preference.

@@ -349,10 +349,11 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	// rather than on a push nobody is making (ADR 26-09-24-005).
 	delivering := newStatusLine(stderr, a.color)
 	ui := &cobra.Command{}
+	ui.SetContext(ctx)
 	ui.SetIn(stdin)
 	ui.SetOut(stdout)
 	ui.SetErr(stderr)
-	err = a.deliverBeforeAttach(ctx, apiClient, projectID, sandboxID, delivering.set, credentialDeliveryOptions(ui, delivering, false))
+	err = a.deliverBeforeAttach(ctx, apiClient, projectID, sandboxID, delivering.set, credentialDeliveryOptions(ui, delivering))
 	delivering.clear()
 	if err != nil {
 		return err

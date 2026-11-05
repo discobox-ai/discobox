@@ -439,13 +439,13 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// A server that cannot reach this directory waits for us to push it.
 	gitServerURL, releaseGitServerURL, err := a.gitServerURL(cmd.Context())
 	if err != nil {
-		return err
+		return fmt.Errorf("discobox %s is awaiting source; retry with %s: %w", sandbox.ID, a.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
-	err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report, credentialDeliveryOptions(cmd, status, opts.lendGitCredentials))
+	err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report, credentialDeliveryOptions(cmd, status))
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
-		return err
+		return fmt.Errorf("discobox %s is awaiting source; retry with %s: %w", sandbox.ID, a.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
 	// Still under the status line, and named on it: the sync generates a key,
 	// enrolls it and rewrites two files, which is a wait like any other and the
@@ -471,7 +471,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 // --from-json to check against.
 func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags := pflag.NewFlagSet("run", pflag.ContinueOnError)
-	flags.BoolVar(&opts.lendGitCredentials, "lend-git-credentials", false, "Allow lending Git HTTPS credentials to the pool for one source pull")
+	flags.BoolVar(&opts.lendGitCredentials, "lend-git-credentials", false, "Deprecated: use --git-credentials=lend (false means ask)")
 
 	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after SOURCE")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
@@ -751,7 +751,7 @@ func warningLine(warning string) string {
 // open one.
 func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.RunRequest {
 	req := tui.RunRequest{
-		LendGitCredentials:  opts.lendGitCredentials,
+
 		Prompt:              prompt,
 		Source:              opts.source,
 		NoSource:            opts.noSource,

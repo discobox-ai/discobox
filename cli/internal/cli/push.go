@@ -319,7 +319,7 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 	status := newStatusLine(cmd.ErrOrStderr(), a.color)
 	defer status.clear()
 	step := func(step sandboxcreate.Step) { status.set(string(step)) }
-	sources, err := a.deliverParkedSource(ctx, client, projectID, sandbox, pending, hostID, gitServerURL, dirOverrides, step, credentialDeliveryOptions(cmd, status, false))
+	sources, err := a.deliverParkedSource(ctx, client, projectID, sandbox, pending, hostID, gitServerURL, dirOverrides, step, credentialDeliveryOptions(cmd, status))
 	status.clear()
 	if err != nil {
 		return err

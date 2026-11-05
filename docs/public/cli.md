@@ -31,6 +31,7 @@ discobox [flags]
 | --- | --- | --- | --- |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --help, -h | bool | false | help for discobox Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
@@ -4002,6 +4003,7 @@ Examples:
 | --- | --- | --- | --- |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --help, -h | bool | false | help for attach Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --raw | bool | false | Attach this terminal straight to the discobox's primary terminal instead of opening the window on the discobox Value when passed without an argument: true. |
@@ -4108,6 +4110,7 @@ Examples:
 | --- | --- | --- | --- |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --help, -h | bool | false | help for configure Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
@@ -4170,6 +4173,7 @@ Examples:
 | --- | --- | --- | --- |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --help, -h | bool | false | help for console Value when passed without an argument: true. |
 | --leader, -l | string |  | Prefix key for the terminal pane's own commands: a letter taken as Ctrl-that (e.g. -l b for Ctrl-B), or ctrl+ or alt+ one (e.g. -l alt+g for Alt-G); defaults to DISCOBOX_LEADER, then a |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
@@ -4515,6 +4519,7 @@ discobox push [DISCOBOX] [flags]
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --dir | stringArray | [] | Local directory to push a source from, as slug=path; required for a source with no known local directory on this machine |
 | --force | bool | false | Push even if the origin has moved since this machine last pushed, or holds an unrelated history Value when passed without an argument: true. |
+| --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --help, -h | bool | false | help for push Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
@@ -4884,11 +4889,12 @@ Examples:
 | --discobox-api | bool | false | Let the new discobox call the discobox API through its pool, acting only on the discoboxes it leads. A discobox creating one may set it only when it has it itself Value when passed without an argument: true. |
 | --env, -e | stringArray | [] | Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable |
 | --from-json | bool | false | Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON Value when passed without an argument: true. |
+| --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --harness, -H | string |  | Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default |
 | --help, -h | bool | false | help for run Value when passed without an argument: true. |
 | --include, -i | stringArray | [] | Additional source to bring into the discobox, DIR, URL or GitHub OWNER/REPO, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo |
 | --include-dirty | bool | false | Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says Value when passed without an argument: true. |
-| --lend-git-credentials | bool | false | Allow lending Git HTTPS credentials to the pool for one source pull Value when passed without an argument: true. |
+| --lend-git-credentials | bool | false | Deprecated: use --git-credentials=lend (false means ask) Value when passed without an argument: true. |
 | --no-project-skills | bool | false | Leave the project's skills repositories (discobox admin skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name Value when passed without an argument: true. |
 | --no-source | bool | false | Create the discobox with nothing checked out in it, in place of SOURCE, so every argument is the prompt; the directory you run in still decides where it is filed and what Git authorship it commits under Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
@@ -5603,6 +5609,7 @@ Examples:
 | --- | --- | --- | --- |
 | --color | WHEN | auto | set color &#96;WHEN&#96; to auto, always, or never |
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
+| --git-credentials | strategy |  | Git credential &#96;strategy&#96;: ask, lend, or local; overrides git.credentials in client.yaml (default ask) |
 | --help, -h | bool | false | help for start Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |

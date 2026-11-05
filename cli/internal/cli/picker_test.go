@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -534,5 +535,37 @@ func TestPickOneWithNoCandidatesFails(t *testing.T) {
 	})
 	if err == nil || err.Error() != "nothing here" {
 		t.Fatalf("pickOne err = %v, want the empty label", err)
+	}
+}
+
+func TestCredentialPickerFitsSmallTerminalAndExplainsBeforeSelection(t *testing.T) {
+	m := newPickerModel("forge.example/long/repository.git needs credentials", []pickerItem{{id: "lend", title: sandboxcreate.GitLendLabel, explanation: sandboxcreate.GitLendExplanation}, {id: "local", title: sandboxcreate.GitLocalLabel, explanation: sandboxcreate.GitLocalExplanation}}, "")
+	m.width, m.height = 40, 18
+	view := m.View().Content
+	if lipgloss.Height(view) > 18 {
+		t.Fatalf("picker height=%d exceeds terminal: %s", lipgloss.Height(view), view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if ansi.StringWidth(line) > 40 {
+			t.Fatalf("picker exceeds terminal: %q", line)
+		}
+	}
+	if !strings.Contains(view, "Git's credential") {
+		t.Fatalf("initial explanation absent: %s", view)
+	}
+	for range 100 {
+		m.updateKey(tea.KeyPressMsg{Code: tea.KeyPgDown})
+		view = m.View().Content
+	}
+	if !strings.Contains(view, "pool with it") {
+		t.Fatalf("cannot read explanation end: %s", view)
+	}
+
+	m.updateKey(tea.KeyPressMsg{Code: tea.KeyDown})
+	if view := m.View().Content; !strings.Contains(view, "This machine authenticates") {
+		t.Fatalf("local explanation absent: %s", view)
+	}
+	if m.chosen >= 0 {
+		t.Fatal("preview confirmed selection")
 	}
 }

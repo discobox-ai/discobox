@@ -2200,3 +2200,7 @@ func (f *fakeSource) DecideAdoptionRequest(_ context.Context, server, requestID 
 	f.dropRequestLocked(requestID)
 	return nil
 }
+
+func (f *fakeSource) GitCredentialPolicy(context.Context) (string, error) {
+	return f.session.GitCredentials, nil
+}
