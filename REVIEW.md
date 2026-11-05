@@ -169,5 +169,7 @@ Global review expectations:
 - Default Unix socket privacy covers both ownership/mode bits and effective
   ACL grants, including ancestors that could allow replacement. Darwin evaluates
   ACL allow entries before mode bits: mode 0700 alone can still expose a moved
-  socket under shared `/tmp`. Reject unsafe directories rather than repairing
-  permissions or trusting their listeners.
+  socket under shared `/tmp`. Reject unsafe directories before contacting listeners. Only the CLI may
+  offer mode-only repair of eligible user-owned runtime directories after fresh,
+  explicit human consent (ADR 26-11-05-240). Recheck the complete descriptor-walked
+  path after consent; ownership, symlinks and ACL refusals cannot be overridden.

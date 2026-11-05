@@ -142,6 +142,9 @@ while this runs recreates what it deletes.`,
 }
 
 func (a *App) uninstall(cmd *cobra.Command) error {
+	if err := a.prepareRuntimeDirectories(cmd); err != nil {
+		return err
+	}
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	plan := a.planUninstall(ctx)

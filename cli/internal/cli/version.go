@@ -69,6 +69,9 @@ func (a *App) printVersion(cmd *cobra.Command) error {
 	if _, err := fmt.Fprintf(out, "client version %s\n", version.String()); err != nil {
 		return err
 	}
+	if err := a.prepareRuntimeDirectories(cmd); err != nil {
+		return err
+	}
 	_, err := fmt.Fprintf(out, "server version %s\n", a.serverVersion(cmd.Context()))
 	return err
 }

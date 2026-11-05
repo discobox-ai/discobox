@@ -202,6 +202,9 @@ See "%[1]s run --help" for everything run takes.`, name),
 			if err := app.resolveServerName(serverChosen(cmd)); err != nil {
 				return err
 			}
+			if runtimePreparationNeeded(cmd) {
+				return app.prepareRuntimeDirectories(cmd)
+			}
 			return nil
 		},
 		// The words a bare `discobox` is given are refused, so nothing below

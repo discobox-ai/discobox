@@ -45,3 +45,28 @@ func TestDefaultSocketRejectsDarwinACLGrants(t *testing.T) {
 		})
 	}
 }
+
+func TestRuntimeDirectoryRepairDarwinACLChanged(t *testing.T) {
+	_, child := repairTree(t)
+	if err := os.Chmod(child, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.CommandContext(t.Context(), "/bin/chmod", "+a", "everyone deny delete", child).CombinedOutput(); err != nil {
+		t.Fatalf("set ACL: %v: %s", err, output)
+	}
+	plan, err := InspectRuntimeDirectories(DefaultEndpoint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if output, err := exec.CommandContext(t.Context(), "/bin/chmod", "-N", child).CombinedOutput(); err != nil {
+		t.Fatalf("remove ACL: %v: %s", err, output)
+	}
+	if err := plan.Repair(); err == nil {
+		t.Fatal("changed deny-only ACL accepted")
+	}
+	st, _ := os.Stat(child)
+	if st.Mode().Perm() != 0755 {
+		t.Fatal("changed tree was repaired")
+	}
+}
