@@ -580,6 +580,9 @@ func (s *Service) PrepareSandboxBindings(ctx context.Context, projectID string, 
 		}
 		if !byDiscobox || named {
 			if err := guardBindingTTL(secret, ttl); err != nil {
+				if byDiscobox {
+					return SandboxBindings{}, apperrors.NewStatusError(http.StatusForbidden, "the requested lifetime exceeds the secret's limit")
+				}
 				return SandboxBindings{}, err
 			}
 		}
@@ -601,16 +604,21 @@ func StoreSandboxBindingsTx(ctx context.Context, txStore *store.Store, prepared 
 	for i, binding := range prepared.Bindings {
 		ttl := prepared.ttls[i]
 		if prepared.Grantor != "" {
-			parent, err := heldParent(ctx, txStore, binding.ProjectID, prepared.Grantor, binding.SecretID, prepared.Parents[i], now)
+			if err := lockHandoff(ctx, txStore, binding.ProjectID, prepared.Grantor, binding.TargetID); err != nil {
+				return err
+			}
+			if err := binding.BeforeCreate(nil); err != nil {
+				return err
+			}
+			_, fitted, err := fitDelegation(ctx, txStore, prepared.Grantor, binding, prepared.Parents[i], ttl, prepared.named[i])
 			if err != nil {
 				return err
 			}
-			if ttl, err = fitToParent(parent, ttl, prepared.named[i], now); err != nil {
-				return err
-			}
-			binding.ParentID = parent.ID
+			ttl = fitted
 		}
-		binding.ExpiresAt = expiryAt(now, ttl)
+		if prepared.Grantor == "" {
+			binding.ExpiresAt = expiryAt(now, ttl)
+		}
 		if err := txStore.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: prepared.Actor}); err != nil {
 			return bindingConflict(err)
 		}

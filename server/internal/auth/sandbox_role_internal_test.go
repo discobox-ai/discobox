@@ -425,3 +425,16 @@ func TestAdoptionAwayRevokesCreatorAndRestrictedParentCanRelease(t *testing.T) {
 		}
 	}
 }
+
+func TestSandboxRoleAddressesOnlyLedBindingTargets(t *testing.T) {
+	checkRole(t, []roleCase{
+		{"grant to child", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-worker/secret-bindings", 200},
+		{"unled target", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-persons/secret-bindings", 403},
+		{"self", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-lead/secret-bindings", 403},
+		{"grandchild", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-noapi-child/secret-bindings", 403},
+		{"body cannot choose project target", roleLead, http.MethodPost, "/projects/default/secret-bindings", 403},
+		{"binding list private", roleLead, http.MethodGet, "/projects/default/secret-bindings?target=sbx-worker", 403},
+		{"binding get private", roleLead, http.MethodGet, "/projects/default/secret-bindings/bind-granted", 403},
+		{"cross project", roleLead, http.MethodPost, "/projects/elsewhere/sandboxes/sbx-worker/secret-bindings", 403},
+	})
+}

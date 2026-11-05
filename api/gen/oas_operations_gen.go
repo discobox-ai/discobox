@@ -32,6 +32,7 @@ const (
 	CreateSandboxCredentialRequestOperation        OperationName = "CreateSandboxCredentialRequest"
 	CreateSandboxExecOperation                     OperationName = "CreateSandboxExec"
 	CreateSandboxProviderInstanceOperation         OperationName = "CreateSandboxProviderInstance"
+	CreateSandboxSecretBindingOperation            OperationName = "CreateSandboxSecretBinding"
 	CreateSandboxTrustRequestOperation             OperationName = "CreateSandboxTrustRequest"
 	CreateSecretOperation                          OperationName = "CreateSecret"
 	CreateSecretBindingOperation                   OperationName = "CreateSecretBinding"

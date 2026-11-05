@@ -2193,3 +2193,7 @@ func (f *fakeSource) DecideAdoptionRequest(_ context.Context, server, requestID 
 func (f *fakeSource) GitCredentialPolicy(context.Context) (string, error) {
 	return f.session.GitCredentials, nil
 }
+
+func (f *fakeSource) BindingHistory(context.Context, string, string) ([]BindingDecision, error) {
+	return nil, nil
+}

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -173,7 +175,9 @@ func TestACreatesBindingsAreHeldToTheirDelegation(t *testing.T) {
 	if _, err := svc.DeleteSecretBinding(ctx, "project-1", parent.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := resourcesecrets.StoreSandboxBindingsTx(ctx, st, prepared); !isStatus(err, http.StatusForbidden) {
+	if err := st.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		return resourcesecrets.StoreSandboxBindingsTx(ctx, txStore, prepared)
+	}); !isStatus(err, http.StatusForbidden) {
 		t.Fatalf("store after the delegation went = %v, want 403", err)
 	}
 }
@@ -365,5 +369,24 @@ func TestABoundSecretLapsesWithItsParent(t *testing.T) {
 	bound, err := svc.ListBoundSecrets(ctx, "project-1", model.SecretBindingTargetSandbox, testSandboxID)
 	if err != nil || len(bound) != 1 || bound[0].ExpiresAt == nil || !bound[0].ExpiresAt.Equal(sooner) {
 		t.Fatalf("bound = %+v, %v; want it lapsing with its parent at %v", bound, err, sooner)
+	}
+}
+
+func TestALeadDirectlyBindsWithinItsDelegation(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	mustBindAs(t, st, &model.SecretBinding{
+		SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox,
+		TargetID: leadID, Delegate: true,
+	})
+	_, err := svc.CreateSandboxSecretBinding(asLead(), "project-1", testSandboxID, services.CreateSandboxSecretBindingBody{
+		Secret:     secret.ID,
+		EnvVar:     serverapi.NewOptString("GH_TOKEN"),
+		Routes:     []serverapi.SecretRouteInput{{Hosts: []string{"github.com"}}},
+		TtlSeconds: serverapi.NewOptInt64(60),
+	})
+	if err != nil {
+		t.Fatalf("bind within the lead's delegation: %v; want success", err)
 	}
 }

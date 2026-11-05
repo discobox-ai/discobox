@@ -97,7 +97,7 @@ func (s *Store) UpdateSecretBinding(ctx context.Context, binding *model.SecretBi
 		binding.UpdatedAt = time.Now().UTC()
 		result := tx.Model(&model.SecretBinding{}).
 			Where("project_id = ? AND id = ?", binding.ProjectID, binding.ID).
-			Select("routes", "expires_at", "env_name", "use", "delegate", "raw", "updated_at").
+			Select("routes", "expires_at", "env_name", "use", "delegate", "raw", "receipt", "updated_at").
 			Updates(binding)
 		if result.Error != nil {
 			return result.Error
@@ -271,6 +271,16 @@ func (s *Store) DeleteSecretBinding(ctx context.Context, projectID, bindingID st
 // deleteBindingTreeTx deletes binding and its children, an event each, and
 // returns them. The children go as the system's, caused by their parent.
 func deleteBindingTreeTx(tx *gorm.DB, binding *model.SecretBinding, event string, change BindingChange) ([]model.SecretBinding, error) {
+	// Lock before reading children: handoff holds this same row through insert.
+	var current model.SecretBinding
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND id = ?", binding.ProjectID, binding.ID).First(&current).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	binding = &current
+
 	var children []model.SecretBinding
 	if err := tx.Where("project_id = ? AND parent_id = ?", binding.ProjectID, binding.ID).Find(&children).Error; err != nil {
 		return nil, err

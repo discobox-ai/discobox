@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -135,7 +136,7 @@ routes. Editing a file does not change an existing binding. Blocked routes
 participate across the merged list under the usual specificity rules.
 
 --delegate lets the discobox give the secret, to use, to the discoboxes it
-creates: by answering their requests, or when it creates them. With --as as
+leads: by answering their requests, binding directly, or when it creates them. With --as as
 well, it uses the secret too; without, it is delivered nothing itself.
 
 For one discobox and one variable, the narrowest binding wins: a discobox's own
@@ -195,6 +196,27 @@ over its harness config's, and that over the project's.
 			}
 			if seconds, given := lasts.Seconds(); given {
 				body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
+			}
+			if app.usesSandboxRole() {
+				if t.kind != apiclientgen.CreateSecretBindingBodyTargetKindSandbox {
+					return fmt.Errorf("a discobox binds only to a discobox it leads")
+				}
+				if delegate || raw.set {
+					return fmt.Errorf("a discobox grants sentinel use only")
+				}
+				grant := &apimodel.CreateSandboxSecretBindingBody{Secret: body.Secret, EnvVar: body.EnvVar, Use: body.Use, Routes: body.Routes, TtlSeconds: body.TtlSeconds}
+				res, err := client.CreateSandboxSecretBinding(cmd.Context(), grant, apiclientgen.CreateSandboxSecretBindingParams{ProjectId: projectID, SandboxId: t.ref})
+				if err != nil {
+					return err
+				}
+				receipt, err := expectResponse[apimodel.SecretGrantReceipt](res)
+				if err != nil {
+					return err
+				}
+				if app.output == "json" {
+					return writeJSON(cmd.OutOrStdout(), receipt)
+				}
+				return writeGrantReceipt(cmd.OutOrStdout(), *receipt)
 			}
 			res, err := client.CreateSecretBinding(cmd.Context(), body, apiclientgen.CreateSecretBindingParams{ProjectId: projectID})
 			if err != nil {
@@ -581,6 +603,22 @@ func routeListsText(lists [][]apimodel.SecretRoute) string {
 func (a *App) defaultBindingVariable(ctx context.Context, client *apiclientgen.Client, projectID, secret string) (string, error) {
 	name := strings.TrimSpace(secret)
 	if idpkg.IsGenerated(name) {
+		if a.usesSandboxRole() {
+			res, err := client.ListSecrets(ctx, apiclientgen.ListSecretsParams{ProjectId: projectID})
+			if err != nil {
+				return "", err
+			}
+			listed, err := expectResponse[apimodel.ListSecretsBody](res)
+			if err != nil {
+				return "", err
+			}
+			for _, secret := range listed.Secrets {
+				if secret.ID == name {
+					return secretenv.Name(secret.Name), nil
+				}
+			}
+			return "", fmt.Errorf("no delegable secret %q", secret)
+		}
 		found, err := a.getSecret(ctx, client, projectID, name)
 		if err != nil {
 			return "", err
@@ -619,4 +657,25 @@ func (v *policyValue) Set(value string) error {
 		return v.references.Argument(value)
 	}
 	return v.references.Add(value)
+}
+
+// usesSandboxRole identifies the pool-forwarded API endpoint. Other servers,
+// including ones reached from inside a box, retain the person's preview.
+func (a *App) usesSandboxRole() bool {
+	u, err := url.Parse(a.serverURL)
+	return err == nil && strings.EqualFold(u.Hostname(), "api.discobox.internal")
+}
+
+func writeGrantReceipt(w io.Writer, r apimodel.SecretGrantReceipt) error {
+	fmt.Fprintf(w, "Granted %s to %s in %s (binding %s)\n", terminalSafe(r.SecretName), terminalSafe(r.SandboxId), terminalSafe(r.EnvVar), terminalSafe(r.BindingId))
+	fmt.Fprintf(w, "Approved by %s at %s; delegation %s\n", terminalSafe(r.Actor), formatTime(r.At), terminalSafe(r.ParentId))
+	for _, list := range r.RouteLists {
+		fmt.Fprintf(w, "Within: %s\n", routesText(list))
+	}
+	expiry := "forever"
+	if at, ok := r.ExpiresAt.Get(); ok {
+		expiry = formatTime(at)
+	}
+	_, err := fmt.Fprintf(w, "Expires: %s\n", expiry)
+	return err
 }

@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -580,5 +582,57 @@ func TestApprovalScopesAreIndependentAndRejectConflictingFlags(t *testing.T) {
 	answer.delegateScope = scopeFlag{value: "hosts"}
 	if _, err := approvalBody(request, answer); err == nil {
 		t.Fatal("scope on denied delegate accepted")
+	}
+}
+
+func TestSandboxApprovalNeedsNoChildBindingReads(t *testing.T) {
+	const receipt = `{"bindingId":"bind_1","requestId":"sreq_1","secretId":"sec_1","secretName":"github","sandboxId":"sbx_child","envVar":"GH_TOKEN","parentId":"bind_parent","actor":"sbx_lead","at":"2026-11-05T00:00:00Z","routeLists":[[{"hosts":["api.github.com"]}]]}`
+	asked := pendingRequestJSON("sreq_1", "use")
+	posted := false
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		w := httptest.NewRecorder()
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /projects/project-1/secret-requests":
+			fmt.Fprintf(w, `{"secretRequests":[%s]}`, asked)
+		case "GET /projects/project-1/secret-requests/sreq_1":
+			fmt.Fprint(w, asked)
+		case "GET /projects/project-1/secrets":
+			fmt.Fprint(w, `{"secrets":[`+bindTestSecretJSON+`]}`)
+		case "POST /projects/project-1/secret-requests/sreq_1/approve":
+			posted = true
+			fmt.Fprintf(w, `{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"approved","use":{"outcome":"approved","bindingId":"bind_1","receipt":%s},"createdAt":"2026-11-05T00:00:00Z","updatedAt":"2026-11-05T00:00:00Z"}`, receipt)
+		default:
+			t.Errorf("forbidden or unexpected read: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(403)
+		}
+		return w.Result(), nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = original })
+	out, err := runBindCommand(t, &httptest.Server{URL: "https://api.discobox.internal"}, "request", "approve", "sreq_1", "--secret", "github")
+	if err != nil || !posted || !strings.Contains(out, "Approved by sbx_lead") || !strings.Contains(out, "bind_parent") {
+		t.Fatalf("posted=%v output=%q err=%v", posted, out, err)
+	}
+}
+
+func TestHistoryKeepsEventAndGrantAttributionSeparate(t *testing.T) {
+	const body = `{"secretBindingEvents":[{"id":"event_1","projectId":"project-1","bindingId":"bind_1","actor":"person_later","event":"updated","at":"2026-11-06T00:00:00Z","binding":{"id":"bind_1","projectId":"project-1","secretId":"sec_1","targetKind":"sandbox","targetId":"sbx_child","use":true,"delegate":false,"createdAt":"2026-11-05T00:00:00Z","updatedAt":"2026-11-06T00:00:00Z","receipt":{"bindingId":"bind_1","secretId":"sec_1","secretName":"github","sandboxId":"sbx_child","envVar":"GH","parentId":"bind_parent","actor":"sbx_original","at":"2026-11-05T00:00:00Z","routeLists":[[{"hosts":["api.github.com"]}]]}}} ]}`
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, body)
+	}))
+	defer server.Close()
+	client, err := apiclientgen.NewClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := &apiDataSource{client: client, projectID: "project-1"}
+	history, err := ds.BindingHistory(context.Background(), "", "sec_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Actor != "person_later" || history[0].At.Day() != 6 || history[0].GrantedBy != "sbx_original" || history[0].GrantedAt.Day() != 5 {
+		t.Fatalf("history = %+v", history)
 	}
 }

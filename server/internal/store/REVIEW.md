@@ -26,3 +26,7 @@
   lock through `HarnessConfigsTransaction` before reading the destination parent
   and inserting or converting its child. A cached parent snapshot can become
   stale, or its row disappear, before a later unlocked insert commits.
+
+- Lock a delegation before enumerating its children for a cascade or expiry.
+  A handoff holds that row through insert; enumerating first can miss the new
+  child after waiting to delete its parent, leaving its pool uninformed.

@@ -392,12 +392,14 @@ for the parts it approves.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Com
 			if err != nil {
 				return err
 			}
-			if replacements, err = a.requestReplacements(cmd.Context(), client, projectID, request, secretID, askedAs(request), true); err != nil {
-				return err
+			if !a.usesSandboxRole() {
+				if replacements, err = a.requestReplacements(cmd.Context(), client, projectID, request, secretID, askedAs(request), true); err != nil {
+					return err
+				}
 			}
 		}
 		var grants *useGrants
-		if request.Status == apiclientgen.SecretRequestStatusPending && a.output != "json" {
+		if request.Status == apiclientgen.SecretRequestStatusPending && a.output != "json" && !a.usesSandboxRole() {
 			if grants, err = a.requestUseGrants(cmd.Context(), client, projectID, request); err != nil {
 				return err
 			}
@@ -508,8 +510,10 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 				return err
 			}
 			body.SetSecretId(apiclientgen.NewOptString(selectedSecretID))
-			if replacements, err = a.requestReplacements(cmd.Context(), client, projectID, asked, selectedSecretID, grantedAs(asked, body.Use), approves(body.Delegate)); err != nil {
-				return err
+			if !a.usesSandboxRole() {
+				if replacements, err = a.requestReplacements(cmd.Context(), client, projectID, asked, selectedSecretID, grantedAs(asked, body.Use), approves(body.Delegate)); err != nil {
+					return err
+				}
 			}
 		}
 		res2, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})
@@ -522,6 +526,19 @@ value anywhere; its pool only refuses a request carrying it off its routes.
 		}
 		if a.output == "json" || a.quiet {
 			return a.writeSecretRequest(cmd, request, nil, nil)
+		}
+		if a.usesSandboxRole() {
+			fmt.Fprintf(cmd.OutOrStdout(), "Request %s %s\n", terminalSafe(request.ID), request.Status)
+			for _, part := range []apiclientgen.OptSecretRequestPart{request.Use, request.Delegate} {
+				if p, ok := part.Get(); ok {
+					if receipt, ok := p.Receipt.Get(); ok {
+						if err := writeGrantReceipt(cmd.OutOrStdout(), receipt); err != nil {
+							return err
+						}
+					}
+				}
+			}
+			return nil
 		}
 		// What was approved is each binding, not the ask: its routes and
 		// lifetime can be narrower than what the agent asked for, so they are

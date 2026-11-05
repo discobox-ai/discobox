@@ -3586,3 +3586,10 @@ The session seeds the effective policy for command previews. A targeted
 they remain visible rereads consent without replaying the initial Session
 (which would reset drafts, filters and options). The preview is unavailable
 while refreshing or when the configuration cannot be read.
+
+The secrets screen's `h` opens the selected secret's latest 100 binding events,
+including answered requests. Grant snapshots show the stable actor ID, target,
+time, delegation, all effective route lists and expiry, even after renaming or
+deletion. A decision's `d` reads the delegation if it still exists; its existing
+binding controls revoke it. Older events without a receipt say their effective
+limits were not recorded (ADR 26-11-04-389).

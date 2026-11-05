@@ -4953,7 +4953,7 @@ routes. Editing a file does not change an existing binding. Blocked routes
 participate across the merged list under the usual specificity rules.
 
 --delegate lets the discobox give the secret, to use, to the discoboxes it
-creates: by answering their requests, or when it creates them. With --as as
+leads: by answering their requests, binding directly, or when it creates them. With --as as
 well, it uses the secret too; without, it is delivered nothing itself.
 
 For one discobox and one variable, the narrowest binding wins: a discobox's own

@@ -352,3 +352,7 @@ approval's restriction and independent source route lists, secret revision,
 parent, expiry, delivery and mode after a binding changes or disappears. The
 original requested routes/policies stay intact. Old approved parts carry
 `legacy-unknown`; pending parts have no decision scope.
+
+`SecretGrantReceipt` is a JSON decision snapshot on a handed-on binding and its
+approved request part: stable actor, effective routes and lifetime, with no
+credential material. Nullable additive columns preserve existing records.

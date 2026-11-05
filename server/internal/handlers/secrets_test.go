@@ -487,3 +487,7 @@ func TestAHarnessConfigWithABlockedCaptureRouteSerializes(t *testing.T) {
 		t.Fatalf("save-back = %+v, want the blocked route carried", body.SaveBack)
 	}
 }
+
+func (fakeSecretService) CreateSandboxSecretBinding(context.Context, string, string, svcapi.CreateSandboxSecretBindingBody) (*model.SecretGrantReceipt, error) {
+	return nil, nil
+}

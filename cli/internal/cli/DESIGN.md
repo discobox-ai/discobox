@@ -156,3 +156,10 @@ asks an interactive terminal with default No, then repairs and revalidates befor
 continuing the original command. EOF, cancellation and noninteractive input fail
 without repair. Version and status probes use this same preparation. No saved
 approval or assume-yes option authorizes it (ADR 26-11-05-240).
+
+## Sandbox credential grants
+
+Sandbox calls through `api.discobox.internal` use the target-addressed binding
+endpoint and render its receipt. Approval skips replacement previews and binding
+GETs on this endpoint and renders each committed part's receipt instead. A
+person's connection retains full previews and inspection (ADR 26-11-04-389).

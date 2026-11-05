@@ -202,6 +202,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/providers
 	CreateSandboxProviderInstance(ctx context.Context, request *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (CreateSandboxProviderInstanceRes, error)
+	// CreateSandboxSecretBinding invokes create-sandbox-secret-binding operation.
+	//
+	// Grant sentinel use of a secret to a led discobox.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/secret-bindings
+	CreateSandboxSecretBinding(ctx context.Context, request *CreateSandboxSecretBindingBody, params CreateSandboxSecretBindingParams) (CreateSandboxSecretBindingRes, error)
 	// CreateSandboxTrustRequest invokes create-sandbox-trust-request operation.
 	//
 	// Record an agent's host trust request.
@@ -4154,6 +4160,121 @@ func (c *Client) sendCreateSandboxProviderInstance(ctx context.Context, request 
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// CreateSandboxSecretBinding invokes create-sandbox-secret-binding operation.
+//
+// Grant sentinel use of a secret to a led discobox.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/secret-bindings
+func (c *Client) CreateSandboxSecretBinding(ctx context.Context, request *CreateSandboxSecretBindingBody, params CreateSandboxSecretBindingParams) (CreateSandboxSecretBindingRes, error) {
+	res, err := c.sendCreateSandboxSecretBinding(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateSandboxSecretBinding(ctx context.Context, request *CreateSandboxSecretBindingBody, params CreateSandboxSecretBindingParams) (res CreateSandboxSecretBindingRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-sandbox-secret-binding"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/secret-bindings"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateSandboxSecretBindingOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/secret-bindings"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateSandboxSecretBindingRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateSandboxSecretBindingResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -1840,6 +1840,155 @@ func (s *CreateSandboxProviderInstanceBody) SetType(val string) {
 	s.Type = val
 }
 
+// Grant sentinel use to the discobox addressed by the path, within the calling lead's delegation.
+// Ref: #/components/schemas/CreateSandboxSecretBindingBody
+type CreateSandboxSecretBindingBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Let a discobox the binding covers give the credential to the discoboxes it leads. Only a person
+	// binds with delegate.
+	Delegate OptBool `json:"delegate"`
+	// Environment variable to deliver the credential's sentinel in; required with use.
+	EnvVar OptString `json:"envVar"`
+	// Reserved for a person; sandbox callers cannot hand the discobox the value itself: env in envVar,
+	// or file, the path of a file holding it in envVar. Needs use and a secret that allows raw. Absent
+	// is a sentinel.
+	Raw OptCreateSandboxSecretBindingBodyRaw `json:"raw"`
+	// Routes within the lead's delegation; omitted or empty inherits its effective limits.
+	Routes []SecretRouteInput `json:"routes"`
+	// The secret, by name or ID.
+	Secret string `json:"secret"`
+	// How long the binding lasts, in seconds, within the secret's limit; 0 never lapses where the secret
+	// allows it. Omitted takes the secret's limit.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// Deliver the credential to the target in envVar. Defaults to true unless delegate is set.
+	Use OptBool `json:"use"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateSandboxSecretBindingBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetDelegate returns the value of Delegate.
+func (s *CreateSandboxSecretBindingBody) GetDelegate() OptBool {
+	return s.Delegate
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *CreateSandboxSecretBindingBody) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetRaw returns the value of Raw.
+func (s *CreateSandboxSecretBindingBody) GetRaw() OptCreateSandboxSecretBindingBodyRaw {
+	return s.Raw
+}
+
+// GetRoutes returns the value of Routes.
+func (s *CreateSandboxSecretBindingBody) GetRoutes() []SecretRouteInput {
+	return s.Routes
+}
+
+// GetSecret returns the value of Secret.
+func (s *CreateSandboxSecretBindingBody) GetSecret() string {
+	return s.Secret
+}
+
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *CreateSandboxSecretBindingBody) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
+}
+
+// GetUse returns the value of Use.
+func (s *CreateSandboxSecretBindingBody) GetUse() OptBool {
+	return s.Use
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateSandboxSecretBindingBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetDelegate sets the value of Delegate.
+func (s *CreateSandboxSecretBindingBody) SetDelegate(val OptBool) {
+	s.Delegate = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *CreateSandboxSecretBindingBody) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetRaw sets the value of Raw.
+func (s *CreateSandboxSecretBindingBody) SetRaw(val OptCreateSandboxSecretBindingBodyRaw) {
+	s.Raw = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *CreateSandboxSecretBindingBody) SetRoutes(val []SecretRouteInput) {
+	s.Routes = val
+}
+
+// SetSecret sets the value of Secret.
+func (s *CreateSandboxSecretBindingBody) SetSecret(val string) {
+	s.Secret = val
+}
+
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *CreateSandboxSecretBindingBody) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
+}
+
+// SetUse sets the value of Use.
+func (s *CreateSandboxSecretBindingBody) SetUse(val OptBool) {
+	s.Use = val
+}
+
+// Reserved for a person; sandbox callers cannot hand the discobox the value itself: env in envVar,
+// or file, the path of a file holding it in envVar. Needs use and a secret that allows raw. Absent
+// is a sentinel.
+type CreateSandboxSecretBindingBodyRaw string
+
+const (
+	CreateSandboxSecretBindingBodyRawEnv  CreateSandboxSecretBindingBodyRaw = "env"
+	CreateSandboxSecretBindingBodyRawFile CreateSandboxSecretBindingBodyRaw = "file"
+)
+
+// AllValues returns all CreateSandboxSecretBindingBodyRaw values.
+func (CreateSandboxSecretBindingBodyRaw) AllValues() []CreateSandboxSecretBindingBodyRaw {
+	return []CreateSandboxSecretBindingBodyRaw{
+		CreateSandboxSecretBindingBodyRawEnv,
+		CreateSandboxSecretBindingBodyRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateSandboxSecretBindingBodyRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateSandboxSecretBindingBodyRawEnv:
+		return []byte(s), nil
+	case CreateSandboxSecretBindingBodyRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateSandboxSecretBindingBodyRaw) UnmarshalText(data []byte) error {
+	switch CreateSandboxSecretBindingBodyRaw(data) {
+	case CreateSandboxSecretBindingBodyRawEnv:
+		*s = CreateSandboxSecretBindingBodyRawEnv
+		return nil
+	case CreateSandboxSecretBindingBodyRawFile:
+		*s = CreateSandboxSecretBindingBodyRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/CreateSandboxTrustRequestBody
 type CreateSandboxTrustRequestBody struct {
 	// A URL to the JSON Schema for this object.
@@ -2826,6 +2975,7 @@ func (*ErrorModelStatusCode) createSSHKeyRes()                          {}
 func (*ErrorModelStatusCode) createSandboxCredentialRequestRes()        {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()         {}
 func (*ErrorModelStatusCode) createSandboxRes()                         {}
+func (*ErrorModelStatusCode) createSandboxSecretBindingRes()            {}
 func (*ErrorModelStatusCode) createSandboxTrustRequestRes()             {}
 func (*ErrorModelStatusCode) createSecretBindingRes()                   {}
 func (*ErrorModelStatusCode) createSecretRes()                          {}
@@ -9449,6 +9599,52 @@ func (o OptCreateSandboxExecWait) Or(d CreateSandboxExecWait) CreateSandboxExecW
 	return d
 }
 
+// NewOptCreateSandboxSecretBindingBodyRaw returns new OptCreateSandboxSecretBindingBodyRaw with value set to v.
+func NewOptCreateSandboxSecretBindingBodyRaw(v CreateSandboxSecretBindingBodyRaw) OptCreateSandboxSecretBindingBodyRaw {
+	return OptCreateSandboxSecretBindingBodyRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSandboxSecretBindingBodyRaw is optional CreateSandboxSecretBindingBodyRaw.
+type OptCreateSandboxSecretBindingBodyRaw struct {
+	Value CreateSandboxSecretBindingBodyRaw
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSandboxSecretBindingBodyRaw was set.
+func (o OptCreateSandboxSecretBindingBodyRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSandboxSecretBindingBodyRaw) Reset() {
+	var v CreateSandboxSecretBindingBodyRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSandboxSecretBindingBodyRaw) SetTo(v CreateSandboxSecretBindingBodyRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSandboxSecretBindingBodyRaw) Get() (v CreateSandboxSecretBindingBodyRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSandboxSecretBindingBodyRaw) Or(d CreateSandboxSecretBindingBodyRaw) CreateSandboxSecretBindingBodyRaw {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptCreateSecretBindingBodyRaw returns new OptCreateSecretBindingBodyRaw with value set to v.
 func NewOptCreateSecretBindingBodyRaw(v CreateSecretBindingBodyRaw) OptCreateSecretBindingBodyRaw {
 	return OptCreateSecretBindingBodyRaw{
@@ -15952,6 +16148,52 @@ func (o OptSecretExchange) Get() (v SecretExchange, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSecretExchange) Or(d SecretExchange) SecretExchange {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretGrantReceipt returns new OptSecretGrantReceipt with value set to v.
+func NewOptSecretGrantReceipt(v SecretGrantReceipt) OptSecretGrantReceipt {
+	return OptSecretGrantReceipt{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretGrantReceipt is optional SecretGrantReceipt.
+type OptSecretGrantReceipt struct {
+	Value SecretGrantReceipt
+	Set   bool
+}
+
+// IsSet returns true if OptSecretGrantReceipt was set.
+func (o OptSecretGrantReceipt) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretGrantReceipt) Reset() {
+	var v SecretGrantReceipt
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretGrantReceipt) SetTo(v SecretGrantReceipt) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretGrantReceipt) Get() (v SecretGrantReceipt, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretGrantReceipt) Or(d SecretGrantReceipt) SecretGrantReceipt {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -31480,6 +31722,7 @@ func (*Secret) updateSecretRes()  {}
 // envVar instead of replacing or shadowing it.
 // Ref: #/components/schemas/SecretBinding
 type SecretBinding struct {
+	Receipt OptSecretGrantReceipt `json:"receipt"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// An addition: a use on a discobox, with or without expiry, that stacks on the binding delivering
@@ -31525,6 +31768,11 @@ type SecretBinding struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	// The target may send the credential: it is delivered in envVar.
 	Use bool `json:"use"`
+}
+
+// GetReceipt returns the value of Receipt.
+func (s *SecretBinding) GetReceipt() OptSecretGrantReceipt {
+	return s.Receipt
 }
 
 // GetSchema returns the value of Schema.
@@ -31620,6 +31868,11 @@ func (s *SecretBinding) GetUpdatedAt() time.Time {
 // GetUse returns the value of Use.
 func (s *SecretBinding) GetUse() bool {
 	return s.Use
+}
+
+// SetReceipt sets the value of Receipt.
+func (s *SecretBinding) SetReceipt(val OptSecretGrantReceipt) {
+	s.Receipt = val
 }
 
 // SetSchema sets the value of Schema.
@@ -32021,6 +32274,133 @@ func (s *SecretExchange) SetRecipe(val OptExchangeRecipe) {
 func (s *SecretExchange) SetTokenExpiresAt(val OptInt64) {
 	s.TokenExpiresAt = val
 }
+
+// Ref: #/components/schemas/SecretGrantReceipt
+type SecretGrantReceipt struct {
+	BindingId  string          `json:"bindingId"`
+	RequestId  OptString       `json:"requestId"`
+	SecretId   string          `json:"secretId"`
+	SecretName string          `json:"secretName"`
+	SandboxId  string          `json:"sandboxId"`
+	EnvVar     string          `json:"envVar"`
+	ParentId   string          `json:"parentId"`
+	Actor      string          `json:"actor"`
+	At         time.Time       `json:"at"`
+	ExpiresAt  OptDateTime     `json:"expiresAt"`
+	RouteLists [][]SecretRoute `json:"routeLists"`
+}
+
+// GetBindingId returns the value of BindingId.
+func (s *SecretGrantReceipt) GetBindingId() string {
+	return s.BindingId
+}
+
+// GetRequestId returns the value of RequestId.
+func (s *SecretGrantReceipt) GetRequestId() OptString {
+	return s.RequestId
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SecretGrantReceipt) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetSecretName returns the value of SecretName.
+func (s *SecretGrantReceipt) GetSecretName() string {
+	return s.SecretName
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *SecretGrantReceipt) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *SecretGrantReceipt) GetEnvVar() string {
+	return s.EnvVar
+}
+
+// GetParentId returns the value of ParentId.
+func (s *SecretGrantReceipt) GetParentId() string {
+	return s.ParentId
+}
+
+// GetActor returns the value of Actor.
+func (s *SecretGrantReceipt) GetActor() string {
+	return s.Actor
+}
+
+// GetAt returns the value of At.
+func (s *SecretGrantReceipt) GetAt() time.Time {
+	return s.At
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SecretGrantReceipt) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetRouteLists returns the value of RouteLists.
+func (s *SecretGrantReceipt) GetRouteLists() [][]SecretRoute {
+	return s.RouteLists
+}
+
+// SetBindingId sets the value of BindingId.
+func (s *SecretGrantReceipt) SetBindingId(val string) {
+	s.BindingId = val
+}
+
+// SetRequestId sets the value of RequestId.
+func (s *SecretGrantReceipt) SetRequestId(val OptString) {
+	s.RequestId = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SecretGrantReceipt) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetSecretName sets the value of SecretName.
+func (s *SecretGrantReceipt) SetSecretName(val string) {
+	s.SecretName = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *SecretGrantReceipt) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *SecretGrantReceipt) SetEnvVar(val string) {
+	s.EnvVar = val
+}
+
+// SetParentId sets the value of ParentId.
+func (s *SecretGrantReceipt) SetParentId(val string) {
+	s.ParentId = val
+}
+
+// SetActor sets the value of Actor.
+func (s *SecretGrantReceipt) SetActor(val string) {
+	s.Actor = val
+}
+
+// SetAt sets the value of At.
+func (s *SecretGrantReceipt) SetAt(val time.Time) {
+	s.At = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SecretGrantReceipt) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetRouteLists sets the value of RouteLists.
+func (s *SecretGrantReceipt) SetRouteLists(val [][]SecretRoute) {
+	s.RouteLists = val
+}
+
+func (*SecretGrantReceipt) createSandboxSecretBindingRes() {}
 
 // What an OAuth credential is, without being it. Never the access token and never the refresh token.
 // Ref: #/components/schemas/SecretOAuth
@@ -33001,7 +33381,7 @@ type SecretRequest struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// When it was answered.
 	DecidedAt OptDateTime `json:"decidedAt"`
-	// Who answered the request: a person, or the discobox that created the requester.
+	// Who answered the request: a person, or the discobox leading the requester.
 	DecidedBy OptString            `json:"decidedBy"`
 	Delegate  OptSecretRequestPart `json:"delegate"`
 	// Environment variable the credential is wanted in, for protocol-originated requests.
@@ -33329,6 +33709,7 @@ func (s *SecretRequestGrantRouteList) SetRoutes(val []SecretRoute) {
 // in envName; the delegate part asks to give it to the discoboxes the asking one creates.
 // Ref: #/components/schemas/SecretRequestPart
 type SecretRequestPart struct {
+	Receipt OptSecretGrantReceipt `json:"receipt"`
 	// Use part only: the discobox asks for these routes in addition to what it holds, as an addition,
 	// rather than as its whole use of the credential.
 	Add OptBool `json:"add"`
@@ -33348,6 +33729,11 @@ type SecretRequestPart struct {
 	Policies []SecretRequestPolicy `json:"policies"`
 	// Where the part asks for the credential to be sent, resolved.
 	Routes []SecretRoute `json:"routes"`
+}
+
+// GetReceipt returns the value of Receipt.
+func (s *SecretRequestPart) GetReceipt() OptSecretGrantReceipt {
+	return s.Receipt
 }
 
 // GetAdd returns the value of Add.
@@ -33388,6 +33774,11 @@ func (s *SecretRequestPart) GetPolicies() []SecretRequestPolicy {
 // GetRoutes returns the value of Routes.
 func (s *SecretRequestPart) GetRoutes() []SecretRoute {
 	return s.Routes
+}
+
+// SetReceipt sets the value of Receipt.
+func (s *SecretRequestPart) SetReceipt(val OptSecretGrantReceipt) {
+	s.Receipt = val
 }
 
 // SetAdd sets the value of Add.

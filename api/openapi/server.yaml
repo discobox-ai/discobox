@@ -111,6 +111,48 @@ components:
                 - secret
                 - targetKind
             type: object
+        CreateSandboxSecretBindingBody:
+            additionalProperties: false
+            description: Grant sentinel use to the discobox addressed by the path, within the calling lead's delegation.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateSandboxSecretBindingBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                delegate:
+                    description: Let a discobox the binding covers give the credential to the discoboxes it leads. Only a person binds with delegate.
+                    type: boolean
+                envVar:
+                    description: Environment variable to deliver the credential's sentinel in; required with use
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                    type: string
+                raw:
+                    description: "Reserved for a person; sandbox callers cannot hand the discobox the value itself: env in envVar, or file, the path of a file holding it in envVar. Needs use and a secret that allows raw. Absent is a sentinel."
+                    enum:
+                        - env
+                        - file
+                    type: string
+                routes:
+                    description: Routes within the lead's delegation; omitted or empty inherits its effective limits
+                    items:
+                        $ref: '#/components/schemas/SecretRouteInput'
+                    type: array
+                secret:
+                    description: The secret, by name or ID
+                    type: string
+                ttlSeconds:
+                    description: How long the binding lasts, in seconds, within the secret's limit; 0 never lapses where the secret allows it. Omitted takes the secret's limit.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                use:
+                    description: Deliver the credential to the target in envVar. Defaults to true unless delegate is set.
+                    type: boolean
+            required:
+                - secret
+            type: object
         DeleteSecretBindingResponse:
             additionalProperties: false
             description: 'What a delete removed: the binding, and every binding handed on under it.'
@@ -2831,10 +2873,45 @@ components:
                 - meta
                 - observedAt
             type: object
+        SecretGrantReceipt:
+            additionalProperties: false
+            type: object
+            properties:
+                bindingId:
+                    type: string
+                requestId:
+                    type: string
+                secretId:
+                    type: string
+                secretName:
+                    type: string
+                sandboxId:
+                    type: string
+                envVar:
+                    type: string
+                parentId:
+                    type: string
+                actor:
+                    type: string
+                at:
+                    type: string
+                    format: date-time
+                expiresAt:
+                    type: string
+                    format: date-time
+                routeLists:
+                    type: array
+                    items:
+                        type: array
+                        items:
+                            $ref: '#/components/schemas/SecretRoute'
+            required: [bindingId, secretId, secretName, sandboxId, envVar, parentId, actor, at, routeLists]
         SecretBinding:
             additionalProperties: false
             description: "A secret made available to a target: existing and unexpired, it is the whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a discobox the binding covers give the credential to the discoboxes it leads. An addition (adds) stacks on the binding delivering envVar instead of replacing or shadowing it."
             properties:
+                receipt:
+                    $ref: '#/components/schemas/SecretGrantReceipt'
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/SecretBinding.json
@@ -6561,7 +6638,7 @@ components:
                     format: date-time
                     type: string
                 decidedBy:
-                    description: 'Who answered the request: a person, or the discobox that created the requester'
+                    description: 'Who answered the request: a person, or the discobox leading the requester'
                     type: string
                 delegate:
                     $ref: '#/components/schemas/SecretRequestPart'
@@ -6618,6 +6695,8 @@ components:
             additionalProperties: false
             description: One part of a request (ADR 26-11-02-022 §1). The use part asks to use the credential, delivered in envName; the delegate part asks to give it to the discoboxes the asking one creates.
             properties:
+                receipt:
+                    $ref: '#/components/schemas/SecretGrantReceipt'
                 add:
                     description: "Use part only: the discobox asks for these routes in addition to what it holds, as an addition, rather than as its whole use of the credential"
                     type: boolean
@@ -13474,6 +13553,39 @@ paths:
             summary: Read the history of secret bindings, newest first
             tags:
                 - Secrets
+    /projects/{projectId}/sandboxes/{sandboxId}/secret-bindings:
+        post:
+            operationId: create-sandbox-secret-binding
+            summary: Grant sentinel use of a secret to a led discobox
+            tags: [Secrets]
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema: {type: string, default: default}
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema: {type: string}
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateSandboxSecretBindingBody'
+            responses:
+                200:
+                    description: Committed grant, without credential material
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretGrantReceipt'
+                default:
+                    description: Error
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
     /projects/{projectId}/secret-bindings:
         get:
             operationId: list-secret-bindings
