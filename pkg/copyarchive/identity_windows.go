@@ -17,7 +17,7 @@ func FileIdentity(name string, _ fs.FileInfo) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer windows.CloseHandle(handle)
+	defer func() { _ = windows.CloseHandle(handle) }()
 	var info windows.ByHandleFileInformation
 	if err := windows.GetFileInformationByHandle(handle, &info); err != nil {
 		return "", err
