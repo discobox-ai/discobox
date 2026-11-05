@@ -1,6 +1,6 @@
 # 26-10-23-948 — A pool pulls a cached source first, and a client supplies what the pull could not
 
-- **Status**: Accepted
+- **Status**: Accepted (§5's implicit noninteractive fetch-and-push fallback superseded and §4's `needs_credential` fallback narrowed by [26-11-04-253](26-11-04-253-git-credential-delivery-is-an-explicit-client-policy.md))
 - **Date**: 2026-10-23
 - **Supersedes**, for sandboxes created after it:
   [26-10-10-545](26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)

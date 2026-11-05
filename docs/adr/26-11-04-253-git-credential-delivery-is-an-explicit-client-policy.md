@@ -1,7 +1,8 @@
 # 26-11-04-253 — Git credential delivery is an explicit client policy
 
-- **Status**: Proposed (would supersede [26-10-23-948](26-10-23-948-a-pool-pulls-a-cached-source-first-and-a-client-supplies-what-the-pull-could-not.md) §5's implicit noninteractive fetch-and-push fallback and narrow §4's `needs_credential` fallback to the policy below)
+- **Status**: Accepted (supersedes [26-10-23-948](26-10-23-948-a-pool-pulls-a-cached-source-first-and-a-client-supplies-what-the-pull-could-not.md) §5's implicit noninteractive fetch-and-push fallback and narrow §4's `needs_credential` fallback to the policy below)
 - **Date**: 2026-11-04
+- Accepted by the owner by merging #615, 2026-11-05
 - **Issue**: [#614](https://github.com/discobox-ai/discobox/issues/614)
 - **Relates to**: [26-10-09-389](26-10-09-389-the-cli-reads-one-schema-checked-configuration-file.md), [0128](0128-a-private-remote-source-is-fetched-with-a-credential-the-client-lends.md) (rejected).
 
