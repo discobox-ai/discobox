@@ -17,6 +17,14 @@ func (p *approvalPreview) openTrust() {
 	ca := TrustCertificate{Subject: "CN=cluster-ca", Issuer: "CN=cluster-ca", IsCA: true, SelfSigned: true, SHA256: strings.Repeat("ca", 32), NotBefore: now.AddDate(0, -1, 0), NotAfter: now.AddDate(1, 0, 0)}
 	leaf := TrustCertificate{Subject: "CN=kube-apiserver", Issuer: ca.Subject, Names: []string{"cluster.internal"}, SHA256: strings.Repeat("ab", 32), SPKISHA256: strings.Repeat("12", 32), NotBefore: now.AddDate(0, -1, 0), NotAfter: now.AddDate(0, 3, 0)}
 	req := CredentialRequest{ID: "trust_sample", SandboxID: "sbx_worker", Host: "cluster.internal:443", Justification: "Deploy to the development cluster, which uses its own certificate authority.", Created: now.Add(-2 * time.Minute), AskedTTL: time.Hour, Trust: &TrustAsk{Chain: []TrustCertificate{leaf, ca}, DefaultPin: TrustPin{Kind: TrustPinCA, SHA256: ca.SHA256}}}
+	if p.readOnly {
+		supplied := ca
+		supplied.Subject = "CN=agent-supplied-cluster-ca"
+		supplied.Issuer = supplied.Subject
+		supplied.SHA256 = strings.Repeat("de", 32)
+		req.Trust.SuppliedCA = &supplied
+		req.Trust.DefaultPin = TrustPin{Kind: TrustPinCA, SHA256: supplied.SHA256}
+	}
 	if p.current {
 		m := &Model{secrets: newSecretList()}
 		m.askAboutTrust(req)
@@ -28,6 +36,9 @@ func (p *approvalPreview) openTrust() {
 	choices := []choice{}
 	for i, opt := range options {
 		label := "Cluster CA"
+		if req.Trust.SuppliedCA != nil && opt.pin.SHA256 == req.Trust.SuppliedCA.SHA256 {
+			label = "Agent-supplied CA"
+		}
 		hint := "Accept certificates verified by this CA, for this host and box only."
 		if opt.pin.Kind == TrustPinLeafSPKI {
 			label = "Host public key"
@@ -57,6 +68,9 @@ func (p *approvalPreview) openTrust() {
 		index, _ := strconv.Atoi(f.chosen("pin"))
 		pin := options[index].pin
 		cert := ca
+		if req.Trust.SuppliedCA != nil && pin.SHA256 == req.Trust.SuppliedCA.SHA256 {
+			cert = *req.Trust.SuppliedCA
+		}
 		hashLabel := "CA SHA-256"
 		if pin.Kind == TrustPinLeafSPKI {
 			cert = leaf

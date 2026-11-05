@@ -16,6 +16,9 @@ import (
 func (p *approvalPreview) openRefresh() {
 	now := time.Now()
 	secret := Secret{ID: "sec_cloud", Name: "Cloud access token", Type: "bearer", ValueTTL: time.Hour, RefreshCommand: []string{"gcloud", "auth", "print-access-token"}, Routes: []secretroute.Route{{Hosts: []string{"container.googleapis.com"}}}}
+	if p.noCommand {
+		secret.RefreshCommand = nil
+	}
 	cause, reason := "stale", "The token has expired."
 	if p.readOnly {
 		cause = "rejected"
@@ -30,6 +33,9 @@ func (p *approvalPreview) openRefresh() {
 		return
 	}
 	source := pickRow("source", "New value", choice{key: "command", label: "Run saved command", hint: "Runs on your machine, as you, without a shell. Sends its output as the new token."}, choice{key: "manual", label: "Paste a value", hint: "Enter a replacement token. It stays masked and is never echoed in the preview receipt."})
+	if p.noCommand {
+		source.choices = source.choices[1:]
+	}
 	permission := pickRow("permission", "Run permission", choice{key: "once", label: "Once", hint: "Ask again the next time this token needs refreshing."}, choice{key: "session", label: "While this window is open", hint: "Run this command again without asking when this token needs refreshing, until this console window closes."})
 	permission.when = func(f *form) bool { return f.chosen("source") == "command" }
 	permission.why = "No command runs for a pasted value"

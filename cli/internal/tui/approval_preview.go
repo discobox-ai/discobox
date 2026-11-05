@@ -15,11 +15,11 @@ import (
 
 // RunApprovalPreview is a local design workbench. It never creates a data source
 // or calls an API. The prototype build tag keeps it out of the product binary.
-func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height int, requestPath, policyRoot, screen string) error {
-	if screen != "credential" && screen != "adoption" && screen != "trust" && screen != "refresh" {
+func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height int, requestPath, policyRoot, screen string, compact bool) error {
+	if screen != "credential" && screen != "adoption" && screen != "trust" && screen != "refresh" && screen != "api" {
 		return fmt.Errorf("unknown screen %q", screen)
 	}
-	p := &approvalPreview{screen: screen, width: width, height: height, current: current, st: newStyles(true)}
+	p := &approvalPreview{compact: compact, screen: screen, width: width, height: height, current: current, st: newStyles(true)}
 	if requestPath != "" {
 		req, err := loadApprovalPreviewRequest(requestPath, policyRoot)
 		if err != nil {
@@ -41,6 +41,8 @@ type approvalPreview struct {
 	current       bool
 	screen        string
 	readOnly      bool
+	compact       bool
+	noCommand     bool
 	fixture       *CredentialRequest
 	st            *styles
 	d             *dialog
@@ -71,8 +73,14 @@ func (p *approvalPreview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.open()
 			return p, nil
 		case "f3":
-			if p.screen == "adoption" || p.screen == "refresh" {
+			if p.screen == "adoption" || p.screen == "refresh" || p.screen == "trust" || p.screen == "api" {
 				p.readOnly = !p.readOnly
+				p.open()
+			}
+			return p, nil
+		case "f4":
+			if p.screen == "refresh" {
+				p.noCommand = !p.noCommand
 				p.open()
 			}
 			return p, nil
@@ -104,11 +112,14 @@ func (p *approvalPreview) render() string {
 		mode = "CURRENT"
 	}
 	subject := "Credential use"
+	if p.screen == "api" {
+		subject = "Discobox API · F3 enable/disable"
+	}
 	if p.screen == "refresh" {
-		subject = "Credential refresh · F3 expired/rejected"
+		subject = "Refresh · F3 expired/rejected · F4 command/no command"
 	}
 	if p.screen == "trust" {
-		subject = "Host trust"
+		subject = "Host trust · F3 chain/supplied CA"
 	}
 	if p.screen == "adoption" {
 		subject = "Adoption · F3 full/read-only"
@@ -116,8 +127,13 @@ func (p *approvalPreview) render() string {
 	if p.fixture != nil {
 		subject = fmt.Sprintf("Manager · %d use / %d delegate routes", previewRouteCount(p.fixture.Use), previewRouteCount(p.fixture.Delegate))
 	}
-	header := p.st.dimText.Render(subject + " · " + mode + " · F2 compare · F5 reset · q quit · sample data only")
-	card := p.d.view(p.st, &p.z, p.width, max(p.height-2, 10))
+	width, height := p.width, p.height
+	if p.compact {
+		width = min(width, 80)
+		height = min(height, 24)
+	}
+	header := p.st.dimText.Render(truncate(subject+" · "+mode+" · F2 compare · F5 reset · q quit · sample data only", width))
+	card := p.d.view(p.st, &p.z, width, max(height-2, 10))
 	return header + "\n" + card
 }
 func (p *approvalPreview) receipt(result string) tea.Cmd {
@@ -127,6 +143,10 @@ func (p *approvalPreview) receipt(result string) tea.Cmd {
 }
 func (p *approvalPreview) open() {
 	p.refreshGrant = nil
+	if p.screen == "api" {
+		p.openAPI()
+		return
+	}
 	if p.screen == "refresh" {
 		p.openRefresh()
 		return

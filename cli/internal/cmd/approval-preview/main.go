@@ -13,14 +13,15 @@ import (
 
 func main() {
 	capture := flag.Bool("capture", false, "Print one ANSI frame instead of opening the interactive preview")
-	current := flag.Bool("current", false, "Start with the current credential request")
+	current := flag.Bool("current", false, "Start with the current screen")
 	width := flag.Int("width", 100, "Capture width")
 	height := flag.Int("height", 36, "Capture height")
 	request := flag.String("request", "", "discobox-access JSON request fixture")
 	root := flag.String("policy-root", ".", "Directory relative policy file names are resolved against")
-	screen := flag.String("screen", "credential", "Screen to explore: credential, adoption, trust or refresh")
+	screen := flag.String("screen", "credential", "Screen to explore: credential, adoption, trust, refresh or api")
+	compact := flag.Bool("compact", false, "Constrain the preview to 80 columns and 24 rows")
 	flag.Parse()
-	if err := tui.RunApprovalPreview(os.Stdout, *capture, *current, *width, *height, *request, *root, *screen); err != nil {
+	if err := tui.RunApprovalPreview(os.Stdout, *capture, *current, *width, *height, *request, *root, *screen, *compact); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

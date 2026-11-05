@@ -75,8 +75,8 @@ and its Go toolchain; it is not a standalone snippet.
   consent. The current backend expects one answer covering the request;
   this prototype's two visual steps do not decide transaction timing.
 - Implement creation of a new credential; its preview option is a placeholder.
-- Exercise API access separately with the owner. Adoption and host trust are
-  accepted; credential refresh is the next draft below.
+- Review the new API-access proposal with the owner. Credential use/delegation,
+  adoption, host trust and refresh layouts have been accepted.
 
 ## Fixture and limitations
 
@@ -141,7 +141,7 @@ chain to that CA; the host-key choice is tied to its public key and breaks on
 key rotation. Denial leaves the host refused; expiration requires trust again.
 All data and fingerprints are synthetic, and no host is contacted. The owner accepted this layout. Mouse and scroll-gate requirements apply.
 
-## Next screen: credential refresh (draft for owner review)
+## Credential refresh (layout accepted by owner)
 
 ```sh
 go tool task prototype:approvals:refresh
@@ -161,4 +161,52 @@ routes/lifetimes. No command executes and no token is sent. Use dummy text only.
 The program never prints manual input in its receipt and clears it on submit.
 The fixture includes a saved command; no-command and OAuth/exchange-specific
 renewal flows remain implementation work. Mouse and scroll-gate requirements
-apply. This layout is not yet accepted by the owner.
+apply. The owner accepted this layout.
+
+## Final batch: API access and remaining variants
+
+```sh
+go tool task prototype:approvals:api
+```
+
+F2 compares the actual settingsDialog (the current API toggle) with a proposed
+API permission card. There is no structured API request endpoint today: the
+new request reason is illustrative, and transaction/intake design remains open.
+The proposed card covers project discovery/creation and bounded management of
+led boxes, with explicit credential/egress ceilings and persistent on/off state.
+F3 toggles between enabling and turning access off, with consequences and modal
+buttons. This proposal awaits owner review. No setting changes occur.
+
+Additional variants, in either CURRENT or PROPOSED:
+
+- Adoption F3: full/read-only authority.
+- Trust F3: certificate-chain CA/agent-supplied CA. Pin choices still include
+  the chain CA and host key; the real default ordering is retained.
+- Refresh F3: expired/rejected; F4: saved command/no saved command. Without a
+  command, only masked manual entry is offered.
+- API F3: enable/disable.
+
+Add `-- --compact` to any task to constrain its renderer to 80x24, even in a
+larger terminal. All proposed cards were rendered at that size and their upper
+content scrolls while controls remain visible. Long table rows still wrap. The
+preserved CURRENT Settings/API screen needs 25 lines at this size; it is a
+baseline limitation, not new intended behavior. Captures do not exercise mouse
+interaction or enforce the deferred scroll-to-end gate.
+
+### Commands for the complete review
+
+```sh
+go tool task prototype:approvals              # simple credential use
+go tool task prototype:approvals:manager      # use, then delegation
+go tool task prototype:approvals:adoption
+go tool task prototype:approvals:trust
+go tool task prototype:approvals:refresh
+go tool task prototype:approvals:api
+```
+
+All named category tasks start CURRENT; F2 shows PROPOSED. The simple credential
+preview starts PROPOSED. Example narrow-screen command:
+
+```sh
+go tool task prototype:approvals:api -- --compact
+```

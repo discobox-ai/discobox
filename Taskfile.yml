@@ -150,6 +150,11 @@ vars:
   DEADCODE_BIN: deadcode{{.EXE}}
 
 tasks:
+  prototype:approvals:api:
+    desc: Compare current settings and proposed API access approval screens
+    cmds:
+      - go run -tags prototype ./cli/internal/cmd/approval-preview --screen api --current {{.CLI_ARGS}}
+
   prototype:approvals:refresh:
     desc: Compare current and proposed credential refresh screens
     cmds:
