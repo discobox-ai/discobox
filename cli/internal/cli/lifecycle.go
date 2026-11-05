@@ -105,7 +105,7 @@ fails does not hide the rest.`,
 				}
 				if action.verb == "start" {
 					status := newStatusLine(cmd.ErrOrStderr(), a.color)
-					delivered, err := a.deliverInsteadOfStart(cmd.Context(), client, projectID, sandboxID, status.set, credentialDeliveryOptions(cmd, status, false))
+					delivered, err := a.deliverInsteadOfStart(cmd.Context(), client, projectID, sandboxID, status.set, credentialDeliveryOptions(cmd, status))
 					status.clear()
 					if err != nil || delivered {
 						return sandboxID, err

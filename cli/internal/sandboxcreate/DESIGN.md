@@ -233,7 +233,12 @@ sandbox create requests.
   §6). Completion may cover a subset of sources; the server resumes only
   when every source has arrived. `sourcepull.go` waits for a pool's anonymous
   pull when the client lacks the commit, and optionally lends a credential
-  with `DeliveryOptions` consent (ADR 26-10-23-948). It is a no-op when nothing awaits delivery,
+  with the typed `DeliveryOptions.Credentials` client policy (ADR 26-11-04-253).
+  Ask without a frontend question fails before a helper runs; local fetches
+  here and lend attempts the synchronous pool pull. Cancellation aborts.
+  Noninteractive execution is carried in the context through ref lookup and
+  every transport/credential subprocess; sandboxgit owns its environment and
+  process-tree cancellation. It is a no-op when nothing awaits delivery,
   so callers invoke it unconditionally. See the CLI design doc's "Origin and
   Source Delivery".
 - Delivery is also reachable from outside a create: `PendingSourcePushes`,

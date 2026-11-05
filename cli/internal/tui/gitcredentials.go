@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 )
 
 // CredentialUI asks on the active frontend and temporarily returns terminal
@@ -18,7 +19,11 @@ type CredentialUI struct {
 
 type credentialQuestion struct {
 	remote string
-	answer chan bool
+	answer chan credentialAnswer
+}
+type credentialAnswer struct {
+	yes bool
+	err error
 }
 type credentialProcess struct {
 	command *exec.Cmd
@@ -29,15 +34,15 @@ func (n narration) credentials() CredentialUI {
 	return CredentialUI{
 		Report: n.report,
 		Confirm: func(ctx context.Context, remote string) (bool, error) {
-			answer := make(chan bool, 1)
+			answer := make(chan credentialAnswer, 1)
 			select {
 			case n.ch <- narrationLine{question: &credentialQuestion{remote: remote, answer: answer}}:
 			case <-ctx.Done():
 				return false, ctx.Err()
 			}
 			select {
-			case yes := <-answer:
-				return yes, nil
+			case result := <-answer:
+				return result.yes, result.err
 			case <-ctx.Done():
 				return false, ctx.Err()
 			}
@@ -62,13 +67,15 @@ func (n narration) credentials() CredentialUI {
 func (m *Model) credentialQuestion(msg narrationMsg) tea.Cmd {
 	question := msg.question
 	if msg.source.gen != m.busyGen {
-		question.answer <- false
+		question.answer <- credentialAnswer{err: context.Canceled}
 		return m.nextNarration(msg.source)
 	}
-	answer := func(yes bool) tea.Cmd { question.answer <- yes; return nil }
+	answer := func(yes bool) tea.Cmd { question.answer <- credentialAnswer{yes: yes}; return nil }
 	previous := m.dialog
-	m.dialog = actionsDialog("Git credentials", ansi.Strip(question.remote)+" needs credentials to pull on the pool. Use your Git credentials?", []action{{key: "lend", label: "Use Git credentials for this pull", enabled: true}, {key: "push", label: "Fetch here and push", enabled: true}}, func(choice string) tea.Cmd { return answer(choice == "lend") })
-	m.dialog.onCancel = func() tea.Cmd { return answer(false) }
+	m.dialog = actionsDialog("Git credentials", ansi.Strip(question.remote)+" needs credentials to pull on the pool.", []action{{key: "lend", label: sandboxcreate.GitLendLabel, enabled: true}, {key: "push", label: sandboxcreate.GitLocalLabel, enabled: true}}, func(choice string) tea.Cmd { return answer(choice == "lend") })
+	m.dialog.onCancel = func() tea.Cmd { question.answer <- credentialAnswer{err: context.Canceled}; return nil }
+	m.dialog.choiceDescriptions = []string{sandboxcreate.GitLendExplanation, sandboxcreate.GitLocalExplanation}
+	m.dialog.wrapDetails = true
 	// The question comes up over whatever the window was showing — the wait
 	// on this create, in a window that is one command's own — and answering
 	// it puts that back rather than uncovering the list.

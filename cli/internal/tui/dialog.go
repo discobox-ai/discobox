@@ -36,9 +36,11 @@ const (
 // dialog is the single modal layer. Everything that is not the list or the
 // prompt — the action menu, a confirmation, the help — is one of these.
 type dialog struct {
-	kind  dialogKind
-	title string
-	body  string
+	choiceDescriptions []string
+	descriptionCursor  int
+	kind               dialogKind
+	title              string
+	body               string
 	// copy is what c does on a scrolling card: the whole body on the
 	// clipboard, for a card longer than the window it is drawn in. Nil where
 	// no Model has wired one, and the key is then neither offered nor answered.
@@ -739,7 +741,14 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 	if chevron {
 		room -= lipgloss.Width(dialogMarkOff)
 	}
+	if d.choiceDescriptions != nil && d.cursor != d.descriptionCursor {
+		d.offset = 0
+		d.descriptionCursor = d.cursor
+	}
 	lines := d.bodyLines(st, room)
+	if d.choiceDescriptions != nil {
+		lines = wrap(d.choiceDescriptions[d.cursor], room)
+	}
 
 	// Everything under the body is what answers the card, so it is measured
 	// first and the body takes what the window has left: a body drawn whole
@@ -791,6 +800,17 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 	}
 	d.page = maxBody
 
+	if d.choiceDescriptions != nil {
+		subject := wrap(d.body, inner)
+		b.WriteString(strings.Join(subject, "\n"))
+		b.WriteByte('\n')
+		maxBody = max(maxBody-len(subject)-2, 1)
+		d.page = maxBody
+		b.WriteString(d.viewFoot(st, z, strings.Count(b.String(), "\n"), inner, avail, itemRoom, false))
+		b.WriteString("\n\n")
+		b.WriteString(d.viewBody(st, lines, inner, maxBody, chevron))
+		return st.dialog.Width(boxWidth).Render(b.String())
+	}
 	if len(lines) > 0 {
 		b.WriteString(d.viewBody(st, lines, inner, maxBody, chevron))
 		b.WriteString("\n")

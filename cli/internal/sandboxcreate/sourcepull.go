@@ -12,14 +12,14 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
-	"github.com/discobox-ai/x/gitutil"
 )
 
-// DeliveryOptions holds the user's consent to lending a Git credential.
-// Without either form of consent the client fetches and pushes as before.
+// DeliveryOptions carries the resolved client policy and frontend capabilities.
 type DeliveryOptions struct {
-	LendCredentials   bool
+	Credentials       GitCredentials
+	ConfigPath        string
 	RunCredential     func(context.Context, *exec.Cmd) error
 	ConfirmCredential func(context.Context, string) (bool, error)
 }
@@ -31,7 +31,7 @@ func (d cacheDelivery) waitForPull(ctx context.Context, slug, remote, commit str
 	if err != nil {
 		return false, err
 	}
-	if _, err := gitutil.Output(ctx, cache, nil, nil, "cat-file", "-e", commit+"^{commit}"); err == nil {
+	if _, err := sandboxgit.Output(ctx, cache, nil, nil, "cat-file", "-e", commit+"^{commit}"); err == nil {
 		return false, nil
 	}
 	stall := NewStallClock(awaitSourceStall)
@@ -68,7 +68,13 @@ func (d cacheDelivery) waitForPull(ctx context.Context, slug, remote, commit str
 				d.credentialUI.Lock()
 				defer d.credentialUI.Unlock()
 			}
-			allowed := d.options.LendCredentials
+			allowed := d.options.Credentials == GitCredentialsLend
+			if d.options.Credentials == GitCredentialsLocal {
+				return false, nil
+			}
+			if !allowed && d.options.ConfirmCredential == nil {
+				return false, fmt.Errorf("%s needs Git credentials: choose --git-credentials=local or --git-credentials=lend, or set git.credentials in %s; retry with discobox attach --git-credentials=local %s", displaySafe(remote), d.options.ConfigPath, d.sandboxID)
+			}
 			if !allowed && d.options.ConfirmCredential != nil {
 				allowed, err = d.options.ConfirmCredential(ctx, state.Host.Or("")+"/"+state.Path.Or(""))
 				if err != nil {
@@ -78,7 +84,11 @@ func (d cacheDelivery) waitForPull(ctx context.Context, slug, remote, commit str
 			if !allowed {
 				return false, nil
 			}
-			return d.lend(ctx, slug, state)
+			delivered, err := d.lend(ctx, slug, state)
+			if !delivered && err == nil {
+				d.report.step(Step("pool pull could not finish; downloading on this machine"))
+			}
+			return delivered, err
 		default:
 			return false, nil
 		}
@@ -113,7 +123,7 @@ func (d cacheDelivery) lend(ctx context.Context, slug string, state apimodel.Sou
 	fields := "protocol=" + state.Protocol.Or("https") + "\nhost=" + state.Host.Or("") + "\npath=" + state.Path.Or("") + "\n\n"
 	// No prompt: the consent dialog is the only UI here; a missing helper falls
 	// back to fetching through the client with its existing auth configuration.
-	for attempt := 0; attempt < 3 || d.options.RunCredential != nil; attempt++ {
+	for attempt := 0; attempt < 3; attempt++ {
 		var output string
 		var err error
 		if d.options.RunCredential != nil {
@@ -127,9 +137,12 @@ func (d cacheDelivery) lend(ctx context.Context, slug string, state apimodel.Sou
 			err = d.options.RunCredential(ctx, cmd)
 			output = stdout.String()
 		} else {
-			output, err = gitutil.Output(ctx, "", []byte(fields), map[string]string{"GIT_TERMINAL_PROMPT": "0"}, "credential", "fill")
+			output, err = sandboxgit.Output(ctx, "", []byte(fields), sandboxgit.NoPromptEnv, "credential", "fill")
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				return false, ctx.Err()
+			}
 			return false, nil //nolint:nilerr // No helper/declined Git prompt falls back to client delivery.
 		}
 
@@ -148,11 +161,11 @@ func (d cacheDelivery) lend(ctx context.Context, slug string, state apimodel.Sou
 			return false, err
 		}
 		if _, ok := res.(*apimodel.Sandbox); ok {
-			_, _ = gitutil.Output(ctx, "", []byte(output+"\n\n"), nil, "credential", "approve")
+			_, _ = sandboxgit.Output(ctx, "", []byte(output+"\n\n"), nil, "credential", "approve")
 			return true, nil
 		}
 		if problem, ok := res.(*apiclientgen.ErrorModelStatusCode); ok && problem.StatusCode == 401 {
-			_, _ = gitutil.Output(ctx, "", []byte(output+"\n\n"), nil, "credential", "reject")
+			_, _ = sandboxgit.Output(ctx, "", []byte(output+"\n\n"), nil, "credential", "reject")
 			continue
 		}
 		return false, nil

@@ -116,6 +116,9 @@ func sourceAwaitsDelivery(source apimodel.GitSource, awaiting bool) bool {
 // It is a no-op unless the server expects a delivery, so callers can invoke it
 // unconditionally after create.
 func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSources, serverURL, token string, report Report, options DeliveryOptions) error {
+	if err := options.Credentials.Validate(); err != nil {
+		return err
+	}
 	pending := pushDeliveredSources(sandbox)
 	if len(pending) == 0 {
 		return nil
@@ -367,7 +370,7 @@ func pushSource(ctx context.Context, repoRoot, repoURL, token, leaseRef, commit,
 	}
 	args := []string{"push", repoURL}
 	args = append(args, refspecs...)
-	if _, err := gitutil.Output(ctx, repoRoot, nil, sandboxgit.NoPromptEnv, sandboxgit.PushArgs(token, args)...); err != nil {
+	if _, err := sandboxgit.Output(ctx, repoRoot, nil, sandboxgit.NoPromptEnv, sandboxgit.PushArgs(token, args)...); err != nil {
 		return fmt.Errorf("push source to discobox: %w", err)
 	}
 	if !held {

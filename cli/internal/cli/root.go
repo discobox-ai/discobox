@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -33,17 +35,18 @@ const defaultProjectAlias = "default"
 const serverEnv = "DISCOBOX_SERVER"
 
 type App struct {
-	serverURL     string
-	irohRelayURLs string
-	irohLogLevel  string
-	projectID     string
-	token         string
-	output        string
-	quiet         bool
-	debug         bool
-	autoStart     autoStartServer
-	color         colorWhen
-	errOut        io.Writer
+	gitCredentials sandboxcreate.GitCredentials
+	serverURL      string
+	irohRelayURLs  string
+	irohLogLevel   string
+	projectID      string
+	token          string
+	output         string
+	quiet          bool
+	debug          bool
+	autoStart      autoStartServer
+	color          colorWhen
+	errOut         io.Writer
 
 	// serverSource is where the server binary comes from, as far as the flags
 	// say. `admin server` is what sets it; everything else, the autolaunch
@@ -157,10 +160,38 @@ See "%[1]s run --help" for everything run takes.`, name),
 		SuggestionsMinimumDistance: 2,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			app.errOut = cmd.ErrOrStderr()
-			// --version is answered whatever else the environment gets wrong,
-			// for the reason the version command skips this hook altogether.
 			if showVersion && cmd == cmd.Root() {
 				return nil
+			}
+			if cmd.Parent() == cmd.Root() {
+				switch cmd.Name() {
+				case "run", "attach", "start", "console", "tui", "push", "configure":
+					explicit := cmd.Flags().Changed("git-credentials") || cmd.Root().Flags().Changed("git-credentials")
+					policy := app.gitCredentials
+					if old := cmd.Flags().Lookup("lend-git-credentials"); old != nil && old.Changed {
+						if explicit {
+							return fmt.Errorf("--lend-git-credentials and --git-credentials cannot be used together")
+						}
+						explicit = true
+						policy = sandboxcreate.GitCredentialsAsk
+						if old.Value.String() == "true" {
+							policy = sandboxcreate.GitCredentialsLend
+						}
+					}
+					ctx := cmd.Context()
+					if explicit {
+						ctx = context.WithValue(ctx, gitCredentialOverrideKey{}, policy)
+					}
+					ctx, err := resolveGitCredentials(ctx)
+					if err != nil {
+						return err
+					}
+					if !canAskInline(cmd) {
+						ctx = sandboxgit.WithNoninteractive(ctx)
+					}
+					cmd.SetContext(ctx)
+				}
+
 			}
 			if err := refuseRootOnlyArguments(cmd, args); err != nil {
 				return err
@@ -186,6 +217,7 @@ See "%[1]s run --help" for everything run takes.`, name),
 			return cmd.Help()
 		},
 	}
+	cmd.Flags().Var(&app.gitCredentials, "git-credentials", "Git credential `strategy`: ask, lend, or local; overrides git.credentials in client.yaml (default ask)")
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault(serverEnv, endpoint.DefaultEndpoint()), "connect to `SERVER`, an endpoint or a registered server's name; defaults to the primary \"discobox admin remote primary\" set, and to the local server when none is")
 	// Its default is said in words: the endpoint it resolves to is this
 	// machine's socket path, which is noise in help.
@@ -272,6 +304,12 @@ See "%[1]s run --help" for everything run takes.`, name),
 	cmd.AddCommand(hiddenSpelling("shell", app.newExecCommand()))
 	cmd.AddCommand(hiddenSpelling("id", app.newIDCommand()))
 	app.installHelp(cmd)
+	for _, child := range cmd.Commands() {
+		switch child.Name() {
+		case "run", "attach", "start", "console", "tui", "push", "configure":
+			child.Flags().Var(&app.gitCredentials, "git-credentials", "Git credential `strategy`: ask, lend, or local; overrides git.credentials in client.yaml (default ask)")
+		}
+	}
 	return cmd, app
 }
 

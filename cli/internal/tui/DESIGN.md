@@ -3589,3 +3589,17 @@ Nothing saves automatically.
 Harness variants retain their own selectable identity and account status.
 `Harness.Parent` annotates the display name as a variant of its parent; it does
 not participate in account availability or bindings.
+
+## Git source authentication questions
+
+The frontend carries questions and Git terminal handoffs through `CredentialUI`;
+the CLI data source supplies the resolved client policy to shared delivery.
+The Git credentials action dialog uses the labels and explanation text from
+`sandboxcreate`. Its persistent description below the choices follows keyboard
+selection and mouse hover; PageUp/PageDown reads overflowing text before
+confirmation. Escape cancels delivery instead of selecting local fetch.
+The session seeds the effective policy for command previews. A targeted
+`DataSource.GitCredentialPolicy` refresh at create/options entry and while
+they remain visible rereads consent without replaying the initial Session
+(which would reset drafts, filters and options). The preview is unavailable
+while refreshing or when the configuration cannot be read.

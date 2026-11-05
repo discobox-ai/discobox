@@ -42,12 +42,18 @@ const SchemaID = "https://raw.githubusercontent.com/discobox-ai/discobox/main/cl
 // `doc` the description, `default` the literal default and `example` a sample
 // value. A command-line flag always wins over the setting it defaults.
 type Config struct {
+	Git Git `yaml:"git" doc:"Git authentication choices on this client, across servers and repositories."`
 	Run Run `yaml:"run" doc:"What discobox run, and the console's New Discobox panel, take when the command line does not say."`
 
 	// Path is the file read, or empty when FileVar says read none. Read is
 	// whether one was there to read.
 	Path string `yaml:"-"`
 	Read bool   `yaml:"-"`
+}
+
+// Git controls authentication consent for client source delivery.
+type Git struct {
+	Credentials sandboxcreate.GitCredentials `yaml:"credentials" default:"ask" enum:"ask,lend,local" doc:"How to answer a private source's pool credential request: ask each time, lend credentials through the control plane to the pool, or fetch locally and send objects. Saving lend authorizes future eligible pulls without another consent question. --git-credentials overrides this machine-wide preference. This is consent, not a forced fetch location; public and cached sources need none."`
 }
 
 // Run is what a create takes by default.
@@ -95,6 +101,10 @@ func Load() (*Config, error) {
 		return cfg, nil
 	default:
 		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	var policy sandboxcreate.GitCredentials
+	if err := policy.Set(string(cfg.Git.Credentials)); err != nil {
+		return nil, fmt.Errorf("%s: git.credentials: %w", path, err)
 	}
 	if err := cfg.resolvePaths(); err != nil {
 		return nil, err

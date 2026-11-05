@@ -120,9 +120,11 @@ func (o *option) cycle(delta int) {
 // directory come from the session rather than the panel, and are carried here
 // only so the command preview can show the flags it would need.
 type optionSet struct {
-	opts    []*option
-	cursor  int
-	session Session
+	gitPolicyLoading bool
+	gitPolicyError   bool
+	opts             []*option
+	cursor           int
+	session          Session
 
 	// folder is the source of the folder the window is currently working in,
 	// chosen in the header: the directory or URL a create from it cuts from. It
@@ -1139,6 +1141,12 @@ func (o *optionSet) command(prompt string) string {
 // previews one whose source is the row under its cursor rather than the one
 // the Source row is set to.
 func (o *optionSet) commandFor(req RunRequest) string {
+	if o.gitPolicyLoading {
+		return "Reading Git credential preference…"
+	}
+	if o.gitPolicyError {
+		return "Cannot read Git credential preference; fix client.yaml before creating"
+	}
 	args := []string{"discobox"}
 	if req.Server != "" {
 		args = append(args, "--server", req.Server)
@@ -1153,6 +1161,9 @@ func (o *optionSet) commandFor(req RunRequest) string {
 	// and go in front of it. SOURCE leads, as `run SOURCE` reads, and is "."
 	// for the window's own directory. --no-source takes its place.
 	run := []string{"run"}
+	if p := o.session.GitCredentials; p != "" {
+		run = append(run, "--git-credentials="+p)
+	}
 	switch {
 	case req.NoSource:
 		run = append(run, "--no-source")

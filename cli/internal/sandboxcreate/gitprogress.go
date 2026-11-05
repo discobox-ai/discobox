@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
 )
 
 // A fetch from a remote, and the push of what it fetched, are the two
@@ -107,12 +107,7 @@ func (w *meterWriter) message() string {
 // terminal here, and it reports none to anything else unasked.
 func gitTransfer(ctx context.Context, dir string, env map[string]string, step Step, report Report, args ...string) error {
 	//nolint:gosec // The executable is fixed; the arguments are this package's own refspecs, URLs and switches.
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = os.Environ()
-	for key, value := range env {
-		cmd.Env = append(cmd.Env, key+"="+value)
-	}
+	cmd := sandboxgit.Command(ctx, dir, env, args...)
 	// The meters are git's English: a translated one would not parse, and
 	// would simply not be reported.
 	cmd.Env = append(cmd.Env, "LC_ALL=C")

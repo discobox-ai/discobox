@@ -460,6 +460,7 @@ func (u BoxSettingsUpdate) empty() bool {
 // the run options offer as a harness is not here — that is the harnesses, which
 // are read on their own and change while the window is up.
 type Session struct {
+	GitCredentials string
 	Project        string
 	DefaultProject string
 
@@ -1198,8 +1199,7 @@ type Listing struct {
 // RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
 // nothing the command does not have.
 type RunRequest struct {
-	Credentials        CredentialUI
-	LendGitCredentials bool
+	Credentials CredentialUI
 	// Prompt is what the harness is given to do, as the create takes it: the
 	// arguments. The composer holds one piece of text and sends it as one
 	// argument — splitting it would be inventing tokens nobody typed — while
@@ -2073,6 +2073,9 @@ type ReviewComment struct {
 var ErrNotRunning = errors.New("the discobox is not running")
 
 type DataSource interface {
+	// GitCredentialPolicy rereads client consent defaults for command previews.
+	GitCredentialPolicy(ctx context.Context) (string, error)
+
 	// Session is read once at startup, and is what the header and the run
 	// options panel are drawn from.
 	Session(ctx context.Context) (Session, error)

@@ -106,3 +106,43 @@ client is connected; the console shows where to reach them.
 Tools under `.discobox/tools` open editors or other programs for a box.
 `discobox tools ls` lists available tools. Repository tools run inside the
 box; only user-owned tools may request execution on the user's host.
+
+## Private Git sources
+
+When a pool needs authentication for missing source objects, choose how this
+client supplies them with `--git-credentials=ask|lend|local` on `run`, `attach`,
+`start`, or `console`. The command-line option overrides `git.credentials` in
+your client configuration. Omission defaults to `ask`. For example:
+
+```yaml
+git:
+  credentials: local
+```
+
+This machine-wide setting covers all servers and repositories used by this
+client. Saving `lend` authorizes future eligible pulls without another question.
+Choosing an option in a dialog does not save it.
+
+- `ask` explains both choices before you confirm. Without interactive input it
+  fails with the configuration path and a retry command when a choice is needed.
+- `lend` sends your local Git helper's username/password or token through the
+  control plane to the pool for the synchronous HTTPS pull. Discobox does not
+  save it in server/pool resources, cache Git configuration, or credential stores.
+  Your local helper may save it on success. Discobox's use ends with the request;
+  the original credential keeps its provider scope and expiry and is not revoked
+  or restricted to this repository. Trust the server and pool with it. If the
+  pool pull cannot finish, the client reports its switch to local fetching.
+- `local` authenticates with this machine's Git configuration, downloads objects
+  and sends them to the pool, without lending the upstream credential. Objects
+  remain cached and the initial download travels through this machine twice.
+
+These choices govern consent, not the location of every fetch: public sources
+and commits already cached need no question. A failed delivery leaves the box
+awaiting source; use the reported attach command to retry. Noninteractive
+operations suppress Git, askpass, credential-manager and SSH questions; configure
+a noninteractive credential helper or an SSH key and known host first.
+
+A discobox creating another discobox uses its proxy to fetch locally and cannot
+lend credentials. Use `local` there. The older `run --lend-git-credentials`
+spelling still works: true means `lend`, false means `ask`; it cannot be combined
+with `--git-credentials`.

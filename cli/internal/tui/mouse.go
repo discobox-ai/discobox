@@ -48,6 +48,11 @@ func (m *Model) updateMouse(msg tea.MouseMsg) tea.Cmd {
 // alone receives no more than it did before the window wanted hover.
 func (m *Model) hover(ev tea.MouseMotionMsg) tea.Cmd {
 	m.hoverX, m.hoverY = ev.X, ev.Y
+	if m.dialog != nil && m.dialog.choiceDescriptions != nil {
+		if z, ok := m.zones.at(ev.X, ev.Y); ok && z.what.kind == hitDialogItem {
+			m.dialog.cursor = z.what.idx
+		}
+	}
 	if m.modalUp() || !m.inPanes() || m.mouseSeized {
 		return nil
 	}

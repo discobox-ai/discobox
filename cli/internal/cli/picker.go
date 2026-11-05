@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -366,9 +367,10 @@ func sandboxPickerOrigin(sandbox apimodel.Sandbox, localHostID string) (path, ho
 
 // pickerItem is one choice: its resource ID plus what to show for it.
 type pickerItem struct {
-	id     string
-	title  string
-	detail string
+	explanation string
+	id          string
+	title       string
+	detail      string
 	// origin says where the item's resource lives — for a sandbox, the
 	// directory it was started from. It is a trailing column drawn only when
 	// the terminal leaves room for it, and shortened from its front, a path
@@ -606,7 +608,10 @@ type pickerModel struct {
 	live func() (string, bool)
 	// width is the terminal's, from the runtime. Zero until it has said, which
 	// is only ever before the first frame.
-	width int
+	width              int
+	height             int
+	explanationOffset  int
+	explanationBlocked bool
 }
 
 // pickerLiveInterval is how often a live prompt is re-read. It is a number
@@ -637,6 +642,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.pollLive()
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 	case tea.KeyPressMsg:
 		return m, m.updateKey(msg)
@@ -693,6 +699,12 @@ func (m *pickerModel) updateKey(key tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	switch key.String() {
+	case "pgdown":
+		m.explanationOffset++
+		return nil
+	case "pgup":
+		m.explanationOffset = max(m.explanationOffset-1, 0)
+		return nil
 	case "ctrl+c":
 		m.done = true
 		return tea.Quit
@@ -712,13 +724,14 @@ func (m *pickerModel) updateKey(key tea.KeyPressMsg) tea.Cmd {
 			m.cursor++
 		}
 	case "enter":
-		if len(m.matches) == 0 {
+		if m.explanationBlocked || len(m.matches) == 0 {
 			return nil
 		}
 		m.chosen = m.matches[m.cursor].index
 		m.done = true
 		return tea.Quit
 	}
+	m.explanationOffset = 0
 	m.scrollToCursor()
 	return nil
 }
@@ -875,6 +888,9 @@ func (m *pickerModel) columnBudgets() (detail, origin int) {
 }
 
 func (m *pickerModel) View() tea.View {
+	if !m.done && len(m.items) > 0 && m.items[0].explanation != "" {
+		return m.viewExplanation()
+	}
 	if m.done {
 		// Take the menu back down: the picked resource is the command's subject,
 		// not part of its output.
@@ -1017,4 +1033,47 @@ func renderPickerField(text string, positions []int, width int, base lipgloss.St
 		b.WriteString(strings.Repeat(" ", pad))
 	}
 	return b.String()
+}
+
+// viewExplanation budgets the entire decision card, including wrapped title,
+// choices, help and frame, before allocating the scrolling description.
+func (m *pickerModel) viewExplanation() tea.View {
+	width, height := m.width, m.height
+	if width == 0 {
+		width = 80
+	}
+	if height == 0 {
+		height = 24
+	}
+	inner := max(width-pickerCardChrome, 1)
+	title := strings.Split(ansi.Wrap(m.prompt, inner, ""), "\n")
+	if len(title) > 2 {
+		title = title[:2]
+		title[1] = ansi.Truncate(title[1], inner, "…")
+	}
+	var head strings.Builder
+	head.WriteString(pickerTitleStyle.Render(strings.Join(title, "\n")))
+	for i, match := range m.matches {
+		lines := strings.Split(ansi.Wrap(match.item.title, max(inner-2, 1), ""), "\n")
+		for j, line := range lines {
+			head.WriteByte('\n')
+			prefix := "  "
+			if i == m.cursor && j == 0 {
+				prefix = pickerCursorStyle.Render("❯ ")
+			}
+			head.WriteString(prefix)
+			head.WriteString(line)
+		}
+	}
+	help := ansi.Wrap("↑↓ choose · Enter confirms · Esc cancels", inner, "")
+	hint := ansi.Wrap("PgUp/PgDn reads more", inner, "")
+	room := height - pickerCardStyle.GetVerticalFrameSize() - lipgloss.Height(head.String()) - lipgloss.Height(help) - lipgloss.Height(hint) - 2
+	m.explanationBlocked = room < 1 || len(m.matches) == 0
+	if m.explanationBlocked {
+		return tea.NewView(ansi.Wrap("Resize terminal or Esc to cancel", max(width, 1), ""))
+	}
+	lines := strings.Split(ansi.Wrap(m.matches[m.cursor].item.explanation, inner, ""), "\n")
+	m.explanationOffset = min(m.explanationOffset, max(len(lines)-room, 0))
+	content := head.String() + "\n\n" + strings.Join(lines[m.explanationOffset:min(m.explanationOffset+room, len(lines))], "\n") + "\n" + hint + "\n\n" + help
+	return tea.NewView(pickerCardStyle.Render(content))
 }
