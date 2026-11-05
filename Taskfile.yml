@@ -150,6 +150,11 @@ vars:
   DEADCODE_BIN: deadcode{{.EXE}}
 
 tasks:
+  prototype:approvals:refresh:
+    desc: Compare current and proposed credential refresh screens
+    cmds:
+      - go run -tags prototype ./cli/internal/cmd/approval-preview --screen refresh --current {{.CLI_ARGS}}
+
   prototype:approvals:trust:
     desc: Compare current and proposed host trust approval screens
     cmds:

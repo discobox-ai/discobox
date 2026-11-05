@@ -75,8 +75,8 @@ and its Go toolchain; it is not a standalone snippet.
   consent. The current backend expects one answer covering the request;
   this prototype's two visual steps do not decide transaction timing.
 - Implement creation of a new credential; its preview option is a placeholder.
-- Exercise the remaining approval kinds (refresh, API access) separately
-  with the owner. Adoption is accepted; host trust is the next draft below.
+- Exercise API access separately with the owner. Adoption and host trust are
+  accepted; credential refresh is the next draft below.
 
 ## Fixture and limitations
 
@@ -121,7 +121,7 @@ replaced. The new design uses the same themed form/dialog components and modal
 buttons as credential approval. The owner accepted this layout. The mouse and scroll-to-end requirements
 above also apply here.
 
-## Next screen: host trust (draft for owner review)
+## Host trust (layout accepted by owner)
 
 ```sh
 go tool task prototype:approvals:trust
@@ -139,5 +139,26 @@ Forever option. Both decisions use the established modal buttons.
 The scope is explicit: this host and box only. The CA choice trusts a verifying
 chain to that CA; the host-key choice is tied to its public key and breaks on
 key rotation. Denial leaves the host refused; expiration requires trust again.
-All data and fingerprints are synthetic, and no host is contacted. This layout
-is for discussion, not yet accepted. Mouse and scroll-gate requirements apply.
+All data and fingerprints are synthetic, and no host is contacted. The owner accepted this layout. Mouse and scroll-gate requirements apply.
+
+## Next screen: credential refresh (draft for owner review)
+
+```sh
+go tool task prototype:approvals:refresh
+```
+
+F2 compares current/proposed; F3 switches expired/rejected causes. The original
+initial screen comes from askAboutRefresh with its callback replaced. The new
+single card identifies box/credential/reason, destination and value lifetime.
+Choose Run saved command or Paste a value. For command renewal, display the
+exact command and explain that it runs locally as the person, without a shell;
+permission is once or while this console window stays open. The upper summary
+tracks those choices. Manual entry is masked and command permission is dimmed.
+
+Use Refresh/Dismiss modal buttons: dismissal keeps the existing value and may
+prompt again later. Refresh changes a project token value, not existing grant
+routes/lifetimes. No command executes and no token is sent. Use dummy text only.
+The program never prints manual input in its receipt and clears it on submit.
+The fixture includes a saved command; no-command and OAuth/exchange-specific
+renewal flows remain implementation work. Mouse and scroll-gate requirements
+apply. This layout is not yet accepted by the owner.

@@ -16,7 +16,7 @@ import (
 // RunApprovalPreview is a local design workbench. It never creates a data source
 // or calls an API. The prototype build tag keeps it out of the product binary.
 func RunApprovalPreview(out io.Writer, capture bool, current bool, width, height int, requestPath, policyRoot, screen string) error {
-	if screen != "credential" && screen != "adoption" && screen != "trust" {
+	if screen != "credential" && screen != "adoption" && screen != "trust" && screen != "refresh" {
 		return fmt.Errorf("unknown screen %q", screen)
 	}
 	p := &approvalPreview{screen: screen, width: width, height: height, current: current, st: newStyles(true)}
@@ -51,18 +51,27 @@ type approvalPreview struct {
 func (p *approvalPreview) Init() tea.Cmd { return nil }
 func (p *approvalPreview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.PasteMsg:
+		if p.d.kind == dlgForm && p.d.formActionAt < 0 && len(p.d.form.rows) > 0 && p.d.form.answerable(p.d.form.cursor) {
+			return p, p.d.form.paste(msg)
+		}
 	case tea.WindowSizeMsg:
 		p.width, p.height = msg.Width, msg.Height
 	case tea.KeyPressMsg:
 		switch keyName(msg) {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return p, tea.Quit
+		case "q":
+			typing := p.d.kind == dlgForm && p.d.formActionAt < 0 && len(p.d.form.rows) > 0 && len(p.d.form.rows[p.d.form.cursor].choices) == 0
+			if !typing {
+				return p, tea.Quit
+			}
 		case "f2":
 			p.current = !p.current
 			p.open()
 			return p, nil
 		case "f3":
-			if p.screen == "adoption" {
+			if p.screen == "adoption" || p.screen == "refresh" {
 				p.readOnly = !p.readOnly
 				p.open()
 			}
@@ -95,6 +104,9 @@ func (p *approvalPreview) render() string {
 		mode = "CURRENT"
 	}
 	subject := "Credential use"
+	if p.screen == "refresh" {
+		subject = "Credential refresh · F3 expired/rejected"
+	}
 	if p.screen == "trust" {
 		subject = "Host trust"
 	}
@@ -115,6 +127,10 @@ func (p *approvalPreview) receipt(result string) tea.Cmd {
 }
 func (p *approvalPreview) open() {
 	p.refreshGrant = nil
+	if p.screen == "refresh" {
+		p.openRefresh()
+		return
+	}
 	if p.screen == "trust" {
 		p.openTrust()
 		return
