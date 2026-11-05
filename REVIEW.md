@@ -171,3 +171,10 @@ Global review expectations:
   ACL allow entries before mode bits: mode 0700 alone can still expose a moved
   socket under shared `/tmp`. Reject unsafe directories rather than repairing
   permissions or trusting their listeners.
+
+- A test bridge from a sandbox to a server's loopback API must allow only the
+  methods, paths and response fields the fixture needs. IP filtering and GET-only
+  forwarding do not confine its authority: it can inherit the default user's
+  ScopeAll, and GET can return other boxes' files, exec logs or screens. Harness
+  config DTOs also contain configured file bodies; project identities alone do
+  not make them metadata-only (the desktop spike, #583).

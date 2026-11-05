@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Discobox renderer comparison workload</title>
+<style>
+  body {
+    margin: 0;
+    background: #f5f5f5;
+    font: 18px monospace;
+    color: #202020;
+  }
+  #marker {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 10;
+  }
+  #text {
+    padding: 70px 40px;
+  }
+  #input {
+    position: fixed;
+    right: 20px;
+    top: 60px;
+    background: white;
+  }
+</style>
+<canvas id="marker" width="480" height="48"></canvas>
+<div id="input">Click or type to change this box</div>
+<div id="text"></div>
+<script>
+  // The 40-bit black/white marker format matches voxl's MIT-licensed benchmark:
+  // low 24 bits are source wall-clock milliseconds, high 16 bits are frame number.
+  // It measures source draw to observed browser pixels, not physical display latency.
+  const ctx = document.querySelector("canvas").getContext("2d");
+  const text = document.querySelector("#text");
+  for (let i = 0; i < 1200; i++)
+    text.appendChild(
+      Object.assign(document.createElement("p"), {
+        textContent: `${String(i).padStart(4, "0")}  discobox renderer comparison — abcdef0123456789 — sharp text, scrolling and colored lines`,
+      }),
+    );
+  let frame = 0;
+  window.inputSerial = 0;
+  window.mode = "idle";
+  function changed(e) {
+    window.inputSerial++;
+    document.querySelector("#input").textContent =
+      `${e.type} ${e.key || ""} #${window.inputSerial}`;
+    document.querySelector("#input").style.background =
+      window.inputSerial % 2 ? "#00ff00" : "#ff0000";
+  }
+  for (const type of ["keydown", "pointerdown", "wheel", "touchstart"])
+    addEventListener(type, changed);
+  function tick() {
+    if (window.mode !== "idle") {
+      if (window.mode === "browser") window.scrollTo(0, (frame * 6) % 30000);
+      const value =
+        (BigInt(frame++ & 0xffff) << 24n) | BigInt(Date.now() & 0xffffff);
+      for (let bit = 0; bit < 40; bit++) {
+        ctx.fillStyle = (value >> BigInt(bit)) & 1n ? "#fff" : "#000";
+        ctx.fillRect((bit % 20) * 24, Math.floor(bit / 20) * 24, 24, 24);
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+</script>

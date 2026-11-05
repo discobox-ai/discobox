@@ -2218,6 +2218,78 @@ tasks:
           report >> "$GITHUB_STEP_SUMMARY"
         fi
 
+  spike:voxl:build:
+    desc: Build the pinned voxl desktop spike locally (Linux x86_64, Nix required)
+    preconditions:
+      - sh: '[ "$(uname -s)/$(uname -m)" = Linux/x86_64 ]'
+        msg: The voxl spike runtime packer currently supports Linux x86_64 only
+    cmds:
+      - bash test/spikes/voxl/build.sh
+
+  spike:voxl:
+    desc: Run the disposable voxl desktop overlay in a desktop sandbox
+    env:
+      VOXL_BIN: '{{.ROOT_DIR}}/.tmp/voxl-runtime/voxl'
+    cmds:
+      - node test/spikes/voxl/run.mjs sandbox-agent/desktop/web/app.js
+
+  spike:voxl:source:
+    desc: Run the browser workload on the sandbox's X display
+    env:
+      DISPLAY: ':0'
+    cmds:
+      - node test/spikes/voxl/source.mjs
+
+  spike:voxl:measure:
+    desc: Measure one connected renderer against the running workload
+    vars:
+      RENDERER: '{{.RENDERER | default "voxl"}}'
+      SECONDS: '{{.SECONDS | default "20"}}'
+      WORKLOAD: '{{.WORKLOAD | default "browser"}}'
+    cmds:
+      - node test/spikes/voxl/measure.mjs 'http://127.0.0.1:6902/?renderer={{.RENDERER}}' '{{.SECONDS}}' '{{.WORKLOAD}}'
+
+  spike:voxl:features:
+    desc: Exercise input, clipboard, touch, image quality and annotations
+    vars:
+      RENDERER: '{{.RENDERER | default "voxl"}}'
+    cmds:
+      - node test/spikes/voxl/features.mjs '{{.RENDERER}}'
+
+  spike:voxl:quality:
+    desc: Compare a stationary console-logo region with the X framebuffer
+    vars:
+      RENDERER: '{{.RENDERER | default "voxl"}}'
+    cmds:
+      - node test/spikes/voxl/quality.mjs '{{.RENDERER}}'
+
+  spike:voxl:scale:
+    desc: Exercise 1x, 2x and live resize (restarts the desktop session)
+    vars:
+      RENDERER: '{{.RENDERER | default "voxl"}}'
+    env:
+      DISPLAY: ':0'
+    cmds:
+      - node test/spikes/voxl/scale.mjs '{{.RENDERER}}'
+
+  spike:voxl:console-bridge:
+    desc: Let one test sandbox read the parent dev server for a console workload
+    requires:
+      vars: [SANDBOX_IP, SANDBOX_ID]
+    cmds:
+      - node test/spikes/voxl/console-bridge.mjs '{{.SANDBOX_IP}}' '{{.SANDBOX_ID}}'
+
+  spike:voxl:console:
+    desc: Open the real CLI console in the test desktop
+    requires:
+      vars: [DEV_SERVER]
+    env:
+      DISPLAY: ':0'
+      LANG: C.UTF-8
+      COLORTERM: truecolor
+    cmds:
+      - xterm -u8 -fa 'DejaVu Sans Mono' -fs 12 -bg '#100c16' -fg '#ece5f5' -b 0 +sb -fullscreen -e '{{.CLI_BINARY}}' --server '{{.DEV_SERVER}}' console
+
   clean:
     desc: Remove local build artifacts
     cmds:
