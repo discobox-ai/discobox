@@ -385,8 +385,17 @@ durable state asks the same question.
 
 The pool bundle's units (`bundle/features/*/systemd`) run what its features
 link from the bundle's stable tree. A unit that reads a file the agent renders
-`Requires=` and is `After=` the agent's Type=notify unit: systemd starts it no
-sooner than the agent has written it.
+is `After=` the agent's Type=notify unit: systemd starts it no sooner than
+its configuration is written. Builder units use `Wants=`, never `Requires=`,
+`BindsTo=` or `PartOf=` on the agent: an agent-only restart must leave the
+whole builder graph running, or the mediator's ten-minute drain can hold the
+agent and egress proxy down. Explicit builder upgrades still restart the
+builder units and drain the mediator.
+
+Install and reload `pool-builder-units` before `pool-agent` runs: an existing
+pool still has the old Requires graph until that reload. Unit upgrades drain
+before the agent restart while egress remains available. Only `pool-builder`
+enables the units, after configuration and binaries exist.
 
 A feature's binary moves under its stable link without any step's definition
 moving, so nothing would restart what runs it: each feature's `restart` step

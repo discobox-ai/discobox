@@ -3,6 +3,7 @@ package bundle
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,8 +43,23 @@ func TestThePoolBundleLoads(t *testing.T) {
 	for _, feature := range features {
 		names = append(names, feature.Name)
 	}
-	if got := strings.Join(names, " "); got != "pool-agent pool-builder" {
+	if got := strings.Join(names, " "); got != "pool-agent pool-builder pool-builder-units" {
 		t.Fatalf("features = %s", got)
+	}
+
+	for _, feature := range features {
+		var dependency string
+		switch feature.Name {
+		case "pool-agent":
+			dependency = "pool-builder-units"
+		case "pool-builder":
+			dependency = "pool-agent"
+		default:
+			continue
+		}
+		if !slices.Contains(feature.Spec.Requires, dependency) {
+			t.Errorf("%s must wait for %s", feature.Name, dependency)
+		}
 	}
 	unit, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", "discobox-pool-agent.service"))
 	if err != nil {
@@ -95,5 +111,62 @@ func TestBootstrapUnitsAreTheFeaturesUnits(t *testing.T) {
 		if unit == "discobox-pool-agent.service" && !strings.Contains(string(data), BootstrapFile) {
 			t.Fatalf("%s does not read %s", unit, BootstrapFile)
 		}
+	}
+}
+
+func TestAgentRestartDoesNotStopBuildMediator(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("features", "pool-builder-units", "systemd", "discobox-buildkit-mediator.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || (key != "Requires" && key != "BindsTo" && key != "PartOf") {
+			continue
+		}
+		for _, unit := range strings.Fields(value) {
+			if unit == "discobox-pool-agent.service" {
+				t.Errorf("mediator %s=%s propagates agent stop into its build drain, blocking agent/proxy restart", key, unit)
+			}
+		}
+	}
+}
+
+// Every path from the agent into the builder must leave builds running.
+func TestAgentRestartLeavesBuilderRunning(t *testing.T) {
+	for _, name := range []string{"discobox-buildkit-mediator", "discobox-buildkitd", "discobox-registry"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("features", "pool-builder-units", "systemd", name+".service"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for line := range strings.SplitSeq(string(data), "\n") {
+				key, value, ok := strings.Cut(line, "=")
+				if !ok {
+					continue
+				}
+				for _, unit := range strings.Fields(value) {
+					if unit != "discobox-pool-agent.service" {
+						continue
+					}
+					if key == "Requires" || key == "BindsTo" || key == "PartOf" {
+						t.Errorf("%s=%s propagates agent shutdown", key, unit)
+					}
+				}
+			}
+			for _, key := range []string{"Wants", "After"} {
+				found := false
+				for line := range strings.SplitSeq(string(data), "\n") {
+					if value, ok := strings.CutPrefix(line, key+"="); ok {
+						for _, unit := range strings.Fields(value) {
+							found = found || unit == "discobox-pool-agent.service"
+						}
+					}
+				}
+				if !found {
+					t.Errorf("missing %s dependency on agent", key)
+				}
+			}
+		})
 	}
 }

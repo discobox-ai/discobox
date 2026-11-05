@@ -3,7 +3,7 @@ Description=Discobox Pool BuildKit
 Documentation=https://github.com/discobox-ai/discobox
 # Its configuration is rendered by the pool agent before it reports itself
 # started (Type=notify there).
-Requires=discobox-pool-agent.service
+Wants=discobox-pool-agent.service
 After=network-online.target discobox-pool-agent.service
 Wants=network-online.target
 

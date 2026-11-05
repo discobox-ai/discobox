@@ -8,3 +8,9 @@ set -eu
 
 [ -d /run/systemd/system ] || exit 0
 systemctl try-restart discobox-pool-agent.service discobox-proxy.service
+
+# The mediator runs the same binary. Restart it only after egress has returned:
+# its build drain must never join the agent/proxy restart transaction.
+if systemctl is-active --quiet discobox-buildkit-mediator.service; then
+  systemctl try-restart discobox-buildkit-mediator.service
+fi

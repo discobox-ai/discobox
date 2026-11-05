@@ -48,8 +48,8 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # The pool bundle (ADR 26-10-24-953 §2): the features that make a box a
 # pool's, which `discobox-provision apply` applies. `pool-agent` lays and
 # starts the agent, which is also the pool proxy, and the proxy; `pool-builder`
-# the pool-shared builder (ADR 0044), which a pool whose sandboxes are machines
-# turns off. Each COPY --link, so an edit to one feature moves its layer and
+# the pool-shared builder (ADR 0044). `pool-builder-units` installs the builder's
+# dependency graph before an agent restart, including on an existing pool. Each COPY --link, so an edit to one feature moves its layer and
 # no other. BuildKit's and the registry's are taken from their upstream
 # images, so the set stays what those projects ship and test together;
 # BuildKit's CNI plugins are its `buildkit-cni-*` binaries, which
@@ -57,6 +57,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # A pool's container runs the sandbox base image, so there is no pool image:
 # this is the Dockerfile's one product, and its default target.
 FROM scratch AS bundle
+COPY --link pool-agent/bundle/features/pool-builder-units /features/pool-builder-units
 COPY --link pool-agent/bundle/features/pool-agent /features/pool-agent
 COPY --link --from=build --chmod=0755 /out/discobox-pool-agent /features/pool-agent/discobox-pool-agent
 COPY --link pool-agent/bundle/features/pool-builder /features/pool-builder

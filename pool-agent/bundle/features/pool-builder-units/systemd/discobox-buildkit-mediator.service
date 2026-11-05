@@ -1,7 +1,7 @@
 [Unit]
 Description=Discobox Pool BuildKit Mediator
 Documentation=https://github.com/discobox-ai/discobox
-Requires=discobox-pool-agent.service
+Wants=discobox-pool-agent.service
 After=discobox-buildkitd.service discobox-pool-agent.service
 Wants=discobox-buildkitd.service
 

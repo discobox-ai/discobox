@@ -6,6 +6,7 @@
 # The build puts the agent binary beside this directory's files
 # (pool-agent/Dockerfile's bundle stage).
 apiVersion: discobox.ai/provision/v1
+requires: [pool-builder-units]
 steps:
   # The agent runs git for the pool's cache of Git and its sources' origins.
   - name: packages
