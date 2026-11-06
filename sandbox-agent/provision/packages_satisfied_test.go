@@ -33,6 +33,8 @@ steps:
 			}
 			_, err := fmt.Fprint(out, "install ok installed\t1.0\n")
 			return err
+		case "dpkg":
+			return nil // Model recovery without touching the host database.
 		case "apt-get":
 			apt = append(apt, args[0])
 			if args[0] == "install" {

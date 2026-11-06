@@ -55,7 +55,7 @@ func newBox(t *testing.T) *box {
 					return err
 				}
 				return errors.New("package missing")
-			case "systemctl", "groupadd", "apt-get":
+			case "systemctl", "groupadd", "apt-get", "dpkg":
 				if name == "apt-get" && args[0] == "install" {
 					for _, pkg := range args[7:] {
 						b.packages[pkg] = true
@@ -189,6 +189,7 @@ steps:
 		"groupadd --system discobox",
 		"systemctl --root=" + b.root + " mask getty@.service",
 		"systemctl --root=" + b.root + " enable discobox-agent.service",
+		"dpkg --force-confdef --force-confold --configure -a",
 		"apt-get update --error-on=any",
 		"apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold jq ripgrep",
 	}

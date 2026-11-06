@@ -400,6 +400,9 @@ func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisi
 		return nil
 	}
 	env := []string{"DEBIAN_FRONTEND=noninteractive"}
+	if err := r.recoverDpkg(ctx, out); err != nil {
+		return err
+	}
 	if !r.aptUpdated {
 		if err := r.command(ctx, out, "/", env, "apt-get", "update", "--error-on=any"); err != nil {
 			return err
@@ -449,4 +452,13 @@ func fileMode(mode string) os.FileMode {
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// recoverDpkg finishes configuration left interrupted by a previous boot.
+// The caller holds apt through recovery and the package work that follows.
+func (r *Runner) recoverDpkg(ctx context.Context, out io.Writer) error {
+	if err := r.command(ctx, out, "/", []string{"DEBIAN_FRONTEND=noninteractive"}, "dpkg", "--force-confdef", "--force-confold", "--configure", "-a"); err != nil {
+		return fmt.Errorf("recover interrupted dpkg: %w", err)
+	}
+	return nil
 }
