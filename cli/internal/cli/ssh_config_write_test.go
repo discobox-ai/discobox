@@ -388,16 +388,39 @@ func TestSSHConfigWriteIsScopedPerProject(t *testing.T) {
 		}
 	}
 
+	var stanzas strings.Builder
 	for _, url := range []string{firstURL, secondURL} {
 		namespace := sshConfigNamespace(url, resolvedTestProjectID)
 		configPath := filepath.Join(state, "discobox", "cli", "ssh", namespace, "config")
-		if !strings.Contains(readFile(t, configPath), url) {
+		config := readFile(t, configPath)
+		if !strings.Contains(config, url) {
 			t.Fatalf("config %s has another server's route", configPath)
 		}
+		stanzas.WriteString(config)
+		stanzas.WriteString("\n")
+	}
+	// Parse both servers' stanzas together: an unqualified alias would select
+	// the first server for both boxes. The ssh found on PATH can be MSYS ssh
+	// on Windows, whose Include path syntax differs from native OpenSSH's.
+	// Include installation is checked separately below and in the writer tests.
+	combined := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(combined, []byte(stanzas.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target, err := localSSHTarget()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, url := range []string{firstURL, secondURL} {
+		namespace := sshConfigNamespace(url, resolvedTestProjectID)
 		if ssh, err := exec.LookPath("ssh"); err == nil {
 			host := sshConfigHost(namespace, "sbx_devbox00000001")
-			output, err := exec.CommandContext(t.Context(), ssh, "-G", "-F", filepath.Join(home, ".ssh", "config"), host).CombinedOutput()
-			if err != nil || !strings.Contains(string(output), "--server '"+url+"'") || !strings.Contains(string(output), "hostkeyalias "+namespace+".discobox.internal") {
+			proxyCommand, err := target.proxyCommandLine(url)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, err := exec.CommandContext(t.Context(), ssh, "-G", "-F", combined, host).CombinedOutput()
+			if err != nil || !strings.Contains(string(output), "proxycommand "+proxyCommand) || !strings.Contains(string(output), "hostkeyalias "+namespace+".discobox.internal") || !strings.Contains(string(output), "user sbx_devbox00000001") {
 				t.Fatalf("qualified SSH alias %s resolved incorrectly: %v\n%s", host, err, output)
 			}
 		}
