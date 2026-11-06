@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/proxy"
 	"github.com/discobox-ai/x/shorttmp"
 )
@@ -17,7 +18,7 @@ import (
 func TestTheGateWaitsForTheControlPlaneSocketToReturn(t *testing.T) {
 	root := withTestRoot(t)
 	socket := filepath.Join(shorttmp.Dir(t), "server.sock")
-	endpoint := "unix://" + socket
+	endpoint := wire.UnixURL(socket)
 	var config net.ListenConfig
 	listener, err := config.Listen(t.Context(), "unix", socket)
 	if err != nil {
