@@ -110,3 +110,7 @@
   409 mapping for an already-existing sandbox. During an agent upgrade, a raw
   missing `start-admitted` route is a pool wait, while a typed runtime 404
   remains the runtime's refusal. Never fall back to sending an unfenced start.
+
+- On pool outbound rotation, restart the agent and proxy before draining the
+  build mediator. Wait for the drain before restarting BuildKit and registry;
+  rewriting their environment files alone leaves running consumers on old routes.

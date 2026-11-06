@@ -29,8 +29,9 @@ const statusLayerAPI = "api"
 // emits. It is the transport's diagnosis plus the two things only this side
 // knows: which client asked, and whether the API answered it.
 type statusReport struct {
-	Client   statusClient       `json:"client"`
-	Endpoint endpoint.Diagnosis `json:"endpoint"`
+	Pools    []statusPoolOutbound `json:"pools,omitempty"`
+	Client   statusClient         `json:"client"`
+	Endpoint endpoint.Diagnosis   `json:"endpoint"`
 	// Server is what the server says about its own iroh listener, when this
 	// client could reach it to ask. It is the other half of the report: every
 	// layer above is this client's view of one transport, and this is the
@@ -152,6 +153,7 @@ func (a *App) runStatus(cmd *cobra.Command, timeout time.Duration) error {
 	// value of the command: it is the one place that says whether the transport
 	// other machines dial is working.
 	report.Server = a.statusServer(ctx, report.Endpoint)
+	report.Pools = a.statusPoolOutbound(ctx, report.Endpoint)
 	return a.writeStatus(cmd, report)
 }
 
@@ -387,6 +389,28 @@ func printStatus(out io.Writer, color colorWhen, report statusReport) {
 	}
 
 	printStatusServer(writer, paint, report.Server)
+	for _, pool := range report.Pools {
+		status := pool.Outbound
+		fmt.Fprintf(writer, "pool      %s · outbound %s (%s)\n", terminalSafe(pool.ID), terminalSafe(status.Mode.Or("direct")), terminalSafe(status.Source.Or("unknown")))
+		if value := status.HTTP.Or(""); value != "" {
+			fmt.Fprintf(writer, "          HTTP %s\n", terminalSafe(value))
+		}
+		if value := status.HTTPS.Or(""); value != "" {
+			fmt.Fprintf(writer, "          HTTPS %s\n", terminalSafe(value))
+		}
+		fmt.Fprintf(writer, "          revision desired=%s applied=%s restartRequired=%t\n", terminalSafe(status.DesiredRevision.Or("")), terminalSafe(status.AppliedRevision.Or("")), status.RestartRequired.Or(false))
+		for _, hop := range []string{"server", "guest", "pool"} {
+			allProbes, _ := status.Probes.Get()
+			probes, ok := allProbes[hop]
+			if !ok {
+				fmt.Fprintf(writer, "          %s: untested\n", hop)
+				continue
+			}
+			httpProbe, _ := probes.HTTP.Get()
+			httpsProbe, _ := probes.HTTPS.Get()
+			fmt.Fprintf(writer, "          %s: HTTP %s %s; TLS/registry %s %s\n", hop, terminalSafe(httpProbe.State.Or("untested")), terminalSafe(httpProbe.Detail.Or("")), terminalSafe(httpsProbe.State.Or("untested")), terminalSafe(httpsProbe.Detail.Or("")))
+		}
+	}
 
 	fmt.Fprintln(writer)
 	if failure := report.Endpoint.FirstFailure(); failure != nil {
@@ -486,4 +510,48 @@ func statusDuration(step endpoint.DiagnosisStep) string {
 		return ""
 	}
 	return (time.Duration(step.DurationMS) * time.Millisecond).String()
+}
+
+type statusPoolOutbound struct {
+	ID       string                      `json:"id"`
+	Outbound apimodel.PoolOutboundStatus `json:"outbound"`
+}
+
+func (a *App) statusPoolOutbound(ctx context.Context, diagnosis endpoint.Diagnosis) []statusPoolOutbound {
+	if !diagnosis.OK() || diagnosis.ServerStatus == health.StatusStarting {
+		return nil
+	}
+	base, httpClient, err := a.httpClientWithAutoStart(false)
+	if err != nil {
+		return nil
+	}
+	client, err := apiclientgen.NewClient(base, apiclientgen.WithClient(httpClient))
+	if err != nil {
+		return nil
+	}
+	res, err := client.ListProjects(ctx)
+	if err != nil {
+		return nil
+	}
+	projects, err := expectResponse[apimodel.ListProjectsBody](res)
+	if err != nil {
+		return nil
+	}
+	var result []statusPoolOutbound
+	for _, project := range projects.GetProjects() {
+		res, err := client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: project.ID})
+		if err != nil {
+			continue
+		}
+		pools, err := expectResponse[apimodel.ListPoolsBody](res)
+		if err != nil {
+			continue
+		}
+		for _, pool := range pools.GetPools() {
+			if outbound, ok := pool.Outbound.Get(); ok {
+				result = append(result, statusPoolOutbound{ID: pool.ID, Outbound: outbound})
+			}
+		}
+	}
+	return result
 }

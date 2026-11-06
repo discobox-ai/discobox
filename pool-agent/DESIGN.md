@@ -2561,3 +2561,10 @@ remains usable by legacy agents. See ADR 26-11-05-143.
 The HTTP server uses a pipe bridge for resettable read deadlines. When HTTP
 closes its single connection, the WebSocket handler waits for the response
 copy to drain before returning and closing the stream.
+
+Pool outbound configuration is staged by the server before provisioning. The
+agent and builder read the resolved environment; the proxy reads the committed
+`pooloutbound.RuntimeFile` directly, so empty schemes cannot re-enable ambient
+fallback. Additional upstream trust augments system roots, independently of the
+inner pool's own MITM and mTLS CAs. Internal control/sandbox transports remain
+explicitly proxy-free.

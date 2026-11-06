@@ -50,6 +50,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
@@ -114,12 +116,20 @@ func (d *Driver) Close() error {
 }
 
 func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
+	if err := spec.Outbound.RejectLocalEndpoints(); err != nil {
+		return nil, err
+	}
+	outbound, err := json.Marshal(spec.Outbound)
+	if err != nil {
+		return nil, err
+	}
 	metadata, err := json.Marshal(spec.Metadata)
 	if err != nil {
 		return nil, err
 	}
 	out, err := d.run(ctx, opEnsureVM, poolID,
 		"DISCOBOX_VM_NAME="+spec.Name,
+		"DISCOBOX_VM_OUTBOUND="+string(outbound),
 		"DISCOBOX_VM_METADATA="+string(metadata),
 	)
 	if err != nil {
@@ -289,4 +299,28 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 // GuestImageBuildSpec reports that there is nothing here to build: the pool host is whatever the configured command brings up, so this backend has no guest image of its own.
 func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
 	return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("the execvm backend has no guest image to build: %w", sandbox.ErrGuestImageBuildUnsupported)
+}
+
+// PoolOutbound is a required backend operation: it stages the desired private
+// value and reports the boot revision actually in use, without a forced restart.
+func (d *Driver) PoolOutbound(ctx context.Context, poolID string, r pooloutbound.Resolved) (pooloutbound.Delivery, error) {
+	if err := r.RejectLocalEndpoints(); err != nil {
+		return pooloutbound.Delivery{}, err
+	}
+	raw, err := json.Marshal(r)
+	if err != nil {
+		return pooloutbound.Delivery{}, err
+	}
+	out, err := d.run(ctx, "pool-outbound", poolID, "DISCOBOX_VM_OUTBOUND="+string(raw))
+	if err != nil {
+		return pooloutbound.Delivery{}, fmt.Errorf("%w: exec backend must implement pool-outbound boot delivery and applied-revision reporting", sandbox.ErrPoolConfigApply)
+	}
+	var delivery pooloutbound.Delivery
+	if json.Unmarshal(out, &delivery) != nil || delivery.AppliedRevision == "" {
+		return delivery, fmt.Errorf("exec backend pool-outbound returned no valid applied revision")
+	}
+	if _, err := pooloutbound.Resolve(pooloutbound.Intent{Mode: "explicit", HTTP: delivery.Runtime.HTTP, HTTPS: delivery.Runtime.HTTPS, NoProxy: delivery.Runtime.NoProxy, CAPEM: delivery.Runtime.CAPEM}, os.LookupEnv); err != nil {
+		return delivery, err
+	}
+	return delivery, nil
 }

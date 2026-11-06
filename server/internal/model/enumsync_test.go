@@ -71,6 +71,7 @@ var yamlEnumAliases = map[string]string{
 //
 //nolint:gosec // G101: these are contract enum names, not credentials.
 var yamlOwnedEnums = map[string]string{
+	"PoolProxy.mode":                         "Owned by pkg/pooloutbound and validated at the API/configuration boundary; the model stores sealed intent.",
 	"SecretRequestPartDecision.scope":        "approval input excludes legacy-unknown, which only describes older stored decisions",
 	"SecretRouteGraphQL.operations[]":        "the GraphQL operation types a route names, owned by pkg/secretroute, whose Normalize refuses any other; model.SecretRoute is that package's Route",
 	"UpdateSecretBindingBody.raw":            "a binding's raw delivery plus none, which makes it a sentinel again (ADR 26-10-27-840)",

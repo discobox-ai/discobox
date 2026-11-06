@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 )
 
@@ -188,7 +189,7 @@ func (h *httpProxy) upstreamProxyFor(addr string) string {
 	if err != nil || upstream == nil {
 		return ""
 	}
-	return upstream.Redacted()
+	return pooloutbound.Redact(upstream.String())
 }
 
 func (h *httpProxy) recordTunnel(t *passthroughTunnel, status int) {

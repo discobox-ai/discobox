@@ -10,26 +10,19 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+	"gopkg.in/yaml.v3"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker/sshdocker"
 )
-
-// dockerInstallUserData brings up Docker on a fresh droplet. The pool-agent
-// container is launched by the control plane over the droplet's Docker daemon,
-// so cloud-init only needs Docker itself.
-const dockerInstallUserData = `#cloud-config
-package_update: true
-packages:
-  - docker.io
-runcmd:
-  - [ systemctl, enable, --now, docker ]
-`
 
 const (
 	dropletStatusPollInterval = time.Second
@@ -120,6 +113,13 @@ func (d *Driver) Close() error {
 }
 
 func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
+	if err := spec.Outbound.RejectLocalEndpoints(); err != nil {
+		return nil, err
+	}
+	userData, err := outboundUserData(spec.Outbound)
+	if err != nil {
+		return nil, err
+	}
 	existing, err := d.findPoolDroplet(ctx, poolID)
 	if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		return nil, err
@@ -146,7 +146,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		IPv6:       d.ipv6,
 		Monitoring: d.monitoring,
 		Tags:       dropletTags(d.tags, poolID),
-		UserData:   dockerInstallUserData,
+		UserData:   userData,
 		VPCUUID:    d.vpcUUID,
 	}
 	var out dropletResponse
@@ -454,4 +454,30 @@ type dropletNetwork struct {
 // GuestImageBuildSpec reports that there is nothing here to build: the pool host is a droplet booted from the provider's own image.
 func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
 	return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("the digitalocean backend has no guest image to build: %w", sandbox.ErrGuestImageBuildUnsupported)
+}
+
+func outboundUserData(r pooloutbound.Resolved) (string, error) {
+	files, err := r.Files()
+	if err != nil {
+		return "", err
+	}
+	var entries []map[string]any
+	for name, data := range files {
+		entries = append(entries, map[string]any{"path": name, "content": string(data), "permissions": "0600", "owner": "root:root"})
+	}
+	entries = append(entries, map[string]any{"path": "/etc/apt/apt.conf.d/90-discobox-outbound", "content": r.APTConfig(), "permissions": "0600"})
+	anchors, err := pooloutbound.Anchors(r.CAPEM)
+	if err != nil {
+		return "", err
+	}
+	for fp, cert := range anchors {
+		entries = append(entries, map[string]any{"path": "/usr/local/share/ca-certificates/discobox-outbound/" + fp + ".crt", "content": cert, "permissions": "0644"})
+	}
+	stage := path.Dir(pooloutbound.StagedRuntimeFile(r.Revision()))
+	entries = append(entries, map[string]any{"path": "/etc/systemd/system/docker.service.d/20-discobox-outbound.conf", "content": "[Service]\nEnvironmentFile=" + stage + "/environment\n", "permissions": "0644"})
+	// ca_certs runs after write_files and before package installation. Even an
+	// empty trusted list regenerates the stores with the managed anchors above.
+	config := map[string]any{"package_update": true, "packages": []string{"docker.io"}, "write_files": entries, "ca_certs": map[string]any{"trusted": []string{}, "remove_defaults": false}, "runcmd": []any{[]string{"env", pooloutbound.RevisionEnv + "=" + r.Revision(), "sh", pooloutbound.InstallFile}, []string{"systemctl", "enable", "--now", "docker"}}}
+	raw, err := yaml.Marshal(config)
+	return "#cloud-config\n" + string(raw), err
 }

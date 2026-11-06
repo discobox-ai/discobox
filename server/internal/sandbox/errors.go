@@ -142,3 +142,6 @@ func (e *ImageUnavailableError) Error() string {
 }
 
 func (e *ImageUnavailableError) Is(target error) bool { return target == ErrImageUnavailable }
+
+// ErrPoolConfigApply is a retryable configuration failure that must not replace a running pool.
+var ErrPoolConfigApply = errors.New("pool configuration apply failed")

@@ -817,3 +817,39 @@ func TestAdjustNamesNoBundleWithoutAMitmCA(t *testing.T) {
 		}
 	}
 }
+
+func TestManagedPoolCreateKeepsResolvedRoutingWithoutOuterTrust(t *testing.T) {
+	f := newFixture(t, []string{"debian.pem"}, map[string]string{"HTTP_PROXY": "http://127.0.0.1:17008", "SSL_CERT_FILE": "/outer/roots"}, []string{"HTTP_PROXY", "SSL_CERT_FILE"})
+	spec := map[string]any{"process": map[string]any{"env": []string{"DISCOBOX_PROXY_ENVIRONMENT=managed", "HTTP_PROXY=http://127.0.0.1:8888", "HTTPS_PROXY="}}, "root": map[string]any{"path": "rootfs"}}
+	bundle := writeBundle(t, f.dir, spec, "STOCK ROOTS")
+	if _, err := Adjust(bundle, "pool", f.cfg); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(bundle, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, absent := range []string{"DISCOBOX_PROXY_ENVIRONMENT", "/outer/roots", "172.30.0.1", "destination\":\"/etc/ssl/certs"} {
+		if strings.Contains(text, absent) {
+			t.Fatalf("managed spec contains %s", absent)
+		}
+	}
+	if !strings.Contains(text, "HTTP_PROXY=http://127.0.0.1:8888") {
+		t.Fatal("rewrote resolved route")
+	}
+}
+
+func TestManagedProvisionExecConsumesItsOwnMarker(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "process.json")
+	if err := os.WriteFile(file, []byte(`{"env":["DISCOBOX_PROXY_ENVIRONMENT=managed","HTTP_PROXY=","HTTPS_PROXY=http://explicit:3128"],"args":["true"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := AdjustProcessFile(file); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(file)
+	if strings.Contains(string(raw), "DISCOBOX_PROXY_ENVIRONMENT") || !strings.Contains(string(raw), "HTTP_PROXY=") {
+		t.Fatal(string(raw))
+	}
+}

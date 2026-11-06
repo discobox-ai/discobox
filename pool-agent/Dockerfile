@@ -22,6 +22,7 @@ COPY pkg/layout ./pkg/layout
 COPY pkg/platform ./pkg/platform
 COPY pkg/poolassets ./pkg/poolassets
 COPY pkg/poolauth ./pkg/poolauth
+COPY pkg/pooloutbound ./pkg/pooloutbound
 COPY proxy ./proxy
 COPY pkg/runcca ./pkg/runcca
 COPY pkg/sandboxconfig ./pkg/sandboxconfig

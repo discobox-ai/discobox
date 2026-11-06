@@ -183,3 +183,10 @@ The local-server launch health handshake carries `health.Status.Warnings`
 through readiness. The CLI prints each distinct warning once above its startup
 progress line, escaping server text. `--quiet` suppresses startup narration.
 Connecting to an already-ready server does not replay its first-start warnings.
+
+## Pool outbound status
+
+`admin server status` also reads each accessible pool's redacted outbound
+configuration, desired/applied revisions and observations by server/guest/pool
+context. A missing context is untested. Endpoint/CA details describe pool
+routing independently of the server connection diagnosis.

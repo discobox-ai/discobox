@@ -6,9 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"github.com/discobox-ai/discobox/proxy/internal/cache"
@@ -108,11 +112,46 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 	if s.http.poolHosts, err = newPoolHosts(cfg.PoolHosts); err != nil {
 		return nil, err
 	}
-	upstream, err := upstreamProxyURL(cfg)
-	if err != nil {
-		return nil, err
+	var upstream, httpsUpstream *url.URL
+	var noProxy string
+	if cfg.Outbound != nil {
+		if err := pooloutbound.ValidateEndpoint(cfg.Outbound.HTTP); err != nil {
+			return nil, err
+		}
+		if err := pooloutbound.ValidateEndpoint(cfg.Outbound.HTTPS); err != nil {
+			return nil, err
+		}
+		if cfg.Outbound.HTTP != "" {
+			upstream, _ = url.Parse(cfg.Outbound.HTTP)
+		}
+		if cfg.Outbound.HTTPS != "" {
+			httpsUpstream, _ = url.Parse(cfg.Outbound.HTTPS)
+		}
+		noProxy = cfg.Outbound.NoProxy
+	} else if cfg.UpstreamProxy == "" {
+		inherited, resolveErr := pooloutbound.Resolve(pooloutbound.Intent{Mode: "inherit"}, os.LookupEnv)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		if inherited.HTTP != "" {
+			upstream, _ = url.Parse(inherited.HTTP)
+		}
+		if inherited.HTTPS != "" {
+			httpsUpstream, _ = url.Parse(inherited.HTTPS)
+		}
+		noProxy = inherited.NoProxy
+		if cfg.UpstreamNoProxy != "" {
+			noProxy = cfg.UpstreamNoProxy
+		}
+	} else {
+		upstream, err = upstreamProxyURL(cfg)
+		if err != nil {
+			return nil, err
+		}
+		httpsUpstream = upstream
+		noProxy = upstreamNoProxy(cfg)
 	}
-	applyUpstreamProxy(s.http, upstream, upstreamNoProxy(cfg))
+	applyUpstreamProxy(s.http, upstream, httpsUpstream, noProxy)
 	// After the upstream is applied: a pinned transport is a clone of the
 	// proxy's own, and must leave the way it does.
 	trusts, err := buildTrustTable(cfg.Trusts, s.http.proxy.Tr, nil)

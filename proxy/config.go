@@ -10,12 +10,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 )
 
 // Config controls a pool proxy instance.
 type Config struct {
+	// Outbound is server-resolved routing; nonnil suppresses all environment fallback.
+	Outbound *pooloutbound.Resolved
+
 	ListenAddress string
 	PublicURL     string
 	CertDir       string

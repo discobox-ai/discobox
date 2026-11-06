@@ -39,13 +39,14 @@ type destinationDialer struct {
 	// Config.AllowLoopbackDestinations, for upstreams they serve on loopback.
 	allowLoopback bool
 	// via is the upstream proxy's address as the transport dials it, or "".
-	via string
+	via      string
+	httpsVia string
 }
 
 // DialContext is the transport's, CONNECT's and SOCKS's dialer.
 func (d *destinationDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	var dialer net.Dialer
-	if !d.allowLoopback && addr != d.via {
+	if !d.allowLoopback && addr != d.via && addr != d.httpsVia {
 		dialer.Control = refuseOwnAddress
 	}
 	return dialer.DialContext(ctx, network, addr)

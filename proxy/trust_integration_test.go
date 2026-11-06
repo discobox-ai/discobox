@@ -313,7 +313,7 @@ func TestProbeTLSSaysWhichUpstreamItWentThrough(t *testing.T) {
 		ListenAddress:             "127.0.0.1:0",
 		AllowLoopbackDestinations: true,
 		CertDir:                   prepared.Bundle.Dir,
-		UpstreamProxy:             upstream.URL,
+		UpstreamProxy:             strings.Replace(upstream.URL, "http://", "http://private-user:private-password@", 1),
 		UpstreamNoProxy:           "example.invalid",
 	}, prepared.Bundle, nil)
 	if err != nil {
@@ -419,7 +419,7 @@ func TestHTTPProxyNamesTheUpstreamProxyThatFailed(t *testing.T) {
 		ListenAddress:             "127.0.0.1:0",
 		AllowLoopbackDestinations: true,
 		CertDir:                   prepared.Bundle.Dir,
-		UpstreamProxy:             upstreamURL,
+		UpstreamProxy:             strings.Replace(upstreamURL, "http://", "http://private-user:private-password@", 1),
 		UpstreamNoProxy:           "example.invalid",
 	}, prepared.Bundle, nil)
 	if err != nil {
@@ -440,6 +440,9 @@ func TestHTTPProxyNamesTheUpstreamProxyThatFailed(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), "private-user") || strings.Contains(string(body), "private-password") {
+		t.Fatalf("proxy credentials exposed in failure: %s", body)
+	}
 	if resp.StatusCode != http.StatusBadGateway || resp.Header.Get(UpstreamProxyHeader) != upstreamURL || !strings.Contains(string(body), "trusted where that proxy runs") {
 		t.Fatalf("status %d, %s %q, body %q", resp.StatusCode, UpstreamProxyHeader, resp.Header.Get(UpstreamProxyHeader), body)
 	}

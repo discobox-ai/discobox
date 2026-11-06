@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
@@ -60,6 +63,20 @@ func runProvisionCommand(args []string) int {
 			return usage()
 		}
 		return provisionIdentity(*key, os.Stdout)
+	case "outbound-probe":
+		raw, err := os.ReadFile(pooloutbound.RuntimeFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		var outbound pooloutbound.Resolved
+		if err := json.Unmarshal(raw, &outbound); err != nil {
+			return 1
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(pooloutbound.Check(ctx, outbound)); err != nil {
+			return 1
+		}
+		return 0
 	case "apply":
 		flags := flag.NewFlagSet("discobox-provision apply", flag.ContinueOnError)
 		pool := flags.Bool("pool", false, "provision a pool's box from the bundles its maker placed")
@@ -105,6 +122,29 @@ func applyPool(ctx context.Context) int {
 	fail := func(err error) int {
 		fmt.Fprintln(os.Stderr, "discobox-provision:", err)
 		return 1
+	}
+	// Managed outbound material is installed before bundle package steps fetch.
+	revision := os.Getenv(pooloutbound.RevisionEnv)
+	if len(revision) != 64 || strings.Trim(revision, "0123456789abcdef") != "" {
+		return fail(fmt.Errorf("missing managed pool outbound revision; the pool must be provisioned by an updated server"))
+	}
+	if raw, err := os.ReadFile(pooloutbound.StagedRuntimeFile(revision)); err == nil {
+		var outbound pooloutbound.Resolved
+		if err := json.Unmarshal(raw, &outbound); err != nil {
+			return fail(fmt.Errorf("invalid managed pool outbound material"))
+		}
+		if err := outbound.ValidateEnvironment(os.LookupEnv); err != nil {
+			return fail(err)
+		}
+		//nolint:gosec // Fixed private script placed by the authenticated pool maker.
+		command := exec.CommandContext(ctx, "sh", pooloutbound.InstallFile)
+		command.Stdout = os.Stdout
+		command.Stderr = os.Stderr
+		if err := command.Run(); err != nil {
+			return fail(fmt.Errorf("install pool outbound trust: %w", err))
+		}
+	} else {
+		return fail(err)
 	}
 	pins, ok, err := placedPins()
 	if err != nil {

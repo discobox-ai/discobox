@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -249,6 +252,14 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 		return fmt.Errorf("prepare proxy certificates: %w", err)
 	}
 	cfg := proxy.DefaultConfig()
+	if data, err := os.ReadFile(pooloutbound.RuntimeFile); err == nil {
+		cfg.Outbound = &pooloutbound.Resolved{}
+		if err := json.Unmarshal(data, cfg.Outbound); err != nil {
+			return fmt.Errorf("read managed pool outbound routing: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read managed pool outbound routing: %w", err)
+	}
 	cfg.ListenAddress = ListenAddress
 	cfg.PublicURL = PoolProxyURL
 	cfg.CertDir = root.ProxyCerts(projectID, poolID)

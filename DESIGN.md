@@ -499,3 +499,8 @@ Explicit
 endpoints retain their configured trust. Windows keeps its named pipe.
 See the [server singleton design](server/DESIGN.md#single-server-per-data-directory)
 for lock-holder discovery and startup handoffs (ADR 26-11-04-074).
+
+Pool outbound routing and additional trust share the domain contract in
+[`pkg/pooloutbound`](pkg/pooloutbound/DESIGN.md). The server selects one complete
+configuration per pool; provider boot and provisioning deliver its resolved
+value before network bootstrap (ADR 26-11-05-814).

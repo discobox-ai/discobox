@@ -2387,6 +2387,12 @@ func (s *CreatePoolBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *CreatePoolBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.Proxy.Set {
+			e.FieldStart("proxy")
+			s.Proxy.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -2426,14 +2432,15 @@ func (s *CreatePoolBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreatePoolBody = [7]string{
-	0: "$schema",
-	1: "disableAgentEndpointTls",
-	2: "cpuVcpus",
-	3: "memoryBytes",
-	4: "name",
-	5: "providerInstanceId",
-	6: "storageBytes",
+var jsonFieldsNameOfCreatePoolBody = [8]string{
+	0: "proxy",
+	1: "$schema",
+	2: "disableAgentEndpointTls",
+	3: "cpuVcpus",
+	4: "memoryBytes",
+	5: "name",
+	6: "providerInstanceId",
+	7: "storageBytes",
 }
 
 // Decode decodes CreatePoolBody from json.
@@ -2445,6 +2452,16 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "proxy":
+			if err := func() error {
+				s.Proxy.Reset()
+				if err := s.Proxy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"proxy\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -2486,7 +2503,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -2498,7 +2515,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -2529,7 +2546,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00110000,
+		0b01100000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -21769,6 +21786,55 @@ func (s *OptNilPoolArray) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes PoolProxy as json.
+func (o OptNilPoolProxy) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolProxy from json.
+func (o *OptNilPoolProxy) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilPoolProxy to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v PoolProxy
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilPoolProxy) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilPoolProxy) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolResources as json.
 func (o OptNilPoolResources) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -22546,6 +22612,106 @@ func (s *OptPoolHostCredentialKey) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes PoolOutboundProbe as json.
+func (o OptPoolOutboundProbe) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolOutboundProbe from json.
+func (o *OptPoolOutboundProbe) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolOutboundProbe to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolOutboundProbe) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolOutboundProbe) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolOutboundStatus as json.
+func (o OptPoolOutboundStatus) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolOutboundStatus from json.
+func (o *OptPoolOutboundStatus) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolOutboundStatus to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolOutboundStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolOutboundStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolOutboundStatusProbes as json.
+func (o OptPoolOutboundStatusProbes) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolOutboundStatusProbes from json.
+func (o *OptPoolOutboundStatusProbes) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolOutboundStatusProbes to nil")
+	}
+	o.Set = true
+	o.Value = make(PoolOutboundStatusProbes)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolOutboundStatusProbes) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolOutboundStatusProbes) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolProvisionProgress as json.
 func (o OptPoolProvisionProgress) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -22575,6 +22741,39 @@ func (s OptPoolProvisionProgress) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptPoolProvisionProgress) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolProxyMode as json.
+func (o OptPoolProxyMode) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes PoolProxyMode from json.
+func (o *OptPoolProxyMode) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolProxyMode to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolProxyMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolProxyMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -25877,6 +26076,18 @@ func (s *Pool) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *Pool) encodeFields(e *jx.Encoder) {
 	{
+		if s.Proxy.Set {
+			e.FieldStart("proxy")
+			s.Proxy.Encode(e)
+		}
+	}
+	{
+		if s.Outbound.Set {
+			e.FieldStart("outbound")
+			s.Outbound.Encode(e)
+		}
+	}
+	{
 		if s.Egress.Set {
 			e.FieldStart("egress")
 			s.Egress.Encode(e)
@@ -26074,46 +26285,48 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPool = [39]string{
-	0:  "egress",
-	1:  "$schema",
-	2:  "disableAgentEndpointTls",
-	3:  "cpuVcpus",
-	4:  "createdAt",
-	5:  "id",
-	6:  "imageKind",
-	7:  "memoryBytes",
-	8:  "name",
-	9:  "platform",
-	10: "projectId",
-	11: "providerInstance",
-	12: "providerInstanceId",
-	13: "storageBytes",
-	14: "health",
-	15: "ready",
-	16: "schedulable",
-	17: "degraded",
-	18: "hostCredential",
-	19: "provisionProgress",
-	20: "provisionProgressAt",
-	21: "availableCpuVcpus",
-	22: "availableMemoryBytes",
-	23: "availableStorageBytes",
-	24: "conditions",
-	25: "resources",
-	26: "resourcesReportedAt",
-	27: "desiredState",
-	28: "state",
-	29: "stateChangedAt",
-	30: "generation",
-	31: "observedGeneration",
-	32: "errorMessage",
-	33: "keyType",
-	34: "publicKey",
-	35: "registeredAt",
-	36: "lastSeenAt",
-	37: "revokedAt",
-	38: "updatedAt",
+var jsonFieldsNameOfPool = [41]string{
+	0:  "proxy",
+	1:  "outbound",
+	2:  "egress",
+	3:  "$schema",
+	4:  "disableAgentEndpointTls",
+	5:  "cpuVcpus",
+	6:  "createdAt",
+	7:  "id",
+	8:  "imageKind",
+	9:  "memoryBytes",
+	10: "name",
+	11: "platform",
+	12: "projectId",
+	13: "providerInstance",
+	14: "providerInstanceId",
+	15: "storageBytes",
+	16: "health",
+	17: "ready",
+	18: "schedulable",
+	19: "degraded",
+	20: "hostCredential",
+	21: "provisionProgress",
+	22: "provisionProgressAt",
+	23: "availableCpuVcpus",
+	24: "availableMemoryBytes",
+	25: "availableStorageBytes",
+	26: "conditions",
+	27: "resources",
+	28: "resourcesReportedAt",
+	29: "desiredState",
+	30: "state",
+	31: "stateChangedAt",
+	32: "generation",
+	33: "observedGeneration",
+	34: "errorMessage",
+	35: "keyType",
+	36: "publicKey",
+	37: "registeredAt",
+	38: "lastSeenAt",
+	39: "revokedAt",
+	40: "updatedAt",
 }
 
 // Decode decodes Pool from json.
@@ -26121,11 +26334,31 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode Pool to nil")
 	}
-	var requiredBitSet [5]uint8
+	var requiredBitSet [6]uint8
 	s.setDefaults()
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "proxy":
+			if err := func() error {
+				s.Proxy.Reset()
+				if err := s.Proxy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"proxy\"")
+			}
+		case "outbound":
+			if err := func() error {
+				s.Outbound.Reset()
+				if err := s.Outbound.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"outbound\"")
+			}
 		case "egress":
 			if err := func() error {
 				s.Egress.Reset()
@@ -26157,7 +26390,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"disableAgentEndpointTls\"")
 			}
 		case "cpuVcpus":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Float64()
 				s.CpuVcpus = float64(v)
@@ -26169,7 +26402,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"cpuVcpus\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -26181,7 +26414,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -26203,7 +26436,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageKind\"")
 			}
 		case "memoryBytes":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.MemoryBytes = int64(v)
@@ -26215,7 +26448,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -26237,7 +26470,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platform\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -26259,7 +26492,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstance\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -26271,7 +26504,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
 		case "storageBytes":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.StorageBytes = int64(v)
@@ -26293,7 +26526,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"health\"")
 			}
 		case "ready":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -26305,7 +26538,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"ready\"")
 			}
 		case "schedulable":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -26317,7 +26550,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"schedulable\"")
 			}
 		case "degraded":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Degraded = bool(v)
@@ -26359,7 +26592,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"provisionProgressAt\"")
 			}
 		case "availableCpuVcpus":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Float64()
 				s.AvailableCpuVcpus = float64(v)
@@ -26371,7 +26604,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableCpuVcpus\"")
 			}
 		case "availableMemoryBytes":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[3] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableMemoryBytes = int64(v)
@@ -26383,7 +26616,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableMemoryBytes\"")
 			}
 		case "availableStorageBytes":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableStorageBytes = int64(v)
@@ -26426,7 +26659,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resourcesReportedAt\"")
 			}
 		case "desiredState":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				if err := s.DesiredState.Decode(d); err != nil {
 					return err
@@ -26436,7 +26669,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"desiredState\"")
 			}
 		case "state":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 6
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -26456,7 +26689,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"stateChangedAt\"")
 			}
 		case "generation":
-			requiredBitSet[3] |= 1 << 6
+			requiredBitSet[4] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -26468,7 +26701,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[3] |= 1 << 7
+			requiredBitSet[4] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -26540,7 +26773,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 6
+			requiredBitSet[5] |= 1 << 0
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -26560,12 +26793,13 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [5]uint8{
-		0b10111000,
-		0b10110101,
-		0b11100011,
-		0b11011000,
-		0b01000000,
+	for i, mask := range [6]uint8{
+		0b11100000,
+		0b11010110,
+		0b10001110,
+		0b01100011,
+		0b00000011,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -27697,6 +27931,466 @@ func (s *PoolMemoryUsageAdditional) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode implements json.Marshaler.
+func (s *PoolOutboundProbe) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PoolOutboundProbe) encodeFields(e *jx.Encoder) {
+	{
+		if s.State.Set {
+			e.FieldStart("state")
+			s.State.Encode(e)
+		}
+	}
+	{
+		if s.Detail.Set {
+			e.FieldStart("detail")
+			s.Detail.Encode(e)
+		}
+	}
+	{
+		if s.HttpStatus.Set {
+			e.FieldStart("httpStatus")
+			s.HttpStatus.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfPoolOutboundProbe = [3]string{
+	0: "state",
+	1: "detail",
+	2: "httpStatus",
+}
+
+// Decode decodes PoolOutboundProbe from json.
+func (s *PoolOutboundProbe) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolOutboundProbe to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "state":
+			if err := func() error {
+				s.State.Reset()
+				if err := s.State.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"state\"")
+			}
+		case "detail":
+			if err := func() error {
+				s.Detail.Reset()
+				if err := s.Detail.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"detail\"")
+			}
+		case "httpStatus":
+			if err := func() error {
+				s.HttpStatus.Reset()
+				if err := s.HttpStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"httpStatus\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolOutboundProbe")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PoolOutboundProbe) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolOutboundProbe) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *PoolOutboundProbes) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PoolOutboundProbes) encodeFields(e *jx.Encoder) {
+	{
+		if s.HTTP.Set {
+			e.FieldStart("http")
+			s.HTTP.Encode(e)
+		}
+	}
+	{
+		if s.HTTPS.Set {
+			e.FieldStart("https")
+			s.HTTPS.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfPoolOutboundProbes = [2]string{
+	0: "http",
+	1: "https",
+}
+
+// Decode decodes PoolOutboundProbes from json.
+func (s *PoolOutboundProbes) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolOutboundProbes to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "http":
+			if err := func() error {
+				s.HTTP.Reset()
+				if err := s.HTTP.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"http\"")
+			}
+		case "https":
+			if err := func() error {
+				s.HTTPS.Reset()
+				if err := s.HTTPS.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"https\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolOutboundProbes")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PoolOutboundProbes) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolOutboundProbes) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *PoolOutboundStatus) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PoolOutboundStatus) encodeFields(e *jx.Encoder) {
+	{
+		if s.Probes.Set {
+			e.FieldStart("probes")
+			s.Probes.Encode(e)
+		}
+	}
+	{
+		if s.Source.Set {
+			e.FieldStart("source")
+			s.Source.Encode(e)
+		}
+	}
+	{
+		if s.Mode.Set {
+			e.FieldStart("mode")
+			s.Mode.Encode(e)
+		}
+	}
+	{
+		if s.HTTP.Set {
+			e.FieldStart("http")
+			s.HTTP.Encode(e)
+		}
+	}
+	{
+		if s.HTTPS.Set {
+			e.FieldStart("https")
+			s.HTTPS.Encode(e)
+		}
+	}
+	{
+		if s.CaFingerprints != nil {
+			e.FieldStart("caFingerprints")
+			e.ArrStart()
+			for _, elem := range s.CaFingerprints {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.DesiredRevision.Set {
+			e.FieldStart("desiredRevision")
+			s.DesiredRevision.Encode(e)
+		}
+	}
+	{
+		if s.AppliedRevision.Set {
+			e.FieldStart("appliedRevision")
+			s.AppliedRevision.Encode(e)
+		}
+	}
+	{
+		if s.RestartRequired.Set {
+			e.FieldStart("restartRequired")
+			s.RestartRequired.Encode(e)
+		}
+	}
+	{
+		if s.ShadowsYaml.Set {
+			e.FieldStart("shadowsYaml")
+			s.ShadowsYaml.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfPoolOutboundStatus = [10]string{
+	0: "probes",
+	1: "source",
+	2: "mode",
+	3: "http",
+	4: "https",
+	5: "caFingerprints",
+	6: "desiredRevision",
+	7: "appliedRevision",
+	8: "restartRequired",
+	9: "shadowsYaml",
+}
+
+// Decode decodes PoolOutboundStatus from json.
+func (s *PoolOutboundStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolOutboundStatus to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "probes":
+			if err := func() error {
+				s.Probes.Reset()
+				if err := s.Probes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"probes\"")
+			}
+		case "source":
+			if err := func() error {
+				s.Source.Reset()
+				if err := s.Source.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
+		case "mode":
+			if err := func() error {
+				s.Mode.Reset()
+				if err := s.Mode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mode\"")
+			}
+		case "http":
+			if err := func() error {
+				s.HTTP.Reset()
+				if err := s.HTTP.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"http\"")
+			}
+		case "https":
+			if err := func() error {
+				s.HTTPS.Reset()
+				if err := s.HTTPS.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"https\"")
+			}
+		case "caFingerprints":
+			if err := func() error {
+				s.CaFingerprints = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.CaFingerprints = append(s.CaFingerprints, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"caFingerprints\"")
+			}
+		case "desiredRevision":
+			if err := func() error {
+				s.DesiredRevision.Reset()
+				if err := s.DesiredRevision.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"desiredRevision\"")
+			}
+		case "appliedRevision":
+			if err := func() error {
+				s.AppliedRevision.Reset()
+				if err := s.AppliedRevision.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"appliedRevision\"")
+			}
+		case "restartRequired":
+			if err := func() error {
+				s.RestartRequired.Reset()
+				if err := s.RestartRequired.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"restartRequired\"")
+			}
+		case "shadowsYaml":
+			if err := func() error {
+				s.ShadowsYaml.Reset()
+				if err := s.ShadowsYaml.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"shadowsYaml\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolOutboundStatus")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PoolOutboundStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolOutboundStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolOutboundStatusProbes) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolOutboundStatusProbes) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		elem.Encode(e)
+	}
+}
+
+// Decode decodes PoolOutboundStatusProbes from json.
+func (s *PoolOutboundStatusProbes) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolOutboundStatusProbes to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem PoolOutboundProbes
+		if err := func() error {
+			if err := elem.Decode(d); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolOutboundStatusProbes")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolOutboundStatusProbes) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolOutboundStatusProbes) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolProvisionPhase as json.
 func (s PoolProvisionPhase) Encode(e *jx.Encoder) {
 	e.Str(string(s))
@@ -27858,6 +28552,213 @@ func (s *PoolProvisionProgress) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolProvisionProgress) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *PoolProxy) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PoolProxy) encodeFields(e *jx.Encoder) {
+	{
+		if s.Mode.Set {
+			e.FieldStart("mode")
+			s.Mode.Encode(e)
+		}
+	}
+	{
+		if s.HTTP.Set {
+			e.FieldStart("http")
+			s.HTTP.Encode(e)
+		}
+	}
+	{
+		if s.HTTPS.Set {
+			e.FieldStart("https")
+			s.HTTPS.Encode(e)
+		}
+	}
+	{
+		if s.NoProxy.Set {
+			e.FieldStart("noProxy")
+			s.NoProxy.Encode(e)
+		}
+	}
+	{
+		if s.CaPem.Set {
+			e.FieldStart("caPem")
+			s.CaPem.Encode(e)
+		}
+	}
+	{
+		if s.ClearHttpCredentials.Set {
+			e.FieldStart("clearHttpCredentials")
+			s.ClearHttpCredentials.Encode(e)
+		}
+	}
+	{
+		if s.ClearHttpsCredentials.Set {
+			e.FieldStart("clearHttpsCredentials")
+			s.ClearHttpsCredentials.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfPoolProxy = [7]string{
+	0: "mode",
+	1: "http",
+	2: "https",
+	3: "noProxy",
+	4: "caPem",
+	5: "clearHttpCredentials",
+	6: "clearHttpsCredentials",
+}
+
+// Decode decodes PoolProxy from json.
+func (s *PoolProxy) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolProxy to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "mode":
+			if err := func() error {
+				s.Mode.Reset()
+				if err := s.Mode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mode\"")
+			}
+		case "http":
+			if err := func() error {
+				s.HTTP.Reset()
+				if err := s.HTTP.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"http\"")
+			}
+		case "https":
+			if err := func() error {
+				s.HTTPS.Reset()
+				if err := s.HTTPS.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"https\"")
+			}
+		case "noProxy":
+			if err := func() error {
+				s.NoProxy.Reset()
+				if err := s.NoProxy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"noProxy\"")
+			}
+		case "caPem":
+			if err := func() error {
+				s.CaPem.Reset()
+				if err := s.CaPem.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"caPem\"")
+			}
+		case "clearHttpCredentials":
+			if err := func() error {
+				s.ClearHttpCredentials.Reset()
+				if err := s.ClearHttpCredentials.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"clearHttpCredentials\"")
+			}
+		case "clearHttpsCredentials":
+			if err := func() error {
+				s.ClearHttpsCredentials.Reset()
+				if err := s.ClearHttpsCredentials.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"clearHttpsCredentials\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolProxy")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PoolProxy) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolProxy) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolProxyMode as json.
+func (s PoolProxyMode) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes PoolProxyMode from json.
+func (s *PoolProxyMode) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolProxyMode to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch PoolProxyMode(v) {
+	case PoolProxyModeDirect:
+		*s = PoolProxyModeDirect
+	case PoolProxyModeExplicit:
+		*s = PoolProxyModeExplicit
+	case PoolProxyModeInherit:
+		*s = PoolProxyModeInherit
+	default:
+		*s = PoolProxyMode(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolProxyMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolProxyMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -60862,6 +61763,12 @@ func (s *UpdatePoolBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *UpdatePoolBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.Proxy.Set {
+			e.FieldStart("proxy")
+			s.Proxy.Encode(e)
+		}
+	}
+	{
 		if s.Egress.Set {
 			e.FieldStart("egress")
 			s.Egress.Encode(e)
@@ -60905,14 +61812,15 @@ func (s *UpdatePoolBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdatePoolBody = [7]string{
-	0: "egress",
-	1: "$schema",
-	2: "disableAgentEndpointTls",
-	3: "cpuVcpus",
-	4: "memoryBytes",
-	5: "name",
-	6: "storageBytes",
+var jsonFieldsNameOfUpdatePoolBody = [8]string{
+	0: "proxy",
+	1: "egress",
+	2: "$schema",
+	3: "disableAgentEndpointTls",
+	4: "cpuVcpus",
+	5: "memoryBytes",
+	6: "name",
+	7: "storageBytes",
 }
 
 // Decode decodes UpdatePoolBody from json.
@@ -60923,6 +61831,16 @@ func (s *UpdatePoolBody) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "proxy":
+			if err := func() error {
+				s.Proxy.Reset()
+				if err := s.Proxy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"proxy\"")
+			}
 		case "egress":
 			if err := func() error {
 				s.Egress.Reset()

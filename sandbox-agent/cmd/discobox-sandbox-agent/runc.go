@@ -16,6 +16,12 @@ import (
 // replaced the NRI plugin of docs/adr/0015.
 func runRunc(args []string) int {
 	id := runcca.ContainerID(args)
+	if name, ok := runcca.ProcessFile(args); ok {
+		if err := runcca.AdjustProcessFile(name); err != nil {
+			fmt.Fprintf(os.Stderr, "discobox-runc: managed process environment: %v\n", err)
+			return 127
+		}
+	}
 
 	// Injection is best-effort by design. A container that starts without the
 	// MITM CA fails only the TLS calls it happens to make; a container that

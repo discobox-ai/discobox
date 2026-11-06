@@ -54,6 +54,9 @@ func (s *Store) GetPool(ctx context.Context, projectID, poolID string) (*model.P
 	if err != nil {
 		return nil, err
 	}
+	if s.txWrite != nil {
+		read = read.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	return firstByID[model.Pool](read.Where("project_id = ?", projectID), "id", poolID)
 }
 
@@ -74,7 +77,7 @@ func (s *Store) UpdatePool(ctx context.Context, pool *model.Pool) error {
 	if err != nil {
 		return err
 	}
-	return write.Model(pool).Select("name", "cpu_vcpus", "memory_bytes", "storage_bytes", "disable_agent_endpoint_tls", "egress", "updated_at").Updates(pool).Error
+	return write.Model(pool).Select("proxy_intent", "proxy_bootstrap", "name", "cpu_vcpus", "memory_bytes", "storage_bytes", "disable_agent_endpoint_tls", "egress", "updated_at").Updates(pool).Error
 }
 
 func (s *Store) DeletePool(ctx context.Context, projectID, poolID string) error {
@@ -164,7 +167,7 @@ func (s *Store) UpdatePoolWithGeneration(ctx context.Context, pool *model.Pool, 
 	result := write.Model(&model.Pool{}).
 		Where("id = ? AND generation = ?", pool.ID, generation).
 		Select("desired_state", "state", "state_changed_at", "generation",
-			"observed_generation", "error_message", "runtime_state", "host_credential", "reconciled_at", "revoked_at", "updated_at").
+			"outbound_probes", "outbound_restart_required", "outbound_applied_revision", "observed_generation", "error_message", "runtime_state", "host_credential", "reconciled_at", "revoked_at", "updated_at").
 		Updates(pool)
 	if result.Error != nil {
 		return result.Error

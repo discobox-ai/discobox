@@ -78,3 +78,16 @@ func isFlagExpectingValue(arg string) bool {
 	}
 	return false
 }
+
+// ProcessFile returns runc exec's separate process specification.
+func ProcessFile(args []string) (string, bool) {
+	for i, a := range args {
+		if (a == "--process" || a == "-p") && i+1 < len(args) {
+			return args[i+1], true
+		}
+		if value, ok := strings.CutPrefix(a, "--process="); ok {
+			return value, true
+		}
+	}
+	return "", false
+}

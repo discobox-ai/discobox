@@ -135,7 +135,7 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return fmt.Errorf("start the build container: %w", err)
 	}
-	if err := runSnapshotCommand(ctx, provisioner.ContainerGuest{Client: r.client, Container: created.ID}, agent, plan.Pins, data); err != nil {
+	if err := runSnapshotCommand(ctx, provisioner.ContainerGuest{Client: r.client, Container: created.ID, Stdin: true}, agent, plan.Pins, data); err != nil {
 		return err
 	}
 	// Stopped in order, so what it wrote is on its filesystem whole.

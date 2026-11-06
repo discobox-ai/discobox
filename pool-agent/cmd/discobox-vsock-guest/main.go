@@ -35,6 +35,8 @@ func run(ctx context.Context, args []string) error {
 		return errors.New("usage: discobox-vsock-guest <docker-proxy|lifecycle> [flags]")
 	}
 	switch args[0] {
+	case "outbound":
+		return runOutbound(ctx)
 	case "docker-proxy":
 		flags := flag.NewFlagSet("docker-proxy", flag.ContinueOnError)
 		port := flags.Uint("port", 3004, "guest VSOCK port")

@@ -2,12 +2,15 @@ package proxy
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	"golang.org/x/net/http/httpproxy"
 )
@@ -47,10 +50,10 @@ func upstreamProxyURL(cfg Config) (*url.URL, error) {
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parse upstream proxy %q: %w", raw, err)
+		return nil, fmt.Errorf("parse upstream proxy: invalid URL")
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("upstream proxy %q names no host", raw)
+		return nil, fmt.Errorf("upstream proxy names no host")
 	}
 	return u, nil
 }
@@ -85,16 +88,16 @@ func upstreamNoProxy(cfg Config) string {
 // wrong even when an upstream exists: a pool proxy reaches its own control
 // plane and loopback services directly, and forcing those through an upstream
 // breaks them.
-func applyUpstreamProxy(h *httpProxy, upstream *url.URL, noProxy string) {
-	if upstream == nil {
+func applyUpstreamProxy(h *httpProxy, upstream, httpsUpstream *url.URL, noProxy string) {
+	if upstream == nil && httpsUpstream == nil {
 		return
 	}
 	// httpproxy implements the same NO_PROXY matching as the standard library
 	// (suffix, CIDR, port-specific, "*"), so exemptions behave the way every
 	// other tool in a sandbox already expects.
 	proxyFunc := (&httpproxy.Config{
-		HTTPProxy:  upstream.String(),
-		HTTPSProxy: upstream.String(),
+		HTTPProxy:  proxyURLString(upstream),
+		HTTPSProxy: proxyURLString(httpsUpstream),
 		NoProxy:    noProxy,
 	}).ProxyFunc()
 
@@ -108,11 +111,25 @@ func applyUpstreamProxy(h *httpProxy, upstream *url.URL, noProxy string) {
 	// The upstream proxy is this proxy's own hop, which the destination
 	// dialer lets through even on loopback; the destinations behind it are
 	// resolved there.
-	h.destinations.via = proxyDialAddress(upstream)
-	viaProxy := h.proxy.NewConnectDialToProxy(upstream.String())
+	if upstream != nil {
+		h.destinations.via = proxyDialAddress(upstream)
+	}
+	if httpsUpstream != nil {
+		h.destinations.httpsVia = proxyDialAddress(httpsUpstream)
+	}
+	var viaProxy func(string, string) (net.Conn, error)
+	if httpsUpstream != nil {
+		viaProxy = h.proxy.NewConnectDialToProxyWithHandler(httpsUpstream.String(), func(req *http.Request) {
+			if httpsUpstream.User != nil {
+				password, _ := httpsUpstream.User.Password()
+				token := base64.StdEncoding.EncodeToString([]byte(httpsUpstream.User.Username() + ":" + password))
+				req.Header.Set("Proxy-Authorization", "Basic "+token)
+			}
+		})
+	}
 	direct := h.proxy.ConnectDial
 	h.proxy.ConnectDial = func(network, addr string) (net.Conn, error) {
-		if exempt(proxyFunc, addr) {
+		if httpsUpstream == nil || exempt(proxyFunc, addr) {
 			if direct != nil {
 				return direct(network, addr)
 			}
@@ -121,7 +138,8 @@ func applyUpstreamProxy(h *httpProxy, upstream *url.URL, noProxy string) {
 			// narrower than Background to hand the dialer.
 			return h.proxy.Tr.DialContext(context.Background(), network, addr)
 		}
-		return viaProxy(network, addr)
+		conn, err := viaProxy(network, addr)
+		return conn, (pooloutbound.Resolved{HTTP: proxyURLString(upstream), HTTPS: proxyURLString(httpsUpstream)}).RedactError(err)
 	}
 }
 
@@ -139,4 +157,11 @@ func exempt(proxyFunc func(*url.URL) (*url.URL, error), addr string) bool {
 	}
 	u, err := proxyFunc(target)
 	return err == nil && u == nil
+}
+
+func proxyURLString(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	return u.String()
 }

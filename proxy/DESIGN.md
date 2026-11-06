@@ -1103,15 +1103,17 @@ flowchart LR
 
 ## Upstream Egress
 
-The proxy dials origins directly unless `Config.UpstreamProxy` — or, when that
-is empty, the first set variable in `UpstreamProxyEnvVars` (`HTTPS_PROXY`,
-`HTTP_PROXY`, `ALL_PROXY`, each upper then lower case) — names an upstream. That
-is the nested case: a pool proxy inside a Discobox sandbox has no route off-box
-and must hand its egress to the sandbox's own forwarder. Both goproxy egress
-hooks (`Transport.Proxy` and `ConnectDial`, which carries
-[passthrough](#passthrough) tunnels) route through it, and both honor
-`UpstreamNoProxy` (falling back to `NO_PROXY`) with standard `NO_PROXY` matching,
-so loopback and control-plane traffic stay direct. With no upstream,
-`ConnectDial` is nil and a tunnel is dialed by the destination dialer. `pool-agent/proxyagent`
-forwards those variables into the proxy unit rather than setting the fields.
-SOCKS5 connects always dial directly.
+Managed pools set `Config.Outbound` from their committed runtime document,
+including resolved direct routing. This value never falls back to process
+environment. HTTP and HTTPS origins select separate upstreams; inspected,
+pinned and passthrough CONNECT paths share standard NO_PROXY semantics.
+`pool-agent/proxyagent` reads this document when the proxy starts.
+
+Standalone callers may set `Config.UpstreamProxy` and `UpstreamNoProxy`, or
+use legacy environment discovery: the first nonempty `HTTPS_PROXY`,
+`HTTP_PROXY` or `ALL_PROXY`, each upper then lower case, selects one upstream
+for both schemes. `NO_PROXY` supplies bypasses when the explicit list is empty.
+Both `Transport.Proxy` and the scheme-aware `ConnectDial` route through the
+selected upstream or the destination dialer. SOCKS5 connects dial directly.
+Upstream credentials stay private; diagnostics and tunnel metadata omit all
+URL userinfo.

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -24,10 +25,11 @@ import (
 // untrusted input and speaks apperrors), the control plane takes ids from
 // persisted rows at face value and returns plain domain errors.
 type ControlPlane struct {
-	store     *store.Store
-	engine    *reconcile.Engine
-	agentAuth *poolagentauth.Manager
-	boxes     PoolBoxes
+	OutboundDefaults pooloutbound.Defaults
+	store            *store.Store
+	engine           *reconcile.Engine
+	agentAuth        *poolagentauth.Manager
+	boxes            PoolBoxes
 }
 
 // PoolBoxes is what a pool's box is placed with: the release's agent and the

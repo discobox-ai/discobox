@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/configfile"
 	"github.com/discobox-ai/discobox/pkg/devimage"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
@@ -77,6 +78,9 @@ func LoadEnvFile() {
 // has none). A field tagged
 // `yaml:"-"` is derived rather than configured, and appears in neither.
 type Config struct {
+	Pools        PoolSettings          `yaml:"pools" doc:"Pool outbound defaults and per-pool overrides."`
+	PoolOutbound pooloutbound.Defaults `yaml:"-"`
+
 	ReleaseManifest string                    `yaml:"releaseManifest" env:"DISCOBOX_RELEASE_MANIFEST" doc:"Path to a release manifest supplying the runtime image set, including built-in harnesses. Overrides individual image settings and disables development image synchronization." example:"/opt/discobox/release.json"`
 	Release         *releasemanifest.Manifest `yaml:"-"`
 	// Harnesses is what the built-in harnesses resolve against: the platform
@@ -342,6 +346,9 @@ func Load() (*Config, error) {
 		fromEnv["otelMetricExportInterval"] = true
 	}
 	configured := func(path string) bool { return fromFile[path] || fromEnv[path] }
+	if err := cfg.resolvePoolOutbound(configured); err != nil {
+		return nil, err
+	}
 	cfg.Warnings = retiredKeyWarnings(fromFile)
 	if err := cfg.applyLegacyEncryptionKey(configured); err != nil {
 		return nil, err

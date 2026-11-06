@@ -23,6 +23,12 @@ import (
 type ContainerGuest struct {
 	Client    *client.Client
 	Container string
+	// Env is supplied independently on every exec; runc consumes the create marker.
+	Env []string
+	// Stdin declares commands that consume input. Without it Docker closes the
+	// process input itself; half-closing a transport that carries only output is
+	// unnecessary and loses that output on libkrun's host VSOCK mapping.
+	Stdin bool
 }
 
 var _ machine.Guest = ContainerGuest{}
@@ -31,10 +37,10 @@ func (g ContainerGuest) Exec(ctx context.Context, req machine.ExecRequest) (mach
 	created, err := g.Client.ExecCreate(ctx, g.Container, client.ExecCreateOptions{
 		User:         req.User,
 		TTY:          req.TTY,
-		AttachStdin:  true,
+		AttachStdin:  g.Stdin,
 		AttachStdout: true,
 		AttachStderr: true,
-		Env:          req.Env,
+		Env:          append(append([]string{}, g.Env...), req.Env...),
 		WorkingDir:   req.Dir,
 		Cmd:          req.Argv,
 	})
@@ -45,7 +51,7 @@ func (g ContainerGuest) Exec(ctx context.Context, req machine.ExecRequest) (mach
 	if err != nil {
 		return nil, err
 	}
-	return &containerProcess{cli: g.Client, id: created.ID, tty: req.TTY, attached: attached}, nil
+	return &containerProcess{cli: g.Client, id: created.ID, tty: req.TTY, stdin: g.Stdin, attached: attached}, nil
 }
 
 func (g ContainerGuest) CopyTo(ctx context.Context, dir string, tarStream io.Reader) error {
@@ -110,12 +116,23 @@ type containerProcess struct {
 	cli      *client.Client
 	id       string
 	tty      bool
+	stdin    bool
 	attached client.ExecAttachResult
 }
 
-func (p *containerProcess) Write(b []byte) (int, error) { return p.attached.Conn.Write(b) }
+func (p *containerProcess) Write(b []byte) (int, error) {
+	if !p.stdin {
+		return 0, fmt.Errorf("container exec does not accept stdin")
+	}
+	return p.attached.Conn.Write(b)
+}
 
-func (p *containerProcess) CloseStdin() error { return p.attached.CloseWrite() }
+func (p *containerProcess) CloseStdin() error {
+	if !p.stdin {
+		return nil
+	}
+	return p.attached.CloseWrite()
+}
 
 func (p *containerProcess) Resize(rows, cols uint16) error {
 	_, err := p.cli.ExecResize(context.Background(), p.id, client.ExecResizeOptions{Height: uint(rows), Width: uint(cols)})
