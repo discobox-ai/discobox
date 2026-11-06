@@ -4603,8 +4603,10 @@ A discobox that is still waiting for its source -- one whose create failed after
 it had been provisioned -- is delivered rather than offered something to rebase
 onto: every source it waits for is pushed at the commit it was created from,
 with any uncommitted work that create captured, and reported complete, which
-starts it. That needs the repositories those sources came from to still hold
-those commits; --source, --branch, and --force describe a push to a running
+starts it. Git repositories must still hold those commits; a non-Git directory
+uses the snapshot retained by this client even if that directory has changed.
+For a non-Git source, --dir cannot replace the original snapshot.
+--source, --branch, and --force describe a push to a running
 discobox and do not apply. Attaching to it from the machine that created it
 delivers it the same way, so this is for delivering it from a directory that
 has moved (--dir), or from another machine.
