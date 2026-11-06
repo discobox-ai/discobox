@@ -190,3 +190,9 @@ Connecting to an already-ready server does not replay its first-start warnings.
 configuration, desired/applied revisions and observations by server/guest/pool
 context. A missing context is untested. Endpoint/CA details describe pool
 routing independently of the server connection diagnosis.
+
+Autolaunch forwards pool proxy configuration, including explicit empty values,
+and standard server proxy/trust variables. Pool resolution still selects direct
+unless explicitly configured or bootstrapped; inherited server routing is not
+a pool override. Pool and inherited CA file paths, and each inherited CA directory, are made
+absolute before starting the unit.

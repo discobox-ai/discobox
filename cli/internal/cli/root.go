@@ -823,6 +823,12 @@ func localServerEnv(endpoint string) []string {
 		ImageCacheEnv + "=" + stagedImagesRoot(),
 	}
 	for _, key := range []string{
+		// Preserve server routing independently from pool mode. Inherit mode
+		// resolves these only when selected; explicit/direct pools ignore them.
+		"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy",
+		"ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR",
+		"DISCOBOX_POOLS_PROXY_MODE", "DISCOBOX_POOLS_PROXY_HTTP", "DISCOBOX_POOLS_PROXY_HTTPS",
+		"DISCOBOX_POOLS_PROXY_NO_PROXY", "DISCOBOX_POOLS_PROXY_CA_FILE",
 		"DATABASE_DSN",
 		"DATABASE_READ_DSN",
 		"DISCOBOX_CACHE_DIR",
@@ -846,10 +852,22 @@ func localServerEnv(endpoint string) []string {
 			continue
 		}
 		// Empty stays empty: that is how the server is told to read no file.
-		if key == ServerConfigFileEnv && strings.TrimSpace(value) != "" {
+		if (key == ServerConfigFileEnv || key == "DISCOBOX_POOLS_PROXY_CA_FILE" || key == "SSL_CERT_FILE") && strings.TrimSpace(value) != "" {
 			if absolute, err := filepath.Abs(strings.TrimSpace(value)); err == nil {
 				value = absolute
 			}
+		}
+		if key == "SSL_CERT_DIR" && value != "" {
+			directories := filepath.SplitList(value)
+			for i, directory := range directories {
+				if directory == "" {
+					continue
+				}
+				if absolute, err := filepath.Abs(directory); err == nil {
+					directories[i] = absolute
+				}
+			}
+			value = strings.Join(directories, string(os.PathListSeparator))
 		}
 		env = append(env, key+"="+value)
 	}
