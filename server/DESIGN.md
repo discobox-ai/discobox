@@ -715,9 +715,12 @@ all slow at least once; binding first means a client sees a server that is
 still coming up rather than a refused connection it cannot tell from one that
 died on startup.
 
-`startupHandler` occupies the listeners from the moment they bind. Every request
-is answered `503` with a `health.Status` naming the step in progress, and each
-step is logged, so a foreground run and a polling client say the same thing.
+`startupHandler` occupies the listeners from the moment they bind. `/healthz` answers `503` with a `health.Status` naming the step in progress.
+API requests answer `503` with a safe startup-phase explanation in their
+contracted error format: legacy JSON or problem JSON. The legacy route set is
+derived lazily from the embedded OpenAPI contract; other paths use problem
+JSON. All startup responses disable caching. Each step is logged, so a
+foreground run and a polling client say the same thing.
 When initialization finishes, the real router is swapped in behind the same
 handler: nothing rebinds and no connection is dropped.
 
@@ -749,7 +752,7 @@ Handing over is becoming ready. There are two states
 
 | State | API | `/healthz` | Meaning |
 | --- | --- | --- | --- |
-| `starting` | `503` with the status on every route | `503` | no router yet: the database is being opened or migrated, the services built, or the built-in harnesses checked; `phase` names the step |
+| `starting` | `503` with a contract-compatible error | `503` | no router yet: the database is being opened or migrated, the services built, or the built-in harnesses checked; `phase` names the step |
 | `ready` | every route serves | `200` | the real router is serving |
 
 `startupHandler` answers every route itself until handover. The router's own
