@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/health"
 )
 
@@ -91,5 +93,59 @@ func TestStartupWarningsSurviveReadiness(t *testing.T) {
 		if ready && (resp.Code != http.StatusOK || status.Status != health.StatusReady) {
 			t.Fatalf("ready status: %d %+v", resp.Code, status)
 		}
+	}
+}
+
+func TestStartupHarnessChangesReturnsDecodableUnavailable(t *testing.T) {
+	const phase = "starting services"
+	server := httptest.NewServer(newStartupHandler(phase))
+	defer server.Close()
+	client, err := serverapi.NewClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.GetSandboxHarnessConfigChanges(t.Context(), serverapi.GetSandboxHarnessConfigChangesParams{ProjectId: "default", SandboxId: "box"})
+	if err != nil {
+		t.Fatalf("startup 503 must decode as an API error carrying phase %q: %v", phase, err)
+	}
+	unavailable, ok := response.(*serverapi.ErrorResponseStatusCode)
+	if !ok || unavailable.StatusCode != http.StatusServiceUnavailable || !strings.Contains(unavailable.Response.Error, phase) {
+		t.Fatalf("response = %#v, want 503 with phase %q", response, phase)
+	}
+}
+
+func TestStartupProblemErrorsDecodeWithGeneratedClient(t *testing.T) {
+	const phase = "opening the database"
+	server := httptest.NewServer(newStartupHandler(phase))
+	defer server.Close()
+	client, err := serverapi.NewClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.GetServerInfo(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	unavailable, ok := response.(*serverapi.ErrorModelStatusCode)
+	if !ok || unavailable.StatusCode != http.StatusServiceUnavailable || unavailable.Response.Status.Value != http.StatusServiceUnavailable || !strings.Contains(unavailable.Response.Detail.Value, phase) {
+		t.Fatalf("response = %#v, want 503 with phase %q", response, phase)
+	}
+}
+
+func TestStartupSaveChangesUsesProblemJSON(t *testing.T) {
+	h := newStartupHandler("starting services")
+	// Save is a problem-JSON operation beside the legacy capture operations.
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/projects/default/sandboxes/box/harness-config-changes/save", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Content-Type") != "application/problem+json" || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("startup response: %d %v %s", w.Code, w.Header(), w.Body)
+	}
+	var body serverapi.ErrorModel
+	if err := body.UnmarshalJSON(w.Body.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if body.Detail.Value != "server is starting: starting services" {
+		t.Fatalf("detail = %q", body.Detail.Value)
 	}
 }

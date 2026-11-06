@@ -2,14 +2,20 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/api/openapi"
 	"github.com/discobox-ai/discobox/pkg/health"
 	"github.com/discobox-ai/discobox/pkg/version"
+	"github.com/go-faster/jx"
+	"gopkg.in/yaml.v3"
 )
 
 // processStart is when this server process began. Uptime is reported against
@@ -95,10 +101,32 @@ func (h *startupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		(*handler).ServeHTTP(w, r)
 		return
 	}
-	// Every path answers the same way, not just the probe: a request that
-	// arrives mid-startup has no handler to reach, and 503 with the reason is a
-	// better answer than a 404 that suggests the route does not exist.
-	writeHealthStatus(w, http.StatusServiceUnavailable, h.status())
+	status := h.status()
+	if r.URL.Path == health.Path {
+		writeHealthStatus(w, http.StatusServiceUnavailable, status)
+		return
+	}
+	message := "server is starting: " + status.Phase
+	w.Header().Set("Cache-Control", "no-store")
+	var body interface{ Encode(*jx.Encoder) }
+	_, pattern := startupLegacyErrors().Handler(r)
+	if pattern != "" {
+		w.Header().Set("Content-Type", "application/json")
+		body = &serverapi.ErrorResponse{Error: message}
+	} else {
+		w.Header().Set("Content-Type", "application/problem+json")
+		body = &serverapi.ErrorModel{
+			Status: serverapi.NewOptInt64(http.StatusServiceUnavailable),
+			Title:  serverapi.NewOptString(http.StatusText(http.StatusServiceUnavailable)),
+			Detail: serverapi.NewOptString(message),
+		}
+	}
+	w.WriteHeader(http.StatusServiceUnavailable)
+	encoder := new(jx.Encoder)
+	body.Encode(encoder)
+	if _, err := encoder.WriteTo(w); err != nil {
+		log.Printf("write startup error: %v", err)
+	}
 }
 
 // readyStatus is what /healthz reports once the real router is serving. It is
@@ -123,3 +151,30 @@ func writeHealthStatus(w http.ResponseWriter, code int, status health.Status) {
 		log.Printf("write health status: %v", err)
 	}
 }
+
+// The contract mixes legacy JSON errors and problem JSON, even within /api.
+// Derive the legacy route set from the embedded contract so new operations and
+// changes to their error format cannot silently drift from the startup responder.
+// Defer parsing until an API request arrives; listener binding and health probes
+// do not wait for it, and the ready router never uses it.
+var startupLegacyErrors = sync.OnceValue(func() *http.ServeMux {
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Content map[string]any `yaml:"content"`
+			} `yaml:"responses"`
+		} `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(openapi.ServerYAML, &doc); err != nil {
+		panic(fmt.Sprintf("parse embedded server contract: %v", err))
+	}
+	mux := http.NewServeMux()
+	for path, methods := range doc.Paths {
+		for method, operation := range methods {
+			if _, legacy := operation.Responses["default"].Content["application/json"]; legacy {
+				mux.HandleFunc(strings.ToUpper(method)+" "+path, func(http.ResponseWriter, *http.Request) {})
+			}
+		}
+	}
+	return mux
+})
