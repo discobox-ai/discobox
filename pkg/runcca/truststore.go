@@ -37,7 +37,7 @@ const (
 	// PrebuiltTrustStoreDir holds the complete system trust store, built into
 	// the image. It deliberately sits outside /etc/ssl/certs: the runc wrapper
 	// bind-mounts a staging directory over that path in every container it
-	// starts (see seedTrustStore), including the build containers that produce
+	// starts (see seedTrustBundle), including the build containers that produce
 	// this image, so anything written there during a build lands in the mount
 	// and is lost when the layer commits.
 	PrebuiltTrustStoreDir = "/opt/discobox/ca-certificates"

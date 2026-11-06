@@ -308,12 +308,48 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 	// first is the Debian path every one of them accepts.
 	installed := ""
 
-	for _, store := range trustStores() {
-		if _, taken := existing[store.dir]; taken {
-			continue // the container brought its own; leave it alone
+	// Resolve aliases before staging: all names for one image directory must
+	// expose the same bundles, regardless of the order runc mounts them.
+	root, err := os.OpenRoot(rootfs)
+	if err != nil {
+		return false, "", fmt.Errorf("open image root: %w", err)
+	}
+	defer root.Close()
+	stores := trustStores()
+	resolved := make([]string, len(stores))
+	for i, store := range stores {
+		resolved[i], err = resolveImagePath(root, store.dir)
+		if err != nil {
+			return false, "", err
+		}
+	}
+	for i, store := range stores {
+		// An explicit mount through either alias owns the whole directory.
+		taken := false
+		for j, other := range stores {
+			if _, exists := existing[other.dir]; exists && resolved[i] == resolved[j] {
+				taken = true
+			}
+		}
+		if taken {
+			continue
 		}
 		dst := path.Join(staging, store.dir)
-		if err := seedTrustStore(rootfs, dst, store, ca, cfg); err != nil {
+		for j := 0; j < i; j++ {
+			if resolved[i] == resolved[j] {
+				dst = path.Join(staging, stores[j].dir)
+				break
+			}
+		}
+		if dst == path.Join(staging, store.dir) {
+			if err := os.MkdirAll(dst, 0o755); err != nil {
+				return changed, installed, fmt.Errorf("create staging dir %s: %w", dst, err)
+			}
+			if err := copyTree(path.Join(rootfs, resolved[i]), dst); err != nil {
+				return changed, installed, err
+			}
+		}
+		if err := seedTrustBundle(rootfs, dst, store, ca, cfg); err != nil {
 			return changed, installed, err
 		}
 		if installed == "" {
@@ -407,17 +443,9 @@ func specRootPath(spec map[string]any, bundleDir string) string {
 	return path.Join(bundleDir, rootPath)
 }
 
-// seedTrustStore copies an image's trust store into staging and appends the
-// MITM CA to its aggregate bundle, preserving whatever CAs the image shipped
-// rather than replacing them.
-func seedTrustStore(rootfs, dst string, store trustStore, ca []byte, cfg Config) error {
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return fmt.Errorf("create staging dir %s: %w", dst, err)
-	}
-	if err := copyTree(path.Join(rootfs, store.dir), dst); err != nil {
-		return err
-	}
-
+// seedTrustBundle appends the MITM CA to an image's aggregate bundle in an
+// already copied trust directory, preserving whatever CAs the image shipped.
+func seedTrustBundle(rootfs, dst string, store trustStore, ca []byte, cfg Config) error {
 	bundle := path.Join(dst, store.bundle)
 	body, err := readImageBundle(rootfs, path.Join(store.dir, store.bundle))
 	switch {
@@ -453,15 +481,24 @@ func seedTrustStore(rootfs, dst string, store trustStore, ca []byte, cfg Config)
 	return nil
 }
 
-// readImageBundle resolves links with container semantics: absolute links
-// start at the image root, and .. cannot climb above it. Root confines every
-// filesystem operation even if the image changes while links are resolved.
+// readImageBundle reads an image bundle without following links outside rootfs.
 func readImageBundle(rootfs, name string) ([]byte, error) {
 	root, err := os.OpenRoot(rootfs)
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
+	resolved, err := resolveImagePath(root, name)
+	if err != nil {
+		return nil, err
+	}
+	return root.ReadFile(resolved)
+}
+
+// resolveImagePath uses container semantics: absolute links start at the image
+// root and .. cannot climb above it. Missing suffixes are kept for trust paths
+// that injection will create. Root confines operations during resolution.
+func resolveImagePath(root *os.Root, name string) (string, error) {
 	pending := strings.Split(name, "/")
 	resolved := "."
 	links := 0
@@ -477,8 +514,11 @@ func readImageBundle(rootfs, name string) ([]byte, error) {
 		}
 		next := path.Join(resolved, component)
 		info, err := root.Lstat(next)
+		if os.IsNotExist(err) {
+			return strings.TrimPrefix(path.Join(append([]string{"/", next}, pending...)...), "/"), nil
+		}
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
 			resolved = next
@@ -486,18 +526,18 @@ func readImageBundle(rootfs, name string) ([]byte, error) {
 		}
 		links++
 		if links > 40 {
-			return nil, fmt.Errorf("too many symlinks in image bundle %s", name)
+			return "", fmt.Errorf("too many symlinks in image path %s", name)
 		}
 		target, err := root.Readlink(next)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		if path.IsAbs(target) {
 			resolved = "."
 		}
 		pending = append(strings.Split(target, "/"), pending...)
 	}
-	return root.ReadFile(resolved)
+	return resolved, nil
 }
 
 // copyTree copies a trust-store directory's entries. Symlinks are recreated as
