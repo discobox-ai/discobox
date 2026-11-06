@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -2466,6 +2467,7 @@ func TestClientVersionDoesNotContactServer(t *testing.T) {
 // Empty explicit fields must survive systemd autolaunch too; omission could
 // expose a YAML default or enable nested bootstrap instead of explicit direct.
 func TestLocalServerEnvForwardsPoolOutboundConfiguration(t *testing.T) {
+	trust := t.TempDir()
 	want := map[string]string{
 		"DISCOBOX_POOLS_PROXY_MODE":     "explicit",
 		"DISCOBOX_POOLS_PROXY_HTTP":     "http://proxy.example:3128",
@@ -2480,8 +2482,18 @@ func TestLocalServerEnvForwardsPoolOutboundConfiguration(t *testing.T) {
 		"all_proxy":                     "",
 		"NO_PROXY":                      "server.example",
 		"no_proxy":                      "",
-		"SSL_CERT_FILE":                 "/server/roots.pem",
-		"SSL_CERT_DIR":                  "/server/roots",
+		"SSL_CERT_FILE":                 filepath.Join(trust, "roots.pem"),
+		"SSL_CERT_DIR":                  filepath.Join(trust, "roots"),
+	}
+	// Windows environment names are case-insensitive: distinct upper/lower
+	// values cannot coexist. Resolver case precedence has a platform-neutral
+	// lookup test; here exercise the OS's actual setting semantics.
+	if runtime.GOOS == "windows" {
+		for key := range want {
+			if key != strings.ToUpper(key) {
+				delete(want, key)
+			}
+		}
 	}
 	for key, value := range want {
 		t.Setenv(key, value)
