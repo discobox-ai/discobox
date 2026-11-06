@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	"github.com/discobox-ai/discobox/pkg/execstream/resume"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // Each invocation executes the real Cobra tree in a fresh process, including
@@ -107,7 +108,9 @@ func directoryRetryScenario(t *testing.T, console, bindFailure bool) {
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("original snapshot\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	root := t.TempDir()
+	// Git receive-pack appends quarantine and object paths; keep the backend
+	// root short enough for Windows even when the subtest name is long.
+	root := shorttmp.Dir(t)
 	origin := filepath.Join(root, "projects", "project-1", "sandboxes", pushTestSandboxID, "git-origins", "primary.git")
 	if err := os.MkdirAll(origin, 0700); err != nil {
 		t.Fatal(err)
