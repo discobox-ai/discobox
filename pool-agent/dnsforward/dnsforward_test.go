@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -251,8 +250,11 @@ func TestServerCapsConnectionsPerSandbox(t *testing.T) {
 	}
 	over := dial(t, addr, c.clients["sbx_a"])
 	_ = writeMessage(over, []byte("q"))
-	if _, err := readMessage(over); !errors.Is(err, io.EOF) {
-		t.Fatalf("connection over the sandbox's cap: read error = %v, want EOF", err)
+	// Closing with the client's query unread can report a TCP reset/abort
+	// instead of EOF, particularly on Windows. A timeout is not a refusal.
+	var readErr net.Error
+	if n, err := over.Read(make([]byte, 1)); n != 0 || err == nil || (errors.As(err, &readErr) && readErr.Timeout()) {
+		t.Fatalf("connection over the sandbox's cap: read = %d, %v, want a closed connection", n, err)
 	}
 	// Another sandbox is not starved by the first one's connections.
 	if got := ask(t, dial(t, addr, c.clients["sbx_b"]), "q"); got != udpAnswer("q") {
@@ -282,8 +284,10 @@ func TestServerCapsUnauthenticatedConnectionsPerSource(t *testing.T) {
 	}
 	defer func() { _ = over.Close() }()
 	_ = over.SetDeadline(time.Now().Add(queryTimeout / 2))
-	if _, err := over.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
-		t.Fatalf("connection over the source cap: read error = %v, want EOF", err)
+	// Either EOF or a TCP reset/abort proves refusal; a timeout does not.
+	var readErr net.Error
+	if n, err := over.Read(make([]byte, 1)); n != 0 || err == nil || (errors.As(err, &readErr) && readErr.Timeout()) {
+		t.Fatalf("connection over the source cap: read = %d, %v, want a closed connection", n, err)
 	}
 }
 
