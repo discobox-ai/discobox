@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -60,6 +61,43 @@ func TestDockerIntegrationPoolConsole(t *testing.T) {
 		defer cleanupCancel()
 		_, _ = dockerClient.ContainerRemove(cleanupCtx, dockerworker.ConsoleContainerName(pool.ID), client.ContainerRemoveOptions{Force: true})
 	})
+
+	// Commands work before any pool agent or persistent shell exists.
+	for _, tty := range []bool{false, true} {
+		command, err := engine.OpenConsole(ctx, provider, pool, sandbox.ConsoleOptions{Command: []string{"/bin/bash", "-c", `if test -t 1; then printf tty; else cat; fi; printf error >&2; test -d /host/etc && test -S /var/run/docker.sock || exit 99; exit 37`}, TTY: tty})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(command, "input\n"); err != nil {
+			t.Fatal(err)
+		}
+		if err := command.CloseWrite(); err != nil {
+			t.Fatal(err)
+		}
+		errors := make(chan string, 1)
+		go func() {
+			var b []byte
+			if reader := command.Stderr(); reader != nil {
+				b, _ = io.ReadAll(reader)
+			}
+			errors <- string(b)
+		}()
+		output, err := io.ReadAll(command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		errorOutput := <-errors
+		if !tty && (string(output) != "input\n" || errorOutput != "error") {
+			t.Fatalf("stdout=%q stderr=%q", output, errorOutput)
+		}
+		if tty && (!strings.Contains(string(output), "ttyerror") || errorOutput != "") {
+			t.Fatalf("TTY stdout=%q stderr=%q", output, errorOutput)
+		}
+		if code, err := command.Wait(ctx); err != nil || code != 37 {
+			t.Fatalf("Wait=%d %v", code, err)
+		}
+		_ = command.Close()
+	}
 
 	console, err := engine.OpenConsole(ctx, provider, pool, sandbox.ConsoleOptions{Rows: 24, Cols: 80})
 	if err != nil {

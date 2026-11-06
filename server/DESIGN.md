@@ -150,10 +150,17 @@ any project member able to open a root shell on that project's pool hosts. It
 is an administrative capability waiting on an administrative role
 (docs/adr/0051).
 
-The route rejects before upgrading, so a caller whose pool host is unreachable
-reads the reason instead of watching a websocket close, and it passes the
-terminal size on the open (`?rows=&cols=`) so the first prompt is drawn at the
-caller's size.
+The route accepts and validates the WebSocket handshake and Origin before
+opening any provider process. Provider failures are reported as error frames.
+Terminal size travels on the open (`?rows=&cols=`) so the first prompt is drawn
+at the caller's size.
+
+The console accepts repeated `command` query parameters as argv, and `tty=true`
+for command-mode terminal allocation. With no command it attaches the persistent
+shell. The provider returns `sandbox.Stream`; the handler drains stdout and
+stderr concurrently into serialized frames, forwards stdin EOF for commands,
+and waits for the command's actual exit status. Only interactive detach uses
+a bounded exit wait.
 
 `get-http-audit` reads one exchange in full from the pool that recorded it; the
 pool is in the path because a record ID is only unique within it.

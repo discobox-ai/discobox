@@ -658,7 +658,7 @@ func (s *Service) auditRuntime(ctx context.Context, pool *model.Pool) (sandbox.P
 // schedulable, and it does not refuse a disabled provider instance: a console
 // is asked for when the pool is broken, and every one of those checks would
 // withhold it exactly then.
-func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")

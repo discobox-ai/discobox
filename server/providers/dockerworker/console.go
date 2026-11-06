@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -48,7 +51,7 @@ const (
 // attach lands on the same shell. It runs on the daemon the pool's containers
 // run on, reached through the driver's Docker client — which is what makes it
 // useful for debugging a backend whose pool agent never came up.
-func (e *Engine) OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (e *Engine) OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	if pool == nil || strings.TrimSpace(pool.ID) == "" {
 		return nil, errors.New("pool is required")
 	}
@@ -56,10 +59,65 @@ func (e *Engine) OpenConsole(ctx context.Context, provider *model.SandboxProvide
 	if err != nil {
 		return nil, fmt.Errorf("reach the pool host's Docker daemon: %w", err)
 	}
+	if len(opts.Command) > 0 {
+		session, err := e.runConsoleCommand(ctx, lease, provider, pool, opts)
+		if err != nil {
+			lease.Release()
+		}
+		return session, err
+	}
 	session, err := e.attachConsole(ctx, lease, provider, pool, opts)
 	if err != nil {
 		lease.Release()
 		return nil, err
+	}
+	return session, nil
+}
+
+// runConsoleCommand uses an independent container so concurrent commands cannot
+// interfere with the persistent console's shell, terminal size or input.
+func (e *Engine) runConsoleCommand(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (*consoleSession, error) {
+	cli := lease.Client
+	existing, _ := cli.ContainerInspect(ctx, ConsoleContainerName(pool.ID), client.ContainerInspectOptions{})
+	image, err := e.resolvePoolImage(ctx, lease, pool.ID, existing.Container)
+	if err != nil {
+		return nil, err
+	}
+	config := e.consoleConfig(provider, pool, image)
+	config.Cmd = opts.Command
+	config.Tty = opts.TTY
+	config.StdinOnce = true
+	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: e.consoleHostConfig()})
+	if err != nil {
+		return nil, fmt.Errorf("create pool console command: %w", err)
+	}
+	cleanup := func() {
+		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, _ = cli.ContainerRemove(cleanCtx, created.ID, client.ContainerRemoveOptions{Force: true})
+	}
+	attached, err := cli.ContainerAttach(ctx, created.ID, client.ContainerAttachOptions{Stream: true, Stdin: true, Stdout: true, Stderr: true})
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	if _, err = cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		attached.Close()
+		cleanup()
+		return nil, err
+	}
+	session := &consoleSession{client: cli, lease: lease, containerID: created.ID, attached: attached, cleanup: cleanup}
+	if opts.TTY {
+		resizeConsole(ctx, cli, created.ID, opts.Rows, opts.Cols)
+	} else {
+		output, outputWriter := io.Pipe()
+		stderr, stderrWriter := io.Pipe()
+		session.output, session.stderr = output, stderr
+		go func() {
+			_, err := stdcopy.StdCopy(outputWriter, stderrWriter, attached.Reader)
+			_ = outputWriter.CloseWithError(err)
+			_ = stderrWriter.CloseWithError(err)
+		}()
 	}
 	return session, nil
 }
@@ -278,9 +336,25 @@ type consoleSession struct {
 	containerID string
 	attached    client.ContainerAttachResult
 	closeOnce   sync.Once
+	output      *io.PipeReader
+	stderr      *io.PipeReader
+	cleanup     func()
 }
 
-func (c *consoleSession) Read(p []byte) (int, error) { return c.attached.Reader.Read(p) }
+func (c *consoleSession) Read(p []byte) (int, error) {
+	if c.output != nil {
+		return c.output.Read(p)
+	}
+	return c.attached.Reader.Read(p)
+}
+
+func (c *consoleSession) Stderr() io.Reader {
+	if c.stderr == nil {
+		return nil
+	}
+	return c.stderr
+}
+func (c *consoleSession) CloseWrite() error { return c.attached.CloseWrite() }
 
 func (c *consoleSession) Write(p []byte) (int, error) { return c.attached.Conn.Write(p) }
 
@@ -315,6 +389,15 @@ func (c *consoleSession) Wait(ctx context.Context) (int, error) {
 func (c *consoleSession) Close() error {
 	c.closeOnce.Do(func() {
 		c.attached.Close()
+		if c.output != nil {
+			_ = c.output.Close()
+		}
+		if c.stderr != nil {
+			_ = c.stderr.Close()
+		}
+		if c.cleanup != nil {
+			c.cleanup()
+		}
 		c.lease.Release()
 	})
 	return nil

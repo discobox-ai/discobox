@@ -17,7 +17,7 @@ type refusingConsoleProvider struct {
 	stubPoolProvider
 }
 
-func (refusingConsoleProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (refusingConsoleProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	return nil, fmt.Errorf("this pool's host is the user's own machine: %w", sandbox.ErrPoolConsoleUnsupported)
 }
 

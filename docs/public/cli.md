@@ -2228,11 +2228,16 @@ One console container is kept per pool host and reattached, so a capture or a
 trace started in it survives a detach. The shell exits when you type exit, and
 the next console starts a fresh one.
 
+Pass -- followed by a command to run it once. Stdin is attached, stdout and
+stderr stay separate without a TTY, and the command's exit status is returned.
+A TTY is allocated when stdin is a terminal, or with -t; TTY output is merged.
+One-off commands have the same host access and do not change the persistent shell.
+
 Without POOL the project's default pool is used.
 ~~~~
 
 ```text
-discobox admin pool console [POOL] [flags]
+discobox admin pool console [POOL] [-- CMD [ARG...]] [flags]
 ```
 
 Examples:
@@ -2240,6 +2245,7 @@ Examples:
 ```text
   discobox admin pool console
   discobox admin pool console pool_01hq
+  discobox admin pool console -- docker ps -a
 ```
 
 | Flag | Type | Default | Description |
@@ -2250,6 +2256,7 @@ Examples:
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
+| --tty, -t | bool | false | Allocate a TTY for a one-off command Value when passed without an argument: true. |
 
 ## discobox admin pool create
 

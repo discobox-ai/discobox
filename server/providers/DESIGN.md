@@ -507,6 +507,13 @@ The console is deliberately outside the pool's convergence machinery:
   debugging a host that is out of memory should not be capped by the pool's
   share of it.
 
+A `ConsoleOptions.Command` runs in a separate temporary container with the same
+image and host access, attached before start so short commands lose no output.
+Its TTY setting is per request; non-TTY Docker output is demultiplexed through
+`sandbox.Stream`, including stdin half-close and container exit status. Closing
+that stream removes the command container and releases its driver lease. It
+never shares the persistent interactive shell's input or terminal dimensions.
+
 The host filesystem is bound at the daemon's default (private) propagation.
 `rslave` would reflect mounts made on the host after the console started, but
 the daemon refuses it unless `/` is already shared or slave, which it is not on

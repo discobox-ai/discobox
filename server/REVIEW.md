@@ -37,3 +37,10 @@
 - Singleton refusal reaches the launching CLI through its per-launch error
   record, including systemd launches that have no child process handle. A
   useful log tail alone still left those launches reporting `never answered`.
+
+- Validate a WebSocket handshake and Origin before executing query-supplied
+  commands. Rejecting an upgrade after opening the provider is too late: an
+  ordinary or cross-origin request can already have run a command on the host.
+- Pool console output errors must fail commands and close both output readers;
+  treating a broken driver attach as EOF can hang waiting for a process whose
+  output was truncated, or report its later successful status.

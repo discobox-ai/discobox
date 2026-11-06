@@ -727,7 +727,7 @@ func (s *routerTestServices) ClearPoolCache(_ context.Context, projectID, poolID
 
 // OpenPoolConsole hands out the stub console the test installed, so the console
 // route can be exercised without a provider or a Docker daemon.
-func (s *routerTestServices) OpenPoolConsole(_ context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (s *routerTestServices) OpenPoolConsole(_ context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.consoleErr != nil {

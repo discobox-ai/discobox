@@ -22,8 +22,9 @@ import (
 // container in the pool host's own namespaces, opened straight against that
 // host's Docker daemon, so it answers even when the pool agent never came up.
 func (a *App) newPoolConsoleCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "console [POOL]",
+	var forceTTY bool
+	command := &cobra.Command{
+		Use:   "console [POOL] [-- CMD [ARG...]]",
 		Short: "Open an admin console on a pool's host",
 		Long: `Open an administrative console on the machine hosting a pool's runtime.
 
@@ -46,12 +47,25 @@ One console container is kept per pool host and reattached, so a capture or a
 trace started in it survives a detach. The shell exits when you type exit, and
 the next console starts a fresh one.
 
+Pass -- followed by a command to run it once. Stdin is attached, stdout and
+stderr stay separate without a TTY, and the command's exit status is returned.
+A TTY is allocated when stdin is a terminal, or with -t; TTY output is merged.
+One-off commands have the same host access and do not change the persistent shell.
+
 Without POOL the project's default pool is used.`,
 		Example: `  discobox admin pool console
-  discobox admin pool console pool_01hq`,
-		Args:              cobra.MaximumNArgs(1),
+  discobox admin pool console pool_01hq
+  discobox admin pool console -- docker ps -a`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			_, _, err := splitPoolConsoleCommand(cmd, args)
+			return err
+		},
 		ValidArgsFunction: a.completePools,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			pool, argv, err := splitPoolConsoleCommand(cmd, args)
+			if err != nil {
+				return err
+			}
 			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
@@ -61,8 +75,8 @@ Without POOL the project's default pool is used.`,
 				return err
 			}
 			var poolID string
-			if len(args) > 0 {
-				poolID, err = a.resolvePoolID(cmd.Context(), apiClient, projectID, args[0])
+			if pool != "" {
+				poolID, err = a.resolvePoolID(cmd.Context(), apiClient, projectID, pool)
 			} else {
 				poolID, err = a.defaultPoolID(cmd.Context(), apiClient, projectID)
 				if err == nil && strings.TrimSpace(poolID) == "" {
@@ -72,20 +86,41 @@ Without POOL the project's default pool is used.`,
 			if err != nil {
 				return err
 			}
+			if len(argv) > 0 {
+				tty := forceTTY || isTerminalStream(cmd.InOrStdin())
+				return a.attachPoolConsole(cmd.Context(), projectID, poolID, argv, tty, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "Opening an admin console on pool %s's host (%s to detach)\n", poolID, a.detachHint())
 			fmt.Fprintln(cmd.ErrOrStderr(), "If the screen stays blank, press Enter to redraw the prompt.")
-			return a.attachPoolConsole(cmd.Context(), projectID, poolID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return a.attachPoolConsole(cmd.Context(), projectID, poolID, nil, true, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
+	command.Flags().BoolVarP(&forceTTY, "tty", "t", false, "Allocate a TTY for a one-off command")
+	return command
 }
 
-func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, stdin io.Reader, stdout, stderr io.Writer) error {
+func splitPoolConsoleCommand(cmd *cobra.Command, args []string) (string, []string, error) {
+	before := cmd.ArgsLenAtDash()
+	if before < 0 {
+		before = len(args)
+	}
+	if before > 1 {
+		return "", nil, errors.New("expected at most one pool before --; put the command after --")
+	}
+	var pool string
+	if before == 1 {
+		pool = args[0]
+	}
+	return pool, args[before:], nil
+}
+
+func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, argv []string, tty bool, stdin io.Reader, stdout, stderr io.Writer) error {
 	console := client.NewOSConsole(stdin, stdout)
 	var cols, rows int
 	if console != nil {
 		cols, rows, _ = console.Size()
 	}
-	frames, err := a.openPoolConsoleAttach(ctx, projectID, poolID, rows, cols)
+	frames, err := a.openPoolConsoleAttach(ctx, projectID, poolID, argv, tty, rows, cols)
 	if err != nil {
 		return err
 	}
@@ -95,19 +130,24 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, s
 	// keystrokes and can land in separate reads.
 	chord := newDetachFilter(a.leader())
 	session := client.New(client.Options{
-		Conn:     frames,
-		Stdin:    stdin,
-		Stdout:   stdout,
-		Stderr:   stderr,
-		Console:  console,
-		Kind:     "pool console",
-		Action:   "open pool console",
-		RawMode:  true,
-		Terminal: true,
+		Conn:        frames,
+		Stdin:       stdin,
+		Stdout:      stdout,
+		Stderr:      stderr,
+		Console:     console,
+		Kind:        "pool console",
+		Action:      "open pool console",
+		RequireExit: len(argv) > 0,
+		ErrorFrame:  func(payload []byte) error { return fmt.Errorf("pool console: %s", terminalSafe(string(payload))) },
+		RawMode:     tty,
+		Terminal:    tty,
 		CopyInput: func(ctx context.Context, s *client.Session) error {
-			return copyTerminalInput(ctx, s, chord)
+			if len(argv) == 0 {
+				return copyTerminalInput(ctx, s, chord)
+			}
+			return copySandboxExecInput(ctx, s, true)
 		},
-		InterruptNotice: interruptNotice(stderr, true, "the pool host"),
+		InterruptNotice: interruptNotice(stderr, tty, "the pool host"),
 		OtherErr: func(err error) (bool, error) {
 			if client.IsDone(err) {
 				return true, nil
@@ -131,7 +171,7 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, s
 // openPoolConsoleAttach dials the console websocket. The size travels as query
 // parameters so the shell's first prompt is already drawn at the caller's size,
 // before the session's own resize tracking has said anything.
-func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID string, rows, cols int) (*directAttachFrames, error) {
+func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID string, argv []string, tty bool, rows, cols int) (*directAttachFrames, error) {
 	baseURL, httpClient, err := a.httpClient()
 	if err != nil {
 		return nil, err
@@ -149,12 +189,18 @@ func (a *App) openPoolConsoleAttach(ctx context.Context, projectID, poolID strin
 		return nil, fmt.Errorf("open pool console: unsupported websocket base URL scheme %q", u.Scheme)
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + "/api/projects/" + url.PathEscape(projectID) + "/pools/" + url.PathEscape(poolID) + "/console"
-	if rows > 0 && cols > 0 {
-		query := url.Values{}
+	query := url.Values{}
+	for _, arg := range argv {
+		query.Add("command", arg)
+	}
+	if len(argv) > 0 {
+		query.Set("tty", strconv.FormatBool(tty))
+	}
+	if tty && rows > 0 && cols > 0 {
 		query.Set("rows", strconv.Itoa(rows))
 		query.Set("cols", strconv.Itoa(cols))
-		u.RawQuery = query.Encode()
 	}
+	u.RawQuery = query.Encode()
 	conn, resp, err := websocket.Dial(ctx, u.String(), &websocket.DialOptions{HTTPClient: httpClient})
 	if err != nil {
 		if resp != nil && resp.Body != nil {

@@ -45,7 +45,7 @@ func (h *hostAgent) removePoolHost(_ context.Context, pool *model.Pool) error {
 // openConsole is refused: the pool's host is the user's own machine, and a root
 // shell on it is not the server's to hand out. The pool agent's log is what
 // says why it will not come up.
-func (h *hostAgent) openConsole(context.Context, *model.Pool, sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (h *hostAgent) openConsole(context.Context, *model.Pool, sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	return nil, fmt.Errorf("this pool's agent runs on the server's own machine, which is not a pool host to open a shell on; read its log instead: %w", sandbox.ErrPoolConsoleUnsupported)
 }
 

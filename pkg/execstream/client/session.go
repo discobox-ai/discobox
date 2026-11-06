@@ -85,6 +85,9 @@ type Options struct {
 	// SignalReady sends a Ready frame once the output reader is running, telling
 	// the remote it is safe to stream replay history. Set for replay attaches.
 	SignalReady bool
+	// RequireExit requires an explicit exit code before reporting successful
+	// completion. Interactive attaches may detach; one-off commands must finish.
+	RequireExit bool
 	// CopyInput moves stdin to the remote. It owns the policy — detach
 	// sequences, whether EOF closes the remote's stdin — which differs per
 	// caller and is not the protocol's business.
@@ -292,6 +295,9 @@ func (s *Session) copyOutput() error {
 	for {
 		next, err := s.opts.Conn.ReadFrame()
 		if err != nil {
+			if s.opts.RequireExit && errors.Is(err, io.EOF) {
+				return fmt.Errorf("%s ended without an exit status", s.opts.Kind)
+			}
 			return err
 		}
 		s.framesIn.Add(1)
@@ -312,6 +318,15 @@ func (s *Session) copyOutput() error {
 			}
 			return nil
 		case frame.Exit:
+			if s.opts.RequireExit {
+				exit, err := frame.DecodeExit(next.Payload)
+				if err != nil {
+					return err
+				}
+				if exit.ExitCode == nil && !strings.EqualFold(exit.Status, "failed") {
+					return fmt.Errorf("%s ended without an exit status", s.opts.Kind)
+				}
+			}
 			return ExitErrorFromPayload(s.opts.Kind, next.Payload)
 		default:
 			return fmt.Errorf("%s: unexpected frame type %d", s.opts.Action, next.Type)

@@ -224,7 +224,7 @@ func (p *testRuntimeProvider) RemovePool(context.Context, *model.Project, *model
 	return nil
 }
 
-func (p *testRuntimeProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (p *testRuntimeProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	p.consoleCalls++
 	return nil, errors.New("no console in unit tests")
 }

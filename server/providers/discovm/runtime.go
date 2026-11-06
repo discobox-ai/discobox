@@ -34,7 +34,7 @@ type poolHost interface {
 	removePoolHost(ctx context.Context, pool *model.Pool) error
 	// acquireAgentClient reaches the pool agent's API.
 	acquireAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error)
-	openConsole(ctx context.Context, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error)
+	openConsole(ctx context.Context, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.Stream, error)
 	openLogs(ctx context.Context, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
 }
 
@@ -240,7 +240,7 @@ func (r *Runtime) AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) 
 	return r.host.acquireAgentClient(ctx, pool)
 }
 
-func (r *Runtime) OpenConsole(ctx context.Context, _ *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (r *Runtime) OpenConsole(ctx context.Context, _ *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	if err := requirePool(pool); err != nil {
 		return nil, err
 	}

@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -40,18 +43,13 @@ func poolConsoleHandler(service services.PoolService) http.Handler {
 			return
 		}
 		opts := sandbox.ConsoleOptions{
-			Rows: consoleDimension(r.URL.Query().Get("rows")),
-			Cols: consoleDimension(r.URL.Query().Get("cols")),
+			Command: r.URL.Query()["command"],
+			TTY:     r.URL.Query().Get("tty") == "true",
+			Rows:    consoleDimension(r.URL.Query().Get("rows")),
+			Cols:    consoleDimension(r.URL.Query().Get("cols")),
 		}
-		console, err := service.OpenPoolConsole(r.Context(), chi.URLParam(r, "projectId"), chi.URLParam(r, "poolId"), opts)
-		if err != nil {
-			// Reject before upgrading: an operator whose pool host is
-			// unreachable needs the reason, not a websocket that closes.
-			writeSandboxAgentProxyError(w, statusCodeForProxyError(err), err.Error())
-			return
-		}
-		defer console.Close()
-
+		// Accept validates both the handshake and Origin before anything can
+		// execute on the pool host. Provider failures travel in the framed stream.
 		socket, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
@@ -59,14 +57,20 @@ func poolConsoleHandler(service services.PoolService) http.Handler {
 		defer socket.Close(websocket.StatusNormalClosure, "done")
 		conn := websocket.NetConn(r.Context(), socket, websocket.MessageBinary)
 		defer conn.Close()
+		console, err := service.OpenPoolConsole(r.Context(), chi.URLParam(r, "projectId"), chi.URLParam(r, "poolId"), opts)
+		if err != nil {
+			_ = frame.Write(conn, frame.Error, []byte(err.Error()))
+			return
+		}
+		defer console.Close()
 
-		pumpPoolConsole(r.Context(), console, conn)
+		pumpPoolConsole(r.Context(), console, conn, len(opts.Command) > 0)
 	})
 }
 
 // pumpPoolConsole moves bytes between the console TTY and the framed websocket
 // until one of them ends, then reports how the session ended.
-func pumpPoolConsole(ctx context.Context, console sandbox.PTY, conn net.Conn) {
+func pumpPoolConsole(ctx context.Context, console sandbox.Stream, conn net.Conn, command bool) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -90,26 +94,54 @@ func pumpPoolConsole(ctx context.Context, console sandbox.PTY, conn net.Conn) {
 				}
 				_ = console.Resize(ctx, int(size.Rows), int(size.Cols))
 			case frame.CloseInput:
-				// A console has no meaningful half-close: its shell reads
-				// stdin for the life of the session.
-				continue
+				if command {
+					_ = console.CloseWrite()
+				}
 			}
 		}
 	}()
 
-	buf := make([]byte, 32*1024)
-	for {
-		n, err := console.Read(buf)
-		if n > 0 {
-			if writeErr := frame.Write(conn, frame.Stdout, buf[:n]); writeErr != nil {
-				break
+	// stdout and stderr can arrive concurrently, but frames must stay atomic.
+	var writeMu sync.Mutex
+	writeFrame := func(kind byte, payload []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		return frame.Write(conn, kind, payload)
+	}
+	var output sync.WaitGroup
+	outputErrors := make(chan error, 2)
+	copyOutput := func(reader io.Reader, kind byte) {
+		defer output.Done()
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := reader.Read(buf)
+			if n > 0 {
+				if err := writeFrame(kind, buf[:n]); err != nil {
+					_ = console.Close()
+					return
+				}
+			}
+			if err != nil {
+				if command && !errors.Is(err, io.EOF) {
+					outputErrors <- err
+					_ = console.Close()
+				}
+				return
 			}
 		}
-		if err != nil {
-			// The shell ended (or the console was closed under us); say which.
-			writePoolConsoleExit(ctx, console, conn)
-			break
-		}
+	}
+	output.Add(1)
+	go copyOutput(console, frame.Stdout)
+	if stderr := console.Stderr(); stderr != nil {
+		output.Add(1)
+		go copyOutput(stderr, frame.Stderr)
+	}
+	output.Wait()
+	select {
+	case err := <-outputErrors:
+		_ = frame.Write(conn, frame.Error, []byte("read pool console output: "+err.Error()))
+	default:
+		writePoolConsoleExit(ctx, console, conn, command)
 	}
 	_ = conn.Close()
 	<-done
@@ -118,12 +150,20 @@ func pumpPoolConsole(ctx context.Context, console sandbox.PTY, conn net.Conn) {
 // writePoolConsoleExit reports the console shell's exit code when the container
 // stopped, and reports a plain detach otherwise. The container outliving the
 // stream is the normal case, so the wait for a status is deliberately brief.
-func writePoolConsoleExit(ctx context.Context, console sandbox.PTY, conn net.Conn) {
-	waitCtx, cancel := context.WithTimeout(ctx, consoleExitWait)
-	defer cancel()
+func writePoolConsoleExit(ctx context.Context, console sandbox.Stream, conn net.Conn, command bool) {
+	waitCtx := ctx
+	if !command {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, consoleExitWait)
+		defer cancel()
+	}
 	code, err := console.Wait(waitCtx)
 	if err != nil {
-		payload, encodeErr := frame.EncodeExit("detached", nil, "")
+		status, message := "detached", ""
+		if command {
+			status, message = "failed", err.Error()
+		}
+		payload, encodeErr := frame.EncodeExit(status, nil, message)
 		if encodeErr == nil {
 			_ = frame.Write(conn, frame.Exit, payload)
 		}

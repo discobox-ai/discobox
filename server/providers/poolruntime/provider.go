@@ -104,7 +104,7 @@ type RuntimeProvider interface {
 	// OpenConsole attaches to the pool host's administrative console. It reaches
 	// the host runtime directly, not through the pool agent, so it answers on a
 	// host whose agent is exactly what refuses to come up.
-	OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error)
+	OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.Stream, error)
 	// OpenLogs reads what the backend recorded about the pool's host. It is the
 	// console's companion for a host that cannot be attached to at all: the
 	// console needs the host's Docker daemon, and this is what says why there
@@ -412,7 +412,7 @@ func (p *Provider) OpenHTTPAuditArtifact(ctx context.Context, pool *model.Pool, 
 // capacity: a console is asked for precisely when the pool is not answering,
 // so gating it on the pool being ready would withhold it exactly when it is
 // needed.
-func (p *Provider) OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (p *Provider) OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("pool is required")
 	}

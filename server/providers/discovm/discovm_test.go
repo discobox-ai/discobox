@@ -162,6 +162,41 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	}
 }
 
+// Command argv runs through the login environment and keeps streams separate.
+func TestPoolConsoleCommand(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r, _ := newFakePool(t, "fake")
+	pool := &model.Pool{ID: "pool-command", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
+		t.Fatal(err)
+	}
+	console, err := r.OpenConsole(ctx, nil, pool, sandbox.ConsoleOptions{Command: []string{"sh", "-c", `cat; printf '%s' "$1" >&2; exit 37`, "sh", "literal ; $HOME"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer console.Close()
+	if _, err := io.WriteString(console, "input\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := console.CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	stderr := make(chan string, 1)
+	go func() { b, _ := io.ReadAll(console.Stderr()); stderr <- string(b) }()
+	out, err := io.ReadAll(console)
+	if err != nil || string(out) != "input\n" {
+		t.Fatalf("stdout=%q err=%v", out, err)
+	}
+	if got := <-stderr; got != "literal ; $HOME" {
+		t.Fatalf("stderr=%q", got)
+	}
+	if code, err := console.Wait(ctx); err != nil || code != 37 {
+		t.Fatalf("Wait=%d %v", code, err)
+	}
+}
+
 // A pool machine is made fresh from the base the provider names, which is
 // the driver's own configuration (disco-vm ADR 26-11-03-606), and its
 // bootstrap names the same base for its sandboxes' machines.

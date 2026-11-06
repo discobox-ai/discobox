@@ -173,6 +173,12 @@ as ADR 26-10-09-106 §1 places it:
   `Validate` requires the key, and an `http(s)` URL when one is given, for a
   remote driver, and refuses both for a local one.
 
+One-off console argv runs through the same login shell (`-c 'exec "$@"'` with
+positional arguments), preserving the machine's login environment without
+interpreting command arguments as shell source. Its stream separates stderr,
+forwards stdin EOF and reports the process status. No-command consoles remain
+interactive, and local host consoles remain refused.
+
 ## The Pool's Box
 
 A remote driver's pool machine is made the pool's box as a Docker pool's
