@@ -1,7 +1,13 @@
+//go:build !windows
+
+// These fixtures model Linux image symlinks, including absolute targets and
+// slash-separated relative targets. Windows rewrites symlink targets using
+// host path semantics, so its filesystem cannot represent these fixtures.
 package runcca
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,7 +40,7 @@ func TestAdjustPreservesBundleBehindRelativeSymlink(t *testing.T) {
 				t.Fatalf("Adjust must inject trust for %s: %v", family, err)
 			}
 			mounts := specMounts(t, readSpec(t, bundle))
-			mount, ok := mounts[filepath.Dir(store)]
+			mount, ok := mounts[path.Dir(store)]
 			if !ok {
 				t.Fatalf("missing trust mount for %s", store)
 			}
