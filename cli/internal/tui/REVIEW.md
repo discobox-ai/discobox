@@ -187,6 +187,9 @@
   land after its "done" (`createdMsg`). What one learns of the other goes in a
   record both carry (`createWatch`), not in a window-wide field, which a
   second create started in between overwrites too.
+- Install an operation's progress status before launching its asynchronous
+  work. Batching the start notice with the operation lets a fast completion
+  arrive first; a late "merging…" once erased GitHub's merge refusal.
 - **Anything a pane started that answers it later finds it with `heldPane`.**
   A parked workspace's panes are still attached and still running; an issue
   read, a files changed session or an image paste that looks its pane up on
