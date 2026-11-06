@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
@@ -264,7 +266,9 @@ func configRevision(cfg Config) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) error {
+func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) (resultErr error) {
+	defer func() { resultErr = pool.Outbound.RedactError(resultErr) }()
+	previousOutboundRevision := pool.OutboundAppliedRevision
 	// The phases of bringing a host up, in the order they happen, for a client
 	// whose sandbox is waiting for a pool to take it. On a VM backend starting
 	// the machine includes fetching the disk image the first time, which on a
@@ -283,6 +287,28 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	defer lease.Release()
+	delivery, err := e.driver.PoolOutbound(ctx, pool.ID, pool.Outbound)
+	if err != nil {
+		return err
+	}
+	pool.RuntimeOutbound = delivery.Runtime.WithInternalHosts(e.cfg.ControlPlaneURL)
+	if delivery.GuestProbes != nil {
+		observations := map[string]pooloutbound.Probes{}
+		_ = json.Unmarshal(pool.OutboundProbes, &observations)
+		observations["guest"] = *delivery.GuestProbes
+		encoded, marshalErr := json.Marshal(observations)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		pool.OutboundProbes = encoded
+	}
+	if delivery.RestartRequired && pool.RegisteredAt == nil {
+		return fmt.Errorf("%w: pool boot configuration has not applied; waiting for machine initialization or its next restart", sandbox.ErrPoolConfigApply)
+	}
+	pool.OutboundRestartRequired = delivery.RestartRequired
+	if delivery.RestartRequired {
+		pool.OutboundAppliedRevision = delivery.AppliedRevision
+	}
 	err = e.cfg.DevelopmentImageSync.Ensure(ctx, lease.Client, e.cfg.ProgressReporter, pool.ID)
 	if err != nil {
 		return err
@@ -292,10 +318,13 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	e.reclaimImagesForPool(ctx, lease.Client, pool.ID)
+	observePoolOutbound(ctx, lease.Client, inst.ID, pool, previousOutboundRevision)
 	return e.recordPoolRuntime(pool, vmInfo, inst, box, recreated)
 }
 
-func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, _ string, begin func(context.Context) error) error {
+func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, _ string, begin func(context.Context) error) (resultErr error) {
+	defer func() { resultErr = pool.Outbound.RedactError(resultErr) }()
+	previousOutboundRevision := pool.OutboundAppliedRevision
 	// Replace the VM only when it is missing or unhealthy, which includes a VM
 	// hosted here whose Docker daemon does not answer; pool-local state such as
 	// named volumes survives container replacement on a healthy VM.
@@ -350,6 +379,28 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	defer lease.Release()
+	delivery, err := e.driver.PoolOutbound(ctx, pool.ID, pool.Outbound)
+	if err != nil {
+		return err
+	}
+	pool.RuntimeOutbound = delivery.Runtime.WithInternalHosts(e.cfg.ControlPlaneURL)
+	if delivery.GuestProbes != nil {
+		observations := map[string]pooloutbound.Probes{}
+		_ = json.Unmarshal(pool.OutboundProbes, &observations)
+		observations["guest"] = *delivery.GuestProbes
+		encoded, marshalErr := json.Marshal(observations)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		pool.OutboundProbes = encoded
+	}
+	if delivery.RestartRequired && pool.RegisteredAt == nil {
+		return fmt.Errorf("%w: pool boot configuration has not applied; waiting for machine initialization or its next restart", sandbox.ErrPoolConfigApply)
+	}
+	pool.OutboundRestartRequired = delivery.RestartRequired
+	if delivery.RestartRequired {
+		pool.OutboundAppliedRevision = delivery.AppliedRevision
+	}
 	err = e.cfg.DevelopmentImageSync.Ensure(ctx, lease.Client, e.cfg.ProgressReporter, pool.ID)
 	if err != nil {
 		return err
@@ -358,6 +409,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
+	observePoolOutbound(ctx, lease.Client, inst.ID, pool, previousOutboundRevision)
 	return e.recordPoolRuntime(pool, vmInfo, inst, box, true)
 }
 
@@ -441,6 +493,7 @@ func (e *Engine) vmSpec(provider *model.SandboxProviderInstance, pool *model.Poo
 		LabelProviderInstanceID: provider.ID,
 	}
 	return VMSpec{
+		Outbound:    pool.Outbound,
 		Name:        ContainerName(pool.ID),
 		Metadata:    metadata,
 		CPUVCPUs:    pool.CPUVCPUs,
@@ -513,7 +566,7 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 	}
 	image, err := e.resolvePoolImage(ctx, lease, pool.ID, existing.Container)
 	if err != nil {
-		return nil, recorded, false, err
+		return nil, recorded, false, fmt.Errorf("hosting Docker daemon cannot fetch the pool base image; configure proxy and trust on that daemon before creating a pool: %w", err)
 	}
 
 	if existingErr == nil {
@@ -586,19 +639,26 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 // logged and tried again on the pool's next reconcile. A failure here that
 // failed the reconcile would repair the pool — remove a working container and
 // the sandboxes' host with it — over bundles it did not need. Only begin's
-// error is returned: newer intent supersedes this pass.
+// error is returned for bundle changes. Outbound changes return ErrPoolConfigApply
+// instead, which records an actionable retry without repairing the running host.
 func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, containerID string, pool *model.Pool, maker poolruntime.PoolMaker, recorded poolruntime.BoxRecord, begin func(context.Context) error) (poolruntime.BoxRecord, error) {
 	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
+		if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
+			return recorded, fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
+		}
 		return recorded, nil
 	}
-	placement := poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv()}
+	placement := poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv(), Outbound: pool.RuntimeOutbound}
 	current, err := recorded.Current(placement)
 	if err != nil {
 		return recorded, err
 	}
 	if current {
+		if !pool.OutboundRestartRequired {
+			pool.OutboundAppliedRevision = pool.Outbound.Revision()
+		}
 		return recorded, nil
 	}
 	// The apply restarts the agent the moved bundles carry, so placement is
@@ -606,17 +666,26 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	if err := begin(ctx); err != nil {
 		return recorded, err
 	}
-	guest := provisioner.ContainerGuest{Client: cli, Container: containerID}
+	guest := provisioner.ContainerGuest{Client: cli, Container: containerID, Env: pool.RuntimeOutbound.Environment()}
 	record, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
+		if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
+			return recorded, fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
+		}
 		return recorded, nil
 	}
 	if recorded.Placement != record.Placement {
-		if err := poolruntime.RestartPoolUnits(ctx, guest); err != nil {
+		if err := poolruntime.RestartPoolUnits(ctx, guest, recorded.OutboundRevision != record.OutboundRevision); err != nil {
 			slog.WarnContext(ctx, "the pool's agent did not restart on its new placement; the next reconcile places it again", "pool", pool.ID, "error", err)
+			if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
+				return recorded, fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
+			}
 			return recorded, nil
 		}
+	}
+	if !pool.OutboundRestartRequired {
+		pool.OutboundAppliedRevision = pool.Outbound.Revision()
 	}
 	return record, nil
 }
@@ -700,6 +769,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	defer releaseStart()
 	config := &container.Config{
 		Image:  image,
+		Env:    pool.RuntimeOutbound.Environment(),
 		Labels: labels,
 		// The box boots its own init, as a sandbox's does: the pool agent is a
 		// unit its bundle lays, and nothing runs before systemd.
@@ -786,9 +856,12 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, poolruntime.BoxRecord{}, err
 	}
-	record, err := poolruntime.ProvisionBox(ctx, provisioner.ContainerGuest{Client: cli, Container: created.ID}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv()})
+	record, err := poolruntime.ProvisionBox(ctx, provisioner.ContainerGuest{Client: cli, Container: created.ID, Env: pool.RuntimeOutbound.Environment()}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv(), Outbound: pool.RuntimeOutbound})
 	if err != nil {
 		return nil, poolruntime.BoxRecord{}, err
+	}
+	if !pool.OutboundRestartRequired {
+		pool.OutboundAppliedRevision = pool.Outbound.Revision()
 	}
 	releaseStart()
 	releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)

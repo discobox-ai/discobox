@@ -320,3 +320,21 @@ admission and retry policy; this service owns authenticating the pool's read.
 ownership checks, then delegates successful-freeze bookkeeping to the sandbox
 service. It is invoked under the pool's power lock before another start can
 execute, including when different server instances dispatched the two calls.
+
+## Pool outbound intent
+
+Outbound routing is independent of sandbox egress policy. `proxy_intent` is a
+sealed, optional whole-object API override; its additive column leaves existing
+pools without an override. The server selects API, immutable-pool-ID YAML, global
+YAML/environment defaults, then direct. Explicit empty schemes remain direct.
+API writes read saved credentials inside the intent transaction, preserve them
+on redacted round trips, and support explicit replacement/removal. Intent and
+its generation/dirty mark commit together. Proxy credentials require configured
+at-rest encryption; reads expose only redacted intent and effective status.
+
+`ControlPlane.ResolveOutbound` supplies a domain-owned `pooloutbound.Resolved`
+on the provider's pool value. Runtime code never resolves environment anew.
+Reconciliation owns applied revisions, restart-required and context-specific
+observations; failed configuration apply retries without repairing/replacing a
+running host. VM boot changes retain the previous applied revision until an
+ordinary restart. A configuration change never deletes sandbox/data/cache state.

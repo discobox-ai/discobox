@@ -363,3 +363,11 @@ credential material. Nullable additive columns preserve existing records.
 after sandbox purge. It is a separate consent record; the current permission
 remains `Sandbox.DiscoboxAPI`. Adding its table through `AllModels` preserves
 existing sandboxes and their settings without a backfill.
+
+## Pool outbound intent
+
+A pool's sealed `proxy_intent` and its bootstrap-origin flag are desired intent
+in `PoolManifest`, independently of sandbox egress policy. Applied outbound
+revision, restart-required and probes are reconciler observations. The resolved
+value and redacted response projection are non-persisted fields on `Pool`;
+private runtime material is always excluded from JSON.

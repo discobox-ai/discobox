@@ -1079,3 +1079,12 @@ The running server keeps it in `pkg/health.Status.Warnings` both while starting
 and when ready. These are process-local first-start warnings, not repeated on
 a restart of an already seeded database. The CLI receives them through the
 normal launch health probe; no server log parsing is involved.
+
+## Pool outbound configuration
+
+`pools.proxy` configures pool egress independently of the server's own proxy
+and trust environment. Its five `DISCOBOX_POOLS_PROXY_*` variables treat an
+explicitly empty value as an override (`envEmpty:"set"` in the configuration
+contract). Pool-ID overrides select whole objects; API intent takes precedence.
+Only initial default-pool creation in a recognized enclosing Discobox can seed
+an explicit logical-forwarder override. Removing it never redetects nesting.

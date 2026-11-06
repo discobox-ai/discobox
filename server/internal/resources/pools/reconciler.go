@@ -2,10 +2,13 @@ package pools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -107,6 +110,9 @@ func (r *PoolReconciler) reconcile(ctx context.Context, id string) (reconcile.Re
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+	if err := r.pools.ResolveOutbound(ctx, pool); err != nil {
+		return reconcile.Result{}, err
+	}
 	generation := pool.Generation
 	switch pool.DesiredState {
 	case model.DesiredStatePresent:
@@ -164,6 +170,14 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		}
 	}
 
+	if pool.OutboundAppliedRevision != pool.Outbound.Revision() || len(pool.OutboundProbes) == 0 {
+		if resolved, resolveErr := pool.Outbound.ResolveLocalForwarder(); resolveErr == nil {
+			pool.OutboundStatus.Probes["server"] = pooloutbound.Check(ctx, resolved)
+			if encoded, marshalErr := json.Marshal(pool.OutboundStatus.Probes); marshalErr == nil {
+				pool.OutboundProbes = encoded
+			}
+		}
+	}
 	// The engine calls this only for a new/replaced agent, before it removes
 	// the old runtime or preloads images. Persist the gate first so stale ready
 	// heartbeats from the old agent cannot admit work during a replacement.
@@ -196,6 +210,13 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		if errors.Is(err, reconcile.ErrSuperseded) {
 			return reconcile.Result{}, err
 		}
+		if errors.Is(err, sandbox.ErrPoolConfigApply) {
+			r.failReconcile(pool, generation, err.Error())
+			if updateErr := r.update(ctx, pool, generation); updateErr != nil {
+				return reconcile.Result{}, updateErr
+			}
+			return reconcile.Result{}, err
+		}
 		if repairErr := r.repairAssignedPool(ctx, runtimeProvider, project, provider, pool, err, begin); repairErr != nil {
 			err = repairErr
 		} else {
@@ -224,6 +245,9 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// is safe to copy from the pre-call local object; copying the others would
 	// stomp a registration that already landed in the DB with the stale
 	// pre-call value.
+	current.OutboundProbes = pool.OutboundProbes
+	current.OutboundAppliedRevision = pool.OutboundAppliedRevision
+	current.OutboundRestartRequired = pool.OutboundRestartRequired
 	current.RuntimeState = pool.RuntimeState
 	current.HostCredential = pool.HostCredential
 	current.ObservedGeneration = generation

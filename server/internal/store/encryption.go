@@ -37,6 +37,7 @@ type sealedColumn struct {
 }
 
 var sealedColumns = []sealedColumn{
+	{"pools", "proxy_intent", []string{"project_id", "id"}, func(k []string) encryption.Field { return encryption.PoolProxyIntent(k[0], k[1]) }},
 	{"secrets", "encrypted_value", []string{"project_id", "id"}, func(k []string) encryption.Field {
 		return encryption.SecretValue(k[0], k[1])
 	}},

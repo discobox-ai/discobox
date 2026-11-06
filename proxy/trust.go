@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"github.com/elazarl/goproxy"
 	"go.opentelemetry.io/otel/attribute"
@@ -352,7 +353,7 @@ func upstreamFailed(req *http.Request, transport *http.Transport, cause error) *
 	var via string
 	if transport.Proxy != nil {
 		if upstream, err := transport.Proxy(req); err == nil && upstream != nil {
-			via = upstream.Redacted()
+			via = pooloutbound.Redact(upstream.String())
 		}
 	}
 	if via != "" {
@@ -469,7 +470,7 @@ func (s *Server) ProbeTLS(ctx context.Context, clientID, endpoint string) (TLSPr
 	var via string
 	if transport.Proxy != nil {
 		if upstream, err := transport.Proxy(req); err == nil && upstream != nil {
-			via = upstream.Redacted()
+			via = pooloutbound.Redact(upstream.String())
 		}
 	}
 	resp, err := transport.RoundTrip(req)

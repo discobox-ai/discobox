@@ -231,3 +231,8 @@ func newLegacyAEAD(key []byte) (cipher.AEAD, error) {
 }
 
 func clone(b []byte) []byte { return append([]byte(nil), b...) }
+
+// PoolProxyIntent is a pool's private outbound configuration, including URL credentials.
+func PoolProxyIntent(projectID, poolID string) Field {
+	return Field{Scope: projectID, Purpose: "pools.proxy_intent", ResourceID: projectID + "/" + poolID}
+}

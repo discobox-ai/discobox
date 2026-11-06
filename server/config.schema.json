@@ -602,6 +602,149 @@
         "null"
       ]
     },
+    "pools": {
+      "additionalProperties": false,
+      "description": "Pool outbound defaults and per-pool overrides.",
+      "properties": {
+        "overrides": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "proxy": {
+                "additionalProperties": false,
+                "description": "Whole-object outbound override for this immutable pool ID.",
+                "properties": {
+                  "caFile": {
+                    "description": "Server-local additional CA bundle.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "http": {
+                    "description": "HTTP forward proxy URL.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "https": {
+                    "description": "HTTPS origin HTTP CONNECT proxy URL.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "mode": {
+                    "description": "Outbound mode: direct, explicit, or inherit.",
+                    "enum": [
+                      "direct",
+                      "explicit",
+                      "inherit",
+                      null
+                    ],
+                    "examples": [
+                      "explicit"
+                    ],
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "noProxy": {
+                    "description": "Upstream bypass list.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "description": "Whole-object outbound overrides keyed by immutable pool ID; unmatched IDs create nothing.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "proxy": {
+          "additionalProperties": false,
+          "description": "Default outbound routing and trust for pools.",
+          "properties": {
+            "caFile": {
+              "description": "Server-local PEM CA bundle copied into pool trust stores before bootstrap. Environment: DISCOBOX_POOLS_PROXY_CA_FILE (takes precedence over this file).",
+              "examples": [
+                "/etc/company/roots.pem"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "http": {
+              "description": "HTTP origin forward proxy URL; empty means direct in explicit mode. Environment: DISCOBOX_POOLS_PROXY_HTTP (takes precedence over this file).",
+              "examples": [
+                "http://proxy.example:3128"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "https": {
+              "description": "HTTPS origin HTTP CONNECT proxy URL; empty means direct in explicit mode. Environment: DISCOBOX_POOLS_PROXY_HTTPS (takes precedence over this file).",
+              "examples": [
+                "http://proxy.example:3128"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mode": {
+              "description": "Pool outbound mode. Defaults to direct, independently of the server environment. Environment: DISCOBOX_POOLS_PROXY_MODE (takes precedence over this file).",
+              "enum": [
+                "direct",
+                "explicit",
+                "inherit",
+                null
+              ],
+              "examples": [
+                "explicit"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "noProxy": {
+              "description": "Upstream bypass list. Does not bypass sandbox egress policy. Environment: DISCOBOX_POOLS_PROXY_NO_PROXY (takes precedence over this file).",
+              "examples": [
+                ".example.internal"
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "port": {
       "default": 18080,
       "description": "TCP port for an http:// listen endpoint that does not name one. Environment: PORT (takes precedence over this file).",

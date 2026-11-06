@@ -50,6 +50,13 @@
 // Nothing here writes into the container's own filesystem, so the MITM CA is
 // never captured into a committed image layer.
 //
+// # Managed pool processes
+//
+// A process carrying DISCOBOX_PROXY_ENVIRONMENT=managed owns its resolved
+// routing and trust. Consume that marker before injection, mounts or loopback
+// retargeting; runc exec's independent process file consumes its own marker.
+// Ordinary containers retain the injection below (ADR 26-11-05-814).
+//
 // # Blind injection
 //
 // Every known trust store is seeded unconditionally rather than detecting a
@@ -216,35 +223,40 @@ func Adjust(bundleDir, containerID string, cfg Config) (bool, error) {
 		return false, fmt.Errorf("parse oci spec %s: %w", path, err)
 	}
 
-	changed, bundle, err := addTrustMounts(spec, bundleDir, containerID, cfg)
-	if err != nil {
-		return false, err
-	}
-	env, err := proxyEnv(cfg)
-	if err != nil {
-		return false, err
-	}
-	if addEnv(spec, env) {
-		changed = true
-	}
-	// addEnv never touches a name the container already sets, but a value
-	// naming the sandbox's loopback forwarder is not a user choice: it is this
-	// sandbox's own proxy env, copied in by a tool that forwards the caller's
-	// environment (kind's node containers, `docker run -e HTTP_PROXY`,
-	// compose's bare `environment:` entries). ADR 26-10-01-425.
-	if retargetLoopback(spec, cfg) {
-		changed = true
-	}
-	// After the manifest, never over it: addEnv only adds a name nothing has
-	// set, so a sandbox's own values win and a pool-side build container —
-	// which has no manifest to read — gets these from the mount alone.
-	if addEnv(spec, trustEnv(bundle)) {
-		changed = true
+	managed := consumeManagedEnvironment(spec)
+	changed := managed
+	if !managed {
+		trustChanged, bundle, err := addTrustMounts(spec, bundleDir, containerID, cfg)
+		if err != nil {
+			return false, err
+		}
+		changed = changed || trustChanged
+		env, err := proxyEnv(cfg)
+		if err != nil {
+			return false, err
+		}
+		if addEnv(spec, env) {
+			changed = true
+		}
+		// addEnv never touches a name the container already sets, but a value
+		// naming the sandbox's loopback forwarder is not a user choice: it is this
+		// sandbox's own proxy env, copied in by a tool that forwards the caller's
+		// environment (kind's node containers, `docker run -e HTTP_PROXY`,
+		// compose's bare `environment:` entries). ADR 26-10-01-425.
+		if retargetLoopback(spec, cfg) {
+			changed = true
+		}
+		// After the manifest, never over it: addEnv only adds a name nothing has
+		// set, so a sandbox's own values win and a pool-side build container —
+		// which has no manifest to read — gets these from the mount alone.
+		if addEnv(spec, trustEnv(bundle)) {
+			changed = true
+		}
 	}
 	if addHooks(spec, cfg.Hooks) {
 		changed = true
 	}
-	if rewriteSpecEnv(spec, cfg.RewriteEnv) {
+	if !managed && rewriteSpecEnv(spec, cfg.RewriteEnv) {
 		changed = true
 	}
 	if !changed {
@@ -806,4 +818,47 @@ func bridgeListenAddress(path string) string {
 		return ""
 	}
 	return cfg.ListenAddress
+}
+
+// consumeManagedEnvironment strips the routing ownership marker before runc.
+func consumeManagedEnvironment(spec map[string]any) bool {
+	process, _ := spec["process"].(map[string]any)
+	if process == nil {
+		process = spec
+	}
+	env, _ := process["env"].([]any)
+	managed := false
+	kept := make([]any, 0, len(env))
+	for _, entry := range env {
+		if entry == "DISCOBOX_PROXY_ENVIRONMENT=managed" {
+			managed = true
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	if managed {
+		process["env"] = kept
+	}
+	return managed
+}
+
+// AdjustProcessFile handles runc exec's independent OCI process document.
+// Ordinary execs retain the runtime's existing behavior.
+func AdjustProcessFile(name string) error {
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	var process map[string]any
+	if err := json.Unmarshal(raw, &process); err != nil {
+		return err
+	}
+	if !consumeManagedEnvironment(process) {
+		return nil
+	}
+	raw, err = json.Marshal(process)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(name, raw, 0600)
 }

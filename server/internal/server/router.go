@@ -8,6 +8,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	"github.com/discobox-ai/discobox/pkg/requestprogress"
 
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
@@ -107,6 +109,7 @@ type AppOptions struct {
 
 	// ServerDefaults are the provider settings the server configures rather
 	// than any one provider instance (ADR 0096 §5, configuration file).
+	PoolOutbound   pooloutbound.Defaults
 	ServerDefaults dockerworker.ServerDefaults
 
 	// WSLCCommand overrides the WSL Containers program the Windows host is
@@ -227,6 +230,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ArchiveRetention:               opts.ArchiveRetention,
 		ServerPeerID:                   addressPeerID,
 		ConfiguredGateways:             opts.ConfiguredGateways,
+		PoolOutbound:                   opts.PoolOutbound,
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
 		AssetDir:                       opts.AssetDir,

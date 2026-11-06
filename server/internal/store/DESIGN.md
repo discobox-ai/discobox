@@ -368,3 +368,10 @@ pending request unchanged. Approval rechecks sandbox existence and lifecycle,
 then sets `discobox_api` and records the person's decision in one transaction.
 Denial changes no setting and remains possible after purge. Records are retained
 with consent history and deleted only with their project.
+
+## Pool outbound intent
+
+Pool outbound intent is sealed as `encryption.PoolProxyIntent(projectID,poolID)`;
+`OpenPoolProxy` and `SetPoolProxy` never expose that private column through JSON.
+Credential writes require encryption configuration. Intent replacement/removal
+runs in the same store transaction as the pool generation and dirty mark.

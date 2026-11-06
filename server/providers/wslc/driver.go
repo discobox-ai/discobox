@@ -127,6 +127,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	if err := validatePoolID(poolID); err != nil {
 		return nil, err
 	}
+	if _, err := d.PoolOutbound(ctx, poolID, spec.Outbound); err != nil {
+		return nil, err
+	}
 	want := d.sizeFor(spec)
 
 	d.mu.Lock()

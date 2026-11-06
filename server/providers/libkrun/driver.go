@@ -19,6 +19,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
@@ -114,9 +116,11 @@ type Driver struct {
 // one. The pipe's write end is held here and nowhere else, so it is closed
 // exactly when this process exits or this driver lets the VM go.
 type guestVM struct {
-	cmd        *exec.Cmd
-	watchdog   *os.File
-	runtimeDir string
+	outbound       pooloutbound.Resolved
+	outboundCancel context.CancelFunc
+	cmd            *exec.Cmd
+	watchdog       *os.File
+	runtimeDir     string
 	// sockets are the Unix sockets this launcher creates. The driver deletes
 	// them before starting it, so their presence means this process bound them.
 	sockets []string
@@ -225,7 +229,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		return nil, err
 	}
 
-	guest, started, err := d.launch(ctx, poolID, root, kernel, want)
+	guest, started, err := d.launch(ctx, poolID, root, kernel, want, spec.Outbound)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +257,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 //
 // started is false when the VM was already running, which is the only case
 // where the caller has nothing to wait for.
-func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guestimage.Bundle, size vmsize.Size) (*guestVM, bool, error) {
+func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guestimage.Bundle, size vmsize.Size, outbound pooloutbound.Resolved) (*guestVM, bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -282,7 +286,29 @@ func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guesti
 		return nil, false, err
 	}
 
+	relayPath := filepath.Join(runtimeDir, "outbound.sock")
+	_ = os.Remove(relayPath)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", relayPath)
+	if err != nil {
+		return nil, false, err
+	}
+	relayCtx, cancel := context.WithCancel(context.Background())
+	resolved, err := outbound.ResolveLocalForwarder()
+	if err != nil {
+		cancel()
+		listener.Close()
+		return nil, false, err
+	}
+	relayOwned := false
+	defer func() {
+		if !relayOwned {
+			cancel()
+			listener.Close()
+		}
+	}()
+	go func() { _ = pooloutbound.ServeHost(relayCtx, listener, resolved) }()
 	manifest := d.manifest(poolID, root, kernel, dataDisk, cacheDisk, size)
+	manifest.VSOCK = append(manifest.VSOCK, krunvm.VSOCKMapping{Name: "outbound", Port: pooloutbound.HostPort, Socket: relayPath, Direction: krunvm.GuestConnects}, krunvm.VSOCKMapping{Name: "outbound-container", Port: pooloutbound.ContainerPort, Socket: filepath.Join(runtimeDir, "outbound-container.sock"), Direction: krunvm.HostConnects})
 	if err := manifest.Validate(); err != nil {
 		return nil, false, fmt.Errorf("libkrun VM %s: %w", poolID, err)
 	}
@@ -310,6 +336,9 @@ func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guesti
 		return nil, false, err
 	}
 	guest.size = size
+	guest.outbound = outbound
+	guest.outboundCancel = cancel
+	relayOwned = true
 	d.vms[poolID] = guest
 	return guest, true, nil
 }
@@ -759,6 +788,9 @@ func (g *guestVM) waitExited(timeout time.Duration) bool {
 // the one that works when a signal does not arrive.
 func (g *guestVM) close() {
 	g.stopOnce.Do(func() {
+		if g.outboundCancel != nil {
+			g.outboundCancel()
+		}
 		if g.cmd.Process != nil {
 			_ = g.cmd.Process.Kill()
 		}
@@ -919,3 +951,20 @@ func runningInfo(poolID string) *dockerworker.VMInfo {
 }
 
 func vmID(poolID string) string { return "libkrun-" + poolID }
+
+func (d *Driver) PoolOutbound(ctx context.Context, poolID string, want pooloutbound.Resolved) (pooloutbound.Delivery, error) {
+	guest := d.runningVM(poolID)
+	if guest == nil {
+		return pooloutbound.Delivery{}, fmt.Errorf("pool VM is not running")
+	}
+	dialer := net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "unix", filepath.Join(guest.runtimeDir, "outbound-container.sock"))
+	if err != nil {
+		return pooloutbound.Delivery{}, fmt.Errorf("guest image lacks pool outbound boot delivery: %w", err)
+	}
+	runtime, err := pooloutbound.ReadContainerConfig(ctx, conn)
+	if err != nil {
+		return pooloutbound.Delivery{}, err
+	}
+	return pooloutbound.Delivery{Runtime: runtime.Runtime, GuestProbes: &runtime.Probes, AppliedRevision: guest.outbound.Revision(), RestartRequired: guest.outbound.Revision() != want.Revision()}, nil
+}

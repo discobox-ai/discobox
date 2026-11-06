@@ -1178,3 +1178,36 @@ Bootstrap and reads retain ordinary transport leases.
 an upgrade: it releases proof immediately and reports a typed pool protocol
 transition. It grants no authority to the reconciler's later create, which
 probes independently. See ADR 26-11-05-143.
+
+## Pool outbound delivery
+
+`VMSpec.Outbound` carries the server-resolved schemes, bypasses and CA bytes.
+The required driver `PoolOutbound` returns container-reachable routing and the
+boot revision actually applied. Provider code does not read ambient proxy
+variables. The shared `poolruntime.BoxPlacement` stages revisioned private
+material, installs additional trust before any package step, and supplies the
+resolved environment on provisioning execs independently of container creation.
+`DISCOBOX_PROXY_ENVIRONMENT=managed` suppresses enclosing runc injection;
+provisioning rejects unexpected proxy/trust injection at the actual exec boundary.
+
+Local Docker resolves a bootstrap's logical enclosing-forwarder endpoint through
+the published dynamic Docker bridge. libkrun and vz expose a per-pool private
+VSOCK host service: boot material and byte relays to the two upstream hops.
+Guest loopback listeners precede dockerd, then dynamic bridge listeners precede
+the pool container. Changing boot material on a running VM reports restart
+required and keeps its applied material. No dockerd is required on the server.
+Hosted machines reject host-local upstreams without a relay. DigitalOcean
+includes proxy/trust in cloud-init before package installation; external exec
+backends receive private resolved material in `DISCOBOX_VM_OUTBOUND` on ensure-vm.
+Operator-owned Docker daemons remain responsible for their own registry proxy
+and trust; container settings cannot configure that earlier hop.
+
+WSL Containers currently has no pre-daemon delivery surface in its session API;
+non-direct/additional-trust configuration is refused before session creation,
+with a capability diagnostic. It must not claim that container environment
+configured its daemon.
+
+Outbound rotation on Docker pools restarts the agent and proxy first, waits for
+the agent to render the new builder environment, then drains the mediator
+before restarting BuildKit and its registry. The mediator resumes only after
+those consumers have returned; sandbox workloads, disks and build caches stay.

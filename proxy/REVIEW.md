@@ -187,3 +187,7 @@
 - A message record with a complete header but a missing nonempty payload is
   truncated, not clean EOF. Normalize that `io.ReadFull` EOF so the viewer
   cannot silently omit an interrupted message.
+
+- Strip all userinfo from private upstream proxy URLs in responses, probe results
+  and tunnel audit metadata. `url.URL.Redacted` retains the username, which is
+  also a credential and must never reach sandbox diagnostics.

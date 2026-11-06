@@ -2,6 +2,7 @@ package pools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
 
 	"github.com/discobox-ai/discobox/pkg/auditid"
@@ -48,6 +50,9 @@ func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 		RegisteredAt: &registeredAt,
 		LastSeenAt:   &registeredAt,
 	}
+	// A previous proxied revision must not certify the replacement direct route.
+	pool.OutboundAppliedRevision = "old-proxied-revision"
+	pool.OutboundProbes = []byte(`{"server":{"http":{"state":"reachable","httpStatus":299},"https":{"state":"reachable","httpStatus":299}}}`)
 	pool.DesiredState = model.DesiredStatePresent
 	// The state an earlier failure left behind: offline with the reason
 	// recorded against its generation (the shape a stale-heartbeat verdict
@@ -66,6 +71,14 @@ func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get pool: %v", err)
 	}
+	var observations map[string]pooloutbound.Probes
+	if err := json.Unmarshal(updated.OutboundProbes, &observations); err != nil {
+		t.Fatal(err)
+	}
+	if observations["server"].HTTP.HTTPStatus == 299 || observations["server"].HTTPS.HTTPStatus == 299 {
+		t.Fatal("replacement direct route retained the previous proxy observations")
+	}
+
 	if updated.ErrorMessage != nil {
 		t.Fatalf("error message = %q, want none: the reconcile that just succeeded disproves it", *updated.ErrorMessage)
 	}

@@ -132,8 +132,9 @@ func ApplyEnv(cfg any, lookup func(string) (string, bool)) (map[string]bool, err
 		// An empty variable means "unset" rather than "set to empty", which is
 		// how the environment has always behaved here: getEnv fell back to the
 		// default on a blank value, and a caller who exports a variable to the
-		// empty string in a shell script means to say nothing.
-		if strings.TrimSpace(raw) == "" {
+		// empty string in a shell script means to say nothing. A field whose
+		// empty value is authoritative opts in with envEmpty:"set".
+		if strings.TrimSpace(raw) == "" && s.Field.Tag.Get("envEmpty") != "set" {
 			continue
 		}
 		if err := assign(value.FieldByIndex(s.index), raw); err != nil {

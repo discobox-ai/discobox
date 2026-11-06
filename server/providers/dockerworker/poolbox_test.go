@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -75,6 +76,18 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	if err != nil || began || got.Agent != recorded.Agent || len(got.Bundles) != 1 {
 		t.Fatalf("an unresolvable release: record %+v, began %v, err %v; want the box kept as it is", got, began, err)
 	}
+
+	// Unresolved assets cannot certify a requested outbound revision as applied.
+	pool.OutboundStatus = &model.PoolOutboundStatus{}
+	pool.Outbound = pooloutbound.Resolved{HTTP: "http://new-proxy:3128"}
+	pool.OutboundAppliedRevision = "last-applied"
+	_, err = engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, unresolvable, recorded, begin)
+	if !errors.Is(err, sandbox.ErrPoolConfigApply) || pool.OutboundAppliedRevision != "last-applied" || began {
+		t.Fatalf("unapplied outbound update: revision %q, began %v, error %v", pool.OutboundAppliedRevision, began, err)
+	}
+	pool.OutboundStatus = nil
+	pool.Outbound = pooloutbound.Resolved{}
+	pool.OutboundAppliedRevision = ""
 
 	same := &fakeMaker{box: sandbox.PoolBox{Bundles: []sandbox.BundlePin{{Name: "discobox-pool-agent-bundle", Digest: "sha256:b"}}}}
 	bootstrap, err := engine.poolBootstrap(context.Background(), pool, same)

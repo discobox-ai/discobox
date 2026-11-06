@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
@@ -90,6 +91,7 @@ type Options struct {
 	// ServerDefaults are the provider settings the server configures rather
 	// than any one provider instance: the sandbox base image and bundle
 	// overrides, and the host daemon's image retention window.
+	PoolOutbound   pooloutbound.Defaults
 	ServerDefaults dockerworker.ServerDefaults
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for.
@@ -116,6 +118,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	}
 	manager := sandbox.NewProviderManager(store)
 	poolControlPlane := pools.NewControlPlane(store, engine)
+	poolControlPlane.OutboundDefaults = options.PoolOutbound
 	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, providerregistry.FactoryOptions{
 		DevelopmentImageSync: options.DevelopmentImageSync,
 		ControlPlaneStreams:  options.ControlPlaneStreams,

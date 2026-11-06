@@ -10,9 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -48,7 +51,18 @@ func (s *Service) ListPools(ctx context.Context, projectID string) ([]model.Pool
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	return s.store.ListPools(ctx, projectID)
+	listed, err := s.store.ListPools(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if s.pools != nil {
+		for i := range listed {
+			if err := s.pools.ResolveOutbound(ctx, &listed[i]); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return listed, nil
 }
 
 func (s *Service) CreatePool(ctx context.Context, projectID string, input services.CreatePoolBody) (*model.Pool, error) {
@@ -83,13 +97,25 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 			DisableAgentEndpointTLS: input.DisableAgentEndpointTls.Or(false),
 		},
 	}
-	if err := s.store.CreatePool(ctx, pool); err != nil {
-		return nil, err
-	}
-	if s.pools != nil {
-		if err := s.pools.SchedulePoolReconciliation(ctx, projectID, pool.ID); err != nil {
-			return nil, err
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if value, ok := input.Proxy.Get(); ok {
+			intent, err := proxyWrite(value, nil)
+			if err != nil {
+				return apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+			}
+			if err := txStore.SetPoolProxy(ctx, pool, intent); err != nil {
+				return err
+			}
 		}
+		if err := txStore.CreatePool(ctx, pool); err != nil {
+			return err
+		}
+		if s.pools != nil && s.pools.engine != nil {
+			return s.pools.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(projectID, pool.ID))
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return s.GetPool(ctx, projectID, pool.ID)
 }
@@ -98,6 +124,11 @@ func (s *Service) GetPool(ctx context.Context, projectID, poolID string) (*model
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
+	}
+	if s.pools != nil {
+		if err := s.pools.ResolveOutbound(ctx, pool); err != nil {
+			return nil, err
+		}
 	}
 	return pool, nil
 }
@@ -145,6 +176,44 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 		egressChanged = true
 	}
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if input.Proxy.IsSet() {
+			current, err := txStore.GetPool(ctx, projectID, poolID)
+			if err != nil {
+				return err
+			}
+			old, err := txStore.OpenPoolProxy(ctx, current)
+			if err != nil {
+				return err
+			}
+			var intent *pooloutbound.Intent
+			if value, ok := input.Proxy.Get(); ok {
+				intent, err = proxyWrite(value, old)
+				if err != nil {
+					return apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+				}
+			}
+			if err := txStore.SetPoolProxy(ctx, pool, intent); err != nil {
+				return err
+			}
+			pool.ProxyBootstrap = false
+			if !reflect.DeepEqual(old, intent) && s.pools != nil && s.pools.engine != nil {
+				previous := current.Generation
+				current.IncrementGeneration()
+				if err := txStore.UpdatePoolWithGeneration(ctx, current, previous); err != nil {
+					return err
+				}
+				if err := s.pools.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(projectID, poolID)); err != nil {
+					return err
+				}
+			}
+		} else {
+			current, err := txStore.GetPool(ctx, projectID, poolID)
+			if err != nil {
+				return err
+			}
+			pool.ProxyIntent = current.ProxyIntent
+			pool.ProxyBootstrap = current.ProxyBootstrap
+		}
 		if err := txStore.UpdatePool(ctx, pool); err != nil {
 			return err
 		}
@@ -156,7 +225,7 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 		return nil, err
 	}
 	// Sizing policy may have changed; let the pool reconciler converge it.
-	if s.pools != nil {
+	if s.pools != nil && s.pools.engine != nil {
 		if err := s.pools.SchedulePoolReconciliation(ctx, projectID, pool.ID); err != nil {
 			return nil, err
 		}

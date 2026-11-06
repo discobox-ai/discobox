@@ -11,6 +11,8 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
@@ -778,4 +780,8 @@ func TestVMSpecCarriesThePoolSize(t *testing.T) {
 	if spec.CPUVCPUs != 3.5 || spec.MemoryBytes != 6<<30 {
 		t.Fatalf("VMSpec size = %v vCPUs, %d bytes; want the pool's 3.5 vCPUs and %d bytes", spec.CPUVCPUs, spec.MemoryBytes, int64(6<<30))
 	}
+}
+
+func (nopDriver) PoolOutbound(_ context.Context, _ string, r pooloutbound.Resolved) (pooloutbound.Delivery, error) {
+	return pooloutbound.Delivery{Runtime: r, AppliedRevision: r.Revision()}, nil
 }

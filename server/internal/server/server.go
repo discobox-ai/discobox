@@ -236,6 +236,7 @@ func Run(ctx context.Context) error {
 		ListenEndpoints:                cfg.Listen,
 		ArchiveRetention:               cfg.ArchiveRetention,
 		ConfiguredGateways:             gateways.Configured{Default: defaultGateways, ByProject: projectGateways},
+		PoolOutbound:                   cfg.PoolOutbound,
 		ServerDefaults: dockerworker.ServerDefaults{
 			SandboxBaseImage: cfg.DockerSandboxBaseImage,
 			PoolAgentBundle:  cfg.PoolAgentBundle,

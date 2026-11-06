@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
@@ -48,7 +50,8 @@ type BoxRecord struct {
 	// Placement fingerprints the bootstrap and environment placed: what the
 	// provider's configuration and the pool's own settings say of the pool,
 	// which move apart from a release (PlacementFingerprint).
-	Placement string `json:"placement,omitempty"`
+	Placement        string `json:"placement,omitempty"`
+	OutboundRevision string `json:"outboundRevision,omitempty"`
 }
 
 // Current reports whether the record placed placement: its bundles, and its
@@ -65,9 +68,10 @@ func (r BoxRecord) Current(placement BoxPlacement) (bool, error) {
 // bootstrap and the agent's environment.
 func PlacementFingerprint(placement BoxPlacement) (string, error) {
 	data, err := json.Marshal(struct {
-		Bootstrap poolagent.Bootstrap `json:"bootstrap"`
-		Env       map[string]string   `json:"env"`
-	}{placement.Bootstrap, placement.Env})
+		Bootstrap poolagent.Bootstrap   `json:"bootstrap"`
+		Env       map[string]string     `json:"env"`
+		Outbound  pooloutbound.Resolved `json:"outbound"`
+	}{placement.Bootstrap, placement.Env, placement.Outbound})
 	if err != nil {
 		return "", err
 	}
@@ -75,16 +79,40 @@ func PlacementFingerprint(placement BoxPlacement) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// RestartPoolUnits restarts the pool's agent and its proxy, where they run:
-// they read the bootstrap and environment once, at start, and apply restarts
-// only what moved bundles move, so a moved placement reaches them so.
-func RestartPoolUnits(ctx context.Context, guest machine.Guest) error {
-	var stderr strings.Builder
-	code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: append([]string{"systemctl", "try-restart"}, bundle.BootstrapUnits...)}, nil, io.Discard, &stderr)
-	if err == nil && code != 0 {
-		err = fmt.Errorf("systemctl exited with status %d: %s", code, strings.TrimSpace(stderr.String()))
+// RestartPoolUnits first waits for the agent to render consumers' configuration
+// and restore egress. An outbound rotation then drains builds before restarting
+// the builder and registry; their data and caches stay in place.
+func RestartPoolUnits(ctx context.Context, guest machine.Guest, restartBuilder bool) error {
+	commands := [][]string{append([]string{"systemctl", "try-restart"}, bundle.BootstrapUnits...)}
+	if restartBuilder {
+		commands = append(commands, []string{"sh", "-ec", `
+resume=/run/discobox/pool-outbound-resume-mediator
+if [ -e "$resume" ] || systemctl is-active --quiet discobox-buildkit-mediator.service; then
+ umask 077
+ : > "$resume"
+ trap 'systemctl start discobox-buildkit-mediator.service && rm -f "$resume"' EXIT
+ trap 'exit 1' HUP INT TERM
+ systemctl stop discobox-buildkit-mediator.service
+fi
+systemctl try-restart discobox-buildkitd.service discobox-registry.service
+if [ -e "$resume" ]; then
+ systemctl start discobox-buildkit-mediator.service
+ rm -f "$resume"
+ trap - EXIT HUP INT TERM
+fi
+`})
 	}
-	return err
+	for _, argv := range commands {
+		var stderr strings.Builder
+		code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: argv}, nil, io.Discard, &stderr)
+		if err != nil {
+			return err
+		}
+		if code != 0 {
+			return fmt.Errorf("pool consumer restart exited with status %d: %s", code, strings.TrimSpace(stderr.String()))
+		}
+	}
+	return nil
 }
 
 // SameBundles reports whether box pins the bundles the record placed.
@@ -106,7 +134,7 @@ func RecordOf(placement BoxPlacement) (BoxRecord, error) {
 	if err != nil {
 		return BoxRecord{}, err
 	}
-	record := BoxRecord{Agent: placement.Box.Agent.Name + "@" + placement.Box.Agent.Digest, Placement: fingerprint}
+	record := BoxRecord{Agent: placement.Box.Agent.Name + "@" + placement.Box.Agent.Digest, Placement: fingerprint, OutboundRevision: placement.Outbound.Revision()}
 	for _, pin := range placement.Box.Bundles {
 		record.Bundles = append(record.Bundles, pin.Name+"@"+pin.Digest)
 	}
@@ -127,6 +155,7 @@ type BoxFile struct {
 // bootstrap and what its box is placed with, and the policy the agent reads
 // from its environment (bundle.EnvironmentFile).
 type BoxPlacement struct {
+	Outbound  pooloutbound.Resolved
 	Bootstrap poolagent.Bootstrap
 	Box       sandbox.PoolBox
 	Env       map[string]string
@@ -183,10 +212,10 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	identity, err := provisioner.Provision(ctx, guest, provisioner.Plan{
 		Dir:     "/",
 		Tree:    &agentTree,
-		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "identity", "--key", keyPath}},
+		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "identity", "--key", keyPath}, Env: placement.Outbound.Environment()},
 	})
 	if err != nil {
-		return BoxRecord{}, provisionError("make the pool's identity", identity, err)
+		return BoxRecord{}, placement.Outbound.RedactError(provisionError("make the pool's identity", identity, err))
 	}
 	publicKey := strings.TrimSpace(string(identity.Stdout))
 	if publicKey == "" {
@@ -199,15 +228,22 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	if err != nil {
 		return BoxRecord{}, err
 	}
+	outboundFiles, err := placement.Outbound.Files()
+	if err != nil {
+		return BoxRecord{}, err
+	}
+	for name, data := range outboundFiles {
+		files = append(files, BoxFile{Path: name, Data: data})
+	}
 	tree := applyTree(ctx, files, box)
 	applied, err := provisioner.Provision(ctx, guest, provisioner.Plan{
 		Dir:     "/",
 		Tree:    tree,
-		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply", "--pool"}},
+		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply", "--pool"}, Env: placement.Outbound.Environment()},
 	})
 	_ = tree.Close()
 	if err != nil {
-		return BoxRecord{}, provisionError("provision the pool's box", applied, err)
+		return BoxRecord{}, placement.Outbound.RedactError(provisionError("provision the pool's box", applied, err))
 	}
 	return RecordOf(placement)
 }
@@ -249,6 +285,10 @@ func bootstrapFiles(placement BoxPlacement) ([]BoxFile, error) {
 		return nil, err
 	}
 	env := make([]string, 0, len(placement.Env))
+	for _, entry := range placement.Outbound.Environment()[1:] {
+		key, value, _ := strings.Cut(entry, "=")
+		env = append(env, key+"="+strconv.Quote(value)+"\n")
+	}
 	for key, value := range placement.Env {
 		env = append(env, key+"="+value+"\n")
 	}

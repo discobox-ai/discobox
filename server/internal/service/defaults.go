@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
@@ -141,7 +143,7 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 		if err := txStore.CreateSandboxProviderInstance(ctx, defaultProvider); err != nil {
 			return err
 		}
-		if err := ensureDefaultPool(ctx, txStore, defaultProvider); err != nil {
+		if err := s.ensureDefaultPool(ctx, txStore, defaultProvider); err != nil {
 			return err
 		}
 
@@ -177,7 +179,7 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 // run` works with zero configuration. It runs exactly once, in the same
 // transaction that installs the default provider — if the user later deletes
 // the pool (or the provider), it is not recreated.
-func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvider *model.SandboxProviderInstance) error {
+func (s *Service) ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvider *model.SandboxProviderInstance) error {
 	pool := &model.Pool{
 		ID:        id.NewString(id.PrefixPool),
 		ProjectID: defaultProvider.ProjectID,
@@ -185,6 +187,22 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 			Name:               "Default",
 			ProviderInstanceID: defaultProvider.ID,
 		},
+	}
+	if s.poolControlPlane != nil {
+		defaults := s.poolControlPlane.OutboundDefaults
+		_, specific := defaults.ByPool[pool.ID]
+		if !defaults.Configured && !specific {
+			intent, err := pooloutbound.NestedBootstrap("/etc/discobox/sandbox.json")
+			if err != nil {
+				return fmt.Errorf("nested pool outbound bootstrap: %w", err)
+			}
+			if intent != nil {
+				if err := appStore.SetPoolProxy(ctx, pool, intent); err != nil {
+					return err
+				}
+				pool.ProxyBootstrap = true
+			}
+		}
 	}
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		return err

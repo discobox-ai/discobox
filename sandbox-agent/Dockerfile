@@ -25,6 +25,7 @@ COPY internal/filelock ./internal/filelock
 COPY pkg/platform ./pkg/platform
 COPY pkg/poolassets ./pkg/poolassets
 COPY pkg/poolauth ./pkg/poolauth
+COPY pkg/pooloutbound ./pkg/pooloutbound
 COPY pkg/programstatus ./pkg/programstatus
 COPY pkg/provisionspec ./pkg/provisionspec
 COPY proxy ./proxy

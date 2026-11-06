@@ -21,6 +21,7 @@ import (
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
@@ -626,6 +627,10 @@ func SandboxOriginKey(origin *Origin, source *GitSource) string {
 // as SandboxManifest (ADR 0017 §11): the fields the pool's host is built from,
 // separated from everything the host reports back.
 type PoolManifest struct {
+	// ProxyIntent is sealed whole-object outbound intent; never serialized publicly.
+	ProxyIntent    []byte `gorm:"column:proxy_intent;type:bytea" json:"-"`
+	ProxyBootstrap bool   `gorm:"column:proxy_bootstrap;not null;default:false" json:"-"`
+
 	Name               string `gorm:"column:name;not null;type:text;uniqueIndex:idx_pool_project_name,priority:2" json:"name" doc:"Pool display name" maxLength:"200"`
 	ProviderInstanceID string `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Backing sandbox provider instance ID. Immutable after create."`
 	// The pool's size. A provider that runs one VM per pool sizes that VM from
@@ -688,6 +693,14 @@ const (
 // runtime in place under the same pool identity; pool-local state survives in
 // named volumes.
 type Pool struct {
+	OutboundProbes          RawJSON               `gorm:"column:outbound_probes;type:text" json:"-"`
+	RuntimeOutbound         pooloutbound.Resolved `gorm:"-" json:"-"`
+	OutboundRestartRequired bool                  `gorm:"column:outbound_restart_required;not null;default:false" json:"-"`
+	Outbound                pooloutbound.Resolved `gorm:"-" json:"-"`
+	Proxy                   *pooloutbound.Intent  `gorm:"-" json:"proxy,omitempty"`
+	OutboundStatus          *PoolOutboundStatus   `gorm:"-" json:"outbound,omitempty"`
+	OutboundAppliedRevision string                `gorm:"column:outbound_applied_revision;type:text;not null;default:''" json:"-"`
+
 	ID           string `gorm:"primaryKey;type:text" json:"id" doc:"Stable pool ID"`
 	ProjectID    string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_pool_project_name,priority:1" json:"projectId" doc:"Project ID"`
 	PoolManifest `gorm:"embedded"`

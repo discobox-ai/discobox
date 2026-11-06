@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	"github.com/moby/moby/client"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -25,6 +27,8 @@ import (
 // GuestImageBuildSpec; the engine handles everything Docker.
 type Driver interface {
 	Close() error
+	// PoolOutbound translates host endpoints for the pool container, after daemon readiness.
+	PoolOutbound(context.Context, string, pooloutbound.Resolved) (pooloutbound.Delivery, error)
 
 	// EnsureVM idempotently creates and starts the VM for a pool. The local
 	// driver is a no-op that resolves every pool to the host. Region and image
@@ -78,6 +82,7 @@ type Driver interface {
 
 // VMSpec is the driver-neutral VM launch request for one pool.
 type VMSpec struct {
+	Outbound pooloutbound.Resolved
 	// Name is the suggested instance name.
 	Name string
 	// Metadata carries labels/tags, including the pool identity labels.

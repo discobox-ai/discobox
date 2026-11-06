@@ -1217,6 +1217,9 @@ func (s *CreatePeerBody) SetName(val OptString) {
 
 // Ref: #/components/schemas/CreatePoolBody
 type CreatePoolBody struct {
+	// Whole-object pool outbound override. On create omitted or null uses server defaults; on update
+	// omission preserves it and null removes it.
+	Proxy OptNilPoolProxy `json:"proxy"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR
@@ -1235,6 +1238,11 @@ type CreatePoolBody struct {
 	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
 	// zero is unset.
 	StorageBytes OptInt64 `json:"storageBytes"`
+}
+
+// GetProxy returns the value of Proxy.
+func (s *CreatePoolBody) GetProxy() OptNilPoolProxy {
+	return s.Proxy
 }
 
 // GetSchema returns the value of Schema.
@@ -1270,6 +1278,11 @@ func (s *CreatePoolBody) GetProviderInstanceId() string {
 // GetStorageBytes returns the value of StorageBytes.
 func (s *CreatePoolBody) GetStorageBytes() OptInt64 {
 	return s.StorageBytes
+}
+
+// SetProxy sets the value of Proxy.
+func (s *CreatePoolBody) SetProxy(val OptNilPoolProxy) {
+	s.Proxy = val
 }
 
 // SetSchema sets the value of Schema.
@@ -12657,6 +12670,69 @@ func (o OptNilPoolArray) Or(d []Pool) []Pool {
 	return d
 }
 
+// NewOptNilPoolProxy returns new OptNilPoolProxy with value set to v.
+func NewOptNilPoolProxy(v PoolProxy) OptNilPoolProxy {
+	return OptNilPoolProxy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolProxy is optional nullable PoolProxy.
+type OptNilPoolProxy struct {
+	Value PoolProxy
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolProxy was set.
+func (o OptNilPoolProxy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolProxy) Reset() {
+	var v PoolProxy
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolProxy) SetTo(v PoolProxy) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolProxy) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolProxy) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolProxy
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolProxy) Get() (v PoolProxy, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolProxy) Or(d PoolProxy) PoolProxy {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilPoolResources returns new OptNilPoolResources with value set to v.
 func NewOptNilPoolResources(v PoolResources) OptNilPoolResources {
 	return OptNilPoolResources{
@@ -13563,6 +13639,144 @@ func (o OptPoolHostCredentialKey) Or(d PoolHostCredentialKey) PoolHostCredential
 	return d
 }
 
+// NewOptPoolOutboundProbe returns new OptPoolOutboundProbe with value set to v.
+func NewOptPoolOutboundProbe(v PoolOutboundProbe) OptPoolOutboundProbe {
+	return OptPoolOutboundProbe{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolOutboundProbe is optional PoolOutboundProbe.
+type OptPoolOutboundProbe struct {
+	Value PoolOutboundProbe
+	Set   bool
+}
+
+// IsSet returns true if OptPoolOutboundProbe was set.
+func (o OptPoolOutboundProbe) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolOutboundProbe) Reset() {
+	var v PoolOutboundProbe
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolOutboundProbe) SetTo(v PoolOutboundProbe) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolOutboundProbe) Get() (v PoolOutboundProbe, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolOutboundProbe) Or(d PoolOutboundProbe) PoolOutboundProbe {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolOutboundStatus returns new OptPoolOutboundStatus with value set to v.
+func NewOptPoolOutboundStatus(v PoolOutboundStatus) OptPoolOutboundStatus {
+	return OptPoolOutboundStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolOutboundStatus is optional PoolOutboundStatus.
+type OptPoolOutboundStatus struct {
+	Value PoolOutboundStatus
+	Set   bool
+}
+
+// IsSet returns true if OptPoolOutboundStatus was set.
+func (o OptPoolOutboundStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolOutboundStatus) Reset() {
+	var v PoolOutboundStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolOutboundStatus) SetTo(v PoolOutboundStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolOutboundStatus) Get() (v PoolOutboundStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolOutboundStatus) Or(d PoolOutboundStatus) PoolOutboundStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolOutboundStatusProbes returns new OptPoolOutboundStatusProbes with value set to v.
+func NewOptPoolOutboundStatusProbes(v PoolOutboundStatusProbes) OptPoolOutboundStatusProbes {
+	return OptPoolOutboundStatusProbes{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolOutboundStatusProbes is optional PoolOutboundStatusProbes.
+type OptPoolOutboundStatusProbes struct {
+	Value PoolOutboundStatusProbes
+	Set   bool
+}
+
+// IsSet returns true if OptPoolOutboundStatusProbes was set.
+func (o OptPoolOutboundStatusProbes) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolOutboundStatusProbes) Reset() {
+	var v PoolOutboundStatusProbes
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolOutboundStatusProbes) SetTo(v PoolOutboundStatusProbes) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolOutboundStatusProbes) Get() (v PoolOutboundStatusProbes, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolOutboundStatusProbes) Or(d PoolOutboundStatusProbes) PoolOutboundStatusProbes {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolProvisionProgress returns new OptPoolProvisionProgress with value set to v.
 func NewOptPoolProvisionProgress(v PoolProvisionProgress) OptPoolProvisionProgress {
 	return OptPoolProvisionProgress{
@@ -13603,6 +13817,52 @@ func (o OptPoolProvisionProgress) Get() (v PoolProvisionProgress, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptPoolProvisionProgress) Or(d PoolProvisionProgress) PoolProvisionProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolProxyMode returns new OptPoolProxyMode with value set to v.
+func NewOptPoolProxyMode(v PoolProxyMode) OptPoolProxyMode {
+	return OptPoolProxyMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolProxyMode is optional PoolProxyMode.
+type OptPoolProxyMode struct {
+	Value PoolProxyMode
+	Set   bool
+}
+
+// IsSet returns true if OptPoolProxyMode was set.
+func (o OptPoolProxyMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolProxyMode) Reset() {
+	var v PoolProxyMode
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolProxyMode) SetTo(v PoolProxyMode) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolProxyMode) Get() (v PoolProxyMode, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolProxyMode) Or(d PoolProxyMode) PoolProxyMode {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -17953,6 +18213,10 @@ func (*Peer) createPeerRes() {}
 
 // Ref: #/components/schemas/Pool
 type Pool struct {
+	// Configured override with proxy credentials omitted.
+	Proxy OptNilPoolProxy `json:"proxy"`
+	// Effective pool outbound routing and applied revision.
+	Outbound OptPoolOutboundStatus `json:"outbound"`
 	// The pool's egress policy level (ADR 26-10-01-032). Its denyByDefault restricts every discobox in
 	// the pool; its allow list is added to each restricted one's.
 	Egress OptEgressPolicy `json:"egress"`
@@ -18047,6 +18311,16 @@ type Pool struct {
 	RevokedAt OptDateTime `json:"revokedAt"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetProxy returns the value of Proxy.
+func (s *Pool) GetProxy() OptNilPoolProxy {
+	return s.Proxy
+}
+
+// GetOutbound returns the value of Outbound.
+func (s *Pool) GetOutbound() OptPoolOutboundStatus {
+	return s.Outbound
 }
 
 // GetEgress returns the value of Egress.
@@ -18242,6 +18516,16 @@ func (s *Pool) GetRevokedAt() OptDateTime {
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *Pool) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
+}
+
+// SetProxy sets the value of Proxy.
+func (s *Pool) SetProxy(val OptNilPoolProxy) {
+	s.Proxy = val
+}
+
+// SetOutbound sets the value of Outbound.
+func (s *Pool) SetOutbound(val OptPoolOutboundStatus) {
+	s.Outbound = val
 }
 
 // SetEgress sets the value of Egress.
@@ -18950,6 +19234,196 @@ func (s *PoolMemoryUsageAdditional) init() PoolMemoryUsageAdditional {
 	return m
 }
 
+// Ref: #/components/schemas/PoolOutboundProbe
+type PoolOutboundProbe struct {
+	State      OptString `json:"state"`
+	Detail     OptString `json:"detail"`
+	HttpStatus OptInt    `json:"httpStatus"`
+}
+
+// GetState returns the value of State.
+func (s *PoolOutboundProbe) GetState() OptString {
+	return s.State
+}
+
+// GetDetail returns the value of Detail.
+func (s *PoolOutboundProbe) GetDetail() OptString {
+	return s.Detail
+}
+
+// GetHttpStatus returns the value of HttpStatus.
+func (s *PoolOutboundProbe) GetHttpStatus() OptInt {
+	return s.HttpStatus
+}
+
+// SetState sets the value of State.
+func (s *PoolOutboundProbe) SetState(val OptString) {
+	s.State = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *PoolOutboundProbe) SetDetail(val OptString) {
+	s.Detail = val
+}
+
+// SetHttpStatus sets the value of HttpStatus.
+func (s *PoolOutboundProbe) SetHttpStatus(val OptInt) {
+	s.HttpStatus = val
+}
+
+// Ref: #/components/schemas/PoolOutboundProbes
+type PoolOutboundProbes struct {
+	HTTP  OptPoolOutboundProbe `json:"http"`
+	HTTPS OptPoolOutboundProbe `json:"https"`
+}
+
+// GetHTTP returns the value of HTTP.
+func (s *PoolOutboundProbes) GetHTTP() OptPoolOutboundProbe {
+	return s.HTTP
+}
+
+// GetHTTPS returns the value of HTTPS.
+func (s *PoolOutboundProbes) GetHTTPS() OptPoolOutboundProbe {
+	return s.HTTPS
+}
+
+// SetHTTP sets the value of HTTP.
+func (s *PoolOutboundProbes) SetHTTP(val OptPoolOutboundProbe) {
+	s.HTTP = val
+}
+
+// SetHTTPS sets the value of HTTPS.
+func (s *PoolOutboundProbes) SetHTTPS(val OptPoolOutboundProbe) {
+	s.HTTPS = val
+}
+
+// Ref: #/components/schemas/PoolOutboundStatus
+type PoolOutboundStatus struct {
+	// Observations keyed by server, guest, or pool context. Untested hops are never inferred healthy.
+	Probes          OptPoolOutboundStatusProbes `json:"probes"`
+	Source          OptString                   `json:"source"`
+	Mode            OptString                   `json:"mode"`
+	HTTP            OptString                   `json:"http"`
+	HTTPS           OptString                   `json:"https"`
+	CaFingerprints  []string                    `json:"caFingerprints"`
+	DesiredRevision OptString                   `json:"desiredRevision"`
+	AppliedRevision OptString                   `json:"appliedRevision"`
+	RestartRequired OptBool                     `json:"restartRequired"`
+	ShadowsYaml     OptBool                     `json:"shadowsYaml"`
+}
+
+// GetProbes returns the value of Probes.
+func (s *PoolOutboundStatus) GetProbes() OptPoolOutboundStatusProbes {
+	return s.Probes
+}
+
+// GetSource returns the value of Source.
+func (s *PoolOutboundStatus) GetSource() OptString {
+	return s.Source
+}
+
+// GetMode returns the value of Mode.
+func (s *PoolOutboundStatus) GetMode() OptString {
+	return s.Mode
+}
+
+// GetHTTP returns the value of HTTP.
+func (s *PoolOutboundStatus) GetHTTP() OptString {
+	return s.HTTP
+}
+
+// GetHTTPS returns the value of HTTPS.
+func (s *PoolOutboundStatus) GetHTTPS() OptString {
+	return s.HTTPS
+}
+
+// GetCaFingerprints returns the value of CaFingerprints.
+func (s *PoolOutboundStatus) GetCaFingerprints() []string {
+	return s.CaFingerprints
+}
+
+// GetDesiredRevision returns the value of DesiredRevision.
+func (s *PoolOutboundStatus) GetDesiredRevision() OptString {
+	return s.DesiredRevision
+}
+
+// GetAppliedRevision returns the value of AppliedRevision.
+func (s *PoolOutboundStatus) GetAppliedRevision() OptString {
+	return s.AppliedRevision
+}
+
+// GetRestartRequired returns the value of RestartRequired.
+func (s *PoolOutboundStatus) GetRestartRequired() OptBool {
+	return s.RestartRequired
+}
+
+// GetShadowsYaml returns the value of ShadowsYaml.
+func (s *PoolOutboundStatus) GetShadowsYaml() OptBool {
+	return s.ShadowsYaml
+}
+
+// SetProbes sets the value of Probes.
+func (s *PoolOutboundStatus) SetProbes(val OptPoolOutboundStatusProbes) {
+	s.Probes = val
+}
+
+// SetSource sets the value of Source.
+func (s *PoolOutboundStatus) SetSource(val OptString) {
+	s.Source = val
+}
+
+// SetMode sets the value of Mode.
+func (s *PoolOutboundStatus) SetMode(val OptString) {
+	s.Mode = val
+}
+
+// SetHTTP sets the value of HTTP.
+func (s *PoolOutboundStatus) SetHTTP(val OptString) {
+	s.HTTP = val
+}
+
+// SetHTTPS sets the value of HTTPS.
+func (s *PoolOutboundStatus) SetHTTPS(val OptString) {
+	s.HTTPS = val
+}
+
+// SetCaFingerprints sets the value of CaFingerprints.
+func (s *PoolOutboundStatus) SetCaFingerprints(val []string) {
+	s.CaFingerprints = val
+}
+
+// SetDesiredRevision sets the value of DesiredRevision.
+func (s *PoolOutboundStatus) SetDesiredRevision(val OptString) {
+	s.DesiredRevision = val
+}
+
+// SetAppliedRevision sets the value of AppliedRevision.
+func (s *PoolOutboundStatus) SetAppliedRevision(val OptString) {
+	s.AppliedRevision = val
+}
+
+// SetRestartRequired sets the value of RestartRequired.
+func (s *PoolOutboundStatus) SetRestartRequired(val OptBool) {
+	s.RestartRequired = val
+}
+
+// SetShadowsYaml sets the value of ShadowsYaml.
+func (s *PoolOutboundStatus) SetShadowsYaml(val OptBool) {
+	s.ShadowsYaml = val
+}
+
+// Observations keyed by server, guest, or pool context. Untested hops are never inferred healthy.
+type PoolOutboundStatusProbes map[string]PoolOutboundProbes
+
+func (s *PoolOutboundStatusProbes) init() PoolOutboundStatusProbes {
+	m := *s
+	if m == nil {
+		m = map[string]PoolOutboundProbes{}
+		*s = m
+	}
+	return m
+}
+
 // What a pool host is being made to do right now, named for a client whose sandbox is
 // waiting for a pool to take it and wants to know what it is waiting for.
 // It is the pool-shaped twin of SandboxProvisionPhase: an observation, never a state,
@@ -19089,6 +19563,146 @@ func (s *PoolProvisionProgress) SetPhase(val PoolProvisionPhase) {
 // SetPull sets the value of Pull.
 func (s *PoolProvisionProgress) SetPull(val OptSandboxPullProgress) {
 	s.Pull = val
+}
+
+// Ref: #/components/schemas/PoolProxy
+type PoolProxy struct {
+	// Outbound routing mode. Direct is the default; inherit explicitly selects the server proxy
+	// environment.
+	Mode OptPoolProxyMode `json:"mode"`
+	// HTTP origin forward proxy URL. Credentials may be replaced using URL userinfo; reads omit them.
+	// Without userinfo existing credentials are preserved unless explicitly cleared.
+	HTTP OptString `json:"http"`
+	// HTTPS origin HTTP CONNECT proxy URL. Empty means direct in explicit mode. Reads omit URL userinfo.
+	HTTPS OptString `json:"https"`
+	// Upstream bypass list; sandbox destination policy still applies.
+	NoProxy OptString `json:"noProxy"`
+	// Additional PEM CA certificates copied to the pool before bootstrap.
+	CaPem OptString `json:"caPem"`
+	// Remove saved HTTP proxy credentials. Cannot be combined with replacement URL userinfo.
+	ClearHttpCredentials OptBool `json:"clearHttpCredentials"`
+	// Remove saved HTTPS proxy credentials. Cannot be combined with replacement URL userinfo.
+	ClearHttpsCredentials OptBool `json:"clearHttpsCredentials"`
+}
+
+// GetMode returns the value of Mode.
+func (s *PoolProxy) GetMode() OptPoolProxyMode {
+	return s.Mode
+}
+
+// GetHTTP returns the value of HTTP.
+func (s *PoolProxy) GetHTTP() OptString {
+	return s.HTTP
+}
+
+// GetHTTPS returns the value of HTTPS.
+func (s *PoolProxy) GetHTTPS() OptString {
+	return s.HTTPS
+}
+
+// GetNoProxy returns the value of NoProxy.
+func (s *PoolProxy) GetNoProxy() OptString {
+	return s.NoProxy
+}
+
+// GetCaPem returns the value of CaPem.
+func (s *PoolProxy) GetCaPem() OptString {
+	return s.CaPem
+}
+
+// GetClearHttpCredentials returns the value of ClearHttpCredentials.
+func (s *PoolProxy) GetClearHttpCredentials() OptBool {
+	return s.ClearHttpCredentials
+}
+
+// GetClearHttpsCredentials returns the value of ClearHttpsCredentials.
+func (s *PoolProxy) GetClearHttpsCredentials() OptBool {
+	return s.ClearHttpsCredentials
+}
+
+// SetMode sets the value of Mode.
+func (s *PoolProxy) SetMode(val OptPoolProxyMode) {
+	s.Mode = val
+}
+
+// SetHTTP sets the value of HTTP.
+func (s *PoolProxy) SetHTTP(val OptString) {
+	s.HTTP = val
+}
+
+// SetHTTPS sets the value of HTTPS.
+func (s *PoolProxy) SetHTTPS(val OptString) {
+	s.HTTPS = val
+}
+
+// SetNoProxy sets the value of NoProxy.
+func (s *PoolProxy) SetNoProxy(val OptString) {
+	s.NoProxy = val
+}
+
+// SetCaPem sets the value of CaPem.
+func (s *PoolProxy) SetCaPem(val OptString) {
+	s.CaPem = val
+}
+
+// SetClearHttpCredentials sets the value of ClearHttpCredentials.
+func (s *PoolProxy) SetClearHttpCredentials(val OptBool) {
+	s.ClearHttpCredentials = val
+}
+
+// SetClearHttpsCredentials sets the value of ClearHttpsCredentials.
+func (s *PoolProxy) SetClearHttpsCredentials(val OptBool) {
+	s.ClearHttpsCredentials = val
+}
+
+// Outbound routing mode. Direct is the default; inherit explicitly selects the server proxy
+// environment.
+type PoolProxyMode string
+
+const (
+	PoolProxyModeDirect   PoolProxyMode = "direct"
+	PoolProxyModeExplicit PoolProxyMode = "explicit"
+	PoolProxyModeInherit  PoolProxyMode = "inherit"
+)
+
+// AllValues returns all PoolProxyMode values.
+func (PoolProxyMode) AllValues() []PoolProxyMode {
+	return []PoolProxyMode{
+		PoolProxyModeDirect,
+		PoolProxyModeExplicit,
+		PoolProxyModeInherit,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolProxyMode) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolProxyModeDirect:
+		return []byte(s), nil
+	case PoolProxyModeExplicit:
+		return []byte(s), nil
+	case PoolProxyModeInherit:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolProxyMode) UnmarshalText(data []byte) error {
+	switch PoolProxyMode(data) {
+	case PoolProxyModeDirect:
+		*s = PoolProxyModeDirect
+		return nil
+	case PoolProxyModeExplicit:
+		*s = PoolProxyModeExplicit
+		return nil
+	case PoolProxyModeInherit:
+		*s = PoolProxyModeInherit
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // What a pool's own services are consuming, as of its last resource report: the
@@ -35630,6 +36244,9 @@ func (s *UpdateHarnessConfigBody) SetName(val OptString) {
 
 // Ref: #/components/schemas/UpdatePoolBody
 type UpdatePoolBody struct {
+	// Whole-object pool outbound override. On create omitted or null uses server defaults; on update
+	// omission preserves it and null removes it.
+	Proxy OptNilPoolProxy `json:"proxy"`
 	// Replaces the pool's egress policy level. Every live discobox in the pool converges onto the result.
 	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
@@ -35649,6 +36266,11 @@ type UpdatePoolBody struct {
 	// Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today;
 	// zero is unset.
 	StorageBytes OptInt64 `json:"storageBytes"`
+}
+
+// GetProxy returns the value of Proxy.
+func (s *UpdatePoolBody) GetProxy() OptNilPoolProxy {
+	return s.Proxy
 }
 
 // GetEgress returns the value of Egress.
@@ -35684,6 +36306,11 @@ func (s *UpdatePoolBody) GetName() OptString {
 // GetStorageBytes returns the value of StorageBytes.
 func (s *UpdatePoolBody) GetStorageBytes() OptInt64 {
 	return s.StorageBytes
+}
+
+// SetProxy sets the value of Proxy.
+func (s *UpdatePoolBody) SetProxy(val OptNilPoolProxy) {
+	s.Proxy = val
 }
 
 // SetEgress sets the value of Egress.

@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/pooloutbound"
+
 	dockerclient "github.com/moby/moby/client"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -112,8 +114,10 @@ type Driver struct {
 // useful. The two are created and torn down together: a VM whose guests cannot
 // reach the control plane can never register a pool agent.
 type guestVM struct {
-	vm       *vzvm.VM
-	listener net.Listener
+	outbound       pooloutbound.Resolved
+	outboundCancel context.CancelFunc
+	vm             *vzvm.VM
+	listener       net.Listener
 	// size is what the VM was started with, compared on every EnsureVM so a
 	// pool or provider size change replaces it rather than waiting for a
 	// restart nobody asked for.
@@ -339,7 +343,21 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		return nil, fmt.Errorf("start vz VM for pool %s: %w", poolID, err)
 	}
 
-	guest := &guestVM{vm: vm, size: want, stopped: make(chan struct{})}
+	guest := &guestVM{vm: vm, size: want, stopped: make(chan struct{}), outbound: spec.Outbound}
+	outboundListener, err := vm.Listen(pooloutbound.HostPort)
+	if err != nil {
+		guest.close()
+		return nil, err
+	}
+	resolved, err := spec.Outbound.ResolveLocalForwarder()
+	if err != nil {
+		outboundListener.Close()
+		guest.close()
+		return nil, err
+	}
+	relayCtx, cancel := context.WithCancel(context.Background())
+	guest.outboundCancel = cancel
+	go func() { _ = pooloutbound.ServeHost(relayCtx, outboundListener, resolved) }()
 	listener, err := vm.Listen(controlPlaneVSOCKPort)
 	if err != nil {
 		guest.close()
@@ -622,6 +640,9 @@ func (g *guestVM) serveControlPlane(ctx context.Context, poolID string, sink Str
 
 func (g *guestVM) close() {
 	g.stopOnce.Do(func() {
+		if g.outboundCancel != nil {
+			g.outboundCancel()
+		}
 		close(g.stopped)
 		if g.listener != nil {
 			_ = g.listener.Close()
@@ -641,4 +662,22 @@ func validatePoolID(poolID string) error {
 		return fmt.Errorf("invalid pool ID %q", poolID)
 	}
 	return nil
+}
+
+func (d *Driver) PoolOutbound(ctx context.Context, poolID string, want pooloutbound.Resolved) (pooloutbound.Delivery, error) {
+	d.mu.Lock()
+	guest := d.vms[poolID]
+	d.mu.Unlock()
+	if guest == nil {
+		return pooloutbound.Delivery{}, fmt.Errorf("pool VM is not running")
+	}
+	conn, err := guest.vm.Connect(pooloutbound.ContainerPort)
+	if err != nil {
+		return pooloutbound.Delivery{}, fmt.Errorf("guest image lacks pool outbound boot delivery: %w", err)
+	}
+	runtime, err := pooloutbound.ReadContainerConfig(ctx, conn)
+	if err != nil {
+		return pooloutbound.Delivery{}, err
+	}
+	return pooloutbound.Delivery{Runtime: runtime.Runtime, GuestProbes: &runtime.Probes, AppliedRevision: guest.outbound.Revision(), RestartRequired: guest.outbound.Revision() != want.Revision()}, nil
 }

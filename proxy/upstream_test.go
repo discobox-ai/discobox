@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
@@ -74,7 +77,7 @@ func TestApplyUpstreamProxySetsBothPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upstreamProxyURL: %v", err)
 	}
-	applyUpstreamProxy(h, u, "")
+	applyUpstreamProxy(h, u, u, "")
 
 	if h.proxy.Tr == nil || h.proxy.Tr.Proxy == nil {
 		t.Fatal("Transport.Proxy not set: MITM'd traffic would dial origins directly")
@@ -101,7 +104,7 @@ func TestApplyUpstreamProxyNilLeavesDirect(t *testing.T) {
 		beforeProxy = h.proxy.Tr.Proxy != nil
 	}
 
-	applyUpstreamProxy(h, nil, "")
+	applyUpstreamProxy(h, nil, nil, "")
 
 	if fmt.Sprintf("%p", h.proxy.ConnectDial) != fmt.Sprintf("%p", beforeDial) {
 		t.Fatal("ConnectDial was changed despite there being no upstream")
@@ -131,7 +134,7 @@ func TestApplyUpstreamProxyHonoursNoProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upstreamProxyURL: %v", err)
 	}
-	applyUpstreamProxy(h, u, "127.0.0.1,localhost,::1")
+	applyUpstreamProxy(h, u, u, "127.0.0.1,localhost,::1")
 
 	// Transport path: exempt host goes direct, other host goes via upstream.
 	got, err := h.proxy.Tr.Proxy(&http.Request{URL: mustURL(t, "http://127.0.0.1:8080/x")})
@@ -162,4 +165,71 @@ func proxyFuncFor(t *testing.T, upstream *url.URL, noProxy string) func(*url.URL
 		HTTPSProxy: upstream.String(),
 		NoProxy:    noProxy,
 	}).ProxyFunc()
+}
+
+func TestDistinctSchemeUpstreamsAndExplicitDirectScheme(t *testing.T) {
+	for _, https := range []string{"http://https-proxy:3129", ""} {
+		h := newHTTPProxy(nil, nil, nil, nil, nil, nil, nil)
+		var secure *url.URL
+		if https != "" {
+			secure = mustURL(t, https)
+		}
+		applyUpstreamProxy(h, mustURL(t, "http://http-proxy:3128"), secure, ".internal.example")
+		for _, tc := range []struct{ target, want string }{{"http://public.example/", "http://http-proxy:3128"}, {"https://public.example/", https}, {"https://a.internal.example/", ""}} {
+			got, err := h.proxy.Tr.Proxy(&http.Request{URL: mustURL(t, tc.target)})
+			if err != nil || proxyURLString(got) != tc.want {
+				t.Fatalf("%s: got %v, %v", tc.target, got, err)
+			}
+		}
+	}
+}
+
+func TestPassthroughConnectUsesUpstreamBasicAuthentication(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			w.WriteHeader(204)
+			return
+		}
+		want := "Basic " + base64.StdEncoding.EncodeToString([]byte("fixture:credential"))
+		if req.Method != http.MethodConnect || req.Header.Get("Proxy-Authorization") != want {
+			w.WriteHeader(407)
+			return
+		}
+		conn, rw, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if _, err := rw.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+			return
+		}
+		if err := rw.Flush(); err != nil {
+			return
+		}
+		request := make([]byte, 4)
+		if _, err := io.ReadFull(rw, request); err != nil {
+			return
+		}
+		_, _ = conn.Write(request)
+	}))
+	defer upstream.Close()
+	address := mustURL(t, upstream.URL)
+	address.User = url.UserPassword("fixture", "credential")
+	h := newHTTPProxy(nil, nil, nil, nil, nil, nil, nil)
+	applyUpstreamProxy(h, nil, address, "")
+	if got := h.upstreamProxyFor("public.example:443"); got != upstream.URL {
+		t.Fatalf("tunnel audit upstream = %q, want userinfo-free %q", got, upstream.URL)
+	}
+	conn, err := h.proxy.ConnectDial("tcp", "public.example:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	response := make([]byte, 4)
+	if _, err := io.ReadFull(conn, response); err != nil || string(response) != "ping" {
+		t.Fatalf("CONNECT exchange: %q %v", response, err)
+	}
 }

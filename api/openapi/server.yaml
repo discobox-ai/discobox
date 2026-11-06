@@ -3879,6 +3879,13 @@ components:
             # Response fields may differ across releases selected by the CLI.
             # Leave unknown fields ignorable, including retired staging fields.
             properties:
+                proxy:
+                    $ref: '#/components/schemas/PoolProxy'
+                    description: Configured override with proxy credentials omitted.
+                outbound:
+                    $ref: '#/components/schemas/PoolOutboundStatus'
+                    description: Effective pool outbound routing and applied revision.
+
                 egress:
                     $ref: '#/components/schemas/EgressPolicy'
                     description: The pool's egress policy level (ADR 26-10-01-032). Its denyByDefault restricts every discobox in the pool; its allow list is added to each restricted one's.
@@ -4059,9 +4066,88 @@ components:
                 - createdAt
                 - updatedAt
             type: object
+        PoolProxy:
+            nullable: true
+            type: object
+            additionalProperties: false
+            properties:
+                mode:
+                    type: string
+                    enum: [direct, explicit, inherit]
+                    description: Outbound routing mode. Direct is the default; inherit explicitly selects the server proxy environment.
+                http:
+                    type: string
+                    description: HTTP origin forward proxy URL. Credentials may be replaced using URL userinfo; reads omit them. Without userinfo existing credentials are preserved unless explicitly cleared.
+                https:
+                    type: string
+                    description: HTTPS origin HTTP CONNECT proxy URL. Empty means direct in explicit mode. Reads omit URL userinfo.
+                noProxy:
+                    type: string
+                    description: Upstream bypass list; sandbox destination policy still applies.
+                caPem:
+                    type: string
+                    description: Additional PEM CA certificates copied to the pool before bootstrap.
+                clearHttpCredentials:
+                    type: boolean
+                    writeOnly: true
+                    description: Remove saved HTTP proxy credentials. Cannot be combined with replacement URL userinfo.
+                clearHttpsCredentials:
+                    type: boolean
+                    writeOnly: true
+                    description: Remove saved HTTPS proxy credentials. Cannot be combined with replacement URL userinfo.
+        PoolOutboundProbes:
+            type: object
+            properties:
+                http:
+                    $ref: '#/components/schemas/PoolOutboundProbe'
+                https:
+                    $ref: '#/components/schemas/PoolOutboundProbe'
+        PoolOutboundProbe:
+            type: object
+            properties:
+                state:
+                    type: string
+                detail:
+                    type: string
+                httpStatus:
+                    type: integer
+        PoolOutboundStatus:
+            type: object
+            properties:
+                probes:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/PoolOutboundProbes'
+                    description: Observations keyed by server, guest, or pool context. Untested hops are never inferred healthy.
+
+                source:
+                    type: string
+                mode:
+                    type: string
+                http:
+                    type: string
+                https:
+                    type: string
+                caFingerprints:
+                    type: array
+                    items:
+                        type: string
+                desiredRevision:
+                    type: string
+                appliedRevision:
+                    type: string
+                restartRequired:
+                    type: boolean
+                shadowsYaml:
+                    type: boolean
         CreatePoolBody:
             additionalProperties: false
             properties:
+                proxy:
+                    $ref: '#/components/schemas/PoolProxy'
+                    nullable: true
+                    description: Whole-object pool outbound override. On create omitted or null uses server defaults; on update omission preserves it and null removes it.
+
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/CreatePoolBody.json
@@ -4097,6 +4183,11 @@ components:
         UpdatePoolBody:
             additionalProperties: false
             properties:
+                proxy:
+                    $ref: '#/components/schemas/PoolProxy'
+                    nullable: true
+                    description: Whole-object pool outbound override. On create omitted or null uses server defaults; on update omission preserves it and null removes it.
+
                 egress:
                     $ref: '#/components/schemas/EgressPolicy'
                     description: Replaces the pool's egress policy level. Every live discobox in the pool converges onto the result.

@@ -225,6 +225,9 @@ func (h *poolMachine) repairPoolHost(ctx context.Context, pool *model.Pool, make
 // configuration decides — or always when force. Its record is written to the pool as it goes, so a pass that
 // fails part way still says what it placed, a key above all.
 func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker, gate func(context.Context) error, force bool) error {
+	if err := pool.Outbound.RejectLocalEndpoints(); err != nil {
+		return err
+	}
 	if maker == nil {
 		return errors.New("a pool maker is required")
 	}
@@ -327,6 +330,7 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		return err
 	}
 	if !force && current {
+		pool.OutboundAppliedRevision = pool.Outbound.Revision()
 		return nil
 	}
 	// The apply restarts the agent the moved bundles carry, so placement is
@@ -341,16 +345,20 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 			// 26-10-24-953 §5): it keeps what it last provisioned, and the
 			// next reconcile tries again.
 			slog.WarnContext(ctx, "keeping the pool's machine as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
+			if pool.OutboundStatus != nil && pool.OutboundAppliedRevision != pool.Outbound.Revision() {
+				return fmt.Errorf("%w: %w", sandbox.ErrPoolConfigApply, err)
+			}
 			return nil
 		}
 		return fmt.Errorf("provision pool %s's machine: %w", pool.ID, err)
 	}
 	if provisioned && record.Box.Placement != box.Placement {
-		if err := poolruntime.RestartPoolUnits(ctx, guest); err != nil {
+		if err := poolruntime.RestartPoolUnits(ctx, guest, false); err != nil {
 			return fmt.Errorf("restart pool %s's agent on its new placement: %w", pool.ID, err)
 		}
 	}
 	record.Box = box
+	pool.OutboundAppliedRevision = pool.Outbound.Revision()
 	return h.writeState(pool, record)
 }
 
@@ -410,7 +418,7 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	if err != nil {
 		return poolruntime.BoxPlacement{}, err
 	}
-	return poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: h.policy}, nil
+	return poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: h.policy, Outbound: pool.Outbound}, nil
 }
 
 // agentListenURL is where the pool agent listens in its machine: where the
