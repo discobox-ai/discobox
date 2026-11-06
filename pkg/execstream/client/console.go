@@ -24,7 +24,7 @@ type OSConsole struct {
 // stdin is not a file and so cannot be a terminal. A nil Console disables
 // terminal control. A stdout that is not a file is no obstacle: the session
 // still owns the terminal's mode, it just has nowhere to write the reset.
-func NewOSConsole(stdin, stdout any) *OSConsole {
+func NewOSConsole(stdin, stdout any) Console {
 	file, ok := stdin.(*os.File)
 	if !ok {
 		return nil
