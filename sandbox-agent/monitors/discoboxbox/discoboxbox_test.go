@@ -779,8 +779,12 @@ func TestTheImageDeclaresThisMonitor(t *testing.T) {
 
 func TestAdoptionAndReleaseReportSelectionChangesOnce(t *testing.T) {
 	f := newFake(t)
+	// Finish each run after consuming the available events, rather than
+	// racing the short stream-holding interval against HTTP scheduling.
+	f.cut = true
 	workers(f)
 	in := newInstance(t, f, map[string]string{"created-by": "me", "watch": "terminal"})
+	in.env.Interval = 30 * time.Second
 	in.poll()
 	f.at(time.Minute)
 	f.boxes["sbx_c"]["parentSandboxId"] = "sbx_lead"
@@ -788,6 +792,9 @@ func TestAdoptionAndReleaseReportSelectionChangesOnce(t *testing.T) {
 	got := in.poll()
 	if !slices.Equal(kinds(got), []string{"box.adopted"}) {
 		t.Fatalf("adoption: %+v", got)
+	}
+	if got = in.poll(); len(got) != 0 {
+		t.Fatalf("repeated adoption: %+v", got)
 	}
 	f.at(2 * time.Minute)
 	f.boxes["sbx_c"]["parentSandboxId"] = "another-lead"
