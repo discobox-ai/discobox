@@ -79,6 +79,23 @@ esac
 				write("fail", "")
 				write("missing", "")
 				tick(presence, time.Second)
+				// Presence inspection is asynchronous. Keep the file loop moving
+				// until its result has triggered the failed build.
+				deadline := time.After(5 * time.Second)
+				beat := time.NewTicker(10 * time.Millisecond)
+				defer beat.Stop()
+			waitForBuild:
+				for {
+					select {
+					case <-deadline:
+						t.Fatal("missing-image result did not trigger a build")
+					case <-beat.C:
+						tick(ticks, 2*time.Second)
+						if data, _ := os.ReadFile(filepath.Join(dir, "calls")); strings.Count(string(data), "build\n") == 2 {
+							break waitForBuild
+						}
+					}
+				}
 			}
 			tick(ticks, 2*time.Second)
 			// Older :local images exist, so presence alone will not retry.

@@ -152,7 +152,10 @@ true of it, and true *by rule* rather than by slug:
   seeding; startup must not silently keep harnesses from a
   different release.
 - Otherwise, seeding is best-effort per harness: an uninspectable bundle is logged
-  and skipped so it cannot block startup. **Skipping all of them is not**.
+  and skipped so it cannot block startup. If every configured bundle fails
+  inspection, the pass also logs an error naming the project and directing
+  developers to the image watcher and bundle availability. Existing configs
+  remain intact. **Having no harness left to run is a startup failure**.
   `EnsureHarnessAvailable` reports a project with no harness config at all —
   any config counts, not only a built-in — and the server process refuses to
   serve when the default project has none, because sandbox create resolves a

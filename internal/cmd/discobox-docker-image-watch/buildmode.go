@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -113,6 +114,19 @@ func buildModeArgs(spec imageSpec) (map[string]string, error) {
 // which build-mode cannot know in advance because nothing is built here.
 func contentImageTag(spec imageSpec) (string, error) {
 	digest := sha256.New()
+	args, err := buildModeArgs(spec)
+	if err != nil {
+		return "", err
+	}
+	// Hash what will actually be built, including rendered metadata. A change
+	// to the renderer must not reuse a layout rendered by the old watcher.
+	if err := json.NewEncoder(digest).Encode(struct {
+		Dockerfile string
+		Target     string
+		Args       map[string]string
+	}{spec.dockerfile, spec.target, args}); err != nil {
+		return "", err
+	}
 	for _, path := range spec.files {
 		rel, err := filepath.Rel(spec.buildDir, path)
 		if err != nil {

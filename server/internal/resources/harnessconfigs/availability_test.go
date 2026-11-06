@@ -1,8 +1,10 @@
 package harnessconfigs
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
@@ -121,5 +123,39 @@ func TestReleaseManifestPreservesCustomHarnessOnSlugCollision(t *testing.T) {
 	}
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("custom config changed: before %#v; after %#v", before, after)
+	}
+}
+
+func TestAllFailedSeedsLogErrorAndRetainExistingConfigs(t *testing.T) {
+	ctx := t.Context()
+	st := newTestStore(t)
+	existing := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true, Bundle: "old:bundle", BundleDigest: "sha256:old", ConfiguredFiles: []model.HarnessConfigFile{{Path: "settings.json", Content: "saved"}}}
+	if err := st.CreateHarnessConfig(ctx, existing); err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	svc := &Service{store: st, harnesses: testReferences, inspector: unavailableInspector{err: errors.New("stale bundle")}}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), `"level":"ERROR"`) || !strings.Contains(logs.String(), "all built-in harness seeds failed") || !strings.Contains(logs.String(), `"projectId":"project-1"`) {
+		t.Fatalf("missing aggregate error: %s", logs.String())
+	}
+	after, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("failed seed changed durable config: before %#v; after %#v", before, after)
+	}
+	if err := svc.EnsureHarnessAvailable(ctx, "project-1"); err != nil {
+		t.Fatalf("existing config should still run: %v", err)
 	}
 }
