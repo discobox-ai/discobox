@@ -47,17 +47,21 @@ def command(args, *, limit=120, expected=0, input=None):
     with COMMAND_LOCK:
         COMMAND_COUNT += 1
         output_path = ARTIFACTS / f"command-{COMMAND_COUNT:04}.log"
+        error_path = ARTIFACTS / f"command-{COMMAND_COUNT:04}.stderr.log"
         print("+", " ".join(str(a) if len(str(a)) < 180 else str(a)[:160] + "..." for a in args), flush=True)
     # Write while the command runs so bootstrap failures/timeouts retain output.
-    with output_path.open("w") as output:
+    # Progress belongs to stderr; assertions and JSON parsing consume stdout.
+    # Keep both files open during execution so timeouts retain both streams.
+    with output_path.open("w") as output, error_path.open("w") as errors:
         result = subprocess.run(list(map(str, args)), cwd=ROOT, env=ENV,
-                                input=input, stdout=output, stderr=subprocess.STDOUT,
+                                input=input, stdout=output, stderr=errors,
                                 text=True, timeout=limit)
     result.stdout = output_path.read_text()
+    result.stderr = error_path.read_text()
     with COMMAND_LOCK, (ARTIFACTS / "commands.log").open("a") as log:
-        log.write(f"$ {args!r}\n{result.stdout}\nexit={result.returncode} duration={time.monotonic()-started:.2f}s\n")
+        log.write(f"$ {args!r}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}\nexit={result.returncode} duration={time.monotonic()-started:.2f}s\n")
     if result.returncode != expected:
-        raise RuntimeError(f"exit {result.returncode}, expected {expected}: {args}\n{result.stdout}")
+        raise RuntimeError(f"exit {result.returncode}, expected {expected}: {args}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
     return result.stdout
 
 

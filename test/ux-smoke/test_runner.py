@@ -1,6 +1,8 @@
 """Builder readiness regression tests; no Docker daemon required."""
 import importlib.util
 from pathlib import Path
+import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -66,6 +68,15 @@ class BuilderReadinessTest(unittest.TestCase):
 
     def test_failed_bootstrap_stops_builds(self):
         self.check_builder(containerd=False, bootstrap_fails=True)
+
+    def test_command_keeps_progress_out_of_stdout(self):
+        runner = self.runner
+        with tempfile.TemporaryDirectory() as directory, patch.object(runner, "ARTIFACTS", Path(directory)):
+            output = runner.command([sys.executable, "-c",
+                                     "import sys; print('preparing the discobox', file=sys.stderr); "
+                                     "print('personal-override')"])
+            self.assertEqual(output.strip(), "personal-override")
+            self.assertIn("preparing the discobox", (Path(directory) / "commands.log").read_text())
 
 
 if __name__ == "__main__":
