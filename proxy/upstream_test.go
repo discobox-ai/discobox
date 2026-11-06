@@ -1,12 +1,15 @@
 package proxy
 
 import (
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
 	"golang.org/x/net/http/httpproxy"
@@ -231,5 +234,45 @@ func TestPassthroughConnectUsesUpstreamBasicAuthentication(t *testing.T) {
 	response := make([]byte, 4)
 	if _, err := io.ReadFull(conn, response); err != nil || string(response) != "ping" {
 		t.Fatalf("CONNECT exchange: %q %v", response, err)
+	}
+}
+
+// This path exists only inside an enclosing Discobox. Outside one, ordinary
+// inheritance tests cover the same constructor without logical translation.
+func TestStandaloneProxyKeepsRecognizedForwarderHostReachable(t *testing.T) {
+	raw, err := os.ReadFile("/etc/discobox/sandbox.json")
+	if os.IsNotExist(err) {
+		t.Skip("no enclosing Discobox runtime")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var enclosing struct {
+		Env map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(raw, &enclosing); err != nil {
+		t.Fatal(err)
+	}
+	endpoint := enclosing.Env["HTTP_PROXY"]
+	if endpoint == "" {
+		t.Skip("enclosing runtime declares no HTTP forwarder")
+	}
+	for _, name := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+		t.Setenv(name, endpoint)
+	}
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+	prepared, err := PrepareCertificates(PrepareOptions{Dir: t.TempDir(), ClientIDs: []string{"sandbox-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewServer(context.Background(), Config{ListenAddress: "127.0.0.1:0", CertDir: prepared.Bundle.Dir}, prepared.Bundle, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	via, err := server.http.proxy.Tr.Proxy(&http.Request{URL: mustURL(t, "https://public.example/")})
+	if err != nil || proxyURLString(via) != endpoint {
+		t.Fatalf("standalone inherited proxy=%v error=%v, want host endpoint %s", via, err, endpoint)
 	}
 }

@@ -16,6 +16,7 @@ func TestResolutionIsExplicitAndPreservesEmptyInheritance(t *testing.T) {
 	}{
 		{name: "empty inherited trust directories", intent: Intent{Mode: "inherit"}, env: map[string]string{"SSL_CERT_DIR": string(os.PathListSeparator)}},
 		{name: "default ignores ambient", env: map[string]string{"HTTP_PROXY": "http://ambient:1"}},
+		{name: "explicit localhost remains operator choice", intent: Intent{Mode: "explicit", HTTP: "http://127.0.0.1:17008"}, http: "http://127.0.0.1:17008"},
 		{name: "explicit empty scheme", intent: Intent{Mode: "explicit", HTTP: "http://first:1"}, env: map[string]string{"HTTPS_PROXY": "http://ambient:1"}, http: "http://first:1"},
 		{name: "independent inherited schemes", intent: Intent{Mode: "inherit"}, env: map[string]string{"HTTP_PROXY": "http://first:1", "HTTPS_PROXY": "http://second:2"}, http: "http://first:1", https: "http://second:2"},
 		{name: "empty uppercase suppresses lowercase and fallback", intent: Intent{Mode: "inherit"}, env: map[string]string{"HTTP_PROXY": "", "http_proxy": "http://lower:1", "HTTPS_PROXY": "", "ALL_PROXY": "http://all:1"}},

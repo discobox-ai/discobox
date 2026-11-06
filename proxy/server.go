@@ -133,6 +133,12 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
+		// Standalone consumes the host route itself rather than delivering
+		// the logical endpoint into a backend's container or guest.
+		inherited, resolveErr = inherited.ResolveLocalForwarder()
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
 		if inherited.HTTP != "" {
 			upstream, _ = url.Parse(inherited.HTTP)
 		}

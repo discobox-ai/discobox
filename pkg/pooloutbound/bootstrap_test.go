@@ -36,3 +36,37 @@ func TestNestedBootstrapRecordsLogicalExplicitIntentFromDeliveredMaterial(t *tes
 		t.Fatalf("unrecognized runtime qualified: %+v %v", got, err)
 	}
 }
+
+func TestInheritedForwarderRecognitionRequiresDeliveredMatchingEndpoint(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "sandbox.json")
+	raw, err := json.Marshal(enclosingRuntime{SandboxID: "sbx_outer", ProxyEnvs: []string{"HTTP_PROXY", "HTTPS_PROXY"}, Env: map[string]string{"HTTP_PROXY": "http://127.0.0.1:17008", "HTTPS_PROXY": "http://127.0.0.1:17008"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name        string
+		input, want Resolved
+	}{
+		{name: "known endpoint with empty direct HTTPS", input: Resolved{HTTP: "http://127.0.0.1:17008"}, want: Resolved{HTTP: "http://" + LogicalForwarderHost}},
+		{name: "independent external HTTPS", input: Resolved{HTTP: "http://127.0.0.1:17008", HTTPS: "http://enterprise.example:3129"}, want: Resolved{HTTP: "http://" + LogicalForwarderHost, HTTPS: "http://enterprise.example:3129"}},
+		{name: "unrelated localhost proxy", input: Resolved{HTTP: "http://127.0.0.1:9999"}, want: Resolved{HTTP: "http://127.0.0.1:9999"}},
+		{name: "explicit direct", input: Resolved{}, want: Resolved{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := recognizeInheritedForwarder(test.input, file)
+			if err != nil || got != test.want {
+				t.Fatalf("recognized routing=%+v error=%v, want %+v", got, err, test.want)
+			}
+		})
+	}
+	if err := os.WriteFile(file, []byte(`{"sandboxId":"sbx_outer","proxyEnvs":["UNRELATED"],"env":{"HTTP_PROXY":"http://127.0.0.1:17008"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	original := Resolved{HTTP: "http://127.0.0.1:17008"}
+	if got, err := recognizeInheritedForwarder(original, file); err != nil || got != original {
+		t.Fatalf("undeclared endpoint qualified: %+v %v", got, err)
+	}
+}

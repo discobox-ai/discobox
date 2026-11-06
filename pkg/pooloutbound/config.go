@@ -136,6 +136,13 @@ func Resolve(i Intent, lookup func(string) (string, bool)) (Resolved, error) {
 	if err := ValidateEndpoint(r.HTTPS); err != nil {
 		return r, fmt.Errorf("HTTPS proxy: %w", err)
 	}
+	if mode == "inherit" {
+		var err error
+		r, err = recognizeInheritedForwarder(r, "/etc/discobox/sandbox.json")
+		if err != nil {
+			return r, err
+		}
+	}
 	if strings.ContainsAny(r.NoProxy, "\r\n\x00") {
 		return r, errors.New("invalid proxy bypass list")
 	}
@@ -226,21 +233,16 @@ func (r Resolved) ResolveLocalForwarder() (Resolved, error) {
 		if u.Hostname() != LogicalForwarderHost {
 			continue
 		}
-		raw, err := os.ReadFile("/etc/discobox/sandbox.json")
-		if err != nil {
-			return r, errors.New("enclosing sandbox forwarder material is unavailable")
+		delivered, err := readEnclosingRuntime("/etc/discobox/sandbox.json")
+		if err != nil || delivered == nil {
+			return r, errors.New("enclosing sandbox forwarder material is unavailable or invalid")
 		}
-		var delivered struct {
-			SandboxID string            `json:"sandboxId"`
-			ProxyEnvs []string          `json:"proxyEnvs"`
-			Env       map[string]string `json:"env"`
-		}
-		if json.Unmarshal(raw, &delivered) != nil || delivered.SandboxID == "" {
-			return r, errors.New("enclosing sandbox forwarder material is invalid")
-		}
-		localEndpoint := delivered.Env["HTTP_PROXY"]
-		if localEndpoint == "" {
-			localEndpoint = delivered.Env["HTTPS_PROXY"]
+		var localEndpoint string
+		for _, name := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+			if value, ok := delivered.lookup(name); ok && value != "" {
+				localEndpoint = value
+				break
+			}
 		}
 		forwarder, err := url.Parse(localEndpoint)
 		if err != nil || forwarder.Host == "" {
