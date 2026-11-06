@@ -211,14 +211,15 @@ func writeFakeTool(t *testing.T, path, script string) {
 // their drive path, and cannot execute this CLI without re-entering the
 // distribution. See ADR 0074.
 func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	root, record := fakeWSLMachine(t)
-	home, _, stderr, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
+	home, _, stderr, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 
 	windowsState := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local", "discobox", "cli", "ssh")
-	config := readFile(t, filepath.Join(windowsState, resolvedTestProjectID, "config"))
+	config := readFile(t, filepath.Join(windowsState, sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config"))
 	for _, want := range []string{
 		// Windows ssh.exe cannot run a Linux binary: the ProxyCommand
 		// re-enters the distribution and runs it there, quoted for the shell
@@ -228,7 +229,7 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 		// Every file the config names is named the way Windows spells it, and
 		// quoted because the profile has a space in it.
 		`    IdentityFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\id_ed25519"` + "\n",
-		`    UserKnownHostsFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + resolvedTestProjectID + `\known_hosts"` + "\n",
+		`    UserKnownHostsFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + sshConfigNamespace(sshFixture.url, resolvedTestProjectID) + `\known_hosts"` + "\n",
 		"Host sbx_devbox00000001 ",
 	} {
 		if !strings.Contains(config, want) {
@@ -249,7 +250,7 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 
 	// The Include goes in the Windows user's ssh_config, quoted.
 	userConfig := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", ".ssh", "config"))
-	if want := `Include "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + resolvedTestProjectID + `\config"` + "\n"; userConfig != want {
+	if want := `Include "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + sshConfigNamespace(sshFixture.url, resolvedTestProjectID) + `\config"` + "\n"; userConfig != want {
 		t.Fatalf("Windows ssh_config = %q, want %q", userConfig, want)
 	}
 	// And this distribution's own ssh is configured too: the machine has two,
@@ -261,7 +262,7 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 
 	// A folder URI, never a bare path: a path argument is what the Windows
 	// launcher rewrites into a window on the local WSL directory.
-	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+sbx_devbox00000001/home/agent/repo"}
+	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+" + sshConfigHost(sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "sbx_devbox00000001") + "/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -272,14 +273,15 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 // the Windows config is written anyway, because the next thing to reach for a
 // discobox may be a Windows program.
 func TestToolsVSCodeOnWSLWritesBothSidesForALinuxEditor(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	root, _ := fakeWSLMachine(t)
 	record := fakeVSCode(t)
 
-	home, state, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
+	home, state, _, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
-	configPath, _ := managedPaths(state)
+	configPath, _ := managedPaths(t, state)
 	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("the local config was not written: %v", err)
 	}
@@ -287,7 +289,7 @@ func TestToolsVSCodeOnWSLWritesBothSidesForALinuxEditor(t *testing.T) {
 		t.Fatalf("the local ssh_config does not include the managed one: %q", got)
 	}
 	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", resolvedTestProjectID, "config")
+		"discobox", "cli", "ssh", sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config")
 	if _, err := os.Stat(windowsConfig); err != nil {
 		t.Fatalf("the Windows config was not written for a Linux editor: %v", err)
 	}
@@ -305,12 +307,13 @@ func TestToolsVSCodeOnWSLWritesBothSidesForALinuxEditor(t *testing.T) {
 // the disk: cmd.exe is found where Windows keeps it, translated through the
 // mount rather than guessed at.
 func TestToolsVSCodeOnWSLWithoutTheWindowsPATH(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	root, _ := fakeWSLMachine(t, withoutWindowsPATH)
-	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", resolvedTestProjectID, "config")
+		"discobox", "cli", "ssh", sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config")
 	if _, err := os.Stat(windowsConfig); err != nil {
 		t.Fatalf("the Windows config was not written: %v", err)
 	}
@@ -320,8 +323,9 @@ func TestToolsVSCodeOnWSLWithoutTheWindowsPATH(t *testing.T) {
 // known, rather than leaving Remote-SSH to say "Permissions for … are too open"
 // about a file the user never created.
 func TestToolsVSCodeOnWSLRefusesALeakyKey(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	fakeWSLMachine(t, withLeakyKeyACL)
-	_, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
+	_, _, _, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
 	if err == nil {
 		t.Fatal("expected tools vscode to refuse a key another principal can read")
 	}
@@ -337,22 +341,23 @@ func TestToolsVSCodeOnWSLRefusesALeakyKey(t *testing.T) {
 // Linux editor connects through this distribution's own ssh: the Windows side
 // says what it could not do and the window still opens.
 func TestToolsVSCodeOnWSLReportsTheWindowsSideForALinuxEditor(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	root, _ := fakeWSLMachine(t, withLeakyKeyACL)
 	record := fakeVSCode(t)
 
-	home, state, stderr, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
+	home, state, stderr, err := runToolsVSCodeCmd(t, sshFixture, "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	if !strings.Contains(stderr, "not writing the Windows ssh_config") {
 		t.Fatalf("nothing said what the Windows side could not do:\n%s", stderr)
 	}
-	configPath, _ := managedPaths(state)
+	configPath, _ := managedPaths(t, state)
 	if got := readFile(t, filepath.Join(home, ".ssh", "config")); !strings.Contains(got, configPath) {
 		t.Fatalf("the local ssh_config does not include the managed one: %q", got)
 	}
 	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", resolvedTestProjectID, "config")
+		"discobox", "cli", "ssh", sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config")
 	if _, err := os.Stat(windowsConfig); err == nil {
 		t.Fatal("a config was written for a key ssh will not read")
 	}
@@ -386,12 +391,12 @@ func TestSSHConfigWriteOnWSLReportsTheWindowsSide(t *testing.T) {
 			t.Fatalf("the report is missing %q:\n%s", want, errOut.String())
 		}
 	}
-	local, _ := managedPaths(state)
+	local, _ := managedPaths(t, state)
 	if _, err := os.Stat(local); err != nil {
 		t.Fatalf("this distribution's config was not written: %v", err)
 	}
 	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", resolvedTestProjectID, "config")
+		"discobox", "cli", "ssh", sshConfigNamespace(server.URL, resolvedTestProjectID), "config")
 	if _, err := os.Stat(windowsConfig); err == nil {
 		t.Fatal("a config was written for a key ssh will not read")
 	}
@@ -418,12 +423,12 @@ func TestSSHConfigWriteOnWSLWritesBothSides(t *testing.T) {
 		t.Fatalf("execute ssh-config --write: %v", err)
 	}
 
-	local, _ := managedPaths(state)
+	local, _ := managedPaths(t, state)
 	if got := readFile(t, local); strings.Contains(got, "wsl.exe") {
 		t.Fatalf("this distribution's config re-enters WSL to reach itself:\n%s", got)
 	}
 	windows := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", resolvedTestProjectID, "config"))
+		"discobox", "cli", "ssh", sshConfigNamespace(server.URL, resolvedTestProjectID), "config"))
 	if !strings.Contains(windows, `ProxyCommand wsl.exe -d Ubuntu -e sh -c "exec '`) {
 		t.Fatalf("the Windows config does not re-enter the distribution:\n%s", windows)
 	}
@@ -465,14 +470,15 @@ func TestSSHConfigPrintOnWSLIsThisSideOnly(t *testing.T) {
 // and needs the config under the Windows profile, with a ProxyCommand that
 // re-enters this distribution to reach the CLI (ADR 0074).
 func TestToolsZedOnWSLWritesTheConfigWindowsReads(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	root, record := fakeWSLMachine(t, withWindowsEditor("zed"))
 
-	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(), "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsZedCmd(t, sshFixture, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 
 	config := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
-		"discobox", "cli", "ssh", resolvedTestProjectID, "config"))
+		"discobox", "cli", "ssh", sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "config"))
 	if !strings.Contains(config, `    ProxyCommand wsl.exe -d Ubuntu -e sh -c "exec '`) {
 		t.Fatalf("the Windows config does not re-enter the distribution:\n%s", config)
 	}
@@ -482,7 +488,7 @@ func TestToolsZedOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	// The URL crosses the boundary as it was built: Zed's launcher passes a
 	// known scheme through, while a bare path would be rewritten into a --wsl
 	// path in this distribution.
-	want := []string{"--new", "ssh://sbx_devbox00000001/home/agent/repo"}
+	want := []string{"--new", "ssh://" + sshConfigHost(sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "sbx_devbox00000001") + "/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -514,7 +520,7 @@ func TestSSHConfigOnWSLNarrowsEveryFileWindowsReads(t *testing.T) {
 	}
 
 	write()
-	windowsSSH := `C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + resolvedTestProjectID
+	windowsSSH := `C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + sshConfigNamespace(server.URL, resolvedTestProjectID)
 	acl := readFile(t, aclLog(windowsToolsDir(root)))
 	for _, want := range []string{
 		windowsSSH + `\config`,
@@ -583,7 +589,7 @@ func TestSSHConfigOnWSLRemovesAConfigItCannotNarrow(t *testing.T) {
 	}
 	// This side is written and correct, which is the point of the Windows side
 	// being optional.
-	local, _ := managedPaths(state)
+	local, _ := managedPaths(t, state)
 	if _, err := os.Stat(local); err != nil {
 		t.Fatalf("this distribution's config was not written: %v", err)
 	}

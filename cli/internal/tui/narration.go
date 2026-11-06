@@ -169,17 +169,17 @@ func (m *Model) endNarration() {
 // It runs beside the attach rather than in front of it: the attach waits for
 // readiness on its own (ADR 0039) and this only says what that wait is for, so
 // a failure here costs a status line and never a terminal.
-func (m *Model) watchProvisioning(sandboxID string) tea.Cmd {
+func (m *Model) watchProvisioning(box Sandbox) tea.Cmd {
 	feed, next := m.narrate()
 	ctx, stop := context.WithCancel(m.ctx)
 	m.stopNarrating = stop
 	watch := func() tea.Msg {
 		defer feed.close()
-		m.ds.WatchProvisioning(ctx, sandboxID, feed.report)
+		m.ds.ForServer(box.Server).WatchProvisioning(ctx, box.ID, feed.report)
 		// The watch returns when the discobox has nothing left to report,
 		// which is the same moment the attach it runs beside can finish. That
 		// is the signal the waiting dialog takes itself down on.
-		return provisioningDoneMsg{sandboxID: sandboxID}
+		return provisioningDoneMsg{sandboxID: box.ID}
 	}
 	// The watch follows the discobox for as long as it has something to say.
 	return tea.Batch(listen(watch), next)

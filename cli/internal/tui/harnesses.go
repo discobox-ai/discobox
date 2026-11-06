@@ -292,7 +292,7 @@ func (m *Model) loadHarnesses() tea.Cmd {
 // both: what the panel offers as a harness to run is what this reports, so a
 // harness registered while the window is up is selectable without reopening it.
 func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
-	if m.serverName(msg.server) != m.configServer() {
+	if m.session.serverName(msg.server) != m.configServer() {
 		// Read for a server the header has since moved off. The one it is on
 		// now was asked for when it moved (configServerChanged).
 		return nil
@@ -322,6 +322,7 @@ func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 
 // openHarnesses brings the screen up.
 func (m *Model) openHarnesses() tea.Cmd {
+	m.recordConsoleUse("harnesses")
 	m.harnessesOpen = true
 	m.optionsOpen = false
 	// The secrets screen is this one's peer, not what it is drawn over: one of
@@ -509,7 +510,7 @@ func (m *Model) createHarnessVariant(server string, variant NewHarnessVariant, f
 func (m *Model) harnessVariantCreated(msg harnessVariantCreatedMsg) tea.Cmd {
 	waiting := m.dialog == msg.wait
 	if msg.err != nil {
-		if waiting && m.serverName(msg.server) == m.configServer() {
+		if waiting && m.session.serverName(msg.server) == m.configServer() {
 			msg.form.form.err = fmt.Sprintf("not created: %v", msg.err)
 			m.dialog = msg.form
 			return nil
@@ -519,7 +520,7 @@ func (m *Model) harnessVariantCreated(msg harnessVariantCreatedMsg) tea.Cmd {
 	if waiting {
 		m.dialog = nil
 	}
-	if m.serverName(msg.server) != m.configServer() {
+	if m.session.serverName(msg.server) != m.configServer() {
 		return nil
 	}
 	return tea.Batch(m.report(false, "created variant %q", msg.harness.Name), func() tea.Msg {

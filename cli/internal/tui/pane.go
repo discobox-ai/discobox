@@ -435,24 +435,23 @@ func (m *Model) primary() *pane {
 // It is what the keys dispatch against and what the header reads, so the two
 // answer from the same listing, keeping the header and actions in sync.
 func (m *Model) currentBox() Sandbox {
-	return m.boxByID(m.paneBox.ID)
+	return m.boxByRef(m.boxRef(m.paneBox))
 }
 
-// boxByID is one discobox as the listing last had it: the workspace's own
-// box, or a parked one's.
-func (m *Model) boxByID(id string) Sandbox {
+// boxByRef reads a box from the same server as its workspace or operation.
+func (m *Model) boxByRef(ref boxRef) Sandbox {
 	for _, s := range m.list.all {
-		if s.ID == id {
+		if m.boxRef(s) == ref {
 			return s
 		}
 	}
-	if id == m.paneBox.ID {
+	if m.boxRef(m.paneBox) == ref {
 		return m.paneBox
 	}
-	if ws := m.parked[id]; ws != nil {
+	if ws := m.parked[ref]; ws != nil {
 		return ws.paneBox
 	}
-	return Sandbox{ID: id}
+	return Sandbox{ID: ref.id, Server: ref.server}
 }
 
 // paneKeymap is the keymap the panes this window opens are given, and it is
@@ -493,9 +492,7 @@ func (m *Model) paneOptions(readOnly bool) []termpane.Option {
 		termpane.WithPrefix(m.leader(), ""),
 		// Waiting on the stream is a listener, as every wait in the window is.
 		termpane.WithListen(listen),
-		termpane.WithPrefixBinding(paneMouseKey, toggleMouseMsg{}),
-		termpane.WithPrefixBinding(paneDetachAlt, termpane.DetachMsg{}),
-		termpane.WithPrefixBinding(paneQuitKey, quitPaneMsg{}),
+
 		// A URL printed in here was printed on the other side of the forward,
 		// where the port it names is the sandbox's own. See forwardedURL.
 		termpane.WithLinkRewrite(m.forwardedURL),
@@ -522,68 +519,49 @@ func (m *Model) paneOptions(readOnly bool) []termpane.Option {
 		// screen, rather than the pane in it. See tree.go.
 		termpane.WithRepeatingPrefixBinding("up", switchBoxMsg{delta: -1}),
 		termpane.WithRepeatingPrefixBinding("down", switchBoxMsg{delta: 1}),
-		termpane.WithRepeatingPrefixBinding("k", switchBoxMsg{delta: -1}),
+
 		termpane.WithRepeatingPrefixBinding("j", switchBoxMsg{delta: 1}),
 		// And without the leader at all, on the chords only an enhanced
 		// keyboard protocol encodes (boxStepBare). A window with no tree
 		// hands them back to the program (switchBoxMsg.chord).
 		termpane.WithBinding(boxUpKey, switchBoxMsg{delta: -1, chord: &boxUpChord}),
 		termpane.WithBinding(boxDownKey, switchBoxMsg{delta: 1, chord: &boxDownChord}),
-		termpane.WithPrefixBinding(boxMenuKey, boxMenuMsg{}),
-		termpane.WithPrefixBinding(paneZoomKey, zoomPaneMsg{}),
-		termpane.WithPrefixBinding(paneTerminalKey, newTerminalMsg{}),
-		termpane.WithPrefixBinding(paneEndKey, endPaneMsg{}),
 	)
-	// The tree's entries, on the keys the tree names them by: the new card
-	// and the pages open right of it from the box being typed at.
-	for _, tp := range treePages {
-		opts = append(opts, termpane.WithPrefixBinding(tp.key, treePageMsg{act: tp.act}))
-	}
 	// The digits jump straight to a pane by the number its label wears, the
 	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
 	for n := 0; n <= 9; n++ {
 		opts = append(opts, termpane.WithPrefixBinding(strconv.Itoa(n), jumpPaneMsg{n: n}))
 	}
-	// The tools picker, which is where the editors live rather than on keys of
-	// their own here: a second way to open one of the picker's tools is one
-	// more key to remember for no more reach. See tools.go.
-	opts = append(opts, termpane.WithPrefixBinding(toolsKey, openToolsMsg{}))
-	// The audit screen, over the workspace like a tool. See audit.go.
-	opts = append(opts, termpane.WithPrefixBinding(auditKey, openAuditMsg{}))
-	// The issue and the pull request, each as a tab of its own. See issue.go.
-	opts = append(opts, termpane.WithPrefixBinding(issueKey, openIssueMsg{}))
-	opts = append(opts, termpane.WithPrefixBinding(pullKey, openIssueMsg{pull: true}))
 	// The services have the same alphabet one keystroke further in: S1 through
 	// S9 are their own tabs, and S0 is the menu that reaches the ones with no
 	// tab at all. See paneServicesKey.
-	services := map[string]tea.Msg{paneServicesMenuKey: openServicesMsg{}}
+
+	chords := map[string]map[string]tea.Msg{paneServicesKey: {}}
 	for n := 1; n <= 9; n++ {
-		services[strconv.Itoa(n)] = jumpServiceMsg{n: n}
+		chords[paneServicesKey][strconv.Itoa(n)] = jumpServiceMsg{n: n}
 	}
-	opts = append(opts, termpane.WithPrefixChord(paneServicesKey, services))
-	// The credential request the header is telling you about. It is bound here
-	// rather than only on the list because the workspace is where the banner
-	// says there is one, and an affordance that names a key the pane swallows
-	// is not one.
-	opts = append(opts, termpane.WithPrefixBinding(credentialsLeaderKey, openCredentialsMsg{}))
-	// The credential the header is telling you was refused, for the same
-	// reason: the band names this key, and a key the pane swallowed would make
-	// the band a sentence rather than a button. See rejections.go.
-	opts = append(opts, termpane.WithPrefixBinding(rejectedKey, openRejectedMsg{}))
-	// And the band's own dismissal, for the same reason again: the band draws
-	// a button for it, and the key is the button from the keyboard.
-	opts = append(opts, termpane.WithPrefixBinding(bannerDismissKey, dismissBannerMsg{}))
-	// Every command the list offers, on the key it has there. One key map for
-	// the two screens is the point: the workspace is a discobox with the
-	// cursor on it, and what you can do to it does not change with where you
-	// are looking at it from.
-	opts = append(opts, termpane.WithPrefixBinding(harnessChangesKey, paneActionMsg{key: harnessChangesKey}))
-	for key := range interactions {
-		opts = append(opts, termpane.WithPrefixBinding(key, paneActionMsg{key: key}))
+	for _, c := range m.consoleCommands(nil) {
+		if len(c.prefixKeys) == 0 || c.prefixKeys[0] == "" {
+			continue
+		}
+		msg := tea.Msg(consoleCommandMsg{id: c.id})
+		if c.action {
+			msg = paneActionMsg{key: c.key}
+		}
+		if len(c.prefixKeys) == 1 {
+			opts = append(opts, termpane.WithPrefixBinding(c.prefixKeys[0], msg))
+		} else {
+			lead, key := c.prefixKeys[0], c.prefixKeys[1]
+			if chords[lead] == nil {
+				chords[lead] = map[string]tea.Msg{}
+			}
+			chords[lead][key] = msg
+		}
 	}
-	for key := range verbs {
-		opts = append(opts, termpane.WithPrefixBinding(key, paneActionMsg{key: key}))
+	for lead, bindings := range chords {
+		opts = append(opts, termpane.WithPrefixChord(lead, bindings))
 	}
+
 	return opts
 }
 
@@ -862,17 +840,23 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		// session keeps running without it.
 		return m.closeWindow()
 
+	case consoleCommandMsg:
+		return m.dispatchConsoleCommand(msg.id, m.currentBox())
+
+	case openPaletteMsg:
+		return m.openPalette()
+
 	case openToolsMsg:
-		return m.openTools()
+		return m.openTools(m.currentBox())
 
 	case openAuditMsg:
-		return m.openAudit()
+		return m.openAudit(m.currentBox())
 
 	case openIssueMsg:
-		return m.toggleIssue(msg.pull)
+		return m.toggleIssue(m.currentBox(), msg.pull)
 
 	case openCredentialsMsg:
-		return m.openCredentialDialog(m.paneBox.ID)
+		return m.openCredentialDialog(m.paneBox)
 
 	// The band's other two keys. A binding's message comes back tagged with
 	// its pane, and one this switch does not name is handed to the terminal,

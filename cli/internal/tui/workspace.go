@@ -172,7 +172,7 @@ func (m *Model) openFromList(act Interaction, sandbox Sandbox) tea.Cmd {
 	// The workspace on screen is parked rather than closed, so the tree can
 	// switch back to it without attaching again. See tree.go.
 	m.parkWorkspace()
-	if ws := m.parked[sandbox.ID]; ws != nil {
+	if ws := m.parked[m.boxRef(sandbox)]; ws != nil {
 		cmd := m.unparkWorkspace(ws)
 		if act == InteractShell {
 			cmd = tea.Batch(cmd, m.newShell())
@@ -232,7 +232,7 @@ func (m *Model) attachWorkspace(gen int, sandbox Sandbox, freshShell bool) tea.C
 	// cold image pull is minutes (ADR 0039). Say what it is waiting for while
 	// it does; the watch reports nothing for a discobox that is already up, so
 	// attaching to a running one still shows only "attach…" (ADR 0060).
-	cmds := []tea.Cmd{m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), m.startForward(gen), m.watchProvisioning(sandbox.ID), m.autoPush(sandbox.ID, gen)}
+	cmds := []tea.Cmd{m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), m.startForward(gen), m.watchProvisioning(sandbox), m.autoPush(m.boxRef(sandbox), gen)}
 	if freshShell {
 		cmds = append(cmds, m.newShell())
 	}
@@ -261,7 +261,7 @@ type sourceDeliveredMsg struct {
 // answer, failure included.
 func (m *Model) deliverSource(gen int, sandbox Sandbox, freshShell bool) tea.Cmd {
 	feed, next := m.narrate()
-	ctx, ds := m.ctx, m.ds
+	ctx, ds := m.ctx, m.ds.ForServer(sandbox.Server)
 	deliver := func() tea.Msg {
 		defer feed.close()
 		err := ds.DeliverSource(ctx, sandbox.ID, feed.report, feed.credentials())
@@ -295,7 +295,7 @@ func (m *Model) sourceDelivered(msg sourceDeliveredMsg) tea.Cmd {
 // the reachable form of that list is what the screen shows from the moment it
 // is up.
 func (m *Model) startForward(gen int) tea.Cmd {
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		forward, err := ds.Forward(ctx, id)
 		return workspaceForwardMsg{gen: gen, forward: forward, err: err}
@@ -369,7 +369,7 @@ func (m *Model) forwardedPorts() map[portKey]int {
 // no exec to report — so a tab strip drawn from it alone is silent about
 // exactly the service you need to hear about.
 func (m *Model) listServices(gen int) tea.Cmd {
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		services, err := ds.Services(ctx, id)
 		return workspaceServicesMsg{gen: gen, services: services, err: err}
@@ -378,7 +378,7 @@ func (m *Model) listServices(gen int) tea.Cmd {
 
 // listExecs asks the server what is running in the workspace's discobox.
 func (m *Model) listExecs(gen int) tea.Cmd {
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		execs, err := ds.Execs(ctx, id)
 		return workspaceExecsMsg{gen: gen, execs: execs, err: err}
@@ -545,7 +545,7 @@ func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
 func (m *Model) openService(gen int, service Service, order int) tea.Cmd {
 	term, _ := m.columns(m.shells.len())
 	cols, rows := m.paneCells(term)
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		// The transcript is read for both kinds of pane, and read first.
 		//
@@ -675,7 +675,7 @@ func serviceExec(exec Exec) bool { return exec.Service != "" }
 // the wrong size draws itself wrong before anything can correct it.
 func (m *Model) openExec(gen int, exec Exec, width int) tea.Cmd {
 	cols, rows := m.paneCells(width)
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		term, err := ds.OpenExec(ctx, id, exec.ID, cols, rows)
 		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err}
@@ -691,7 +691,7 @@ func (m *Model) newShell() tea.Cmd {
 	gen := m.wsGen
 	_, shells := m.columns(m.shells.len() + 1)
 	cols, rows := m.paneCells(shells)
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewShell(ctx, id, cols, rows)
 		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: InteractShell, focus: true}
@@ -711,7 +711,7 @@ func (m *Model) newTerminal() tea.Cmd {
 	gen := m.wsGen
 	term, _ := m.columns(m.shells.len())
 	cols, rows := m.paneCells(term)
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewTerminal(ctx, id, cols, rows)
 		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: InteractTerminal, focus: true}
@@ -773,7 +773,7 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 			// box failed on an image its pool cannot get. A listing read after
 			// the failure can, so the offer asks for one of its own.
 			m.layout()
-			return tea.Batch(m.refresh(), m.checkImageOffer(box.ID), m.report(true, "%s: %v", action, msg.err))
+			return tea.Batch(m.refresh(), m.checkImageOffer(box), m.report(true, "%s: %v", action, msg.err))
 		}
 		// Re-fit what did open: a primary sized for a split whose tabs never
 		// arrived should take the width back.
@@ -781,6 +781,9 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 		return m.report(true, "%s: %v", action, msg.err)
 	}
 
+	if primary {
+		m.recordPaletteVisit(m.paneBox)
+	}
 	if !primary {
 		if existing := m.paneByExec(msg.exec.ID); existing != nil {
 			// The poll and a leader key race onto the same session; the tab
@@ -988,7 +991,7 @@ func (m *Model) endPane(p *pane) tea.Cmd {
 	}
 	m.ending[execID] = true
 	m.closeTab(p)
-	ctx, ds, box := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, box := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	// The report of the end comes from the same command as the kill, so it is
 	// said once the server has done it, and a refusal cannot land ahead of it
 	// and be written over.
@@ -1027,6 +1030,9 @@ func (m *Model) endExecFailed(msg endExecFailedMsg) tea.Cmd {
 // terminal and every tab — and every session keeps running. Bumping
 // the generation is what ends the poll and orphans any open still in flight.
 func (m *Model) closeWorkspace() {
+	if m.paletteReveal != nil && (m.hasWorkspace() || m.wsOpening) && m.paletteReveal.target == m.boxRef(m.paneBox) {
+		m.restorePaletteView()
+	}
 	m.wsOpening = false
 	m.listFront, m.treeExpanded = false, false
 	m.endLiveScreen()

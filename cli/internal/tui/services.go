@@ -96,12 +96,13 @@ type serviceVerbMsg struct {
 
 // openServices asks for the discobox's services and opens the menu on them.
 func (m *Model) openServices() tea.Cmd {
+	m.recordConsoleUse("services")
 	if m.paneBox.ID == "" {
 		return nil
 	}
 	m.busy = "services…"
 	gen := m.wsGen
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		services, err := ds.Services(ctx, id)
 		return servicesMsg{gen: gen, services: services, err: err}
@@ -188,7 +189,7 @@ func (m *Model) runServiceVerb(verb ServiceVerb, service Service) tea.Cmd {
 		return nil
 	}
 	m.busy = string(verb) + "…"
-	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	name := service.displayName()
 	return func() tea.Msg {
 		err := ds.DoService(ctx, verb, id, service.ID)

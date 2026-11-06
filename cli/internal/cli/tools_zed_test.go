@@ -44,13 +44,14 @@ func runToolsZedCmd(t *testing.T, fake *sshConfigFakeServer, args ...string) (ho
 // reads before Zed is told to use it, and the window has to open on the working
 // tree rather than the home directory an SSH session lands in.
 func TestToolsZedWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	record := fakeZed(t)
-	_, state, _, err := runToolsZedCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
+	_, state, _, err := runToolsZedCmd(t, sshFixture, "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 
-	configPath, _ := managedPaths(state)
+	configPath, _ := managedPaths(t, state)
 	config := readFile(t, configPath)
 	if !strings.Contains(config, "Host sbx_devbox00000001 ") {
 		t.Fatalf("the editor's host is not in the config ssh reads:\n%s", config)
@@ -62,7 +63,7 @@ func TestToolsZedWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 	// A URL rather than a path argument, on every platform: the launcher passes
 	// a known scheme through untouched and rewrites a bare path. No user and no
 	// port either — the stanza carries both.
-	want := []string{"--new", "ssh://sbx_devbox00000001/home/agent/repo"}
+	want := []string{"--new", "ssh://" + sshConfigHost(sshConfigNamespace(sshFixture.url, resolvedTestProjectID), "sbx_devbox00000001") + "/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -70,8 +71,9 @@ func TestToolsZedWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 
 // Arguments past the sandbox belong to the editor.
 func TestToolsZedPassesEditorArgumentsThrough(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	record := fakeZed(t)
-	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
+	if _, _, _, err := runToolsZedCmd(t, sshFixture,
 		"sbx_devbox00000001", "--", "--foreground"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
@@ -91,7 +93,7 @@ func TestToolsZedEncodesTheWorkdir(t *testing.T) {
 	if _, _, _, err := runToolsZedCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
-	want := []string{"--new", "ssh://sbx_devbox00000001/home/agent/my%20repo"}
+	want := []string{"--new", "ssh://" + sshConfigHost(sshConfigNamespace(fake.url, resolvedTestProjectID), "sbx_devbox00000001") + "/home/agent/my%20repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -108,7 +110,7 @@ func TestToolsZedOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 	if _, _, _, err := runToolsZedCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
-	want := []string{"--new", "ssh://sbx_devbox00000001/workspace"}
+	want := []string{"--new", "ssh://" + sshConfigHost(sshConfigNamespace(fake.url, resolvedTestProjectID), "sbx_devbox00000001") + "/workspace"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -117,9 +119,10 @@ func TestToolsZedOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 // Nothing is written for a window that could never open: a missing editor is
 // the one failure the user cannot fix after the fact, so it is found first.
 func TestToolsZedFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("DISCOBOX_ZED", "")
-	_, state, _, err := runToolsZedCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
+	_, state, _, err := runToolsZedCmd(t, sshFixture, "sbx_devbox00000001")
 	if err == nil {
 		t.Fatal("expected tools zed to fail with no editor installed")
 	}
@@ -128,8 +131,8 @@ func TestToolsZedFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 			t.Fatalf("error should name the editor and how to point at one, got: %v", err)
 		}
 	}
-	configPath, _ := managedPaths(state)
-	if _, statErr := os.Stat(configPath); statErr == nil {
+	paths, _ := filepath.Glob(filepath.Join(state, "discobox", "cli", "ssh", "*", "config"))
+	if len(paths) != 0 {
 		t.Fatal("a config was written for a window that never opened")
 	}
 }
@@ -137,8 +140,9 @@ func TestToolsZedFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 // --program names a build that is not one of the ones looked for, which is how a
 // Zed installed under a packager's own name is reached.
 func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	record := fakeZed(t)
-	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
+	if _, _, _, err := runToolsZedCmd(t, sshFixture,
 		"--program", "zed", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
@@ -146,7 +150,7 @@ func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 		t.Fatal("the named editor was not run")
 	}
 
-	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
+	if _, _, _, err := runToolsZedCmd(t, sshFixture,
 		"--program", "not-an-editor", "sbx_devbox00000001"); err == nil {
 		t.Fatal("expected an editor that is not installed to fail")
 	}
@@ -161,10 +165,11 @@ func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 // found, so finding one would not merely fail: it would open that editor on a
 // host that exists only in the temporary HOME this test just pointed at.
 func TestToolsZedDoesNotFallBackToVSCode(t *testing.T) {
+	sshFixture := vscodeFakeServer()
 	record := fakeVSCode(t)
 	t.Setenv("PATH", filepath.Dir(record))
 	t.Setenv("DISCOBOX_ZED", "")
-	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(), "sbx_devbox00000001"); err == nil {
+	if _, _, _, err := runToolsZedCmd(t, sshFixture, "sbx_devbox00000001"); err == nil {
 		t.Fatal("expected tools zed to fail on a machine with only VS Code installed")
 	}
 }

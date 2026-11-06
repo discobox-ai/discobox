@@ -95,7 +95,7 @@ func TestARefusedPushIsHeldUntilTheCommitMoves(t *testing.T) {
 
 		// The next look carries what is being held, and says nothing further about
 		// it — the fake holds it back exactly as the data source does.
-		d.dispatch(autoPushTickMsg{box: m.paneBox.ID, gen: m.wsGen})
+		d.dispatch(autoPushTickMsg{box: m.boxRef(m.paneBox), gen: m.wsGen})
 		d.wait("the second look", func() bool { return len(ds.pushedCalls()) > 1 })
 		d.settle()
 
@@ -126,7 +126,7 @@ func TestANewCommitReleasesAHeldPush(t *testing.T) {
 		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "c81e2ab30f45", Pushed: true}}
 		ds.mu.Unlock()
 
-		d.dispatch(autoPushTickMsg{box: m.paneBox.ID, gen: m.wsGen})
+		d.dispatch(autoPushTickMsg{box: m.boxRef(m.paneBox), gen: m.wsGen})
 		d.wait("the push", func() bool { return strings.Contains(m.status, "pushed c81e2ab30f45") })
 	})
 }
@@ -149,7 +149,7 @@ func TestLeavingTheWorkspaceStopsPushing(t *testing.T) {
 		d.wait("the workspace to close", func() bool { return !m.inPanes() })
 		before := len(ds.pushedCalls())
 
-		d.dispatch(autoPushTickMsg{box: box, gen: stale})
+		d.dispatch(autoPushTickMsg{box: boxRef{"", box}, gen: stale})
 		d.settle()
 
 		if after := len(ds.pushedCalls()); after != before {
@@ -178,7 +178,7 @@ func TestAnAnsweredRefusalReleasesTheHold(t *testing.T) {
 		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", UpToDate: true}}
 		ds.mu.Unlock()
 
-		d.dispatch(autoPushTickMsg{box: m.paneBox.ID, gen: m.wsGen})
+		d.dispatch(autoPushTickMsg{box: m.boxRef(m.paneBox), gen: m.wsGen})
 		d.wait("the hold to go", func() bool { _, held := m.pushHeld["primary"]; return !held })
 		if m.status != "" {
 			t.Fatalf("status = %q, want nothing said about a refusal somebody else answered", m.status)

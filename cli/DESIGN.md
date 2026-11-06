@@ -630,9 +630,12 @@ is an error rather than a lost convenience.
   candidates the caller has already listed, in the caller's words.
   `findOnEveryServer` and the picker answer with the `*server`, so a caller
   comparing where two discoboxes are can name both.
-- **The console routes two ways.** A call about one discobox finds its server
-  from the ID the listing located it under (`apiDataSource.at`). A call about
-  a server's configuration — harnesses, secrets, bindings, answering a
+- **The console pins box operations to their snapshot's server.**
+  `DataSource.ForServer` returns a single-server `apiDataSource`; lifecycle
+  actions, confirmations, workspace interactions and their follow-ups retain
+  that source. A newer listing cannot redirect an old visible box by ID.
+  Independent servers may list the same box ID; aliases deduplicate only when
+  their server peer identities agree. A call about a server's configuration — harnesses, secrets, bindings, answering a
   credential request — is handed the server's name and resolves it
   (`apiDataSource.on`), because a secret ID says nothing about where it lives
   until that server has been asked, and asking is the call that needs to know
@@ -2085,11 +2088,11 @@ level or layering on the attach transports above.
   both spellings — the one this process opens and the one the reading ssh uses
   — because on WSL they are different files to look at and the same file in
   fact. `admin ssh-config` always writes for this machine's own ssh.
-- The host key is verified under `HostKeyAlias`, one name per project
-  (`<project id>.discobox.internal`), which is also the `known_hosts` host
+- The host key is verified under `HostKeyAlias`, one name per server/project
+  (`<project-id>-<endpoint-hash>.discobox.internal`), which is also the `known_hosts` host
   field. A stanza with no address gives ssh nothing to derive a name from. The
-  project ID is resolved for printing as well as writing, since the alias is
-  derived from it. (`knownHostsHost`'s bracketed `[host]:port` form survives for
+  project ID is resolved for printing as well as writing; the alias combines it
+  with the endpoint hash so independent servers never share a trust entry. (`knownHostsHost`'s bracketed `[host]:port` form survives for
   `tools ssh`'s temporary known_hosts, which really is per port.)
 - `GET /ssh` carries the host key and nothing else — `sshHostKey` is the one
   reader — because there is no address to discover and nothing to enable.
@@ -2101,18 +2104,17 @@ level or layering on the attach transports above.
   not pile up duplicates. The private key is written in OpenSSH's own format,
   not the PKCS#8 PEM the server uses for its host key, because this file is
   read by the `ssh` binary rather than by `x/crypto/ssh`.
-- Each stanza carries four `Host` patterns, all from the sandbox ID: the ID
+- Each stanza carries five `Host` patterns, all from the sandbox ID: the ID
   and its hyphenated spelling (`sbx-…`, the discobox's own hostname, via
-  `id.Hostname`), each bare and suffixed with `.discobox.internal`. The bare
-  ID is the host handed to every tool (`{ssh.host}`, the VS Code window's
-  machine) and printed by the console; the suffixed form is the spelling to
-  fall back on should a bare one collide with a real host.
+  `id.Hostname`), each bare and suffixed with `.discobox.internal`, plus the server/project-qualified
+  tool alias. The bare
+  ID remains a manual shortcut. Tools receive a qualified alias combining the
+  box ID, resolved project ID and a hash of the server endpoint, so the first
+  matching SSH block cannot route a cross-server selection elsewhere.
 - **The sandbox's name is never a pattern.** A generated name is neither
   stable nor unique the way an ID is — a renamed discobox, a name that spells
   another's ID, two servers' discoboxes of one name — and ssh applies the
-  *first* matching block, so a name would silently reach the wrong one. With
-  every pattern derived from an ID none can be contested, so no stanza is ever
-  dropped. `User` carries the ID too, which is what `ResolveUsername` routes
+  *first* matching block, so a name would silently reach the wrong one. Bare aliases can collide across servers; qualified tool aliases cannot. No stanza is dropped. `User` carries the ID too, which is what `ResolveUsername` routes
   on. A write rewrites its own project's file wholesale, and re-keys every
   other project's managed file under the same target by the `User` each
   stanza carries (`rekeyManagedSSHConfigs`), since that project may never be
@@ -2131,13 +2133,14 @@ level or layering on the attach transports above.
   pointing at a moved — or, on Windows, wrongly permissioned — file breaks every
   connection through the config, the ones the new line was written to enable
   included. Other projects' lines under the current state directory stay: one
-  per project is the design, and the user's own `Include`s are never touched. Both files are scoped to the project — `<state>/ssh/<project
-  id>/{config,known_hosts}`, one `Include` each — because a run only knows
+  per project is the design, and the user's own `Include`s are never touched. Both files are scoped to the resolved project and server endpoint —
+  `<state>/ssh/<project-id>-<endpoint-hash>/{config,known_hosts}`, one `Include` each — because a run only knows
   about the project it was given: a shared file would drop every other
   project's stanzas on each write, and two projects can live on different
   servers with different addresses and host keys. The ID is resolved first, so
   the same project reached as `default` and by ID does not end up owning two
-  files. Nothing else in `~/.ssh` is edited: this command owns those
+  files. Older project-only generated files are retained; matching-route stanzas
+  are retired with a migration note, while other routes remain untouched. Nothing else in `~/.ssh` is edited: this command owns those
   two files and rewrites them wholesale, so it never has to parse or merge into
   a config the user maintains by hand. The `Include` goes at the *top*, because
   ssh takes the first value obtained for each keyword and an `Include` placed

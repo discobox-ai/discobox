@@ -51,6 +51,13 @@ const (
 
 // Model is the launcher window.
 type Model struct {
+	paletteReveal *paletteReveal
+
+	palette       *palette
+	paletteRecent map[boxRef]int
+	paletteUsage  map[string]int
+	paletteClock  int
+
 	gitPolicyGen uint64
 	// reviewEnds counts the files changed sessions being ended in their
 	// discoboxes, which EndReviews waits for (pullreview.go).
@@ -101,9 +108,9 @@ type Model struct {
 	// screenWidth is the terminal's width; width is what the window draws in,
 	// which is less the workspace tree while it is up. See tree.go.
 	screenWidth int
-	// parked is every workspace switched away from, by discobox id, still
+	// parked is every workspace switched away from, by server and discobox id, still
 	// attached; wsOpening is a workspace on its way up, before its primary.
-	parked    map[string]*workspace
+	parked    map[boxRef]*workspace
 	wsOpening bool
 	// treeZones is the tree's own hit map. listFront is the list in the tree
 	// holding the keys while a workspace is open; treeExpanded is the list
@@ -121,7 +128,7 @@ type Model struct {
 	// (endLiveScreen). Any other narration taking the line clears it.
 	createNarrating bool
 	// cursorOn is the box syncListCursor last found in the list.
-	cursorOn string
+	cursorOn boxRef
 	// treeHoverX and treeHoverY are where the pointer rests over the tree,
 	// -1 when it is elsewhere.
 	treeHoverX, treeHoverY int
@@ -207,14 +214,14 @@ type Model struct {
 	// the poll and the picker cannot open two panes onto one session.
 	toolOpening map[string]bool
 	// addresses is what each discobox answers to from a shell on this
-	// machine, keyed by sandbox id, once the picker has asked. An entry that
+	// machine, keyed by server and sandbox id, once the picker has asked. An entry that
 	// is present and empty is a lookup still running — which is what keeps
 	// reopening the picker from starting a second one — so absence, not a
 	// zero value, is what means "never asked". See tools.go.
-	addresses map[string]resolvedAddresses
-	// toolCatalogs is each discobox's tools, keyed by sandbox id, as the
+	addresses map[boxRef]resolvedAddresses
+	// toolCatalogs is each discobox's tools, keyed by server and sandbox id, as the
 	// picker last found them. See tools.go.
-	toolCatalogs map[string]resolvedTools
+	toolCatalogs map[boxRef]resolvedTools
 	// toolWanted is a tool asked for before its discobox's catalog arrived.
 	toolWanted toolWant
 	// copied is the address last taken off that card, so the row it came from
@@ -313,7 +320,7 @@ type Model struct {
 	// press on the same cell is a double click only on the same box, since a
 	// listing that reordered the tree between the two would otherwise start
 	// one the first press never pointed at.
-	clickBox string
+	clickBox boxRef
 	// now is the clock the window counts elapsed time against: the
 	// double-click window above, and how long a read has been out (see poll),
 	// which is what decides whether the band says the listing is late. One
@@ -540,7 +547,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	ta.SetStyles(composer)
 	ta.Focus()
 
-	session := Session{DefaultProject: "default"}
+	session := Session{DefaultProject: "default", PrimaryServer: ds.PrimaryServer()}
 	m := &Model{
 		ctx:            ctx,
 		ds:             ds,
@@ -594,7 +601,7 @@ func (m *Model) made() *Sandbox {
 		return nil
 	}
 	for _, s := range m.list.all {
-		if s.ID == m.attach.ID {
+		if m.boxRef(s) == m.boxRef(*m.attach) {
 			return &s
 		}
 	}
@@ -867,9 +874,9 @@ type createdMsg struct {
 
 // verbDoneMsg reports a lifecycle verb that ran against the API and returned.
 type verbDoneMsg struct {
-	verb Verb
-	ids  []string
-	errs []error
+	verb    Verb
+	targets []Sandbox
+	errs    []error
 	// notes are, per id, what the answer left that sandbox doing beyond what
 	// the verb says (DataSource.Do).
 	notes []string
@@ -884,7 +891,7 @@ type verbThen struct {
 	leave bool
 	// next is the box an archive beside the tree goes on to once it is
 	// answered: the archived box's neighbor in the tree.
-	next string
+	next boxRef
 }
 
 // runActionMsg carries a choice out of the action menu. The menu cannot run the
@@ -924,7 +931,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if mouse, ok := msg.(tea.MouseMsg); ok && m.treeShown() {
+	if mouse, ok := msg.(tea.MouseMsg); ok && m.palette == nil && m.treeShown() {
 		shifted, cmd, taken := m.treeMouse(mouse)
 		if taken {
 			if m.syncWidth() {
@@ -1097,7 +1104,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// the tree's cursor once it lands. Only while it is open: the box a
 		// closed workspace leaves in paneBox is no longer the cursor's to
 		// follow, and an archive beside the tree has put it on another.
-		if (m.hasWorkspace() || m.wsOpening) && !m.listFront && m.cursorOn != m.paneBox.ID {
+		if (m.hasWorkspace() || m.wsOpening) && !m.listFront && m.cursorOn != m.boxRef(m.paneBox) {
 			m.syncListCursor()
 		}
 		// What the project has been cut from is read off the same listing the
@@ -1304,7 +1311,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case runVerbMsg:
-		return m.runVerb(msg.verb, msg.ids, verbThen{})
+		return m.runVerb(msg.verb, msg.targets, verbThen{})
 
 	case imageReadMsg:
 		return m.imagesRead(msg)
@@ -1320,7 +1327,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.verbDone(msg)
 
 	case renameMsg:
-		return m.rename(msg.id, msg.name)
+		return m.rename(msg.box, msg.name)
 
 	case renameDoneMsg:
 		return m.renameDone(msg)
@@ -1403,9 +1410,15 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.toolOpened(msg)
 
 	case runToolMsg:
+		if m.boxRef(m.currentBox()) != msg.box {
+			return status("the tools target is no longer on screen")
+		}
 		return m.runTool(msg.id)
 
 	case toolFilesMsg:
+		if m.boxRef(m.currentBox()) != msg.box {
+			return status("the tools target is no longer on screen")
+		}
 		return m.openToolFiles(msg.id)
 
 	case toolFileMsg:
@@ -1465,11 +1478,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		case paneServicesKey:
 			return m.openServices()
 		case auditKey:
-			return m.openAudit()
+			return m.openAudit(m.currentBox())
 		case allBoxesKey:
 			return m.showAllBoxes()
 		}
-		return m.openTools()
+		return m.openTools(m.currentBox())
 
 	case harnessesLoadedMsg:
 		return m.harnessesLoaded(msg)
@@ -1608,6 +1621,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 // nothing on screen a paste could land in, and text pushed into a composer
 // nobody can see is worse than a paste that does nothing.
 func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
+	if m.palette != nil {
+		return m.palettePaste(msg)
+	}
 	switch {
 	case m.dialog != nil:
 		return m.dialog.paste(msg)
@@ -1727,6 +1743,9 @@ func (m *Model) windowWalks() bool {
 }
 
 func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
+	if m.palette != nil {
+		return m.paletteKey(msg)
+	}
 	msg = unshiftBackspace(msg)
 
 	// The opening flourish is over the moment there is anything to do.
@@ -1807,6 +1826,9 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if key != m.leader() {
 			key = strings.TrimPrefix(key, keys.Modifier(m.leader()))
 		}
+		if key == paletteKey {
+			return m.openPalette()
+		}
 		if key == paneQuitKey {
 			return m.closeWindow()
 		}
@@ -1878,7 +1900,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if m.audit != nil && m.inPanes() {
 			switch key {
 			case credentialsLeaderKey:
-				return m.openCredentialDialog(m.paneBox.ID)
+				return m.openCredentialDialog(m.paneBox)
 			case rejectedKey:
 				return m.openRejectedRemedy(m.currentBox())
 			case harnessChangesKey:
@@ -1893,12 +1915,14 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.leaderArmed = true
 		return nil
 	}
+	if keyName(msg) == ":" && (m.focus == focusList || m.listHasKeys()) && !m.modalUp() && !m.newOpen {
+		return m.openPalette()
+	}
 	if cmd, taken := m.treeKey(msg); taken {
 		return cmd
 	}
 	if keyName(msg) == "f1" {
-		m.dialog = m.helpDialog()
-		return nil
+		return m.dispatchConsoleCommand("help", Sandbox{})
 	}
 	// The audit screen is drawn over the workspace and takes its keys: none of
 	// the panes under it is on screen to be typed at. See audit.go.
@@ -1948,6 +1972,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// frame exactly as it was — one press of the key the panel's own harness
 	// row advertises, doing nothing.
 	if keyName(msg) == optionsKey && !m.inPanes() {
+		m.recordConsoleUse("options")
 		m.optionsOpen = !m.optionsOpen
 		if m.optionsOpen {
 			m.harnessesOpen, m.secretsOpen = false, false
@@ -2141,7 +2166,8 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		// never the selection: approving a credential for several boxes at
 		// once is not a thing anyone means to do.
 		if s := m.list.current(); s != nil {
-			return m.openCredentialDialog(s.ID)
+			m.recordConsoleUse("requests")
+			return m.openCredentialDialog(*s)
 		}
 		return nil
 	case "down", "j":
@@ -2214,17 +2240,11 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		m.list.visual = false
 		return status("selection cleared")
 	case "A":
-		m.list.showArchived = !m.list.showArchived
-		m.list.clamp()
-		m.layout()
-		if m.list.showArchived {
-			return status("showing archived discoboxes")
-		}
-		return status("hiding archived discoboxes")
+		return m.dispatchConsoleCommand("archived", Sandbox{})
 	case "r":
-		return tea.Batch(m.refresh(), status("refreshing"))
+		return tea.Batch(m.dispatchConsoleCommand("refresh", Sandbox{}), status("refreshing"))
 	case "?":
-		m.dialog = m.helpDialog()
+		return m.dispatchConsoleCommand("help", Sandbox{})
 	case "enter":
 		return m.act("a")
 	case "delete":
@@ -2235,11 +2255,23 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		return m.act("x")
 	case ".":
 		targets := m.list.targets()
+		m.recordConsoleUse("actions")
 		m.dialog = actionsDialog(actionTitle(targets), "", m.actions(targets), chooseAction(targets))
 	default:
-		for _, a := range m.actions(m.list.targets()) {
-			if a.key == keyName(msg) {
-				return m.act(a.key)
+		for _, c := range m.consoleCommands(m.list.current()) {
+			if c.key == keyName(msg) && c.key != "" {
+				if c.targeted {
+					for _, a := range m.actions(m.list.targets()) {
+						if a.key == c.key {
+							return m.act(c.key)
+						}
+					}
+					if box := m.list.current(); box != nil {
+						return m.dispatchConsoleCommand(c.id, *box)
+					}
+					return status("nothing selected")
+				}
+				return m.executeConsoleCommand(c, Sandbox{})
 			}
 		}
 	}
@@ -2284,6 +2316,7 @@ func (m *Model) touched() {
 }
 
 func (m *Model) backToPrompt() {
+	m.restorePaletteView()
 	m.focus = focusPrompt
 	if !m.submitting {
 		m.prompt.Focus()
@@ -2563,10 +2596,12 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		return nil
 	}
 
-	ids := make([]string, 0, len(targets))
 	for _, s := range targets {
-		ids = append(ids, s.ID)
+		if m.ds.ForServer(s.Server) == nil {
+			return status("server %q is no longer available", s.Server)
+		}
 	}
+	m.recordConsoleUse(chosen.label)
 
 	if key == harnessChangesKey {
 		return m.reviewHarnessChanges(targets[0])
@@ -2591,7 +2626,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 			// the primary, which is what attach means there: it is the session
 			// the workspace is a view onto. From the list it is the screen to
 			// open.
-			if m.inPanes() {
+			if m.inPanes() && m.boxRef(box) == m.boxRef(m.paneBox) {
 				// By pointer rather than by number: the primary is 0 in the
 				// digits, but the services sit ahead of it in the strip and a
 				// jump by position would land on one of those.
@@ -2602,7 +2637,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 			}
 			return m.openFromList(action, box)
 		case InteractShell:
-			if m.inPanes() {
+			if m.inPanes() && m.boxRef(box) == m.boxRef(m.paneBox) {
 				return m.newShell()
 			}
 			return m.openFromList(action, box)
@@ -2620,7 +2655,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		question := fmt.Sprintf("Purge %s? The disk and everything on it goes, and unarchive cannot bring it back.",
 			actionTitle(targets))
 		d := confirmDialog("Purge", question, func(string) tea.Cmd {
-			return func() tea.Msg { return runVerbMsg{verb: VerbPurge, ids: ids} }
+			return func() tea.Msg { return runVerbMsg{verb: VerbPurge, targets: targets} }
 		})
 		// Enter means no: a destruction nobody can undo has to be typed for,
 		// not fallen into by answering the dialog the way every other one is.
@@ -2628,18 +2663,18 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		m.dialog = d
 		return nil
 	}
-	if verb == VerbArchive && m.inPanes() {
+	if verb == VerbArchive && m.inPanes() && len(targets) == 1 && m.boxRef(targets[0]) == m.boxRef(m.paneBox) {
 		// From the workspace the one target is the discobox it shows.
 		return m.archiveWorkspace(targets[0])
 	}
-	return m.runVerb(verb, ids, verbThen{})
+	return m.runVerb(verb, targets, verbThen{})
 }
 
 // runVerbMsg is a confirmed verb on its way back to the live model, for the
 // same reason the action menu emits a message rather than running anything.
 type runVerbMsg struct {
-	verb Verb
-	ids  []string
+	verb    Verb
+	targets []Sandbox
 }
 
 // repairKey is the letter repair answers to. It is R rather than r, which
@@ -2671,20 +2706,26 @@ var interactions = map[string]Interaction{
 // seconds in which the row looks untouched.
 //
 // then is what the answer does beyond being reported (verbThen).
-func (m *Model) runVerb(verb Verb, ids []string, then verbThen) tea.Cmd {
+func (m *Model) runVerb(verb Verb, targets []Sandbox, then verbThen) tea.Cmd {
+
 	feed, next := m.narrate()
 	m.busy = string(verb) + "…"
 	if verb == VerbArchive {
-		m.list.markArchiving(ids)
+		m.list.markArchiving(targets)
 	}
 	run := func() tea.Msg {
 		defer feed.close()
-		errs := make([]error, len(ids))
-		notes := make([]string, len(ids))
-		for i, id := range ids {
-			notes[i], errs[i] = m.ds.Do(m.ctx, verb, id, feed.credentials())
+		errs := make([]error, len(targets))
+		notes := make([]string, len(targets))
+		for i, box := range targets {
+			source := m.ds.ForServer(targets[i].Server)
+			if source == nil {
+				errs[i] = fmt.Errorf("server %q is no longer available", targets[i].Server)
+				continue
+			}
+			notes[i], errs[i] = source.Do(m.ctx, verb, box.ID, feed.credentials())
 		}
-		return verbDoneMsg{verb: verb, ids: ids, errs: errs, notes: notes, then: then}
+		return verbDoneMsg{verb: verb, targets: targets, errs: errs, notes: notes, then: then}
 	}
 	return tea.Batch(run, next)
 }
@@ -2713,13 +2754,13 @@ func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
 	// Read before the workspace closes: the tree is drawn only beside one.
 	var next *Sandbox
 	if m.treeAvailable() {
-		next = m.list.neighbor(box.ID)
+		next = m.list.neighbor(box)
 	}
 	m.closeWorkspace()
 	m.layout()
 	if next != nil {
-		m.listCursorTo(next.ID)
-		return m.runVerb(VerbArchive, []string{box.ID}, verbThen{next: next.ID})
+		m.listCursorTo(*next)
+		return m.runVerb(VerbArchive, []Sandbox{box}, verbThen{next: m.boxRef(*next)})
 	}
 	leave := m.attach != nil
 	if leave {
@@ -2733,7 +2774,7 @@ func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
 		d.back = d
 		m.dialog = d
 	}
-	return m.runVerb(VerbArchive, []string{box.ID}, verbThen{leave: leave})
+	return m.runVerb(VerbArchive, []Sandbox{box}, verbThen{leave: leave})
 }
 
 // archivedOnTo goes on from an archive beside the tree to the box it picked
@@ -2743,14 +2784,14 @@ func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
 // up — keeps where it is.
 func (m *Model) archivedOnTo(msg verbDoneMsg, failed bool) tea.Cmd {
 	cur := m.list.current()
-	if cur == nil || cur.ID != msg.then.next || m.hasWorkspace() || m.wsOpening || m.dialog != nil || m.focus != focusList {
+	if cur == nil || m.boxRef(*cur) != msg.then.next || m.hasWorkspace() || m.wsOpening || m.dialog != nil || m.focus != focusList {
 		return nil
 	}
 	if failed {
-		m.listCursorTo(msg.ids[0])
+		m.listCursorTo(msg.targets[0])
 		return nil
 	}
-	if box := *cur; box.live() || m.parked[box.ID] != nil {
+	if box := *cur; box.live() || m.parked[m.boxRef(box)] != nil {
 		return m.switchTo(box)
 	}
 	return nil
@@ -2771,19 +2812,19 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 			}
 		}
 	}
-	done := len(msg.ids) - failed
+	done := len(msg.targets) - failed
 	if done > 0 {
 		m.list.clearSelection()
 	}
 	// Before anything puts the cursor back on a box whose archive failed:
 	// its row is listed again first.
 	if msg.verb == VerbArchive {
-		var answered, refused []string
-		for i, id := range msg.ids {
+		var answered, refused []Sandbox
+		for i, box := range msg.targets {
 			if msg.errs[i] != nil {
-				refused = append(refused, id)
+				refused = append(refused, box)
 			} else {
-				answered = append(answered, id)
+				answered = append(answered, box)
 			}
 		}
 		m.list.answeredArchives(answered, m.listPoll.sent)
@@ -2799,16 +2840,16 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 		return m.exit(nil)
 	}
 	var onTo tea.Cmd
-	if msg.then.next != "" {
+	if msg.then.next.id != "" {
 		onTo = m.archivedOnTo(msg, failed > 0)
 	}
 	switch {
 	case failed == 0:
 		return tea.Batch(m.refresh(), m.report(false, "%s: %s%s", msg.verb, plural(done, "box", "boxes"), m.verbNotes(msg)), onTo)
-	case done == 0 && len(msg.ids) == 1:
+	case done == 0 && len(msg.targets) == 1:
 		return tea.Batch(m.refresh(), m.report(true, "%s: %v", msg.verb, firstErr), onTo)
 	default:
-		return tea.Batch(m.refresh(), m.report(true, "%s: %d of %d failed: %v", msg.verb, failed, len(msg.ids), firstErr), onTo)
+		return tea.Batch(m.refresh(), m.report(true, "%s: %d of %d failed: %v", msg.verb, failed, len(msg.targets), firstErr), onTo)
 	}
 }
 
@@ -2821,10 +2862,10 @@ func (m *Model) verbNotes(msg verbDoneMsg) string {
 		if note == "" || msg.errs[i] != nil {
 			continue
 		}
-		if len(msg.ids) == 1 {
+		if len(msg.targets) == 1 {
 			return ", " + note
 		}
-		noted = append(noted, sandboxLabel(m.boxByID(msg.ids[i]))+" "+note)
+		noted = append(noted, sandboxLabel(msg.targets[i])+" "+note)
 	}
 	if len(noted) == 0 {
 		return ""
@@ -2842,7 +2883,10 @@ const renameKey = "e"
 
 // renameMsg is an accepted name on its way back to the live model, the same way
 // the action menu and a confirmation hand their answers back.
-type renameMsg struct{ id, name string }
+type renameMsg struct {
+	box  Sandbox
+	name string
+}
 
 type renameDoneMsg struct {
 	name string
@@ -2872,15 +2916,15 @@ func (m *Model) askRename(box Sandbox) tea.Cmd {
 			if name == current || (name == "" && box.GivenName == "") {
 				return status("name unchanged")
 			}
-			return func() tea.Msg { return renameMsg{id: box.ID, name: name} }
+			return func() tea.Msg { return renameMsg{box: box, name: name} }
 		})
 	return nil
 }
 
-func (m *Model) rename(id, name string) tea.Cmd {
+func (m *Model) rename(box Sandbox, name string) tea.Cmd {
 	m.busy = "rename…"
 	return func() tea.Msg {
-		return renameDoneMsg{name: name, err: m.ds.Rename(m.ctx, id, name)}
+		return renameDoneMsg{name: name, err: m.ds.ForServer(box.Server).Rename(m.ctx, box.ID, name)}
 	}
 }
 
@@ -3752,6 +3796,10 @@ func (m *Model) layout() {
 // View draws the window.
 func (m *Model) View() tea.View {
 	view := m.view()
+	if m.palette != nil {
+		view.Content = m.viewPalette(view.Content)
+		view.Cursor = nil
+	}
 	// The attributes that are the terminal's rather than the frame's are
 	// stamped here, at the one place every frame leaves by, rather than by each
 	// builder that makes one: every frame owns the whole terminal, reports the
@@ -4482,7 +4530,7 @@ func (m *Model) hints() []hint {
 				pressing("V or Esc cancel", "V"),
 			}
 		}
-		var out []hint
+		out := []hint{keyed(":", ":", "find box or command")}
 		if m.list.nameFull > m.list.nameWidth {
 			// Only worth saying on a row that has more name than column.
 			out = append(out, says("←→ read the rest of the name"))
@@ -4571,7 +4619,7 @@ func (m *Model) paneHints() []hint {
 	}
 	// What can be done to the box itself — stop, rename, archive — is a
 	// menu away, offered where the reader is looking.
-	hints := append([]hint{pressing(leader+" "+boxMenuKey+" actions", leader, boxMenuKey)}, leave...)
+	hints := append([]hint{pressing(leader+" "+boxMenuKey+" actions", leader, boxMenuKey), pressing(leader+" "+paletteKey+" palette", leader, paletteKey)}, leave...)
 	// A screen over the workspace — a tool — has the leader's
 	// menu key for itself (underScreen), so the menu is not offered there.
 	if m.hasScreen(p) {
@@ -4770,6 +4818,10 @@ func (m *Model) helpText() string {
 		"───────────────────────────────────────────────────────────────",
 		"The discobox list",
 		"",
+		"    : or " + m.leader() + " k    find a box or command",
+		"    In the palette: Tab composes a box or command, Enter chooses.",
+		"    Esc drops the chip, clears the text, then closes.",
+		"",
 		"    ↑ ↓ / k j      move",
 		"    g / G          first / last (pgup and pgdn move a screen)",
 		"    ← →            read the rest of a name too long for its column",
@@ -4882,7 +4934,7 @@ func (m *Model) helpText() string {
 		"  and secrets, which open on the right, and + new discobox.",
 		"",
 		"    " + leader + " h       to the list, from the leftmost pane; Esc back",
-		"    " + leader + " ↑ / ↓   the discobox above or below, or k and j",
+		"    " + leader + " ↑ / ↓   the discobox above or below; j also moves down",
 		"    Ctrl-Shift-K / Ctrl-Shift-J",
 		"                   the same, with no leader, in a terminal that",
 		"                   speaks the Kitty keyboard protocol",

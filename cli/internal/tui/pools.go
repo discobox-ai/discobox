@@ -27,7 +27,7 @@ func (m *Model) loadPools() tea.Cmd {
 // the default all the same, and the strip saying so on every start would be a
 // complaint about something nobody asked for.
 func (m *Model) poolsLoaded(msg poolsLoadedMsg) {
-	if m.serverName(msg.server) != m.configServer() || msg.err != nil {
+	if m.session.serverName(msg.server) != m.configServer() || msg.err != nil {
 		return
 	}
 	m.pools = msg.pools

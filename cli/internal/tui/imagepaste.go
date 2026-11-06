@@ -220,7 +220,7 @@ func (m *Model) imagesRead(msg imageReadMsg) tea.Cmd {
 		}
 		return cmd
 	}
-	ds, sandboxID, id := m.ds, p.sandbox.ID, p.id
+	ds, sandboxID, id := m.ds.ForServer(p.sandbox.Server), p.sandbox.ID, p.id
 	ctx, cancel := context.WithTimeout(m.ctx, imagePutTimeout)
 	images, now := msg.images, m.now()
 	put := func() tea.Msg {

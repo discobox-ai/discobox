@@ -99,7 +99,7 @@ func (m *Model) viewToSave() (view ListView, ok bool) {
 	// A `discobox run` or `discobox attach` window never shows the list, so
 	// nothing it holds is a choice somebody made; and before the session lands
 	// the window does not have the view it opened on.
-	if m.oneShot() || m.session.Directory == "" {
+	if m.paletteReveal != nil || m.oneShot() || m.session.Directory == "" {
 		return ListView{}, false
 	}
 	view = m.currentView()

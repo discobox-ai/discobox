@@ -150,12 +150,14 @@ func TestAHostScriptIsHandedTheDiscoboxInItsEnvironment(t *testing.T) {
 		t.Skip("the script is a shell script")
 	}
 	home := t.TempDir()
+	fake := vscodeFakeServer()
 	record := declareEnvRecordingTool(t, home)
-	if _, _, stderr, err := runToolsCmd(t, vscodeFakeServer(), home, "gitk", "sbx_devbox00000001", "--", "--all"); err != nil {
+	if _, _, stderr, err := runToolsCmd(t, fake, home, "gitk", "sbx_devbox00000001", "--", "--all"); err != nil {
 		t.Fatalf("tools gitk: %v\n%s", err, stderr)
 	}
 	got := strings.Split(readFile(t, record), "\n")
-	want := []string{"sbx_devbox00000001", "ssh://sbx_devbox00000001/home/agent/repo", "/home/agent/repo", "--all"}
+	host := sshConfigHost(sshConfigNamespace(fake.url, resolvedTestProjectID), "sbx_devbox00000001")
+	want := []string{host, "ssh://" + host + "/home/agent/repo", "/home/agent/repo", "--all"}
 	if strings.Join(got[:4], "\n") != strings.Join(want, "\n") {
 		t.Fatalf("the script saw %q, want %q", got[:4], want)
 	}

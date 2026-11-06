@@ -288,7 +288,11 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   generated name is neither stable nor unique the way an ID is, and ssh takes
   the first matching block, so a name that spells another discobox's ID would
   quietly reach the wrong one. What a tool is handed as `{ssh.host}` is the
-  bare ID, the first of `sshConfigHostPatterns`.
+  server-and-project-qualified alias from `sshConfigHost`. Preserve that scope
+  through host tools: independent servers can reuse both project and box IDs.
+- **Retire route-matching legacy SSH stanzas even for an empty project.**
+  Keep the expected proxy route independent of rendered box stanzas: the last
+  box disappearing must remove old aliases too, while other servers' files stay.
 - **Every write of a project's managed config or known_hosts is restricted
   and locked.** Each is put through `target.restrict` once written — over an
   existing file `os.WriteFile` keeps the ACL an older CLI left, and an

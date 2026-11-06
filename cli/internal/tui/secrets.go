@@ -348,6 +348,7 @@ func (m *Model) loadSecrets() tea.Cmd {
 }
 
 func (m *Model) openSecrets() tea.Cmd {
+	m.recordConsoleUse("credentials")
 	m.secretsOpen = true
 	m.optionsOpen = false
 	m.harnessesOpen = false
@@ -361,7 +362,7 @@ func (m *Model) closeSecrets() {
 }
 
 func (m *Model) secretsLoaded(msg secretsLoadedListMsg) tea.Cmd {
-	if m.serverName(msg.server) != m.configServer() {
+	if m.session.serverName(msg.server) != m.configServer() {
 		// Read for a server the header has since moved off; see
 		// harnessesLoaded.
 		return nil
@@ -520,7 +521,7 @@ func (m *Model) askForBinding() tea.Cmd {
 	// server is not one this secret can ever reach.
 	var boxes []choice
 	for _, box := range m.list.all {
-		if m.serverName(box.Server) == m.configServer() {
+		if m.session.serverName(box.Server) == m.configServer() {
 			boxes = append(boxes, choice{key: box.ID, label: box.Name, hint: box.ID})
 		}
 	}

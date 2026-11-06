@@ -37,7 +37,7 @@ func openToolAt(t *testing.T, ds *fakeSource, key string, width int) (*driver, *
 func waitPicker(d *driver, m *Model) {
 	d.wait("the picker", func() bool { return m.dialog != nil && m.dialog.title == toolsTitle })
 	d.wait("the tools", func() bool {
-		_, known := m.toolCatalogs[m.currentBox().ID]
+		_, known := m.toolCatalogs[m.boxRef(m.currentBox())]
 		return known
 	})
 }

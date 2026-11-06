@@ -11,7 +11,6 @@ import (
 // BoxSettings reads what the console's settings form edits, off the sandbox as
 // `discobox admin box get` prints it.
 func (d *apiDataSource) BoxSettings(ctx context.Context, sandboxID string) (tui.BoxSettings, error) {
-	d = d.at(sandboxID)
 	sandbox, err := getSandbox(ctx, d.client, d.projectID, sandboxID)
 	if err != nil {
 		return tui.BoxSettings{}, err
@@ -36,7 +35,6 @@ func (d *apiDataSource) BoxSettings(ctx context.Context, sandboxID string) (tui.
 // request by the same body. The harness goes by its config ID, which the
 // window holds, rather than through the selector --harness takes.
 func (d *apiDataSource) UpdateBox(ctx context.Context, sandboxID string, update tui.BoxSettingsUpdate) error {
-	d = d.at(sandboxID)
 	change := sandboxChange{
 		name:            update.Name,
 		harnessConfigID: update.Harness,

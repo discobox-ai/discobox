@@ -110,7 +110,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	if output := out.String(); !strings.Contains(output, sandboxID) {
 		t.Fatalf("output = %q, want sandbox ID", output)
 	}
-	managedConfig := filepath.Join(cliStateDir(), "ssh", "project-1", "config")
+	managedConfig := filepath.Join(cliStateDir(), "ssh", sshConfigNamespace(server.URL, "project-1"), "config")
 	configBytes, err := os.ReadFile(managedConfig)
 	if err != nil {
 		t.Fatalf("read automatically synchronized SSH config: %v", err)

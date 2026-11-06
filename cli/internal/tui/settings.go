@@ -36,7 +36,7 @@ type boxSettingsReadMsg struct {
 // a save the server refuses can put it back with everything typed.
 type boxSettingsSaveMsg struct {
 	form   *dialog
-	id     string
+	box    Sandbox
 	update BoxSettingsUpdate
 }
 
@@ -56,7 +56,7 @@ func (m *Model) askSettings(box Sandbox) tea.Cmd {
 	wait := statusDialog("Settings", "reading the settings of "+boxTitle(box, box.TerminalTitle)+"…")
 	m.dialog = wait
 	return func() tea.Msg {
-		settings, err := m.ds.BoxSettings(m.ctx, box.ID)
+		settings, err := m.ds.ForServer(box.Server).BoxSettings(m.ctx, box.ID)
 		if err != nil {
 			return boxSettingsReadMsg{wait: wait, box: box, err: err}
 		}
@@ -130,8 +130,8 @@ func settingsDialog(box Sandbox, was BoxSettings, harnesses []Harness) *dialog {
 		if update.empty() {
 			return status("settings unchanged")
 		}
-		id, form := box.ID, d
-		return func() tea.Msg { return boxSettingsSaveMsg{form: form, id: id, update: update} }
+		form := d
+		return func() tea.Msg { return boxSettingsSaveMsg{form: form, box: box, update: update} }
 	})
 	d.sections = []section{{lines: []line{
 		{text: "what `discobox admin box update` changes · egress here is the box's own level, one of four with its project, pool and harness", tone: toneDim},
@@ -212,7 +212,7 @@ func (m *Model) saveSettings(msg boxSettingsSaveMsg) tea.Cmd {
 	wait := statusDialog("Settings", "saving…")
 	m.dialog = wait
 	return func() tea.Msg {
-		return boxSettingsDoneMsg{form: msg.form, wait: wait, err: m.ds.UpdateBox(m.ctx, msg.id, msg.update)}
+		return boxSettingsDoneMsg{form: msg.form, wait: wait, err: m.ds.ForServer(msg.box.Server).UpdateBox(m.ctx, msg.box.ID, msg.update)}
 	}
 }
 

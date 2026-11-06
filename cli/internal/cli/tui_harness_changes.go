@@ -11,7 +11,6 @@ import (
 )
 
 func (d *apiDataSource) HarnessChanges(ctx context.Context, sandboxID string) (tui.HarnessChanges, error) {
-	d = d.at(sandboxID)
 	res, err := d.client.GetSandboxHarnessConfigChanges(ctx, api.GetSandboxHarnessConfigChangesParams{ProjectId: d.projectID, SandboxId: sandboxID})
 	if err != nil {
 		return tui.HarnessChanges{}, fmt.Errorf("%s", terminalSafe(err.Error()))
@@ -46,7 +45,6 @@ func toTUIHarnessChanges(p *api.HarnessConfigChanges) tui.HarnessChanges {
 }
 
 func (d *apiDataSource) SaveHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error) {
-	d = d.at(sandboxID)
 	res, err := d.client.SaveSandboxHarnessConfigChanges(ctx, &api.HarnessConfigCandidateRequest{CandidateId: candidateID}, api.SaveSandboxHarnessConfigChangesParams{ProjectId: d.projectID, SandboxId: sandboxID})
 	if err != nil {
 		return "", fmt.Errorf("%s", terminalSafe(err.Error()))
@@ -59,7 +57,6 @@ func (d *apiDataSource) SaveHarnessChanges(ctx context.Context, sandboxID, candi
 }
 
 func (d *apiDataSource) DiscardHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error) {
-	d = d.at(sandboxID)
 	res, err := d.client.DiscardSandboxHarnessConfigChanges(ctx, &api.HarnessConfigCandidateRequest{CandidateId: candidateID}, api.DiscardSandboxHarnessConfigChangesParams{ProjectId: d.projectID, SandboxId: sandboxID})
 	if err != nil {
 		return "", fmt.Errorf("%s", terminalSafe(err.Error()))

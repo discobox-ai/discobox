@@ -258,7 +258,7 @@ func TestALateBoxLinkAnswerIsDropped(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		_, m, _ := openWorkspace(t, ds, "enter")
 
-		if cmd := m.boxLinkServer(boxLinkServerMsg{uri: "discobox://x/sbx_two", sandbox: "sbx_two", known: true, from: "sbx_other"}); cmd != nil {
+		if cmd := m.boxLinkServer(boxLinkServerMsg{uri: "discobox://x/sbx_two", sandbox: "sbx_two", known: true, from: boxRef{"", "sbx_other"}}); cmd != nil {
 			t.Fatalf("a late answer did something: %#v", cmd())
 		}
 		if m.paneBox.ID != "sbx_one" {

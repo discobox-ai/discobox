@@ -34,7 +34,7 @@ type sandboxList struct {
 	index    map[boxRef]int
 	cursor   int
 	offset   int
-	selected map[string]bool
+	selected map[boxRef]bool
 
 	// folder is the folder the list is filtered to, chosen in the header. With
 	// no key it is every folder, which is the one choice that is not a place.
@@ -63,7 +63,7 @@ type sandboxList struct {
 	// one sent after the answer lands (settleArchives); which is which is
 	// counted in listings sent, not timed. A failed archive drops it at once
 	// (unmarkArchiving).
-	archiving map[string]archiveMark
+	archiving map[boxRef]archiveMark
 
 	// inTree is the list drawn as the workspace tree's narrow column. A
 	// row's tags go on a line of their own under it rather than beside the
@@ -134,7 +134,7 @@ type sandboxList struct {
 }
 
 func newSandboxList(session Session) *sandboxList {
-	return &sandboxList{session: session, selected: map[string]bool{}, now: time.Now}
+	return &sandboxList{session: session, selected: map[boxRef]bool{}, now: time.Now}
 }
 
 // setAll takes a refreshed listing, keeping the cursor on the sandbox it was
@@ -146,9 +146,9 @@ func (l *sandboxList) setAll(all []Sandbox) {
 	l.loaded = true
 	l.keepingCursor(func() {
 		for i := range all {
-			if mark, ok := l.archiving[all[i].ID]; ok && all[i].State != StateArchived {
+			if mark, ok := l.archiving[boxRef{all[i].Server, all[i].ID}]; ok && all[i].State != StateArchived {
 				mark.was = all[i].State
-				l.archiving[all[i].ID] = mark
+				l.archiving[boxRef{all[i].Server, all[i].ID}] = mark
 				all[i].State = StateArchived
 			}
 		}
@@ -198,11 +198,12 @@ type archiveMark struct {
 // markArchiving lists the discoboxes an archive is going out for as archived
 // (archiving). The cursor stays on the box it was on; one on an archived box
 // goes to the row that takes its place, as neighbor says.
-func (l *sandboxList) markArchiving(ids []string) {
+func (l *sandboxList) markArchiving(targets []Sandbox) {
 	if l.archiving == nil {
-		l.archiving = map[string]archiveMark{}
+		l.archiving = map[boxRef]archiveMark{}
 	}
-	for _, id := range ids {
+	for _, box := range targets {
+		id := boxRef{box.Server, box.ID}
 		l.archiving[id] = archiveMark{}
 	}
 	l.setAll(l.all)
@@ -211,8 +212,9 @@ func (l *sandboxList) markArchiving(ids []string) {
 // answeredArchives records that the archives for ids were answered once
 // after listings had been sent, so that the first listing sent after that
 // is the one that settles them.
-func (l *sandboxList) answeredArchives(ids []string, after uint64) {
-	for _, id := range ids {
+func (l *sandboxList) answeredArchives(targets []Sandbox, after uint64) {
+	for _, box := range targets {
+		id := boxRef{box.Server, box.ID}
 		if mark, ok := l.archiving[id]; ok {
 			mark.answered, mark.after = true, after
 			l.archiving[id] = mark
@@ -222,16 +224,17 @@ func (l *sandboxList) answeredArchives(ids []string, after uint64) {
 
 // unmarkArchiving drops the marks of archives that failed, putting the rows
 // back in the state the latest listing gave them: the box is where it was.
-func (l *sandboxList) unmarkArchiving(ids []string) {
+func (l *sandboxList) unmarkArchiving(targets []Sandbox) {
 	l.keepingCursor(func() {
-		for _, id := range ids {
+		for _, box := range targets {
+			id := boxRef{box.Server, box.ID}
 			mark, ok := l.archiving[id]
 			if !ok {
 				continue
 			}
 			delete(l.archiving, id)
 			for i := range l.all {
-				if l.all[i].ID == id && mark.was != "" {
+				if (boxRef{l.all[i].Server, l.all[i].ID}) == id && mark.was != "" {
 					l.all[i].State = mark.was
 				}
 			}
@@ -255,7 +258,12 @@ func (l *sandboxList) settleArchives(asked uint64) {
 // the draw stays a pure function of what the list holds.
 func (l *sandboxList) setPending(byBox map[string][]CredentialRequest) {
 	for i := range l.all {
-		l.all[i].PendingRequests = len(byBox[l.all[i].ID])
+		l.all[i].PendingRequests = 0
+		for _, req := range byBox[l.all[i].ID] {
+			if l.session.serverName(req.Server) == l.session.serverName(l.all[i].Server) {
+				l.all[i].PendingRequests++
+			}
+		}
 	}
 }
 
@@ -680,10 +688,10 @@ func (l *sandboxList) current() *Sandbox {
 // neighbor is the row after one box's — the one before it, for the last row —
 // which is where the list goes once that box leaves it. Nil when the box is
 // not listed or is the only row.
-func (l *sandboxList) neighbor(id string) *Sandbox {
+func (l *sandboxList) neighbor(box Sandbox) *Sandbox {
 	rows := l.rows()
 	for i, s := range rows {
-		if s.ID != id {
+		if s.ID != box.ID || s.Server != box.Server {
 			continue
 		}
 		switch {
@@ -708,7 +716,7 @@ func (l *sandboxList) targets() []Sandbox {
 	}
 	var out []Sandbox
 	for _, s := range rows {
-		if l.selected[s.ID] {
+		if l.selected[boxRef{s.Server, s.ID}] {
 			out = append(out, s)
 		}
 	}
@@ -741,7 +749,7 @@ func (l *sandboxList) commitVisual() int {
 		return 0
 	}
 	for _, s := range rows[lo : hi+1] {
-		l.selected[s.ID] = true
+		l.selected[boxRef{s.Server, s.ID}] = true
 	}
 	l.visual = false
 	return hi - lo + 1
@@ -750,7 +758,7 @@ func (l *sandboxList) commitVisual() int {
 func (l *sandboxList) selectionCount() int {
 	n := 0
 	for _, s := range l.rows() {
-		if l.selected[s.ID] {
+		if l.selected[boxRef{s.Server, s.ID}] {
 			n++
 		}
 	}
@@ -762,14 +770,14 @@ func (l *sandboxList) toggleSelect() {
 	if s == nil {
 		return
 	}
-	if l.selected[s.ID] {
-		delete(l.selected, s.ID)
+	if l.selected[boxRef{s.Server, s.ID}] {
+		delete(l.selected, boxRef{s.Server, s.ID})
 		return
 	}
-	l.selected[s.ID] = true
+	l.selected[boxRef{s.Server, s.ID}] = true
 }
 
-func (l *sandboxList) clearSelection() { l.selected = map[string]bool{} }
+func (l *sandboxList) clearSelection() { l.selected = map[boxRef]bool{} }
 
 func (l *sandboxList) move(delta int) {
 	l.cursor += delta
@@ -1208,7 +1216,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// Selection is a background rather than a column of bullets: it is the
 	// state of the row, not a field of it, and a column spent on it is a
 	// column the name does not get.
-	selected := l.selected[s.ID] || inVisual
+	selected := l.selected[boxRef{s.Server, s.ID}] || inVisual
 
 	// The state is the colored glyph in front of the name and nothing else:
 	// spelling "running" out on every row costs a column that says the same
@@ -1409,7 +1417,7 @@ func (l *sandboxList) tagLine(st *styles, z *zones, s Sandbox, i, y int, focused
 		return "", nil, false
 	}
 	atCursor := i == l.cursor && focused
-	selected := l.selected[s.ID]
+	selected := l.selected[boxRef{s.Server, s.ID}]
 	if l.visual {
 		lo, hi := l.visualRange()
 		selected = selected || (i >= lo && i <= hi)

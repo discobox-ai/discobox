@@ -15,19 +15,20 @@ import (
 
 // The written artifacts live beside the generated key, under the state
 // directory of whichever ssh reads them, and that ssh's ~/.ssh/config gains one
-// line per project: an Include pointing at that project's file. Keeping the
+// line per server/project: an Include pointing at that namespace's file. Keeping the
 // generated files out of ~/.ssh means this command never has to parse, merge
 // into, or risk mangling a config the user maintains by hand — it owns each
 // project's files outright and rewrites them wholesale. Where they land, and
 // how they are spelled once they are there, is sshTarget's answer: on WSL the
 // ssh that reads them can be the Windows one.
 //
-// The files are per project rather than one merged config because a run only
+// The files are per server/project rather than one merged config because a run only
 // ever knows about one project: writing a shared file would delete the stanzas
 // of every other project each time, and two projects can live on different
 // servers with different host keys and addresses.
 
 type sshConfigRender struct {
+	namespace string
 	sandboxes []apimodel.Sandbox
 
 	// proxyCommand carries the connection. Nothing here names an address: the
@@ -50,7 +51,7 @@ type sshConfigRender struct {
 func renderSSHConfig(in sshConfigRender) string {
 	var out strings.Builder
 	for i, sandbox := range in.sandboxes {
-		fmt.Fprintf(&out, "Host %s\n", strings.Join(sshConfigHostPatterns(sandbox.ID), " "))
+		fmt.Fprintf(&out, "Host %s\n", strings.Join(sshConfigHostPatterns(in.namespace, sandbox.ID), " "))
 		// No HostName and no Port: there is no address to dial. ssh runs the
 		// ProxyCommand and speaks its protocol over its stdio. The whole line
 		// is escaped rather than the endpoint alone, since the executable's
@@ -87,9 +88,9 @@ func managedConfigHeader(projectID string) string {
 // stanzas is empty when the project has no sandboxes, and that writes an empty
 // config rather than skipping the write: these files mirror the server, so a
 // project whose last sandbox is gone must stop offering stanzas for it.
-func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, projectID string, notes noteFunc) error {
+func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, notes noteFunc) error {
 	target := built.target
-	configPath, knownHostsPath := target.configPath(projectID), target.knownHostsPath(projectID)
+	configPath, knownHostsPath := target.configPath(built.namespace), target.knownHostsPath(built.namespace)
 	if err := ensureStateDir(filepath.Dir(configPath.local)); err != nil {
 		return fmt.Errorf("create SSH config directory: %w", err)
 	}
@@ -105,7 +106,7 @@ func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, projectI
 	if err := os.WriteFile(knownHostsPath.local, []byte(knownHosts), 0o600); err != nil {
 		return fmt.Errorf("write known_hosts: %w", err)
 	}
-	if err := os.WriteFile(configPath.local, []byte(managedConfigHeader(projectID)+built.stanzas), 0o600); err != nil {
+	if err := os.WriteFile(configPath.local, []byte(managedConfigHeader(built.projectID)+built.stanzas), 0o600); err != nil {
 		return fmt.Errorf("write SSH config: %w", err)
 	}
 	// Both files, every run, and not the directory holding them: ensureStateDir
@@ -137,6 +138,7 @@ func writeManagedSSHConfig(ctx context.Context, built managedSSHConfig, projectI
 	if err != nil {
 		return err
 	}
+	retireLegacySSHConfig(ctx, built, notes)
 	notes("wrote %s", configPath.client)
 	rekeyManagedSSHConfigs(ctx, target, notes)
 	if edits.added {
@@ -196,7 +198,7 @@ func rekeyManagedSSHConfigs(ctx context.Context, target sshTarget, notes noteFun
 			notes("could not read %s to re-key it by discobox ID: %v", path.client, err)
 			continue
 		}
-		rekeyed, changed := rekeySSHConfigStanzas(string(data))
+		rekeyed, changed := rekeySSHConfigStanzas(string(data), filepath.Base(filepath.Dir(local)))
 		if !changed {
 			continue
 		}
@@ -211,6 +213,44 @@ func rekeyManagedSSHConfigs(ctx context.Context, target sshTarget, notes noteFun
 	}
 }
 
+// retireLegacySSHConfig preserves another server's legacy project file. Only
+// a generated file whose every route matches this rendering can be retired.
+// Its Include stays valid and the file remains, with a migration note.
+func retireLegacySSHConfig(ctx context.Context, built managedSSHConfig, notes noteFunc) {
+	path := built.target.configPath(built.projectID)
+	if path.local == built.target.configPath(built.namespace).local {
+		return
+	}
+	data, err := os.ReadFile(path.local)
+	if err != nil {
+		return
+	}
+	if !strings.HasPrefix(string(data), managedConfigHeader(built.projectID)) {
+		return
+	}
+	route := "    ProxyCommand " + escapeSSHPercent(built.proxyCommand)
+	seen := false
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "    ProxyCommand ") {
+			if line != route {
+				return
+			}
+			seen = true
+		}
+	}
+	if !seen {
+		return
+	}
+	note := managedConfigHeader(built.projectID) + "# Stanzas moved to " + built.namespace + "/config.\n"
+	if err := os.WriteFile(path.local, []byte(note), 0o600); err != nil {
+		notes("could not retire legacy SSH config %s: %v", path.client, err)
+		return
+	}
+	if err := built.target.restrict(ctx, path); err != nil {
+		notes("could not restrict legacy SSH config %s: %v", path.client, err)
+	}
+}
+
 // skippedStanzaSuffix ends the comment an older CLI wrote in place of a stanza
 // whose every pattern another discobox's name had claimed.
 const skippedStanzaSuffix = " has no unambiguous host alias and was skipped"
@@ -219,7 +259,7 @@ const skippedStanzaSuffix = " has no unambiguous host alias and was skipped"
 // patterns, and drops the comments an older CLI left for a skipped discobox,
 // reporting whether anything changed. A Host line with no User under it is
 // none of this CLI's and is left as it is.
-func rekeySSHConfigStanzas(config string) (string, bool) {
+func rekeySSHConfigStanzas(config, namespace string) (string, bool) {
 	lines := strings.Split(config, "\n")
 	out := make([]string, 0, len(lines))
 	host := -1
@@ -232,7 +272,7 @@ func rekeySSHConfigStanzas(config string) (string, bool) {
 		case strings.HasPrefix(line, "Host "):
 			host = len(out)
 		case host >= 0 && strings.HasPrefix(line, "    User "):
-			want := "Host " + strings.Join(sshConfigHostPatterns(strings.TrimPrefix(line, "    User ")), " ")
+			want := "Host " + strings.Join(sshConfigHostPatterns(namespace, strings.TrimPrefix(line, "    User ")), " ")
 			if out[host] != want {
 				out[host], changed = want, true
 			}

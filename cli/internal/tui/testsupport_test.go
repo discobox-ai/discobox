@@ -67,6 +67,8 @@ type timerMsg struct {
 // for, so a test can assert on the command a key press turned into rather than
 // on the frame it drew.
 type fakeSource struct {
+	serverSources map[string]*fakeSource
+
 	createdVariants       []NewHarnessVariant
 	variantErr            error
 	harnessChanges        HarnessChanges
@@ -373,6 +375,15 @@ var farHostKey = originkey.Host(farHostID)
 func cutFrom(s Sandbox, root string) Sandbox {
 	s.Source, s.OriginKey, s.SourceOriginKey, s.OriginHostID = root, testKey(root), testKey(root), testHostID
 	return s
+}
+
+func (f *fakeSource) PrimaryServer() string { return f.session.serverName("") }
+
+func (f *fakeSource) ForServer(server string) DataSource {
+	if source := f.serverSources[server]; source != nil {
+		return source
+	}
+	return f
 }
 
 func newFakeSource(sandboxes ...Sandbox) *fakeSource {

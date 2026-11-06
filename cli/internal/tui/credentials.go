@@ -146,7 +146,7 @@ func (m *Model) setCredentialRequests(requests []CredentialRequest) {
 func (m *Model) syncRequestRows() {
 	var rows []CredentialRequest
 	for _, req := range m.allRequests {
-		if m.serverName(req.Server) == m.configServer() {
+		if m.session.serverName(req.Server) == m.configServer() {
 			rows = append(rows, req)
 		}
 	}
@@ -165,16 +165,21 @@ func (m *Model) syncRequestRows() {
 
 // pendingFor is the requests waiting on one discobox, oldest first: the one
 // that has been waiting longest is the one to answer.
-func (m *Model) pendingFor(sandboxID string) []CredentialRequest {
-	out := append([]CredentialRequest(nil), m.requests[sandboxID]...)
+func (m *Model) pendingFor(box Sandbox) []CredentialRequest {
+	out := []CredentialRequest{}
+	for _, req := range m.requests[box.ID] {
+		if m.session.serverName(req.Server) == m.session.serverName(box.Server) {
+			out = append(out, req)
+		}
+	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created) })
 	return out
 }
 
 // openCredentialDialog asks about the oldest request on the discobox the
 // workspace is showing.
-func (m *Model) openCredentialDialog(sandboxID string) tea.Cmd {
-	pending := m.pendingFor(sandboxID)
+func (m *Model) openCredentialDialog(box Sandbox) tea.Cmd {
+	pending := m.pendingFor(box)
 	if len(pending) == 0 {
 		return m.report(false, "nothing waiting on this discobox")
 	}
@@ -1063,7 +1068,7 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 // middle of it throbs, and why it is the only thing in the window that moves
 // without something having happened. See banner.go for the bar and its beat.
 func (m *Model) viewCredentialBanner(width int) string {
-	pending := m.pendingFor(m.paneBox.ID)
+	pending := m.pendingFor(m.paneBox)
 	if len(pending) == 0 {
 		return ""
 	}
