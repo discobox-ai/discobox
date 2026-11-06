@@ -669,6 +669,10 @@ func (r *Runner) applyStep(ctx context.Context, out io.Writer, feature provision
 	if !r.Platform.Selects(step.When) {
 		return Unselected, nil
 	}
+	if step.Packages != nil {
+		r.apt.Lock()
+		defer r.apt.Unlock()
+	}
 	digest, err := StepDigest(feature, step)
 	if err != nil {
 		return "", err
@@ -679,12 +683,16 @@ func (r *Runner) applyStep(ctx context.Context, out io.Writer, feature provision
 	}
 	result := Applied
 	if ok && record.Digest == digest {
-		if step.Check == "" {
-			return Skipped, nil
+		inPlace := true
+		if step.Packages != nil {
+			packages, supported := step.Packages.For(r.Platform.ID, r.Platform.IDLike)
+			inPlace = supported && r.packagesSatisfied(ctx, packages)
 		}
-		inPlace, err := r.check(ctx, out, feature, step.Check)
-		if err != nil {
-			return "", err
+		if inPlace && step.Check != "" {
+			inPlace, err = r.check(ctx, out, feature, step.Check)
+			if err != nil {
+				return "", err
+			}
 		}
 		if inPlace {
 			return Skipped, nil

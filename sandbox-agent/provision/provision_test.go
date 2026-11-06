@@ -25,13 +25,14 @@ var ubuntu = Platform{OS: "linux", Arch: "amd64", ID: "ubuntu", IDLike: []string
 // box is a runner over a temporary root, whose system tools are recorded
 // rather than run. Scripts are run for real.
 type box struct {
-	t      *testing.T
-	root   string
-	tree   string
-	runner *Runner
-	tools  []string
-	served map[string]string
-	opts   Options
+	t        *testing.T
+	root     string
+	tree     string
+	runner   *Runner
+	tools    []string
+	served   map[string]string
+	opts     Options
+	packages map[string]bool
 }
 
 func newBox(t *testing.T) *box {
@@ -41,14 +42,25 @@ func newBox(t *testing.T) *box {
 		t.Skip("the runner provisions Linux: its steps run sh scripts and set POSIX modes")
 	}
 	t.Cleanup(runuser.FixedDatabase())
-	b := &box{t: t, root: filepath.Join(dir, "root"), tree: filepath.Join(dir, "tree"), served: map[string]string{}}
+	b := &box{t: t, root: filepath.Join(dir, "root"), tree: filepath.Join(dir, "tree"), served: map[string]string{}, packages: map[string]bool{}}
 	b.runner = &Runner{
 		Root:     b.root,
 		Records:  Records{Dir: filepath.Join(b.root, "opt/discobox/provision")},
 		Platform: ubuntu,
 		Command: func(ctx context.Context, out io.Writer, dir string, env []string, name string, args ...string) error {
 			switch name {
+			case "dpkg-query":
+				if b.packages[args[len(args)-1]] {
+					_, err := io.WriteString(out, "install ok installed\t1.0\n")
+					return err
+				}
+				return errors.New("package missing")
 			case "systemctl", "groupadd", "apt-get":
+				if name == "apt-get" && args[0] == "install" {
+					for _, pkg := range args[7:] {
+						b.packages[pkg] = true
+					}
+				}
 				b.tools = append(b.tools, strings.Join(append([]string{name}, args...), " "))
 				return nil
 			}

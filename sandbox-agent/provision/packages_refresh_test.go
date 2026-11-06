@@ -2,6 +2,7 @@ package provision
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -56,6 +57,9 @@ steps:
 			}
 			installs := 0
 			b.runner.Command = func(ctx context.Context, out io.Writer, dir string, env []string, tool string, args ...string) error {
+				if tool == "dpkg-query" {
+					return errors.New("package missing")
+				}
 				if tool != "apt-get" {
 					t.Fatalf("unexpected tool %s", tool)
 				}
