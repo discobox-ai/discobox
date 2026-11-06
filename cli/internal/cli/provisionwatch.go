@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -53,6 +54,7 @@ func (a *App) watchProvisioning(ctx context.Context, projectID, sandboxID string
 		return
 	}
 	last := ""
+	started := time.Now()
 	for {
 		// The wait is measured before it is described, so an attach onto a
 		// discobox that is already up reads nothing at all: it connects inside
@@ -76,9 +78,18 @@ func (a *App) watchProvisioning(ctx context.Context, projectID, sandboxID string
 		if err != nil {
 			continue
 		}
-		if line := string(sandboxcreate.Status(ctx, client, projectID, sandbox)); line != "" && line != last {
-			last = line
-			report(line)
+		line := string(sandboxcreate.Status(ctx, client, projectID, sandbox))
+		if line == "" && last != "" {
+			line = "connecting to the terminal"
+		}
+		if line != "" {
+			if elapsed := time.Since(started).Truncate(10 * time.Second); elapsed >= 10*time.Second {
+				line += fmt.Sprintf(" — waiting %s", elapsed)
+			}
+			if line != last {
+				last = line
+				report(line)
+			}
 		}
 	}
 }

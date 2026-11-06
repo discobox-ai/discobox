@@ -927,8 +927,10 @@ docker exec vmlike journalctl -u discobox-sandbox-agent -o short-precise
 
 # Verifying feature provisioning (`sandbox-agent/provision`, provision.json)
 
-A box provisions the trees at `/opt/discobox/bundles/{platform,harness}` on
-every boot. A dev box is delivered its platform (ADR 26-10-16-423 §7): its
+A box provisions the pins in `/opt/discobox/bundles/pins.json` on every boot,
+through `/opt/discobox/bundles/by-name/<pin.name>` (for example
+`discobox-platform` and `discobox-harness-shell`). A directory invented beside
+`by-name`, such as `bundles/harness`, is not a pinned tree and is never read. A dev box is delivered its platform (ADR 26-10-16-423 §7): its
 container is `discobox-sandbox-base:dev-*` with `/sbin/init` as PID 1, the
 pool places the agent layer, units and `pins.json`, and the agent fetches
 the rest into its store, then provisions from scratch — core blocks (ready in
@@ -942,7 +944,9 @@ feature of your own, drop a tree in and restart:
 # scratch repo whose settings turn features off; -o json shows config.features
 git init $S/app && mkdir $S/app/.discobox && echo '{"features":{"brew":false}}' > $S/app/.discobox/settings.json
 d run -H shell -d $S/app -o json           # commit something first
-# a tree: features/<name>/provision.yaml + scripts, tarred and placed by root
+# add features/<name>/provision.yaml + scripts inside a pinned tree, e.g.
+# /opt/discobox/bundles/by-name/discobox-harness-shell/features/<name>/
+# tar paths are absolute-root-relative; place them as root
 d exec <box> -- sh -c 'sudo tar -xz -C /' < $S/tree.tgz
 d stop <box>; d start <box>                # a real boot: wiring in discobox-wire, the rest in the agent
 d exec <box> -- cat /run/discobox/provision.json

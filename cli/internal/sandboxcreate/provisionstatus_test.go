@@ -333,3 +333,21 @@ func TestProvisionStatusIncludesAgentPreparation(t *testing.T) {
 		t.Fatalf("ready status = %q", got)
 	}
 }
+
+func TestProvisionStatusDescribesBlockingPreparation(t *testing.T) {
+	for _, tc := range []struct{ name, report, want string }{
+		{"bundles", `{"state":"pending","ready":false,"features":{}}`, "loading provisioning bundles"},
+		{"node", `{"state":"provisioning","ready":false,"features":{"core":{"state":"ready"},"node":{"state":"provisioning","step":"install"},"claude-code":{"state":"pending"},"nix":{"state":"provisioning","async":true,"step":"download"}}}`, "provisioning node / install"},
+		{"failure", `{"state":"failed","ready":false,"error":"node install failed","features":{}}`, "discobox preparation failed: node install failed"},
+		{"terminal", `{"state":"provisioning","ready":true,"features":{}}`, "connecting to the terminal"},
+		{"untrusted", `{"state":"provisioning","ready":false,"features":{"node\u001b[31m":{"state":"provisioning","step":"install\nnow"}}}`, `provisioning node\x1b[31m / install now`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := apimodel.SandboxRuntime{State: apiclientgen.SandboxRuntimeStateReady, Generation: 1, ObservedGeneration: 1, RuntimeState: apiclientgen.NewOptSandboxRuntimeRuntimeState(apiclientgen.SandboxRuntimeRuntimeStateRunning), DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState(apiclientgen.SandboxRuntimeDisplayStateStarting)}
+			runtime.AgentStatus = apiclientgen.NewOptNilSandboxRuntimeAgentStatus(apiclientgen.SandboxRuntimeAgentStatus{"provision": []byte(tc.report)})
+			if got := ProvisionStatus(provisioning(runtime)); string(got) != tc.want {
+				t.Fatalf("status = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

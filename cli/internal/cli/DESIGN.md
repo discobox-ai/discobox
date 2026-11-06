@@ -196,3 +196,8 @@ and standard server proxy/trust variables. Pool resolution still selects direct
 unless explicitly configured or bootstrapped; inherited server routing is not
 a pool override. Pool and inherited CA file paths, and each inherited CA directory, are made
 absolute before starting the unit.
+
+Attach and command preparation narration includes blocking feature/step reports
+during blocking preparation. The watcher adds elapsed waiting time every ten
+seconds; the terminal spinner remains a liveness cue, not proof of installer
+activity or an ETA. The original attach waits independently of these reads.

@@ -169,3 +169,11 @@ Boot, snapshot and placed-content callers use the same `Apply` function and
 runner, with feature opt-outs, `Background`, `Snapshot`, and wiring-only options.
 The sandbox agent clears prior provisioning status before each process starts;
 a waiting caller checks that installed bundle pins match those it requested.
+
+## Readiness waits
+
+`Tracker.AwaitReady` joins blocking readiness until success, failure, or caller
+cancellation; a caller leaving does not cancel provisioning. Boot, terminal
+launches and command creation share this gate. A terminal startup deadline begins
+only after blocking provisioning is ready. Services use `AwaitFeatures` for their
+declared dependencies or the complete run.

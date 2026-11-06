@@ -2,7 +2,10 @@ package sandboxcreate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +13,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 // Reading what a discobox that is not ready yet is being made to do, off the
@@ -84,6 +88,9 @@ func ProvisionStatus(sandbox *apimodel.Sandbox) Step {
 	// Its display state is the current report; a recent pool phase is past.
 	if runtime.State == apiclientgen.SandboxRuntimeStateReady && runtime.Generation == runtime.ObservedGeneration &&
 		runtime.RuntimeState.Or("") == apiclientgen.SandboxRuntimeRuntimeStateRunning && runtime.DisplayState.Or("") == apiclientgen.SandboxRuntimeDisplayStateStarting {
+		if preparation := agentPreparation(runtime); preparation != "" {
+			return preparation
+		}
 		return "preparing the discobox"
 	}
 	if phase := recordedPhase(runtime); phase != "" {
@@ -104,6 +111,56 @@ func ProvisionStatus(sandbox *apimodel.Sandbox) Step {
 		return "resuming the discobox"
 	}
 	return "preparing the discobox"
+}
+
+// agentPreparation describes the readiness gate from the agent's own report.
+// Pending precedes the feature plan, while the agent loads its pinned bundles.
+// Async features do not delay a harness, and must not appear to hold attach up.
+func agentPreparation(runtime apimodel.SandboxRuntime) Step {
+	agent, ok := runtime.AgentStatus.Get()
+	if !ok {
+		return ""
+	}
+	var status provisionspec.Status
+	if err := json.Unmarshal(agent["provision"], &status); err != nil {
+		return ""
+	}
+	if status.Ready {
+		return "connecting to the terminal"
+	}
+	if status.Error != "" {
+		return Step("discobox preparation failed: " + OneLine(status.Error))
+	}
+	if status.State == provisionspec.StatePending && len(status.Features) == 0 {
+		return "loading provisioning bundles"
+	}
+	var active []string
+	required := 0
+	for _, name := range slices.Sorted(maps.Keys(status.Features)) {
+		feature := status.Features[name]
+		if feature.Async || feature.State == provisionspec.StateOff {
+			continue
+		}
+		required++
+		if feature.State == provisionspec.StateReady {
+			continue
+		}
+		if feature.State == provisionspec.StateProvisioning && feature.Step != "" {
+			item := OneLine(name)
+			if feature.Step != "" {
+				item += " / " + OneLine(feature.Step)
+			}
+			active = append(active, item)
+		}
+	}
+	if required == 0 {
+		return ""
+	}
+	activity := "preparing features"
+	if len(active) > 0 {
+		activity = "provisioning " + strings.Join(active, ", ")
+	}
+	return Step(activity)
 }
 
 // StepRepairing is what a discobox says while a repair of it has been recorded
