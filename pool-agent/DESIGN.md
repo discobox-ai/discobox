@@ -2018,7 +2018,13 @@ flowchart LR
   and keeps nothing in step with it. A pool with no control-plane credential
   yet refuses the call rather than forwarding it unasserted. Every sandbox is given `DISCOBOX_API_URL` and
   `DISCOBOX_SERVER` for that host with its proxy environment, so the
-  `discobox` CLI in the image calls it.
+  `discobox` CLI in the image calls it. Its transport retries missing-listener
+  and connection-refused dial failures for up to ten seconds, within the call's
+  timeout, to bridge a brief control-plane restart. Cancellation stops the wait.
+  Only connection establishment is retried; a transmitted request, response
+  error or status is never replayed by this retry loop, so uploads and mutating
+  calls keep their single-send semantics. Other wire clients keep their own
+  connection policy.
 - The same resolver authorizes the proxy's requests (`Authorize`): asked, per
   request and before anything in it is resolved, whether the request may carry
   what its sentinels stand for

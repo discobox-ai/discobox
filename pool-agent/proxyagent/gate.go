@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/poolauth"
@@ -27,6 +29,11 @@ import (
 // stream for less (its maxHold, sandbox-agent/monitors/discoboxbox): lowering
 // this below that cuts every run short.
 const gateHTTPTimeout = 2 * time.Minute
+
+// Only connection establishment is retried: the request body has not been
+// sent yet. Keep this budget inside the forwarded call's overall timeout.
+const gateConnectWait = 10 * time.Second
+const gateConnectRetry = 100 * time.Millisecond
 
 // GateHost is the host a sandbox reaches the discobox API at.
 const GateHost = "api.discobox.internal"
@@ -140,12 +147,42 @@ func gateTarget(controlPlaneURL string, in *url.URL) (string, error) {
 // forwarded call's longer timeout.
 func gateHTTPClient() *http.Client {
 	client := &http.Client{Timeout: gateHTTPTimeout}
-	if url := strings.TrimSpace(os.Getenv(envControlPlaneURL)); url != "" {
-		if _, resolved, err := wire.HTTPClient(url, gateHTTPTimeout); err == nil {
-			client = resolved
+	endpoint, err := wire.Parse(strings.TrimSpace(os.Getenv(envControlPlaneURL)))
+	if err != nil {
+		return client
+	}
+	dial, err := endpoint.DialContext()
+	if err != nil {
+		return client
+	}
+	client.Transport = &http.Transport{DialContext: gateDialContext(dial)}
+	return client
+}
+
+// gateDialContext tolerates a listener being unlinked or not accepting yet
+// during control-plane replacement. It never retries a transmitted request or
+// other dial failures (permissions, name resolution, TLS, and so on).
+func gateDialContext(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		ctx, cancel := context.WithTimeout(ctx, gateConnectWait)
+		defer cancel()
+		for {
+			conn, err := dial(ctx, network, address)
+			if err == nil {
+				return conn, nil
+			}
+			if !errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.ECONNREFUSED) {
+				return nil, err
+			}
+			timer := time.NewTimer(gateConnectRetry)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
 		}
 	}
-	return client
 }
 
 // Only the files transfer and exec attach routes receive a progress-based
