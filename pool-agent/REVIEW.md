@@ -566,3 +566,8 @@ answer is seen): after that its disk is the sandbox's work.
   `net/http` interrupts speculative reads with a temporary expired deadline;
   `websocket.NetConn` permanently closes on that interruption. The create
   stream uses `net.Pipe` between HTTP and the WebSocket bridge for this reason.
+
+- Dial error handling uses the platform's socket error: Windows net.Dial
+  returns Winsock's WSAECONNREFUSED, which does not match its POSIX
+  compatibility ECONNREFUSED constant. Keep the real listener-replacement
+  test running on Windows; synthetic POSIX errors alone missed this mismatch.

@@ -18,7 +18,7 @@ import (
 )
 
 func TestGateDialRetriesOnlyListenerReplacementErrors(t *testing.T) {
-	for _, failure := range []error{syscall.ENOENT, syscall.ECONNREFUSED, syscall.EACCES, syscall.EHOSTUNREACH, io.EOF} {
+	for _, failure := range []error{syscall.ENOENT, gateConnectionRefused, syscall.EACCES, syscall.EHOSTUNREACH, io.EOF} {
 		t.Run(failure.Error(), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				attempts := 0
@@ -34,7 +34,7 @@ func TestGateDialRetriesOnlyListenerReplacementErrors(t *testing.T) {
 				})
 				start := time.Now()
 				conn, err := dial(t.Context(), "tcp", "unused")
-				retry := errors.Is(failure, syscall.ENOENT) || errors.Is(failure, syscall.ECONNREFUSED)
+				retry := errors.Is(failure, syscall.ENOENT) || errors.Is(failure, gateConnectionRefused)
 				if retry {
 					if err != nil || conn != client || attempts != 2 || time.Since(start) != gateConnectRetry {
 						t.Fatalf("conn=%v error=%v attempts=%d elapsed=%v", conn, err, attempts, time.Since(start))
@@ -64,7 +64,7 @@ func TestGateDialWaitIsBoundedAndCancelable(t *testing.T) {
 					if err := ctx.Err(); err != nil {
 						return nil, err
 					}
-					return nil, syscall.ECONNREFUSED
+					return nil, gateConnectionRefused
 				})
 				start := time.Now()
 				_, err := dial(ctx, "tcp", "unused")

@@ -11,7 +11,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/poolauth"
@@ -171,7 +170,7 @@ func gateDialContext(dial func(context.Context, string, string) (net.Conn, error
 			if err == nil {
 				return conn, nil
 			}
-			if !errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.ECONNREFUSED) {
+			if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, gateConnectionRefused) {
 				return nil, err
 			}
 			timer := time.NewTimer(gateConnectRetry)
