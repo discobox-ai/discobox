@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import tarfile
 import threading
@@ -173,8 +174,81 @@ def wait_box(box_id):
                for t in (obj("admin", "terminal", "ls", box_id).get("terminals") or [])), seconds=120)
 
 
+def start_server():
+    global SERVER
+    with (ARTIFACTS / "server.log").open("a") as log:
+        SERVER = subprocess.Popen([str(ARTIFACTS / "discobox-server")], cwd=ROOT, env=ENV,
+                                  stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+
+    def ready():
+        if SERVER.poll() is not None:
+            raise RuntimeError("server exited; see server.log")
+        try:
+            with urllib.request.urlopen(URL + "/openapi.yaml", timeout=2):
+                return True
+        except OSError:
+            return False
+    eventually("server ready", ready, seconds=30)
+
+
+def restart_control_plane(box):
+    pool = obj("admin", "box", "get", box)["poolId"]
+    container = "discobox-vm-" + pool
+    identity_args = ["docker", "exec", container, "systemctl", "show", "discobox-pool-agent",
+                     "--property=MainPID,InvocationID,ActiveEnterTimestampMonotonic"]
+    before = command(identity_args)
+    (ARTIFACTS / "pool-agent-before-restart.log").write_text(before)
+    command(["docker", "exec", container, "sh", "-c",
+             'sha256sum /proc/$(systemctl show -p MainPID --value discobox-pool-agent)/exe'])
+    # Keep the nonce only in the primary shell's memory. Terminal IDs alone
+    # survive a relaunch, so cannot prove that its program survived.
+    cli("send", box, f"export RESTART_SMOKE_TOKEN={RUN}; printf 'restart-armed:%s\\n' \"$RESTART_SMOKE_TOKEN\"")
+    cli("send-key", box, "Enter")
+    eventually("primary armed for restart", lambda: "restart-armed:" + RUN in
+               "\n".join(obj("capture", box)["lines"]), seconds=15)
+    stopped_at = time.time()
+    os.killpg(SERVER.pid, signal.SIGTERM)
+    SERVER.wait(timeout=30)
+    # Leave a full heartbeat interval with no server, exercising a failed
+    # report before recovery rather than a restart between two successful beats.
+    time.sleep(35)
+    failed_beat = command(["docker", "exec", container, "journalctl", "-u", "discobox-pool-agent",
+                           "--no-pager", "--since", f"@{stopped_at:.6f}"])
+    (ARTIFACTS / "pool-failed-heartbeat.log").write_text(failed_beat)
+    assert "report pool status" in failed_beat, "no failed pool heartbeat observed during outage"
+    start_server()
+
+    def recovered():
+        status = obj("admin", "pool", "get", pool)
+        (ARTIFACTS / "pool-after-restart.json").write_text(json.dumps(status, indent=2))
+        return status.get("health") == "ready" and status.get("ready") and status.get("schedulable")
+    try:
+        eventually("existing pool ready after server restart", recovered, seconds=120)
+        after = command(identity_args)
+        (ARTIFACTS / "pool-agent-after-restart.log").write_text(after)
+        assert before == after, "pool agent restarted during control-plane recovery"
+        cli("send", box, 'printf \'restart-retained:%s\\n\' "$RESTART_SMOKE_TOKEN"')
+        cli("send-key", box, "Enter")
+        eventually("primary program retained after restart", lambda: "restart-retained:" + RUN in
+                   "\n".join(obj("capture", box)["lines"]), seconds=15)
+        cli("admin", "service", "ls", box)
+        assert cli("exec", box, "--", "printf", "restart-recovered").strip() == "restart-recovered"
+    finally:
+        with sqlite3.connect(ARTIFACTS / "db.sqlite") as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute("select health_check_started_at, status_reported_at, last_seen_at, "
+                             "ready, schedulable, conditions, provision_progress from pools where id = ?",
+                             (pool,)).fetchone()
+            (ARTIFACTS / "pool-restart-persisted.json").write_text(json.dumps(dict(row), indent=2))
+        journal = command(["docker", "exec", container, "journalctl", "-u", "discobox-pool-agent",
+                           "--no-pager", "-n", "200"])
+        (ARTIFACTS / "pool-restart-journal.log").write_text(journal)
+    print("PASS server restart recovers pool, terminal and service access without agent restart", flush=True)
+
+
 def smoke():
     primary = create_box("ux-primary", requester=True)
+    restart_control_plane(primary)
     marker = "UX-" + RUN
     # Split the marker in the input: seeing the echoed command cannot pass capture.
     cli("send", primary, f"printf '%s%s\\n' UX- {RUN}")
@@ -299,19 +373,7 @@ def main():
         ENV[f"DISCOBOX_HARNESS_{slug}_BUNDLE"] = bundles[3]["reference"]
     CLI = [str(ARTIFACTS / "discobox"), "--server", URL, "--project", "default",
            "--auto-start-server=false", "--output", "json"]
-    log = (ARTIFACTS / "server.log").open("w")
-    SERVER = subprocess.Popen([str(ARTIFACTS / "discobox-server")], cwd=ROOT, env=ENV,
-                              stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-    log.close()
-    def ready():
-        if SERVER.poll() is not None:
-            raise RuntimeError("server exited; see server.log")
-        try:
-            with urllib.request.urlopen(URL + "/openapi.yaml", timeout=2):
-                return True
-        except OSError:
-            return False
-    eventually("server ready", ready, seconds=30)
+    start_server()
     pools = obj("admin", "pool", "ls")["pools"]
     POOLS.extend(p["id"] for p in pools)
     assert POOLS, "isolated server seeded no pool"

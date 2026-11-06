@@ -165,6 +165,10 @@ Global review expectations:
   overwrite the failure evidence it is meant to preserve. Adoption tests use a
   sandbox-created child and assert a nonempty creator: comparing absent
   creator IDs cannot detect a regression that clears one.
+- A restart regression proving a running terminal program survived checks its
+  process state, such as a nonce kept only in its shell's memory. Terminal IDs
+  survive an in-place relaunch, so an unchanged ID and running status cannot
+  distinguish recovery from a replacement program.
 
 - Default Unix socket privacy covers both ownership/mode bits and effective
   ACL grants, including ancestors that could allow replacement. Darwin evaluates
