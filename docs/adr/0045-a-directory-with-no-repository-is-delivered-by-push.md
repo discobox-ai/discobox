@@ -6,6 +6,7 @@
   [0139](0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md);
   everything else stands)
 - **§3 superseded by**: [26-10-10-545](26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
+- **§4 superseded and §1 narrowed by**: [26-11-05-928](26-11-05-928-a-directory-snapshot-survives-until-source-delivery-is-confirmed.md)
 - **Date**: 2026-08-08
 
 ## Context

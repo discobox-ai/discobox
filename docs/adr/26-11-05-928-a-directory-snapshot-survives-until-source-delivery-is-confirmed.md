@@ -1,9 +1,10 @@
 # 26-11-05-928 — A directory snapshot survives until source delivery is confirmed
 
-- **Status**: Proposed (would supersede 0045 §4's throwaway lifetime and
-  narrow 0045 §1's temporary storage requirement and 26-09-24-005 §2's
+- **Status**: Accepted (supersedes 0045 §4's throwaway lifetime and
+  narrows 0045 §1's temporary storage requirement and 26-09-24-005 §2's
   refusal for a source with no repository; origin-host restrictions remain)
 - **Date**: 2026-11-05
+- Accepted by the owner by merging #710, 2026-11-06
 - **Issue**: [#685](https://github.com/discobox-ai/discobox/issues/685)
 
 ## Context
