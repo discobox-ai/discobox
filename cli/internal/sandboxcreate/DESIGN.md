@@ -347,7 +347,9 @@ image preparation can continue while the health wait is pending. The server
 holds creation until a current status report permits placement.
 
 Provision narration also respects the server display state: a converged running
-container shown as `starting` still says "preparing the discobox" until the
-agent reports readiness. This current agent report outranks the pool phase
+container shown as `starting` describes the agent's blocking feature and step,
+while it runs. Before its feature plan arrives it
+says "loading provisioning bundles". A missing agent report falls back to
+"preparing the discobox" until readiness. This current agent report outranks the pool phase
 from boot or source delivery, even while that older phase is fresh. This is
 shared by CLI and console waits.

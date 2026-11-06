@@ -116,6 +116,7 @@ COPY pkg/imagecache ./pkg/imagecache
 COPY internal ./internal
 COPY pkg/platform ./pkg/platform
 COPY pkg/programstatus ./pkg/programstatus
+COPY pkg/provisionspec ./pkg/provisionspec
 COPY pkg/randomname ./pkg/randomname
 COPY pkg/releasemanifest ./pkg/releasemanifest
 COPY pkg/sandboxconfig ./pkg/sandboxconfig

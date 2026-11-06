@@ -94,7 +94,7 @@ func (h *handler) AttachSandboxExecOnce(context.Context, sandboxapi.AttachSandbo
 }
 
 // terminalReadyTimeout bounds how long a caller waits for a terminal to be
-// launched or revived, installed and started — the sandbox-agent's own tier of
+// launched or revived, installed and started after provisioning — the sandbox-agent's own tier of
 // the readiness wait (ADR 0039). It sits inside the tiers above it so that a
 // harness that cannot install is reported as exactly that, rather than as a
 // generic control-plane deadline.
@@ -115,6 +115,21 @@ const terminalReadyTimeout = 90 * time.Second
 // (terminal.Relaunches). Plain (non-terminal) exec ids pass through unchanged. Use it for attach/start,
 // where resuming is the goal.
 func (h *handler) resolveExecID(ctx context.Context, execID string) (string, error) {
+	// Provisioning waits for its outcome on the request context, before the startup
+	// budget. A live terminal remains usable while a new run provisions.
+	needsLaunch := execID == terminal.PrimaryExecID
+	if needsLaunch {
+		if current, ok := h.terminals.CurrentPrimary(); ok && current.Status == execs.StatusRunning {
+			needsLaunch = false
+		}
+	} else if current, ok := h.execs.Get(execID); ok {
+		needsLaunch = h.terminals.Relaunches(current)
+	}
+	if needsLaunch && h.provision != nil {
+		if err := h.provision.AwaitReady(ctx); err != nil {
+			return "", err
+		}
+	}
 	// Both branches below can launch or revive a terminal, which is the work
 	// the readiness budget exists to bound. An id that passes through unchanged
 	// waits for nothing, so the deadline costs it nothing.
@@ -325,7 +340,14 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 	// harness terminal: an empty command only means "run the harness" when the
 	// caller did not ask for a shell.
 	if !shell && (harnessID != "" || len(req.Command) == 0) {
-		created, err := h.terminals.Create(ctx, terminal.CreateRequest{
+		if h.provision != nil {
+			if err := h.provision.AwaitReady(ctx); err != nil {
+				return nil, statusError{status: http.StatusConflict, message: "discobox preparation failed: " + err.Error()}
+			}
+		}
+		waiting, cancel := context.WithTimeout(ctx, terminalReadyTimeout)
+		defer cancel()
+		created, err := h.terminals.Create(waiting, terminal.CreateRequest{
 			HarnessID: harnessID,
 			Args:      append([]string{}, req.Args...),
 			Workdir:   req.Workdir.Or(""),
@@ -345,11 +367,9 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 	// Commands and login shells need the provisioned user environment too.
 	// Wait before creating any exec record so cancellation leaves no phantom.
 	if h.provision != nil {
-		waiting, cancel := context.WithTimeout(ctx, terminalReadyTimeout)
-		defer cancel()
-		if err := h.provision.AwaitReady(waiting); err != nil {
+		if err := h.provision.AwaitReady(ctx); err != nil {
 			message := "discobox preparation failed: " + err.Error()
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if ctx.Err() != nil {
 				message = "discobox is still preparing; retry when preparation finishes"
 			}
 			return nil, statusError{status: http.StatusConflict, message: message}

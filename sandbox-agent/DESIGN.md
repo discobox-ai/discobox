@@ -969,7 +969,10 @@ signer. Error output never includes exporter stderr or parse fragments.
   yet. Each launch runs under a context detached from whichever caller started
   it — an attach that times out must not abort an install that boot and other
   joiners are waiting on — while each joiner waits under its own context,
-  bounded by `terminalReadyTimeout`. A failed launch is reported to everyone
+  bounded by `terminalReadyTimeout` after blocking provisioning. API callers first
+  join provisioning until readiness, failure, or request cancellation. Silent
+  package installs and cold bundle fetches have no attach deadline. Running terminals
+  bypass this gate during agent re-provisioning. A failed launch is reported to everyone
   joined to it and clears the key, so the next attach retries.
 - `"primary"` (`terminal.PrimaryExecID`) is a virtual exec id accepted anywhere
   the exec API takes one. It always names the sandbox's current primary
