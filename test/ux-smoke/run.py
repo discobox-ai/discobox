@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 import threading
 import time
+import urllib.error
 import urllib.request
 import uuid
 
@@ -41,6 +42,12 @@ COMMAND_COUNT = 0
 COMMAND_LOCK = threading.Lock()
 
 
+class CommandFailure(RuntimeError):
+    def __init__(self, message, result):
+        super().__init__(message)
+        self.result = result
+
+
 def command(args, *, limit=120, expected=0, input=None):
     global COMMAND_COUNT
     started = time.monotonic()
@@ -61,7 +68,7 @@ def command(args, *, limit=120, expected=0, input=None):
     with COMMAND_LOCK, (ARTIFACTS / "commands.log").open("a") as log:
         log.write(f"$ {args!r}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}\nexit={result.returncode} duration={time.monotonic()-started:.2f}s\n")
     if result.returncode != expected:
-        raise RuntimeError(f"exit {result.returncode}, expected {expected}: {args}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+        raise CommandFailure(f"exit {result.returncode}, expected {expected}: {args}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}", result)
     return result.stdout
 
 
@@ -317,6 +324,38 @@ def main():
     print(f"TIMING flows {time.monotonic()-started:.1f}s", flush=True)
 
 
+def purge_box(box):
+    try:
+        cli("admin", "box", "purge", box, input="", limit=45)
+        return
+    except CommandFailure as exc:
+        # Only this answer promises a durable background delete. Do not resend
+        # purge: observe its outcome before removing the pool it needs to finish.
+        pending = ("409 Conflict: sandbox purge did not complete; "
+                   "it will be retried in the background")
+        if exc.result.returncode != 1 or pending not in exc.result.stderr:
+            raise
+
+    last = None
+    def removed():
+        nonlocal last
+        try:
+            last = api("sandboxes/" + box)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return True
+            raise
+        # Retain the state and errorMessage missing from the original flake's
+        # artifacts, including when background convergence never completes.
+        (ARTIFACTS / (box + "-purge.json")).write_text(json.dumps(last, indent=2))
+        return False
+
+    try:
+        eventually("background purge of " + box, removed, seconds=60)
+    except Exception as exc:
+        raise RuntimeError(f"background purge of {box} failed; last sandbox: {last}") from exc
+
+
 def cleanup(failed):
     started = time.monotonic()
     errors = []
@@ -349,7 +388,7 @@ def cleanup(failed):
             errors.append(str(exc))
     for box in reversed(BOXES):
         try:
-            cli("admin", "box", "purge", box, input="", limit=45)
+            purge_box(box)
         except Exception as exc:
             errors.append(str(exc))
     if CLI and POOLS:

@@ -1,7 +1,9 @@
-"""Builder readiness regression tests; no Docker daemon required."""
+"""Smoke runner regression tests; no Docker daemon required."""
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
+import urllib.error
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -77,6 +79,67 @@ class BuilderReadinessTest(unittest.TestCase):
                                      "print('personal-override')"])
             self.assertEqual(output.strip(), "personal-override")
             self.assertIn("preparing the discobox", (Path(directory) / "commands.log").read_text())
+
+
+class PurgeCleanupTest(unittest.TestCase):
+    setUpClass = classmethod(BuilderReadinessTest.setUpClass.__func__)
+    tearDownClass = classmethod(BuilderReadinessTest.tearDownClass.__func__)
+    def failure(self, stderr, code=1):
+        result = subprocess.CompletedProcess([], code, stdout="", stderr=stderr)
+        return self.runner.CommandFailure("purge failed", result)
+
+    def pending(self):
+        return self.failure('failed to purge discobox "box": request failed: '
+                            '409 Conflict: sandbox purge did not complete; '
+                            'it will be retried in the background')
+
+    def test_pending_purge_waits_for_absence_without_resending(self):
+        runner = self.runner
+        missing = urllib.error.HTTPError("url", 404, "not found", {}, None)
+        state = {"desiredState": "deleted", "errorMessage": "removal in progress"}
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(runner, "ARTIFACTS", Path(directory)), \
+                patch.object(runner, "cli", side_effect=self.pending()) as cli, \
+                patch.object(runner, "api", side_effect=[state, missing]) as api, \
+                patch.object(runner.time, "sleep"):
+            runner.purge_box("box")
+            cli.assert_called_once_with("admin", "box", "purge", "box", input="", limit=45)
+            self.assertEqual(api.call_count, 2)
+            self.assertIn("removal in progress", (Path(directory) / "box-purge.json").read_text())
+
+    def test_success_needs_no_wait(self):
+        with patch.object(self.runner, "cli"), patch.object(self.runner, "api") as api:
+            self.runner.purge_box("box")
+            api.assert_not_called()
+
+    def test_other_purge_errors_still_fail(self):
+        for error in (self.failure("403 Forbidden"), self.failure("409 Conflict: other conflict")):
+            with self.subTest(error=error), \
+                    patch.object(self.runner, "cli", side_effect=error), \
+                    patch.object(self.runner, "api") as api:
+                with self.assertRaises(self.runner.CommandFailure):
+                    self.runner.purge_box("box")
+                api.assert_not_called()
+
+    def test_background_purge_is_bounded_and_keeps_failure(self):
+        runner = self.runner
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(runner, "ARTIFACTS", Path(directory)), \
+                patch.object(runner, "cli", side_effect=self.pending()), \
+                patch.object(runner, "api", return_value={"errorMessage": "data busy"}), \
+                patch.object(runner.time, "monotonic", side_effect=[0, 61]):
+            with self.assertRaisesRegex(RuntimeError, "last sandbox:.*data busy"):
+                runner.purge_box("box")
+            self.assertIn("data busy", (Path(directory) / "box-purge.json").read_text())
+
+    def test_observation_errors_are_not_absence(self):
+        runner = self.runner
+        for code in (403, 500):
+            with self.subTest(code=code), \
+                    patch.object(runner, "cli", side_effect=self.pending()), \
+                    patch.object(runner, "api", side_effect=urllib.error.HTTPError("url", code, "error", {}, None)):
+                with self.assertRaisesRegex(RuntimeError, "background purge.*failed"):
+                    runner.purge_box("box")
 
 
 if __name__ == "__main__":
