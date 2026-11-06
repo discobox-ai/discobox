@@ -80,13 +80,10 @@ Without POOL the project's default pool is used.`,
 }
 
 func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, stdin io.Reader, stdout, stderr io.Writer) error {
-	// A nil *OSConsole must not travel as a non-nil Console interface, so the
-	// interface stays unset when stdin is not a terminal file.
-	var console client.Console
+	console := client.NewOSConsole(stdin, stdout)
 	var cols, rows int
-	if osConsole := client.NewOSConsole(stdin, stdout); osConsole != nil {
-		console = osConsole
-		cols, rows, _ = osConsole.Size()
+	if console != nil {
+		cols, rows, _ = console.Size()
 	}
 	frames, err := a.openPoolConsoleAttach(ctx, projectID, poolID, rows, cols)
 	if err != nil {
