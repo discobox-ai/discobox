@@ -81,7 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [26-11-06-664](26-11-06-664-common-apt-packages-are-built-into-the-docker-base-before-development-binaries.md) | Common apt packages are built into the Docker base before development binaries | Proposed |
+| [26-11-06-664](26-11-06-664-common-apt-packages-are-built-into-the-docker-base-before-development-binaries.md) | Common apt packages are built into the Docker base before development binaries | Accepted |
 | [26-11-06-671](26-11-06-671-the-console-palette-composes-commands-and-boxes.md) | The console palette composes commands and boxes | Proposed |
 | [26-11-05-928](26-11-05-928-a-directory-snapshot-survives-until-source-delivery-is-confirmed.md) | A directory snapshot survives until source delivery is confirmed | Accepted (supersedes 0045 §4 and narrows 0045 §1 and 26-09-24-005 §2 for retained non-Git snapshots; origin-host restrictions remain) |
 | [26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md) | A start waits for a compatible pool and its pending upgrade | Accepted (narrows 26-11-04-167 §1 and extends §2; further narrows 26-10-12-711 §6 and 26-11-03-618 §2 for an existing sandbox's pending upgrade; source-delivery refusals remain) |
