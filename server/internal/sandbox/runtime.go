@@ -568,7 +568,7 @@ type PoolRuntime interface {
 	// shell in the host's own namespaces, for operators debugging the backend
 	// itself. It deliberately does not go through the pool agent, because the
 	// agent is one of the things a broken host stops running.
-	OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts ConsoleOptions) (PTY, error)
+	OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts ConsoleOptions) (Stream, error)
 	// OpenLogs reads what the backend itself recorded about the pool's host: a
 	// VM's serial console, the Docker daemon's journal. Like OpenConsole it
 	// goes through the driver rather than the pool agent, for the same reason —
@@ -650,15 +650,13 @@ type PoolLogStream struct {
 	io.ReadCloser
 }
 
-// ConsoleOptions configures one attach to a pool host console.
-//
-// It carries only the terminal size, because the console session outlives any
-// one attach: the container is created once per pool host and reattached, so
-// anything baked in at creation would be whatever the first caller happened to
-// ask for. Size is a property of the TTY and is applied on every attach.
+// ConsoleOptions configures a pool host console. With no Command it attaches
+// to the persistent interactive shell; otherwise it runs one command.
 type ConsoleOptions struct {
-	Rows int
-	Cols int
+	Command []string
+	TTY     bool
+	Rows    int
+	Cols    int
 }
 
 // AttachOptions configures an interactive PTY.

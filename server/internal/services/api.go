@@ -437,7 +437,7 @@ type PoolService interface {
 	// OpenPoolConsole attaches to the pool host's administrative console: a
 	// privileged root shell on the machine running the pool's runtime, for
 	// debugging the backend itself.
-	OpenPoolConsole(ctx context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error)
+	OpenPoolConsole(ctx context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.Stream, error)
 	// OpenPoolLogs reads whatever the pool's backend recorded about the machine
 	// running its runtime: a VM's serial console, a Docker daemon's journal.
 	OpenPoolLogs(ctx context.Context, projectID, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)

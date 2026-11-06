@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -381,4 +382,32 @@ func runToExit(t *testing.T, opts Options) []string {
 		t.Fatal("session did not finish")
 	}
 	return console.Events()
+}
+
+func TestRequireExitDistinguishesCompletionFromDetach(t *testing.T) {
+	for _, status := range []string{"eof", "detached", "exited"} {
+		for _, required := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/required=%t", status, required), func(t *testing.T) {
+				conn, remote := newPipe(t)
+				go func() {
+					defer remote.Close()
+					if status != "eof" {
+						var code *int64
+						if status == "exited" {
+							zero := int64(0)
+							code = &zero
+						}
+						payload, _ := frame.EncodeExit(status, code, "")
+						_ = frame.Write(remote, frame.Exit, payload)
+					}
+				}()
+				session := New(Options{Conn: conn, Stdout: io.Discard, Stderr: io.Discard, RequireExit: required, Kind: "command"})
+				err := session.Run(context.Background())
+				wantError := required && status != "exited"
+				if (err != nil) != wantError {
+					t.Fatalf("Run=%v, wantError=%t", err, wantError)
+				}
+			})
+		}
+	}
 }

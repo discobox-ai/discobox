@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -28,12 +30,14 @@ type stubPoolConsole struct {
 
 	output chan []byte
 
-	mu       sync.Mutex
-	written  []byte
-	resizes  [][2]int
-	closed   bool
-	exitCode int
-	exitErr  error
+	mu          sync.Mutex
+	written     []byte
+	resizes     [][2]int
+	closed      bool
+	stderr      io.Reader
+	inputClosed chan struct{}
+	exitCode    int
+	exitErr     error
 }
 
 func newStubPoolConsole() *stubPoolConsole {
@@ -46,6 +50,14 @@ func (c *stubPoolConsole) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 	return copy(p, chunk), nil
+}
+
+func (c *stubPoolConsole) Stderr() io.Reader { return c.stderr }
+func (c *stubPoolConsole) CloseWrite() error {
+	if c.inputClosed != nil {
+		close(c.inputClosed)
+	}
+	return nil
 }
 
 func (c *stubPoolConsole) Write(p []byte) (int, error) {
@@ -200,31 +212,114 @@ func TestPoolConsoleReportsShellExit(t *testing.T) {
 	}
 }
 
-// The console is refused before the upgrade, so an operator whose pool host is
-// unreachable gets the reason instead of a websocket that closes on its own.
-func TestPoolConsoleRejectsBeforeUpgrade(t *testing.T) {
+// Provider errors remain visible after the handshake has been accepted.
+func TestPoolConsoleReportsProviderFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	stubs := newRouterTestServices()
 	stubs.consoleErr = apperrors.NewStatusError(http.StatusNotFound, "pool not found")
 	server := newPoolConsoleTestServer(t, stubs)
+	socket := dialPoolConsole(ctx, t, server, "missing", "?command=true")
+	next, err := frame.Read(websocket.NetConn(ctx, socket, websocket.MessageBinary))
+	if err != nil || next.Type != frame.Error || !strings.Contains(string(next.Payload), "pool not found") {
+		t.Fatalf("frame=%+v err=%v", next, err)
+	}
+}
 
-	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/projects/" + testDefaultProjectID + "/pools/missing/console"
-	conn, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPClient: server.Client()})
-	if err == nil {
-		conn.Close(websocket.StatusNormalClosure, "done")
-		t.Fatal("dial console succeeded, want rejection")
+func TestPoolConsoleRejectsHandshakeBeforeOpening(t *testing.T) {
+	stubs := newRouterTestServices()
+	stubs.console = newStubPoolConsole()
+	server := newPoolConsoleTestServer(t, stubs)
+	url := server.URL + "/api/projects/" + testDefaultProjectID + "/pools/pool-1/console?command=sh&command=-c&command=touch+sentinel"
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if resp == nil {
-		t.Fatalf("dial console error without response: %v", err)
+	resp, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUpgradeRequired {
+		t.Fatalf("status=%d", resp.StatusCode)
 	}
-	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "pool not found") {
-		t.Fatalf("body = %q", body)
+	headers := http.Header{"Origin": []string{"https://attacker.example"}}
+	socket, resp, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(url, "http"), &websocket.DialOptions{HTTPClient: server.Client(), HTTPHeader: headers})
+	if socket != nil {
+		_ = socket.CloseNow()
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin response=%v error=%v", resp, err)
+	}
+	stubs.mu.Lock()
+	defer stubs.mu.Unlock()
+	if stubs.console.poolID != "" {
+		t.Fatal("rejected request opened a console")
+	}
+}
+
+func TestPoolConsoleCommandStreamsStderrAndEOF(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stubs := newRouterTestServices()
+	console := newStubPoolConsole()
+	console.stderr = strings.NewReader("stderr\n")
+	console.inputClosed = make(chan struct{})
+	console.exitCode = 37
+	stubs.console = console
+	server := newPoolConsoleTestServer(t, stubs)
+	conn := dialPoolConsole(ctx, t, server, "pool-1", "?command=cat&command=--help&tty=false")
+	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
+	_ = frame.Write(netConn, frame.Input, []byte("stdin\n"))
+	_ = frame.Write(netConn, frame.CloseInput, nil)
+	select {
+	case <-console.inputClosed:
+	case <-ctx.Done():
+		t.Fatal("stdin not closed")
+	}
+	console.output <- []byte("stdout\n")
+	_ = console.Close()
+	got := map[byte]string{}
+	for {
+		next, err := frame.Read(netConn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Type == frame.Exit {
+			exit, err := frame.DecodeExit(next.Payload)
+			if err != nil || exit.ExitCode == nil || *exit.ExitCode != 37 {
+				t.Fatalf("exit=%+v %v", exit, err)
+			}
+			break
+		}
+		got[next.Type] += string(next.Payload)
+	}
+	if got[frame.Stdout] != "stdout\n" || got[frame.Stderr] != "stderr\n" {
+		t.Fatalf("output=%v", got)
+	}
+	if !reflect.DeepEqual(console.openOpts.Command, []string{"cat", "--help"}) || console.openOpts.TTY {
+		t.Fatalf("opts=%+v", console.openOpts)
+	}
+}
+
+type brokenConsoleOutput struct{}
+
+func (brokenConsoleOutput) Read([]byte) (int, error) { return 0, errors.New("driver connection lost") }
+
+func TestPoolConsoleReportsOutputFailure(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stubs := newRouterTestServices()
+	console := newStubPoolConsole()
+	console.stderr = brokenConsoleOutput{}
+	stubs.console = console
+	server := newPoolConsoleTestServer(t, stubs)
+	socket := dialPoolConsole(ctx, t, server, "pool-1", "?command=cat")
+	next, err := frame.Read(websocket.NetConn(ctx, socket, websocket.MessageBinary))
+	if err != nil || next.Type != frame.Error || !strings.Contains(string(next.Payload), "driver connection lost") {
+		t.Fatalf("frame=%+v err=%v", next, err)
 	}
 }

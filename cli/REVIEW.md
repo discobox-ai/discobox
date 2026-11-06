@@ -351,3 +351,6 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   response cleanly after upstream revocation; runtime verification once showed
   curl succeeding with only 22 MiB of a 32 MiB file. Archive transfers already
   require their final checksum manifest; raw files need their extent checked.
+
+- One-off pool console commands require an explicit exit status. Interactive
+  attach EOF means detach, so its default success cannot prove command completion.

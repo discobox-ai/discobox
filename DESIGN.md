@@ -134,6 +134,9 @@ flowchart TD
   screen emulator in `sandbox-agent`, terminal control in the CLI — so the
   shared module never grows a terminal dependency. See
   [ADR 0008](docs/adr/0008-attach-stream-packages.md).
+  A one-off stream can require an explicit exit status (`client.Options.RequireExit`)
+  so a lost connection cannot count as command success; interactive streams still
+  allow detach without completion.
 - CLI module: `discobox` command implementation; depends on root generated
   clients/contracts for normal user commands and talks to the control plane
   through the Server REST API. It does **not** depend on the server module:

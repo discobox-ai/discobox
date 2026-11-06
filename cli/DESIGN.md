@@ -1832,6 +1832,12 @@ console's shell is started by the server before the session's own resize
 tracking has said anything, and a first prompt drawn at 80x24 would then be
 repainted.
 
+`console [POOL] -- CMD [ARG...]` runs one command and returns its exit status.
+The separator distinguishes the default pool's command from an explicit pool.
+Stdin is always attached; a terminal stdin or `-t` requests a TTY, otherwise
+stdout and stderr remain separate. Command mode sends EOF and omits interactive
+narration and detach filtering. No-command attachment retains the persistent shell.
+
 ## Pool Host Logs
 
 `discobox admin pool logs [POOL]` prints what that pool's backend recorded

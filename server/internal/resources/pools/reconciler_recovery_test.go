@@ -412,7 +412,7 @@ func (stubPoolProvider) ClearCache(context.Context, *model.Pool) ([]string, erro
 	return nil, nil
 }
 
-func (stubPoolProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (stubPoolProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	return nil, errors.New("no console in unit tests")
 }
 

@@ -564,7 +564,7 @@ func (h *poolMachine) running(ctx context.Context, pool *model.Pool) (engine.Ins
 	return inst, nil
 }
 
-func (h *poolMachine) openConsole(ctx context.Context, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+func (h *poolMachine) openConsole(ctx context.Context, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.Stream, error) {
 	inst, err := h.running(ctx, pool)
 	if err != nil {
 		return nil, err
@@ -573,19 +573,24 @@ func (h *poolMachine) openConsole(ctx context.Context, pool *model.Pool, opts sa
 	if err != nil {
 		return nil, err
 	}
+	argv := h.shell
+	if len(opts.Command) > 0 {
+		argv = append(slices.Clone(h.shell), "-c", `exec "$@"`, "discobox-console")
+		argv = append(argv, opts.Command...)
+	}
 	process, err := client.Exec(ctx, machine.ExecRequest{
-		Argv: h.shell,
+		Argv: argv,
 		// A login environment has no TERM: without one, clear, less, top and
 		// vim refuse or degrade.
 		Env:  []string{"TERM=xterm-256color"},
-		TTY:  true,
+		TTY:  len(opts.Command) == 0 || opts.TTY,
 		Rows: terminalSize(opts.Rows),
 		Cols: terminalSize(opts.Cols),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open a shell in pool %s's machine: %w", pool.ID, err)
 	}
-	return newGuestProcess(process), nil
+	return newGuestProcess(process, true), nil
 }
 
 func (h *poolMachine) openLogs(ctx context.Context, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
@@ -606,7 +611,7 @@ func (h *poolMachine) openLogs(ctx context.Context, pool *model.Pool, opts sandb
 		_ = process.Close()
 		return nil, err
 	}
-	return &sandbox.PoolLogStream{Source: h.logSource, ReadCloser: newGuestProcess(process)}, nil
+	return &sandbox.PoolLogStream{Source: h.logSource, ReadCloser: newGuestProcess(process, false)}, nil
 }
 
 func terminalSize(n int) uint16 {
@@ -625,6 +630,7 @@ func terminalSize(n int) uint16 {
 type guestProcess struct {
 	process machine.Process
 	reader  *io.PipeReader
+	stderr  *io.PipeReader
 
 	done     chan struct{}
 	code     int
@@ -632,12 +638,21 @@ type guestProcess struct {
 	closeOne sync.Once
 }
 
-func newGuestProcess(process machine.Process) *guestProcess {
+func newGuestProcess(process machine.Process, separate bool) *guestProcess {
 	reader, writer := io.Pipe()
 	p := &guestProcess{process: process, reader: reader, done: make(chan struct{})}
+	var stderrWriter *io.PipeWriter
+	var errOutput io.Writer = writer
+	if separate {
+		p.stderr, stderrWriter = io.Pipe()
+		errOutput = stderrWriter
+	}
 	go func() {
 		defer close(p.done)
-		p.code, p.err = process.Wait(writer, writer)
+		p.code, p.err = process.Wait(writer, errOutput)
+		if stderrWriter != nil {
+			_ = stderrWriter.CloseWithError(p.err)
+		}
 		// A process that ran and exited ends the stream; its exit code is
 		// Wait's to report, not the reader's. A stream that broke first is
 		// the reader's error, so a followed log cut off by a dropped
@@ -646,6 +661,14 @@ func newGuestProcess(process machine.Process) *guestProcess {
 	}()
 	return p
 }
+
+func (p *guestProcess) Stderr() io.Reader {
+	if p.stderr == nil {
+		return nil
+	}
+	return p.stderr
+}
+func (p *guestProcess) CloseWrite() error { return p.process.CloseStdin() }
 
 func (p *guestProcess) Read(b []byte) (int, error)  { return p.reader.Read(b) }
 func (p *guestProcess) Write(b []byte) (int, error) { return p.process.Write(b) }
@@ -667,6 +690,9 @@ func (p *guestProcess) Close() error {
 	p.closeOne.Do(func() {
 		_ = p.process.Close()
 		_ = p.reader.Close()
+		if p.stderr != nil {
+			_ = p.stderr.Close()
+		}
 		<-p.done
 	})
 	return nil
