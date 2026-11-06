@@ -616,9 +616,6 @@ func TestEnvScriptsAreTheirStepsAlone(t *testing.T) {
 
 // A download whose server stops sending is given up, not waited on.
 func TestFetchGivesUpOnAStalledServer(t *testing.T) {
-	saved := fetchStall
-	fetchStall = 50 * time.Millisecond
-	t.Cleanup(func() { fetchStall = saved })
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {
@@ -639,6 +636,17 @@ func TestFetchGivesUpOnAStalledServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer body.Close()
+	partial := make([]byte, len("partial"))
+	if _, err := io.ReadFull(body, partial); err != nil {
+		t.Fatal(err)
+	}
+	if string(partial) != "partial" {
+		t.Fatalf("initial body = %q, want partial", partial)
+	}
+	// Keep the normal timeout until the response and its initial bytes arrive:
+	// a loaded host may take longer to schedule them than the stall below.
+	// Only shorten the timer once we know the body has stopped sending.
+	body.(*stallReader).stalled.Reset(50 * time.Millisecond)
 	_, err = io.ReadAll(body)
 	if err == nil || !strings.Contains(err.Error(), "nothing received") {
 		t.Fatalf("read = %v, want a stall", err)
