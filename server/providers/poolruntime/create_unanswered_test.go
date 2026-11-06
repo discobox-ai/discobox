@@ -86,23 +86,31 @@ func TestPoolProviderCreateIsSentAgainWhenThePoolAgentLeavesMidRequest(t *testin
 // agent's internal address, once the ceiling the host wait has runs out.
 func TestPoolProviderCreateGivesUpOnAPoolAgentThatKeepsLeaving(t *testing.T) {
 	oldInterval, oldCeiling := poolCapacityPollInterval, poolAgentWaitCeiling
-	poolCapacityPollInterval = time.Millisecond
-	poolAgentWaitCeiling = 20 * time.Millisecond
+	// Let the recovery budget expire before another attempt is due. Retry
+	// counts and fresh leases are covered by the preceding test; this test
+	// must not depend on fitting multiple HTTP requests into that budget.
+	poolCapacityPollInterval = time.Hour
+	poolAgentWaitCeiling = time.Second
 	t.Cleanup(func() { poolCapacityPollInterval, poolAgentWaitCeiling = oldInterval, oldCeiling })
 
 	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", "/sandboxes", 1<<30)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
-	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _, err := provider.Create(ctx, sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+	if ctx.Err() != nil {
+		t.Fatalf("create exhausted the outer guard instead of the recovery budget: %v", err)
+	}
 	if err == nil {
 		t.Fatal("create on a pool agent that never answers succeeded")
 	}
 	if !strings.Contains(err.Error(), "create sandbox on pool pool-1") || strings.Contains(err.Error(), runtimeProvider.baseURL) {
 		t.Fatalf("create error = %q, want the pool named and the agent's address left out", err)
 	}
-	if creates.Load() < 2 {
-		t.Fatalf("creates sent = %d, want it tried again before giving up", creates.Load())
+	if got := creates.Load(); got != 1 {
+		t.Fatalf("creates sent = %d, want 1 before the recovery budget expires", got)
 	}
 }
 
