@@ -33,3 +33,8 @@
   host twice. Noninteractive cache delivery uses the same no-question executor, including
   its best-effort fetch from the pool cache; an expired pool API token can
   trigger Git askpass there too.
+
+- Private pending-source repositories must never become another source's files.
+  Keep their capture and measurement exclusions together, including copies of
+  home/config ancestors, direct store paths, path aliases and .gitignore negations.
+  A retained bare repository carries another directory's original private bytes.

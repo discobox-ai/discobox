@@ -207,7 +207,7 @@ func TestListingChecksHarnessChangesAgainstCurrentSavedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ds := &apiDataSource{client: client, projectID: "project-1"}
+	ds := &apiDataSource{app: &App{serverURL: server.URL}, client: client, projectID: "project-1"}
 	for _, tc := range []struct {
 		name, body string
 		pending    bool

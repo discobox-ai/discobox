@@ -16,7 +16,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create and push; owns Git authentication execution policy and process-tree cancellation for source ref lookup, delivery and lending. |
 | `internal/sandboxpush` | `discobox push`: sending a local source's commits into the origin on its pool that its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 26-09-05-008). |
 | `internal/origin` | Resolves the client host a sandbox is created from, and a directory's project root (its repository root). Host identity itself is shared, in the root module's `internal/hostid`. |
-| `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Used by create (ADR 0083). |
+| `internal/gitunborn` | A repository with no commits: whether HEAD is unborn. Used by create (ADR 0083). |
 | `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/lifetime` | How long a binding lasts, said the way people say it: the presets an approval offers, the words every length-of-time flag parses (`Flag`: `--for`, `--ttl`, `--max-binding-ttl`, `--expires-in`, and `--since` counting back), and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
@@ -2393,11 +2393,11 @@ may save it locally. Server/pool resource intent, cache configuration and stores
 do not save the lent credential.
 Source completion is per slug; the server starts only after all sources arrive.
 
-A local source is delivered out of the `sandboxcreate.LocalSources` that create
-returned, not out of a repository re-resolved from the source argument. For a directory with
-no repository (below) that repository is a throwaway one holding the only copy
-of what the sandbox was configured against, so it cannot be found again. Callers
-`Close` them as soon as the sources have been delivered.
+A local source is delivered out of the `sandboxcreate.LocalSources` create
+returned. Non-Git sources are retained in the private pending-sources store
+before create; `Close` releases resources without discarding recovery data.
+Only confirmed aggregate delivery permits deletion. See "A Directory That Is
+Not a Repository" below and ADR 26-11-05-928.
 
 The delivery goes through the control plane's Git proxy, never directly to the
 pool, which sits on a network the client cannot reach.
@@ -2466,12 +2466,13 @@ rebase-time push resolve it).
 Every source is resolved and checked before any of them is pushed
 (`CheckDeliverable`), because the discobox resumes only after delivery of all of
 them: a delivery that cannot finish must not leave half of itself in an origin.
-Three things make one impossible, and each is refused by name — the commit is
-gone from the local repository, the workspace snapshot ref is gone, or the
-source was created from a directory with no repository of its own, whose
-throwaway repository was deleted when that run ended (ADR 0045) and took the
-only copy of those commits with it. `--source`, `--branch`, and `--force` all
-describe a rebase-time push and are refused here rather than ignored.
+A missing pinned commit or workspace snapshot ref refuses delivery by name.
+For a non-Git source, `RecoverSource` finds its retained snapshot before any
+Git directory lookup, validating endpoint, project, host, sandbox/source identity
+and captured objects. It never reads today's directory, and `--dir` cannot
+substitute a new snapshot. Missing data explains recovery from the original
+client or creating a new box. `--source`, `--branch` and `--force` describe a
+rebase-time push and are refused here.
 
 A discobox that failed while owed — the source-await timeout, or any other
 failure — is **repaired first**,
@@ -2862,9 +2863,8 @@ the empty tree, the directory is snapshotted on top of it exactly as a dirty
 workspace, and the sandbox comes up with the files as uncommitted changes.
 
 - The source records `noLocalRepository`, and `localDirectory` still names the
-  user's directory — never the temporary repository, which is one create's
-  implementation detail. That flag is what makes the server choose `push`: there
-  is nothing at that path to clone however reachable it is.
+  user's directory — never the retained repository. The server selects cache
+  delivery; there is nothing at the original path to clone.
 - The user is asked first, through `sandboxcreate.ConfirmCopyDirectoryFunc`,
   and copying leads: there is no commit to start from instead, so the content
   is what running against the directory asks for, and the size on the question
@@ -2897,6 +2897,18 @@ See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-p
 [ADR 0073](../docs/adr/0073-a-directory-with-no-repository-is-copied-only-when-asked.md)
 and [ADR 0077](../docs/adr/0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md).
 
+Non-Git snapshots survive CLI and console exit in
+`<os.UserConfigDir()>/discobox/client/pending-sources/`, with a private manifest
+and repository per source. `sandboxcreate` publishes them before create and
+binds them after its response; an interrupted binding requires an unambiguous
+match of the complete recorded identity. Attach, explicit push and console
+start/open share its resolver. They send the captured objects even if the
+original directory changed or disappeared. Pending snapshots have no automatic
+expiry. Aggregate completion or an authenticated delivery confirmation removes
+them under the same file locks held by delivery. Failure output names the
+retained paths and attach retry; manually deleting those paths forfeits
+recovery. See ADR 26-11-05-928.
+
 ## A Repository With No Commits
 
 `git init` and nothing since leaves an *unborn* HEAD — it names a branch that
@@ -2913,19 +2925,18 @@ touched, so HEAD stays unborn and their first commit stays theirs.
 - The source records `noLocalCommits`, and that is what makes the server choose
   `push`: a clone of the repository yields nothing, and the base commit lives
   only in objects this client wrote. It is deliberately not `noLocalRepository`,
-  which additionally means the commits are gone with the repository built for
-  that one run. These are in the user's repository and stay there, so a later
+  whose temporary capture is retained privately until delivery is confirmed. These are in the user's repository and stay there, so a later
   `discobox push` delivers this source out of it and `CheckDeliverable` finds
   both objects.
 - The base commit gets a `refs/discobox/run/` ref of its own. It is what the
   sandbox checks out and what the snapshot is measured against on both ends, so
   it has to be a ref rather than a loose object — an empty repository's base is
   pointed at by nothing else at all.
-- `gitunborn.WorkspaceTree` writes the working tree from an index of its own
-  that starts empty, because `gitutil.CurrentWorkspaceTree` seeds its index from
-  HEAD. `git add` fills it, honoring `.gitignore` and skipping `.git`, and the
-  repository's real index — which may already hold paths staged for that first
-  commit — is untouched.
+- `sandboxcreate.captureWorkspaceTree` snapshots all workspaces through a
+  temporary index seeded from their pinned base, which is the empty root commit
+  here. It honors `.gitignore`, skips `.git`, and excludes the private pending
+  source store even when a dotfiles repository encloses it. The person's real
+  index is untouched.
 - Nobody is asked, and `--include-dirty` does not decide it: the files are
   carried in either way. The directory question exists because a directory in
   no repository may be a home directory somebody ran in by accident, and `git

@@ -115,12 +115,30 @@ func sourceAwaitsDelivery(source apimodel.GitSource, awaiting bool) bool {
 //
 // It is a no-op unless the server expects a delivery, so callers can invoke it
 // unconditionally after create.
-func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSources, serverURL, token string, report Report, options DeliveryOptions) error {
+func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSources, serverURL, token string, report Report, options DeliveryOptions) (deliveryErr error) {
+	defer local.Close()
+	if err := local.lockPending(ctx, sandbox); err != nil {
+		if delivered, readErr := sourceDelivered(ctx, client, projectID, sandbox.ID); readErr == nil && delivered {
+			return nil
+		}
+		return err
+	}
+	defer func() {
+		if deliveryErr == nil {
+			deliveryErr = local.removeConfirmedPending()
+		}
+	}()
+
 	if err := options.Credentials.Validate(); err != nil {
 		return err
 	}
 	pending := pushDeliveredSources(sandbox)
-	if len(pending) == 0 {
+	if len(pending) == 0 && !sandbox.Runtime.SourceDeliveredAt.IsSet() {
+		// A record with no delivery owed is not confirmation that a staged create's
+		// source was delivered. Keep anything retained until an authoritative ack.
+		if local.RetainedSources() != "" {
+			return fmt.Errorf("discobox has no source delivery to confirm")
+		}
 		return nil
 	}
 	if sandbox.Runtime.SourceDeliveredAt.IsSet() {
@@ -489,7 +507,7 @@ func NewLocalSources(roots map[string]string) *LocalSources {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		local.sources = append(local.sources, localSource{key: key, repoRoot: roots[key]})
+		local.AddRepository(key, roots[key])
 	}
 	return local
 }
@@ -502,14 +520,10 @@ func NewLocalSources(roots map[string]string) *LocalSources {
 // later means finding those exact objects here: the commit, and for a discobox
 // created from a dirty working tree the snapshot commit holding those
 // uncommitted changes. Either can be gone — a branch deleted, a snapshot ref
-// pruned — and the source that was created from a directory with no repository
-// of its own is always gone, because the repository built over it existed only
-// for that run (ADR 0045).
+// pruned. Non-Git sources are checked against their retained repository after
+// RecoverSource validates the recorded identity and captured snapshot object.
 func CheckDeliverable(ctx context.Context, repoRoot string, source apimodel.GitSource) error {
 	slug := strings.TrimSpace(source.Slug.Or(""))
-	if source.NoLocalRepository.Or(false) {
-		return fmt.Errorf("source %q was created from a directory that is not a Git repository, so it was delivered out of a repository built for that run and deleted afterwards; nothing on this machine holds those commits now", slug)
-	}
 	commit, _, snapshotRef, err := pushRefs(source)
 	if err != nil {
 		return err
@@ -524,4 +538,9 @@ func CheckDeliverable(ctx context.Context, repoRoot string, source apimodel.GitS
 		return fmt.Errorf("source %q carried uncommitted changes, and the snapshot holding them (%s) is gone from %s", slug, snapshotRef, repoRoot)
 	}
 	return nil
+}
+
+// AddRepository records an existing repository alongside recovered directory snapshots.
+func (s *LocalSources) AddRepository(key, root string) {
+	s.sources = append(s.sources, localSource{key: key, repoRoot: root})
 }

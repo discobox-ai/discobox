@@ -347,13 +347,4 @@ func TestCheckDeliverableRefusesWhatThisMachineNoLongerHolds(t *testing.T) {
 		t.Fatalf("CheckDeliverable with the snapshot still here: %v", err)
 	}
 
-	// The repository a directory with no repository of its own was delivered
-	// out of existed for that one run, so there is nothing to deliver twice.
-	err = CheckDeliverable(ctx, repo, pushSourceFixture(t, func(s *apimodel.GitSource) {
-		atHead(s)
-		s.NoLocalRepository = apiclientgen.NewOptBool(true)
-	}))
-	if err == nil || !strings.Contains(err.Error(), "not a Git repository") {
-		t.Fatalf("error = %v, want it to say the run's repository is gone", err)
-	}
 }

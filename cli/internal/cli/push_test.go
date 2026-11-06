@@ -129,7 +129,7 @@ func TestPushRefusesADeliveryThisMachineCanNoLongerFinish(t *testing.T) {
 		source := pushTestSource(t, func(s map[string]any) { s["noLocalRepository"] = true })
 		server := awaitingSourceServer(t, source, &paths)
 		err := runPushCommand(t, server.URL, "--dir", "primary="+repo)
-		if err == nil || !strings.Contains(err.Error(), "not a Git repository") {
+		if err == nil || !strings.Contains(err.Error(), "must be delivered from its original client") {
 			t.Fatalf("error = %v, want it to say the run's repository is gone", err)
 		}
 		assertNothingPushed(t, paths)

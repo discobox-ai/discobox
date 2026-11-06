@@ -7,6 +7,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 )
@@ -72,6 +73,9 @@ draw a window on, attach is raw whether or not the flag was given.`,
 				}
 				sandbox, err := expectResponse[apimodel.Sandbox](res)
 				if err != nil {
+					return err
+				}
+				if err := sandboxcreate.CleanupConfirmedSources(cmd.Context(), a.serverURL, sandbox); err != nil {
 					return err
 				}
 				// A machine with no resolvable identity simply has no

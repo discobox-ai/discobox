@@ -216,7 +216,7 @@ func TestAwaitSourceRequestedStopsAtADeliveryAlreadyReported(t *testing.T) {
 // parkedWithPushSource is a discobox parked waiting for one push-delivered
 // source at commit.
 func parkedWithPushSource(commit string) *apimodel.Sandbox {
-	sandbox := &apimodel.Sandbox{ID: "sbx_1"}
+	sandbox := &apimodel.Sandbox{ID: "sbx_1", ProjectId: "project-1"}
 	sandbox.Config.SetSource(apiclientgen.NewOptGitSource(apimodel.GitSource{
 		Slug:     apiclientgen.NewOptString("primary"),
 		Delivery: apiclientgen.NewOptGitSourceDelivery(apiclientgen.GitSourceDeliveryPush),

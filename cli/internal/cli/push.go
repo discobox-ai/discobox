@@ -61,8 +61,10 @@ A discobox that is still waiting for its source -- one whose create failed after
 it had been provisioned -- is delivered rather than offered something to rebase
 onto: every source it waits for is pushed at the commit it was created from,
 with any uncommitted work that create captured, and reported complete, which
-starts it. That needs the repositories those sources came from to still hold
-those commits; --source, --branch, and --force describe a push to a running
+starts it. Git repositories must still hold those commits; a non-Git directory
+uses the snapshot retained by this client even if that directory has changed.
+For a non-Git source, --dir cannot replace the original snapshot.
+--source, --branch, and --force describe a push to a running
 discobox and do not apply. Attaching to it from the machine that created it
 delivers it the same way, so this is for delivering it from a directory that
 has moved (--dir), or from another machine.
@@ -350,7 +352,8 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 // checks come first so that a discobox this machine cannot deliver is not
 // rebuilt for a delivery that will not follow.
 func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox, pending []sandboxcreate.PendingSourcePush, hostID, gitServerURL string, dirOverrides map[string]string, step sandboxcreate.Report, options sandboxcreate.DeliveryOptions) ([]pushSourceReport, error) {
-	roots := make(map[string]string, len(pending))
+	local := sandboxcreate.NewLocalSources(nil)
+	defer local.Close()
 	sources := make([]pushSourceReport, 0, len(pending))
 	for _, entry := range pending {
 		if entry.Remote != "" {
@@ -358,6 +361,23 @@ func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Clie
 			// has to, and whichever client can read the URL delivers it.
 			commit, deliveredBranch := deliveredRefs(entry.Source)
 			sources = append(sources, pushSourceReport{Slug: entry.Slug, Status: pushStatusDelivered, Branch: deliveredBranch, Commit: commit})
+			continue
+		}
+		if entry.Source.NoLocalRepository.Or(false) {
+			if sandbox.Origin.Value.HostId != hostID || hostID == "" || sandbox.CreatedBySandboxId.Or("") != "" {
+				return nil, fmt.Errorf("source %q must be delivered from its original client", entry.Slug)
+			}
+			repoRoot, err := local.RecoverSource(ctx, a.serverURL, sandbox, entry)
+			if err != nil {
+				// Cleanup may have won the lock after this attempt read an owed record.
+				if current, readErr := getSandbox(ctx, client, projectID, sandbox.ID); readErr == nil && current.Runtime.SourceDeliveredAt.IsSet() {
+					local.Close()
+					return sources, sandboxcreate.CleanupConfirmedSources(ctx, a.serverURL, current)
+				}
+				return nil, err
+			}
+			commit, branch := deliveredRefs(entry.Source)
+			sources = append(sources, pushSourceReport{Slug: entry.Slug, Status: pushStatusDelivered, HostPath: repoRoot, Branch: branch, Commit: commit})
 			continue
 		}
 		hostDir, err := resolveSourceHostDir(sandbox, hostID, sourceEntry{slug: entry.Slug, source: entry.Source}, dirOverrides)
@@ -374,7 +394,7 @@ func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Clie
 		if err := sandboxcreate.CheckDeliverable(ctx, repoRoot, entry.Source); err != nil {
 			return nil, err
 		}
-		roots[entry.Key] = repoRoot
+		local.AddRepository(entry.Key, repoRoot)
 		commit, deliveredBranch := deliveredRefs(entry.Source)
 		sources = append(sources, pushSourceReport{
 			Slug:     entry.Slug,
@@ -391,7 +411,7 @@ func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Clie
 		}
 		sandbox = repaired
 	}
-	if err := sandboxcreate.DeliverSource(ctx, client, projectID, sandbox, sandboxcreate.NewLocalSources(roots), gitServerURL, a.token, step, options); err != nil {
+	if err := sandboxcreate.DeliverSource(ctx, client, projectID, sandbox, local, gitServerURL, a.token, step, options); err != nil {
 		return nil, err
 	}
 	return sources, nil

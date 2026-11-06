@@ -489,6 +489,7 @@ func declaredPromptSettings(ctx context.Context, opts PromptOptions, primary res
 type promptSandboxCreator interface {
 	CreateSandbox(context.Context, *apimodel.CreateSandboxBody, apiclientgen.CreateSandboxParams) (apiclientgen.CreateSandboxRes, error)
 	secretReader
+	GetProject(context.Context, apiclientgen.GetProjectParams) (apiclientgen.GetProjectRes, error)
 }
 
 // nameConflictAttempts bounds the retries below. Sandbox names are unique
@@ -500,12 +501,13 @@ const nameConflictAttempts = 5
 // CreatePromptSandbox builds, submits, and decodes a prompt sandbox request,
 // picking another name if the generated one is already taken, and returns the
 // local sources it was resolved from for the caller to deliver and then close.
-// They are nil with an error.
+// An accepted create returns its sandbox and local sources even if binding the
+// recovery state failed; callers must report its retry command and close sources.
 //
 // Only this path retries: the name here is generated (BuildPromptSandboxBody),
 // so replacing it costs the caller nothing. A name the user typed is theirs,
 // and `admin box create --name` reports the conflict instead.
-func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions, report Report) (*apimodel.Sandbox, *LocalSources, error) {
+func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID, endpoint string, opts PromptOptions, report Report) (*apimodel.Sandbox, *LocalSources, error) {
 	report.step(StepPreparingSource)
 	body, local, err := BuildPromptSandboxBody(ctx, opts)
 	if err != nil {
@@ -515,14 +517,47 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 		local.Close()
 		return nil, nil, err
 	}
+	// The selector "default" may change after create. Resolve it before any
+	// retained snapshot is published, including for ambiguous create outcomes.
+	if projectID == "default" {
+		for _, entry := range local.sources {
+			source := body.Config.Source.Value
+			if entry.key != "" {
+				source = body.Config.SourceCodeReferences.Value[entry.key]
+			}
+			if !source.NoLocalRepository.Or(false) {
+				continue
+			}
+			res, readErr := client.GetProject(ctx, apiclientgen.GetProjectParams{ProjectId: projectID})
+			if readErr != nil {
+				local.Close()
+				return nil, nil, readErr
+			}
+			project, ok := res.(*apimodel.Project)
+			if !ok || project.ID == "" {
+				local.Close()
+				return nil, nil, fmt.Errorf("resolve project for source recovery: %v", res)
+			}
+			projectID = project.ID
+			break
+		}
+	}
+	if err := local.stagePending(ctx, endpoint, projectID, body); err != nil {
+		local.Close()
+		return nil, nil, fmt.Errorf("retain source snapshot%s: %w", local.RetainedSources(), err)
+	}
 	report.step(StepCreating)
 	for attempt := 1; ; attempt++ {
 		res, err := client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 		if err != nil {
 			local.Close()
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("create discobox%s: %w", local.RetainedSources(), err)
 		}
 		if sandbox, ok := res.(*apimodel.Sandbox); ok {
+			if err := local.bindPending(ctx, sandbox); err != nil {
+				local.Close()
+				return sandbox, local, fmt.Errorf("bind source recovery: %w", err)
+			}
 			// Said only now: a create that failed stored nothing.
 			if opts.ReportInlineSecret != nil {
 				for _, secret := range body.Config.Secrets {
@@ -533,7 +568,7 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 		}
 		if attempt >= nameConflictAttempts || !isNameConflict(res) {
 			local.Close()
-			return nil, nil, createResponseError(res)
+			return nil, nil, fmt.Errorf("create discobox%s: %w", local.RetainedSources(), createResponseError(res))
 		}
 		name, err := randomname.Generate()
 		if err != nil {

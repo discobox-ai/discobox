@@ -138,16 +138,10 @@ type resolvedRunSource struct {
 	cleanup func()
 }
 
-// LocalSources are the local repositories a create resolved its sources from —
-// the primary source and every `--include` reference — and that a push delivers
-// those sources out of. Close releases them: a directory with no repository of
-// its own got a throwaway one built over it, which is deleted once the source
-// has reached the sandbox, and a real repository has nothing to release.
-//
-// They are carried from create to delivery rather than resolved twice, because
-// a throwaway repository cannot be found again: it holds the only copy of the
-// base commit and the workspace snapshot that the sandbox was configured
-// against.
+// LocalSources holds the repositories used for source delivery. Before create,
+// non-Git snapshots are published to the private pending-sources store. Close
+// releases temporary resources and delivery locks; durable entries survive
+// until aggregate delivery is confirmed (ADR 26-11-05-928).
 type LocalSources struct {
 	sources []localSource
 }
@@ -160,6 +154,8 @@ type localSource struct {
 	key      string
 	repoRoot string
 	cleanup  func()
+	pending  string
+	release  func()
 }
 
 // add records the repository a resolved source was built from. The zero key is
@@ -175,6 +171,10 @@ func (s *LocalSources) Close() {
 		return
 	}
 	for i := range s.sources {
+		if s.sources[i].release != nil {
+			s.sources[i].release()
+			s.sources[i].release = nil
+		}
 		if s.sources[i].cleanup == nil {
 			continue
 		}
@@ -448,11 +448,10 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	if opts.IncludeDirty == IncludeDirtyNever {
 		return resolved, warnLeftOut(ctx, repoRoot, opts)
 	}
-	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
+	workspaceTree, err := captureWorkspaceTree(ctx, repoRoot, repoRoot, baseCommit)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	defer cleanup()
 	if !workspaceTree.Dirty {
 		return resolved, nil
 	}
@@ -588,23 +587,14 @@ func resolveUnbornRunSource(ctx context.Context, repoRoot, absSource, ref string
 		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
 		Destination: localRunDestination(opts.Platform, repoRoot, absSource),
 	}
-	tree, cleanup, err := gitunborn.WorkspaceTree(ctx, repoRoot)
+	tree, err := captureWorkspaceTree(ctx, repoRoot, repoRoot, baseCommit)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	defer cleanup()
-	if tree == emptyTree {
-		// An empty repository. There is nothing to snapshot, and the sandbox
-		// starts on the empty base commit at this repository's path — which is
-		// what `git init` in a new project directory asks for.
+	if !tree.Dirty {
 		return resolved, nil
 	}
-	workspace, err := snapshotWorkspace(ctx, repoRoot, gitutil.WorkspaceTree{
-		BaseCommit: baseCommit,
-		BaseTree:   emptyTree,
-		Tree:       tree,
-		Dirty:      true,
-	})
+	workspace, err := snapshotWorkspace(ctx, repoRoot, tree)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
@@ -752,11 +742,10 @@ func directoryRunSource(ctx context.Context, dir, repoRoot string, sandbox platf
 		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
 		Destination: localRunDestination(sandbox, dir, dir),
 	}
-	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
+	workspaceTree, err := captureWorkspaceTree(ctx, dir, repoRoot, baseCommit)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	defer cleanup()
 	if !workspaceTree.Dirty {
 		// An empty directory. There is nothing to snapshot, and the sandbox
 		// starts on the empty base commit — which is the point of running in
