@@ -86,11 +86,11 @@ func TestApprovalCardsFitCompactWindow(t *testing.T) {
 			req := waitingRequest()
 			switch kind {
 			case "use":
-				m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub"}})
+				m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub"}}, nil)
 			case "delegate":
 				req.Delegate = req.Use
 				req.Use = nil
-				m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub"}})
+				m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub"}}, nil)
 			case "adoption":
 				req.Adoption = &AdoptionAsk{ChildID: "child", RequesterID: "requester", CurrentParentID: "parent"}
 				m.askAboutAdoption(req)
@@ -156,7 +156,7 @@ func TestCombinedApprovalStagesIndependentDecisions(t *testing.T) {
 				m, ds := sourceWithRequest(t)
 				req := waitingRequest()
 				req.Delegate = &RequestPart{Routes: req.Use.Routes}
-				m.askAboutCredential(req, ds.projectSecrets)
+				m.askAboutCredential(req, ds.projectSecrets, nil)
 				m.dialog.form.choose("scope", "hosts")
 				answerApproval(t, m, use)
 				if len(ds.approvals) != 0 || len(ds.denials) != 0 {
@@ -192,7 +192,7 @@ func TestCombinedApprovalStagesIndependentDecisions(t *testing.T) {
 
 func TestQueuedChoiceCannotApproveUnseenSummary(t *testing.T) {
 	m, ds := sourceWithRequest(t)
-	m.askAboutCredential(waitingRequest(), ds.projectSecrets)
+	m.askAboutCredential(waitingRequest(), ds.projectSecrets, nil)
 	d := m.dialog
 	for {
 		plainFrame(m)
@@ -220,14 +220,14 @@ func TestCredentialDurationDefaultsLimitsAndCustomInput(t *testing.T) {
 		m, ds := sourceWithRequest(t)
 		req := waitingRequest()
 		req.AskedTTL = asked
-		m.askAboutCredential(req, ds.projectSecrets)
+		m.askAboutCredential(req, ds.projectSecrets, nil)
 		if got := m.dialog.form.chosen("duration"); got != "3600" {
 			t.Fatalf("ask=%v selected %s", asked, got)
 		}
 	}
 	m, ds := sourceWithRequest(t)
 	ds.projectSecrets[0].MaxTTL = time.Hour
-	m.askAboutCredential(waitingRequest(), ds.projectSecrets)
+	m.askAboutCredential(waitingRequest(), ds.projectSecrets, nil)
 	m.dialog.form.choose("duration", "0")
 	answerApproval(t, m, "accept")
 	if len(ds.approvals) != 0 || m.dialog.form.err == "" {
@@ -254,7 +254,7 @@ func TestOpenApprovalPickersFitAndMouseCanReachLastChoice(t *testing.T) {
 	for i := range 50 {
 		secrets = append(secrets, Secret{ID: fmt.Sprintf("sec_%d", i), Name: fmt.Sprintf("Credential %d", i)})
 	}
-	m.askAboutCredential(waitingRequest(), secrets)
+	m.askAboutCredential(waitingRequest(), secrets, nil)
 	for _, row := range []int{0, 1, 3} {
 		m.dialog.form.moveTo(row)
 		m.dialog.form.openList()
@@ -290,7 +290,7 @@ func TestRequestJSONPreservesIncompleteCustomDuration(t *testing.T) {
 		m, ds := sourceWithRequest(t)
 		req := waitingRequest()
 		req.Raw = `{"request":"original"}`
-		m.askAboutCredential(req, ds.projectSecrets)
+		m.askAboutCredential(req, ds.projectSecrets, nil)
 		original := m.dialog
 		original.form.choose("duration", "custom")
 		original.form.set("customDuration", value)
@@ -325,7 +325,7 @@ func TestRouteTableBoundsCartesianOutputAndPreservesCompactRoutes(t *testing.T) 
 func TestNewCredentialEditorScrollsFieldsOnCompactTerminal(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	send(t, m, sizeMsg(80, 24))
-	m.askAboutCredential(waitingRequest(), ds.projectSecrets)
+	m.askAboutCredential(waitingRequest(), ds.projectSecrets, nil)
 	m.dialog.form.choose("credential", "new")
 	answerApproval(t, m, "accept")
 	if !onNewCredentialForm(m) {

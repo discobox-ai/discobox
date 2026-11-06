@@ -63,7 +63,10 @@ type credentialsLoadedMsg struct {
 type secretsLoadedMsg struct {
 	requestID string
 	secrets   []Secret
-	err       error
+	// held is what applies in the use part's variable now, read with the
+	// secrets: a variable a secret already holds is answered with that one.
+	held []HeldGrant
+	err  error
 }
 
 // standingLoadedMsg carries the bindings of the chosen secret the asking
@@ -180,7 +183,9 @@ func (m *Model) openCredentialDialog(sandboxID string) tea.Cmd {
 
 // openCredentialRequest asks about one request, whichever discobox it came from
 // and whether it came from one at all. It reads the secrets first, because the
-// question it asks is which of them answers this.
+// question it asks is which of them answers this, and what holds the variable
+// the use part names, because a secret that already does is the only answer
+// the server takes (heldBy).
 func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
 	if req.APIAccess {
 		return m.askAboutAPIAccess(req)
@@ -196,7 +201,11 @@ func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
 	m.dialog = statusDialog("Credential request", "reading the project's secrets…")
 	return func() tea.Msg {
 		secrets, err := m.ds.Secrets(m.ctx, req.Server)
-		return secretsLoadedMsg{requestID: req.ID, secrets: secrets, err: err}
+		var held []HeldGrant
+		if err == nil && req.Use != nil && req.EnvVar != "" && req.SandboxID != "" {
+			held, err = m.ds.HeldGrants(m.ctx, req.Server, req.SandboxID, req.EnvVar)
+		}
+		return secretsLoadedMsg{requestID: req.ID, secrets: secrets, held: held, err: err}
 	}
 }
 
@@ -212,11 +221,50 @@ func (m *Model) credentialRequestByID(requestID string) (CredentialRequest, bool
 }
 
 // askAboutCredential opens the first part card, or the token refresh card.
-func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.Cmd {
+// held is what applies in the use part's variable now.
+func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
 	if req.Refresh != nil {
 		return m.askAboutRefresh(req, secrets)
 	}
-	return m.approvalPart(newApproval(req, secrets), req.Use == nil && req.Delegate != nil)
+	return m.approvalPart(newApproval(req, secrets, held), req.Use == nil && req.Delegate != nil)
+}
+
+// heldBy is the secret the discobox's own bindings deliver in the use part's
+// variable, if any: pinned when one of the discobox's own bindings — a use
+// or an addition stacked on one — delivers it there. The server takes no
+// other secret in that variable from a request, whether added or replaced
+// (secrets.Service addBinding and replaceBindings), so it is the one answer.
+// Otherwise holder is the grant the variable's delivery stands on from the
+// discobox's harness config or project, which a replacement shadows but an
+// addition only stacks on with the same secret (approval.canAdd).
+func heldBy(held []HeldGrant) (holder HeldGrant, pinned bool) {
+	for _, grant := range held {
+		if grant.From == BindingSandbox {
+			return grant, true
+		}
+	}
+	for _, grant := range held {
+		if !grant.Adds {
+			return grant, false
+		}
+	}
+	return HeldGrant{}, false
+}
+
+// heldSecret is the secret holding the variable, as the project's secrets
+// list it. One the list does not have — gone, or not readable here — is still
+// named, since what the server binds is its ID.
+func heldSecret(secrets []Secret, holder HeldGrant) Secret {
+	for _, secret := range secrets {
+		if secret.ID == holder.SecretID {
+			return secret
+		}
+	}
+	name := holder.SecretName
+	if name == "" {
+		name = holder.SecretID
+	}
+	return Secret{ID: holder.SecretID, Name: name}
 }
 
 // showRawRequest is the request as the server sent it, as JSON highlighted
@@ -704,7 +752,7 @@ func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
 			return nil
 		}
 		return m.createAndApprove(a, secret)
-	}, func() tea.Cmd { return m.askAboutCredential(a.req, a.secrets) })
+	}, func() tea.Cmd { return m.askAboutCredential(a.req, a.secrets, a.held) })
 }
 
 // newCredentialForm is the new-secret form filled from a request, with what
@@ -809,8 +857,9 @@ type approval struct {
 }
 
 // newApproval is an answer to req, its parts approved until asked otherwise.
-func newApproval(req CredentialRequest, secrets []Secret) approval {
-	a := approval{req: req, secrets: secrets, useAs: bindingplan.Replace}
+// held is what applies in the use part's variable now.
+func newApproval(req CredentialRequest, secrets []Secret, held []HeldGrant) approval {
+	a := approval{req: req, secrets: secrets, held: held, useAs: bindingplan.Replace}
 	if req.Use != nil || req.Delegate == nil {
 		a.use = PartApprove
 	}
@@ -823,8 +872,19 @@ func newApproval(req CredentialRequest, secrets []Secret) approval {
 	return a
 }
 
+// canAdd reports whether the use part can be granted as an addition with
+// the secret chosen: an addition stacks on what delivers the variable, so
+// it has to be that secret (ADR 26-11-03-329 §4).
+func (a approval) canAdd() bool {
+	holder, _ := heldBy(a.held)
+	return holder.SecretID == "" || (!a.fresh && holder.SecretID == a.secret.ID)
+}
+
 // chooseSecret reads live standing grants before the final confirmation.
 func (m *Model) chooseSecret(a approval, secretID string) tea.Cmd {
+	if holder, _ := heldBy(a.held); holder.SecretID == secretID {
+		a.secret = heldSecret(a.secrets, holder)
+	}
 	for _, secret := range a.secrets {
 		if secret.ID == secretID {
 			a.secret = secret

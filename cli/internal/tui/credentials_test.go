@@ -799,3 +799,71 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 		})
 	}
 }
+
+// A variable the discobox already holds a secret in is answered with that
+// secret alone: the server refuses any other there, as an addition or a
+// replacement, so the use card's Credential row is locked to it, with no new
+// credential offered.
+func TestAVariableHeldBySecretIsAnsweredWithIt(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_own", SecretID: "sec_openai", SecretName: "OpenAI key", From: BindingSandbox}}
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if m.dialog == nil || m.dialog.form == nil {
+		t.Fatalf("dialog = %s, want the use card", describe(m.dialog))
+	}
+	row := m.dialog.form.rows[0]
+	if row.key != "credential" || !row.locked || len(row.choices) != 1 || row.choices[0].key != "sec_openai" {
+		t.Fatalf("credential row = %#v, want it locked to the secret holding the variable", row)
+	}
+	if text := plainFrame(m); !strings.Contains(text, "GH_TOKEN already holds OpenAI key in this box") {
+		t.Fatalf("card = %q, want it to say the variable already holds the secret", text)
+	}
+	answerApproval(t, m, "accept")
+	answerApproval(t, m, "accept")
+	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_openai" {
+		t.Fatalf("approvals = %#v, want one with the secret holding the variable", ds.approvals)
+	}
+}
+
+// A variable delivered from the harness config or project may be answered
+// with another secret, as a replacement shadowing it; an addition stacks only
+// on the secret delivering it, so one with another secret is refused on the
+// card, before anything is sent, and granted once made a replacement.
+func TestAnAdditionWithAnotherSecretIsRefusedOnTheCard(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	req.Use.Add = true
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{
+		{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
+		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
+	}
+	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_openai", SecretName: "OpenAI key", From: "project"}}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if m.dialog == nil || m.dialog.form == nil {
+		t.Fatalf("dialog = %s, want the use card", describe(m.dialog))
+	}
+	f := m.dialog.form
+	if f.rows[0].locked || len(f.rows[0].choices) != 3 {
+		t.Fatalf("credential row = %#v, want every secret and a new credential offered", f.rows[0])
+	}
+	f.choose("credential", "sec_gh")
+	if f.chosen("as") != "add" {
+		t.Fatalf("grant as = %q, want the addition asked for", f.chosen("as"))
+	}
+	answerApproval(t, m, "accept")
+	if !strings.Contains(m.dialog.form.err, "GH_TOKEN holds OpenAI key; an addition stacks only on that credential") || len(ds.approvals) != 0 {
+		t.Fatalf("form error = %q, approvals = %#v; want the addition refused on the card", m.dialog.form.err, ds.approvals)
+	}
+	m.dialog.form.choose("as", "replace")
+	answerApproval(t, m, "accept")
+	answerApproval(t, m, "accept")
+	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_gh" || ds.approvals[0].UseAs != "replace" {
+		t.Fatalf("approvals = %#v, want a replacement with the chosen secret", ds.approvals)
+	}
+}

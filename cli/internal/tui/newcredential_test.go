@@ -145,7 +145,7 @@ func TestANewCredentialApprovalCanChooseWiderScope(t *testing.T) {
 
 func TestWiderScopeShowsIndependentCredentialConstraints(t *testing.T) {
 	m, _ := sourceWithRequest(t)
-	a := newApproval(waitingRequest(), nil)
+	a := newApproval(waitingRequest(), nil, nil)
 	a.secrets = []Secret{{ID: "test", Name: "test", Routes: []secretroute.Route{{Hosts: []string{"*"}}}, RouteConstraints: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Paths: []string{"/one"}}}, {{Hosts: []string{"api.github.com"}, Paths: []string{"/blocked"}, Blocked: true}}}}}
 	m.approvalPart(a, false)
 	var text strings.Builder
