@@ -246,16 +246,13 @@ tasks:
       - cd access && go build -o ../{{.ACCESS_BINARY}} {{.ACCESS_MAIN}}
 
   build:cp-relay:
-    desc: Cross-compile the guest control-plane relays embedded in the Windows server
+    desc: Cross-compile the guest helpers embedded in the server
     # Several targets depend on this and the output is the same set for all of
     # them, so one run per invocation is enough.
     run: once
     cmds:
-      # One relay per Windows target architecture. WSL2 does not emulate, so a
-      # guest is always the host's architecture and the relay a binary needs is
-      # decided by what that binary was built for — but one source tree builds
-      # both Windows binaries, so both are produced here and the server picks
-      # its own by GOARCH at run time.
+      # Local VMs run the host architecture. Build both guest helpers so each
+      # server target can embed and select its own by GOARCH.
       - task: build:cp-relay:arch
         vars: { RELAY_ARCH: amd64 }
       - task: build:cp-relay:arch
@@ -267,12 +264,12 @@ tasks:
       vars: [RELAY_ARCH]
     vars:
       RELAY_BIN: build/discobox-cp-relay.linux-{{.RELAY_ARCH}}
-      RELAY_OUT: server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-{{.RELAY_ARCH}}.gz
+      RELAY_OUT: server/providers/guestrelay/artifacts/discobox-cp-relay.linux-{{.RELAY_ARCH}}.gz
     cmds:
       # The relay runs inside a pool guest, which has no Go toolchain, so it is
       # cross-compiled here and embedded in the server binary. Stripped and
-      # gzipped it costs about 1 MB. The artifact is gitignored; without it the
-      # server still builds and only the wslc provider refuses to start.
+      # gzipped it stays small. The artifact is gitignored; without it the
+      # server still builds but local VM bootstrap refuses to proceed.
       # CGO_ENABLED=0 explicitly: cgo is on by default wherever a native
       # toolchain exists, and cross-compiling to linux from a Mac with it on
       # builds runtime/cgo's Linux C against the macOS SDK and fails. The relay
@@ -1367,12 +1364,10 @@ tasks:
           case "$name" in *.json) continue ;; esac
           found=$((found + 1))
 
-          # A Windows server reaches its WSL guest through the relay embedded
-          # for its own architecture: WSL2 does not emulate, so the guest is
-          # always the host's. One built without it installs, launches, and
-          # fails at the first pool -- on a machine no Linux or amd64 test run
-          # ever touches, which is the same blind spot the interpreter check
-          # below exists for.
+          # Every server delivers this helper before a local VM can fetch
+          # images or bundles; WSL also uses it for its control-plane channel.
+          # A plain checkout compiles without artifacts, so verify every
+          # release target carries the helper for its own architecture.
           # The server binaries only: the relay is embedded in the server (ADR
           # 0099), and release:windows-zip puts a .zip beside each CLI carrying
           # the very same executable, so a looser pattern would both check a
@@ -1380,10 +1375,10 @@ tasks:
           # and a .zip's name does not end in .exe, so its architecture would
           # come out as "amd64.zip" and match no relay.
           case "$name" in
-            discobox-server-windows-*.exe)
-              arch=${name#*-windows-}
+            discobox-server-linux-*|discobox-server-darwin-*|discobox-server-windows-*.exe)
+              arch=${name##*-}
               arch=${arch%.exe}
-              relay="server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-$arch.gz"
+              relay="server/providers/guestrelay/artifacts/discobox-cp-relay.linux-$arch.gz"
               [ -f "$relay" ] || { echo "$name: no guest relay was built for linux/$arch; add it to build:cp-relay" >&2; exit 1; }
               size=$(wc -c < "$relay")
               [ "$size" -gt 65536 ] || { echo "$name: guest relay for linux/$arch is $size bytes, not a real binary" >&2; exit 1; }

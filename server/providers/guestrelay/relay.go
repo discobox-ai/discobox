@@ -1,17 +1,12 @@
-// Package relay embeds the guest control-plane relay so the Windows server
-// ships as a single binary.
+// Package relay embeds the guest helper so every server ships the code it
+// delivers before a pool can fetch images or bundles.
 //
 // The relay is a Linux program that must run inside the pool guest, which has
 // no Go toolchain and — on first connect — no guaranteed network. Cross
 // compiling it on the host and carrying it inside the server binary avoids both
-// problems. The driver then streams it into the guest over a guest process's
-// stdin, so nothing here is ever written to a Windows directory or shared into
-// the VM: the relay is the only program the guest needs, and it is also what
-// backs every other guest connection (see its --dial mode).
-//
-// The payload is gzipped: the relay is ~2.4 MB stripped and ~1.0 MB compressed,
-// nearly all of which is the Go runtime floor rather than anything the relay
-// itself pulls in.
+// problems. WSL streams it over a guest process; the Docker engine imports it
+// as a command image on local VMs, then copies it into boot-local host storage.
+// Its outbound mode forwards raw bytes and has no configuration protocol.
 //
 // The compressed binary is a build artifact, not source. `task build:cp-relay`
 // produces it; the artifacts directory's committed README keeps `go build ./...`
@@ -43,9 +38,9 @@ var artifacts embed.FS
 // artifactName is the compressed relay produced by `task build:cp-relay` for
 // this binary's architecture.
 //
-// WSL2 does not emulate, so a guest runs the architecture its Windows host
-// does and the relay a server needs is the one matching the server itself.
-// One source tree builds both Windows binaries, so the choice cannot be a
+// Local VMs run the architecture their server host
+// does, so the helper a server needs matches the server itself.
+// One source tree builds multiple server binaries, so the choice cannot be a
 // constant: build:cp-relay produces a relay per architecture and each binary
 // reads its own.
 func artifactName() string {
@@ -69,7 +64,7 @@ const GuestPath = "/tmp/discobox-cp-relay"
 
 // ErrNotBuilt reports that the server was built without the guest relay
 // artifact, so no pool can start.
-var ErrNotBuilt = errors.New("wslc: guest control-plane relay was not built into this binary; run `task build:cp-relay`")
+var ErrNotBuilt = errors.New("guest helper was not built into this binary; run `task build:cp-relay`")
 
 // minimumSize guards against a truncated or otherwise bogus artifact being
 // mistaken for a real binary.

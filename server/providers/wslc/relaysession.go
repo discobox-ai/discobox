@@ -16,8 +16,8 @@ import (
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pool-agent/cpmux"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	relay "github.com/discobox-ai/discobox/server/providers/guestrelay"
 	"github.com/discobox-ai/discobox/server/providers/wslc/internal/wslcsession"
-	"github.com/discobox-ai/discobox/server/providers/wslc/relay"
 )
 
 // GuestSocketDir is the guest directory the relay creates its control-plane

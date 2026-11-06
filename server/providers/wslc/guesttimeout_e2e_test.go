@@ -13,8 +13,8 @@ import (
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	relay "github.com/discobox-ai/discobox/server/providers/guestrelay"
 	"github.com/discobox-ai/discobox/server/providers/wslc/internal/wslcsession"
-	"github.com/discobox-ai/discobox/server/providers/wslc/relay"
 )
 
 // TestGuestCommandTimeoutE2E runs the timeout against a real guest, because the

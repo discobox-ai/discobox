@@ -24,9 +24,9 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	relay "github.com/discobox-ai/discobox/server/providers/guestrelay"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 	"github.com/discobox-ai/discobox/server/providers/vmsize"
-	"github.com/discobox-ai/discobox/server/providers/wslc/relay"
 )
 
 const (

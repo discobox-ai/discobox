@@ -46,7 +46,7 @@ devenv.local.yaml
 # Cross-compiled guest relay embedded in the server binary. Built by
 # `task build:cp-relay` (which `task build` runs); the directory's README is
 # committed so `go build` works without it.
-server/providers/wslc/relay/artifacts/*.gz
+server/providers/guestrelay/artifacts/*.gz
 
 # Cross-compiled Windows clipboard helper embedded in the Linux CLI. Built by
 # `task build:clipwatch` (which `task build:cli` runs); the directory's README

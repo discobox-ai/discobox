@@ -28,7 +28,6 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
 COPY pkg/vsock ./pkg/vsock
-COPY pkg/pooloutbound ./pkg/pooloutbound
 COPY pool-agent/cmd/discobox-vsock-guest ./pool-agent/cmd/discobox-vsock-guest
 WORKDIR /src/pool-agent
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -156,7 +155,6 @@ RUN systemctl mask \
 COPY --from=guest-tools /out/discobox-vsock-guest /usr/local/bin/discobox-vsock-guest
 COPY vm-image/discobox-storage.service /etc/systemd/system/discobox-storage.service
 COPY --chmod=0755 vm-image/discobox-mount-storage /usr/local/sbin/discobox-mount-storage
-COPY vm-image/discobox-outbound.service /etc/systemd/system/discobox-outbound.service
 COPY vm-image/discobox-vsock-docker.service /etc/systemd/system/discobox-vsock-docker.service
 COPY vm-image/discobox-vsock-lifecycle.service /etc/systemd/system/discobox-vsock-lifecycle.service
 COPY --chmod=0755 vm-image/discobox-sync-clock /usr/local/sbin/discobox-sync-clock
@@ -180,7 +178,7 @@ RUN mkdir -p \
         /var/log \
         /var/tmp \
     && chmod 0711 /var/lib/containerd /var/lib/docker \
-    && systemctl enable discobox-outbound.service \
+    && systemctl enable \
         discobox-storage.service \
         discobox-vsock-docker.service \
         discobox-vsock-lifecycle.service \

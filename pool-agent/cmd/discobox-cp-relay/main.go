@@ -47,12 +47,21 @@ import (
 func main() {
 	socket := flag.String("socket", "/run/discobox/cp.sock", "unix socket the pool agent dials for the control plane")
 	dial := flag.String("dial", "", "splice this process's stdio to one guest address (\"unix:/path\", \"tcp:host:port\") and exit, instead of serving the control plane")
+	host := flag.Bool("host-command", false, "execute a command in the Docker host")
+	outbound := flag.String("outbound", "", "serve outbound byte relays using the placed settings file")
+	probe := flag.Bool("outbound-probe", false, "probe the installed outbound settings")
 	flag.Parse()
 
 	// The two modes are exclusive: --dial is one connection's worth of work,
 	// not a relay that also serves a socket.
 	var err error
-	if *dial != "" {
+	if *host {
+		err = hostCommand(flag.Args())
+	} else if *outbound != "" {
+		err = outboundRelay(*outbound)
+	} else if *probe {
+		err = outboundProbe()
+	} else if *dial != "" {
 		err = dialOnce(*dial)
 	} else {
 		err = run(*socket)

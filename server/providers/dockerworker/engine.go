@@ -291,6 +291,9 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
+	if err := e.prepareHostOutbound(ctx, lease.Client, pool.ID, &delivery); err != nil {
+		return err
+	}
 	pool.RuntimeOutbound = delivery.Runtime.WithInternalHosts(e.cfg.ControlPlaneURL)
 	if delivery.GuestProbes != nil {
 		observations := map[string]pooloutbound.Probes{}
@@ -381,6 +384,9 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 	defer lease.Release()
 	delivery, err := e.driver.PoolOutbound(ctx, pool.ID, pool.Outbound)
 	if err != nil {
+		return err
+	}
+	if err := e.prepareHostOutbound(ctx, lease.Client, pool.ID, &delivery); err != nil {
 		return err
 	}
 	pool.RuntimeOutbound = delivery.Runtime.WithInternalHosts(e.cfg.ControlPlaneURL)
