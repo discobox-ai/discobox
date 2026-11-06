@@ -122,6 +122,35 @@ func TestApprovalCardsFitCompactWindow(t *testing.T) {
 	}
 }
 
+func TestApprovalCardsOnlyNameAServerWhenKnown(t *testing.T) {
+	for _, server := range []string{"", "production"} {
+		for _, kind := range []string{"use", "api", "trust"} {
+			t.Run(kind+"/"+server, func(t *testing.T) {
+				m := newTestModel(t, newFakeSource())
+				req := waitingRequest()
+				req.Server = server
+				switch kind {
+				case "use":
+					m.askAboutCredential(req, nil, nil)
+				case "api":
+					m.askAboutAPIAccess(req)
+				case "trust":
+					trust := waitingTrust()
+					trust.Server = server
+					m.askAboutTrust(trust)
+				}
+				text := dialogText(m)
+				if strings.Contains(text, "Server") != (server != "") {
+					t.Fatalf("server row for %q: %s", server, text)
+				}
+				if server != "" && !strings.Contains(text, server) {
+					t.Fatalf("server name missing: %s", text)
+				}
+			})
+		}
+	}
+}
+
 func TestApprovalMouseDecisionsUseTheGate(t *testing.T) {
 	for _, button := range []string{"Accept", "Deny"} {
 		t.Run(button, func(t *testing.T) {

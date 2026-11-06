@@ -89,9 +89,12 @@ func (m *Model) askAboutTrust(req CredentialRequest) tea.Cmd {
 			hash = "Key SHA-256"
 		}
 		d.sections = []section{
-			{fields: []field{{label: "Box", value: req.SandboxID, tone: toneAccent}, {label: "Server", value: req.Server}, {label: "Host", value: req.Host, tone: toneAccent}, {label: "Reason (box's words)", value: req.Justification}}},
+			{fields: []field{{label: "Box", value: req.SandboxID, tone: toneAccent}, {label: "Host", value: req.Host, tone: toneAccent}, {label: "Reason (box's words)", value: req.Justification}}},
 			{label: "Selected certificate", fields: []field{{label: "Subject", value: cert.Subject}, {label: "Issuer", value: cert.Issuer}, {label: "Valid", value: fmt.Sprintf("%s to %s", cert.NotBefore.Format(time.DateOnly), cert.NotAfter.Format(time.DateOnly))}, {label: hash, value: pin.SHA256, tone: toneAccent}}, lines: []line{{text: meaning}}},
 			{label: "What accepting changes", lines: []line{{text: "This box may connect to " + req.Host + " using this trust for " + f.chosenLabel("duration") + "."}, {text: "Trust always expires. Deny leaves this host refused; other hosts and boxes are unaffected."}}},
+		}
+		if req.Server != "" {
+			d.sections[0].fields = append(d.sections[0].fields, field{label: "Server", value: req.Server})
 		}
 	}
 	d.refreshSections()

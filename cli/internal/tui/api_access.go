@@ -19,10 +19,13 @@ func (m *Model) askAboutAPIAccess(req CredentialRequest) tea.Cmd {
 	var d *dialog
 	d = approvalDialog("Allow discobox API access?", newForm(), func(*form) tea.Cmd { return m.answerAPIAccess(req, d.formActions[d.formActionAt].key == "accept") })
 	d.sections = []section{
-		{fields: []field{{label: "Box", value: req.SandboxID, tone: toneAccent}, {label: "Server", value: req.Server}, {label: "Reason (box's words)", value: req.Justification}}},
+		{fields: []field{{label: "Box", value: req.SandboxID, tone: toneAccent}, {label: "Reason (box's words)", value: req.Justification}}},
 		{label: "Project access", fields: []field{{label: "Discovery", value: "List boxes and watch project events"}, {label: "Create", value: "Launch boxes within its allowed egress, using project harness configs and their credentials"}}},
 		{label: "Authority over boxes it leads", fields: []field{{label: "Terminals/files", value: "Run commands; read and write files; read output and type input"}, {label: "Lifecycle", value: "Start, stop, restart, repair, upgrade and archive"}, {label: "Source/settings", value: "Deliver source and edit metadata"}, {label: "Services/ports", value: "Inspect and control services; reach HTTP ports"}, {label: "Credentials", value: "Answer eligible requests within its delegation"}}},
 		{label: "Limits", lines: []line{{text: "Management covers direct children in this project. Wider-egress children are read-only."}, {text: "Enabling API access grants no credential. Credential and egress restrictions still apply."}, {text: "Access stays on until a person turns it off in Settings. Deny leaves access unchanged."}}},
+	}
+	if req.Server != "" {
+		d.sections[0].fields = append(d.sections[0].fields, field{label: "Server", value: req.Server})
 	}
 	m.dialog = d
 	return nil

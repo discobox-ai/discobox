@@ -190,7 +190,9 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 	d.refreshSections = func() {
 		next := read()
 		d.sections = []section{{fields: []field{{label: "Box", value: a.req.SandboxID, tone: toneAccent}, {label: "Reason (box's words)", value: a.req.Justification}}}}
-		d.sections[0].fields = append(d.sections[0].fields, field{label: "Server", value: a.req.Server})
+		if a.req.Server != "" {
+			d.sections[0].fields = append(d.sections[0].fields, field{label: "Server", value: a.req.Server})
+		}
 		if !delegate {
 			d.sections[0].fields = append(d.sections[0].fields, field{label: "Variable", value: variableOf(a.req)})
 		}
