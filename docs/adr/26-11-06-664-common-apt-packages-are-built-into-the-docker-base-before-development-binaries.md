@@ -1,7 +1,8 @@
 # 26-11-06-664 — Common apt packages are built into the Docker base before development binaries
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-06
+Accepted by the owner by merging #755, 2026-11-06
 Issue: [#740](https://github.com/discobox-ai/discobox/issues/740)
 
 ## Context
