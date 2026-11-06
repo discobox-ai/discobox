@@ -6,6 +6,13 @@ candidate save and default reset, and sandbox-requested adoption with person
 approval/denial and release. Missing prerequisites and failed cases fail the
 job; there are no opt-in gates or skipped cases. It needs a Docker daemon.
 
+With a box running, the runner also stops the control plane for a full pool
+heartbeat interval and starts it on the same database. It requires the pool to
+report fresh ready health within 120 seconds, with the same agent invocation
+and terminal, and checks service and exec access. The following terminal flow
+drives send and capture through that recovered pool. Artifacts retain the agent
+binary digest, invocation identity, pool status and journal across the restart.
+
 The runner builds the CLI, server, sandbox base and OCI bundles from this
 checkout. Each run has its own image tag, database, directories,
 port and socket under `build/ux-smoke/<run>`. It never joins `task dev` or

@@ -1064,7 +1064,7 @@ tasks:
       - test/codex-trust/run.sh
 
   ci:ux-smoke:
-    desc: Run required Docker terminal, harness save/reset and adoption smoke flows
+    desc: Run required Docker restart recovery, terminal, harness and adoption smoke flows
     platforms: [linux]
     cmds:
       - python3 -B test/ux-smoke/test_runner.py
