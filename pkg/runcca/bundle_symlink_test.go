@@ -3,6 +3,7 @@
 // These fixtures model Linux image symlinks, including absolute targets and
 // slash-separated relative targets. Windows rewrites symlink targets using
 // host path semantics, so its filesystem cannot represent these fixtures.
+
 package runcca
 
 import (
