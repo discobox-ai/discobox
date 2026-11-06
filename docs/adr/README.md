@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-06-970](26-11-06-970-docker-activation-waits-for-configuration-not-feature-completion.md) | Docker activation waits for configuration, not feature completion | Proposed |
 | [26-11-06-664](26-11-06-664-common-apt-packages-are-built-into-the-docker-base-before-development-binaries.md) | Common apt packages are built into the Docker base before development binaries | Accepted |
 | [26-11-06-671](26-11-06-671-the-console-palette-composes-commands-and-boxes.md) | The console palette composes commands and boxes | Proposed |
 | [26-11-05-928](26-11-05-928-a-directory-snapshot-survives-until-source-delivery-is-confirmed.md) | A directory snapshot survives until source delivery is confirmed | Accepted (supersedes 0045 §4 and narrows 0045 §1 and 26-09-24-005 §2 for retained non-Git snapshots; origin-host restrictions remain) |
