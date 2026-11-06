@@ -518,6 +518,12 @@ rows group by protocol and host and sort by path/method for display only.
 Role descriptions remain attributed to the box. Request JSON opens the original
 request; returning restores the selected choices.
 
+What holds the use part's variable is read with the secrets, when the request
+opens (`heldBy`). One of the box's own bindings there locks the use card's
+credential to its secret, with no new credential offered: the server takes no
+other secret in that variable. One from the harness config or project leaves the
+choice open, but an addition is refused on the card unless it is that secret.
+
 Accepting use locks credential and duration on delegation; denying use leaves
 them editable. These are staged decisions: no server mutation occurs until both
 parts are reviewed. Existing credentials then get a final confirmation, after

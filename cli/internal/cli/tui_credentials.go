@@ -613,10 +613,12 @@ func (d *apiDataSource) HeldGrants(ctx context.Context, server, sandboxID, envVa
 			continue
 		}
 		grant := tui.HeldGrant{
-			BindingID: bound.BindingId,
-			Adds:      bound.Adds.Or(false),
-			From:      string(bound.From),
-			Routes:    tuiRoutes(grantRoutes(bound)),
+			BindingID:  bound.BindingId,
+			SecretID:   bound.SecretId,
+			SecretName: bound.SecretName.Or(""),
+			Adds:       bound.Adds.Or(false),
+			From:       string(bound.From),
+			Routes:     tuiRoutes(grantRoutes(bound)),
 		}
 		if expires, ok := bound.ExpiresAt.Get(); ok {
 			grant.Expires = expires

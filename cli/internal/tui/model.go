@@ -1161,7 +1161,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case secretsLoadedMsg:
 		if msg.err != nil {
-			m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read the project's secrets: %v\n\nThe request is still waiting.", msg.err))
+			m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read the project's secrets, or what the discobox holds: %v\n\nThe request is still waiting.", msg.err))
 			return nil
 		}
 		req, ok := m.credentialRequestByID(msg.requestID)
@@ -1170,7 +1170,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.dialog = nil
 			return m.report(false, "that request is no longer waiting")
 		}
-		return m.askAboutCredential(req, msg.secrets)
+		return m.askAboutCredential(req, msg.secrets, msg.held)
 
 	case standingLoadedMsg:
 		return m.standingLoaded(msg)

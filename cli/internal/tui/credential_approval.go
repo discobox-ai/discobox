@@ -14,12 +14,24 @@ import (
 
 // Each part has its own decision and scope. Nothing is sent until both have
 // been reviewed; canceling leaves the whole request pending on the server.
+//
+// A variable the discobox's own bindings already deliver a secret in is
+// answered, on the use card, with that secret alone: the server refuses any
+// other there (heldBy), so the Credential row is locked to it, with no new
+// credential offered.
 func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
+	holder, pinned := heldBy(a.held)
+	pinned = pinned && !delegate
 	var credentials []choice
-	for _, s := range secretsForRequest(a.secrets, a.req) {
-		credentials = append(credentials, choice{key: s.ID, label: s.Name, hint: secretDetail(s)})
+	if pinned {
+		held := heldSecret(a.secrets, holder)
+		credentials = []choice{{key: held.ID, label: held.Name, hint: "Already in " + variableOf(a.req) + " in this box"}}
+	} else {
+		for _, s := range secretsForRequest(a.secrets, a.req) {
+			credentials = append(credentials, choice{key: s.ID, label: s.Name, hint: secretDetail(s)})
+		}
+		credentials = append(credentials, choice{key: "new", label: "New credential…", hint: "Enter its value after reviewing both parts"})
 	}
-	credentials = append(credentials, choice{key: "new", label: "New credential…", hint: "Enter its value after reviewing both parts"})
 	credential := pickRow("credential", "Credential", credentials...)
 	var durations []choice
 	offered := a.req.AskedTTL
@@ -51,7 +63,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 	}
 	f := newForm(rows...)
 	locked := delegate && a.use == PartApprove
-	f.rows[0].locked, f.rows[1].locked = locked, locked
+	f.rows[0].locked, f.rows[1].locked = locked || pinned, locked
 	if a.secret.ID != "" {
 		f.choose("credential", a.secret.ID)
 	} else if a.fresh {
@@ -85,6 +97,9 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		next.fresh = f.chosen("credential") == "new"
 		if !locked {
 			next.secret = Secret{}
+			if pinned {
+				next.secret = heldSecret(a.secrets, holder)
+			}
 			for _, s := range a.secrets {
 				if s.ID == f.chosen("credential") {
 					next.secret = s
@@ -136,6 +151,10 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 				f.err = "Raw delivery requires an existing credential that allows it and a replacement grant."
 				return nil
 			}
+			if !delegate && next.useAs == bindingplan.Add && !next.canAdd() {
+				f.err = variableOf(a.req) + " holds " + heldSecret(a.secrets, holder).Name + "; an addition stacks only on that credential. Choose it, or grant a replacement."
+				return nil
+			}
 		}
 		if delegate {
 			next.delegate = answer
@@ -180,6 +199,9 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 			explain = "This box may give access to boxes it leads; delegation grants no use to this box."
 		}
 		d.sections = append(d.sections, section{lines: []line{{text: explain}}})
+		if pinned {
+			d.sections = append(d.sections, section{lines: []line{{text: variableOf(a.req) + " already holds " + heldSecret(a.secrets, holder).Name + " in this box; no other credential can be granted there, so it answers this.", tone: toneAccent}}})
+		}
 		if delegate && a.req.Use != nil {
 			state := "Use denied. Credential and duration remain editable."
 			if locked {

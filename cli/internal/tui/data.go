@@ -1524,7 +1524,10 @@ type RequestPart struct {
 // lapses.
 type HeldGrant struct {
 	BindingID string
-	Adds      bool
+	// SecretID and SecretName are the secret the grant delivers: what holds
+	// the variable, which an approval in it has to answer with (heldBy).
+	SecretID, SecretName string
+	Adds                 bool
 	// From is the level the binding is on: BindingSandbox, or a harness
 	// config's or the project's, which a replacement shadows rather than
 	// replaces.
