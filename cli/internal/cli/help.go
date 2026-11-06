@@ -279,7 +279,7 @@ func writeFlagRows(b *strings.Builder, rows []helpFlag, width int, style helpSty
 func flagValueName(flag *pflag.Flag) string {
 	name, _ := pflag.UnquoteUsage(flag)
 	if strings.Contains(flag.Usage, "`") {
-		return name
+		return strings.ToUpper(name)
 	}
 	switch flag.Value.Type() {
 	case "bool":

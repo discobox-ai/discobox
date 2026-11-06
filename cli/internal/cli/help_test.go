@@ -206,6 +206,15 @@ func TestHelpValueNamesAndDescriptions(t *testing.T) {
 	}
 }
 
+func TestGitCredentialStrategyUsesUppercaseHelpValue(t *testing.T) {
+	for _, args := range [][]string{nil, {"run"}, {"attach"}} {
+		help := rootHelp(t, args...)
+		if !strings.Contains(help, "--git-credentials STRATEGY") {
+			t.Fatalf("%v help does not use an uppercase strategy value:\n%s", args, help)
+		}
+	}
+}
+
 // --color reaches what draws its own color too: never strips it, always keeps
 // it into a pipe.
 func TestColorWriterFollowsTheColorFlag(t *testing.T) {
