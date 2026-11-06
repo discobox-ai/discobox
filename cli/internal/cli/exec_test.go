@@ -754,14 +754,14 @@ func TestSplitDiscoboxCommand(t *testing.T) {
 		cmd.Flags().SetInterspersed(false)
 		// No flags to parse: the -- reaches the split as an argument, as it
 		// does for tools ssh.
-		line, err := splitDiscoboxCommand(cmd, tc.args)
+		line, err := splitTargetCommand(cmd, tc.args)
 		if tc.err != "" {
 			if err == nil || !strings.Contains(err.Error(), tc.err) {
 				t.Fatalf("split %q error = %v, want %q", tc.args, err, tc.err)
 			}
 			continue
 		}
-		if err != nil || line.discobox != tc.discobox || !slices.Equal(line.command, tc.command) || line.dashed != tc.dashed {
+		if err != nil || line.target != tc.discobox || !slices.Equal(line.command, tc.command) || line.dashed != tc.dashed {
 			t.Fatalf("split %q = %+v, %v; want %q %q dashed %v", tc.args, line, err, tc.discobox, tc.command, tc.dashed)
 		}
 	}

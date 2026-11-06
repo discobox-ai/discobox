@@ -95,20 +95,20 @@ so, and one more quits exec and leaves the command where it is.`,
 	return cmd
 }
 
-// discoboxCommandLine names a discobox, empty for selection, and its command.
-type discoboxCommandLine struct {
-	discobox string
-	command  []string
+// targetCommandLine names a target, empty for default selection, and its command.
+type targetCommandLine struct {
+	target  string
+	command []string
 	// dashed is whether the line had its --, which is what a hint about where
 	// a command goes needs to know.
 	dashed bool
 }
 
-// splitDiscoboxCommand reads an optional discobox followed by command arguments.
-// A leading -- omits the discobox; a -- immediately after it is optional.
+// splitTargetCommand reads an optional target followed by command arguments.
+// A leading -- omits the target; a -- immediately after it is optional.
 // Later separators belong to the command.
-func splitDiscoboxCommand(cmd *cobra.Command, args []string) (discoboxCommandLine, error) {
-	line := discoboxCommandLine{}
+func splitTargetCommand(cmd *cobra.Command, args []string) (targetCommandLine, error) {
+	line := targetCommandLine{}
 	if cmd.Flags().ArgsLenAtDash() == 0 {
 		line.command, line.dashed = args, true
 		return line, nil
@@ -120,7 +120,7 @@ func splitDiscoboxCommand(cmd *cobra.Command, args []string) (discoboxCommandLin
 		line.command, line.dashed = args[1:], true
 		return line, nil
 	}
-	line.discobox, line.command = args[0], args[1:]
+	line.target, line.command = args[0], args[1:]
 	if cmd.Flags().ArgsLenAtDash() == 1 {
 		line.dashed = true
 	} else if len(line.command) > 0 && line.command[0] == "--" {
@@ -129,18 +129,18 @@ func splitDiscoboxCommand(cmd *cobra.Command, args []string) (discoboxCommandLin
 	return line, nil
 }
 
-// selectDiscoboxCommand is splitDiscoboxCommand and selectSandbox together:
+// selectDiscoboxCommand is splitTargetCommand and selectSandbox together:
 // the discobox a `[DISCOBOX] [--] [ARG...]` line names, on the server it is on,
 // and the command. A DISCOBOX that names nothing on a line without its -- is
 // most likely a command that left it out, so the error says where one goes.
 func (a *App) selectDiscoboxCommand(cmd *cobra.Command, args []string) (app *App, projectID, sandboxID string, client *apiclientgen.Client, command []string, err error) {
-	line, err := splitDiscoboxCommand(cmd, args)
+	line, err := splitTargetCommand(cmd, args)
 	if err != nil {
 		return nil, "", "", nil, nil, err
 	}
-	app, projectID, sandboxID, client, err = a.selectSandbox(cmd, line.discobox)
-	if err != nil && line.discobox != "" && !line.dashed {
-		return nil, "", "", nil, nil, fmt.Errorf("%w\na command goes after --: %s -- %s", err, cmd.CommandPath(), line.discobox)
+	app, projectID, sandboxID, client, err = a.selectSandbox(cmd, line.target)
+	if err != nil && line.target != "" && !line.dashed {
+		return nil, "", "", nil, nil, fmt.Errorf("%w\na command goes after --: %s -- %s", err, cmd.CommandPath(), line.target)
 	}
 	return app, projectID, sandboxID, client, line.command, err
 }

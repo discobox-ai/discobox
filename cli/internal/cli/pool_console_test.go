@@ -13,7 +13,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
-	"github.com/spf13/cobra"
 )
 
 func TestPoolConsoleCommandParsing(t *testing.T) {
@@ -21,25 +20,26 @@ func TestPoolConsoleCommandParsing(t *testing.T) {
 		args    []string
 		pool    string
 		command []string
-		invalid bool
 	}{
 		{args: nil},
 		{args: []string{"pool_1"}, pool: "pool_1"},
 		{args: []string{"--", "docker", "ps", "-a"}, command: []string{"docker", "ps", "-a"}},
 		{args: []string{"pool_1", "--", "sh", "-c", "echo a b", "--"}, pool: "pool_1", command: []string{"sh", "-c", "echo a b", "--"}},
-		{args: []string{"pool_1", "docker", "ps"}, invalid: true},
+		{args: []string{"pool_1", "docker", "ps", "-a"}, pool: "pool_1", command: []string{"docker", "ps", "-a"}},
+		{args: []string{"pool_1", "sh", "-c", "echo a b", "--"}, pool: "pool_1", command: []string{"sh", "-c", "echo a b", "--"}},
+		{args: []string{"-t", "pool_1", "--", "docker", "ps", "-a"}, pool: "pool_1", command: []string{"docker", "ps", "-a"}},
 	} {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
-			cmd := &cobra.Command{Use: "console"}
+			cmd := (&App{}).newPoolConsoleCommand()
 			if err := cmd.ParseFlags(tt.args); err != nil {
 				t.Fatal(err)
 			}
-			pool, argv, err := splitPoolConsoleCommand(cmd, cmd.Flags().Args())
-			if (err != nil) != tt.invalid {
-				t.Fatalf("parse error = %v", err)
+			line, err := splitTargetCommand(cmd, cmd.Flags().Args())
+			if err != nil {
+				t.Fatal(err)
 			}
-			if !tt.invalid && (pool != tt.pool || !slices.Equal(argv, tt.command)) {
-				t.Fatalf("got %q %q", pool, argv)
+			if line.target != tt.pool || !slices.Equal(line.command, tt.command) {
+				t.Fatalf("got %q %q", line.target, line.command)
 			}
 		})
 	}
