@@ -1063,6 +1063,7 @@ tasks:
     desc: Exercise folder trust against the pinned Codex TUI (Linux, sudo and npm required)
     platforms: [linux]
     cmds:
+      - python3 -B test/codex-trust/test_run.py
       - test/codex-trust/run.sh
 
   ci:ux-smoke:

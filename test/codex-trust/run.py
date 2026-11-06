@@ -1,7 +1,9 @@
 """Exercise the real harness and pinned Codex TUI without a model request."""
+import ctypes
 import fcntl
 import json
 import os
+from multiprocessing import Pipe
 from pathlib import Path
 import pty
 import re
@@ -14,6 +16,7 @@ import tempfile
 import termios
 import time
 import tomllib
+import traceback
 
 ROOT, CODEX, VERSION = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 ANSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
@@ -23,7 +26,62 @@ def command(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
+def stop_children():
+    """Kill and reap children until even detached, reparented descendants are gone."""
+    children = Path(f"/proc/self/task/{os.getpid()}/children")
+    while True:
+        pids = [int(pid) for pid in children.read_text().split()]
+        if not pids:
+            return
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        for pid in pids:
+            os.waitpid(pid, 0)
+
+
 def tui(argv, cwd, home, expected):
+    """Give each scenario its own subreaper, including daemons in new sessions."""
+    receiver, sender = Pipe(duplex=False)
+    worker = os.fork()
+    if worker == 0:
+        receiver.close()
+        failure = None
+        try:
+            # Linux PR_SET_CHILD_SUBREAPER: orphaned grandchildren become ours,
+            # rather than PID 1's. This worker owns no unrelated subprocesses.
+            libc = ctypes.CDLL(None, use_errno=True)
+            if libc.prctl(36, 1, 0, 0, 0) != 0:
+                errno = ctypes.get_errno()
+                raise OSError(errno, os.strerror(errno))
+            run_tui(argv, cwd, home, expected)
+        except BaseException as exc:
+            failure = exc
+            failure.add_note(traceback.format_exc())
+        finally:
+            try:
+                stop_children()
+            except BaseException as exc:
+                if failure is None:
+                    failure = exc
+                else:
+                    failure.add_note(f"Process cleanup also failed: {exc!r}")
+            sender.send(failure)
+            sender.close()
+            os._exit(0)
+    sender.close()
+    try:
+        failure = receiver.recv()
+    finally:
+        receiver.close()
+        os.waitpid(worker, 0)
+    if failure is not None:
+        raise failure
+
+
+def run_tui(argv, cwd, home, expected):
     """Answer terminal queries, but never send Enter or accept a trust dialog."""
     pid, fd = pty.fork()
     if pid == 0:
@@ -63,9 +121,9 @@ def tui(argv, cwd, home, expected):
                     return
         raise AssertionError(f"did not reach {expected}: {ANSI.sub(b'', output).decode(errors='replace')}")
     finally:
-        os.kill(pid, signal.SIGKILL)
-        os.waitpid(pid, 0)
         os.close(fd)
+        # The scenario worker stops and reaps the whole tree, including this
+        # PTY child, before reporting the scenario's result.
 
 
 def main():
