@@ -117,7 +117,10 @@ flowchart TD
 - **Failure.** A failed step is not recorded, fails its feature and those
   requiring it, and nothing else. A failure before readiness fails it, and
   its error names each failed feature's log.
-- **Locks.** `packages` steps and `run` steps marked `apt` take one lock; a
+- **Locks.** `packages` steps and `run` steps marked `apt` take one lock;
+  before apt work for unsatisfied packages or an apt-marked script runs,
+  `dpkg --configure -a` finishes any configuration interrupted by a previous
+  boot under that lock, noninteractively and keeping existing configuration files. Recovery failure fails the step without recording it. A
   `file` step with `merge: json` takes another across its read and its write,
   so features merging into one file in parallel keep each other's keys.
 

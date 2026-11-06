@@ -742,6 +742,9 @@ func (r *Runner) apply(ctx context.Context, out io.Writer, feature provisionspec
 		if step.Apt {
 			r.apt.Lock()
 			defer r.apt.Unlock()
+			if err := r.recoverDpkg(ctx, out); err != nil {
+				return err
+			}
 		}
 		return r.script(ctx, out, feature, step.Run)
 	}

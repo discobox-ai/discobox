@@ -179,3 +179,9 @@ Global review expectations:
   docker: killing only the parent leaves an exporter able to overwrite the
   next attempt's `.partial.tar`. `WaitDelay` only bounds pipe draining; it
   does not kill descendants. Keep a non-exec child exporter in deadline tests.
+
+- A real-box restart regression keeps its fixtures and progress markers off
+  `/tmp`, which Docker sandboxes mount as tmpfs and clear on restart. Keep
+  markers on the persistent root filesystem, and give a marker written by a
+  declared service a directory writable by the sandbox user: the agent's
+  `/var/lib/discobox` directory is root-owned.

@@ -60,6 +60,9 @@ steps:
 				if tool == "dpkg-query" {
 					return errors.New("package missing")
 				}
+				if tool == "dpkg" {
+					return nil // Never change the host package database.
+				}
 				if tool != "apt-get" {
 					t.Fatalf("unexpected tool %s", tool)
 				}
