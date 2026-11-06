@@ -24,7 +24,10 @@ without a byte, and moved into place only once its sha256 matches; with
 `unpack`, a gzipped tar or a zip, told apart by its first bytes, unpacked
 beside its directory and swapped in whole, refusing an entry or link that would
 land outside it, and a zip whose entries carry no Unix modes), `packages`
-(`apt-get`, requiring every repository index fetch to succeed before installing,
+(checks local dpkg status under the apt lock on every run, including matching
+records; fully installed packages with matching pinned versions skip apt entirely.
+Missing or partial packages use `apt-get`, requiring every repository index
+fetch to succeed before installing,
 keeping a configuration file already in a package's way rather
 than asking; a list per distribution, the box's own os-release `ID`'s, else the
 first `ID_LIKE`'s that has one, and a box no list names fails the step), and `run` (whose `inputs` name the files and directories its script reads
@@ -39,7 +42,8 @@ socket-activated dockerd are up before the `docker` feature lays their drop-ins
 — so it would otherwise run without them until the next boot. Each step is keyed by a digest of its definition and every
 file it names, recorded under `/opt/discobox/provision/steps/` on the root
 filesystem, never a declared volume; a step whose record matches is skipped
-unless its `check` exits non-zero (drift), so a second run changes nothing. A
+unless its `check` exits non-zero or its package requirements are no longer
+satisfied (drift), so a second run with no drift changes nothing. A
 box that is not Linux of the Debian family is refused by name before any step
 runs, unless it has no features to provision.
 

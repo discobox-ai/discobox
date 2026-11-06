@@ -387,7 +387,7 @@ func (r *Runner) applyDownload(ctx context.Context, step *provisionspec.Download
 
 // applyPackages installs a Debian family box's packages, the list its
 // distribution names (PackagesStep.For), refreshing the
-// package lists once per run. It holds the apt lock, which features
+// package lists once per run. Its caller holds the apt lock, which features
 // provisioning at once share. A configuration file already at a package's
 // path is kept, never asked about: it is the box's, or a feature's that was
 // provisioned before the package arrived, and there is nobody to answer.
@@ -396,8 +396,9 @@ func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisi
 	if !ok {
 		return fmt.Errorf("packages: no list for %s", r.Platform.ID)
 	}
-	r.apt.Lock()
-	defer r.apt.Unlock()
+	if r.packagesSatisfied(ctx, packages) {
+		return nil
+	}
 	env := []string{"DEBIAN_FRONTEND=noninteractive"}
 	if !r.aptUpdated {
 		if err := r.command(ctx, out, "/", env, "apt-get", "update", "--error-on=any"); err != nil {
@@ -407,6 +408,31 @@ func (r *Runner) applyPackages(ctx context.Context, out io.Writer, step *provisi
 	}
 	args := []string{"install", "-y", "--no-install-recommends", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"}
 	return r.command(ctx, out, "/", env, "apt-get", append(args, packages...)...)
+}
+
+// packagesSatisfied checks the actual dpkg database, even when a step has a
+// matching record. Query under the apt lock so another feature cannot change
+// package state between this check and the decision to install. Unavailable or
+// ambiguous query results take the ordinary apt path.
+func (r *Runner) packagesSatisfied(ctx context.Context, packages []string) bool {
+	for _, requirement := range packages {
+		name, version, pinned := strings.Cut(requirement, "=")
+		var out bytes.Buffer
+		if err := r.command(ctx, &out, "/", nil, "dpkg-query",
+			"--admindir="+r.path("/var/lib/dpkg"), "--show",
+			"--showformat=${Status}\t${Version}\n", name); err != nil {
+			return false
+		}
+		status, installed, ok := strings.Cut(strings.TrimSpace(out.String()), "\t")
+		state := strings.Fields(status)
+		if !ok || len(state) != 3 || state[1] != "ok" || state[2] != "installed" || installed == "" || strings.ContainsAny(installed, "\n\t") {
+			return false
+		}
+		if pinned && r.command(ctx, io.Discard, "/", nil, "dpkg", "--compare-versions", installed, "eq", version) != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func fileMode(mode string) os.FileMode {

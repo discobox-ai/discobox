@@ -249,7 +249,12 @@ with the platform's and its harness's features provisioned on top, and a
 Docker pool's own container runs it too, provisioned as a pool
 ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
 §2), so a pool host pulls one image. No harness is an image (ADR 26-10-16-423
-§10).
+§10). Common Debian apt requirements of core, build, cli, python and
+shells-editors are installed in the base before application inputs
+(ADR 26-11-06-664). Feature declarations remain portable requirements; the
+provisioner checks the local package database and skips satisfied apt work.
+Feature opt-outs skip configuration without removing base software. Node,
+browsers and harness installation remain feature provisioning.
 
 It is released and staged under its own role, and resolves from the release
 manifest's `Images.SandboxBase`, then a provider's

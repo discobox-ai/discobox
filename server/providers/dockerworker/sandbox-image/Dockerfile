@@ -31,6 +31,9 @@ LABEL io.discobox.reclaimable.v1=true
 # GID package installs leave kvm at moves with what they install.
 RUN groupadd --system --gid 992 kvm
 
+# Common apt requirements of core, build, cli, python and shells-editors
+# (ADR 26-11-06-664). Keep in sync with their provision.yaml declarations.
+# This layer precedes all application inputs; binaries live in separate bundles.
 # systemd and the tools a working box is expected to have. apt's own
 # cache-cleaning drop-in is removed: it fights the build caches children
 # mount, and no image wants a container mutating its package state.
@@ -41,17 +44,40 @@ RUN set -eux \
         ca-certificates \
         curl \
         dbus \
+        expect \
+        file \
         git \
         gnupg \
         iproute2 \
         iptables \
         jq \
+        less \
+        openssh-client \
+        openssh-sftp-server \
+        passwd \
+        patch \
         pipx \
+        poppler-utils \
+        procps \
+        psmisc \
+        python-is-python3 \
         python3 \
+        python3-pip \
+        python3-requests \
+        python3-venv \
         ripgrep \
+        screen \
+        shellcheck \
+        socat \
+        sqlite3 \
         sudo \
         systemd \
         systemd-sysv \
+        tmux \
+        unzip \
+        vim \
+        xz-utils \
+        zsh \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/apt/apt.conf.d/docker-clean
