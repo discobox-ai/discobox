@@ -1023,3 +1023,27 @@ func TestChecksNotAllReadSaySo(t *testing.T) {
 		t.Errorf("no checks = %q, want no row", got)
 	}
 }
+
+// A merge completion must survive any outstanding progress command.
+func TestAMergeRefusalSurvivesLateProgress(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ds := pullSource()
+		ds.mergeErr = errors.New("GitHub answered 405: Required status check \"lint\" is failing")
+		_, m := openPullPane(t, ds)
+		p := issueTabOf(m)
+		batch := m.mergePull(p, "squash", p.issue.issue.Pull.HeadSHA)().(tea.BatchMsg)
+
+		// Deliver the completed merge and its refusal before the sibling
+		// progress command, a legal ordering for Bubble Tea's batch.
+		// Progress is now installed synchronously; its sibling is only expiry.
+		_, report := m.Update(batch[0]())
+		m.Update(report())
+		if !strings.Contains(m.status, "#9 was not merged") || !strings.Contains(m.status, "lint") {
+			t.Fatalf("merge did not report the refusal: %q", m.status)
+		}
+		m.Update(batch[1]())
+		if !m.statusE || !strings.Contains(m.status, "#9 was not merged") || !strings.Contains(m.status, "lint") {
+			t.Fatalf("late progress overwrote the refusal: status = %q, error = %v", m.status, m.statusE)
+		}
+	})
+}

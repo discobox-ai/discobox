@@ -313,7 +313,10 @@ func (m *Model) mergePull(p *pane, method, sha string) tea.Cmd {
 		defer cancel()
 		return pullMergedMsg{id: id, method: method, err: ds.MergePullRequest(ctx, repository, number, method, sha)}
 	}
-	return tea.Batch(merge, status("merging #%d…", number))
+	// Install progress before starting the merge: a fast refusal must not be
+	// overwritten by a sibling start notice. Keep the normal status expiry.
+	_, expires := m.Update(status("merging #%d…", number)())
+	return tea.Batch(merge, expires)
 }
 
 // pullMerged reads the pull request again once it is merged, so the badge and
