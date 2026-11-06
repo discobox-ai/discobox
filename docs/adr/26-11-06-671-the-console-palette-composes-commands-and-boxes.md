@@ -1,7 +1,8 @@
 # 26-11-06-671 — The console palette composes commands and boxes
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-06
+- Accepted by the owner by merging #719, 2026-11-06
 - **Issue**: [#717](https://github.com/discobox-ai/discobox/issues/717)
 
 ## Context
