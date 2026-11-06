@@ -28,6 +28,9 @@ func Wait(ctx context.Context, path string, features []string, waiting func(prov
 		if err != nil {
 			return status, err
 		}
+		if len(features) == 0 && ok && status.State.Done() {
+			return status, nil
+		}
 		var pending []string
 		for _, name := range features {
 			feature, reported := status.Features[name]
@@ -37,6 +40,9 @@ func Wait(ctx context.Context, path string, features []string, waiting func(prov
 			case reported && !feature.State.Done():
 				pending = append(pending, name)
 			}
+		}
+		if len(features) == 0 {
+			pending = append(pending, "all features")
 		}
 		if len(pending) == 0 {
 			return status, nil

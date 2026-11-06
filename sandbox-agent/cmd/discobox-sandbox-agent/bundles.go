@@ -68,7 +68,7 @@ func provisionBox(ctx context.Context, tracker *provision.Tracker, runtimeConfig
 		tracker.Fail(err)
 		return err
 	}
-	return provision.Boot(ctx, slog.Default(), tracker, trees, features, false)
+	return provision.Apply(ctx, slog.Default(), tracker, trees, features, provision.Options{Background: true}, false)
 }
 
 // fetchBundles applies the pins in agentlayer.PinsFile, when the pool placed

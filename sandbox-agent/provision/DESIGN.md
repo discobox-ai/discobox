@@ -47,10 +47,10 @@ runs, unless it has no features to provision.
 
 | Caller | Entry | Runs |
 |---|---|---|
-| The agent, every boot | `Boot(…, wireOnly=false)` → `Runner.Provision` | Everything, with `Background`: the server answers meanwhile |
-| `boot.Wire` / `boot.Provision` | `Boot(…, wireOnly=true)` → `Runner.Wire` | Wiring alone, before the account exists |
-| `discobox-sandbox-agent snapshot` | `Snapshot` → `Runner.Provision` with `Snapshot` | Every step blocking, the plan's features off, and what a feature keeps out of a snapshot `Deferred`: a box provisioned as a snapshot is taken ([Snapshots](#snapshots)) |
-| `discobox-provision apply`, on a pool | `Pool` → `Runner.Provision` | Every feature of the pool's bundles, every step blocking, nothing off and no placeholders: nothing runs on a pool but what its bundles lay ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §2) |
+| The agent, every boot | `Apply(…, wireOnly=false)` → `Runner.Provision` | Everything, with `Background`: the server answers meanwhile |
+| `boot.Wire` / `boot.Provision` | `Apply(…, wireOnly=true)` → `Runner.Wire` | Wiring alone, before the account exists |
+| `discobox-sandbox-agent snapshot` | `Apply` → `Runner.Provision` with `Snapshot` | Every step blocking, the plan's features off, and what a feature keeps out of a snapshot `Deferred`: a box provisioned as a snapshot is taken ([Snapshots](#snapshots)) |
+| `discobox-provision apply`, on a pool | `Apply` → `Runner.Provision` | Every feature of the pool's bundles, every step blocking, nothing off and no placeholders: nothing runs on a pool but what its bundles lay ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §2) |
 
 At boot the trees are the box's pins' bundles, in the pins' order
 (`bundlestore.Trees`, handed to `BootPlan`): a sandbox's sandbox bundle and
@@ -155,3 +155,17 @@ run FEATURE COMMAND`, which says on stderr that it waits, waits on
 `provision.json`, then finds the real command past the placeholders and execs
 it. A feature's placeholders go when it is ready, and every boot replaces the
 set. `discobox-provision wait FEATURE...` is the same wait for anything else.
+
+## Applying contents
+
+`discobox-provision apply` selects local delivery when its maker supplied the
+placed bundle directory. That bootstrap work runs in the foreground. Otherwise
+it starts the delivered agent, preserving sandbox pulls through the pool cache
+after runtime-config intake. `--wait` additionally waits for background features
+to finish and reports failure; it does not choose the delivery source. No new
+job service or bundle transfer mechanism is involved.
+
+Boot, snapshot and placed-content callers use the same `Apply` function and
+runner, with feature opt-outs, `Background`, `Snapshot`, and wiring-only options.
+The sandbox agent clears prior provisioning status before each process starts;
+a waiting caller checks that installed bundle pins match those it requested.

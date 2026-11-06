@@ -635,7 +635,7 @@ func newBooter() *booter {
 		tracker := provision.NewTracker(provisionspec.StatusPath)
 		trees, err := bundlestore.Trees("/")
 		if err == nil {
-			err = provision.Boot(ctx, logger, tracker, trees, features, true)
+			err = provision.Apply(ctx, logger, tracker, trees, features, provision.Options{Background: true}, true)
 		}
 		if err != nil {
 			logger.Warn("provision the box's wiring", "error", err)

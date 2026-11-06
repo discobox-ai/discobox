@@ -300,6 +300,12 @@ func TestApplyRecordsOnlyTheTreesOfThePinsItApplied(t *testing.T) {
 	if err := s.Apply(context.Background(), pins[:1]); err != nil {
 		t.Fatal(err)
 	}
+	if current, err := s.Current(pins); err != nil || current {
+		t.Fatalf("stale full pin set reported applied: %v %v", current, err)
+	}
+	if current, err := s.Current(pins[:1]); err != nil || !current {
+		t.Fatalf("current pin set not recognized: %v %v", current, err)
+	}
 	if trees, err := Trees(s.Root); err != nil || len(trees) != 1 {
 		t.Fatalf("trees = %q, %v; want the one pin's", trees, err)
 	}

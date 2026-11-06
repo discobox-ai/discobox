@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -33,12 +34,12 @@ import (
 //	discobox-provision wait FEATURE...           block until each is ready
 //	discobox-provision run FEATURE COMMAND ARG... a placeholder: wait, then exec
 //	discobox-provision identity --key PATH       the box's public key, made on demand
-//	discobox-provision apply [--pool]             provision the box its maker placed
+//	discobox-provision apply [--wait]             provision the box its maker placed
 func runProvisionCommand(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	usage := func() int {
-		fmt.Fprintln(os.Stderr, "usage: discobox-provision wait FEATURE...\n       discobox-provision run FEATURE COMMAND [ARG...]\n       discobox-provision identity --key PATH\n       discobox-provision apply [--pool]")
+		fmt.Fprintln(os.Stderr, "usage: discobox-provision wait FEATURE...\n       discobox-provision run FEATURE COMMAND [ARG...]\n       discobox-provision identity --key PATH\n       discobox-provision apply [--wait]")
 		return 2
 	}
 	if len(args) == 0 {
@@ -79,14 +80,17 @@ func runProvisionCommand(args []string) int {
 		return 0
 	case "apply":
 		flags := flag.NewFlagSet("discobox-provision apply", flag.ContinueOnError)
-		pool := flags.Bool("pool", false, "provision a pool's box from the bundles its maker placed")
+		wait := flags.Bool("wait", false, "also wait for background provisioning to finish")
 		if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 {
 			return usage()
 		}
-		if *pool {
-			return applyPool(ctx)
+		if info, err := os.Stat(agentlayer.PlacedDir); err == nil && info.IsDir() {
+			return applyPlacedBundles(ctx)
+		} else if err != nil && !os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
 		}
-		return applySandbox(ctx)
+		return applyDeliveredBundles(ctx, *wait)
 	}
 	return usage()
 }
@@ -110,7 +114,7 @@ func provisionIdentity(path string, out io.Writer) int {
 	return 0
 }
 
-// applyPool provisions a pool's box from what its maker placed (ADR
+// applyPlacedBundles applies the verified contents its maker placed (ADR
 // 26-10-24-953 §2, ADR 26-10-30-875 §5): the pins, and every blob of their
 // bundles for the box's platform (agentlayer.PlacedDir), which it applies to
 // the box's content store with nothing fetched — it dials nothing, since it
@@ -118,7 +122,7 @@ func provisionIdentity(path string, out io.Writer) int {
 // — then applies every feature, every step blocking, and exits. The pool
 // agent is what the pool's bundles lay and start; this never runs as the
 // agent.
-func applyPool(ctx context.Context) int {
+func applyPlacedBundles(ctx context.Context) int {
 	fail := func(err error) int {
 		fmt.Fprintln(os.Stderr, "discobox-provision:", err)
 		return 1
@@ -155,10 +159,17 @@ func applyPool(ctx context.Context) int {
 	}
 	store := &bundlestore.Store{Root: "/", Fetcher: bundlestore.PlacedFetcher{Root: "/"}, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
 	err = store.Apply(ctx, pins)
-	// Placed again whenever the box is provisioned, and held by the store
-	// once applied.
-	if removeErr := os.RemoveAll(agentlayer.PlacedDir); err == nil && removeErr != nil {
-		err = removeErr
+	// Keep the local-delivery directory across retries after consuming blobs.
+	if err == nil {
+		entries, readErr := os.ReadDir(agentlayer.PlacedDir)
+		if readErr != nil {
+			return fail(readErr)
+		}
+		for _, entry := range entries {
+			if err := os.RemoveAll(filepath.Join(agentlayer.PlacedDir, entry.Name())); err != nil {
+				return fail(err)
+			}
+		}
 	}
 	if err != nil {
 		return fail(fmt.Errorf("apply the box's placed bundles: %w", err))
@@ -167,21 +178,30 @@ func applyPool(ctx context.Context) int {
 	if err != nil {
 		return fail(err)
 	}
-	if err := provision.Pool(ctx, slog.Default(), provision.NewTracker(provisionspec.StatusPath), trees); err != nil {
+	if err := provision.Apply(ctx, slog.Default(), provision.NewTracker(provisionspec.StatusPath), trees, nil, provision.Options{}, false); err != nil {
 		return fail(err)
 	}
 	return 0
 }
 
-// applySandbox starts a sandbox's agent on a box that is already running,
+// applyDeliveredBundles starts a sandbox's agent on a box that is already running,
 // whose maker placed the agent, its units and their enablement, the pins and
 // the bootstrap (ADR 26-10-24-953 §2): systemd is told of the units, and the
 // agent's path unit started, which starts the agent once its bootstrap is
 // there. The agent then provisions the box itself, from its first
 // runtime-config document. A box systemd is not running has nothing to start:
 // it boots on the units it was placed.
-func applySandbox(ctx context.Context) int {
+func applyDeliveredBundles(ctx context.Context, wait bool) int {
+	requested, _, err := placedPins()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		if wait || !os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, "discobox-provision: cannot wait for provisioning before systemd is running")
+			return 1
+		}
 		return 0
 	}
 	for _, command := range [][]string{
@@ -199,6 +219,30 @@ func applySandbox(ctx context.Context) int {
 			return 1
 		}
 	}
+	if wait {
+		status, err := provision.Wait(ctx, provisionspec.StatusPath, nil, nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if status.State == provisionspec.StateFailed {
+			fmt.Fprintln(os.Stderr, "discobox-provision: provisioning failed", status.Error)
+			for name, feature := range status.Features {
+				if feature.State == provisionspec.StateFailed {
+					fmt.Fprintln(os.Stderr, provision.Problem(status, name))
+				}
+			}
+			return 1
+		}
+		if len(requested) > 0 {
+			current, err := (&bundlestore.Store{Root: "/"}).Current(requested)
+			if err != nil || !current {
+				fmt.Fprintln(os.Stderr, "discobox-provision: requested bundle pins have not been applied; restart the box to apply changed pins")
+				return 1
+			}
+		}
+	}
+
 	return 0
 }
 

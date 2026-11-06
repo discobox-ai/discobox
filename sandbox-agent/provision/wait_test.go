@@ -3,6 +3,7 @@ package provision
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -92,5 +93,27 @@ func TestLookPathSkipsThePlaceholders(t *testing.T) {
 	}
 	if _, err := LookPath("brew", PlaceholderDir); err == nil {
 		t.Error("found the placeholder itself")
+	}
+}
+
+func TestWaitWholeRunIncludesBackgroundFeatures(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "provision.json")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := Wait(ctx, path, nil, nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("missing run completed: %v", err)
+	}
+	writeStatus(t, path, provisionspec.Status{State: provisionspec.StateProvisioning, Ready: true, Features: map[string]provisionspec.FeatureStatus{"async-tool": {State: provisionspec.StateProvisioning, Async: true}}})
+	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := Wait(ctx, path, nil, nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("background run completed early: %v", err)
+	}
+	for _, state := range []provisionspec.State{provisionspec.StateReady, provisionspec.StateFailed} {
+		writeStatus(t, path, provisionspec.Status{State: state})
+		status, err := Wait(context.Background(), path, nil, nil)
+		if err != nil || status.State != state {
+			t.Fatalf("completed run=%s %v, want %s", status.State, err, state)
+		}
 	}
 }
