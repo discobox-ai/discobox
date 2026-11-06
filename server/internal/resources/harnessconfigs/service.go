@@ -429,6 +429,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		return nil
 	}
 	platformBundle := s.platformBundle()
+	attempted, resolved := 0, 0
 	for _, seed := range s.seeds() {
 		bundle := strings.TrimSpace(seed.Bundle)
 		if bundle == "" {
@@ -441,6 +442,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if existing != nil && !existing.BuiltIn {
 			return fmt.Errorf("built-in harness %s conflicts with a user-created harness config", seed.Slug)
 		}
+		attempted++
 		metadata, inspectErr := s.resolveHarness(ctx, platformBundle, bundle)
 		if inspectErr != nil {
 			if s.requireBuiltInImages {
@@ -450,6 +452,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				"slug", seed.Slug, "bundle", bundle, "error", inspectErr)
 			continue
 		}
+		resolved++
 		// The secret declarations are compared too: one snapshotted by a
 		// server that did not read a field of them yet (a rejection scope, ADR
 		// 26-10-13-595) carries the digest and not the field, and would
@@ -484,6 +487,10 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 			return err
 		}
 
+	}
+	if attempted > 0 && resolved == 0 {
+		slog.ErrorContext(ctx, "all built-in harness seeds failed; existing harness configs retained; check development image watcher and bundle availability",
+			"projectId", projectID, "attempted", attempted)
 	}
 	return nil
 }

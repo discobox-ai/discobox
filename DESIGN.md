@@ -444,7 +444,13 @@ watcher derives both the complete development manifest and every image and
 bundle setting in `.env` from one inspection of the full local set; the two
 publications must never name different base images or bundles. Failed
 build or publication work stays pending and retries without requiring another
-file change, including the initial build. The inputs themselves are discovered
+file change, including the initial build. Docker probes and tag operations have a
+30-second deadline; each build or builder setup has 30 minutes. A single
+background presence inspection runs at a time, so a stalled daemon cannot
+stop file-change intake; a failed inspection is logged and retried on the next
+presence tick. Both deadlines are watcher flags. Build-mode references hash
+rendered build arguments alongside watched inputs, so a metadata-rendering
+change also invalidates saved layouts. The inputs themselves are discovered
 again every few seconds, not only at startup, so a file added to a package an
 image builds is watched without restarting the loop.
 

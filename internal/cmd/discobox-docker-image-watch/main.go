@@ -25,6 +25,10 @@ import (
 const envFile = ".env"
 const developmentImageManifestFile = ".tmp/discobox-dev-images.json"
 
+// Probes should fail promptly; builds need time to download and compile inputs.
+var dockerCommandTimeout = flag.Duration("docker-command-timeout", 30*time.Second, "Deadline for Docker inspection and tag commands")
+var buildCommandTimeout = flag.Duration("build-command-timeout", 30*time.Minute, "Deadline for each Docker build or builder setup")
+
 var bundleBuilder = flag.String("bundle-builder", "discobox", "Buildx builder for local OCI bundle exports when the host daemon's own cannot export them")
 
 // bundleLayoutDir is where the watcher exports each bundle, as the OCI image
@@ -108,6 +112,9 @@ var harnessImages = []harnessImage{
 
 func main() {
 	flag.Parse()
+	if *dockerCommandTimeout <= 0 || *buildCommandTimeout <= 0 {
+		log.Fatal("command deadlines must be positive")
+	}
 	log.SetFlags(0)
 	ctx := context.Background()
 	if err := run(ctx); err != nil {
@@ -164,6 +171,20 @@ func watchImages(ctx context.Context, repoRoot string, specs []imageSpec, ticks,
 		states[spec.name] = snapshot(spec.files)
 		pending[spec.name] = true
 	}
+	// Only one presence inspection runs at a time. It owns a snapshot of the
+	// specs, and never blocks file intake or retries while Docker is stalled.
+	type presenceResult struct {
+		missing []imageSpec
+		err     error
+	}
+	var checking <-chan presenceResult
+	var cancelCheck context.CancelFunc
+	defer func() {
+		if cancelCheck != nil {
+			cancelCheck()
+			<-checking
+		}
+	}()
 	var retryAt time.Time
 	now := time.Now()
 	for {
@@ -212,12 +233,27 @@ func watchImages(ctx context.Context, repoRoot string, specs []imageSpec, ticks,
 				pending[specs[i].name] = true
 			}
 		case now = <-presence:
-			missing, err := missingImageSpecs(ctx, repoRoot, specs)
-			if err != nil {
-				log.Printf("check built images: %v", err)
+			if checking != nil {
 				continue
 			}
-			for _, spec := range missing {
+			checkCtx, cancel := context.WithCancel(ctx)
+			cancelCheck = cancel
+			results := make(chan presenceResult, 1)
+			checking = results
+			checkSpecs := slices.Clone(specs)
+			go func() {
+				missing, err := missingImageSpecs(checkCtx, repoRoot, checkSpecs)
+				results <- presenceResult{missing: missing, err: err}
+			}()
+		case result := <-checking:
+			cancelCheck()
+			cancelCheck = nil
+			checking = nil
+			if result.err != nil {
+				log.Printf("check built images (will retry): %v", result.err)
+				continue
+			}
+			for _, spec := range result.missing {
 				pending[spec.name] = true
 			}
 		case now = <-ticks:
@@ -374,16 +410,16 @@ func findRepoRoot() (string, error) {
 // last `docker buildx use`): the daemon's own is the builder named after its
 // Docker context.
 func localBundleBuilder(ctx context.Context, repoRoot string) (string, error) {
-	out, err := exec.CommandContext(ctx, "docker", "info", "--format", "{{json .DriverStatus}}").Output()
+	out, err := commandOutput(ctx, repoRoot, "docker", "info", "--format", "{{json .DriverStatus}}")
 	if err != nil {
 		return "", fmt.Errorf("read the host daemon's image store: %w", err)
 	}
-	if containerdImageStore(out) {
-		context, err := exec.CommandContext(ctx, "docker", "context", "show").Output()
+	if containerdImageStore([]byte(out)) {
+		context, err := commandOutput(ctx, repoRoot, "docker", "context", "show")
 		if err != nil {
 			return "", fmt.Errorf("read the host daemon's Docker context: %w", err)
 		}
-		return strings.TrimSpace(string(context)), nil
+		return strings.TrimSpace(context), nil
 	}
 	if err := runCommand(ctx, repoRoot, "go", "tool", "task", "buildx:builder", "BUILDX_BUILDER="+*bundleBuilder); err != nil {
 		return "", fmt.Errorf("prepare bundle builder: %w", err)
@@ -1058,22 +1094,48 @@ func devImageTag(prefix, imageID string) string {
 	return prefix + shortID
 }
 
-func runCommand(ctx context.Context, dir, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+// command bounds the process and the wait for any inherited output pipes.
+// Builder setup invokes Docker through task, so it gets the build budget too.
+func command(ctx context.Context, dir, name string, args ...string) (*exec.Cmd, context.Context, context.CancelFunc) {
+	deadline := *dockerCommandTimeout
+	if name == "go" || (len(args) > 0 && (args[0] == "build" || (args[0] == "buildx" && len(args) > 1 && args[1] == "build"))) {
+		deadline = *buildCommandTimeout
+	}
+	bounded, cancel := context.WithTimeout(ctx, deadline)
+	cmd := exec.CommandContext(bounded, name, args...)
 	cmd.Dir = dir
+	cancelProcessTree(cmd)
+	cmd.WaitDelay = time.Second
+	return cmd, bounded, cancel
+}
+
+func runCommand(ctx context.Context, dir, name string, args ...string) error {
+	cmd, bounded, cancel := command(ctx, dir, name, args...)
+	defer cancel()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return commandError(bounded, cmd, err)
+	}
+	return nil
 }
 
 func commandOutput(ctx context.Context, dir, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = dir
+	cmd, bounded, cancel := command(ctx, dir, name, args...)
+	defer cancel()
 	out, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", commandError(bounded, cmd, err)
 	}
 	return string(out), nil
+}
+
+func commandError(ctx context.Context, cmd *exec.Cmd, err error) error {
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	deadline, _ := ctx.Deadline()
+	return fmt.Errorf("%s (deadline %s): %w", strings.Join(cmd.Args, " "), deadline.Format(time.RFC3339), err)
 }
 
 func updateEnv(path string, values map[string]string) error {

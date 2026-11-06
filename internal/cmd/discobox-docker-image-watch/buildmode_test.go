@@ -170,3 +170,43 @@ func TestStampBuildModeImagesIsStableForUnchangedInputs(t *testing.T) {
 		t.Fatalf("content tag %q does not use the spec's dev prefix %q", first, spec.devPrefix)
 	}
 }
+
+func TestHarnessDeclarationChangesBuildModeReference(t *testing.T) {
+	dir := t.TempDir()
+	metadata := filepath.Join(dir, "image.json")
+	write := func(value string) {
+		t.Helper()
+		if err := os.WriteFile(metadata, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"apiVersion":"discobox.dev/image/v1","harness":{"id":"test","name":"Before"}}`)
+	spec := imageSpec{name: "harness-test", bundle: true, devPrefix: "test:dev-", buildDir: dir, files: []string{metadata}, metadataFile: metadata, metadataArg: "HARNESS_METADATA", contextDir: dir, dockerfile: "Dockerfile", target: "bundle"}
+	out := t.TempDir()
+	stamp := func() devimage.Bundle {
+		t.Helper()
+		if err := stampBuildModeImages(out, []imageSpec{spec, {name: "base", devPrefix: "base:dev-", buildDir: dir, files: []string{metadata}, contextDir: dir, dockerfile: "Dockerfile"}}); err != nil {
+			t.Fatal(err)
+		}
+		manifest, err := devimage.Read(filepath.Join(out, developmentImageManifestFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return manifest.Bundles[0]
+	}
+	before := stamp()
+	if same := stamp(); same.Reference != before.Reference {
+		t.Fatal("unchanged input changed reference")
+	}
+	write(`{"apiVersion":"discobox.dev/image/v1","harness":{"id":"test","name":"After"}}`)
+	after := stamp()
+	if before.Reference == after.Reference || before.Build.Args["HARNESS_METADATA"] == after.Build.Args["HARNESS_METADATA"] {
+		t.Fatal("declaration edit reused reference or old metadata")
+	}
+	// The rendered arguments are inputs too, even if watched file bytes do not
+	// change (for example, when the renderer starts filling a different label).
+	spec.metadataArg = "NEW_METADATA"
+	if next := stamp(); next.Reference == after.Reference {
+		t.Fatal("changed rendered arguments reused reference")
+	}
+}
