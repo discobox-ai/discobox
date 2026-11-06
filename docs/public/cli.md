@@ -2228,8 +2228,11 @@ One console container is kept per pool host and reattached, so a capture or a
 trace started in it survives a detach. The shell exits when you type exit, and
 the next console starts a fresh one.
 
-Pass -- followed by a command to run it once. Stdin is attached, stdout and
-stderr stay separate without a TTY, and the command's exit status is returned.
+The command follows POOL; an optional -- separates them explicitly.
+Use a leading -- to omit POOL and use the default pool.
+CLI flags go before POOL; everything after it is passed to the command.
+Stdin is attached, stdout and stderr stay separate without a TTY, and the
+command's exit status is returned.
 A TTY is allocated when stdin is a terminal, or with -t; TTY output is merged.
 One-off commands have the same host access and do not change the persistent shell.
 
@@ -2237,7 +2240,7 @@ Without POOL the project's default pool is used.
 ~~~~
 
 ```text
-discobox admin pool console [POOL] [-- CMD [ARG...]] [flags]
+discobox admin pool console [POOL] [--] [CMD...] [flags]
 ```
 
 Examples:
@@ -2246,6 +2249,7 @@ Examples:
   discobox admin pool console
   discobox admin pool console pool_01hq
   discobox admin pool console -- docker ps -a
+  discobox admin pool console pool_01hq docker ps -a
 ```
 
 | Flag | Type | Default | Description |

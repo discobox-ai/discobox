@@ -1021,7 +1021,7 @@ stderr frame, which the client neither detects nor needs to.
 
 `discobox exec [DISCOBOX] [--] [CMD...]` and the tool and exec-create
 commands read the first positional as DISCOBOX and the remaining words as the
-command through `splitDiscoboxCommand`. An optional `--` immediately after
+command through `splitTargetCommand`. An optional `--` immediately after
 DISCOBOX separates it explicitly; a leading `--` omits DISCOBOX and selects
 one interactively. Later separators belong to the command. No argument's
 contents are used to guess whether it is a discobox or a command.
@@ -1832,8 +1832,10 @@ console's shell is started by the server before the session's own resize
 tracking has said anything, and a first prompt drawn at 80x24 would then be
 repainted.
 
-`console [POOL] -- CMD [ARG...]` runs one command and returns its exit status.
-The separator distinguishes the default pool's command from an explicit pool.
+`console [POOL] [--] [CMD...]` runs one command and returns its exit status.
+It shares `splitTargetCommand` with exec: the first positional is the pool,
+with an optional separator before its command; a leading `--` uses the default
+pool. CLI flags go before the pool, and command flags pass through unchanged.
 Stdin is always attached; a terminal stdin or `-t` requests a TTY, otherwise
 stdout and stderr remain separate. Command mode sends EOF and omits interactive
 narration and detach filtering. No-command attachment retains the persistent shell.

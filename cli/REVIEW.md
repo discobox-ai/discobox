@@ -123,7 +123,7 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   `--no-source` is given; a SOURCE that does not resolve is an error naming
   the form that works, not a guess that it was a prompt. Only zero arguments
   open a picker. A command that runs a command reads `[DISCOBOX] [--] [ARG...]`
-  through `splitDiscoboxCommand`; one that parses no flags (`tools ssh`) has
+  through `splitTargetCommand`; one that parses no flags (`tools ssh`) has
   to say what a leading `-` means itself, since nothing stops it reaching
   DISCOBOX.
 - **`-q` prints what the group's other verbs take back,** not necessarily an
