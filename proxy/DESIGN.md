@@ -1109,10 +1109,11 @@ environment. HTTP and HTTPS origins select separate upstreams; inspected,
 pinned and passthrough CONNECT paths share standard NO_PROXY semantics.
 `pool-agent/proxyagent` reads this document when the proxy starts.
 
-Standalone callers may set `Config.UpstreamProxy` and `UpstreamNoProxy`, or
-use legacy environment discovery: the first nonempty `HTTPS_PROXY`,
-`HTTP_PROXY` or `ALL_PROXY`, each upper then lower case, selects one upstream
-for both schemes. `NO_PROXY` supplies bypasses when the explicit list is empty.
+Standalone callers may set `Config.UpstreamProxy` for one shared upstream,
+with `UpstreamNoProxy` for bypasses, or use independent inherited schemes:
+uppercase before lowercase, missing HTTPS falling back to HTTP, and HTTP-only
+ALL_PROXY as a last fallback. A recognized enclosing forwarder is translated
+back to its host-reachable endpoint because this consumer runs on the host.
 Both `Transport.Proxy` and the scheme-aware `ConnectDial` route through the
 selected upstream or the destination dialer. SOCKS5 connects dial directly.
 Upstream credentials stay private; diagnostics and tunnel metadata omit all
