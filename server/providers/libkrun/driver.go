@@ -286,29 +286,33 @@ func (d *Driver) launch(ctx context.Context, poolID string, root, kernel *guesti
 		return nil, false, err
 	}
 
-	relayPath := filepath.Join(runtimeDir, "outbound.sock")
-	_ = os.Remove(relayPath)
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", relayPath)
-	if err != nil {
-		return nil, false, err
-	}
 	relayCtx, cancel := context.WithCancel(context.Background())
-	resolved, err := outbound.ResolveLocalForwarder()
-	if err != nil {
-		cancel()
-		listener.Close()
-		return nil, false, err
-	}
 	relayOwned := false
 	defer func() {
 		if !relayOwned {
 			cancel()
-			listener.Close()
 		}
 	}()
-	go func() { _ = pooloutbound.ServeHost(relayCtx, listener, resolved) }()
+	resolved, err := outbound.ResolveLocalForwarder()
+	if err != nil {
+		return nil, false, err
+	}
 	manifest := d.manifest(poolID, root, kernel, dataDisk, cacheDisk, size)
-	manifest.VSOCK = append(manifest.VSOCK, krunvm.VSOCKMapping{Name: "outbound", Port: pooloutbound.HostPort, Socket: relayPath, Direction: krunvm.GuestConnects}, krunvm.VSOCKMapping{Name: "outbound-container", Port: pooloutbound.ContainerPort, Socket: filepath.Join(runtimeDir, "outbound-container.sock"), Direction: krunvm.HostConnects})
+	for i, raw := range []string{resolved.HTTP, resolved.HTTPS} {
+		if raw == "" {
+			continue
+		}
+		port := []uint32{pooloutbound.HTTPPort, pooloutbound.HTTPSPort}[i]
+		name := []string{"outbound-http", "outbound-https"}[i]
+		socket := filepath.Join(runtimeDir, name+".sock")
+		_ = os.Remove(socket)
+		listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", socket)
+		if err != nil {
+			return nil, false, err
+		}
+		go func() { _ = pooloutbound.ServeRelay(relayCtx, listener, pooloutbound.UpstreamDialer(raw)) }()
+		manifest.VSOCK = append(manifest.VSOCK, krunvm.VSOCKMapping{Name: name, Port: port, Socket: socket, Direction: krunvm.GuestConnects})
+	}
 	if err := manifest.Validate(); err != nil {
 		return nil, false, fmt.Errorf("libkrun VM %s: %w", poolID, err)
 	}
@@ -957,14 +961,10 @@ func (d *Driver) PoolOutbound(ctx context.Context, poolID string, want pooloutbo
 	if guest == nil {
 		return pooloutbound.Delivery{}, fmt.Errorf("pool VM is not running")
 	}
-	dialer := net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "unix", filepath.Join(guest.runtimeDir, "outbound-container.sock"))
-	if err != nil {
-		return pooloutbound.Delivery{}, fmt.Errorf("guest image lacks pool outbound boot delivery: %w", err)
-	}
-	runtime, err := pooloutbound.ReadContainerConfig(ctx, conn)
+	lease, err := d.AcquireDockerClient(ctx, poolID)
 	if err != nil {
 		return pooloutbound.Delivery{}, err
 	}
-	return pooloutbound.Delivery{Runtime: runtime.Runtime, GuestProbes: &runtime.Probes, AppliedRevision: guest.outbound.Revision(), RestartRequired: guest.outbound.Revision() != want.Revision()}, nil
+	defer lease.Release()
+	return dockerworker.VMOutbound(ctx, lease.Client, guest.outbound, want)
 }

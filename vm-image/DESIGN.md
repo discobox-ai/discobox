@@ -191,14 +191,3 @@ a contract:
 
 Keeping it narrow is what makes independent versioning safe. A change to any of
 it is a coordinated release: the guest ships first, then the pin moves.
-
-## Outbound boot material
-
-`discobox-outbound.service` runs before Docker and receives private resolved
-routing/CA bytes over VSOCK port 3005. Its boot-local overlays on `/etc` and the
-local CA directory leave the shared read-only root unchanged. It installs
-additional anchors without replacing stock roots and starts loopback byte
-relays before notifying readiness. After Docker creates its dynamic bridge,
-bridge-bound listeners become available to containers; port 3008 reports their
-resolved configuration and the guest-context probes. No deployment CA or proxy
-credential is baked into this image (ADR 26-11-05-814).

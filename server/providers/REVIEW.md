@@ -114,3 +114,9 @@
 - On pool outbound rotation, restart the agent and proxy before draining the
   build mediator. Wait for the drain before restarting BuildKit and registry;
   rewriting their environment files alone leaves running consumers on old routes.
+
+- VM outbound bootstrap must work on the pinned guest with an empty Docker
+  image store. Deliver executable code and settings through copy/exec; do not
+  add a guest-image service or a new configuration protocol as a prerequisite.
+  The temporary command container keeps its init process in its own root: a
+  chroot in init makes later Docker exec resolve paths in the host root.

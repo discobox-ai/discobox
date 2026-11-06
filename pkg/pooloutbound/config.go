@@ -216,10 +216,12 @@ func (d Defaults) Select(poolID string) (Resolved, string) {
 
 // Delivery describes what a backend can apply without stopping its workloads.
 type Delivery struct {
-	GuestProbes     *Probes  `json:"guestProbes,omitempty"`
-	Runtime         Resolved `json:"runtime"`
-	AppliedRevision string   `json:"appliedRevision"`
-	RestartRequired bool     `json:"restartRequired"`
+	// Host is configured by the engine over Docker copy/exec on an owned VM.
+	Host            *Resolved `json:"-"`
+	GuestProbes     *Probes   `json:"guestProbes,omitempty"`
+	Runtime         Resolved  `json:"runtime"`
+	AppliedRevision string    `json:"appliedRevision"`
+	RestartRequired bool      `json:"restartRequired"`
 }
 
 // ResolveLocalForwarder resolves the bootstrap's logical endpoint at boot. It

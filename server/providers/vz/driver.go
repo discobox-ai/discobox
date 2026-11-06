@@ -344,20 +344,24 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 	}
 
 	guest := &guestVM{vm: vm, size: want, stopped: make(chan struct{}), outbound: spec.Outbound}
-	outboundListener, err := vm.Listen(pooloutbound.HostPort)
-	if err != nil {
-		guest.close()
-		return nil, err
-	}
 	resolved, err := spec.Outbound.ResolveLocalForwarder()
 	if err != nil {
-		outboundListener.Close()
 		guest.close()
 		return nil, err
 	}
 	relayCtx, cancel := context.WithCancel(context.Background())
 	guest.outboundCancel = cancel
-	go func() { _ = pooloutbound.ServeHost(relayCtx, outboundListener, resolved) }()
+	for i, raw := range []string{resolved.HTTP, resolved.HTTPS} {
+		if raw == "" {
+			continue
+		}
+		listener, err := vm.Listen([]uint32{pooloutbound.HTTPPort, pooloutbound.HTTPSPort}[i])
+		if err != nil {
+			guest.close()
+			return nil, err
+		}
+		go func() { _ = pooloutbound.ServeRelay(relayCtx, listener, pooloutbound.UpstreamDialer(raw)) }()
+	}
 	listener, err := vm.Listen(controlPlaneVSOCKPort)
 	if err != nil {
 		guest.close()
@@ -671,13 +675,10 @@ func (d *Driver) PoolOutbound(ctx context.Context, poolID string, want pooloutbo
 	if guest == nil {
 		return pooloutbound.Delivery{}, fmt.Errorf("pool VM is not running")
 	}
-	conn, err := guest.vm.Connect(pooloutbound.ContainerPort)
-	if err != nil {
-		return pooloutbound.Delivery{}, fmt.Errorf("guest image lacks pool outbound boot delivery: %w", err)
-	}
-	runtime, err := pooloutbound.ReadContainerConfig(ctx, conn)
+	lease, err := d.AcquireDockerClient(ctx, poolID)
 	if err != nil {
 		return pooloutbound.Delivery{}, err
 	}
-	return pooloutbound.Delivery{Runtime: runtime.Runtime, GuestProbes: &runtime.Probes, AppliedRevision: guest.outbound.Revision(), RestartRequired: guest.outbound.Revision() != want.Revision()}, nil
+	defer lease.Release()
+	return dockerworker.VMOutbound(ctx, lease.Client, guest.outbound, want)
 }

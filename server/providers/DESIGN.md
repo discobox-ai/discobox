@@ -977,7 +977,7 @@ that has really been abandoned.
 ### One guest program, streamed in over stdin
 
 The guest gets exactly one program from the host: `discobox-cp-relay`, cross
-compiled for Linux, embedded in the server binary (`wslc/relay`), and installed
+compiled for Linux, embedded in the server binary (`guestrelay`), and installed
 at `/tmp/discobox-cp-relay` each time `EnsureVM` starts a VM. It runs in two modes —
 `--socket`, the long-lived multiplexer whose stdio carries the control plane,
 and `--dial <target>`, one connection spliced to this process's stdio, which is
@@ -1198,11 +1198,24 @@ resolved environment on provisioning execs independently of container creation.
 provisioning rejects unexpected proxy/trust injection at the actual exec boundary.
 
 Local Docker resolves a bootstrap's logical enclosing-forwarder endpoint through
-the published dynamic Docker bridge. libkrun and vz expose a per-pool private
-VSOCK host service: boot material and byte relays to the two upstream hops.
-Guest loopback listeners precede dockerd, then dynamic bridge listeners precede
-the pool container. Changing boot material on a running VM reports restart
-required and keeps its applied material. No dockerd is required on the server.
+the published dynamic Docker bridge. libkrun and vz expose two per-pool private
+VSOCK byte relays, one to each configured upstream; they carry no configuration
+or command protocol. The engine imports the server's embedded static guest helper
+as a temporary Docker image, starts a privileged command container, and copies
+the helper, private settings and install script through Docker. Host commands
+run through that container, as they do in the host console. No registry fetch,
+agent, or outbound service is required on the guest beforehand.
+
+The install runs under guest systemd so it survives restarting Docker. It creates
+boot-local trust overlays over the shared read-only root, starts loopback and
+Docker-bridge byte relays, installs proxy/trust settings and restarts Docker
+before any development build or pool image fetch. The engine reads the result
+through Docker copy and removes the temporary command container. The helper
+image contains no secrets and is reused. The embedded helper also serves WSL's
+existing control-plane channel (`guestrelay`); development can bootstrap before
+any bundles are built. The published VM image and its protocol remain unchanged.
+Changing boot material on a running VM reports restart required and keeps its
+applied material. No dockerd is required on the server.
 Hosted machines reject host-local upstreams without a relay. DigitalOcean
 includes proxy/trust in cloud-init before package installation; external exec
 backends receive private resolved material in `DISCOBOX_VM_OUTBOUND` on ensure-vm.
