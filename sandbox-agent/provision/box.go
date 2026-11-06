@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
@@ -37,17 +38,24 @@ func BootPlan(trees []string, features map[string]sandboxconfig.Feature) ([]prov
 	return loaded, opts, nil
 }
 
-// Boot provisions this box at boot from its bundle trees, in order, turning
-// off the features the bootstrap does, and reports to tracker, which writes
-// provision.json. wireOnly runs the wiring alone (Runner.Wire), as boot does
-// before the account exists; otherwise it is the whole run (Runner.Provision),
-// the agent's, which returns once nothing is left to provision.
-func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []string, features map[string]sandboxconfig.Feature, wireOnly bool) error {
+// Apply provisions the contents with the supplied execution policy. Feature
+// opt-outs are applied for every delivery source. wireOnly runs account wiring
+// before the account exists; Background and Snapshot retain their runner meaning.
+func Apply(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []string, features map[string]sandboxconfig.Feature, options Options, wireOnly bool) error {
 	loaded, opts, err := BootPlan(trees, features)
 	if err != nil {
 		tracker.Fail(err)
 		return err
 	}
+	opts.Background, opts.Snapshot = options.Background, options.Snapshot
+	off := maps.Clone(options.Off)
+	if off == nil {
+		off = map[string]string{}
+	}
+	for name, reason := range opts.Off {
+		off[name] = reason
+	}
+	opts.Off = off
 	runner := &Runner{
 		Root:         "/",
 		Records:      Records{Dir: RecordsDir},
@@ -70,68 +78,6 @@ func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []st
 		return runner.Wire(ctx, loaded, opts)
 	}
 	_, err = runner.Provision(ctx, loaded, opts)
-	return err
-}
-
-// Snapshot provisions this box from its bundle trees, in order, as a
-// snapshot is taken
-// (ADR 26-10-16-423 §8): the features turned off as a sandbox's bootstrap
-// turns them off, every step blocking, and the steps a feature keeps out of a
-// snapshot left for the boot of each box made from it (Options.Snapshot). It
-// reports to tracker, and returns once nothing is left to provision.
-func Snapshot(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []string, features map[string]sandboxconfig.Feature) error {
-	loaded, opts, err := BootPlan(trees, features)
-	if err != nil {
-		tracker.Fail(err)
-		return err
-	}
-	opts.Background, opts.Snapshot = false, true
-	runner := &Runner{
-		Root:    "/",
-		Records: Records{Dir: RecordsDir},
-		LogDir:  LogDir,
-		Tracker: tracker,
-		Logger:  logger,
-		Booted:  booted(),
-	}
-	if self, err := os.Executable(); err == nil {
-		runner.Self = self
-	}
-	if runner.Platform, err = DetectPlatform("/"); err != nil {
-		tracker.Fail(err)
-		return err
-	}
-	_, err = runner.Provision(ctx, loaded, opts)
-	return err
-}
-
-// Pool provisions a pool's box from its bundle trees, in order (ADR
-// 26-10-24-953 §2): every feature, every step blocking, nothing turned off
-// and no placeholders, since nothing runs on a pool but what its bundles lay.
-// It reports to tracker, and returns once nothing is left to provision.
-func Pool(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []string) error {
-	loaded, err := provisionspec.Load(trees...)
-	if err != nil {
-		err = fmt.Errorf("load bundle trees: %w", err)
-		tracker.Fail(err)
-		return err
-	}
-	runner := &Runner{
-		Root:    "/",
-		Records: Records{Dir: RecordsDir},
-		LogDir:  LogDir,
-		Tracker: tracker,
-		Logger:  logger,
-		Booted:  booted(),
-	}
-	if self, err := os.Executable(); err == nil {
-		runner.Self = self
-	}
-	if runner.Platform, err = DetectPlatform("/"); err != nil {
-		tracker.Fail(err)
-		return err
-	}
-	_, err = runner.Provision(ctx, loaded, Options{})
 	return err
 }
 

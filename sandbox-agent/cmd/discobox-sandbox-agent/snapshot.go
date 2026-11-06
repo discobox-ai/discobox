@@ -115,7 +115,7 @@ func takeSnapshot(ctx context.Context, planInput io.Reader) error {
 		return err
 	}
 	tracker := provision.NewTracker(provisionspec.StatusPath)
-	if err := provision.Snapshot(ctx, slog.Default(), tracker, trees, plan.Features); err != nil {
+	if err := provision.Apply(ctx, slog.Default(), tracker, trees, plan.Features, provision.Options{Snapshot: true}, false); err != nil {
 		return err
 	}
 	// Nothing is sealed that is not provisioned whole: every feature done, as

@@ -290,7 +290,7 @@ or the `vm` provider's machine: it places the agent, runs
 and layer of the pool's bundles the box's content store reads for its platform
 (`PoolBox.Blobs`, read from the server's own asset store through
 `PoolBox.OpenBlob` and streamed into the copy at `agentlayer.PlacedBlob`), and
-runs `discobox-provision apply --pool`, which applies what was placed, dialing
+runs `discobox-provision apply --wait`, which applies what was placed, dialing
 nothing, and every feature of it (ADR 26-10-30-875 §5): one path for every
 pool, however it reaches its control plane, and a machine pool runs what a
 Docker pool runs (ADR 26-10-27-767). Each provider records what it

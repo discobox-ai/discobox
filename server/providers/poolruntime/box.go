@@ -239,7 +239,7 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	applied, err := provisioner.Provision(ctx, guest, provisioner.Plan{
 		Dir:     "/",
 		Tree:    tree,
-		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply", "--pool"}, Env: placement.Outbound.Environment()},
+		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply", "--wait"}, Env: placement.Outbound.Environment()},
 	})
 	_ = tree.Close()
 	if err != nil {

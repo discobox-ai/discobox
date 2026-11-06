@@ -131,6 +131,26 @@ func (s *Store) Apply(ctx context.Context, pins agentlayer.Pins) error {
 	return s.collect(next)
 }
 
+// Current reports whether the installed bundle trees match the requested pins.
+func (s *Store) Current(pins agentlayer.Pins) (bool, error) {
+	if err := pins.Validate(); err != nil {
+		return false, err
+	}
+	state, err := s.readState()
+	if err != nil {
+		return false, err
+	}
+	if len(state.Bundles) != len(pins) || len(state.Current) != len(pins) {
+		return false, nil
+	}
+	for i, pin := range pins {
+		if state.Bundles[i] != pin.Name || state.Resolved[pin.Digest] == "" || state.Resolved[pin.Digest] != state.Current[i] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // Trees is where the bundles the store last applied are read under root, in
 // the pins' order: what provisioning loads. A store that has applied nothing
 // has none.

@@ -48,7 +48,7 @@ Before the agent starts, the pool's maker has made its box
 §§3–4): placed the agent, run `discobox-provision identity` there, recorded the
 public key it printed as the pool's (enrollment), placed the bootstrap with the
 pool bundle's blobs, read from its own asset store, and run
-`discobox-provision apply --pool`, which applies what was placed, fetching
+`discobox-provision apply --wait`, which applies what was placed, fetching
 nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)
 §5), laying and starting the agent's unit.
 
@@ -1533,7 +1533,7 @@ bundle. `bundle` names the files its maker places beside it.
   (`bundle.BootstrapFile`; 0600 and root's, or the agent refuses it), with the
   agent's environment beside it (`bundle.EnvironmentFile`), and the pool
   bundle's blobs, read from the server's own asset store, under
-  `agentlayer.PlacedDir`; then runs `discobox-provision apply --pool`, which
+  `agentlayer.PlacedDir`; then runs `discobox-provision apply --wait`, which
   applies what was placed, dialing nothing and signing nothing (ADR
   26-10-30-875 §5), all three features, every step blocking.
 - **Ordering**: the agent's unit is `Type=notify`, ready once the proxy's

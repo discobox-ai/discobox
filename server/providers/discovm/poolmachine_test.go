@@ -211,8 +211,8 @@ func (m *poolTestMachine) Exec(ctx context.Context, req machine.ExecRequest) (ma
 		if m.driver.applyFails {
 			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "echo apply failed >&2; exit 3"}})
 		}
-		if len(req.Argv) != 4 || req.Argv[3] != "--pool" {
-			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "echo apply was not asked for a pool >&2; exit 2"}})
+		if len(req.Argv) != 4 || req.Argv[3] != "--wait" {
+			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "echo apply was not asked to wait >&2; exit 2"}})
 		}
 		check += ` && test -f "$root` + bundle.BootstrapFile + `" && test -f "$root` + bundle.ProvisioningKeyFile + `"`
 		check += ` && test "$(cat "$root` + agentlayer.PlacedBlob(testPoolBlob) + `")" = "` + testPoolBlobData + `"`
