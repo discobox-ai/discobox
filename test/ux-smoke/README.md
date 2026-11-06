@@ -29,7 +29,11 @@ in the logs. Concurrent builds have separate logs and are joined before cleanup.
 Every command and readiness wait is bounded; Taskfile bounds the whole run to
 25 minutes. Before teardown it records screens, container logs and system journals. The runner
 purges its boxes, unsets its default pool, deletes its pools and removes its
-builder and base image tag. Its fallback uses only pool IDs from its private
+builder and base image tag. If purge returns the specific 409 promising a
+background retry, cleanup observes the sandbox for up to 60 seconds until GET
+returns 404, without resending purge. It retains the pending sandbox state and
+error in `*-purge.json`; a timeout or any other purge/observation error still
+fails cleanup. Pool removal waits for this observation. Its fallback uses only pool IDs from its private
 database, including a pool seeded during failed bootstrap. Cleanup errors fail
 an otherwise successful run. CI retains command/server/pool logs, candidate
 previews and screen captures on failure for seven days; build archives and
