@@ -109,6 +109,9 @@ func Resolve(i Intent, lookup func(string) (string, bool)) (Resolved, error) {
 		}
 		dirs, _ := lookup("SSL_CERT_DIR")
 		for _, dir := range filepath.SplitList(dirs) {
+			if dir == "" {
+				continue
+			}
 			entries, err := os.ReadDir(dir)
 			if err != nil {
 				return r, fmt.Errorf("read inherited trust directory: %w", err)

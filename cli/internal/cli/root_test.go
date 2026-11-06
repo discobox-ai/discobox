@@ -1839,7 +1839,7 @@ func TestLocalServerEnvIncludesSupportedServerConfig(t *testing.T) {
 	}
 	// A server the CLI launches for itself opens no TCP port on the user's
 	// machine; HTTP is something an operator asks for explicitly.
-	if strings.Contains(joined, "http://") {
+	if strings.Contains(joined, "\nDISCOBOX_SERVER_LISTEN=http://") {
 		t.Fatalf("localServerEnv() configured an HTTP listener in %q", joined)
 	}
 }
@@ -2460,5 +2460,73 @@ func TestClientVersionDoesNotContactServer(t *testing.T) {
 	}
 	if want := "client version " + version.String() + "\n"; out.String() != want {
 		t.Fatalf("got %q, want %q", out.String(), want)
+	}
+}
+
+// Empty explicit fields must survive systemd autolaunch too; omission could
+// expose a YAML default or enable nested bootstrap instead of explicit direct.
+func TestLocalServerEnvForwardsPoolOutboundConfiguration(t *testing.T) {
+	want := map[string]string{
+		"DISCOBOX_POOLS_PROXY_MODE":     "explicit",
+		"DISCOBOX_POOLS_PROXY_HTTP":     "http://proxy.example:3128",
+		"DISCOBOX_POOLS_PROXY_HTTPS":    "",
+		"DISCOBOX_POOLS_PROXY_NO_PROXY": ".internal.example",
+		"DISCOBOX_POOLS_PROXY_CA_FILE":  "",
+		"HTTP_PROXY":                    "http://server-proxy.example:3128",
+		"http_proxy":                    "",
+		"HTTPS_PROXY":                   "",
+		"https_proxy":                   "http://lower-proxy.example:3129",
+		"ALL_PROXY":                     "http://fallback.example:3128",
+		"all_proxy":                     "",
+		"NO_PROXY":                      "server.example",
+		"no_proxy":                      "",
+		"SSL_CERT_FILE":                 "/server/roots.pem",
+		"SSL_CERT_DIR":                  "/server/roots",
+	}
+	for key, value := range want {
+		t.Setenv(key, value)
+	}
+	env := localServerEnv("unix:///tmp/discobox/server.sock")
+	for key, value := range want {
+		if !slices.Contains(env, key+"="+value) {
+			t.Errorf("localServerEnv dropped %s", key)
+		}
+	}
+	t.Setenv("DISCOBOX_POOLS_PROXY_CA_FILE", "roots.pem")
+	absolute, err := filepath.Abs("roots.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(localServerEnv("unix:///tmp/discobox/server.sock"), "DISCOBOX_POOLS_PROXY_CA_FILE="+absolute) {
+		t.Fatal("autolaunched server received a relative trust path")
+	}
+}
+
+func TestLocalServerEnvNormalizesInheritedTrustPaths(t *testing.T) {
+	t.Setenv("SSL_CERT_FILE", "roots.pem")
+	t.Setenv("SSL_CERT_DIR", "roots"+string(os.PathListSeparator)+"other-roots")
+	file, err := filepath.Abs("roots.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := filepath.Abs("roots")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := filepath.Abs("other-roots")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := localServerEnv("unix:///tmp/discobox/server.sock")
+	for _, want := range []string{"SSL_CERT_FILE=" + file, "SSL_CERT_DIR=" + first + string(os.PathListSeparator) + second} {
+		if !slices.Contains(env, want) {
+			t.Errorf("missing normalized trust setting %q", want)
+		}
+	}
+	t.Setenv("SSL_CERT_FILE", "")
+	t.Setenv("SSL_CERT_DIR", "")
+	env = localServerEnv("unix:///tmp/discobox/server.sock")
+	if !slices.Contains(env, "SSL_CERT_FILE=") || !slices.Contains(env, "SSL_CERT_DIR=") {
+		t.Fatal("empty trust settings were dropped")
 	}
 }
