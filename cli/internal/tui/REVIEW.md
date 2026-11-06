@@ -353,3 +353,24 @@
 - Observe an exec through its live fake attachment, not simply its newest one.
   Shell creation and exec listing can attach concurrently; the workspace closes
   the losing duplicate, which may be the last attachment the fake created.
+
+
+## Palette overlays
+
+- Route a whole-window modal's mouse before the workspace tree translates or
+  consumes it. Marking the overlay in screen coordinates while dispatching in
+  right-pane coordinates silently broke its controls beside the tree.
+- A dimmed bare status line is not modal provenance: with no color it is the
+  original line. Replace the trusted final row with a window-owned modal label
+  while an overlay is up, and test that distinction in NO_COLOR.
+- Budget the input's prompt and end cursor within the card content width.
+  A wrapped query moves every result below the rows the mouse was marked for.
+- Keep a palette's temporary reveal across the empty-workspace teardown that
+  precedes opening its live result. Restore it on leaving that result, not on
+  the intermediate close used to start its workspace.
+
+- A box command keeps the server from its selected snapshot through every
+  follow-up and stream. Use the required server-scoped data source; never
+  recover a server from the current box-ID listing map. Two independent
+  servers can share an ID, and a newer listing can arrive before the UI sees
+  it. Workspace, selection and tool-cache identities include the server too.

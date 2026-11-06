@@ -1351,9 +1351,12 @@ every server, or showing that one. It is also reported once, when that changes
 (`reportUnreachable`) — the list is polled, and a complaint on every refresh is
 one you stop reading.
 
-Every `DataSource` method that takes a sandbox ID is routed by the CLI to the
-server the row was listed from (`apiDataSource.at`), so nothing here carries a
-server beside an ID. The run options carry a **Server** row — last, and only
+Box operations retain their snapshot's server and select a pinned source with
+`DataSource.ForServer`; the adapter never learns a target from a moving ID map.
+`PrimaryServer` supplies a stable identity before the asynchronous session read.
+Parked workspaces, cursor targets, selections, archive marks and tool/address
+caches use server-and-ID references, so independent servers may share an ID.
+Aliases deduplicate only when their server peer identities agree. The run options carry a **Server** row — last, and only
 when `Session.Servers` has more than one — whose first choice is the primary, marked
 `(primary)`, so an untouched panel creates where it always did; anything else
 is `RunRequest.Server`, and `--server <name>` in the preview. It is the header's
@@ -1918,7 +1921,7 @@ screen, the showing tool.
   cannot print them until a lookup returns — `resolveAddresses` starts one when
   the card opens and `addressesResolved` builds the card again, since a row's
   callback is fixed when the card is. The cache is `Model.addresses`, keyed by
-  discobox: an entry present and empty is a lookup in flight, and a failed one
+  server and discobox ID: an entry present and empty is a lookup in flight, and a failed one
   is retried on the next open rather than kept as the answer.
 - **A copy leaves the card up** (`action.stays`, `action.note`,
   `Model.copied`). The row that was taken says `copied` in the window's OK
@@ -3534,3 +3537,45 @@ time, delegation, all effective route lists and expiry, even after renaming or
 deletion. A decision's `d` reads the delegation if it still exists; its existing
 binding controls revoke it. Older events without a receipt say their effective
 limits were not recorded (ADR 26-11-04-389).
+
+
+## Command palette
+
+The window's command palette (`palette.go`, ADR 26-11-06-671) is a modal over
+the list, tree or panes, reached by leader-k, or `:` when the list has keys.
+It owns keys, paste, mouse and the complete dimmed frame while open, replacing
+the trusted bare status row with a modal provenance label even without color; opening
+and closing disarm the leader. It does not intercept the composer's keys.
+
+`consoleCommands` (`commands.go`) builds descriptors from the lifecycle and
+interaction actions plus the window verbs. Pane prefix registration, list
+verb dispatch and palette results consume these descriptors, including the
+window verbs for terminals, detach, maximize, notices and mouse ownership.
+Bare keys, leader sequences and menu sequences are distinct metadata.
+Coverage enumerates handwritten window key handling and pane registrations;
+only editing, motion, selection and terminal forwarding are gestures. Eligibility for
+lifecycle actions remains `actions`, so batch menus and single-box palette
+execution use the same rules. Targets are resolved again before dispatch.
+The registry coverage test rejects bindings without command metadata.
+
+A palette holds a query, a stable result identity and at most one chip: a
+command or a server-and-box reference. Enter navigates to an unchipped box
+with `landOn` semantics; Tab composes a chip. With a chip, Enter enters the
+existing command flow and Tab moves down. Esc drops the chip keeping the
+query, then clears the query, then closes. An exact targeted single-word
+alias followed by space completes the command, including in pasted text.
+Rows select on press and choose on double-click; box rows also expose their
+commands. The chip and key hints are clickable.
+
+Search reads the unfiltered listing, across all listed servers, using
+`fuzzyQuery` term acceptance within individual fields. Rank evidence orders
+exact, prefix, contiguous, scattered and detail-only hits. Partial listings
+remain labelled. Archived boxes require the palette's own scope toggle;
+unarchive and purge enable it when selected. Search does not edit the header
+filters. Navigation to a filtered-out result temporarily reveals it, suppresses
+view persistence and restores the original filters when the navigation ends.
+
+Usage counts and at most 100 recent box references live on `Model` for this
+window only. Successful workspace navigation records recency; cursor movement
+and completion do not. Dispatch counts command use even if a follow-up is
+cancelled. Neither history is written to console state.

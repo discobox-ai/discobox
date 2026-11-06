@@ -37,7 +37,7 @@ const (
 	treeMinScreen = 90
 )
 
-// switchBoxMsg is the leader's ↑/↓ (or k/j), or a leaderless chord: move to
+// switchBoxMsg is the leader's ↑/↓ (or j for down), or a leaderless chord: move to
 // the discobox above or below in the tree.
 type switchBoxMsg struct {
 	delta int
@@ -94,6 +94,7 @@ func (m *Model) closePages() {
 // openNew opens the new discobox card: the composer, framed as a dialog and
 // modal like one.
 func (m *Model) openNew() {
+	m.recordConsoleUse("new")
 	m.closePages()
 	m.newOpen = true
 	m.listFront, m.treeExpanded = false, false
@@ -330,16 +331,16 @@ func (m *Model) toggleTreeExpanded() {
 // syncListCursor puts the list's cursor on the box the workspace is showing,
 // which is what the tree draws as picked out while the panes have the keys.
 func (m *Model) syncListCursor() {
-	if m.listCursorTo(m.paneBox.ID) {
-		m.cursorOn = m.paneBox.ID
+	if m.listCursorTo(m.paneBox) {
+		m.cursorOn = m.boxRef(m.paneBox)
 	}
 }
 
 // listCursorTo puts the list's cursor on one box's row, reporting whether the
 // list has it.
-func (m *Model) listCursorTo(id string) bool {
+func (m *Model) listCursorTo(box Sandbox) bool {
 	for i, s := range m.list.rows() {
-		if s.ID == id {
+		if m.boxRef(s) == m.boxRef(box) {
 			m.list.moveTo(i)
 			return true
 		}
@@ -394,7 +395,7 @@ func (m *Model) treeKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case "enter":
 		// The box a page covers is still the live one: choosing it puts the
 		// page away rather than attaching again.
-		if cur := m.list.current(); cur != nil && cur.ID == m.paneBox.ID && m.pageOpen() && m.hasWorkspace() {
+		if cur := m.list.current(); cur != nil && m.boxRef(*cur) == m.boxRef(m.paneBox) && m.pageOpen() && m.hasWorkspace() {
 			m.showLive()
 			return nil, true
 		}
@@ -424,12 +425,12 @@ func (m *Model) syncWidth() bool {
 	return true
 }
 
-// boxStep is how far along the tree the leader plus a key moves: ↑ and ↓, k
-// and j. The key is as the window's leader matching leaves it, with the
+// boxStep is how far along the tree the leader plus a key moves: ↑ and ↓,
+// with j as an alias for down. The key is as the window's leader matching leaves it, with the
 // leader's own modifier already forgiven (updateKey).
 func boxStep(key string) (int, bool) {
 	switch key {
-	case "up", "k":
+	case "up":
 		return -1, true
 	case "down", "j":
 		return 1, true
@@ -491,7 +492,7 @@ func (m *Model) switchBox(delta int) tea.Cmd {
 	if next == nil {
 		return nil
 	}
-	if next.ID == m.paneBox.ID {
+	if m.boxRef(*next) == m.boxRef(m.paneBox) {
 		if m.listFront && m.hasWorkspace() {
 			m.backToPanes()
 		}
@@ -506,9 +507,12 @@ func (m *Model) switchBox(delta int) tea.Cmd {
 // row and the list in front, since attaching to it would start it. Enter, or a
 // double click, is what goes on to start it (switchTo).
 func (m *Model) landOn(box Sandbox) tea.Cmd {
-	if !box.live() && m.parked[box.ID] == nil {
+	if m.paletteReveal != nil && m.paletteReveal.target != m.boxRef(box) {
+		m.restorePaletteView()
+	}
+	if !box.live() && m.parked[m.boxRef(box)] == nil {
 		m.focusTree()
-		m.listCursorTo(box.ID)
+		m.listCursorTo(box)
 		if box.startable() {
 			return status("%s is %s — enter starts it", sandboxLabel(box), box.State)
 		}
@@ -521,14 +525,14 @@ func (m *Model) landOn(box Sandbox) tea.Cmd {
 // and otherwise a fresh attach — refused, with the reason, on a box the list
 // would not attach to either.
 func (m *Model) switchTo(box Sandbox) tea.Cmd {
-	if box.ID == m.paneBox.ID && m.hasWorkspace() && m.pageOpen() {
+	if m.boxRef(box) == m.boxRef(m.paneBox) && m.hasWorkspace() && m.pageOpen() {
 		m.showLive()
 		return nil
 	}
-	if box.ID == m.paneBox.ID && (m.inPanes() || m.wsOpening) {
+	if m.boxRef(box) == m.boxRef(m.paneBox) && (m.inPanes() || m.wsOpening) {
 		return nil
 	}
-	if m.parked[box.ID] == nil {
+	if m.parked[m.boxRef(box)] == nil {
 		for _, a := range m.actions([]Sandbox{box}) {
 			if interactions[a.key] == InteractAttach && !a.enabled {
 				return status("%s: %s", sandboxLabel(box), a.why)
@@ -559,16 +563,17 @@ func (m *Model) parkWorkspace() {
 	ws := m.workspace
 	m.workspace = workspace{paneBox: m.paneBox}
 	if m.parked == nil {
-		m.parked = map[string]*workspace{}
+		m.parked = map[boxRef]*workspace{}
 	}
-	m.parked[ws.paneBox.ID] = &ws
+	m.parked[m.boxRef(ws.paneBox)] = &ws
 }
 
 // unparkWorkspace puts a parked workspace back on screen and restarts what
 // only the screen runs. Its push loop is already running, and is not started
 // a second time.
 func (m *Model) unparkWorkspace(ws *workspace) tea.Cmd {
-	delete(m.parked, ws.paneBox.ID)
+	m.recordPaletteVisit(ws.paneBox)
+	delete(m.parked, m.boxRef(ws.paneBox))
 	m.workspace = *ws
 	m.harnessesOpen = false
 	m.connecting = map[string]bool{}
@@ -605,7 +610,7 @@ func (m *Model) updateParkedPane(ws *workspace, p *pane, msg tea.Msg) tea.Cmd {
 		box := sandboxLabel(ws.paneBox)
 		switch {
 		case p.primary:
-			delete(m.parked, ws.paneBox.ID)
+			delete(m.parked, m.boxRef(ws.paneBox))
 			ws.closeStreams()
 			if msg.Err != nil {
 				return m.report(true, "%s: %s: %v", box, p.action, msg.Err)
@@ -735,9 +740,9 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 			// — the one the first click just switched to, opened or still
 			// opening — it gives that box the keys rather than the list.
 			clicks, prev := m.countClick(mouse.X, mouse.Y), m.clickBox
-			m.clickBox = box.ID
-			if clicks > 1 && prev == box.ID {
-				if box.ID == m.paneBox.ID {
+			m.clickBox = m.boxRef(box)
+			if clicks > 1 && prev == m.boxRef(box) {
+				if m.boxRef(box) == m.boxRef(m.paneBox) {
 					if m.hasWorkspace() || m.wsOpening {
 						m.showLive()
 					}
@@ -745,11 +750,11 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 				}
 				return nil, m.switchTo(box), true
 			}
-			if box.ID == m.paneBox.ID && m.pageOpen() && m.hasWorkspace() {
+			if m.boxRef(box) == m.boxRef(m.paneBox) && m.pageOpen() && m.hasWorkspace() {
 				m.showLive()
 				return nil, nil, true
 			}
-			if box.ID == m.paneBox.ID {
+			if m.boxRef(box) == m.boxRef(m.paneBox) {
 				m.focusTree()
 				return nil, nil, true
 			}
@@ -981,14 +986,14 @@ type boxMenuMsg struct{}
 // is there so the menu answers for the box as it is now.
 func (m *Model) boxMenu(box Sandbox) tea.Cmd {
 	for _, s := range m.list.rows() {
-		if s.ID == box.ID {
+		if m.boxRef(s) == m.boxRef(box) {
 			box = s
 			break
 		}
 	}
 	targets := []Sandbox{box}
 	// Any other box's menu is the list's own, attach and all.
-	if box.ID != m.paneBox.ID || !m.hasWorkspace() {
+	if m.boxRef(box) != m.boxRef(m.paneBox) || !m.hasWorkspace() {
 		m.dialog = actionsDialog(actionTitle(targets), "", m.actions(targets), chooseAction(targets))
 		return nil
 	}

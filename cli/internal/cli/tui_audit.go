@@ -21,7 +21,6 @@ import (
 // a stream to watch arrive — and each read reports what it could not reach,
 // so the screen can say when a trail stops answering and when it is back.
 func (d *apiDataSource) FollowAudit(ctx context.Context, sandboxID string, report func(tui.AuditUpdate)) error {
-	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return err
@@ -80,7 +79,6 @@ func (d *apiDataSource) FollowAudit(ctx context.Context, sandboxID string, repor
 // reads them itself (AuditBody). httpAuditPart* spell the recordings the way
 // the console's AuditRequestBody and its siblings do.
 func (d *apiDataSource) AuditDetail(ctx context.Context, sandboxID, recordID string) (tui.AuditRecordDetail, error) {
-	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return tui.AuditRecordDetail{}, err
@@ -101,7 +99,6 @@ const auditBodyShown = 1 << 20
 // it to a terminal: escaped, and laid out to be read when it is JSON the
 // recording holds whole.
 func (d *apiDataSource) AuditBody(ctx context.Context, sandboxID, recordID, part string) (string, error) {
-	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return "", err

@@ -35,14 +35,14 @@ const autoPushEvery = refreshEvery
 // is still attached and keeps pushing under the generation it was parked with
 // (pushLoop).
 type autoPushTickMsg struct {
-	box string
+	box boxRef
 	gen int
 }
 
 // autoPushedMsg is one look, done: what each of the discobox's push-delivered
 // sources resolved to.
 type autoPushedMsg struct {
-	box    string
+	box    boxRef
 	gen    int
 	pushes []SourcePush
 }
@@ -51,8 +51,8 @@ type autoPushedMsg struct {
 // parked in the tree, which is still attached and so still pushes (ADR
 // 26-09-05-008 §1), and whether it is a parked one. It is nil once the
 // workspace is gone, which ends the loop.
-func (m *Model) pushLoop(box string, gen int) (ws *workspace, parked bool) {
-	if m.pushHeld != nil && box == m.paneBox.ID && gen == m.pushGen {
+func (m *Model) pushLoop(box boxRef, gen int) (ws *workspace, parked bool) {
+	if m.pushHeld != nil && box == m.boxRef(m.paneBox) && gen == m.pushGen {
 		return &m.workspace, false
 	}
 	if ws := m.parked[box]; ws != nil && gen == ws.pushGen {
@@ -72,19 +72,19 @@ func (m *Model) pushLoop(box string, gen int) (ws *workspace, parked bool) {
 // clone-delivered source, an archived box — is skipped rather than ending the
 // loop, since the listing that answers Pushable is re-read on its own beat and
 // a starting discobox becomes pushable a few seconds in.
-func (m *Model) autoPush(id string, gen int) tea.Cmd {
+func (m *Model) autoPush(id boxRef, gen int) tea.Cmd {
 	ws, _ := m.pushLoop(id, gen)
 	if ws == nil {
 		return nil
 	}
-	if !m.boxByID(id).Pushable {
+	if !m.boxByRef(id).Pushable {
 		return m.autoPushTick(id, gen)
 	}
-	ctx, ds := m.ctx, m.ds
+	ctx, ds := m.ctx, m.ds.ForServer(ws.paneBox.Server)
 	// Copied, because the window goes on editing it while the push runs.
 	held := maps.Clone(ws.pushHeld)
 	return func() tea.Msg {
-		pushes, err := ds.PushSources(ctx, id, held)
+		pushes, err := ds.PushSources(ctx, id.id, held)
 		if err != nil {
 			// The call failing as a whole is ambient work failing — the
 			// discobox could not be read, the git route could not be opened —
@@ -95,7 +95,7 @@ func (m *Model) autoPush(id string, gen int) tea.Cmd {
 	}
 }
 
-func (m *Model) autoPushTick(id string, gen int) tea.Cmd {
+func (m *Model) autoPushTick(id boxRef, gen int) tea.Cmd {
 	return tick(autoPushEvery, func(time.Time) tea.Msg {
 		return autoPushTickMsg{box: id, gen: gen}
 	})
@@ -143,7 +143,7 @@ func (m *Model) autoPushed(msg autoPushedMsg) tea.Cmd {
 	// A parked box's report names it, since the box on screen is another.
 	who := ""
 	if parked {
-		who = sandboxLabel(m.boxByID(msg.box)) + ": "
+		who = sandboxLabel(m.boxByRef(msg.box)) + ": "
 	}
 	// A failure outranks a push: with several sources, the one that did not go
 	// is the half of the answer somebody has to act on.

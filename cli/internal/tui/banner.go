@@ -108,7 +108,7 @@ func (m *Model) bannerWanted(kind bannerKind, box Sandbox) bool {
 	case bannerRejected:
 		return m.hasRejection(box)
 	case bannerCredential:
-		return len(m.requests[box.ID]) > 0
+		return len(m.pendingFor(box)) > 0
 	case bannerHarnessChanges:
 		return box.HarnessConfigPending
 	}
@@ -156,7 +156,7 @@ type dismissal struct {
 // dismissalFor is a band's key on this discobox, which is its server as well
 // as its ID: IDs are only unique within a server.
 func (m *Model) dismissalFor(kind bannerKind, box Sandbox) dismissal {
-	return dismissal{box: m.serverName(box.Server) + "\x00" + box.ID, kind: kind}
+	return dismissal{box: m.session.serverName(box.Server) + "\x00" + box.ID, kind: kind}
 }
 
 // bannerInstance names the occurrence a band would be about, or nothing when
@@ -181,7 +181,7 @@ func (m *Model) bannerInstance(kind bannerKind, box Sandbox) []string {
 		}
 	case bannerCredential:
 		var ids []string
-		for _, req := range m.requests[box.ID] {
+		for _, req := range m.pendingFor(box) {
 			ids = append(ids, req.ID)
 		}
 		return ids
@@ -256,7 +256,7 @@ func (m *Model) pruneDismissed() {
 // listedBox is the listing's row for a dismissal's discobox.
 func (m *Model) listedBox(key string) (Sandbox, bool) {
 	for _, box := range m.list.all {
-		if m.serverName(box.Server)+"\x00"+box.ID == key {
+		if m.session.serverName(box.Server)+"\x00"+box.ID == key {
 			return box, true
 		}
 	}
@@ -340,7 +340,7 @@ func (m *Model) pressBanner() tea.Cmd {
 	case bannerHarnessChanges:
 		return m.reviewHarnessChanges(m.currentBox())
 	case bannerCredential:
-		return m.openCredentialDialog(m.currentBox().ID)
+		return m.openCredentialDialog(m.currentBox())
 	}
 	return nil
 }

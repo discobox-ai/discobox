@@ -121,7 +121,7 @@ func (m *Model) rejectionsFor(box Sandbox) []SecretRejection {
 	for _, rejection := range m.rejections {
 		// A credential belongs to one server, and IDs are only unique within
 		// one: a box on another server is running something else entirely.
-		if m.serverName(rejection.Server) != m.serverName(box.Server) {
+		if m.session.serverName(rejection.Server) != m.session.serverName(box.Server) {
 			continue
 		}
 		if rejection.harnessOwned() && box.HarnessID != "" && rejection.HarnessConfigID == box.HarnessID ||
@@ -159,7 +159,7 @@ func (m *Model) viewRejectedBanner(width int) string {
 	// would leave the dead credential bound to the harness and the new one
 	// belonging to nobody. It is last in the sentence because it is the first
 	// thing a narrow window should drop.
-	if waiting := len(m.requests[box.ID]); waiting > 0 {
+	if waiting := len(m.pendingFor(box)); waiting > 0 {
 		subject += st.attentionHint.Render("  ·  " + plural(waiting, "request", "requests") + " waiting behind it")
 	}
 	call := bannerChip(st, rejectionCall(rejection), colAlertChip)
@@ -211,7 +211,7 @@ func (m *Model) openRejectedRemedy(box Sandbox) tea.Cmd {
 	m.busy = "reading " + rejection.name() + "…"
 	// The credential's own server, not the one the header names: the fix goes
 	// where the credential lives (ADR 0131 §2).
-	ctx, ds, server := m.ctx, m.ds, m.serverName(rejection.Server)
+	ctx, ds, server := m.ctx, m.ds, m.session.serverName(rejection.Server)
 	return func() tea.Msg {
 		secrets, err := ds.Secrets(ctx, server)
 		if err != nil {
@@ -251,7 +251,7 @@ func (m *Model) rejectionRemedy(msg rejectionRemedyMsg) tea.Cmd {
 	case msg.err != nil:
 		return m.report(true, "%s: %v", msg.rejection.name(), msg.err)
 	case msg.secret != nil:
-		return m.editSecretForm(m.serverName(msg.rejection.Server), *msg.secret)
+		return m.editSecretForm(m.session.serverName(msg.rejection.Server), *msg.secret)
 	}
 	return nil
 }

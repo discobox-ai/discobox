@@ -30,6 +30,9 @@ const clickRun = 500 * time.Millisecond
 // place of the window, then the panes, then the window itself. Only the panes
 // route by their own geometry; everything else is a lookup in the hit map.
 func (m *Model) updateMouse(msg tea.MouseMsg) tea.Cmd {
+	if m.palette != nil {
+		return m.paletteMouse(msg)
+	}
 	// A pointer moving with no button down is nobody's gesture: it is where
 	// the pointer is resting, which is what draws a control as live.
 	if ev, ok := msg.(tea.MouseMotionMsg); ok && ev.Button == tea.MouseNone {
@@ -67,7 +70,7 @@ func (m *Model) hover(ev tea.MouseMotionMsg) tea.Cmd {
 // drawn over everything, panes included, so both take the mouse as well
 // as the keys.
 func (m *Model) modalUp() bool {
-	return m.dialog != nil || m.optionsOpen
+	return m.palette != nil || m.dialog != nil || m.optionsOpen
 }
 
 // windowMouse is the mouse on one of the window's own screens.
@@ -438,7 +441,7 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		if clicks > 1 {
 			return nil, true
 		}
-		return m.openIssue(what.idx, what.kind == hitPull), true
+		return m.openIssue(m.currentBox(), what.idx, what.kind == hitPull), true
 
 	case hitChips:
 		// The strip names the run options, so it is the way into them.

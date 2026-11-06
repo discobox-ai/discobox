@@ -95,7 +95,7 @@ func (m *Model) askAboutRefresh(req CredentialRequest, secrets []Secret) tea.Cmd
 		renewal := Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand}
 		key := ""
 		if f.chosen("permission") == "session" {
-			key = sessionKey(m.serverName(req.Server), secret.ID, secret.RefreshCommand)
+			key = sessionKey(m.session.serverName(req.Server), secret.ID, secret.RefreshCommand)
 			if m.renewSession == nil {
 				m.renewSession = map[string]bool{}
 			}
@@ -234,7 +234,7 @@ func (m *Model) renewBySession(requests []CredentialRequest) tea.Cmd {
 		if req.Refresh == nil || m.renewing[req.ID] {
 			continue
 		}
-		server := m.serverName(req.Server)
+		server := m.session.serverName(req.Server)
 		// The permissions for this token, as they stand now, go with the
 		// command: it runs off the update loop, which is the only place they
 		// change.

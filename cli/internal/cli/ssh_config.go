@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -244,8 +246,11 @@ type managedSSHConfigRequest struct {
 type managedSSHConfig struct {
 	// target is the ssh installation this rendering is for: where its files
 	// go, how their paths are spelled, and what its ProxyCommand runs.
+	projectID    string
+	namespace    string
 	target       sshTarget
 	stanzas      string
+	proxyCommand string
 	hostKeyAlias string
 	hostKey      string
 }
@@ -288,18 +293,22 @@ func (a *App) buildManagedSSHConfig(ctx context.Context, req managedSSHConfigReq
 		// owns one: printed output would be naming a file this run never wrote.
 		knownHostsFile := ""
 		if req.write {
-			knownHostsFile = target.knownHostsPath(req.resolvedProjectID).client
+			knownHostsFile = target.knownHostsPath(sshConfigNamespace(a.serverURL, req.resolvedProjectID)).client
 		}
 		render := sshConfigRender{
 			sandboxes:      sandboxes,
+			namespace:      sshConfigNamespace(a.serverURL, req.resolvedProjectID),
 			proxyCommand:   proxyCommand,
-			hostKeyAlias:   sshHostKeyAlias(req.resolvedProjectID),
+			hostKeyAlias:   sshHostKeyAlias(sshConfigNamespace(a.serverURL, req.resolvedProjectID)),
 			identityFile:   identity.client,
 			knownHostsFile: knownHostsFile,
 		}
 		return managedSSHConfig{
 			target:       target,
+			projectID:    req.resolvedProjectID,
+			namespace:    sshConfigNamespace(a.serverURL, req.resolvedProjectID),
 			stanzas:      renderSSHConfig(render),
+			proxyCommand: proxyCommand,
 			hostKeyAlias: render.hostKeyAlias,
 			hostKey:      req.hostKey,
 		}, nil
@@ -358,7 +367,7 @@ func (a *App) writeManagedSSHConfigs(ctx context.Context, req managedSSHConfigRe
 	}
 	defer func() { _ = lock.Release() }()
 	for _, config := range built {
-		if err := writeManagedSSHConfig(ctx, config, req.resolvedProjectID, req.notes); err != nil {
+		if err := writeManagedSSHConfig(ctx, config, req.notes); err != nil {
 			if !config.target.optional {
 				return err
 			}
@@ -400,15 +409,12 @@ func (a *App) sshHostKey(ctx context.Context, client *apiclientgen.Client) (stri
 	return hostKey, nil
 }
 
-// sshHostKeyAlias is the name every one of a project's stanzas verifies the
-// server's host key under, and so the host field of its known_hosts line.
-//
-// One name per project rather than per address: a proxied stanza has no address
-// for ssh to derive a name from, and a direct one would tie the entry to the
-// address of the day. It is qualified into the same discobox-owned namespace
-// the host patterns are, so it cannot be mistaken for a real hostname.
-func sshHostKeyAlias(projectID string) string {
-	return projectID + hostAliasSuffix
+// sshHostKeyAlias is the name a server/project namespace verifies its host key
+// under, and the host field in its known_hosts line. The endpoint hash keeps
+// independently routed servers with identical project IDs from sharing trust.
+
+func sshHostKeyAlias(namespace string) string {
+	return namespace + hostAliasSuffix
 }
 
 // hostAliasSuffix qualifies each pattern into an obviously discobox-owned
@@ -418,6 +424,17 @@ func sshHostKeyAlias(projectID string) string {
 // in the user's ssh_config.
 const hostAliasSuffix = ".discobox.internal"
 
+// sshConfigNamespace separates independently routed servers even when their
+// restored databases contain the same project and sandbox IDs. Endpoint text
+// is hashed so it cannot introduce ssh_config syntax or path components.
+func sshConfigNamespace(serverURL, projectID string) string {
+	sum := sha256.Sum256([]byte(serverURL))
+	return projectID + "-" + hex.EncodeToString(sum[:16])
+}
+func sshConfigHost(namespace, sandboxID string) string {
+	return sandboxID + "." + namespace + hostAliasSuffix
+}
+
 // sshConfigHostPatterns returns a sandbox's Host patterns: its ID, each bare
 // and suffixed. The ID comes in both spellings — "sbx_…" as the CLI prints it
 // and "sbx-…" as the discobox's own hostname does (id.Hostname) — so either one
@@ -426,13 +443,16 @@ const hostAliasSuffix = ".discobox.internal"
 // The sandbox's name is never a pattern. A generated name is neither stable nor
 // unique the way an ID is: a renamed discobox would keep its old host until the
 // next sync, a name can spell another discobox's ID, and two servers' discoboxes
-// can share one. Every spelling here derives from the ID alone, so no two
-// sandboxes can claim the same pattern and the first one is always the host to
-// hand out: the ID, as the rest of discobox names the discobox.
-func sshConfigHostPatterns(sandboxID string) []string {
+// can share one. Every spelling derives from the ID and, for the final
+// qualified pattern, the server/project namespace. Host tools use that pattern
+// so identical IDs on separate servers cannot redirect them.
+func sshConfigHostPatterns(namespace, sandboxID string) []string {
 	patterns := []string{sandboxID, sandboxID + hostAliasSuffix}
 	if hostname := idpkg.Hostname(sandboxID); hostname != sandboxID {
 		patterns = append(patterns, hostname, hostname+hostAliasSuffix)
+	}
+	if namespace != "" {
+		patterns = append(patterns, sshConfigHost(namespace, sandboxID))
 	}
 	return patterns
 }
@@ -611,10 +631,9 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 	if err != nil {
 		return sandboxSSHRemote{}, err
 	}
-	// The host is the ID, whichever ssh reads the stanza: the first of the
-	// patterns every stanza carries (sshConfigHostPatterns), and the name the
-	// editor shows the machine by.
-	return sandboxSSHRemote{host: sshConfigHostPatterns(sandbox.ID)[0], folder: folder, workingRoot: sandboxPaths(sandbox).WorkingRoot(), projectID: resolvedProjectID}, nil
+	// A host tool gets the server/project-qualified pattern. Bare ID aliases
+	// remain convenient for manual ssh, but cannot select a cross-server target.
+	return sandboxSSHRemote{host: sshConfigHost(sshConfigNamespace(a.serverURL, resolvedProjectID), sandbox.ID), folder: folder, workingRoot: sandboxPaths(sandbox).WorkingRoot(), projectID: resolvedProjectID}, nil
 }
 
 // sandboxSSHFolder is the directory in the sandbox an ssh-driven program is

@@ -176,6 +176,8 @@ func canAskInline(cmd *cobra.Command) bool {
 // shell would run: the interactive ones by building and executing the very same
 // Cobra command, the rest through the same API client.
 type apiDataSource struct {
+	primaryName string
+
 	app       *App
 	client    *apiclientgen.Client
 	projectID string
@@ -188,11 +190,8 @@ type apiDataSource struct {
 	// aimed at one server, which routes nothing.
 	servers []*tuiServer
 
-	// mu guards located and what each tuiServer learns as the window runs.
+	// mu guards what each tuiServer learns as the window runs.
 	mu sync.Mutex
-	// located is the server each discobox was listed from, which is where
-	// everything done to it goes.
-	located map[string]*tuiServer
 }
 
 // tuiServer is one server the window lists, and what the window knows about
@@ -283,6 +282,7 @@ func newAPIDataSource(ctx context.Context, a *App, client *apiclientgen.Client, 
 		return nil, err
 	}
 	if len(set) == 1 {
+		ds.primaryName = set[0].name
 		return ds, nil
 	}
 	// The primary's name is settled here, before the window opens, because two
@@ -300,7 +300,7 @@ func newAPIDataSource(ctx context.Context, a *App, client *apiclientgen.Client, 
 			primary.name = name
 		}
 	}
-	ds.located = map[string]*tuiServer{}
+	ds.primaryName = set[0].name
 	for _, s := range set {
 		entry := &tuiServer{server: s}
 		if s.primary {
@@ -344,22 +344,38 @@ func (d *apiDataSource) sourceFor(ctx context.Context, s *tuiServer) (*apiDataSo
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if s.source == nil {
-		s.source = &apiDataSource{app: s.app, client: client, projectID: projectID}
+		s.source = &apiDataSource{app: s.app, client: client, projectID: projectID, primaryName: s.name}
 	}
 	return s.source, nil
 }
 
-// at is the data source for the server sandboxID is on: a registered server's
-// own for a discobox the window listed from it, and this one otherwise. Every
-// method that acts on one discobox starts with it, so the rest of each is
-// written against one server exactly as it was before there were several.
-func (d *apiDataSource) at(sandboxID string) *apiDataSource {
+func (d *apiDataSource) PrimaryServer() string { return d.primaryName }
+
+// ForServer pins an operation to the server in its UI snapshot. A fresh
+// single-server source prevents a newer listing from changing its ID route.
+func (d *apiDataSource) ForServer(name string) tui.DataSource {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if s := d.located[sandboxID]; s != nil && s.source != nil {
-		return s.source
+	if name == "" {
+		name = d.primaryName
 	}
-	return d
+	source := d
+	if len(d.servers) == 0 && name != "" && name != d.primaryName {
+		return nil
+	}
+	if len(d.servers) > 0 && name != "" {
+		source = nil
+		for _, s := range d.servers {
+			if s.name == name {
+				source = s.source
+				break
+			}
+		}
+	}
+	if source == nil {
+		return nil
+	}
+	return &apiDataSource{app: source.app, client: source.client, projectID: source.projectID, primaryName: name, serverChosen: source.serverChosen}
 }
 
 // waitForPushes waits out every server's automatic pushes (App.waitForPushes):
@@ -430,6 +446,7 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	state := loadConsoleState()
 	session.Draft, session.View, session.LastSource = state.Draft, state.View.listView(), state.LastSource
 	session.ServerChosen = d.serverChosen
+	session.PrimaryServer = d.primaryName
 	// The harnesses are not here: they are read on their own by Harnesses,
 	// which is what both the run options and the harnesses screen are drawn
 	// from. See tui_harnesses.go.
@@ -540,12 +557,16 @@ func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error
 		}
 		listing.Listed[s.name] = s.listing.answeredAt
 		for _, box := range s.listing.last {
-			if seen[box.ID] {
+			identity := s.id
+			if identity == "" {
+				identity = s.name
+			}
+			key := identity + "\x00" + box.ID
+			if seen[key] {
 				continue
 			}
-			seen[box.ID] = true
+			seen[key] = true
 			box.Server = s.name
-			d.located[box.ID] = s
 			listing.Sandboxes = append(listing.Sandboxes, box)
 		}
 	}
@@ -853,6 +874,10 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		HasRuntime: sb.Runtime.RuntimeState.IsSet(),
 		Message:    sandboxMessage(sb),
 		Created:    sb.CreatedAt,
+	}
+	row.PoolID = sb.PoolId.Or("")
+	if pool, ok := sb.Pool.Get(); ok {
+		row.Pool = terminalSafe(pool.Name)
 	}
 	// The discobox that created it, which the list nests it under.
 	row.CreatedBy = strings.TrimSpace(sb.CreatedBySandboxId.Or(""))
@@ -1175,9 +1200,6 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, war
 	// the run goes through, and is known to be from the moment it is taken:
 	// the window goes to it then, and asks after it here.
 	locate := func(box tui.Sandbox) tui.Sandbox {
-		d.mu.Lock()
-		d.located[box.ID] = target
-		d.mu.Unlock()
 		box.Server = target.name
 		return box
 	}
@@ -1313,7 +1335,6 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 // WatchProvisioning says what a discobox that is not usable yet is being made
 // to do, on the same reading of the same record `discobox run` narrates from.
 func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string, report func(string)) {
-	d = d.at(sandboxID)
 	d.app.watchProvisioning(ctx, d.projectID, sandboxID, report)
 }
 
@@ -1324,7 +1345,6 @@ func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, rep
 	if err != nil {
 		return err
 	}
-	d = d.at(sandboxID)
 	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, report, tuiCredentialDeliveryOptions(ctx, credentials))
 }
 
@@ -1332,7 +1352,6 @@ func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, rep
 // rather than through their Cobra commands: the commands print a sandbox table
 // on success, and the window reports on its own status line instead.
 func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string, credentials tui.CredentialUI) (string, error) {
-	d = d.at(sandboxID)
 	ctx = requestprogress.Observe(ctx, credentials.Report)
 	switch verb {
 	case tui.VerbStart:
@@ -1421,7 +1440,6 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string,
 // name, which `discobox admin box update --name` edits and a row stops showing
 // as soon as the harness titles its terminal.
 func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) error {
-	d = d.at(sandboxID)
 	body := &apimodel.UpdateSandboxMetaBody{Name: apiclientgen.NewOptString(name)}
 	res, err := d.client.UpdateSandboxMeta(ctx, body, apiclientgen.UpdateSandboxMetaParams{ProjectId: d.projectID, SandboxId: sandboxID})
 	if err != nil {
@@ -1532,7 +1550,6 @@ func (d *apiDataSource) serverPeerID(ctx context.Context, s *server) (id string,
 // went wrong still comes back as the error, which the card puts on the row it
 // could not fill.
 func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Addresses, error) {
-	d = d.at(sandboxID)
 	// A Windows ssh that cannot be resolved from WSL leaves this side's, which
 	// is the one the shell reading this is running, and machineSSHTargets errors
 	// only when that one is missing too.
@@ -1550,7 +1567,6 @@ func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Ad
 
 // Tools is every tool one sandbox can be worked on with (ADR 0125).
 func (d *apiDataSource) Tools(ctx context.Context, sandboxID string) ([]tui.Tool, error) {
-	d = d.at(sandboxID)
 	catalog, _, err := d.app.toolCatalog(ctx, d.client, d.projectID, sandboxID)
 	if err != nil {
 		return nil, err
@@ -1587,7 +1603,6 @@ func tuiTools(catalog []tools.Definition) []tui.Tool {
 // key in a list is waiting to read. What went wrong still comes back as the
 // error, which the status line reports.
 func (d *apiDataSource) RunHostTool(ctx context.Context, sandboxID, toolID string) error {
-	d = d.at(sandboxID)
 	catalog, _, err := d.app.toolCatalog(ctx, d.client, d.projectID, sandboxID)
 	if err != nil {
 		return err

@@ -92,7 +92,7 @@ func (m *Model) openReview(p *pane) tea.Cmd {
 	v.closeReview()
 	ctx, cancel := context.WithCancel(m.ctx)
 	cols, rows := m.paneCells(m.paneWidthOf(p))
-	ds, box := m.ds, p.sandbox.ID
+	ds, box := m.ds.ForServer(p.sandbox.Server), p.sandbox.ID
 	w := &reviewWindow{
 		// The leader never reaches it — the tab takes it first — so it has
 		// no prefix of its own: every other key is discobox-review's.

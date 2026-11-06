@@ -50,7 +50,7 @@ type harnessChangesDoneMsg struct {
 func (m *Model) reviewHarnessChanges(box Sandbox) tea.Cmd {
 	m.busy = "reading harness changes…"
 	return func() tea.Msg {
-		changes, err := m.ds.HarnessChanges(m.ctx, box.ID)
+		changes, err := m.ds.ForServer(box.Server).HarnessChanges(m.ctx, box.ID)
 		return harnessChangesLoadedMsg{box: box, changes: changes, err: err}
 	}
 }
@@ -116,9 +116,9 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 			var state string
 			var err error
 			if key == "s" {
-				state, err = m.ds.SaveHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
+				state, err = m.ds.ForServer(msg.box.Server).SaveHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
 			} else {
-				state, err = m.ds.DiscardHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
+				state, err = m.ds.ForServer(msg.box.Server).DiscardHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
 			}
 			return harnessChangesDoneMsg{state: state, err: err, box: msg.box, candidateID: c.CandidateID}
 		}

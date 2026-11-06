@@ -82,7 +82,7 @@ func toolRowKey(id string) string { return "tool:" + id }
 // to replace, under the same id (ADR 0125 §5). The one that runs is the tool.
 func (m *Model) toolByID(id string) (Tool, bool) {
 	var refused *Tool
-	catalog := m.toolCatalogs[m.currentBox().ID].tools
+	catalog := m.toolCatalogs[m.boxRef(m.currentBox())].tools
 	for i, t := range catalog {
 		if t.ID != id {
 			continue
@@ -158,22 +158,22 @@ func (m *Model) runToolWhenKnown(id string) tea.Cmd {
 	// A lookup that failed is not a known catalog: asking again is how the
 	// click learns whether it still fails, and the reason reaches the status
 	// line (toolsResolved) rather than "no such tool" against no tools.
-	if entry, known := m.toolCatalogs[box.ID]; known && entry.err == "" {
+	if entry, known := m.toolCatalogs[m.boxRef(box)]; known && entry.err == "" {
 		return m.runTool(id)
 	}
-	m.toolWanted = toolWant{box: box.ID, id: id}
+	m.toolWanted = toolWant{box: m.boxRef(box), id: id}
 	return m.resolveTools(box)
 }
 
 // toolWant is a tool asked for by id before its discobox's catalog was known.
 type toolWant struct {
-	box string
+	box boxRef
 	id  string
 }
 
 // toolsMsg is one discobox's catalog, looked up.
 type toolsMsg struct {
-	id    string
+	box   boxRef
 	tools []Tool
 	err   error
 }
@@ -183,10 +183,11 @@ func (m *Model) resolveTools(box Sandbox) tea.Cmd {
 	if box.ID == "" {
 		return nil
 	}
-	ctx, ds, id := m.ctx, m.ds, box.ID
+	ref := m.boxRef(box)
+	ctx, ds, id := m.ctx, m.ds.ForServer(box.Server), box.ID
 	return func() tea.Msg {
 		catalog, err := ds.Tools(ctx, id)
-		return toolsMsg{id: id, tools: catalog, err: err}
+		return toolsMsg{box: ref, tools: catalog, err: err}
 	}
 }
 
@@ -195,18 +196,18 @@ func (m *Model) resolveTools(box Sandbox) tea.Cmd {
 // addressesResolved does.
 func (m *Model) toolsResolved(msg toolsMsg) tea.Cmd {
 	if m.toolCatalogs == nil {
-		m.toolCatalogs = map[string]resolvedTools{}
+		m.toolCatalogs = map[boxRef]resolvedTools{}
 	}
 	entry := resolvedTools{tools: msg.tools}
 	if msg.err != nil {
 		// A failed lookup keeps the last catalog it had, with the reason: the
 		// tools a box offered a moment ago are a better card than none.
-		entry = resolvedTools{tools: m.toolCatalogs[msg.id].tools, err: msg.err.Error()}
+		entry = resolvedTools{tools: m.toolCatalogs[msg.box].tools, err: msg.err.Error()}
 	}
-	_, hadCatalog := m.toolCatalogs[msg.id]
-	m.toolCatalogs[msg.id] = entry
+	_, hadCatalog := m.toolCatalogs[msg.box]
+	m.toolCatalogs[msg.box] = entry
 	box := m.currentBox()
-	if want := m.toolWanted; want.box == msg.id {
+	if want := m.toolWanted; want.box == msg.box {
 		m.toolWanted = toolWant{}
 		// A lookup that failed is the answer to the click that was waiting on
 		// it: running the tool against no catalog would report "no such tool"
@@ -214,11 +215,11 @@ func (m *Model) toolsResolved(msg toolsMsg) tea.Cmd {
 		if msg.err != nil {
 			return m.report(true, "%s: %v", want.id, msg.err)
 		}
-		if box.ID == want.box {
+		if m.boxRef(box) == want.box {
 			return m.runTool(want.id)
 		}
 	}
-	if m.dialog == nil || m.dialog.title != toolsTitle || box.ID != msg.id {
+	if m.dialog == nil || m.dialog.title != toolsTitle || m.boxRef(box) != msg.box {
 		return nil
 	}
 	cursor := m.dialog.cursor
@@ -239,19 +240,25 @@ type openToolsMsg struct{}
 // runToolMsg carries a choice out of the picker back to the live model. A
 // dialog closes over the model by value, so it emits the choice rather than
 // running it, the way the action menu does.
-type runToolMsg struct{ id string }
+type runToolMsg struct {
+	id  string
+	box boxRef
+}
 
 // toolFilesMsg is the picker's second action on the highlighted row: show that
 // tool's files. Like runToolMsg it is a message rather than a call, because a
 // dialog closes over the model by value.
-type toolFilesMsg struct{ id string }
+type toolFilesMsg struct {
+	id  string
+	box boxRef
+}
 
 // toolFileMsg is the file chosen out of that list, on its way to $EDITOR.
 type toolFileMsg struct{ file ToolFile }
 
 // addressesMsg is one discobox's ssh and git addresses, looked up.
 type addressesMsg struct {
-	id   string
+	box  boxRef
 	addr Addresses
 	err  error
 }
@@ -287,8 +294,8 @@ type toolTermMsg struct {
 // on: the discobox's tools, and its addresses. Every tool is offered whatever
 // is running: the row says which are up, and choosing one is "show me that",
 // not "start another".
-func (m *Model) openTools() tea.Cmd {
-	box := m.currentBox()
+func (m *Model) openTools(box Sandbox) tea.Cmd {
+	m.recordConsoleUse("tools")
 	// A receipt belongs to the press that earned it, not to the card: reopening
 	// the picker must not greet a reader with a "copied" from last time.
 	m.copied = ""
@@ -303,7 +310,8 @@ func (m *Model) openTools() tea.Cmd {
 // separate from openTools because the addresses arrive after the card does, and
 // the card is then built again rather than patched — see addressesResolved.
 func (m *Model) toolsDialog(box Sandbox) *dialog {
-	resolved, known := m.toolCatalogs[box.ID]
+	ref := m.boxRef(box)
+	resolved, known := m.toolCatalogs[m.boxRef(box)]
 	catalog := pickerTools(resolved.tools)
 	keys := toolKeys(catalog, toolFileKey, addressSSHKey, addressGitKey, "q", "j", "k")
 	items := make([]action, 0, len(catalog)+3)
@@ -333,7 +341,7 @@ func (m *Model) toolsDialog(box Sandbox) *dialog {
 	// An address is only worth printing for a discobox the config has a stanza
 	// for, which is the same boxes the tools apply to: an archived one is out
 	// of the listing the stanzas are rendered from.
-	addr, unreachable := m.addresses[box.ID], attachWhy(true, []Sandbox{box})
+	addr, unreachable := m.addresses[m.boxRef(box)], attachWhy(true, []Sandbox{box})
 	ssh := addr.action(addressSSHKey, "ssh", addr.SSH, unreachable)
 	git := addr.action(addressGitKey, "git url", addr.Git, unreachable)
 	ssh.note, git.note = m.copiedNote(addr.SSH), m.copiedNote(addr.Git)
@@ -350,7 +358,7 @@ func (m *Model) toolsDialog(box Sandbox) *dialog {
 			for _, t := range catalog {
 				if toolRowKey(t.ID) == key {
 					id := t.ID
-					return func() tea.Msg { return runToolMsg{id: id} }
+					return func() tea.Msg { return runToolMsg{id: id, box: ref} }
 				}
 			}
 			return nil
@@ -360,7 +368,7 @@ func (m *Model) toolsDialog(box Sandbox) *dialog {
 		for _, t := range catalog {
 			if toolRowKey(t.ID) == key {
 				id := t.ID
-				return func() tea.Msg { return toolFilesMsg{id: id} }
+				return func() tea.Msg { return toolFilesMsg{id: id, box: ref} }
 			}
 		}
 		return nil
@@ -429,16 +437,17 @@ func (m *Model) resolveAddresses(box Sandbox) tea.Cmd {
 		return nil
 	}
 	if m.addresses == nil {
-		m.addresses = map[string]resolvedAddresses{}
+		m.addresses = map[boxRef]resolvedAddresses{}
 	}
-	if known, asked := m.addresses[box.ID]; asked && known.err == "" {
+	if known, asked := m.addresses[m.boxRef(box)]; asked && known.err == "" {
 		return nil
 	}
-	m.addresses[box.ID] = resolvedAddresses{}
-	ctx, ds, id := m.ctx, m.ds, box.ID
+	m.addresses[m.boxRef(box)] = resolvedAddresses{}
+	ref := m.boxRef(box)
+	ctx, ds, id := m.ctx, m.ds.ForServer(box.Server), box.ID
 	return func() tea.Msg {
 		addr, err := ds.Addresses(ctx, id)
-		return addressesMsg{id: id, addr: addr, err: err}
+		return addressesMsg{box: ref, addr: addr, err: err}
 	}
 }
 
@@ -454,12 +463,12 @@ func (m *Model) addressesResolved(msg addressesMsg) tea.Cmd {
 		entry.err = msg.err.Error()
 	}
 	if m.addresses == nil {
-		m.addresses = map[string]resolvedAddresses{}
+		m.addresses = map[boxRef]resolvedAddresses{}
 	}
-	m.addresses[msg.id] = entry
+	m.addresses[msg.box] = entry
 
 	box := m.currentBox()
-	if m.dialog == nil || m.dialog.title != toolsTitle || box.ID != msg.id {
+	if m.dialog == nil || m.dialog.title != toolsTitle || m.boxRef(box) != msg.box {
 		return nil
 	}
 	// The cursor is where the reader put it, and a card rebuilt under them
@@ -646,7 +655,7 @@ func (m *Model) newTool(t Tool, show bool) tea.Cmd {
 	m.busy = t.Label + "…"
 	gen := m.wsGen
 	cols, rows := m.paneCells(max(m.width, 4))
-	ctx, ds, box, id := m.ctx, m.ds, m.paneBox.ID, t.ID
+	ctx, ds, box, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID, t.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewTool(ctx, box, id, cols, rows)
 		return toolTermMsg{gen: gen, id: id, exec: exec, term: term, err: err, show: show}
@@ -669,7 +678,7 @@ type hostToolRanMsg struct {
 // something that owns the screen.
 func (m *Model) runHostTool(box Sandbox, t Tool) tea.Cmd {
 	m.busy = t.ID + "…"
-	ctx, ds, id, name := m.ctx, m.ds, box.ID, box.Name
+	ctx, ds, id, name := m.ctx, m.ds.ForServer(box.Server), box.ID, box.Name
 	return func() tea.Msg {
 		return hostToolRanMsg{name: name, tool: t, err: ds.RunHostTool(ctx, id, t.ID)}
 	}
@@ -699,7 +708,7 @@ func (m *Model) openToolExec(gen int, exec Exec) tea.Cmd {
 	// It arrives put away, as one more tab in the shells column.
 	_, width := m.columns(m.shells.len() + 1)
 	cols, rows := m.paneCells(width)
-	ctx, ds, box := m.ctx, m.ds, m.paneBox.ID
+	ctx, ds, box := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		term, err := ds.OpenExec(ctx, box, exec.ID, cols, rows)
 		return toolTermMsg{gen: gen, id: exec.Tool, exec: exec, term: term, err: err}

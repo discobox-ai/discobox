@@ -33,15 +33,15 @@ func (m *Model) offerImageUpgrade(box Sandbox) {
 		return
 	}
 	question := fmt.Sprintf("%s's image is no longer available on its pool, so it cannot start. Upgrade it to its harness's current image? Its work is kept.", box.Name)
-	ids := []string{box.ID}
+	targets := []Sandbox{box}
 	m.dialog = confirmDialog("Upgrade", question, func(string) tea.Cmd {
-		return func() tea.Msg { return runVerbMsg{verb: VerbUpgrade, ids: ids} }
+		return func() tea.Msg { return runVerbMsg{verb: VerbUpgrade, targets: targets} }
 	})
 }
 
 // imageOfferListedMsg is the listing read for one failed attach.
 type imageOfferListedMsg struct {
-	id      string
+	box     Sandbox
 	listing Listing
 	err     error
 }
@@ -53,11 +53,11 @@ type imageOfferListedMsg struct {
 // already on its way — and would say nothing about it. A read issued from here
 // was issued after the attach failed, and the attach wait gives up only once
 // the failure is on the row.
-func (m *Model) checkImageOffer(id string) tea.Cmd {
-	ctx, ds := m.ctx, m.ds
+func (m *Model) checkImageOffer(box Sandbox) tea.Cmd {
+	ctx, ds := m.ctx, m.ds.ForServer(box.Server)
 	return func() tea.Msg {
 		listing, err := ds.List(ctx)
-		return imageOfferListedMsg{id: id, listing: listing, err: err}
+		return imageOfferListedMsg{box: box, listing: listing, err: err}
 	}
 }
 
@@ -69,7 +69,8 @@ func (m *Model) imageOfferListed(msg imageOfferListedMsg) {
 		return
 	}
 	for _, box := range msg.listing.Sandboxes {
-		if box.ID == msg.id && box.ImageUnavailable {
+		if box.ID == msg.box.ID && box.ImageUnavailable {
+			box.Server = msg.box.Server
 			m.offerImageUpgrade(box)
 			return
 		}

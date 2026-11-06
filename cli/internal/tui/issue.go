@@ -102,6 +102,7 @@ type issuePane struct {
 	// once it has been opened.
 	conversation issuePage
 	files        bool
+	reviewOnRead bool
 	review       *reviewWindow
 	// pushed is the head the person was last shown, once a read of the tab's
 	// own brought a newer one: the tab says so until they ask for a read (r).
@@ -252,8 +253,7 @@ func (m *Model) issueOf(id int) (*pane, *issuePane) {
 // openIssue opens a tab on one issue or pull request of the discobox on screen
 // and focuses it. The same one already open is only focused: reading it again
 // would throw away the place it was read to.
-func (m *Model) openIssue(number int, pull bool) tea.Cmd {
-	box := m.currentBox()
+func (m *Model) openIssue(box Sandbox, number int, pull bool) tea.Cmd {
 	v := &issuePane{repository: box.Repository, number: number, pull: pull, composer: m.newIssueComposer()}
 	v.url = v.address()
 	if box.Repository == "" {
@@ -281,11 +281,11 @@ func (m *Model) openIssue(number int, pull bool) tea.Cmd {
 
 // toggleIssue is the leader's i, or its p for the pull request: the tab on the
 // discobox's issue, opened or focused.
-func (m *Model) toggleIssue(pull bool) tea.Cmd {
-	number, ok := m.currentBox().workNumber(pull)
+func (m *Model) toggleIssue(box Sandbox, pull bool) tea.Cmd {
+	number, ok := box.workNumber(pull)
 	switch {
 	case ok:
-		return m.openIssue(number, pull)
+		return m.openIssue(box, number, pull)
 	case pull:
 		return status("no pull request to show — tag this discobox pr=N, on a GitHub repository")
 	}
@@ -316,7 +316,7 @@ func (m *Model) loadIssue(p *pane, full bool) tea.Cmd {
 	v := p.issue
 	v.loading = true
 	v.reads++
-	ctx, ds, id, read, repository, number := m.ctx, m.ds, p.id, v.reads, v.repository, v.number
+	ctx, ds, id, read, repository, number := m.ctx, m.ds.ForServer(p.sandbox.Server), p.id, v.reads, v.repository, v.number
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(ctx, issueTimeout)
 		defer cancel()
@@ -372,6 +372,10 @@ func (m *Model) issueLoaded(msg issueLoadedMsg) tea.Cmd {
 		// On the tab itself, so it is seen from whichever pane has the keys.
 		p.title += " ●"
 	}
+	if v.reviewOnRead {
+		v.reviewOnRead = false
+		return tea.Batch(m.pullSettle(p), m.openReview(p))
+	}
 	return m.pullSettle(p)
 }
 
@@ -401,7 +405,7 @@ func (m *Model) postComment(p *pane) tea.Cmd {
 		return status("nothing to post — the comment is empty")
 	}
 	v.posting = true
-	ctx, ds, id, repository, number := m.ctx, m.ds, p.id, v.repository, v.number
+	ctx, ds, id, repository, number := m.ctx, m.ds.ForServer(p.sandbox.Server), p.id, v.repository, v.number
 	post := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(ctx, issueTimeout)
 		defer cancel()
@@ -564,7 +568,7 @@ func (m *Model) askIssueState(p *pane) tea.Cmd {
 func (m *Model) setIssueState(p *pane, state, reason string) tea.Cmd {
 	v := p.issue
 	v.changing = true
-	ctx, ds, id, repository, number := m.ctx, m.ds, p.id, v.repository, v.number
+	ctx, ds, id, repository, number := m.ctx, m.ds.ForServer(p.sandbox.Server), p.id, v.repository, v.number
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(ctx, issueTimeout)
 		defer cancel()

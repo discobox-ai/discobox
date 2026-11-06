@@ -43,6 +43,11 @@ const (
 	// hitRow and its siblings are one row of a list, idx counting from the
 	// top of what that list holds rather than from what is on screen.
 	hitRow
+	hitPaletteCard
+	hitPaletteRow
+	hitPaletteChip
+	hitPaletteCommands
+	hitPaletteInput
 	hitHarnessRow
 	hitSecretRow
 	hitRequestRow

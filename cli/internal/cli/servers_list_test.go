@@ -651,10 +651,10 @@ func TestLauncherListsEveryServerAndRoutesToIt(t *testing.T) {
 	if !reflect.DeepEqual(got, map[string]string{sandboxA: "alpha", sandboxB: "beta"}) {
 		t.Fatalf("List() = %v", got)
 	}
-	if ds.at(sandboxA) != ds {
+	if ds.ForServer("alpha").(*apiDataSource).client != ds.client {
 		t.Fatal("the primary's discobox is not routed to the primary")
 	}
-	if at := ds.at(sandboxB); at.app.serverURL != other.URL || at.projectID != defaultProjectAlias {
+	if at := ds.ForServer("beta").(*apiDataSource); at.app.serverURL != other.URL || at.projectID != defaultProjectAlias {
 		t.Fatalf("beta's discobox is routed to %s %s", at.app.serverURL, at.projectID)
 	}
 
@@ -1257,14 +1257,14 @@ func TestSSHConfigWritesEveryServer(t *testing.T) {
 	if len(configs) != 2 {
 		t.Fatalf("wrote %d configs, want one per server: %v", len(configs), configs)
 	}
-	if got := configs[fakeProjectID("alpha")]; !strings.Contains(got, sandboxA) || strings.Contains(got, sandboxB) {
+	if got := configs[sshConfigNamespace(primary.URL, fakeProjectID("alpha"))]; !strings.Contains(got, sandboxA) || strings.Contains(got, sandboxB) {
 		t.Fatalf("alpha's config carries the wrong discoboxes:\n%s", got)
 	}
-	if got := configs[fakeProjectID("beta")]; !strings.Contains(got, sandboxB) || strings.Contains(got, primary.URL) {
+	if got := configs[sshConfigNamespace(other.URL, fakeProjectID("beta"))]; !strings.Contains(got, sandboxB) || strings.Contains(got, primary.URL) {
 		t.Fatalf("beta's config carries the wrong discoboxes or the wrong server:\n%s", got)
 	}
 	// Each stanza reaches its own server, and ssh Includes both files.
-	if got := configs[fakeProjectID("beta")]; !strings.Contains(got, other.URL) {
+	if got := configs[sshConfigNamespace(other.URL, fakeProjectID("beta"))]; !strings.Contains(got, other.URL) {
 		t.Fatalf("beta's stanzas do not reach beta:\n%s", got)
 	}
 	userConfig, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), ".ssh", "config"))
@@ -1295,7 +1295,7 @@ func TestServersAddSyncsItsSSHConfig(t *testing.T) {
 	}
 
 	configs := managedSSHConfigs(t, state)
-	got, ok := configs[fakeProjectID("beta")]
+	got, ok := configs[sshConfigNamespace(other.URL, fakeProjectID("beta"))]
 	if !ok {
 		t.Fatalf("registering beta wrote no config for it: %v", configs)
 	}

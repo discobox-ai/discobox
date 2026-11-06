@@ -23,7 +23,6 @@ import (
 // Execs is the sandbox's exec sessions as the workspace's tab strip needs
 // them.
 func (d *apiDataSource) Execs(ctx context.Context, sandboxID string) ([]tui.Exec, error) {
-	d = d.at(sandboxID)
 	execs, observedAt, err := d.app.listSandboxExecs(ctx, d.projectID, sandboxID)
 	if err != nil {
 		return nil, err
@@ -116,7 +115,6 @@ func execToolID(label string) string {
 // Services is the sandbox's declared services, running or not — what the
 // workspace's services menu is drawn from.
 func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.Service, error) {
-	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return nil, err
@@ -154,7 +152,6 @@ func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.S
 // that draws a service with no running process. The two streams are merged
 // here — a pane is one screen, and that is what a terminal does with them.
 func (d *apiDataSource) ServiceLogs(ctx context.Context, sandboxID, serviceID string) ([]byte, error) {
-	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return nil, err
@@ -183,7 +180,6 @@ func (d *apiDataSource) ServiceLogs(ctx context.Context, sandboxID, serviceID st
 
 // DoService runs one lifecycle verb against one declared service.
 func (d *apiDataSource) DoService(ctx context.Context, verb tui.ServiceVerb, sandboxID, serviceID string) error {
-	d = d.at(sandboxID)
 	client, err := d.app.apiClient()
 	if err != nil {
 		return err
@@ -197,7 +193,6 @@ func (d *apiDataSource) DoService(ctx context.Context, verb tui.ServiceVerb, san
 // relaunching a primary terminal that has stopped — so nothing is started
 // here.
 func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (tui.Terminal, error) {
-	d = d.at(sandboxID)
 	return d.openFramedTerminal(ctx, sandboxID, execID, cols, rows)
 }
 
@@ -207,7 +202,6 @@ func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, 
 // shell this machine's user prefers (preferredShellEnv), which the sandbox runs
 // instead when it has it.
 func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
-	d = d.at(sandboxID)
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, shell: true, env: append(paneTerminalEnv(), preferredShellEnv()...),
 	}, cols, rows)
@@ -219,7 +213,6 @@ func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, ro
 // the request names none: an exec created with no command, no shell and no
 // harness is a terminal on the sandbox's configured harness.
 func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
-	d = d.at(sandboxID)
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, terminal: true, env: paneTerminalEnv(),
 	}, cols, rows)
@@ -234,7 +227,6 @@ func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols,
 // and naming it here would be this machine guessing at a path only the sandbox
 // knows.
 func (d *apiDataSource) NewTool(ctx context.Context, sandboxID, toolID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
-	d = d.at(sandboxID)
 	catalog, _, err := d.app.toolCatalog(ctx, d.client, d.projectID, sandboxID)
 	if err != nil {
 		return tui.Exec{}, nil, err
@@ -281,7 +273,6 @@ func (d *apiDataSource) NewTool(ctx context.Context, sandboxID, toolID string, c
 // The two commits are GitHub's word, and go on a command line: each has to be
 // a commit hash, so neither can be read as a flag.
 func (d *apiDataSource) PullReview(ctx context.Context, sandboxID string, pull tui.PullRequest, cols, rows int) (tui.Exec, tui.Terminal, error) {
-	d = d.at(sandboxID)
 	if !commitHash(pull.BaseSHA) || !commitHash(pull.HeadSHA) {
 		return tui.Exec{}, nil, fmt.Errorf("the pull request has not said which commits it is between")
 	}
@@ -348,12 +339,10 @@ func commitHash(s string) bool {
 
 // EndExec ends one exec session in the sandbox, killing what is running in it.
 func (d *apiDataSource) EndExec(ctx context.Context, sandboxID, execID string) error {
-	d = d.at(sandboxID)
 	return d.app.deleteSandboxExec(ctx, d.projectID, sandboxID, execID)
 }
 
 func (d *apiDataSource) PutImage(ctx context.Context, sandboxID, name string, data []byte) (string, error) {
-	d = d.at(sandboxID)
 	stat, err := d.app.writeSandboxFile(ctx, apiclientgen.WriteSandboxFileParams{
 		ProjectId: d.projectID,
 		SandboxId: sandboxID,

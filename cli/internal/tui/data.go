@@ -281,6 +281,10 @@ type Sandbox struct {
 	Tags        []string
 	Description string
 
+	// Pool and PoolID identify the pool for box search.
+	Pool   string
+	PoolID string
+
 	Harness string
 	// HarnessID is that harness's config ID. The slug above is what the row
 	// shows; this is what matches a credential the window has been told is
@@ -524,7 +528,9 @@ type Session struct {
 	// Servers are the servers a discobox can be created on, by the names the
 	// window lists them under, the primary first (ADR 0116 §5). Nil when there
 	// is only the primary, and then the run options offer no choice.
-	Servers []string
+	// PrimaryServer retains the configured identity even when rows omit it.
+	PrimaryServer string
+	Servers       []string
 }
 
 // ListView is the header's three filters as a window leaves them: the server,
@@ -2074,6 +2080,14 @@ type ReviewComment struct {
 var ErrNotRunning = errors.New("the discobox is not running")
 
 type DataSource interface {
+	// PrimaryServer is the configured identity, available before Session does Git work.
+	PrimaryServer() string
+
+	// ForServer returns a source pinned to one already-listed server. It never
+	// consults a moving box-ID routing table. All box operations use this source.
+	// Nil means that server is unavailable.
+	ForServer(server string) DataSource
+
 	// GitCredentialPolicy rereads client consent defaults for command previews.
 	GitCredentialPolicy(ctx context.Context) (string, error)
 

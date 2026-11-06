@@ -69,17 +69,17 @@ func TestAFailedAttachOffersTheUpgradeFromItsOwnListing(t *testing.T) {
 		t.Fatal("a routine listing raised the offer with no attach to answer")
 	}
 
-	send(t, m, imageOfferListedMsg{id: "sbx_one", err: errors.New("server unreachable")})
+	send(t, m, imageOfferListedMsg{box: Sandbox{ID: "sbx_one"}, err: errors.New("server unreachable")})
 	if m.dialog != nil {
 		t.Fatal("a listing that failed raised an offer")
 	}
 
-	send(t, m, imageOfferListedMsg{id: "sbx_two", listing: Listing{Sandboxes: imageGoneSandboxes(true)}})
+	send(t, m, imageOfferListedMsg{box: Sandbox{ID: "sbx_two"}, listing: Listing{Sandboxes: imageGoneSandboxes(true)}})
 	if m.dialog != nil {
 		t.Fatal("an attach that failed for another reason was offered an upgrade")
 	}
 
-	send(t, m, imageOfferListedMsg{id: "sbx_one", listing: Listing{Sandboxes: imageGoneSandboxes(true)}})
+	send(t, m, imageOfferListedMsg{box: Sandbox{ID: "sbx_one"}, listing: Listing{Sandboxes: imageGoneSandboxes(true)}})
 	if m.dialog == nil || m.dialog.title != "Upgrade" {
 		t.Fatalf("dialog = %+v, want the upgrade offer", m.dialog)
 	}

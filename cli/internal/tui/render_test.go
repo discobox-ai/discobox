@@ -60,11 +60,11 @@ func TestFrames(t *testing.T) {
 			// The addresses come from a lookup this frame has no runtime to
 			// run, so they are seeded as one that finished would have left
 			// them; the rows are the frame worth looking at.
-			m.addresses = map[string]resolvedAddresses{"sbx_one": {Addresses: Addresses{
+			m.addresses = map[boxRef]resolvedAddresses{{"", "sbx_one"}: {Addresses: Addresses{
 				SSH: "ssh sbx_one",
 				Git: "ssh://sbx_one/home/discobox/disco2",
 			}}}
-			m.openTools()
+			m.openTools(m.currentBox())
 		}},
 		{"folder", func(m *Model) { send(t, m, keyPress("tab"), keyPress("up")) }},
 		{"folder-open", func(m *Model) { send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter")) }},

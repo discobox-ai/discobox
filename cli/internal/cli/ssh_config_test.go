@@ -17,6 +17,7 @@ import (
 // sshConfigFakeServer serves the routes ssh-config drives: the SSH ingress
 // discovery document, the project's enrolled keys, and its sandboxes.
 type sshConfigFakeServer struct {
+	url       string
 	ingress   string
 	sandboxes []sshConfigFakeSandbox
 
@@ -107,6 +108,7 @@ func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
+	f.url = server.URL
 	t.Cleanup(server.Close)
 	return server
 }
@@ -192,12 +194,12 @@ func TestSSHConfigKeysEveryStanzaByTheID(t *testing.T) {
 
 	for _, want := range []string{
 		// The bare ID first: it is the host handed to a tool.
-		"Host sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n",
+		"Host sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal " + sshConfigHost(sshConfigNamespace(fake.url, resolvedTestProjectID), "sbx_devbox00000001") + "\n",
 		"    User sbx_devbox00000001\n",
 		"    IdentitiesOnly yes\n",
 		// One name for the server's key, whatever the alias and whatever the
 		// address, so one known_hosts line covers the project.
-		"    HostKeyAlias " + resolvedTestProjectID + ".discobox.internal\n",
+		"    HostKeyAlias " + sshConfigNamespace(fake.url, resolvedTestProjectID) + ".discobox.internal\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q; got:\n%s", want, out)
@@ -306,7 +308,7 @@ func TestSSHConfigIgnoresWhatANameSpells(t *testing.T) {
 	var want []string
 	for _, sandbox := range fake.sandboxes {
 		hostname := "sbx-" + strings.TrimPrefix(sandbox.id, "sbx_")
-		want = append(want, "Host "+sandbox.id+" "+sandbox.id+".discobox.internal "+hostname+" "+hostname+".discobox.internal")
+		want = append(want, "Host "+sandbox.id+" "+sandbox.id+".discobox.internal "+hostname+" "+hostname+".discobox.internal "+sshConfigHost(sshConfigNamespace(fake.url, resolvedTestProjectID), sandbox.id))
 	}
 	if strings.Join(hosts, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("Host lines =\n%s\nwant\n%s", strings.Join(hosts, "\n"), strings.Join(want, "\n"))

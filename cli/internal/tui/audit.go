@@ -57,6 +57,8 @@ const auditTitle = "Audit record"
 
 // auditScreen is the audit screen's state while it is up.
 type auditScreen struct {
+	server string
+
 	// gen is which opening of the screen this is. A reader still in flight
 	// from one that was closed must not land on the next.
 	gen     int
@@ -165,16 +167,16 @@ var auditRecordings = []struct{ part, key, label string }{
 // openAudit puts the audit screen over the workspace and starts following the
 // discobox's trails. Opening it again starts over: the records are the
 // server's, and the screen holds only what it has been shown.
-func (m *Model) openAudit() tea.Cmd {
-	box := m.currentBox()
+func (m *Model) openAudit(box Sandbox) tea.Cmd {
+	m.recordConsoleUse("audit")
 	m.closeAudit()
 	m.auditGen++
 	ctx, stop := context.WithCancel(m.ctx)
-	a := &auditScreen{gen: m.auditGen, sandbox: box.ID, name: displayName(box), stop: stop, following: true,
+	a := &auditScreen{server: box.Server, gen: m.auditGen, sandbox: box.ID, name: displayName(box), stop: stop, following: true,
 		expanded: map[string]bool{}}
 	m.audit = a
 	feed := make(chan AuditUpdate, auditFeedCapacity)
-	ds, id, gen := m.ds, box.ID, a.gen
+	ds, id, gen := m.ds.ForServer(box.Server), box.ID, a.gen
 	follow := func() tea.Msg {
 		defer close(feed)
 		err := ds.FollowAudit(ctx, id, func(update AuditUpdate) {
@@ -493,7 +495,7 @@ func (m *Model) openAuditRecord() tea.Cmd {
 	}
 	record := a.rec(row.first)
 	m.busy = "reading " + record.ID + "…"
-	ctx, ds, id, gen := m.ctx, m.ds, a.sandbox, a.gen
+	ctx, ds, id, gen := m.ctx, m.ds.ForServer(a.server), a.sandbox, a.gen
 	return func() tea.Msg {
 		detail, err := ds.AuditDetail(ctx, id, record.ID)
 		return auditDetailMsg{gen: gen, record: record, detail: detail, err: err}
@@ -539,7 +541,7 @@ func (m *Model) openAuditBody(from *dialog, record AuditRecord, part, label stri
 		return nil
 	}
 	from.emphasis = "reading the " + label + "…"
-	ctx, ds, id := m.ctx, m.ds, a.sandbox
+	ctx, ds, id := m.ctx, m.ds.ForServer(a.server), a.sandbox
 	return func() tea.Msg {
 		text, err := ds.AuditBody(ctx, id, record.ID, part)
 		return auditBodyMsg{from: from, record: record, part: part, text: text, err: err}

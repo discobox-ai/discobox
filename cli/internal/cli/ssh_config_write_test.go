@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,7 +13,7 @@ import (
 // runSSHConfigWrite runs `ssh-config --write` against fake with HOME and
 // XDG_STATE_HOME redirected into the test's temp dirs, so nothing here can
 // touch the developer's real ~/.ssh or state directory.
-func runSSHConfigWrite(t *testing.T, fake *sshConfigFakeServer) (home, state, stderr string) {
+func runSSHConfigWrite(t *testing.T, fake *sshConfigFakeServer) (home, state, stderr, serverURL string) {
 	t.Helper()
 	home = t.TempDir()
 	state = t.TempDir()
@@ -31,7 +32,7 @@ func runSSHConfigWrite(t *testing.T, fake *sshConfigFakeServer) (home, state, st
 	if out.String() != "" {
 		t.Fatalf("--write should not print the config, got:\n%s", out.String())
 	}
-	return home, state, errOut.String()
+	return home, state, errOut.String(), server.URL
 }
 
 // setHome redirects the home directory a test writes into, on every platform.
@@ -54,7 +55,15 @@ func setConfigHome(t *testing.T, dir string) {
 	t.Setenv("APPDATA", dir)
 }
 
-func managedPaths(state string) (config, knownHosts string) {
+func managedPaths(t *testing.T, state string) (config, knownHosts string) {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(state, "discobox", "cli", "ssh", resolvedTestProjectID+"-*", "config"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("want one server-qualified config, got %v (%v)", paths, err)
+	}
+	return paths[0], filepath.Join(filepath.Dir(paths[0]), "known_hosts")
+}
+func legacyManagedPaths(state string) (config, knownHosts string) {
 	dir := filepath.Join(state, "discobox", "cli", "ssh", resolvedTestProjectID)
 	return filepath.Join(dir, "config"), filepath.Join(dir, "known_hosts")
 }
@@ -79,14 +88,14 @@ func writeFakeServer() *sshConfigFakeServer {
 // afterwards ssh can resolve the host, find the key, and verify the server,
 // with no further steps.
 func TestSSHConfigWriteProducesAUsableConfig(t *testing.T) {
-	home, state, stderr := runSSHConfigWrite(t, writeFakeServer())
-	configPath, knownHostsPath := managedPaths(state)
+	home, state, stderr, serverURL := runSSHConfigWrite(t, writeFakeServer())
+	configPath, knownHostsPath := managedPaths(t, state)
 
 	config := readFile(t, configPath)
 	for _, want := range []string{
-		"Host sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n",
+		"Host sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal " + sshConfigHost(sshConfigNamespace(serverURL, resolvedTestProjectID), "sbx_devbox00000001") + "\n",
 		"    User sbx_devbox00000001\n",
-		"    HostKeyAlias " + resolvedTestProjectID + ".discobox.internal\n",
+		"    HostKeyAlias " + sshConfigNamespace(serverURL, resolvedTestProjectID) + ".discobox.internal\n",
 		"    IdentitiesOnly yes\n",
 		"    UserKnownHostsFile " + knownHostsPath + "\n",
 	} {
@@ -105,7 +114,7 @@ func TestSSHConfigWriteProducesAUsableConfig(t *testing.T) {
 		t.Fatalf("managed config has no ProxyCommand:\n%s", config)
 	}
 
-	if got := readFile(t, knownHostsPath); got != resolvedTestProjectID+".discobox.internal ssh-ed25519 AAAAfakehostkey==\n" {
+	if got := readFile(t, knownHostsPath); got != sshConfigNamespace(serverURL, resolvedTestProjectID)+".discobox.internal ssh-ed25519 AAAAfakehostkey==\n" {
 		t.Fatalf("known_hosts = %q", got)
 	}
 
@@ -126,7 +135,7 @@ func TestSSHConfigWriteProducesAUsableConfig(t *testing.T) {
 func TestSSHConfigWriteClearsANameKeyedStanza(t *testing.T) {
 	home := t.TempDir()
 	state := t.TempDir()
-	configPath, _ := managedPaths(state)
+	configPath, _ := legacyManagedPaths(state)
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -150,9 +159,9 @@ func TestSSHConfigWriteClearsANameKeyedStanza(t *testing.T) {
 			"\n    IdentitiesOnly yes\n    HostKeyAlias proj_other0000001.discobox.internal\n"
 	}
 	other := managedConfigHeader("proj_other0000001") +
-		otherStanza("Host sad_einstein sad_einstein.discobox.internal sbx_other000000001 sbx_other000000001.discobox.internal sbx-other000000001 sbx-other000000001.discobox.internal", "sbx_other000000001") + "\n" +
+		otherStanza("Host sad_einstein sad_einstein.discobox.internal sbx_other000000001 sbx_other000000001.discobox.internal sbx-other000000001 sbx-other000000001.discobox.internal sbx_other000000001.proj_other0000001.discobox.internal", "sbx_other000000001") + "\n" +
 		"# sbx_other000000002 (sbx_other000000003) has no unambiguous host alias and was skipped\n\n" +
-		otherStanza("Host sbx-other000000002 sbx-other000000002.discobox.internal", "sbx_other000000002")
+		otherStanza("Host sbx-other000000002 sbx-other000000002.discobox.internal sbx_other000000002.proj_other0000001.discobox.internal", "sbx_other000000002")
 	if err := os.WriteFile(otherPath, []byte(other), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -175,22 +184,23 @@ func TestSSHConfigWriteClearsANameKeyedStanza(t *testing.T) {
 		t.Fatalf("execute ssh-config --write: %v", err)
 	}
 
-	config := readFile(t, configPath)
+	newConfig, _ := managedPaths(t, state)
+	config := readFile(t, newConfig)
 	for _, gone := range []string{"devbox ", "devbox.discobox.internal", "sad_einstein", "sbx_gone0000000001"} {
 		if strings.Contains(config, gone) {
 			t.Fatalf("the rewritten config still carries %q:\n%s", gone, config)
 		}
 	}
-	if !strings.Contains(config, "\nHost sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal\n") {
+	if !strings.Contains(config, "\nHost sbx_devbox00000001 sbx_devbox00000001.discobox.internal sbx-devbox00000001 sbx-devbox00000001.discobox.internal "+sshConfigHost(sshConfigNamespace(server.URL, resolvedTestProjectID), "sbx_devbox00000001")+"\n") {
 		t.Fatalf("the rewritten config is not keyed by the ID:\n%s", config)
 	}
 	wantOther := managedConfigHeader("proj_other0000001") +
-		otherStanza("Host sbx_other000000001 sbx_other000000001.discobox.internal sbx-other000000001 sbx-other000000001.discobox.internal", "sbx_other000000001") + "\n\n" +
-		otherStanza("Host sbx_other000000002 sbx_other000000002.discobox.internal sbx-other000000002 sbx-other000000002.discobox.internal", "sbx_other000000002")
+		otherStanza("Host sbx_other000000001 sbx_other000000001.discobox.internal sbx-other000000001 sbx-other000000001.discobox.internal sbx_other000000001.proj_other0000001.discobox.internal", "sbx_other000000001") + "\n\n" +
+		otherStanza("Host sbx_other000000002 sbx_other000000002.discobox.internal sbx-other000000002 sbx-other000000002.discobox.internal sbx_other000000002.proj_other0000001.discobox.internal", "sbx_other000000002")
 	if got := readFile(t, otherPath); got != wantOther {
 		t.Fatalf("the other project's config =\n%s\nwant\n%s", got, wantOther)
 	}
-	if got := readFile(t, filepath.Join(home, ".ssh", "config")); got != userConfig {
+	if got := readFile(t, filepath.Join(home, ".ssh", "config")); !strings.Contains(got, userConfig) {
 		t.Fatalf("user ssh config = %q", got)
 	}
 }
@@ -208,7 +218,7 @@ func TestRekeySSHConfigStanzasLeavesACurrentConfigAlone(t *testing.T) {
 		hostKeyAlias: "p.discobox.internal",
 		identityFile: "/k",
 	})
-	if got, changed := rekeySSHConfigStanzas(config); changed || got != config {
+	if got, changed := rekeySSHConfigStanzas(config, ""); changed || got != config {
 		t.Fatalf("re-keyed a current config (changed=%v):\n%s", changed, got)
 	}
 }
@@ -216,18 +226,18 @@ func TestRekeySSHConfigStanzasLeavesACurrentConfigAlone(t *testing.T) {
 // TestSSHConfigWriteIsIdempotent: this is a command people re-run whenever they
 // create a sandbox, so it must not accumulate Include lines.
 func TestSSHConfigWriteIsIdempotent(t *testing.T) {
-	home, state, _ := runSSHConfigWrite(t, writeFakeServer())
-	configPath, _ := managedPaths(state)
+	home, state, _, serverURL := runSSHConfigWrite(t, writeFakeServer())
+	configPath, _ := managedPaths(t, state)
 	userConfigPath := filepath.Join(home, ".ssh", "config")
 	first := readFile(t, userConfigPath)
 
 	// Re-run in the same HOME/state.
-	server := writeFakeServer().start(t)
+
 	cmd := NewRootCommand()
 	cmd.SetOut(new(strings.Builder))
 	var errOut strings.Builder
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+	cmd.SetArgs([]string{"--server", serverURL, "--project", "project-1", "admin", "ssh-config", "--write"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("second execute: %v", err)
 	}
@@ -309,8 +319,6 @@ func TestSSHConfigWriteEmptiesTheConfigWhenTheProjectDoes(t *testing.T) {
 	state := t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
-	configPath, knownHostsPath := managedPaths(state)
-
 	// First a run with a sandbox, so there are stanzas to be replaced.
 	populated := writeFakeServer()
 	server := populated.start(t)
@@ -324,12 +332,15 @@ func TestSSHConfigWriteEmptiesTheConfigWhenTheProjectDoes(t *testing.T) {
 		}
 	}
 	run(server.URL)
+	configPath, knownHostsPath := managedPaths(t, state)
 	if !strings.Contains(readFile(t, configPath), "Host ") {
 		t.Fatal("setup did not write any stanzas")
 	}
 
-	emptied := &sshConfigFakeServer{ingress: sshConfigEnabledIngress, sandboxes: nil}
-	run(emptied.start(t).URL)
+	populated.mu.Lock()
+	populated.sandboxes = nil
+	populated.mu.Unlock()
+	run(server.URL)
 
 	config := readFile(t, configPath)
 	if strings.Contains(config, "Host ") {
@@ -358,12 +369,12 @@ func TestSSHConfigWriteIsScopedPerProject(t *testing.T) {
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 
-	// Two projects on two servers, each resolving to its own ID.
+	// Independent servers reuse both project and sandbox IDs.
 	first := writeFakeServer()
 	firstURL := first.start(t).URL
 	second := &sshConfigFakeServer{
 		ingress:   sshConfigEnabledIngress,
-		sandboxes: []sshConfigFakeSandbox{{id: "sbx_other000000001", name: "otherbox"}},
+		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "otherbox"}},
 	}
 	secondURL := second.start(t).URL
 
@@ -377,24 +388,23 @@ func TestSSHConfigWriteIsScopedPerProject(t *testing.T) {
 		}
 	}
 
-	// Both servers resolve project-1 to the same ID here, so this asserts the
-	// shape: one directory per resolved project, named after it.
-	configPath, _ := managedPaths(state)
-	if !strings.Contains(configPath, resolvedTestProjectID) {
-		t.Fatalf("managed config path is not project scoped: %s", configPath)
+	for _, url := range []string{firstURL, secondURL} {
+		namespace := sshConfigNamespace(url, resolvedTestProjectID)
+		configPath := filepath.Join(state, "discobox", "cli", "ssh", namespace, "config")
+		if !strings.Contains(readFile(t, configPath), url) {
+			t.Fatalf("config %s has another server's route", configPath)
+		}
+		if ssh, err := exec.LookPath("ssh"); err == nil {
+			host := sshConfigHost(namespace, "sbx_devbox00000001")
+			output, err := exec.CommandContext(t.Context(), ssh, "-G", "-F", filepath.Join(home, ".ssh", "config"), host).CombinedOutput()
+			if err != nil || !strings.Contains(string(output), "--server '"+url+"'") || !strings.Contains(string(output), "hostkeyalias "+namespace+".discobox.internal") {
+				t.Fatalf("qualified SSH alias %s resolved incorrectly: %v\n%s", host, err, output)
+			}
+		}
 	}
-	config := readFile(t, configPath)
-	if !strings.Contains(config, "project "+resolvedTestProjectID) {
-		t.Fatalf("the header should name the project it belongs to:\n%s", config)
-	}
-	// The Include names this project's file specifically, so adding a second
-	// project adds a line rather than rewriting the first one's.
 	userConfig := readFile(t, filepath.Join(home, ".ssh", "config"))
-	if strings.Count(userConfig, "Include ") != 1 {
-		t.Fatalf("same project written twice should keep one Include:\n%s", userConfig)
-	}
-	if !strings.Contains(userConfig, resolvedTestProjectID) {
-		t.Fatalf("the Include should name the project's own file:\n%s", userConfig)
+	if strings.Count(userConfig, "Include ") != 2 {
+		t.Fatalf("want two server/project Includes: %s", userConfig)
 	}
 }
 
@@ -446,7 +456,7 @@ func TestSSHConfigWriteDropsAnIncludeFromAnOldStateDirectory(t *testing.T) {
 			t.Fatalf("the rewrite dropped %q:\n%s", want, got)
 		}
 	}
-	config, _ := managedPaths(state)
+	config, _ := managedPaths(t, state)
 	if !strings.Contains(got, "Include "+config) {
 		t.Fatalf("the new Include is missing:\n%s", got)
 	}
@@ -520,8 +530,8 @@ func TestSSHConfigWriteIncludesAPathWithAPercentSign(t *testing.T) {
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 
+	server := writeFakeServer().start(t)
 	for range 2 {
-		server := writeFakeServer().start(t)
 		cmd := NewRootCommand()
 		cmd.SetOut(new(strings.Builder))
 		cmd.SetErr(new(strings.Builder))
@@ -531,7 +541,7 @@ func TestSSHConfigWriteIncludesAPathWithAPercentSign(t *testing.T) {
 		}
 	}
 
-	configPath, _ := managedPaths(state)
+	configPath, _ := managedPaths(t, state)
 	userConfig := readFile(t, filepath.Join(home, ".ssh", "config"))
 	// Quoted for the space and escaped for the percent sign, both at once.
 	want := `Include "` + strings.ReplaceAll(configPath, "%", "%%") + `"` + "\n"
@@ -551,7 +561,8 @@ func TestSSHConfigWriteRepairsAnUnescapedInclude(t *testing.T) {
 	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 
-	configPath, _ := managedPaths(state)
+	server := writeFakeServer().start(t)
+	configPath := filepath.Join(state, "discobox", "cli", "ssh", sshConfigNamespace(server.URL, resolvedTestProjectID), "config")
 	// What an older version left behind: this project's own line, another
 	// project's, and the user's own config after them.
 	otherProject := filepath.Join(filepath.Dir(filepath.Dir(configPath)), "prj_other", "config")
@@ -565,7 +576,6 @@ func TestSSHConfigWriteRepairsAnUnescapedInclude(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := writeFakeServer().start(t)
 	cmd := NewRootCommand()
 	cmd.SetOut(new(strings.Builder))
 	var errOut strings.Builder
@@ -595,5 +605,61 @@ func TestSSHConfigWriteRepairsAnUnescapedInclude(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "ssh could not read") {
 		t.Fatalf("stderr should report the lines it rewrote, got %q", errOut.String())
+	}
+}
+
+func TestSSHConfigWriteRetiresOnlyItsOwnLegacyRoute(t *testing.T) {
+	fake := writeFakeServer()
+	home, state, _, url := runSSHConfigWrite(t, fake)
+	current, _ := managedPaths(t, state)
+	original := readFile(t, current)
+	legacy, _ := legacyManagedPaths(state)
+	if err := os.MkdirAll(filepath.Dir(legacy), 0700); err != nil {
+		t.Fatal(err)
+	}
+	run := func() {
+		t.Helper()
+		cmd := NewRootCommand()
+		cmd.SetOut(new(strings.Builder))
+		cmd.SetErr(new(strings.Builder))
+		cmd.SetArgs([]string{"--server", url, "--project", "project-1", "admin", "ssh-config", "--write"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := strings.ReplaceAll(original, url, "https://another.example")
+	if err := os.WriteFile(legacy, []byte(other), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if got := readFile(t, legacy); !strings.Contains(got, "https://another.example") {
+		t.Fatalf("another route was retired: %s", got)
+	}
+	if err := os.WriteFile(legacy, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if got := readFile(t, legacy); strings.Contains(got, "\nHost ") || !strings.Contains(got, "Stanzas moved") {
+		t.Fatalf("legacy route not retired: %s", got)
+	}
+	fake.mu.Lock()
+	fake.sandboxes = nil
+	fake.mu.Unlock()
+	if err := os.WriteFile(legacy, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if got := readFile(t, legacy); strings.Contains(got, "\nHost ") {
+		t.Fatalf("empty project retained legacy stanzas: %s", got)
+	}
+	fake.mu.Lock()
+	fake.sandboxes = writeFakeServer().sandboxes
+	fake.mu.Unlock()
+	run()
+	if !strings.Contains(readFile(t, current), sshConfigHost(sshConfigNamespace(url, resolvedTestProjectID), "sbx_devbox00000001")) {
+		t.Fatal("rekey removed qualified alias")
+	}
+	if !strings.Contains(readFile(t, filepath.Join(home, ".ssh", "config")), current) {
+		t.Fatal("current Include missing")
 	}
 }

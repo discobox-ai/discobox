@@ -892,7 +892,7 @@ func TestEveryModalAsksTheTerminalForTheMouse(t *testing.T) {
 	}{
 		{"a dialog", func(t *testing.T, m *Model) {
 			send(t, m, keyPress("tab"))
-			drain(t, m, m.openTools(), 0)
+			drain(t, m, m.openTools(m.currentBox()), 0)
 		}},
 		{"the action menu", func(t *testing.T, m *Model) {
 			send(t, m, keyPress("tab"), keyPress("."))

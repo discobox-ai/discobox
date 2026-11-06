@@ -44,10 +44,10 @@ func archiveSent(t *testing.T, ds *fakeSource, id, cursorOn string) *Model {
 	m := newTestModel(t, ds)
 	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}})
 	m.list.folder = folder{} // every folder, so there are rows on both sides
-	if !m.listCursorTo(cursorOn) {
+	if !m.listCursorTo(Sandbox{ID: cursorOn}) {
 		t.Fatalf("%s is not listed", cursorOn)
 	}
-	_ = m.runVerb(VerbArchive, []string{id}, verbThen{})
+	_ = m.runVerb(VerbArchive, []Sandbox{{ID: id}}, verbThen{})
 	if got := m.list.current(); got == nil || got.ID != cursorOn {
 		t.Fatalf("the cursor is on %v once the archive went out, want it kept on %s", got, cursorOn)
 	}
@@ -93,7 +93,7 @@ func TestAListingOlderThanTheArchiveDoesNotBringTheRowBack(t *testing.T) {
 	if !m.listPoll.start(m.now()) {
 		t.Fatal("a read was already out")
 	}
-	m.Update(verbDoneMsg{verb: VerbArchive, ids: []string{"sbx_one"}, errs: []error{nil}})
+	m.Update(verbDoneMsg{verb: VerbArchive, targets: []Sandbox{{ID: "sbx_one"}}, errs: []error{nil}})
 	landed(m, testSandboxes())
 	if st, shown := listedState(m, "sbx_one"); st != StateArchived || shown {
 		t.Fatalf("a listing sent before the answer put the row back: state %q, shown %v", st, shown)
@@ -127,7 +127,7 @@ func TestAFailedArchivePutsTheRowBack(t *testing.T) {
 	}
 
 	m.listPoll.since = time.Now() // hold the answer's own refresh back
-	m.Update(verbDoneMsg{verb: VerbArchive, ids: []string{"sbx_one"}, errs: []error{errors.New("server said no")}})
+	m.Update(verbDoneMsg{verb: VerbArchive, targets: []Sandbox{{ID: "sbx_one"}}, errs: []error{errors.New("server said no")}})
 	if st, shown := listedState(m, "sbx_one"); st != StateRunning || !shown {
 		t.Fatalf("after a failed archive the row is %q, shown %v; want it back as running", st, shown)
 	}

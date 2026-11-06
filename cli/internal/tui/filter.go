@@ -50,6 +50,7 @@ type filterRow struct {
 // filterDialog is the card, opened on the filter as it stands with the cursor
 // on the first choice marked.
 func (m *Model) filterDialog() *dialog {
+	m.restorePaletteView()
 	// The tree's filter is the list's, whatever page is beside it.
 	config := m.onConfigScreen() && !m.listHasKeys()
 	p := &filterPicker{list: *m.list, config: config}

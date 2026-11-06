@@ -753,7 +753,7 @@ func TestARequestOnAnotherServerIsAnsweredThere(t *testing.T) {
 	ds.secretsOn = map[string][]Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}}
 	m := newTestModel(t, ds)
 
-	if pending := m.pendingFor("sbx_one"); len(pending) != 1 {
+	if pending := m.pendingFor(Sandbox{ID: "sbx_one", Server: "beta"}); len(pending) != 1 {
 		t.Fatalf("pending on beta's discobox = %v, want its request", pending)
 	}
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
