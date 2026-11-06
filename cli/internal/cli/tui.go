@@ -684,6 +684,9 @@ func (d *apiDataSource) listHere(ctx context.Context) ([]tui.Sandbox, error) {
 	hostID, _ := hostid.Get()
 	out := make([]tui.Sandbox, 0, len(sandboxes))
 	for _, sb := range sandboxes {
+		if err := sandboxcreate.CleanupConfirmedSources(ctx, d.app.serverURL, &sb); err != nil {
+			return nil, err
+		}
 		out = append(out, toTUISandbox(sb, hostID))
 	}
 	d.refreshHarnessChanges(ctx, out)
@@ -1265,8 +1268,8 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 			report(string(step))
 		}
 	}
-	sandbox, local, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, opts, step)
-	if err != nil {
+	sandbox, local, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, d.app.serverURL, opts, step)
+	if sandbox == nil {
 		return tui.Sandbox{}, err
 	}
 	// From here the discobox exists, so a failure still returns it: the
@@ -1276,20 +1279,23 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	if accepted != nil {
 		accepted(made)
 	}
-	// The local source is done as soon as it has been delivered, which for a
-	// directory that is not a repository means deleting the repository built
-	// over it. The defer covers the paths that never reach the delivery.
+	// Close releases temporary resources and delivery locks. Pending directory
+	// snapshots survive every failure until their aggregate delivery is confirmed.
 	defer local.Close()
+	projectID := sandbox.ProjectId
+	if err != nil {
+		return made, fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), d.app.sourceRetryCommand(projectID, sandbox.ID), err)
+	}
 	// A server that cannot reach this directory waits for us to push it.
 	gitServerURL, releaseGitServerURL, err := d.app.gitServerURL(ctx)
 	if err != nil {
-		return made, fmt.Errorf("discobox %s is awaiting source; retry with %s: %w", sandbox.ID, d.app.sourceRetryCommand(d.projectID, sandbox.ID), err)
+		return made, fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), d.app.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
-	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token, step, tuiCredentialDeliveryOptions(ctx, req.Credentials))
+	err = sandboxcreate.DeliverSource(ctx, d.client, projectID, sandbox, local, gitServerURL, d.app.token, step, tuiCredentialDeliveryOptions(ctx, req.Credentials))
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
-		return made, fmt.Errorf("discobox %s is awaiting source; retry with %s: %w", sandbox.ID, d.app.sourceRetryCommand(d.projectID, sandbox.ID), err)
+		return made, fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), d.app.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
 	if report != nil {
 		report("syncing SSH config")
@@ -1304,7 +1310,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 			report(fmt.Sprintf(format, args...))
 		}
 	})
-	if err := d.app.syncSSHConfigAfterCreate(ctx, d.client, d.projectID, notes); err != nil {
+	if err := d.app.syncSSHConfigAfterCreate(ctx, d.client, projectID, notes); err != nil {
 		return made, err
 	}
 	return made, nil

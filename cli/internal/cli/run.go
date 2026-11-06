@@ -427,25 +427,27 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		return err
 	}
 	report := func(step sandboxcreate.Step) { status.set(string(step)) }
-	sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
-	if err != nil {
+	sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, a.serverURL, parsedOpts, report)
+	if sandbox == nil {
 		return err
 	}
-	// The local source is done as soon as it has been delivered, which
-	// for a directory that is not a repository means deleting the
-	// repository built over it. The defer covers the paths that never
-	// reach the delivery.
+	// Close releases temporary resources and delivery locks. Pending directory
+	// snapshots survive every failure until their aggregate delivery is confirmed.
 	defer local.Close()
+	projectID = sandbox.ProjectId
+	if err != nil {
+		return fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), a.sourceRetryCommand(projectID, sandbox.ID), err)
+	}
 	// A server that cannot reach this directory waits for us to push it.
 	gitServerURL, releaseGitServerURL, err := a.gitServerURL(cmd.Context())
 	if err != nil {
-		return fmt.Errorf("discobox %s is awaiting source; retry with %s: %w", sandbox.ID, a.sourceRetryCommand(projectID, sandbox.ID), err)
+		return fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), a.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
 	err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report, credentialDeliveryOptions(cmd, status))
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
-		return fmt.Errorf("discobox %s is awaiting source; retry with %s: %w", sandbox.ID, a.sourceRetryCommand(projectID, sandbox.ID), err)
+		return fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), a.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
 	// Still under the status line, and named on it: the sync generates a key,
 	// enrolls it and rewrites two files, which is a wait like any other and the

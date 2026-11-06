@@ -242,7 +242,7 @@ sandbox create requests.
   so callers invoke it unconditionally. See the CLI design doc's "Origin and
   Source Delivery".
 - Delivery is also reachable from outside a create: `PendingSourcePushes`,
-  `NewLocalSources`, and `CheckDeliverable` let `discobox push` hand a discobox
+  `NewLocalSources`, `RecoverSource`, and `CheckDeliverable` let `discobox push` hand a discobox
   still owed its delivery — parked, or failed and repaired first — the source
   its create never delivered, out of the
   repositories still on the client — or, for a source that is a remote URL
@@ -251,20 +251,31 @@ sandbox create requests.
   same `DeliverSource`; only where the repositories come from differs — a create
   has just resolved them, a later delivery finds them again from each source's
   recorded local directory. See the CLI design doc's "Re-delivering Source".
-- A source directory in no Git repository gets a throwaway repository built over
-  it — after the user has been asked whether to copy it at all — and is
-  delivered out of that. Create returns every source's repository as
-  `LocalSources`, which delivery pushes out of and the caller closes; see the
-  CLI design doc's "A Directory That Is Not a Repository" and
-  [ADR 0045](../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).
+- A non-Git directory is captured in a temporary repository after copy consent.
+  Before create, `pending.go` publishes a self-contained bare repository and
+  versioned manifest under `<os.UserConfigDir()>/discobox/client/pending-sources`.
+  Both are private to this user, including Windows ACLs. All workspace captures (ordinary Git, unborn Git and non-Git) and
+  directory measurement exclude the pending store; explicit Git exclusion pathspecs
+  keep a source's .gitignore negations from re-exporting other snapshots. Entries record the
+  credential-free selected endpoint, project, host, source key/slug, original
+  directory, checkout/workspace identity and exact snapshot object. Create binds
+  them to the returned sandbox; interrupted binding requires one exact staged
+  match. `RecoverSource` owns lookup for attach, push and console recovery;
+  it never reads today's directory. Validation precedes repair and delivery.
+  `LocalSources.Close` releases temporary resources and locks, retaining pending
+  entries on cancellation, create ambiguity or delivery failure. Per-entry file
+  locks serialize retries with cleanup. Aggregate completion acknowledgment or
+  an authenticated `sourceDeliveredAt` reread permits cleanup; partial delivery,
+  archive state and elapsed time do not. Failure output names retained paths and
+  explains manual removal forfeits recovery. See ADR 26-11-05-928.
 - A source repository with no commits — an unborn HEAD, which is what `git init`
   leaves — is resolved into the same shape without building anything: the empty
   base commit, the snapshot, and their refs go into the user's own repository,
   no branch moves, and the source records `noLocalCommits` rather than
   `noLocalRepository`, so it stays deliverable afterwards. Nobody
-  is asked. The two questions about an unborn repository — is HEAD one, and
-  what does the working tree hold with no HEAD to read it against — come from
-  `internal/gitunborn`.
+  is asked. `internal/gitunborn` detects an unborn HEAD.
+  `captureWorkspaceTree` snapshots all workspaces through a temporary index
+  seeded from the pinned base, excluding private pending-source data.
   See the CLI design doc's "A Repository With No Commits" and
   [ADR 0083](../../../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md).
 - A source repository whose `.git` is not a real directory — a linked worktree

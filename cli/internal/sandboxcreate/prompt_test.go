@@ -46,7 +46,7 @@ func (f *fakeCreator) CreateSandbox(_ context.Context, body *apimodel.CreateSand
 // user's to see.
 func TestCreatePromptSandboxRetriesAGeneratedNameConflict(t *testing.T) {
 	creator := &fakeCreator{conflicts: 2}
-	sandbox, local, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil)
+	sandbox, local, err := CreatePromptSandbox(context.Background(), creator, "project-1", "http://example.test", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil)
 	if err != nil {
 		t.Fatalf("create prompt sandbox: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestCreatePromptSandboxRetriesAGeneratedNameConflict(t *testing.T) {
 // from becoming an infinite loop of sandbox creations.
 func TestCreatePromptSandboxGivesUpOnAPersistentConflict(t *testing.T) {
 	creator := &fakeCreator{conflicts: 100}
-	_, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil)
+	_, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", "http://example.test", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil)
 	if err == nil {
 		t.Fatal("expected a persistent conflict to surface")
 	}
@@ -86,7 +86,7 @@ func TestCreatePromptSandboxGivesUpOnAPersistentConflict(t *testing.T) {
 // ours to fix by renaming.
 func TestCreatePromptSandboxDoesNotRetryOtherFailures(t *testing.T) {
 	creator := &fakeCreator{conflicts: 100, status: http.StatusBadRequest}
-	if _, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil); err == nil {
+	if _, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", "http://example.test", PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t)}, nil); err == nil {
 		t.Fatal("expected the error to surface")
 	}
 	if len(creator.names) != 1 {
@@ -239,14 +239,14 @@ func TestInlineSecretsAreReportedOnlyOnceCreated(t *testing.T) {
 	opts := PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t), NoSource: true,
 		Secret: []string{"DB_PASS=hunter2@corp.example"}, ReportInlineSecret: func(line string) { said = append(said, line) }}
 
-	if _, _, err := CreatePromptSandbox(context.Background(), &fakeCreator{conflicts: 100, status: http.StatusBadRequest}, "project-1", opts, nil); err == nil {
+	if _, _, err := CreatePromptSandbox(context.Background(), &fakeCreator{conflicts: 100, status: http.StatusBadRequest}, "project-1", "http://example.test", opts, nil); err == nil {
 		t.Fatal("expected the failure to surface")
 	}
 	if len(said) != 0 {
 		t.Fatalf("said %q for a create that failed", said)
 	}
 
-	_, local, err := CreatePromptSandbox(context.Background(), &fakeCreator{}, "project-1", opts, nil)
+	_, local, err := CreatePromptSandbox(context.Background(), &fakeCreator{}, "project-1", "http://example.test", opts, nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -254,4 +254,8 @@ func TestInlineSecretsAreReportedOnlyOnceCreated(t *testing.T) {
 	if len(said) != 1 || said[0] != "DB_PASS: stored, sent to corp.example" {
 		t.Fatalf("said %q, want where DB_PASS is sent", said)
 	}
+}
+
+func (f *fakeCreator) GetProject(_ context.Context, _ apiclientgen.GetProjectParams) (apiclientgen.GetProjectRes, error) {
+	return &apimodel.Project{ID: "project-1"}, nil
 }

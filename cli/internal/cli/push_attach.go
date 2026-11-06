@@ -144,6 +144,9 @@ func (a *App) deliverOwedSource(ctx context.Context, client *apiclientgen.Client
 	if err != nil {
 		return err
 	}
+	if err := sandboxcreate.CleanupConfirmedSources(ctx, a.serverURL, sandbox); err != nil {
+		return err
+	}
 	// A machine with no resolvable identity delivers nothing, which is the
 	// answer it gives for a discobox created somewhere else; see pushable.
 	hostID, _ := hostid.Get()
@@ -163,6 +166,11 @@ func (a *App) deliverOwedSource(ctx context.Context, client *apiclientgen.Client
 	_, err = a.deliverParkedSource(ctx, client, projectID, sandbox, sandboxcreate.PendingSourcePushes(sandbox), hostID, gitServerURL, nil, step, options)
 	if err == nil || errors.Is(err, context.Canceled) {
 		return err
+	}
+	for _, entry := range sandboxcreate.PendingSourcePushes(sandbox) {
+		if entry.Source.NoLocalRepository.Or(false) {
+			return fmt.Errorf("the discobox is still waiting for its source: %w", err)
+		}
 	}
 	return fmt.Errorf("the discobox is still waiting for its source, and it could not be delivered from here: %w; `discobox push --dir SLUG=PATH` delivers it from another directory", err)
 }

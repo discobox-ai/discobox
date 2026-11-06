@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 )
 
@@ -43,12 +44,24 @@ func MeasureDirectory(ctx context.Context, dir string) *DirectoryWalk {
 	walk := &DirectoryWalk{stop: cancel}
 	go func() {
 		defer cancel()
-		_ = filepath.WalkDir(dir, func(_ string, entry fs.DirEntry, err error) error {
+		exclude, err := recoveryExclusion(dir)
+		if err != nil {
+			return
+		}
+		excluded := filepath.Join(dir, exclude)
+
+		_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 			if ctx.Err() != nil {
 				return filepath.SkipAll
 			}
 			if err != nil {
 				if entry != nil && entry.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if exclude != "" && (path == excluded || strings.HasPrefix(path, excluded+string(filepath.Separator))) {
+				if entry.IsDir() {
 					return fs.SkipDir
 				}
 				return nil
