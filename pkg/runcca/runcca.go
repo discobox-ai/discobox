@@ -313,7 +313,7 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 			continue // the container brought its own; leave it alone
 		}
 		dst := path.Join(staging, store.dir)
-		if err := seedTrustStore(path.Join(rootfs, store.dir), dst, store, ca, cfg); err != nil {
+		if err := seedTrustStore(rootfs, dst, store, ca, cfg); err != nil {
 			return changed, installed, err
 		}
 		if installed == "" {
@@ -410,16 +410,16 @@ func specRootPath(spec map[string]any, bundleDir string) string {
 // seedTrustStore copies an image's trust store into staging and appends the
 // MITM CA to its aggregate bundle, preserving whatever CAs the image shipped
 // rather than replacing them.
-func seedTrustStore(src, dst string, store trustStore, ca []byte, cfg Config) error {
+func seedTrustStore(rootfs, dst string, store trustStore, ca []byte, cfg Config) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return fmt.Errorf("create staging dir %s: %w", dst, err)
 	}
-	if err := copyTree(src, dst); err != nil {
+	if err := copyTree(path.Join(rootfs, store.dir), dst); err != nil {
 		return err
 	}
 
 	bundle := path.Join(dst, store.bundle)
-	body, err := os.ReadFile(bundle)
+	body, err := readImageBundle(rootfs, path.Join(store.dir, store.bundle))
 	switch {
 	case err == nil:
 		// The image has its own bundle: keep it and append ours.
@@ -441,11 +441,63 @@ func seedTrustStore(src, dst string, store trustStore, ca []byte, cfg Config) er
 	default:
 		return fmt.Errorf("read image bundle %s: %w", bundle, err)
 	}
+	// Materialize the aggregate bundle: its image symlink may point outside
+	// the copied directory, or be absolute. Never write through that link.
+	if err := os.Remove(bundle); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove staged bundle %s: %w", bundle, err)
+	}
 	//nolint:gosec // A CA bundle is public and must be readable by every user in the container.
 	if err := os.WriteFile(bundle, body, 0o644); err != nil {
 		return fmt.Errorf("write staged bundle %s: %w", bundle, err)
 	}
 	return nil
+}
+
+// readImageBundle resolves links with container semantics: absolute links
+// start at the image root, and .. cannot climb above it. Root confines every
+// filesystem operation even if the image changes while links are resolved.
+func readImageBundle(rootfs, name string) ([]byte, error) {
+	root, err := os.OpenRoot(rootfs)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	pending := strings.Split(name, "/")
+	resolved := "."
+	links := 0
+	for len(pending) > 0 {
+		component := pending[0]
+		pending = pending[1:]
+		switch component {
+		case "", ".":
+			continue
+		case "..":
+			resolved = path.Dir(resolved)
+			continue
+		}
+		next := path.Join(resolved, component)
+		info, err := root.Lstat(next)
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			resolved = next
+			continue
+		}
+		links++
+		if links > 40 {
+			return nil, fmt.Errorf("too many symlinks in image bundle %s", name)
+		}
+		target, err := root.Readlink(next)
+		if err != nil {
+			return nil, err
+		}
+		if path.IsAbs(target) {
+			resolved = "."
+		}
+		pending = append(strings.Split(target, "/"), pending...)
+	}
+	return root.ReadFile(resolved)
 }
 
 // copyTree copies a trust-store directory's entries. Symlinks are recreated as
