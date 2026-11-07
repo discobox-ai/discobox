@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) | Initial pool bootstrap waits on work evidence | Proposed (narrows 26-10-12-711 §6 and 0039 tier-1 stall rule for bounded initial-bootstrap operations; explicit-start and upgrade ceilings remain) |
 | [26-11-06-567](26-11-06-567-the-local-socket-follows-tmpdir-and-a-dev-shell-pins-its-address.md) | The local socket follows TMPDIR, and a development shell pins its address | Accepted (supersedes 26-11-04-074 §1 and 26-11-05-240; 26-11-04-074 §§2–4 remain) |
 | [26-11-06-970](26-11-06-970-docker-activation-waits-for-configuration-not-feature-completion.md) | Docker activation waits for configuration, not feature completion | Accepted |
 | [26-11-06-664](26-11-06-664-common-apt-packages-are-built-into-the-docker-base-before-development-binaries.md) | Common apt packages are built into the Docker base before development binaries | Accepted |
