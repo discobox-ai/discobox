@@ -1,0 +1,108 @@
+#!/bin/sh
+# npm-global install PACKAGE... — install npm packages for every user of the
+# box: with the npm the node feature chose, into Discobox's own prefix, and
+# each command they bring linked into /usr/local/bin.
+# npm-global check PACKAGE... — exit 0 only when each is still installed
+# there and each of its commands is the one /usr/local/bin has.
+#
+# Never npm's default global prefix, and never an npm found on PATH: on a box
+# whose image put one user's nvm ahead of the system's (boxd links
+# /usr/local/bin/npm into /home/boxd), both lead into a home the sandbox user
+# cannot read, and the package installed is one nobody else can run. The npm
+# is the record's (/usr/local/lib/discobox/node.env, written by the node
+# feature's select step), run with the chosen node's directory first on PATH,
+# since npm and a package's install scripts run `node` by name. The prefix is
+# the record's too, /usr/local/lib/discobox/npm; npm puts each package's
+# commands in its bin/, and link-command makes /usr/local/bin's entries for
+# them, moving aside what the box had at those names.
+#
+# Provisioning also runs after boot, when ~/.npm may be a shared cache mount,
+# so the install uses a private cache it removes, and never that one.
+#
+# DISCOBOX_NODE_ENV and DISCOBOX_LINK_COMMAND move its fixed paths, for tests.
+set -eu
+
+record=${DISCOBOX_NODE_ENV:-/usr/local/lib/discobox/node.env}
+link_command=${DISCOBOX_LINK_COMMAND:-/usr/local/libexec/discobox/link-command}
+
+usage() {
+  echo "usage: npm-global install|check PACKAGE..." >&2
+  exit 2
+}
+[ $# -ge 2 ] || usage
+mode=$1
+shift
+
+DISCOBOX_NODE=
+DISCOBOX_NPM=
+DISCOBOX_NPM_PREFIX=
+if [ ! -r "$record" ]; then
+  echo "npm-global: $record is not there: the node feature has not chosen a Node" >&2
+  exit 1
+fi
+# shellcheck source=/dev/null
+. "$record"
+: "${DISCOBOX_NODE:?$record names no DISCOBOX_NODE}"
+: "${DISCOBOX_NPM:?$record names no DISCOBOX_NPM}"
+prefix=${DISCOBOX_NPM_PREFIX:?$record names no DISCOBOX_NPM_PREFIX}
+
+# name_of PACKAGE is the package's name without a version or tag:
+# @scope/name@1.2.3 is @scope/name.
+name_of() {
+  case $1 in
+  @*/*@*) printf '%s' "${1%@*}" ;;
+  @*) printf '%s' "$1" ;;
+  *@*) printf '%s' "${1%%@*}" ;;
+  *) printf '%s' "$1" ;;
+  esac
+}
+
+# commands_of NAME prints each command npm put in the prefix's bin/ for the
+# package installed as NAME: npm makes each a link into the package's own
+# directory, whatever its package.json calls it.
+commands_of() {
+  package_dir=$(cd "$prefix/lib/node_modules/$1" && pwd -P)
+  for command in "$prefix"/bin/*; do
+    [ -L "$command" ] || continue
+    resolved=$(readlink -f "$command") || continue
+    case $resolved in
+    "$package_dir"/*) printf '%s\n' "${command##*/}" ;;
+    esac
+  done
+}
+
+case $mode in
+install)
+  npm_config_cache=$(mktemp -d)
+  export npm_config_cache
+  trap 'rm -rf "$npm_config_cache"' EXIT
+  mkdir -p "$prefix"
+  PATH=${DISCOBOX_NODE%/*}:$PATH "$DISCOBOX_NPM" install --global --prefix "$prefix" "$@"
+  for package in "$@"; do
+    name=$(name_of "$package")
+    linked=
+    for command in $(commands_of "$name"); do
+      "$link_command" "$prefix/bin/$command" "$command"
+      linked=1
+    done
+    if [ -z "$linked" ]; then
+      echo "npm-global: $name put no command in $prefix/bin" >&2
+      exit 1
+    fi
+  done
+  ;;
+check)
+  for package in "$@"; do
+    name=$(name_of "$package")
+    [ -r "$prefix/lib/node_modules/$name/package.json" ] || exit 1
+    commands=$(commands_of "$name")
+    [ -n "$commands" ] || exit 1
+    for command in $commands; do
+      "$link_command" --check "$prefix/bin/$command" "$command"
+    done
+  done
+  ;;
+*)
+  usage
+  ;;
+esac

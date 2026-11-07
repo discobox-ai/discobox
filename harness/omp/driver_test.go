@@ -163,7 +163,7 @@ func TestImagePolicy(t *testing.T) {
 			t.Errorf("the feature installs %s at %q, want %q", source, got, want)
 		}
 	}
-	if !feature.Runs(t, "ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install -g @oh-my-pi/pi-coding-agent") {
+	if !feature.Runs(t, "export ONNXRUNTIME_NODE_INSTALL_CUDA=skip\nexec /usr/local/libexec/discobox/npm-global install @oh-my-pi/pi-coding-agent") {
 		t.Error("the feature does not install omp with onnxruntime's CUDA download skipped")
 	}
 	if !strings.Contains(readFile(t, "agent.conf"), "AGENT_BIN=omp\n") {

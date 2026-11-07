@@ -3,8 +3,16 @@
 # runs and keeps it across restarts, `refresh` advances the store on a stamp,
 # and `discobox-harness-upgrade` is the by-hand "now". The store is inert
 # without a harness's agent.conf.
+#
+# Which Node runs is the adopt check's: the box's own when it passes, ours
+# (NodeSource's) when not. Where what Discobox installs with npm goes is
+# always ours: /usr/local/lib/discobox/npm, with the chosen npm, by
+# npm-global, never npm's default global prefix and never an npm found on
+# PATH. select records the choice and links it; everything after it, the
+# harnesses' CLIs among them, reads the record.
 apiVersion: discobox.ai/provision/v1
 async: true
+requires: [core]
 commands: [node, npm, npx, pnpm]
 adopt:
   commands: [node, npm]
@@ -15,7 +23,15 @@ steps:
     install: true
     apt: true
     run: install-node.sh
+  # The chosen Node, recorded in /usr/local/lib/discobox/node.env and linked
+  # into /usr/local/bin, adopted or installed.
+  - name: select
+    check: check-node.sh
+    run: select-node.sh
+  - name: npm-global
+    file: {path: /usr/local/libexec/discobox/npm-global, source: npm-global, mode: "0755"}
   - name: pnpm
+    check: check-pnpm.sh
     run: install-pnpm.sh
   - name: agent-store
     file: {path: /usr/local/bin/discobox-agent-store, source: agent-store, mode: "0755"}

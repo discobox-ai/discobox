@@ -4,6 +4,8 @@
 # are pinned, their version and checksums moving together.
 apiVersion: discobox.ai/provision/v1
 async: true
+# For link-command.
+requires: [core]
 commands: [nvim, nu, fresh]
 steps:
   - name: packages

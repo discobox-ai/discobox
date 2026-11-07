@@ -40,6 +40,9 @@ type box struct {
 	binDir string
 	conf   string
 	imgDir string
+	// nodeEnv is the node feature's record of the npm the box runs: the
+	// stub, which is on no PATH, so a call that looked npm up would miss it.
+	nodeEnv string
 }
 
 const (
@@ -65,6 +68,7 @@ func newBox(t *testing.T, store, imageVersion string) *box {
 	b.npmLog = filepath.Join(b.binDir, "npm.log")
 	b.imgDir = filepath.Join(t.TempDir(), "node_modules")
 	b.conf = filepath.Join(t.TempDir(), "agent.conf")
+	b.nodeEnv = filepath.Join(t.TempDir(), "node.env")
 
 	if imageVersion != "" {
 		writeFile(t, filepath.Join(b.imgDir, agentPackage, "package.json"),
@@ -73,6 +77,8 @@ func newBox(t *testing.T, store, imageVersion string) *box {
 	writeFile(t, b.conf, fmt.Sprintf("AGENT_PACKAGE=%s\nAGENT_BIN=%s\nAGENT_IMAGE_DIRS=%s\n",
 		agentPackage, agentBin, b.imgDir), 0o644)
 	b.writeNPMStub()
+	writeFile(t, b.nodeEnv, fmt.Sprintf("DISCOBOX_NODE=%s\nDISCOBOX_NPM=%s\nDISCOBOX_NPM_PREFIX=%s\n",
+		filepath.Join(b.binDir, "node"), filepath.Join(b.binDir, "npm"), filepath.Join(t.TempDir(), "prefix")), 0o644)
 	// The store lives at a fixed path under HOME, so point HOME's copy at the
 	// shared directory the test owns — that is exactly what the cache volume
 	// does at boot.
@@ -148,16 +154,22 @@ func (b *box) run(args ...string) string {
 	b.t.Helper()
 	//nolint:gosec // The command is the image's own script and arguments this test wrote.
 	cmd := exec.CommandContext(b.t.Context(), "sh", append([]string{absScript(b.t)}, args...)...)
-	cmd.Env = append(os.Environ(),
-		"HOME="+b.home,
-		"PATH="+b.binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"DISCOBOX_AGENT_CONF="+b.conf,
-	)
+	cmd.Env = b.env()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		b.t.Fatalf("agent-store %v: %v\n%s", args, err, out)
 	}
 	return string(out)
+}
+
+// env is the script's environment: the box's HOME, its agent.conf, and the
+// node feature's record. The npm stub is on no PATH.
+func (b *box) env() []string {
+	return append(os.Environ(),
+		"HOME="+b.home,
+		"DISCOBOX_AGENT_CONF="+b.conf,
+		"DISCOBOX_NODE_ENV="+b.nodeEnv,
+	)
 }
 
 // runFailing runs the script expecting it to fail, and returns what it said on
@@ -167,11 +179,7 @@ func (b *box) runFailing(args ...string) string {
 	b.t.Helper()
 	//nolint:gosec // The command is the image's own script and arguments this test wrote.
 	cmd := exec.CommandContext(b.t.Context(), "sh", append([]string{absScript(b.t)}, args...)...)
-	cmd.Env = append(os.Environ(),
-		"HOME="+b.home,
-		"PATH="+b.binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"DISCOBOX_AGENT_CONF="+b.conf,
-	)
+	cmd.Env = b.env()
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		b.t.Fatalf("agent-store %v succeeded, want it to report failure\n%s", args, out)
@@ -534,6 +542,48 @@ func TestNoAgentConfIsSilentlyNothing(t *testing.T) {
 		if out := b.run(arg); out != "" {
 			t.Fatalf("%s said %q on an image with no agent, want silence", arg, out)
 		}
+	}
+}
+
+// With no AGENT_IMAGE_DIRS, the image's own copy is the one its harness
+// installed into Discobox's npm prefix, which the node feature's record
+// names — not npm's default global prefix, which on a box whose image links
+// npm into one user's nvm is that user's.
+func TestTheImageVersionIsReadFromDiscoboxsNPMPrefix(t *testing.T) {
+	t.Parallel()
+	store := t.TempDir()
+	seedVersion(t, store, "2.1.0")
+	b := newBox(t, store, "")
+	prefix := filepath.Join(t.TempDir(), "npm")
+	writeFile(t, b.conf, fmt.Sprintf("AGENT_PACKAGE=%s\nAGENT_BIN=%s\n", agentPackage, agentBin), 0o644)
+	writeFile(t, b.nodeEnv, fmt.Sprintf("DISCOBOX_NODE=%s\nDISCOBOX_NPM=%s\nDISCOBOX_NPM_PREFIX=%s\n",
+		filepath.Join(b.binDir, "node"), filepath.Join(b.binDir, "npm"), prefix), 0o644)
+	writeFile(t, filepath.Join(prefix, "lib", "node_modules", agentPackage, "package.json"),
+		"{\n  \"name\": \""+agentPackage+"\",\n  \"version\": \"2.0.0\"\n}\n", 0o644)
+
+	if out := b.run("status"); !strings.Contains(out, "image:   2.0.0\n") {
+		t.Fatalf("status = %q, want the prefix's 2.0.0 as the image's version", out)
+	}
+	b.run("pin")
+	if got := b.pinnedVersion(); got != "2.1.0" {
+		t.Fatalf("pinned %q, want the store's 2.1.0, newer than the prefix's 2.0.0", got)
+	}
+}
+
+// A box with no record of the npm the node feature chose fetches nothing, and
+// never falls back to an npm on PATH: upgrade says why.
+func TestNoNodeRecordFetchesNothing(t *testing.T) {
+	t.Parallel()
+	b := newBox(t, t.TempDir(), "2.0.0")
+	b.publish("2.1.0")
+	b.nodeEnv = filepath.Join(t.TempDir(), "absent.env")
+
+	b.run("refresh", "--force")
+	if out := b.runFailing("upgrade"); !strings.Contains(out, "no npm to fetch claude with") {
+		t.Fatalf("upgrade said %q, want it to name the missing record", out)
+	}
+	if calls := b.npmCalls(); len(calls) != 0 {
+		t.Fatalf("npm was run %v with no record naming it", calls)
 	}
 }
 

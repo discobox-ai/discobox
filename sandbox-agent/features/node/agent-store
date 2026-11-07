@@ -63,11 +63,33 @@ fi
 AGENT_PACKAGE=
 AGENT_BIN=
 # AGENT_IMAGE_DIRS is the space-separated list of global node_modules
-# directories to look for the image's own copy in. Images that install an agent
-# where npm's root prefixes are not may set it; ours do not.
+# directories to look for the image's own copy in. Unset, it is the one the
+# box's harness installed its agent into: Discobox's npm prefix, as the node
+# feature's record names it. A harness installing its agent elsewhere may set
+# it; ours do not.
 AGENT_IMAGE_DIRS=
 # shellcheck source=/dev/null
 . "$conf"
+
+# The Node the node feature chose, and Discobox's npm prefix, from its record
+# (npm-global): npm is run by the record's path, with the chosen node first on
+# PATH, never looked up — on PATH it may be one user's nvm, or one the user
+# put there for their own work. A box with no record has no npm this can run:
+# pin falls back to what the image ships, and a refresh fails.
+node_env=${DISCOBOX_NODE_ENV:-/usr/local/lib/discobox/node.env}
+DISCOBOX_NODE=
+DISCOBOX_NPM=
+DISCOBOX_NPM_PREFIX=
+if [ -r "$node_env" ]; then
+	# shellcheck source=/dev/null
+	. "$node_env"
+fi
+# npm runs `node` by name, so the chosen node's directory goes first on the
+# PATH every npm here runs with.
+npm_path=$PATH
+if [ -n "$DISCOBOX_NODE" ]; then
+	npm_path=${DISCOBOX_NODE%/*}:$PATH
+fi
 
 if [ -z "$AGENT_PACKAGE" ] || [ -z "$AGENT_BIN" ]; then
 	printf 'discobox-agent-store: %s declares no AGENT_PACKAGE/AGENT_BIN\n' "$conf" >&2
@@ -88,7 +110,13 @@ link=$HOME/.local/bin/$AGENT_BIN
 image_version() {
 	# Deliberately word-split: the setting is a search path, not one directory.
 	# shellcheck disable=SC2086
-	set -- ${AGENT_IMAGE_DIRS:-/usr/lib/node_modules /usr/local/lib/node_modules}
+	if [ -n "$AGENT_IMAGE_DIRS" ]; then
+		set -- $AGENT_IMAGE_DIRS
+	elif [ -n "$DISCOBOX_NPM_PREFIX" ]; then
+		set -- "$DISCOBOX_NPM_PREFIX/lib/node_modules"
+	else
+		return 0
+	fi
 	for image_dir in "$@"; do
 		if [ -r "$image_dir/$AGENT_PACKAGE/package.json" ]; then
 			# `q` after the first match rather than `| head -1`: this runs in
@@ -316,7 +344,7 @@ fetch() {
 	rm -rf "${dir:?}/${1:?}" 2>/dev/null || true
 	tmp=$dir/.tmp-$$
 	rm -rf "$tmp"
-	if ! timeout 1800 npm install -g --prefix "$tmp" "$AGENT_PACKAGE@$1" >/dev/null 2>&1; then
+	if ! timeout 1800 env PATH="$npm_path" "$DISCOBOX_NPM" install -g --prefix "$tmp" "$AGENT_PACKAGE@$1" >/dev/null 2>&1; then
 		rm -rf "$tmp"
 		return 1
 	fi
@@ -348,6 +376,7 @@ fetch() {
 # exit status, because "nothing happened" has several causes and `upgrade` has
 # to tell a person which one it hit:
 #
+#   nonpm       the box has no record of the npm the node feature chose
 #   windowed    the check window has not passed; the registry was not asked
 #   busy        another sandbox holds the store lock
 #   unreachable the registry did not answer
@@ -360,6 +389,10 @@ refresh_outcome=
 refresh_latest=
 
 cmd_refresh() {
+	if [ -z "$DISCOBOX_NPM" ]; then
+		refresh_outcome=nonpm
+		return 0
+	fi
 	mkdir -p "$dir"
 	exec 9>"$dir/.lock"
 	if [ "$1" = force ]; then
@@ -384,7 +417,7 @@ cmd_refresh() {
 		return 0
 	fi
 
-	latest=$(timeout 60 npm view "$AGENT_PACKAGE" version 2>/dev/null | tr -d '[:space:]') || latest=
+	latest=$(timeout 60 env PATH="$npm_path" "$DISCOBOX_NPM" view "$AGENT_PACKAGE" version 2>/dev/null | tr -d '[:space:]') || latest=
 	# Stamped on the attempt, not on its success: the registry query is the
 	# thing being rate-limited, and a sandbox with no way out should not ask
 	# again at every login. A download that fails leaves the version absent,
@@ -416,6 +449,10 @@ cmd_upgrade() {
 	# the registry was never reached is the one answer a person cannot act on,
 	# and it is what every one of these used to print.
 	case $refresh_outcome in
+	nonpm)
+		printf 'discobox: this box has no npm to fetch %s with: the node feature has not recorded one in %s.\n' "$AGENT_BIN" "$node_env" >&2
+		return 1
+		;;
 	busy)
 		printf 'discobox: another sandbox is fetching a new %s; try again shortly.\n' "$AGENT_BIN" >&2
 		return 1

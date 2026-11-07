@@ -1,0 +1,111 @@
+#!/bin/sh
+# link-command [--check] TARGET [NAME] — put a command a feature installed on
+# every user's PATH: /usr/local/bin/NAME (TARGET's own name by default), a
+# link to TARGET.
+# link-command --aside NAME — take a name off every user's PATH: what the box
+# has at /usr/local/bin/NAME is moved aside, and nothing is linked there. For
+# a name that belongs with a copy a feature refused and has no counterpart in
+# the feature's own: the refused Node's corepack, beside an installed Node
+# that ships none.
+#
+# A feature installs into a prefix of its own (/usr/local/lib/discobox/<tool>)
+# and links from there, never into a tool's default prefix and never through
+# whatever a box already has at the name. /usr/local/bin is ahead of /usr/bin
+# on every PATH, so a box's own entry there — a link into one user's home, a
+# dangling link, an older copy the feature's adopt check refused — would
+# shadow the feature's. So the name is Discobox's: what the box had there is
+# moved aside, never deleted, to /usr/local/lib/discobox/displaced/ under its
+# own path (a later one numbered after it), and said on stderr, which is the
+# step's feature log. A link already into /usr/local/lib/discobox/ is one a
+# step laid before, and is replaced in place.
+#
+# With --check it changes nothing, and exits 0 only when the link is in place
+# and TARGET can be run: what a step's check runs, so a box whose command
+# went missing or was shadowed again is linked again at its next boot.
+#
+# DISCOBOX_BIN_DIR, DISCOBOX_OWN_DIR and DISCOBOX_DISPLACED_DIR move the
+# directories, for tests.
+set -eu
+
+bin=${DISCOBOX_BIN_DIR:-/usr/local/bin}
+own=${DISCOBOX_OWN_DIR:-/usr/local/lib/discobox}
+displaced=${DISCOBOX_DISPLACED_DIR:-$own/displaced}
+
+# displace LINK WHY moves what is at LINK aside, saying WHY; a link of
+# Discobox's own is only removed.
+displace() {
+  if [ -L "$1" ]; then
+    case $(readlink "$1") in
+    "$own"/*)
+      rm -f "$1"
+      return
+      ;;
+    esac
+  fi
+  [ -e "$1" ] || [ -L "$1" ] || return 0
+  aside=$displaced$1
+  n=0
+  while [ -e "$aside" ] || [ -L "$aside" ]; do
+    n=$((n + 1))
+    aside=$displaced$1.$n
+  done
+  mkdir -p "${aside%/*}"
+  what=$1
+  if [ -L "$1" ]; then
+    what="$1 (a link to $(readlink "$1"))"
+  fi
+  mv "$1" "$aside"
+  echo "link-command: moved the box's $what aside to $aside: $2" >&2
+}
+
+if [ "${1-}" = --aside ]; then
+  if [ $# -ne 2 ]; then
+    echo "usage: link-command --aside NAME" >&2
+    exit 2
+  fi
+  displace "$bin/$2" "$2 is not on every user's PATH"
+  exit 0
+fi
+
+check=
+if [ "${1-}" = --check ]; then
+  check=1
+  shift
+fi
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "usage: link-command [--check] TARGET [NAME] | --aside NAME" >&2
+  exit 2
+fi
+target=$1
+name=${2:-${target##*/}}
+link=$bin/$name
+
+case $target in
+/*) ;;
+*)
+  echo "link-command: $target is not an absolute path" >&2
+  exit 2
+  ;;
+esac
+
+# The command is already where every user finds it: nothing to link.
+if [ "$target" = "$link" ]; then
+  [ -x "$target" ]
+  exit
+fi
+
+if [ -L "$link" ] && [ "$(readlink "$link")" = "$target" ]; then
+  [ -x "$target" ]
+  exit
+fi
+if [ -n "$check" ]; then
+  exit 1
+fi
+if [ ! -x "$target" ]; then
+  echo "link-command: $target is not an executable to link" >&2
+  exit 1
+fi
+
+displace "$link" "$name is $target"
+mkdir -p "$bin"
+ln -s "$target" "$link"

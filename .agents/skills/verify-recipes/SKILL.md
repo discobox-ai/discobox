@@ -977,6 +977,10 @@ d exec <box> -- cat /run/discobox/provision.json
   apt resolving an alternative another feature used to satisfy.
 - `new -d -H <id> --no-source` reaches a login harness's CLI, signed out, in
   a box of its bundle without credentials.
+- To run a harness's own steps (its `install-cli.sh`, `check-cli.sh`) on a
+  boxd-like box, link `/usr/local/bin/{node,npm,<cli>}` into a `/home/boxd` at
+  0750 in such a box and stop/start it: the steps' checks see the drift at the
+  next boot.
 
 # Verifying a feature's Ubuntu path
 

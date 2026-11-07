@@ -1034,8 +1034,13 @@ signer. Error output never includes exporter stderr or parse fragments.
   mid-fetch (ADR 0108) loses a temp directory rather than a version. The script
   is shell, in the image, rather than anything the agent runs: its whole
   vocabulary is symlinks, version directories and npm, and nothing outside the
-  sandbox reads or decides any of it. `sandbox-agent/agentstore` exists to test
-  it.
+  sandbox reads or decides any of it. The npm it fetches with, and the prefix
+  it reads the image's own copy from, are the node feature's record
+  (`/usr/local/lib/discobox/node.env`), never an npm on PATH
+  ([`provision`](provision/DESIGN.md#where-a-feature-installs)).
+  `sandbox-agent/agentstore` exists to test it, and
+  `sandbox-agent/featurescripts` the features' scripts that choose where a
+  tool goes and what PATH finds.
 - Run identity is owned by [`runuser`](runuser/DESIGN.md): one call resolves who
   a process runs as, so nothing re-derives it. `execs.User` is that package's
   type. `execs.Manager.ResolveUser` is the entry point for execs and terminals —
