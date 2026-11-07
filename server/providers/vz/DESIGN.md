@@ -97,6 +97,12 @@ full-close fallback, which is correct. Nothing the engine does over this client
 — container lifecycle, BuildKit's grpc session, TTY console attach — needs a
 half-close.
 
+VSOCK connect and listen failures in `NSPOSIXErrorDomain` expose the native
+errno through a Go `net.OpError`, preserving the framework error and the VM
+name and port. Callers can recognize a refused or reset connection with
+`errors.Is` and use the same recovery path as other transports. Other NSError
+domains retain their own meaning and are not translated to POSIX errors.
+
 The IP network exists only for the guest's own outbound traffic. It is the
 framework's NAT attachment, which also serves DHCP and DNS; the guest takes its
 address from the lease. Bridged networking is not used: it needs the

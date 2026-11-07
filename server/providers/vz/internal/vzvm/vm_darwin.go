@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Code-Hex/vz/v3"
@@ -269,7 +270,7 @@ func (v *VM) Connect(port uint32) (net.Conn, error) {
 	}
 	conn, err := socket.Connect(port)
 	if err != nil {
-		return nil, fmt.Errorf("vzvm: connect to %s guest port %d: %w", v.name, port, err)
+		return nil, fmt.Errorf("vzvm: connect to %s guest port %d: %w", v.name, port, socketError("dial", "connect", err))
 	}
 	return conn, nil
 }
@@ -285,7 +286,7 @@ func (v *VM) Listen(port uint32) (net.Listener, error) {
 	}
 	listener, err := v.socket.Listen(port)
 	if err != nil {
-		return nil, fmt.Errorf("vzvm: listen on %s guest port %d: %w", v.name, port, err)
+		return nil, fmt.Errorf("vzvm: listen on %s guest port %d: %w", v.name, port, socketError("listen", "listen", err))
 	}
 	v.listeners = append(v.listeners, listener)
 	return listener, nil
@@ -373,4 +374,14 @@ func (v *VM) waitRunning(timeout time.Duration) error {
 		time.Sleep(20 * time.Millisecond)
 	}
 	return fmt.Errorf("vzvm: VM %s did not reach the running state within %s", v.name, timeout)
+}
+
+// socketError exposes POSIX failures from the framework as Go network errors.
+// Other NSError domains use unrelated code spaces and must remain opaque.
+func socketError(op, call string, err error) error {
+	var nsErr *vz.NSError
+	if errors.As(err, &nsErr) && nsErr.Domain == "NSPOSIXErrorDomain" {
+		return &net.OpError{Op: op, Net: "vsock", Err: os.NewSyscallError(call, errors.Join(err, syscall.Errno(nsErr.Code)))}
+	}
+	return err
 }
