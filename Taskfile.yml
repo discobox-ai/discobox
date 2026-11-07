@@ -227,6 +227,11 @@ tasks:
       - mkdir -p build
       - cp desktop/target/release/discobox-desktop{{.EXE}} build/discobox-desktop{{.EXE}}
 
+  desktop:test:
+    desc: Test the desktop app (desktop/), its parity scenarios included; on Linux, run it inside `nix develop .#desktop`
+    cmds:
+      - cd desktop && cargo test --release --locked
+
   desktop:spec:
     desc: Refresh the spec the desktop app runs with when no CLI serves it (desktop/src/spec.json)
     cmds:
