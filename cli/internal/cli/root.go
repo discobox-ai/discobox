@@ -287,6 +287,7 @@ See "%[1]s run --help" for everything run takes.`, name),
 	cmd.AddCommand(inGroup("automation", app.newAPIAccessCommand()))
 	cmd.AddCommand(inGroup("automation", app.newReleaseCommand()))
 	cmd.AddCommand(inGroup("interface", app.newConsoleCommand()))
+	cmd.AddCommand(inGroup("interface", app.newDesktopCommand()))
 	cmd.AddCommand(inGroup("files", app.newCPCommand()))
 	cmd.AddCommand(inGroup("files", app.newPushCommand()))
 	cmd.AddCommand(inGroup("files", app.newProxyCommand()))

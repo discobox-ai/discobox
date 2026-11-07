@@ -218,6 +218,20 @@ tasks:
     cmds:
       - node scripts/brand-tokens.mjs
 
+  build:desktop:
+    desc: Build the desktop app (`discobox desktop`, desktop/) and put it beside the CLI, where a development CLI finds it (ADR 26-11-07-983 §3)
+    deps:
+      - build:cli
+    cmds:
+      - cd desktop && cargo build --release --locked
+      - mkdir -p build
+      - cp desktop/target/release/discobox-desktop{{.EXE}} build/discobox-desktop{{.EXE}}
+
+  desktop:spec:
+    desc: Refresh the spec the desktop app runs with when no CLI serves it (desktop/src/spec.json)
+    cmds:
+      - cd cli && go run {{.CLI_MAIN}} desktop --print-spec > ../desktop/src/spec.json
+
   build:clipwatch:
     desc: Cross-compile the Windows clipboard helper the Linux CLI embeds for WSL
     run: once
