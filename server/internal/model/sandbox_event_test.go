@@ -42,7 +42,12 @@ func TestSameStateComparesEveryFieldButAt(t *testing.T) {
 		case reflect.Map:
 			value.Set(reflect.ValueOf(map[string]string{"k": "other"}))
 		case reflect.Pointer:
-			value.Set(reflect.ValueOf(&model.SandboxEventProgram{State: "working", App: "a"}))
+			if value.Type().Elem().Kind() == reflect.String {
+				message := "ensure failed"
+				value.Set(reflect.ValueOf(&message))
+			} else {
+				value.Set(reflect.ValueOf(&model.SandboxEventProgram{State: "working", App: "a"}))
+			}
 		default:
 			t.Fatalf("field %s is a %s this test cannot change: teach it, so SameState is shown to compare it", field.Name, value.Kind())
 		}

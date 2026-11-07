@@ -1421,15 +1421,16 @@ action; the `exec` field is the `tea.Exec` handoff `$EDITOR` still needs — on 
 harness's file or a tool's config — and exists as a field only so a test can
 run one without a terminal to release.
 
-**The row carries both of the server's state axes** (`Sandbox.State`,
-`Sandbox.HasRuntime`). Existence and power are separate fields on the server
-(ADR 0034 §§1–2), and its `displayState` — which `State` is narrowed from —
-merges them error-first: a latched `ErrorMessage` reads `error` however healthily
-the container is running, and a settled failure is never cleared without new
-intent (ADR 0017 §4). That is right for the mark on the row and wrong for the
-guards, so the row keeps the power axis beside it. `HasRuntime` is the presence
-of `runtimeState` on the wire, which the API omits until the pool agent has
-reported (absent is not `stopped`).
+**The row carries composed state and runtime presence** (`Sandbox.State`,
+`Sandbox.HasRuntime`). `State` is narrowed from the server's `displayState`;
+clients never recombine existence and power. A present, running box with a
+recorded reconcile failure stays running, subject to blocking provisioning
+(ADR 26-11-07-519). A non-empty `Message` adds a warning glyph beside its state,
+including without colour, and replaces the name under the cursor. Running
+actions, program status and counts keep using `StateRunning`.
+`HasRuntime` is the presence of `runtimeState` on the wire, which the API omits
+until the pool agent has reported (absent is not `stopped`). It includes stopped
+containers, so it is distinct from being running.
 
 `StateRepairing` is a repair recorded and not yet landed, typed or automatic
 (ADR 26-10-12-711 §8). It is drawn as `StateStarting` is — the busy glyph and

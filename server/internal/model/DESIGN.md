@@ -381,3 +381,9 @@ first-registration deadline and terminal failure independently of display stamps
 First registration permanently ends eligibility. `BootstrapWait` pins a caller
 to its admitted attempt and applies the same evidence policy at every gate
 (ADR 26-11-07-306). Whole-row lifecycle and manifest writers omit this column.
+
+A recorded reconcile failure on a desired-present, running sandbox retains its
+stored failure but displays running, qualified by the same blocking provisioning
+rule (ADR 26-11-07-519). Repair-in-flight still wins; archive/delete intent and
+non-running power never earn this exception. Events carry optional `errorMessage`
+as part of their whole snapshot; its absence clears a previous warning.
