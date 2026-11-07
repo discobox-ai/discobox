@@ -2,6 +2,7 @@ package krunvm
 
 import (
 	"fmt"
+	"log"
 	"runtime"
 	"syscall"
 
@@ -118,6 +119,7 @@ func boot(cfg Config, lib *krunLibrary) error {
 		return err
 	}
 
+	log.Print("discobox pool VM launcher: creating libkrun context")
 	raw := lib.createCtx()
 	if raw < 0 {
 		return krunError("krun_create_ctx", raw)
@@ -130,12 +132,14 @@ func boot(cfg Config, lib *krunLibrary) error {
 		}
 	}()
 
+	log.Print("discobox pool VM launcher: configuring VM resources")
 	if err := check("krun_set_vm_config", lib.setVMConfig(ctx, uint8(cfg.VCPUs), uint32(cfg.MemoryMiB))); err != nil {
 		return err
 	}
 	// No initramfs and no command line: the kernel is built with every driver
 	// this guest has, and libkrun's default command line already names the
 	// console and the root device it sets up below.
+	log.Print("discobox pool VM launcher: loading kernel")
 	if err := check("krun_set_kernel", lib.setKernel(ctx, cfg.KernelImage, krunKernelFormatELF, nil, nil)); err != nil {
 		return err
 	}
@@ -144,6 +148,7 @@ func boot(cfg Config, lib *krunLibrary) error {
 	// /dev/vdb, /dev/vdc, and discobox-mount-storage addresses them by those
 	// names. All three are raw — the guest image publishes a raw ext4 root
 	// (ADR 0062 §8), so nothing here reads QCOW2.
+	log.Print("discobox pool VM launcher: configuring disks")
 	for _, disk := range []struct {
 		id       string
 		path     string
@@ -158,6 +163,7 @@ func boot(cfg Config, lib *krunLibrary) error {
 			return err
 		}
 	}
+	log.Print("discobox pool VM launcher: configuring guest init and console")
 	if err := check("krun_set_root_disk_remount", lib.setRootDiskRemount(ctx, "/dev/vda", "ext4", "ro")); err != nil {
 		return err
 	}
@@ -188,6 +194,7 @@ func boot(cfg Config, lib *krunLibrary) error {
 		return err
 	}
 
+	log.Print("discobox pool VM launcher: configuring network")
 	mac, err := cfg.MAC()
 	if err != nil {
 		return err
@@ -202,6 +209,7 @@ func boot(cfg Config, lib *krunLibrary) error {
 	// sockets on the host's network stack. This guest must not reach the host
 	// that way (ADR 0013): every port it uses is an explicit mapping onto a
 	// Unix socket, and passt is the only path out.
+	log.Print("discobox pool VM launcher: configuring VSOCK")
 	if err := check("krun_disable_implicit_vsock", lib.disableImplicitVSOCK(ctx)); err != nil {
 		return err
 	}
@@ -218,6 +226,7 @@ func boot(cfg Config, lib *krunLibrary) error {
 	// krun_start_enter consumes this process: the vCPUs run on its threads and
 	// it exits when the guest does. That is the whole reason the launcher is a
 	// separate process rather than a goroutine in the server.
+	log.Print("discobox pool VM launcher: entering VM (krun_start_enter)")
 	entered = true
 	return krunError("krun_start_enter", lib.startEnter(ctx))
 }

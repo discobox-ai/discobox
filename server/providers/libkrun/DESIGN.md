@@ -78,6 +78,18 @@ directory, versioned by `krunvm.ConfigVersion` and validated on both sides.
 Before starting a launcher the driver deletes the sockets the VM owns
 (`Config.OwnedSockets`); their reappearance is the readiness signal, and a
 launcher that exits first fails `EnsureVM` with the tail of `launcher.log`.
+The VSOCK listeners appear when the guest activates its virtio device, not
+when the launcher finishes native configuration, so this wait includes early
+guest boot. A large guest on a loaded nested host can spend minutes before
+activating it. The launcher logs timestamped startup stages and VM size before
+entering native calls; passt startup stderr shares that log.
+The launcher sends a five-second startup heartbeat on fd 4, separate from the
+log so liveness does not bury its last stage. The driver fails after 30 seconds
+without a heartbeat or new launcher/guest-console log output; there is no total
+startup deadline while either continues. Child exit and caller cancellation
+end the wait immediately. Closing the heartbeat reader at readiness stops the
+reporter for the rest of VM life. An empty guest
+console alone does not mean the launcher has not entered KVM.
 
 `krunvm.Supported` is a platform gate only: the provider is registered
 everywhere, `NewDriver` refuses off linux/amd64 with `krunvm.ErrUnsupported`,

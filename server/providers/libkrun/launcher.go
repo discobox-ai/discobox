@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,10 @@ const launcherCommand = "__pool-vm-launcher"
 // watchdogFD is the read end of a pipe the server holds open. It is the third
 // descriptor because os/exec numbers ExtraFiles from 3.
 const watchdogFD = 3
+
+// Startup liveness travels separately from diagnostics so a heartbeat cannot
+// bury the last native startup stage in the log tail.
+const startupLivenessFD = 4
 
 // RunLauncherIfInvoked runs this process as a pool VM and never returns, or
 // returns immediately when the process was started for anything else.
@@ -91,6 +96,7 @@ func runLauncher(args []string) error {
 		return errors.New("usage: --config <manifest>")
 	}
 	path := args[1]
+	log.Printf("discobox pool VM launcher: reading manifest %s", path)
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("manifest path %s must be absolute", path)
 	}
@@ -103,7 +109,39 @@ func runLauncher(args []string) error {
 		return fmt.Errorf("decode manifest %s: %w", path, err)
 	}
 	watchServerProcess()
+	stop := reportStartupLiveness()
+	defer stop()
 	return krunvm.Run(cfg)
+}
+
+// reportStartupLiveness confirms that the launcher can still schedule work
+// while libkrun boots on its locked OS thread. The driver closes the reader
+// once sockets are ready, which stops this reporter for the rest of VM life.
+// A manually invoked launcher has no liveness pipe and needs no reporter.
+func reportStartupLiveness() func() {
+	pipe := os.NewFile(startupLivenessFD, "discobox-startup-liveness")
+	info, err := pipe.Stat()
+	if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+		_ = pipe.Close()
+		return func() {}
+	}
+	done := make(chan struct{})
+	go func() {
+		defer func() { _ = pipe.Close() }()
+		tick := time.NewTicker(5 * time.Second)
+		defer tick.Stop()
+		for {
+			if _, err := pipe.Write([]byte{1}); err != nil {
+				return
+			}
+			select {
+			case <-done:
+				return
+			case <-tick.C:
+			}
+		}
+	}()
+	return func() { close(done); _ = pipe.Close() }
 }
 
 // watchServerProcess ends this VM when the server that started it goes away.
