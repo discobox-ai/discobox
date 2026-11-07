@@ -69,6 +69,10 @@ type Endpoint struct {
 }
 
 func Parse(raw string) (Endpoint, error) {
+	return parse(raw, true)
+}
+
+func parse(raw string, resolveDefault bool) (Endpoint, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return Endpoint{}, fmt.Errorf("endpoint is required")
@@ -86,12 +90,18 @@ func Parse(raw string) (Endpoint, error) {
 		return Endpoint{Raw: raw, Scheme: scheme, Value: strings.TrimRight(raw, "/")}, nil
 	case "unix":
 		if u.Path == "" {
+			if !resolveDefault {
+				return Endpoint{}, fmt.Errorf("%s must name a socket path", AddressEnv)
+			}
 			return localDefault(raw, scheme)
 		}
 		return Endpoint{Raw: raw, Scheme: scheme, Value: u.Path}, nil
 	case "npipe":
 		value := npipePath(u)
 		if value == "" {
+			if !resolveDefault {
+				return Endpoint{}, fmt.Errorf("%s must name a pipe path", AddressEnv)
+			}
 			return localDefault(raw, scheme)
 		}
 		return Endpoint{Raw: raw, Scheme: scheme, Value: value}, nil
@@ -166,7 +176,7 @@ func parseDiscoboxTransport(raw string, u *url.URL, transport string) (Endpoint,
 // substitution: "unix://" on Windows is a configuration written for somewhere
 // else, and quietly binding a named pipe would hide that rather than say it.
 func localDefault(raw, scheme string) (Endpoint, error) {
-	parsed, err := Parse(DefaultEndpoint())
+	parsed, err := parse(DefaultEndpoint(), false)
 	if err != nil {
 		return Endpoint{}, fmt.Errorf("resolve the default endpoint for %q: %w", raw, err)
 	}

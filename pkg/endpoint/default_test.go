@@ -14,3 +14,14 @@ func TestDefaultEndpointHonorsAddressEnv(t *testing.T) {
 		t.Fatalf("DefaultEndpoint() = %q, want %s's %q", got, AddressEnv, pinned)
 	}
 }
+
+func TestAddressEnvCannotRecursivelyResolveItself(t *testing.T) {
+	for _, address := range []string{"unix://", "npipe://", "unix:", "npipe:"} {
+		t.Run(address, func(t *testing.T) {
+			t.Setenv(AddressEnv, address)
+			if _, err := Parse(DefaultEndpoint()); err == nil {
+				t.Fatal("expected a missing socket or pipe path error")
+			}
+		})
+	}
+}

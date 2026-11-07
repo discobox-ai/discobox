@@ -181,3 +181,12 @@ Global review expectations:
   markers on the persistent root filesystem, and give a marker written by a
   declared service a directory writable by the sandbox user: the agent's
   `/var/lib/discobox` directory is root-owned.
+
+- Render filesystem paths as escaped URLs when a development shell pins a
+  socket address. Raw concatenation truncates paths containing `#` or `?`
+  and rejects `%`, disagreeing with the platform endpoint resolver.
+- Tests that override the default local socket through XDG or TMPDIR must clear
+  `DISCOBOX_SERVER_ADDRESS` before contacting a listener. The Nix shell exports
+  it, and a shutdown test can otherwise stop the developer's real server.
+- Empty local IPC shorthand must not recursively resolve an address override
+  that is itself shorthand. Parse that default once and reject a missing path.

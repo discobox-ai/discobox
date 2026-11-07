@@ -143,7 +143,7 @@
                 else
                   _discobox_runtime="/tmp/discobox-$(id -u)"
                 fi
-                export DISCOBOX_SERVER_ADDRESS="unix://$_discobox_runtime/discobox/server.sock"
+                export DISCOBOX_SERVER_ADDRESS="$(python3 -c 'import sys, urllib.parse; print("unix://" + urllib.parse.quote(sys.argv[1], safe="/"))' "$_discobox_runtime/discobox/server.sock")"
                 unset _discobox_runtime
               fi
 
