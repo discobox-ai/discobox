@@ -534,7 +534,6 @@ install_release() {
 		*) die "installed $dir/discobox, but it says it is '$out' rather than $release" ;;
 	esac
 	ok "installed discobox $release to $dir/discobox"
-	say "On first server use after an upgrade, run interactively to review any runtime permission repair."
 
 	if [ -n "$stage" ]; then
 		stage_server
