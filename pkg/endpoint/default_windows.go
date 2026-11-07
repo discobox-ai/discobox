@@ -2,6 +2,6 @@
 
 package endpoint
 
-func DefaultEndpoint() string {
+func platformDefaultEndpoint() string {
 	return `npipe:////./pipe/discobox`
 }
