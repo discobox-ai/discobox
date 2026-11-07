@@ -375,3 +375,12 @@ Pool outbound intent is sealed as `encryption.PoolProxyIntent(projectID,poolID)`
 `OpenPoolProxy` and `SetPoolProxy` never expose that private column through JSON.
 Credential writes require encryption configuration. Intent replacement/removal
 runs in the same store transaction as the pool generation and dirty mark.
+
+## Initial bootstrap persistence
+
+`RecordPoolBootstrap` locks the pool and fences reports by attempt and target
+generation, writing only `bootstrap`. New pending pools initialize the document
+in `Pool.BeforeCreate`; additive migration leaves legacy documents NULL.
+Enrollment and heartbeat writers read locked rows; manifest/lifecycle writers
+omit evidence. Control-plane bootstrap reads use the primary so stale replica
+observations cannot extend or revive an attempt.

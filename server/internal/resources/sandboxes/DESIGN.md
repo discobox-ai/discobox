@@ -291,7 +291,7 @@ from attach to every action).
 - The wait polls, because what it waits on is a row (ADR 0081). Every pass
   re-reads authoritative state and asks again, so the transition that opens the
   gate has no window to land in unseen.
-- Its stall budget is restarted by `provisioningMark`: the gate (the sandbox's
+- Outside eligible initial bootstrap, its stall budget is restarted by `provisioningMark`: the gate (the sandbox's
   lifecycle state and convergence, its runtime state, the pool's state and
   readiness) plus the counters that tick while a long provision proceeds (the
   sandbox's pull progress, the pool's own provisioning and image staging). It is
@@ -305,7 +305,8 @@ from attach to every action).
   host whose container is being replaced or whose healthcheck has not passed,
   which the row cannot see because it reads ready until the agent is noticed
   gone. The service answers both with 409. The host refusal carries its own
-  ceiling (`sandboxPoolHostWaitCeiling`) because the stall budget cannot bound
+  recovery ceiling (`sandboxPoolHostWaitCeiling`), except for an eligible initial
+  bootstrap governed by durable work evidence, because the stall budget cannot bound
   it: a failed acquire marks the pool for reconcile, and every reconcile stamps
   the pool progress the budget reads as movement, so the wait would renew
   itself for as long as the pool kept reconciling. Every
@@ -334,7 +335,7 @@ from attach to every action).
 - A caller's deadline also ends the wait, and is answered like the stall
   budget and the host ceiling: with the last refusal, which names what never
   became true. A cancel is the caller leaving, and gets the context's error.
-- The budget is a stall timeout, not a duration cap. Progress restarts it, so an
+- Ordinary readiness uses a stall timeout, not a duration cap. Progress restarts it, so an
   image pull that keeps reporting takes as long as it takes while a sandbox that
   has gone silent gives up. Tiers below take budgets that fit inside it, so the
   innermost stage to stall is the one that reports.
@@ -1246,3 +1247,14 @@ person may approve or deny. Approval enables the existing `DiscoboxAPI` setting
 and grants no credential or new role. Settings still changes access directly.
 The fixed role, direct-parent authority, egress limits and credential delegation
 checks apply on every subsequent call. Consent records outlive sandbox purge.
+
+## Actions during initial pool bootstrap
+
+Before probing, action readiness waits read the pool's authoritative bootstrap
+facts through `BootstrapWait`. Eligible initial attempts use accepted work and
+fixed operation deadlines instead of display timestamps or the recovery ceiling.
+The request reports the pool and operation and clears progress on every exit.
+A settled pool failure reaches actions before the sandbox's reconcile records
+it. First registration switches back to ordinary readiness and recovery policy.
+Explicit starts (including repair's final start) keep their existing ceiling.
+See ADR 26-11-07-306.

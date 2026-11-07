@@ -70,7 +70,7 @@ func TestUnknownPoolTimeoutExplainsTheAgentWait(t *testing.T) {
 	t.Cleanup(func() { poolCapacityWaitTimeout, poolCapacityPollInterval = oldTimeout, oldPoll })
 	manager := healthPoolManager{&fakePoolManager{pool: activePool("pool-1")}}
 	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
-	_, err := provider.schedulablePool(context.Background(), &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"})
+	_, err := provider.schedulablePool(context.Background(), &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}, &poolWaitBudget{})
 	if err == nil || !strings.Contains(err.Error(), "timed out waiting for the pool agent to become ready") {
 		t.Fatalf("timeout = %v", err)
 	}

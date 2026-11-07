@@ -602,7 +602,7 @@ func (s *Service) acquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if use == sandbox.UseAction && sandboxModel.DesiredState == model.DesiredStateArchived {
 		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived; unarchive it first")
 	}
-	pool, err := s.store.GetPool(ctx, projectID, sandboxModel.PoolID)
+	pool, err := s.store.WithPrimaryRead().GetPool(ctx, projectID, sandboxModel.PoolID)
 	if err != nil {
 		return nil, sandboxModel, apperrors.NotFound(err, "sandbox pool not found")
 	}
@@ -612,6 +612,16 @@ func (s *Service) acquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	// reasons (State active, ErrorMessage set) still serves the sandboxes it
 	// already hosts, so traffic onto them must not be refused for it.
 	if !pool.IsReady() {
+		if use == sandbox.UseAction {
+			if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Generation == pool.Generation {
+				if reason := b.Expired(time.Now()); reason != "" {
+					return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("pool %s bootstrap %s: %s", pool.ID, b.Operation, reason))
+				}
+			}
+			if pool.Converged() && pool.State == model.PoolStateFailed && pool.ErrorMessage != nil {
+				return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("pool %s: %s", pool.ID, *pool.ErrorMessage))
+			}
+		}
 		return nil, sandboxModel, apperrors.StatusError{
 			Status:  http.StatusConflict,
 			Message: fmt.Sprintf("sandbox pool is not reachable: pool=%s state=%s ready=%t", pool.ID, pool.State, pool.IsReady()),

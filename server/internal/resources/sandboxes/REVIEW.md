@@ -148,3 +148,7 @@
   forwarding a sandbox-authenticated lease. A caller may be deleted while a
   waiting acquire is preparing its target; registering only after that deletion
   must not turn the completed revocation into a fresh authorization baseline.
+
+- When first registration ends an initial-bootstrap wait, reset the ordinary
+  readiness stall clock once. A silent bounded apply can outlast its old clock
+  without changing display telemetry; registration need not report ready yet.

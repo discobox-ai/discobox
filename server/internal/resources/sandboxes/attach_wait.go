@@ -47,7 +47,7 @@ const sandboxReachableStallTimeout = 2 * time.Minute
 // This is the whole of the latency it adds once the gate opens, and it is set
 // against work that takes seconds at best: a container being created, an image
 // being pulled, a source tree being materialized.
-const sandboxReachablePollInterval = 500 * time.Millisecond
+var sandboxReachablePollInterval = 500 * time.Millisecond
 
 // sandboxPoolHostWaitCeiling bounds how long tier 1 waits for the pool host
 // itself to come back, whatever the stall budget says.
@@ -64,6 +64,8 @@ const sandboxReachablePollInterval = 500 * time.Millisecond
 // sandbox base image, and no longer.
 //
 // A var so a test can reach the ceiling without spending five minutes on it.
+var sandboxWaitNow = time.Now
+
 var sandboxPoolHostWaitCeiling = 5 * time.Minute
 
 // acquireForAction is the acquire for a request that is about to act in the
@@ -155,9 +157,12 @@ const (
 // Every pass re-reads authoritative state and asks again, so there is no window
 // in which the transition that opens the gate can be missed.
 func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, use services.SandboxUse, wait useWait, attempt func(context.Context, *useWaitBudget) (*model.Sandbox, error)) (*model.Sandbox, error) {
-	stallDeadline := time.Now().Add(sandboxReachableStallTimeout)
+	stallDeadline := sandboxWaitNow().Add(sandboxReachableStallTimeout)
 	var observed provisioningMark
 	budget := &useWaitBudget{}
+	var bootstrap model.BootstrapWait
+	bootstrapEligible := false
+	bootstrapOperation := ""
 	// The last "not yet", which is what a caller's deadline is answered with.
 	var refusal error
 	waiting := wait == waitFromTheStart
@@ -175,12 +180,33 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 	defer func() { report("") }()
 	for {
 		deadline := stallDeadline
-		if !budget.poolSince.IsZero() {
+		if wait == waitFromTheStart {
+			if sb, readErr := s.store.GetSandbox(ctx, projectID, sandboxID, store.SandboxFromPrimary()); readErr == nil && sb.PoolID != "" {
+				if pool, readErr := s.store.WithPrimaryRead().GetPool(ctx, projectID, sb.PoolID); readErr == nil {
+					bootstrapDeadline, eligible, bootstrapErr := bootstrap.Observe(pool, sandboxWaitNow())
+					if bootstrapErr != nil {
+						return sb, waitEnded(errors.Join(bootstrapErr, refusal))
+					}
+					if bootstrapEligible && !eligible {
+						stallDeadline = sandboxWaitNow().Add(sandboxReachableStallTimeout)
+						deadline = stallDeadline
+						budget.poolSince = time.Time{}
+					}
+					bootstrapEligible = eligible
+					if eligible {
+						deadline = bootstrapDeadline
+						budget.poolSince = time.Time{}
+						bootstrapOperation = pool.BootstrapFacts().Operation
+					}
+				}
+			}
+		}
+		if !bootstrapEligible && !budget.poolSince.IsZero() {
 			if ceiling := budget.poolSince.Add(sandboxPoolHostWaitCeiling); ceiling.Before(deadline) {
 				deadline = ceiling
 			}
 		}
-		if refusal != nil && !time.Now().Before(deadline) {
+		if refusal != nil && !sandboxWaitNow().Before(deadline) {
 			return nil, waitEnded(refusal)
 		}
 		attemptCtx, cancel := context.WithDeadline(ctx, deadline)
@@ -191,6 +217,9 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 			refusal = err
 		}
 		if expired && err != nil && ctx.Err() == nil && refusal != nil {
+			if bootstrapEligible {
+				continue
+			} // consume work accepted during the probe
 			return sandboxModel, waitEnded(refusal)
 		}
 		if err == nil {
@@ -226,7 +255,7 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 		} else if wait == waitForStartPool && pendingUpgradeStart(sandboxModel) && (errors.Is(err, sandbox.ErrNotFound) || errors.Is(err, ErrSandboxProvisioning) || errors.Is(err, sandbox.ErrPoolProtocolTransition)) {
 			waiting = true
 			if budget.poolSince.IsZero() {
-				budget.poolSince = time.Now()
+				budget.poolSince = sandboxWaitNow()
 			}
 		} else if wait == waitForStartPool && errors.Is(err, sandbox.ErrPoolNotReachable) && sandboxModel != nil && sandboxModel.DesiredState == model.DesiredStatePresent {
 			waiting = true
@@ -236,10 +265,12 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 		// A host that is not there has its own ceiling, for the reason
 		// sandboxPoolHostWaitCeiling gives: this wait stamps the progress that
 		// would otherwise re-arm the stall budget forever.
-		if errors.Is(err, sandbox.ErrPoolNotReachable) || errors.Is(err, sandbox.ErrPoolProtocolTransition) {
+		if bootstrapEligible {
+			report(fmt.Sprintf("%s (pool %s): bootstrap %s", sandboxID, sandboxModel.PoolID, bootstrapOperation))
+		} else if errors.Is(err, sandbox.ErrPoolNotReachable) || errors.Is(err, sandbox.ErrPoolProtocolTransition) {
 			if budget.poolSince.IsZero() {
-				budget.poolSince = time.Now()
-			} else if time.Since(budget.poolSince) >= sandboxPoolHostWaitCeiling {
+				budget.poolSince = sandboxWaitNow()
+			} else if sandboxWaitNow().Sub(budget.poolSince) >= sandboxPoolHostWaitCeiling {
 				return sandboxModel, waitEnded(err)
 			}
 			report(fmt.Sprintf("%s (pool %s): waiting for the pool to come online", sandboxID, sandboxModel.PoolID))
@@ -257,14 +288,14 @@ func (s *Service) awaitUsable(ctx context.Context, projectID, sandboxID string, 
 		// armed a moment ago.
 		if mark := s.provisioningMark(ctx, sandboxModel); mark != observed {
 			observed = mark
-			stallDeadline = time.Now().Add(sandboxReachableStallTimeout)
+			stallDeadline = sandboxWaitNow().Add(sandboxReachableStallTimeout)
 		}
-		if !time.Now().Before(stallDeadline) {
+		if !bootstrapEligible && !sandboxWaitNow().Before(stallDeadline) {
 			// The last refusal names what never became true, which is more use
 			// than "timed out" on its own.
 			return sandboxModel, waitEnded(err)
 		}
-		if !budget.poolSince.IsZero() && !time.Now().Before(budget.poolSince.Add(sandboxPoolHostWaitCeiling)) {
+		if !budget.poolSince.IsZero() && !sandboxWaitNow().Before(budget.poolSince.Add(sandboxPoolHostWaitCeiling)) {
 			return sandboxModel, waitEnded(err)
 		}
 		refusal = err
@@ -427,7 +458,7 @@ type useWaitBudget struct{ poolSince time.Time }
 
 func (b *useWaitBudget) enterPoolTransition(ctx context.Context) (context.Context, context.CancelFunc) {
 	if b.poolSince.IsZero() {
-		b.poolSince = time.Now()
+		b.poolSince = sandboxWaitNow()
 	}
 	return context.WithDeadline(ctx, b.poolSince.Add(sandboxPoolHostWaitCeiling))
 }

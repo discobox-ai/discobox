@@ -17,6 +17,9 @@ import (
 // Providers own runtime mechanics; the manager owns persistence, credentials,
 // and lifecycle intent. A pool is its own runtime host (ADR-0006).
 type PoolManager interface {
+	// ReportPoolBootstrap records authoritative executor evidence and returns the
+	// original persisted deadline. Unlike display telemetry, failure stops dispatch.
+	ReportPoolBootstrap(context.Context, string, string, int64, model.BootstrapEvidence) (*model.PoolBootstrap, error)
 	GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
 	ListPoolsForProviderInstance(ctx context.Context, projectID, providerID string) ([]model.Pool, error)
 	// ListPools returns every pool in the project, across provider instances.
@@ -134,6 +137,10 @@ func PoolProgressReporterFor(manager PoolManager) PoolProgressReporter {
 		return nil
 	}
 	return func(ctx context.Context, poolID string, progress PoolProvisionProgress) {
+		if progress.Pull != nil {
+			pull := progress.Pull
+			_, _ = ReportBootstrap(ctx, model.BootstrapEvidence{Operation: string(progress.Phase) + ":" + pull.Image, Bytes: pull.Current, Extracted: pull.Extracted, Layers: int64(pull.LayersComplete), LayersExtracted: int64(pull.LayersExtracted), Complete: pull.Done})
+		}
 		if err := manager.ReportPoolProvisionProgress(ctx, poolID, progress); err != nil {
 			slog.DebugContext(ctx, "report pool provision progress", "pool", poolID, "phase", progress.Phase, "error", err)
 		}

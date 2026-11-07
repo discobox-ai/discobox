@@ -63,12 +63,13 @@ func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 	if p.manager == nil {
 		return "", fmt.Errorf("pool manager is required")
 	}
+	budget := &poolWaitBudget{}
 	pool, err := p.schedulablePool(ctx, &model.Sandbox{
 		ID:        ref.SandboxID,
 		ProjectID: ref.ProjectID,
 		PoolID:    poolID,
 		Platform:  sandboxPlatform,
-	})
+	}, budget)
 	if err != nil {
 		return "", err
 	}
@@ -79,7 +80,7 @@ func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 	if err := pool.ImageKind.TakesContainerTree(); err != nil {
 		return "", fmt.Errorf("pool %q cannot take an imported discobox: %w", pool.Name, err)
 	}
-	lease, err := p.awaitPoolAgentClient(ctx, pool, p.runtimeProvider.AcquirePoolAgentClient)
+	lease, err := p.awaitPoolAgentClient(ctx, pool, budget, p.runtimeProvider.AcquirePoolAgentClient)
 	if err != nil {
 		return "", err
 	}

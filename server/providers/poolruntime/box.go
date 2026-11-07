@@ -26,6 +26,7 @@ import (
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
+	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -173,6 +174,19 @@ const provisionTimeout = 15 * time.Minute
 // reads (PlaceBoxFiles) is placed before. Every step is idempotent, so a box
 // provisioned before is provisioned again in place, its key the same.
 func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, placement BoxPlacement) (BoxRecord, error) {
+	facts, reportErr := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: "provision_pool_box", Bounded: true})
+	if reportErr != nil {
+		return BoxRecord{}, reportErr
+	}
+	if facts != nil {
+		if reason := facts.Expired(time.Now()); reason != "" {
+			return BoxRecord{}, fmt.Errorf("bootstrap provision_pool_box: %s", reason)
+		}
+		var stop context.CancelFunc
+		ctx, stop = context.WithDeadline(ctx, facts.Allowance())
+		defer stop()
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, provisionTimeout)
 	defer cancel()
 	bootstrap, box := placement.Bootstrap, placement.Box
@@ -244,6 +258,9 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	_ = tree.Close()
 	if err != nil {
 		return BoxRecord{}, placement.Outbound.RedactError(provisionError("provision the pool's box", applied, err))
+	}
+	if _, err := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: "provision_pool_box", Complete: true, Registration: true}); err != nil {
+		return BoxRecord{}, err
 	}
 	return RecordOf(placement)
 }

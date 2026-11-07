@@ -293,3 +293,7 @@ func (m *recordingPoolManager) ReportPoolProvisionProgress(context.Context, stri
 func (m *recordingPoolManager) SchedulePoolRepair(context.Context, string, string) error {
 	return nil
 }
+
+func (m *recordingPoolManager) ReportPoolBootstrap(context.Context, string, string, int64, model.BootstrapEvidence) (*model.PoolBootstrap, error) {
+	return nil, nil
+}

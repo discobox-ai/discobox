@@ -62,7 +62,7 @@ func (s *ControlPlane) RegisterJobs(providerManager *sandbox.ProviderManager) er
 }
 
 func (s *ControlPlane) GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error) {
-	return s.store.GetPool(ctx, projectID, poolID)
+	return s.store.WithPrimaryRead().GetPool(ctx, projectID, poolID)
 }
 
 func (s *ControlPlane) ListPoolsForProviderInstance(ctx context.Context, projectID, providerID string) ([]model.Pool, error) {
@@ -229,4 +229,9 @@ func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID s
 		}
 		return s.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(pool.ProjectID, pool.ID))
 	})
+}
+
+// ReportPoolBootstrap is the required executor reporting contract.
+func (s *ControlPlane) ReportPoolBootstrap(ctx context.Context, poolID, attempt string, generation int64, evidence model.BootstrapEvidence) (*model.PoolBootstrap, error) {
+	return s.store.RecordPoolBootstrap(ctx, poolID, attempt, generation, evidence)
 }
