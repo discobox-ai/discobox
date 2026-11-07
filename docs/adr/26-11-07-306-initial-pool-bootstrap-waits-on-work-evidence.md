@@ -1,7 +1,8 @@
 # 26-11-07-306 — Initial pool bootstrap waits on work evidence
 
-- **Status**: Proposed (narrows [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6's pool-host ceiling for actions waiting on initial pool bootstrap, and [0039](0039-attach-waits-for-readiness-at-every-tier.md)'s tier-1 stall rule for bounded bootstrap operations without incremental progress)
+- **Status**: Accepted (narrows [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6's pool-host ceiling for actions waiting on initial pool bootstrap, and [0039](0039-attach-waits-for-readiness-at-every-tier.md)'s tier-1 stall rule for bounded bootstrap operations without incremental progress)
 - **Date**: 2026-11-07
+- Accepted by the owner by merging #777, 2026-11-07
 - **Issue**: [#772](https://github.com/discobox-ai/discobox/issues/772)
 - **Preserves**: [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) §2 and [26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md) §4's explicit-start and upgrade ceilings, protocol discovery and execution fencing; source-delivery gates and settled-failure semantics.
 
