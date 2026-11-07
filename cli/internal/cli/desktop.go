@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,9 +48,9 @@ func (a *App) newDesktopCommand() *cobra.Command {
 		Long: `Open the console as a native desktop app.
 
 It is the same console as "discobox console": the discoboxes, and a box's
-terminals beside them. It talks to the server
-through this command, so --server, --token and every configured server work
-as they do for the console.`,
+terminals beside them. It talks to the server through this command, so
+--server, --token and every configured server work as they do for the
+console.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if printSpec {
@@ -88,7 +90,10 @@ func (a *App) runDesktop(cmd *cobra.Command, binary string) error {
 	defer ds.waitForPushes(cmd.ErrOrStderr())
 
 	child := exec.CommandContext(ctx, path, "--bridge")
-	child.Stderr = cmd.ErrOrStderr()
+	child.Env = desktopEnv(os.Environ())
+	// The app logs what the bridge carried, and that is text a box wrote.
+	stderr := &terminalSafeLines{w: cmd.ErrOrStderr()}
+	child.Stderr = stderr
 	toChild, err := child.StdinPipe()
 	if err != nil {
 		return err
@@ -100,12 +105,68 @@ func (a *App) runDesktop(cmd *cobra.Command, binary string) error {
 	if err := child.Start(); err != nil {
 		return fmt.Errorf("start the desktop app: %w", err)
 	}
-	b := &desktopBridge{ds: ds, out: toChild, streams: map[uint32]tui.Terminal{}, leader: a.leader()}
+	b := &desktopBridge{ds: ds, out: toChild, streams: map[uint32]*desktopStream{}, boxes: map[string]desktopBoxRef{}, leader: a.leader()}
 	go b.serve(ctx, fromChild)
 	err = child.Wait()
+	stderr.flush()
 	cancel()
 	b.closeAll()
 	return err
+}
+
+// desktopEnv is the app's environment: this process's, less every discobox
+// variable but the app's own (DISCOBOX_DESKTOP_*). The app holds no
+// credentials and knows no servers (ADR 26-11-07-983 §1), so neither
+// DISCOBOX_TOKEN nor a server's address reaches it.
+func desktopEnv(environ []string) []string {
+	out := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(strings.ToUpper(name), "DISCOBOX_") && !strings.HasPrefix(strings.ToUpper(name), "DISCOBOX_DESKTOP_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// terminalSafeLines writes the app's stderr to this terminal a line at a
+// time, each through terminalSafeMultiline: the app logs requests and answers
+// that carry what boxes wrote (names, messages, errors folded from a box's
+// stderr), and a control sequence in them is display data, not an
+// instruction to the user's terminal.
+type terminalSafeLines struct {
+	mu      sync.Mutex
+	w       io.Writer
+	pending []byte
+}
+
+func (t *terminalSafeLines) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pending = append(t.pending, p...)
+	for {
+		i := bytes.IndexByte(t.pending, '\n')
+		if i < 0 {
+			break
+		}
+		line := string(t.pending[:i+1])
+		t.pending = t.pending[i+1:]
+		if _, err := io.WriteString(t.w, terminalSafeMultiline(line)); err != nil {
+			return len(p), err
+		}
+	}
+	return len(p), nil
+}
+
+// flush writes what is left after the app's last newline.
+func (t *terminalSafeLines) flush() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.pending) > 0 {
+		_, _ = io.WriteString(t.w, terminalSafeMultiline(string(t.pending))+"\n")
+		t.pending = nil
+	}
 }
 
 // desktopBinary finds the desktop app: the flag, then the environment, then one
@@ -155,7 +216,34 @@ type desktopBridge struct {
 	out     io.Writer
 
 	mu      sync.Mutex
-	streams map[uint32]tui.Terminal
+	streams map[uint32]*desktopStream
+	// boxes is every box of the last listing the app was sent, by the key the
+	// app knows it by: what routes a request about a box to its server, as
+	// the window's ForServer(box.Server) does.
+	boxes map[string]desktopBoxRef
+}
+
+// desktopBoxRef is a box as the bridge routes it: the server it is on, as the
+// listing names it ("" when only one server is configured), and its ID there.
+// Two servers can list the same ID, so the ID alone names no box
+// (cli/internal/tui/REVIEW.md).
+type desktopBoxRef struct{ server, id string }
+
+// desktopBoxKey is the key the app knows a box by: its ID when the listing
+// names no server (one is configured), and the server's name and the ID
+// otherwise. The app treats it as opaque and shows the box's sandboxId.
+func desktopBoxKey(server, id string) string {
+	if server == "" {
+		return id
+	}
+	return server + "/" + id
+}
+
+// desktopStream is one terminal the app has open, and what ends the
+// goroutines that serve it.
+type desktopStream struct {
+	term tui.Terminal
+	done chan struct{}
 }
 
 type bridgeRequest struct {
@@ -215,11 +303,12 @@ func (b *desktopBridge) serve(ctx context.Context, in io.Reader) {
 			continue
 		}
 		b.mu.Lock()
-		term := b.streams[stream]
+		st := b.streams[stream]
 		b.mu.Unlock()
-		if term == nil {
+		if st == nil {
 			continue
 		}
+		term := st.term
 		switch kind {
 		case frame.Input:
 			_, _ = term.Write(payload)
@@ -249,31 +338,92 @@ func (b *desktopBridge) handle(ctx context.Context, req bridgeRequest) {
 	case "hello":
 		b.reply(req.ID, map[string]any{"spec": tui.Spec(b.leader)}, nil)
 	case "list":
-		listing, err := b.ds.List(ctx)
+		listing, err := b.list(ctx)
 		b.reply(req.ID, desktopListing(listing), err)
 	case "actions":
-		listing, err := b.ds.List(ctx)
+		listing, err := b.list(ctx)
 		if err != nil {
 			b.reply(req.ID, nil, err)
 			return
 		}
 		var targets []tui.Sandbox
 		for _, s := range listing.Sandboxes {
-			for _, id := range req.Targets {
-				if s.ID == id {
+			for _, key := range req.Targets {
+				if desktopBoxKey(s.Server, s.ID) == key {
 					targets = append(targets, s)
 				}
 			}
 		}
 		b.reply(req.ID, tui.ActionsFor(targets), nil)
+	case "execs", "open", "newShell", "newTerminal", "endExec", "do":
+		ds, sandboxID, err := b.source(ctx, req.Sandbox)
+		if err != nil {
+			if req.Op == "endExec" {
+				b.closeStream(req.Stream)
+			}
+			b.reply(req.ID, nil, err)
+			return
+		}
+		req.Sandbox = sandboxID
+		b.handleBox(ctx, ds, req)
+	default:
+		b.reply(req.ID, nil, fmt.Errorf("unknown op %q", req.Op))
+	}
+}
+
+// list is the listing, noting each box in it by the key the app knows it by.
+func (b *desktopBridge) list(ctx context.Context) (tui.Listing, error) {
+	listing, err := b.ds.List(ctx)
+	if err != nil {
+		return listing, err
+	}
+	boxes := make(map[string]desktopBoxRef, len(listing.Sandboxes))
+	for _, s := range listing.Sandboxes {
+		boxes[desktopBoxKey(s.Server, s.ID)] = desktopBoxRef{server: s.Server, id: s.ID}
+	}
+	b.mu.Lock()
+	b.boxes = boxes
+	b.mu.Unlock()
+	return listing, nil
+}
+
+// source is the data source for the server a box is on, and the box's ID
+// there, from the key the app named it by. A key this side has not listed is
+// listed again first, and one no server lists is an error, never a request to
+// the primary server about another server's box.
+func (b *desktopBridge) source(ctx context.Context, key string) (tui.DataSource, string, error) {
+	b.mu.Lock()
+	ref, ok := b.boxes[key]
+	b.mu.Unlock()
+	if !ok {
+		if _, err := b.list(ctx); err != nil {
+			return nil, "", err
+		}
+		b.mu.Lock()
+		ref, ok = b.boxes[key]
+		b.mu.Unlock()
+		if !ok {
+			return nil, "", fmt.Errorf("no discobox %s is listed", key)
+		}
+	}
+	ds := b.ds.ForServer(ref.server)
+	if ds == nil {
+		return nil, "", fmt.Errorf("the server %s is not answering", ref.server)
+	}
+	return ds, ref.id, nil
+}
+
+// handleBox answers a request about one box, from the source for its server.
+func (b *desktopBridge) handleBox(ctx context.Context, ds tui.DataSource, req bridgeRequest) {
+	switch req.Op {
 	case "execs":
-		execs, err := b.ds.Execs(ctx, req.Sandbox)
+		execs, err := ds.Execs(ctx, req.Sandbox)
 		if errors.Is(err, tui.ErrNotRunning) {
 			execs, err = nil, nil
 		}
 		b.reply(req.ID, desktopExecs(execs), err)
 	case "open":
-		term, err := b.ds.OpenExec(ctx, req.Sandbox, req.Exec, req.Cols, req.Rows)
+		term, err := ds.OpenExec(ctx, req.Sandbox, req.Exec, req.Cols, req.Rows)
 		if err == nil {
 			b.attach(req.Stream, term)
 		}
@@ -285,9 +435,9 @@ func (b *desktopBridge) handle(ctx context.Context, req bridgeRequest) {
 			err  error
 		)
 		if req.Op == "newShell" {
-			ex, term, err = b.ds.NewShell(ctx, req.Sandbox, req.Cols, req.Rows)
+			ex, term, err = ds.NewShell(ctx, req.Sandbox, req.Cols, req.Rows)
 		} else {
-			ex, term, err = b.ds.NewTerminal(ctx, req.Sandbox, req.Cols, req.Rows)
+			ex, term, err = ds.NewTerminal(ctx, req.Sandbox, req.Cols, req.Rows)
 		}
 		if err == nil {
 			b.attach(req.Stream, term)
@@ -295,12 +445,10 @@ func (b *desktopBridge) handle(ctx context.Context, req bridgeRequest) {
 		b.reply(req.ID, desktopExec(ex), err)
 	case "endExec":
 		b.closeStream(req.Stream)
-		b.reply(req.ID, nil, b.ds.EndExec(ctx, req.Sandbox, req.Exec))
+		b.reply(req.ID, nil, ds.EndExec(ctx, req.Sandbox, req.Exec))
 	case "do":
-		note, err := b.ds.Do(ctx, tui.Verb(req.Verb), req.Sandbox, desktopCredentials())
+		note, err := ds.Do(ctx, tui.Verb(req.Verb), req.Sandbox, desktopCredentials())
 		b.reply(req.ID, map[string]any{"note": note}, err)
-	default:
-		b.reply(req.ID, nil, fmt.Errorf("unknown op %q", req.Op))
 	}
 }
 
@@ -322,7 +470,7 @@ func (b *desktopBridge) pollListing(ctx context.Context) {
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	for {
-		if listing, err := b.ds.List(ctx); err == nil {
+		if listing, err := b.list(ctx); err == nil {
 			b.send(map[string]any{"event": "listing", "listing": desktopListing(listing)})
 		}
 		select {
@@ -334,8 +482,9 @@ func (b *desktopBridge) pollListing(ctx context.Context) {
 }
 
 func (b *desktopBridge) attach(stream uint32, term tui.Terminal) {
+	st := &desktopStream{term: term, done: make(chan struct{})}
 	b.mu.Lock()
-	b.streams[stream] = term
+	b.streams[stream] = st
 	b.mu.Unlock()
 	go func() {
 		buf := make([]byte, 32*1024)
@@ -355,41 +504,54 @@ func (b *desktopBridge) attach(stream uint32, term tui.Terminal) {
 			}
 		}
 	}()
+	// Events is never closed while the terminal is open, and need not be
+	// after: this ends when the stream does.
 	go func() {
-		for ev := range term.Events() {
-			state := "reconnected"
-			if ev.State == tui.TerminalReconnecting {
-				state = "reconnecting"
+		for {
+			select {
+			case <-st.done:
+				return
+			case ev := <-term.Events():
+				state := "reconnected"
+				if ev.State == tui.TerminalReconnecting {
+					state = "reconnecting"
+				}
+				b.send(map[string]any{"event": "stream", "stream": stream, "state": state})
 			}
-			b.send(map[string]any{"event": "stream", "stream": stream, "state": state})
 		}
 	}()
 }
 
 func (b *desktopBridge) closeStream(stream uint32) {
 	b.mu.Lock()
-	term := b.streams[stream]
+	st := b.streams[stream]
 	delete(b.streams, stream)
 	b.mu.Unlock()
-	if term != nil {
-		_ = term.Close()
+	if st != nil {
+		close(st.done)
+		_ = st.term.Close()
 	}
 }
 
 func (b *desktopBridge) closeAll() {
 	b.mu.Lock()
 	streams := b.streams
-	b.streams = map[uint32]tui.Terminal{}
+	b.streams = map[uint32]*desktopStream{}
 	b.mu.Unlock()
-	for _, t := range streams {
-		_ = t.Close()
+	for _, st := range streams {
+		close(st.done)
+		_ = st.term.Close()
 	}
 }
 
 // The wire's shapes: what the desktop app draws a row and a tab from.
 
 type desktopSandbox struct {
+	// ID is the key the app knows the box by (desktopBoxKey), SandboxID its
+	// ID on its server, which is what the app shows.
 	ID           string    `json:"id"`
+	SandboxID    string    `json:"sandboxId"`
+	Server       string    `json:"server,omitempty"`
 	Name         string    `json:"name"`
 	State        string    `json:"state"`
 	Agent        string    `json:"agent,omitempty"`
@@ -410,13 +572,22 @@ type desktopSandbox struct {
 	Provisioning string    `json:"provisioning,omitempty"`
 }
 
+// desktopParent is the key of the box that made this one, which is on the
+// same server.
+func desktopParent(s tui.Sandbox) string {
+	if s.CreatedBy == "" {
+		return ""
+	}
+	return desktopBoxKey(s.Server, s.CreatedBy)
+}
+
 func desktopListing(l tui.Listing) []desktopSandbox {
 	out := make([]desktopSandbox, 0, len(l.Sandboxes))
 	for _, s := range l.Sandboxes {
 		d := desktopSandbox{
-			ID: s.ID, Name: s.Name, State: string(s.State), Agent: string(s.Agent.State), AgentMsg: s.Agent.Msg,
+			ID: desktopBoxKey(s.Server, s.ID), SandboxID: s.ID, Server: s.Server, Name: s.Name, State: string(s.State), Agent: string(s.Agent.State), AgentMsg: s.Agent.Msg,
 			Harness: s.HarnessName, Source: s.Source, Tags: s.Tags, Branch: s.Branch, Commit: s.Commit, Dirty: s.Dirty,
-			Created: s.Created, Parent: s.CreatedBy, Message: s.Message, Provisioning: s.Provisioning,
+			Created: s.Created, Parent: desktopParent(s), Message: s.Message, Provisioning: s.Provisioning,
 		}
 		if d.Harness == "" {
 			d.Harness = s.Harness

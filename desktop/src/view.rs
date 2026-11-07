@@ -306,7 +306,7 @@ fn header(s: &State, sbx: &Sandbox) -> El {
             .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "view.sidebar", tx)));
     }
     r = r.child(t(source_label(sbx), theme::grey()))
-        .child(t(sbx.id.clone(), theme::dim()));
+        .child(t(sbx.shown_id().to_string(), theme::dim()));
     if !sbx.branch.is_empty() {
         r = r.child(t(format!("{}@{}", sbx.branch, sbx.commit), theme::grey()));
     }

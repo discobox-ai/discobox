@@ -268,6 +268,25 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   says it suits a tool that opens its own window; a terminal program runs
   through `discobox tools <id>`.
 
+## The desktop app (`discobox desktop`)
+
+- **What the app writes to stderr is this CLI printing.** It logs bridge
+  requests and answers, which carry box names, messages and errors folded from
+  a box's stderr, and `runDesktop` puts its stderr on the user's terminal. Keep
+  it behind `terminalSafeLines`; a new pipe from the app to this terminal goes
+  through the same escaping. A Rust-side `serde_json` encode is not enough: it
+  passes C1 controls and bidirectional overrides.
+- **The app's environment carries no `DISCOBOX_*` but its own.** It holds no
+  credentials and knows no servers (ADR 26-11-07-983 §1), so `desktopEnv`
+  drops `DISCOBOX_TOKEN` and the server variables; a new variable the app
+  needs is named `DISCOBOX_DESKTOP_*`.
+- **The app knows a box by its server and ID together, and an op goes
+  through that server.** Two servers can list the same ID, so the bridge gives
+  each box an opaque key (`desktopBoxKey`), resolves it to the server and ID it
+  listed (`desktopBridge.source`) and calls `ForServer(server)`, never `b.ds`
+  directly and never a lookup by ID alone: this mistake was made in the
+  console's own data source, and twice in the bridge.
+
 ## Crossing into Windows from WSL
 
 - **Ask Windows through `internal/wsl`, never with a copy of it.** Detection,

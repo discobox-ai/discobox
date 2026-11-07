@@ -23,7 +23,10 @@ use serde_json::{Value, json};
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Sandbox {
+    /// The key the CLI knows this box by, server and ID together: opaque here.
     pub id: String,
+    /// The box's ID on its server, which is what is shown.
+    pub sandbox_id: String,
     pub name: String,
     pub state: String,
     pub agent: String,
@@ -46,6 +49,8 @@ pub struct Sandbox {
 
 impl Sandbox {
     pub fn running(&self) -> bool { self.state == "running" }
+    /// The ID to show: the box's own on its server (the mock has only `id`).
+    pub fn shown_id(&self) -> &str { if self.sandbox_id.is_empty() { &self.id } else { &self.sandbox_id } }
     /// What the cursor row says in place of the name, as the TUI's row does.
     pub fn note(&self) -> Option<&str> {
         [&self.provisioning, &self.message].into_iter().find(|s| !s.is_empty()).map(|s| s.as_str())
@@ -428,5 +433,31 @@ impl Pty {
             }
         });
         Ok(Pty { master: pair.master, writer, child })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The frame kinds are execstream's (pkg/execstream/frame/frame.go), which the CLI's side
+    // of the bridge passes through unchanged.
+    #[test]
+    fn frame_kinds_are_execstreams() {
+        assert_eq!((INPUT, STDOUT, STDERR, RESIZE, EXIT, JSON), (0, 1, 2, 3, 6, 255));
+    }
+
+    // A frame is kind, stream and length big-endian, then the payload, as
+    // cli/internal/cli/desktop.go writes and reads it.
+    #[test]
+    fn frames_round_trip() {
+        let mut wire = Vec::new();
+        write_frame(&mut wire, STDOUT, 7, b"hello").unwrap();
+        write_frame(&mut wire, JSON, 0, b"").unwrap();
+        assert_eq!(&wire[..9], &[1, 0, 0, 0, 7, 0, 0, 0, 5]);
+        let mut r = wire.as_slice();
+        assert_eq!(read_frame(&mut r).unwrap(), (STDOUT, 7, b"hello".to_vec()));
+        assert_eq!(read_frame(&mut r).unwrap(), (JSON, 0, vec![]));
+        assert!(read_frame(&mut r).is_err());
     }
 }
