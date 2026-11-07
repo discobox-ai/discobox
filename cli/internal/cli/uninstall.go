@@ -142,9 +142,6 @@ while this runs recreates what it deletes.`,
 }
 
 func (a *App) uninstall(cmd *cobra.Command) error {
-	if err := a.prepareRuntimeDirectories(cmd); err != nil {
-		return err
-	}
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	plan := a.planUninstall(ctx)
@@ -254,10 +251,7 @@ func uninstallLocations() []uninstallLocation {
 		{path: serverDir("DISCOBOX_CONFIG_DIR", xdg.ConfigHome), what: "server configuration", env: envNamed("DISCOBOX_CONFIG_DIR")},
 		{path: serverDir("DISCOBOX_CACHE_DIR", xdg.CacheHome), what: "server cache", env: envNamed("DISCOBOX_CACHE_DIR")},
 		{path: serverDir("DISCOBOX_STATE_DIR", xdg.StateHome), what: "server state and logs", env: envNamed("DISCOBOX_STATE_DIR")},
-		{path: discoboxRuntimeDir(), what: "provider runtime files"},
-	}
-	if local, err := endpoint.Parse(endpoint.DefaultEndpoint()); err == nil && local.Scheme == "unix" {
-		locations = append(locations, uninstallLocation{path: filepath.Dir(local.Value), what: "server socket and startup lock"})
+		{path: discoboxRuntimeDir(), what: "server socket and runtime files"},
 	}
 	if dir, err := toolConfigDir(); err == nil {
 		locations = append(locations, uninstallLocation{path: filepath.Dir(dir), what: "tool configuration"})

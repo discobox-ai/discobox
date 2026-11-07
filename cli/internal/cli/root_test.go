@@ -1796,11 +1796,7 @@ func TestServerShutdownFallsBackToDefaultHTTPWhenSocketMissing(t *testing.T) {
 		t.Fatalf("parse server URL: %v", err)
 	}
 	t.Setenv(serverEnv, "")
-	runtimeDir := t.TempDir()
-	if err := os.Chmod(runtimeDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Setenv("PORT", serverURL.Port())
 
 	cmd := NewRootCommand()

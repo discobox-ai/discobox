@@ -147,18 +147,6 @@ Approval has independent `--use-scope` and `--delegate-scope` choices: routes
 route overrides are refused before submission. Request history distinguishes
 the original routes from approved scope and immutable consent route lists.
 
-## Runtime permission consent
-
-Before opening the selected default local endpoint or its startup lock, the CLI
-inspects runtime directories through `endpoint.InspectRuntimeDirectories`. It
-displays all proposed mode changes and the prior-exposure warning on stderr,
-asks an interactive terminal with default No, then repairs and revalidates before
-continuing the original command. EOF, cancellation and noninteractive input fail
-without repair. Version and status probes use this same preparation. `version --client` prints
-only the client version and skips endpoint inspection and contact, allowing the
-installer to verify its binary before any interactive migration. No saved
-approval or assume-yes option authorizes it (ADR 26-11-05-240).
-
 ## Sandbox credential grants
 
 Sandbox calls through `api.discobox.internal` use the target-addressed binding

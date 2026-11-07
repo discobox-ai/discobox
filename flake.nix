@@ -127,6 +127,25 @@
               if [ -e /etc/discobox/sandbox.json ]; then
                 unset DISCOBOX_SERVER
               fi
+              # The local server's socket defaults under TMPDIR, which this
+              # shell replaces with a nix-shell.XXXXXX directory of its own —
+              # so a server started here would be invisible to every other
+              # shell, and this shell's CLI would miss the one already running.
+              # Pin the address a plain shell resolves (XDG_RUNTIME_DIR, else
+              # the user's real temp directory) on both ends; an address the
+              # developer set themselves is left alone.
+              if [ -z "''${DISCOBOX_SERVER_ADDRESS:-}" ]; then
+                if [ -n "''${XDG_RUNTIME_DIR:-}" ]; then
+                  _discobox_runtime="$XDG_RUNTIME_DIR"
+                elif [ "$(uname -s)" = Darwin ]; then
+                  _discobox_runtime="$(getconf DARWIN_USER_TEMP_DIR)"
+                  _discobox_runtime="''${_discobox_runtime%/}/discobox-$(id -u)"
+                else
+                  _discobox_runtime="/tmp/discobox-$(id -u)"
+                fi
+                export DISCOBOX_SERVER_ADDRESS="unix://$_discobox_runtime/discobox/server.sock"
+                unset _discobox_runtime
+              fi
 
               # Completions come out of the CLI itself, so they are refreshed
               # whenever one has been built and skipped silently before the

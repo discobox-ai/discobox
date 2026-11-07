@@ -8,6 +8,7 @@ import "testing"
 // holding a character a URL gives meaning to must be escaped when it is
 // rendered: unescaped, "#" and "?" end the path early and "%" fails to parse.
 func TestDefaultEndpointEscapesTheRuntimeDir(t *testing.T) {
+	t.Setenv(AddressEnv, "")
 	t.Setenv("XDG_RUNTIME_DIR", "/run/user/a b#c?d%e")
 	got, err := Parse(DefaultEndpoint())
 	if err != nil {
@@ -15,16 +16,5 @@ func TestDefaultEndpointEscapesTheRuntimeDir(t *testing.T) {
 	}
 	if want := "/run/user/a b#c?d%e/discobox/server.sock"; got.Scheme != "unix" || got.Value != want {
 		t.Fatalf("Parse(%q) = %+v, want unix socket %q", DefaultEndpoint(), got, want)
-	}
-}
-
-func TestDefaultEndpointIndependentOfTemporaryEnvironment(t *testing.T) {
-	t.Setenv("XDG_RUNTIME_DIR", "")
-	before := DefaultEndpoint()
-	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
-		t.Setenv(key, t.TempDir())
-	}
-	if got := DefaultEndpoint(); got != before {
-		t.Fatalf("endpoint changed from %q to %q", before, got)
 	}
 }

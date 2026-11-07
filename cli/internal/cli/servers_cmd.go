@@ -97,11 +97,7 @@ func (a *App) listServers(cmd *cobra.Command) error {
 	// when it answers; a registered server by what was recorded when it was
 	// registered. Listing servers is not a reason to start one, so the primary
 	// is asked only if it is already running.
-	plan, privacyErr := endpoint.InspectRuntimeDirectories(a.serverURL)
-	if plan != nil {
-		plan.Close()
-	}
-	if primary := set[0]; !primary.registered && privacyErr == nil && plan == nil {
+	if primary := set[0]; !primary.registered {
 		if baseURL, httpClient, err := a.httpClientWithAutoStart(false); err == nil {
 			if client, err := apiclientgen.NewClient(baseURL, apiclientgen.WithClient(httpClient)); err == nil {
 				if name := offeredName(cmd.Context(), client); name != "" {
@@ -189,9 +185,6 @@ func (a *App) addServer(cmd *cobra.Command, address, name string) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), serverAddTimeout)
 	defer cancel()
 	target := a.forServer(address)
-	if err := target.prepareRuntimeDirectories(cmd); err != nil {
-		return err
-	}
 	client, err := target.apiClient()
 	if err != nil {
 		return err
@@ -372,9 +365,6 @@ func (a *App) setPrimaryServer(cmd *cobra.Command, name string, registerCurrent 
 		}
 		if !set[0].registered {
 			current = set[0]
-			if err := a.prepareRuntimeDirectories(cmd); err != nil {
-				return err
-			}
 			// Asked before the lock, and without being started, as add asks:
 			// what gets registered is a server that answered, and one that
 			// did not fails the command before anything is written.
