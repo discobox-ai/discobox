@@ -1,9 +1,11 @@
-# Bun, by its own installer, under /usr/local.
+# Bun, by its own installer, into /usr/local/lib/discobox/bun, and linked onto
+# PATH.
 apiVersion: discobox.ai/provision/v1
 async: true
-# Its installer unpacks a zip.
-requires: [cli]
+# Its installer unpacks a zip; core for link-command.
+requires: [core, cli]
 commands: [bun, bunx]
 steps:
   - name: install
+    check: check-bun.sh
     run: install-bun.sh

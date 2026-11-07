@@ -3,9 +3,11 @@
 # version sandbox-agent/Dockerfile pins, and the build puts it beside this file.
 apiVersion: discobox.ai/provision/v1
 async: true
+requires: [core]
 commands: [discobox-review]
 steps:
   - name: binary
+    check: check-review.sh
     run: link-review.sh
   # What has changed, in discobox-review, declared as a tool (ADR 0125).
   - name: tool-diff
