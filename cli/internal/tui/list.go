@@ -32,7 +32,13 @@ type sandboxList struct {
 	all       []console.Sandbox
 	// index is where each discobox is in all, which is how a row finds the
 	// discobox that created it.
-	index    map[console.BoxRef]int
+	index map[console.BoxRef]int
+	// nesting is where each row of the last ordering hangs (nest): the
+	// branch drawn in front of a row nested under the discobox that created
+	// it, empty on a row nested under nothing, and the row its tree hangs
+	// from, which is itself for that one. It is the list's drawing, keyed as
+	// index is.
+	nesting  map[console.BoxRef]rowNest
 	cursor   int
 	offset   int
 	selected map[console.BoxRef]bool
@@ -312,10 +318,22 @@ func (l *sandboxList) creator(s console.Sandbox) (console.Sandbox, bool) {
 	return l.all[i], true
 }
 
+// rowNest is one row's place in the last ordering's trees (nesting).
+type rowNest struct {
+	tree  string
+	under console.BoxRef
+}
+
+// tree is the branch drawn in front of a row's name: empty for a row nested
+// under nothing.
+func (l *sandboxList) tree(s console.Sandbox) string {
+	return l.nesting[console.BoxRef{Server: s.Server, ID: s.ID}].tree
+}
+
 // top is the row a row's tree hangs from, which is the row whose section it
 // is drawn in: itself, for a row nested under nothing.
 func (l *sandboxList) top(s console.Sandbox) console.Sandbox {
-	if i, ok := l.index[s.Under]; ok && i < len(l.all) {
+	if i, ok := l.index[l.nesting[console.BoxRef{Server: s.Server, ID: s.ID}].under]; ok && i < len(l.all) {
 		return l.all[i]
 	}
 	return s
@@ -331,9 +349,8 @@ func (l *sandboxList) shown(s console.Sandbox) bool {
 
 // nest is the rows in the order they are drawn, as trees: the discoboxes in
 // the folder the header names, in the order they arrived, and under each the
-// discoboxes it leads, their own creations under those in turn. Each row is
-// given the branch it draws (Sandbox.tree) and the row its tree hangs from
-// (Sandbox.under).
+// discoboxes it leads, their own creations under those in turn. Each row's
+// branch and the row its tree hangs from go in nesting.
 //
 // A discobox is filed where the server filed it (ADR 0111 §3), and that is
 // often not where its creator is: one cut from a checkout inside the creator
@@ -346,6 +363,7 @@ func (l *sandboxList) shown(s console.Sandbox) bool {
 // is archived and hidden, or lacks a tag the header names, moves up to the
 // creator's own creator, or is drawn in its own folder alone.
 func (l *sandboxList) nest() []console.Sandbox {
+	l.nesting = make(map[console.BoxRef]rowNest, len(l.all))
 	type node struct {
 		parent int // in l.all, -1 for none
 		kids   []int
@@ -404,7 +422,7 @@ func (l *sandboxList) nest() []console.Sandbox {
 		placing[i], placed[i] = true, true
 		defer func() { placing[i] = false }()
 		s := l.all[i]
-		s.Under, s.Tree = under, lead+branch
+		l.nesting[console.BoxRef{Server: s.Server, ID: s.ID}] = rowNest{tree: lead + branch, under: under}
 		out = append(out, s)
 		switch branch {
 		case treeBranch:
@@ -1283,8 +1301,8 @@ func (l *sandboxList) row(st *styles, z *zones, s console.Sandbox, i, y int, foc
 	// The branch a discobox created by another hangs from, after the state so
 	// the glyphs stay one column the eye runs down. It is part of the head: it
 	// comes out of the name's width, and the name keeps its floor.
-	if s.Tree != "" {
-		head += st.dimText.Render(s.Tree)
+	if tree := l.tree(s); tree != "" {
+		head += st.dimText.Render(tree)
 	}
 	nameW := max(l.width-lipgloss.Width(head)-lipgloss.Width(tail), 4)
 	name := s.Name
@@ -1314,7 +1332,7 @@ func (l *sandboxList) row(st *styles, z *zones, s console.Sandbox, i, y int, foc
 	// A row nested under its creator does not say it: the machine it would
 	// name is that creator, which the branch already says.
 	from := ""
-	if text := s.Elsewhere(l.session); text != "" && s.Tree == "" {
+	if text := s.Elsewhere(l.session); text != "" && l.tree(s) == "" {
 		// The floor is the one the tail columns hold to, less the head, which
 		// is the part of that reserve the name does not get either way.
 		if room := nameW - lipgloss.Width(text) - 1; room >= nameReserve-lipgloss.Width(head) {
@@ -1425,9 +1443,9 @@ func (l *sandboxList) tagLine(st *styles, z *zones, s console.Sandbox, i, y int,
 	// it continues on, so a tree reads unbroken through its rows' tags.
 	indent := strings.Repeat(" ", lipgloss.Width(l.rowHead(st, s, false)))
 	cont := ""
-	if lead, ok := strings.CutSuffix(s.Tree, treeBranch); ok {
+	if lead, ok := strings.CutSuffix(l.tree(s), treeBranch); ok {
 		cont = lead + treeRule
-	} else if lead, ok := strings.CutSuffix(s.Tree, treeLast); ok {
+	} else if lead, ok := strings.CutSuffix(l.tree(s), treeLast); ok {
 		cont = lead + treeGap
 	}
 	head := indent + st.dimText.Render(cont)

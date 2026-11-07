@@ -35,7 +35,7 @@ func nestBoxes() []console.Sandbox {
 func rowNames(l *sandboxList) []string {
 	var out []string
 	for _, s := range l.rows() {
-		out = append(out, s.Tree+s.Name)
+		out = append(out, l.tree(s)+s.Name)
 	}
 	return out
 }

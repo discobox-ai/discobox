@@ -297,13 +297,6 @@ type Sandbox struct {
 	// that discobox (sandboxList.nest).
 	CreatedBy string
 
-	// tree and under are the list's, set on each row as the rows are ordered
-	// (sandboxList.nest): the branch drawn in front of the name of a row
-	// nested under the discobox that created it, empty on a row nested under
-	// nothing, and the row its tree hangs from, which is itself for that one.
-	Tree  string
-	Under BoxRef
-
 	// OriginKey is where the discobox is filed on the client that created it
 	// (ADR 0111): that host and where its source came from, or the host alone
 	// when it has none. It is not a column on the row — it is what the header
@@ -1018,12 +1011,12 @@ func (s Sandbox) Changes() string {
 	}
 }
 
-// standing is what a discobox's workspace header says of it
-// (Sandbox.standing): nothing, ready for a person, or blocked on one.
-type standing int
+// Standing is what a discobox's workspace header says of it
+// (Sandbox.Standing): nothing, ready for a person, or blocked on one.
+type Standing int
 
 const (
-	StandingNone standing = iota
+	StandingNone Standing = iota
 	StandingReady
 	StandingBlocked
 )
@@ -1033,7 +1026,7 @@ const (
 // an agent asking for a credential is as stuck as a pull request waiting on
 // somebody — or when its agent reports it is blocked on one, and ready when
 // its pull request is ready for a human merge.
-func (s Sandbox) Standing() standing {
+func (s Sandbox) Standing() Standing {
 	switch {
 	case s.PendingRequests > 0 || s.Status() == StatusBlocked || s.Status() == StatusNeedsInput || s.Agent.State == programstatus.Blocked:
 		return StandingBlocked
