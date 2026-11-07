@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -61,12 +62,14 @@ func CheckHost(libraryPath, passtPath string) error {
 // its watchdog when the server exits, which is what makes "the VM dies with the
 // server" true here as it is by construction on vz and wslc (ADR 0062 §9).
 func Run(cfg Config) error {
+	log.Printf("discobox pool VM launcher: validating pool %s (vcpus=%d memoryMiB=%d)", cfg.PoolID, cfg.VCPUs, cfg.MemoryMiB)
 	if !hostSupported() {
 		return ErrUnsupported
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	log.Print("discobox pool VM launcher: checking KVM and disks")
 	if err := checkKVM(); err != nil {
 		return err
 	}
@@ -77,11 +80,13 @@ func Run(cfg Config) error {
 		return err
 	}
 
+	log.Print("discobox pool VM launcher: loading libkrun")
 	lib, err := openLibrary(cfg.LibraryPath)
 	if err != nil {
 		return err
 	}
 
+	log.Print("discobox pool VM launcher: starting passt")
 	passt, err := startPasst(cfg)
 	if err != nil {
 		return err
@@ -169,7 +174,7 @@ func startPasst(cfg Config) (*passtProcess, error) {
 	)
 	cmd.Stdin = nil
 	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stderr = os.Stderr
 	// passt dies with the launcher, which dies with the server. Nothing
 	// reconciles a passt that outlived its VM, so nothing may.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}

@@ -40,6 +40,11 @@ func TestLauncherFailureIsReportedWithTheChildsReason(t *testing.T) {
 	if err == nil {
 		t.Fatal("EnsureVM succeeded with no libkrun installed")
 	}
+	for _, diagnostic := range []string{"reading manifest", "vcpus=1 memoryMiB=1024", "loading libkrun"} {
+		if !strings.Contains(err.Error(), diagnostic) {
+			t.Errorf("error = %v, want startup diagnostic %q", err, diagnostic)
+		}
+	}
 	if !strings.Contains(err.Error(), "nonexistent-libkrun.so") {
 		t.Fatalf("error = %v, want the launcher's own reason", err)
 	}
@@ -78,8 +83,8 @@ func TestTheLauncherIsSpawnedWithBothLifetimeMechanisms(t *testing.T) {
 	if guest.cmd.SysProcAttr.Setsid {
 		t.Fatal("the launcher was put in its own session, which detaches it from the server's fate")
 	}
-	if len(guest.cmd.ExtraFiles) != 1 {
-		t.Fatalf("ExtraFiles = %v, want the watchdog pipe's read end at fd 3", guest.cmd.ExtraFiles)
+	if len(guest.cmd.ExtraFiles) != 2 {
+		t.Fatalf("ExtraFiles = %v, want the watchdog at fd 3 and startup liveness at fd 4", guest.cmd.ExtraFiles)
 	}
 	if guest.watchdog == nil {
 		t.Fatal("the driver did not keep the watchdog pipe's write end")

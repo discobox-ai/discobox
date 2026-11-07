@@ -30,9 +30,9 @@ import (
 )
 
 const (
-	launcherStartTimeout = 30 * time.Second
-	gracefulStopTimeout  = 30 * time.Second
-	forcedStopTimeout    = 15 * time.Second
+	launcherIdleTimeout = 30 * time.Second
+	gracefulStopTimeout = 30 * time.Second
+	forcedStopTimeout   = 15 * time.Second
 
 	// maxUnixSocketPath is sun_path minus its NUL. A runtime directory deep
 	// enough to overflow it produces a VM whose sockets silently never appear,
@@ -130,8 +130,10 @@ type guestVM struct {
 	// restart nobody asked for.
 	size vmsize.Size
 
-	exited   chan struct{}
-	stopOnce sync.Once
+	startupLiveness *os.File
+	alive           <-chan struct{}
+	exited          chan struct{}
+	stopOnce        sync.Once
 }
 
 // NewDriver validates configuration without starting anything.
@@ -237,8 +239,8 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		return runningInfo(poolID), nil
 	}
 
-	// Waited on outside the lock, for the reason the resolve is: this is up to
-	// launcherStartTimeout, it happens on every pool start rather than only the
+	// Waited on outside the lock, for the reason the resolve is: a live startup
+	// can take minutes, and it happens on every pool start rather than only the
 	// first one on a machine, and every other operation on this driver — an
 	// InspectVM, another pool's AcquireDockerClient — would queue behind it.
 	if err := d.waitForLauncher(ctx, guest); err != nil {
@@ -604,17 +606,27 @@ func (d *Driver) startLauncher(manifest krunvm.Config, manifestPath string) (*gu
 	cmd.Stdin = nil
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.ExtraFiles = []*os.File{watchdogRead}
+	aliveRead, aliveWrite, err := os.Pipe()
+	if err != nil {
+		_ = watchdogWrite.Close()
+		return nil, fmt.Errorf("create launcher liveness pipe: %w", err)
+	}
+	defer func() { _ = aliveWrite.Close() }()
+	cmd.ExtraFiles = []*os.File{watchdogRead, aliveWrite}
 	cmd.SysProcAttr = launcherSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		_ = watchdogWrite.Close()
+		_ = aliveRead.Close()
 		return nil, fmt.Errorf("start the pool VM launcher: %w", err)
 	}
 
+	alive := make(chan struct{}, 1)
 	guest := &guestVM{
-		cmd:        cmd,
-		watchdog:   watchdogWrite,
-		runtimeDir: runtimeDir,
+		startupLiveness: aliveRead,
+		alive:           alive,
+		cmd:             cmd,
+		watchdog:        watchdogWrite,
+		runtimeDir:      runtimeDir,
 		// The sockets this launcher must create, taken from the manifest it was
 		// handed rather than from a list spelled again here: readiness is
 		// exactly "the paths launch cleared have come back".
@@ -622,45 +634,84 @@ func (d *Driver) startLauncher(manifest krunvm.Config, manifestPath string) (*gu
 		exited:  make(chan struct{}),
 	}
 	go func() {
+		var buf [64]byte
+		for {
+			n, err := aliveRead.Read(buf[:])
+			if n > 0 {
+				select {
+				case alive <- struct{}{}:
+				default:
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
 		_ = cmd.Wait()
 		close(guest.exited)
 	}()
 	return guest, nil
 }
 
-// waitForLauncher waits for the VM's sockets to appear, which is the only
-// evidence from out here that libkrun configured the guest and started it.
-//
-// It is evidence only because launch deleted them first. They live in a runtime
-// directory that outlives a server process, and libkrun leaves them behind when
-// it is killed.
+// waitForLauncher includes early guest boot: libkrun binds its host VSOCK
+// listeners only when the guest activates the device. Heartbeats and new log
+// output keep a slow boot alive; elapsed startup time alone is not a failure.
 func (d *Driver) waitForLauncher(ctx context.Context, guest *guestVM) error {
-	deadline := time.Now().Add(launcherStartTimeout)
+	if guest.startupLiveness != nil {
+		defer func() { _ = guest.startupLiveness.Close() }()
+	}
+	lastActivity := time.Now()
+	poll := time.NewTicker(100 * time.Millisecond)
+	defer poll.Stop()
+	var logSizes [2]int64
+	logPaths := []string{filepath.Join(guest.runtimeDir, launcherLogName), filepath.Join(guest.runtimeDir, consoleLogName)}
+	for i, path := range logPaths {
+		if info, err := os.Stat(path); err == nil {
+			logSizes[i] = info.Size()
+		}
+	}
 	for {
+		// Recheck termination, queued heartbeats, output and readiness before
+		// declaring inactivity. A timer selected alongside fresh activity must
+		// never kill a live boot.
+		select {
+		case <-guest.exited:
+			return fmt.Errorf("the pool VM launcher exited during startup: %s", guest.launcherLogTail())
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for pool VM startup: %w: %s", ctx.Err(), guest.launcherLogTail())
+		default:
+		}
+		select {
+		case <-guest.alive:
+			lastActivity = time.Now()
+		default:
+		}
+		for i, path := range logPaths {
+			if info, err := os.Stat(path); err == nil && info.Size() != logSizes[i] {
+				logSizes[i] = info.Size()
+				lastActivity = time.Now()
+			}
+		}
 		if guest.socketsReady() {
 			return nil
 		}
+		if time.Since(lastActivity) >= launcherIdleTimeout {
+			var missing []string
+			for _, path := range guest.sockets {
+				if !isUnixSocket(path) {
+					missing = append(missing, path)
+				}
+			}
+			return fmt.Errorf("the pool VM launcher reported no liveness or log progress for %s; waiting for sockets %v: %s", launcherIdleTimeout, missing, guest.launcherLogTail())
+		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
 		case <-guest.exited:
-			// Any exit here is a failure, including a clean one:
-			// krun_start_enter returns only on error, and a guest that powered
-			// itself off before its sockets were usable did not start. The
-			// sockets may exist by now — libkrun binds them before the guest
-			// boots — which is exactly why their presence is not the answer.
-			return fmt.Errorf("the pool VM launcher exited during startup: %s", guest.launcherLogTail())
-		default:
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("the pool VM launcher did not create its sockets within %s: %s", launcherStartTimeout, guest.launcherLogTail())
-		}
-		timer := time.NewTimer(25 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
+		case <-guest.alive:
+			lastActivity = time.Now()
+		case <-poll.C:
 		}
 	}
 }
@@ -792,6 +843,9 @@ func (g *guestVM) waitExited(timeout time.Duration) bool {
 // the one that works when a signal does not arrive.
 func (g *guestVM) close() {
 	g.stopOnce.Do(func() {
+		if g.startupLiveness != nil {
+			_ = g.startupLiveness.Close()
+		}
 		if g.outboundCancel != nil {
 			g.outboundCancel()
 		}
