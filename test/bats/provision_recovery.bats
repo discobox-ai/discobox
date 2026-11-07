@@ -41,7 +41,7 @@ SETTINGS
   id="$(cli run -d -H shell "$BATS_TEST_TMPDIR/app" -o json | jq -er .id)"
   echo "$id" >"$BATS_SUITE_TMPDIR/sandbox"
   # Wait for the normal platform before adding a controlled background feature.
-  run timeout 600 env HOME="$DISCOBOX_BATS_HOME" "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" exec "$id" -- discobox-provision wait
+  run timeout 600 env HOME="$DISCOBOX_BATS_HOME" "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" exec "$id" -- discobox-provision wait core
   echo "$output"
   [ "$status" -eq 0 ]
   container="$(docker ps -q --filter "name=-$id")"
@@ -108,13 +108,17 @@ SETUP
   # Cut power while apt/dpkg holds the transaction, then start via the product.
   docker kill "$container"
   cli restart "$id"
-  run timeout 180 env HOME="$DISCOBOX_BATS_HOME" "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" exec "$id" -- discobox-provision wait
+  run timeout 180 env HOME="$DISCOBOX_BATS_HOME" "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" exec "$id" -- discobox-provision wait recovery
   echo "$output"
   [ "$status" -eq 0 ]
   docker exec "$container" test -e /var/lib/discobox/recovery-configured
-  state="$(docker exec "$container" cat /run/discobox/provision.json)"
+  deadline=$((SECONDS + 30))
+  until state="$(docker exec "$container" cat /run/discobox/provision.json)" &&
+    jq -e '.ready == true and .state == "ready" and .features.recovery.state == "ready"' <<<"$state"; do
+    [ "$SECONDS" -lt "$deadline" ] || return 1
+    sleep 0.2
+  done
   echo "$state"
-  jq -e '.ready == true and .state == "ready" and .features.recovery.state == "ready"' <<<"$state"
   cli admin service start "$id" recovery-test
   deadline=$((SECONDS + 30))
   until docker exec "$container" test -e /var/lib/discobox/recovery-service-state/started; do
