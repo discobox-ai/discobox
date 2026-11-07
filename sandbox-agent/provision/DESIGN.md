@@ -128,6 +128,13 @@ Npm install scripts use a private temporary cache and remove only that cache.
 They run while a box provisions, at its boot or as a snapshot is taken, when the user's npm cache can be
 a mounted, pool-shared volume; provisioning must not clear or remove it.
 
+The Go installer retries download and validation up to three times within its
+install step. Each attempt extracts into a private sibling of `/usr/local/go`
+and runs the staged toolchain's version command before replacing the installed
+tree. Exhaustion preserves the prior installation and fails the feature with
+the attempts in its log; a later provisioning pass can run the unrecorded step
+again. Other run steps are not automatically retried.
+
 ## Snapshots
 
 A snapshot is a box provisioned for no sandbox, and kept so a box of the same
