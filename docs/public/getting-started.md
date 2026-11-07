@@ -37,8 +37,8 @@ manual is selected after it lands. `discobox-dev` is Homebrew's latest dot
 release channel; it does not select an `-rc` tag. Stable and development
 clients share local state and cannot run their servers simultaneously.
 
-Discobox supports macOS, Linux and Windows. Linux uses Docker by default;
-ensure Docker is installed and accessible to the server user. First use can
+Discobox supports macOS, Linux and Windows. On Linux, the built-in provider
+needs Docker installed and accessible to the server user. First use can
 download the server, images and agent bundles, so allow time and network
 access. A remote server runs its pools on the server side.
 
@@ -93,6 +93,18 @@ discobox run . 'fix the failing tests'
 `.` is the source; the words after it are the agent's prompt. Each box gets
 its own checkout at your selected commit. Uncommitted files stay on your
 machine unless you explicitly add `--include-dirty`.
+
+A run names three things: the harness, the source and the task. Choose a
+harness for one run with `-H`, and give a repository as the source instead of
+a directory:
+
+```sh
+discobox run -H codex OWNER/REPO -p 'fix the flaky retry test'
+```
+
+Without `-d`, your terminal becomes the box's window: the harness's own
+interface, with shells and services beside it. Press **Ctrl-A**, then **d**,
+to detach; the box keeps running.
 
 For an empty box, use `discobox run --no-source`. To start a task without
 opening its workspace, add `-d`; it prints the box identifier:
