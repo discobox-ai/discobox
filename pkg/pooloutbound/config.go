@@ -257,6 +257,12 @@ func (r Resolved) ResolveLocalForwarder() (Resolved, error) {
 	return r, nil
 }
 
+// Direct reports whether r routes nothing through a proxy and adds no trust: a
+// machine needs no boot material to apply it.
+func (r Resolved) Direct() bool {
+	return r.HTTP == "" && r.HTTPS == "" && r.CAPEM == ""
+}
+
 // RejectLocalEndpoints is for hosted machines with no host/guest relay.
 func (r Resolved) RejectLocalEndpoints() error {
 	for _, raw := range []string{r.HTTP, r.HTTPS} {

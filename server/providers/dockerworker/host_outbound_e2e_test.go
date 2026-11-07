@@ -76,6 +76,9 @@ func TestHostOutboundRetriesFailedRevisionE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if delivery.Host == nil {
+		t.Skip("the VM's boot outbound configuration is direct, so nothing is installed on its host")
+	}
 	revision := delivery.Host.Revision()
 	run := func(script string) {
 		t.Helper()
@@ -90,7 +93,7 @@ cat > /etc/systemd/system/discobox-outbound.service.d/99-retry-test.conf <<'UNIT
 [Service]
 ExecStartPre=/bin/sh -ec 'test -e /run/discobox-outbound-retry-once || { touch /run/discobox-outbound-retry-once; exit 1; }'
 UNIT
-rm -f /run/discobox-outbound-retry-once ` + hostOutboundDir + "/" + revision + `.done
+rm -f /run/discobox-outbound-retry-once ` + hostOutboundBootDir + "/" + revision + `.done
 systemctl daemon-reload`)
 	defer func() {
 		_, _ = cli.ContainerStart(context.WithoutCancel(ctx), created.ID, client.ContainerStartOptions{})
