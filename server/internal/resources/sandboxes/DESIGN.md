@@ -586,6 +586,11 @@ Two consequences worth stating:
 - **`displayState` is the composition** and the only thing clients should read
   (`model.Sandbox.DisplayState`). Existence answers first; the runtime axis
   fills in what the container is doing once existence is settled at `ready`.
+  A recorded failure with desired `present` and runtime `running` also reads
+  `running`, retaining the failure as a warning (ADR 26-11-07-519). Both running
+  paths read `starting` while reported blocking provisioning is incomplete,
+  or `error` if blocking preparation failed. Other power states and archive/delete
+  failures keep `error`; runtime reports never clear the recorded failure.
   A repair recorded and not yet landed is `repairing`, whoever authored it, and
   answers before the failure it is repairing: recording it cleared the error
   while the row still reads `failed`.

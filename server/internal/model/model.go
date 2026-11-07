@@ -1321,8 +1321,8 @@ func (s *Sandbox) Repairing() bool {
 //
 // Existence is consulted first and wins, because a sandbox that is being
 // archived or deleted is not described by whatever its container was last seen
-// doing. Only once existence is settled at `ready` does the runtime axis
-// answer. A sandbox event carries it (ADR 26-11-01-560 §2), so every client
+// doing. A present, running sandbox can retain a reconcile failure as a
+// warning (ADR 26-11-07-519); blocking provisioning still qualifies running. A sandbox event carries it (ADR 26-11-01-560 §2), so every client
 // reads this one rule.
 func (s *Sandbox) DisplayState() string {
 	// A repair that has not landed answers before the failure it is repairing:
@@ -1333,6 +1333,9 @@ func (s *Sandbox) DisplayState() string {
 		return "repairing"
 	}
 	if s.ErrorMessage != nil || s.State == SandboxStateFailed {
+		if s.DesiredState == DesiredStatePresent && s.RuntimeState == SandboxRuntimeStateRunning {
+			return s.runningDisplayState()
+		}
 		return "error"
 	}
 	if s.DesiredState == DesiredStateDeleted && s.State != SandboxStateDeleted {
@@ -1361,18 +1364,7 @@ func (s *Sandbox) DisplayState() string {
 			return "starting"
 		}
 		if s.RuntimeState == SandboxRuntimeStateRunning {
-			var status struct {
-				Provision *struct {
-					Ready bool   `json:"ready"`
-					Error string `json:"error"`
-				} `json:"provision"`
-			}
-			if json.Unmarshal(s.AgentStatus, &status) == nil && status.Provision != nil && !status.Provision.Ready {
-				if status.Provision.Error != "" {
-					return "error"
-				}
-				return "starting"
-			}
+			return s.runningDisplayState()
 		}
 		return s.RuntimeState
 	case SandboxStateArchived, SandboxStateDeleted:
@@ -1381,6 +1373,23 @@ func (s *Sandbox) DisplayState() string {
 		// Includes the empty state, which is a row that was never given one.
 		return "error"
 	}
+}
+
+// runningDisplayState qualifies observed running power with blocking provisioning.
+func (s *Sandbox) runningDisplayState() string {
+	var status struct {
+		Provision *struct {
+			Ready bool   `json:"ready"`
+			Error string `json:"error"`
+		} `json:"provision"`
+	}
+	if json.Unmarshal(s.AgentStatus, &status) == nil && status.Provision != nil && !status.Provision.Ready {
+		if status.Provision.Error != "" {
+			return "error"
+		}
+		return "starting"
+	}
+	return "running"
 }
 
 // SetRuntimeState records an observation of what the container is doing,

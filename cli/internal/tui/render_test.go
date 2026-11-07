@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // TestFrames renders the window in each of its states to the test log, so the
@@ -1164,5 +1165,64 @@ func TestAMessageSitsAboveTheKeys(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRunningReconcileWarning(t *testing.T) {
+	for _, color := range []bool{false, true} {
+		box := Sandbox{ID: "warning", Name: "working box", State: StateRunning, Message: "ensure failed", Agent: programstatus.Status{State: programstatus.Working}}
+		l := listForTest(Session{}, []Sandbox{box})
+		st := newStyles(color)
+		for _, focused := range []bool{false, true} {
+			row, _ := l.row(st, &zones{}, box, 0, 0, focused)
+			if !strings.Contains(row, "⚠") {
+				t.Fatalf("color %v: missing warning: %q", color, row)
+			}
+			want := "working box"
+			if focused {
+				want = "ensure failed"
+			}
+			if !strings.Contains(row, want) {
+				t.Fatalf("missing %q: %q", want, row)
+			}
+			if color && !strings.Contains(row, "▶") {
+				t.Fatalf("program status lost: %q", row)
+			}
+		}
+		box.Message = ""
+		row, _ := l.row(st, &zones{}, box, 0, 0, true)
+		if strings.Contains(row, "⚠") {
+			t.Fatalf("cleared warning remains: %q", row)
+		}
+	}
+}
+
+func TestRunningWarningKeepsActions(t *testing.T) {
+	boxes := testSandboxes()[:1]
+	boxes[0].Message = "ensure failed"
+	ds := newFakeSource(boxes...)
+	ds.harnessChanges = HarnessChanges{CandidateID: "warning-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add"}}}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"))
+	for _, label := range []string{"attach", "shell", "stop", "review config"} {
+		found := false
+		for _, action := range m.actions(m.list.targets()) {
+			if action.label == label {
+				found = true
+				if !action.enabled {
+					t.Errorf("%s disabled: %s", label, action.why)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("action %s absent", label)
+		}
+	}
+	if got := m.list.count(); got != len(boxes) {
+		t.Fatalf("count %d, want %d", got, len(boxes))
+	}
+	send(t, m, keyPress("H"))
+	if !strings.Contains(dialogText(m), "settings.json") {
+		t.Fatalf("review config did not open: %s", dialogText(m))
 	}
 }

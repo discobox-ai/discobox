@@ -2792,6 +2792,9 @@ components:
                         - deleted
                         - error
                     type: string
+                errorMessage:
+                    description: Recorded reconcile failure, also served in the sandbox runtime. A running sandbox can retain this warning. Each event is a whole snapshot; absence clears the previous message.
+                    type: string
                 program:
                     $ref: '#/components/schemas/SandboxEventProgram'
                     description: What the program in the sandbox's primary session last reported of itself over OSC 7501. Present only while runtimeState is running, and absent when the program reported nothing.
