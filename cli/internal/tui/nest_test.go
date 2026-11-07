@@ -5,36 +5,37 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // nestSession is a window on this machine, in /src/app.
-var nestSession = Session{HostID: "host_here", OriginKey: "here:/src/app", HostKey: "here"}
+var nestSession = console.Session{HostID: "host_here", OriginKey: "here:/src/app", HostKey: "here"}
 
 // nestBoxes is a lead a person created here, two discoboxes it leads — one
 // of which created one of its own — and an unrelated one. Each created one
 // records what a create from inside a discobox records: that discobox as the
 // machine, and a path inside it.
-func nestBoxes() []Sandbox {
-	created := func(id, name, by string) Sandbox {
-		return Sandbox{
-			ID: id, Name: name, State: StateRunning, CreatedBy: by,
+func nestBoxes() []console.Sandbox {
+	created := func(id, name, by string) console.Sandbox {
+		return console.Sandbox{
+			ID: id, Name: name, State: console.StateRunning, CreatedBy: by,
 			OriginKey: "box:" + by + ":/workspace/source", OriginHostID: "host_" + by, OriginHost: by,
 			Source: "/workspace/source",
 		}
 	}
-	return []Sandbox{
+	return []console.Sandbox{
 		created("sbx_grand", "grandchild", "sbx_old"),
-		{ID: "sbx_solo", Name: "solo", State: StateRunning, OriginKey: "here:/src/app", OriginHostID: "host_here", Source: "/src/app"},
+		{ID: "sbx_solo", Name: "solo", State: console.StateRunning, OriginKey: "here:/src/app", OriginHostID: "host_here", Source: "/src/app"},
 		created("sbx_new", "newer child", "sbx_lead"),
 		created("sbx_old", "older child", "sbx_lead"),
-		{ID: "sbx_lead", Name: "lead", State: StateRunning, OriginKey: "here:/src/app", OriginHostID: "host_here", Source: "/src/app"},
+		{ID: "sbx_lead", Name: "lead", State: console.StateRunning, OriginKey: "here:/src/app", OriginHostID: "host_here", Source: "/src/app"},
 	}
 }
 
 func rowNames(l *sandboxList) []string {
 	var out []string
 	for _, s := range l.rows() {
-		out = append(out, s.tree+s.Name)
+		out = append(out, s.Tree+s.Name)
 	}
 	return out
 }
@@ -43,7 +44,7 @@ func rowNames(l *sandboxList) []string {
 // is in, though the folder it is filed in itself is a path inside the creator.
 func TestADiscoboxIsNestedUnderTheOneThatCreatedIt(t *testing.T) {
 	l := listForTest(nestSession, nestBoxes())
-	l.folder = nestSession.folder()
+	l.folder = nestSession.Folder()
 
 	want := []string{"solo", "lead", "├ newer child", "└ older child", "  └ grandchild"}
 	if got := rowNames(l); strings.Join(got, "|") != strings.Join(want, "|") {
@@ -94,7 +95,7 @@ func TestADiscoboxFiledApartFromItsCreatorIsDrawnOnceUnderIt(t *testing.T) {
 
 	// Its own folder lists it as the server filed it when its creator is not
 	// drawn there.
-	l.folder = folder{key: "box:sbx_lead:/workspace/source"}
+	l.folder = console.Folder{Key: "box:sbx_lead:/workspace/source"}
 	if got := rowNames(l); strings.Join(got, "|") != "newer child|older child|└ grandchild" {
 		t.Fatalf("rows in the created discoboxes' folder = %q", got)
 	}
@@ -102,15 +103,15 @@ func TestADiscoboxFiledApartFromItsCreatorIsDrawnOnceUnderIt(t *testing.T) {
 
 // A discobox filed in its creator's own folder is drawn once, under it.
 func TestADiscoboxFiledWithItsCreatorIsDrawnOnce(t *testing.T) {
-	boxes := []Sandbox{
+	boxes := []console.Sandbox{
 		{ID: "sbx_child", Name: "child", CreatedBy: "sbx_lead", OriginKey: "here"},
 		{ID: "sbx_lead", Name: "lead", OriginKey: "here"},
 	}
-	for _, f := range []folder{everyFolder, {key: "here"}} {
+	for _, f := range []console.Folder{everyFolder, {Key: "here"}} {
 		l := listForTest(nestSession, boxes)
 		l.folder = f
 		if got := rowNames(l); strings.Join(got, "|") != "lead|└ child" {
-			t.Fatalf("rows in %q = %q", f.key, got)
+			t.Fatalf("rows in %q = %q", f.Key, got)
 		}
 	}
 }
@@ -121,11 +122,11 @@ func TestTheArchivedOfferCountsTheNestedOnes(t *testing.T) {
 	boxes := nestBoxes()
 	for i := range boxes {
 		if boxes[i].ID == "sbx_new" {
-			boxes[i].State = StateArchived
+			boxes[i].State = console.StateArchived
 		}
 	}
 	l := listForTest(nestSession, boxes)
-	l.folder = nestSession.folder()
+	l.folder = nestSession.Folder()
 	if got := l.archivedCount(); got != 1 {
 		t.Fatalf("archivedCount = %d, want 1", got)
 	}
@@ -147,7 +148,7 @@ func TestTheCursorStaysOnANestedDiscobox(t *testing.T) {
 	l := listForTest(nestSession, nestBoxes())
 	l.folder = everyFolder
 	l.moveTo(4) // "grandchild", two levels down
-	l.setAll(append([]Sandbox{{ID: "sbx_fresh", Name: "fresh", OriginKey: "here:/src/app", OriginHostID: "host_here"}}, nestBoxes()...))
+	l.setAll(append([]console.Sandbox{{ID: "sbx_fresh", Name: "fresh", OriginKey: "here:/src/app", OriginHostID: "host_here"}}, nestBoxes()...))
 	if s := l.current(); s == nil || s.ID != "sbx_grand" {
 		t.Fatalf("cursor on %v after a refresh, want sbx_grand", s)
 	}
@@ -159,11 +160,11 @@ func TestARowNestsUnderTheNearestCreatorOnScreen(t *testing.T) {
 	boxes := nestBoxes()
 	for i := range boxes {
 		if boxes[i].ID == "sbx_old" {
-			boxes[i].State = StateArchived
+			boxes[i].State = console.StateArchived
 		}
 	}
 	l := listForTest(nestSession, boxes)
-	l.folder = nestSession.folder()
+	l.folder = nestSession.Folder()
 	want := []string{"solo", "lead", "├ grandchild", "└ newer child"}
 	if got := rowNames(l); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("rows with a creator archived = %q, want %q", got, want)
@@ -184,7 +185,7 @@ func TestARowNestsUnderTheNearestCreatorOnScreen(t *testing.T) {
 // An ID is one server's: a discobox is not nested under another server's
 // discobox that happens to share its creator's ID.
 func TestNestingStaysInsideOneServer(t *testing.T) {
-	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
+	l := listForTest(console.Session{Servers: []string{"alpha", "beta"}}, []console.Sandbox{
 		{ID: "sbx_child", Name: "child", Server: "beta", CreatedBy: "sbx_lead"},
 		{ID: "sbx_lead", Name: "lead", Server: "alpha"},
 	})
@@ -196,7 +197,7 @@ func TestNestingStaysInsideOneServer(t *testing.T) {
 
 // A listing that holds a loop still lists every row.
 func TestALoopOfCreatorsStillListsEveryRow(t *testing.T) {
-	l := listForTest(Session{}, []Sandbox{
+	l := listForTest(console.Session{}, []console.Sandbox{
 		{ID: "sbx_a", Name: "a", CreatedBy: "sbx_b"},
 		{ID: "sbx_b", Name: "b", CreatedBy: "sbx_a"},
 	})

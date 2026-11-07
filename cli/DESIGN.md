@@ -17,7 +17,8 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxpush` | `discobox push`: sending a local source's commits into the origin on its pool that its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 26-09-05-008). |
 | `internal/origin` | Resolves the client host a sandbox is created from, and a directory's project root (its repository root). Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn. Used by create (ADR 0083). |
-| `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
+| `internal/console` | The console core (ADR 26-11-07-876): what the console means, shared by every frontend — the `DataSource` seam and its types. Imports no frontend. See [`internal/console/DESIGN.md`](internal/console/DESIGN.md). |
+| `internal/tui` | The `discobox console` window: a renderer of `internal/console` — Bubble Tea presentation and interaction state. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/lifetime` | How long a binding lasts, said the way people say it: the presets an approval offers, the words every length-of-time flag parses (`Flag`: `--for`, `--ttl`, `--max-binding-ttl`, `--expires-in`, and `--since` counting back), and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/apiroute` | A secret route between the API's shape and `secretroute.Route`, the one reading of a route (ADR 26-10-27-880 §4). The CLI and the console parse, print and edit routes as `secretroute.Route`; this is the one place the two shapes meet, so a field added to a route is carried in one place. |
@@ -36,8 +37,10 @@ transport helpers where OpenAPI does not model the stream.
 
 - Keep reusable sandbox creation workflows out of `internal/cli`; place them in
   `internal/sandboxcreate` so Cobra and console adapters consume the same behavior.
-- `internal/tui` must not import `internal/cli`. It owns presentation state and
-  frontend contracts only; API and terminal adapters belong outside it.
+- `internal/tui` must not import `internal/cli`. It owns presentation state
+  only; API and terminal adapters belong outside it.
+- `internal/console` imports no frontend: not `internal/tui`, not
+  `internal/cli`, and no Bubble Tea.
 - `internal/cli` may adapt generated API clients and terminal transports to the
   console's interfaces, but must not become the owner of logic shared by frontends.
 - **The command that makes a discobox is `run`, and `new`, `create`, `r` and

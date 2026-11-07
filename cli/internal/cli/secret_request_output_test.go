@@ -14,7 +14,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
 )
 
@@ -96,9 +96,9 @@ func TestTheConsoleAnswersEachPartInOneCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &apiDataSource{app: &App{serverURL: server.URL}, client: client, projectID: "project-1"}
-	err = d.ApproveCredentialRequest(t.Context(), "", tui.Approval{
+	err = d.ApproveCredentialRequest(t.Context(), "", console.Approval{
 		RequestID: "sreq_1", SecretID: "sec_1", TTLSeconds: 3600, Raw: "env",
-		Use: tui.PartApprove, Delegate: tui.PartDeny,
+		Use: console.PartApprove, Delegate: console.PartDeny,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -227,9 +227,9 @@ func TestTheConsoleSubmitsAnAdditionWithoutExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &apiDataSource{app: &App{serverURL: server.URL}, client: client, projectID: "project-1"}
-	err = d.ApproveCredentialRequest(t.Context(), "", tui.Approval{
+	err = d.ApproveCredentialRequest(t.Context(), "", console.Approval{
 		RequestID: "sreq_1", SecretID: "sec_1", TTLSeconds: 0, UseAs: "add",
-		Use: tui.PartApprove, Delegate: tui.PartDeny,
+		Use: console.PartApprove, Delegate: console.PartDeny,
 	})
 	if err != nil {
 		t.Fatal(err)

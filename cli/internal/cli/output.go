@@ -18,11 +18,11 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/apiroute"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -904,11 +904,11 @@ func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) 
 // formatHarnessFileSource names the set a harness file comes from, and the
 // one beneath it that it overrides.
 func formatHarnessFileSource(file harnessFile) string {
-	name := func(source tui.HarnessFileSource) string {
+	name := func(source console.HarnessFileSource) string {
 		switch source {
-		case tui.HarnessFileOverride:
+		case console.HarnessFileOverride:
 			return "yours"
-		case tui.HarnessFileSaved:
+		case console.HarnessFileSaved:
 			return "saved"
 		default:
 			return "bundle"

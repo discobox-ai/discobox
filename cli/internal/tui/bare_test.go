@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // openBare is an attach window on the first discobox, past its wait screen,
@@ -18,7 +19,7 @@ func openBare(t *testing.T, ds *fakeSource) (*driver, *Model, *fakeTerminal) {
 	if !m.bare() {
 		t.Fatalf("an attach with only its primary should be bare:\n%s", plainFrame(m))
 	}
-	return d, m, ds.execTerm(ExecPrimary)
+	return d, m, ds.execTerm(console.ExecPrimary)
 }
 
 // bareStatus is the bare window's last row, as plain text.
@@ -167,7 +168,7 @@ func TestABareAttachCentersItsLinks(t *testing.T) {
 		ds := newFakeSource(desktopSandboxes()...)
 		d, m, _ := openBare(t, ds)
 		d.wait("the forward", func() bool { return m.forward != nil })
-		ds.forward.bind(Binding{Port: 6900, Local: 6901})
+		ds.forward.bind(console.Binding{Port: 6900, Local: 6901})
 		d.wait("the desktop", func() bool { return strings.Contains(bareStatus(m), "Desktop") })
 
 		status := bareStatus(m)
@@ -192,8 +193,8 @@ func TestRunningServicesAloneKeepAttachBare(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
+		ds.services = []console.Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
 		d, m := openAttached(t, ds, ds.sandboxes[0])
 		d.wait("primary and service loaded", func() bool {
 			return m.primary() != nil && m.dialog == nil && m.terminals.len() == 2
@@ -223,8 +224,8 @@ func TestRunWithServicesStartsBare(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("api", "API", "exec_api")}
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		ds.services = []console.Service{runningService("api", "API", "exec_api")}
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("primary and service", func() bool { return m.primary() != nil && m.dialog == nil && m.terminals.len() == 2 })
 		if !m.bare() {
 			t.Fatalf("run with services should be bare:\n%s", plainFrame(m))
@@ -238,7 +239,7 @@ func TestServicesArrivingDuringAttachKeepItBare(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openBare(t, ds)
 		ds.mu.Lock()
-		ds.services = []Service{runningService("api", "API", "exec_api")}
+		ds.services = []console.Service{runningService("api", "API", "exec_api")}
 		ds.serviceLogs = map[string][]byte{"api": []byte("API is listening\r\n")}
 		ds.mu.Unlock()
 		d.dispatch(workspaceTickMsg{gen: m.wsGen})
@@ -278,7 +279,7 @@ func TestAdditionalInteractivePanesAndBannersRestoreAttachChrome(t *testing.T) {
 			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				ds := newFakeSource(testSandboxes()...)
-				ds.services = []Service{runningService("api", "API", "exec_api")}
+				ds.services = []console.Service{runningService("api", "API", "exec_api")}
 				d, m, _ := openBare(t, ds)
 				d.wait("service pane", func() bool { return m.terminals.len() == 2 })
 				switch extra {
@@ -287,13 +288,13 @@ func TestAdditionalInteractivePanesAndBannersRestoreAttachChrome(t *testing.T) {
 					d.wait("shell", func() bool { return m.shells.len() == 1 })
 				case "terminal":
 					ds.mu.Lock()
-					ds.execs = append(ds.execs, Exec{ID: "exec_other", Harness: "shell", Live: true, Tty: true})
+					ds.execs = append(ds.execs, console.Exec{ID: "exec_other", Harness: "shell", Live: true, Tty: true})
 					ds.mu.Unlock()
 					d.dispatch(workspaceTickMsg{gen: m.wsGen})
 					d.wait("second terminal", func() bool { return m.terminals.len() == 3 })
 				case "banner":
 					ds.mu.Lock()
-					ds.requests = []CredentialRequest{waitingRequest()}
+					ds.requests = []console.CredentialRequest{waitingRequest()}
 					ds.mu.Unlock()
 					d.dispatch(tickMsg{})
 					d.wait("credential band", func() bool { return m.bannerShowing() != bannerNone })
@@ -310,7 +311,7 @@ func TestBareAttachActionsCanInspectBrokenServices(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{{ID: "broken", Name: "Broken", Status: "stopped", Problem: "script is not executable"}}
+		ds.services = []console.Service{{ID: "broken", Name: "Broken", Status: "stopped", Problem: "script is not executable"}}
 		d, m, _ := openBare(t, ds)
 		d.wait("diagnostic pane", func() bool { return m.terminals.len() == 2 })
 		d.leader(boxMenuKey)

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
@@ -39,7 +40,7 @@ type boxLinkServerMsg struct {
 	// the link matched none of the rest.
 	unsure error
 	// from is the box on screen when the link was pressed.
-	from boxRef
+	from console.BoxRef
 }
 
 // markBoxLinks marks the box links a pane's last View drew, at the origin its
@@ -155,13 +156,13 @@ func (m *Model) paneServer(p *pane) string {
 // focusAddressed focuses the discobox ref names on server, by ID or by a
 // prefix only one of its discoboxes has, from what the listing last said.
 func (m *Model) focusAddressed(server, ref, uri string) tea.Cmd {
-	var found []Sandbox
+	var found []console.Sandbox
 	for _, box := range m.list.all {
 		if box.Server != server {
 			continue
 		}
 		if box.ID == ref {
-			found = []Sandbox{box}
+			found = []console.Sandbox{box}
 			break
 		}
 		if strings.HasPrefix(box.ID, ref) {

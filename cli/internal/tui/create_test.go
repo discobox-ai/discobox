@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // openCreateCard types a prompt and presses Enter, which puts the card up.
@@ -261,11 +262,11 @@ func TestTheCreateCardFoldsItsOptionsUntilTab(t *testing.T) {
 // request names neither way; a command that said either way keeps saying it.
 func TestUserSkillsLeftAloneAreTheConfigurations(t *testing.T) {
 	t.Parallel()
-	opts := newOptions(Session{Directory: "/src/disco2"})
+	opts := newOptions(console.Session{Directory: "/src/disco2"})
 	if got := opts.request("fix", "").UserSkills; got != nil {
 		t.Fatalf("UserSkills = %v, want nil for the configuration to decide", *got)
 	}
-	opts.prefill(RunRequest{UserSkills: new(false)})
+	opts.prefill(console.RunRequest{UserSkills: new(false)})
 	got := opts.request("fix", "").UserSkills
 	if got == nil || *got {
 		t.Fatalf("UserSkills = %v, want false as the command gave it", got)

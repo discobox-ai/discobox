@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 const paletteKey = "k"
@@ -22,7 +23,7 @@ type palette struct {
 	mouseIdentity string
 	input         textinput.Model
 	command       string
-	box           *boxRef
+	box           *console.BoxRef
 	selected      string
 	offset        int
 	archived      bool
@@ -32,7 +33,7 @@ type palette struct {
 
 type paletteRow struct {
 	identity string
-	box      *Sandbox
+	box      *console.Sandbox
 	command  *consoleCommand
 	why      string
 	score    matchRank
@@ -143,8 +144,10 @@ func paletteMatch(q fuzzyQuery, primary, detail []string) (matchRank, bool) {
 	return rank, true
 }
 
-func (m *Model) boxRef(s Sandbox) boxRef { return boxRef{m.session.serverName(s.Server), s.ID} }
-func (m *Model) paletteBox(ref boxRef) *Sandbox {
+func (m *Model) boxRef(s console.Sandbox) console.BoxRef {
+	return console.BoxRef{Server: m.session.ServerName(s.Server), ID: s.ID}
+}
+func (m *Model) paletteBox(ref console.BoxRef) *console.Sandbox {
 	for _, s := range m.list.all {
 		if m.boxRef(s) == ref {
 			return &s
@@ -152,9 +155,9 @@ func (m *Model) paletteBox(ref boxRef) *Sandbox {
 	}
 	return nil
 }
-func (m *Model) paletteFields(s Sandbox) ([]string, []string) {
+func (m *Model) paletteFields(s console.Sandbox) ([]string, []string) {
 	primary := []string{s.ID, strings.TrimPrefix(s.ID, "sbx_"), s.Name, s.ConfigName, s.GivenName}
-	detail := []string{s.Description, s.Repository, s.RepositoryKey, s.Source, s.Branch, s.Git.Branch, s.Harness, s.HarnessName, s.Pool, s.PoolID, m.session.serverName(s.Server), string(s.State)}
+	detail := []string{s.Description, s.Repository, s.RepositoryKey, s.Source, s.Branch, s.Git.Branch, s.Harness, s.HarnessName, s.Pool, s.PoolID, m.session.ServerName(s.Server), string(s.State)}
 	for _, tag := range s.Tags {
 		detail = append(detail, tag)
 		detail = append(detail, strings.SplitN(tag, "=", 2)...)
@@ -177,7 +180,7 @@ func (m *Model) rebuildPalette(reset bool) {
 	var rows []paletteRow
 	if p.box == nil {
 		for _, s := range m.list.all {
-			if s.State == StateArchived && !p.archived {
+			if s.State == console.StateArchived && !p.archived {
 				continue
 			}
 			primary, detail := m.paletteFields(s)
@@ -194,11 +197,11 @@ func (m *Model) rebuildPalette(reset bool) {
 				}
 			}
 			ref := m.boxRef(s)
-			rows = append(rows, paletteRow{identity: "box:" + ref.server + ":" + ref.id, box: &s, score: score, why: why})
+			rows = append(rows, paletteRow{identity: "box:" + ref.Server + ":" + ref.ID, box: &s, score: score, why: why})
 		}
 	}
 	if p.command == "" {
-		var box *Sandbox
+		var box *console.Sandbox
 		if p.box != nil {
 			box = m.paletteBox(*p.box)
 		}
@@ -236,7 +239,7 @@ func (m *Model) rebuildPalette(reset bool) {
 			}
 		}
 	}
-	current := boxRef{}
+	current := console.BoxRef{}
 	if m.hasWorkspace() {
 		current = m.boxRef(m.currentBox())
 	} else if s := m.list.current(); s != nil {
@@ -323,7 +326,7 @@ func (m *Model) paletteMove(delta int) {
 		p.reason = ""
 	}
 }
-func (m *Model) paletteChip(c *consoleCommand, box *Sandbox) {
+func (m *Model) paletteChip(c *consoleCommand, box *console.Sandbox) {
 	p := m.palette
 	if c != nil {
 		p.command = c.id
@@ -372,7 +375,7 @@ func (m *Model) paletteChoose(complete bool) tea.Cmd {
 			return nil
 		}
 	}
-	var box Sandbox
+	var box console.Sandbox
 	var c *consoleCommand
 	if r.box != nil {
 		box = *r.box
@@ -399,7 +402,7 @@ func (m *Model) paletteChoose(complete bool) tea.Cmd {
 	m.closePalette()
 	return m.executeConsoleCommand(*c, box)
 }
-func (m *Model) paletteNavigate(box Sandbox) tea.Cmd {
+func (m *Model) paletteNavigate(box console.Sandbox) tea.Cmd {
 	if m.oneShot() {
 		return m.focusAddressed(box.Server, box.ID, box.ID)
 	}
@@ -508,7 +511,7 @@ func (m *Model) viewPalette(background string) string {
 		chip = p.command + " ▸ ×"
 	}
 	if p.box != nil {
-		chip = p.box.id + " ▸ ×"
+		chip = p.box.ID + " ▸ ×"
 	}
 	if chip != "" {
 		lines = append(lines, ansi.Truncate(chip, inner, "…"))
@@ -528,12 +531,12 @@ func (m *Model) viewPalette(background string) string {
 		if r.box != nil {
 			s := r.box
 			statusTags := []string{}
-			for _, tag := range s.rowTags() {
-				if isStatusTag(tag) {
+			for _, tag := range s.RowTags() {
+				if console.IsStatusTag(tag) {
 					statusTags = append(statusTags, tag)
 				}
 			}
-			line = strings.Join(statusTags, " ") + " " + fmt.Sprintf("□ %s  %s  %s  %s  %s", displayName(*s), shortID(s.ID), s.State, s.RepositoryKey, m.session.serverName(s.Server))
+			line = strings.Join(statusTags, " ") + " " + fmt.Sprintf("□ %s  %s  %s  %s  %s", displayName(*s), shortID(s.ID), s.State, s.RepositoryKey, m.session.ServerName(s.Server))
 		} else {
 			c := r.command
 			line = "› " + c.label + "  " + c.detail
@@ -580,7 +583,7 @@ func (m *Model) viewPalette(background string) string {
 	var stale []string
 	for name := range m.list.listed {
 		if age := m.list.listedAgo(name); age != "" {
-			stale = append(stale, m.session.serverName(name)+" "+age)
+			stale = append(stale, m.session.ServerName(name)+" "+age)
 		}
 	}
 	slices.Sort(stale)
@@ -699,17 +702,17 @@ func (m *Model) paletteMouse(msg tea.MouseMsg) tea.Cmd {
 
 // paletteReveal is a navigation-only view. It never becomes a saved filter.
 type paletteReveal struct {
-	target   boxRef
+	target   console.BoxRef
 	server   string
-	folder   folder
+	folder   console.Folder
 	tags     []string
 	archived bool
 }
 
-func (m *Model) revealPaletteBox(box Sandbox) {
+func (m *Model) revealPaletteBox(box console.Sandbox) {
 
 	m.restorePaletteView()
-	visible := slices.ContainsFunc(m.list.rows(), func(s Sandbox) bool { return m.boxRef(s) == m.boxRef(box) })
+	visible := slices.ContainsFunc(m.list.rows(), func(s console.Sandbox) bool { return m.boxRef(s) == m.boxRef(box) })
 	if visible {
 		return
 	}
@@ -717,7 +720,7 @@ func (m *Model) revealPaletteBox(box Sandbox) {
 	m.list.server = ""
 	m.list.folder = everyFolder
 	m.list.tags = nil
-	m.list.showArchived = box.State == StateArchived
+	m.list.showArchived = box.State == console.StateArchived
 
 	m.status = "Showing the palette result outside your filters; the filters return when you leave"
 	m.list.clamp()
@@ -733,14 +736,14 @@ func (m *Model) restorePaletteView() {
 	m.list.clamp()
 }
 
-func (m *Model) recordPaletteVisit(box Sandbox) {
+func (m *Model) recordPaletteVisit(box console.Sandbox) {
 	if m.paletteRecent == nil {
-		m.paletteRecent = map[boxRef]int{}
+		m.paletteRecent = map[console.BoxRef]int{}
 	}
 	m.paletteClock++
 	m.paletteRecent[m.boxRef(box)] = m.paletteClock
 	if len(m.paletteRecent) > 100 {
-		var oldest boxRef
+		var oldest console.BoxRef
 		v := m.paletteClock
 		for k, n := range m.paletteRecent {
 			if n < v {

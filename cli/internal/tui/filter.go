@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The header's filter is one control: a line saying what the list is narrowed
@@ -100,8 +101,8 @@ func (p *filterPicker) rows() []filterRow {
 	}
 	for _, f := range append(l.folders(), everyFolder) {
 		rows = append(rows, filterRow{
-			group: "Folder", label: f.label, detail: p.folderDetail(f),
-			marked: l.folder.key == f.key,
+			group: "Folder", label: f.Label, detail: p.folderDetail(f),
+			marked: l.folder.Key == f.Key,
 			mark:   func(l *sandboxList) { l.folder = f },
 		})
 	}
@@ -161,9 +162,9 @@ func (p *filterPicker) serverDetail(name string) string {
 
 // folderDetail is a folder's count, and whether it is the one this window is
 // running in.
-func (p *filterPicker) folderDetail(f folder) string {
+func (p *filterPicker) folderDetail(f console.Folder) string {
 	detail := plural(p.count(func(l *sandboxList) { l.folder = f }), "box", "boxes")
-	if f.key != "" && f.key == p.list.session.folder().key {
+	if f.Key != "" && f.Key == p.list.session.Folder().Key {
 		detail += " · where this window is running"
 	}
 	return detail
@@ -233,7 +234,7 @@ func (p *filterPicker) chosen() tea.Cmd {
 // same reason every other dialog does: it closed over the model by value.
 type filterChosenMsg struct {
 	server string
-	folder folder
+	folder console.Folder
 	tags   []string
 }
 
@@ -379,8 +380,8 @@ func (m *Model) listFilterLabel() string {
 	if m.list.server != "" && m.manyServers() {
 		parts = append(parts, "server "+m.list.server)
 	}
-	if m.list.folder.key != "" {
-		parts = append(parts, m.list.folder.label)
+	if m.list.folder.Key != "" {
+		parts = append(parts, m.list.folder.Label)
 	}
 	if len(m.list.tags) > 0 {
 		parts = append(parts, tagsLabel(m.list.tags))
@@ -420,8 +421,8 @@ func (m *Model) styleFilter(label string, hovered, focused bool) string {
 // The cursor goes back to the top: the rows underneath it are a different set
 // of discoboxes now, and leaving it on row four of a list that has been
 // replaced points it at something nobody chose.
-func (m *Model) applyFilter(server string, f folder, tags []string) tea.Cmd {
-	serverMoved, folderMoved := server != m.list.server, f.key != m.list.folder.key
+func (m *Model) applyFilter(server string, f console.Folder, tags []string) tea.Cmd {
+	serverMoved, folderMoved := server != m.list.server, f.Key != m.list.folder.Key
 	if !serverMoved && !folderMoved && slices.Equal(tags, m.list.tags) {
 		return nil
 	}
@@ -432,7 +433,7 @@ func (m *Model) applyFilter(server string, f folder, tags []string) tea.Cmd {
 	// to the primary, which is where `discobox run` puts it with no --server
 	// at all (ADR 0116 §5).
 	if folderMoved {
-		m.opts.setFolder(f.source)
+		m.opts.setFolder(f.Source)
 	}
 	if serverMoved {
 		m.opts.setServer(server)

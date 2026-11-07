@@ -7,12 +7,14 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // runningService is a service the sandbox reports as up, with the exec running
 // it — the shape the two listings have together.
-func runningService(id, name, execID string) Service {
-	return Service{
+func runningService(id, name, execID string) console.Service {
+	return console.Service{
 		ID: id, Name: name, Status: "running", ExecID: execID,
 		StartedAt: time.Date(2026, 8, 7, 12, 30, 0, 0, time.UTC),
 	}
@@ -20,8 +22,8 @@ func runningService(id, name, execID string) Service {
 
 // serviceExecRecord is what the exec listing reports for a running service: an
 // exec on pipes, tagged with the service it runs.
-func serviceExecRecord(id, service, name string) Exec {
-	return Exec{
+func serviceExecRecord(id, service, name string) console.Exec {
+	return console.Exec{
 		ID:          id,
 		Command:     []string{"/bin/bash", "-lc", "'/src/.discobox/services/10-api.sh'"},
 		Service:     service,
@@ -37,8 +39,8 @@ func TestARunningServiceIsATabBeforeTheTerminals(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
+		ds.services = []console.Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -52,8 +54,8 @@ func TestARunningServiceIsATabBeforeTheTerminals(t *testing.T) {
 		if p.service != "discobox-api" {
 			t.Errorf("pane service = %q, want discobox-api", p.service)
 		}
-		if p.action != InteractService {
-			t.Errorf("action = %q, want %q", p.action, InteractService)
+		if p.action != console.InteractService {
+			t.Errorf("action = %q, want %q", p.action, console.InteractService)
 		}
 		if got := p.name(); got != "Discobox API" {
 			t.Errorf("tab name = %q, want %q", got, "Discobox API")
@@ -72,7 +74,7 @@ func TestABrokenDeclarationGetsATabSayingWhy(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{{
+		ds.services = []console.Service{{
 			ID: "discobox-api", Name: "Discobox Api", Status: "stopped",
 			FileName: "10-discobox-api.sh",
 			Problem:  "front matter: yaml: line 2: mapping values are not allowed in this context",
@@ -112,7 +114,7 @@ func TestAFailedServiceShowsItsLastOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		code := 1
-		ds.services = []Service{{
+		ds.services = []console.Service{{
 			ID: "otel", Name: "OTEL", Status: "failed", ExecID: "exec_svc1",
 			ExitCode: &code, StartedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 		}}
@@ -141,8 +143,8 @@ func TestARunningServicePaneOpensOnItsHistory(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		ds.serviceLogs = map[string][]byte{"otel": []byte("Dashboard is running\r\n")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
@@ -183,8 +185,8 @@ func TestAServiceDoesNotTakeTheFocus(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 		d.settle()
@@ -219,7 +221,7 @@ func TestThePrimaryTakesTheFocusWhenItArrivesAfterAService(t *testing.T) {
 		if m.terminals.len() != 1 {
 			t.Fatalf("terminals = %d, want the service", m.terminals.len())
 		}
-		d.dispatch(workspaceTermMsg{gen: gen, exec: Exec{ID: ExecPrimary, Primary: true}, term: newFakeTerminal()})
+		d.dispatch(workspaceTermMsg{gen: gen, exec: console.Exec{ID: console.ExecPrimary, Primary: true}, term: newFakeTerminal()})
 
 		if m.terminals.len() != 2 {
 			t.Fatalf("terminals = %d, want both", m.terminals.len())
@@ -243,12 +245,12 @@ func TestAnAskedForShellKeepsTheFocusWhenThePrimaryArrives(t *testing.T) {
 		gen := m.wsGen
 		d.dispatch(workspaceTermMsg{
 			gen:   gen,
-			exec:  Exec{ID: "exec_shell1", Command: []string{"/bin/zsh"}, Tty: true, Live: true},
+			exec:  console.Exec{ID: "exec_shell1", Command: []string{"/bin/zsh"}, Tty: true, Live: true},
 			term:  newFakeTerminal(),
-			asked: InteractShell,
+			asked: console.InteractShell,
 			focus: true,
 		})
-		d.dispatch(workspaceTermMsg{gen: gen, exec: Exec{ID: ExecPrimary, Primary: true}, term: newFakeTerminal()})
+		d.dispatch(workspaceTermMsg{gen: gen, exec: console.Exec{ID: console.ExecPrimary, Primary: true}, term: newFakeTerminal()})
 
 		if !m.onShells {
 			t.Fatal("the shell that was asked for must keep the keys")
@@ -272,7 +274,7 @@ func TestAnArrivingServiceLeavesTheWorkingPaneAlone(t *testing.T) {
 		}
 		working := m.terminals.panes[1]
 
-		ds.setServices([]Service{{ID: "otel", Name: "OTEL", Status: "failed"}})
+		ds.setServices([]console.Service{{ID: "otel", Name: "OTEL", Status: "failed"}})
 		d.wait("the service tab", func() bool { return m.terminals.len() == 3 })
 
 		if m.terminals.visible() != working {
@@ -293,8 +295,8 @@ func TestStopAndStartOnAServicePaneActOnTheService(t *testing.T) {
 		t.Run(tc.key, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				ds := newFakeSource(testSandboxes()...)
-				ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-				ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+				ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+				ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 				d, m, _ := openWorkspace(t, ds, "enter")
 				d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 				focusService(d, m)
@@ -321,8 +323,8 @@ func TestStopOnATerminalPaneStillActsOnTheDiscobox(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -346,8 +348,8 @@ func TestAnUnrelatedVerbOnAServicePaneActsOnTheDiscobox(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 		focusService(d, m)
@@ -368,8 +370,8 @@ func TestTheHintsLineOnAServiceOffersItsVerbs(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -400,8 +402,8 @@ func TestAServiceTabMarksOutputYouHaveNotSeen(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -428,8 +430,8 @@ func TestOutputOnAVisibleServiceIsNotMarked(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 		focusService(d, m)
@@ -473,7 +475,7 @@ func TestAStoppedServiceHasNoTab(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
+		ds.services = []console.Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.settle()
 
@@ -493,15 +495,15 @@ func TestAServicePaneFollowsItsService(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
-		ds.setServices([]Service{{ID: "otel", Name: "OTEL", Status: "stopped"}})
+		ds.setServices([]console.Service{{ID: "otel", Name: "OTEL", Status: "stopped"}})
 		d.wait("the tab to go", func() bool { return m.terminals.len() == 1 })
 
-		ds.setServices([]Service{runningService("otel", "OTEL", "exec_svc2")})
+		ds.setServices([]console.Service{runningService("otel", "OTEL", "exec_svc2")})
 		d.wait("the tab to come back", func() bool { return m.terminals.len() == 2 })
 	})
 }
@@ -513,15 +515,15 @@ func TestARestartedServiceReopensItsPane(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		first := runningService("otel", "OTEL", "exec_svc1")
-		ds.services = []Service{first}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{first}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 		before := m.terminals.panes[0].id
 
 		restarted := first
 		restarted.StartedAt = first.StartedAt.Add(time.Minute)
-		ds.setServices([]Service{restarted})
+		ds.setServices([]console.Service{restarted})
 		d.wait("the pane to be reopened", func() bool {
 			return m.terminals.len() == 2 && m.terminals.panes[0].id != before
 		})
@@ -533,7 +535,7 @@ func TestADeletedDeclarationLosesItsTab(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "failed"}}
+		ds.services = []console.Service{{ID: "otel", Name: "OTEL", Status: "failed"}}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -555,8 +557,8 @@ func TestServicesSortBeforeTerminalsInDeclarationOrder(t *testing.T) {
 		otel.StartedAt = time.Date(2026, 8, 7, 13, 0, 0, 0, time.UTC)
 		api := runningService("api", "API", "exec_api")
 		api.StartedAt = time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
-		ds.services = []Service{otel, api}
-		ds.execs = []Exec{
+		ds.services = []console.Service{otel, api}
+		ds.execs = []console.Exec{
 			serviceExecRecord("exec_api", "api", "API"),
 			serviceExecRecord("exec_otel", "otel", "OTEL"),
 			{
@@ -571,7 +573,7 @@ func TestServicesSortBeforeTerminalsInDeclarationOrder(t *testing.T) {
 		for _, p := range m.terminals.panes {
 			got = append(got, p.execID)
 		}
-		want := []string{servicePaneID("otel"), servicePaneID("api"), ExecPrimary, "exec_term1"}
+		want := []string{servicePaneID("otel"), servicePaneID("api"), console.ExecPrimary, "exec_term1"}
 		if !slices.Equal(got, want) {
 			t.Fatalf("left column = %v, want %v", got, want)
 		}
@@ -587,8 +589,8 @@ func TestServicesDoNotSplitTheWindow(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -596,7 +598,7 @@ func TestServicesDoNotSplitTheWindow(t *testing.T) {
 			t.Fatal("a service must not split the window; it is a tab in the box the primary already has")
 		}
 		full, rows := m.paneCells(m.width)
-		if got := ds.execTerm(ExecPrimary).size(); got != [2]int{full, rows} {
+		if got := ds.execTerm(console.ExecPrimary).size(); got != [2]int{full, rows} {
 			t.Errorf("primary is %v, want the whole window %dx%d", got, full, rows)
 		}
 	})
@@ -607,8 +609,8 @@ func TestAServicePaneIsReadOnly(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -633,7 +635,7 @@ func TestANonTTYExecThatIsNotAServiceIsNotATab(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.execs = []Exec{{
+		ds.execs = []console.Exec{{
 			ID:        "exec_plain",
 			Command:   []string{"git", "status"},
 			Tty:       false,
@@ -655,7 +657,7 @@ func TestLeaderS0OpensTheServicesMenu(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{
+		ds.services = []console.Service{
 			{ID: "discobox-api", Name: "Discobox API", Description: "hot reload", Status: "stopped"},
 			{ID: "otel", Name: "OTEL", Status: "stopped"},
 		}
@@ -680,7 +682,7 @@ func TestTheServicesMenuRunsAVerb(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
+		ds.services = []console.Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
 		d, m, _ := openWorkspace(t, ds, "enter")
 
 		d.key("ctrl+a")
@@ -723,7 +725,7 @@ func TestTheServicesMenuShowsUnrunnableDeclarations(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{{ID: "broken", Name: "Broken", Status: "stopped", Problem: "script is not executable"}}
+		ds.services = []console.Service{{ID: "broken", Name: "Broken", Status: "stopped", Problem: "script is not executable"}}
 		d, m, _ := openWorkspace(t, ds, "enter")
 
 		d.key("ctrl+a")
@@ -809,11 +811,11 @@ func TestTheSChordJumpsToAServiceByItsNumber(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{
+		ds.services = []console.Service{
 			runningService("api", "API", "exec_api"),
 			runningService("otel", "OTEL", "exec_otel"),
 		}
-		ds.execs = []Exec{
+		ds.execs = []console.Exec{
 			serviceExecRecord("exec_api", "api", "API"),
 			serviceExecRecord("exec_otel", "otel", "OTEL"),
 		}
@@ -841,8 +843,8 @@ func TestAnUnknownServiceNumberIsReported(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("api", "API", "exec_api")}
-		ds.execs = []Exec{serviceExecRecord("exec_api", "api", "API")}
+		ds.services = []console.Service{runningService("api", "API", "exec_api")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_api", "api", "API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -862,8 +864,8 @@ func TestServiceTabsWearSNumbersAndLeaveTheDigitsAlone(t *testing.T) {
 		boxes := testSandboxes()
 		boxes[0].Name, boxes[0].TerminalTitle = "reaper", "reaper"
 		ds := newFakeSource(boxes...)
-		ds.services = []Service{runningService("api", "API", "exec_api")}
-		ds.execs = []Exec{serviceExecRecord("exec_api", "api", "API")}
+		ds.services = []console.Service{runningService("api", "API", "exec_api")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_api", "api", "API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 		d.key("ctrl+a")
@@ -891,7 +893,7 @@ func TestAServiceStartingDoesNotRenumberAShell(t *testing.T) {
 		d.wait("the shell", func() bool { return m.shells.len() == 1 })
 		shell := m.shells.panes[0]
 
-		ds.setServices([]Service{runningService("api", "API", "exec_api")})
+		ds.setServices([]console.Service{runningService("api", "API", "exec_api")})
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
 		d.key("ctrl+a")
@@ -908,8 +910,8 @@ func TestLeaderAGoesBackToThePrimaryPastTheServices(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("api", "API", "exec_api")}
-		ds.execs = []Exec{serviceExecRecord("exec_api", "api", "API")}
+		ds.services = []console.Service{runningService("api", "API", "exec_api")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_api", "api", "API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 		focusService(d, m)

@@ -28,6 +28,7 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
 	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
@@ -54,7 +55,7 @@ type Model struct {
 	paletteReveal *paletteReveal
 
 	palette       *palette
-	paletteRecent map[boxRef]int
+	paletteRecent map[console.BoxRef]int
 	paletteUsage  map[string]int
 	paletteClock  int
 
@@ -99,7 +100,7 @@ type Model struct {
 	renewing     map[string]bool
 
 	ctx context.Context
-	ds  DataSource
+	ds  console.DataSource
 	st  *styles
 
 	width, height int
@@ -110,7 +111,7 @@ type Model struct {
 	screenWidth int
 	// parked is every workspace switched away from, by server and discobox id, still
 	// attached; wsOpening is a workspace on its way up, before its primary.
-	parked    map[boxRef]*workspace
+	parked    map[console.BoxRef]*workspace
 	wsOpening bool
 	// treeZones is the tree's own hit map. listFront is the list in the tree
 	// holding the keys while a workspace is open; treeExpanded is the list
@@ -128,7 +129,7 @@ type Model struct {
 	// (endLiveScreen). Any other narration taking the line clears it.
 	createNarrating bool
 	// cursorOn is the box syncListCursor last found in the list.
-	cursorOn boxRef
+	cursorOn console.BoxRef
 	// treeHoverX and treeHoverY are where the pointer rests over the tree,
 	// -1 when it is elsewhere.
 	treeHoverX, treeHoverY int
@@ -137,7 +138,7 @@ type Model struct {
 	// resources is what Discobox has on this machine and what it is using,
 	// refreshed on the listing's beat and drawn in the header. Zero until the
 	// first report arrives, which draws nothing rather than zeroes.
-	resources Resources
+	resources console.Resources
 	// promptTypedAt is when a key last went into the composer, so something
 	// unprompted that acts on single letters can wait for the person to stop
 	// (explainHarnessChangesIfOwed).
@@ -153,7 +154,7 @@ type Model struct {
 
 	// savedView is the header's filters as the store last had them, written only
 	// when they move away from it. See view.go.
-	savedView ListView
+	savedView console.ListView
 
 	// edits is the composer's kill ring and undo history — the readline state
 	// the textarea does not keep for itself. See readline.go.
@@ -164,17 +165,17 @@ type Model struct {
 	// there is no client-facing event stream (ADR 0061) and an approval is
 	// answered on human time — and it is what both the row's mark and the
 	// workspace's banner are drawn from. See credentials.go.
-	requests map[string][]CredentialRequest
+	requests map[string][]console.CredentialRequest
 
 	// allRequests is every pending request, the ones no discobox owns
 	// included. The secrets screen counts and answers from it; the map above
 	// only exists to mark rows.
-	allRequests []CredentialRequest
+	allRequests []console.CredentialRequest
 
 	// rejections is every credential in the project an upstream has refused
 	// and the server cannot renew (ADR 0132). Read on its own beat beside the
 	// inbox, and drawn as the workspace's first band. See rejections.go.
-	rejections []SecretRejection
+	rejections []console.SecretRejection
 
 	// dismissed is the bands somebody has dismissed, per discobox, each with
 	// the occurrence it was dismissed on. See banner.go.
@@ -186,7 +187,7 @@ type Model struct {
 	harnesses *harnessList
 	// pools are the configured server's, as last listed, for the run options'
 	// Pool row: kept here because the panel is rebuilt when the session lands.
-	pools []Pool
+	pools []console.Pool
 
 	// secrets is the project's credentials and the bindings standing on them:
 	// the screen that manages them, and the operator's side of the credential
@@ -218,10 +219,10 @@ type Model struct {
 	// is present and empty is a lookup still running — which is what keeps
 	// reopening the picker from starting a second one — so absence, not a
 	// zero value, is what means "never asked". See tools.go.
-	addresses map[boxRef]resolvedAddresses
+	addresses map[console.BoxRef]resolvedAddresses
 	// toolCatalogs is each discobox's tools, keyed by server and sandbox id, as the
 	// picker last found them. See tools.go.
-	toolCatalogs map[boxRef]resolvedTools
+	toolCatalogs map[console.BoxRef]resolvedTools
 	// toolWanted is a tool asked for before its discobox's catalog arrived.
 	toolWanted toolWant
 	// copied is the address last taken off that card, so the row it came from
@@ -234,7 +235,7 @@ type Model struct {
 	// of a create (a project with no default harness) is asked off that
 	// listing, and a run started before it arrived would meet the server's
 	// refusal instead of the question.
-	pendingRun *RunRequest
+	pendingRun *console.RunRequest
 	// askSource is whether that run left its source unsaid (`discobox run`
 	// with no SOURCE), so the create card asks it before anything is made. The
 	// card waits for the session as well as the harnesses: it is the session
@@ -255,7 +256,7 @@ type Model struct {
 	// their own, so the window is that attach: leaving the workspace —
 	// detaching, or the session ending — leaves the window, because there is
 	// no list behind it that anybody asked for. See WithAttach.
-	attach *Sandbox
+	attach *console.Sandbox
 	// bareShown is whether the last layout was for the bare window.
 	bareShown bool
 	// exitErr is what an attach that never came up ends the window with. Run
@@ -320,7 +321,7 @@ type Model struct {
 	// press on the same cell is a double click only on the same box, since a
 	// listing that reordered the tree between the two would otherwise start
 	// one the first press never pointed at.
-	clickBox boxRef
+	clickBox console.BoxRef
 	// now is the clock the window counts elapsed time against: the
 	// double-click window above, and how long a read has been out (see poll),
 	// which is what decides whether the band says the listing is late. One
@@ -388,7 +389,7 @@ type Model struct {
 	harnessesOpen bool
 	dialog        *dialog
 
-	session Session
+	session console.Session
 	// sessionRead is whether the session has come back, read or not: the
 	// filters the list is drawn through are as settled as they will get.
 	sessionRead bool
@@ -467,7 +468,7 @@ type Model struct {
 	// copySize is the measurement behind the "copy this directory?" question:
 	// the running total, the walk's stop, and the dialog the number is being
 	// written into, which is what says the answer has not been given yet.
-	copySize   func() DirectoryTotal
+	copySize   func() console.DirectoryTotal
 	copyStop   func()
 	copyDialog *dialog
 	copyDir    string
@@ -493,7 +494,7 @@ func WithHarnesses() Option {
 // `discobox run` and `discobox attach` are: the window is that attach rather
 // than a launcher that happens to have one open. Leaving the workspace closes the window
 // instead of falling back to a list nobody asked for.
-func WithAttach(sandbox Sandbox) Option {
+func WithAttach(sandbox console.Sandbox) Option {
 	return func(m *Model) { m.attach = &sandbox }
 }
 
@@ -507,11 +508,11 @@ func WithAttach(sandbox Sandbox) Option {
 // askSource is a run whose source the command left unsaid: rather than cutting
 // it from the directory the command ran in, the window puts the create card up
 // first, holding every other flag the command was given.
-func WithRun(req RunRequest, askSource bool) Option {
+func WithRun(req console.RunRequest, askSource bool) Option {
 	return func(m *Model) { m.oneRun, m.pendingRun, m.askSource = true, &req, askSource }
 }
 
-func New(ctx context.Context, ds DataSource, options ...Option) *Model {
+func New(ctx context.Context, ds console.DataSource, options ...Option) *Model {
 	color := detectColor()
 	st := newStyles(color)
 
@@ -547,7 +548,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	ta.SetStyles(composer)
 	ta.Focus()
 
-	session := Session{DefaultProject: "default", PrimaryServer: ds.PrimaryServer()}
+	session := console.Session{DefaultProject: "default", PrimaryServer: ds.PrimaryServer()}
 	m := &Model{
 		ctx:            ctx,
 		ds:             ds,
@@ -596,7 +597,7 @@ func (m *Model) oneShot() bool { return m.oneRun || m.attach != nil }
 // whose window was left before the create came back: that discobox may still
 // come up, and nothing here knows what it is called. Such a run's window is
 // the attach on what it made, so that is where it is kept (see created).
-func (m *Model) made() *Sandbox {
+func (m *Model) made() *console.Sandbox {
 	if !m.oneRun || m.attach == nil {
 		return nil
 	}
@@ -825,17 +826,17 @@ func (m *Model) loadResources() tea.Cmd {
 // messages
 
 type sessionLoadedMsg struct {
-	session Session
+	session console.Session
 	err     error
 }
 
 type listLoadedMsg struct {
-	listing Listing
+	listing console.Listing
 	err     error
 }
 
 type resourcesLoadedMsg struct {
-	resources Resources
+	resources console.Resources
 }
 
 type tickMsg struct{}
@@ -852,8 +853,8 @@ type statusMsg struct {
 // workspaceCheckedMsg answers what the source directory
 // would carry into the discobox, and so what there is to ask about.
 type workspaceCheckedMsg struct {
-	req       RunRequest
-	workspace SourceWorkspace
+	req       console.RunRequest
+	workspace console.SourceWorkspace
 	err       error
 }
 
@@ -863,8 +864,8 @@ type directorySizeMsg struct{}
 
 // createdMsg reports the sandbox Enter asked for, or why there is none.
 type createdMsg struct {
-	sandbox Sandbox
-	req     RunRequest
+	sandbox console.Sandbox
+	req     console.RunRequest
 	create  *createWatch
 	// accepted is whether the server took the create before err: a run that
 	// fails after that has still made a discobox.
@@ -874,8 +875,8 @@ type createdMsg struct {
 
 // verbDoneMsg reports a lifecycle verb that ran against the API and returned.
 type verbDoneMsg struct {
-	verb    Verb
-	targets []Sandbox
+	verb    console.Verb
+	targets []console.Sandbox
 	errs    []error
 	// notes are, per id, what the answer left that sandbox doing beyond what
 	// the verb says (DataSource.Do).
@@ -891,7 +892,7 @@ type verbThen struct {
 	leave bool
 	// next is the box an archive beside the tree goes on to once it is
 	// answered: the archived box's neighbor in the tree.
-	next boxRef
+	next console.BoxRef
 }
 
 // runActionMsg carries a choice out of the action menu. The menu cannot run the
@@ -899,7 +900,7 @@ type verbThen struct {
 // choice and the update loop runs it against the live model.
 type runActionMsg struct {
 	key     string
-	targets []Sandbox
+	targets []console.Sandbox
 }
 
 // statusHolds is how long a message sits there when nothing else is pressed.
@@ -1043,7 +1044,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// view.go.
 		m.restoreView(msg.session.View)
 		m.opts = newOptions(msg.session)
-		m.opts.setFolder(m.list.folder.source)
+		m.opts.setFolder(m.list.folder.Source)
 		m.opts.openOnLastCut(msg.session.LastSource)
 		m.opts.setServer(m.list.server)
 		// The listing can land first, and what it says the project was cut
@@ -1922,7 +1923,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 	if keyName(msg) == "f1" {
-		return m.dispatchConsoleCommand("help", Sandbox{})
+		return m.dispatchConsoleCommand("help", console.Sandbox{})
 	}
 	// The audit screen is drawn over the workspace and takes its keys: none of
 	// the panes under it is on screen to be typed at. See audit.go.
@@ -2240,11 +2241,11 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		m.list.visual = false
 		return status("selection cleared")
 	case "A":
-		return m.dispatchConsoleCommand("archived", Sandbox{})
+		return m.dispatchConsoleCommand("archived", console.Sandbox{})
 	case "r":
-		return tea.Batch(m.dispatchConsoleCommand("refresh", Sandbox{}), status("refreshing"))
+		return tea.Batch(m.dispatchConsoleCommand("refresh", console.Sandbox{}), status("refreshing"))
 	case "?":
-		return m.dispatchConsoleCommand("help", Sandbox{})
+		return m.dispatchConsoleCommand("help", console.Sandbox{})
 	case "enter":
 		return m.act("a")
 	case "delete":
@@ -2271,7 +2272,7 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 					}
 					return status("nothing selected")
 				}
-				return m.executeConsoleCommand(c, Sandbox{})
+				return m.executeConsoleCommand(c, console.Sandbox{})
 			}
 		}
 	}
@@ -2391,7 +2392,7 @@ const (
 // header and the Source row are one control in both directions: the header
 // moves the source (applyFilter), and the source moves the header here.
 func (m *Model) followSource() tea.Cmd {
-	if f, ok := m.opts.followSource(); ok && f.key != m.list.folder.key {
+	if f, ok := m.opts.followSource(); ok && f.Key != m.list.folder.Key {
 		m.list.folder = f
 		m.list.resetCursor()
 		m.layout()
@@ -2462,28 +2463,28 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 // actions is the base level CLI, filtered against what the current targets can
 // actually do. Unavailable actions stay on the menu with the reason, rather
 // than disappearing and leaving you wondering where upgrade went.
-func (m *Model) actions(targets []Sandbox) []action {
+func (m *Model) actions(targets []console.Sandbox) []action {
 	one := len(targets) == 1
 	anyUpgrade, anyRepair, anyRunning, anyStopped := false, false, false, false
 	anyArchived, allArchived := false, len(targets) > 0
 	for _, s := range targets {
 		anyUpgrade = anyUpgrade || s.Upgrade
-		anyRepair = anyRepair || s.repairable()
+		anyRepair = anyRepair || s.Repairable()
 		// A suspended box takes both: stop powers it off, start thaws it.
-		anyRunning = anyRunning || s.State == StateRunning || s.State == StateSuspended
-		anyStopped = anyStopped || s.startable()
-		anyArchived = anyArchived || s.State == StateArchived
-		allArchived = allArchived && s.State == StateArchived
+		anyRunning = anyRunning || s.State == console.StateRunning || s.State == console.StateSuspended
+		anyStopped = anyStopped || s.Startable()
+		anyArchived = anyArchived || s.State == console.StateArchived
+		allArchived = allArchived && s.State == console.StateArchived
 	}
-	attachable := one && targets[0].attachable()
+	attachable := one && targets[0].Attachable()
 	// The name is written into the box (ADR 26-10-12-026), which is started to
 	// take it. An archived one has nothing to start.
 	renameable, renameWhy := one, "takes exactly one box"
-	if one && targets[0].State == StateArchived {
+	if one && targets[0].State == console.StateArchived {
 		renameable, renameWhy = false, "an archived box cannot be started to take a name — unarchive it first"
 	}
 	settable, settableWhy := one, "takes exactly one box"
-	if one && targets[0].State == StateArchived {
+	if one && targets[0].State == console.StateArchived {
 		settable, settableWhy = false, "an archived box is unarchived before its settings change"
 	}
 	return []action{
@@ -2491,7 +2492,7 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: attachWhy(one, targets)},
 		{key: "s", press: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
 			why: attachWhy(one, targets)},
-		{key: harnessChangesKey, press: harnessChangesKey, label: "review config", detail: "review and save local settings and logins", enabled: one && targets[0].State == StateRunning, why: "takes one running box"},
+		{key: harnessChangesKey, press: harnessChangesKey, label: "review config", detail: "review and save local settings and logins", enabled: one && targets[0].State == console.StateRunning, why: "takes one running box"},
 		{key: renameKey, press: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
 			why: renameWhy},
 		{key: settingsKey, press: settingsKey, label: "settings", detail: "edit its configured name, harness, egress and discobox API access", enabled: settable,
@@ -2522,7 +2523,7 @@ func (m *Model) actions(targets []Sandbox) []action {
 // The state name is not the reason. "the box is error" described the row rather
 // than the obstacle, and it was wrong as often as not: the boxes it refused
 // mostly had a container and a stale error latched over it.
-func attachWhy(one bool, targets []Sandbox) string {
+func attachWhy(one bool, targets []console.Sandbox) string {
 	if !one {
 		return "takes exactly one box"
 	}
@@ -2533,16 +2534,16 @@ func attachWhy(one bool, targets []Sandbox) string {
 		}
 		return "its image is no longer available on its pool, and its harness has no newer image"
 	}
-	if box.attachable() {
+	if box.Attachable() {
 		return ""
 	}
-	if box.State == StateArchived {
+	if box.State == console.StateArchived {
 		return "the box is archived — unarchive it first"
 	}
 	return "the box has no container; repair rebuilds it"
 }
 
-func actionTitle(targets []Sandbox) string {
+func actionTitle(targets []console.Sandbox) string {
 	if len(targets) == 1 {
 		return targets[0].Name
 	}
@@ -2551,7 +2552,7 @@ func actionTitle(targets []Sandbox) string {
 
 // chooseAction is the action menu's callback: it turns the chosen key into a
 // message, which the update loop runs against the live model.
-func chooseAction(targets []Sandbox) func(string) tea.Cmd {
+func chooseAction(targets []console.Sandbox) func(string) tea.Cmd {
 	return func(key string) tea.Cmd {
 		return func() tea.Msg { return runActionMsg{key: key, targets: targets} }
 	}
@@ -2570,7 +2571,7 @@ func (m *Model) act(key string) tea.Cmd {
 // The two kinds part here: a verb goes to the API and comes back, leaving the
 // window up; an interaction owns the terminal, so the window suspends and hands
 // over the real streams until it returns.
-func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
+func (m *Model) actOn(key string, targets []console.Sandbox) tea.Cmd {
 	if len(targets) == 0 {
 		return status("nothing selected")
 	}
@@ -2621,7 +2622,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		}
 		box := targets[0]
 		switch action {
-		case InteractAttach:
+		case console.InteractAttach:
 			// On the workspace screen the terminal is already there — back to
 			// the primary, which is what attach means there: it is the session
 			// the workspace is a view onto. From the list it is the screen to
@@ -2636,7 +2637,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 				return nil
 			}
 			return m.openFromList(action, box)
-		case InteractShell:
+		case console.InteractShell:
 			if m.inPanes() && m.boxRef(box) == m.boxRef(m.paneBox) {
 				return m.newShell()
 			}
@@ -2650,12 +2651,12 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	if verb == VerbPurge {
+	if verb == console.VerbPurge {
 		// Archiving is reversible and needs no ceremony. Purging is not.
 		question := fmt.Sprintf("Purge %s? The disk and everything on it goes, and unarchive cannot bring it back.",
 			actionTitle(targets))
 		d := confirmDialog("Purge", question, func(string) tea.Cmd {
-			return func() tea.Msg { return runVerbMsg{verb: VerbPurge, targets: targets} }
+			return func() tea.Msg { return runVerbMsg{verb: console.VerbPurge, targets: targets} }
 		})
 		// Enter means no: a destruction nobody can undo has to be typed for,
 		// not fallen into by answering the dialog the way every other one is.
@@ -2663,7 +2664,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		m.dialog = d
 		return nil
 	}
-	if verb == VerbArchive && m.inPanes() && len(targets) == 1 && m.boxRef(targets[0]) == m.boxRef(m.paneBox) {
+	if verb == console.VerbArchive && m.inPanes() && len(targets) == 1 && m.boxRef(targets[0]) == m.boxRef(m.paneBox) {
 		// From the workspace the one target is the discobox it shows.
 		return m.archiveWorkspace(targets[0])
 	}
@@ -2673,8 +2674,8 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 // runVerbMsg is a confirmed verb on its way back to the live model, for the
 // same reason the action menu emits a message rather than running anything.
 type runVerbMsg struct {
-	verb    Verb
-	targets []Sandbox
+	verb    console.Verb
+	targets []console.Sandbox
 }
 
 // repairKey is the letter repair answers to. It is R rather than r, which
@@ -2682,19 +2683,19 @@ type runVerbMsg struct {
 // container, next to one that redraws a table.
 const repairKey = "R"
 
-var verbs = map[string]Verb{
-	"u":       VerbUpgrade,
-	repairKey: VerbRepair,
-	"t":       VerbStop,
-	"T":       VerbStart,
-	"x":       VerbArchive,
-	"U":       VerbUnarchive,
-	"P":       VerbPurge,
+var verbs = map[string]console.Verb{
+	"u":       console.VerbUpgrade,
+	repairKey: console.VerbRepair,
+	"t":       console.VerbStop,
+	"T":       console.VerbStart,
+	"x":       console.VerbArchive,
+	"U":       console.VerbUnarchive,
+	"P":       console.VerbPurge,
 }
 
-var interactions = map[string]Interaction{
-	"a": InteractAttach,
-	"s": InteractShell,
+var interactions = map[string]console.Interaction{
+	"a": console.InteractAttach,
+	"s": console.InteractShell,
 }
 
 // runVerb applies a lifecycle verb to every target, in one command: the window
@@ -2706,11 +2707,11 @@ var interactions = map[string]Interaction{
 // seconds in which the row looks untouched.
 //
 // then is what the answer does beyond being reported (verbThen).
-func (m *Model) runVerb(verb Verb, targets []Sandbox, then verbThen) tea.Cmd {
+func (m *Model) runVerb(verb console.Verb, targets []console.Sandbox, then verbThen) tea.Cmd {
 
 	feed, next := m.narrate()
 	m.busy = string(verb) + "…"
-	if verb == VerbArchive {
+	if verb == console.VerbArchive {
 		m.list.markArchiving(targets)
 	}
 	run := func() tea.Msg {
@@ -2750,9 +2751,9 @@ func (m *Model) runVerb(verb Verb, targets []Sandbox, then verbThen) tea.Cmd {
 // does not take that wait down: the window going takes the process with it,
 // and an archive cut off on its way to the server is one nobody can say
 // happened.
-func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
+func (m *Model) archiveWorkspace(box console.Sandbox) tea.Cmd {
 	// Read before the workspace closes: the tree is drawn only beside one.
-	var next *Sandbox
+	var next *console.Sandbox
 	if m.treeAvailable() {
 		next = m.list.neighbor(box)
 	}
@@ -2760,7 +2761,7 @@ func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
 	m.layout()
 	if next != nil {
 		m.listCursorTo(*next)
-		return m.runVerb(VerbArchive, []Sandbox{box}, verbThen{next: m.boxRef(*next)})
+		return m.runVerb(console.VerbArchive, []console.Sandbox{box}, verbThen{next: m.boxRef(*next)})
 	}
 	leave := m.attach != nil
 	if leave {
@@ -2774,7 +2775,7 @@ func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
 		d.back = d
 		m.dialog = d
 	}
-	return m.runVerb(VerbArchive, []Sandbox{box}, verbThen{leave: leave})
+	return m.runVerb(console.VerbArchive, []console.Sandbox{box}, verbThen{leave: leave})
 }
 
 // archivedOnTo goes on from an archive beside the tree to the box it picked
@@ -2791,7 +2792,7 @@ func (m *Model) archivedOnTo(msg verbDoneMsg, failed bool) tea.Cmd {
 		m.listCursorTo(msg.targets[0])
 		return nil
 	}
-	if box := *cur; box.live() || m.parked[m.boxRef(box)] != nil {
+	if box := *cur; box.Live() || m.parked[m.boxRef(box)] != nil {
 		return m.switchTo(box)
 	}
 	return nil
@@ -2818,8 +2819,8 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 	}
 	// Before anything puts the cursor back on a box whose archive failed:
 	// its row is listed again first.
-	if msg.verb == VerbArchive {
-		var answered, refused []Sandbox
+	if msg.verb == console.VerbArchive {
+		var answered, refused []console.Sandbox
 		for i, box := range msg.targets {
 			if msg.errs[i] != nil {
 				refused = append(refused, box)
@@ -2840,7 +2841,7 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 		return m.exit(nil)
 	}
 	var onTo tea.Cmd
-	if msg.then.next.id != "" {
+	if msg.then.next.ID != "" {
 		onTo = m.archivedOnTo(msg, failed > 0)
 	}
 	switch {
@@ -2884,7 +2885,7 @@ const renameKey = "e"
 // renameMsg is an accepted name on its way back to the live model, the same way
 // the action menu and a confirmation hand their answers back.
 type renameMsg struct {
-	box  Sandbox
+	box  console.Sandbox
 	name string
 }
 
@@ -2896,7 +2897,7 @@ type renameDoneMsg struct {
 // askRename opens the input dialog on the name the discobox already has, so the
 // common edit — a word added to a name that is nearly right — is a word typed
 // rather than a name retyped.
-func (m *Model) askRename(box Sandbox) tea.Cmd {
+func (m *Model) askRename(box console.Sandbox) tea.Cmd {
 	// Enter on what is shown asks for nothing, whichever name that is: on a
 	// box nobody has named it is the title its harness set, and accepting it
 	// would freeze that as the box's name. An empty line takes a
@@ -2921,7 +2922,7 @@ func (m *Model) askRename(box Sandbox) tea.Cmd {
 	return nil
 }
 
-func (m *Model) rename(box Sandbox, name string) tea.Cmd {
+func (m *Model) rename(box console.Sandbox, name string) tea.Cmd {
 	m.busy = "rename…"
 	return func() tea.Msg {
 		return renameDoneMsg{name: name, err: m.ds.ForServer(box.Server).Rename(m.ctx, box.ID, name)}
@@ -3042,7 +3043,7 @@ func (m *Model) resolveSource(msg sourceChosenMsg) tea.Cmd {
 type sourceResolvedMsg struct {
 	// typed is what was in the field, which a refusal puts back into it.
 	typed  string
-	source Source
+	source console.Source
 	card   *createCard
 	err    error
 }
@@ -3085,7 +3086,7 @@ func (m *Model) askForItem(opt *option, value, problem string, card *createCard)
 type itemResolvedMsg struct {
 	opt    *option
 	typed  string
-	source Source
+	source console.Source
 	card   *createCard
 	err    error
 }
@@ -3117,7 +3118,7 @@ func (m *Model) cutFrom(card *createCard, source string) tea.Cmd {
 // wherever the request came: the composer, or the command the window was opened
 // by (WithRun). Both take the same path, which is the point of handing the
 // command's request to the window rather than having it create for itself.
-func (m *Model) runRequest(req RunRequest) tea.Cmd {
+func (m *Model) runRequest(req console.RunRequest) tea.Cmd {
 	if cmd, stop := m.askForADefaultHarness(req); stop {
 		return cmd
 	}
@@ -3158,7 +3159,7 @@ var errNothingCreated = errors.New("no discobox was created")
 // on. A run those questions interrupted resumes here rather than at run(): they
 // have already been answered, and asking again against a listing that has not
 // caught up yet would ask the same one twice.
-func (m *Model) startRun(req RunRequest) tea.Cmd {
+func (m *Model) startRun(req console.RunRequest) tea.Cmd {
 	// A discobox with no source has no working tree to carry anything out of,
 	// so there is nothing either question could be about; and both answered
 	// leaves nothing to ask.
@@ -3187,7 +3188,7 @@ func (m *Model) startRun(req RunRequest) tea.Cmd {
 // `shell` is not among the choices. It runs like any other harness and is
 // chosen like any other, but a project whose default is a login shell has no
 // coding harness by default, which is the state this is trying to leave.
-func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
+func (m *Model) askForADefaultHarness(req console.RunRequest) (tea.Cmd, bool) {
 	if req.Harness != "" || m.projectDefaultHarness() != nil {
 		return nil, false
 	}
@@ -3207,7 +3208,7 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 		detail := "make it the project default"
 		n := itoa(i + 1)
 		items = append(items, action{
-			key: n, press: n, label: harness.displayName(), detail: detail, enabled: true,
+			key: n, press: n, label: harness.DisplayName(), detail: detail, enabled: true,
 		})
 	}
 	chosen := candidates
@@ -3230,12 +3231,12 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 // chooseDefaultHarness acts on that choice: the harness becomes the default,
 // and the run that asked the question runs when it is answered.
 func (m *Model) chooseDefaultHarness(msg harnessDefaultMsg) tea.Cmd {
-	return m.runHarnessVerb(HarnessSetDefault, msg.harness, msg.resume)
+	return m.runHarnessVerb(console.HarnessSetDefault, msg.harness, msg.resume)
 }
 
 // projectDefaultHarness is the harness the project runs when nothing says
 // otherwise, or nil when it has named none.
-func (m *Model) projectDefaultHarness() *Harness {
+func (m *Model) projectDefaultHarness() *console.Harness {
 	for _, harness := range m.harnesses.all {
 		if harness.Default {
 			return &harness
@@ -3246,8 +3247,8 @@ func (m *Model) projectDefaultHarness() *Harness {
 
 // defaultCandidates are the harnesses worth offering as a project default: all
 // of them except `shell`, in the order the listing reports.
-func (m *Model) defaultCandidates() []Harness {
-	var out []Harness
+func (m *Model) defaultCandidates() []console.Harness {
+	var out []console.Harness
 	for _, harness := range m.harnesses.all {
 		if !harness.Shell {
 			out = append(out, harness)
@@ -3298,7 +3299,7 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 // names: how many paths differ from the checked-out commit, and enough of them
 // to recognize the change by. A listing that reported no paths still asks the
 // question — what it is about is the working tree, not the count.
-func dirtyWorkspaceBody(workspace SourceWorkspace) string {
+func dirtyWorkspaceBody(workspace console.SourceWorkspace) string {
 	changes := "It has uncommitted changes"
 	if n := len(workspace.Changes); n > 0 {
 		changes = fmt.Sprintf("It has %s (%s)",
@@ -3327,7 +3328,7 @@ func summarizePaths(paths []string) string {
 // The size is counted while the question is up rather than before it: a home
 // directory takes long enough to walk that waiting for the number would be the
 // thing the question exists to avoid.
-func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
+func (m *Model) askToCopyDirectory(req console.RunRequest, dir string) tea.Cmd {
 	total, stop := m.ds.MeasureDirectory(m.ctx, dir)
 	m.copySize, m.copyStop, m.copyDir = total, stop, dir
 	m.dialog = m.includeDirtyDialog("Copy this directory?", dir, copyDirectoryBody, false, req)
@@ -3349,7 +3350,7 @@ func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
 // copying leads — the size on the dialog is the reason to ask — and the answer
 // is CopyDirectory. The directory is the dialog's subject, on a row of its own
 // above the body.
-func (m *Model) includeDirtyDialog(title, dir, body string, repository bool, req RunRequest) *dialog {
+func (m *Model) includeDirtyDialog(title, dir, body string, repository bool, req console.RunRequest) *dialog {
 	answer := func(yes string) tea.Cmd {
 		req := req
 		if repository {
@@ -3423,7 +3424,7 @@ const copyDirectoryBody = "It is not a Git repository, so copying it into the di
 // directoryCopySize is that line, with as much of the count as the walk behind
 // the question has reached. Nothing counted yet says so rather than reporting a
 // zero that is about to be wrong.
-func directoryCopySize(total DirectoryTotal) string {
+func directoryCopySize(total console.DirectoryTotal) string {
 	if total.Files == 0 && !total.Done {
 		return "calculating…"
 	}
@@ -3435,7 +3436,7 @@ func directoryCopySize(total DirectoryTotal) string {
 }
 
 // createMsg carries a settled request back to the live model.
-type createMsg struct{ req RunRequest }
+type createMsg struct{ req console.RunRequest }
 
 // creatingTitle is the wait's title before there is a discobox to name. It
 // becomes "Starting <name>" the moment the create comes back with one.
@@ -3464,7 +3465,7 @@ func (m *Model) waitDialog(title, body string) *dialog {
 	return d
 }
 
-func (m *Model) create(req RunRequest) tea.Cmd {
+func (m *Model) create(req console.RunRequest) tea.Cmd {
 	if m.oneShot() {
 		// The window is this run, so the wait is the screen: there is no list
 		// behind it for a busy line to sit under. The launcher's own runs keep
@@ -3488,7 +3489,7 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 	// up take a while, and a composer still holding a prompt that is already
 	// running reads as one that was not sent. Not before, either — a create
 	// the server refuses leaves the prompt where it was, to be sent again.
-	accepted := make(chan Sandbox, 1)
+	accepted := make(chan console.Sandbox, 1)
 	create := func() tea.Msg {
 		defer feed.close()
 		defer close(accepted)
@@ -3496,7 +3497,7 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 		var taken bool
 		deliveryRequest := req
 		deliveryRequest.Credentials = feed.credentials()
-		sandbox, err := m.ds.Run(m.ctx, deliveryRequest, feed.report, feed.warn, func(box Sandbox) {
+		sandbox, err := m.ds.Run(m.ctx, deliveryRequest, feed.report, feed.warn, func(box console.Sandbox) {
 			taken = true
 			select {
 			case accepted <- box:
@@ -3517,8 +3518,8 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 // promptSpentMsg says the server has taken a create, so the prompt it carried
 // is running and no longer the composer's, and the discobox it made exists.
 type promptSpentMsg struct {
-	req     RunRequest
-	sandbox Sandbox
+	req     console.RunRequest
+	sandbox console.Sandbox
 	create  *createWatch
 }
 
@@ -3576,7 +3577,7 @@ func (m *Model) createShowing(id string) bool {
 // read-only until the answer (submitting), but a draft can still land in it:
 // Enter on an empty composer creates a discobox with no prompt, and the draft
 // the session brings is not what was sent.
-func (m *Model) promptSpent(req RunRequest) {
+func (m *Model) promptSpent(req console.RunRequest) {
 	if strings.TrimSpace(m.prompt.Value()) != strings.Join(req.Prompt, " ") {
 		return
 	}
@@ -3660,7 +3661,7 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 	// Anywhere else the window is on the discobox's workspace already, or
 	// goes to it now, and the same wait is narrated in its frame
 	// (viewOpening) with the tree beside it.
-	return tea.Batch(m.refresh(), m.openFromList(InteractAttach, msg.sandbox))
+	return tea.Batch(m.refresh(), m.openFromList(console.InteractAttach, msg.sandbox))
 }
 
 // runFailed is how a run ends short of a workspace: a create, or a question on
@@ -4335,7 +4336,7 @@ func (m *Model) statusIdentity() string {
 	// The repair nobody typed. It is said here because a repair that worked
 	// cleared the failure from the row, and this is all that is left of it
 	// (ADR 26-10-12-711 §8).
-	if note := box.Repaired.note(m.now()); note != "" {
+	if note := repairNote(box.Repaired, m.now()); note != "" {
 		out += "  " + m.st.dimText.Render(note)
 	}
 	return out
@@ -4347,8 +4348,8 @@ func (m *Model) statusIdentity() string {
 // has the rest.
 const repairFailureWidth = 40
 
-// note is the automatic repair in a clause, or "" when there was none.
-func (r AutomaticRepair) note(now time.Time) string {
+// repairNote is the automatic repair in a clause, or "" when there was none.
+func repairNote(r console.AutomaticRepair, now time.Time) string {
 	if r.At.IsZero() {
 		return ""
 	}
@@ -4686,10 +4687,10 @@ func (m *Model) paneHints() []hint {
 	}
 	// The issue and the pull request are offered where there is one to show:
 	// an issue= or a pr= tag on a GitHub repository.
-	if _, ok := m.currentBox().workNumber(false); ok {
+	if _, ok := m.currentBox().WorkNumber(false); ok {
 		hints = append(hints, pressing(leader+" "+issueKey+" issue", leader, issueKey))
 	}
-	if _, ok := m.currentBox().workNumber(true); ok {
+	if _, ok := m.currentBox().WorkNumber(true); ok {
 		hints = append(hints, pressing(leader+" "+pullKey+" PR", leader, pullKey))
 	}
 	if len(m.panes()) > 1 {
@@ -5176,7 +5177,7 @@ func (m *Model) helpText() string {
 // sandboxLabel is what to call a discobox on screen: its name when it has one,
 // its id when it does not — a freshly created one may be reported before the
 // name it was given comes back.
-func sandboxLabel(sandbox Sandbox) string {
+func sandboxLabel(sandbox console.Sandbox) string {
 	if name := strings.TrimSpace(sandbox.Name); name != "" {
 		return name
 	}

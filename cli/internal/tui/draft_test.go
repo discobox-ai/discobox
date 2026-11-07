@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The prompt survives the window. What was in the composer when it closed is
@@ -190,7 +192,7 @@ func TestRunningThePromptDropsTheDraft(t *testing.T) {
 	send(t, m, typeString("build it")...)
 	send(t, m, tickMsg{})
 
-	send(t, m, promptSpentMsg{req: RunRequest{Prompt: []string{"build it"}}})
+	send(t, m, promptSpentMsg{req: console.RunRequest{Prompt: []string{"build it"}}})
 	send(t, m, tickMsg{})
 
 	if got := ds.drafts[len(ds.drafts)-1]; got != "" {

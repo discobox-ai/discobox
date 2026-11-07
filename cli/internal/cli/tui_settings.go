@@ -5,23 +5,23 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // BoxSettings reads what the console's settings form edits, off the sandbox as
 // `discobox admin box get` prints it.
-func (d *apiDataSource) BoxSettings(ctx context.Context, sandboxID string) (tui.BoxSettings, error) {
+func (d *apiDataSource) BoxSettings(ctx context.Context, sandboxID string) (console.BoxSettings, error) {
 	sandbox, err := getSandbox(ctx, d.client, d.projectID, sandboxID)
 	if err != nil {
-		return tui.BoxSettings{}, err
+		return console.BoxSettings{}, err
 	}
 	egress := sandbox.Egress.Value
 	allow, _ := egress.Allow.Get()
 	passthrough, _ := egress.Passthrough.Get()
-	return tui.BoxSettings{
+	return console.BoxSettings{
 		Name:      sandbox.Config.Name,
 		HarnessID: sandbox.Config.HarnessConfigId.Or(""),
-		Egress: tui.Egress{
+		Egress: console.Egress{
 			DenyByDefault: egress.DenyByDefault.Or(false),
 			Allow:         allow,
 			Passthrough:   passthrough,
@@ -34,7 +34,7 @@ func (d *apiDataSource) BoxSettings(ctx context.Context, sandboxID string) (tui.
 // answers as the sandboxChange the command's flags make, built into the
 // request by the same body. The harness goes by its config ID, which the
 // window holds, rather than through the selector --harness takes.
-func (d *apiDataSource) UpdateBox(ctx context.Context, sandboxID string, update tui.BoxSettingsUpdate) error {
+func (d *apiDataSource) UpdateBox(ctx context.Context, sandboxID string, update console.BoxSettingsUpdate) error {
 	change := sandboxChange{
 		name:            update.Name,
 		harnessConfigID: update.Harness,

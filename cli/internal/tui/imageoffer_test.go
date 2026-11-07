@@ -5,14 +5,16 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // imageGoneSandboxes is the fixture with its first box failed on an image its
 // pool cannot obtain: no container, a latched error, and a newer image to move
 // to when upgrade says so.
-func imageGoneSandboxes(upgrade bool) []Sandbox {
+func imageGoneSandboxes(upgrade bool) []console.Sandbox {
 	boxes := testSandboxes()
-	boxes[0].State = StateError
+	boxes[0].State = console.StateError
 	boxes[0].HasRuntime = false
 	boxes[0].ImageUnavailable = true
 	boxes[0].Upgrade = upgrade
@@ -64,22 +66,22 @@ func TestAFailedAttachOffersTheUpgradeFromItsOwnListing(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 
-	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: imageGoneSandboxes(true)}})
+	send(t, m, listLoadedMsg{listing: console.Listing{Sandboxes: imageGoneSandboxes(true)}})
 	if m.dialog != nil {
 		t.Fatal("a routine listing raised the offer with no attach to answer")
 	}
 
-	send(t, m, imageOfferListedMsg{box: Sandbox{ID: "sbx_one"}, err: errors.New("server unreachable")})
+	send(t, m, imageOfferListedMsg{box: console.Sandbox{ID: "sbx_one"}, err: errors.New("server unreachable")})
 	if m.dialog != nil {
 		t.Fatal("a listing that failed raised an offer")
 	}
 
-	send(t, m, imageOfferListedMsg{box: Sandbox{ID: "sbx_two"}, listing: Listing{Sandboxes: imageGoneSandboxes(true)}})
+	send(t, m, imageOfferListedMsg{box: console.Sandbox{ID: "sbx_two"}, listing: console.Listing{Sandboxes: imageGoneSandboxes(true)}})
 	if m.dialog != nil {
 		t.Fatal("an attach that failed for another reason was offered an upgrade")
 	}
 
-	send(t, m, imageOfferListedMsg{box: Sandbox{ID: "sbx_one"}, listing: Listing{Sandboxes: imageGoneSandboxes(true)}})
+	send(t, m, imageOfferListedMsg{box: console.Sandbox{ID: "sbx_one"}, listing: console.Listing{Sandboxes: imageGoneSandboxes(true)}})
 	if m.dialog == nil || m.dialog.title != "Upgrade" {
 		t.Fatalf("dialog = %+v, want the upgrade offer", m.dialog)
 	}

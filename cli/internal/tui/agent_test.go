@@ -5,18 +5,19 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
-func agentBoxes() []Sandbox {
-	box := func(id string, state programstatus.State, msg string) Sandbox {
-		return Sandbox{
-			ID: id, Name: id, State: StateRunning,
+func agentBoxes() []console.Sandbox {
+	box := func(id string, state programstatus.State, msg string) console.Sandbox {
+		return console.Sandbox{
+			ID: id, Name: id, State: console.StateRunning,
 			OriginKey: "here:/src/app", OriginHostID: "host_here", Source: "/src/app",
 			Agent: programstatus.Status{State: state, Msg: msg},
 		}
 	}
-	return []Sandbox{
+	return []console.Sandbox{
 		box("blocked-box", programstatus.Blocked, "Allow rm -rf build?"),
 		box("working-box", programstatus.Working, ""),
 		box("idle-box", programstatus.Idle, ""),
@@ -26,7 +27,7 @@ func agentBoxes() []Sandbox {
 	}
 }
 
-func agentList() *sandboxList { return listForTest(Session{}, agentBoxes()) }
+func agentList() *sandboxList { return listForTest(console.Session{}, agentBoxes()) }
 
 // What a discobox's agent reports is a glyph after the box's own state dot,
 // one shape per state, and a blank cell for no report (ADR 26-10-16-424 §5).
@@ -61,10 +62,10 @@ func TestWithoutColorTheAgentsWordTakesRunningsPlace(t *testing.T) {
 // blocked on.
 func TestABlockedAgentIsTheBoxsStandingAndSaysWhy(t *testing.T) {
 	boxes := agentBoxes()
-	if boxes[0].standing() != standingBlocked {
+	if boxes[0].Standing() != console.StandingBlocked {
 		t.Fatal("a blocked agent does not make its box's standing blocked")
 	}
-	if boxes[1].standing() != standingNone {
+	if boxes[1].Standing() != console.StandingNone {
 		t.Fatal("a working agent made its box's standing something")
 	}
 	l := agentList()
@@ -90,7 +91,7 @@ func TestTheCursorRowSaysWhatIsStillProvisioning(t *testing.T) {
 	boxes := agentBoxes()
 	boxes[0].Provisioning = "provisioning docker"
 	boxes[1].Provisioning = "provisioning docker"
-	l := listForTest(Session{}, boxes)
+	l := listForTest(console.Session{}, boxes)
 	l.moveTo(1)
 	out := ansi.Strip(l.view(newStyles(true), &zones{}, true))
 	if !strings.Contains(out, "❯ ● ▶ provisioning d") {
@@ -110,7 +111,7 @@ func TestCursorNotifiesPendingHarnessCapture(t *testing.T) {
 	boxes := agentBoxes()
 	boxes[1].Name = "dynamic program title"
 	boxes[1].HarnessConfigPending = true
-	l := listForTest(Session{}, boxes)
+	l := listForTest(console.Session{}, boxes)
 	l.width = 150
 	l.moveTo(1)
 	out := ansi.Strip(l.view(newStyles(true), &zones{}, true))
@@ -118,7 +119,7 @@ func TestCursorNotifiesPendingHarnessCapture(t *testing.T) {
 		t.Fatalf("missing capture notice: %s", out)
 	}
 	boxes[0].HarnessConfigPending = true
-	l = listForTest(Session{}, boxes)
+	l = listForTest(console.Session{}, boxes)
 	l.moveTo(0)
 	out = ansi.Strip(l.view(newStyles(true), &zones{}, true))
 	if !strings.Contains(out, "Allow rm") {

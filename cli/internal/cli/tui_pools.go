@@ -7,13 +7,13 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // Pools is one server's pools for the project, oldest first, with the project's
 // default marked — the same listing `discobox pool list` reads, and the pools
 // `discobox run --pool` resolves against.
-func (d *apiDataSource) Pools(ctx context.Context, server string) ([]tui.Pool, error) {
+func (d *apiDataSource) Pools(ctx context.Context, server string) ([]console.Pool, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
@@ -34,9 +34,9 @@ func (d *apiDataSource) Pools(ctx context.Context, server string) ([]tui.Pool, e
 	}
 	sorted := append([]apimodel.Pool(nil), body.GetPools()...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CreatedAt.Before(sorted[j].CreatedAt) })
-	pools := make([]tui.Pool, 0, len(sorted))
+	pools := make([]console.Pool, 0, len(sorted))
 	for _, pool := range sorted {
-		pools = append(pools, tui.Pool{
+		pools = append(pools, console.Pool{
 			ID:       pool.ID,
 			Name:     strings.TrimSpace(pool.Name),
 			Platform: strings.TrimSpace(pool.Platform.Or("")),

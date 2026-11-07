@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -33,7 +34,7 @@ import (
 type reviewWindow struct {
 	// term draws the session; stream is nil until it has started.
 	term   *termpane.Model
-	stream Terminal
+	stream console.Terminal
 	// head is the commit it was opened over.
 	head string
 	// width and height are what it was last told it has, so a frame that
@@ -44,7 +45,7 @@ type reviewWindow struct {
 	// box and execID are the session's, once it has started, and ds what
 	// ends it, within ctx; cancel ends a start still under way.
 	box, execID string
-	ds          DataSource
+	ds          console.DataSource
 	ctx         context.Context
 	cancel      context.CancelFunc
 	// ends counts the ends still on their way to the discobox, which the
@@ -73,8 +74,8 @@ type reviewMsg struct {
 
 // reviewStartedMsg is the session a window asked for, started or refused.
 type reviewStartedMsg struct {
-	exec   Exec
-	stream Terminal
+	exec   console.Exec
+	stream console.Terminal
 	err    error
 }
 

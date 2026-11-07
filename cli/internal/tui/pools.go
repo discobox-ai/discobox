@@ -1,13 +1,16 @@
 package tui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
+)
 
 // poolsLoadedMsg is the configured server's pools, for the run options' Pool
 // row.
 type poolsLoadedMsg struct {
 	// server is the server the listing was read from; see harnessesLoadedMsg.
 	server string
-	pools  []Pool
+	pools  []console.Pool
 	err    error
 }
 
@@ -27,7 +30,7 @@ func (m *Model) loadPools() tea.Cmd {
 // the default all the same, and the strip saying so on every start would be a
 // complaint about something nobody asked for.
 func (m *Model) poolsLoaded(msg poolsLoadedMsg) {
-	if m.session.serverName(msg.server) != m.configServer() || msg.err != nil {
+	if m.session.ServerName(msg.server) != m.configServer() || msg.err != nil {
 		return
 	}
 	m.pools = msg.pools

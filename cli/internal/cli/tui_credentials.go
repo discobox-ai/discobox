@@ -11,8 +11,8 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/apiroute"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -38,20 +38,20 @@ import (
 // its requests on (pollTimeout): long enough that a slow server's answer still
 // arrives, short enough that a request which will never come back is not left
 // outstanding for the life of the window.
-func (d *apiDataSource) CredentialRequests(ctx context.Context) ([]tui.CredentialRequest, error) {
+func (d *apiDataSource) CredentialRequests(ctx context.Context) ([]console.CredentialRequest, error) {
 	if d.servers == nil {
 		ctx, cancel := context.WithTimeout(ctx, pollTimeout)
 		defer cancel()
 		return d.requestsHere(ctx)
 	}
-	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[tui.CredentialRequest] { return &s.requests },
-		func(ctx context.Context, source *apiDataSource) ([]tui.CredentialRequest, error) {
+	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[console.CredentialRequest] { return &s.requests },
+		func(ctx context.Context, source *apiDataSource) ([]console.CredentialRequest, error) {
 			return source.requestsHere(ctx)
 		})
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	var out []tui.CredentialRequest
+	var out []console.CredentialRequest
 	// A request two servers both list is one server registered under two
 	// addresses, and is listed once, under the first — as its discobox is.
 	seen := map[string]bool{}
@@ -82,7 +82,7 @@ func (d *apiDataSource) answered(server, requestID string) {
 	defer d.mu.Unlock()
 	for _, s := range d.servers {
 		if s.name == server {
-			stale(&s.requests, func(r tui.CredentialRequest) bool { return r.ID == requestID })
+			stale(&s.requests, func(r console.CredentialRequest) bool { return r.ID == requestID })
 			return
 		}
 	}
@@ -91,7 +91,7 @@ func (d *apiDataSource) answered(server, requestID string) {
 // requestsHere is this data source's own server's pending requests, credential
 // and trust alike: the server's inbox read (ADR 0149 §7), so each beat still
 // makes one call to it.
-func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialRequest, error) {
+func (d *apiDataSource) requestsHere(ctx context.Context) ([]console.CredentialRequest, error) {
 	res, err := d.client.ListApprovalRequests(ctx, apiclientgen.ListApprovalRequestsParams{
 		ProjectId: d.projectID,
 		Status:    apiclientgen.NewOptListApprovalRequestsStatus(apiclientgen.ListApprovalRequestsStatusPending),
@@ -103,13 +103,13 @@ func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialReque
 	if err != nil {
 		return nil, err
 	}
-	out := make([]tui.CredentialRequest, 0, len(body.GetApprovalRequests()))
+	out := make([]console.CredentialRequest, 0, len(body.GetApprovalRequests()))
 	for _, item := range body.GetApprovalRequests() {
 		if req, ok := item.ApiAccess.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindApiAccess {
-			out = append(out, tui.CredentialRequest{ID: req.ID, SandboxID: req.RequesterSandboxId, Created: req.CreatedAt, Justification: terminalSafe(req.Justification), APIAccess: true})
+			out = append(out, console.CredentialRequest{ID: req.ID, SandboxID: req.RequesterSandboxId, Created: req.CreatedAt, Justification: terminalSafe(req.Justification), APIAccess: true})
 		}
 		if adoption, ok := item.Adoption.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindAdoption {
-			out = append(out, tui.CredentialRequest{ID: adoption.ID, SandboxID: adoption.RequesterSandboxId, Created: adoption.CreatedAt, Justification: terminalSafe(adoption.Justification), Adoption: &tui.AdoptionAsk{
+			out = append(out, console.CredentialRequest{ID: adoption.ID, SandboxID: adoption.RequesterSandboxId, Created: adoption.CreatedAt, Justification: terminalSafe(adoption.Justification), Adoption: &console.AdoptionAsk{
 				ChildID: terminalSafe(adoption.ChildSandboxId), ChildName: terminalSafe(adoption.ChildName.Or("")), RequesterID: terminalSafe(adoption.RequesterSandboxId), RequesterName: terminalSafe(adoption.RequesterName.Or("")), CurrentParentID: terminalSafe(adoption.CurrentParentSandboxId.Or("none")), ReadOnly: adoption.ReadOnly.Or(false),
 			}})
 		}
@@ -130,20 +130,20 @@ func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialReque
 // SecretRejections is what the window knows does not work: credentials an
 // upstream refused that their server could not renew (ADR 0132), on every
 // server the window lists, the way the credential inbox is (ADR 0131 §1).
-func (d *apiDataSource) SecretRejections(ctx context.Context) ([]tui.SecretRejection, error) {
+func (d *apiDataSource) SecretRejections(ctx context.Context) ([]console.SecretRejection, error) {
 	if d.servers == nil {
 		ctx, cancel := context.WithTimeout(ctx, pollTimeout)
 		defer cancel()
 		return d.rejectionsHere(ctx)
 	}
-	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[tui.SecretRejection] { return &s.rejections },
-		func(ctx context.Context, source *apiDataSource) ([]tui.SecretRejection, error) {
+	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[console.SecretRejection] { return &s.rejections },
+		func(ctx context.Context, source *apiDataSource) ([]console.SecretRejection, error) {
 			return source.rejectionsHere(ctx)
 		})
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	var out []tui.SecretRejection
+	var out []console.SecretRejection
 	// A server registered under two addresses lists the same rows twice; they
 	// are kept once, under the first, as its discoboxes and requests are.
 	seen := map[string]bool{}
@@ -162,7 +162,7 @@ func (d *apiDataSource) SecretRejections(ctx context.Context) ([]tui.SecretRejec
 }
 
 // rejectionsHere is one server's refused credentials.
-func (d *apiDataSource) rejectionsHere(ctx context.Context) ([]tui.SecretRejection, error) {
+func (d *apiDataSource) rejectionsHere(ctx context.Context) ([]console.SecretRejection, error) {
 	res, err := d.client.ListSecretRejections(ctx, apiclientgen.ListSecretRejectionsParams{ProjectId: d.projectID})
 	if err != nil {
 		return nil, err
@@ -172,9 +172,9 @@ func (d *apiDataSource) rejectionsHere(ctx context.Context) ([]tui.SecretRejecti
 		return nil, err
 	}
 	rejections := body.GetSecretRejections()
-	out := make([]tui.SecretRejection, 0, len(rejections))
+	out := make([]console.SecretRejection, 0, len(rejections))
 	for _, r := range rejections {
-		out = append(out, tui.SecretRejection{
+		out = append(out, console.SecretRejection{
 			SecretID:          r.SecretId,
 			SecretName:        strings.TrimSpace(r.SecretName.Or("")),
 			SecretType:        string(r.SecretType.Or("")),
@@ -191,8 +191,8 @@ func (d *apiDataSource) rejectionsHere(ctx context.Context) ([]tui.SecretRejecti
 	return out, nil
 }
 
-func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
-	req := tui.CredentialRequest{
+func toTUICredentialRequest(r apimodel.SecretRequest) console.CredentialRequest {
+	req := console.CredentialRequest{
 		ID:        r.ID,
 		SandboxID: strings.TrimSpace(r.SandboxId.Or("")),
 		// The name, variable, routes and reason are the asking agent's own
@@ -218,8 +218,8 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 // and its roles grouped by document. Every name, description and argument in
 // a role is the asking discobox's, escaped here as its routes are
 // (cli/REVIEW.md).
-func tuiRequestPart(part apimodel.SecretRequestPart) *tui.RequestPart {
-	out := &tui.RequestPart{Routes: tuiRoutes(part.Routes), Add: part.Add.Or(false)}
+func tuiRequestPart(part apimodel.SecretRequestPart) *console.RequestPart {
+	out := &console.RequestPart{Routes: tuiRoutes(part.Routes), Add: part.Add.Or(false)}
 	for _, role := range partRoles(part) {
 		role.Name = terminalSafe(role.Name)
 		role.Description = terminalSafe(role.Description)
@@ -244,14 +244,14 @@ func tuiRequestPart(part apimodel.SecretRequestPart) *tui.RequestPart {
 // toTUIRefreshRequest is a refresh request as the inbox holds it: an item
 // whose answer is a new value for a token the project already holds, or a
 // dismissal (ADR 26-10-27-880 §1).
-func toTUIRefreshRequest(r apimodel.SecretRefreshRequest) tui.CredentialRequest {
-	return tui.CredentialRequest{
+func toTUIRefreshRequest(r apimodel.SecretRefreshRequest) console.CredentialRequest {
+	return console.CredentialRequest{
 		ID:        r.ID,
 		SandboxID: strings.TrimSpace(r.SandboxId.Or("")),
 		Name:      terminalSafe(strings.TrimSpace(r.SecretName.Or(r.SecretId))),
 		Created:   r.CreatedAt,
 		Raw:       requestJSON(r),
-		Refresh:   &tui.RefreshAsk{SecretID: r.SecretId, Cause: string(r.Cause)},
+		Refresh:   &console.RefreshAsk{SecretID: r.SecretId, Cause: string(r.Cause)},
 	}
 }
 
@@ -299,8 +299,8 @@ func requestJSON(v any) string {
 
 // toTUITrustRequest is a trust request as the inbox holds it: an item whose
 // answer is a pin rather than a secret.
-func toTUITrustRequest(r apimodel.HostTrustRequest) tui.CredentialRequest {
-	ask := &tui.TrustAsk{}
+func toTUITrustRequest(r apimodel.HostTrustRequest) console.CredentialRequest {
+	ask := &console.TrustAsk{}
 	for _, cert := range r.ObservedChain.Or(nil) {
 		ask.Chain = append(ask.Chain, toTUITrustCertificate(cert))
 	}
@@ -309,7 +309,7 @@ func toTUITrustRequest(r apimodel.HostTrustRequest) tui.CredentialRequest {
 		ask.SuppliedCA = &ca
 	}
 	ask.DefaultPin = defaultTrustPin(*ask)
-	req := tui.CredentialRequest{
+	req := console.CredentialRequest{
 		ID:            r.ID,
 		SandboxID:     r.SandboxId,
 		Host:          terminalSafe(r.Host),
@@ -321,8 +321,8 @@ func toTUITrustRequest(r apimodel.HostTrustRequest) tui.CredentialRequest {
 	return req
 }
 
-func toTUITrustCertificate(cert apimodel.ObservedCertificate) tui.TrustCertificate {
-	return tui.TrustCertificate{
+func toTUITrustCertificate(cert apimodel.ObservedCertificate) console.TrustCertificate {
+	return console.TrustCertificate{
 		Subject:    cert.Subject,
 		Issuer:     cert.Issuer,
 		Names:      append(cert.DnsNames.Or(nil), cert.Ips.Or(nil)...),
@@ -339,24 +339,24 @@ func toTUITrustCertificate(cert apimodel.ObservedCertificate) tui.TrustCertifica
 // the supplied CA, then a self-signed CA in the chain, then the leaf's key —
 // so the window offers first what `discobox trust request approve` would
 // pin without --pin.
-func defaultTrustPin(ask tui.TrustAsk) tui.TrustPin {
+func defaultTrustPin(ask console.TrustAsk) console.TrustPin {
 	if ask.SuppliedCA != nil {
-		return tui.TrustPin{Kind: tui.TrustPinCA, SHA256: ask.SuppliedCA.SHA256}
+		return console.TrustPin{Kind: console.TrustPinCA, SHA256: ask.SuppliedCA.SHA256}
 	}
 	for i := len(ask.Chain) - 1; i >= 0; i-- {
 		if cert := ask.Chain[i]; cert.IsCA && cert.SelfSigned {
-			return tui.TrustPin{Kind: tui.TrustPinCA, SHA256: cert.SHA256}
+			return console.TrustPin{Kind: console.TrustPinCA, SHA256: cert.SHA256}
 		}
 	}
 	if len(ask.Chain) == 0 {
-		return tui.TrustPin{}
+		return console.TrustPin{}
 	}
-	return tui.TrustPin{Kind: tui.TrustPinLeafSPKI, SHA256: ask.Chain[0].SPKISHA256}
+	return console.TrustPin{Kind: console.TrustPinLeafSPKI, SHA256: ask.Chain[0].SPKISHA256}
 }
 
 // ApproveTrustRequest pins the chosen certificate for the asking discobox.
 // The lifetime is always sent: a trust always lapses.
-func (d *apiDataSource) ApproveTrustRequest(ctx context.Context, server string, approval tui.TrustApproval) error {
+func (d *apiDataSource) ApproveTrustRequest(ctx context.Context, server string, approval console.TrustApproval) error {
 	window := d
 	d, err := d.on(ctx, server)
 	if err != nil {
@@ -401,7 +401,7 @@ func (d *apiDataSource) DenyTrustRequest(ctx context.Context, server, requestID 
 }
 
 // Secrets returns one server's secrets, without values.
-func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secret, error) {
+func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]console.Secret, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
@@ -415,9 +415,9 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 		return nil, err
 	}
 	secrets := sortedByRecency(body.GetSecrets(), func(s apimodel.Secret) time.Time { return s.UpdatedAt })
-	out := make([]tui.Secret, 0, len(secrets))
+	out := make([]console.Secret, 0, len(secrets))
 	for _, s := range secrets {
-		row := tui.Secret{
+		row := console.Secret{
 			ID:       s.ID,
 			Name:     s.Name,
 			Type:     string(s.Type),
@@ -427,7 +427,7 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 			Updated:  s.UpdatedAt,
 		}
 		if oauth, ok := s.OAuth.Get(); ok {
-			row.OAuth = &tui.SecretOAuth{
+			row.OAuth = &console.SecretOAuth{
 				TokenURL:         strings.TrimSpace(oauth.TokenUrl.Or("")),
 				ClientID:         strings.TrimSpace(oauth.ClientId.Or("")),
 				SubscriptionType: strings.TrimSpace(oauth.SubscriptionType.Or("")),
@@ -441,7 +441,7 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 			}
 		}
 		if exchange, ok := s.Exchange.Get(); ok {
-			row.Exchange = &tui.SecretExchange{}
+			row.Exchange = &console.SecretExchange{}
 			if recipe, ok := exchange.Recipe.Get(); ok {
 				row.Exchange.URL, row.Exchange.Fields = recipe.URL, recipe.Fields
 			}
@@ -466,10 +466,10 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 }
 
 // CreateSecret stores a credential typed into the approval dialog.
-func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret tui.NewSecret) (tui.Secret, error) {
+func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret console.NewSecret) (console.Secret, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
-		return tui.Secret{}, err
+		return console.Secret{}, err
 	}
 	kind := strings.TrimSpace(secret.Type)
 	if kind == "" {
@@ -477,7 +477,7 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 	}
 	secretType, err := createSecretBodyType(kind)
 	if err != nil {
-		return tui.Secret{}, err
+		return console.Secret{}, err
 	}
 	body := &apimodel.CreateSecretBody{Name: strings.TrimSpace(secret.Name), Type: secretType}
 	// Always sent, zero included: zero is the answer "bindings of this may
@@ -501,21 +501,21 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 		if strings.TrimSpace(secret.Value.Token) == "" {
 			token, err := refreshcmd.Run(ctx, secret.RefreshCommand)
 			if err != nil {
-				return tui.Secret{}, err
+				return console.Secret{}, err
 			}
-			body.Value = secretValueBody(tui.SecretValue{Token: token})
+			body.Value = secretValueBody(console.SecretValue{Token: token})
 		}
 	}
 
 	res, err := d.client.CreateSecret(ctx, body, apiclientgen.CreateSecretParams{ProjectId: d.projectID})
 	if err != nil {
-		return tui.Secret{}, err
+		return console.Secret{}, err
 	}
 	created, err := expectResponse[apimodel.Secret](res)
 	if err != nil {
-		return tui.Secret{}, err
+		return console.Secret{}, err
 	}
-	return tui.Secret{
+	return console.Secret{
 		ID:     created.ID,
 		Name:   created.Name,
 		Type:   string(created.Type),
@@ -526,7 +526,7 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 // secretValueBody is a credential's material on the wire. The optional halves
 // are sent only when they are there: an empty refresh token on a token secret
 // is not a field the server has any use for.
-func secretValueBody(value tui.SecretValue) apimodel.SecretValue {
+func secretValueBody(value console.SecretValue) apimodel.SecretValue {
 	body := apimodel.SecretValue{Token: apiclientgen.NewOptString(value.Token)}
 	if value.RefreshToken != "" {
 		body.SetRefreshToken(apiclientgen.NewOptString(value.RefreshToken))
@@ -550,7 +550,7 @@ func secretValueBody(value tui.SecretValue) apimodel.SecretValue {
 // field the update names is set even when it is empty or zero — an unset field
 // changes nothing, so clearing the routes and lifting a limit both have to be
 // said rather than left out — and every field it does not name is left out.
-func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID string, update tui.SecretUpdate) error {
+func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID string, update console.SecretUpdate) error {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return err
@@ -590,7 +590,7 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID strin
 
 // HeldGrants are the grants applying in one variable of a discobox, from its
 // resolved bindings (ADR 26-11-03-329 §5).
-func (d *apiDataSource) HeldGrants(ctx context.Context, server, sandboxID, envVar string) ([]tui.HeldGrant, error) {
+func (d *apiDataSource) HeldGrants(ctx context.Context, server, sandboxID, envVar string) ([]console.HeldGrant, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
@@ -607,12 +607,12 @@ func (d *apiDataSource) HeldGrants(ctx context.Context, server, sandboxID, envVa
 	if err != nil {
 		return nil, err
 	}
-	var out []tui.HeldGrant
+	var out []console.HeldGrant
 	for _, bound := range body.BoundSecrets {
 		if !bound.Use || bound.EnvVar.Or("") != envVar || bound.NotApplied.Or("") != "" {
 			continue
 		}
-		grant := tui.HeldGrant{
+		grant := console.HeldGrant{
 			BindingID:  bound.BindingId,
 			SecretID:   bound.SecretId,
 			SecretName: bound.SecretName.Or(""),
@@ -629,7 +629,7 @@ func (d *apiDataSource) HeldGrants(ctx context.Context, server, sandboxID, envVa
 }
 
 // ApproveCredentialRequest makes the binding that answers a request.
-func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server string, approval tui.Approval) error {
+func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server string, approval console.Approval) error {
 	window := d
 	d, err := d.on(ctx, server)
 	if err != nil {
@@ -644,7 +644,7 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
 	decide := func(answer, raw, as, scope string) apiclientgen.OptSecretRequestPartDecision {
 		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(answer)}
-		if answer == tui.PartApprove {
+		if answer == console.PartApprove {
 			part.TtlSeconds = apiclientgen.NewOptInt64(approval.TTLSeconds)
 			if scope != "" {
 				part.Scope = apiclientgen.NewOptSecretRequestPartDecisionScope(apiclientgen.SecretRequestPartDecisionScope(scope))
@@ -682,7 +682,7 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 // token's command, run here, or the value a person entered. The command is
 // run on this machine because this is where the person who agreed to it is
 // (ADR 26-09-25-122 §5).
-func (d *apiDataSource) RefreshSecret(ctx context.Context, server string, renewal tui.Renewal) error {
+func (d *apiDataSource) RefreshSecret(ctx context.Context, server string, renewal console.Renewal) error {
 	window := d
 	d, err := d.on(ctx, server)
 	if err != nil {
@@ -718,7 +718,7 @@ func (d *apiDataSource) RefreshSecret(ctx context.Context, server string, renewa
 	// first, which the window treats as renewed.
 	if problem, ok := res.(*apiclientgen.ErrorModelStatusCode); ok && problem.StatusCode == http.StatusConflict {
 		window.answered(server, renewal.RequestID)
-		return tui.ErrAlreadyAnswered
+		return console.ErrAlreadyAnswered
 	}
 	if _, err := expectResponse[apimodel.Secret](res); err != nil {
 		return err
@@ -770,7 +770,7 @@ func (d *apiDataSource) DismissRefresh(ctx context.Context, server, requestID st
 }
 
 // Bindings lists the bindings of a secret, or one server's whole project's.
-func (d *apiDataSource) Bindings(ctx context.Context, server string, filter tui.BindingFilter) ([]tui.SecretBinding, error) {
+func (d *apiDataSource) Bindings(ctx context.Context, server string, filter console.BindingFilter) ([]console.SecretBinding, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
@@ -788,15 +788,15 @@ func (d *apiDataSource) Bindings(ctx context.Context, server string, filter tui.
 		return nil, err
 	}
 	bindings := sortedByRecency(body.GetSecretBindings(), func(b apimodel.SecretBinding) time.Time { return b.CreatedAt })
-	out := make([]tui.SecretBinding, 0, len(bindings))
+	out := make([]console.SecretBinding, 0, len(bindings))
 	for _, b := range bindings {
 		out = append(out, toTUIBinding(b))
 	}
 	return out, nil
 }
 
-func toTUIBinding(b apimodel.SecretBinding) tui.SecretBinding {
-	binding := tui.SecretBinding{
+func toTUIBinding(b apimodel.SecretBinding) console.SecretBinding {
+	binding := console.SecretBinding{
 		ID:          b.ID,
 		SecretID:    b.SecretId,
 		SecretName:  terminalSafe(strings.TrimSpace(b.SecretName.Or(""))),
@@ -821,10 +821,10 @@ func toTUIBinding(b apimodel.SecretBinding) tui.SecretBinding {
 }
 
 // CreateBinding binds a secret by hand.
-func (d *apiDataSource) CreateBinding(ctx context.Context, server string, binding tui.NewBinding) (tui.SecretBinding, error) {
+func (d *apiDataSource) CreateBinding(ctx context.Context, server string, binding console.NewBinding) (console.SecretBinding, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
-		return tui.SecretBinding{}, err
+		return console.SecretBinding{}, err
 	}
 	body := &apimodel.CreateSecretBindingBody{
 		Secret:     binding.SecretID,
@@ -847,11 +847,11 @@ func (d *apiDataSource) CreateBinding(ctx context.Context, server string, bindin
 	body.SetTtlSeconds(apiclientgen.NewOptInt64(binding.TTLSeconds))
 	res, err := d.client.CreateSecretBinding(ctx, body, apiclientgen.CreateSecretBindingParams{ProjectId: d.projectID})
 	if err != nil {
-		return tui.SecretBinding{}, err
+		return console.SecretBinding{}, err
 	}
 	created, err := expectResponse[apimodel.SecretBinding](res)
 	if err != nil {
-		return tui.SecretBinding{}, err
+		return console.SecretBinding{}, err
 	}
 	return toTUIBinding(*created), nil
 }
@@ -920,7 +920,7 @@ func (d *apiDataSource) DecideAdoptionRequest(ctx context.Context, server, reque
 	return nil
 }
 
-func (d *apiDataSource) BindingHistory(ctx context.Context, server, secretID string) ([]tui.BindingDecision, error) {
+func (d *apiDataSource) BindingHistory(ctx context.Context, server, secretID string) ([]console.BindingDecision, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
@@ -933,9 +933,9 @@ func (d *apiDataSource) BindingHistory(ctx context.Context, server, secretID str
 	if err != nil {
 		return nil, err
 	}
-	out := make([]tui.BindingDecision, 0, len(body.SecretBindingEvents))
+	out := make([]console.BindingDecision, 0, len(body.SecretBindingEvents))
 	for _, e := range body.SecretBindingEvents {
-		decision := tui.BindingDecision{ID: e.ID, Event: string(e.Event), Actor: terminalSafe(e.Actor), BindingID: e.BindingId, At: e.At}
+		decision := console.BindingDecision{ID: e.ID, Event: string(e.Event), Actor: terminalSafe(e.Actor), BindingID: e.BindingId, At: e.At}
 		{
 			b := e.Binding
 			decision.TargetID = terminalSafe(b.TargetId)

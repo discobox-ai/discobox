@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
@@ -500,7 +501,7 @@ func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.execs = []Exec{{
+		ds.execs = []console.Exec{{
 			ID: "exec_diff", Command: []string{"discobox-review"}, Tool: tools.DiffID,
 			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 		}}
@@ -615,7 +616,7 @@ func TestThePickerEditsTheHighlightedToolsConfig(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.editToolFile = func(ToolFile) string { return `{"theme":"mine"}` }
+		ds.editToolFile = func(console.ToolFile) string { return `{"theme":"mine"}` }
 		d, m, _ := openWorkspace(t, ds, "enter")
 
 		d.key("ctrl+a")
@@ -650,7 +651,7 @@ func TestAnUneditedConfigReportsUnchanged(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.editToolFile = func(file ToolFile) string { return file.Default }
+		ds.editToolFile = func(file console.ToolFile) string { return file.Default }
 		d, m, _ := openWorkspace(t, ds, "enter")
 
 		d.key("ctrl+a")
@@ -774,8 +775,8 @@ func TestThePickerListsTheDiscoboxsCatalog(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.catalog = append(testTools(),
-			Tool{ID: "review", Key: "d", Label: "review", Detail: "the repository's own reviewer"},
-			Tool{ID: "open", Key: "w", Label: "open", Detail: "open it here", Problem: "a tool that runs on your machine cannot be declared by the discobox's source"},
+			console.Tool{ID: "review", Key: "d", Label: "review", Detail: "the repository's own reviewer"},
+			console.Tool{ID: "open", Key: "w", Label: "open", Detail: "open it here", Problem: "a tool that runs on your machine cannot be declared by the discobox's source"},
 		)
 		// Wide enough that the card beside the tree has room for the reason.
 		d, m := openPickerAt(t, ds, wideConsole)
@@ -818,7 +819,7 @@ func TestARefusedReplacementDoesNotTakeTheHostToolsRowOrKey(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.catalog = append([]Tool{
+		ds.catalog = append([]console.Tool{
 			{ID: "vscode", Key: "v", Label: "vscode", Problem: "id \"vscode\" is a tool that runs on your machine, declared by builtin; the discobox's source cannot replace it"},
 			{ID: "lint", Key: "z", Label: "lint", Detail: "the repository's linter"},
 		}, testTools()...)

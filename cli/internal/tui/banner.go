@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The workspace's attention band: the one thing this screen draws that is not
@@ -103,7 +104,7 @@ func (m *Model) bannerShowing() bannerKind {
 // box's own report, and a box that could take a refusal down by reporting one
 // would turn "your login was refused" into "click to review and save" in front
 // of the person it wants to sign in.
-func (m *Model) bannerWanted(kind bannerKind, box Sandbox) bool {
+func (m *Model) bannerWanted(kind bannerKind, box console.Sandbox) bool {
 	switch kind {
 	case bannerRejected:
 		return m.hasRejection(box)
@@ -155,8 +156,8 @@ type dismissal struct {
 
 // dismissalFor is a band's key on this discobox, which is its server as well
 // as its ID: IDs are only unique within a server.
-func (m *Model) dismissalFor(kind bannerKind, box Sandbox) dismissal {
-	return dismissal{box: m.session.serverName(box.Server) + "\x00" + box.ID, kind: kind}
+func (m *Model) dismissalFor(kind bannerKind, box console.Sandbox) dismissal {
+	return dismissal{box: m.session.ServerName(box.Server) + "\x00" + box.ID, kind: kind}
 }
 
 // bannerInstance names the occurrence a band would be about, or nothing when
@@ -167,12 +168,12 @@ func (m *Model) dismissalFor(kind bannerKind, box Sandbox) dismissal {
 // go one at a time: a dismissal covers the ones it saw, so one of them going
 // leaves the rest dismissed, and a new one brings the band back — including a
 // second refusal while the first is still outstanding.
-func (m *Model) bannerInstance(kind bannerKind, box Sandbox) []string {
+func (m *Model) bannerInstance(kind bannerKind, box console.Sandbox) []string {
 	switch kind {
 	case bannerRejected:
 		var names []string
 		for _, rejection := range m.rejectionsFor(box) {
-			names = append(names, rejection.occurrence())
+			names = append(names, rejection.Occurrence())
 		}
 		return names
 	case bannerHarnessChanges:
@@ -191,7 +192,7 @@ func (m *Model) bannerInstance(kind bannerKind, box Sandbox) []string {
 
 // bannerDismissed is whether this band's occurrence on this discobox is one
 // somebody dismissed.
-func (m *Model) bannerDismissed(kind bannerKind, box Sandbox) bool {
+func (m *Model) bannerDismissed(kind bannerKind, box console.Sandbox) bool {
 	dismissed, ok := m.dismissed[m.dismissalFor(kind, box)]
 	return ok && covers(dismissed, m.bannerInstance(kind, box))
 }
@@ -254,13 +255,13 @@ func (m *Model) pruneDismissed() {
 }
 
 // listedBox is the listing's row for a dismissal's discobox.
-func (m *Model) listedBox(key string) (Sandbox, bool) {
+func (m *Model) listedBox(key string) (console.Sandbox, bool) {
 	for _, box := range m.list.all {
-		if m.session.serverName(box.Server)+"\x00"+box.ID == key {
+		if m.session.ServerName(box.Server)+"\x00"+box.ID == key {
 			return box, true
 		}
 	}
-	return Sandbox{}, false
+	return console.Sandbox{}, false
 }
 
 // bannerTop is how many rows stand between the header and the boxes: the top

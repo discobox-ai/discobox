@@ -4,24 +4,26 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // A cluster's API server asking to be trusted: a leaf signed by the cluster's
 // own self-signed CA, as GKE and kubeadm both present.
-func waitingTrust() CredentialRequest {
-	ca := TrustCertificate{Subject: "CN=cluster-ca", Issuer: "CN=cluster-ca", SHA256: strings.Repeat("c", 64), SPKISHA256: strings.Repeat("d", 64), IsCA: true, SelfSigned: true,
+func waitingTrust() console.CredentialRequest {
+	ca := console.TrustCertificate{Subject: "CN=cluster-ca", Issuer: "CN=cluster-ca", SHA256: strings.Repeat("c", 64), SPKISHA256: strings.Repeat("d", 64), IsCA: true, SelfSigned: true,
 		NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC)}
-	leaf := TrustCertificate{Subject: "CN=kube-apiserver", Issuer: "CN=cluster-ca", Names: []string{"34.70.64.109"}, SHA256: strings.Repeat("a", 64), SPKISHA256: strings.Repeat("b", 64),
+	leaf := console.TrustCertificate{Subject: "CN=kube-apiserver", Issuer: "CN=cluster-ca", Names: []string{"34.70.64.109"}, SHA256: strings.Repeat("a", 64), SPKISHA256: strings.Repeat("b", 64),
 		NotBefore: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 9, 1, 0, 0, 0, 0, time.UTC)}
-	return CredentialRequest{
+	return console.CredentialRequest{
 		ID:            "treq_1",
 		SandboxID:     "sbx_one",
 		Host:          "34.70.64.109:443",
 		Justification: "the user's GKE cluster uses its own CA",
 		Created:       time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC),
-		Trust: &TrustAsk{
-			Chain:      []TrustCertificate{leaf, ca},
-			DefaultPin: TrustPin{Kind: TrustPinCA, SHA256: ca.SHA256},
+		Trust: &console.TrustAsk{
+			Chain:      []console.TrustCertificate{leaf, ca},
+			DefaultPin: console.TrustPin{Kind: console.TrustPinCA, SHA256: ca.SHA256},
 		},
 	}
 }
@@ -29,7 +31,7 @@ func waitingTrust() CredentialRequest {
 func sourceWithTrust(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{waitingTrust()}
+	ds.requests = []console.CredentialRequest{waitingTrust()}
 	return newTestModel(t, ds), ds
 }
 
@@ -75,7 +77,7 @@ func TestApprovingATrustPinsForTheChosenLifetime(t *testing.T) {
 		t.Fatalf("trust approvals = %#v", ds.trustApprovals)
 	}
 	got := ds.trustApprovals[0]
-	if got.RequestID != "treq_1" || got.Pin.Kind != TrustPinCA || got.Pin.SHA256 != strings.Repeat("c", 64) || got.TTLSeconds != 86400 {
+	if got.RequestID != "treq_1" || got.Pin.Kind != console.TrustPinCA || got.Pin.SHA256 != strings.Repeat("c", 64) || got.TTLSeconds != 86400 {
 		t.Fatalf("approval = %+v", got)
 	}
 	if len(ds.approvals) != 0 {
@@ -101,7 +103,7 @@ func TestDenyingATrustAnswersTheTrustRequest(t *testing.T) {
 func TestTheBannerNamesATrustRequest(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithTrust(t)
-	m.paneBox = Sandbox{ID: "sbx_one", Name: "one"}
+	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
 	banner := m.viewCredentialBanner(120)
 	if !strings.Contains(banner, "trust request") || !strings.Contains(banner, "34.70.64.109:443") {
 		t.Fatalf("banner = %q", banner)
@@ -113,9 +115,9 @@ func TestTheBannerNamesATrustRequest(t *testing.T) {
 func TestASuppliedCAIsOfferedFirst(t *testing.T) {
 	t.Parallel()
 	req := waitingTrust()
-	supplied := TrustCertificate{Subject: "CN=gke-ca", SHA256: strings.Repeat("f", 64), IsCA: true}
+	supplied := console.TrustCertificate{Subject: "CN=gke-ca", SHA256: strings.Repeat("f", 64), IsCA: true}
 	req.Trust.SuppliedCA = &supplied
-	req.Trust.DefaultPin = TrustPin{Kind: TrustPinCA, SHA256: supplied.SHA256}
+	req.Trust.DefaultPin = console.TrustPin{Kind: console.TrustPinCA, SHA256: supplied.SHA256}
 	options := trustPinOptions(*req.Trust)
 	if options[0].pin.SHA256 != supplied.SHA256 || len(options) != 3 {
 		t.Fatalf("options = %+v", options)

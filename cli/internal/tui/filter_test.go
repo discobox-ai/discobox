@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The header says what the list is narrowed to and nothing about what it
@@ -21,7 +22,7 @@ func TestTheHeaderDescribesTheActiveFilters(t *testing.T) {
 	if got := headerLine(m); !strings.HasSuffix(got, "all discoboxes ▾") {
 		t.Fatalf("header = %q, want it to say nothing is narrowed", got)
 	}
-	own := m.session.folder().label
+	own := m.session.Folder().Label
 	filterTo(t, m, "alpha", own, "#wip")
 	if got, want := headerLine(m), "server alpha · "+own+" · #wip ▾"; !strings.HasSuffix(got, want) {
 		t.Fatalf("header = %q, want it to end %q", got, want)
@@ -47,23 +48,23 @@ func TestTheFilterCardAppliesEveryMarkOnEnter(t *testing.T) {
 			t.Errorf("the card has no %s group:\n%s", group, view)
 		}
 	}
-	own := m.session.folder()
+	own := m.session.Folder()
 	markFilter(t, m, "alpha")
-	markFilter(t, m, own.label)
+	markFilter(t, m, own.Label)
 	markFilter(t, m, "#wip")
-	if m.list.server != "" || m.list.folder.key != "" || len(m.list.tags) != 0 {
-		t.Fatalf("the list moved before Enter: server %q, folder %q, tags %q", m.list.server, m.list.folder.label, m.list.tags)
+	if m.list.server != "" || m.list.folder.Key != "" || len(m.list.tags) != 0 {
+		t.Fatalf("the list moved before Enter: server %q, folder %q, tags %q", m.list.server, m.list.folder.Label, m.list.tags)
 	}
 
 	send(t, m, keyPress("enter"))
 	if m.dialog != nil {
 		t.Fatal("Enter should close the card")
 	}
-	if m.list.server != "alpha" || m.list.folder.key != own.key || !slices.Equal(m.list.tags, []string{"wip"}) {
-		t.Fatalf("server %q, folder %q, tags %q, want alpha, the window's own and wip", m.list.server, m.list.folder.label, m.list.tags)
+	if m.list.server != "alpha" || m.list.folder.Key != own.Key || !slices.Equal(m.list.tags, []string{"wip"}) {
+		t.Fatalf("server %q, folder %q, tags %q, want alpha, the window's own and wip", m.list.server, m.list.folder.Label, m.list.tags)
 	}
 	for _, s := range m.list.rows() {
-		if s.Server != "alpha" || s.OriginKey != own.key || !m.list.tagged(s) {
+		if s.Server != "alpha" || s.OriginKey != own.Key || !m.list.tagged(s) {
 			t.Fatalf("row %s is outside the filter", s.ID)
 		}
 	}
@@ -73,13 +74,13 @@ func TestTheFilterCardAppliesEveryMarkOnEnter(t *testing.T) {
 func TestEscDropsTheMarks(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	was := m.list.folder.key
+	was := m.list.folder.Key
 
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter"))
 	markFilter(t, m, allFolders)
 	send(t, m, keyPress("esc"))
-	if m.dialog != nil || m.list.folder.key != was {
-		t.Fatalf("folder = %q after Esc, want it unchanged", m.list.folder.label)
+	if m.dialog != nil || m.list.folder.Key != was {
+		t.Fatalf("folder = %q after Esc, want it unchanged", m.list.folder.Label)
 	}
 	if m.focus != focusFilter {
 		t.Fatalf("focus = %v, want the filter the card was opened from", m.focus)
@@ -135,10 +136,10 @@ func TestAnUntouchedCardOverTheConfigScreensMovesNothing(t *testing.T) {
 // the cursor on screen and says how much is out of it.
 func TestTheFilterCardScrollsInAShortWindow(t *testing.T) {
 	t.Parallel()
-	var boxes []Sandbox
+	var boxes []console.Sandbox
 	for i := range 12 {
 		dir := "/src/project-" + itoa(i)
-		boxes = append(boxes, cutFrom(Sandbox{ID: "sbx_" + itoa(i), Name: "box " + itoa(i), State: StateRunning, Tags: []string{"t" + itoa(i)}}, dir))
+		boxes = append(boxes, cutFrom(console.Sandbox{ID: "sbx_" + itoa(i), Name: "box " + itoa(i), State: console.StateRunning, Tags: []string{"t" + itoa(i)}}, dir))
 	}
 	m := newTestModel(t, newFakeSource(boxes...))
 	m.dialog = m.filterDialog()
@@ -171,13 +172,13 @@ func TestEnterPicksTheRowUnderTheCursor(t *testing.T) {
 	filterTo(t, m, allFolders)
 
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter"))
-	markFilter(t, m, m.session.folder().label)
+	markFilter(t, m, m.session.Folder().Label)
 	p := m.dialog.filter
 	for p.rows()[p.cursor].label != "#wip" {
 		send(t, m, keyPress("down"))
 	}
 	send(t, m, keyPress("enter"))
-	if m.list.folder.key != m.session.OriginKey || !slices.Equal(m.list.tags, []string{"wip"}) {
-		t.Fatalf("folder %q, tags %q, want the folder Space marked and the tag Enter was on", m.list.folder.label, m.list.tags)
+	if m.list.folder.Key != m.session.OriginKey || !slices.Equal(m.list.tags, []string{"wip"}) {
+		t.Fatalf("folder %q, tags %q, want the folder Space marked and the tag Enter was on", m.list.folder.Label, m.list.tags)
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // pad truncates s to w display cells, padding with spaces when it is shorter.
@@ -147,7 +148,7 @@ func trimLeft(s string, n int) string {
 // is a claim about what we know. The two halves are measured on different
 // schedules — the counters every report, the disk on the agent's own slower
 // sweep — so a discobox can have one and not the other.
-func usage(st *styles, s Sandbox) string {
+func usage(st *styles, s console.Sandbox) string {
 	// The color is the share in every case; only the cpu shows the share as
 	// its number.
 	cell := func(percent int, text string, w int) string {
@@ -159,7 +160,7 @@ func usage(st *styles, s Sandbox) string {
 	cpu, memory, disk := "·", "·", "·"
 	// CPU and memory are what a discobox is using, which a stopped one is not:
 	// it holds neither, and there is no sample of it to report.
-	if s.up() && s.Usage.Known {
+	if s.Up() && s.Usage.Known {
 		cpu = fmt.Sprintf("%d%%", s.Usage.CPUPercent)
 		memory = humanBytes(s.Usage.MemoryBytes)
 	}
@@ -203,10 +204,10 @@ type resourceGroup struct {
 //
 // What has not been measured is left off rather than dotted: the dot in the
 // list holds a cell under its label, and here there is neither.
-func resourceGroups(st *styles, s Sandbox, r Resources) []resourceGroup {
+func resourceGroups(st *styles, s console.Sandbox, r console.Resources) []resourceGroup {
 	var groups []resourceGroup
 	// CPU and memory are what a discobox is using, which a stopped one is not.
-	if s.up() && s.Usage.Known {
+	if s.Up() && s.Usage.Known {
 		cpu := resourceGroup{own: shareStyle(st, float64(s.Usage.CPUPercent)/100).Render(fmt.Sprintf("cpu %d%%", s.Usage.CPUPercent))}
 		// The machine's cpu is what it has, not a share of it: a percentage
 		// beside a percentage would read as the same measurement twice.
@@ -409,7 +410,7 @@ func ago(t, now time.Time) string {
 // the one timestamp a user's action put there — nothing yet records real
 // access — so the row says how old the discobox is rather than pretending to
 // know when it was last touched.
-func createdText(s Sandbox, now time.Time) string {
+func createdText(s console.Sandbox, now time.Time) string {
 	return ago(s.Created, now)
 }
 
@@ -689,7 +690,7 @@ func itoa(n int) string { return fmt.Sprintf("%d", n) }
 // "cpu 4.2/2" is a wrong number, where an absent readout is merely an absent
 // one. Parts drop from the right until what is left fits, so a narrow window
 // keeps the cpu and loses the disk.
-func machineText(st *styles, r Resources, avail int) string {
+func machineText(st *styles, r console.Resources, avail int) string {
 	if !r.Known || avail <= 0 {
 		return ""
 	}

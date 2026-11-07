@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/termpane"
@@ -102,9 +103,9 @@ type pane struct {
 	id int
 
 	term    *termpane.Model
-	stream  Terminal
-	action  Interaction
-	sandbox Sandbox
+	stream  console.Terminal
+	action  console.Interaction
+	sandbox console.Sandbox
 	status  string
 
 	// execID keys the pane to the server session it is drawing, which is what
@@ -276,9 +277,9 @@ type jumpServiceMsg struct{ n int }
 // paneServiceVerbs are the list's own lifecycle keys, re-read as the focused
 // service's rather than the discobox's. They are the list's keys and not new
 // ones so that stopping the thing in front of you is the key you already know.
-var paneServiceVerbs = map[string]ServiceVerb{
-	"t": ServiceStop,
-	"T": ServiceStart,
+var paneServiceVerbs = map[string]console.ServiceVerb{
+	"t": console.ServiceStop,
+	"T": console.ServiceStart,
 }
 
 // zoomPaneMsg is the leader plus z: give the focused column the whole window,
@@ -295,7 +296,7 @@ type endPaneMsg struct{}
 type quitPaneMsg struct{}
 
 // paneEventMsg is a connection state change under an open pane.
-type paneEventMsg struct{ event TerminalEvent }
+type paneEventMsg struct{ event console.TerminalEvent }
 
 // paneMsg is anything a pane's own commands produced, addressed to the pane it
 // came from. See pane.id.
@@ -434,12 +435,12 @@ func (m *Model) primary() *pane {
 //
 // It is what the keys dispatch against and what the header reads, so the two
 // answer from the same listing, keeping the header and actions in sync.
-func (m *Model) currentBox() Sandbox {
+func (m *Model) currentBox() console.Sandbox {
 	return m.boxByRef(m.boxRef(m.paneBox))
 }
 
 // boxByRef reads a box from the same server as its workspace or operation.
-func (m *Model) boxByRef(ref boxRef) Sandbox {
+func (m *Model) boxByRef(ref console.BoxRef) console.Sandbox {
 	for _, s := range m.list.all {
 		if m.boxRef(s) == ref {
 			return s
@@ -451,7 +452,7 @@ func (m *Model) boxByRef(ref boxRef) Sandbox {
 	if ws := m.parked[ref]; ws != nil {
 		return ws.paneBox
 	}
-	return Sandbox{ID: ref.id, Server: ref.server}
+	return console.Sandbox{ID: ref.ID, Server: ref.Server}
 }
 
 // paneKeymap is the keymap the panes this window opens are given, and it is
@@ -568,7 +569,7 @@ func (m *Model) paneOptions(readOnly bool) []termpane.Option {
 // paneEvents waits for the next connection state change. A reconnect never
 // appears in the output — the stream simply carries on — so it is reported here
 // or not at all.
-func (m *Model) paneEvents(term Terminal) tea.Cmd {
+func (m *Model) paneEvents(term console.Terminal) tea.Cmd {
 	ctx := m.ctx
 	return listen(func() tea.Msg {
 		select {
@@ -714,13 +715,13 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		// menu rather than taking a key that means something else everywhere.
 		if p.service != "" {
 			if verb, ok := paneServiceVerbs[msg.key]; ok {
-				return m.runServiceVerb(verb, Service{ID: p.service, Name: p.serviceName})
+				return m.runServiceVerb(verb, console.Service{ID: p.service, Name: p.serviceName})
 			}
 		}
 		// The list's dispatcher, on the one discobox this screen is showing:
 		// the same enabled checks, the same confirmations, the same reports.
 		// Archive leaves the workspace as it starts (archiveWorkspace).
-		return m.actOn(msg.key, []Sandbox{m.currentBox()})
+		return m.actOn(msg.key, []console.Sandbox{m.currentBox()})
 
 	case movePaneMsg:
 		if m.hasScreen(p) {
@@ -896,9 +897,9 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 
 	case paneEventMsg:
 		switch msg.event.State {
-		case TerminalReconnecting:
+		case console.TerminalReconnecting:
 			p.status = "reconnecting…"
-		case TerminalReconnected:
+		case console.TerminalReconnected:
 			p.status = ""
 		}
 		return fromPane(p.id, m.paneEvents(p.stream))
@@ -1970,11 +1971,11 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	// position rather than with the word — whose mark is on the position, a
 	// mark that says nothing about being blocked — and a press on it does
 	// not open the diff the summary opens.
-	blocked := box.standing() == standingBlocked
+	blocked := box.Standing() == console.StandingBlocked
 	if blocked {
-		fields = append(fields, textField(m.st.blockedText.Render(statusBlocked)))
+		fields = append(fields, textField(m.st.blockedText.Render(console.StatusBlocked)))
 	}
-	if base := box.base(); base != "" {
+	if base := box.Base(); base != "" {
 		fields = append(fields, gitField(git.Render(base)))
 	}
 	// The list pads this into a column, so it spells the empty answer as a
@@ -1984,10 +1985,10 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	// A ready pull request turns the work's own `ready` green, since the two
 	// agree — committed, and only a merge left — and it does not claim a state
 	// the work is not in.
-	switch changes := box.changes(); {
+	switch changes := box.Changes(); {
 	case blocked:
 		// Said ahead of the git summary, in its own field.
-	case changes == "ready" && box.standing() == standingReady:
+	case changes == "ready" && box.Standing() == console.StandingReady:
 		fields = append(fields, gitField(m.st.readyText.Render(changes)))
 	case changes != "-":
 		fields = append(fields, gitField(git.Render(changes)))
@@ -2344,7 +2345,7 @@ func translateMouse(msg tea.MouseMsg, originX, originY, cols int) tea.MouseMsg {
 
 // displayName is what to call a discobox in the pane's caption: its name, or its
 // ID when it has none worth reading.
-func displayName(s Sandbox) string {
+func displayName(s console.Sandbox) string {
 	if s.Name != "" {
 		return s.Name
 	}

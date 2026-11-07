@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
@@ -193,8 +194,8 @@ func TestATerminalThatKnowsTheProtocolKeepsItsTitlePlain(t *testing.T) {
 // ends with the msg (sandboxmeta.Title), which the record already carries
 // beside the title.
 func TestTheRecordsTitleIsNotTheMsgAgain(t *testing.T) {
-	box := Sandbox{
-		ID: "sbx_quiet", Name: "Fix the reaper race", ConfigName: "brave-otter", State: StateRunning,
+	box := console.Sandbox{
+		ID: "sbx_quiet", Name: "Fix the reaper race", ConfigName: "brave-otter", State: console.StateRunning,
 		Agent: programstatus.Status{State: programstatus.Working, Msg: "Fix the reaper race"},
 	}
 	if got := recordTitle(box); got != "brave-otter" {

@@ -9,7 +9,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/harness"
 )
 
@@ -21,7 +21,7 @@ import (
 // Harnesses is one server's harness configs, oldest first, which is the order
 // they were registered in — the built-ins the server ships lead, and anything
 // registered by hand follows.
-func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Harness, error) {
+func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]console.Harness, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 	sorted := append([]apimodel.HarnessConfig(nil), configs...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CreatedAt.Before(sorted[j].CreatedAt) })
 
-	harnesses := make([]tui.Harness, 0, len(sorted))
+	harnesses := make([]console.Harness, 0, len(sorted))
 	for _, cfg := range sorted {
 		harnesses = append(harnesses, toTUIHarness(cfg, defaultID))
 	}
@@ -47,10 +47,10 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 }
 
 // CreateHarnessVariant uses the same create contract as harness create --extends.
-func (d *apiDataSource) CreateHarnessVariant(ctx context.Context, server string, variant tui.NewHarnessVariant) (tui.Harness, error) {
+func (d *apiDataSource) CreateHarnessVariant(ctx context.Context, server string, variant console.NewHarnessVariant) (console.Harness, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
-		return tui.Harness{}, err
+		return console.Harness{}, err
 	}
 	res, err := d.client.CreateHarnessConfig(ctx, &apimodel.CreateHarnessConfigBody{
 		Extends: apiclientgen.NewOptString(variant.ParentID),
@@ -58,17 +58,17 @@ func (d *apiDataSource) CreateHarnessVariant(ctx context.Context, server string,
 		Slug:    apiclientgen.NewOptString(variant.Slug),
 	}, apiclientgen.CreateHarnessConfigParams{ProjectId: d.projectID})
 	if err != nil {
-		return tui.Harness{}, err
+		return console.Harness{}, err
 	}
 	cfg, err := expectResponse[apimodel.HarnessConfig](res)
 	if err != nil {
-		return tui.Harness{}, err
+		return console.Harness{}, err
 	}
 	return toTUIHarness(*cfg, ""), nil
 }
 
-func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
-	harness := tui.Harness{
+func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) console.Harness {
+	harness := console.Harness{
 		Parent:   cfg.Extends.Or(""),
 		ID:       cfg.ID,
 		Name:     strings.TrimSpace(cfg.Name),
@@ -83,7 +83,7 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 		Updated:  cfg.UpdatedAt,
 	}
 	for _, secret := range cfg.Secrets.Or(nil) {
-		harness.Secrets = append(harness.Secrets, tui.HarnessSecret{
+		harness.Secrets = append(harness.Secrets, console.HarnessSecret{
 			Name:     secret.Name,
 			Required: secret.Required.Or(false),
 			OneOf:    secret.OneOfGroup.Or(""),
@@ -93,7 +93,7 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 	// Each path once, as a discobox is given it: a person's files lead, then
 	// the saved ones, then the bundle's.
 	for _, file := range harnessEffectiveFiles(&cfg) {
-		harness.Files = append(harness.Files, tui.HarnessFile{
+		harness.Files = append(harness.Files, console.HarnessFile{
 			Path:       file.Path,
 			Content:    file.Content,
 			Source:     file.Source,
@@ -108,7 +108,7 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 // needs: the image's declarations resolved against the project's secret
 // bindings, plus the bindings the image never declared, which are the ones
 // somebody bound by hand.
-func (d *apiDataSource) HarnessSecrets(ctx context.Context, server, harnessID string) ([]tui.HarnessSecret, error) {
+func (d *apiDataSource) HarnessSecrets(ctx context.Context, server, harnessID string) ([]console.HarnessSecret, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func (d *apiDataSource) HarnessSecrets(ctx context.Context, server, harnessID st
 	return harnessSecrets(*cfg, bindings, secretsByID), nil
 }
 
-func harnessSecrets(cfg apimodel.HarnessConfig, bindings []apimodel.SecretBinding, secretsByID map[string]apimodel.Secret) []tui.HarnessSecret {
+func harnessSecrets(cfg apimodel.HarnessConfig, bindings []apimodel.SecretBinding, secretsByID map[string]apimodel.Secret) []console.HarnessSecret {
 	boundByEnv := make(map[string]string, len(bindings))
 	for _, binding := range bindings {
 		if env := binding.EnvVar.Or(""); env != "" {
@@ -136,11 +136,11 @@ func harnessSecrets(cfg apimodel.HarnessConfig, bindings []apimodel.SecretBindin
 		}
 	}
 
-	out := make([]tui.HarnessSecret, 0, len(bindings))
+	out := make([]console.HarnessSecret, 0, len(bindings))
 	declared := map[string]bool{}
 	for _, secret := range cfg.Secrets.Or(nil) {
 		declared[secret.Name] = true
-		out = append(out, resolveHarnessSecret(tui.HarnessSecret{
+		out = append(out, resolveHarnessSecret(console.HarnessSecret{
 			Name:     secret.Name,
 			Required: secret.Required.Or(false),
 			OneOf:    secret.OneOfGroup.Or(""),
@@ -154,12 +154,12 @@ func harnessSecrets(cfg apimodel.HarnessConfig, bindings []apimodel.SecretBindin
 		if env == "" || declared[env] {
 			continue
 		}
-		out = append(out, resolveHarnessSecret(tui.HarnessSecret{Name: terminalSafe(env)}, binding.SecretId, secretsByID))
+		out = append(out, resolveHarnessSecret(console.HarnessSecret{Name: terminalSafe(env)}, binding.SecretId, secretsByID))
 	}
 	return out
 }
 
-func resolveHarnessSecret(out tui.HarnessSecret, secretID string, secretsByID map[string]apimodel.Secret) tui.HarnessSecret {
+func resolveHarnessSecret(out console.HarnessSecret, secretID string, secretsByID map[string]apimodel.Secret) console.HarnessSecret {
 	if secretID == "" {
 		return out
 	}
@@ -175,19 +175,19 @@ func resolveHarnessSecret(out tui.HarnessSecret, secretID string, secretsByID ma
 }
 
 // DoHarness runs one of the harness verbs against the API.
-func (d *apiDataSource) DoHarness(ctx context.Context, server string, verb tui.HarnessVerb, harnessID string) error {
+func (d *apiDataSource) DoHarness(ctx context.Context, server string, verb console.HarnessVerb, harnessID string) error {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return err
 	}
 	switch verb {
-	case tui.HarnessSetDefault:
+	case console.HarnessSetDefault:
 		return d.app.setDefaultHarnessConfig(ctx, d.client, d.projectID, harnessID)
 
-	case tui.HarnessReset, tui.HarnessResetOverrides:
+	case console.HarnessReset, console.HarnessResetOverrides:
 		res, err := d.client.ResetHarnessConfig(ctx, apiclientgen.ResetHarnessConfigParams{
 			ProjectId: d.projectID, HarnessConfigId: harnessID,
-			IncludeOverrides: apiclientgen.NewOptBool(verb == tui.HarnessResetOverrides),
+			IncludeOverrides: apiclientgen.NewOptBool(verb == console.HarnessResetOverrides),
 		})
 		if err != nil {
 			return err

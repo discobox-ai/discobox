@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The rewriter is what a pane asks where a URL on its screen actually goes: the
@@ -13,9 +15,9 @@ import (
 func TestForwardedURLPointsAtTheLocalEnd(t *testing.T) {
 	t.Parallel()
 	m := &Model{forward: newFakeForward(
-		Binding{Port: 8080, Local: 8081},
-		Binding{Port: 443, Local: 8443},
-		Binding{Port: 80, Local: 8000},
+		console.Binding{Port: 8080, Local: 8081},
+		console.Binding{Port: 443, Local: 8443},
+		console.Binding{Port: 80, Local: 8000},
 	)}
 
 	for _, tc := range []struct{ raw, want string }{

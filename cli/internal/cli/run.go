@@ -13,6 +13,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
@@ -751,8 +752,8 @@ func warningLine(warning string) string {
 // the same parse this command has just validated them with. Two flags do not go
 // over: -d, which never reaches a window, and --raw, which is the choice not to
 // open one.
-func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.RunRequest {
-	req := tui.RunRequest{
+func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) console.RunRequest {
+	req := console.RunRequest{
 
 		Prompt:              prompt,
 		Source:              opts.source,

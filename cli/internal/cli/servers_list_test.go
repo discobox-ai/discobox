@@ -17,7 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
@@ -783,10 +783,10 @@ func TestAnAnsweredRequestIsNotPutBackByAStaleRead(t *testing.T) {
 	d := &apiDataSource{}
 	s := &tuiServer{server: &server{name: "alpha", primary: true}, source: d}
 	d.servers = []*tuiServer{s}
-	req := tui.CredentialRequest{ID: "sreq_1"}
-	poll := func(s *tuiServer) *serverPoll[tui.CredentialRequest] { return &s.requests }
-	answer := func(context.Context, *apiDataSource) ([]tui.CredentialRequest, error) {
-		return []tui.CredentialRequest{req}, nil
+	req := console.CredentialRequest{ID: "sreq_1"}
+	poll := func(s *tuiServer) *serverPoll[console.CredentialRequest] { return &s.requests }
+	answer := func(context.Context, *apiDataSource) ([]console.CredentialRequest, error) {
+		return []console.CredentialRequest{req}, nil
 	}
 
 	pollEveryServer(context.Background(), d, poll, answer)
@@ -797,15 +797,15 @@ func TestAnAnsweredRequestIsNotPutBackByAStaleRead(t *testing.T) {
 	// A read that is slower than the poll's patience, and so still out when
 	// the request is answered.
 	release, landed := make(chan struct{}), make(chan struct{})
-	slow := func(context.Context, *apiDataSource) ([]tui.CredentialRequest, error) {
+	slow := func(context.Context, *apiDataSource) ([]console.CredentialRequest, error) {
 		defer close(landed)
 		<-release
-		return []tui.CredentialRequest{req}, nil
+		return []console.CredentialRequest{req}, nil
 	}
 	pollEveryServer(context.Background(), d, poll, slow)
 
 	d.mu.Lock()
-	stale(&s.requests, func(r tui.CredentialRequest) bool { return r.ID == req.ID })
+	stale(&s.requests, func(r console.CredentialRequest) bool { return r.ID == req.ID })
 	d.mu.Unlock()
 	if len(s.requests.last) != 0 {
 		t.Fatalf("after the answer the poll holds %v, want it gone", s.requests.last)
@@ -816,12 +816,12 @@ func TestAnAnsweredRequestIsNotPutBackByAStaleRead(t *testing.T) {
 	// The landing takes the lock just after the read returns.
 	time.Sleep(100 * time.Millisecond)
 	d.mu.Lock()
-	got := append([]tui.CredentialRequest(nil), s.requests.last...)
+	got := append([]console.CredentialRequest(nil), s.requests.last...)
 	d.mu.Unlock()
 	if len(got) != 0 {
 		t.Fatalf("the read taken before the answer put %v back", got)
 	}
-	none := func(context.Context, *apiDataSource) ([]tui.CredentialRequest, error) { return nil, nil }
+	none := func(context.Context, *apiDataSource) ([]console.CredentialRequest, error) { return nil, nil }
 	pollEveryServer(context.Background(), d, poll, none)
 	if len(s.requests.last) != 0 {
 		t.Fatalf("the next poll holds %v, want nothing waiting", s.requests.last)

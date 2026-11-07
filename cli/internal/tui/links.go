@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/wsl"
 )
 
@@ -49,7 +50,7 @@ func (m *Model) forwardedURL(raw string) string {
 	}
 	// A URL's port is a TCP one: http and https are the only schemes this
 	// moves.
-	local, ok := m.forwardedPorts()[portKey{number: remote}]
+	local, ok := m.forwardedPorts()[console.PortKey{Number: remote}]
 	if !ok {
 		return raw
 	}

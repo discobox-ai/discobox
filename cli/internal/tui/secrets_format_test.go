@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // formatFixture is the secrets screen over one token whose sentinel shape was
@@ -12,7 +14,7 @@ func formatFixture(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.projectSecrets = []Secret{
+	ds.projectSecrets = []console.Secret{
 		{ID: "sec_read", Name: "anthropic", Type: "token", MaxTTL: time.Hour, Format: "sk-ant-api03-{base64url:95}"},
 		{ID: "sec_set", Name: "custom", Type: "token", MaxTTL: time.Hour, Format: "sk-custom-{hex:40}", FormatSet: true},
 	}

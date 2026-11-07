@@ -18,6 +18,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/cli/internal/origin"
@@ -206,13 +207,13 @@ type tuiServer struct {
 	// of its credential requests waiting on a person (ADR 0131 §1). They are
 	// two polls rather than one because the inbox is re-read on its own the
 	// moment a request is answered, and the listing has no reason to be.
-	listing  serverPoll[tui.Sandbox]
-	requests serverPoll[tui.CredentialRequest]
+	listing  serverPoll[console.Sandbox]
+	requests serverPoll[console.CredentialRequest]
 	// rejections is the poll of the credentials this server's upstreams have
 	// refused (ADR 0132). Its own poll, beside the inbox's, for the reason the
 	// inbox has one: a server that is slow to list what is refused must not
 	// hold up what is waiting on a person.
-	rejections serverPoll[tui.SecretRejection]
+	rejections serverPoll[console.SecretRejection]
 }
 
 // serverPoll is what one server said to one of the window's polls the last
@@ -353,7 +354,7 @@ func (d *apiDataSource) PrimaryServer() string { return d.primaryName }
 
 // ForServer pins an operation to the server in its UI snapshot. A fresh
 // single-server source prevents a newer listing from changing its ID route.
-func (d *apiDataSource) ForServer(name string) tui.DataSource {
+func (d *apiDataSource) ForServer(name string) console.DataSource {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if name == "" {
@@ -397,13 +398,13 @@ func (d *apiDataSource) waitForPushes(out io.Writer) {
 
 // Session is what the header, the origin filter and the run options are drawn
 // from: where the window is running and what the project offers.
-func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
+func (d *apiDataSource) Session(ctx context.Context) (console.Session, error) {
 	ctx, err := resolveGitCredentials(ctx)
 	if err != nil {
-		return tui.Session{}, err
+		return console.Session{}, err
 	}
 	policy, _ := sandboxcreate.GitCredentialPolicy(ctx)
-	session := tui.Session{
+	session := console.Session{
 		GitCredentials: string(policy),
 		Project:        d.projectID,
 		DefaultProject: defaultProjectAlias,
@@ -487,7 +488,7 @@ func (d *apiDataSource) SaveDraft(_ context.Context, prompt string) error {
 
 // SaveView keeps the header's filters for the next window. The context is
 // unused, for the reason SaveDraft's is.
-func (d *apiDataSource) SaveView(_ context.Context, view tui.ListView) error {
+func (d *apiDataSource) SaveView(_ context.Context, view console.ListView) error {
 	return saveConsoleView(view)
 }
 
@@ -503,7 +504,7 @@ func (d *apiDataSource) SaveLastSource(_ context.Context, source string) error {
 // timestamp a user's action put there. The window
 // filters to the ones started here itself, on a key, so the listing is not
 // narrowed before it gets there.
-func (d *apiDataSource) List(ctx context.Context) (tui.Listing, error) {
+func (d *apiDataSource) List(ctx context.Context) (console.Listing, error) {
 	if d.servers == nil {
 		// One server, so its failure is the listing's failure and there is
 		// nothing to draw without it: this is the one poll that does wait for
@@ -513,9 +514,9 @@ func (d *apiDataSource) List(ctx context.Context) (tui.Listing, error) {
 		defer cancel()
 		sandboxes, err := d.listHere(ctx)
 		if err != nil {
-			return tui.Listing{}, err
+			return console.Listing{}, err
 		}
-		return tui.Listing{Sandboxes: sandboxes, Listed: map[string]time.Time{"": time.Now()}}, nil
+		return console.Listing{Sandboxes: sandboxes, Listed: map[string]time.Time{"": time.Now()}}, nil
 	}
 	return d.listEveryServer(ctx)
 }
@@ -531,13 +532,15 @@ func (d *apiDataSource) List(ctx context.Context) (tui.Listing, error) {
 //
 // A discobox two servers both list is one server registered under two
 // addresses, and is listed once.
-func (d *apiDataSource) listEveryServer(ctx context.Context) (tui.Listing, error) {
-	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[tui.Sandbox] { return &s.listing },
-		func(ctx context.Context, source *apiDataSource) ([]tui.Sandbox, error) { return source.listHere(ctx) })
+func (d *apiDataSource) listEveryServer(ctx context.Context) (console.Listing, error) {
+	pollEveryServer(ctx, d, func(s *tuiServer) *serverPoll[console.Sandbox] { return &s.listing },
+		func(ctx context.Context, source *apiDataSource) ([]console.Sandbox, error) {
+			return source.listHere(ctx)
+		})
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	listing := tui.Listing{Listed: map[string]time.Time{}}
+	listing := console.Listing{Listed: map[string]time.Time{}}
 	seen := map[string]bool{}
 	for _, s := range d.servers {
 		if s.listing.failed {
@@ -689,7 +692,7 @@ func waitForAnswers(ctx context.Context, asked *sync.WaitGroup) {
 }
 
 // listHere is this data source's own server's discoboxes.
-func (d *apiDataSource) listHere(ctx context.Context) ([]tui.Sandbox, error) {
+func (d *apiDataSource) listHere(ctx context.Context) ([]console.Sandbox, error) {
 	res, err := d.client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: d.projectID})
 	if err != nil {
 		return nil, err
@@ -703,7 +706,7 @@ func (d *apiDataSource) listHere(ctx context.Context) ([]tui.Sandbox, error) {
 	// row: it is what decides whether a discobox's origin is this window's to
 	// push into. A machine that cannot resolve one pushes nothing (pushable).
 	hostID, _ := hostid.Get()
-	out := make([]tui.Sandbox, 0, len(sandboxes))
+	out := make([]console.Sandbox, 0, len(sandboxes))
 	for _, sb := range sandboxes {
 		if err := sandboxcreate.CleanupConfirmedSources(ctx, d.app.serverURL, &sb); err != nil {
 			return nil, err
@@ -728,18 +731,18 @@ func (d *apiDataSource) listHere(ctx context.Context) ([]tui.Sandbox, error) {
 // It rides the listing's beat, so it is on the same leash the listing puts its
 // requests on (pollTimeout) rather than leaving one outstanding for the life
 // of the window against a server that has stopped answering.
-func (d *apiDataSource) Resources(ctx context.Context) (tui.Resources, error) {
+func (d *apiDataSource) Resources(ctx context.Context) (console.Resources, error) {
 	ctx, cancel := context.WithTimeout(ctx, pollTimeout)
 	defer cancel()
 	res, err := d.client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: d.projectID})
 	if err != nil {
-		return tui.Resources{}, err
+		return console.Resources{}, err
 	}
 	body, err := expectResponse[apimodel.ListPoolsBody](res)
 	if err != nil {
-		return tui.Resources{}, err
+		return console.Resources{}, err
 	}
-	var out tui.Resources
+	var out console.Resources
 	for _, pool := range body.GetPools() {
 		report, ok := poolResourceReport(&pool)
 		if !ok {
@@ -800,12 +803,12 @@ func dedicated(size, capacity float64) float64 {
 // measured figure and a denominator to divide it by, and when either is missing
 // the row draws a dot: a zero share would say the sandbox is idle, which is a
 // claim about it rather than about what we know.
-func toTUIUsage(sb apimodel.Sandbox) tui.Usage {
+func toTUIUsage(sb apimodel.Sandbox) console.Usage {
 	consumption, ok := sandboxResourceConsumption(sb)
 	if !ok {
-		return tui.Usage{}
+		return console.Usage{}
 	}
-	var usage tui.Usage
+	var usage console.Usage
 	pool, hasPool := sb.Pool.Get()
 	var report apimodel.PoolResourceReport
 	if hasPool {
@@ -858,8 +861,8 @@ func percentOf(value, of float64) int {
 	return min(max(int(value/of*100+0.5), 0), 100)
 }
 
-func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
-	row := tui.Sandbox{
+func toTUISandbox(sb apimodel.Sandbox, hostID string) console.Sandbox {
+	row := console.Sandbox{
 		ID:   sb.ID,
 		Name: sb.DisplayName,
 		// The name the box is configured with, beside the name the server
@@ -915,15 +918,15 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	// row's state and its message; this is the record that outlives it, which
 	// is the only thing left saying the box was rebuilt once the repair has
 	// cleared the failure it answered (ADR 26-10-12-711 §8).
-	if repair, ok := sb.Runtime.AutomaticRepair.Get(); ok && row.State != tui.StateRepairing {
+	if repair, ok := sb.Runtime.AutomaticRepair.Get(); ok && row.State != console.StateRepairing {
 		// A repair that landed says when. One that did not, on a box settled
 		// in error on the generation it was recorded as, failed. Anything
 		// else was overtaken by newer intent before it finished, and is not
 		// worth a line.
 		_, landed := repair.LandedAt.Get()
-		failed := !landed && row.State == tui.StateError && repair.Generation == sb.Runtime.Generation
+		failed := !landed && row.State == console.StateError && repair.Generation == sb.Runtime.Generation
 		if landed || failed {
-			row.Repaired = tui.AutomaticRepair{
+			row.Repaired = console.AutomaticRepair{
 				At:      repair.LandedAt.Or(repair.StartedAt),
 				Trigger: sandboxcreate.OneLine(repair.Trigger),
 				Failure: sandboxcreate.OneLine(repair.Failure.Or("")),
@@ -987,14 +990,14 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		row.TerminalTitle = terminalSafe(title)
 	}
 	if git := sandboxGitStatus(sb); git.Known {
-		row.Git = tui.GitState{
+		row.Git = console.GitState{
 			Known:  true,
 			Branch: git.Branch,
 			Commit: shortCommit(git.Commit),
 			Dirty:  !git.Clean,
 		}
 		if git.DiffKnown {
-			row.Diff = tui.DiffStat{
+			row.Diff = console.DiffStat{
 				Known:   true,
 				Files:   git.DiffFiles,
 				Added:   git.DiffAdded,
@@ -1011,24 +1014,24 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 // the same actions a running one does until it is off. Repairing is the
 // exception and keeps its own: where it is heading is a box that works, where
 // it came from is one that had failed, and neither is what it is.
-func toTUIState(state string) tui.State {
+func toTUIState(state string) console.State {
 	switch state {
 	case "running":
-		return tui.StateRunning
+		return console.StateRunning
 	case "starting":
-		return tui.StateStarting
+		return console.StateStarting
 	case "stopping":
-		return tui.StateRunning
+		return console.StateRunning
 	case "repairing":
-		return tui.StateRepairing
+		return console.StateRepairing
 	case "suspended":
-		return tui.StateSuspended
+		return console.StateSuspended
 	case "archived", "archiving":
-		return tui.StateArchived
+		return console.StateArchived
 	case "error":
-		return tui.StateError
+		return console.StateError
 	default:
-		return tui.StateStopped
+		return console.StateStopped
 	}
 }
 
@@ -1041,18 +1044,18 @@ func shortCommit(commit string) string {
 
 // Workspace reports what the source directory would carry into a discobox
 // beyond its committed history, which is what the window's questions are about.
-func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.SourceWorkspace, error) {
+func (d *apiDataSource) Workspace(ctx context.Context, source string) (console.SourceWorkspace, error) {
 	if strings.TrimSpace(source) == "" {
 		source = "."
 	}
 	parsed, err := sandboxcreate.ParseSource(source)
 	if err != nil {
-		return tui.SourceWorkspace{}, err
+		return console.SourceWorkspace{}, err
 	}
 	// A repository the discobox clones for itself has no working tree here, so
 	// there is nothing it could carry and nothing to ask about.
 	if parsed.Kind == sourceref.Git {
-		return tui.SourceWorkspace{Directory: source}, nil
+		return console.SourceWorkspace{Directory: source}, nil
 	}
 	dir := sandboxcreate.SourceDirectory(parsed)
 	// Outside a repository there is no commit to fall back to, so what the
@@ -1062,19 +1065,19 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 	if !inRepo {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return tui.SourceWorkspace{}, err
+			return console.SourceWorkspace{}, err
 		}
-		return tui.SourceWorkspace{Directory: dir, Carries: len(entries) > 0}, nil
+		return console.SourceWorkspace{Directory: dir, Carries: len(entries) > 0}, nil
 	}
 	// A repository with no commits carries its files whatever is answered —
 	// there is no last commit to start from instead — so there is nothing to
 	// ask about it.
 	if gitunborn.HeadIsUnborn(ctx, root) {
-		return tui.SourceWorkspace{Directory: root, Repository: true}, nil
+		return console.SourceWorkspace{Directory: root, Repository: true}, nil
 	}
 	changes, err := gitutil.StatusChanges(ctx, root)
 	if err != nil {
-		return tui.SourceWorkspace{}, err
+		return console.SourceWorkspace{}, err
 	}
 	// The paths as well as the count: the question about them names a few, so
 	// what is being carried in is recognizable rather than a number.
@@ -1082,7 +1085,7 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 	for _, change := range changes {
 		paths = append(paths, change.Path)
 	}
-	return tui.SourceWorkspace{Directory: root, Repository: true, Carries: len(paths) > 0, Changes: paths}, nil
+	return console.SourceWorkspace{Directory: root, Repository: true, Carries: len(paths) > 0, Changes: paths}, nil
 }
 
 // ResolveSource checks a source the window was given by hand and reports it the
@@ -1095,10 +1098,10 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 // The refusal is the point of it. A SOURCE that is not there fails
 // the create a few seconds later, by which time the field it was typed into is
 // gone and the path has to be remembered rather than corrected.
-func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (tui.Source, error) {
+func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (console.Source, error) {
 	parsed, err := resolveSourceValue(source)
 	if err != nil {
-		return tui.Source{}, err
+		return console.Source{}, err
 	}
 	value := parsed.String()
 	// Where a discobox cut from it here is filed, so the list can follow the
@@ -1106,9 +1109,9 @@ func (d *apiDataSource) ResolveSource(ctx context.Context, source string) (tui.S
 	// which what was typed need not be.
 	key, _, err := sandboxcreate.OriginKeys(ctx, value)
 	if err != nil {
-		return tui.Source{}, err
+		return console.Source{}, err
 	}
-	resolved := tui.Source{
+	resolved := console.Source{
 		Value:         value,
 		Remote:        parsed.Kind == sourceref.Git,
 		OriginKey:     key,
@@ -1154,9 +1157,9 @@ func resolveSourceValue(source string) (sourceref.Ref, error) {
 // MeasureDirectory is the shared create path's directory walk, in the shape the
 // window polls it in. The two frontends count the same thing the same way; only
 // where the number is drawn differs.
-func (d *apiDataSource) MeasureDirectory(ctx context.Context, dir string) (func() tui.DirectoryTotal, func()) {
+func (d *apiDataSource) MeasureDirectory(ctx context.Context, dir string) (func() console.DirectoryTotal, func()) {
 	walk := sandboxcreate.MeasureDirectory(ctx, dir)
-	return func() tui.DirectoryTotal { return tui.DirectoryTotal(walk.Total()) }, walk.Stop
+	return func() console.DirectoryTotal { return console.DirectoryTotal(walk.Total()) }, walk.Stop
 }
 
 // gitRoot is gitutil.Root asked as a question rather than for an error: not
@@ -1170,10 +1173,10 @@ func gitRoot(ctx context.Context, dir string) (string, bool) {
 // Run creates the sandbox Enter asked for and delivers its source, which is
 // exactly what `discobox run` does before it attaches — including saying which of
 // those steps is underway, on the same words the command uses (ADR 0060).
-func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func(tui.Sandbox)) (tui.Sandbox, error) {
+func (d *apiDataSource) Run(ctx context.Context, req console.RunRequest, report, warn func(string), accepted func(console.Sandbox)) (console.Sandbox, error) {
 	if d.servers == nil {
 		if req.Server != "" {
-			return tui.Sandbox{}, fmt.Errorf("there is no server %s to create on; there is only the primary", req.Server)
+			return console.Sandbox{}, fmt.Errorf("there is no server %s to create on; there is only the primary", req.Server)
 		}
 		return d.create(ctx, req, report, warn, accepted)
 	}
@@ -1192,36 +1195,36 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, war
 		}
 		d.mu.Unlock()
 		if target == nil {
-			return tui.Sandbox{}, fmt.Errorf("there is no server named %s to create on", req.Server)
+			return console.Sandbox{}, fmt.Errorf("there is no server named %s to create on", req.Server)
 		}
 	}
 	source, err := d.sourceFor(ctx, target)
 	if err != nil {
-		return tui.Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 	// A box the server took is on this server whether or not the rest of
 	// the run goes through, and is known to be from the moment it is taken:
 	// the window goes to it then, and asks after it here.
-	locate := func(box tui.Sandbox) tui.Sandbox {
+	locate := func(box console.Sandbox) console.Sandbox {
 		box.Server = target.name
 		return box
 	}
-	box, err := source.create(ctx, req, report, warn, func(box tui.Sandbox) {
+	box, err := source.create(ctx, req, report, warn, func(box console.Sandbox) {
 		if accepted != nil {
 			accepted(locate(box))
 		}
 	})
 	if box.ID == "" {
-		return tui.Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 	return locate(box), err
 }
 
 // create is Run on this data source's own server.
-func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func(tui.Sandbox)) (tui.Sandbox, error) {
+func (d *apiDataSource) create(ctx context.Context, req console.RunRequest, report, warn func(string), accepted func(console.Sandbox)) (console.Sandbox, error) {
 	ctx, err := resolveGitCredentials(ctx)
 	if err != nil {
-		return tui.Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 	opts := sandboxcreate.PromptOptions{
 		Source:   strings.TrimSpace(req.Source),
@@ -1238,7 +1241,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	// A Skills or User skills row left alone is nil, so what client.yaml says
 	// stands; one that was set, or `discobox run`'s own flags, replace it.
 	if opts.SkillDirs, opts.UserSkills, err = newSkills(req.SkillDirs, req.UserSkills); err != nil {
-		return tui.Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 	// What each declared source resolved to, in the window's own form: it has
 	// no scrollback to keep a line in, so the report is narrated as it happens
@@ -1275,14 +1278,14 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	// parse takes it from.
 	opts, err = sandboxcreate.ParsePromptOptions(opts, req.Prompt)
 	if err != nil {
-		return tui.Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 	if opts.Bindings, err = sandboxcreate.ParseBindings(req.Bind, req.Delegate); err != nil {
-		return tui.Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 	opts.DiscoboxAPI = req.DiscoboxAPI
 	if err := d.app.newSandboxSettings(ctx, d.client, d.projectID, req.Pool, !req.NoProjectSkills, &opts); err != nil {
-		return tui.Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 
 	step := func(step sandboxcreate.Step) {
@@ -1292,7 +1295,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	}
 	sandbox, local, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, d.app.serverURL, opts, step)
 	if sandbox == nil {
-		return tui.Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 	// From here the discobox exists, so a failure still returns it: the
 	// window names what it made either way (tui.DataSource.Run).
@@ -1346,7 +1349,7 @@ func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string,
 
 // DeliverSource delivers the source a parked discobox is waiting for before
 // the workspace attaches to it (ADR 26-09-24-005); see deliverBeforeAttach.
-func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, report func(string), credentials tui.CredentialUI) error {
+func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, report func(string), credentials console.CredentialUI) error {
 	ctx, err := resolveGitCredentials(ctx)
 	if err != nil {
 		return err
@@ -1357,10 +1360,10 @@ func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, rep
 // Do runs a lifecycle verb against one sandbox. These go straight to the API
 // rather than through their Cobra commands: the commands print a sandbox table
 // on success, and the window reports on its own status line instead.
-func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string, credentials tui.CredentialUI) (string, error) {
+func (d *apiDataSource) Do(ctx context.Context, verb console.Verb, sandboxID string, credentials console.CredentialUI) (string, error) {
 	ctx = requestprogress.Observe(ctx, credentials.Report)
 	switch verb {
-	case tui.VerbStart:
+	case console.VerbStart:
 		var err error
 		ctx, err = resolveGitCredentials(ctx)
 		if err != nil {
@@ -1378,7 +1381,7 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string,
 		_, err = expectResponse[apimodel.Sandbox](res)
 		return "", err
 
-	case tui.VerbStop:
+	case console.VerbStop:
 		res, err := d.client.StopSandbox(ctx, &apimodel.StopSandboxBody{},
 			apiclientgen.StopSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
@@ -1387,7 +1390,7 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string,
 		_, err = expectResponse[apimodel.Sandbox](res)
 		return "", err
 
-	case tui.VerbUpgrade:
+	case console.VerbUpgrade:
 		res, err := d.client.UpgradeSandbox(ctx, &apimodel.UpgradeSandboxBody{},
 			apiclientgen.UpgradeSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
@@ -1396,7 +1399,7 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string,
 		_, err = expectResponse[apimodel.Sandbox](res)
 		return "", err
 
-	case tui.VerbRepair:
+	case console.VerbRepair:
 		// Repair converges in the request (ADR 0035), so this call is as long
 		// as the rebuild is — the window shows its busy line meanwhile.
 		res, err := d.client.RepairSandbox(ctx, apiclientgen.RepairSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
@@ -1414,21 +1417,21 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string,
 		}
 		return "", nil
 
-	case tui.VerbArchive:
+	case console.VerbArchive:
 		res, err := d.client.DeleteSandbox(ctx, apiclientgen.DeleteSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
 			return "", err
 		}
 		return "", expectNoContent[apiclientgen.DeleteSandboxAccepted](res)
 
-	case tui.VerbUnarchive:
+	case console.VerbUnarchive:
 		res, err := d.client.UnarchiveSandbox(ctx, apiclientgen.UnarchiveSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
 			return "", err
 		}
 		return "", expectNoContent[apiclientgen.UnarchiveSandboxAccepted](res)
 
-	case tui.VerbPurge:
+	case console.VerbPurge:
 		res, err := d.client.PurgeSandbox(ctx, apiclientgen.PurgeSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {
 			return "", err
@@ -1555,24 +1558,24 @@ func (d *apiDataSource) serverPeerID(ctx context.Context, s *server) (id string,
 // "wrote …/config" is not what someone opening the picker is reading for. What
 // went wrong still comes back as the error, which the card puts on the row it
 // could not fill.
-func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Addresses, error) {
+func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (console.Addresses, error) {
 	// A Windows ssh that cannot be resolved from WSL leaves this side's, which
 	// is the one the shell reading this is running, and machineSSHTargets errors
 	// only when that one is missing too.
 	targets, err := machineSSHTargets(ctx)
 	if err != nil {
-		return tui.Addresses{}, err
+		return console.Addresses{}, err
 	}
 	silent := noteFunc(func(string, ...any) {})
 	remote, err := d.app.sandboxSSHRemote(ctx, targets.all, d.client, d.projectID, sandboxID, "", silent)
 	if err != nil {
-		return tui.Addresses{}, err
+		return console.Addresses{}, err
 	}
-	return tui.Addresses{SSH: "ssh " + remote.host, Git: tools.Remote{Host: remote.host, Workdir: remote.folder, WorkingRoot: remote.workingRoot}.GitURL()}, nil
+	return console.Addresses{SSH: "ssh " + remote.host, Git: tools.Remote{Host: remote.host, Workdir: remote.folder, WorkingRoot: remote.workingRoot}.GitURL()}, nil
 }
 
 // Tools is every tool one sandbox can be worked on with (ADR 0125).
-func (d *apiDataSource) Tools(ctx context.Context, sandboxID string) ([]tui.Tool, error) {
+func (d *apiDataSource) Tools(ctx context.Context, sandboxID string) ([]console.Tool, error) {
 	catalog, _, err := d.app.toolCatalog(ctx, d.client, d.projectID, sandboxID)
 	if err != nil {
 		return nil, err
@@ -1580,10 +1583,10 @@ func (d *apiDataSource) Tools(ctx context.Context, sandboxID string) ([]tui.Tool
 	return tuiTools(catalog), nil
 }
 
-func tuiTools(catalog []tools.Definition) []tui.Tool {
-	out := make([]tui.Tool, 0, len(catalog))
+func tuiTools(catalog []tools.Definition) []console.Tool {
+	out := make([]console.Tool, 0, len(catalog))
 	for _, def := range catalog {
-		t := tui.Tool{
+		t := console.Tool{
 			ID:      def.ID,
 			Key:     def.Key,
 			Label:   def.Label(),
@@ -1592,7 +1595,7 @@ func tuiTools(catalog []tools.Definition) []tui.Tool {
 			Problem: def.Problem,
 		}
 		for _, file := range def.Files {
-			t.Files = append(t.Files, tui.ToolFile{Tool: def.ID, Name: file.Name, Home: file.Home, Default: file.Default})
+			t.Files = append(t.Files, console.ToolFile{Tool: def.ID, Name: file.Name, Home: file.Home, Default: file.Default})
 		}
 		out = append(out, t)
 	}
@@ -1625,7 +1628,7 @@ func (d *apiDataSource) RunHostTool(ctx context.Context, sandboxID, toolID strin
 	return d.app.runHostTool(ctx, def, target, "", nil, strings.NewReader(""), io.Discard, io.Discard, silent)
 }
 
-func tuiCredentialDeliveryOptions(ctx context.Context, ui tui.CredentialUI) sandboxcreate.DeliveryOptions {
+func tuiCredentialDeliveryOptions(ctx context.Context, ui console.CredentialUI) sandboxcreate.DeliveryOptions {
 	policy, path := sandboxcreate.GitCredentialPolicy(ctx)
 	options := sandboxcreate.DeliveryOptions{Credentials: policy, ConfigPath: path}
 	if !sandboxgit.Noninteractive(ctx) {

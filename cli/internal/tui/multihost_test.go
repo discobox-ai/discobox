@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -20,11 +21,11 @@ func TestARequestIsShownWithEveryRouteItAsksFor(t *testing.T) {
 		{[]secretroute.Route{{Hosts: []string{"api.github.com"}}, {Hosts: []string{"uploads.github.com"}, Paths: []string{"/repos"}}}, "api.github.com; uploads.github.com/repos"},
 		{[]secretroute.Route{{Hosts: []string{"*"}}}, "*"},
 	} {
-		if got := (CredentialRequest{Use: &RequestPart{Routes: tc.routes}}).where(); got != tc.where {
+		if got := (console.CredentialRequest{Use: &console.RequestPart{Routes: tc.routes}}).Where(); got != tc.where {
 			t.Errorf("where(%v) = %q, want %q", tc.routes, got, tc.where)
 		}
 	}
-	if got := (CredentialRequest{Host: "kube.internal:6443", Trust: &TrustAsk{}}).where(); got != "kube.internal:6443" {
+	if got := (console.CredentialRequest{Host: "kube.internal:6443", Trust: &console.TrustAsk{}}).Where(); got != "kube.internal:6443" {
 		t.Errorf("a trust's where = %q", got)
 	}
 }
@@ -33,10 +34,10 @@ func TestARequestIsShownWithEveryRouteItAsksFor(t *testing.T) {
 // is offered, since the binding an approval makes is held to the secret's
 // routes and the request's both.
 func TestThePickerOffersTheSecretNamedAsAskedFirst(t *testing.T) {
-	req := CredentialRequest{Name: "github", Use: &RequestPart{Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
-	other := Secret{ID: "sec-other", Name: "openai"}
-	named := Secret{ID: "sec-named", Name: "github"}
-	got := secretsForRequest([]Secret{other, named}, req)
+	req := console.CredentialRequest{Name: "github", Use: &console.RequestPart{Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+	other := console.Secret{ID: "sec-other", Name: "openai"}
+	named := console.Secret{ID: "sec-named", Name: "github"}
+	got := secretsForRequest([]console.Secret{other, named}, req)
 	if len(got) != 2 || got[0].ID != named.ID {
 		t.Fatalf("picker order = %v; want the secret named github first, and both offered", got)
 	}
@@ -45,13 +46,13 @@ func TestThePickerOffersTheSecretNamedAsAskedFirst(t *testing.T) {
 // A card lists a request's routes one to a row, each whole on its own row,
 // rather than as one "; "-joined line wrapped wherever the card runs out.
 func TestACardListsEachRouteOnItsOwnRow(t *testing.T) {
-	req := CredentialRequest{Name: "github", Use: &RequestPart{Routes: []secretroute.Route{
+	req := console.CredentialRequest{Name: "github", Use: &console.RequestPart{Routes: []secretroute.Route{
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/**"}, Methods: []string{"GET"}},
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/pulls"}, Methods: []string{"POST"}},
 	}}}
-	d := &dialog{sections: []section{bindingSection(approval{req: req, secret: Secret{Name: "github"}})}}
+	d := &dialog{sections: []section{bindingSection(approval{req: req, secret: console.Secret{Name: "github"}})}}
 	rows := d.sectionLines(newStyles(false), 120)
-	for _, route := range req.routes() {
+	for _, route := range req.Routes() {
 		want := secretroute.Format(route)
 		found := false
 		for _, row := range rows {

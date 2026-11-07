@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
@@ -124,7 +125,7 @@ type optionSet struct {
 	gitPolicyError   bool
 	opts             []*option
 	cursor           int
-	session          Session
+	session          console.Session
 
 	// folder is the source of the folder the window is currently working in,
 	// chosen in the header: the directory or URL a create from it cuts from. It
@@ -139,7 +140,7 @@ type optionSet struct {
 	// first, as the listing reports them. They are what the Source row offers
 	// besides the folder itself: the places this project is worked in are
 	// exactly the ones already holding something.
-	known []Source
+	known []console.Source
 	// source is what the Source row is set to: a directory, a repository URL,
 	// sourceNone, or empty for the folder the header is on. It is kept here
 	// rather than read back off the row's cursor, because the row is rebuilt
@@ -148,10 +149,10 @@ type optionSet struct {
 	// named is the last source typed by hand, as the check of it reported it.
 	// The listing does not hold it, so where a discobox cut from it is filed
 	// is kept here for the list to follow it there.
-	named Source
+	named console.Source
 	// pools are the server's pools as last listed, which the Pool row is
 	// built from; see setPools.
-	pools []Pool
+	pools []console.Pool
 	// lastCut is the source the last create card was answered with
 	// (askHowToCreate), in this window or — through Session.LastSource — the
 	// last one on this machine. It leads the Source row, and answering a card
@@ -160,38 +161,11 @@ type optionSet struct {
 	lastCut string
 }
 
-// Source is one place the project's discoboxes have been cut from, as the
-// Source row offers it.
-type Source struct {
-	// Value is what `run`'s SOURCE takes: the client directory, or the
-	// repository URL.
-	Value string
-	// Remote marks a repository URL rather than a directory on a client.
-	Remote bool
-	// Directory is the directory a local Value names, without its ref or
-	// path, as the data source resolved it; empty for a remote. It is not
-	// split off Value here: a directory's own name may hold `@` or `//`,
-	// which only its disk tells from a ref or a path (sourceref.Ref.Resolve).
-	Directory string
-	// OriginKey is where a discobox cut from Value on this machine is filed
-	// (ADR 0111), which is the folder the list follows the source to.
-	OriginKey string
-	// RepositoryKey is the GitHub repository Value belongs to, keyed as
-	// Sandbox.RepositoryKey is, and empty when it is not on GitHub: the
-	// folder the list follows the source to is then the repository's.
-	RepositoryKey string
-}
-
 // sourceNone is what the Source row carries for a discobox with nothing
 // checked out in it. It is a sentinel rather than the empty string because
 // empty already means "the folder the header is on", and the two are different
 // answers; the NUL keeps it from ever colliding with a path or a URL.
 const sourceNone = "\x00no-source"
-
-// noSourceChoice is how sourceNone reads, in the panel and on the chip strip
-// both. It is the flag's own words rather than "(none)", which reads as a value
-// that has not been filled in yet rather than as the answer it is.
-const noSourceChoice = "no source"
 
 // enterSourceChoice is the dropdown's last row: the one entry that is not a
 // source but a way to name one the listing has never seen. It is only in the
@@ -241,7 +215,7 @@ const (
 // an entry meaning the same thing would be a second way to say it.
 const unsetHarness = "(default)"
 
-func newOptions(session Session) *optionSet {
+func newOptions(session console.Session) *optionSet {
 	// The choices are the project's harnesses, which are loaded on their own
 	// and arrive here through setHarnesses. Until they do the row is empty
 	// rather than offering "none (shell)" as if it were the default: a panel
@@ -363,7 +337,7 @@ func (o *optionSet) setServer(name string) {
 // answer, and the card opens holding it rather than asking it again. A harness
 // the listing does not offer is added to the row rather than dropped, so the
 // create meets the server's answer about it rather than a different harness.
-func (o *optionSet) prefill(req RunRequest) {
+func (o *optionSet) prefill(req console.RunRequest) {
 	if req.Harness != "" {
 		harness := o.opts[optHarness]
 		i := slices.Index(harness.choices, req.Harness)
@@ -420,7 +394,7 @@ const harnessesHint = "--harness · " + HarnessesKeyName + " enables, disables a
 // leaving a name the run would be refused for. Every harness runs on every
 // pool: a harness names no platform and no image kind, which are its pool's
 // (ADR 26-11-01-122).
-func (o *optionSet) setHarnesses(harnesses []Harness) {
+func (o *optionSet) setHarnesses(harnesses []console.Harness) {
 	harness := o.opts[optHarness]
 	chosen := ""
 	if harness.idx > 0 && harness.idx < len(harness.choices) {
@@ -430,7 +404,7 @@ func (o *optionSet) setHarnesses(harnesses []Harness) {
 	var def string
 	for _, harness := range harnesses {
 		if harness.Default {
-			def = harness.flagName()
+			def = harness.FlagName()
 		}
 	}
 	choices := make([]string, 0, len(harnesses)+1)
@@ -445,7 +419,7 @@ func (o *optionSet) setHarnesses(harnesses []Harness) {
 		choices = append(choices, unsetHarness)
 	}
 	for _, harness := range harnesses {
-		if name := harness.flagName(); name != "" && name != def {
+		if name := harness.FlagName(); name != "" && name != def {
 			choices = append(choices, name)
 		}
 	}
@@ -485,7 +459,7 @@ const poolHint = "--pool · the pool the discobox is created on, which decides t
 // not hold — one `discobox run --pool` named — stays on the row rather than
 // being dropped, so the create meets the server's answer about it rather than
 // another pool.
-func (o *optionSet) setPools(pools []Pool) {
+func (o *optionSet) setPools(pools []console.Pool) {
 	row := o.opts[optPool]
 	chosen := row.selected()
 	for _, pool := range o.pools {
@@ -556,7 +530,7 @@ func (o *optionSet) clearPools() {
 
 // poolLabel is how a pool reads on the row: its name, or its ID when it has
 // none.
-func poolLabel(pool Pool) string {
+func poolLabel(pool console.Pool) string {
 	if pool.Name != "" {
 		return pool.Name
 	}
@@ -564,7 +538,7 @@ func poolLabel(pool Pool) string {
 }
 
 // platformNote is the platform a pool hosts, as the end of a hint.
-func platformNote(pool Pool) string {
+func platformNote(pool console.Pool) string {
 	if pool.Platform == "" {
 		return ""
 	}
@@ -574,7 +548,7 @@ func platformNote(pool Pool) string {
 // poolSelector is what --pool takes for a pool: its name, which is what the
 // command preview is read for, unless another pool shares it, where only the
 // ID says which.
-func poolSelector(pool Pool, pools []Pool) string {
+func poolSelector(pool console.Pool, pools []console.Pool) string {
 	if pool.Name == "" {
 		return pool.ID
 	}
@@ -607,7 +581,7 @@ func (o *optionSet) setFolder(folder string) {
 // same listing the header filter's folders are built from. What was chosen survives a
 // refresh, including a path typed by hand that no discobox has been cut from
 // yet.
-func (o *optionSet) setSources(known []Source) {
+func (o *optionSet) setSources(known []console.Source) {
 	o.known = known
 	o.rebuildSources()
 }
@@ -656,7 +630,7 @@ func (o *optionSet) rebuildSources() {
 	// listing.
 	add(o.sourceDir())
 	add(o.source)
-	choices = append(choices, noSourceChoice)
+	choices = append(choices, console.NoSourceChoice)
 	values = append(values, sourceNone)
 
 	opt.choices, opt.values, opt.unchanged = choices, values, o.sourceDir()
@@ -674,7 +648,7 @@ func (o *optionSet) rebuildSources() {
 // else has a branch that means anything here.
 func (o *optionSet) sourceChoiceLabel(value string) string {
 	if sameSource(value, o.session.Directory) {
-		return o.session.sourceLabel()
+		return o.session.SourceLabel()
 	}
 	return sourceref.Display(value, o.session.Home)
 }
@@ -725,14 +699,14 @@ func (o *optionSet) chooseSource(value string) {
 // source typed by hand — reported it, and is in its GitHub repository's folder
 // when it resolved to one. A source nothing has reported on is not followed
 // anywhere.
-func (o *optionSet) sourceFolder() (folder, bool) {
+func (o *optionSet) sourceFolder() (console.Folder, bool) {
 	value := o.opts[optSource].selected()
 	if value == sourceNone || sameSource(value, o.session.Directory) {
-		return o.session.folder(), true
+		return o.session.Folder(), true
 	}
-	of := func(source Source) (folder, bool) {
+	of := func(source console.Source) (console.Folder, bool) {
 		if !sameSource(source.Value, value) || source.OriginKey == "" {
-			return folder{}, false
+			return console.Folder{}, false
 		}
 		// A directory's folder is the directory, whatever ref was named with
 		// it: the ref is the source row's to say, not the folder's.
@@ -741,9 +715,9 @@ func (o *optionSet) sourceFolder() (folder, bool) {
 			dir = source.Directory
 		}
 		if source.RepositoryKey != "" {
-			return folder{key: source.RepositoryKey, label: repositoryLabel(source.RepositoryKey), source: dir, local: true}, true
+			return console.Folder{Key: source.RepositoryKey, Label: console.RepositoryLabel(source.RepositoryKey), Source: dir, Local: true}, true
 		}
-		return folder{key: source.OriginKey, label: sourceref.Display(dir, o.session.Home), source: dir, local: true}, true
+		return console.Folder{Key: source.OriginKey, Label: sourceref.Display(dir, o.session.Home), Source: dir, Local: true}, true
 	}
 	if f, ok := of(o.named); ok {
 		return f, true
@@ -753,12 +727,12 @@ func (o *optionSet) sourceFolder() (folder, bool) {
 			return f, true
 		}
 	}
-	return folder{}, false
+	return console.Folder{}, false
 }
 
 // nameSource sets the row to a source typed by hand and checked, keeping what
 // the check said about where a discobox cut from it is filed.
-func (o *optionSet) nameSource(source Source) {
+func (o *optionSet) nameSource(source console.Source) {
 	o.named = source
 	o.chooseSource(source.Value)
 }
@@ -785,12 +759,12 @@ func (o *optionSet) remoteSource(value string) bool {
 // reports that nothing says where that is, and the header stays where it is.
 // This is the source moving the header rather than the header moving the
 // source, so the source itself is left exactly as it was chosen.
-func (o *optionSet) followSource() (folder, bool) {
+func (o *optionSet) followSource() (console.Folder, bool) {
 	f, ok := o.sourceFolder()
 	if !ok {
-		return folder{}, false
+		return console.Folder{}, false
 	}
-	o.folder = f.source
+	o.folder = f.Source
 	o.rebuildSources()
 	return f, true
 }
@@ -918,18 +892,9 @@ func (o *optionSet) sourceDir() string {
 // running in.
 func (o *optionSet) sourceLabel() string {
 	if sameSource(o.sourceDir(), o.session.Directory) {
-		return o.session.sourceLabel()
+		return o.session.SourceLabel()
 	}
 	return sourceref.Display(o.sourceDir(), o.session.Home)
-}
-
-// sourceLabel is what a sandbox is cut from by default, in the spelling the
-// header uses: the window's directory and the branch checked out there.
-func (s Session) sourceLabel() string {
-	if s.Branch == "" {
-		return sourceref.Display(s.Directory, s.Home)
-	}
-	return sourceref.Display(s.Directory, s.Home) + " @ " + s.Branch
 }
 
 func (o *optionSet) current() *option { return o.opts[o.cursor] }
@@ -971,8 +936,8 @@ func (o *optionSet) shown(i int) bool {
 // than read off the row, because the answer to a create's own question is cut
 // from without moving the row (askHowToCreate); everything else passes what
 // the row has selected.
-func (o *optionSet) request(prompt, source string) RunRequest {
-	req := RunRequest{
+func (o *optionSet) request(prompt, source string) console.RunRequest {
+	req := console.RunRequest{
 		Detach: o.opts[optDetach].changed(),
 		Env:    append([]string(nil), o.opts[optEnv].items...),
 		Secret: append([]string(nil), o.opts[optSecret].items...),
@@ -1140,7 +1105,7 @@ func (o *optionSet) command(prompt string) string {
 // commandFor is that invocation for a request already made: the create card
 // previews one whose source is the row under its cursor rather than the one
 // the Source row is set to.
-func (o *optionSet) commandFor(req RunRequest) string {
+func (o *optionSet) commandFor(req console.RunRequest) string {
 	if o.gitPolicyLoading {
 		return "Reading Git credential preference…"
 	}

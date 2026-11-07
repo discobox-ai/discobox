@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The audit screen is one discobox's audit trails as a single timeline,
@@ -72,7 +73,7 @@ type auditScreen struct {
 	// record of an opened run. cursor and offset count rows. expanded is the
 	// opened runs, by the ID of their first record, which does not change as
 	// the run grows.
-	records  []AuditRecord
+	records  []console.AuditRecord
 	shown    []int
 	rows     []auditRow
 	expanded map[string]bool
@@ -126,8 +127,8 @@ type openAuditMsg struct{}
 // came from so the next read can be asked of the same one.
 type auditUpdateMsg struct {
 	gen    int
-	feed   chan AuditUpdate
-	update AuditUpdate
+	feed   chan console.AuditUpdate
+	update console.AuditUpdate
 }
 
 // auditEndedMsg is the follow returning: the screen was closed, or the read
@@ -140,8 +141,8 @@ type auditEndedMsg struct {
 // auditDetailMsg is one record read in full, for its card.
 type auditDetailMsg struct {
 	gen    int
-	record AuditRecord
-	detail AuditRecordDetail
+	record console.AuditRecord
+	detail console.AuditRecordDetail
 	err    error
 }
 
@@ -149,7 +150,7 @@ type auditDetailMsg struct {
 // asked from.
 type auditBodyMsg struct {
 	from   *dialog
-	record AuditRecord
+	record console.AuditRecord
 	part   string
 	text   string
 	err    error
@@ -159,15 +160,15 @@ type auditBodyMsg struct {
 // what each is called: b for the body the service answered, which is the one
 // most worth reading, r for what was sent, s for an upgraded stream.
 var auditRecordings = []struct{ part, key, label string }{
-	{AuditResponseBody, "b", "response body"},
-	{AuditRequestBody, "r", "request body"},
-	{AuditStream, "s", "stream"},
+	{console.AuditResponseBody, "b", "response body"},
+	{console.AuditRequestBody, "r", "request body"},
+	{console.AuditStream, "s", "stream"},
 }
 
 // openAudit puts the audit screen over the workspace and starts following the
 // discobox's trails. Opening it again starts over: the records are the
 // server's, and the screen holds only what it has been shown.
-func (m *Model) openAudit(box Sandbox) tea.Cmd {
+func (m *Model) openAudit(box console.Sandbox) tea.Cmd {
 	m.recordConsoleUse("audit")
 	m.closeAudit()
 	m.auditGen++
@@ -175,11 +176,11 @@ func (m *Model) openAudit(box Sandbox) tea.Cmd {
 	a := &auditScreen{server: box.Server, gen: m.auditGen, sandbox: box.ID, name: displayName(box), stop: stop, following: true,
 		expanded: map[string]bool{}}
 	m.audit = a
-	feed := make(chan AuditUpdate, auditFeedCapacity)
+	feed := make(chan console.AuditUpdate, auditFeedCapacity)
 	ds, id, gen := m.ds.ForServer(box.Server), box.ID, a.gen
 	follow := func() tea.Msg {
 		defer close(feed)
-		err := ds.FollowAudit(ctx, id, func(update AuditUpdate) {
+		err := ds.FollowAudit(ctx, id, func(update console.AuditUpdate) {
 			// Never dropped, unlike a narrated line: the follower has
 			// already moved its position past these records. Closing the
 			// screen is what releases a send nobody will read.
@@ -201,7 +202,7 @@ func (m *Model) openAudit(box Sandbox) tea.Cmd {
 
 // nextAudit waits for the feed's next update. It re-arms itself from the
 // handler, so one call follows the screen from its first update to its last.
-func nextAudit(gen int, feed chan AuditUpdate) tea.Cmd {
+func nextAudit(gen int, feed chan console.AuditUpdate) tea.Cmd {
 	return listen(func() tea.Msg {
 		update, ok := <-feed
 		if !ok {
@@ -234,7 +235,7 @@ func (m *Model) auditUpdated(msg auditUpdateMsg) tea.Cmd {
 			a.records = append(a.records, update.Records...)
 			if over := len(a.records) - auditHistory; over > 0 {
 				// Copied rather than resliced, so what was let go of is freed.
-				a.records = append([]AuditRecord(nil), a.records[over:]...)
+				a.records = append([]console.AuditRecord(nil), a.records[over:]...)
 			}
 		})
 	}
@@ -351,7 +352,7 @@ func (a *auditScreen) setQuery(query string) {
 }
 
 // rec is the record a row position names.
-func (a *auditScreen) rec(i int) AuditRecord { return a.records[a.shown[i]] }
+func (a *auditScreen) rec(i int) console.AuditRecord { return a.records[a.shown[i]] }
 
 // matchText is what the search is matched against on a row: what it says,
 // its trail and its line.
@@ -362,7 +363,7 @@ func matchText(source, summary string) string { return source + " " + summary }
 // against, because every http record's ID starts "http" — a fuzzy term would
 // take its trailing letters from there, letting through rows nothing lit on
 // screen explains.
-func (a *auditScreen) matches(r AuditRecord) bool {
+func (a *auditScreen) matches(r console.AuditRecord) bool {
 	if _, ok := a.search.match(matchText(r.Source, r.Summary)); ok {
 		return true
 	}
@@ -535,7 +536,7 @@ func cardText(text string) string {
 // openAuditBody reads one recording of the record on the card, saying so on
 // the card while it does: the card is the whole window, so the status line is
 // not there to say it.
-func (m *Model) openAuditBody(from *dialog, record AuditRecord, part, label string) tea.Cmd {
+func (m *Model) openAuditBody(from *dialog, record console.AuditRecord, part, label string) tea.Cmd {
 	a := m.audit
 	if a == nil {
 		return nil

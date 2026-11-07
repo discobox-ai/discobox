@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/portforward"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // sandboxPortTargets is what the sandbox is serving, as its agent last reported
@@ -114,16 +114,16 @@ func udpDialHost(addresses []string) string {
 
 // sandboxListeningPorts is the same listing narrowed to what fits beside a
 // sandbox on one line: the number and what it speaks.
-func sandboxListeningPorts(sb apimodel.Sandbox) []tui.Port {
+func sandboxListeningPorts(sb apimodel.Sandbox) []console.Port {
 	reported := reportedPorts(sb)
-	out := make([]tui.Port, 0, len(reported))
+	out := make([]console.Port, 0, len(reported))
 	for _, port := range reported {
 		if port.Port <= 0 || port.Port > 65535 {
 			continue
 		}
 		// Read from the report rather than from the forward targets: the
 		// header's ports are what the sandbox serves, bound locally or not.
-		out = append(out, tui.Port{
+		out = append(out, console.Port{
 			Number:      int(port.Port),
 			UDP:         portNetwork(string(port.Protocol)) == portforward.UDP,
 			Protocol:    string(port.Protocol),

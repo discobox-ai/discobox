@@ -6,9 +6,9 @@ import (
 	"io"
 	"strings"
 	"sync"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The workspace's view of the discobox's declared services (ADR 0070).
@@ -21,77 +21,26 @@ import (
 // stopped from another window, or one whose file was added to the repository a
 // minute ago, is exactly what it is being opened to find out about.
 
-// Service is one of a discobox's declared services, as the menu draws it.
-type Service struct {
-	ID          string
-	Name        string
-	Description string
-	// Status is the sandbox's own word for what the service is doing:
-	// stopped, starting, running, exited or failed.
-	Status string
-	// Problem is why a declaration cannot run — a missing shebang or
-	// executable bit. Such a service is listed, because the alternative is a
-	// file the author believes is a service and that nothing ever mentions.
-	Problem string
-
-	// FileName is the declaring file, which is what a pane points at when it
-	// has to say where to go and fix something.
-	FileName string
-	// ExecID is the exec running, or last run, for this service. Empty when
-	// none ever has.
-	ExecID string
-	// StartedAt is when the current or last run began. With ExecID it says
-	// whether a pane is looking at the run the server is reporting: a restart
-	// keeps the exec id (ADR 0038) and moves this.
-	StartedAt time.Time
-	// ExitCode is how the last run ended, absent when it has not ended.
-	ExitCode *int
-	// Error is what the last run failed with, when it did.
-	Error string
-}
-
-// runnable reports whether this declaration can be acted on at all.
-func (s Service) runnable() bool { return strings.TrimSpace(s.Problem) == "" }
-
-// detail is the row's second line: why it cannot run, or what it is for.
-func (s Service) detail() string {
-	if !s.runnable() {
-		return "cannot run: " + s.Problem
-	}
-	if description := strings.TrimSpace(s.Description); description != "" {
-		return s.Status + " · " + description
-	}
-	return s.Status
-}
-
-// displayName is what the service is called on screen.
-func (s Service) displayName() string {
-	if name := strings.TrimSpace(s.Name); name != "" {
-		return name
-	}
-	return s.ID
-}
-
 // servicesMsg is the answer to opening the menu: the discobox's services, or
 // why they could not be read.
 type servicesMsg struct {
 	gen      int
-	services []Service
+	services []console.Service
 	err      error
 }
 
 // serviceMenuMsg opens the verb menu for one service. It is a message rather
 // than a direct call because a dialog's action returns a command, and the
 // command is the only way one dialog can put another in its place.
-type serviceMenuMsg struct{ service Service }
+type serviceMenuMsg struct{ service console.Service }
 
 // serviceOutputMsg focuses the service pane after its menu has closed.
 type serviceOutputMsg struct{ id string }
 
 // serviceVerbMsg runs one verb against one service.
 type serviceVerbMsg struct {
-	verb    ServiceVerb
-	service Service
+	verb    console.ServiceVerb
+	service console.Service
 }
 
 // openServices asks for the discobox's services and opens the menu on them.
@@ -132,8 +81,8 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 			// harness file picker uses.
 			key:     n,
 			press:   n,
-			label:   service.displayName(),
-			detail:  service.detail(),
+			label:   service.DisplayName(),
+			detail:  service.Detail(),
 			enabled: true,
 		})
 	}
@@ -156,23 +105,23 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 // changes nothing, stopping a stopped one likewise — and a menu that greys out
 // the verb you came for, on a status read a moment ago, is a menu arguing with
 // a service that has since moved on.
-func (m *Model) showServiceMenu(service Service) tea.Cmd {
+func (m *Model) showServiceMenu(service console.Service) tea.Cmd {
 	items := []action{
 		{key: "v", press: "v", label: "view output", detail: "show the service log", enabled: m.terminals.byExec(servicePaneID(service.ID)) != nil, why: "no output pane is available"},
-		{key: "s", press: "s", label: "start", detail: "run it, or leave it running", enabled: service.runnable(), why: service.Problem},
-		{key: "t", press: "t", label: "stop", detail: "end its run and keep what it printed", enabled: service.runnable(), why: service.Problem},
-		{key: "R", press: "R", label: "restart", detail: "stop it if it is running, then start it", enabled: service.runnable(), why: service.Problem},
+		{key: "s", press: "s", label: "start", detail: "run it, or leave it running", enabled: service.Runnable(), why: service.Problem},
+		{key: "t", press: "t", label: "stop", detail: "end its run and keep what it printed", enabled: service.Runnable(), why: service.Problem},
+		{key: "R", press: "R", label: "restart", detail: "stop it if it is running, then start it", enabled: service.Runnable(), why: service.Problem},
 	}
-	m.dialog = actionsDialog(service.displayName(), service.detail(), items, func(key string) tea.Cmd {
+	m.dialog = actionsDialog(service.DisplayName(), service.Detail(), items, func(key string) tea.Cmd {
 		if key == "v" {
 			return func() tea.Msg { return serviceOutputMsg{id: service.ID} }
 		}
-		verb := ServiceRestart
+		verb := console.ServiceRestart
 		switch key {
 		case "s":
-			verb = ServiceStart
+			verb = console.ServiceStart
 		case "t":
-			verb = ServiceStop
+			verb = console.ServiceStop
 		}
 		return func() tea.Msg { return serviceVerbMsg{verb: verb, service: service} }
 	})
@@ -184,13 +133,13 @@ func (m *Model) showServiceMenu(service Service) tea.Cmd {
 // workspace is already polling, so there is nothing to refresh here: a service
 // that starts becomes a tab on its own, and one that stops takes its tab with
 // it.
-func (m *Model) runServiceVerb(verb ServiceVerb, service Service) tea.Cmd {
+func (m *Model) runServiceVerb(verb console.ServiceVerb, service console.Service) tea.Cmd {
 	if m.paneBox.ID == "" {
 		return nil
 	}
 	m.busy = string(verb) + "…"
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
-	name := service.displayName()
+	name := service.DisplayName()
 	return func() tea.Msg {
 		err := ds.DoService(ctx, verb, id, service.ID)
 		return serviceDoneMsg{verb: verb, name: name, err: err}
@@ -199,7 +148,7 @@ func (m *Model) runServiceVerb(verb ServiceVerb, service Service) tea.Cmd {
 
 // serviceDoneMsg is one finished verb.
 type serviceDoneMsg struct {
-	verb ServiceVerb
+	verb console.ServiceVerb
 	name string
 	err  error
 }
@@ -209,7 +158,7 @@ func (m *Model) serviceDone(msg serviceDoneMsg) tea.Cmd {
 	if msg.err != nil {
 		return m.report(true, "cannot %s %s: %v", msg.verb, msg.name, msg.err)
 	}
-	return m.report(false, "%s", msg.verb.done(msg.name))
+	return m.report(false, "%s", msg.verb.Done(msg.name))
 }
 
 // A service's pane is keyed by the service rather than by the exec running it.
@@ -219,75 +168,21 @@ func (m *Model) serviceDone(msg serviceDoneMsg) tea.Cmd {
 // that, and what lets a service with no exec have a tab at all.
 func servicePaneID(id string) string { return "service:" + id }
 
-// paneWorthy reports whether a service should have a tab.
-//
-// Running is obvious. The rest is the answer to "would its absence be a
-// surprise": a service that failed, one that ended on its own, and a
-// declaration that cannot run are all things you would otherwise learn about
-// only by pressing a key you had no reason to press. A service you stopped
-// yourself is the one case where absence says the right thing — you know, and a
-// tab you have to dismiss every time would be the window nagging.
-func (s Service) paneWorthy() bool {
-	switch {
-	case !s.runnable():
-		return true
-	case s.live():
-		return true
-	case s.Status == "failed", s.Status == "exited":
-		return true
-	default:
-		return false
-	}
-}
-
-// live reports whether there is a running process to attach to.
-func (s Service) live() bool { return s.Status == "running" || s.Status == "starting" }
-
-// runKey identifies the run a pane is looking at, so the workspace can notice
-// when it is looking at a stale one. A restart keeps the exec id and moves the
-// start time; a stop clears the liveness; a fixed declaration clears the
-// problem. Any of those means the pane has to be opened again.
-func (s Service) runKey() string {
-	return fmt.Sprintf("%s|%s|%s|%s", s.ExecID, s.StartedAt.UTC().Format(time.RFC3339Nano), s.Status, s.Problem)
-}
-
-// tabMark is the sign the tab strip wears beside a service that is not running:
-// enough to tell "it is fine" from "go and look" without opening it.
-func (s Service) tabMark() string {
-	switch {
-	case !s.runnable(), s.Status == "failed":
-		return " ✗"
-	case s.Status == "exited":
-		return " ·"
-	default:
-		return ""
-	}
-}
-
-// paneStatus is the word the pane's own header wears for a service that is not
-// running, so the state is readable without reading the card.
-func (s Service) paneStatus() string {
-	if !s.runnable() {
-		return "cannot run"
-	}
-	return s.Status
-}
-
-// card is what a pane draws for a service with no stream of its own: what it
+// serviceCard is what a pane draws for a service with no stream of its own: what it
 // is, what state it is in, why, and then whatever its last run printed.
 //
 // It is written as terminal output rather than laid out with the window's
 // styles because that is what it is — the pane is a terminal, and this is the
 // one place the window writes into one. CRLF throughout: the pane sets LNM for
 // a service, but this text is not the service's and should not depend on it.
-func (s Service) card(logs []byte) []byte {
+func serviceCard(s console.Service, logs []byte) []byte {
 	var b strings.Builder
-	b.WriteString(s.displayName())
+	b.WriteString(s.DisplayName())
 	b.WriteString("\r\n")
-	b.WriteString(strings.Repeat("─", len([]rune(s.displayName()))))
+	b.WriteString(strings.Repeat("─", len([]rune(s.DisplayName()))))
 	b.WriteString("\r\n\r\n")
 	switch {
-	case !s.runnable():
+	case !s.Runnable():
 		b.WriteString("cannot run\r\n\r\n")
 		b.WriteString(wrapCard(s.Problem))
 		b.WriteString("\r\n\r\n")
@@ -362,13 +257,13 @@ func wrapCard(text string) string {
 // some bytes teaches them nothing.
 type textTerminal struct {
 	text   []byte
-	events chan TerminalEvent
+	events chan console.TerminalEvent
 	done   chan struct{}
 	once   sync.Once
 }
 
 func newTextTerminal(text []byte) *textTerminal {
-	return &textTerminal{text: text, events: make(chan TerminalEvent), done: make(chan struct{})}
+	return &textTerminal{text: text, events: make(chan console.TerminalEvent), done: make(chan struct{})}
 }
 
 // Read delivers the text once and then blocks until close.
@@ -399,7 +294,7 @@ func (t *textTerminal) Resize(int, int) error { return nil }
 // pane showing it is read-only.
 func (t *textTerminal) Repaint() error { return nil }
 
-func (t *textTerminal) Events() <-chan TerminalEvent { return t.events }
+func (t *textTerminal) Events() <-chan console.TerminalEvent { return t.events }
 
 func (t *textTerminal) Close() error {
 	t.once.Do(func() { close(t.done) })
@@ -416,7 +311,7 @@ func (t *textTerminal) Close() error {
 // interposed.
 type historyTerminal struct {
 	history []byte
-	Terminal
+	console.Terminal
 }
 
 func (t *historyTerminal) Read(p []byte) (int, error) {

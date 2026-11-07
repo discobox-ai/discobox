@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -134,7 +135,7 @@ func treeKeyOf(t *testing.T, m *Model, label string) string {
 func primaryOpens(ds *fakeSource, id string) int {
 	n := 0
 	for _, open := range ds.execOpened() {
-		if strings.HasPrefix(open, id+" "+ExecPrimary+" ") {
+		if strings.HasPrefix(open, id+" "+console.ExecPrimary+" ") {
 			n++
 		}
 	}
@@ -240,7 +241,7 @@ func TestTheLeaderSwitchesBoxesAndParksTheOneLeft(t *testing.T) {
 
 		d.leader("down")
 		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
-		if m.parked[boxRef{"", "sbx_one"}] == nil {
+		if m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil {
 			t.Fatal("the box switched away from should be parked")
 		}
 		select {
@@ -264,7 +265,7 @@ func TestTheLeaderSwitchesBoxesAndParksTheOneLeft(t *testing.T) {
 		if m.primary() != first {
 			t.Fatal("switching back should bring the parked primary back, not a new one")
 		}
-		if m.parked[boxRef{"", "sbx_one"}] != nil || m.parked[boxRef{"", "sbx_two"}] == nil {
+		if m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] != nil || m.parked[console.BoxRef{Server: "", ID: "sbx_two"}] == nil {
 			t.Fatalf("parked = %v, want sbx_two parked and sbx_one live", m.parked)
 		}
 		d.settle()
@@ -311,7 +312,7 @@ func TestArchivingBesideTheTreeGoesOnToTheNextBox(t *testing.T) {
 		if got := ds.verbs(); len(got) != 1 || got[0] != "archive sbx_one" {
 			t.Fatalf("did = %v, want the box on screen archived", got)
 		}
-		if m.parked[boxRef{"", "sbx_one"}] != nil {
+		if m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] != nil {
 			t.Fatal("the archived box's workspace should be closed, not parked")
 		}
 		if !m.treeShown() || m.focus != focusPane || m.listFront {
@@ -334,7 +335,7 @@ func TestACursorMovedDuringTheArchiveKeepsItsRow(t *testing.T) {
 		third := boxes[1]
 		third.ID, third.Name, third.TerminalTitle = "sbx_five", "another in the folder", "another in the folder"
 		third.Created = third.Created.Add(-time.Minute)
-		ds := newFakeSource(append(boxes[:2:2], append([]Sandbox{third}, boxes[2:]...)...)...)
+		ds := newFakeSource(append(boxes[:2:2], append([]console.Sandbox{third}, boxes[2:]...)...)...)
 		ds.doGate = make(chan struct{})
 		d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -398,7 +399,7 @@ func TestArchivingBesideTheTreePointsAtAStoppedNextBox(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()
-		boxes[1].State = StateStopped
+		boxes[1].State = console.StateStopped
 		ds := newFakeSource(boxes...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -448,17 +449,17 @@ func TestAFailedArchiveBesideTheTreeStaysOnTheBox(t *testing.T) {
 // A box's neighbor is the row after it, the one before it from the last row,
 // and none for the only row or a box the list does not have.
 func TestABoxsNeighborIsTheRowAfterItOrBefore(t *testing.T) {
-	l := listForTest(Session{}, treeTagBoxes())
+	l := listForTest(console.Session{}, treeTagBoxes())
 	for id, want := range map[string]string{"sbx_a": "sbx_b", "sbx_b": "sbx_c", "sbx_c": "sbx_b", "sbx_gone": ""} {
 		got := ""
-		if n := l.neighbor(Sandbox{ID: id}); n != nil {
+		if n := l.neighbor(console.Sandbox{ID: id}); n != nil {
 			got = n.ID
 		}
 		if got != want {
 			t.Errorf("neighbor(%s) = %q, want %q", id, got, want)
 		}
 	}
-	if n := listForTest(Session{}, treeTagBoxes()[:1]).neighbor(Sandbox{ID: "sbx_a"}); n != nil {
+	if n := listForTest(console.Session{}, treeTagBoxes()[:1]).neighbor(console.Sandbox{ID: "sbx_a"}); n != nil {
 		t.Errorf("the only row's neighbor = %s, want none", n.ID)
 	}
 }
@@ -470,7 +471,7 @@ func TestTheLeaderStopsOnAStoppedBoxUntilEnter(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()
-		boxes[1].State = StateStopped
+		boxes[1].State = console.StateStopped
 		ds := newFakeSource(boxes...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -511,8 +512,8 @@ func TestCtrlShiftWalksTheTreeWithoutTheLeader(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()
-		boxes[1].State = StateStopped
-		boxes[2].State, boxes[2].OriginKey, boxes[2].SourceOriginKey = StateRunning, boxes[0].OriginKey, boxes[0].SourceOriginKey
+		boxes[1].State = console.StateStopped
+		boxes[2].State, boxes[2].OriginKey, boxes[2].SourceOriginKey = console.StateRunning, boxes[0].OriginKey, boxes[0].SourceOriginKey
 		ds := newFakeSource(boxes...)
 		d, m, term := openWorkspace(t, ds, "enter")
 		down := tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift}
@@ -552,7 +553,7 @@ func TestTheLeaderWalksThroughNestedBoxes(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()[:2]
-		created := func(id, by string) Sandbox {
+		created := func(id, by string) console.Sandbox {
 			box := boxes[0]
 			box.ID, box.Name, box.CreatedBy = id, id+" box", by
 			box.OriginKey = "box:" + by + ":/workspace/source"
@@ -565,7 +566,7 @@ func TestTheLeaderWalksThroughNestedBoxes(t *testing.T) {
 		ds.nothingSaved = true
 		d, m, _ := openWorkspace(t, ds, "enter")
 		if !m.list.grouped() {
-			t.Fatalf("the list is narrowed to %q, want every folder", m.list.folder.key)
+			t.Fatalf("the list is narrowed to %q, want every folder", m.list.folder.Key)
 		}
 
 		var ids []string
@@ -600,7 +601,7 @@ func TestTheLeaderStopsOnAnErroredBox(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()
-		boxes[1].State = StateError
+		boxes[1].State = console.StateError
 		ds := newFakeSource(boxes...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -622,7 +623,7 @@ func TestAWalkStoppedOnARowLeavesNoLeaderArmed(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()
-		boxes[1].State = StateStopped
+		boxes[1].State = console.StateStopped
 		ds := newFakeSource(boxes...)
 		d, m, term := openWorkspace(t, ds, "enter")
 
@@ -651,7 +652,7 @@ func TestTheChordReachesTheProgramWithNoTree(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openAttached(t, ds, testSandboxes()[0])
 		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
-		term := ds.execTerm(ExecPrimary)
+		term := ds.execTerm(console.ExecPrimary)
 		before := term.inputSoFar()
 		d.dispatch(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift})
 		d.wait("the chord at the program", func() bool { return len(term.inputSoFar()) > len(before) })
@@ -688,7 +689,7 @@ func TestAClickOnAStoppedRowPointsAndADoubleClickStartsIt(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()
-		boxes[1].State = StateStopped
+		boxes[1].State = console.StateStopped
 		ds := newFakeSource(boxes...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -771,14 +772,14 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 	park := func(t *testing.T) (*driver, *Model, *fakeSource, *fakeTerminal, int) {
 		t.Helper()
 		ds := newFakeSource(pushableSandboxes()...)
-		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Pushed: true}}
+		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Pushed: true}}
 		d, m, term := openWorkspace(t, ds, "enter")
 		d.wait("the first look", func() bool { return len(ds.pushedCalls()) > 0 })
 		gen := m.pushGen
 
 		d.leader("down")
 		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
-		ws := m.parked[boxRef{"", "sbx_one"}]
+		ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]
 		if ws == nil || ws.pushGen != gen {
 			t.Fatalf("parked = %v, want sbx_one parked under generation %d", ws, gen)
 		}
@@ -793,7 +794,7 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 			before := len(ds.pushedCalls())
 			m.status = ""
 
-			d.dispatch(autoPushTickMsg{box: boxRef{"", "sbx_one"}, gen: gen})
+			d.dispatch(autoPushTickMsg{box: console.BoxRef{Server: "", ID: "sbx_one"}, gen: gen})
 			d.wait("the parked box's look", func() bool { return len(ds.pushedCalls()) > before })
 			if got := ds.pushedCalls()[before]; got != "sbx_one" {
 				t.Fatalf("pushed %q, want the parked box", got)
@@ -812,7 +813,9 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 			d.settle()
 			before := len(ds.pushedCalls())
 			d.leader("up")
-			d.wait("the first box", func() bool { return m.paneBox.ID == "sbx_one" && m.parked[boxRef{"", "sbx_one"}] == nil })
+			d.wait("the first box", func() bool {
+				return m.paneBox.ID == "sbx_one" && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil
+			})
 			d.settle()
 			// Back on screen it is the loop it already had: showing it starts no
 			// second push over one that may still be running.
@@ -822,7 +825,7 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 			if m.pushGen != gen {
 				t.Fatalf("pushGen = %d, want the loop it was opened with (%d)", m.pushGen, gen)
 			}
-			d.dispatch(autoPushTickMsg{box: boxRef{"", "sbx_one"}, gen: gen})
+			d.dispatch(autoPushTickMsg{box: console.BoxRef{Server: "", ID: "sbx_one"}, gen: gen})
 			d.wait("the same loop's next look", func() bool { return len(ds.pushedCalls()) > before })
 			if got := ds.pushedCalls()[before]; got != "sbx_one" {
 				t.Fatalf("pushed %q, want the box on screen", got)
@@ -835,11 +838,11 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			d, m, ds, term, gen := park(t)
 			term.Close()
-			d.wait("the parked workspace to go", func() bool { return m.parked[boxRef{"", "sbx_one"}] == nil })
+			d.wait("the parked workspace to go", func() bool { return m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil })
 			d.settle()
 			before := len(ds.pushedCalls())
 
-			d.dispatch(autoPushTickMsg{box: boxRef{"", "sbx_one"}, gen: gen})
+			d.dispatch(autoPushTickMsg{box: console.BoxRef{Server: "", ID: "sbx_one"}, gen: gen})
 			d.settle()
 			if after := len(ds.pushedCalls()); after != before {
 				t.Fatalf("looks = %d, want the loop to have ended with the parked workspace (%d)", after, before)
@@ -1271,7 +1274,7 @@ func switchToSecond(d *driver, m *Model) {
 	d.t.Helper()
 	d.leader("down")
 	d.wait("the second box", func() bool {
-		return m.paneBox.ID == "sbx_two" && m.primary() != nil && m.parked[boxRef{"", "sbx_one"}] != nil
+		return m.paneBox.ID == "sbx_two" && m.primary() != nil && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] != nil
 	})
 }
 
@@ -1290,15 +1293,15 @@ func TestParkingClosesTheForwardAndUnparkingReopensIt(t *testing.T) {
 		if !first.isClosed() {
 			t.Fatal("parking should close the first box's forward")
 		}
-		if ws := m.parked[boxRef{"", "sbx_one"}]; ws.forward != nil {
+		if ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]; ws.forward != nil {
 			t.Fatal("a parked workspace should hold no forward")
 		}
 
 		d.leader("up")
 		d.wait("the first box with a forward", func() bool {
-			return m.paneBox.ID == "sbx_one" && m.parked[boxRef{"", "sbx_one"}] == nil && m.forward != nil
+			return m.paneBox.ID == "sbx_one" && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil && m.forward != nil
 		})
-		if m.forward == Forward(first) {
+		if m.forward == console.Forward(first) {
 			t.Fatal("unparking should open a new forward, not hold the closed one")
 		}
 		asked := ds.forwardsAskedFor()
@@ -1507,7 +1510,7 @@ func TestAParkedPaneThatEndsIsSettled(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			d, m, shell := open(t)
 			d.dispatch(paneMsg{id: shell.id, msg: termpane.ClosedMsg{}})
-			ws := m.parked[boxRef{"", "sbx_one"}]
+			ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]
 			if ws == nil || ws.shells.len() != 1 || !ws.shells.panes[0].exited {
 				t.Fatal("a parked shell that finished should stay as a tab, exited")
 			}
@@ -1519,7 +1522,7 @@ func TestAParkedPaneThatEndsIsSettled(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			d, m, shell := open(t)
 			d.dispatch(paneMsg{id: shell.id, msg: termpane.ClosedMsg{Err: errors.New("stream reset")}})
-			ws := m.parked[boxRef{"", "sbx_one"}]
+			ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]
 			if ws == nil || ws.shells.len() != 0 {
 				t.Fatal("a parked shell that broke should lose its tab, leaving the workspace parked")
 			}
@@ -1541,7 +1544,7 @@ func TestAParkedPaneThatEndsIsSettled(t *testing.T) {
 			m.focusPane(m.primary())
 			switchToSecond(d, m)
 			d.dispatch(paneMsg{id: tool.id, msg: termpane.ClosedMsg{}})
-			ws := m.parked[boxRef{"", "sbx_one"}]
+			ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]
 			if ws == nil || slices.Contains(ws.shells.panes, tool) || ws.toolShown == tool {
 				t.Fatal("a parked tool that ended should lose its tab")
 			}
@@ -1688,7 +1691,7 @@ func TestTheNewCardGoesToTheBoxOnceTheServerHasIt(t *testing.T) {
 		if m.newOpen || m.dialog != nil || !m.treeShown() || m.focus != focusPane {
 			t.Fatalf("card %v, dialog %v, tree %v, focus %v; want the opening workspace beside the tree", m.newOpen, m.dialog != nil, m.treeShown(), m.focus)
 		}
-		if m.parked[boxRef{"", "sbx_one"}] == nil {
+		if m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil {
 			t.Fatal("the workspace the card was opened over was not parked")
 		}
 		if frame := plainFrame(m); !strings.Contains(frame, "pushing the source") {
@@ -1729,7 +1732,7 @@ func TestACreateWalkedOffDoesNotTakeTheScreenBack(t *testing.T) {
 
 		d.leader("h")
 		d.wait("the tree", func() bool { return m.listFront })
-		m.listCursorTo(Sandbox{ID: "sbx_two"})
+		m.listCursorTo(console.Sandbox{ID: "sbx_two"})
 		d.key("enter")
 		d.wait("the other box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
 
@@ -1750,14 +1753,14 @@ func TestTreeDoubleClickDoesNotFollowAReplacedServerIdentity(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()
-		boxes[1].State = StateStopped
+		boxes[1].State = console.StateStopped
 		boxes[1].Server = "alpha"
 		ds := newFakeSource(boxes...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 		x, y := at(t, m, "exec/terminal cons")
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		d.settle()
-		if m.clickBox.server != "alpha" {
+		if m.clickBox.Server != "alpha" {
 			t.Fatalf("first click identity: %+v", m.clickBox)
 		}
 		for i := range m.list.all {
@@ -1771,7 +1774,7 @@ func TestTreeDoubleClickDoesNotFollowAReplacedServerIdentity(t *testing.T) {
 		if got := primaryOpens(ds, boxes[1].ID); got != 0 {
 			t.Fatalf("replacement box attached %d times", got)
 		}
-		if m.clickBox.server != "beta" {
+		if m.clickBox.Server != "beta" {
 			t.Fatalf("replacement click identity: %+v", m.clickBox)
 		}
 	})

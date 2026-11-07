@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 
@@ -28,7 +29,7 @@ import (
 // permission made without a prompt, whose failure hands the next ask back to
 // a person rather than trying again on every beat.
 type renewalAnsweredMsg struct {
-	request CredentialRequest
+	request console.CredentialRequest
 	secret  string
 	auto    bool
 	key     string
@@ -48,18 +49,18 @@ func sessionKey(server, secretID string, command []string) string {
 }
 
 // refreshSecret finds the token a refresh request is about.
-func refreshSecret(req CredentialRequest, secrets []Secret) (Secret, bool) {
+func refreshSecret(req console.CredentialRequest, secrets []console.Secret) (console.Secret, bool) {
 	for _, secret := range secrets {
 		if secret.ID == req.Refresh.SecretID {
 			return secret, true
 		}
 	}
-	return Secret{}, false
+	return console.Secret{}, false
 }
 
 // askAboutRefresh is the card for a refresh request: which token, why, and the
 // ways to give it a new value.
-func (m *Model) askAboutRefresh(req CredentialRequest, secrets []Secret) tea.Cmd {
+func (m *Model) askAboutRefresh(req console.CredentialRequest, secrets []console.Secret) tea.Cmd {
 	secret, ok := refreshSecret(req, secrets)
 	if !ok {
 		m.dialog = errorDialog("Refresh request", "The token this request is about is no longer in the project.")
@@ -90,12 +91,12 @@ func (m *Model) askAboutRefresh(req CredentialRequest, secrets []Secret) tea.Cmd
 				return nil
 			}
 			f.set("value", "")
-			return m.renew(req, secret.Name, Renewal{RequestID: req.ID, SecretID: secret.ID, Value: token}, false, "")
+			return m.renew(req, secret.Name, console.Renewal{RequestID: req.ID, SecretID: secret.ID, Value: token}, false, "")
 		}
-		renewal := Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand}
+		renewal := console.Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand}
 		key := ""
 		if f.chosen("permission") == "session" {
-			key = sessionKey(m.session.serverName(req.Server), secret.ID, secret.RefreshCommand)
+			key = sessionKey(m.session.ServerName(req.Server), secret.ID, secret.RefreshCommand)
 			if m.renewSession == nil {
 				m.renewSession = map[string]bool{}
 			}
@@ -126,7 +127,7 @@ func (m *Model) askAboutRefresh(req CredentialRequest, secrets []Secret) tea.Cmd
 
 // refreshAsk is the request as a person reads it before running something:
 // the token, why it wants a value, and — above all — the command.
-func refreshAsk(req CredentialRequest, secret Secret, now time.Time) []section {
+func refreshAsk(req console.CredentialRequest, secret console.Secret, now time.Time) []section {
 	why := "its value is past the lifetime it was given"
 	if req.Refresh.Cause == "rejected" {
 		why = "an upstream refused its value"
@@ -136,7 +137,7 @@ func refreshAsk(req CredentialRequest, secret Secret, now time.Time) []section {
 		{label: "why", value: why},
 	}
 	if len(secret.Routes) > 0 {
-		fields = append(fields, field{label: "sent to", value: routeRows(secret.Routes)})
+		fields = append(fields, field{label: "sent to", value: console.RouteRows(secret.Routes)})
 	}
 	if secret.ValueTTL > 0 {
 		fields = append(fields, field{label: "a value lasts", value: lifetime.Label(secret.ValueTTL)})
@@ -162,7 +163,7 @@ func refreshAsk(req CredentialRequest, secret Secret, now time.Time) []section {
 
 // renew sends a renewal. A prompted one says what it is doing while the
 // command runs; an automatic one runs behind whatever is on screen.
-func (m *Model) renew(req CredentialRequest, name string, renewal Renewal, auto bool, key string) tea.Cmd {
+func (m *Model) renew(req console.CredentialRequest, name string, renewal console.Renewal, auto bool, key string) tea.Cmd {
 	// One renewal per request at a time: a session's own, begun on the beat,
 	// may be running while a person answers the same request by hand.
 	if m.renewing[req.ID] {
@@ -193,7 +194,7 @@ func (m *Model) renewalAnswered(msg renewalAnsweredMsg) tea.Cmd {
 	// Somebody else's value was written first — another window, another
 	// machine, the session's own renewal. The token is renewed; the
 	// permission worked; there is nothing to report as a failure.
-	if errors.Is(msg.err, ErrAlreadyAnswered) {
+	if errors.Is(msg.err, console.ErrAlreadyAnswered) {
 		if msg.auto {
 			return m.loadCredentialRequests()
 		}
@@ -225,7 +226,7 @@ func (m *Model) renewalAnswered(msg renewalAnsweredMsg) tea.Cmd {
 // once each, as the inbox lists them. It reads the token first, because the
 // permission is for a command, and the command it would run is the one the
 // token names now.
-func (m *Model) renewBySession(requests []CredentialRequest) tea.Cmd {
+func (m *Model) renewBySession(requests []console.CredentialRequest) tea.Cmd {
 	if len(m.renewSession) == 0 {
 		return nil
 	}
@@ -234,7 +235,7 @@ func (m *Model) renewBySession(requests []CredentialRequest) tea.Cmd {
 		if req.Refresh == nil || m.renewing[req.ID] {
 			continue
 		}
-		server := m.session.serverName(req.Server)
+		server := m.session.ServerName(req.Server)
 		// The permissions for this token, as they stand now, go with the
 		// command: it runs off the update loop, which is the only place they
 		// change.
@@ -265,7 +266,7 @@ func (m *Model) renewBySession(requests []CredentialRequest) tea.Cmd {
 			if !allowed[key] {
 				return renewalSkippedMsg{requestID: req.ID}
 			}
-			err = m.ds.RefreshSecret(m.ctx, req.Server, Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand, Session: true})
+			err = m.ds.RefreshSecret(m.ctx, req.Server, console.Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand, Session: true})
 			return renewalAnsweredMsg{request: req, secret: secret.Name, auto: true, key: key, err: err}
 		})
 	}

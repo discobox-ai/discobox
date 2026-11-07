@@ -9,9 +9,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-func taggedSandboxes() []Sandbox {
+func taggedSandboxes() []console.Sandbox {
 	boxes := testSandboxes()
 	boxes[0].Tags = []string{"ticket=ENG-12", "wip"}
 	boxes[1].Tags = []string{"wip"}
@@ -47,7 +48,7 @@ func TestThereAreNoTagsToPickUntilSomethingIsTagged(t *testing.T) {
 func TestATagNarrowsTheList(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(taggedSandboxes()...))
-	filterTo(t, m, "Folder: "+m.session.folder().label)
+	filterTo(t, m, "Folder: "+m.session.Folder().Label)
 	if got := tagRows(m); len(got) != 3 || got[0] != allTags || got[1] != "#ticket=ENG-12" || got[2] != "#wip" {
 		t.Fatalf("tags = %q, want every box then each tag in order", got)
 	}
@@ -159,35 +160,9 @@ func TestATagReplacesAnotherValueOfItsKey(t *testing.T) {
 	}
 }
 
-// An `issue=` or `pr=` tag on a discobox cut from a GitHub repository is the
-// number of an issue or pull request there; any other tag, or one of those on
-// a discobox with no GitHub repository to number it in, points nowhere.
-func TestATagThatNumbersGitHubWorkLinksToIt(t *testing.T) {
-	t.Parallel()
-	box := Sandbox{Repository: "https://github.com/acme/foo"}
-	for _, tc := range []struct{ tag, want string }{
-		{"issue=4", "https://github.com/acme/foo/issues/4"},
-		{"pr=123", "https://github.com/acme/foo/pull/123"},
-		{"issue", ""},
-		{"issue=", ""},
-		{"issue=04", ""},
-		{"issue=ENG-12", ""},
-		{"pr=-1", ""},
-		{"ticket=4", ""},
-		{"wip", ""},
-	} {
-		if got := box.tagURL(tc.tag); got != tc.want {
-			t.Errorf("tagURL(%q) = %q, want %q", tc.tag, got, tc.want)
-		}
-	}
-	if got := (Sandbox{}).tagURL("issue=4"); got != "" {
-		t.Errorf("tagURL on a discobox with no GitHub repository = %q, want nothing", got)
-	}
-}
-
 // githubTaggedSandboxes is the listing with the first discobox, cut from a
 // GitHub repository, working on an issue and a pull request in it.
-func githubTaggedSandboxes() []Sandbox {
+func githubTaggedSandboxes() []console.Sandbox {
 	boxes := testSandboxes()
 	boxes[0].Name = "reaper"
 	boxes[0].Repository = "https://github.com/acme/foo"
@@ -301,12 +276,12 @@ func TestTheWorkspaceHeaderLeavesAnUnnumberedIssueOut(t *testing.T) {
 
 // treeTagBoxes are three discoboxes for the tree's tag lines: one with more
 // tags than its line holds, one with none, and one tagged blocked.
-func treeTagBoxes() []Sandbox {
-	return []Sandbox{
-		{ID: "sbx_a", Name: "fix the reaper", State: StateRunning, Harness: "claude", Repository: "https://github.com/acme/disco",
+func treeTagBoxes() []console.Sandbox {
+	return []console.Sandbox{
+		{ID: "sbx_a", Name: "fix the reaper", State: console.StateRunning, Harness: "claude", Repository: "https://github.com/acme/disco",
 			Tags: []string{"issue=342", "ready", "area=tui", "size=s", "kind=bug"}},
-		{ID: "sbx_b", Name: "plain", State: StateRunning},
-		{ID: "sbx_c", Name: "consolidate", State: StateRunning, Repository: "https://github.com/acme/disco",
+		{ID: "sbx_b", Name: "plain", State: console.StateRunning},
+		{ID: "sbx_c", Name: "consolidate", State: console.StateRunning, Repository: "https://github.com/acme/disco",
 			Tags: []string{"pr=12", "blocked"}},
 	}
 }
@@ -318,7 +293,7 @@ func treeTagBoxes() []Sandbox {
 // the row's width rather than sharing it, with the harness column too.
 func TestTheTreeDrawsATaggedRowsTagsUnderIt(t *testing.T) {
 	st := newStyles(true)
-	l := listForTest(Session{}, treeTagBoxes())
+	l := listForTest(console.Session{}, treeTagBoxes())
 	l.width, l.inTree = treeWidth-2, true
 	z := &zones{}
 	out := l.view(st, z, true)
@@ -374,11 +349,11 @@ func TestTheTreeDrawsATaggedRowsTagsUnderIt(t *testing.T) {
 // A tree too short for every row keeps the cursor's row on screen with its tag
 // line, counting the tag lines above it.
 func TestTheTreeScrollsByTheLinesItsTagsTake(t *testing.T) {
-	var boxes []Sandbox
+	var boxes []console.Sandbox
 	for i := range 6 {
-		boxes = append(boxes, Sandbox{ID: fmt.Sprintf("sbx_%d", i), Name: fmt.Sprintf("box %d", i), State: StateRunning, Tags: []string{"t"}})
+		boxes = append(boxes, console.Sandbox{ID: fmt.Sprintf("sbx_%d", i), Name: fmt.Sprintf("box %d", i), State: console.StateRunning, Tags: []string{"t"}})
 	}
-	l := listForTest(Session{}, boxes)
+	l := listForTest(console.Session{}, boxes)
 	l.width, l.height, l.inTree = treeWidth-2, 7, true
 	l.moveTo(5)
 	lines := strings.Split(ansi.Strip(l.view(newStyles(true), &zones{}, true)), "\n")
@@ -398,7 +373,7 @@ func TestTheWorkspaceHeaderCarriesTheBoxsOtherTags(t *testing.T) {
 	t.Parallel()
 	st := newStyles(true)
 	m := newColorModel(t, newFakeSource())
-	m.paneBox = Sandbox{ID: "sbx_one", Name: "one", Repository: "https://github.com/acme/disco",
+	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one", Repository: "https://github.com/acme/disco",
 		Tags: []string{"issue=4", "ready", "area=tui", "kind=bug"}}
 	got := m.paneHeaderFields().text()
 	if !strings.Contains(got, st.dimText.Render("#area=tui #kind=bug")) {
@@ -434,17 +409,17 @@ func TestARowDrawsStatusThenPullRequestThenIssueThenTheRest(t *testing.T) {
 			want: []string{"wip", "ticket=ENG-12"},
 		},
 	} {
-		if got := (Sandbox{Tags: tc.tags}).rowTags(); !slices.Equal(got, tc.want) {
+		if got := (console.Sandbox{Tags: tc.tags}).RowTags(); !slices.Equal(got, tc.want) {
 			t.Errorf("rowTags(%q) = %q, want %q", tc.tags, got, tc.want)
 		}
 	}
 
-	box := Sandbox{Tags: []string{"needs-input", "ready"}}
-	if box.status() != statusNeedsInput || box.standing() != standingBlocked {
-		t.Fatalf("a box waiting on its owner has status %q, standing %v; want needs-input, blocked", box.status(), box.standing())
+	box := console.Sandbox{Tags: []string{"needs-input", "ready"}}
+	if box.Status() != console.StatusNeedsInput || box.Standing() != console.StandingBlocked {
+		t.Fatalf("a box waiting on its owner has status %q, standing %v; want needs-input, blocked", box.Status(), box.Standing())
 	}
 	st := newStyles(true)
-	spans, _ := listForTest(Session{}, nil).tagSpans(st, &zones{}, box, box.rowTags(), 0, 0)
+	spans, _ := listForTest(console.Session{}, nil).tagSpans(st, &zones{}, box, box.RowTags(), 0, 0)
 	if !strings.Contains(spans, st.blockedText.Render("#needs-input")) {
 		t.Fatalf("needs-input is not drawn as blocked is: %q", spans)
 	}

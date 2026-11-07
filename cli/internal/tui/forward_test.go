@@ -8,14 +8,15 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
 
 // forwardSandboxes is the listing with the first sandbox serving something, so
 // the workspace's header has ports to draw arrows on.
-func forwardSandboxes() []Sandbox {
+func forwardSandboxes() []console.Sandbox {
 	sandboxes := testSandboxes()
-	sandboxes[0].Ports = []Port{
+	sandboxes[0].Ports = []console.Port{
 		{Number: 8080, Protocol: "http"},
 		{Number: 5432, Protocol: "tcp"},
 	}
@@ -55,8 +56,8 @@ func TestWorkspaceHeaderShowsBoundPortsAsTheyArrive(t *testing.T) {
 			t.Fatalf("the header should list the port before it is bound:\n%s", frame)
 		}
 
-		ds.forward.bind(Binding{Port: 8080, Local: 8082})
-		ds.forward.bind(Binding{Port: 5432, Local: 5433})
+		ds.forward.bind(console.Binding{Port: 8080, Local: 8082})
+		ds.forward.bind(console.Binding{Port: 5432, Local: 5433})
 		d.wait("the arrows", func() bool {
 			return strings.Contains(ansi.Strip(frameText(m)), "http:8082->8080")
 		})
@@ -132,9 +133,9 @@ func TestAForwardThatFailsLeavesTheWorkspaceOpen(t *testing.T) {
 
 // desktopSandboxes is the listing with the first sandbox serving a dev server
 // and a graphical desktop, which is every kind of header link at once.
-func desktopSandboxes() []Sandbox {
+func desktopSandboxes() []console.Sandbox {
 	sandboxes := testSandboxes()
-	sandboxes[0].Ports = []Port{
+	sandboxes[0].Ports = []console.Port{
 		{Number: 8080, Protocol: "http"},
 		{Number: 5432, Protocol: "tcp"},
 		{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"},
@@ -157,9 +158,9 @@ func TestClickingAHeaderLinkOpensIt(t *testing.T) {
 		opened := make(chan string, 4)
 		m.openOS = func(url string) error { opened <- url; return nil }
 
-		ds.forward.bind(Binding{Port: 8080, Local: 8082})
-		ds.forward.bind(Binding{Port: 5432, Local: 5433})
-		ds.forward.bind(Binding{Port: 6900, Local: 6901})
+		ds.forward.bind(console.Binding{Port: 8080, Local: 8082})
+		ds.forward.bind(console.Binding{Port: 5432, Local: 5433})
+		ds.forward.bind(console.Binding{Port: 6900, Local: 6901})
 		d.wait("the links", func() bool {
 			return strings.Contains(plainFrame(m), "Desktop") &&
 				strings.Contains(plainFrame(m), "http:8082->8080")
@@ -229,7 +230,7 @@ func TestAHeaderLinkLightsUnderThePointer(t *testing.T) {
 		// what the test looks at.
 		m.st = newStyles(true)
 
-		ds.forward.bind(Binding{Port: 6900, Local: 6901})
+		ds.forward.bind(console.Binding{Port: 6900, Local: 6901})
 		d.wait("the desktop link", func() bool { return strings.Contains(plainFrame(m), "Desktop") })
 
 		x, y := at(t, m, "Desktop")

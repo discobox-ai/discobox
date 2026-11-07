@@ -7,11 +7,12 @@ import (
 	"testing/synctest"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 func TestHarnessChangesReviewSavesDisplayedCandidate(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []HarnessChangedFile{{Path: ".claude/settings.json", Action: "update", Diff: "@@ -1 +1 @@\n-{\"theme\":\"dark\"}\n+{\"theme\":\"light\"}"}}, Credentials: []string{"anthropic ANTHROPIC_API_KEY (oauth)"}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []console.HarnessChangedFile{{Path: ".claude/settings.json", Action: "update", Diff: "@@ -1 +1 @@\n-{\"theme\":\"dark\"}\n+{\"theme\":\"light\"}"}}, Credentials: []string{"anthropic ANTHROPIC_API_KEY (oauth)"}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("H"))
 	card := dialogText(m)
@@ -29,7 +30,7 @@ func TestHarnessChangesReviewSavesDisplayedCandidate(t *testing.T) {
 
 func TestHarnessDiagnosticOnlyCanBeDiscardedButNotSaved(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "diagnostic", State: "pending", Diagnostics: []string{"unsupported local configuration"}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "diagnostic", State: "pending", Diagnostics: []string{"unsupported local configuration"}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("H"))
 	if m.dialog == nil || !strings.Contains(m.dialog.body, "No saveable") {
@@ -47,11 +48,11 @@ func TestHarnessDiagnosticOnlyCanBeDiscardedButNotSaved(t *testing.T) {
 
 func TestHarnessChangesRefreshIsExplicit(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "old", State: "pending", Files: []HarnessChangedFile{{Path: "old.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+old"}}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "old", State: "pending", Files: []console.HarnessChangedFile{{Path: "old.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+old"}}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("H"))
 	ds.mu.Lock()
-	ds.harnessChanges = HarnessChanges{CandidateID: "new", State: "pending", Files: []HarnessChangedFile{{Path: "new.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+new"}}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "new", State: "pending", Files: []console.HarnessChangedFile{{Path: "new.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+new"}}}
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
 	if !strings.Contains(dialogText(m), "new.json") {
@@ -66,7 +67,7 @@ func TestHarnessChangesRefreshIsExplicit(t *testing.T) {
 func TestWorkspaceLeaderOpensHarnessReview(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.harnessChanges = HarnessChanges{CandidateID: "workspace-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
+		ds.harnessChanges = console.HarnessChanges{CandidateID: "workspace-review", State: "pending", Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
 		d, m, term := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("H")
@@ -94,7 +95,7 @@ func TestHarnessReviewScrollsEverySettingsField(t *testing.T) {
 		content.WriteString(itoa(n))
 		content.WriteString(": value\n")
 	}
-	ds.harnessChanges = HarnessChanges{CandidateID: "long-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1,100 @@\n" + content.String()}}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "long-review", State: "pending", Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1,100 @@\n" + content.String()}}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("H"))
 	var seen strings.Builder
@@ -124,7 +125,7 @@ func TestHarnessReviewScrollsEverySettingsField(t *testing.T) {
 
 func TestHarnessSaveFailureIsReportedWithoutRetry(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "update"}}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "update"}}}
 	ds.harnessChangesSaveErr = errors.New("upgrade or recreate the sandbox")
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("H"), keyPress("s"))
@@ -139,7 +140,7 @@ func TestHarnessSaveFailureIsReportedWithoutRetry(t *testing.T) {
 
 // pendingSandboxes is the fixture's listing with its first box reporting a
 // harness change to save.
-func pendingSandboxes() []Sandbox {
+func pendingSandboxes() []console.Sandbox {
 	boxes := testSandboxes()
 	boxes[0].HarnessName = "Claude Code"
 	boxes[0].HarnessConfigPending, boxes[0].HarnessConfigCandidate = true, "cand_1"
@@ -172,7 +173,7 @@ func TestTheHarnessChangesBandIsGreen(t *testing.T) {
 func TestPressingTheHarnessChangesBandOpensTheReview(t *testing.T) {
 	t.Parallel()
 	m, ds := workspaceWithHarnessChanges(t)
-	ds.harnessChanges = HarnessChanges{CandidateID: "cand_1", State: "pending", Files: []HarnessChangedFile{{Path: ".claude/settings.json", Action: "update", Diff: "@@ -1 +1 @@\n-a\n+b"}}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "cand_1", State: "pending", Files: []console.HarnessChangedFile{{Path: ".claude/settings.json", Action: "update", Diff: "@@ -1 +1 @@\n-a\n+b"}}}
 	m.viewBanner(140)
 
 	drain(t, m, m.pressBanner(), 0)
@@ -225,7 +226,7 @@ func TestTheFirstHarnessChangeIsExplainedOnce(t *testing.T) {
 func TestTheExplainerOpensTheReview(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(pendingSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "cand_1", State: "pending", Credentials: []string{"anthropic CLAUDE_CODE_OAUTH_TOKEN (oauth)"}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "cand_1", State: "pending", Credentials: []string{"anthropic CLAUDE_CODE_OAUTH_TOKEN (oauth)"}}
 	m := newTestModel(t, ds)
 	m.explainHarnessChanges = true
 	send(t, m, tickMsg{})

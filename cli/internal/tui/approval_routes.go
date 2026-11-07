@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -73,7 +74,7 @@ func approvalRouteCells(routes []secretroute.Route) []approvalRouteRow {
 
 // Keep use/delegation boundaries, then protocol order and host groups inside
 // each. GraphQL/MCP methods are shown only when at least one is restricted.
-func approvalRouteSection(label string, part *RequestPart) section {
+func approvalRouteSection(label string, part *console.RequestPart) section {
 	sec := section{label: label}
 	if part == nil {
 		sec.lines = []line{{text: "not requested", tone: toneDim}}
@@ -173,7 +174,7 @@ func approvalRouteSection(label string, part *RequestPart) section {
 
 // This is the binding's own restriction, not a flattening of the credential
 // or parent ceilings. Hosts scope intentionally drops request-level blocks.
-func approvalGrantSection(scope string, part *RequestPart, hosts []string) section {
+func approvalGrantSection(scope string, part *console.RequestPart, hosts []string) section {
 	if scope == "routes" {
 		return approvalRouteSection("Grant restriction · Requested routes", part)
 	}

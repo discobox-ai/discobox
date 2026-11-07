@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The windows that are one command's own: `discobox run`, which is the window
@@ -15,7 +17,7 @@ import (
 
 // openAttached is the window `discobox attach` opens: the launcher, opened on
 // one discobox's workspace rather than on its list.
-func openAttached(t *testing.T, ds *fakeSource, sandbox Sandbox) (*driver, *Model) {
+func openAttached(t *testing.T, ds *fakeSource, sandbox console.Sandbox) (*driver, *Model) {
 	t.Helper()
 	m := New(t.Context(), ds, WithAttach(sandbox))
 	m.logo = logo{}
@@ -40,7 +42,7 @@ func TestAnAttachOpensOnItsDiscobox(t *testing.T) {
 		if m.paneBox.ID != box.ID {
 			t.Fatalf("the window opened on %q, want the discobox it was given (%q)", m.paneBox.ID, box.ID)
 		}
-		term := ds.execTerm(ExecPrimary)
+		term := ds.execTerm(console.ExecPrimary)
 		term.send("hello from the discobox")
 		d.wait("output", func() bool { return strings.Contains(frameText(m), "hello from the discobox") })
 
@@ -117,7 +119,7 @@ func TestAnAttachEndsWithItsSession(t *testing.T) {
 		d, m := openAttached(t, ds, testSandboxes()[0])
 		d.wait("the primary terminal", func() bool { return m.primary() != nil })
 
-		ds.execTerm(ExecPrimary).Close()
+		ds.execTerm(console.ExecPrimary).Close()
 		d.wait("the window to close", func() bool { return m.quit })
 
 		if m.exitErr != nil {
@@ -133,7 +135,7 @@ func TestAnAttachThatCannotOpenEndsWithTheError(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.openExecErrFor = map[string]error{ExecPrimary: errors.New("session is sealed")}
+		ds.openExecErrFor = map[string]error{console.ExecPrimary: errors.New("session is sealed")}
 		d, m := openAttached(t, ds, testSandboxes()[0])
 		d.wait("the window to close", func() bool { return m.quit })
 
@@ -146,14 +148,14 @@ func TestAnAttachThatCannotOpenEndsWithTheError(t *testing.T) {
 // openRun is the window `discobox run` opens: the launcher, opened on the
 // request the command built from its flags rather than on a prompt somebody
 // types.
-func openRun(t *testing.T, ds *fakeSource, req RunRequest) (*driver, *Model) {
+func openRun(t *testing.T, ds *fakeSource, req console.RunRequest) (*driver, *Model) {
 	t.Helper()
 	return openRunWith(t, ds, req, false)
 }
 
 // openRunWith is that window for a command that may have left its source
 // unsaid, which the window then asks.
-func openRunWith(t *testing.T, ds *fakeSource, req RunRequest, askSource bool) (*driver, *Model) {
+func openRunWith(t *testing.T, ds *fakeSource, req console.RunRequest, askSource bool) (*driver, *Model) {
 	t.Helper()
 	m := New(t.Context(), ds, WithRun(req, askSource))
 	m.logo = logo{}
@@ -170,11 +172,11 @@ func TestARunWindowAsksTheWindowsOwnQuestion(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.workspace = SourceWorkspace{
+		ds.workspace = console.SourceWorkspace{
 			Directory: "/src/disco2", Repository: true, Carries: true,
 			Changes: []string{"run.go", "tui.go", "model.go", "pane.go"},
 		}
-		d, m := openRun(t, ds, RunRequest{Prompt: []string{"fix", "the", "tests"}})
+		d, m := openRun(t, ds, console.RunRequest{Prompt: []string{"fix", "the", "tests"}})
 		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 
 		if !strings.Contains(m.dialog.body, "4 uncommitted changes (run.go, tui.go, model.go and 1 more)") {
@@ -199,8 +201,8 @@ func TestARunWindowsQuestionLeadsWithCarryingNothing(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.workspace = SourceWorkspace{Directory: "/src/disco2", Repository: true, Carries: true}
-		d, m := openRun(t, ds, RunRequest{})
+		ds.workspace = console.SourceWorkspace{Directory: "/src/disco2", Repository: true, Carries: true}
+		d, m := openRun(t, ds, console.RunRequest{})
 		d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 
 		d.key("enter")
@@ -218,16 +220,16 @@ func TestARunWindowAsksOnlyTheQuestionTheCommandLeftOpen(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.workspace = SourceWorkspace{Directory: "/src/disco2", Repository: true, Carries: true}
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		ds.workspace = console.SourceWorkspace{Directory: "/src/disco2", Repository: true, Carries: true}
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 		if got := ds.runs[0].IncludeDirty; got != "false" {
 			t.Fatalf("includeDirty = %q, want the command's answer", got)
 		}
 
 		ds = newFakeSource(testSandboxes()...)
-		ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
-		d, m = openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+		d, m = openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("the copy question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 		if m.dialog.subject != "/home/ada/notes" {
 			t.Fatalf("dialog subject = %q, want the directory", m.dialog.subject)
@@ -248,7 +250,7 @@ func TestARunWindowWaitsOnItsOwnScreen(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.runGate = make(chan struct{})
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false", Prompt: []string{"fix the tests"}})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false", Prompt: []string{"fix the tests"}})
 		d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 
 		if m.dialog == nil || m.dialog.kind != dlgStatus {
@@ -271,7 +273,7 @@ func TestARunWindowBecomesTheAttachOnWhatItMade(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		// Past the wait screen, which has the keys while it is up.
 		d.wait("the workspace", func() bool { return m.primary() != nil && m.dialog == nil })
 
@@ -298,7 +300,7 @@ func TestARunWindowsFailedCreateEndsWithTheError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.runErr = errors.New("no pool is accepting discoboxes")
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("the window to close", func() bool { return m.quit })
 
 		if m.exitErr == nil || !strings.Contains(m.exitErr.Error(), "cannot create the discobox: no pool is accepting discoboxes") {
@@ -314,7 +316,7 @@ func TestARunWindowsUnfinishedCreateEndsWithTheError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.deliverErr = errors.New("source push refused")
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("the window to close", func() bool { return m.quit })
 
 		if m.exitErr == nil || !strings.Contains(m.exitErr.Error(), "created the discobox, but could not finish setting it up: source push refused") {
@@ -335,7 +337,7 @@ func TestEscOnARunsHarnessQuestionEndsTheCommand(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := noDefaultSource(t)
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("the harness question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 
 		d.key("esc")
@@ -355,7 +357,7 @@ func TestAOneShotWindowLeavesTheDraftAlone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.session.Draft = "the sentence I was in the middle of"
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("the workspace", func() bool { return m.primary() != nil && m.dialog == nil })
 
 		d.key("ctrl+a")
@@ -375,7 +377,7 @@ func TestEscOnAOneShotWaitLeavesTheDiscoboxStarting(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.runGate = make(chan struct{})
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("the wait", func() bool { return m.dialog != nil && m.dialog.kind == dlgStatus })
 
 		d.key("esc")
@@ -398,12 +400,12 @@ func TestARunOpensItsWorkspaceWithoutInput(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		d, m := openRun(t, ds, RunRequest{Prompt: []string{"fix", "the", "tests"}})
+		d, m := openRun(t, ds, console.RunRequest{Prompt: []string{"fix", "the", "tests"}})
 		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
 		if m.paneBox.ID != ds.createdID {
 			t.Fatalf("opened %q, want the created discobox %q", m.paneBox.ID, ds.createdID)
 		}
-		ds.execTerm(ExecPrimary).send("hello from the new discobox")
+		ds.execTerm(console.ExecPrimary).send("hello from the new discobox")
 		d.wait("output", func() bool { return strings.Contains(frameText(m), "hello from the new discobox") })
 	})
 }
@@ -416,7 +418,7 @@ func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		req := RunRequest{
+		req := console.RunRequest{
 			Prompt:     []string{"fix", "the", "tests"},
 			Harness:    "codex",
 			UserSkills: new(true),
@@ -464,7 +466,7 @@ func TestEscOnARunsCreateCardEndsTheCommand(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		d, m := openRunWith(t, ds, RunRequest{Prompt: []string{"fix"}}, true)
+		d, m := openRunWith(t, ds, console.RunRequest{Prompt: []string{"fix"}}, true)
 		d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
 		d.key("esc")
 		d.wait("the window to close", func() bool { return m.quit })
@@ -488,7 +490,7 @@ func TestARunsCreateCardEndsTheCommandHoweverItIsLeft(t *testing.T) {
 			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				ds := newFakeSource(testSandboxes()...)
-				d, m := openRunWith(t, ds, RunRequest{Prompt: []string{"fix"}}, true)
+				d, m := openRunWith(t, ds, console.RunRequest{Prompt: []string{"fix"}}, true)
 				d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
 				for _, key := range keys {
 					d.key(key)
@@ -508,8 +510,8 @@ func TestARunsCreateCardOpensOnTheDirectoryItRanIn(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.session.View = ListView{FolderKey: testKey("/src/obot"), FolderLabel: "/src/obot", FolderSource: "/src/obot"}
-		d, m := openRunWith(t, ds, RunRequest{Prompt: []string{"fix"}}, true)
+		ds.session.View = console.ListView{FolderKey: testKey("/src/obot"), FolderLabel: "/src/obot", FolderSource: "/src/obot"}
+		d, m := openRunWith(t, ds, console.RunRequest{Prompt: []string{"fix"}}, true)
 		d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
 		d.key("enter")
 		d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
@@ -531,7 +533,7 @@ func TestAnsweringARunsCreateCardGoesBackToTheWaitScreen(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.workspaceGate = make(chan struct{})
 		defer close(ds.workspaceGate)
-		d, m := openRunWith(t, ds, RunRequest{Prompt: []string{"fix"}}, true)
+		d, m := openRunWith(t, ds, console.RunRequest{Prompt: []string{"fix"}}, true)
 		d.wait("the create card", func() bool { return m.dialog != nil && m.dialog.kind == dlgCreate })
 		d.key("enter")
 		if m.dialog == nil || m.dialog.title != creatingTitle {
@@ -548,7 +550,7 @@ func TestARunWindowsWarningIsOnTheWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.runWarnings = []string{"/src/disco2: 2 uncommitted changes left out (--include-dirty carries them); the discobox starts from the last commit"}
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		// A long message is cut from its middle to fit the row, so its two ends
 		// are what is certain to be on screen: what it is about, and what came of
 		// it.
@@ -567,7 +569,7 @@ func TestArchivingFromARunWindowClosesTheWindow(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		d.wait("the workspace", func() bool { return m.primary() != nil && m.dialog == nil })
 
 		ds.doGate = make(chan struct{})
@@ -667,8 +669,8 @@ func TestEscOnARunsDirectoryCopyQuestionEndsTheCommand(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
-		d, m := openRun(t, ds, RunRequest{})
+		ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+		d, m := openRun(t, ds, console.RunRequest{})
 		d.wait("the copy question", func() bool { return m.dialog != nil && m.dialog.title == "Copy this directory?" })
 		d.key("esc")
 		d.wait("the window to close", func() bool { return m.quit })

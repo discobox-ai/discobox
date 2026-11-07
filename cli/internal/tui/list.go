@@ -9,6 +9,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
@@ -23,22 +24,22 @@ import (
 // columns drop off the right end as the terminal narrows — the name and the
 // glyph are what the eye actually picks a sandbox by, and neither ever goes.
 type sandboxList struct {
-	session Session
+	session console.Session
 	// resources is what the machine has and what Discobox is using of it,
 	// drawn on the title band. It is the machine's, not this list's: the list
 	// is filtered to a folder and the machine is not.
-	resources Resources
-	all       []Sandbox
+	resources console.Resources
+	all       []console.Sandbox
 	// index is where each discobox is in all, which is how a row finds the
 	// discobox that created it.
-	index    map[boxRef]int
+	index    map[console.BoxRef]int
 	cursor   int
 	offset   int
-	selected map[boxRef]bool
+	selected map[console.BoxRef]bool
 
 	// folder is the folder the list is filtered to, chosen in the header. With
 	// no key it is every folder, which is the one choice that is not a place.
-	folder folder
+	folder console.Folder
 
 	// tags are the tags the list is filtered to, chosen in the header after
 	// the folder (tags.go), in order: a discobox is listed when it carries
@@ -63,7 +64,7 @@ type sandboxList struct {
 	// one sent after the answer lands (settleArchives); which is which is
 	// counted in listings sent, not timed. A failed archive drops it at once
 	// (unmarkArchiving).
-	archiving map[boxRef]archiveMark
+	archiving map[console.BoxRef]archiveMark
 
 	// inTree is the list drawn as the workspace tree's narrow column. A
 	// row's tags go on a line of their own under it rather than beside the
@@ -133,8 +134,8 @@ type sandboxList struct {
 	width, height int
 }
 
-func newSandboxList(session Session) *sandboxList {
-	return &sandboxList{session: session, selected: map[boxRef]bool{}, now: time.Now}
+func newSandboxList(session console.Session) *sandboxList {
+	return &sandboxList{session: session, selected: map[console.BoxRef]bool{}, now: time.Now}
 }
 
 // setAll takes a refreshed listing, keeping the cursor on the sandbox it was
@@ -142,20 +143,20 @@ func newSandboxList(session Session) *sandboxList {
 // while something starts up would otherwise move the cursor onto a different
 // sandbox between the key press and the action. A box whose archive is out
 // is listed as archived however the listing has it (archiving).
-func (l *sandboxList) setAll(all []Sandbox) {
+func (l *sandboxList) setAll(all []console.Sandbox) {
 	l.loaded = true
 	l.keepingCursor(func() {
 		for i := range all {
-			if mark, ok := l.archiving[boxRef{all[i].Server, all[i].ID}]; ok && all[i].State != StateArchived {
+			if mark, ok := l.archiving[console.BoxRef{Server: all[i].Server, ID: all[i].ID}]; ok && all[i].State != console.StateArchived {
 				mark.was = all[i].State
-				l.archiving[boxRef{all[i].Server, all[i].ID}] = mark
-				all[i].State = StateArchived
+				l.archiving[console.BoxRef{Server: all[i].Server, ID: all[i].ID}] = mark
+				all[i].State = console.StateArchived
 			}
 		}
 		l.all = all
-		l.index = make(map[boxRef]int, len(all))
+		l.index = make(map[console.BoxRef]int, len(all))
 		for i, s := range all {
-			l.index[boxRef{s.Server, s.ID}] = i
+			l.index[console.BoxRef{Server: s.Server, ID: s.ID}] = i
 		}
 	})
 }
@@ -166,14 +167,14 @@ func (l *sandboxList) setAll(all []Sandbox) {
 // the cursor was never on. A cursor whose box has left stays at its row
 // number, on the row that takes its place.
 func (l *sandboxList) keepingCursor(change func()) {
-	var on boxRef
+	var on console.BoxRef
 	if s := l.current(); s != nil {
-		on = boxRef{s.Server, s.ID}
+		on = console.BoxRef{Server: s.Server, ID: s.ID}
 	}
 	change()
-	if on.id != "" {
+	if on.ID != "" {
 		for i, s := range l.rows() {
-			if (boxRef{s.Server, s.ID}) == on {
+			if (console.BoxRef{Server: s.Server, ID: s.ID}) == on {
 				l.cursor = i
 				break
 			}
@@ -192,18 +193,18 @@ type archiveMark struct {
 	after    uint64
 	// was is the state the latest listing gave the box, which is what a
 	// failed archive puts back.
-	was State
+	was console.State
 }
 
 // markArchiving lists the discoboxes an archive is going out for as archived
 // (archiving). The cursor stays on the box it was on; one on an archived box
 // goes to the row that takes its place, as neighbor says.
-func (l *sandboxList) markArchiving(targets []Sandbox) {
+func (l *sandboxList) markArchiving(targets []console.Sandbox) {
 	if l.archiving == nil {
-		l.archiving = map[boxRef]archiveMark{}
+		l.archiving = map[console.BoxRef]archiveMark{}
 	}
 	for _, box := range targets {
-		id := boxRef{box.Server, box.ID}
+		id := console.BoxRef{Server: box.Server, ID: box.ID}
 		l.archiving[id] = archiveMark{}
 	}
 	l.setAll(l.all)
@@ -212,9 +213,9 @@ func (l *sandboxList) markArchiving(targets []Sandbox) {
 // answeredArchives records that the archives for ids were answered once
 // after listings had been sent, so that the first listing sent after that
 // is the one that settles them.
-func (l *sandboxList) answeredArchives(targets []Sandbox, after uint64) {
+func (l *sandboxList) answeredArchives(targets []console.Sandbox, after uint64) {
 	for _, box := range targets {
-		id := boxRef{box.Server, box.ID}
+		id := console.BoxRef{Server: box.Server, ID: box.ID}
 		if mark, ok := l.archiving[id]; ok {
 			mark.answered, mark.after = true, after
 			l.archiving[id] = mark
@@ -224,17 +225,17 @@ func (l *sandboxList) answeredArchives(targets []Sandbox, after uint64) {
 
 // unmarkArchiving drops the marks of archives that failed, putting the rows
 // back in the state the latest listing gave them: the box is where it was.
-func (l *sandboxList) unmarkArchiving(targets []Sandbox) {
+func (l *sandboxList) unmarkArchiving(targets []console.Sandbox) {
 	l.keepingCursor(func() {
 		for _, box := range targets {
-			id := boxRef{box.Server, box.ID}
+			id := console.BoxRef{Server: box.Server, ID: box.ID}
 			mark, ok := l.archiving[id]
 			if !ok {
 				continue
 			}
 			delete(l.archiving, id)
 			for i := range l.all {
-				if (boxRef{l.all[i].Server, l.all[i].ID}) == id && mark.was != "" {
+				if (console.BoxRef{Server: l.all[i].Server, ID: l.all[i].ID}) == id && mark.was != "" {
 					l.all[i].State = mark.was
 				}
 			}
@@ -256,11 +257,11 @@ func (l *sandboxList) settleArchives(asked uint64) {
 // setPending stamps each row with how many credential requests are waiting on
 // it. The count lives on the row rather than being looked up while drawing, so
 // the draw stays a pure function of what the list holds.
-func (l *sandboxList) setPending(byBox map[string][]CredentialRequest) {
+func (l *sandboxList) setPending(byBox map[string][]console.CredentialRequest) {
 	for i := range l.all {
 		l.all[i].PendingRequests = 0
 		for _, req := range byBox[l.all[i].ID] {
-			if l.session.serverName(req.Server) == l.session.serverName(l.all[i].Server) {
+			if l.session.ServerName(req.Server) == l.session.ServerName(l.all[i].Server) {
 				l.all[i].PendingRequests++
 			}
 		}
@@ -268,7 +269,7 @@ func (l *sandboxList) setPending(byBox map[string][]CredentialRequest) {
 }
 
 // rows is what is actually displayed, after the two filters.
-func (l *sandboxList) rows() []Sandbox {
+func (l *sandboxList) rows() []console.Sandbox {
 	out := l.nest()
 	// Grouped by section, and newest-first inside one as everywhere else: the
 	// sort is stable, so the order the listing arrived in is what orders a
@@ -298,29 +299,23 @@ func (l *sandboxList) count() int {
 	return len(l.rows())
 }
 
-// boxRef names a discobox across every server the window lists: an ID is one
-// server's.
-type boxRef struct {
-	server, id string
-}
-
 // creator is the discobox that created s, when a discobox did and the listing
 // still holds it.
-func (l *sandboxList) creator(s Sandbox) (Sandbox, bool) {
+func (l *sandboxList) creator(s console.Sandbox) (console.Sandbox, bool) {
 	if s.CreatedBy == "" {
-		return Sandbox{}, false
+		return console.Sandbox{}, false
 	}
-	i, ok := l.index[boxRef{s.Server, s.CreatedBy}]
+	i, ok := l.index[console.BoxRef{Server: s.Server, ID: s.CreatedBy}]
 	if !ok || i >= len(l.all) {
-		return Sandbox{}, false
+		return console.Sandbox{}, false
 	}
 	return l.all[i], true
 }
 
 // top is the row a row's tree hangs from, which is the row whose section it
 // is drawn in: itself, for a row nested under nothing.
-func (l *sandboxList) top(s Sandbox) Sandbox {
-	if i, ok := l.index[s.under]; ok && i < len(l.all) {
+func (l *sandboxList) top(s console.Sandbox) console.Sandbox {
+	if i, ok := l.index[s.Under]; ok && i < len(l.all) {
 		return l.all[i]
 	}
 	return s
@@ -330,8 +325,8 @@ func (l *sandboxList) top(s Sandbox) Sandbox {
 // discobox itself: the server, the tags, and whether the archived are listed.
 // The folder is not one of them — a discobox is drawn under its creator in
 // whichever folder that is (nest).
-func (l *sandboxList) shown(s Sandbox) bool {
-	return l.onServer(s) && l.tagged(s) && (l.showArchived || s.State != StateArchived)
+func (l *sandboxList) shown(s console.Sandbox) bool {
+	return l.onServer(s) && l.tagged(s) && (l.showArchived || s.State != console.StateArchived)
 }
 
 // nest is the rows in the order they are drawn, as trees: the discoboxes in
@@ -350,7 +345,7 @@ func (l *sandboxList) shown(s Sandbox) bool {
 // A row nests under the nearest creator that is shown, so one whose creator
 // is archived and hidden, or lacks a tag the header names, moves up to the
 // creator's own creator, or is drawn in its own folder alone.
-func (l *sandboxList) nest() []Sandbox {
+func (l *sandboxList) nest() []console.Sandbox {
 	type node struct {
 		parent int // in l.all, -1 for none
 		kids   []int
@@ -370,13 +365,13 @@ func (l *sandboxList) nest() []Sandbox {
 			if by, ok = l.creator(by); !ok {
 				break
 			}
-			if j := l.index[boxRef{by.Server, by.ID}]; j != i && l.shown(by) {
+			if j := l.index[console.BoxRef{Server: by.Server, ID: by.ID}]; j != i && l.shown(by) {
 				nodes[i].parent = j
 				nodes[j].kids = append(nodes[j].kids, i)
 				break
 			}
 		}
-		if l.folder.holds(s, l.session) {
+		if l.folder.Holds(s, l.session) {
 			tops = append(tops, i)
 		}
 	}
@@ -389,27 +384,27 @@ func (l *sandboxList) nest() []Sandbox {
 			if at = nodes[at].parent; at < 0 || at == i {
 				return false
 			}
-			if l.folder.holds(l.all[at], l.session) {
+			if l.folder.Holds(l.all[at], l.session) {
 				return true
 			}
 		}
 		return false
 	}
 
-	out := make([]Sandbox, 0, len(tops))
+	out := make([]console.Sandbox, 0, len(tops))
 	// placed is what has a row; placing is what is above the row being
 	// placed, which a row is not drawn under a second time.
 	placed := make([]bool, len(l.all))
 	placing := make([]bool, len(l.all))
-	var place func(i int, under boxRef, lead, branch string)
-	place = func(i int, under boxRef, lead, branch string) {
+	var place func(i int, under console.BoxRef, lead, branch string)
+	place = func(i int, under console.BoxRef, lead, branch string) {
 		if placing[i] {
 			return
 		}
 		placing[i], placed[i] = true, true
 		defer func() { placing[i] = false }()
 		s := l.all[i]
-		s.under, s.tree = under, lead+branch
+		s.Under, s.Tree = under, lead+branch
 		out = append(out, s)
 		switch branch {
 		case treeBranch:
@@ -427,14 +422,14 @@ func (l *sandboxList) nest() []Sandbox {
 	}
 	for _, i := range tops {
 		if !drawnAbove(i) {
-			place(i, boxRef{l.all[i].Server, l.all[i].ID}, "", "")
+			place(i, console.BoxRef{Server: l.all[i].Server, ID: l.all[i].ID}, "", "")
 		}
 	}
 	// Rows that created each other are each above the other, and are still
 	// rows.
 	for _, i := range tops {
 		if !placed[i] {
-			place(i, boxRef{l.all[i].Server, l.all[i].ID}, "", "")
+			place(i, console.BoxRef{Server: l.all[i].Server, ID: l.all[i].ID}, "", "")
 		}
 	}
 	return out
@@ -451,7 +446,7 @@ const (
 
 // onServer reports whether a discobox is on the server the header names. Every
 // discobox is on every server at once.
-func (l *sandboxList) onServer(s Sandbox) bool {
+func (l *sandboxList) onServer(s console.Sandbox) bool {
 	return l.server == "" || s.Server == l.server
 }
 
@@ -500,13 +495,13 @@ func (l *sandboxList) setWaiting(servers []string) {
 // narrowing the header to that server, and a section per server split one
 // repository's discoboxes across as many bands as there were servers.
 func (l *sandboxList) grouped() bool {
-	return l.folder.key == ""
+	return l.folder.Key == ""
 }
 
 // sectionOf is the section a row is drawn under: the folder it is in, or for
 // a nested row the folder of the row its tree hangs from.
-func (l *sandboxList) sectionOf(s Sandbox) string {
-	return l.top(s).folderKey(l.session)
+func (l *sandboxList) sectionOf(s console.Sandbox) string {
+	return l.top(s).FolderKey(l.session)
 }
 
 // folderRanks is where each folder's rows go: the order the header's filter
@@ -515,7 +510,7 @@ func (l *sandboxList) folderRanks() map[string]int {
 	folders := l.folders()
 	ranks := make(map[string]int, len(folders))
 	for i, f := range folders {
-		ranks[f.key] = i
+		ranks[f.Key] = i
 	}
 	return ranks
 }
@@ -611,26 +606,26 @@ func (l *sandboxList) behind() []string {
 //
 // It is derived from the listing rather than asked for separately: the folders
 // worth offering are exactly the ones something is sitting in.
-func (l *sandboxList) folders() []folder {
+func (l *sandboxList) folders() []console.Folder {
 	at := map[string]int{"": -1, l.session.HostKey: -1}
-	out := []folder{}
-	add := func(f folder) {
-		if i, ok := at[f.key]; ok {
+	out := []console.Folder{}
+	add := func(f console.Folder) {
+		if i, ok := at[f.Key]; ok {
 			if i >= 0 {
-				out[i].local = out[i].local || f.local
+				out[i].Local = out[i].Local || f.Local
 			}
 			return
 		}
-		at[f.key] = len(out)
+		at[f.Key] = len(out)
 		out = append(out, f)
 	}
-	add(l.session.folder())
+	add(l.session.Folder())
 	// The folders on the server the header names: the folder sits inside
 	// the server, and a folder only another server has something in
 	// is a choice that lists nothing.
 	for _, s := range l.all {
 		if l.onServer(s) {
-			add(s.folder(l.session))
+			add(s.Folder(l.session))
 		}
 	}
 	add(l.folder)
@@ -647,9 +642,9 @@ func (l *sandboxList) folders() []folder {
 // on this machine is filed. A discobox created with no source at all
 // contributes nothing, because "no source" is an answer the row already offers
 // on its own.
-func (l *sandboxList) sources() []Source {
+func (l *sandboxList) sources() []console.Source {
 	seen := map[string]bool{}
-	out := []Source{}
+	out := []console.Source{}
 	for _, s := range l.all {
 		// One source is one entry, however each discobox spelled it.
 		key := sourceKey(s.Source)
@@ -657,7 +652,7 @@ func (l *sandboxList) sources() []Source {
 			continue
 		}
 		seen[key] = true
-		source := Source{Value: s.Source, Remote: s.SourceRemote, OriginKey: s.SourceOriginKey, RepositoryKey: s.RepositoryKey}
+		source := console.Source{Value: s.Source, Remote: s.SourceRemote, OriginKey: s.SourceOriginKey, RepositoryKey: s.RepositoryKey}
 		if !s.SourceRemote {
 			// What a local discobox records is its directory alone.
 			source.Directory = s.Source
@@ -677,7 +672,7 @@ func (l *sandboxList) archivedCount() int {
 	return with.count() - without.count()
 }
 
-func (l *sandboxList) current() *Sandbox {
+func (l *sandboxList) current() *console.Sandbox {
 	rows := l.rows()
 	if l.cursor < 0 || l.cursor >= len(rows) {
 		return nil
@@ -688,7 +683,7 @@ func (l *sandboxList) current() *Sandbox {
 // neighbor is the row after one box's — the one before it, for the last row —
 // which is where the list goes once that box leaves it. Nil when the box is
 // not listed or is the only row.
-func (l *sandboxList) neighbor(box Sandbox) *Sandbox {
+func (l *sandboxList) neighbor(box console.Sandbox) *console.Sandbox {
 	rows := l.rows()
 	for i, s := range rows {
 		if s.ID != box.ID || s.Server != box.Server {
@@ -708,15 +703,15 @@ func (l *sandboxList) neighbor(box Sandbox) *Sandbox {
 // targets returns the sandboxes a command should act on: the visual range
 // while one is being drawn, otherwise everything selected, otherwise the row
 // under the cursor.
-func (l *sandboxList) targets() []Sandbox {
+func (l *sandboxList) targets() []console.Sandbox {
 	rows := l.rows()
 	if l.visual && len(rows) > 0 {
 		lo, hi := l.visualRange()
-		return append([]Sandbox(nil), rows[lo:hi+1]...)
+		return append([]console.Sandbox(nil), rows[lo:hi+1]...)
 	}
-	var out []Sandbox
+	var out []console.Sandbox
 	for _, s := range rows {
-		if l.selected[boxRef{s.Server, s.ID}] {
+		if l.selected[console.BoxRef{Server: s.Server, ID: s.ID}] {
 			out = append(out, s)
 		}
 	}
@@ -724,7 +719,7 @@ func (l *sandboxList) targets() []Sandbox {
 		return out
 	}
 	if s := l.current(); s != nil {
-		return []Sandbox{*s}
+		return []console.Sandbox{*s}
 	}
 	return nil
 }
@@ -749,7 +744,7 @@ func (l *sandboxList) commitVisual() int {
 		return 0
 	}
 	for _, s := range rows[lo : hi+1] {
-		l.selected[boxRef{s.Server, s.ID}] = true
+		l.selected[console.BoxRef{Server: s.Server, ID: s.ID}] = true
 	}
 	l.visual = false
 	return hi - lo + 1
@@ -758,7 +753,7 @@ func (l *sandboxList) commitVisual() int {
 func (l *sandboxList) selectionCount() int {
 	n := 0
 	for _, s := range l.rows() {
-		if l.selected[boxRef{s.Server, s.ID}] {
+		if l.selected[console.BoxRef{Server: s.Server, ID: s.ID}] {
 			n++
 		}
 	}
@@ -770,14 +765,14 @@ func (l *sandboxList) toggleSelect() {
 	if s == nil {
 		return
 	}
-	if l.selected[boxRef{s.Server, s.ID}] {
-		delete(l.selected, boxRef{s.Server, s.ID})
+	if l.selected[console.BoxRef{Server: s.Server, ID: s.ID}] {
+		delete(l.selected, console.BoxRef{Server: s.Server, ID: s.ID})
 		return
 	}
-	l.selected[boxRef{s.Server, s.ID}] = true
+	l.selected[console.BoxRef{Server: s.Server, ID: s.ID}] = true
 }
 
-func (l *sandboxList) clearSelection() { l.selected = map[boxRef]bool{} }
+func (l *sandboxList) clearSelection() { l.selected = map[console.BoxRef]bool{} }
 
 func (l *sandboxList) move(delta int) {
 	l.cursor += delta
@@ -850,13 +845,13 @@ func (l *sandboxList) clamp() {
 	}
 }
 
-func (l *sandboxList) stateStyle(st *styles, s Sandbox) lipgloss.Style {
+func (l *sandboxList) stateStyle(st *styles, s console.Sandbox) lipgloss.Style {
 	switch s.State {
-	case StateRunning:
+	case console.StateRunning:
 		return st.stateRun
-	case StateStarting, StateRepairing, StateSuspended:
+	case console.StateStarting, console.StateRepairing, console.StateSuspended:
 		return st.stateBusy
-	case StateError:
+	case console.StateError:
 		return st.stateErr
 	default:
 		return st.stateOff
@@ -906,8 +901,8 @@ func agentMark(state programstatus.State) string {
 // `running`, which every report implies (a box that is not running carries
 // none), so it costs no column of its own; a failed agent is `failed`, not
 // the box's own `error`.
-func stateWord(s Sandbox) string {
-	if s.State != StateRunning || s.Agent.State == "" {
+func stateWord(s console.Sandbox) string {
+	if s.State != console.StateRunning || s.Agent.State == "" {
 		return string(s.State)
 	}
 	if s.Agent.State == programstatus.Error {
@@ -916,17 +911,17 @@ func stateWord(s Sandbox) string {
 	return string(s.Agent.State)
 }
 
-func stateDot(s Sandbox) string {
+func stateDot(s console.Sandbox) string {
 	switch s.State {
-	case StateRunning:
+	case console.StateRunning:
 		return "●"
-	case StateStarting, StateRepairing:
+	case console.StateStarting, console.StateRepairing:
 		return "◐"
-	case StateSuspended:
+	case console.StateSuspended:
 		return "‖"
-	case StateError:
+	case console.StateError:
 		return "✗"
-	case StateArchived:
+	case console.StateArchived:
 		return "▪"
 	default:
 		return "○"
@@ -1128,7 +1123,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 // is what tells the window whether the cursor still fits, and it counts the
 // way the body draws: a header in front of the first row, and one wherever the
 // section changes.
-func (l *sandboxList) lineSpan(rows []Sandbox, from, to int) int {
+func (l *sandboxList) lineSpan(rows []console.Sandbox, from, to int) int {
 	if from < 0 || to >= len(rows) || from > to {
 		return 0
 	}
@@ -1164,8 +1159,8 @@ func (l *sandboxList) sectionHeader(st *styles, title, right string) string {
 
 // sectionTitle names the section a row is drawn under: its folder — for a
 // nested row, its tree's — the way the header's filter names it.
-func (l *sandboxList) sectionTitle(s Sandbox) string {
-	return l.top(s).folder(l.session).label
+func (l *sandboxList) sectionTitle(s console.Sandbox) string {
+	return l.top(s).Folder(l.session).Label
 }
 
 // serverTitle is a server as a band names it. It says "server" because a bare
@@ -1202,7 +1197,7 @@ func (l *sandboxList) markBand(z *zones, y int, offer, marks, right string) {
 // first, then the origin, then the diffstat, and the name never goes at all.
 // row draws one discobox on line y of the list's block, and hands back the
 // links on it for the list to mark over the row.
-func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused bool) (string, []rowLink) {
+func (l *sandboxList) row(st *styles, z *zones, s console.Sandbox, i, y int, focused bool) (string, []rowLink) {
 	// The cursor belongs to the pane that has focus. With the prompt focused
 	// there is nothing to act on, so nothing is drawn as picked out — only
 	// the marks, which were put there deliberately and outlive the focus.
@@ -1216,7 +1211,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// Selection is a background rather than a column of bullets: it is the
 	// state of the row, not a field of it, and a column spent on it is a
 	// column the name does not get.
-	selected := l.selected[boxRef{s.Server, s.ID}] || inVisual
+	selected := l.selected[console.BoxRef{Server: s.Server, ID: s.ID}] || inVisual
 
 	// The state is the colored glyph in front of the name and nothing else:
 	// spelling "running" out on every row costs a column that says the same
@@ -1274,10 +1269,10 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 		// row is a column spent saying nothing.
 		//
 		baseStyle := gitStyle(st, s)
-		addCol(baseStyle.Render(pad(s.base(), 14)), 15)
+		addCol(baseStyle.Render(pad(s.Base(), 14)), 15)
 		// The mark spelled out, in the mark's own color. It is added right after
 		// the position so the two survive a narrowing terminal together.
-		addCol(baseStyle.Render(pad(s.changes(), 7)), 8)
+		addCol(baseStyle.Render(pad(s.Changes(), 7)), 8)
 		addCol(st.dimText.Render(pad(createdText(s, l.now()), 8)), 9)
 		addCol(usage(st, s), usageWidth+1)
 		addCol(padANSI(diffText(st, s), 11), 11)
@@ -1288,14 +1283,14 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// The branch a discobox created by another hangs from, after the state so
 	// the glyphs stay one column the eye runs down. It is part of the head: it
 	// comes out of the name's width, and the name keeps its floor.
-	if s.tree != "" {
-		head += st.dimText.Render(s.tree)
+	if s.Tree != "" {
+		head += st.dimText.Render(s.Tree)
 	}
 	nameW := max(l.width-lipgloss.Width(head)-lipgloss.Width(tail), 4)
 	name := s.Name
 	// Under the cursor the name gives way to what the state is about: the
 	// error a box settled on, or what a repair nobody typed is answering.
-	if (s.State == StateError || s.State == StateRepairing || s.State == StateRunning) && s.Message != "" && atCursor {
+	if (s.State == console.StateError || s.State == console.StateRepairing || s.State == console.StateRunning) && s.Message != "" && atCursor {
 		name = s.Message
 	} else if (s.Agent.State == programstatus.Blocked || s.Agent.State == programstatus.Error) && s.Agent.Msg != "" && atCursor {
 		// And to what an agent blocked on a person, or failed, said about it.
@@ -1319,7 +1314,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// A row nested under its creator does not say it: the machine it would
 	// name is that creator, which the branch already says.
 	from := ""
-	if text := s.elsewhere(l.session); text != "" && s.tree == "" {
+	if text := s.Elsewhere(l.session); text != "" && s.Tree == "" {
 		// The floor is the one the tail columns hold to, less the head, which
 		// is the part of that reserve the name does not get either way.
 		if room := nameW - lipgloss.Width(text) - 1; room >= nameReserve-lipgloss.Width(head) {
@@ -1338,7 +1333,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	taggedW := 0
 	if len(s.Tags) > 0 && !l.inTree {
 		room := nameW - (nameReserve - lipgloss.Width(head))
-		for _, tag := range s.rowTags() {
+		for _, tag := range s.RowTags() {
 			next := taggedW + lipgloss.Width(" "+tagLabel(tag))
 			if next > room {
 				break
@@ -1374,7 +1369,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 // cursor's chevron, and in color the state dot and the agent's glyph. It is
 // the one place that says how wide that is, so the tag line under a row
 // (tagLine) starts where the row's name does.
-func (l *sandboxList) rowHead(st *styles, s Sandbox, atCursor bool) string {
+func (l *sandboxList) rowHead(st *styles, s console.Sandbox, atCursor bool) string {
 	// The cursor is a chevron, and selection is a background —
 	// discobox-review's file list, which is a picker like this one rather than
 	// a diff.
@@ -1389,7 +1384,7 @@ func (l *sandboxList) rowHead(st *styles, s Sandbox, atCursor bool) string {
 		// in line.
 		head += l.stateStyle(st, s).Render(stateDot(s)) + " " + agentGlyph(st, s.Agent.State) + " "
 	}
-	if s.State == StateRunning && s.Message != "" {
+	if s.State == console.StateRunning && s.Message != "" {
 		head += st.statusWA.Render("⚠") + " "
 	}
 	return head
@@ -1415,12 +1410,12 @@ func (l *sandboxList) shade(st *styles, line string, atCursor, selected bool) st
 // the rest dim — from under the name, with the tree's rule carried down past
 // them. As many as fit, and how many more there are when that is not all of
 // them. It reports false for a row with no tags, which has no such line.
-func (l *sandboxList) tagLine(st *styles, z *zones, s Sandbox, i, y int, focused bool) (string, []rowLink, bool) {
+func (l *sandboxList) tagLine(st *styles, z *zones, s console.Sandbox, i, y int, focused bool) (string, []rowLink, bool) {
 	if len(s.Tags) == 0 {
 		return "", nil, false
 	}
 	atCursor := i == l.cursor && focused
-	selected := l.selected[boxRef{s.Server, s.ID}]
+	selected := l.selected[console.BoxRef{Server: s.Server, ID: s.ID}]
 	if l.visual {
 		lo, hi := l.visualRange()
 		selected = selected || (i >= lo && i <= hi)
@@ -1430,9 +1425,9 @@ func (l *sandboxList) tagLine(st *styles, z *zones, s Sandbox, i, y int, focused
 	// it continues on, so a tree reads unbroken through its rows' tags.
 	indent := strings.Repeat(" ", lipgloss.Width(l.rowHead(st, s, false)))
 	cont := ""
-	if lead, ok := strings.CutSuffix(s.tree, treeBranch); ok {
+	if lead, ok := strings.CutSuffix(s.Tree, treeBranch); ok {
 		cont = lead + treeRule
-	} else if lead, ok := strings.CutSuffix(s.tree, treeLast); ok {
+	} else if lead, ok := strings.CutSuffix(s.Tree, treeLast); ok {
 		cont = lead + treeGap
 	}
 	head := indent + st.dimText.Render(cont)
@@ -1441,7 +1436,7 @@ func (l *sandboxList) tagLine(st *styles, z *zones, s Sandbox, i, y int, focused
 	// and a cell is kept clear of the right edge, as the row's columns keep
 	// one.
 	room := l.width - lipgloss.Width(head)
-	tags := s.rowTags()
+	tags := s.RowTags()
 	var shown []string
 	used := 0
 	for n, tag := range tags {
@@ -1482,7 +1477,7 @@ type rowLink struct {
 // GitHub repository (Sandbox.tagURL) is a link to it instead, in the color the
 // header's links are drawn in, and lit when the pointer is on it — the same
 // terms the header's links are drawn on, since a click on one opens it.
-func (l *sandboxList) tagSpans(st *styles, z *zones, s Sandbox, tags []string, x, y int) (string, []rowLink) {
+func (l *sandboxList) tagSpans(st *styles, z *zones, s console.Sandbox, tags []string, x, y int) (string, []rowLink) {
 	var out strings.Builder
 	var links []rowLink
 	for _, tag := range tags {
@@ -1490,10 +1485,10 @@ func (l *sandboxList) tagSpans(st *styles, z *zones, s Sandbox, tags []string, x
 		out.WriteString(st.dimText.Render(" "))
 		x++
 		width := lipgloss.Width(label)
-		switch url := s.tagURL(tag); {
-		case tagKey(tag) == statusBlocked || tagKey(tag) == statusNeedsInput:
+		switch url := s.TagURL(tag); {
+		case console.TagKey(tag) == console.StatusBlocked || console.TagKey(tag) == console.StatusNeedsInput:
 			out.WriteString(st.blockedText.Render(label))
-		case tagKey(tag) == statusReady:
+		case console.TagKey(tag) == console.StatusReady:
 			out.WriteString(st.readyText.Render(label))
 		case url == "":
 			out.WriteString(st.dimText.Render(label))
@@ -1518,11 +1513,11 @@ func (l *sandboxList) tagSpans(st *styles, z *zones, s Sandbox, tags []string, x
 //
 // It is one function rather than a switch per drawing site so the list row and
 // the workspace header cannot drift apart on what a color means.
-func gitStyle(st *styles, s Sandbox) lipgloss.Style {
+func gitStyle(st *styles, s console.Sandbox) lipgloss.Style {
 	switch {
-	case s.dirty():
+	case s.Uncommitted():
 		return st.statusWA
-	case s.ahead():
+	case s.Ahead():
 		return st.name
 	default:
 		return st.dimText
@@ -1533,8 +1528,8 @@ func gitStyle(st *styles, s Sandbox) lipgloss.Style {
 // what the sandbox has changed, in the diff's own two colors. Empty when
 // nothing has been reported or nothing has changed, which is the same answer
 // as far as anything drawing it is concerned.
-func diffText(st *styles, s Sandbox) string {
-	if !s.hasDiff() {
+func diffText(st *styles, s console.Sandbox) string {
+	if !s.HasDiff() {
 		return ""
 	}
 	return st.add.Render("+"+itoa(s.Diff.Added)) + " " + st.del.Render("−"+itoa(s.Diff.Deleted))
@@ -1580,11 +1575,11 @@ func diffText(st *styles, s Sandbox) string {
 // Empty when nothing is listening, which is also what a sandbox whose agent has
 // not reported yet looks like — there is no third thing to say and no room to
 // say it in.
-func portsField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderField {
+func portsField(st *styles, s console.Sandbox, forwarded map[console.PortKey]int) paneHeaderField {
 	if len(s.Ports) == 0 {
 		return paneHeaderField{}
 	}
-	groups := map[string][]Port{}
+	groups := map[string][]console.Port{}
 	var order []string
 	for _, port := range s.Ports {
 		// The desktop is drawn as its own field, not as a number here. It is
@@ -1646,10 +1641,10 @@ func linkSpan(st *styles, text, url string) headerSpan {
 //
 // Each opens as a workspace tab on a plain click (the issue tab) and on the
 // page on a Ctrl-click.
-func workField(st *styles, s Sandbox) paneHeaderField {
+func workField(st *styles, s console.Sandbox) paneHeaderField {
 	var field paneHeaderField
 	for _, tag := range s.Tags {
-		url := s.tagURL(tag)
+		url := s.TagURL(tag)
 		if url == "" {
 			continue
 		}
@@ -1674,10 +1669,10 @@ func workField(st *styles, s Sandbox) paneHeaderField {
 // issue or pull request workField links, and a status tag, which the
 // header says through the git word (paneHeaderFields), on terms of its own
 // that a tag drawn beside it would contradict. Empty when that leaves none.
-func tagsField(st *styles, s Sandbox) paneHeaderField {
+func tagsField(st *styles, s console.Sandbox) paneHeaderField {
 	var labels []string
 	for _, tag := range s.Tags {
-		if s.tagURL(tag) == "" && !isStatusTag(tag) {
+		if s.TagURL(tag) == "" && !console.IsStatusTag(tag) {
 			labels = append(labels, tagLabel(tag))
 		}
 	}
@@ -1700,12 +1695,12 @@ func tagsField(st *styles, s Sandbox) paneHeaderField {
 // forwarded ports: an offer to open a desktop that cannot be reached is worse
 // than not offering. The label is the declaration's own name, so the sandbox
 // says what to call it.
-func desktopField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderField {
+func desktopField(st *styles, s console.Sandbox, forwarded map[console.PortKey]int) paneHeaderField {
 	for _, port := range s.Ports {
 		if port.ServiceID != sandboxservices.DesktopID {
 			continue
 		}
-		local, ok := forwarded[port.key()]
+		local, ok := forwarded[port.Key()]
 		if !ok {
 			return paneHeaderField{}
 		}
@@ -1738,8 +1733,8 @@ func desktopField(st *styles, s Sandbox, forwarded map[portKey]int) paneHeaderFi
 // link. Only the web ones: OSC 8 hands the URL to whatever opens
 // `http://`, and there is nothing sensible for a browser to do with a Postgres
 // socket.
-func portEntry(st *styles, port Port, forwarded map[portKey]int) headerSpan {
-	local, ok := forwarded[port.key()]
+func portEntry(st *styles, port console.Port, forwarded map[console.PortKey]int) headerSpan {
+	local, ok := forwarded[port.Key()]
 	if !ok {
 		return linkSpan(st, itoa(port.Number), "")
 	}

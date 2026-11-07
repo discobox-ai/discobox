@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // A box whose pool cannot obtain the image it is pinned to fails the same way
@@ -18,12 +19,12 @@ import (
 // unavailable image stops.
 func opensBox(key string) bool {
 	action, ok := interactions[key]
-	return ok && (action == InteractAttach || action == InteractShell)
+	return ok && (action == console.InteractAttach || action == console.InteractShell)
 }
 
 // offerImageUpgrade puts the upgrade to the user for a box whose image is gone,
 // or says there is nothing to upgrade to.
-func (m *Model) offerImageUpgrade(box Sandbox) {
+func (m *Model) offerImageUpgrade(box console.Sandbox) {
 	if !box.Upgrade {
 		body := fmt.Sprintf("%s's image is no longer available on its pool, so it cannot start, and its harness has no newer image to move it to.", box.Name)
 		if box.Message != "" {
@@ -33,16 +34,16 @@ func (m *Model) offerImageUpgrade(box Sandbox) {
 		return
 	}
 	question := fmt.Sprintf("%s's image is no longer available on its pool, so it cannot start. Upgrade it to its harness's current image? Its work is kept.", box.Name)
-	targets := []Sandbox{box}
+	targets := []console.Sandbox{box}
 	m.dialog = confirmDialog("Upgrade", question, func(string) tea.Cmd {
-		return func() tea.Msg { return runVerbMsg{verb: VerbUpgrade, targets: targets} }
+		return func() tea.Msg { return runVerbMsg{verb: console.VerbUpgrade, targets: targets} }
 	})
 }
 
 // imageOfferListedMsg is the listing read for one failed attach.
 type imageOfferListedMsg struct {
-	box     Sandbox
-	listing Listing
+	box     console.Sandbox
+	listing console.Listing
 	err     error
 }
 
@@ -53,7 +54,7 @@ type imageOfferListedMsg struct {
 // already on its way — and would say nothing about it. A read issued from here
 // was issued after the attach failed, and the attach wait gives up only once
 // the failure is on the row.
-func (m *Model) checkImageOffer(box Sandbox) tea.Cmd {
+func (m *Model) checkImageOffer(box console.Sandbox) tea.Cmd {
 	ctx, ds := m.ctx, m.ds.ForServer(box.Server)
 	return func() tea.Msg {
 		listing, err := ds.List(ctx)

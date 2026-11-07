@@ -19,6 +19,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 
@@ -69,20 +70,20 @@ type timerMsg struct {
 type fakeSource struct {
 	serverSources map[string]*fakeSource
 
-	createdVariants       []NewHarnessVariant
+	createdVariants       []console.NewHarnessVariant
 	variantErr            error
-	harnessChanges        HarnessChanges
+	harnessChanges        console.HarnessChanges
 	harnessChangesWrites  []string
 	harnessChangesSaveErr error
-	resources             Resources
+	resources             console.Resources
 	mu                    sync.Mutex
 	// renewals are the refresh requests answered, and renewErr what the next
 	// answer fails with.
-	renewals []Renewal
+	renewals []console.Renewal
 	renewErr error
 
-	session   Session
-	sandboxes []Sandbox
+	session   console.Session
+	sandboxes []console.Sandbox
 	// putImages are the images carried into a discobox by a paste, and
 	// putImageErr what the next one fails with.
 	putImages   []putImage
@@ -98,7 +99,7 @@ type fakeSource struct {
 	// unsureServers is what AddressedServer says about the servers that did
 	// not say who they are, for an address it matched to none.
 	unsureServers error
-	workspace     SourceWorkspace
+	workspace     console.SourceWorkspace
 	// resolved records every source handed to ResolveSource, and sourceErr is
 	// what it answers with — a directory that is not on this machine.
 	resolved  []string
@@ -120,52 +121,52 @@ type fakeSource struct {
 	// measured records the directories the window asked to be measured, and
 	// total is what the walk it gets back reports.
 	measured []string
-	total    DirectoryTotal
+	total    console.DirectoryTotal
 	stopped  int
 
-	harnesses   []Harness
-	pools       []Pool
+	harnesses   []console.Harness
+	pools       []console.Pool
 	harnessErr  error
-	secrets     []HarnessSecret
+	secrets     []console.HarnessSecret
 	editChanged bool
 
 	// The credential inbox: what is waiting, what can answer it, and what the
 	// window did about it.
-	requests []CredentialRequest
+	requests []console.CredentialRequest
 	// Credentials an upstream refused: what the third band is drawn from.
-	rejections     []SecretRejection
+	rejections     []console.SecretRejection
 	rejectionsErr  error
-	projectSecrets []Secret
+	projectSecrets []console.Secret
 	// secretsOn and harnessesOn are what a server named in the call holds,
 	// for a window with several; one not named there answers with
 	// projectSecrets and harnesses. onServer is every server-scoped call, as
 	// "Method@server", which is what says where the window sent it.
-	secretsOn         map[string][]Secret
-	harnessesOn       map[string][]Harness
+	secretsOn         map[string][]console.Secret
+	harnessesOn       map[string][]console.Harness
 	onServer          []string
 	requestsErr       error
 	secretsErr        error
-	approvals         []Approval
-	trustApprovals    []TrustApproval
+	approvals         []console.Approval
+	trustApprovals    []console.TrustApproval
 	trustDenials      []string
 	adoptionDecisions []string
 	denials           []string
-	createdSecrets    []NewSecret
+	createdSecrets    []console.NewSecret
 	approveErr        error
 	createSecretErr   error
 	limited           []string
 	limitErr          error
-	updated           []SecretUpdate
+	updated           []console.SecretUpdate
 	revalued          []string
 	// projectBindings are the project's bindings; handedOn is how many
 	// bindings a delete takes with it, by binding ID.
-	projectBindings []SecretBinding
+	projectBindings []console.SecretBinding
 	bindingsErr     error
 	// heldGrants are what applies in a variable of the asking discobox.
-	heldGrants       []HeldGrant
+	heldGrants       []console.HeldGrant
 	unbindings       []string
 	handedOn         map[string]int
-	createdBindings  []NewBinding
+	createdBindings  []console.NewBinding
 	createBindingErr error
 	dismissed        []string
 	deleted          []string
@@ -201,23 +202,23 @@ type fakeSource struct {
 	hostToolErr error
 	toolsErr    error
 	// catalog is every discobox's tools; nil is testTools.
-	catalog []Tool
+	catalog []console.Tool
 
 	// addressed records which discoboxes were looked up; addressErr fails the
 	// lookup, and addresses is what a successful one reports.
 	addressed  []string
 	addressErr error
-	addresses  Addresses
+	addresses  console.Addresses
 
 	// execs is what the workspace's poll is told is running; execsErr fails
 	// the listing, openExecErr every attach, openExecErrFor one exec's
 	// attach, newShellErr the shell create.
-	execs       []Exec
+	execs       []console.Exec
 	execsErr    error
 	openExecErr error
 	// failedExecSandboxes, when set, replaces the listing as an attach fails:
 	// the server recording why a sandbox failed at the moment its attach does.
-	failedExecSandboxes []Sandbox
+	failedExecSandboxes []console.Sandbox
 	openExecErrFor      map[string]error
 	newShellErr         error
 	// newTerminalErr fails the terminal create.
@@ -235,7 +236,7 @@ type fakeSource struct {
 	// stands in for the config directory on this machine. editToolFile is what
 	// $EDITOR would have written; nil leaves the file as it was.
 	toolFiles    map[string]string
-	editToolFile func(file ToolFile) string
+	editToolFile func(file console.ToolFile) string
 	// pullDiffs are the files changed of a pull request, by its head, which
 	// its session draws; pullReviews the sessions PullReview was asked for,
 	// as "sandbox: base...head", and pullReviewErr fails it.
@@ -253,7 +254,7 @@ type fakeSource struct {
 	// services is what the services menu is told the discobox declares,
 	// servicesErr fails reading them, and serviceActs records every verb the
 	// window ran, as "<verb> <sandbox> <service>".
-	services       []Service
+	services       []console.Service
 	servicesErr    error
 	serviceErr     error
 	serviceActs    []string
@@ -264,7 +265,7 @@ type fakeSource struct {
 	// and FollowAudit hands each update on. auditFollows records which
 	// discoboxes were followed and auditStops how many follows have ended;
 	// auditDetails is what AuditDetail answers, by record ID.
-	audit        chan AuditUpdate
+	audit        chan console.AuditUpdate
 	auditFollows []string
 	auditStops   int
 	auditDetails map[string]string
@@ -277,7 +278,7 @@ type fakeSource struct {
 	// fails every read; issueReads counts the reads. comments records every
 	// comment posted, as "repository#number: body", and commentErr fails
 	// posting one.
-	issues     map[string]Issue
+	issues     map[string]console.Issue
 	issueErr   error
 	issueReads int
 	comments   []string
@@ -308,18 +309,18 @@ type fakeSource struct {
 	// pushErr fails the call as a whole, and pushCalls records every call as
 	// "<id> <held slug=commit,…>" so a test can hold the window to what it
 	// asked for and what it said it was already holding.
-	pushes    []SourcePush
+	pushes    []console.SourcePush
 	pushErr   error
 	pushCalls []string
 
 	// Calls, in order.
 	drafts      []string
-	views       []ListView
+	views       []console.ListView
 	lastSources []string
 	// nothingSaved is a machine no window has narrowed yet, which opens on
 	// every server, folder and tag rather than on its own folder.
 	nothingSaved bool
-	runs         []RunRequest
+	runs         []console.RunRequest
 	did          []string          // "verb id"
 	doErr        error             // what every lifecycle verb answers
 	doNotes      map[string]string // what a verb's answer notes, by sandbox
@@ -327,7 +328,7 @@ type fakeSource struct {
 	renames      []string          // "id name"
 	// settings is what BoxSettings answers per box, and updates every
 	// UpdateBox it was sent.
-	settings    map[string]BoxSettings
+	settings    map[string]console.BoxSettings
 	settingsErr error
 	updates     []boxUpdate
 	updateErr   error
@@ -351,7 +352,7 @@ type fakeSource struct {
 // promptText is the request's prompt as one string, which is what a test
 // asserts on: the window sends one argument, and `discobox run` sends the words
 // the shell split.
-func promptText(req RunRequest) string { return strings.Join(req.Prompt, " ") }
+func promptText(req console.RunRequest) string { return strings.Join(req.Prompt, " ") }
 
 // testHostID is the machine the test window is running on, which is what makes
 // a discobox created on another one recognizable as such.
@@ -372,23 +373,23 @@ const farHostID = "host_wilma000000000"
 var farHostKey = originkey.Host(farHostID)
 
 // cutFrom files a test sandbox as one this machine cut from root.
-func cutFrom(s Sandbox, root string) Sandbox {
+func cutFrom(s console.Sandbox, root string) console.Sandbox {
 	s.Source, s.OriginKey, s.SourceOriginKey, s.OriginHostID = root, testKey(root), testKey(root), testHostID
 	return s
 }
 
-func (f *fakeSource) PrimaryServer() string { return f.session.serverName("") }
+func (f *fakeSource) PrimaryServer() string { return f.session.ServerName("") }
 
-func (f *fakeSource) ForServer(server string) DataSource {
+func (f *fakeSource) ForServer(server string) console.DataSource {
 	if source := f.serverSources[server]; source != nil {
 		return source
 	}
 	return f
 }
 
-func newFakeSource(sandboxes ...Sandbox) *fakeSource {
+func newFakeSource(sandboxes ...console.Sandbox) *fakeSource {
 	return &fakeSource{
-		session: Session{
+		session: console.Session{
 			Project:        "default",
 			DefaultProject: "default",
 			Directory:      "/src/disco2",
@@ -409,17 +410,17 @@ func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 // itself, and the reserved shell. The second row is what makes every action
 // apply somewhere: `s` applies only to a harness that is not already the
 // default.
-func testHarnesses() []Harness {
+func testHarnesses() []console.Harness {
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
-	return []Harness{
+	return []console.Harness{
 		{
 			ID: "hc_claude", Name: "Claude", Slug: "claude",
 			Default: true, BuiltIn: true, Bundle: "ghcr.io/example/claude:latest",
 			Run:     []string{"claude"},
-			Secrets: []HarnessSecret{{Name: "ANTHROPIC_API_KEY", Required: true, Declared: true}},
-			Files: []HarnessFile{
-				{Path: ".claude.json", Content: "{}", Source: HarnessFileSaved},
-				{Path: "settings.json", Content: "{}", Source: HarnessFileFromBundle},
+			Secrets: []console.HarnessSecret{{Name: "ANTHROPIC_API_KEY", Required: true, Declared: true}},
+			Files: []console.HarnessFile{
+				{Path: ".claude.json", Content: "{}", Source: console.HarnessFileSaved},
+				{Path: "settings.json", Content: "{}", Source: console.HarnessFileFromBundle},
 			},
 			Updated: now.Add(-2 * time.Hour),
 		},
@@ -427,8 +428,8 @@ func testHarnesses() []Harness {
 			ID: "hc_codex", Name: "Codex", Slug: "codex",
 			BuiltIn: true, Bundle: "ghcr.io/example/codex:latest",
 			Run:     []string{"codex"},
-			Secrets: []HarnessSecret{{Name: "OPENAI_API_KEY", Required: true, Declared: true}},
-			Files:   []HarnessFile{{Path: "config.toml", Content: "{}", Source: HarnessFileSaved}},
+			Secrets: []console.HarnessSecret{{Name: "OPENAI_API_KEY", Required: true, Declared: true}},
+			Files:   []console.HarnessFile{{Path: "config.toml", Content: "{}", Source: console.HarnessFileSaved}},
 			Updated: now.Add(-30 * time.Minute),
 		},
 		{
@@ -452,11 +453,11 @@ func testHarnesses() []Harness {
 // Session is the fake's session. Unless a test says the folder is a fresh one,
 // it hands back a view saved on the window's own folder: most tests are about
 // one folder's discoboxes, which is what a window left narrowed there opens on.
-func (f *fakeSource) Session(context.Context) (Session, error) {
+func (f *fakeSource) Session(context.Context) (console.Session, error) {
 	s := f.session
 	if !f.nothingSaved && s.View.IsZero() {
-		own := s.folder()
-		s.View = ListView{FolderKey: own.key, FolderLabel: own.label, FolderSource: own.source, FolderLocal: own.local}
+		own := s.Folder()
+		s.View = console.ListView{FolderKey: own.Key, FolderLabel: own.Label, FolderSource: own.Source, FolderLocal: own.Local}
 	}
 	return s, nil
 }
@@ -492,7 +493,7 @@ func (f *fakeSource) forwardsAskedFor() []string {
 }
 
 // SaveView records the filters the window handed the store, in order.
-func (f *fakeSource) SaveView(_ context.Context, view ListView) error {
+func (f *fakeSource) SaveView(_ context.Context, view console.ListView) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.views = append(f.views, view)
@@ -507,26 +508,26 @@ func (f *fakeSource) SaveLastSource(_ context.Context, source string) error {
 	return nil
 }
 
-func (f *fakeSource) List(context.Context) (Listing, error) {
+func (f *fakeSource) List(context.Context) (console.Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.listErr != nil {
-		return Listing{}, f.listErr
+		return console.Listing{}, f.listErr
 	}
-	return Listing{
-		Sandboxes:   append([]Sandbox(nil), f.sandboxes...),
+	return console.Listing{
+		Sandboxes:   append([]console.Sandbox(nil), f.sandboxes...),
 		Unreachable: append([]string(nil), f.unreachable...),
 		Listed:      maps.Clone(f.listed),
 	}, nil
 }
 
-func (f *fakeSource) Resources(context.Context) (Resources, error) {
+func (f *fakeSource) Resources(context.Context) (console.Resources, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.resources, nil
 }
 
-func (f *fakeSource) setResources(r Resources) {
+func (f *fakeSource) setResources(r console.Resources) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.resources = r
@@ -535,13 +536,13 @@ func (f *fakeSource) setResources(r Resources) {
 // runRequests is every create the window has asked for. A create runs on the
 // driver's own goroutine, so a test waiting for one reads it through here
 // rather than off the field.
-func (f *fakeSource) runRequests() []RunRequest {
+func (f *fakeSource) runRequests() []console.RunRequest {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]RunRequest(nil), f.runs...)
+	return append([]console.RunRequest(nil), f.runs...)
 }
 
-func (f *fakeSource) Run(_ context.Context, req RunRequest, report, warn func(string), accepted func(Sandbox)) (Sandbox, error) {
+func (f *fakeSource) Run(_ context.Context, req console.RunRequest, report, warn func(string), accepted func(console.Sandbox)) (console.Sandbox, error) {
 	f.mu.Lock()
 	f.runs = append(f.runs, req)
 	gate := f.runGate
@@ -560,10 +561,10 @@ func (f *fakeSource) Run(_ context.Context, req RunRequest, report, warn func(st
 	}
 	if err := f.runErr; err != nil {
 		f.mu.Unlock()
-		return Sandbox{}, err
+		return console.Sandbox{}, err
 	}
 	deliver, deliverErr := f.deliverGate, f.deliverErr
-	created := Sandbox{ID: f.createdID, Name: promptText(req), State: StateStarting}
+	created := console.Sandbox{ID: f.createdID, Name: promptText(req), State: console.StateStarting}
 	accepted(created)
 	f.mu.Unlock()
 	if deliver != nil {
@@ -590,7 +591,7 @@ func (f *fakeSource) WatchProvisioning(_ context.Context, sandboxID string, repo
 	}
 }
 
-func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report func(string), _ CredentialUI) error {
+func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report func(string), _ console.CredentialUI) error {
 	f.mu.Lock()
 	f.delivered = append(f.delivered, sandboxID)
 	f.execOpensAtDelivery = append(f.execOpensAtDelivery, len(f.execOpens))
@@ -603,7 +604,7 @@ func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report f
 	return err
 }
 
-func (f *fakeSource) Workspace(context.Context, string) (SourceWorkspace, error) {
+func (f *fakeSource) Workspace(context.Context, string) (console.SourceWorkspace, error) {
 	if f.workspaceGate != nil {
 		<-f.workspaceGate
 	}
@@ -613,12 +614,12 @@ func (f *fakeSource) Workspace(context.Context, string) (SourceWorkspace, error)
 // ResolveSource answers the way the real one does for a directory that is
 // there: what was typed, unchanged. sourceErr is what a test stages for one
 // that is not.
-func (f *fakeSource) ResolveSource(_ context.Context, source string) (Source, error) {
+func (f *fakeSource) ResolveSource(_ context.Context, source string) (console.Source, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.resolved = append(f.resolved, source)
 	if f.sourceErr != nil {
-		return Source{}, f.sourceErr
+		return console.Source{}, f.sourceErr
 	}
 	// Filed under the directory the ref sits in, which is what the real one's
 	// repository root comes to for a directory that is one.
@@ -626,7 +627,7 @@ func (f *fakeSource) ResolveSource(_ context.Context, source string) (Source, er
 	if parsed, err := sourceref.Parse(source); err == nil {
 		dir = parsed.Location
 	}
-	return Source{Value: source, Directory: dir, OriginKey: testKey(dir)}, nil
+	return console.Source{Value: source, Directory: dir, OriginKey: testKey(dir)}, nil
 }
 
 // setSourceErr moves what ResolveSource answers while the window is up, so a
@@ -637,11 +638,11 @@ func (f *fakeSource) setSourceErr(err error) {
 	f.sourceErr = err
 }
 
-func (f *fakeSource) MeasureDirectory(_ context.Context, dir string) (func() DirectoryTotal, func()) {
+func (f *fakeSource) MeasureDirectory(_ context.Context, dir string) (func() console.DirectoryTotal, func()) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.measured = append(f.measured, dir)
-	return func() DirectoryTotal {
+	return func() console.DirectoryTotal {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			return f.total
@@ -658,7 +659,7 @@ func (f *fakeSource) measuredDirs() []string {
 	return append([]string(nil), f.measured...)
 }
 
-func (f *fakeSource) setTotal(total DirectoryTotal) {
+func (f *fakeSource) setTotal(total console.DirectoryTotal) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.total = total
@@ -670,7 +671,7 @@ func (f *fakeSource) stoppedCount() int {
 	return f.stopped
 }
 
-func (f *fakeSource) Do(_ context.Context, verb Verb, id string, _ CredentialUI) (string, error) {
+func (f *fakeSource) Do(_ context.Context, verb console.Verb, id string, _ console.CredentialUI) (string, error) {
 	if f.doGate != nil {
 		<-f.doGate
 	}
@@ -682,19 +683,19 @@ func (f *fakeSource) Do(_ context.Context, verb Verb, id string, _ CredentialUI)
 
 type boxUpdate struct {
 	id     string
-	update BoxSettingsUpdate
+	update console.BoxSettingsUpdate
 }
 
-func (f *fakeSource) BoxSettings(_ context.Context, id string) (BoxSettings, error) {
+func (f *fakeSource) BoxSettings(_ context.Context, id string) (console.BoxSettings, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.settingsErr != nil {
-		return BoxSettings{}, f.settingsErr
+		return console.BoxSettings{}, f.settingsErr
 	}
 	return f.settings[id], nil
 }
 
-func (f *fakeSource) UpdateBox(_ context.Context, id string, update BoxSettingsUpdate) error {
+func (f *fakeSource) UpdateBox(_ context.Context, id string, update console.BoxSettingsUpdate) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.updates = append(f.updates, boxUpdate{id: id, update: update})
@@ -742,10 +743,10 @@ func (f *fakeSource) openedEditors() []editorOpen {
 
 // testTools is the catalog a discobox offers in these tests: the image's two
 // and the CLI's two, the way the real declarations have them.
-func testTools() []Tool {
-	return []Tool{
+func testTools() []console.Tool {
+	return []console.Tool{
 		{ID: tools.DiffID, Key: "d", Label: "diff", Detail: "what has changed, in discobox-review"},
-		{ID: "fresh", Key: "f", Label: "fresh", Detail: "the fresh editor, in the box", Files: []ToolFile{
+		{ID: "fresh", Key: "f", Label: "fresh", Detail: "the fresh editor, in the box", Files: []console.ToolFile{
 			{Tool: "fresh", Name: "config.jsonc", Home: ".config/fresh/config.json", Default: "// vim: set ft=jsonc :\n{}\n"},
 			{Tool: "fresh", Name: "live_diff.json", Home: ".local/share/fresh/orchestrator/state/live_diff.json", Default: "{}\n"},
 		}},
@@ -754,14 +755,14 @@ func testTools() []Tool {
 	}
 }
 
-func (f *fakeSource) tools() []Tool {
+func (f *fakeSource) tools() []console.Tool {
 	if f.catalog == nil {
 		return testTools()
 	}
 	return f.catalog
 }
 
-func (f *fakeSource) Tools(_ context.Context, id string) ([]Tool, error) {
+func (f *fakeSource) Tools(_ context.Context, id string) ([]console.Tool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.toolLookups = append(f.toolLookups, id)
@@ -785,7 +786,7 @@ func (f *fakeSource) endedExecs() []string {
 	return append([]string(nil), f.ended...)
 }
 
-func (f *fakeSource) PushSources(_ context.Context, id string, held map[string]string) ([]SourcePush, error) {
+func (f *fakeSource) PushSources(_ context.Context, id string, held map[string]string) ([]console.SourcePush, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	holds := make([]string, 0, len(held))
@@ -797,7 +798,7 @@ func (f *fakeSource) PushSources(_ context.Context, id string, held map[string]s
 	if f.pushErr != nil {
 		return nil, f.pushErr
 	}
-	pushes := make([]SourcePush, 0, len(f.pushes))
+	pushes := make([]console.SourcePush, 0, len(f.pushes))
 	for _, push := range f.pushes {
 		// A source held at what it names now is resolved and not sent again,
 		// which is what the data source does with a push that already failed.
@@ -833,15 +834,15 @@ func (f *fakeSource) AddressedServer(_ context.Context, server string) (string, 
 	return name, ok, nil
 }
 
-func (f *fakeSource) Addresses(_ context.Context, id string) (Addresses, error) {
+func (f *fakeSource) Addresses(_ context.Context, id string) (console.Addresses, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.addressed = append(f.addressed, id)
 	if f.addressErr != nil {
-		return Addresses{}, f.addressErr
+		return console.Addresses{}, f.addressErr
 	}
-	if f.addresses == (Addresses{}) {
-		return Addresses{SSH: "ssh " + id, Git: "ssh://" + id + "/home/discobox/repo"}, nil
+	if f.addresses == (console.Addresses{}) {
+		return console.Addresses{SSH: "ssh " + id, Git: "ssh://" + id + "/home/discobox/repo"}, nil
 	}
 	return f.addresses, nil
 }
@@ -852,16 +853,16 @@ func (f *fakeSource) addressLookups() []string {
 	return append([]string(nil), f.addressed...)
 }
 
-func (f *fakeSource) Execs(context.Context, string) ([]Exec, error) {
+func (f *fakeSource) Execs(context.Context, string) ([]console.Exec, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.execsErr != nil {
 		return nil, f.execsErr
 	}
-	return append([]Exec(nil), f.execs...), nil
+	return append([]console.Exec(nil), f.execs...), nil
 }
 
-func (f *fakeSource) OpenExec(_ context.Context, id, execID string, cols, rows int) (Terminal, error) {
+func (f *fakeSource) OpenExec(_ context.Context, id, execID string, cols, rows int) (console.Terminal, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, execID, cols, rows))
@@ -877,7 +878,7 @@ func (f *fakeSource) OpenExec(_ context.Context, id, execID string, cols, rows i
 	return f.newExecTerminal(execID), nil
 }
 
-func (f *fakeSource) Forward(_ context.Context, id string) (Forward, error) {
+func (f *fakeSource) Forward(_ context.Context, id string) (console.Forward, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.forwardErr != nil {
@@ -900,19 +901,19 @@ type fakeForward struct {
 	source *fakeSource
 
 	mu       sync.Mutex
-	bindings []Binding
+	bindings []console.Binding
 	closed   bool
 	changed  chan struct{}
 }
 
-func newFakeForward(bindings ...Binding) *fakeForward {
+func newFakeForward(bindings ...console.Binding) *fakeForward {
 	return &fakeForward{bindings: bindings, changed: make(chan struct{}, 1)}
 }
 
-func (f *fakeForward) Bindings() []Binding {
+func (f *fakeForward) Bindings() []console.Binding {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]Binding(nil), f.bindings...)
+	return append([]console.Binding(nil), f.bindings...)
 }
 
 func (f *fakeForward) Events() <-chan struct{} { return f.changed }
@@ -944,7 +945,7 @@ func (f *fakeForward) Close() error {
 
 // bind adds a binding and wakes whoever is waiting, the way a forwarder that
 // just took a local port does.
-func (f *fakeForward) bind(binding Binding) {
+func (f *fakeForward) bind(binding console.Binding) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.closed {
@@ -957,14 +958,14 @@ func (f *fakeForward) bind(binding Binding) {
 	}
 }
 
-func (f *fakeSource) NewShell(_ context.Context, id string, cols, rows int) (Exec, Terminal, error) {
+func (f *fakeSource) NewShell(_ context.Context, id string, cols, rows int) (console.Exec, console.Terminal, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.newShellErr != nil {
-		return Exec{}, nil, f.newShellErr
+		return console.Exec{}, nil, f.newShellErr
 	}
 	f.newShellID++
-	exec := Exec{
+	exec := console.Exec{
 		ID:        fmt.Sprintf("exec_shell%d", f.newShellID),
 		Command:   []string{"/bin/zsh"},
 		Tty:       true,
@@ -977,18 +978,18 @@ func (f *fakeSource) NewShell(_ context.Context, id string, cols, rows int) (Exe
 	return exec, f.newExecTerminal(exec.ID), nil
 }
 
-func (f *fakeSource) NewTerminal(_ context.Context, id string, cols, rows int) (Exec, Terminal, error) {
+func (f *fakeSource) NewTerminal(_ context.Context, id string, cols, rows int) (console.Exec, console.Terminal, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.newTerminalErr != nil {
-		return Exec{}, nil, f.newTerminalErr
+		return console.Exec{}, nil, f.newTerminalErr
 	}
 	f.newTerminalID++
 	harness := f.terminalHarness
 	if harness == "" {
 		harness = "claude-code"
 	}
-	exec := Exec{
+	exec := console.Exec{
 		ID:        fmt.Sprintf("exec_term%d", f.newTerminalID),
 		Command:   []string{"claude"},
 		Harness:   harness,
@@ -1002,17 +1003,17 @@ func (f *fakeSource) NewTerminal(_ context.Context, id string, cols, rows int) (
 	return exec, f.newExecTerminal(exec.ID), nil
 }
 
-func (f *fakeSource) Services(context.Context, string) ([]Service, error) {
+func (f *fakeSource) Services(context.Context, string) ([]console.Service, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.servicesErr != nil {
 		return nil, f.servicesErr
 	}
-	return append([]Service(nil), f.services...), nil
+	return append([]console.Service(nil), f.services...), nil
 }
 
 // setServices moves what the service poll reports while a workspace is up.
-func (f *fakeSource) setServices(services []Service) {
+func (f *fakeSource) setServices(services []console.Service) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.services = services
@@ -1041,16 +1042,16 @@ func (f *fakeSource) ServiceLogs(_ context.Context, _, serviceID string) ([]byte
 	return f.serviceLogs[serviceID], nil
 }
 
-func (f *fakeSource) Issue(_ context.Context, repository string, number int, _ bool) (Issue, error) {
+func (f *fakeSource) Issue(_ context.Context, repository string, number int, _ bool) (console.Issue, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.issueReads++
 	if f.issueErr != nil {
-		return Issue{}, f.issueErr
+		return console.Issue{}, f.issueErr
 	}
 	issue, ok := f.issues[fmt.Sprintf("%s#%d", repository, number)]
 	if !ok {
-		return Issue{}, errors.New("GitHub answered 404: Not Found")
+		return console.Issue{}, errors.New("GitHub answered 404: Not Found")
 	}
 	return issue, nil
 }
@@ -1068,7 +1069,7 @@ func (f *fakeSource) CommentOnIssue(_ context.Context, repository string, number
 // PullReview starts the files changed as a session, which draws the diff
 // pullDiffs has for the head, as discobox-review would over it, and records
 // what it was asked for.
-func (f *fakeSource) PullReview(_ context.Context, id string, pull PullRequest, cols, rows int) (Exec, Terminal, error) {
+func (f *fakeSource) PullReview(_ context.Context, id string, pull console.PullRequest, cols, rows int) (console.Exec, console.Terminal, error) {
 	f.mu.Lock()
 	gate := f.pullReviewGate
 	f.mu.Unlock()
@@ -1078,11 +1079,11 @@ func (f *fakeSource) PullReview(_ context.Context, id string, pull PullRequest, 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.pullReviewErr != nil {
-		return Exec{}, nil, f.pullReviewErr
+		return console.Exec{}, nil, f.pullReviewErr
 	}
 	f.pullReviews = append(f.pullReviews, fmt.Sprintf("%s: %s...%s", id, pull.BaseSHA, pull.HeadSHA))
 	f.newToolID++
-	exec := Exec{
+	exec := console.Exec{
 		ID:           fmt.Sprintf("exec_files%d", f.newToolID),
 		Command:      []string{"discobox-review"},
 		FilesChanged: true,
@@ -1133,7 +1134,7 @@ func (f *fakeSource) SetIssueState(_ context.Context, repository string, number 
 	return nil
 }
 
-func (f *fakeSource) FollowAudit(ctx context.Context, sandboxID string, report func(AuditUpdate)) error {
+func (f *fakeSource) FollowAudit(ctx context.Context, sandboxID string, report func(console.AuditUpdate)) error {
 	f.mu.Lock()
 	f.auditFollows = append(f.auditFollows, sandboxID)
 	feed := f.audit
@@ -1153,16 +1154,16 @@ func (f *fakeSource) FollowAudit(ctx context.Context, sandboxID string, report f
 	}
 }
 
-func (f *fakeSource) AuditDetail(_ context.Context, _, recordID string) (AuditRecordDetail, error) {
+func (f *fakeSource) AuditDetail(_ context.Context, _, recordID string) (console.AuditRecordDetail, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.auditReads = append(f.auditReads, recordID)
 	text, ok := f.auditDetails[recordID]
 	if !ok {
-		return AuditRecordDetail{}, fmt.Errorf("no audit record %s", recordID)
+		return console.AuditRecordDetail{}, fmt.Errorf("no audit record %s", recordID)
 	}
-	detail := AuditRecordDetail{Text: text}
-	for _, part := range []string{AuditRequestBody, AuditResponseBody, AuditStream} {
+	detail := console.AuditRecordDetail{Text: text}
+	for _, part := range []string{console.AuditRequestBody, console.AuditResponseBody, console.AuditStream} {
 		if _, ok := f.auditBodies[recordID+"/"+part]; ok {
 			detail.Recordings = append(detail.Recordings, part)
 		}
@@ -1187,7 +1188,7 @@ func (f *fakeSource) auditState() (follows []string, stops int, reads []string) 
 	return append([]string(nil), f.auditFollows...), f.auditStops, append([]string(nil), f.auditReads...)
 }
 
-func (f *fakeSource) DoService(_ context.Context, verb ServiceVerb, sandboxID, serviceID string) error {
+func (f *fakeSource) DoService(_ context.Context, verb console.ServiceVerb, sandboxID, serviceID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.serviceErr != nil {
@@ -1197,12 +1198,12 @@ func (f *fakeSource) DoService(_ context.Context, verb ServiceVerb, sandboxID, s
 	return nil
 }
 
-func (f *fakeSource) NewTool(_ context.Context, id, toolID string, cols, rows int) (Exec, Terminal, error) {
+func (f *fakeSource) NewTool(_ context.Context, id, toolID string, cols, rows int) (console.Exec, console.Terminal, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.toolRuns = append(f.toolRuns, toolID)
 	if f.newToolErr != nil {
-		return Exec{}, nil, f.newToolErr
+		return console.Exec{}, nil, f.newToolErr
 	}
 	// The files go in before the session, the way the real adapter does it.
 	for _, t := range f.tools() {
@@ -1214,7 +1215,7 @@ func (f *fakeSource) NewTool(_ context.Context, id, toolID string, cols, rows in
 		}
 	}
 	f.newToolID++
-	exec := Exec{
+	exec := console.Exec{
 		ID:        fmt.Sprintf("exec_tool%d", f.newToolID),
 		Command:   []string{toolID},
 		Tool:      toolID,
@@ -1229,13 +1230,13 @@ func (f *fakeSource) NewTool(_ context.Context, id, toolID string, cols, rows in
 }
 
 // toolFileKeyOf names a tool file the way the fake's own map does.
-func toolFileKeyOf(file ToolFile) string { return file.Tool + "/" + file.Name }
+func toolFileKeyOf(file console.ToolFile) string { return file.Tool + "/" + file.Name }
 
-func (f *fakeSource) ToolFilePath(file ToolFile) string {
+func (f *fakeSource) ToolFilePath(file console.ToolFile) string {
 	return "/config/discobox/tools/" + toolFileKeyOf(file)
 }
 
-func (f *fakeSource) EditToolFile(_ context.Context, file ToolFile, _ io.Reader, _, _ io.Writer) (bool, error) {
+func (f *fakeSource) EditToolFile(_ context.Context, file console.ToolFile, _ io.Reader, _, _ io.Writer) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.editedTools = append(f.editedTools, toolFileKeyOf(file))
@@ -1346,7 +1347,7 @@ func (f *fakeSource) execTerm(execID string) *fakeTerminal {
 }
 
 // addExec puts a session into the listing, as one started elsewhere would be.
-func (f *fakeSource) addExec(exec Exec) {
+func (f *fakeSource) addExec(exec console.Exec) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.execs = append(f.execs, exec)
@@ -1370,13 +1371,13 @@ func (f *fakeSource) endExec(execID string) {
 	}
 }
 
-func (f *fakeSource) Pools(_ context.Context, _ string) ([]Pool, error) {
+func (f *fakeSource) Pools(_ context.Context, _ string) ([]console.Pool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]Pool(nil), f.pools...), nil
+	return append([]console.Pool(nil), f.pools...), nil
 }
 
-func (f *fakeSource) Harnesses(_ context.Context, server string) ([]Harness, error) {
+func (f *fakeSource) Harnesses(_ context.Context, server string) ([]console.Harness, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "Harnesses@"+server)
@@ -1384,27 +1385,27 @@ func (f *fakeSource) Harnesses(_ context.Context, server string) ([]Harness, err
 		return nil, f.harnessErr
 	}
 	if on, ok := f.harnessesOn[server]; ok {
-		return append([]Harness(nil), on...), nil
+		return append([]console.Harness(nil), on...), nil
 	}
-	return append([]Harness(nil), f.harnesses...), nil
+	return append([]console.Harness(nil), f.harnesses...), nil
 }
 
-func (f *fakeSource) HarnessSecrets(_ context.Context, server, _ string) ([]HarnessSecret, error) {
+func (f *fakeSource) HarnessSecrets(_ context.Context, server, _ string) ([]console.HarnessSecret, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "HarnessSecrets@"+server)
-	return append([]HarnessSecret(nil), f.secrets...), nil
+	return append([]console.HarnessSecret(nil), f.secrets...), nil
 }
 
-func (f *fakeSource) CreateHarnessVariant(_ context.Context, server string, variant NewHarnessVariant) (Harness, error) {
+func (f *fakeSource) CreateHarnessVariant(_ context.Context, server string, variant console.NewHarnessVariant) (console.Harness, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "CreateHarnessVariant@"+server)
 	if f.variantErr != nil {
-		return Harness{}, f.variantErr
+		return console.Harness{}, f.variantErr
 	}
 	f.createdVariants = append(f.createdVariants, variant)
-	h := Harness{ID: "variant-created", Name: variant.Name, Slug: variant.Slug, Parent: variant.ParentID}
+	h := console.Harness{ID: "variant-created", Name: variant.Name, Slug: variant.Slug, Parent: variant.ParentID}
 	if on, ok := f.harnessesOn[server]; ok {
 		f.harnessesOn[server] = append(on, h)
 	} else {
@@ -1413,7 +1414,7 @@ func (f *fakeSource) CreateHarnessVariant(_ context.Context, server string, vari
 	return h, nil
 }
 
-func (f *fakeSource) DoHarness(_ context.Context, server string, verb HarnessVerb, id string) error {
+func (f *fakeSource) DoHarness(_ context.Context, server string, verb console.HarnessVerb, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "DoHarness@"+server)
@@ -1433,7 +1434,7 @@ func (f *fakeSource) EditHarnessFile(_ context.Context, server, id, path string,
 // lands on the pane's screen, and what the pane types lands in typed().
 type fakeTerminal struct {
 	out    chan []byte
-	events chan TerminalEvent
+	events chan console.TerminalEvent
 	closed chan struct{}
 	once   sync.Once
 
@@ -1446,7 +1447,7 @@ type fakeTerminal struct {
 func newFakeTerminal() *fakeTerminal {
 	return &fakeTerminal{
 		out:    make(chan []byte, 16),
-		events: make(chan TerminalEvent, 4),
+		events: make(chan console.TerminalEvent, 4),
 		closed: make(chan struct{}),
 	}
 }
@@ -1486,7 +1487,7 @@ func (f *fakeTerminal) Close() error {
 	return nil
 }
 
-func (f *fakeTerminal) Events() <-chan TerminalEvent { return f.events }
+func (f *fakeTerminal) Events() <-chan console.TerminalEvent { return f.events }
 
 func (f *fakeTerminal) send(s string) { f.out <- []byte(s) }
 
@@ -1527,7 +1528,7 @@ func (f *fakeTerminal) size() [2]int {
 
 // newTestModel builds a window with color forced off, so a frame is plain text
 // a test can read, and with a fixed clock so the age column never changes.
-func newColorModel(t *testing.T, ds DataSource) *Model {
+func newColorModel(t *testing.T, ds console.DataSource) *Model {
 	t.Helper()
 	m := newTestModel(t, ds)
 	// The frame is rebuilt with color on, so what a real terminal is sent — the
@@ -1536,7 +1537,7 @@ func newColorModel(t *testing.T, ds DataSource) *Model {
 	return m
 }
 
-func newTestModel(t *testing.T, ds DataSource) *Model {
+func newTestModel(t *testing.T, ds console.DataSource) *Model {
 	t.Helper()
 	// The whole window is built colorless, composer included, so a frame is
 	// plain text a test can read. NO_COLOR is what does it, set once for the
@@ -1567,7 +1568,7 @@ func newTestModel(t *testing.T, ds DataSource) *Model {
 
 // newOpeningModel builds a window nobody has touched yet and loads it, so a
 // test can look at where it opened.
-func newOpeningModel(t *testing.T, ds DataSource) *Model {
+func newOpeningModel(t *testing.T, ds console.DataSource) *Model {
 	t.Helper()
 	m := New(t.Context(), ds)
 	m.logo = logo{}
@@ -1808,8 +1809,8 @@ func showAllFolders(t *testing.T, m *Model) {
 	t.Helper()
 	send(t, m, keyPress("tab"))
 	filterTo(t, m, allFolders)
-	if m.list.folder.key != "" {
-		t.Fatalf("folder filter is %q, want every folder", m.list.folder.label)
+	if m.list.folder.Key != "" {
+		t.Fatalf("folder filter is %q, want every folder", m.list.folder.Label)
 	}
 	if m.focus == focusFilter {
 		send(t, m, keyPress("down"))
@@ -1868,77 +1869,77 @@ func markFilter(t *testing.T, m *Model, label string) {
 	send(t, m, keyPress(" "))
 }
 
-func testSandboxes() []Sandbox {
+func testSandboxes() []console.Sandbox {
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
-	return []Sandbox{
+	return []console.Sandbox{
 		{
-			ID: "sbx_one", Name: "fix flaky pool reaper tests", TerminalTitle: "fix flaky pool reaper tests", State: StateRunning, HasRuntime: true,
+			ID: "sbx_one", Name: "fix flaky pool reaper tests", TerminalTitle: "fix flaky pool reaper tests", State: console.StateRunning, HasRuntime: true,
 			Harness: "claude", OriginKey: testKey("/src/disco2"), OriginHostID: testHostID,
 			Source: "/src/disco2", SourceOriginKey: testKey("/src/disco2"),
 			Branch: "main", Commit: "a3f9c21", Dirty: true,
-			Created: now.Add(-2 * time.Minute), Diff: DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7},
+			Created: now.Add(-2 * time.Minute), Diff: console.DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7},
 		},
 		{
-			ID: "sbx_two", Name: "exec/terminal consolidation", TerminalTitle: "exec/terminal consolidation", State: StateRunning, HasRuntime: true,
+			ID: "sbx_two", Name: "exec/terminal consolidation", TerminalTitle: "exec/terminal consolidation", State: console.StateRunning, HasRuntime: true,
 			Harness: "claude", OriginKey: testKey("/src/disco2"), OriginHostID: testHostID,
 			Source: "/src/disco2", SourceOriginKey: testKey("/src/disco2"),
 			Branch: "main", Commit: "a3f9c21",
 			Created: now.Add(-18 * time.Minute), Upgrade: true,
-			Diff: DiffStat{Known: true, Added: 903, Deleted: 511, Files: 24},
+			Diff: console.DiffStat{Known: true, Added: 903, Deleted: 511, Files: 24},
 		},
 		{
-			ID: "sbx_three", Name: "openapi: sandbox upgrade field", TerminalTitle: "openapi: sandbox upgrade field", State: StateStopped, HasRuntime: true,
+			ID: "sbx_three", Name: "openapi: sandbox upgrade field", TerminalTitle: "openapi: sandbox upgrade field", State: console.StateStopped, HasRuntime: true,
 			Harness: "codex", OriginKey: testKey("/src/obot"), OriginHostID: testHostID,
 			Source: "/src/obot", SourceOriginKey: testKey("/src/obot"),
 			Branch: "main", Commit: "1c713f6",
-			Created: now.Add(-time.Hour), Diff: DiffStat{Known: true},
+			Created: now.Add(-time.Hour), Diff: console.DiffStat{Known: true},
 		},
 		{
-			ID: "sbx_four", Name: "bats harness-configure endpoints", TerminalTitle: "bats harness-configure endpoints", State: StateArchived,
+			ID: "sbx_four", Name: "bats harness-configure endpoints", TerminalTitle: "bats harness-configure endpoints", State: console.StateArchived,
 			Harness: "codex", OriginKey: testKey("https://github.com/acme/foo"), OriginHostID: testHostID,
 			Source: "https://github.com/acme/foo", SourceRemote: true, SourceOriginKey: testKey("https://github.com/acme/foo"),
 			Branch: "main", Commit: "41a9507",
-			Created: now.Add(-48 * time.Hour), Diff: DiffStat{Known: true, Added: 240, Deleted: 96, Files: 11},
+			Created: now.Add(-48 * time.Hour), Diff: console.DiffStat{Known: true, Added: 240, Deleted: 96, Files: 11},
 		},
 	}
 }
 
-func (f *fakeSource) CredentialRequests(context.Context) ([]CredentialRequest, error) {
+func (f *fakeSource) CredentialRequests(context.Context) ([]console.CredentialRequest, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]CredentialRequest(nil), f.requests...), f.requestsErr
+	return append([]console.CredentialRequest(nil), f.requests...), f.requestsErr
 }
 
-func (f *fakeSource) SecretRejections(context.Context) ([]SecretRejection, error) {
+func (f *fakeSource) SecretRejections(context.Context) ([]console.SecretRejection, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]SecretRejection(nil), f.rejections...), f.rejectionsErr
+	return append([]console.SecretRejection(nil), f.rejections...), f.rejectionsErr
 }
 
-func (f *fakeSource) Secrets(_ context.Context, server string) ([]Secret, error) {
+func (f *fakeSource) Secrets(_ context.Context, server string) ([]console.Secret, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "Secrets@"+server)
 	if on, ok := f.secretsOn[server]; ok {
-		return append([]Secret(nil), on...), f.secretsErr
+		return append([]console.Secret(nil), on...), f.secretsErr
 	}
-	return append([]Secret(nil), f.projectSecrets...), f.secretsErr
+	return append([]console.Secret(nil), f.projectSecrets...), f.secretsErr
 }
 
-func (f *fakeSource) CreateSecret(_ context.Context, server string, secret NewSecret) (Secret, error) {
+func (f *fakeSource) CreateSecret(_ context.Context, server string, secret console.NewSecret) (console.Secret, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "CreateSecret@"+server)
 	if f.createSecretErr != nil {
-		return Secret{}, f.createSecretErr
+		return console.Secret{}, f.createSecretErr
 	}
 	f.createdSecrets = append(f.createdSecrets, secret)
-	created := Secret{ID: "sec_new", Name: secret.Name, Type: secret.Type, Routes: secret.Routes}
+	created := console.Secret{ID: "sec_new", Name: secret.Name, Type: secret.Type, Routes: secret.Routes}
 	f.projectSecrets = append(f.projectSecrets, created)
 	return created, nil
 }
 
-func (f *fakeSource) ApproveCredentialRequest(_ context.Context, server string, approval Approval) error {
+func (f *fakeSource) ApproveCredentialRequest(_ context.Context, server string, approval console.Approval) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "ApproveCredentialRequest@"+server)
@@ -1968,7 +1969,7 @@ func (f *fakeSource) DismissRefresh(_ context.Context, server, requestID string)
 	return nil
 }
 
-func (f *fakeSource) RefreshSecret(_ context.Context, server string, renewal Renewal) error {
+func (f *fakeSource) RefreshSecret(_ context.Context, server string, renewal console.Renewal) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "RefreshSecret@"+server)
@@ -1980,7 +1981,7 @@ func (f *fakeSource) RefreshSecret(_ context.Context, server string, renewal Ren
 	return nil
 }
 
-func (f *fakeSource) ApproveTrustRequest(_ context.Context, server string, approval TrustApproval) error {
+func (f *fakeSource) ApproveTrustRequest(_ context.Context, server string, approval console.TrustApproval) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "ApproveTrustRequest@"+server)
@@ -2016,7 +2017,7 @@ func (f *fakeSource) dropRequestLocked(requestID string) {
 // UpdateSecret records each part of an edit the way the server would apply it,
 // so a test can assert on what the window asked for rather than on how many
 // calls it took to ask.
-func (f *fakeSource) UpdateSecret(_ context.Context, server, secretID string, update SecretUpdate) error {
+func (f *fakeSource) UpdateSecret(_ context.Context, server, secretID string, update console.SecretUpdate) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "UpdateSecret@"+server)
@@ -2029,7 +2030,7 @@ func (f *fakeSource) UpdateSecret(_ context.Context, server, secretID string, up
 
 // applySecretUpdateLocked records a change to a secret and makes it, whether it
 // came as an edit or with an approval.
-func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdate) {
+func (f *fakeSource) applySecretUpdateLocked(secretID string, update console.SecretUpdate) {
 	f.updated = append(f.updated, update)
 	if update.MaxTTLSeconds != nil {
 		f.limited = append(f.limited, fmt.Sprintf("%s=%d", secretID, *update.MaxTTLSeconds))
@@ -2053,21 +2054,21 @@ func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdat
 	}
 }
 
-func (f *fakeSource) HeldGrants(_ context.Context, server, _, _ string) ([]HeldGrant, error) {
+func (f *fakeSource) HeldGrants(_ context.Context, server, _, _ string) ([]console.HeldGrant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "HeldGrants@"+server)
-	return append([]HeldGrant(nil), f.heldGrants...), nil
+	return append([]console.HeldGrant(nil), f.heldGrants...), nil
 }
 
-func (f *fakeSource) Bindings(_ context.Context, server string, filter BindingFilter) ([]SecretBinding, error) {
+func (f *fakeSource) Bindings(_ context.Context, server string, filter console.BindingFilter) ([]console.SecretBinding, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "Bindings@"+server)
 	if f.bindingsErr != nil {
 		return nil, f.bindingsErr
 	}
-	var out []SecretBinding
+	var out []console.SecretBinding
 	for _, b := range f.projectBindings {
 		if filter.SecretID == "" || b.SecretID == filter.SecretID {
 			out = append(out, b)
@@ -2076,15 +2077,15 @@ func (f *fakeSource) Bindings(_ context.Context, server string, filter BindingFi
 	return out, nil
 }
 
-func (f *fakeSource) CreateBinding(_ context.Context, server string, binding NewBinding) (SecretBinding, error) {
+func (f *fakeSource) CreateBinding(_ context.Context, server string, binding console.NewBinding) (console.SecretBinding, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "CreateBinding@"+server)
 	if f.createBindingErr != nil {
-		return SecretBinding{}, f.createBindingErr
+		return console.SecretBinding{}, f.createBindingErr
 	}
 	f.createdBindings = append(f.createdBindings, binding)
-	made := SecretBinding{
+	made := console.SecretBinding{
 		ID: "binding_new", SecretID: binding.SecretID, TargetKind: binding.TargetKind,
 		TargetID: binding.TargetID, Use: binding.Use, Delegate: binding.Delegate,
 		EnvVar: binding.EnvVar, Routes: binding.Routes,
@@ -2172,7 +2173,7 @@ func waitsUnwrapped(block chan struct{}) tea.Cmd {
 	}
 }
 
-func (f *fakeSource) HarnessChanges(_ context.Context, id string) (HarnessChanges, error) {
+func (f *fakeSource) HarnessChanges(_ context.Context, id string) (console.HarnessChanges, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "HarnessChanges@"+id)
@@ -2194,11 +2195,11 @@ func (f *fakeSource) DiscardHarnessChanges(_ context.Context, id, candidate stri
 	return "discarded", nil
 }
 
-func readySandboxes() []Sandbox {
+func readySandboxes() []console.Sandbox {
 	all := testSandboxes()
 	all[0].Dirty = false
-	all[0].Git = GitState{Known: true, Branch: "main", Commit: "b7d0f11"}
-	all[0].Diff = DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7}
+	all[0].Git = console.GitState{Known: true, Branch: "main", Commit: "b7d0f11"}
+	all[0].Diff = console.DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7}
 	return all
 }
 
@@ -2218,7 +2219,7 @@ func (f *fakeSource) GitCredentialPolicy(context.Context) (string, error) {
 	return f.session.GitCredentials, nil
 }
 
-func (f *fakeSource) BindingHistory(context.Context, string, string) ([]BindingDecision, error) {
+func (f *fakeSource) BindingHistory(context.Context, string, string) ([]console.BindingDecision, error) {
 	return nil, nil
 }
 

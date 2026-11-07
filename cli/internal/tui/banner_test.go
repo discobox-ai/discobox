@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The call to action is in the middle of the band, not at the end of its
@@ -92,7 +93,7 @@ func TestTheRequestsCallThrobs(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithRequest(t)
 	m.st = newStyles(true)
-	m.paneBox = Sandbox{ID: "sbx_one", Name: "one"}
+	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
 
 	beats := make([]string, len(bannerPulseHues))
 	for beat := range bannerPulseHues {
@@ -124,7 +125,7 @@ func TestTheThrobsClockRunsOnlyWhileTheBandIsUp(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithRequest(t)
 	m.st = newStyles(true)
-	m.paneBox = Sandbox{ID: "sbx_one", Name: "one"}
+	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
 	// A tool window is a workspace as far as the band is concerned: the bar is
 	// drawn over whatever the screen is showing.
 	m.toolShown = &pane{tool: "diff"}

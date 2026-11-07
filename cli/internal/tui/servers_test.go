@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -16,11 +17,11 @@ import (
 // primary leads it so an untouched panel creates where it always did
 // (ADR 0116 §5).
 func TestRunOptionsOfferAServerOnlyWhenThereIsAChoice(t *testing.T) {
-	if single := newOptions(Session{Directory: "/work"}); single.server() != nil {
+	if single := newOptions(console.Session{Directory: "/work"}); single.server() != nil {
 		t.Fatal("the run options offer a server with only the primary to create on")
 	}
 
-	opts := newOptions(Session{Directory: "/work", Servers: []string{"alpha", "beta"}})
+	opts := newOptions(console.Session{Directory: "/work", Servers: []string{"alpha", "beta"}})
 	row := opts.server()
 	if row == nil {
 		t.Fatal("the run options offer no server with two to choose from")
@@ -153,12 +154,12 @@ func TestUnreachableServersAreReportedWhenThatChanges(t *testing.T) {
 // first as the listing gave them, and which server one is on is the header's
 // filter to answer. A server that did not answer is still said.
 func TestServersAreNotSections(t *testing.T) {
-	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
-		{ID: "sbx_b1", Name: "three", Server: "beta", State: StateRunning, OriginKey: testKey("/src/disco2")},
-		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2")},
-		{ID: "sbx_a2", Name: "two", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2")},
+	l := listForTest(console.Session{Servers: []string{"alpha", "beta"}}, []console.Sandbox{
+		{ID: "sbx_b1", Name: "three", Server: "beta", State: console.StateRunning, OriginKey: testKey("/src/disco2")},
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/disco2")},
+		{ID: "sbx_a2", Name: "two", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/disco2")},
 	})
-	l.folder = folder{key: testKey("/src/disco2"), label: "/src/disco2"}
+	l.folder = console.Folder{Key: testKey("/src/disco2"), Label: "/src/disco2"}
 	if l.grouped() {
 		t.Fatal("one folder on two servers is drawn in sections")
 	}
@@ -182,8 +183,8 @@ func TestServersAreNotSections(t *testing.T) {
 // would say it anyway. The list is on one folder, so no other dimension
 // sections it either.
 func TestTheListHasNoSectionsWithOneServer(t *testing.T) {
-	l := listForTest(Session{}, []Sandbox{{ID: "sbx_a1", Name: "one", State: StateRunning, OriginKey: testKey("/src/disco2")}})
-	l.folder = folder{key: testKey("/src/disco2"), label: "/src/disco2"}
+	l := listForTest(console.Session{}, []console.Sandbox{{ID: "sbx_a1", Name: "one", State: console.StateRunning, OriginKey: testKey("/src/disco2")}})
+	l.folder = console.Folder{Key: testKey("/src/disco2"), Label: "/src/disco2"}
 	if l.grouped() {
 		t.Fatal("the list is grouped with one server")
 	}
@@ -196,9 +197,9 @@ func TestTheListHasNoSectionsWithOneServer(t *testing.T) {
 // A header is a label: the mouse walks past it onto the list, which is what
 // the row map the draw records says (zones.go).
 func TestSectionHeadersAreNotRows(t *testing.T) {
-	l := listForTest(Session{}, []Sandbox{
-		{ID: "sbx_a1", Name: "one", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2"},
-		{ID: "sbx_b1", Name: "two", State: StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot"},
+	l := listForTest(console.Session{}, []console.Sandbox{
+		{ID: "sbx_a1", Name: "one", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2"},
+		{ID: "sbx_b1", Name: "two", State: console.StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot"},
 	})
 	l.view(newStyles(false), &zones{}, true)
 	want := []int{-1, 0, -1, 1}
@@ -210,11 +211,11 @@ func TestSectionHeadersAreNotRows(t *testing.T) {
 // The cursor stays on screen in a window too short for every row and its
 // headers: what a row costs is known where it is drawn.
 func TestTheCursorStaysOnScreenAmongSections(t *testing.T) {
-	boxes := make([]Sandbox, 0, 6)
+	boxes := make([]console.Sandbox, 0, 6)
 	for i, dir := range []string{"/src/a", "/src/a", "/src/a", "/src/b", "/src/b", "/src/b"} {
-		boxes = append(boxes, Sandbox{ID: fmt.Sprintf("sbx_%d", i), Name: fmt.Sprintf("box%d", i), OriginKey: testKey(dir), Source: dir, State: StateRunning})
+		boxes = append(boxes, console.Sandbox{ID: fmt.Sprintf("sbx_%d", i), Name: fmt.Sprintf("box%d", i), OriginKey: testKey(dir), Source: dir, State: console.StateRunning})
 	}
-	l := listForTest(Session{}, boxes)
+	l := listForTest(console.Session{}, boxes)
 	l.height = 6
 	l.moveTo(len(boxes) - 1)
 
@@ -224,7 +225,7 @@ func TestTheCursorStaysOnScreenAmongSections(t *testing.T) {
 	}
 }
 
-func listForTest(session Session, boxes []Sandbox) *sandboxList {
+func listForTest(session console.Session, boxes []console.Sandbox) *sandboxList {
 	l := newSandboxList(session)
 	l.width, l.height = 100, 20
 	l.now = func() time.Time { return time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC) }
@@ -237,7 +238,7 @@ func listForTest(session Session, boxes []Sandbox) *sandboxList {
 // there are — otherwise its discoboxes go missing with nothing saying why, and
 // a primary with none of its own draws an entirely blank list.
 func TestUnreachableSectionsDrawBeforeTheSessionArrives(t *testing.T) {
-	l := listForTest(Session{}, nil)
+	l := listForTest(console.Session{}, nil)
 	l.setUnreachable([]string{"beta"})
 	out := l.view(newStyles(false), &zones{}, true)
 	if !strings.Contains(out, "beta") || !strings.Contains(out, "not answering") {
@@ -251,8 +252,8 @@ func TestUnreachableSectionsDrawBeforeTheSessionArrives(t *testing.T) {
 // A server that has not answered yet is slow, not missing, and the list says
 // that where its rows would go — while every other server's rows are drawn.
 func TestAServerStillBeingAskedSaysSoWhereItsRowsGo(t *testing.T) {
-	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
-		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
+	l := listForTest(console.Session{Servers: []string{"alpha", "beta"}}, []console.Sandbox{
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning},
 	})
 	l.setWaiting([]string{"beta"})
 
@@ -274,7 +275,7 @@ func TestAServerStillBeingAskedSaysSoWhereItsRowsGo(t *testing.T) {
 // The band says a listing is slow only while one is: an indicator that is
 // always on is one nobody reads.
 func TestTheBandSaysAListingIsSlowOnlyWhileItIs(t *testing.T) {
-	l := listForTest(Session{}, []Sandbox{{ID: "sbx_a1", Name: "one", State: StateRunning}})
+	l := listForTest(console.Session{}, []console.Sandbox{{ID: "sbx_a1", Name: "one", State: console.StateRunning}})
 	if out := l.view(newStyles(false), &zones{}, true); strings.Contains(out, "still listing") {
 		t.Fatalf("the band says a listing is slow when none is:\n%s", out)
 	}
@@ -288,7 +289,7 @@ func TestTheBandSaysAListingIsSlowOnlyWhileItIs(t *testing.T) {
 	// project that has answered "none" says so whether or not the next
 	// listing is late, or the one screen a new user reads would blink at them
 	// every time a poll ran long.
-	empty := listForTest(Session{}, nil)
+	empty := listForTest(console.Session{}, nil)
 	empty.slow = true
 	if out := empty.view(newStyles(false), &zones{}, true); !strings.Contains(out, "no discoboxes here yet") {
 		t.Fatalf("a project known to be empty stopped saying so while a refresh was out:\n%s", out)
@@ -298,7 +299,7 @@ func TestTheBandSaysAListingIsSlowOnlyWhileItIs(t *testing.T) {
 // Until a listing lands there is no answer about the project, so the list does
 // not offer to create the first discobox — that offer is an answer.
 func TestTheInvitationWaitsForTheFirstListing(t *testing.T) {
-	fresh := newSandboxList(Session{})
+	fresh := newSandboxList(console.Session{})
 	fresh.width, fresh.height = 100, 20
 	fresh.now = func() time.Time { return time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC) }
 	if out := fresh.view(newStyles(false), &zones{}, true); strings.Contains(out, "no discoboxes here yet") {
@@ -348,7 +349,7 @@ func TestTheWindowSaysARefreshIsSlowAfterTheWait(t *testing.T) {
 // that server's default: the line offered for copying has to be the run Enter
 // would make.
 func TestRunOptionsPreviewDropsTheProjectOnAnotherServer(t *testing.T) {
-	opts := newOptions(Session{
+	opts := newOptions(console.Session{
 		Directory:      "/work",
 		Project:        "proj_only_on_the_primary",
 		DefaultProject: "default",
@@ -374,15 +375,15 @@ func TestRunOptionsPreviewDropsTheProjectOnAnotherServer(t *testing.T) {
 // the window, which is the list the launcher is for, would otherwise never say
 // a server was missing at all.
 func TestTheNotAnsweringSectionSurvivesAFullList(t *testing.T) {
-	boxes := make([]Sandbox, 40)
+	boxes := make([]console.Sandbox, 40)
 	for i := range boxes {
-		boxes[i] = Sandbox{
+		boxes[i] = console.Sandbox{
 			ID:    fmt.Sprintf("sbx_%02d", i),
 			Name:  fmt.Sprintf("box-%02d", i),
-			State: StateRunning,
+			State: console.StateRunning,
 		}
 	}
-	l := listForTest(Session{}, boxes)
+	l := listForTest(console.Session{}, boxes)
 	l.setUnreachable([]string{"beta"})
 
 	out := l.view(newStyles(false), &zones{}, true)
@@ -405,8 +406,8 @@ func TestTheNotAnsweringSectionSurvivesAFullList(t *testing.T) {
 func TestTheWindowOpensOnEveryServer(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(
-		Sandbox{ID: "sbx_a1", Name: "alpha-box", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2")},
-		Sandbox{ID: "sbx_b1", Name: "beta-box", Server: "beta", State: StateRunning, OriginKey: testKey("/src/disco2")},
+		console.Sandbox{ID: "sbx_a1", Name: "alpha-box", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/disco2")},
+		console.Sandbox{ID: "sbx_b1", Name: "beta-box", Server: "beta", State: console.StateRunning, OriginKey: testKey("/src/disco2")},
 	)
 	ds.session.Servers = []string{"alpha", "beta"}
 	m := newTestModel(t, ds)
@@ -532,8 +533,8 @@ func TestTheRunOptionsServerRowMovesTheList(t *testing.T) {
 // somewhere else's news, and the section would be a row about a machine whose
 // discoboxes were never going to be on screen.
 func TestTheNotAnsweringSectionFollowsTheFilter(t *testing.T) {
-	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
-		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
+	l := listForTest(console.Session{Servers: []string{"alpha", "beta"}}, []console.Sandbox{
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning},
 	})
 	l.setUnreachable([]string{"beta"})
 
@@ -597,7 +598,7 @@ func TestOneServerOffersNoServers(t *testing.T) {
 
 // onServer puts a listing's discoboxes on one server, the way a window that
 // lists more than one stamps every row with the server it came from.
-func onServer(server string, boxes []Sandbox) []Sandbox {
+func onServer(server string, boxes []console.Sandbox) []console.Sandbox {
 	for i := range boxes {
 		boxes[i].Server = server
 	}
@@ -696,7 +697,7 @@ func TestTheArrowsMoveTheConfigScreensServer(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(onServer("alpha", testSandboxes())...)
 	ds.session.Servers = []string{"alpha", "beta"}
-	ds.secretsOn = map[string][]Secret{
+	ds.secretsOn = map[string][]console.Secret{
 		"alpha": {{ID: "sec_a", Name: "alpha token"}},
 		"beta":  {{ID: "sec_b", Name: "beta token"}},
 	}
@@ -734,7 +735,7 @@ func TestAStaleSecretsListingIsDropped(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, keyPress(secretsKey), keyPress("right"))
 
-	send(t, m, secretsLoadedListMsg{server: "alpha", secrets: []Secret{{ID: "sec_a", Name: "alpha token"}}})
+	send(t, m, secretsLoadedListMsg{server: "alpha", secrets: []console.Secret{{ID: "sec_a", Name: "alpha token"}}})
 	if out := plainFrame(m); strings.Contains(out, "alpha token") {
 		t.Fatalf("alpha's secrets are drawn under beta:\n%s", out)
 	}
@@ -749,11 +750,11 @@ func TestARequestOnAnotherServerIsAnsweredThere(t *testing.T) {
 	ds.session.Servers = []string{"alpha", "beta"}
 	req := waitingRequest()
 	req.Server = "beta"
-	ds.requests = []CredentialRequest{req}
-	ds.secretsOn = map[string][]Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}}
+	ds.requests = []console.CredentialRequest{req}
+	ds.secretsOn = map[string][]console.Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}}
 	m := newTestModel(t, ds)
 
-	if pending := m.pendingFor(Sandbox{ID: "sbx_one", Server: "beta"}); len(pending) != 1 {
+	if pending := m.pendingFor(console.Sandbox{ID: "sbx_one", Server: "beta"}); len(pending) != 1 {
 		t.Fatalf("pending on beta's discobox = %v, want its request", pending)
 	}
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -781,7 +782,7 @@ func TestTheSecretsScreenListsItsServersRequests(t *testing.T) {
 	ds.session.Servers = []string{"alpha", "beta"}
 	req := waitingRequest()
 	req.Server = "beta"
-	ds.requests = []CredentialRequest{req}
+	ds.requests = []console.CredentialRequest{req}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress(secretsKey))
@@ -797,9 +798,9 @@ func TestTheSecretsScreenListsItsServersRequests(t *testing.T) {
 // The archived offer counts what A would show: a discobox archived on another
 // server is not one pressing A brings back into a list narrowed to this one.
 func TestTheArchivedOfferCountsTheServerOnScreen(t *testing.T) {
-	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
-		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
-		{ID: "sbx_b1", Name: "gone", Server: "beta", State: StateArchived},
+	l := listForTest(console.Session{Servers: []string{"alpha", "beta"}}, []console.Sandbox{
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning},
+		{ID: "sbx_b1", Name: "gone", Server: "beta", State: console.StateArchived},
 	})
 	if n := l.archivedCount(); n != 1 {
 		t.Fatalf("every server: archived = %d, want 1", n)
@@ -848,7 +849,7 @@ func TestTheCardsFoldersAreTheMarkedServers(t *testing.T) {
 	}
 	onAlpha := 0
 	for _, s := range boxes {
-		if s.Server == "alpha" && s.State != StateArchived {
+		if s.Server == "alpha" && s.State != console.StateArchived {
 			onAlpha++
 		}
 	}
@@ -867,7 +868,7 @@ func TestTheMachineLineIsOnlyOverThePrimary(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(onServer("alpha", testSandboxes())...)
 	ds.session.Servers = []string{"alpha", "beta"}
-	ds.setResources(Resources{Known: true, CPUVCPUs: 4.2, CPUCapacity: 24})
+	ds.setResources(console.Resources{Known: true, CPUVCPUs: 4.2, CPUCapacity: 24})
 	m := newTestModel(t, ds)
 
 	for _, step := range []struct {
@@ -894,12 +895,12 @@ func TestTheMachineLineIsOnlyOverThePrimary(t *testing.T) {
 // On every server and every folder, a section is a folder, with every
 // server's discoboxes in it under one band that names no server.
 func TestAFolderIsOneSectionAcrossServers(t *testing.T) {
-	session := Session{Servers: []string{"alpha", "beta"}, OriginKey: testKey("/src/disco2"), Directory: "/src/disco2"}
-	l := listForTest(session, []Sandbox{
-		{ID: "sbx_1", Name: "one", Server: "beta", State: StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot"},
-		{ID: "sbx_2", Name: "two", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot"},
-		{ID: "sbx_3", Name: "three", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2"},
-		{ID: "sbx_4", Name: "four", Server: "beta", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2"},
+	session := console.Session{Servers: []string{"alpha", "beta"}, OriginKey: testKey("/src/disco2"), Directory: "/src/disco2"}
+	l := listForTest(session, []console.Sandbox{
+		{ID: "sbx_1", Name: "one", Server: "beta", State: console.StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot"},
+		{ID: "sbx_2", Name: "two", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot"},
+		{ID: "sbx_3", Name: "three", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2"},
+		{ID: "sbx_4", Name: "four", Server: "beta", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2"},
 	})
 	out := l.view(newStyles(false), &zones{}, true)
 	// The window's own folder leads, the way the filter offers it, and each
@@ -929,7 +930,7 @@ func TestAFolderIsOneSectionAcrossServers(t *testing.T) {
 
 	// Narrowed to one folder there is one section, and so none, on one server
 	// or on every one.
-	l.folder = session.folder()
+	l.folder = session.Folder()
 	if l.grouped() {
 		t.Fatal("the list is sectioned while it shows one folder")
 	}
@@ -943,12 +944,12 @@ func TestAFolderIsOneSectionAcrossServers(t *testing.T) {
 // and rows with no key at all — are each one section, however their rows
 // arrived interleaved.
 func TestUnofferedFoldersAreOneSectionEach(t *testing.T) {
-	session := Session{OriginKey: testKey("/src/disco2"), HostKey: testHostKey, HostID: testHostID}
-	l := listForTest(session, []Sandbox{
-		{ID: "sbx_1", Name: "one", State: StateRunning, OriginKey: testHostKey, OriginHostID: testHostID},
-		{ID: "sbx_2", Name: "two", State: StateRunning},
-		{ID: "sbx_3", Name: "three", State: StateRunning, OriginKey: testHostKey, OriginHostID: testHostID},
-		{ID: "sbx_4", Name: "four", State: StateRunning},
+	session := console.Session{OriginKey: testKey("/src/disco2"), HostKey: testHostKey, HostID: testHostID}
+	l := listForTest(session, []console.Sandbox{
+		{ID: "sbx_1", Name: "one", State: console.StateRunning, OriginKey: testHostKey, OriginHostID: testHostID},
+		{ID: "sbx_2", Name: "two", State: console.StateRunning},
+		{ID: "sbx_3", Name: "three", State: console.StateRunning, OriginKey: testHostKey, OriginHostID: testHostID},
+		{ID: "sbx_4", Name: "four", State: console.StateRunning},
 	})
 	l.view(newStyles(false), &zones{}, true)
 	headers := 0
@@ -970,20 +971,20 @@ func TestUnofferedFoldersAreOneSectionEach(t *testing.T) {
 // the folder it is filed under.
 func TestAGitHubRepositoryIsOneFolder(t *testing.T) {
 	const repository, key = "https://github.com/discobox-ai/discobox", "discobox-ai/discobox"
-	session := Session{
+	session := console.Session{
 		Servers:   []string{"alpha", "beta"},
 		OriginKey: testKey("/src/disco2"), Directory: "/src/disco2", RepositoryKey: key,
 		HostID: testHostID, HostKey: testHostKey,
 	}
-	l := listForTest(session, []Sandbox{
-		{ID: "sbx_1", Name: "one", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot", OriginHostID: testHostID},
-		{ID: "sbx_2", Name: "two", Server: "beta", State: StateRunning, OriginKey: testKey(repository + ".git"), Source: repository + ".git", SourceRemote: true, Repository: repository, RepositoryKey: key, OriginHostID: testHostID},
-		{ID: "sbx_3", Name: "three", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/other"), Source: "/src/other", OriginHostID: testHostID},
-		{ID: "sbx_4", Name: "four", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: repository, RepositoryKey: key, OriginHostID: testHostID},
-		{ID: "sbx_5", Name: "five", Server: "beta", State: StateRunning, OriginKey: testKey(repository), Source: repository, SourceRemote: true, Repository: "https://github.com/Discobox-AI/Discobox", RepositoryKey: key, OriginHostID: farHostID},
+	l := listForTest(session, []console.Sandbox{
+		{ID: "sbx_1", Name: "one", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/obot"), Source: "/src/obot", OriginHostID: testHostID},
+		{ID: "sbx_2", Name: "two", Server: "beta", State: console.StateRunning, OriginKey: testKey(repository + ".git"), Source: repository + ".git", SourceRemote: true, Repository: repository, RepositoryKey: key, OriginHostID: testHostID},
+		{ID: "sbx_3", Name: "three", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/other"), Source: "/src/other", OriginHostID: testHostID},
+		{ID: "sbx_4", Name: "four", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: repository, RepositoryKey: key, OriginHostID: testHostID},
+		{ID: "sbx_5", Name: "five", Server: "beta", State: console.StateRunning, OriginKey: testKey(repository), Source: repository, SourceRemote: true, Repository: "https://github.com/Discobox-AI/Discobox", RepositoryKey: key, OriginHostID: farHostID},
 		// Cut from the window's directory before its upstream was recorded:
 		// filed under the window's key, so in the window's folder.
-		{ID: "sbx_6", Name: "six", Server: "alpha", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", OriginHostID: testHostID},
+		{ID: "sbx_6", Name: "six", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", OriginHostID: testHostID},
 	})
 	out := l.view(newStyles(false), &zones{}, true)
 	// The repository is the window's own folder, so it leads, and its rows
@@ -1005,7 +1006,7 @@ func TestAGitHubRepositoryIsOneFolder(t *testing.T) {
 	// discoboxes are filed under.
 	var labels []string
 	for _, f := range l.folders() {
-		labels = append(labels, f.label)
+		labels = append(labels, f.Label)
 	}
 	if want := []string{"discobox-ai/discobox on github", "/src/obot", "/src/other"}; !slices.Equal(labels, want) {
 		t.Fatalf("folders = %q, want %q", labels, want)
@@ -1013,7 +1014,7 @@ func TestAGitHubRepositoryIsOneFolder(t *testing.T) {
 	// It cuts from the window's own source, and narrowed to it the list is
 	// every one of the repository's discoboxes.
 	own := l.folders()[0]
-	if own.source != "/src/disco2" || !own.local {
+	if own.Source != "/src/disco2" || !own.Local {
 		t.Fatalf("the repository's folder = %+v, want this machine's, cutting from /src/disco2", own)
 	}
 	l.folder = own
@@ -1027,18 +1028,18 @@ func TestAGitHubRepositoryIsOneFolder(t *testing.T) {
 // repository itself when it was a directory on another machine.
 func TestARepositoryFolderCutsFromWhatCanBeCutFromHere(t *testing.T) {
 	const repository, key = "https://github.com/discobox-ai/discobox", "discobox-ai/discobox"
-	session := Session{OriginKey: testKey("/src/obot"), Directory: "/src/obot", HostID: testHostID, HostKey: testHostKey}
-	far := Sandbox{ID: "sbx_1", Name: "one", State: StateRunning, OriginKey: testKey("far"), Source: "/home/wilma/disco", Repository: repository, RepositoryKey: key, OriginHostID: farHostID}
-	near := Sandbox{ID: "sbx_2", Name: "two", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: repository, RepositoryKey: key, OriginHostID: testHostID}
+	session := console.Session{OriginKey: testKey("/src/obot"), Directory: "/src/obot", HostID: testHostID, HostKey: testHostKey}
+	far := console.Sandbox{ID: "sbx_1", Name: "one", State: console.StateRunning, OriginKey: testKey("far"), Source: "/home/wilma/disco", Repository: repository, RepositoryKey: key, OriginHostID: farHostID}
+	near := console.Sandbox{ID: "sbx_2", Name: "two", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: repository, RepositoryKey: key, OriginHostID: testHostID}
 
-	if f := listForTest(session, []Sandbox{far}).folders()[1]; f.source != repository || f.local {
+	if f := listForTest(session, []console.Sandbox{far}).folders()[1]; f.Source != repository || f.Local {
 		t.Fatalf("another machine's clone: folder = %+v, want one cutting from %s", f, repository)
 	}
-	if f := listForTest(session, []Sandbox{near, far}).folders()[1]; f.source != "/src/disco2" || !f.local {
+	if f := listForTest(session, []console.Sandbox{near, far}).folders()[1]; f.Source != "/src/disco2" || !f.Local {
 		t.Fatalf("this machine's clone: folder = %+v, want one cutting from /src/disco2", f)
 	}
 	// This machine's wherever in the listing its clone is.
-	if f := listForTest(session, []Sandbox{far, near}).folders()[1]; !f.local {
+	if f := listForTest(session, []console.Sandbox{far, near}).folders()[1]; !f.Local {
 		t.Fatalf("folder = %+v, want this machine's", f)
 	}
 }
@@ -1053,10 +1054,10 @@ func TestAViewSavedOnTheWindowsOriginKeyOpensOnItsRepository(t *testing.T) {
 		t.Fatal("the test session has no origin key to have saved a view on")
 	}
 	ds.session.RepositoryKey = "discobox-ai/discobox"
-	ds.session.View = ListView{FolderKey: ds.session.OriginKey, FolderLabel: "/src/disco2", FolderSource: "/src/disco2", FolderLocal: true}
+	ds.session.View = console.ListView{FolderKey: ds.session.OriginKey, FolderLabel: "/src/disco2", FolderSource: "/src/disco2", FolderLocal: true}
 	m := newTestModel(t, ds)
 
-	if got := m.list.folder; got.key != "discobox-ai/discobox" || got.label != "discobox-ai/discobox on github" {
+	if got := m.list.folder; got.Key != "discobox-ai/discobox" || got.Label != "discobox-ai/discobox on github" {
 		t.Fatalf("the window opened on %+v, want the repository's folder", got)
 	}
 	if !strings.Contains(headerLine(m), "discobox-ai/discobox on github") {
@@ -1075,19 +1076,19 @@ func TestAViewSavedOnTheWindowsOriginKeyOpensOnItsRepository(t *testing.T) {
 // upstream is in the upstream's folder, not the window's: it is filed under
 // the window's key, and its work goes back to the other repository.
 func TestADiscoboxFromTheWindowsDirectoryIsInTheRepositoryItWasCutFrom(t *testing.T) {
-	session := Session{OriginKey: testKey("/src/disco2"), Directory: "/src/disco2", RepositoryKey: "me/discobox"}
-	l := listForTest(session, []Sandbox{
-		{ID: "sbx_1", Name: "fork", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: "https://github.com/me/discobox", RepositoryKey: "me/discobox"},
-		{ID: "sbx_2", Name: "upstream", State: StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: "https://github.com/discobox-ai/discobox", RepositoryKey: "discobox-ai/discobox"},
+	session := console.Session{OriginKey: testKey("/src/disco2"), Directory: "/src/disco2", RepositoryKey: "me/discobox"}
+	l := listForTest(session, []console.Sandbox{
+		{ID: "sbx_1", Name: "fork", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: "https://github.com/me/discobox", RepositoryKey: "me/discobox"},
+		{ID: "sbx_2", Name: "upstream", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: "https://github.com/discobox-ai/discobox", RepositoryKey: "discobox-ai/discobox"},
 	})
 	var labels []string
 	for _, f := range l.folders() {
-		labels = append(labels, f.label)
+		labels = append(labels, f.Label)
 	}
 	if want := []string{"me/discobox on github", "discobox-ai/discobox on github"}; !slices.Equal(labels, want) {
 		t.Fatalf("folders = %q, want %q", labels, want)
 	}
-	l.folder = session.folder()
+	l.folder = session.Folder()
 	if rows := l.rows(); len(rows) != 1 || rows[0].Name != "fork" {
 		t.Fatalf("the window's folder lists %+v, want the fork's discobox alone", rows)
 	}
@@ -1098,7 +1099,7 @@ func TestADiscoboxFromTheWindowsDirectoryIsInTheRepositoryItWasCutFrom(t *testin
 // ordinary poll leaves them a refresh old, and saying so every cycle is the
 // always-on indicator nobody reads.
 func TestRowsThatStopKeepingUpSayHowOld(t *testing.T) {
-	l := listForTest(Session{}, []Sandbox{{ID: "sbx_a1", Name: "one", State: StateRunning}})
+	l := listForTest(console.Session{}, []console.Sandbox{{ID: "sbx_a1", Name: "one", State: console.StateRunning}})
 	now := l.now()
 
 	l.setListed(map[string]time.Time{"": now.Add(-refreshEvery)})
@@ -1128,9 +1129,9 @@ func TestRowsThatStopKeepingUpSayHowOld(t *testing.T) {
 // server that did not answer is said — and only that server, and not the band.
 // Filtered to that one server, the band says it instead.
 func TestOnlyTheServerThatFellBehindSaysHowOldItsRowsAre(t *testing.T) {
-	l := listForTest(Session{Servers: []string{"alpha", "beta"}}, []Sandbox{
-		{ID: "sbx_a1", Name: "one", Server: "alpha", State: StateRunning},
-		{ID: "sbx_b1", Name: "two", Server: "beta", State: StateRunning},
+	l := listForTest(console.Session{Servers: []string{"alpha", "beta"}}, []console.Sandbox{
+		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning},
+		{ID: "sbx_b1", Name: "two", Server: "beta", State: console.StateRunning},
 	})
 	now := l.now()
 	// gamma is behind too, but has nothing on screen to be old: a note about
@@ -1181,7 +1182,7 @@ func TestTheWorkspaceHeaderSaysHowOldTheListingIs(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	m.paneBox = Sandbox{ID: "sbx_one", Name: "one"}
+	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
 
 	if got := m.paneHeaderFields().text(); strings.Contains(got, "listed") {
 		t.Fatalf("a header with nothing stale says how old it is: %q", got)
@@ -1202,12 +1203,12 @@ func TestTheWorkspaceHeaderSaysHowOldTheListingIs(t *testing.T) {
 // leaves that state's word alone. A credential request waiting is blocked.
 func TestTheWorkspaceHeaderSaysThePullRequestStatus(t *testing.T) {
 	t.Parallel()
-	ahead := GitState{Known: true, Branch: "main", Commit: "2222222"}
-	dirty := GitState{Known: true, Branch: "main", Commit: "2222222", Dirty: true}
+	ahead := console.GitState{Known: true, Branch: "main", Commit: "2222222"}
+	dirty := console.GitState{Known: true, Branch: "main", Commit: "2222222", Dirty: true}
 	st := newStyles(true)
 	for _, tc := range []struct {
 		name string
-		git  GitState
+		git  console.GitState
 		tags []string
 		// pending is how many credential requests are waiting on the box.
 		pending int
@@ -1218,12 +1219,12 @@ func TestTheWorkspaceHeaderSaysThePullRequestStatus(t *testing.T) {
 		{"ready work, no tag", ahead, nil, 0, st.name.Render("ready"), st.readyText.Render("ready")},
 		{"dirty work, ready pr", dirty, []string{"ready"}, 0, st.statusWA.Render("dirty"), "ready"},
 		{"dirty work, blocked pr", dirty, []string{"blocked"}, 0, st.blockedText.Render("blocked"), "dirty"},
-		{"unknown work, blocked pr", GitState{}, []string{"blocked", "ready"}, 0, st.blockedText.Render("blocked"), "ready"},
+		{"unknown work, blocked pr", console.GitState{}, []string{"blocked", "ready"}, 0, st.blockedText.Render("blocked"), "ready"},
 		{"ready work, ready pr, a request waiting", ahead, []string{"ready"}, 1, st.blockedText.Render("blocked"), st.readyText.Render("ready")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newColorModel(t, newFakeSource())
-			m.paneBox = Sandbox{ID: "sbx_one", Name: "one", Branch: "main", Commit: "1111111", Git: tc.git, Tags: tc.tags, PendingRequests: tc.pending}
+			m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one", Branch: "main", Commit: "1111111", Git: tc.git, Tags: tc.tags, PendingRequests: tc.pending}
 			got := m.paneHeaderFields().text()
 			if !strings.Contains(got, tc.want) {
 				t.Fatalf("header = %q, want %q in it", got, tc.want)
@@ -1241,9 +1242,9 @@ func TestTheWorkspaceHeaderSaysThePullRequestStatus(t *testing.T) {
 func TestANarrowWorkspaceHeaderKeepsBlocked(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
-	m.paneBox = Sandbox{
+	m.paneBox = console.Sandbox{
 		ID: "sbx_one", Name: "one", Branch: "main", Commit: "1111111", Tags: []string{"blocked"},
-		Git: GitState{Known: true, Branch: "main", Commit: "2222222", Dirty: true},
+		Git: console.GitState{Known: true, Branch: "main", Commit: "2222222", Dirty: true},
 	}
 	fields := m.paneHeaderFields()
 	full := fields.text()
@@ -1268,7 +1269,7 @@ func TestCtrlLReReadsTheListing(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	ds.mu.Lock()
-	ds.sandboxes = []Sandbox{{ID: "sbx_new", Name: "arrived", State: StateRunning}}
+	ds.sandboxes = []console.Sandbox{{ID: "sbx_new", Name: "arrived", State: console.StateRunning}}
 	ds.mu.Unlock()
 
 	press(t, m, "ctrl+l")

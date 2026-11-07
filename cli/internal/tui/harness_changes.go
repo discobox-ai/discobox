@@ -6,48 +6,25 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 const harnessChangesKey = "H"
 
-// HarnessChanges contains only the server's safe preview, never raw credentials.
-type HarnessChanges struct {
-	CandidateID string
-	State       string
-	Revision    int64
-	Files       []HarnessChangedFile
-	Credentials []string
-	Diagnostics []string
-}
-
-// HarnessChangedFile is one file a candidate adds, updates or removes, shown
-// as what changed in it rather than what it now holds.
-type HarnessChangedFile struct {
-	Path string
-	// Action is add, update or remove.
-	Action string
-	// Diff is the change's unified diff hunks against the file it replaces.
-	Diff string
-	// Shadowed is a change at a path a person overrode: a save keeps it
-	// beneath the override, and boxes go on being given the person's file
-	// (ADR 26-11-04-711 §2).
-	Shadowed bool
-}
-
 type harnessChangesLoadedMsg struct {
-	box     Sandbox
-	changes HarnessChanges
+	box     console.Sandbox
+	changes console.HarnessChanges
 	err     error
 }
 
 type harnessChangesDoneMsg struct {
-	box         Sandbox
+	box         console.Sandbox
 	candidateID string
 	state       string
 	err         error
 }
 
-func (m *Model) reviewHarnessChanges(box Sandbox) tea.Cmd {
+func (m *Model) reviewHarnessChanges(box console.Sandbox) tea.Cmd {
 	m.busy = "reading harness changes…"
 	return func() tea.Msg {
 		changes, err := m.ds.ForServer(box.Server).HarnessChanges(m.ctx, box.ID)
@@ -161,7 +138,7 @@ func (m *Model) harnessChangesDone(msg harnessChangesDoneMsg) tea.Cmd {
 
 // harnessChangesName is what the band calls the box's harness: its name, or
 // the slug the row shows when it has none.
-func harnessChangesName(box Sandbox) string {
+func harnessChangesName(box console.Sandbox) string {
 	if box.HarnessName != "" {
 		return box.HarnessName
 	}
@@ -261,7 +238,7 @@ func (m *Model) writingPrompt() bool {
 
 // harnessChangesToExplain is the box the explainer is about: the one on
 // screen when it has a change, else the first listed box that does.
-func (m *Model) harnessChangesToExplain() (Sandbox, bool) {
+func (m *Model) harnessChangesToExplain() (console.Sandbox, bool) {
 	if m.hasWorkspace() {
 		if box := m.currentBox(); box.HarnessConfigPending {
 			return box, true
@@ -272,7 +249,7 @@ func (m *Model) harnessChangesToExplain() (Sandbox, bool) {
 			return box, true
 		}
 	}
-	return Sandbox{}, false
+	return console.Sandbox{}, false
 }
 
 // markHarnessChangesExplained tells the server the explainer has been shown,

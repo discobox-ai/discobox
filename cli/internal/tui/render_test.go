@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
@@ -57,11 +58,11 @@ func TestFrames(t *testing.T) {
 		// opened on the discobox the workspace would have been showing.
 		{"tools", func(m *Model) {
 			send(t, m, keyPress("tab"))
-			m.paneBox = Sandbox{ID: "sbx_one"}
+			m.paneBox = console.Sandbox{ID: "sbx_one"}
 			// The addresses come from a lookup this frame has no runtime to
 			// run, so they are seeded as one that finished would have left
 			// them; the rows are the frame worth looking at.
-			m.addresses = map[boxRef]resolvedAddresses{{"", "sbx_one"}: {Addresses: Addresses{
+			m.addresses = map[console.BoxRef]resolvedAddresses{{Server: "", ID: "sbx_one"}: {Addresses: console.Addresses{
 				SSH: "ssh sbx_one",
 				Git: "ssh://sbx_one/home/discobox/disco2",
 			}}}
@@ -182,7 +183,7 @@ func TestUsageWithoutMeasurementsShowsDots(t *testing.T) {
 func TestUsageDrawsADotForTheHalfItHasNotMeasured(t *testing.T) {
 	t.Parallel()
 	sandboxes := testSandboxes()
-	sandboxes[0].Usage = Usage{Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4}
+	sandboxes[0].Usage = console.Usage{Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4}
 	m := newTestModel(t, newFakeSource(sandboxes...))
 	send(t, m, keyPress("tab"))
 
@@ -202,7 +203,7 @@ func TestUsageDrawsADotForTheHalfItHasNotMeasured(t *testing.T) {
 func TestUsageIsDrawnWhenItIsKnown(t *testing.T) {
 	t.Parallel()
 	sandboxes := testSandboxes()
-	sandboxes[0].Usage = Usage{
+	sandboxes[0].Usage = console.Usage{
 		Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4,
 		DiskKnown: true, DiskBytes: 2_483_027_968, DiskPercent: 12,
 	}
@@ -246,11 +247,11 @@ func TestWithoutColorTheStateIsSpelledOut(t *testing.T) {
 func TestARepairingBoxSaysWhatItIsAnswering(t *testing.T) {
 	t.Parallel()
 	boxes := testSandboxes()
-	boxes[0].State = StateRepairing
+	boxes[0].State = console.StateRepairing
 	boxes[0].HasRuntime = false
 	boxes[0].Message = "exec attach found it failed with no container (EOF)"
 
-	if got := stateDot(boxes[0]); got != stateDot(Sandbox{State: StateStarting}) {
+	if got := stateDot(boxes[0]); got != stateDot(console.Sandbox{State: console.StateStarting}) {
 		t.Fatalf("glyph = %q, want the one a starting box has", got)
 	}
 
@@ -272,20 +273,20 @@ func TestARepairingBoxSaysWhatItIsAnswering(t *testing.T) {
 func TestStatusSaysABoxWasRepairedAutomatically(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
-	repair := AutomaticRepair{At: now.Add(-5 * time.Minute), Trigger: "ssh", Failure: "create container: EOF"}
-	if got, want := repair.note(now), "repaired automatically 5m ago; it had failed with: create container: EOF"; got != want {
+	repair := console.AutomaticRepair{At: now.Add(-5 * time.Minute), Trigger: "ssh", Failure: "create container: EOF"}
+	if got, want := repairNote(repair, now), "repaired automatically 5m ago; it had failed with: create container: EOF"; got != want {
 		t.Fatalf("note = %q, want %q", got, want)
 	}
 	repair.Failed = true
-	if got, want := repair.note(now), "automatic repair failed 5m ago; it had failed with: create container: EOF"; got != want {
+	if got, want := repairNote(repair, now), "automatic repair failed 5m ago; it had failed with: create container: EOF"; got != want {
 		t.Fatalf("note = %q, want %q", got, want)
 	}
-	if got := (AutomaticRepair{}).note(now); got != "" {
+	if got := repairNote(console.AutomaticRepair{}, now); got != "" {
 		t.Fatalf("note = %q, want none for a box never repaired", got)
 	}
 
 	boxes := testSandboxes()
-	boxes[0].Repaired = AutomaticRepair{At: now.Add(-5 * time.Minute), Failure: "EOF"}
+	boxes[0].Repaired = console.AutomaticRepair{At: now.Add(-5 * time.Minute), Failure: "EOF"}
 	m := newTestModel(t, newFakeSource(boxes...))
 	m.now = func() time.Time { return now }
 	send(t, m, keyPress("tab"))
@@ -812,7 +813,7 @@ func TestTheComposerGrowsToThreeRowsAndThenScrolls(t *testing.T) {
 func TestMenuLabelsFitTheirContent(t *testing.T) {
 	t.Parallel()
 	long := "/home/darren/src/discobox-scratch"
-	m := newTestModel(t, newFakeSource(cutFrom(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning}, long)))
+	m := newTestModel(t, newFakeSource(cutFrom(console.Sandbox{ID: "sbx_one", Name: "one", State: console.StateRunning}, long)))
 	// Nothing was started in the folder the window is running in, so Tab lands
 	// on the filter rather than on an empty list.
 	send(t, m, keyPress("tab"), keyPress("enter"))
@@ -858,7 +859,7 @@ func TestTheStripOnlyNamesWhatWasChosen(t *testing.T) {
 func TestMachineRowSaysWhatItHasAndIsUsing(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	ds.setResources(Resources{
+	ds.setResources(console.Resources{
 		Known:    true,
 		CPUVCPUs: 4.2, CPUCapacity: 24,
 		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
@@ -976,7 +977,7 @@ func TestMachineRowSaysNothingUntilItIsMeasured(t *testing.T) {
 func TestMachineRowDropsFiguresItCannotFit(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	ds.setResources(Resources{
+	ds.setResources(console.Resources{
 		Known:    true,
 		CPUVCPUs: 4.2, CPUCapacity: 24,
 		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
@@ -1000,7 +1001,7 @@ func TestMachineRowDropsFiguresItCannotFit(t *testing.T) {
 func TestMachineRowSitsAboveTheBand(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	ds.setResources(Resources{
+	ds.setResources(console.Resources{
 		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,
 		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
 	})
@@ -1031,8 +1032,8 @@ func TestMachineRowSitsAboveTheBand(t *testing.T) {
 func TestAStoppedDiscoboxStillShowsItsDisk(t *testing.T) {
 	t.Parallel()
 	sandboxes := testSandboxes()
-	sandboxes[0].State = StateStopped
-	sandboxes[0].Usage = Usage{
+	sandboxes[0].State = console.StateStopped
+	sandboxes[0].Usage = console.Usage{
 		// Whatever the counters last said, a stopped discobox is using none of
 		// it — only the disk survives.
 		Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4,
@@ -1058,7 +1059,7 @@ func TestAStoppedDiscoboxStillShowsItsDisk(t *testing.T) {
 func TestMachineRowSplitsDiskIntoDataAndCache(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	ds.setResources(Resources{
+	ds.setResources(console.Resources{
 		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,
 		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
 		DiskKnown:      true,
@@ -1082,7 +1083,7 @@ func TestMachineRowSplitsDiskIntoDataAndCache(t *testing.T) {
 func TestMachineRowDropsTheDiskSplitBeforeTheFreeSpace(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	ds.setResources(Resources{
+	ds.setResources(console.Resources{
 		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,
 		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
 		DiskKnown:      true,
@@ -1170,8 +1171,8 @@ func TestAMessageSitsAboveTheKeys(t *testing.T) {
 
 func TestRunningReconcileWarning(t *testing.T) {
 	for _, color := range []bool{false, true} {
-		box := Sandbox{ID: "warning", Name: "working box", State: StateRunning, Message: "ensure failed", Agent: programstatus.Status{State: programstatus.Working}}
-		l := listForTest(Session{}, []Sandbox{box})
+		box := console.Sandbox{ID: "warning", Name: "working box", State: console.StateRunning, Message: "ensure failed", Agent: programstatus.Status{State: programstatus.Working}}
+		l := listForTest(console.Session{}, []console.Sandbox{box})
 		st := newStyles(color)
 		for _, focused := range []bool{false, true} {
 			row, _ := l.row(st, &zones{}, box, 0, 0, focused)
@@ -1201,7 +1202,7 @@ func TestRunningWarningKeepsActions(t *testing.T) {
 	boxes := testSandboxes()[:1]
 	boxes[0].Message = "ensure failed"
 	ds := newFakeSource(boxes...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "warning-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add"}}}
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "warning-review", State: "pending", Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "add"}}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"))
 	for _, label := range []string{"attach", "shell", "stop", "review config"} {

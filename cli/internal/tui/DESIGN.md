@@ -2914,8 +2914,9 @@ something to glance at. Which secret answers each variable a harness needs
 costs a request of its own (`HarnessSecrets`), so it is asked for when the card
 is opened rather than for every row of a listing.
 
-**One data seam.** Everything the window needs is on `DataSource` (`data.go`),
-implemented once in `cli.apiDataSource`. The interactive actions there build and
+**One data seam.** Everything the window needs is on `DataSource`, which the
+console core owns (`cli/internal/console`, `data.go`) and `cli.apiDataSource`
+implements once. The interactive actions there build and
 share the CLI workflows, so the console and shell commands use the same behavior.
 
 **Color is a value, not a global.** `detectColor` reads the profile once and
@@ -3410,7 +3411,6 @@ the newest one where the busy line goes.
 
 | file | what it holds |
 | --- | --- |
-| `data.go` | `Sandbox`, `Session`, `Harness`, `RunRequest`, `Verb`, `Interaction`, `DataSource` |
 | `harnesses.go` | the harnesses screen: the list, its actions, the config card, `F3` |
 | `filter.go` | the header's filter: the line naming what is narrowed, the card that marks a server, folder and tags, and applying them together |
 | `folder.go` | a folder: the origin key it files under, and what it holds |

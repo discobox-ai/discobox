@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // execServer answers the exec API for sbx_1: every exec created runs at once,
@@ -101,7 +101,7 @@ func onBranch(branch string, hasHead bool) func([]string) (string, int64) {
 // started over it: it would exit at once, and the tab could not say why.
 func TestPullReviewSaysAHeadThatIsNotThere(t *testing.T) {
 	ds, created := execServer(t, onBranch("fix-reaper", false))
-	pull := tui.PullRequest{Head: "fix-reaper", HeadRef: "fix-reaper", Base: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: "0123456789ab" + strings.Repeat("c", 28)}
+	pull := console.PullRequest{Head: "fix-reaper", HeadRef: "fix-reaper", Base: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: "0123456789ab" + strings.Repeat("c", 28)}
 	_, _, err := ds.PullReview(t.Context(), "sbx_1", pull, 80, 24)
 	if err == nil || !strings.Contains(err.Error(), "0123456789ab is not in this discobox") {
 		t.Fatalf("err = %v, want it to say the head is not there", err)
@@ -116,7 +116,7 @@ func TestPullReviewSaysAHeadThatIsNotThere(t *testing.T) {
 // it has the branch alone checked out, and that is the pull request's.
 func TestPullReviewTakesAForksBranch(t *testing.T) {
 	ds, created := execServer(t, onBranch("fix-reaper", false))
-	pull := tui.PullRequest{Head: "someone:fix-reaper", HeadRef: "fix-reaper", Base: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("c", 40)}
+	pull := console.PullRequest{Head: "someone:fix-reaper", HeadRef: "fix-reaper", Base: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("c", 40)}
 	_, _, err := ds.PullReview(t.Context(), "sbx_1", pull, 80, 24)
 	if err == nil || !strings.Contains(err.Error(), "is not in this discobox") || len(created()) != 2 {
 		t.Errorf("err = %v after %d execs, want the branch taken and the head looked for", err, len(created()))
@@ -126,7 +126,7 @@ func TestPullReviewTakesAForksBranch(t *testing.T) {
 // The review shown is the branch checked out's, so a discobox on another
 // branch, or on none, is refused before anything is started.
 func TestPullReviewSaysTheDiscoboxIsOnAnotherBranch(t *testing.T) {
-	pull := tui.PullRequest{Head: "fix-reaper", HeadRef: "fix-reaper", Base: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("c", 40)}
+	pull := console.PullRequest{Head: "fix-reaper", HeadRef: "fix-reaper", Base: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("c", 40)}
 	for branch, want := range map[string]string{
 		"other-work": "has other-work checked out, not the pull request's fix-reaper",
 		"":           "has no branch checked out",

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -29,14 +30,14 @@ func describe(d *dialog) string {
 func secretsFixture(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	ds := newFakeSource(testSandboxes()...)
-	ds.projectSecrets = []Secret{
+	ds.projectSecrets = []console.Secret{
 		{ID: "sec_gh", Name: "gh", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}}, MaxTTL: time.Hour},
 		{ID: "sec_loose", Name: "OpenAI key", Type: "bearer", MaxTTL: time.Hour},
 	}
-	ds.projectBindings = []SecretBinding{
-		{ID: "binding_1", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GH_TOKEN",
+	ds.projectBindings = []console.SecretBinding{
+		{ID: "binding_1", SecretID: "sec_gh", TargetKind: console.BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GH_TOKEN",
 			Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}, CreatedBy: "user:alice", Created: time.Now().Add(-time.Minute)},
-		{ID: "binding_2", SecretID: "sec_gh", TargetKind: BindingProject, Use: true, EnvVar: "GITHUB"},
+		{ID: "binding_2", SecretID: "sec_gh", TargetKind: console.BindingProject, Use: true, EnvVar: "GITHUB"},
 	}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress(secretsKey))
@@ -132,8 +133,8 @@ func TestBindingsAreListedAndTakenBack(t *testing.T) {
 func TestALapsedBindingIsNeitherCountedNorListed(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)
-	m.secrets.setBindings(append(m.secrets.bindings, SecretBinding{
-		ID: "binding_old", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_gone", Use: true, EnvVar: "OLD",
+	m.secrets.setBindings(append(m.secrets.bindings, console.SecretBinding{
+		ID: "binding_old", SecretID: "sec_gh", TargetKind: console.BindingSandbox, TargetID: "sbx_gone", Use: true, EnvVar: "OLD",
 		Expires: time.Now().Add(-time.Hour),
 	}))
 	if body := frameText(m); !strings.Contains(body, "2 bindings") {
@@ -336,10 +337,10 @@ func TestReplacingAnOAuthValueTakesAllOfIt(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.projectSecrets = []Secret{{
+	ds.projectSecrets = []console.Secret{{
 		ID: "sec_oauth", Name: "claude", Type: "oauth", Routes: []secretroute.Route{{Hosts: []string{"api.anthropic.com"}}},
 		//nolint:gosec // A token endpoint, which is a URL rather than a credential.
-		OAuth: &SecretOAuth{TokenURL: "https://console.anthropic.com/v1/oauth/token"},
+		OAuth: &console.SecretOAuth{TokenURL: "https://console.anthropic.com/v1/oauth/token"},
 	}}
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
@@ -418,7 +419,7 @@ func TestTheScreenCountsAndOpensWaitingRequests(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.requests = []CredentialRequest{waitingRequest()}
+	ds.requests = []console.CredentialRequest{waitingRequest()}
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 
@@ -462,9 +463,9 @@ func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 	send(t, m, sizeMsg(wideConsole, 40))
 	orphan := waitingRequest()
 	orphan.ID, orphan.SandboxID = "sreq_orphan", ""
-	orphan.Refresh = &RefreshAsk{SecretID: "sec_gh", Cause: "stale"}
+	orphan.Refresh = &console.RefreshAsk{SecretID: "sec_gh", Cause: "stale"}
 	ds.mu.Lock()
-	ds.requests = []CredentialRequest{orphan}
+	ds.requests = []console.CredentialRequest{orphan}
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 
@@ -581,7 +582,7 @@ func TestABindingIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 		t.Fatal("the discobox row is asked before the target calls for it")
 	}
 	onRow(t, m, "target")
-	for m.dialog.form.chosen("target") != BindingSandbox {
+	for m.dialog.form.chosen("target") != console.BindingSandbox {
 		send(t, m, keyPress("right"))
 	}
 	if !rowShown(m, "sandbox") {
@@ -613,7 +614,7 @@ func TestABindingIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 		t.Fatalf("created = %#v, want one binding", ds.createdBindings)
 	}
 	got := ds.createdBindings[0]
-	if got.SecretID != "sec_gh" || got.TargetKind != BindingSandbox || got.TargetID != testSandboxes()[0].ID {
+	if got.SecretID != "sec_gh" || got.TargetKind != console.BindingSandbox || got.TargetID != testSandboxes()[0].ID {
 		t.Fatalf("binding = %#v, want it on the chosen discobox", got)
 	}
 	if got.EnvVar != "GH_TOKEN" || len(got.Routes) != 1 || got.Routes[0].Hosts[0] != "api.github.com" || got.TTLSeconds != 900 {
@@ -792,7 +793,7 @@ func TestTheTablesHandFocusToEachOther(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.requests = []CredentialRequest{waitingRequest()}
+	ds.requests = []console.CredentialRequest{waitingRequest()}
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 
@@ -834,9 +835,9 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	m, ds := secretsFixture(t)
 	older, newer := waitingRequest(), waitingRequest()
 	older.ID, older.Created = "sreq_older", older.Created.Add(-time.Hour)
-	newer.ID, newer.Name, newer.Use = "sreq_newer", "npm", &RequestPart{Routes: []secretroute.Route{{Hosts: []string{"registry.npmjs.org"}}}}
+	newer.ID, newer.Name, newer.Use = "sreq_newer", "npm", &console.RequestPart{Routes: []secretroute.Route{{Hosts: []string{"registry.npmjs.org"}}}}
 	ds.mu.Lock()
-	ds.requests = []CredentialRequest{older, newer}
+	ds.requests = []console.CredentialRequest{older, newer}
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 
@@ -855,8 +856,8 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("enter answered nothing")
 	}
-	if !strings.Contains(dialogText(m), chosen.where()) {
-		t.Fatalf("dialog = %q, want the request under the cursor (%s)", dialogText(m), chosen.where())
+	if !strings.Contains(dialogText(m), chosen.Where()) {
+		t.Fatalf("dialog = %q, want the request under the cursor (%s)", dialogText(m), chosen.Where())
 	}
 }
 
@@ -891,23 +892,23 @@ func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
-		req  CredentialRequest
+		req  console.CredentialRequest
 		want string
 	}{
-		{"an agent names the credential", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "github"},
-		{"an ask to delegate says so", CredentialRequest{Name: "github", SandboxID: "sbx_1", Delegate: &RequestPart{}}, "github · to delegate"},
-		{"an ask for both says so", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1", Use: &RequestPart{}, Delegate: &RequestPart{}}, "github · to use and to delegate"},
-		{"failing that, the variable", CredentialRequest{EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "GH_TOKEN"},
-		{"a discobox asked for a credential it did not name", CredentialRequest{SandboxID: "sbx_1"}, "a credential"},
+		{"an agent names the credential", console.CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "github"},
+		{"an ask to delegate says so", console.CredentialRequest{Name: "github", SandboxID: "sbx_1", Delegate: &console.RequestPart{}}, "github · to delegate"},
+		{"an ask for both says so", console.CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1", Use: &console.RequestPart{}, Delegate: &console.RequestPart{}}, "github · to use and to delegate"},
+		{"failing that, the variable", console.CredentialRequest{EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "GH_TOKEN"},
+		{"a discobox asked for a credential it did not name", console.CredentialRequest{SandboxID: "sbx_1"}, "a credential"},
 	} {
 		if got := requestSubject(tc.req); got != tc.want {
 			t.Errorf("%s: subject = %q, want %q", tc.name, got, tc.want)
 		}
 	}
-	if got := requesterLabel(CredentialRequest{}); got != "control plane" {
+	if got := requesterLabel(console.CredentialRequest{}); got != "control plane" {
 		t.Errorf("requester = %q, want the control plane", got)
 	}
-	if got := requesterLabel(CredentialRequest{SandboxID: "sbx_abcdefghij"}); got != "agent · abcdefgh" {
+	if got := requesterLabel(console.CredentialRequest{SandboxID: "sbx_abcdefghij"}); got != "agent · abcdefgh" {
 		t.Errorf("requester = %q, want the agent and a short id", got)
 	}
 }
@@ -982,10 +983,10 @@ func TestOpeningAnOAuthSecretShowsWhatItIs(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.projectSecrets = []Secret{{
+	ds.projectSecrets = []console.Secret{{
 		ID: "sec_oauth", Name: "claude", Type: "oauth", Routes: []secretroute.Route{{Hosts: []string{"api.anthropic.com"}}}, MaxTTL: time.Hour,
 		//nolint:gosec // A token endpoint, which is a URL rather than a credential.
-		OAuth: &SecretOAuth{
+		OAuth: &console.SecretOAuth{
 			TokenURL:             "https://console.anthropic.com/v1/oauth/token",
 			ClientID:             "client-123",
 			Scopes:               []string{"user:profile", "user:inference"},
@@ -1025,10 +1026,10 @@ func TestASecretThatCannotRenewSaysSo(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.projectSecrets = []Secret{{
+	ds.projectSecrets = []console.Secret{{
 		ID: "sec_oauth", Name: "half", Type: "oauth", MaxTTL: time.Hour,
 		//nolint:gosec // A token endpoint, which is a URL rather than a credential.
-		OAuth: &SecretOAuth{TokenURL: "https://example.com/token"},
+		OAuth: &console.SecretOAuth{TokenURL: "https://example.com/token"},
 	}}
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
@@ -1046,8 +1047,8 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.projectBindings = []SecretBinding{{
-		ID: "binding_h", SecretID: "sec_gh", TargetKind: BindingHarnessConfig,
+	ds.projectBindings = []console.SecretBinding{{
+		ID: "binding_h", SecretID: "sec_gh", TargetKind: console.BindingHarnessConfig,
 		TargetID: "harness_1", Use: true, EnvVar: "GH_TOKEN",
 	}}
 	ds.mu.Unlock()
@@ -1077,7 +1078,7 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 	send(t, m, keyPress("esc"))
 	send(t, m, keyPress(bindingCreateKey))
 	onRow(t, m, "target")
-	for m.dialog.form.chosen("target") != BindingHarnessConfig {
+	for m.dialog.form.chosen("target") != console.BindingHarnessConfig {
 		send(t, m, keyPress("right"))
 	}
 	if got := m.dialog.form.chosenLabel("target"); got != "one harness" {
@@ -1088,7 +1089,7 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 	}
 	send(t, m, keyPress("ctrl+s"))
 
-	if len(ds.createdBindings) != 1 || ds.createdBindings[0].TargetKind != BindingHarnessConfig {
+	if len(ds.createdBindings) != 1 || ds.createdBindings[0].TargetKind != console.BindingHarnessConfig {
 		t.Fatalf("created = %#v, want the server's own word on the wire", ds.createdBindings)
 	}
 	if got := ds.createdBindings[0].TargetID; got != testHarnesses()[0].ID {
@@ -1212,7 +1213,7 @@ func TestTheRequestsTableSitsUnderTheSecrets(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.requests = []CredentialRequest{{ID: "sreq_1", Host: "api.github.com", SandboxID: "sbx_one", Created: time.Now()}}
+	ds.requests = []console.CredentialRequest{{ID: "sreq_1", Host: "api.github.com", SandboxID: "sbx_one", Created: time.Now()}}
 	ds.mu.Unlock()
 	drain(t, m, m.loadCredentialRequests(), 0)
 
@@ -1314,7 +1315,7 @@ func submitForm(t *testing.T, m *Model) tea.Cmd {
 func TestRequestsArrivingOnTheSecretsScreenAreDrawn(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
-	requests := make([]CredentialRequest, 30)
+	requests := make([]console.CredentialRequest, 30)
 	for i := range requests {
 		r := waitingRequest()
 		r.ID = fmt.Sprintf("sreq_%02d", i)
@@ -1352,7 +1353,7 @@ func TestRequestsArrivingOnTheSecretsScreenAreDrawn(t *testing.T) {
 func TestABindingAboutToLapseDoesNotReadAsNever(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	b := SecretBinding{Expires: now.Add(20 * time.Second)}
+	b := console.SecretBinding{Expires: now.Add(20 * time.Second)}
 	if got := bindingExpiry(b, now); got != "expires in 20s" {
 		t.Fatalf("expiry = %q, want the seconds left", got)
 	}
@@ -1366,8 +1367,8 @@ func TestABindingAboutToLapseDoesNotReadAsNever(t *testing.T) {
 func TestTheRowStopsCountingABindingWhenItLapses(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)
-	m.secrets.setBindings(append(m.secrets.bindings, SecretBinding{
-		ID: "binding_short", SecretID: "sec_gh", TargetKind: BindingProject, Use: true, EnvVar: "SHORT",
+	m.secrets.setBindings(append(m.secrets.bindings, console.SecretBinding{
+		ID: "binding_short", SecretID: "sec_gh", TargetKind: console.BindingProject, Use: true, EnvVar: "SHORT",
 		Expires: time.Now().Add(time.Minute),
 	}))
 	if body := frameText(m); !strings.Contains(body, "3 bindings") {
@@ -1382,7 +1383,7 @@ func TestTheRowStopsCountingABindingWhenItLapses(t *testing.T) {
 func TestGrantDecisionShowsStableAttributionAndLimits(t *testing.T) {
 	m := unloadedModel(t)
 	at := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
-	e := BindingDecision{ID: "event_1", Actor: "sbx_deleted", BindingID: "bind_1", RequestID: "sreq_1", TargetID: "sbx_child", EnvVar: "GH_TOKEN", ParentID: "bind_parent", At: at, Expires: at.Add(time.Hour), RouteLists: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/acme/**"}}}}}
+	e := console.BindingDecision{ID: "event_1", Actor: "sbx_deleted", BindingID: "bind_1", RequestID: "sreq_1", TargetID: "sbx_child", EnvVar: "GH_TOKEN", ParentID: "bind_parent", At: at, Expires: at.Add(time.Hour), RouteLists: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/acme/**"}}}}}
 	m.showBindingDecision(e, func() tea.Cmd { return nil })
 	var text strings.Builder
 	for _, section := range m.dialog.sections {
@@ -1406,7 +1407,7 @@ func TestLateBindingHistoryDoesNotReplaceNewerDialog(t *testing.T) {
 	old := statusDialog("History", "reading")
 	newer := statusDialog("Settings", "reading")
 	m.dialog = newer
-	m.bindingHistoryLoaded(bindingHistoryMsg{wait: old, server: m.configServer(), entries: []BindingDecision{{ID: "e"}}})
+	m.bindingHistoryLoaded(bindingHistoryMsg{wait: old, server: m.configServer(), entries: []console.BindingDecision{{ID: "e"}}})
 	if m.dialog != newer {
 		t.Fatal("late history replaced the newer card")
 	}

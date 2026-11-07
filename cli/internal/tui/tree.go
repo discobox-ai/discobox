@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
 )
@@ -338,7 +339,7 @@ func (m *Model) syncListCursor() {
 
 // listCursorTo puts the list's cursor on one box's row, reporting whether the
 // list has it.
-func (m *Model) listCursorTo(box Sandbox) bool {
+func (m *Model) listCursorTo(box console.Sandbox) bool {
 	for i, s := range m.list.rows() {
 		if m.boxRef(s) == m.boxRef(box) {
 			m.list.moveTo(i)
@@ -506,14 +507,14 @@ func (m *Model) switchBox(delta int) tea.Cmd {
 // is switched to, and any other is only pointed at, the list's cursor on its
 // row and the list in front, since attaching to it would start it. Enter, or a
 // double click, is what goes on to start it (switchTo).
-func (m *Model) landOn(box Sandbox) tea.Cmd {
+func (m *Model) landOn(box console.Sandbox) tea.Cmd {
 	if m.paletteReveal != nil && m.paletteReveal.target != m.boxRef(box) {
 		m.restorePaletteView()
 	}
-	if !box.live() && m.parked[m.boxRef(box)] == nil {
+	if !box.Live() && m.parked[m.boxRef(box)] == nil {
 		m.focusTree()
 		m.listCursorTo(box)
-		if box.startable() {
+		if box.Startable() {
 			return status("%s is %s — enter starts it", sandboxLabel(box), box.State)
 		}
 		return status("%s is %s — enter attaches", sandboxLabel(box), box.State)
@@ -524,7 +525,7 @@ func (m *Model) landOn(box Sandbox) tea.Cmd {
 // switchTo shows one discobox's workspace: its parked one when it has one,
 // and otherwise a fresh attach — refused, with the reason, on a box the list
 // would not attach to either.
-func (m *Model) switchTo(box Sandbox) tea.Cmd {
+func (m *Model) switchTo(box console.Sandbox) tea.Cmd {
 	if m.boxRef(box) == m.boxRef(m.paneBox) && m.hasWorkspace() && m.pageOpen() {
 		m.showLive()
 		return nil
@@ -533,13 +534,13 @@ func (m *Model) switchTo(box Sandbox) tea.Cmd {
 		return nil
 	}
 	if m.parked[m.boxRef(box)] == nil {
-		for _, a := range m.actions([]Sandbox{box}) {
-			if interactions[a.key] == InteractAttach && !a.enabled {
+		for _, a := range m.actions([]console.Sandbox{box}) {
+			if interactions[a.key] == console.InteractAttach && !a.enabled {
 				return status("%s: %s", sandboxLabel(box), a.why)
 			}
 		}
 	}
-	return m.openFromList(InteractAttach, box)
+	return m.openFromList(console.InteractAttach, box)
 }
 
 // parkWorkspace puts the open workspace aside with its streams attached. A
@@ -563,7 +564,7 @@ func (m *Model) parkWorkspace() {
 	ws := m.workspace
 	m.workspace = workspace{paneBox: m.paneBox}
 	if m.parked == nil {
-		m.parked = map[boxRef]*workspace{}
+		m.parked = map[console.BoxRef]*workspace{}
 	}
 	m.parked[m.boxRef(ws.paneBox)] = &ws
 }
@@ -984,14 +985,14 @@ type boxMenuMsg struct{}
 
 // boxMenu opens the actions menu for one discobox, read from the list when it
 // is there so the menu answers for the box as it is now.
-func (m *Model) boxMenu(box Sandbox) tea.Cmd {
+func (m *Model) boxMenu(box console.Sandbox) tea.Cmd {
 	for _, s := range m.list.rows() {
 		if m.boxRef(s) == m.boxRef(box) {
 			box = s
 			break
 		}
 	}
-	targets := []Sandbox{box}
+	targets := []console.Sandbox{box}
 	// Any other box's menu is the list's own, attach and all.
 	if m.boxRef(box) != m.boxRef(m.paneBox) || !m.hasWorkspace() {
 		m.dialog = actionsDialog(actionTitle(targets), "", m.actions(targets), chooseAction(targets))
@@ -1066,7 +1067,7 @@ type boxMenuChoiceMsg struct{ key string }
 func (m *Model) boxSourceLabel() string {
 	box := m.paneBox
 	if box.Source == "" {
-		return noSourceChoice
+		return console.NoSourceChoice
 	}
 	return sourceref.Display(box.Source, m.session.Home)
 }

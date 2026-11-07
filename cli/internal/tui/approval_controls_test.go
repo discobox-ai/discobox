@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -86,18 +87,18 @@ func TestApprovalCardsFitCompactWindow(t *testing.T) {
 			req := waitingRequest()
 			switch kind {
 			case "use":
-				m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub"}}, nil)
+				m.askAboutCredential(req, []console.Secret{{ID: "sec", Name: "GitHub"}}, nil)
 			case "delegate":
 				req.Delegate = req.Use
 				req.Use = nil
-				m.askAboutCredential(req, []Secret{{ID: "sec", Name: "GitHub"}}, nil)
+				m.askAboutCredential(req, []console.Secret{{ID: "sec", Name: "GitHub"}}, nil)
 			case "adoption":
-				req.Adoption = &AdoptionAsk{ChildID: "child", RequesterID: "requester", CurrentParentID: "parent"}
+				req.Adoption = &console.AdoptionAsk{ChildID: "child", RequesterID: "requester", CurrentParentID: "parent"}
 				m.askAboutAdoption(req)
 			case "trust":
 				m.askAboutTrust(waitingTrust())
 			case "refresh":
-				m.askAboutRefresh(refreshRequest(), []Secret{{ID: "sec_gh", Name: "GitHub", RefreshCommand: []string{"gh", "auth", "token"}}})
+				m.askAboutRefresh(refreshRequest(), []console.Secret{{ID: "sec_gh", Name: "GitHub", RefreshCommand: []string{"gh", "auth", "token"}}})
 			case "api":
 				req.APIAccess = true
 				m.askAboutAPIAccess(req)
@@ -184,7 +185,7 @@ func TestCombinedApprovalStagesIndependentDecisions(t *testing.T) {
 			t.Run(use+"/"+delegate, func(t *testing.T) {
 				m, ds := sourceWithRequest(t)
 				req := waitingRequest()
-				req.Delegate = &RequestPart{Routes: req.Use.Routes}
+				req.Delegate = &console.RequestPart{Routes: req.Use.Routes}
 				m.askAboutCredential(req, ds.projectSecrets, nil)
 				m.dialog.form.choose("scope", "hosts")
 				answerApproval(t, m, use)
@@ -211,7 +212,7 @@ func TestCombinedApprovalStagesIndependentDecisions(t *testing.T) {
 					t.Fatal("missing atomic answer")
 				}
 				got := ds.approvals[0]
-				if (got.Use == PartApprove) != (use == "accept") || (got.Delegate == PartApprove) != (delegate == "accept") || got.UseScope != "hosts" || got.DelegateScope != "anywhere" {
+				if (got.Use == console.PartApprove) != (use == "accept") || (got.Delegate == console.PartApprove) != (delegate == "accept") || got.UseScope != "hosts" || got.DelegateScope != "anywhere" {
 					t.Fatalf("wrong answer: %#v", got)
 				}
 			})
@@ -279,9 +280,9 @@ func TestCredentialDurationDefaultsLimitsAndCustomInput(t *testing.T) {
 func TestOpenApprovalPickersFitAndMouseCanReachLastChoice(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	send(t, m, sizeMsg(80, 24))
-	var secrets []Secret
+	var secrets []console.Secret
 	for i := range 50 {
-		secrets = append(secrets, Secret{ID: fmt.Sprintf("sec_%d", i), Name: fmt.Sprintf("Credential %d", i)})
+		secrets = append(secrets, console.Secret{ID: fmt.Sprintf("sec_%d", i), Name: fmt.Sprintf("Credential %d", i)})
 	}
 	m.askAboutCredential(waitingRequest(), secrets, nil)
 	for _, row := range []int{0, 1, 3} {
@@ -341,7 +342,7 @@ func TestRouteTableBoundsCartesianOutputAndPreservesCompactRoutes(t *testing.T) 
 	if approvalTableFits([]secretroute.Route{route}) {
 		t.Fatal("unbounded Cartesian product admitted")
 	}
-	sec := approvalRouteSection("Routes", &RequestPart{Routes: []secretroute.Route{route}})
+	sec := approvalRouteSection("Routes", &console.RequestPart{Routes: []secretroute.Route{route}})
 	if len(sec.lines) != 2 || sec.lines[1].text != secretroute.Format(route) {
 		t.Fatal("fallback changed route restrictions")
 	}

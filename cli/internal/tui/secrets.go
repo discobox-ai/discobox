@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/secretenv"
@@ -38,8 +39,8 @@ const SecretsKeyName = "F4"
 // secretList is the screen's list: the project's secrets and where the cursor
 // is in them.
 type secretList struct {
-	all      []Secret
-	bindings []SecretBinding
+	all      []console.Secret
+	bindings []console.SecretBinding
 	cursor   int
 	offset   int
 
@@ -51,7 +52,7 @@ type secretList struct {
 	// that does not work is the first thing to know about it on this screen —
 	// ahead of what stands on it — because it is the answer to the question
 	// that brought somebody here (ADR 0132).
-	refused map[string]SecretRejection
+	refused map[string]console.SecretRejection
 
 	width, height int
 
@@ -70,7 +71,7 @@ func (l *secretList) clear() {
 	l.all, l.bindings, l.loaded, l.cursor, l.offset = nil, nil, false, 0, 0
 }
 
-func (l *secretList) setAll(all []Secret) {
+func (l *secretList) setAll(all []console.Secret) {
 	l.loaded = true
 	var onID string
 	if s := l.current(); s != nil {
@@ -90,8 +91,8 @@ func (l *secretList) setAll(all []Secret) {
 
 // setRefused takes the credentials an upstream has refused, so the rows can say
 // which of them does not work.
-func (l *secretList) setRefused(rejections []SecretRejection) {
-	refused := make(map[string]SecretRejection, len(rejections))
+func (l *secretList) setRefused(rejections []console.SecretRejection) {
+	refused := make(map[string]console.SecretRejection, len(rejections))
 	for _, rejection := range rejections {
 		if _, seen := refused[rejection.SecretID]; !seen {
 			refused[rejection.SecretID] = rejection
@@ -103,26 +104,26 @@ func (l *secretList) setRefused(rejections []SecretRejection) {
 // setBindings takes the project's bindings, which the rows count and the
 // bindings dialog reads. They are listed for the project rather than per row:
 // one read answers every row, and a count per row would be a call per row.
-func (l *secretList) setBindings(bindings []SecretBinding) {
+func (l *secretList) setBindings(bindings []console.SecretBinding) {
 	l.bindings = bindings
 }
 
 // binding is one of the project's bindings, by its ID.
-func (l *secretList) binding(id string) (SecretBinding, bool) {
+func (l *secretList) binding(id string) (console.SecretBinding, bool) {
 	for _, b := range l.bindings {
 		if b.ID == id {
 			return b, true
 		}
 	}
-	return SecretBinding{}, false
+	return console.SecretBinding{}, false
 }
 
 // bindingsFor is the live bindings of one secret. One that has lapsed is gone
 // at the server's next sweep, and until then it carries nothing, so it is not
 // listed: a list of what may use a credential is what may use it now.
-func (l *secretList) bindingsFor(secretID string) []SecretBinding {
+func (l *secretList) bindingsFor(secretID string) []console.SecretBinding {
 	now := l.now()
-	var live []SecretBinding
+	var live []console.SecretBinding
 	for _, b := range l.bindings {
 		if b.SecretID == secretID && bindingLive(b, now) {
 			live = append(live, b)
@@ -141,11 +142,11 @@ func (l *secretList) liveBindings(secretID string) int {
 
 // bindingLive is whether a binding still carries anything: it never expires,
 // or has not yet.
-func bindingLive(b SecretBinding, now time.Time) bool {
+func bindingLive(b console.SecretBinding, now time.Time) bool {
 	return b.Expires.IsZero() || b.Expires.After(now)
 }
 
-func (l *secretList) current() *Secret {
+func (l *secretList) current() *console.Secret {
 	if l.cursor < 0 || l.cursor >= len(l.all) {
 		return nil
 	}
@@ -221,7 +222,7 @@ func (l *secretList) view(st *styles, z *zones, focused bool) string {
 // Its kind and its binding limit are not here. They are facts about a credential
 // rather than ways to tell two of them apart, and a row carrying every field
 // is a row nobody reads — Enter opens the secret, and they are there.
-func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
+func (l *secretList) row(st *styles, s console.Secret, i int, focused bool) string {
 	atCursor := i == l.cursor && focused
 
 	tail := ""
@@ -235,7 +236,7 @@ func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
 	// Its routes, which are the whole of what limits where this credential
 	// may travel. One with none says so rather than showing a blank: blank
 	// reads as "not loaded", and this is a fact about the secret.
-	where := routesText(s.Routes)
+	where := console.RoutesText(s.Routes)
 	whereStyle := st.name
 	if len(s.Routes) == 0 {
 		where, whereStyle = "sent nowhere", st.dimText
@@ -272,7 +273,7 @@ func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
 }
 
 // secretAge is the age column, the same shape the other screens use.
-func secretAge(s Secret, now time.Time) string {
+func secretAge(s console.Secret, now time.Time) string {
 	return ago(s.Updated, now)
 }
 
@@ -308,8 +309,8 @@ func shortDuration(d time.Duration) string {
 type secretsLoadedListMsg struct {
 	// server is the server the listing was read from; see harnessesLoadedMsg.
 	server   string
-	secrets  []Secret
-	bindings []SecretBinding
+	secrets  []console.Secret
+	bindings []console.SecretBinding
 	err      error
 }
 
@@ -339,7 +340,7 @@ func (m *Model) loadSecrets() tea.Cmd {
 		if err != nil {
 			return secretsLoadedListMsg{server: server, err: err}
 		}
-		bindings, err := m.ds.Bindings(m.ctx, server, BindingFilter{})
+		bindings, err := m.ds.Bindings(m.ctx, server, console.BindingFilter{})
 		if err != nil {
 			return secretsLoadedListMsg{server: server, err: err}
 		}
@@ -362,7 +363,7 @@ func (m *Model) closeSecrets() {
 }
 
 func (m *Model) secretsLoaded(msg secretsLoadedListMsg) tea.Cmd {
-	if m.session.serverName(msg.server) != m.configServer() {
+	if m.session.ServerName(msg.server) != m.configServer() {
 		// Read for a server the header has since moved off; see
 		// harnessesLoaded.
 		return nil
@@ -511,22 +512,22 @@ func (m *Model) askForBinding() tea.Cmd {
 	if secret == nil {
 		return nil
 	}
-	targets := []choice{{key: BindingProject, label: "every discobox in this project",
+	targets := []choice{{key: console.BindingProject, label: "every discobox in this project",
 		hint: "the widest of the three: anything the project runs gets the credential"}}
 	if len(m.harnesses.all) > 0 {
-		targets = append(targets, choice{key: BindingHarnessConfig, label: "one harness",
+		targets = append(targets, choice{key: console.BindingHarnessConfig, label: "one harness",
 			hint: "every discobox running that harness gets the credential"})
 	}
 	// A binding names a discobox on the secret's own server: one on another
 	// server is not one this secret can ever reach.
 	var boxes []choice
 	for _, box := range m.list.all {
-		if m.session.serverName(box.Server) == m.configServer() {
+		if m.session.ServerName(box.Server) == m.configServer() {
 			boxes = append(boxes, choice{key: box.ID, label: box.Name, hint: box.ID})
 		}
 	}
 	if len(boxes) > 0 {
-		targets = append(targets, choice{key: BindingSandbox, label: "one discobox",
+		targets = append(targets, choice{key: console.BindingSandbox, label: "one discobox",
 			hint: "the narrowest, and what approving a request makes"})
 	}
 
@@ -543,10 +544,10 @@ func (m *Model) askForBinding() tea.Cmd {
 	rows := []formRow{
 		withSection(who, pickRow("target", "bound to", targets...)),
 		unless(withSection(who, pickRow("harness", "harness", harnesses...)),
-			func(f *form) bool { return f.chosen("target") == BindingHarnessConfig },
+			func(f *form) bool { return f.chosen("target") == console.BindingHarnessConfig },
 			"only when it is bound to one harness"),
 		unless(withSection(who, pickRow("sandbox", "discobox", boxes...)),
-			func(f *form) bool { return f.chosen("target") == BindingSandbox },
+			func(f *form) bool { return f.chosen("target") == console.BindingSandbox },
 			"only when it is bound to one discobox"),
 		withSection(what, pickRow("purpose", "purpose",
 			choice{key: "use", label: "to use it", hint: "the discobox finds a sentinel for it in the variable below"},
@@ -557,7 +558,7 @@ func (m *Model) askForBinding() tea.Cmd {
 
 	routes := secretRouteRows(where, nil)
 	for i := range routes {
-		routes[i].hint = "narrows where the secret's own routes send it, for this binding alone · empty keeps the secret's: " + routesText(secret.Routes)
+		routes[i].hint = "narrows where the secret's own routes send it, for this binding alone · empty keeps the secret's: " + console.RoutesText(secret.Routes)
 	}
 	ttl := ttlRows("ttl", "lifetime", where, "never expires", lifetime.Presets, int64(secret.MaxTTL/time.Second))
 	lasts := "it never expires: a credential nobody has to think about again, and one nothing takes away"
@@ -582,7 +583,7 @@ func (m *Model) askForBinding() tea.Cmd {
 			return nil
 		}
 		purpose := f.chosen("purpose")
-		binding := NewBinding{
+		binding := console.NewBinding{
 			SecretID:   secretID,
 			TargetKind: f.chosen("target"),
 			Use:        purpose != "delegate",
@@ -598,9 +599,9 @@ func (m *Model) askForBinding() tea.Cmd {
 			}
 		}
 		switch binding.TargetKind {
-		case BindingHarnessConfig:
+		case console.BindingHarnessConfig:
 			binding.TargetID = f.chosen("harness")
-		case BindingSandbox:
+		case console.BindingSandbox:
 			binding.TargetID = f.chosen("sandbox")
 		}
 		return m.makeBinding(secretName, binding)
@@ -626,7 +627,7 @@ func unless(row formRow, when func(f *form) bool, why string) formRow {
 	return row
 }
 
-func (m *Model) makeBinding(secretName string, binding NewBinding) tea.Cmd {
+func (m *Model) makeBinding(secretName string, binding console.NewBinding) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "binding…")
 	server := m.configServer()
 	return func() tea.Msg {
@@ -644,7 +645,7 @@ func (m *Model) makeBinding(secretName string, binding NewBinding) tea.Cmd {
 // screen shows, including the ones no discobox owns. Only that server's,
 // because its secrets are the only ones that can answer it.
 func (m *Model) openWaitingRequest() tea.Cmd {
-	var oldest *CredentialRequest
+	var oldest *console.CredentialRequest
 	for i := range m.requestRows.all {
 		if oldest == nil || m.requestRows.all[i].Created.Before(oldest.Created) {
 			oldest = &m.requestRows.all[i]
@@ -725,7 +726,7 @@ func (m *Model) showBindings() tea.Cmd {
 // value is never among them; for an OAuth credential the renewal material is
 // not either, and what is left — where it renews, whose OAuth grant it is, what it
 // may do, when it goes stale — is the part somebody managing it needs.
-func describeSecret(secret Secret, now time.Time) []section {
+func describeSecret(secret console.Secret, now time.Time) []section {
 	limit := "none — bindings of it may last forever"
 	if secret.MaxTTL > 0 {
 		limit = "at most " + bindingLimit(secret.MaxTTL)
@@ -832,18 +833,18 @@ const unbindKey = "x"
 // project, a harness by name, or a discobox by name. The wire word for a
 // harness is harnessConfig, because that is the resource; a person calls it
 // the harness, and a window that says both teaches two names for one thing.
-func (m *Model) bindingTarget(b SecretBinding) string {
+func (m *Model) bindingTarget(b console.SecretBinding) string {
 	switch b.TargetKind {
-	case BindingProject:
+	case console.BindingProject:
 		return "every discobox in the project"
-	case BindingHarnessConfig:
+	case console.BindingHarnessConfig:
 		for _, h := range m.harnesses.all {
 			if h.ID == b.TargetID {
 				return "harness " + h.Name
 			}
 		}
 		return "harness " + b.TargetID
-	case BindingSandbox:
+	case console.BindingSandbox:
 		for _, box := range m.list.all {
 			if box.ID == b.TargetID {
 				return "discobox " + box.Name
@@ -857,7 +858,7 @@ func (m *Model) bindingTarget(b SecretBinding) string {
 // bindingLabel is what a binding's row is named by: the variable it is in,
 // which is what two bindings of one secret differ by most often, or that it
 // is only given on.
-func bindingLabel(b SecretBinding) string {
+func bindingLabel(b console.SecretBinding) string {
 	switch {
 	case b.Use && b.Delegate:
 		return b.EnvVar + ", and given on"
@@ -872,10 +873,10 @@ func bindingLabel(b SecretBinding) string {
 
 // bindingDetail is the rest of the row: what it is on, where it may be sent,
 // and how long it has left.
-func (m *Model) bindingDetail(b SecretBinding, now time.Time) string {
+func (m *Model) bindingDetail(b console.SecretBinding, now time.Time) string {
 	parts := []string{m.bindingTarget(b)}
 	if len(b.Routes) > 0 {
-		parts = append(parts, "to "+routesText(b.Routes))
+		parts = append(parts, "to "+console.RoutesText(b.Routes))
 	}
 	if b.ParentID != "" {
 		parts = append(parts, "handed on")
@@ -885,10 +886,10 @@ func (m *Model) bindingDetail(b SecretBinding, now time.Time) string {
 
 // reviewBinding is the binding read in full: what it is on, where it may go,
 // who made it, and how long it lasts. back is the list it was opened from.
-func (m *Model) reviewBinding(secretName string, b SecretBinding, back func() tea.Cmd) tea.Cmd {
+func (m *Model) reviewBinding(secretName string, b console.SecretBinding, back func() tea.Cmd) tea.Cmd {
 	where, tone := "where the secret's routes send it", toneDim
 	if len(b.Routes) > 0 {
-		where, tone = routeRows(b.Routes)+"\n(within the secret's routes)", toneAccent
+		where, tone = console.RouteRows(b.Routes)+"\n(within the secret's routes)", toneAccent
 	}
 	covers := section{label: "the binding", fields: []field{
 		{label: "secret", value: secretName, tone: toneAccent},
@@ -928,7 +929,7 @@ func (m *Model) reviewBinding(secretName string, b SecretBinding, back func() te
 // confirmUnbind asks before taking a binding back, and says what stops
 // working. back is the list the question was asked from, which No returns to,
 // and after where a finished unbind goes on to (secretActionMsg.after).
-func (m *Model) confirmUnbind(secretName string, b SecretBinding, back, after func() tea.Cmd) tea.Cmd {
+func (m *Model) confirmUnbind(secretName string, b console.SecretBinding, back, after func() tea.Cmd) tea.Cmd {
 	d := confirmDialog("Unbind", "", func(string) tea.Cmd { return m.unbind(b.ID, after) })
 	d.titleRight = b.ID
 	stops := line{text: "the credential stops resolving at once, wherever it is being used", tone: toneAlert}
@@ -963,7 +964,7 @@ func (m *Model) confirmUnbind(secretName string, b SecretBinding, back, after fu
 // bindingLifeLeft is how long a binding has, for a field already labeled with
 // what it is: "expires  expires in 47m" is the row's phrasing put under the
 // row's own heading.
-func bindingLifeLeft(b SecretBinding, now time.Time) string {
+func bindingLifeLeft(b console.SecretBinding, now time.Time) string {
 	switch {
 	case b.Expires.IsZero():
 		return "never"
@@ -978,7 +979,7 @@ func bindingLifeLeft(b SecretBinding, now time.Time) string {
 // are minutes of it. Rounded to the minute under one, half a minute rounds to
 // zero, which shortDuration says as "never": a binding about to lapse read as
 // one that never would.
-func bindingLeft(b SecretBinding, now time.Time) time.Duration {
+func bindingLeft(b console.SecretBinding, now time.Time) time.Duration {
 	left := b.Expires.Sub(now)
 	if left < time.Minute {
 		return max(left.Round(time.Second), time.Second)
@@ -986,7 +987,7 @@ func bindingLeft(b SecretBinding, now time.Time) time.Duration {
 	return left.Round(time.Minute)
 }
 
-func bindingExpiry(b SecretBinding, now time.Time) string {
+func bindingExpiry(b console.SecretBinding, now time.Time) string {
 	switch {
 	case b.Expires.IsZero():
 		return "never expires"
@@ -1111,7 +1112,7 @@ func ttlSeconds(f *form, key string) (int64, bool) {
 //
 // routes are the routes the card opens on: an existing secret's own, or the
 // ones a request asks for.
-func secretForm(existing *Secret, routes []secretroute.Route) *form {
+func secretForm(existing *console.Secret, routes []secretroute.Route) *form {
 	const what, value = "the credential", "what it is"
 	editing := existing != nil
 	oauth := func(f *form) bool { return f.chosen("kind") == "oauth" }
@@ -1416,30 +1417,30 @@ func (m *Model) newSecretForm() tea.Cmd {
 
 // secretFromForm is the secret the new-secret form says, or false with why on
 // the form: the screen's own new secret, and one stored to answer a request.
-func secretFromForm(f *form) (NewSecret, bool) {
+func secretFromForm(f *form) (console.NewSecret, bool) {
 	seconds, ok := ttlSeconds(f, "ttl")
 	if !ok {
 		f.err = "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit"
-		return NewSecret{}, false
+		return console.NewSecret{}, false
 	}
 	format, why := formFormat(f)
 	if why != "" {
 		f.err = why
-		return NewSecret{}, false
+		return console.NewSecret{}, false
 	}
 	routes, why := formRoutes(f)
 	if why != "" {
 		f.err = why
-		return NewSecret{}, false
+		return console.NewSecret{}, false
 	}
 	// A secret with no routes is sent nowhere (ADR 26-10-27-880 §1), so one
 	// is asked for, as `discobox secret create` asks: `*` is how a person
 	// says anywhere (ADR 26-10-27-939).
 	if len(routes) == 0 {
 		f.err = "say where it may be sent: a host on a route row, or * for anywhere"
-		return NewSecret{}, false
+		return console.NewSecret{}, false
 	}
-	secret := NewSecret{
+	secret := console.NewSecret{
 		Name:          f.value("name"),
 		Type:          f.chosen("kind"),
 		MaxTTLSeconds: seconds,
@@ -1451,13 +1452,13 @@ func secretFromForm(f *form) (NewSecret, bool) {
 		command, err := refreshcmd.Split(f.value("command"))
 		if err != nil || len(command) == 0 {
 			f.err = "the command is words, with quotes around one that holds a space"
-			return NewSecret{}, false
+			return console.NewSecret{}, false
 		}
-		secret.RefreshCommand, secret.Value = command, SecretValue{}
+		secret.RefreshCommand, secret.Value = command, console.SecretValue{}
 		lasts, ok := ttlSeconds(f, "lasts")
 		if !ok {
 			f.err = "a value lasts 5m, 90m, 8h, or never goes stale"
-			return NewSecret{}, false
+			return console.NewSecret{}, false
 		}
 		secret.ValueTTLSeconds = &lasts
 	}
@@ -1467,7 +1468,7 @@ func secretFromForm(f *form) (NewSecret, bool) {
 // formSecretValue is the credential's material as the card holds it. An oauth
 // credential is the several fields the control plane renews with; a token is
 // the one field that travels.
-func formSecretValue(f *form) SecretValue {
+func formSecretValue(f *form) console.SecretValue {
 	if f.chosen("kind") == "exchange" {
 		fields := map[string]string{}
 		for _, row := range f.rows {
@@ -1477,12 +1478,12 @@ func formSecretValue(f *form) SecretValue {
 				}
 			}
 		}
-		return SecretValue{Exchange: fields}
+		return console.SecretValue{Exchange: fields}
 	}
 	if f.chosen("kind") != "oauth" {
-		return SecretValue{Token: f.value("token")}
+		return console.SecretValue{Token: f.value("token")}
 	}
-	return SecretValue{
+	return console.SecretValue{
 		Token:        f.value("access"),
 		RefreshToken: f.value("refresh"),
 		TokenURL:     f.value("tokenURL"),
@@ -1506,7 +1507,7 @@ func formFormat(f *form) (string, string) {
 	return format, ""
 }
 
-func (m *Model) storeSecret(secret NewSecret) tea.Cmd {
+func (m *Model) storeSecret(secret console.NewSecret) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "storing "+secret.Name+"…")
 	server := m.configServer()
 	return func() tea.Msg {
@@ -1532,7 +1533,7 @@ func (m *Model) storeSecret(secret NewSecret) tea.Cmd {
 // workspace, where there is no cursor to read and the header may name a
 // different server from the one the credential lives on (rejections.go,
 // ADR 0131 §2).
-func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
+func (m *Model) editSecretForm(server string, secret console.Secret) tea.Cmd {
 	was, id := secret, secret.ID
 	d := formDialog("Edit "+secret.Name, secretForm(&secret, secret.Routes), func(f *form) tea.Cmd {
 		seconds, ok := ttlSeconds(f, "ttl")
@@ -1540,7 +1541,7 @@ func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
 			f.err = "a limit is 1h, 90m, 3d, 2w, 1mo, or no limit"
 			return nil
 		}
-		update := SecretUpdate{}
+		update := console.SecretUpdate{}
 		if name := f.value("name"); name != was.Name {
 			update.Name = &name
 		}
@@ -1552,7 +1553,7 @@ func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
 			f.err = why
 			return nil
 		}
-		if routesText(routes) != routesText(was.Routes) {
+		if console.RoutesText(routes) != console.RoutesText(was.Routes) {
 			if routes == nil {
 				routes = []secretroute.Route{}
 			}
@@ -1618,7 +1619,7 @@ func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
 // Touching any part of one therefore means typing all of it, and the two tokens
 // are the part nobody can copy off the card, which is exactly what makes this
 // worth refusing rather than sending.
-func replacementValue(f *form, was Secret) (*SecretValue, string) {
+func replacementValue(f *form, was console.Secret) (*console.SecretValue, string) {
 	value := formSecretValue(f)
 	if was.Type == "exchange" {
 		// Replaced whole, like an oauth credential: every field, or none.
@@ -1644,7 +1645,7 @@ func replacementValue(f *form, was Secret) (*SecretValue, string) {
 		}
 		return &value, ""
 	}
-	stored := SecretOAuth{}
+	stored := console.SecretOAuth{}
 	if was.OAuth != nil {
 		stored = *was.OAuth
 	}
@@ -1668,7 +1669,7 @@ func replacementValue(f *form, was Secret) (*SecretValue, string) {
 // saveSecret writes the edit back and says what it did, naming each part that
 // changed. Nothing changed is not an error and not a write: it closes and says
 // so, rather than reporting a save that saved nothing.
-func (m *Model) saveSecret(server, id string, was Secret, update SecretUpdate) tea.Cmd {
+func (m *Model) saveSecret(server, id string, was console.Secret, update console.SecretUpdate) tea.Cmd {
 	var did []string
 	if update.Name != nil {
 		did = append(did, "renamed "+was.Name+" to "+*update.Name)
@@ -1682,7 +1683,7 @@ func (m *Model) saveSecret(server, id string, was Secret, update SecretUpdate) t
 		case 0:
 			did = append(did, was.Name+" is sent nowhere")
 		default:
-			did = append(did, was.Name+" is sent to "+routesText(*update.Routes))
+			did = append(did, was.Name+" is sent to "+console.RoutesText(*update.Routes))
 		}
 	}
 	if update.Value != nil {
@@ -1859,7 +1860,7 @@ func (m *Model) secretHints() []hint {
 type bindingHistoryMsg struct {
 	wait           *dialog
 	server, secret string
-	entries        []BindingDecision
+	entries        []console.BindingDecision
 	err            error
 }
 
@@ -1908,7 +1909,7 @@ func (m *Model) showBindingHistory(msg bindingHistoryMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) showBindingDecision(e BindingDecision, back func() tea.Cmd) tea.Cmd {
+func (m *Model) showBindingDecision(e console.BindingDecision, back func() tea.Cmd) tea.Cmd {
 	label := "Bound by"
 	if e.RequestID != "" {
 		label = "Approved by"
@@ -1929,7 +1930,7 @@ func (m *Model) showBindingDecision(e BindingDecision, back func() tea.Cmd) tea.
 		fields = append(fields, field{label: "effective limits", value: "not recorded for this historical change"})
 	}
 	for _, list := range e.RouteLists {
-		fields = append(fields, field{label: "within", value: routeRows(list), tone: toneAccent})
+		fields = append(fields, field{label: "within", value: console.RouteRows(list), tone: toneAccent})
 	}
 	d := actionsDialog("Credential decision", "", nil, func(string) tea.Cmd { return back() })
 	d.sections = []section{{label: "the decision", fields: fields}}

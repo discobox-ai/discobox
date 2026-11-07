@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 
 	tea "charm.land/bubbletea/v2"
@@ -23,15 +24,15 @@ var trustLifetimes = []time.Duration{time.Hour, lifetime.Day, lifetime.Week, lif
 
 // trustAnswer is a trust approval being put together across the two steps.
 type trustAnswer struct {
-	req CredentialRequest
-	pin TrustPin
+	req console.CredentialRequest
+	pin console.TrustPin
 	ttl time.Duration
 }
 
 // askAboutTrust is the trust card: who is asking to reach which host, why, what
 // the pool was shown there, and one row per certificate that may be pinned —
 // the server's default first.
-func (m *Model) askAboutTrust(req CredentialRequest) tea.Cmd {
+func (m *Model) askAboutTrust(req console.CredentialRequest) tea.Cmd {
 	options := trustPinOptions(*req.Trust)
 	var pins []choice
 	for i, opt := range options {
@@ -71,7 +72,7 @@ func (m *Model) askAboutTrust(req CredentialRequest) tea.Cmd {
 			return
 		}
 		pin := options[index].pin
-		var cert TrustCertificate
+		var cert console.TrustCertificate
 		if req.Trust.SuppliedCA != nil && req.Trust.SuppliedCA.SHA256 == pin.SHA256 {
 			cert = *req.Trust.SuppliedCA
 		} else {
@@ -84,7 +85,7 @@ func (m *Model) askAboutTrust(req CredentialRequest) tea.Cmd {
 		}
 		meaning := "Trust certificates verified by this CA for this host and box only."
 		hash := "CA SHA-256"
-		if pin.Kind == TrustPinLeafSPKI {
+		if pin.Kind == console.TrustPinLeafSPKI {
 			meaning = "Trust this host's public key only. Key rotation requires new consent."
 			hash = "Key SHA-256"
 		}
@@ -105,7 +106,7 @@ func (m *Model) askAboutTrust(req CredentialRequest) tea.Cmd {
 func (m *Model) finishTrustApproval(a trustAnswer) tea.Cmd {
 	m.dialog = statusDialog("Trust request", "trusting "+a.req.Host+" for "+lifetime.Label(a.ttl)+"…")
 	return func() tea.Msg {
-		err := m.ds.ApproveTrustRequest(m.ctx, a.req.Server, TrustApproval{
+		err := m.ds.ApproveTrustRequest(m.ctx, a.req.Server, console.TrustApproval{
 			RequestID:  a.req.ID,
 			Pin:        a.pin,
 			TTLSeconds: lifetime.Seconds(a.ttl),
@@ -116,7 +117,7 @@ func (m *Model) finishTrustApproval(a trustAnswer) tea.Cmd {
 
 // trustPinOption is one certificate the card offers to pin.
 type trustPinOption struct {
-	pin    TrustPin
+	pin    console.TrustPin
 	label  string
 	detail string
 }
@@ -124,7 +125,7 @@ type trustPinOption struct {
 // trustPinOptions is every pin the request offers, the server's default first:
 // the CA the agent supplied, each CA in the chain, and the leaf's own key last,
 // since a key pin breaks the day the host rotates its key.
-func trustPinOptions(ask TrustAsk) []trustPinOption {
+func trustPinOptions(ask console.TrustAsk) []trustPinOption {
 	var options []trustPinOption
 	seen := map[string]bool{}
 	add := func(option trustPinOption) {
@@ -137,7 +138,7 @@ func trustPinOptions(ask TrustAsk) []trustPinOption {
 	}
 	if ask.SuppliedCA != nil {
 		add(trustPinOption{
-			pin:    TrustPin{Kind: TrustPinCA, SHA256: ask.SuppliedCA.SHA256},
+			pin:    console.TrustPin{Kind: console.TrustPinCA, SHA256: ask.SuppliedCA.SHA256},
 			label:  "Trust by the CA the agent supplied",
 			detail: ask.SuppliedCA.Subject + " · " + shortFingerprint(ask.SuppliedCA.SHA256),
 		})
@@ -148,7 +149,7 @@ func trustPinOptions(ask TrustAsk) []trustPinOption {
 			continue
 		}
 		add(trustPinOption{
-			pin:    TrustPin{Kind: TrustPinCA, SHA256: cert.SHA256},
+			pin:    console.TrustPin{Kind: console.TrustPinCA, SHA256: cert.SHA256},
 			label:  "Trust by its CA",
 			detail: cert.Subject + " · " + shortFingerprint(cert.SHA256),
 		})
@@ -156,7 +157,7 @@ func trustPinOptions(ask TrustAsk) []trustPinOption {
 	if len(ask.Chain) > 0 {
 		leaf := ask.Chain[0]
 		add(trustPinOption{
-			pin:    TrustPin{Kind: TrustPinLeafSPKI, SHA256: leaf.SPKISHA256},
+			pin:    console.TrustPin{Kind: console.TrustPinLeafSPKI, SHA256: leaf.SPKISHA256},
 			label:  "Trust by its key",
 			detail: "breaks when the host rotates its key · " + shortFingerprint(leaf.SPKISHA256),
 		})

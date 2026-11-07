@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The create card is what Enter in the prompt opens: where this discobox is
@@ -37,7 +38,7 @@ type createCard struct {
 	// is asking where that run is cut from (WithRun). What the card has no row
 	// for — the prompt's own tokens, --bind, --delegate, --declared-sources — is
 	// taken from it as given. Nil for a card the composer opened.
-	base *RunRequest
+	base *console.RunRequest
 	// cursor is the row of the list Enter creates from: a source, or the last
 	// row, which is the way to name one.
 	cursor int
@@ -66,7 +67,7 @@ type createItemMsg struct {
 // newCreateCard opens the card on where a create would be cut from with
 // nothing said: the Source row's choice, which is the last card's answer until
 // the header or the row is moved (optionSet.cutFrom).
-func (o *optionSet) newCreateCard(prompt string, base *RunRequest) *createCard {
+func (o *optionSet) newCreateCard(prompt string, base *console.RunRequest) *createCard {
 	c := &createCard{opts: o, prompt: prompt, base: base, row: -1}
 	source := o.opts[optSource]
 	c.cursor = source.idx
@@ -304,7 +305,7 @@ func (c *createCard) hint() string {
 // request is the create the card would make from the source under its cursor.
 // The row that asks for a source has none yet, so it reads as the folder the
 // field would offer.
-func (c *createCard) request() RunRequest {
+func (c *createCard) request() console.RunRequest {
 	source, ok := c.source()
 	if !ok {
 		source = c.opts.sourceDir()
@@ -315,7 +316,7 @@ func (c *createCard) request() RunRequest {
 // requestFrom is the create the card makes from one source: the run options
 // as they stand, and from `discobox run`'s own request what the card has no
 // row for.
-func (c *createCard) requestFrom(source string) RunRequest {
+func (c *createCard) requestFrom(source string) console.RunRequest {
 	req := c.opts.request(c.prompt, source)
 	if c.base != nil {
 		req.Prompt = append([]string(nil), c.base.Prompt...)

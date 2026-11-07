@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // A discobox whose create stopped after it parked and before its source was
@@ -14,7 +16,7 @@ import (
 
 // parkedSandbox is a discobox parked waiting for a source this machine can
 // deliver.
-func parkedSandbox() Sandbox {
+func parkedSandbox() console.Sandbox {
 	box := testSandboxes()[0]
 	box.AwaitsDelivery = true
 	return box

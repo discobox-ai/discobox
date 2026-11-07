@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The settings form: `discobox admin box update` as one card. It edits what
@@ -25,9 +26,9 @@ const settingsKey = "E"
 // with the card that was put up to wait for it.
 type boxSettingsReadMsg struct {
 	wait      *dialog
-	box       Sandbox
-	settings  BoxSettings
-	harnesses []Harness
+	box       console.Sandbox
+	settings  console.BoxSettings
+	harnesses []console.Harness
 	err       error
 }
 
@@ -36,8 +37,8 @@ type boxSettingsReadMsg struct {
 // a save the server refuses can put it back with everything typed.
 type boxSettingsSaveMsg struct {
 	form   *dialog
-	box    Sandbox
-	update BoxSettingsUpdate
+	box    console.Sandbox
+	update console.BoxSettingsUpdate
 }
 
 type boxSettingsDoneMsg struct {
@@ -52,7 +53,7 @@ type boxSettingsDoneMsg struct {
 // answer opens a modal, and one that arrived after the person had opened a
 // workspace or another dialog would be drawn over it and take its keys. The
 // form replaces only that card; Esc on it gives the read up.
-func (m *Model) askSettings(box Sandbox) tea.Cmd {
+func (m *Model) askSettings(box console.Sandbox) tea.Cmd {
 	wait := statusDialog("Settings", "reading the settings of "+boxTitle(box, box.TerminalTitle)+"…")
 	m.dialog = wait
 	return func() tea.Msg {
@@ -84,14 +85,14 @@ func (m *Model) settingsRead(msg boxSettingsReadMsg) tea.Cmd {
 // settingsDialog is the card. The harness row is drawn on a box that is not
 // stopped, with why it cannot be changed, because the server refuses a harness
 // change on anything else and the card should say so before Enter does.
-func settingsDialog(box Sandbox, was BoxSettings, harnesses []Harness) *dialog {
+func settingsDialog(box console.Sandbox, was console.BoxSettings, harnesses []console.Harness) *dialog {
 	name := textRow("name", "name", "the name it is configured with", was.Name)
 	name.required = "a discobox needs a configured name"
 	name.hint = "the handle it was created with, which commands take · the list shows the name rename gives it, or its agent's title"
 
 	harness := pickRow("harness", "harness", harnessChoices(was.HarnessID, box, harnesses)...)
 	harness.hint = "the new harness provisions on the next start · conversation state is not carried over"
-	harness.when = func(*form) bool { return box.State == StateStopped }
+	harness.when = func(*form) bool { return box.State == console.StateStopped }
 	harness.why = "stop the box to change its harness"
 
 	deny := pickRow("deny", "restrict",
@@ -126,8 +127,8 @@ func settingsDialog(box Sandbox, was BoxSettings, harnesses []Harness) *dialog {
 	// rename's dialog is: the card names the box, not what it is doing.
 	var d *dialog
 	d = formDialog("Settings · "+boxTitle(box, box.TerminalTitle), f, func(f *form) tea.Cmd {
-		update := settingsUpdate(f, was, opened, box.State == StateStopped)
-		if update.empty() {
+		update := settingsUpdate(f, was, opened, box.State == console.StateStopped)
+		if update.Empty() {
 			return status("settings unchanged")
 		}
 		form := d
@@ -142,12 +143,12 @@ func settingsDialog(box Sandbox, was BoxSettings, harnesses []Harness) *dialog {
 
 // harnessChoices is every harness on the box's server, so the row opens on
 // what the box has.
-func harnessChoices(current string, box Sandbox, harnesses []Harness) []choice {
+func harnessChoices(current string, box console.Sandbox, harnesses []console.Harness) []choice {
 	var choices []choice
 	found := false
 	for _, h := range harnesses {
 		found = found || h.ID == current
-		label := h.flagName()
+		label := h.FlagName()
 		hint := h.Name
 		if h.ID == current {
 			hint = "what the box has now"
@@ -175,8 +176,8 @@ func harnessChoices(current string, box Sandbox, harnesses []Harness) []choice {
 
 // settingsUpdate is what the answered form changes against what it opened on.
 // The name is measured against opened, what its field started as.
-func settingsUpdate(f *form, was BoxSettings, opened string, stopped bool) BoxSettingsUpdate {
-	var update BoxSettingsUpdate
+func settingsUpdate(f *form, was console.BoxSettings, opened string, stopped bool) console.BoxSettingsUpdate {
+	var update console.BoxSettingsUpdate
 	if name := f.value("name"); name != opened {
 		update.Name = &name
 	}

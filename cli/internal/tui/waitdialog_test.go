@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // Submitting a prompt does not leave the list on screen with a busy line under
@@ -77,10 +78,10 @@ func TestWaitingDialogIsNotDismissedByEnter(t *testing.T) {
 // created discobox may be reported before its name comes back.
 func TestSandboxLabelPrefersTheName(t *testing.T) {
 	t.Parallel()
-	if got := sandboxLabel(Sandbox{ID: "sbx_1", Name: "nimble_swan"}); got != "nimble_swan" {
+	if got := sandboxLabel(console.Sandbox{ID: "sbx_1", Name: "nimble_swan"}); got != "nimble_swan" {
 		t.Fatalf("sandboxLabel() = %q", got)
 	}
-	if got := sandboxLabel(Sandbox{ID: "sbx_1"}); got != "sbx_1" {
+	if got := sandboxLabel(console.Sandbox{ID: "sbx_1"}); got != "sbx_1" {
 		t.Fatalf("sandboxLabel() = %q", got)
 	}
 }
@@ -93,7 +94,7 @@ func TestSandboxLabelPrefersTheName(t *testing.T) {
 func TestLeavingTheOpeningWorkspaceStopsTheAttachUnderIt(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
-	m.created(createdMsg{sandbox: Sandbox{ID: "sbx_1", Name: "nimble_swan"}, create: &createWatch{}, accepted: true})
+	m.created(createdMsg{sandbox: console.Sandbox{ID: "sbx_1", Name: "nimble_swan"}, create: &createWatch{}, accepted: true})
 	if m.dialog != nil {
 		t.Fatal("the launcher's create put a wait up over the workspace it opens")
 	}
@@ -106,7 +107,7 @@ func TestLeavingTheOpeningWorkspaceStopsTheAttachUnderIt(t *testing.T) {
 
 	// The listing the attach was waiting on, answered after the fact.
 	m.update(workspaceExecsMsg{gen: opening})
-	if m.inPanes() || m.connecting[ExecPrimary] {
+	if m.inPanes() || m.connecting[console.ExecPrimary] {
 		t.Fatal("the discobox took the screen after its workspace was left")
 	}
 }
@@ -118,7 +119,7 @@ func TestLeavingTheOpeningWorkspaceStopsTheAttachUnderIt(t *testing.T) {
 func TestALateAcceptAfterAFailedCreateGoesNowhere(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	box := Sandbox{ID: "sbx_new", Name: "nimble_swan"}
+	box := console.Sandbox{ID: "sbx_new", Name: "nimble_swan"}
 	watch := &createWatch{}
 	m.created(createdMsg{sandbox: box, create: watch, accepted: true, err: errors.New("push failed")})
 	m.update(promptSpentMsg{sandbox: box, create: watch})
@@ -132,7 +133,7 @@ func TestALateAcceptAfterAFailedCreateGoesNowhere(t *testing.T) {
 func TestALateAcceptAfterADoneCreateLeavesTheAttach(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	box := Sandbox{ID: "sbx_new", Name: "nimble_swan"}
+	box := console.Sandbox{ID: "sbx_new", Name: "nimble_swan"}
 	watch := &createWatch{}
 	m.created(createdMsg{sandbox: box, create: watch, accepted: true})
 	gen := m.wsGen
@@ -147,7 +148,7 @@ func TestALateAcceptAfterADoneCreateLeavesTheAttach(t *testing.T) {
 func TestAFirstCreateDoesNotTakeTheScreenFromASecond(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	a, b := Sandbox{ID: "sbx_a", Name: "first"}, Sandbox{ID: "sbx_b", Name: "second"}
+	a, b := console.Sandbox{ID: "sbx_a", Name: "first"}, console.Sandbox{ID: "sbx_b", Name: "second"}
 	wa, wb := &createWatch{}, &createWatch{}
 	m.update(promptSpentMsg{sandbox: a, create: wa})
 	m.update(promptSpentMsg{sandbox: b, create: wb})

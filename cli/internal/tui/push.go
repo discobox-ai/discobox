@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // Push, in the window: while a workspace is open on a discobox, the commits
@@ -35,23 +36,23 @@ const autoPushEvery = refreshEvery
 // is still attached and keeps pushing under the generation it was parked with
 // (pushLoop).
 type autoPushTickMsg struct {
-	box boxRef
+	box console.BoxRef
 	gen int
 }
 
 // autoPushedMsg is one look, done: what each of the discobox's push-delivered
 // sources resolved to.
 type autoPushedMsg struct {
-	box    boxRef
+	box    console.BoxRef
 	gen    int
-	pushes []SourcePush
+	pushes []console.SourcePush
 }
 
 // pushLoop is the workspace a push loop belongs to: the live one, or one
 // parked in the tree, which is still attached and so still pushes (ADR
 // 26-09-05-008 §1), and whether it is a parked one. It is nil once the
 // workspace is gone, which ends the loop.
-func (m *Model) pushLoop(box boxRef, gen int) (ws *workspace, parked bool) {
+func (m *Model) pushLoop(box console.BoxRef, gen int) (ws *workspace, parked bool) {
 	if m.pushHeld != nil && box == m.boxRef(m.paneBox) && gen == m.pushGen {
 		return &m.workspace, false
 	}
@@ -72,7 +73,7 @@ func (m *Model) pushLoop(box boxRef, gen int) (ws *workspace, parked bool) {
 // clone-delivered source, an archived box — is skipped rather than ending the
 // loop, since the listing that answers Pushable is re-read on its own beat and
 // a starting discobox becomes pushable a few seconds in.
-func (m *Model) autoPush(id boxRef, gen int) tea.Cmd {
+func (m *Model) autoPush(id console.BoxRef, gen int) tea.Cmd {
 	ws, _ := m.pushLoop(id, gen)
 	if ws == nil {
 		return nil
@@ -84,7 +85,7 @@ func (m *Model) autoPush(id boxRef, gen int) tea.Cmd {
 	// Copied, because the window goes on editing it while the push runs.
 	held := maps.Clone(ws.pushHeld)
 	return func() tea.Msg {
-		pushes, err := ds.PushSources(ctx, id.id, held)
+		pushes, err := ds.PushSources(ctx, id.ID, held)
 		if err != nil {
 			// The call failing as a whole is ambient work failing — the
 			// discobox could not be read, the git route could not be opened —
@@ -95,7 +96,7 @@ func (m *Model) autoPush(id boxRef, gen int) tea.Cmd {
 	}
 }
 
-func (m *Model) autoPushTick(id boxRef, gen int) tea.Cmd {
+func (m *Model) autoPushTick(id console.BoxRef, gen int) tea.Cmd {
 	return tick(autoPushEvery, func(time.Time) tea.Msg {
 		return autoPushTickMsg{box: id, gen: gen}
 	})
@@ -121,8 +122,8 @@ func (m *Model) autoPushed(msg autoPushedMsg) tea.Cmd {
 		return nil
 	}
 	held := ws.pushHeld
-	var moved []SourcePush
-	var failed []SourcePush
+	var moved []console.SourcePush
+	var failed []console.SourcePush
 	for _, push := range msg.pushes {
 		switch {
 		case push.Err != nil:
@@ -159,7 +160,7 @@ func (m *Model) autoPushed(msg autoPushedMsg) tea.Cmd {
 // pushedText says what went, in the room the status line has. One source names
 // where it landed, which is the branch to rebase onto inside the discobox;
 // several name themselves, since the branches are then not the point.
-func pushedText(moved []SourcePush) string {
+func pushedText(moved []console.SourcePush) string {
 	if len(moved) == 1 {
 		push := moved[0]
 		text := "pushed " + shortCommit(push.Commit)
@@ -181,7 +182,7 @@ func pushedText(moved []SourcePush) string {
 
 // pushFailure is why a source did not go. The reason is git's own or the
 // push's, and both are written to be read by whoever has to answer them.
-func pushFailure(failed []SourcePush) string {
+func pushFailure(failed []console.SourcePush) string {
 	if len(failed) == 1 && failed[0].Err != nil {
 		return failed[0].Err.Error()
 	}

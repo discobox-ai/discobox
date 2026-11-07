@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
@@ -54,7 +55,7 @@ type openCredentialsMsg struct{}
 
 // credentialsLoadedMsg carries the pending requests read on the poll.
 type credentialsLoadedMsg struct {
-	requests []CredentialRequest
+	requests []console.CredentialRequest
 	err      error
 }
 
@@ -62,10 +63,10 @@ type credentialsLoadedMsg struct {
 // opens rather than polled: it is a list nothing changes behind your back.
 type secretsLoadedMsg struct {
 	requestID string
-	secrets   []Secret
+	secrets   []console.Secret
 	// held is what applies in the use part's variable now, read with the
 	// secrets: a variable a secret already holds is answered with that one.
-	held []HeldGrant
+	held []console.HeldGrant
 	err  error
 }
 
@@ -74,10 +75,10 @@ type secretsLoadedMsg struct {
 // 26-11-02-022 §5), read once the secret is chosen.
 type standingLoadedMsg struct {
 	wait     *dialog
-	parents  []SecretBinding
+	parents  []console.SecretBinding
 	approval approval
-	standing []SecretBinding
-	held     []HeldGrant
+	standing []console.SecretBinding
+	held     []console.HeldGrant
 	err      error
 }
 
@@ -85,7 +86,7 @@ type standingLoadedMsg struct {
 // how long the binding the approval made lasts, so the report says how long
 // the credential is good for rather than only that it was handed over.
 type credentialAnsweredMsg struct {
-	request  CredentialRequest
+	request  console.CredentialRequest
 	approved bool
 	ttl      time.Duration
 	err      error
@@ -119,9 +120,9 @@ func (m *Model) loadCredentialRequests() tea.Cmd {
 // row to mark and no workspace to raise it in, but it is still waiting on
 // somebody. Dropping it on the way in made it invisible everywhere, including
 // on the one screen an operator is looking at.
-func (m *Model) setCredentialRequests(requests []CredentialRequest) {
+func (m *Model) setCredentialRequests(requests []console.CredentialRequest) {
 	m.allRequests = requests
-	byBox := map[string][]CredentialRequest{}
+	byBox := map[string][]console.CredentialRequest{}
 	for _, req := range requests {
 		if req.SandboxID == "" {
 			continue
@@ -144,9 +145,9 @@ func (m *Model) setCredentialRequests(requests []CredentialRequest) {
 // its table (ADR 0131 §2): a request is answered with one of its own server's
 // secrets, so the table under another server's secrets offers none of it.
 func (m *Model) syncRequestRows() {
-	var rows []CredentialRequest
+	var rows []console.CredentialRequest
 	for _, req := range m.allRequests {
-		if m.session.serverName(req.Server) == m.configServer() {
+		if m.session.ServerName(req.Server) == m.configServer() {
 			rows = append(rows, req)
 		}
 	}
@@ -165,10 +166,10 @@ func (m *Model) syncRequestRows() {
 
 // pendingFor is the requests waiting on one discobox, oldest first: the one
 // that has been waiting longest is the one to answer.
-func (m *Model) pendingFor(box Sandbox) []CredentialRequest {
-	out := []CredentialRequest{}
+func (m *Model) pendingFor(box console.Sandbox) []console.CredentialRequest {
+	out := []console.CredentialRequest{}
 	for _, req := range m.requests[box.ID] {
-		if m.session.serverName(req.Server) == m.session.serverName(box.Server) {
+		if m.session.ServerName(req.Server) == m.session.ServerName(box.Server) {
 			out = append(out, req)
 		}
 	}
@@ -178,7 +179,7 @@ func (m *Model) pendingFor(box Sandbox) []CredentialRequest {
 
 // openCredentialDialog asks about the oldest request on the discobox the
 // workspace is showing.
-func (m *Model) openCredentialDialog(box Sandbox) tea.Cmd {
+func (m *Model) openCredentialDialog(box console.Sandbox) tea.Cmd {
 	pending := m.pendingFor(box)
 	if len(pending) == 0 {
 		return m.report(false, "nothing waiting on this discobox")
@@ -191,7 +192,7 @@ func (m *Model) openCredentialDialog(box Sandbox) tea.Cmd {
 // question it asks is which of them answers this, and what holds the variable
 // the use part names, because a secret that already does is the only answer
 // the server takes (heldBy).
-func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
+func (m *Model) openCredentialRequest(req console.CredentialRequest) tea.Cmd {
 	if req.APIAccess {
 		return m.askAboutAPIAccess(req)
 	}
@@ -206,7 +207,7 @@ func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
 	m.dialog = statusDialog("Credential request", "reading the project's secrets…")
 	return func() tea.Msg {
 		secrets, err := m.ds.Secrets(m.ctx, req.Server)
-		var held []HeldGrant
+		var held []console.HeldGrant
 		if err == nil && req.Use != nil && req.EnvVar != "" && req.SandboxID != "" {
 			held, err = m.ds.HeldGrants(m.ctx, req.Server, req.SandboxID, req.EnvVar)
 		}
@@ -216,18 +217,18 @@ func (m *Model) openCredentialRequest(req CredentialRequest) tea.Cmd {
 
 // credentialRequestByID finds a request across every discobox, since a dialog
 // answers the one it was opened on however the poll has moved on.
-func (m *Model) credentialRequestByID(requestID string) (CredentialRequest, bool) {
+func (m *Model) credentialRequestByID(requestID string) (console.CredentialRequest, bool) {
 	for _, req := range m.allRequests {
 		if req.ID == requestID {
 			return req, true
 		}
 	}
-	return CredentialRequest{}, false
+	return console.CredentialRequest{}, false
 }
 
 // askAboutCredential opens the first part card, or the token refresh card.
 // held is what applies in the use part's variable now.
-func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret, held []HeldGrant) tea.Cmd {
+func (m *Model) askAboutCredential(req console.CredentialRequest, secrets []console.Secret, held []console.HeldGrant) tea.Cmd {
 	if req.Refresh != nil {
 		return m.askAboutRefresh(req, secrets)
 	}
@@ -242,9 +243,9 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret, held
 // Otherwise holder is the grant the variable's delivery stands on from the
 // discobox's harness config or project, which a replacement shadows but an
 // addition only stacks on with the same secret (approval.canAdd).
-func heldBy(held []HeldGrant) (holder HeldGrant, pinned bool) {
+func heldBy(held []console.HeldGrant) (holder console.HeldGrant, pinned bool) {
 	for _, grant := range held {
-		if grant.From == BindingSandbox {
+		if grant.From == console.BindingSandbox {
 			return grant, true
 		}
 	}
@@ -253,13 +254,13 @@ func heldBy(held []HeldGrant) (holder HeldGrant, pinned bool) {
 			return grant, false
 		}
 	}
-	return HeldGrant{}, false
+	return console.HeldGrant{}, false
 }
 
 // heldSecret is the secret holding the variable, as the project's secrets
 // list it. One the list does not have — gone, or not readable here — is still
 // named, since what the server binds is its ID.
-func heldSecret(secrets []Secret, holder HeldGrant) Secret {
+func heldSecret(secrets []console.Secret, holder console.HeldGrant) console.Secret {
 	for _, secret := range secrets {
 		if secret.ID == holder.SecretID {
 			return secret
@@ -269,12 +270,12 @@ func heldSecret(secrets []Secret, holder HeldGrant) Secret {
 	if name == "" {
 		name = holder.SecretID
 	}
-	return Secret{ID: holder.SecretID, Name: name}
+	return console.Secret{ID: holder.SecretID, Name: name}
 }
 
 // showRawRequest is the request as the server sent it, as JSON highlighted
 // the way a code block in a comment is. back is the request card.
-func (m *Model) showRawRequest(req CredentialRequest, back func() tea.Cmd) tea.Cmd {
+func (m *Model) showRawRequest(req console.CredentialRequest, back func() tea.Cmd) tea.Cmd {
 	rendered := req.Raw
 	if r, err := glamour.NewTermRenderer(glamour.WithStyles(markdownStyle(m.st)), glamour.WithWordWrap(0)); err == nil {
 		if out, err := r.Render("```json\n" + req.Raw + "\n```"); err == nil {
@@ -298,7 +299,7 @@ func (m *Model) showRawRequest(req CredentialRequest, back func() tea.Cmd) tea.C
 
 // withinLimit reports whether a binding of secret may last d: the secret
 // caps nothing, or d is no longer than its cap. Forever is longer than any.
-func withinLimit(secret Secret, d time.Duration) bool {
+func withinLimit(secret console.Secret, d time.Duration) bool {
 	return secret.MaxTTL <= 0 || (d > 0 && d <= secret.MaxTTL)
 }
 
@@ -340,7 +341,7 @@ func bindingSection(a approval) section {
 	if a.req.Delegate != nil {
 		fields = append(fields, field{label: "purpose", value: partsPurpose(a.req), tone: toneAccent})
 	}
-	if where := a.req.whereRows(); where != "" {
+	if where := a.req.WhereRows(); where != "" {
 		fields = append(fields, field{label: "may be sent to", value: where, tone: toneAccent})
 	}
 	for _, kind := range []struct {
@@ -351,7 +352,7 @@ func bindingSection(a approval) section {
 		if kind.answer == "" {
 			continue
 		}
-		if kind.answer == PartDeny {
+		if kind.answer == console.PartDeny {
 			fields = append(fields, field{label: kind.name + " part", value: "denied — what the discobox holds of it stays as it is", tone: toneDim})
 			continue
 		}
@@ -366,7 +367,7 @@ func bindingSection(a approval) section {
 		summary := "Requested routes"
 		switch scope {
 		case "hosts":
-			summary = "Requested hosts · Any method and path on these hosts; any protocol\n" + routeRows(asked)
+			summary = "Requested hosts · Any method and path on these hosts; any protocol\n" + console.RouteRows(asked)
 		case "anywhere":
 			summary = "Anywhere · No grant restriction"
 		}
@@ -379,7 +380,7 @@ func bindingSection(a approval) section {
 // usePlanned is how the use part is planned on the cards: as it will be
 // granted, empty when it is denied or not asked.
 func (a approval) usePlanned() bindingplan.As {
-	if a.use != PartApprove {
+	if a.use != console.PartApprove {
 		return ""
 	}
 	return a.useAs
@@ -387,8 +388,8 @@ func (a approval) usePlanned() bindingplan.As {
 
 // partsPurpose says what a request with a delegate part asks, said the same
 // way on the request and on the binding.
-func partsPurpose(req CredentialRequest) string {
-	if req.asksBoth() {
+func partsPurpose(req console.CredentialRequest) string {
+	if req.AsksBoth() {
 		return "use it, and " + delegationPurpose
 	}
 	return delegationPurpose
@@ -411,8 +412,8 @@ func partsPurpose(req CredentialRequest) string {
 // sent to". secretRoutes stand in for either side that names none. A diff
 // is what a person approving is checking for; two long lists side by side
 // leave them to find the difference themselves.
-func replacedFields(standing []SecretBinding, delegate bool, envVar string, useAs bindingplan.As, asked, secretRoutes []secretroute.Route) []field {
-	held := map[string]SecretBinding{}
+func replacedFields(standing []console.SecretBinding, delegate bool, envVar string, useAs bindingplan.As, asked, secretRoutes []secretroute.Route) []field {
+	held := map[string]console.SecretBinding{}
 	var mine []bindingplan.Binding
 	for _, b := range standing {
 		held[b.ID] = b
@@ -488,7 +489,7 @@ func replacedFields(standing []SecretBinding, delegate bool, envVar string, useA
 // routes this approval carries on. Routes are compared as secretroute.Format
 // writes them, the way a person reads them.
 func routeDiff(was, now []secretroute.Route, kept bool) []line {
-	wasText, nowText := formatRoutes(was), formatRoutes(now)
+	wasText, nowText := console.FormatRoutes(was), console.FormatRoutes(now)
 	var removed, added []line
 	same := 0
 	for _, r := range wasText {
@@ -547,7 +548,7 @@ func (a approval) grantedRoutes(delegate bool) []secretroute.Route {
 	if part != nil {
 		routes = part.Routes
 	} else {
-		routes = a.req.routes()
+		routes = a.req.Routes()
 	}
 	if scope == "anywhere" {
 		return nil
@@ -577,7 +578,7 @@ func heldSection(a approval) section {
 	}
 	planned := make([]bindingplan.Held, 0, len(a.held))
 	for _, grant := range a.held {
-		planned = append(planned, bindingplan.Held{ID: grant.BindingID, Adds: grant.Adds, Own: grant.From == BindingSandbox, Expires: grant.Expires})
+		planned = append(planned, bindingplan.Held{ID: grant.BindingID, Adds: grant.Adds, Own: grant.From == console.BindingSandbox, Expires: grant.Expires})
 	}
 	fates := map[string]bindingplan.HeldFate{}
 	for _, step := range bindingplan.Replacing(planned, until) {
@@ -589,18 +590,18 @@ func heldSection(a approval) section {
 		if grant.Adds {
 			what = "addition"
 		}
-		value := strings.Join(formatRoutes(grant.Routes), "; ") + " · no expiry"
+		value := strings.Join(console.FormatRoutes(grant.Routes), "; ") + " · no expiry"
 		if !grant.Expires.IsZero() {
-			value = strings.Join(formatRoutes(grant.Routes), "; ") + " · until " + grant.Expires.Local().Format("Jan 2 15:04")
+			value = strings.Join(console.FormatRoutes(grant.Routes), "; ") + " · until " + grant.Expires.Local().Format("Jan 2 15:04")
 		}
 		switch grant.From {
-		case BindingHarnessConfig:
+		case console.BindingHarnessConfig:
 			value += " · from its harness config"
-		case BindingProject:
+		case console.BindingProject:
 			value += " · from its project"
 		}
 		s.fields = append(s.fields, field{label: what, value: value})
-		named = append(named, formatRoutes(grant.Routes))
+		named = append(named, console.FormatRoutes(grant.Routes))
 		var fate string
 		switch fates[grant.BindingID] {
 		case bindingplan.Goes:
@@ -618,7 +619,7 @@ func heldSection(a approval) section {
 	if a.req.Use != nil {
 		asked = a.req.Use.Routes
 	}
-	if fresh := bindingplan.NewRoutes(formatRoutes(asked), named); len(fresh) == 0 {
+	if fresh := bindingplan.NewRoutes(console.FormatRoutes(asked), named); len(fresh) == 0 {
 		s.fields = append(s.fields, field{label: "new routes", value: "none, as written", tone: toneDim})
 	} else {
 		s.fields = append(s.fields, field{label: "new routes", value: strings.Join(fresh, "; ") + " (as written)", tone: toneAccent})
@@ -627,7 +628,7 @@ func heldSection(a approval) section {
 }
 
 // variableOf is the variable a request's use part names, or a stand-in.
-func variableOf(req CredentialRequest) string {
+func variableOf(req console.CredentialRequest) string {
 	if req.EnvVar != "" {
 		return req.EnvVar
 	}
@@ -653,7 +654,7 @@ func roleLines(role requestrole.Role) []line {
 	return lines
 }
 
-func credentialName(req CredentialRequest) string {
+func credentialName(req console.CredentialRequest) string {
 	if req.APIAccess {
 		return "discobox API access"
 	}
@@ -677,7 +678,7 @@ func credentialName(req CredentialRequest) string {
 
 // secretNameTaken reports whether the project already holds a secret by this
 // name: a secret's name is unique in its project.
-func secretNameTaken(secrets []Secret, name string) bool {
+func secretNameTaken(secrets []console.Secret, name string) bool {
 	name = strings.TrimSpace(name)
 	for _, secret := range secrets {
 		if strings.TrimSpace(secret.Name) == name {
@@ -691,7 +692,7 @@ func secretNameTaken(secrets []Secret, name string) bool {
 // hold. It is a suggestion to type over, not a name anything is stored under
 // without being seen: one more collision than there are secrets is impossible,
 // which is where the count stops.
-func freeSecretName(secrets []Secret, name string) string {
+func freeSecretName(secrets []console.Secret, name string) string {
 	if !secretNameTaken(secrets, name) {
 		return name
 	}
@@ -707,8 +708,8 @@ func freeSecretName(secrets []Secret, name string) string {
 // secretsForRequest orders the secrets by how likely each is to be the answer:
 // the one named what the request asked for first, then the rest as listed.
 // Order is the whole of the opinion here — every one of them can be chosen.
-func secretsForRequest(secrets []Secret, req CredentialRequest) []Secret {
-	out := append([]Secret(nil), secrets...)
+func secretsForRequest(secrets []console.Secret, req console.CredentialRequest) []console.Secret {
+	out := append([]console.Secret(nil), secrets...)
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].Name == req.Name && out[j].Name != req.Name
 	})
@@ -717,10 +718,10 @@ func secretsForRequest(secrets []Secret, req CredentialRequest) []Secret {
 
 // secretDetail says what a secret is and where it may be sent. A credential
 // that caps how long its bindings may last says so here, beside the row.
-func secretDetail(secret Secret) string {
+func secretDetail(secret console.Secret) string {
 	where := "sent nowhere"
 	if len(secret.Routes) > 0 {
-		where = routesText(secret.Routes)
+		where = console.RoutesText(secret.Routes)
 	}
 	detail := secretKind(secret) + " · " + where
 	if secret.MaxTTL > 0 {
@@ -732,7 +733,7 @@ func secretDetail(secret Secret) string {
 // secretKind is what a secret is, said the way that matters when choosing it:
 // a token got from a command is named by the command, which is how its value
 // is kept current (ADR 26-09-25-122).
-func secretKind(secret Secret) string {
+func secretKind(secret console.Secret) string {
 	if len(secret.RefreshCommand) > 0 {
 		return "from " + refreshcmd.Join(secret.RefreshCommand)
 	}
@@ -749,7 +750,7 @@ func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
 	return m.newCredentialForm(a, section{label: "approves the request", fields: []field{
 		{label: "credential", value: credentialName(a.req), tone: toneAccent},
 		{label: "bound for", value: lifetime.Label(a.ttl), tone: toneAccent},
-	}}, "enter stores and approves", func(f *form, secret NewSecret) tea.Cmd {
+	}}, "enter stores and approves", func(f *form, secret console.NewSecret) tea.Cmd {
 		// A limit shorter than the binding this approval is making is one the
 		// server would refuse the binding for, after the secret was stored.
 		if limit := time.Duration(secret.MaxTTLSeconds) * time.Second; limit > 0 && (a.ttl <= 0 || a.ttl > limit) {
@@ -763,8 +764,8 @@ func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
 // newCredentialForm is the new-secret form filled from a request, with what
 // storing it then does. about says so above the form, and back is where Esc
 // goes, nothing stored.
-func (m *Model) newCredentialForm(a approval, about section, store string, then func(*form, NewSecret) tea.Cmd, back func() tea.Cmd) tea.Cmd {
-	f := secretForm(nil, a.req.routes())
+func (m *Model) newCredentialForm(a approval, about section, store string, then func(*form, console.NewSecret) tea.Cmd, back func() tea.Cmd) tea.Cmd {
+	f := secretForm(nil, a.req.Routes())
 	fillFromRequest(f, a.req, a.secrets)
 	d := formDialog("New credential", f, func(f *form) tea.Cmd {
 		secret, ok := secretFromForm(f)
@@ -786,7 +787,7 @@ func (m *Model) newCredentialForm(a approval, about section, store string, then 
 // named as the request asks; the routes it asks for are the form's own rows
 // (newCredentialForm). A name the project already holds is the first free one
 // instead, which the server would otherwise refuse the create for.
-func fillFromRequest(f *form, req CredentialRequest, secrets []Secret) {
+func fillFromRequest(f *form, req console.CredentialRequest, secrets []console.Secret) {
 	f.set("name", freeSecretName(secrets, credentialName(req)))
 }
 
@@ -794,7 +795,7 @@ func fillFromRequest(f *form, req CredentialRequest, secrets []Secret) {
 // lifetime chosen. A secret stored from a command is run for its first value
 // by the data source. A refusal after the secret was stored says so: the
 // secret stays, and the request still waits.
-func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
+func (m *Model) createAndApprove(a approval, secret console.NewSecret) tea.Cmd {
 	req, ttl := a.req, a.ttl
 	status := "storing the credential…"
 	if secret.RefreshCommand != nil {
@@ -806,7 +807,7 @@ func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
 		if err != nil {
 			return credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		}
-		err = m.ds.ApproveCredentialRequest(m.ctx, req.Server, Approval{
+		err = m.ds.ApproveCredentialRequest(m.ctx, req.Server, console.Approval{
 			RequestID:     req.ID,
 			SecretID:      stored.ID,
 			TTLSeconds:    lifetime.Seconds(ttl),
@@ -831,9 +832,9 @@ func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
 // every step can be gone back from: the dialog before one is rebuilt from the
 // approval as it stood when that dialog was asked, and has to find it that way.
 type approval struct {
-	req     CredentialRequest
-	secrets []Secret
-	secret  Secret
+	req     console.CredentialRequest
+	secrets []console.Secret
+	secret  console.Secret
 	// fresh is a new credential rather than a secret the project holds:
 	// secret is empty, and the new-secret form is filled in after the
 	// lifetime.
@@ -851,11 +852,11 @@ type approval struct {
 	partsChosen             bool
 	// standing is the asking discobox's own bindings of the chosen secret:
 	// what an approved part replaces.
-	standing []SecretBinding
-	parents  []SecretBinding
+	standing []console.SecretBinding
+	parents  []console.SecretBinding
 	// held is what applies in the use part's variable now, from whichever
 	// level: what an addition stacks on (ADR 26-11-03-329 §5).
-	held []HeldGrant
+	held []console.HeldGrant
 	// useAs is how an approved use part is granted, as the request asked
 	// until the person chooses a mode on the use card.
 	useAs bindingplan.As
@@ -863,16 +864,16 @@ type approval struct {
 
 // newApproval is an answer to req, its parts approved until asked otherwise.
 // held is what applies in the use part's variable now.
-func newApproval(req CredentialRequest, secrets []Secret, held []HeldGrant) approval {
+func newApproval(req console.CredentialRequest, secrets []console.Secret, held []console.HeldGrant) approval {
 	a := approval{req: req, secrets: secrets, held: held, useAs: bindingplan.Replace}
 	if req.Use != nil || req.Delegate == nil {
-		a.use = PartApprove
+		a.use = console.PartApprove
 	}
 	if req.Use != nil && req.Use.Add {
 		a.useAs = bindingplan.Add
 	}
 	if req.Delegate != nil {
-		a.delegate = PartApprove
+		a.delegate = console.PartApprove
 	}
 	return a
 }
@@ -903,19 +904,19 @@ func (m *Model) chooseSecret(a approval, secretID string) tea.Cmd {
 	wait := statusDialog("Credential request", "reading what the discobox holds of "+a.secret.Name+"…")
 	m.dialog = wait
 	return func() tea.Msg {
-		bindings, err := m.ds.Bindings(m.ctx, a.req.Server, BindingFilter{SecretID: a.secret.ID})
-		var standing []SecretBinding
+		bindings, err := m.ds.Bindings(m.ctx, a.req.Server, console.BindingFilter{SecretID: a.secret.ID})
+		var standing []console.SecretBinding
 		for _, b := range bindings {
-			if b.TargetKind == BindingSandbox && b.TargetID == a.req.SandboxID {
+			if b.TargetKind == console.BindingSandbox && b.TargetID == a.req.SandboxID {
 				standing = append(standing, b)
 			}
 		}
-		var held []HeldGrant
+		var held []console.HeldGrant
 		if err == nil && a.req.Use != nil && a.req.EnvVar != "" {
 			held, err = m.ds.HeldGrants(m.ctx, a.req.Server, a.req.SandboxID, a.req.EnvVar)
 		}
-		var parents []SecretBinding
-		byID := map[string]SecretBinding{}
+		var parents []console.SecretBinding
+		byID := map[string]console.SecretBinding{}
 		for _, b := range bindings {
 			byID[b.ID] = b
 		}
@@ -957,7 +958,7 @@ func (m *Model) standingLoaded(msg standingLoadedMsg) tea.Cmd {
 // permanent credentials without ever saying the word.
 func (m *Model) finishApproval(a approval) tea.Cmd {
 	what := "approving for " + lifetime.Label(a.ttl) + "…"
-	sent := Approval{
+	sent := console.Approval{
 		RequestID:     a.req.ID,
 		SecretID:      a.secret.ID,
 		TTLSeconds:    lifetime.Seconds(a.ttl),
@@ -967,7 +968,7 @@ func (m *Model) finishApproval(a approval) tea.Cmd {
 		UseScope:      a.useScope,
 		DelegateScope: a.delegateScope,
 	}
-	if a.use == PartApprove && a.req.Use != nil {
+	if a.use == console.PartApprove && a.req.Use != nil {
 		// Always said, so the binding made is the one the card showed.
 		sent.UseAs = string(a.useAs)
 		if a.useAs == bindingplan.Add {
@@ -984,7 +985,7 @@ func (m *Model) finishApproval(a approval) tea.Cmd {
 	}
 }
 
-func (m *Model) denyCredential(req CredentialRequest) tea.Cmd {
+func (m *Model) denyCredential(req console.CredentialRequest) tea.Cmd {
 	if req.APIAccess {
 		return m.answerAPIAccess(req, false)
 	}
@@ -1085,7 +1086,7 @@ func (m *Model) viewCredentialBanner(width int) string {
 	} else if pending[0].Refresh != nil {
 		// A token this discobox already has, wanting a new value.
 		what = "refresh request"
-	} else if host := pending[0].where(); host != "" {
+	} else if host := pending[0].Where(); host != "" {
 		subject += " for " + host
 	}
 	if len(pending) > 1 {
@@ -1123,7 +1124,7 @@ func (m *Model) viewCredentialBanner(width int) string {
 // credentialErrorSection says which request is still waiting, under the
 // server's own wording of the refusal: that wording is the half that says what
 // to do next, so it is left whole as the dialog's body and this stands under it.
-func credentialErrorSection(req CredentialRequest) section {
+func credentialErrorSection(req console.CredentialRequest) section {
 	if req.Adoption != nil {
 		return section{label: "still waiting", fields: []field{{label: "request", value: credentialName(req), tone: toneAccent}}}
 	}
@@ -1131,7 +1132,7 @@ func credentialErrorSection(req CredentialRequest) section {
 		return section{label: "still waiting", fields: []field{{label: "trust", value: req.Host, tone: toneAccent}}}
 	}
 	fields := []field{{label: "credential", value: credentialName(req), tone: toneAccent}}
-	if where := req.whereRows(); where != "" {
+	if where := req.WhereRows(); where != "" {
 		fields = append(fields, field{label: "for", value: where, tone: toneAccent})
 	}
 	return section{label: "still waiting", fields: fields}

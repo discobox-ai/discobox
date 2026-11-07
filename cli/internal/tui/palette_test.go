@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 func TestPaletteMatchesFieldsAndRanks(t *testing.T) {
@@ -55,7 +56,7 @@ func TestPaletteChipOrdersAndEscape(t *testing.T) {
 			t.Fatalf("pasted completion: %+v", m.palette)
 		}
 		for _, r := range m.palette.rows {
-			if r.box == nil || r.box.State != StateRunning && r.box.State != StateSuspended {
+			if r.box == nil || r.box.State != console.StateRunning && r.box.State != console.StateSuspended {
 				t.Fatalf("stop offers %+v", r)
 			}
 		}
@@ -98,7 +99,7 @@ func TestPaletteKeepsDisappearedSelectionAndConsumesOutsideClick(t *testing.T) {
 		if len(m.palette.rows) == 0 {
 			t.Fatal("no selected box")
 		}
-		m.list.all = slices.DeleteFunc(m.list.all, func(s Sandbox) bool { return s.ID == "sbx_one" })
+		m.list.all = slices.DeleteFunc(m.list.all, func(s console.Sandbox) bool { return s.ID == "sbx_one" })
 		d.key("enter")
 		if m.palette == nil || !strings.Contains(m.palette.reason, "no longer") {
 			t.Fatal("missing target was replaced")
@@ -182,7 +183,7 @@ func TestPaletteMouseCanChooseBoxCommandsAndDropChip(t *testing.T) {
 func TestPaletteNavigationTemporarilyRevealsFilteredBox(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		boxes := testSandboxes()
-		boxes[1].State = StateStopped
+		boxes[1].State = console.StateStopped
 		m := newTestModel(t, newFakeSource(boxes...))
 		d := newDriver(t, m)
 		d.start()
@@ -411,7 +412,7 @@ func TestPaletteRoutesSameIDLifecycleAndWorkspacesToTheirServers(t *testing.T) {
 		m.rebuildPalette(true)
 		d.key("enter")
 		d.wait("beta workspace", func() bool { return m.primary() != nil && m.paneBox.Server == "beta" })
-		if m.parked[boxRef{"alpha", a.ID}] == nil {
+		if m.parked[console.BoxRef{Server: "alpha", ID: a.ID}] == nil {
 			t.Fatal("switching same ID across servers lost the alpha workspace")
 		}
 	})

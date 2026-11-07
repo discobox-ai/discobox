@@ -12,7 +12,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/auditid"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // FollowAudit follows one discobox's audit timeline for the console's audit
@@ -20,7 +20,7 @@ import (
 // its --follow reads them. Unpaced — the screen is a list to move through, not
 // a stream to watch arrive — and each read reports what it could not reach,
 // so the screen can say when a trail stops answering and when it is back.
-func (d *apiDataSource) FollowAudit(ctx context.Context, sandboxID string, report func(tui.AuditUpdate)) error {
+func (d *apiDataSource) FollowAudit(ctx context.Context, sandboxID string, report func(console.AuditUpdate)) error {
 	client, err := d.app.apiClient()
 	if err != nil {
 		return err
@@ -43,7 +43,7 @@ func (d *apiDataSource) FollowAudit(ctx context.Context, sandboxID string, repor
 			missing(auditUnavailable{Source: trail, Reason: err.Error()})
 		},
 		polled: func() {
-			update := tui.AuditUpdate{Polled: true}
+			update := console.AuditUpdate{Polled: true}
 			for _, gap := range unavailable {
 				update.Missing = append(update.Missing, gap.sentence())
 			}
@@ -55,9 +55,9 @@ func (d *apiDataSource) FollowAudit(ctx context.Context, sandboxID string, repor
 		if len(records) == 0 {
 			return nil
 		}
-		update := tui.AuditUpdate{Records: make([]tui.AuditRecord, 0, len(records))}
+		update := console.AuditUpdate{Records: make([]console.AuditRecord, 0, len(records))}
 		for _, r := range records {
-			update.Records = append(update.Records, tui.AuditRecord{
+			update.Records = append(update.Records, console.AuditRecord{
 				// A trail's ID is its own generated value, so it is escaped
 				// like everything else a discobox could have shaped; the
 				// summary was built from escaped parts where it was made.
@@ -78,17 +78,17 @@ func (d *apiDataSource) FollowAudit(ctx context.Context, sandboxID string, repor
 // print are named rather than pointed at with a command line: the console
 // reads them itself (AuditBody). httpAuditPart* spell the recordings the way
 // the console's AuditRequestBody and its siblings do.
-func (d *apiDataSource) AuditDetail(ctx context.Context, sandboxID, recordID string) (tui.AuditRecordDetail, error) {
+func (d *apiDataSource) AuditDetail(ctx context.Context, sandboxID, recordID string) (console.AuditRecordDetail, error) {
 	client, err := d.app.apiClient()
 	if err != nil {
-		return tui.AuditRecordDetail{}, err
+		return console.AuditRecordDetail{}, err
 	}
 	var out bytes.Buffer
 	recordings, err := d.app.writeAuditRecord(ctx, &out, false, client, d.projectID, "", sandboxID, recordID)
 	if err != nil {
-		return tui.AuditRecordDetail{}, err
+		return console.AuditRecordDetail{}, err
 	}
-	return tui.AuditRecordDetail{Text: out.String(), Recordings: recordings}, nil
+	return console.AuditRecordDetail{Text: out.String(), Recordings: recordings}, nil
 }
 
 // auditBodyShown is the most of one recording the console draws. A card is

@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/internal/filelock"
 	"github.com/discobox-ai/discobox/internal/privatefs"
 )
@@ -21,7 +21,7 @@ func TestConsoleStateRoundTrips(t *testing.T) {
 	if got := loadConsoleState(); got.Draft != "" || !got.View.listView().IsZero() || got.LastSource != "" {
 		t.Fatalf("a fresh state dir has state: %+v", got)
 	}
-	view := tui.ListView{Server: "beta", FolderKey: "k", FolderLabel: "/src/foo @ main", FolderSource: "/src/foo", FolderLocal: true, Tags: []string{"ticket=ENG-12", "wip"}}
+	view := console.ListView{Server: "beta", FolderKey: "k", FolderLabel: "/src/foo @ main", FolderSource: "/src/foo", FolderLocal: true, Tags: []string{"ticket=ENG-12", "wip"}}
 	for _, save := range []func() error{
 		func() error { return savePromptDraft("finish the reaper\nand test it") },
 		func() error { return saveConsoleView(view) },
@@ -46,7 +46,7 @@ func TestConsoleStateRoundTrips(t *testing.T) {
 	if err := savePromptDraft(""); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveConsoleView(tui.ListView{}); err != nil {
+	if err := saveConsoleView(console.ListView{}); err != nil {
 		t.Fatal(err)
 	}
 	got = loadConsoleState()

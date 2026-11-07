@@ -18,8 +18,8 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // The launcher draws six states, so the server's fuller set has to land on one
@@ -28,18 +28,18 @@ import (
 func TestToTUISandboxNarrowsDisplayState(t *testing.T) {
 	for _, tc := range []struct {
 		display string
-		want    tui.State
+		want    console.State
 	}{
-		{"running", tui.StateRunning},
-		{"starting", tui.StateStarting},
-		{"stopping", tui.StateRunning},
-		{"stopped", tui.StateStopped},
+		{"running", console.StateRunning},
+		{"starting", console.StateStarting},
+		{"stopping", console.StateRunning},
+		{"stopped", console.StateStopped},
 		// A repair is heading for a box that works and came from one that had
 		// failed, and is drawn as neither.
-		{"repairing", tui.StateRepairing},
-		{"archiving", tui.StateArchived},
-		{"archived", tui.StateArchived},
-		{"error", tui.StateError},
+		{"repairing", console.StateRepairing},
+		{"archiving", console.StateArchived},
+		{"archived", console.StateArchived},
+		{"error", console.StateError},
 	} {
 		sandbox := toTUISandbox(apimodel.Sandbox{
 			Runtime: apimodel.SandboxRuntime{
@@ -181,11 +181,11 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	// create falls between them is checked with the rest of the order.
 	const accepted = "<accepted>"
 	var steps []string
-	sandbox, err := ds.Run(t.Context(), tui.RunRequest{
+	sandbox, err := ds.Run(t.Context(), console.RunRequest{
 		Harness: "codex",
 		Source:  repo + "@HEAD",
 		Prompt:  []string{"fix the failing tests"},
-	}, func(step string) { steps = append(steps, step) }, nil, func(tui.Sandbox) { steps = append(steps, accepted) })
+	}, func(step string) { steps = append(steps, step) }, nil, func(console.Sandbox) { steps = append(steps, accepted) })
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestPaneTerminalEnvCarriesTheColorSettings(t *testing.T) {
 // it. The API omits runtimeState until an agent has reported (ADR 0034 §2), so
 // presence is the signal.
 func TestToTUISandboxCarriesTheRuntimeAxis(t *testing.T) {
-	errored := func(runtimeState string) tui.Sandbox {
+	errored := func(runtimeState string) console.Sandbox {
 		runtime := apimodel.SandboxRuntime{
 			State:        "failed",
 			DesiredState: "present",
@@ -293,7 +293,7 @@ func TestToTUISandboxCarriesTheRuntimeAxis(t *testing.T) {
 	}
 
 	live := errored("running")
-	if live.State != tui.StateError {
+	if live.State != console.StateError {
 		t.Fatalf("state = %q, want error: the x still shows", live.State)
 	}
 	if !live.HasRuntime {
@@ -313,7 +313,7 @@ func TestToTUISandboxCarriesTheRuntimeAxis(t *testing.T) {
 func TestToTUISandboxCarriesTheAutomaticRepair(t *testing.T) {
 	started := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
 	landedAt := started.Add(time.Minute)
-	row := func(display, errorMessage string, generation, repairGeneration int64, repairLanded bool) tui.Sandbox {
+	row := func(display, errorMessage string, generation, repairGeneration int64, repairLanded bool) console.Sandbox {
 		runtime := apimodel.SandboxRuntime{
 			State:        "failed",
 			DesiredState: "present",
@@ -338,7 +338,7 @@ func TestToTUISandboxCarriesTheAutomaticRepair(t *testing.T) {
 	}
 
 	running := row("repairing", "", 5, 5, false)
-	if running.State != tui.StateRepairing || running.Message != "exec attach found it failed with no container (create container: EOF)" {
+	if running.State != console.StateRepairing || running.Message != "exec attach found it failed with no container (create container: EOF)" {
 		t.Fatalf("in flight: state = %q, message = %q, want the repair and what it answers", running.State, running.Message)
 	}
 	if !running.Repaired.At.IsZero() {
@@ -346,7 +346,7 @@ func TestToTUISandboxCarriesTheAutomaticRepair(t *testing.T) {
 	}
 
 	landed := row("running", "", 5, 5, true)
-	want := tui.AutomaticRepair{At: landedAt, Trigger: "exec attach", Failure: "create container: EOF"}
+	want := console.AutomaticRepair{At: landedAt, Trigger: "exec attach", Failure: "create container: EOF"}
 	if landed.Repaired != want || landed.Message != "" {
 		t.Fatalf("landed: repaired = %+v, message = %q, want the record kept and nothing else", landed.Repaired, landed.Message)
 	}
@@ -374,7 +374,7 @@ func TestToTUISandboxCarriesTheAutomaticRepair(t *testing.T) {
 // primary terminal's title once the harness has set one, and the one the box is
 // configured with, which the launcher's status line says under the cursor.
 func TestToTUISandboxCarriesBothNames(t *testing.T) {
-	named := func(display, configured string) tui.Sandbox {
+	named := func(display, configured string) console.Sandbox {
 		sb := apimodel.Sandbox{ID: "sbx_abc12345000000p3", DisplayName: display}
 		sb.Config.Name = configured
 		return toTUISandbox(sb, "host_1")

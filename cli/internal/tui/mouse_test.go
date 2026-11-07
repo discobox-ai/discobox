@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The mouse is answered against the hit map the last frame left behind, so
@@ -37,7 +38,7 @@ func at(t *testing.T, m *Model, text string) (int, int) {
 // rowAt is where a discobox's row was drawn. A name too long for its column is
 // ellipsized, so the row is found by as much of the name as fits rather than by
 // the whole of it.
-func rowAt(t *testing.T, m *Model, box Sandbox) (int, int) {
+func rowAt(t *testing.T, m *Model, box console.Sandbox) (int, int) {
 	t.Helper()
 	name := box.Name
 	if len(name) > 12 {
@@ -88,13 +89,13 @@ func slowClock(m *Model) {
 
 // manySandboxes is a project with more discoboxes than the list can draw, for
 // the tests about scrolling.
-func manySandboxes(n int) []Sandbox {
+func manySandboxes(n int) []console.Sandbox {
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
-	out := make([]Sandbox, 0, n)
+	out := make([]console.Sandbox, 0, n)
 	for i := range n {
-		out = append(out, Sandbox{
+		out = append(out, console.Sandbox{
 			ID: "sbx_" + itoa(i), Name: "discobox number " + itoa(i),
-			State: StateRunning, HasRuntime: true, Harness: "claude",
+			State: console.StateRunning, HasRuntime: true, Harness: "claude",
 			OriginKey: testKey("/src/disco2"), Source: "/src/disco2",
 			Branch: "main", Commit: "a3f9c21", Created: now,
 		})
@@ -245,15 +246,15 @@ func TestPressingTheFilterOpensIt(t *testing.T) {
 	// A press marks the choice without applying it; Enter applies.
 	x, y = at(t, m, allFolders)
 	tap(t, m, x, y)
-	if m.dialog == nil || m.dialog.filter.list.folder.key != "" {
+	if m.dialog == nil || m.dialog.filter.list.folder.Key != "" {
 		t.Fatal("pressing a choice should mark it and leave the card up")
 	}
-	if m.list.folder.key == "" {
+	if m.list.folder.Key == "" {
 		t.Fatal("a marked choice should not move the list before Enter")
 	}
 	send(t, m, keyPress("enter"))
-	if m.list.folder.key != "" {
-		t.Fatalf("folder = %q, want every folder", m.list.folder.label)
+	if m.list.folder.Key != "" {
+		t.Fatalf("folder = %q, want every folder", m.list.folder.Label)
 	}
 }
 
@@ -465,7 +466,7 @@ func TestPressingAHarnessRowMovesItsCursor(t *testing.T) {
 	send(t, m, keyPress("f3"))
 
 	want := m.harnesses.all[2]
-	x, y := at(t, m, want.displayName())
+	x, y := at(t, m, want.DisplayName())
 	tap(t, m, x, y)
 
 	if got := m.harnesses.current(); got == nil || got.ID != want.ID {
@@ -482,7 +483,7 @@ func TestTheRightButtonOpensTheHarnessMenu(t *testing.T) {
 	send(t, m, keyPress("f3"))
 
 	want := m.harnesses.all[1]
-	x, y := at(t, m, want.displayName())
+	x, y := at(t, m, want.DisplayName())
 	send(t, m, tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseRight})
 
 	if m.dialog == nil || m.dialog.kind != dlgActions {

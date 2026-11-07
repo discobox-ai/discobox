@@ -4,9 +4,10 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-func (m *Model) askAboutAdoption(req CredentialRequest) tea.Cmd {
+func (m *Model) askAboutAdoption(req console.CredentialRequest) tea.Cmd {
 	ask := req.Adoption
 	child, requester := ask.ChildID, ask.RequesterID
 	if ask.ChildName != "" {
@@ -28,7 +29,7 @@ func (m *Model) askAboutAdoption(req CredentialRequest) tea.Cmd {
 	return nil
 }
 
-func (m *Model) answerAdoption(req CredentialRequest, approve bool) tea.Cmd {
+func (m *Model) answerAdoption(req console.CredentialRequest, approve bool) tea.Cmd {
 	m.dialog = statusDialog("Adoption request", "answering…")
 	return func() tea.Msg {
 		err := m.ds.DecideAdoptionRequest(m.ctx, req.Server, req.ID, approve)

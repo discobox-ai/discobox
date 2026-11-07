@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // Ctrl-O opens the options, the Source row cycles in place, and Enter opens
@@ -27,8 +29,8 @@ func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
 		t.Fatalf("source = %q, want the next one the project holds", got)
 	}
-	if m.list.folder.key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the list to have followed", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the list to have followed", m.list.folder.Label)
 	}
 	// Right again reaches the third entry rather than bouncing back: the row's
 	// order does not move under the cursor when the folder follows it.
@@ -47,7 +49,7 @@ func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 		t.Fatal("enter on the Source row should open the whole list")
 	}
 	body := strings.Join(dialogLabels(m.dialog), "\n")
-	for _, want := range []string{"/src/obot", "acme/foo", noSourceChoice, enterSourceChoice} {
+	for _, want := range []string{"/src/obot", "acme/foo", console.NoSourceChoice, enterSourceChoice} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the dropdown is missing %q:\n%s", want, body)
 		}
@@ -100,8 +102,8 @@ func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
 		t.Fatalf("source = %q, want what was typed", got)
 	}
 	// The ref is not a folder, so the list follows the directory half of it.
-	if m.list.folder.key != testKey("/src/typed") {
-		t.Fatalf("folder = %q, want the directory the ref sits in", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/typed") {
+		t.Fatalf("folder = %q, want the directory the ref sits in", m.list.folder.Label)
 	}
 	// And it is worth a chip: the header names the directory, and the ref is
 	// the part of the answer the window is not otherwise saying.
@@ -118,8 +120,8 @@ func TestTheHeaderStillMovesTheSource(t *testing.T) {
 
 	m.opts.chooseSource("https://github.com/acme/foo")
 	filterTo(t, m, "/src/obot")
-	if m.list.folder.key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the header to have moved", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the header to have moved", m.list.folder.Label)
 	}
 	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", got)
@@ -149,7 +151,7 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 		t.Fatalf("runs = %v, want the create held until the question is answered", ds.runs)
 	}
 	body := strings.Join(cardSources(t, m.dialog), "\n")
-	for _, want := range []string{"/src/disco2", "/src/obot", noSourceChoice, enterSourceChoice} {
+	for _, want := range []string{"/src/disco2", "/src/obot", console.NoSourceChoice, enterSourceChoice} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the question is missing %q:\n%s", want, body)
 		}
@@ -169,8 +171,8 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 	if got := promptText(ds.runs[0]); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the one that was waiting", got)
 	}
-	if m.list.folder.key != everyFolder.key {
-		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.label)
+	if m.list.folder.Key != everyFolder.Key {
+		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.Label)
 	}
 	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
 		t.Fatalf("source row = %q, want the answer", got)
@@ -237,20 +239,20 @@ func TestTheCreateQuestionTakesNoSourceForAnAnswer(t *testing.T) {
 	labels := cardSources(t, m.dialog)
 	key := ""
 	for i, label := range labels {
-		if label == noSourceChoice {
+		if label == console.NoSourceChoice {
 			key = itoa(i + 1)
 		}
 	}
 	if key == "" {
-		t.Fatalf("the question should offer %q: %v", noSourceChoice, labels)
+		t.Fatalf("the question should offer %q: %v", console.NoSourceChoice, labels)
 	}
 	send(t, m, keyPress(key))
 
 	if len(ds.runs) != 1 || !ds.runs[0].NoSource {
 		t.Fatalf("runs = %v, want one discobox created with nothing checked out", ds.runs)
 	}
-	if m.list.folder.key != everyFolder.key || m.opts.folder != "" {
-		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.label)
+	if m.list.folder.Key != everyFolder.Key || m.opts.folder != "" {
+		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.Label)
 	}
 }
 
@@ -318,8 +320,8 @@ func TestAPathTypedIntoTheCreateQuestionRunsWhenItChecksOut(t *testing.T) {
 	if got := promptText(ds.runs[0]); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the one that was waiting", got)
 	}
-	if m.list.folder.key != everyFolder.key || m.opts.folder != "" {
-		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.label)
+	if m.list.folder.Key != everyFolder.Key || m.opts.folder != "" {
+		t.Fatalf("folder = %q, want the header left on every folder", m.list.folder.Label)
 	}
 	if got := m.opts.opts[optSource].selected(); got != "/src/elsewhere" {
 		t.Fatalf("source row = %q, want the answer", got)
@@ -342,8 +344,8 @@ func TestTheLastSourceLeadsTheNextWindow(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.session.LastSource = "/src/obot"
 	m := newTestModel(t, ds)
-	if m.list.folder.key != testKey("/src/disco2") {
-		t.Fatalf("folder = %q, want the header on the window's own", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the header on the window's own", m.list.folder.Label)
 	}
 	send(t, m, typeString("fix the reaper")...)
 	send(t, m, keyPress("enter"))
@@ -389,8 +391,8 @@ func TestTheCardOpensOnTheLastAnswerWithOneFolderShown(t *testing.T) {
 	if got := cardSources(t, m.dialog)[0]; got != "/src/obot" {
 		t.Fatalf("first source = %q, want the last answer", got)
 	}
-	if m.list.folder.key != testKey("/src/disco2") {
-		t.Fatalf("folder = %q, want the header left where it was", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the header left where it was", m.list.folder.Label)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The harnesses screen is the project's harnesses and everything you do to
@@ -44,7 +45,7 @@ const HarnessesKeyName = "F3"
 // harnessList is the screen's list: the harnesses, and where the cursor is in
 // them.
 type harnessList struct {
-	all    []Harness
+	all    []console.Harness
 	cursor int
 	offset int
 
@@ -70,7 +71,7 @@ func newHarnessList() *harnessList { return &harnessList{now: time.Now} }
 // rather than on the row number it was at: nothing reorders the listing
 // today, but a cursor that follows the harness is the cursor that acts on the
 // one you were looking at.
-func (l *harnessList) setAll(all []Harness) {
+func (l *harnessList) setAll(all []console.Harness) {
 	l.loaded = true
 	var onID string
 	if h := l.current(); h != nil {
@@ -94,7 +95,7 @@ func (l *harnessList) clear() {
 	l.all, l.loaded, l.cursor, l.offset = nil, false, 0, 0
 }
 
-func (l *harnessList) current() *Harness {
+func (l *harnessList) current() *console.Harness {
 	if l.cursor < 0 || l.cursor >= len(l.all) {
 		return nil
 	}
@@ -157,7 +158,7 @@ func (l *harnessList) view(st *styles, z *zones) string {
 // row draws one harness, budgeted the way a discobox row is: the columns are
 // added in the order they matter and drop off the right end as the terminal
 // narrows. The name never goes.
-func (l *harnessList) row(st *styles, h Harness, i int) string {
+func (l *harnessList) row(st *styles, h console.Harness, i int) string {
 	atCursor := i == l.cursor
 
 	tail := ""
@@ -203,7 +204,7 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 		marker = st.key.Render("❯") + " "
 	}
 	head := marker
-	name := h.displayName()
+	name := h.DisplayName()
 	nameW := max(l.width-lipgloss.Width(head)-lipgloss.Width(tail), 4)
 	nameStyle := st.name
 	if atCursor {
@@ -219,7 +220,7 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 
 // harnessAge is how long ago the harness was last changed, in the discobox
 // list's own spelling.
-func harnessAge(h Harness, now time.Time) string {
+func harnessAge(h console.Harness, now time.Time) string {
 	return ago(h.Updated, now)
 }
 
@@ -233,29 +234,29 @@ type harnessesLoadedMsg struct {
 	// the header has moved to another server is not drawn under its name.
 	server    string
 	selectID  string
-	harnesses []Harness
+	harnesses []console.Harness
 	err       error
 }
 
 // harnessDefaultMsg carries a chosen default back to the live model.
 type harnessDefaultMsg struct {
-	harness Harness
-	resume  *RunRequest
+	harness console.Harness
+	resume  *console.RunRequest
 }
 
 // resumeRunMsg is the run a harness question interrupted, now answered.
-type resumeRunMsg struct{ req RunRequest }
+type resumeRunMsg struct{ req console.RunRequest }
 
 // harnessVerbMsg is a confirmed verb on its way back to the live model.
 type harnessVerbMsg struct {
-	verb    HarnessVerb
-	harness Harness
+	verb    console.HarnessVerb
+	harness console.Harness
 }
 
 // harnessFileMsg is the file chosen out of the file picker, on its way back for
 // the same reason.
 type harnessFileMsg struct {
-	harness Harness
+	harness console.Harness
 	path    string
 }
 
@@ -266,7 +267,7 @@ type harnessDoneMsg struct {
 	err  error
 	// resume is the run that was waiting on this, once everything it was
 	// waiting for has happened.
-	resume *RunRequest
+	resume *console.RunRequest
 }
 
 // harnessCardMsg is the config card, once the secret bindings behind it have
@@ -292,7 +293,7 @@ func (m *Model) loadHarnesses() tea.Cmd {
 // both: what the panel offers as a harness to run is what this reports, so a
 // harness registered while the window is up is selectable without reopening it.
 func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
-	if m.session.serverName(msg.server) != m.configServer() {
+	if m.session.ServerName(msg.server) != m.configServer() {
 		// Read for a server the header has since moved off. The one it is on
 		// now was asked for when it moved (configServerChanged).
 		return nil
@@ -388,7 +389,7 @@ func (m *Model) harnessMenu() tea.Cmd {
 	if harness == nil {
 		return status("no harnesses to act on")
 	}
-	m.dialog = actionsDialog(harness.displayName(), "", harnessActions(*harness),
+	m.dialog = actionsDialog(harness.DisplayName(), "", harnessActions(*harness),
 		func(key string) tea.Cmd { return m.harnessAct(key) })
 	return nil
 }
@@ -396,7 +397,7 @@ func (m *Model) harnessMenu() tea.Cmd {
 // harnessActions is what can be done to one harness, filtered against what it
 // can actually take. An action that does not apply stays on the menu with the
 // reason, the way the discobox menu keeps upgrade.
-func harnessActions(h Harness) []action {
+func harnessActions(h console.Harness) []action {
 	return []action{
 		{key: "c", press: "c", label: "create variant", detail: "follow this bundle with an independent account", enabled: h.Parent == "",
 			why: "a variant cannot be a parent; select its standalone parent instead"},
@@ -428,7 +429,7 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 		return nil
 	}
 	if !chosen.enabled {
-		m.dialog = errorDialog("Cannot "+chosen.label+" "+harness.displayName(), chosen.why)
+		m.dialog = errorDialog("Cannot "+chosen.label+" "+harness.DisplayName(), chosen.why)
 		return nil
 	}
 
@@ -440,10 +441,10 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 		// settings files and the logins they created. Nothing brings those
 		// back but signing in and saving again, so it asks.
 		question := fmt.Sprintf("Reset %s to its bundle's defaults? The settings and logins saved to it from discoboxes are deleted. New discoboxes on it start signed out until a login made in one is saved again; secrets you bound to it by hand are kept.",
-			harness.displayName())
-		if !harness.hasOverrides() {
+			harness.DisplayName())
+		if !harness.HasOverrides() {
 			m.dialog = confirmDialog("Reset", question, func(string) tea.Cmd {
-				return func() tea.Msg { return harnessVerbMsg{verb: HarnessReset, harness: harness} }
+				return func() tea.Msg { return harnessVerbMsg{verb: console.HarnessReset, harness: harness} }
 			})
 			return nil
 		}
@@ -454,15 +455,15 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 			{key: "a", press: "a", label: "Reset your files too", detail: "nothing but the bundle's files is left", enabled: true},
 		}
 		m.dialog = actionsDialog("Reset", question+"\n\nIt has files you added or overrode yourself.", items, func(key string) tea.Cmd {
-			verb := HarnessReset
+			verb := console.HarnessReset
 			if key == "a" {
-				verb = HarnessResetOverrides
+				verb = console.HarnessResetOverrides
 			}
 			return func() tea.Msg { return harnessVerbMsg{verb: verb, harness: harness} }
 		})
 		return nil
 	case "s":
-		return m.runHarnessVerb(HarnessSetDefault, harness, nil)
+		return m.runHarnessVerb(console.HarnessSetDefault, harness, nil)
 	case "v":
 		return m.showHarnessCard(harness)
 	case "f":
@@ -474,22 +475,22 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 
 type harnessVariantCreatedMsg struct {
 	server     string
-	harness    Harness
+	harness    console.Harness
 	form, wait *dialog
 	err        error
 }
 
-func (m *Model) newHarnessVariantForm(parent Harness) tea.Cmd {
+func (m *Model) newHarnessVariantForm(parent console.Harness) tea.Cmd {
 	server := m.configServer()
-	parentRow := textRow("parent", "Parent", "", parent.displayName())
-	parentRow.locked, parentRow.why = true, parent.displayName()
+	parentRow := textRow("parent", "Parent", "", parent.DisplayName())
+	parentRow.locked, parentRow.why = true, parent.DisplayName()
 	name := textRow("name", "Name", parent.Name+" (work)", "")
 	name.required = "give the variant a name"
 	slug := textRow("slug", "Slug", parent.Slug+"-work", "")
 	slug.required = "give the variant a slug"
 	var d *dialog
 	d = formDialog("Create variant", newForm(parentRow, name, slug), func(f *form) tea.Cmd {
-		variant := NewHarnessVariant{ParentID: parent.ID, Name: strings.TrimSpace(f.value("name")), Slug: strings.TrimSpace(f.value("slug"))}
+		variant := console.NewHarnessVariant{ParentID: parent.ID, Name: strings.TrimSpace(f.value("name")), Slug: strings.TrimSpace(f.value("slug"))}
 		return m.createHarnessVariant(server, variant, d)
 	})
 	d.body = "Follows the parent's bundle updates. Starts with its own account: saved logins, secret bindings and personal files are not copied."
@@ -498,7 +499,7 @@ func (m *Model) newHarnessVariantForm(parent Harness) tea.Cmd {
 	return nil
 }
 
-func (m *Model) createHarnessVariant(server string, variant NewHarnessVariant, form *dialog) tea.Cmd {
+func (m *Model) createHarnessVariant(server string, variant console.NewHarnessVariant, form *dialog) tea.Cmd {
 	wait := statusDialog("Create variant", "creating…")
 	m.dialog = wait
 	return func() tea.Msg {
@@ -510,7 +511,7 @@ func (m *Model) createHarnessVariant(server string, variant NewHarnessVariant, f
 func (m *Model) harnessVariantCreated(msg harnessVariantCreatedMsg) tea.Cmd {
 	waiting := m.dialog == msg.wait
 	if msg.err != nil {
-		if waiting && m.session.serverName(msg.server) == m.configServer() {
+		if waiting && m.session.ServerName(msg.server) == m.configServer() {
 			msg.form.form.err = fmt.Sprintf("not created: %v", msg.err)
 			m.dialog = msg.form
 			return nil
@@ -520,7 +521,7 @@ func (m *Model) harnessVariantCreated(msg harnessVariantCreatedMsg) tea.Cmd {
 	if waiting {
 		m.dialog = nil
 	}
-	if m.session.serverName(msg.server) != m.configServer() {
+	if m.session.ServerName(msg.server) != m.configServer() {
 		return nil
 	}
 	return tea.Batch(m.report(false, "created variant %q", msg.harness.Name), func() tea.Msg {
@@ -531,21 +532,21 @@ func (m *Model) harnessVariantCreated(msg harnessVariantCreatedMsg) tea.Cmd {
 
 // runHarnessVerb sends one verb to the API. Nothing takes the terminal, so the
 // screen stays up and reports on its own status line.
-func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness, resume *RunRequest) tea.Cmd {
-	name := harness.displayName()
+func (m *Model) runHarnessVerb(verb console.HarnessVerb, harness console.Harness, resume *console.RunRequest) tea.Cmd {
+	name := harness.DisplayName()
 	m.busy = string(verb) + " " + name + "…"
 	server := m.configServer()
 	return func() tea.Msg {
 		if err := m.ds.DoHarness(m.ctx, server, verb, harness.ID); err != nil {
 			return harnessDoneMsg{err: fmt.Errorf("%s %s: %w", verb, name, err), resume: resume}
 		}
-		return harnessDoneMsg{text: verb.done(name), resume: resume}
+		return harnessDoneMsg{text: verb.Done(name), resume: resume}
 	}
 }
 
 // editHarnessFile hands the terminal to $EDITOR on one of the harness's files,
 // and saves back what it wrote.
-func (m *Model) editHarnessFile(harness Harness, path string) tea.Cmd {
+func (m *Model) editHarnessFile(harness console.Harness, path string) tea.Cmd {
 	m.busy = "editing " + path + "…"
 	server := m.configServer()
 	var changed bool
@@ -595,7 +596,7 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 
 // harnessFilesDialog is the file picker: the harness's files, the ones saved
 // from discoboxes first, since those are the ones worth editing by hand.
-func (m *Model) harnessFilesDialog(harness Harness) *dialog {
+func (m *Model) harnessFilesDialog(harness console.Harness) *dialog {
 	items := make([]action, 0, len(harness.Files))
 	for i, file := range harness.Files {
 		n := itoa(i + 1)
@@ -610,7 +611,7 @@ func (m *Model) harnessFilesDialog(harness Harness) *dialog {
 		})
 	}
 	files := harness.Files
-	menu := actionsDialog("Files — "+harness.displayName(), "", items, func(key string) tea.Cmd {
+	menu := actionsDialog("Files — "+harness.DisplayName(), "", items, func(key string) tea.Cmd {
 		for i, file := range files {
 			if itoa(i+1) == key {
 				path := file.Path
@@ -623,30 +624,19 @@ func (m *Model) harnessFilesDialog(harness Harness) *dialog {
 	return menu
 }
 
-// hasOverrides is whether a person added or overrode any of the harness's
-// files, which a plain reset keeps.
-func (h Harness) hasOverrides() bool {
-	for _, file := range h.Files {
-		if file.Source == HarnessFileOverride {
-			return true
-		}
-	}
-	return false
-}
-
-func harnessFileDetail(file HarnessFile) string {
+func harnessFileDetail(file console.HarnessFile) string {
 	notes := []string{humanBytes(int64(len(file.Content)))}
 	switch file.Source {
-	case HarnessFileSaved:
+	case console.HarnessFileSaved:
 		notes = append(notes, "saved from a discobox")
-	case HarnessFileOverride:
+	case console.HarnessFileOverride:
 		notes = append(notes, "yours")
 	default:
 		notes = append(notes, "from the image")
 	}
 	if len(file.Shadows) > 0 {
 		switch file.Shadows[0] {
-		case HarnessFileSaved:
+		case console.HarnessFileSaved:
 			notes = append(notes, "over the saved one")
 		default:
 			notes = append(notes, "over the image's")
@@ -661,15 +651,15 @@ func harnessFileDetail(file HarnessFile) string {
 // showHarnessCard opens the config card. The bindings behind it are a request
 // of their own, so the card is built when it is asked for rather than kept up
 // to date for every row.
-func (m *Model) showHarnessCard(harness Harness) tea.Cmd {
-	m.busy = "reading " + harness.displayName() + "…"
+func (m *Model) showHarnessCard(harness console.Harness) tea.Cmd {
+	m.busy = "reading " + harness.DisplayName() + "…"
 	st, server := m.st, m.configServer()
 	return func() tea.Msg {
 		secrets, err := m.ds.HarnessSecrets(m.ctx, server, harness.ID)
 		if err != nil {
 			return harnessCardMsg{err: err}
 		}
-		return harnessCardMsg{title: harness.displayName(), body: harnessCard(st, harness, secrets)}
+		return harnessCardMsg{title: harness.DisplayName(), body: harnessCard(st, harness, secrets)}
 	}
 }
 
@@ -689,7 +679,7 @@ const harnessCardLabel = 13
 // Nothing here pads inside a style: the card goes into the modal layer, which
 // wraps lines too long for it, and a padded label that got wrapped would leave
 // its spaces behind on the previous line.
-func harnessCard(st *styles, h Harness, secrets []HarnessSecret) string {
+func harnessCard(st *styles, h console.Harness, secrets []console.HarnessSecret) string {
 	label := func(text string) string {
 		return "  " + st.dimText.Render(text) + strings.Repeat(" ", max(harnessCardLabel-2-len(text), 1))
 	}
@@ -708,7 +698,7 @@ func harnessCard(st *styles, h Harness, secrets []HarnessSecret) string {
 	if len(role) > 0 {
 		fmt.Fprintln(&b, label("Role"), strings.Join(role, "  "))
 	}
-	if h.Slug != "" && h.Slug != h.displayName() {
+	if h.Slug != "" && h.Slug != h.DisplayName() {
 		fmt.Fprintln(&b, label("Run as"), h.Slug)
 	}
 	fmt.Fprintln(&b, label("ID"), h.ID)
@@ -745,7 +735,7 @@ func harnessCard(st *styles, h Harness, secrets []HarnessSecret) string {
 }
 
 // harnessSecretLine is one environment variable and whatever answers it.
-func harnessSecretLine(st *styles, secret HarnessSecret) string {
+func harnessSecretLine(st *styles, secret console.HarnessSecret) string {
 	var notes []string
 	if secret.Required {
 		notes = append(notes, "required")
@@ -782,7 +772,7 @@ func harnessSecretLine(st *styles, secret HarnessSecret) string {
 
 // harnessFileLines is the file's contents as the card shows them: the first
 // screenful, and how much was left.
-func harnessFileLines(file HarnessFile) []string {
+func harnessFileLines(file console.HarnessFile) []string {
 	if strings.TrimSpace(file.Content) == "" {
 		return nil
 	}

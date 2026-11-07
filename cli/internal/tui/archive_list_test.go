@@ -5,6 +5,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // An archive pressed on the list takes effect on the row as soon as it is
@@ -27,7 +29,7 @@ func TestArchivingFromTheListShowsAtOnce(t *testing.T) {
 		d.wait("the archive asked", func() bool { return m.busy == "archive…" })
 
 		for _, row := range m.list.rows() {
-			if row.ID == box.ID && row.State != StateArchived {
+			if row.ID == box.ID && row.State != console.StateArchived {
 				t.Errorf("row %s still listed as %q while its archive is out; want it gone or marked archiving at once", box.ID, row.State)
 			}
 		}
@@ -42,19 +44,19 @@ func TestArchivingFromTheListShowsAtOnce(t *testing.T) {
 func archiveSent(t *testing.T, ds *fakeSource, id, cursorOn string) *Model {
 	t.Helper()
 	m := newTestModel(t, ds)
-	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}})
-	m.list.folder = folder{} // every folder, so there are rows on both sides
-	if !m.listCursorTo(Sandbox{ID: cursorOn}) {
+	send(t, m, listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}})
+	m.list.folder = console.Folder{} // every folder, so there are rows on both sides
+	if !m.listCursorTo(console.Sandbox{ID: cursorOn}) {
 		t.Fatalf("%s is not listed", cursorOn)
 	}
-	_ = m.runVerb(VerbArchive, []Sandbox{{ID: id}}, verbThen{})
+	_ = m.runVerb(console.VerbArchive, []console.Sandbox{{ID: id}}, verbThen{})
 	if got := m.list.current(); got == nil || got.ID != cursorOn {
 		t.Fatalf("the cursor is on %v once the archive went out, want it kept on %s", got, cursorOn)
 	}
 	return m
 }
 
-func listedState(m *Model, id string) (State, bool) {
+func listedState(m *Model, id string) (console.State, bool) {
 	for _, s := range m.list.all {
 		if s.ID == id {
 			return s.State, m.list.shown(s)
@@ -66,8 +68,8 @@ func listedState(m *Model, id string) (State, bool) {
 // landed hands the window the listing out, without running what it asks for
 // next: a read owed behind it would otherwise land first and answer for it.
 // What it asks for next is still sent, as the window sends it.
-func landed(m *Model, boxes []Sandbox) {
-	m.Update(listLoadedMsg{listing: Listing{Sandboxes: boxes}})
+func landed(m *Model, boxes []console.Sandbox) {
+	m.Update(listLoadedMsg{listing: console.Listing{Sandboxes: boxes}})
 }
 
 // A listing sent before the archive was answered still says the box is
@@ -84,7 +86,7 @@ func TestAListingOlderThanTheArchiveDoesNotBringTheRowBack(t *testing.T) {
 		t.Fatal("a read was already out")
 	}
 	landed(m, testSandboxes())
-	if st, shown := listedState(m, "sbx_one"); st != StateArchived || shown {
+	if st, shown := listedState(m, "sbx_one"); st != console.StateArchived || shown {
 		t.Fatalf("while the archive is out a stale listing put the row back: state %q, shown %v", st, shown)
 	}
 
@@ -93,9 +95,9 @@ func TestAListingOlderThanTheArchiveDoesNotBringTheRowBack(t *testing.T) {
 	if !m.listPoll.start(m.now()) {
 		t.Fatal("a read was already out")
 	}
-	m.Update(verbDoneMsg{verb: VerbArchive, targets: []Sandbox{{ID: "sbx_one"}}, errs: []error{nil}})
+	m.Update(verbDoneMsg{verb: console.VerbArchive, targets: []console.Sandbox{{ID: "sbx_one"}}, errs: []error{nil}})
 	landed(m, testSandboxes())
-	if st, shown := listedState(m, "sbx_one"); st != StateArchived || shown {
+	if st, shown := listedState(m, "sbx_one"); st != console.StateArchived || shown {
 		t.Fatalf("a listing sent before the answer put the row back: state %q, shown %v", st, shown)
 	}
 	if got := m.list.current(); got == nil || got.ID != "sbx_two" {
@@ -108,7 +110,7 @@ func TestAListingOlderThanTheArchiveDoesNotBringTheRowBack(t *testing.T) {
 	// The read sent after the answer has the server's word: archiving,
 	// which the window lists as archived.
 	after := testSandboxes()
-	after[0].State = StateArchived
+	after[0].State = console.StateArchived
 	landed(m, after)
 	if len(m.list.archiving) != 0 {
 		t.Errorf("archive marks = %v once a listing after the answer landed, want none", m.list.archiving)
@@ -127,8 +129,8 @@ func TestAFailedArchivePutsTheRowBack(t *testing.T) {
 	}
 
 	m.listPoll.since = time.Now() // hold the answer's own refresh back
-	m.Update(verbDoneMsg{verb: VerbArchive, targets: []Sandbox{{ID: "sbx_one"}}, errs: []error{errors.New("server said no")}})
-	if st, shown := listedState(m, "sbx_one"); st != StateRunning || !shown {
+	m.Update(verbDoneMsg{verb: console.VerbArchive, targets: []console.Sandbox{{ID: "sbx_one"}}, errs: []error{errors.New("server said no")}})
+	if st, shown := listedState(m, "sbx_one"); st != console.StateRunning || !shown {
 		t.Fatalf("after a failed archive the row is %q, shown %v; want it back as running", st, shown)
 	}
 	if got := m.list.current(); got == nil || got.ID != "sbx_two" {

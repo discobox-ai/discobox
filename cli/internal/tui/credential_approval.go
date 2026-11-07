@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
@@ -51,7 +52,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		part, title = a.req.Delegate, "Allow credential delegation?"
 	}
 	if part == nil {
-		part = &RequestPart{Routes: a.req.routes()}
+		part = &console.RequestPart{Routes: a.req.Routes()}
 	}
 	hosts := secretroute.OpenRouteHosts(part.Routes)
 	scope := pickRow("scope", "Scope", choice{key: "routes", label: "Requested routes", hint: "Keep methods, paths, protocol restrictions and blocked routes"}, choice{key: "hosts", label: "Requested hosts", hint: "Any method, path and protocol on open requested hosts; drops request blocks"}, choice{key: "anywhere", label: "Anywhere", hint: "No grant restriction; credential and parent limits still apply"})
@@ -62,7 +63,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		rows = append(rows, pickRow("delivery", "Delivery", choice{key: "sentinel", label: "Placeholder", hint: "The pool swaps in the value on its permitted routes"}, choice{key: "env", label: "Value in variable", hint: "Only if the credential allows raw delivery"}, choice{key: "file", label: "Value in memory file", hint: "Only if the credential allows raw delivery"}))
 	}
 	f := newForm(rows...)
-	locked := delegate && a.use == PartApprove
+	locked := delegate && a.use == console.PartApprove
 	f.rows[0].locked, f.rows[1].locked = locked || pinned, locked
 	if a.secret.ID != "" {
 		f.choose("credential", a.secret.ID)
@@ -96,7 +97,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		next := a
 		next.fresh = f.chosen("credential") == "new"
 		if !locked {
-			next.secret = Secret{}
+			next.secret = console.Secret{}
 			if pinned {
 				next.secret = heldSecret(a.secrets, holder)
 			}
@@ -128,11 +129,11 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		if d.formActions[d.formActionAt].key == "raw" {
 			return m.showRawRequest(a.req, func() tea.Cmd { m.dialog = d; return nil })
 		}
-		answer := PartApprove
+		answer := console.PartApprove
 		if d.formActions[d.formActionAt].key == "deny" {
-			answer = PartDeny
+			answer = console.PartDeny
 		}
-		if answer == PartApprove {
+		if answer == console.PartApprove {
 			if f.chosen("duration") == "custom" {
 				if _, err := lifetime.Parse(f.value("customDuration")); err != nil {
 					f.err = err.Error()
@@ -160,7 +161,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 			next.delegate = answer
 		} else {
 			next.use = answer
-			if answer == PartDeny {
+			if answer == console.PartDeny {
 				next.raw = ""
 			}
 		}
@@ -169,7 +170,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 			return m.approvalPart(next, true)
 		}
 		next.partsChosen = true
-		if next.use != PartApprove && next.delegate != PartApprove {
+		if next.use != console.PartApprove && next.delegate != console.PartApprove {
 			return m.denyCredential(a.req)
 		}
 		if next.fresh {
@@ -181,7 +182,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		d.formActions = append(d.formActions, action{key: "raw", label: "Request JSON", enabled: true})
 	}
 	d.titleRight = "1 of 1"
-	if a.req.asksBoth() {
+	if a.req.AsksBoth() {
 		d.titleRight = "1 of 2"
 		if delegate {
 			d.titleRight = "2 of 2"
@@ -219,9 +220,9 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		if next.fresh {
 			limits.lines = append(limits.lines, line{text: "Credential restrictions and lifetime limit are chosen on the new credential form."})
 		} else {
-			limits.fields = append(limits.fields, field{label: next.secret.Name, value: routeRows(next.secret.Routes)})
+			limits.fields = append(limits.fields, field{label: next.secret.Name, value: console.RouteRows(next.secret.Routes)})
 			for i, list := range next.secret.RouteConstraints {
-				limits.fields = append(limits.fields, field{label: fmt.Sprintf("Constraint %d", i+1), value: routeRows(list)})
+				limits.fields = append(limits.fields, field{label: fmt.Sprintf("Constraint %d", i+1), value: console.RouteRows(list)})
 			}
 			if next.secret.MaxTTL > 0 {
 				limits.fields = append(limits.fields, field{label: "Maximum duration", value: lifetime.Label(next.secret.MaxTTL)})
@@ -254,13 +255,13 @@ func (m *Model) confirmCredentialApproval(a approval) tea.Cmd {
 	})
 	d.sections = []section{bindingSection(a)}
 	for _, parent := range a.parents {
-		value := routeRows(parent.Routes)
+		value := console.RouteRows(parent.Routes)
 		if len(parent.Routes) == 0 {
 			value = "No additional parent route restriction"
 		}
 		d.sections = append(d.sections, section{label: "Parent delegation ceiling", fields: []field{{label: parent.ID, value: value}, {label: "Expires", value: parent.Expires.String()}}})
 	}
-	if a.use == PartApprove {
+	if a.use == console.PartApprove {
 		d.sections = append(d.sections, heldSection(a))
 	}
 	d.sections = append(d.sections, section{lines: []line{{text: "This submits the use and delegation decisions together. Deny refuses the entire request; Esc leaves it waiting."}}})

@@ -1,9 +1,10 @@
-package tui
+package console
 
 import (
 	"context"
 	"errors"
 	"io"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
-	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/id"
 )
 
@@ -301,8 +301,8 @@ type Sandbox struct {
 	// (sandboxList.nest): the branch drawn in front of the name of a row
 	// nested under the discobox that created it, empty on a row nested under
 	// nothing, and the row its tree hangs from, which is itself for that one.
-	tree  string
-	under boxRef
+	Tree  string
+	Under BoxRef
 
 	// OriginKey is where the discobox is filed on the client that created it
 	// (ADR 0111): that host and where its source came from, or the host alone
@@ -448,8 +448,8 @@ type BoxSettingsUpdate struct {
 	DiscoboxAPI       *bool
 }
 
-// empty is an update that changes nothing.
-func (u BoxSettingsUpdate) empty() bool {
+// Empty is an update that changes nothing.
+func (u BoxSettingsUpdate) Empty() bool {
 	return u.Name == nil && u.Harness == nil && u.EgressDeny == nil && u.EgressAllow == nil &&
 		u.EgressPassthrough == nil && u.DiscoboxAPI == nil
 }
@@ -598,20 +598,20 @@ type SecretRejection struct {
 	LastSeen  time.Time
 }
 
-// occurrence names this refusal among others: the credential, where it was
+// Occurrence names this refusal among others: the credential, where it was
 // refused, and when that was first seen — a refusal cleared and seen again is
 // a new one. It is what a dismissal of the band remembers.
-func (r SecretRejection) occurrence() string {
+func (r SecretRejection) Occurrence() string {
 	return r.SecretID + "\x00" + r.Host + "\x00" + r.FirstSeen.UTC().Format(time.RFC3339Nano)
 }
 
-// harnessOwned reports whether configuring a harness again is the remedy.
-func (r SecretRejection) harnessOwned() bool { return r.HarnessConfigID != "" }
+// HarnessOwned reports whether configuring a harness again is the remedy.
+func (r SecretRejection) HarnessOwned() bool { return r.HarnessConfigID != "" }
 
-// name is what to call the refused credential on one line: the variable it
+// Name is what to call the refused credential on one line: the variable it
 // arrives in where there is one, since that is what a harness's own card and
 // its error messages say, and the secret's name otherwise.
-func (r SecretRejection) name() string {
+func (r SecretRejection) Name() string {
 	if r.EnvName != "" {
 		return r.EnvName
 	}
@@ -742,8 +742,8 @@ const (
 	ServiceRestart ServiceVerb = "restart"
 )
 
-// done is what the status line says once the verb has run.
-func (v ServiceVerb) done(name string) string {
+// Done is what the status line says once the verb has run.
+func (v ServiceVerb) Done(name string) string {
 	switch v {
 	case ServiceStart:
 		return "started " + name
@@ -769,8 +769,8 @@ const (
 	HarnessSetDefault     HarnessVerb = "set default"
 )
 
-// done is what the status line says once the verb has run.
-func (v HarnessVerb) done(name string) string {
+// Done is what the status line says once the verb has run.
+func (v HarnessVerb) Done(name string) string {
 	switch v {
 	case HarnessSetDefault:
 		return name + " is now the default"
@@ -780,9 +780,9 @@ func (v HarnessVerb) done(name string) string {
 	return "reset " + name + " to its bundle's defaults, keeping your files"
 }
 
-// displayName is what the harness is called on screen: its name, the slug it is
+// DisplayName is what the harness is called on screen: its name, the slug it is
 // run by, or failing both the id, which is the one thing it always has.
-func (h Harness) displayName() string {
+func (h Harness) DisplayName() string {
 	if name := strings.TrimSpace(h.Name); name != "" {
 		if h.Parent != "" {
 			return name + " (variant of " + h.Parent + ")"
@@ -795,17 +795,17 @@ func (h Harness) displayName() string {
 	return h.ID
 }
 
-// flagName is what `discobox run --harness` takes for this harness.
-func (h Harness) flagName() string {
+// FlagName is what `discobox run --harness` takes for this harness.
+func (h Harness) FlagName() string {
 	if slug := strings.TrimSpace(h.Slug); slug != "" {
 		return slug
 	}
 	return strings.TrimSpace(h.Name)
 }
 
-func (s Sandbox) hasDiff() bool { return s.Diff.Known && s.Diff.Files > 0 }
+func (s Sandbox) HasDiff() bool { return s.Diff.Known && s.Diff.Files > 0 }
 
-// attachable reports whether there is a container to attach to. It asks the
+// Attachable reports whether there is a container to attach to. It asks the
 // power axis, not the lifecycle one, because that is the question: the pool
 // agent starts a stopped sandbox on demand when the attach arrives (ADR 0017
 // §12), so anything it has observed a container for can be joined.
@@ -828,29 +828,29 @@ func (s Sandbox) hasDiff() bool { return s.Diff.Known && s.Diff.Files > 0 }
 // Spelling this as a list of states is what ADR 0017 §4 warns against — the
 // wedge it describes came from a guard written `State == "stopped"` when it
 // meant "is anything relying on this container".
-func (s Sandbox) attachable() bool {
+func (s Sandbox) Attachable() bool {
 	if s.State == StateArchived {
 		return false
 	}
 	return s.HasRuntime || s.State == StateStarting || s.State == StateRepairing
 }
 
-// startable reports whether start is offered for this box: powered off, or
+// Startable reports whether start is offered for this box: powered off, or
 // frozen whole. Attaching to one starts it too (attachable).
-func (s Sandbox) startable() bool {
+func (s Sandbox) Startable() bool {
 	return s.State == StateStopped || s.State == StateSuspended
 }
 
-// live reports whether the box is running, or being brought up, so attaching
+// Live reports whether the box is running, or being brought up, so attaching
 // to it starts nothing: a starting or repairing box is already being brought up,
 // and the attach waits for it. Every other state either starts the box on an
 // attach — stopped, suspended, and an error whose container may be off, since
 // the state does not say (attachable) — or refuses one.
-func (s Sandbox) live() bool {
+func (s Sandbox) Live() bool {
 	return s.State == StateRunning || s.State == StateStarting || s.State == StateRepairing
 }
 
-// repairable reports whether repair is offered for this box.
+// Repairable reports whether repair is offered for this box.
 //
 // Repair is offered on every box but an archived one. A latched error, or a box
 // nothing has ever reported a container for, is the wedge repair exists for
@@ -860,11 +860,11 @@ func (s Sandbox) live() bool {
 // server takes a repair in any of those states. Archived has no container by
 // intent, and unarchive is what brings it back; the server refuses repair on it
 // with the same reasoning (ADR 0035).
-func (s Sandbox) repairable() bool {
+func (s Sandbox) Repairable() bool {
 	return s.State != StateArchived
 }
 
-// elsewhere is what the row says about a discobox created under another client
+// Elsewhere is what the row says about a discobox created under another client
 // identity: the hostname that machine reported, qualified by the host id that
 // actually identifies it, since a hostname is neither unique nor stable and the
 // id is what every other part of Discobox names the machine by.
@@ -886,7 +886,7 @@ func (s Sandbox) repairable() bool {
 // session.HostID empty is unknown rather than "no machine": nothing is marked
 // at all, because a window that cannot say what is local cannot say what is
 // remote either.
-func (s Sandbox) elsewhere(session Session) string {
+func (s Sandbox) Elsewhere(session Session) string {
 	if session.HostID == "" || s.OriginHostID == "" || s.OriginHostID == session.HostID {
 		return ""
 	}
@@ -896,51 +896,51 @@ func (s Sandbox) elsewhere(session Session) string {
 	return "from " + s.OriginHost + " (" + shortHostID(s.OriginHostID) + ")"
 }
 
-// folder is the header folder a discobox is in (folder.go): its repository's
+// Folder is the header folder a discobox is in (folder.go): its repository's
 // when its source resolved to a GitHub repository when it was cut, and its
 // origin key's otherwise — named by its source, or as having none, and by the
 // machine it was created on when that is not this one. A discobox filed under
 // the window's own key that resolved to no repository is in the window's
-// folder; one that resolved to a repository is in that one's, even when the
+// Folder; one that resolved to a repository is in that one's, even when the
 // window's checkout now resolves to another, as a fork's does.
-func (s Sandbox) folder(session Session) folder {
+func (s Sandbox) Folder(session Session) Folder {
 	local := session.HostID != "" && s.OriginHostID == session.HostID
 	if s.RepositoryKey != "" {
 		// What a create from the repository cuts from is what this one was
 		// cut from when that can be cut from here — a URL, or a directory of
 		// this machine's — and the repository itself otherwise.
-		f := folder{key: s.RepositoryKey, label: repositoryLabel(s.RepositoryKey), source: s.Repository, local: local}
+		f := Folder{Key: s.RepositoryKey, Label: RepositoryLabel(s.RepositoryKey), Source: s.Repository, Local: local}
 		if s.Source != "" && (s.SourceRemote || local) {
-			f.source = s.Source
+			f.Source = s.Source
 		}
 		return f
 	}
 	if s.OriginKey != "" && s.OriginKey == session.OriginKey {
-		return session.folder()
+		return session.Folder()
 	}
-	f := folder{key: s.OriginKey, label: sourceref.Display(s.Source, session.Home), source: s.Source, local: local}
+	f := Folder{Key: s.OriginKey, Label: sourceref.Display(s.Source, session.Home), Source: s.Source, Local: local}
 	if s.Source == "" {
 		// Nothing was cut from it, so there is nothing to cut from in it: the
 		// panel falls back to the window's own source, the way it does for
 		// every folder at once. The sentinel is the Source row's answer, not a
 		// value anything may create from — sourceDir and the field's
 		// placeholder would draw it verbatim.
-		f.label = noSourceChoice
+		f.Label = NoSourceChoice
 	}
-	if from := s.elsewhere(session); from != "" {
-		f.label += " · " + from
+	if from := s.Elsewhere(session); from != "" {
+		f.Label += " · " + from
 	}
 	return f
 }
 
-// folderKey is the key of the folder a discobox is in: what the header's
+// FolderKey is the key of the folder a discobox is in: what the header's
 // filter matches and the list's sections tell rows apart by.
-func (s Sandbox) folderKey(session Session) string {
+func (s Sandbox) FolderKey(session Session) string {
 	if s.RepositoryKey != "" {
 		return s.RepositoryKey
 	}
 	if s.OriginKey != "" && s.OriginKey == session.OriginKey {
-		return session.folder().key
+		return session.Folder().Key
 	}
 	return s.OriginKey
 }
@@ -961,15 +961,15 @@ func shortHostID(hostID string) string {
 	return hostID[:len(hostID)-id.RandomLength+6]
 }
 
-// up reports whether the sandbox is running anything, and so whether its usage
+// Up reports whether the sandbox is running anything, and so whether its usage
 // figures would mean anything.
-func (s Sandbox) up() bool {
+func (s Sandbox) Up() bool {
 	return s.State == StateRunning || s.State == StateStarting
 }
 
-// base is the reported Git position, or the spawn position until a report
+// Base is the reported Git position, or the spawn position until a report
 // arrives. A star marks dirt and an up arrow marks commits ahead of spawn.
-func (s Sandbox) base() string {
+func (s Sandbox) Base() string {
 	branch, commit := s.Branch, s.Commit
 	if s.Git.Known {
 		branch, commit = s.Git.Branch, s.Git.Commit
@@ -979,37 +979,37 @@ func (s Sandbox) base() string {
 	}
 	out := branch + "@" + commit
 	switch {
-	case s.dirty():
+	case s.Uncommitted():
 		out += "*"
-	case s.ahead():
+	case s.Ahead():
 		out += "⇡"
 	}
 	return out
 }
 
-// dirty reports whether the sandbox holds uncommitted content: what its agent
+// Uncommitted reports whether the sandbox holds uncommitted content: what its agent
 // reports once there is a report, the snapshot it was created over until then.
-func (s Sandbox) dirty() bool {
+func (s Sandbox) Uncommitted() bool {
 	if s.Git.Known {
 		return s.Git.Dirty
 	}
 	return s.Dirty
 }
 
-// ahead reports clean committed work beyond the spawn commit.
-func (s Sandbox) ahead() bool {
+// Ahead reports clean committed work beyond the spawn commit.
+func (s Sandbox) Ahead() bool {
 	return s.Git.Known && !s.Git.Dirty &&
 		s.Git.Commit != "" && s.Commit != "" && s.Git.Commit != s.Commit
 }
 
-// changes is the git column's mark spelled out: the one-word state of the
+// Changes is the git column's mark spelled out: the one-word state of the
 // work, for the column beside the position so the mark never has to be
 // decoded. The two agree by construction — same predicates, same order.
-func (s Sandbox) changes() string {
+func (s Sandbox) Changes() string {
 	switch {
-	case s.dirty():
+	case s.Uncommitted():
 		return "dirty"
-	case s.ahead():
+	case s.Ahead():
 		return "ready"
 	case s.Git.Known:
 		return "clean"
@@ -1023,24 +1023,24 @@ func (s Sandbox) changes() string {
 type standing int
 
 const (
-	standingNone standing = iota
-	standingReady
-	standingBlocked
+	StandingNone standing = iota
+	StandingReady
+	StandingBlocked
 )
 
-// standing is blocked when the discobox is tagged blocked or needs-input
+// Standing is blocked when the discobox is tagged blocked or needs-input
 // (Sandbox.status), when a credential request on it is waiting on a person —
 // an agent asking for a credential is as stuck as a pull request waiting on
 // somebody — or when its agent reports it is blocked on one, and ready when
 // its pull request is ready for a human merge.
-func (s Sandbox) standing() standing {
+func (s Sandbox) Standing() standing {
 	switch {
-	case s.PendingRequests > 0 || s.status() == statusBlocked || s.status() == statusNeedsInput || s.Agent.State == programstatus.Blocked:
-		return standingBlocked
-	case s.status() == statusReady:
-		return standingReady
+	case s.PendingRequests > 0 || s.Status() == StatusBlocked || s.Status() == StatusNeedsInput || s.Agent.State == programstatus.Blocked:
+		return StandingBlocked
+	case s.Status() == StatusReady:
+		return StandingReady
 	default:
-		return standingNone
+		return StandingNone
 	}
 }
 
@@ -1351,10 +1351,21 @@ type TerminalEvent struct {
 	State TerminalConnectionState
 }
 
-// Terminal is a sandbox terminal the window draws itself: a stream termpane can
-// render, plus the connection events that never appear in its output.
+// Terminal is a sandbox terminal a frontend draws itself, plus the connection
+// events that never appear in its output. Its methods are the ones a frontend's
+// emulator reads a stream through (the TUI's termpane.Stream), spelled here so
+// the core depends on no renderer.
 type Terminal interface {
-	termpane.Stream
+	// Read blocks until there is output and fails once the session ends; Close
+	// unblocks a pending Read.
+	io.ReadWriteCloser
+
+	// Resize tells the far end the terminal is now cols by rows cells.
+	Resize(cols, rows int) error
+
+	// Repaint asks the far end to send back what it is showing, now; a stream
+	// that cannot reproduce a screen returns nil.
+	Repaint() error
 
 	// Events reports connection state changes. It is never closed while the
 	// terminal is open, and a receive that nobody is waiting on is dropped
@@ -1373,15 +1384,16 @@ type Binding struct {
 	Local int
 }
 
-// portKey is how a forwarded port is looked up. A sandbox's TCP and UDP ports
+// PortKey is how a forwarded port is looked up. A sandbox's TCP and UDP ports
 // of one number are two ports, and their forwards can land on two local ones.
-type portKey struct {
-	number int
-	udp    bool
+type PortKey struct {
+	Number int
+	UDP    bool
 }
 
-func (p Port) key() portKey    { return portKey{number: p.Number, udp: p.UDP} }
-func (b Binding) key() portKey { return portKey{number: b.Port, udp: b.UDP} }
+func (p Port) Key() PortKey { return PortKey{Number: p.Number, UDP: p.UDP} }
+
+func (b Binding) Key() PortKey { return PortKey{Number: b.Port, UDP: b.UDP} }
 
 // Forward is a running port forward onto one sandbox: every port it announces,
 // held open at a local port for as long as the workspace showing it is.
@@ -1451,11 +1463,6 @@ type AuditUpdate struct {
 	Polled  bool
 	Missing []string
 }
-
-// DataSource is everything the window needs from the outside. It is implemented
-// once, in the cli package, over the same API client and code paths the
-// non-interactive commands use: the launcher runs `discobox`'s commands rather
-// than a second implementation of them.
 
 // CredentialRequest is one item waiting on a person: an agent's ask for a
 // credential, made through the in-sandbox CLI (ADR 0031) — an ask to use it
@@ -1541,12 +1548,12 @@ type HeldGrant struct {
 	Expires time.Time
 }
 
-// asksBoth reports whether a request asks both to use the credential and to
+// AsksBoth reports whether a request asks both to use the credential and to
 // delegate it: two answers, each its own.
-func (r CredentialRequest) asksBoth() bool { return r.Use != nil && r.Delegate != nil }
+func (r CredentialRequest) AsksBoth() bool { return r.Use != nil && r.Delegate != nil }
 
-// delegateOnly reports whether a request asks only to delegate.
-func (r CredentialRequest) delegateOnly() bool { return r.Delegate != nil && r.Use == nil }
+// DelegateOnly reports whether a request asks only to delegate.
+func (r CredentialRequest) DelegateOnly() bool { return r.Delegate != nil && r.Use == nil }
 
 // RefreshAsk is which token a refresh request wants a new value of, and why.
 type RefreshAsk struct {
@@ -2529,9 +2536,9 @@ type DataSource interface {
 	DenyTrustRequest(ctx context.Context, server, requestID string) error
 }
 
-// routes is every route a credential request asks for, its use part's then
+// Routes is every route a credential request asks for, its use part's then
 // its delegate part's.
-func (r CredentialRequest) routes() []secretroute.Route {
+func (r CredentialRequest) Routes() []secretroute.Route {
 	var out []secretroute.Route
 	for _, part := range []*RequestPart{r.Use, r.Delegate} {
 		if part != nil {
@@ -2541,37 +2548,37 @@ func (r CredentialRequest) routes() []secretroute.Route {
 	return out
 }
 
-// where is where a request asks to reach, as a person reads it: every route a
+// Where is where a request asks to reach, as a person reads it: every route a
 // credential request names, or a trust's endpoint.
-func (r CredentialRequest) where() string {
-	if routes := r.routes(); len(routes) > 0 {
-		return routesText(routes)
+func (r CredentialRequest) Where() string {
+	if routes := r.Routes(); len(routes) > 0 {
+		return RoutesText(routes)
 	}
 	return r.Host
 }
 
-// whereRows is where, one route to a row, for a card's field: a column of
+// WhereRows is where, one route to a row, for a card's field: a column of
 // routes is read route by route, where a "; "-joined line of them is not.
-func (r CredentialRequest) whereRows() string {
-	if routes := r.routes(); len(routes) > 0 {
-		return routeRows(routes)
+func (r CredentialRequest) WhereRows() string {
+	if routes := r.Routes(); len(routes) > 0 {
+		return RouteRows(routes)
 	}
 	return r.Host
 }
 
-// routesText is routes as a person types them, each as secretroute.Format
+// RoutesText is routes as a person types them, each as secretroute.Format
 // writes it, joined by "; ": a comma is part of a route, between its hosts,
 // methods, paths, fields or tools.
-func routesText(routes []secretroute.Route) string {
-	return strings.Join(formatRoutes(routes), "; ")
+func RoutesText(routes []secretroute.Route) string {
+	return strings.Join(FormatRoutes(routes), "; ")
 }
 
-// routeRows is routes as routesText writes them, one to a row.
-func routeRows(routes []secretroute.Route) string {
-	return strings.Join(formatRoutes(routes), "\n")
+// RouteRows is routes as routesText writes them, one to a row.
+func RouteRows(routes []secretroute.Route) string {
+	return strings.Join(FormatRoutes(routes), "\n")
 }
 
-func formatRoutes(routes []secretroute.Route) []string {
+func FormatRoutes(routes []secretroute.Route) []string {
 	out := make([]string, 0, len(routes))
 	for _, route := range routes {
 		out = append(out, secretroute.Format(route))
@@ -2587,4 +2594,67 @@ type BindingDecision struct {
 	ID, Event, Actor, RequestID, BindingID, TargetID, EnvVar, ParentID string
 	At, Expires                                                        time.Time
 	RouteLists                                                         [][]secretroute.Route
+}
+
+// BoxRef names a discobox across every server the window lists: an ID is one
+// server's.
+type BoxRef struct {
+	Server, ID string
+}
+
+// ServerName is a server's name with the empty one — the primary, however it
+// was written before the session named it — spelled out, so two names for the
+// primary compare equal. A load that went before the session landed carries
+// the empty name, and the model it lands in may since have learned the other.
+func (s Session) ServerName(name string) string {
+	if name == "" && len(s.Servers) > 0 {
+		return s.Servers[0]
+	}
+	if name == "" {
+		return s.PrimaryServer
+	}
+	return name
+}
+
+// HasOverrides is whether a person added or overrode any of the harness's
+// files, which a plain reset keeps.
+func (h Harness) HasOverrides() bool {
+	for _, file := range h.Files {
+		if file.Source == HarnessFileOverride {
+			return true
+		}
+	}
+	return false
+}
+
+// CredentialUI asks on the active frontend and temporarily returns terminal
+// ownership to Git when no credential helper answers.
+type CredentialUI struct {
+	Report  func(string)
+	Confirm func(context.Context, string) (bool, error)
+	Run     func(context.Context, *exec.Cmd) error
+}
+
+// HarnessChanges contains only the server's safe preview, never raw credentials.
+type HarnessChanges struct {
+	CandidateID string
+	State       string
+	Revision    int64
+	Files       []HarnessChangedFile
+	Credentials []string
+	Diagnostics []string
+}
+
+// HarnessChangedFile is one file a candidate adds, updates or removes, shown
+// as what changed in it rather than what it now holds.
+type HarnessChangedFile struct {
+	Path string
+	// Action is add, update or remove.
+	Action string
+	// Diff is the change's unified diff hunks against the file it replaces.
+	Diff string
+	// Shadowed is a change at a path a person overrode: a save keeps it
+	// beneath the override, and boxes go on being given the person's file
+	// (ADR 26-11-04-711 §2).
+	Shadowed bool
 }

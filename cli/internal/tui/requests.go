@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The requests table: the second half of the secrets screen. Credentials are
@@ -18,7 +19,7 @@ import (
 
 // requestList is the screen's lower table and where the cursor is in it.
 type requestList struct {
-	all    []CredentialRequest
+	all    []console.CredentialRequest
 	cursor int
 	offset int
 
@@ -35,7 +36,7 @@ func newRequestList() *requestList { return &requestList{now: time.Now} }
 // setAll takes a refreshed listing, keeping the cursor on the request it was
 // on: answering one is a decision about that request, and a cursor that moved
 // under it is how the wrong one gets answered.
-func (l *requestList) setAll(all []CredentialRequest) {
+func (l *requestList) setAll(all []console.CredentialRequest) {
 	var onID string
 	if r := l.current(); r != nil {
 		onID = r.ID
@@ -52,7 +53,7 @@ func (l *requestList) setAll(all []CredentialRequest) {
 	l.clamp()
 }
 
-func (l *requestList) current() *CredentialRequest {
+func (l *requestList) current() *console.CredentialRequest {
 	if l.cursor < 0 || l.cursor >= len(l.all) {
 		return nil
 	}
@@ -117,7 +118,7 @@ func (l *requestList) view(st *styles, z *zones, focused bool) string {
 
 // row draws one request: what is being asked for, where it may go, who is
 // asking, and how long they have been waiting.
-func (l *requestList) row(st *styles, r CredentialRequest, i int, focused bool) string {
+func (l *requestList) row(st *styles, r console.CredentialRequest, i int, focused bool) string {
 	atCursor := i == l.cursor && focused
 
 	tail := ""
@@ -131,7 +132,7 @@ func (l *requestList) row(st *styles, r CredentialRequest, i int, focused bool) 
 	// the first thing an approver reads after what is being asked for. One cell
 	// short of the column, as the others are, so a list cut short is not run
 	// into the variable beside it.
-	addCol("  "+st.name.Render(pad(r.where(), 23)), 26)
+	addCol("  "+st.name.Render(pad(r.Where(), 23)), 26)
 	addCol(st.dimText.Render(pad(r.EnvVar, 18)), 19)
 	addCol(st.dimText.Render(pad(requesterLabel(r), 22)), 23)
 	addCol(st.dimText.Render(pad(requestAge(r, l.now()), 8)), 9)
@@ -155,7 +156,7 @@ func (l *requestList) row(st *styles, r CredentialRequest, i int, focused bool) 
 
 // requestSubject is what is being asked for: the credential an agent names,
 // or failing that the variable it wants one in.
-func requestSubject(r CredentialRequest) string {
+func requestSubject(r console.CredentialRequest) string {
 	if r.Adoption != nil || r.APIAccess {
 		return credentialName(r)
 	}
@@ -165,9 +166,9 @@ func requestSubject(r CredentialRequest) string {
 	// An ask to delegate and an ask to use the same credential may both be
 	// waiting, and are different questions; one request may ask both.
 	switch {
-	case r.asksBoth():
+	case r.AsksBoth():
 		return credentialName(r) + " · to use and to delegate"
-	case r.delegateOnly():
+	case r.DelegateOnly():
 		return credentialName(r) + " · to delegate"
 	}
 	switch {
@@ -183,7 +184,7 @@ func requestSubject(r CredentialRequest) string {
 // requesterLabel says who is waiting: the agent inside a discobox, or — for a
 // value gone stale with no discobox in the middle of using it — the control
 // plane that noticed.
-func requesterLabel(r CredentialRequest) string {
+func requesterLabel(r console.CredentialRequest) string {
 	if r.SandboxID != "" {
 		return "agent · " + shortID(r.SandboxID)
 	}
@@ -201,6 +202,6 @@ func shortID(id string) string {
 	return id
 }
 
-func requestAge(r CredentialRequest, now time.Time) string {
+func requestAge(r console.CredentialRequest, now time.Time) string {
 	return ago(r.Created, now)
 }

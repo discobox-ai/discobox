@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // What a pull request's page has that an issue's does not, drawn into the
@@ -40,7 +41,7 @@ const (
 // pullState is the badge beside a pull request's title: the dot the list draws
 // a discobox's state with, filled while there is something to do about it,
 // and the word.
-func pullState(st *styles, issue Issue) string {
+func pullState(st *styles, issue console.Issue) string {
 	switch pull := issue.Pull; {
 	case pull.Merged:
 		return st.info.Render("● Merged")
@@ -54,7 +55,7 @@ func pullState(st *styles, issue Issue) string {
 
 // pullByline is the line under the title, which says what the page says: who
 // wants what merged into where, or who merged it.
-func pullByline(st *styles, issue Issue, now time.Time) string {
+func pullByline(st *styles, issue console.Issue, now time.Time) string {
 	pull := issue.Pull
 	who, verb, when := issue.Author, "wants to merge", issue.CreatedAt
 	if pull.Merged {
@@ -67,7 +68,7 @@ func pullByline(st *styles, issue Issue, now time.Time) string {
 }
 
 // reviewerRows is the page's Reviewers list, a reviewer a row.
-func reviewerRows(st *styles, reviewers []PullReviewer, width int) []string {
+func reviewerRows(st *styles, reviewers []console.PullReviewer, width int) []string {
 	rows := make([]string, 0, len(reviewers))
 	for _, reviewer := range reviewers {
 		glyph, said := st.dimText.Render("○"), "review requested"
@@ -87,7 +88,7 @@ func reviewerRows(st *styles, reviewers []PullReviewer, width int) []string {
 }
 
 // pullChanges is the size of the change: the counts over the page's tabs.
-func pullChanges(st *styles, pull PullRequest) string {
+func pullChanges(st *styles, pull console.PullRequest) string {
 	return plural(pull.ChangedFiles, "file", "files") + st.dimText.Render(" · ") +
 		plural(pull.Commits, "commit", "commits") + st.dimText.Render(" · ") + plusMinus(st, pull.Additions, pull.Deletions)
 }
@@ -102,7 +103,7 @@ func plusMinus(st *styles, additions, deletions int) string {
 // every one that has not passed, since those are the ones to go and read. Each
 // is a link to its own page, where it has one. A list that is not all of them
 // says so first, so a row of passes is not read as the whole.
-func checkRows(st *styles, checks []PullCheck, partial bool, width int) []string {
+func checkRows(st *styles, checks []console.PullCheck, partial bool, width int) []string {
 	if len(checks) == 0 {
 		if partial {
 			return []string{st.statusWA.Render(truncate("could not be read — o opens them on GitHub", width))}
@@ -158,7 +159,7 @@ func checkRows(st *styles, checks []PullCheck, partial bool, width int) []string
 // pullReady reports whether a pull request is ready to merge: open, not a
 // draft, and what GitHub calls clean — no conflicts, its checks passed, and
 // every review and rule the branch requires satisfied.
-func pullReady(issue Issue) bool {
+func pullReady(issue console.Issue) bool {
 	pull := issue.Pull
 	return pull != nil && issue.State == "open" && !pull.Draft && (pull.Mergeable == "clean" || pull.Mergeable == "has_hooks")
 }
@@ -168,7 +169,7 @@ func pullReady(issue Issue) bool {
 // cannot, the reason. It is the first thing under the title because it is the
 // question the tab is opened to answer; ready is a band across the tab, so it
 // is seen without being read.
-func mergeBanner(st *styles, issue Issue, width int) string {
+func mergeBanner(st *styles, issue console.Issue, width int) string {
 	pull := issue.Pull
 	if pull == nil || issue.State != "open" {
 		return ""
@@ -336,7 +337,7 @@ func (m *Model) pullMerged(msg pullMergedMsg) tea.Cmd {
 
 // pullEventText is eventText for a pull request's timeline: the events only a
 // pull request has, and the ones it words differently.
-func pullEventText(st *styles, e IssueEvent, issue Issue) string {
+func pullEventText(st *styles, e console.IssueEvent, issue console.Issue) string {
 	switch e.Kind {
 	case "closed":
 		return "closed this"
@@ -380,7 +381,7 @@ func pullEventText(st *styles, e IssueEvent, issue Issue) string {
 // reviewLines is one review: who, and what they said of the change, the
 // summary they wrote, and each conversation they started on the diff under the
 // lines it is about, with its replies.
-func (m *Model) reviewLines(v *issuePane, e IssueEvent, width int, now time.Time) []string {
+func (m *Model) reviewLines(v *issuePane, e console.IssueEvent, width int, now time.Time) []string {
 	st := m.st
 	said := st.attentionHint.Render("reviewed")
 	switch e.Review {

@@ -1,12 +1,16 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
+)
 
 // The desktop app draws every state and runs every action the window does, so
 // the spec has to name them all.
 func TestSpecCoversTheWindow(t *testing.T) {
 	spec := Spec("ctrl+a")
-	for _, s := range []State{StateRunning, StateStarting, StateRepairing, StateStopped, StateSuspended, StateArchived, StateError} {
+	for _, s := range []console.State{console.StateRunning, console.StateStarting, console.StateRepairing, console.StateStopped, console.StateSuspended, console.StateArchived, console.StateError} {
 		if g, ok := spec.States[string(s)]; !ok || g.Glyph == "" {
 			t.Errorf("state %s has no glyph", s)
 		}
@@ -21,7 +25,7 @@ func TestSpecCoversTheWindow(t *testing.T) {
 			t.Errorf("command %s has no key in the window", c.ID)
 		}
 	}
-	for _, a := range ActionsFor([]Sandbox{{State: StateRunning}}) {
+	for _, a := range ActionsFor([]console.Sandbox{{State: console.StateRunning}}) {
 		if a.Command == "" || !ids[a.Command] {
 			t.Errorf("action %q (%s) is not a command in the spec", a.Label, a.Key)
 		}

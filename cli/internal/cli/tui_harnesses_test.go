@@ -10,7 +10,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // A harness config becomes a harness row: its identity, whether it is the
@@ -44,17 +44,17 @@ func TestToTUIHarness(t *testing.T) {
 	if len(harness.Files) != 2 {
 		t.Fatalf("files = %+v, want both sets", harness.Files)
 	}
-	if harness.Files[0].Path != ".claude.json" || harness.Files[0].Source != tui.HarnessFileSaved || !harness.Files[0].CreateOnly {
+	if harness.Files[0].Path != ".claude.json" || harness.Files[0].Source != console.HarnessFileSaved || !harness.Files[0].CreateOnly {
 		t.Fatalf("first file = %+v, want the saved .claude.json", harness.Files[0])
 	}
-	if harness.Files[1].Path != "settings.json" || harness.Files[1].Source != tui.HarnessFileFromBundle {
+	if harness.Files[1].Path != "settings.json" || harness.Files[1].Source != console.HarnessFileFromBundle {
 		t.Fatalf("second file = %+v, want the image-declared settings.json", harness.Files[1])
 	}
 
 	// A person's override of a path leads, naming the file it hides.
 	cfg.FileOverrides = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{{Path: "settings.json", Content: "mine"}})
 	if files := toTUIHarness(cfg, "hc_1").Files; len(files) != 2 || files[0].Path != "settings.json" ||
-		files[0].Source != tui.HarnessFileOverride || len(files[0].Shadows) != 1 || files[0].Shadows[0] != tui.HarnessFileFromBundle {
+		files[0].Source != console.HarnessFileOverride || len(files[0].Shadows) != 1 || files[0].Shadows[0] != console.HarnessFileFromBundle {
 		t.Fatalf("files = %+v, want the override of settings.json first, over the bundle's", files)
 	}
 
@@ -122,7 +122,7 @@ func TestDoHarnessResetCallsReset(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ds := &apiDataSource{app: &App{}, client: client, projectID: "project-1"}
-	if err := ds.DoHarness(context.Background(), "", tui.HarnessReset, harnessID); err != nil {
+	if err := ds.DoHarness(context.Background(), "", console.HarnessReset, harnessID); err != nil {
 		t.Fatalf("reset a harness: %v", err)
 	}
 	if want := "POST /projects/project-1/harness-configs/" + harnessID + "/reset"; len(gotPaths) != 1 || gotPaths[0] != want {
@@ -156,7 +156,7 @@ func TestCreateHarnessVariantUsesSelectedServersCreateAPI(t *testing.T) {
 	}
 	work := &apiDataSource{app: &App{}, client: client, projectID: "work-project"}
 	ds := &apiDataSource{app: &App{}, projectID: "wrong-project", servers: []*tuiServer{{server: &server{name: "work-server"}, source: work}}}
-	got, err := ds.CreateHarnessVariant(context.Background(), "work-server", tui.NewHarnessVariant{ParentID: "parent-id", Name: "Work", Slug: "work"})
+	got, err := ds.CreateHarnessVariant(context.Background(), "work-server", console.NewHarnessVariant{ParentID: "parent-id", Name: "Work", Slug: "work"})
 	if err != nil {
 		t.Fatal(err)
 	}

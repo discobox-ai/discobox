@@ -1,6 +1,9 @@
 package tui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
+)
 
 func approvalDialog(title string, f *form, submit func(*form) tea.Cmd) *dialog {
 	d := formDialog(title, f, submit)
@@ -15,7 +18,7 @@ func approvalDialog(title string, f *form, submit func(*form) tea.Cmd) *dialog {
 
 	return d
 }
-func (m *Model) askAboutAPIAccess(req CredentialRequest) tea.Cmd {
+func (m *Model) askAboutAPIAccess(req console.CredentialRequest) tea.Cmd {
 	var d *dialog
 	d = approvalDialog("Allow discobox API access?", newForm(), func(*form) tea.Cmd { return m.answerAPIAccess(req, d.formActions[d.formActionAt].key == "accept") })
 	d.sections = []section{
@@ -30,7 +33,7 @@ func (m *Model) askAboutAPIAccess(req CredentialRequest) tea.Cmd {
 	m.dialog = d
 	return nil
 }
-func (m *Model) answerAPIAccess(req CredentialRequest, approve bool) tea.Cmd {
+func (m *Model) answerAPIAccess(req console.CredentialRequest, approve bool) tea.Cmd {
 	m.dialog = statusDialog("API access request", "answering…")
 	return func() tea.Msg {
 		return credentialAnsweredMsg{request: req, approved: approve, err: m.ds.DecideAPIAccessRequest(m.ctx, req.Server, req.ID, approve)}

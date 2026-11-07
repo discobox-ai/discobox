@@ -50,21 +50,7 @@ func (m *Model) onConfigScreen() bool { return m.harnessesOpen || m.secretsOpen 
 // always the server the next create goes to, which is why one list of
 // harnesses serves the screen, the run options and the questions a run asks.
 // Empty with one server, where the data source needs no name.
-func (m *Model) configServer() string { return m.session.serverName(m.list.server) }
-
-// serverName is a server's name with the empty one — the primary, however it
-// was written before the session named it — spelled out, so two names for the
-// primary compare equal. A load that went before the session landed carries
-// the empty name, and the model it lands in may since have learned the other.
-func (s Session) serverName(name string) string {
-	if name == "" && len(s.Servers) > 0 {
-		return s.Servers[0]
-	}
-	if name == "" {
-		return s.PrimaryServer
-	}
-	return name
-}
+func (m *Model) configServer() string { return m.session.ServerName(m.list.server) }
 
 // manyServers reports whether there is a server to choose, which is what puts
 // the servers on the filter's card.

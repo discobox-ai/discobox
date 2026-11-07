@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -61,11 +62,11 @@ func TestARefusedHarnessCredentialMarksEveryBoxOnThatHarness(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
 
-	onHarness := Sandbox{ID: "sbx_elsewhere", Name: "another box", HarnessID: "harness_claude"}
+	onHarness := console.Sandbox{ID: "sbx_elsewhere", Name: "another box", HarnessID: "harness_claude"}
 	if !m.hasRejection(onHarness) {
 		t.Fatal("a second box on the same harness was not marked")
 	}
-	other := Sandbox{ID: "sbx_other", Name: "codex box", HarnessID: "harness_codex"}
+	other := console.Sandbox{ID: "sbx_other", Name: "codex box", HarnessID: "harness_codex"}
 	if m.hasRejection(other) {
 		t.Fatal("a box on a different harness was marked")
 	}
@@ -77,10 +78,10 @@ func TestARefusedProjectSecretMarksOnlyTheBoxThatSawIt(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, secretRejection())
 
-	if !m.hasRejection(Sandbox{ID: "sbx_one", HarnessID: "harness_claude"}) {
+	if !m.hasRejection(console.Sandbox{ID: "sbx_one", HarnessID: "harness_claude"}) {
 		t.Fatal("the box that saw the rejection was not marked")
 	}
-	if m.hasRejection(Sandbox{ID: "sbx_two", HarnessID: "harness_claude"}) {
+	if m.hasRejection(console.Sandbox{ID: "sbx_two", HarnessID: "harness_claude"}) {
 		t.Fatal("a box that never used the credential was marked")
 	}
 }
@@ -92,7 +93,7 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 	t.Parallel()
 	ready := readySandboxes()
 	ds := newFakeSource(ready...)
-	ds.rejections = []SecretRejection{{
+	ds.rejections = []console.SecretRejection{{
 		SecretID: "sec_claude", SecretName: "claude-code", Host: "api.anthropic.com",
 		Reason: "unrefreshable", HarnessConfigID: "harness_claude", HarnessConfigName: "Claude Code",
 		EnvName: "ANTHROPIC_API_KEY", FirstSeen: time.Now().Add(-time.Hour),
@@ -110,7 +111,7 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 	}
 
 	// The agent's own reaction to the 401 must not displace it.
-	m.requests = map[string][]CredentialRequest{box.ID: {waitingRequest()}}
+	m.requests = map[string][]console.CredentialRequest{box.ID: {waitingRequest()}}
 	if got := m.bannerShowing(); got != bannerRejected {
 		t.Fatalf("banner = %v, want the refusal to stay up with a request behind it", got)
 	}
@@ -137,7 +138,7 @@ func TestAQueuedRequestBehindARefusalDoesNotThrob(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
 	m.st = newStyles(true)
-	m.requests = map[string][]CredentialRequest{m.paneBox.ID: {waitingRequest()}}
+	m.requests = map[string][]console.CredentialRequest{m.paneBox.ID: {waitingRequest()}}
 
 	if cmd := m.armBannerPulse(); cmd != nil || m.pulsing {
 		t.Fatal("a request behind a refusal started the throb")
@@ -217,7 +218,7 @@ func TestTheSignInAgainDialogNamesAFreshBoxAndWhatASaveShares(t *testing.T) {
 func TestPressingTheRefusedBandOpensTheSecretCard(t *testing.T) {
 	t.Parallel()
 	m, ds := workspaceWithRejection(t, secretRejection())
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+	ds.projectSecrets = []console.Secret{{ID: "sec_gh", Name: "GitHub token", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 
 	drain(t, m, m.openRejectedRemedy(m.paneBox), 0)
 
@@ -232,7 +233,7 @@ func TestPressingTheRefusedBandOpensTheSecretCard(t *testing.T) {
 func TestTheSecretsScreenMarksARefusedCredential(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, secretRejection())
-	m.secrets.setAll([]Secret{
+	m.secrets.setAll([]console.Secret{
 		{ID: "sec_gh", Name: "GitHub token", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
 		{ID: "sec_openai", Name: "OpenAI key", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
 	})
@@ -273,10 +274,10 @@ func TestClearingARejectionTakesTheBandAway(t *testing.T) {
 	}
 }
 
-func harnessRejection() SecretRejection {
+func harnessRejection() console.SecretRejection {
 	//nolint:gosec // G101: an environment variable name, which is what this
 	// whole feature is about naming; there is no credential in this package.
-	return SecretRejection{
+	return console.SecretRejection{
 		SecretID:          "sec_claude",
 		SecretName:        "claude-code oauth",
 		SecretType:        "oauth",
@@ -291,8 +292,8 @@ func harnessRejection() SecretRejection {
 	}
 }
 
-func secretRejection() SecretRejection {
-	return SecretRejection{
+func secretRejection() console.SecretRejection {
+	return console.SecretRejection{
 		SecretID:   "sec_gh",
 		SecretName: "GitHub token",
 		SecretType: "token",
@@ -306,11 +307,11 @@ func secretRejection() SecretRejection {
 
 // workspaceWithRejection is a window looking at a discobox with one refused
 // credential against it.
-func workspaceWithRejection(t *testing.T, rejection SecretRejection) (*Model, *fakeSource) {
+func workspaceWithRejection(t *testing.T, rejection console.SecretRejection) (*Model, *fakeSource) {
 	t.Helper()
 	boxes := testSandboxes()
 	ds := newFakeSource(boxes...)
-	ds.rejections = []SecretRejection{rejection}
+	ds.rejections = []console.SecretRejection{rejection}
 	m := newTestModel(t, ds)
 	// The band reads the listing's row, which carries the harness as the
 	// workspace's does.
@@ -333,7 +334,7 @@ func TestTheRefusedBandsRemedyGoesToTheCredentialsServer(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name      string
-		rejection SecretRejection
+		rejection console.SecretRejection
 		want      string
 	}{
 		{"secret", secretRejection(), "Secrets@beta"},
@@ -347,8 +348,8 @@ func TestTheRefusedBandsRemedyGoesToTheCredentialsServer(t *testing.T) {
 			// beta.
 			m.list.server = ""
 			m.paneBox.Server = "beta"
-			m.setSecretRejections([]SecretRejection{rejection})
-			ds.secretsOn = map[string][]Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "token"}}}
+			m.setSecretRejections([]console.SecretRejection{rejection})
+			ds.secretsOn = map[string][]console.Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "token"}}}
 
 			drain(t, m, m.openRejectedRemedy(m.paneBox), 0)
 
@@ -371,10 +372,10 @@ func TestARejectionOnlyMarksBoxesOnItsOwnServer(t *testing.T) {
 	rejection.Server = "beta"
 	m, _ := workspaceWithRejection(t, rejection)
 	m.session.Servers = []string{"alpha", "beta"}
-	m.setSecretRejections([]SecretRejection{rejection})
+	m.setSecretRejections([]console.SecretRejection{rejection})
 
-	onBeta := Sandbox{ID: "sbx_b", HarnessID: "harness_claude", Server: "beta"}
-	onAlpha := Sandbox{ID: "sbx_a", HarnessID: "harness_claude", Server: "alpha"}
+	onBeta := console.Sandbox{ID: "sbx_b", HarnessID: "harness_claude", Server: "beta"}
+	onAlpha := console.Sandbox{ID: "sbx_a", HarnessID: "harness_claude", Server: "alpha"}
 	if !m.hasRejection(onBeta) {
 		t.Fatal("a box on the credential's own server was not marked")
 	}

@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 )
@@ -100,7 +101,7 @@ func (p *pane) observePrompt(data []byte) {
 // since the pane last heard anything carries that, so it wins. The two
 // clocks compared are the sandbox's and this machine's.
 func (m *Model) focusedProgramStatus() (programstatus.Record, bool) {
-	var box Sandbox
+	var box console.Sandbox
 	switch p := m.primary(); {
 	case p != nil:
 		box = m.currentBox()
@@ -132,7 +133,7 @@ func (m *Model) focusedProgramStatus() (programstatus.Record, bool) {
 // listing's name, which holds the msg (sandboxmeta.Title) or, with none, a
 // title the program wrote; the record carries the msg beside it already, and
 // would say it twice, or say it once from a poll that lags the stream.
-func recordTitle(box Sandbox) string {
+func recordTitle(box console.Sandbox) string {
 	if box.GivenName != "" {
 		return box.GivenName
 	}
@@ -142,7 +143,7 @@ func recordTitle(box Sandbox) string {
 // unnamedName is what a box is called when nothing has named it: its
 // configured name, else its ID. It is the fallback of the box's resolved title
 // (sandboxmeta.Title), as the server's display name falls back.
-func unnamedName(box Sandbox) string {
+func unnamedName(box console.Sandbox) string {
 	if box.ConfigName != "" {
 		return box.ConfigName
 	}
@@ -152,7 +153,7 @@ func unnamedName(box Sandbox) string {
 // boxTitle is box's resolved title without its program's msg (sandboxmeta.Title
 // with none): the name it was given, else terminalTitle, else its configured
 // name, else its ID.
-func boxTitle(box Sandbox, terminalTitle string) string {
+func boxTitle(box console.Sandbox, terminalTitle string) string {
 	return sandboxmeta.Title(box.GivenName, terminalTitle, unnamedName(box), "")
 }
 

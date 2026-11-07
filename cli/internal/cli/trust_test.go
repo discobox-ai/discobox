@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/internal/hostid"
 )
 
@@ -99,7 +99,7 @@ func TestATrustItemBecomesAnInboxRequestWithItsDefaultPin(t *testing.T) {
 	if req.Trust == nil || req.Host != "34.70.64.109:443" || req.SandboxID != "sbx_1" || req.Justification == "" || len(req.Trust.Chain) != 2 {
 		t.Fatalf("request = %+v", req)
 	}
-	if req.Trust.DefaultPin != (tui.TrustPin{Kind: tui.TrustPinCA, SHA256: "cccc"}) {
+	if req.Trust.DefaultPin != (console.TrustPin{Kind: console.TrustPinCA, SHA256: "cccc"}) {
 		t.Fatalf("default pin = %+v, want the chain's self-signed CA", req.Trust.DefaultPin)
 	}
 	if names := req.Trust.Chain[0].Names; len(names) != 1 || names[0] != "34.70.64.109" {

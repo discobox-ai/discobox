@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
@@ -121,21 +122,21 @@ func colorHex(spec string) string {
 }
 
 func specStates() map[string]Glyph {
-	color := func(s State) string {
+	color := func(s console.State) string {
 		switch s {
-		case StateRunning:
+		case console.StateRunning:
 			return "ok"
-		case StateStarting, StateRepairing, StateSuspended:
+		case console.StateStarting, console.StateRepairing, console.StateSuspended:
 			return "gold"
-		case StateError:
+		case console.StateError:
 			return "err"
 		default:
 			return "dim"
 		}
 	}
 	out := map[string]Glyph{}
-	for _, s := range []State{StateRunning, StateStarting, StateRepairing, StateStopped, StateSuspended, StateArchived, StateError} {
-		box := Sandbox{State: s}
+	for _, s := range []console.State{console.StateRunning, console.StateStarting, console.StateRepairing, console.StateStopped, console.StateSuspended, console.StateArchived, console.StateError} {
+		box := console.Sandbox{State: s}
 		out[string(s)] = Glyph{Glyph: stateDot(box), Color: color(s), Word: stateWord(box)}
 	}
 	return out
@@ -185,7 +186,7 @@ func specCommands() []Command {
 	var out []Command
 	// The box's verbs: the list's single letters in the window; the box menu,
 	// a row's context menu and the palette on the desktop.
-	for _, a := range (&Model{}).actions([]Sandbox{{}}) {
+	for _, a := range (&Model{}).actions([]console.Sandbox{{}}) {
 		id := actionCommands[a.key]
 		if id == "" {
 			continue
@@ -229,7 +230,7 @@ type Action struct {
 
 // ActionsFor is the window's actions menu for these boxes, for a frontend that
 // draws its own: the same entries, rules and reasons.
-func ActionsFor(targets []Sandbox) []Action {
+func ActionsFor(targets []console.Sandbox) []Action {
 	actions := (&Model{}).actions(targets)
 	out := make([]Action, 0, len(actions))
 	for _, a := range actions {

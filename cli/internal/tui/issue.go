@@ -16,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -86,7 +87,7 @@ type issuePane struct {
 
 	// issue is the last read, nil until the first one lands. err is why the
 	// last read failed; an issue already on screen stays there under it.
-	issue   *Issue
+	issue   *console.Issue
 	err     string
 	loading bool
 	// reads counts the reads asked for. Only the latest one is taken: one
@@ -182,7 +183,7 @@ type openIssueMsg struct{ pull bool }
 type issueLoadedMsg struct {
 	id    int
 	read  int
-	issue Issue
+	issue console.Issue
 	err   error
 }
 
@@ -210,26 +211,6 @@ type issueEditedMsg struct {
 	err  error
 }
 
-// workNumber is the issue (`issue=`) or the pull request (`pr=`) the discobox
-// is tagged with — the first, when it is tagged with several — for a discobox
-// whose repository is on GitHub.
-func (s Sandbox) workNumber(pull bool) (int, bool) {
-	prefix := "issue="
-	if pull {
-		prefix = "pr="
-	}
-	for _, tag := range s.Tags {
-		if !strings.HasPrefix(tag, prefix) || s.tagURL(tag) == "" {
-			continue
-		}
-		n, err := strconv.Atoi(strings.TrimPrefix(tag, prefix))
-		if err == nil {
-			return n, true
-		}
-	}
-	return 0, false
-}
-
 // issueTab is the open tab on an issue, if there is one.
 func (m *Model) issueTab(repository string, number int) *pane {
 	for _, p := range m.shells.all() {
@@ -253,7 +234,7 @@ func (m *Model) issueOf(id int) (*pane, *issuePane) {
 // openIssue opens a tab on one issue or pull request of the discobox on screen
 // and focuses it. The same one already open is only focused: reading it again
 // would throw away the place it was read to.
-func (m *Model) openIssue(box Sandbox, number int, pull bool) tea.Cmd {
+func (m *Model) openIssue(box console.Sandbox, number int, pull bool) tea.Cmd {
 	v := &issuePane{repository: box.Repository, number: number, pull: pull, composer: m.newIssueComposer()}
 	v.url = v.address()
 	if box.Repository == "" {
@@ -273,7 +254,7 @@ func (m *Model) openIssue(box Sandbox, number int, pull bool) tea.Cmd {
 		title: v.label(),
 		issue: v,
 	}
-	at := m.shells.insert(p, Exec{CreatedAt: time.Now()}, m.onShells)
+	at := m.shells.insert(p, console.Exec{CreatedAt: time.Now()}, m.onShells)
 	m.onShells, m.shells.active = true, at
 	m.layout()
 	return tea.Batch(m.loadIssue(p, true), issueTick(p.id))
@@ -281,8 +262,8 @@ func (m *Model) openIssue(box Sandbox, number int, pull bool) tea.Cmd {
 
 // toggleIssue is the leader's i, or its p for the pull request: the tab on the
 // discobox's issue, opened or focused.
-func (m *Model) toggleIssue(box Sandbox, pull bool) tea.Cmd {
-	number, ok := box.workNumber(pull)
+func (m *Model) toggleIssue(box console.Sandbox, pull bool) tea.Cmd {
+	number, ok := box.WorkNumber(pull)
 	switch {
 	case ok:
 		return m.openIssue(box, number, pull)
@@ -878,7 +859,7 @@ func wrapLines(text string, width int) []string {
 // issueLines is the whole issue as the page lays it out, at width: the title
 // and the state, the facts the page's sidebar has, the description, and the
 // timeline.
-func (m *Model) issueLines(v *issuePane, issue Issue, width int, now time.Time) []string {
+func (m *Model) issueLines(v *issuePane, issue console.Issue, width int, now time.Time) []string {
 	st := m.st
 	var out []string
 
@@ -1074,7 +1055,7 @@ func eventRows(st *styles, run []eventRow, who, width int, now time.Time) []stri
 // commentLines is one comment — the description is the first — under a bar
 // with who wrote it and when, rendered as GitHub renders its markdown, with
 // the reactions under it.
-func (m *Model) commentLines(v *issuePane, author, verb string, at time.Time, body string, reactions IssueReactions, width int, now time.Time) []string {
+func (m *Model) commentLines(v *issuePane, author, verb string, at time.Time, body string, reactions console.IssueReactions, width int, now time.Time) []string {
 	st := m.st
 	out := groupBar(st, st.attentionText.Render(author)+" "+st.attentionHint.Render(verb), st.attentionHint.Render(ago(at, now)), width)
 	if strings.TrimSpace(body) == "" {
@@ -1117,7 +1098,7 @@ func (m *Model) markdown(v *issuePane, body string, width int) []string {
 
 // issueState is the badge the page draws beside the title: open, closed as
 // done, or closed as something else.
-func issueState(st *styles, issue Issue) string {
+func issueState(st *styles, issue console.Issue) string {
 	switch {
 	case issue.Pull != nil:
 		return pullState(st, issue)
@@ -1138,7 +1119,7 @@ func issueState(st *styles, issue Issue) string {
 // cursor, and half of GitHub's label colors cannot be read as text on a dark
 // terminal. Without color it is bracketed, so one label ends where the next
 // begins.
-func labelChip(st *styles, label IssueLabel) string {
+func labelChip(st *styles, label console.IssueLabel) string {
 	if !st.color {
 		return "[" + label.Name + "]"
 	}
@@ -1154,7 +1135,7 @@ func labelChip(st *styles, label IssueLabel) string {
 // the next, and nothing else in the window draws one.
 var reactionOrder = []string{"+1", "-1", "laugh", "hooray", "confused", "heart", "rocket", "eyes"}
 
-func reactionText(st *styles, reactions IssueReactions) string {
+func reactionText(st *styles, reactions console.IssueReactions) string {
 	var parts []string
 	for _, name := range reactionOrder {
 		if n := reactions[name]; n > 0 {
@@ -1166,7 +1147,7 @@ func reactionText(st *styles, reactions IssueReactions) string {
 
 // refText is another issue or pull request as a line names it: its state,
 // its number — with its repository when that is not this one — and its title.
-func refText(st *styles, ref IssueRef, repository string) string {
+func refText(st *styles, ref console.IssueRef, repository string) string {
 	glyph := st.stateRun.Render("●")
 	switch {
 	case ref.Merged:
@@ -1183,7 +1164,7 @@ func refText(st *styles, ref IssueRef, repository string) string {
 
 // eventText is what the page says an event did, after the name of who did
 // it. A kind it has no words for is named as GitHub names it.
-func eventText(st *styles, e IssueEvent, repository string) string {
+func eventText(st *styles, e console.IssueEvent, repository string) string {
 	label := ""
 	if e.Label != nil {
 		label = e.Label.Name

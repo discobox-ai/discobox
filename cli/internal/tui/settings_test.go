@@ -5,27 +5,29 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-func settingsSandboxes() []Sandbox {
-	return []Sandbox{
-		{ID: "sbx_run", Name: "running box", State: StateRunning, HasRuntime: true, Harness: "claude",
+func settingsSandboxes() []console.Sandbox {
+	return []console.Sandbox{
+		{ID: "sbx_run", Name: "running box", State: console.StateRunning, HasRuntime: true, Harness: "claude",
 			HarnessID: "hc_claude", OriginKey: testKey("/src/disco2"), OriginHostID: testHostID},
-		{ID: "sbx_stop", Name: "stopped box", State: StateStopped, HasRuntime: true, Harness: "claude",
+		{ID: "sbx_stop", Name: "stopped box", State: console.StateStopped, HasRuntime: true, Harness: "claude",
 			HarnessID: "hc_claude", OriginKey: testKey("/src/disco2"), OriginHostID: testHostID},
 	}
 }
 
 func settingsSource() *fakeSource {
 	ds := newFakeSource(settingsSandboxes()...)
-	ds.harnesses = []Harness{
+	ds.harnesses = []console.Harness{
 		{ID: "hc_claude", Name: "Claude Code", Slug: "claude"},
 		{ID: "hc_codex", Name: "Codex", Slug: "codex"},
 		{ID: "hc_other", Name: "Other", Slug: "other"},
 	}
-	stored := BoxSettings{Name: "gen-name", HarnessID: "hc_claude",
-		Egress: Egress{Allow: []string{"github.com"}}}
-	ds.settings = map[string]BoxSettings{"sbx_run": stored, "sbx_stop": stored}
+	stored := console.BoxSettings{Name: "gen-name", HarnessID: "hc_claude",
+		Egress: console.Egress{Allow: []string{"github.com"}}}
+	ds.settings = map[string]console.BoxSettings{"sbx_run": stored, "sbx_stop": stored}
 	return ds
 }
 
@@ -217,7 +219,7 @@ func TestSettingsReadGivenUpOpensNothing(t *testing.T) {
 func TestSettingsDoesNotRenameAcrossADroppedCharacter(t *testing.T) {
 	t.Parallel()
 	ds := settingsSource()
-	ds.settings["sbx_run"] = BoxSettings{Name: "odd\x07name", HarnessID: "hc_claude"}
+	ds.settings["sbx_run"] = console.BoxSettings{Name: "odd\x07name", HarnessID: "hc_claude"}
 	m := newTestModel(t, ds)
 	f := openSettings(t, m, "sbx_run")
 	if f.value("name") == "odd\aname" {

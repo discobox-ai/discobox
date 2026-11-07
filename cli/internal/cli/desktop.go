@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
@@ -242,7 +243,7 @@ func desktopBoxKey(server, id string) string {
 // desktopStream is one terminal the app has open, and what ends the
 // goroutines that serve it.
 type desktopStream struct {
-	term tui.Terminal
+	term console.Terminal
 	done chan struct{}
 }
 
@@ -346,7 +347,7 @@ func (b *desktopBridge) handle(ctx context.Context, req bridgeRequest) {
 			b.reply(req.ID, nil, err)
 			return
 		}
-		var targets []tui.Sandbox
+		var targets []console.Sandbox
 		for _, s := range listing.Sandboxes {
 			for _, key := range req.Targets {
 				if desktopBoxKey(s.Server, s.ID) == key {
@@ -372,7 +373,7 @@ func (b *desktopBridge) handle(ctx context.Context, req bridgeRequest) {
 }
 
 // list is the listing, noting each box in it by the key the app knows it by.
-func (b *desktopBridge) list(ctx context.Context) (tui.Listing, error) {
+func (b *desktopBridge) list(ctx context.Context) (console.Listing, error) {
 	listing, err := b.ds.List(ctx)
 	if err != nil {
 		return listing, err
@@ -391,7 +392,7 @@ func (b *desktopBridge) list(ctx context.Context) (tui.Listing, error) {
 // there, from the key the app named it by. A key this side has not listed is
 // listed again first, and one no server lists is an error, never a request to
 // the primary server about another server's box.
-func (b *desktopBridge) source(ctx context.Context, key string) (tui.DataSource, string, error) {
+func (b *desktopBridge) source(ctx context.Context, key string) (console.DataSource, string, error) {
 	b.mu.Lock()
 	ref, ok := b.boxes[key]
 	b.mu.Unlock()
@@ -414,11 +415,11 @@ func (b *desktopBridge) source(ctx context.Context, key string) (tui.DataSource,
 }
 
 // handleBox answers a request about one box, from the source for its server.
-func (b *desktopBridge) handleBox(ctx context.Context, ds tui.DataSource, req bridgeRequest) {
+func (b *desktopBridge) handleBox(ctx context.Context, ds console.DataSource, req bridgeRequest) {
 	switch req.Op {
 	case "execs":
 		execs, err := ds.Execs(ctx, req.Sandbox)
-		if errors.Is(err, tui.ErrNotRunning) {
+		if errors.Is(err, console.ErrNotRunning) {
 			execs, err = nil, nil
 		}
 		b.reply(req.ID, desktopExecs(execs), err)
@@ -430,8 +431,8 @@ func (b *desktopBridge) handleBox(ctx context.Context, ds tui.DataSource, req br
 		b.reply(req.ID, map[string]any{"stream": req.Stream}, err)
 	case "newShell", "newTerminal":
 		var (
-			ex   tui.Exec
-			term tui.Terminal
+			ex   console.Exec
+			term console.Terminal
 			err  error
 		)
 		if req.Op == "newShell" {
@@ -447,15 +448,15 @@ func (b *desktopBridge) handleBox(ctx context.Context, ds tui.DataSource, req br
 		b.closeStream(req.Stream)
 		b.reply(req.ID, nil, ds.EndExec(ctx, req.Sandbox, req.Exec))
 	case "do":
-		note, err := ds.Do(ctx, tui.Verb(req.Verb), req.Sandbox, desktopCredentials())
+		note, err := ds.Do(ctx, console.Verb(req.Verb), req.Sandbox, desktopCredentials())
 		b.reply(req.ID, map[string]any{"note": note}, err)
 	}
 }
 
 // desktopCredentials answers a verb's credential question while the desktop
 // app has no dialog for one: it declines, and says so.
-func desktopCredentials() tui.CredentialUI {
-	return tui.CredentialUI{
+func desktopCredentials() console.CredentialUI {
+	return console.CredentialUI{
 		Report: func(string) {},
 		Confirm: func(context.Context, string) (bool, error) {
 			return false, errors.New("the desktop app cannot answer a credential question yet")
@@ -481,7 +482,7 @@ func (b *desktopBridge) pollListing(ctx context.Context) {
 	}
 }
 
-func (b *desktopBridge) attach(stream uint32, term tui.Terminal) {
+func (b *desktopBridge) attach(stream uint32, term console.Terminal) {
 	st := &desktopStream{term: term, done: make(chan struct{})}
 	b.mu.Lock()
 	b.streams[stream] = st
@@ -513,7 +514,7 @@ func (b *desktopBridge) attach(stream uint32, term tui.Terminal) {
 				return
 			case ev := <-term.Events():
 				state := "reconnected"
-				if ev.State == tui.TerminalReconnecting {
+				if ev.State == console.TerminalReconnecting {
 					state = "reconnecting"
 				}
 				b.send(map[string]any{"event": "stream", "stream": stream, "state": state})
@@ -574,14 +575,14 @@ type desktopSandbox struct {
 
 // desktopParent is the key of the box that made this one, which is on the
 // same server.
-func desktopParent(s tui.Sandbox) string {
+func desktopParent(s console.Sandbox) string {
 	if s.CreatedBy == "" {
 		return ""
 	}
 	return desktopBoxKey(s.Server, s.CreatedBy)
 }
 
-func desktopListing(l tui.Listing) []desktopSandbox {
+func desktopListing(l console.Listing) []desktopSandbox {
 	out := make([]desktopSandbox, 0, len(l.Sandboxes))
 	for _, s := range l.Sandboxes {
 		d := desktopSandbox{
@@ -617,8 +618,8 @@ type desktopExecInfo struct {
 // desktopExecs is what a workspace opens, as the console's does: the primary,
 // and every other live terminal; services and files-changed sessions are drawn
 // by the console in other ways, which the desktop app does not have yet.
-func desktopExecs(execs []tui.Exec) []desktopExecInfo {
-	out := []desktopExecInfo{{ID: tui.ExecPrimary, Kind: "primary", Live: true}}
+func desktopExecs(execs []console.Exec) []desktopExecInfo {
+	out := []desktopExecInfo{{ID: console.ExecPrimary, Kind: "primary", Live: true}}
 	for _, e := range execs {
 		if e.Primary || e.Service != "" || e.FilesChanged || !e.Live || !e.Tty {
 			continue
@@ -628,7 +629,7 @@ func desktopExecs(execs []tui.Exec) []desktopExecInfo {
 	return out
 }
 
-func desktopExec(e tui.Exec) desktopExecInfo {
+func desktopExec(e console.Exec) desktopExecInfo {
 	kind := "shell"
 	switch {
 	case e.Primary:

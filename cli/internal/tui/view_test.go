@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // A machine no window has narrowed opens on everything: every server, every
@@ -15,7 +17,7 @@ func TestNothingSavedOpensOnEverything(t *testing.T) {
 	ds.nothingSaved = true
 	m := newTestModel(t, ds)
 
-	if m.list.server != "" || m.list.folder.key != "" || len(m.list.tags) != 0 {
+	if m.list.server != "" || m.list.folder.Key != "" || len(m.list.tags) != 0 {
 		t.Fatalf("view = %+v, want every server, folder and tag", m.currentView())
 	}
 	if got := len(m.list.rows()); got != 3 {
@@ -34,7 +36,7 @@ func TestASavedViewIsWhereTheWindowOpens(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(onServer("alpha", testSandboxes())...)
 	ds.session.Servers = []string{"alpha", "beta"}
-	ds.session.View = ListView{
+	ds.session.View = console.ListView{
 		Server:       "beta",
 		FolderKey:    testKey("/src/obot"),
 		FolderLabel:  "/src/obot",
@@ -43,7 +45,7 @@ func TestASavedViewIsWhereTheWindowOpens(t *testing.T) {
 	}
 	m := newTestModel(t, ds)
 
-	if m.list.server != "beta" || m.list.folder.key != testKey("/src/obot") || !slices.Equal(m.list.tags, []string{"wip"}) {
+	if m.list.server != "beta" || m.list.folder.Key != testKey("/src/obot") || !slices.Equal(m.list.tags, []string{"wip"}) {
 		t.Fatalf("view = %+v, want the one saved", m.currentView())
 	}
 	if m.opts.folder != "/src/obot" {
@@ -60,7 +62,7 @@ func TestASavedServerThatIsGoneIsEveryServer(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(onServer("alpha", testSandboxes())...)
 	ds.session.Servers = []string{"alpha", "beta"}
-	ds.session.View = ListView{Server: "gamma"}
+	ds.session.View = console.ListView{Server: "gamma"}
 	m := newTestModel(t, ds)
 	if m.list.server != "" {
 		t.Fatalf("server = %q, want every server", m.list.server)
@@ -74,9 +76,9 @@ func TestChangingAFilterIsSaved(t *testing.T) {
 	ds.nothingSaved = true
 	m := newTestModel(t, ds)
 
-	filterTo(t, m, m.session.folder().label)
-	if m.list.folder.key != testKey("/src/disco2") {
-		t.Fatalf("folder = %q, want the window's own", m.list.folder.label)
+	filterTo(t, m, m.session.Folder().Label)
+	if m.list.folder.Key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the window's own", m.list.folder.Label)
 	}
 	send(t, m, tickMsg{})
 	if len(ds.views) != 1 || ds.views[0].FolderKey != testKey("/src/disco2") {
@@ -109,7 +111,7 @@ func TestTheCommandLineNarrowsTheView(t *testing.T) {
 	if m.list.server != "alpha" {
 		t.Fatalf("server = %q, want the one --server named", m.list.server)
 	}
-	if m.list.folder.key != "" || len(m.list.tags) != 0 {
+	if m.list.folder.Key != "" || len(m.list.tags) != 0 {
 		t.Fatalf("view = %+v, want every folder and tag", m.currentView())
 	}
 	send(t, m, tickMsg{})
@@ -126,7 +128,7 @@ func TestTheCommandLineOutranksASavedView(t *testing.T) {
 	ds := newFakeSource(onServer("alpha", testSandboxes())...)
 	ds.session.Servers = []string{"alpha", "beta"}
 	ds.session.ServerChosen = true
-	ds.session.View = ListView{Server: "beta", Tags: []string{"wip"}}
+	ds.session.View = console.ListView{Server: "beta", Tags: []string{"wip"}}
 	m := newTestModel(t, ds)
 	if m.list.server != "alpha" || !slices.Equal(m.list.tags, []string{"wip"}) {
 		t.Fatalf("view = %+v, want the named server with the saved tags", m.currentView())
@@ -142,13 +144,13 @@ func TestTheCommandLineOutranksASavedView(t *testing.T) {
 func TestTheOwnFolderIsRestoredFromTheSession(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	ds.session.View = ListView{FolderKey: testKey("/src/disco2"), FolderLabel: "/src/disco2 @ old", FolderSource: "/src/disco2@old"}
+	ds.session.View = console.ListView{FolderKey: testKey("/src/disco2"), FolderLabel: "/src/disco2 @ old", FolderSource: "/src/disco2@old"}
 	m := newTestModel(t, ds)
-	own := ds.session.folder()
+	own := ds.session.Folder()
 	if m.list.folder != own {
 		t.Fatalf("folder = %+v, want the session's own %+v", m.list.folder, own)
 	}
-	if m.opts.folder != own.source {
-		t.Fatalf("the run options cut from %q, want %q", m.opts.folder, own.source)
+	if m.opts.folder != own.Source {
+		t.Fatalf("the run options cut from %q, want %q", m.opts.folder, own.Source)
 	}
 }

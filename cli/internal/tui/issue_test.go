@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // errNotLoggedIn is what the GitHub client answers a change with no token.
@@ -17,9 +18,9 @@ var errNotLoggedIn = errors.New("not logged in to GitHub: run gh auth login, or 
 
 // testIssue is issue 4 of acme/foo, with something of everything its page
 // shows.
-func testIssue() Issue {
+func testIssue() console.Issue {
 	opened := time.Now().Add(-72 * time.Hour)
-	return Issue{
+	return console.Issue{
 		Repository:     "acme/foo",
 		Number:         4,
 		Title:          "The reaper eats the wrong boxes",
@@ -27,26 +28,26 @@ func testIssue() Issue {
 		Author:         "alice",
 		Body:           "It reaps **running** boxes.\n\n- one\n- two",
 		CreatedAt:      opened,
-		Labels:         []IssueLabel{{Name: "bug", Color: "d73a4a"}},
+		Labels:         []console.IssueLabel{{Name: "bug", Color: "d73a4a"}},
 		Assignees:      []string{"bob"},
 		Milestone:      "v1",
 		Comments:       1,
-		Reactions:      IssueReactions{"+1": 2},
-		SubIssues:      []IssueRef{{Repository: "acme/foo", Number: 5, Title: "Write a failing test", State: "closed"}},
+		Reactions:      console.IssueReactions{"+1": 2},
+		SubIssues:      []console.IssueRef{{Repository: "acme/foo", Number: 5, Title: "Write a failing test", State: "closed"}},
 		SubIssuesTotal: 1,
 		SubIssuesDone:  1,
-		Timeline: []IssueEvent{
-			{Kind: "labeled", Actor: "carol", At: opened.Add(time.Hour), Label: &IssueLabel{Name: "bug"}},
+		Timeline: []console.IssueEvent{
+			{Kind: "labeled", Actor: "carol", At: opened.Add(time.Hour), Label: &console.IssueLabel{Name: "bug"}},
 			{Kind: "commented", Actor: "bob", At: opened.Add(2 * time.Hour), Body: "I can reproduce it."},
 			{Kind: "cross-referenced", Actor: "dave", At: opened.Add(3 * time.Hour),
-				Source: &IssueRef{Repository: "acme/foo", Number: 9, Title: "Reap only stopped boxes", State: "open", PullRequest: true}},
+				Source: &console.IssueRef{Repository: "acme/foo", Number: 9, Title: "Reap only stopped boxes", State: "open", PullRequest: true}},
 		},
 	}
 }
 
 func issueSource() *fakeSource {
 	ds := newFakeSource(githubTaggedSandboxes()...)
-	ds.issues = map[string]Issue{"https://github.com/acme/foo#4": testIssue()}
+	ds.issues = map[string]console.Issue{"https://github.com/acme/foo#4": testIssue()}
 	return ds
 }
 
@@ -163,7 +164,7 @@ func TestTheIssueIsATabLikeAnyOther(t *testing.T) {
 		ds := issueSource()
 		d, m := openIssuePane(t, ds)
 		p := issueTabOf(m)
-		primary := ds.execTerm(ExecPrimary)
+		primary := ds.execTerm(console.ExecPrimary)
 
 		if !strings.Contains(hintLine(m.hints()), "comment") {
 			t.Errorf("the keys line does not offer a comment: %q", hintLine(m.hints()))
@@ -380,7 +381,7 @@ func TestTheIssueScrolls(t *testing.T) {
 		ds := issueSource()
 		issue := testIssue()
 		issue.Body = strings.Repeat("A paragraph of the description.\n\n", 60)
-		ds.issues = map[string]Issue{"https://github.com/acme/foo#4": issue}
+		ds.issues = map[string]console.Issue{"https://github.com/acme/foo#4": issue}
 		d, m := openIssuePane(t, ds)
 		v := issueTabOf(m).issue
 		if v.conversation.offset != 0 {
@@ -424,16 +425,16 @@ func TestEventsReadAsThePageWritesThem(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
 	for _, tc := range []struct {
-		event IssueEvent
+		event console.IssueEvent
 		want  string
 	}{
-		{IssueEvent{Kind: "assigned", Actor: "bob", Subject: "bob"}, "self-assigned this"},
-		{IssueEvent{Kind: "assigned", Actor: "bob", Subject: "carol"}, "assigned carol"},
-		{IssueEvent{Kind: "closed", StateReason: "not_planned"}, "closed this as not planned"},
-		{IssueEvent{Kind: "closed", Subject: "abc1234"}, "closed this as completed in abc1234"},
-		{IssueEvent{Kind: "renamed", From: "a", To: "b"}, "changed the title from “a” to “b”"},
-		{IssueEvent{Kind: "cross-referenced", Source: &IssueRef{Repository: "acme/bar", Number: 3, Title: "x"}}, "mentioned this in ● acme/bar#3 x"},
-		{IssueEvent{Kind: "some_new_event"}, "some new event"},
+		{console.IssueEvent{Kind: "assigned", Actor: "bob", Subject: "bob"}, "self-assigned this"},
+		{console.IssueEvent{Kind: "assigned", Actor: "bob", Subject: "carol"}, "assigned carol"},
+		{console.IssueEvent{Kind: "closed", StateReason: "not_planned"}, "closed this as not planned"},
+		{console.IssueEvent{Kind: "closed", Subject: "abc1234"}, "closed this as completed in abc1234"},
+		{console.IssueEvent{Kind: "renamed", From: "a", To: "b"}, "changed the title from “a” to “b”"},
+		{console.IssueEvent{Kind: "cross-referenced", Source: &console.IssueRef{Repository: "acme/bar", Number: 3, Title: "x"}}, "mentioned this in ● acme/bar#3 x"},
+		{console.IssueEvent{Kind: "some_new_event"}, "some new event"},
 	} {
 		if got := eventText(st, tc.event, "acme/foo"); got != tc.want {
 			t.Errorf("eventText(%s) = %q, want %q", tc.event.Kind, got, tc.want)
@@ -447,8 +448,8 @@ func TestLabelsWrapBetweenChips(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := issueSource()
 		issue := testIssue()
-		issue.Labels = []IssueLabel{{Name: "bug"}, {Name: "area/cli"}, {Name: "area/pool-agent"}, {Name: "area/sandbox-agent"}, {Name: "priority/high"}}
-		ds.issues = map[string]Issue{"https://github.com/acme/foo#4": issue}
+		issue.Labels = []console.IssueLabel{{Name: "bug"}, {Name: "area/cli"}, {Name: "area/pool-agent"}, {Name: "area/sandbox-agent"}, {Name: "priority/high"}}
+		ds.issues = map[string]console.Issue{"https://github.com/acme/foo#4": issue}
 		_, m := openIssuePane(t, ds)
 		frame := plainFrame(m)
 		for _, label := range issue.Labels {
@@ -480,7 +481,7 @@ func TestALinkInACommentOpensOnAClick(t *testing.T) {
 		ds := issueSource()
 		issue := testIssue()
 		issue.Body = "See [the design notes](https://example.com/notes) first."
-		ds.issues = map[string]Issue{"https://github.com/acme/foo#4": issue}
+		ds.issues = map[string]console.Issue{"https://github.com/acme/foo#4": issue}
 		_, m := openIssuePane(t, ds)
 		opened := make(chan string, 2)
 		m.openOS = func(url string) error { opened <- url; return nil }
@@ -575,7 +576,7 @@ func TestOnlyAWebLinkInACommentOpens(t *testing.T) {
 		ds := issueSource()
 		issue := testIssue()
 		issue.Body = "Open [the notes](file:///etc/passwd) or [an editor](vscode://x/y)."
-		ds.issues = map[string]Issue{"https://github.com/acme/foo#4": issue}
+		ds.issues = map[string]console.Issue{"https://github.com/acme/foo#4": issue}
 		_, m := openIssuePane(t, ds)
 		opened := make(chan string, 2)
 		m.openOS = func(url string) error { opened <- url; return nil }
@@ -642,7 +643,7 @@ func TestASubIssueListCutShortKeepsGitHubsCount(t *testing.T) {
 		ds := issueSource()
 		issue := testIssue()
 		issue.SubIssuesTotal, issue.SubIssuesDone = 150, 120
-		ds.issues = map[string]Issue{"https://github.com/acme/foo#4": issue}
+		ds.issues = map[string]console.Issue{"https://github.com/acme/foo#4": issue}
 		_, m := openIssuePane(t, ds)
 		if frame := plainFrame(m); !strings.Contains(frame, "120 of 150 done · 1 shown") {
 			t.Errorf("the sub-issue summary does not say GitHub's count:\n%s", frame)
@@ -657,7 +658,7 @@ func TestSubIssuesThatCouldNotBeReadAreStillCounted(t *testing.T) {
 		ds := issueSource()
 		issue := testIssue()
 		issue.SubIssues, issue.SubIssuesTotal, issue.SubIssuesDone = nil, 150, 120
-		ds.issues = map[string]Issue{"https://github.com/acme/foo#4": issue}
+		ds.issues = map[string]console.Issue{"https://github.com/acme/foo#4": issue}
 		_, m := openIssuePane(t, ds)
 		if frame := plainFrame(m); !strings.Contains(frame, "120 of 150 done · 0 shown") {
 			t.Errorf("the sub-issue summary is not drawn:\n%s", frame)

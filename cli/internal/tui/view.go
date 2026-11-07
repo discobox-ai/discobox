@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The header's filters — server, folder, tag — are kept the way the draft is,
@@ -21,7 +22,7 @@ import (
 // primary. That is where the window opens, not a choice made in it, so the
 // store is taken to have it — it is saved only once the filters move off it,
 // and a window opened without the flag goes back to what was saved before.
-func (m *Model) restoreView(view ListView) {
+func (m *Model) restoreView(view console.ListView) {
 	if m.session.ServerChosen && len(m.session.Servers) > 0 {
 		view.Server = m.session.Servers[0]
 	}
@@ -32,12 +33,12 @@ func (m *Model) restoreView(view ListView) {
 	switch view.FolderKey {
 	case "":
 		m.list.folder = everyFolder
-	case m.session.OriginKey, m.session.folder().key:
+	case m.session.OriginKey, m.session.Folder().Key:
 		// Its origin key is what a view saved before the window's folder was
 		// its repository names it by.
-		m.list.folder = m.session.folder()
+		m.list.folder = m.session.Folder()
 	default:
-		m.list.folder = folder{key: view.FolderKey, label: view.FolderLabel, source: view.FolderSource, local: view.FolderLocal}
+		m.list.folder = console.Folder{Key: view.FolderKey, Label: view.FolderLabel, Source: view.FolderSource, Local: view.FolderLocal}
 	}
 	m.list.server = ""
 	if view.Server != "" && m.manyServers() && m.knownServer(view.Server) {
@@ -58,10 +59,10 @@ func (m *Model) knownServer(name string) bool {
 
 // currentView is the header's filters as they stand. Every folder is no
 // folder at all, so its label is not carried: the zero view is the default.
-func (m *Model) currentView() ListView {
-	view := ListView{Server: m.list.server, Tags: m.list.tags}
-	if f := m.list.folder; f.key != "" {
-		view.FolderKey, view.FolderLabel, view.FolderSource, view.FolderLocal = f.key, f.label, f.source, f.local
+func (m *Model) currentView() console.ListView {
+	view := console.ListView{Server: m.list.server, Tags: m.list.tags}
+	if f := m.list.folder; f.Key != "" {
+		view.FolderKey, view.FolderLabel, view.FolderSource, view.FolderLocal = f.Key, f.Label, f.Source, f.Local
 	}
 	return view
 }
@@ -95,16 +96,16 @@ func (m *Model) saveViewNow() {
 // viewToSave is what a write would carry, and whether there is one to make. It
 // is marked saved before it lands, as a draft is, so a failing write is
 // reported once rather than on every tick.
-func (m *Model) viewToSave() (view ListView, ok bool) {
+func (m *Model) viewToSave() (view console.ListView, ok bool) {
 	// A `discobox run` or `discobox attach` window never shows the list, so
 	// nothing it holds is a choice somebody made; and before the session lands
 	// the window does not have the view it opened on.
 	if m.paletteReveal != nil || m.oneShot() || m.session.Directory == "" {
-		return ListView{}, false
+		return console.ListView{}, false
 	}
 	view = m.currentView()
 	if view.Equal(m.savedView) {
-		return ListView{}, false
+		return console.ListView{}, false
 	}
 	m.savedView = view
 	return view, true

@@ -5,11 +5,13 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // pushableSandboxes is the fixture with its first discobox delivered by
 // pushing it from this machine, which is the one state the window pushes for.
-func pushableSandboxes() []Sandbox {
+func pushableSandboxes() []console.Sandbox {
 	all := testSandboxes()
 	all[0].Pushable = true
 	return all
@@ -21,7 +23,7 @@ func TestTheWorkspacePushesWithoutBeingAsked(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(pushableSandboxes()...)
-		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Pushed: true}}
+		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Pushed: true}}
 
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the push", func() bool { return len(ds.pushedCalls()) > 0 })
@@ -44,7 +46,7 @@ func TestNothingIsSaidWhenThereIsNothingToPush(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(pushableSandboxes()...)
-		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "a3f9c2179bbf"}}
+		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "a3f9c2179bbf"}}
 
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the look", func() bool { return len(ds.pushedCalls()) > 0 })
@@ -79,7 +81,7 @@ func TestARefusedPushIsHeldUntilTheCommitMoves(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(pushableSandboxes()...)
-		ds.pushes = []SourcePush{{
+		ds.pushes = []console.SourcePush{{
 			Slug:   "primary",
 			Branch: "main",
 			Commit: "b7d0f1145aa2",
@@ -114,7 +116,7 @@ func TestANewCommitReleasesAHeldPush(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(pushableSandboxes()...)
-		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Err: errors.New("refused")}}
+		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Err: errors.New("refused")}}
 
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the refusal", func() bool { return strings.Contains(m.status, "refused") })
@@ -123,7 +125,7 @@ func TestANewCommitReleasesAHeldPush(t *testing.T) {
 		// Somebody commits: the branch names something else now, and the hold on
 		// the old commit no longer matches it.
 		ds.mu.Lock()
-		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "c81e2ab30f45", Pushed: true}}
+		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "c81e2ab30f45", Pushed: true}}
 		ds.mu.Unlock()
 
 		d.dispatch(autoPushTickMsg{box: m.boxRef(m.paneBox), gen: m.wsGen})
@@ -138,7 +140,7 @@ func TestLeavingTheWorkspaceStopsPushing(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(pushableSandboxes()...)
-		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2"}}
+		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2"}}
 
 		d, m, _ := openNarrowWorkspace(t, ds, "enter")
 		d.wait("the first look", func() bool { return len(ds.pushedCalls()) > 0 })
@@ -149,7 +151,7 @@ func TestLeavingTheWorkspaceStopsPushing(t *testing.T) {
 		d.wait("the workspace to close", func() bool { return !m.inPanes() })
 		before := len(ds.pushedCalls())
 
-		d.dispatch(autoPushTickMsg{box: boxRef{"", box}, gen: stale})
+		d.dispatch(autoPushTickMsg{box: console.BoxRef{Server: "", ID: box}, gen: stale})
 		d.settle()
 
 		if after := len(ds.pushedCalls()); after != before {
@@ -166,7 +168,7 @@ func TestAnAnsweredRefusalReleasesTheHold(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(pushableSandboxes()...)
-		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Err: errors.New("refused")}}
+		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Err: errors.New("refused")}}
 
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the refusal", func() bool { return strings.Contains(m.status, "refused") })
@@ -175,7 +177,7 @@ func TestAnAnsweredRefusalReleasesTheHold(t *testing.T) {
 		// Somebody runs `discobox push --force` in another terminal: the same
 		// commit, now in the origin.
 		ds.mu.Lock()
-		ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", UpToDate: true}}
+		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", UpToDate: true}}
 		ds.mu.Unlock()
 
 		d.dispatch(autoPushTickMsg{box: m.boxRef(m.paneBox), gen: m.wsGen})

@@ -15,15 +15,15 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // harnessFile is the file a sandbox is given at one path, with the set it
 // comes from and the sets beneath it that it hides there, topmost first.
 type harnessFile struct {
 	apimodel.HarnessConfigFile
-	Source  tui.HarnessFileSource
-	Shadows []tui.HarnessFileSource
+	Source  console.HarnessFileSource
+	Shadows []console.HarnessFileSource
 }
 
 // harnessEffectiveFiles lists every path of a config once, as a sandbox is
@@ -33,12 +33,12 @@ func harnessEffectiveFiles(cfg *apimodel.HarnessConfig) []harnessFile {
 	var files []harnessFile
 	index := map[string]int{}
 	for _, set := range []struct {
-		source tui.HarnessFileSource
+		source console.HarnessFileSource
 		files  []apimodel.HarnessConfigFile
 	}{
-		{tui.HarnessFileOverride, cfg.FileOverrides.Or(nil)},
-		{tui.HarnessFileSaved, cfg.ConfiguredFiles.Or(nil)},
-		{tui.HarnessFileFromBundle, cfg.Files.Or(nil)},
+		{console.HarnessFileOverride, cfg.FileOverrides.Or(nil)},
+		{console.HarnessFileSaved, cfg.ConfiguredFiles.Or(nil)},
+		{console.HarnessFileFromBundle, cfg.Files.Or(nil)},
 	} {
 		for _, file := range set.files {
 			if i, ok := index[file.Path]; ok {
@@ -136,7 +136,7 @@ func (a *App) editHarnessFile(ctx context.Context, client *apiclientgen.Client, 
 	// A bundle's file is the bundle's, re-read whenever it moves, so an edit
 	// to it is the person's override, as an edit to their own file is.
 	body := &apimodel.UpdateHarnessConfigBody{Revision: cfg.Revision.Or(0)}
-	if file.Source == tui.HarnessFileSaved {
+	if file.Source == console.HarnessFileSaved {
 		body.SetConfiguredFiles(apiclientgen.NewOptNilHarnessConfigFileArray(withHarnessFile(cfg.ConfiguredFiles.Or(nil), file.HarnessConfigFile)))
 	} else {
 		body.SetFileOverrides(apiclientgen.NewOptNilHarnessConfigFileArray(withHarnessFile(cfg.FileOverrides.Or(nil), file.HarnessConfigFile)))

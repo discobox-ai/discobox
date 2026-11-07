@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // A column is one side of the workspace: a strip of panes with one visible at
@@ -61,7 +63,7 @@ func (c *column) index(p *pane) int {
 // focused says whether the keys are in this column: the pane being worked in
 // stays the pane being worked in, since an arrival must not move them onto a
 // different session mid-word.
-func (c *column) insert(p *pane, exec Exec, focused bool) int {
+func (c *column) insert(p *pane, exec console.Exec, focused bool) int {
 	p.created = exec.CreatedAt
 	at := len(c.panes)
 	for i, s := range c.panes {
@@ -69,7 +71,7 @@ func (c *column) insert(p *pane, exec Exec, focused bool) int {
 		// ordering groups services ahead of everything else in the column and
 		// tools after it, and a pane described without them would be sorted as
 		// though it were a terminal or a shell.
-		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created, Service: s.service, ServiceOrder: s.serviceOrder, Tool: s.tool}) {
+		if execBefore(exec, console.Exec{ID: s.execID, CreatedAt: s.created, Service: s.service, ServiceOrder: s.serviceOrder, Tool: s.tool}) {
 			at = i
 			break
 		}

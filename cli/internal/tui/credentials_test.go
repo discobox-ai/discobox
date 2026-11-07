@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -22,13 +23,13 @@ import (
 // wrong, and what to do about it.
 var errTestRefused = errors.New("secret sec_gh is bound to api.github.com and cannot be granted for github.com; pick a secret for github.com, or clear the secret's host if this credential is used against both")
 
-func waitingRequest() CredentialRequest {
-	return CredentialRequest{
+func waitingRequest() console.CredentialRequest {
+	return console.CredentialRequest{
 		ID:            "sreq_1",
 		SandboxID:     "sbx_one",
 		Name:          "github",
 		EnvVar:        "GH_TOKEN",
-		Use:           &RequestPart{Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
+		Use:           &console.RequestPart{Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
 		Justification: "the task asks me to open a PR",
 		Created:       time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
 	}
@@ -37,8 +38,8 @@ func waitingRequest() CredentialRequest {
 func sourceWithRequest(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{
+	ds.requests = []console.CredentialRequest{waitingRequest()}
+	ds.projectSecrets = []console.Secret{
 		{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
 		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
 	}
@@ -147,8 +148,8 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	req := waitingRequest()
-	req.Delegate, req.Use = &RequestPart{Routes: req.routes()}, nil
-	ds.requests = []CredentialRequest{req}
+	req.Delegate, req.Use = &console.RequestPart{Routes: req.Routes()}, nil
+	ds.requests = []console.CredentialRequest{req}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -168,8 +169,8 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	req := waitingRequest()
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{
+	ds.requests = []console.CredentialRequest{req}
+	ds.projectSecrets = []console.Secret{
 		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
 		{ID: "sec_loose", Name: "anywhere token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"*"}}}},
 		{ID: "sec_gh", Name: "github", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}}},
@@ -316,7 +317,7 @@ func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
 func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithRequest(t)
-	m.paneBox = Sandbox{ID: "sbx_one", Name: "one"}
+	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
 
 	banner := m.viewCredentialBanner(80)
 	if banner == "" {
@@ -336,7 +337,7 @@ func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 
 	// And nothing at all for a discobox with none: the row is only there while
 	// somebody is waiting.
-	m.paneBox = Sandbox{ID: "sbx_two"}
+	m.paneBox = console.Sandbox{ID: "sbx_two"}
 	if banner := m.viewCredentialBanner(80); banner != "" {
 		t.Fatalf("banner = %q on a discobox with no request", banner)
 	}
@@ -360,8 +361,8 @@ func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
 				credentialsLeaderKey, paneTerminalKey)
 		}
 		ds := newFakeSource(testSandboxes()...)
-		ds.requests = []CredentialRequest{waitingRequest()}
-		ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+		ds.requests = []console.CredentialRequest{waitingRequest()}
+		ds.projectSecrets = []console.Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
@@ -379,8 +380,8 @@ func TestTheBannerCountsSeveralRequests(t *testing.T) {
 	m, _ := sourceWithRequest(t)
 	second := waitingRequest()
 	second.ID, second.Name = "sreq_2", "npm"
-	m.setCredentialRequests([]CredentialRequest{waitingRequest(), second})
-	m.paneBox = Sandbox{ID: "sbx_one"}
+	m.setCredentialRequests([]console.CredentialRequest{waitingRequest(), second})
+	m.paneBox = console.Sandbox{ID: "sbx_one"}
 
 	banner := m.viewCredentialBanner(80)
 	if !strings.Contains(banner, "2 credential requests") {
@@ -414,8 +415,8 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.requests = []CredentialRequest{waitingRequest()}
-		ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+		ds.requests = []console.CredentialRequest{waitingRequest()}
+		ds.projectSecrets = []console.Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
@@ -481,7 +482,7 @@ func TestTheBandMovesTheChromeItPushesDown(t *testing.T) {
 		}
 
 		ds.mu.Lock()
-		ds.requests = []CredentialRequest{waitingRequest()}
+		ds.requests = []console.CredentialRequest{waitingRequest()}
 		ds.mu.Unlock()
 		d.dispatch(tickMsg{})
 		d.wait("the banner", func() bool { return m.bannerTop() == 1 })
@@ -570,7 +571,7 @@ func TestALongRequestCardKeepsItsAnswersOnScreen(t *testing.T) {
 	req.AskedTTL = 72 * time.Hour
 	req.Justification = strings.Repeat("the user asked me to have worker discoboxes keep four pull requests reviewed, green and rebased ", 40)
 	ds.mu.Lock()
-	ds.requests = []CredentialRequest{req}
+	ds.requests = []console.CredentialRequest{req}
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 	send(t, m, keyPress(credentialsKey))
@@ -600,7 +601,7 @@ func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 	const last = "and-that-is-the-end-of-why"
 	req.Justification = strings.Repeat("the user asked me to keep four pull requests reviewed, green and rebased; ", 40) + last
 	ds.mu.Lock()
-	ds.requests = []CredentialRequest{req}
+	ds.requests = []console.CredentialRequest{req}
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 	send(t, m, keyPress(credentialsKey))
@@ -664,7 +665,7 @@ func replacedRows(fields []field) string {
 func TestTheCardSaysWhatEachBindingBecomes(t *testing.T) {
 	t.Parallel()
 	at := func(m int) time.Time { return time.Date(2026, 11, 2, 0, m, 0, 0, time.UTC) }
-	standing := []SecretBinding{
+	standing := []console.SecretBinding{
 		{ID: "old", Use: true, EnvVar: "GITHUB_TOKEN", Created: at(0)},
 		{ID: "asked", Use: true, EnvVar: "GH_TOKEN", Created: at(1)},
 		{ID: "both", Use: true, Delegate: true, EnvVar: "GH_LEAD", Created: at(2)},
@@ -717,14 +718,14 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 	r := func(path string) string { return secretroute.Format(route(path)) }
 	for _, tc := range []struct {
 		name     string
-		standing []SecretBinding
+		standing []console.SecretBinding
 		delegate bool
 		asked    []secretroute.Route
 		secret   []secretroute.Route
 		want     []string
 	}{{
 		name: "the kept one loses and gains, the one that goes only loses",
-		standing: []SecretBinding{
+		standing: []console.SecretBinding{
 			{ID: "old", Use: true, EnvVar: "GITHUB_TOKEN", Created: at(0), Routes: routes("/a", "/gone")},
 			{ID: "asked", Use: true, EnvVar: "GH_TOKEN", Created: at(1), Routes: routes("/a", "/b", "/dropped")},
 		},
@@ -742,7 +743,7 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 		// The split binding stays the delegation and takes the approval's
 		// routes in place, so a widening is said on it.
 		name:     "a split delegation gains",
-		standing: []SecretBinding{{ID: "both", Use: true, Delegate: true, EnvVar: "GH_TOKEN", Created: at(0), Routes: routes("/a")}},
+		standing: []console.SecretBinding{{ID: "both", Use: true, Delegate: true, EnvVar: "GH_TOKEN", Created: at(0), Routes: routes("/a")}},
 		delegate: true,
 		asked:    routes("/a", "/wider"),
 		want: []string{
@@ -752,7 +753,7 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 		},
 	}, {
 		name: "one that goes, all of it carried on, is not the same",
-		standing: []SecretBinding{
+		standing: []console.SecretBinding{
 			{ID: "old", Use: true, EnvVar: "GITHUB_TOKEN", Created: at(0), Routes: routes("/a")},
 			{ID: "asked", Use: true, EnvVar: "GH_TOKEN", Created: at(1), Routes: routes("/a", "/b")},
 		},
@@ -765,7 +766,7 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 		},
 	}, {
 		name:     "a part naming no routes is set against the secret's",
-		standing: []SecretBinding{{ID: "asked", Use: true, EnvVar: "GH_TOKEN", Created: at(0), Routes: routes("/a", "/narrow")}},
+		standing: []console.SecretBinding{{ID: "asked", Use: true, EnvVar: "GH_TOKEN", Created: at(0), Routes: routes("/a", "/narrow")}},
 		secret:   routes("/a", "/wide"),
 		want: []string{
 			"replaces|the one in GH_TOKEN — kept, takes this approval",
@@ -807,7 +808,7 @@ func TestTheCardDiffsAReplacedBindingsRoutes(t *testing.T) {
 func TestAVariableHeldBySecretIsAnsweredWithIt(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
-	ds.heldGrants = []HeldGrant{{BindingID: "sbd_own", SecretID: "sec_openai", SecretName: "OpenAI key", From: BindingSandbox}}
+	ds.heldGrants = []console.HeldGrant{{BindingID: "sbd_own", SecretID: "sec_openai", SecretName: "OpenAI key", From: console.BindingSandbox}}
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	if m.dialog == nil || m.dialog.form == nil {
@@ -836,12 +837,12 @@ func TestAnAdditionWithAnotherSecretIsRefusedOnTheCard(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	req := waitingRequest()
 	req.Use.Add = true
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{
+	ds.requests = []console.CredentialRequest{req}
+	ds.projectSecrets = []console.Secret{
 		{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
 		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
 	}
-	ds.heldGrants = []HeldGrant{{BindingID: "sbd_base", SecretID: "sec_openai", SecretName: "OpenAI key", From: "project"}}
+	ds.heldGrants = []console.HeldGrant{{BindingID: "sbd_base", SecretID: "sec_openai", SecretName: "OpenAI key", From: "project"}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))

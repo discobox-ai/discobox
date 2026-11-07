@@ -12,7 +12,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/execstream"
 	"github.com/discobox-ai/discobox/pkg/execstream/client"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
@@ -22,15 +22,15 @@ import (
 
 // Execs is the sandbox's exec sessions as the workspace's tab strip needs
 // them.
-func (d *apiDataSource) Execs(ctx context.Context, sandboxID string) ([]tui.Exec, error) {
+func (d *apiDataSource) Execs(ctx context.Context, sandboxID string) ([]console.Exec, error) {
 	execs, observedAt, err := d.app.listSandboxExecs(ctx, d.projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
 	if !observedAt.IsZero() {
-		return nil, tui.ErrNotRunning
+		return nil, console.ErrNotRunning
 	}
-	out := make([]tui.Exec, 0, len(execs))
+	out := make([]console.Exec, 0, len(execs))
 	for _, exec := range execs {
 		out = append(out, tuiExec(exec))
 	}
@@ -39,7 +39,7 @@ func (d *apiDataSource) Execs(ctx context.Context, sandboxID string) ([]tui.Exec
 
 // tuiExec maps one API exec record to the launcher's own type, keeping API
 // types out of the tui package.
-func tuiExec(exec apimodel.SandboxExec) tui.Exec {
+func tuiExec(exec apimodel.SandboxExec) console.Exec {
 	// The startup command is what a harness terminal is actually running in
 	// the foreground; the argv is the shell it was typed into.
 	command := exec.StartupCommand
@@ -57,7 +57,7 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 	// tells a service's exec from a terminal or a shell in this listing and
 	// pairs it with the services listing it polls beside it (ADR 0070 §2, §7).
 	metadata := map[string]string(exec.Metadata.Value)
-	return tui.Exec{
+	return console.Exec{
 		ID:           exec.ID,
 		Command:      command,
 		Harness:      exec.CurrentHarnessId.Or(exec.HarnessId.Value),
@@ -114,7 +114,7 @@ func execToolID(label string) string {
 
 // Services is the sandbox's declared services, running or not — what the
 // workspace's services menu is drawn from.
-func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.Service, error) {
+func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]console.Service, error) {
 	client, err := d.app.apiClient()
 	if err != nil {
 		return nil, err
@@ -124,11 +124,11 @@ func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.S
 		return nil, err
 	}
 	if !observedAt.IsZero() {
-		return nil, tui.ErrNotRunning
+		return nil, console.ErrNotRunning
 	}
-	out := make([]tui.Service, 0, len(services))
+	out := make([]console.Service, 0, len(services))
 	for _, service := range services {
-		mapped := tui.Service{
+		mapped := console.Service{
 			ID:          service.ID,
 			Name:        service.Name,
 			Description: service.Description.Or(""),
@@ -179,7 +179,7 @@ func (d *apiDataSource) ServiceLogs(ctx context.Context, sandboxID, serviceID st
 }
 
 // DoService runs one lifecycle verb against one declared service.
-func (d *apiDataSource) DoService(ctx context.Context, verb tui.ServiceVerb, sandboxID, serviceID string) error {
+func (d *apiDataSource) DoService(ctx context.Context, verb console.ServiceVerb, sandboxID, serviceID string) error {
 	client, err := d.app.apiClient()
 	if err != nil {
 		return err
@@ -192,7 +192,7 @@ func (d *apiDataSource) DoService(ctx context.Context, verb tui.ServiceVerb, san
 // the same as the wire's virtual primary id, and the sandbox resolves it —
 // relaunching a primary terminal that has stopped — so nothing is started
 // here.
-func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (tui.Terminal, error) {
+func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (console.Terminal, error) {
 	return d.openFramedTerminal(ctx, sandboxID, execID, cols, rows)
 }
 
@@ -201,7 +201,7 @@ func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, 
 // user has, so the request asks for one rather than naming it — along with the
 // shell this machine's user prefers (preferredShellEnv), which the sandbox runs
 // instead when it has it.
-func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
+func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, rows int) (console.Exec, console.Terminal, error) {
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, shell: true, env: append(paneTerminalEnv(), preferredShellEnv()...),
 	}, cols, rows)
@@ -212,7 +212,7 @@ func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, ro
 // Which harness that is, is the sandbox's answer and not this machine's, so
 // the request names none: an exec created with no command, no shell and no
 // harness is a terminal on the sandbox's configured harness.
-func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
+func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (console.Exec, console.Terminal, error) {
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, terminal: true, env: paneTerminalEnv(),
 	}, cols, rows)
@@ -226,27 +226,27 @@ func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols,
 // exec with no workdir already lands in the sandbox's primary source directory,
 // and naming it here would be this machine guessing at a path only the sandbox
 // knows.
-func (d *apiDataSource) NewTool(ctx context.Context, sandboxID, toolID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
+func (d *apiDataSource) NewTool(ctx context.Context, sandboxID, toolID string, cols, rows int) (console.Exec, console.Terminal, error) {
 	catalog, _, err := d.app.toolCatalog(ctx, d.client, d.projectID, sandboxID)
 	if err != nil {
-		return tui.Exec{}, nil, err
+		return console.Exec{}, nil, err
 	}
 	def, err := findTool(catalog, toolID)
 	if err != nil {
-		return tui.Exec{}, nil, err
+		return console.Exec{}, nil, err
 	}
 	if def.Runs != tools.RunsSandbox {
-		return tui.Exec{}, nil, fmt.Errorf("tool %s runs here, not in the discobox", toolID)
+		return console.Exec{}, nil, fmt.Errorf("tool %s runs here, not in the discobox", toolID)
 	}
 	// Before the session, not alongside it: the tool reads its configuration
 	// when it starts, so a file that lands a moment later is a file this run
 	// never saw. See tui_tools.go.
 	if err := d.app.installToolFiles(ctx, d.projectID, sandboxID, def); err != nil {
-		return tui.Exec{}, nil, err
+		return console.Exec{}, nil, err
 	}
 	command, err := d.app.sandboxToolCommand(ctx, d.projectID, sandboxID, def, nil)
 	if err != nil {
-		return tui.Exec{}, nil, err
+		return console.Exec{}, nil, err
 	}
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, env: append(paneTerminalEnv(), def.Env...),
@@ -272,9 +272,9 @@ func (d *apiDataSource) NewTool(ctx context.Context, sandboxID, toolID string, c
 //
 // The two commits are GitHub's word, and go on a command line: each has to be
 // a commit hash, so neither can be read as a flag.
-func (d *apiDataSource) PullReview(ctx context.Context, sandboxID string, pull tui.PullRequest, cols, rows int) (tui.Exec, tui.Terminal, error) {
+func (d *apiDataSource) PullReview(ctx context.Context, sandboxID string, pull console.PullRequest, cols, rows int) (console.Exec, console.Terminal, error) {
 	if !commitHash(pull.BaseSHA) || !commitHash(pull.HeadSHA) {
-		return tui.Exec{}, nil, fmt.Errorf("the pull request has not said which commits it is between")
+		return console.Exec{}, nil, fmt.Errorf("the pull request has not said which commits it is between")
 	}
 	// The review shown is the one kept for the branch checked out, so that
 	// has to be the pull request's: another branch's card and approvals over
@@ -282,21 +282,21 @@ func (d *apiDataSource) PullReview(ctx context.Context, sandboxID string, pull t
 	branch, _, code, err := d.app.sandboxCommandOutput(ctx, d.projectID, sandboxID, "", []string{"git", "symbolic-ref", "--short", "-q", "HEAD"})
 	switch branch = strings.TrimSpace(branch); {
 	case err != nil:
-		return tui.Exec{}, nil, fmt.Errorf("reading the discobox's branch: %w", err)
+		return console.Exec{}, nil, fmt.Errorf("reading the discobox's branch: %w", err)
 	case code != 0 || branch == "":
-		return tui.Exec{}, nil, fmt.Errorf("this discobox has no branch checked out, so it keeps no review of %s", pull.Head)
+		return console.Exec{}, nil, fmt.Errorf("this discobox has no branch checked out, so it keeps no review of %s", pull.Head)
 	case terminalSafe(branch) != pull.HeadRef:
 		// Both as the screen has them: the pull request's came made safe.
 		// A fork's is its branch alone, as the discobox working on it
 		// names it.
-		return tui.Exec{}, nil, fmt.Errorf("this discobox has %s checked out, not the pull request's %s", terminalSafe(branch), pull.Head)
+		return console.Exec{}, nil, fmt.Errorf("this discobox has %s checked out, not the pull request's %s", terminalSafe(branch), pull.Head)
 	}
 	_, _, code, err = d.app.sandboxCommandOutput(ctx, d.projectID, sandboxID, "", []string{"git", "cat-file", "-e", pull.HeadSHA + "^{commit}"})
 	switch {
 	case err != nil:
-		return tui.Exec{}, nil, fmt.Errorf("looking for its head in the discobox: %w", err)
+		return console.Exec{}, nil, fmt.Errorf("looking for its head in the discobox: %w", err)
 	case code != 0:
-		return tui.Exec{}, nil, fmt.Errorf("its head %s is not in this discobox — it was pushed from somewhere else", pull.HeadSHA[:12])
+		return console.Exec{}, nil, fmt.Errorf("its head %s is not in this discobox — it was pushed from somewhere else", pull.HeadSHA[:12])
 	}
 	command := []string{"discobox-review", "-by", "git-user", "-base", pull.BaseSHA, "-head", pull.HeadSHA}
 	if fallback := pullBaseFallback(pull.Base); fallback != "" {
@@ -369,14 +369,14 @@ const pastedImageDir = "/tmp/discobox-paste"
 // its size is known, which is the order attachSandboxExec uses: started first,
 // its opening output would go out before anything was listening, and it would
 // draw itself at whatever size the sandbox guessed.
-func (d *apiDataSource) newSandboxSession(ctx context.Context, sandboxID string, opts sandboxExecCreateOptions, cols, rows int, command ...string) (tui.Exec, tui.Terminal, error) {
+func (d *apiDataSource) newSandboxSession(ctx context.Context, sandboxID string, opts sandboxExecCreateOptions, cols, rows int, command ...string) (console.Exec, console.Terminal, error) {
 	body, err := createSandboxExecBody(opts, command)
 	if err != nil {
-		return tui.Exec{}, nil, err
+		return console.Exec{}, nil, err
 	}
 	exec, err := d.app.createSandboxExec(ctx, d.projectID, sandboxID, body, true)
 	if err != nil {
-		return tui.Exec{}, nil, err
+		return console.Exec{}, nil, err
 	}
 	// A session created and then not handed back — the attach or the start
 	// failed, or ctx was canceled between them — is nobody's: it is deleted
@@ -389,35 +389,35 @@ func (d *apiDataSource) newSandboxSession(ctx context.Context, sandboxID string,
 	term, err := d.openFramedTerminal(ctx, sandboxID, exec.ID, cols, rows)
 	if err != nil {
 		abandon()
-		return tui.Exec{}, nil, err
+		return console.Exec{}, nil, err
 	}
 	started, err := d.app.startSandboxExec(ctx, d.projectID, sandboxID, exec.ID)
 	if err != nil {
 		_ = term.Close()
 		abandon()
-		return tui.Exec{}, nil, err
+		return console.Exec{}, nil, err
 	}
 	return tuiExec(started), term, nil
 }
 
-func (d *apiDataSource) openFramedTerminal(ctx context.Context, sandboxID, execID string, cols, rows int) (tui.Terminal, error) {
+func (d *apiDataSource) openFramedTerminal(ctx context.Context, sandboxID, execID string, cols, rows int) (console.Terminal, error) {
 	// Buffered and dropped rather than blocked on: a connection event nobody is
 	// waiting for must not hold up the transport that produced it.
-	events := make(chan tui.TerminalEvent, 4)
+	events := make(chan console.TerminalEvent, 4)
 	frames, err := d.app.openReconnectingSandboxExecAttach(ctx, d.projectID, sandboxID, execID, execAttachOptions{
 		replay: true,
 		event: func(event resume.Event) {
-			var state tui.TerminalConnectionState
+			var state console.TerminalConnectionState
 			switch event.State {
 			case resume.ConnectionReconnecting:
-				state = tui.TerminalReconnecting
+				state = console.TerminalReconnecting
 			case resume.ConnectionReconnected:
-				state = tui.TerminalReconnected
+				state = console.TerminalReconnected
 			default:
 				return
 			}
 			select {
-			case events <- tui.TerminalEvent{State: state}:
+			case events <- console.TerminalEvent{State: state}:
 			default:
 			}
 		},
@@ -459,7 +459,7 @@ func paneTerminalEnv() []string {
 // and Resize sends a resize frame.
 type framedTerminal struct {
 	frames  execstream.Conn
-	events  <-chan tui.TerminalEvent
+	events  <-chan console.TerminalEvent
 	readBuf []byte // leftover output bytes from a partially consumed frame
 
 	writeMu sync.Mutex
@@ -553,7 +553,7 @@ func (t *framedTerminal) Repaint() error {
 
 func (t *framedTerminal) Close() error { return t.frames.Close() }
 
-func (t *framedTerminal) Events() <-chan tui.TerminalEvent { return t.events }
+func (t *framedTerminal) Events() <-chan console.TerminalEvent { return t.events }
 
 // ensure the adapter satisfies what the launcher asks of a terminal.
-var _ tui.Terminal = (*framedTerminal)(nil)
+var _ console.Terminal = (*framedTerminal)(nil)

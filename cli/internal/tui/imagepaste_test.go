@@ -15,6 +15,7 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
 	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // input is everything the pane has typed at the terminal so far.
@@ -168,7 +169,7 @@ func TestTheLeaderIsNotHeldBehindAnImagePaste(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.audit = make(chan AuditUpdate)
+		ds.audit = make(chan console.AuditUpdate)
 		d, m, term := openWorkspace(t, ds, "enter")
 		gate := make(chan struct{})
 		defer close(gate)

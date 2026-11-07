@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -17,7 +18,7 @@ import (
 // screen over it, waiting until it is following.
 func openAuditScreen(t *testing.T, ds *fakeSource) (*driver, *Model, *fakeTerminal) {
 	t.Helper()
-	ds.audit = make(chan AuditUpdate)
+	ds.audit = make(chan console.AuditUpdate)
 	d, m, term := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
 	d.key(auditKey)
@@ -29,7 +30,7 @@ func openAuditScreen(t *testing.T, ds *fakeSource) (*driver, *Model, *fakeTermin
 }
 
 // deliverAudit hands the screen one update, the way the follow does.
-func deliverAudit(d *driver, ds *fakeSource, update AuditUpdate) {
+func deliverAudit(d *driver, ds *fakeSource, update console.AuditUpdate) {
 	ds.audit <- update
 	d.settle()
 }
@@ -38,11 +39,11 @@ func deliverAudit(d *driver, ds *fakeSource, update AuditUpdate) {
 // screen finds the row it was on again by its record's ID.
 var auditIDs atomic.Int64
 
-func auditRecords(summaries ...string) []AuditRecord {
+func auditRecords(summaries ...string) []console.AuditRecord {
 	at := time.Now().Add(-time.Minute)
-	out := make([]AuditRecord, 0, len(summaries))
+	out := make([]console.AuditRecord, 0, len(summaries))
 	for i, summary := range summaries {
-		out = append(out, AuditRecord{
+		out = append(out, console.AuditRecord{
 			ID:      fmt.Sprintf("http_%d", auditIDs.Add(1)),
 			Time:    at.Add(time.Duration(i) * time.Second),
 			Source:  "http",
@@ -72,13 +73,13 @@ func TestTheAuditScreenFollowsTheBoxOnScreen(t *testing.T) {
 			}
 		}
 
-		deliverAudit(d, ds, AuditUpdate{Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Polled: true})
 		if frame := frameText(m); !strings.Contains(frame, "nothing recorded yet") {
 			t.Fatalf("a read that found nothing should say so:\n%s", frame)
 		}
 
 		records := auditRecords("GET 200 https://api.github.com/user", "POST 201 https://api.anthropic.com/v1/messages")
-		deliverAudit(d, ds, AuditUpdate{Records: records})
+		deliverAudit(d, ds, console.AuditUpdate{Records: records})
 		frame = frameText(m)
 		for _, want := range []string{"GET 200 https://api.github.com/user", "❯ " + auditTime(records[1].Time, time.Now()), "following"} {
 			if !strings.Contains(frame, want) {
@@ -86,7 +87,7 @@ func TestTheAuditScreenFollowsTheBoxOnScreen(t *testing.T) {
 			}
 		}
 
-		deliverAudit(d, ds, AuditUpdate{Records: []AuditRecord{{ID: "cvd_x", Time: time.Now(), Source: "creds", Summary: "use github (at use): approved"}}})
+		deliverAudit(d, ds, console.AuditUpdate{Records: []console.AuditRecord{{ID: "cvd_x", Time: time.Now(), Source: "creds", Summary: "use github (at use): approved"}}})
 		if m.audit.cursor != 2 {
 			t.Fatalf("cursor = %d, want it to follow onto the newest record", m.audit.cursor)
 		}
@@ -101,11 +102,11 @@ func TestTheAuditScreenHoldsTheRowBeingRead(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: auditRecords("first", "second", "third"), Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("first", "second", "third"), Polled: true})
 
 		d.key("up")
 		d.key("up")
-		deliverAudit(d, ds, AuditUpdate{Records: auditRecords("fourth")})
+		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("fourth")})
 		if m.audit.cursor != 0 || m.audit.following {
 			t.Fatalf("cursor = %d following = %v, want it left on the first record", m.audit.cursor, m.audit.following)
 		}
@@ -137,7 +138,7 @@ func TestTheAuditScreenOpensARecordAndClosesBackToTheBox(t *testing.T) {
 			records[0].ID: "record:   " + records[0].ID + "\nmethod:   GET\nrequest headers:\n\tAccept: */*\n",
 		}
 		d, m, term := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: records, Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 
 		d.key("enter")
 		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == auditTitle })
@@ -185,11 +186,11 @@ func TestTheAuditScreenSaysWhatItCouldNotRead(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openAuditScreen(t, ds)
 		gap := "hooks could not be read, so its records are missing: the discobox is stopped"
-		deliverAudit(d, ds, AuditUpdate{Records: auditRecords("GET 200 https://api.github.com/user"), Polled: true, Missing: []string{gap}})
+		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("GET 200 https://api.github.com/user"), Polled: true, Missing: []string{gap}})
 		if frame := frameText(m); !strings.Contains(frame, gap) {
 			t.Fatalf("the screen should name the trail it could not read:\n%s", frame)
 		}
-		deliverAudit(d, ds, AuditUpdate{Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Polled: true})
 		if frame := frameText(m); strings.Contains(frame, gap) {
 			t.Fatalf("a trail that answers again should stop being reported:\n%s", frame)
 		}
@@ -205,7 +206,7 @@ func TestTheAuditScreenAnswersThePointer(t *testing.T) {
 		records := auditRecords("GET 200 https://api.github.com/user", "POST 201 https://api.anthropic.com/v1/messages")
 		ds.auditDetails = map[string]string{records[0].ID: "record: " + records[0].ID}
 		d, m, _ := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: records, Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 
 		x, y := at(t, m, "GET 200 https://api.github.com/user")
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
@@ -237,7 +238,7 @@ func TestDetachingEndsTheAuditFollow(t *testing.T) {
 }
 
 // httpRun is n exchanges that fold together: one method, status and origin.
-func httpRun(n int, path string) []AuditRecord {
+func httpRun(n int, path string) []console.AuditRecord {
 	summaries := make([]string, n)
 	for i := range summaries {
 		summaries[i] = fmt.Sprintf("GET 200 https://api.github.com/%s/%d", path, i)
@@ -260,9 +261,9 @@ func TestTheAuditScreenFoldsARunOfExchanges(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openAuditScreen(t, ds)
 		records := httpRun(3, "user")
-		records = append(records, AuditRecord{ID: "cvd_between", Time: time.Now(), Source: "creds", Summary: "use github (at use): approved"})
+		records = append(records, console.AuditRecord{ID: "cvd_between", Time: time.Now(), Source: "creds", Summary: "use github (at use): approved"})
 		records = append(records, httpRun(2, "repos")...)
-		deliverAudit(d, ds, AuditUpdate{Records: records, Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 
 		frame := plainFrame(m)
 		for _, want := range []string{"▸ GET 200 https://api.github.com/... (count 3)", "use github (at use): approved", "▸ GET 200 https://api.github.com/... (count 2)"} {
@@ -274,7 +275,7 @@ func TestTheAuditScreenFoldsARunOfExchanges(t *testing.T) {
 			t.Fatalf("a folded run should not draw its records:\n%s", frame)
 		}
 
-		deliverAudit(d, ds, AuditUpdate{Records: httpRun(1, "repos")})
+		deliverAudit(d, ds, console.AuditUpdate{Records: httpRun(1, "repos")})
 		if frame := plainFrame(m); strings.Count(frame, "(count 3)") != 2 {
 			t.Fatalf("an arrival that matches the run should join it:\n%s", frame)
 		}
@@ -293,7 +294,7 @@ func TestTheAuditScreenOpensARun(t *testing.T) {
 		records := httpRun(3, "user")
 		ds.auditDetails = map[string]string{records[1].ID: "record: " + records[1].ID}
 		d, m, _ := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: records, Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 
 		d.key("enter")
 		frame := plainFrame(m)
@@ -319,7 +320,7 @@ func TestTheAuditScreenOpensARun(t *testing.T) {
 		d.key("esc")
 
 		// Arrivals below do not move the cursor off the record being read.
-		deliverAudit(d, ds, AuditUpdate{Records: httpRun(1, "user")})
+		deliverAudit(d, ds, console.AuditUpdate{Records: httpRun(1, "user")})
 		if row, _ := m.audit.at(); !row.member || m.audit.records[row.first].ID != records[1].ID {
 			t.Fatal("the cursor should stay on the record it was on as the run grows")
 		}
@@ -345,11 +346,11 @@ func TestTheAuditScreenReadsARecordsBodies(t *testing.T) {
 		id := records[0].ID
 		ds.auditDetails = map[string]string{id: "record:   " + id + "\nmethod:   POST"}
 		ds.auditBodies = map[string]string{
-			id + "/" + AuditResponseBody: "{\n  \"id\": \"msg_01\"\n}",
-			id + "/" + AuditRequestBody:  "{\"model\": \"claude\"}",
+			id + "/" + console.AuditResponseBody: "{\n  \"id\": \"msg_01\"\n}",
+			id + "/" + console.AuditRequestBody:  "{\"model\": \"claude\"}",
 		}
 		d, m, _ := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: records, Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 		d.key("enter")
 		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == auditTitle })
 		record := m.dialog
@@ -396,12 +397,12 @@ func TestTheAuditScreenSaysWhenABodyCannotBeRead(t *testing.T) {
 		records := auditRecords("GET 200 https://example.com/")
 		id := records[0].ID
 		ds.auditDetails = map[string]string{id: "record:   " + id}
-		ds.auditBodies = map[string]string{id + "/" + AuditResponseBody: ""}
+		ds.auditBodies = map[string]string{id + "/" + console.AuditResponseBody: ""}
 		d, m, _ := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: records, Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 		d.key("enter")
 		d.wait("the record's card", func() bool { return m.dialog != nil && m.dialog.title == auditTitle })
-		delete(ds.auditBodies, id+"/"+AuditResponseBody)
+		delete(ds.auditBodies, id+"/"+console.AuditResponseBody)
 		d.key("b")
 		d.wait("the error", func() bool { return strings.Contains(plainFrame(m), "response body: no response recorded") })
 		if m.dialog.title != auditTitle {
@@ -423,8 +424,8 @@ func TestTheAuditScreenSearchesAsYouType(t *testing.T) {
 			"POST 201 https://api.anthropic.com/v1/messages",
 			"GET 200 https://registry.npmjs.org/react",
 		)
-		records = append(records, AuditRecord{ID: "cvd_needle", Time: time.Now(), Source: "creds", Summary: "use github (at use): approved"})
-		deliverAudit(d, ds, AuditUpdate{Records: records, Polled: true})
+		records = append(records, console.AuditRecord{ID: "cvd_needle", Time: time.Now(), Source: "creds", Summary: "use github (at use): approved"})
+		deliverAudit(d, ds, console.AuditUpdate{Records: records, Polled: true})
 
 		d.key("/")
 		for _, key := range []string{"g", "h", "u", "b"} {
@@ -495,8 +496,8 @@ func TestTheAuditSearchFiltersWhatArrives(t *testing.T) {
 			d.key(key)
 		}
 		d.key("enter")
-		deliverAudit(d, ds, AuditUpdate{Records: auditRecords("POST 201 https://api.anthropic.com/v1/messages"), Polled: true})
-		deliverAudit(d, ds, AuditUpdate{Records: httpRun(3, "user")})
+		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("POST 201 https://api.anthropic.com/v1/messages"), Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: httpRun(3, "user")})
 		frame := plainFrame(m)
 		if strings.Contains(frame, "anthropic") || !strings.Contains(frame, "(count 3)") || !strings.Contains(frame, "3 of 4") {
 			t.Fatalf("arrivals should be filtered, and the matches fold:\n%s", frame)
@@ -537,7 +538,7 @@ func TestTheAuditSearchDoesNotBorrowFromTheID(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: auditRecords("GET 200 https://api.github.com/user", "GET 200 https://registry.npmjs.org/react"), Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("GET 200 https://api.github.com/user", "GET 200 https://registry.npmjs.org/react"), Polled: true})
 		d.key("/")
 		for _, key := range []string{"g", "i", "t", "h"} {
 			d.key(key)
@@ -554,10 +555,10 @@ func TestTheBannerKeysAnswerOverTheAuditScreen(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.requests = []CredentialRequest{waitingRequest()}
-		ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+		ds.requests = []console.CredentialRequest{waitingRequest()}
+		ds.projectSecrets = []console.Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 		d, m, _ := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: auditRecords("first", "second", "third"), Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("first", "second", "third"), Polled: true})
 		d.wait("the banner", func() bool { return m.bannerShowing() != bannerNone })
 
 		d.key("ctrl+a")
@@ -578,9 +579,9 @@ func TestTheHarnessChangesKeyAnswersOverTheAuditScreen(t *testing.T) {
 		boxes[0].HarnessName = "Claude Code"
 		boxes[0].HarnessConfigCandidate, boxes[0].HarnessConfigPending = "cand_1", true
 		ds := newFakeSource(boxes...)
-		ds.harnessChanges = HarnessChanges{CandidateID: "cand_1", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
+		ds.harnessChanges = console.HarnessChanges{CandidateID: "cand_1", State: "pending", Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
 		d, m, _ := openAuditScreen(t, ds)
-		deliverAudit(d, ds, AuditUpdate{Records: auditRecords("first", "second"), Polled: true})
+		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("first", "second"), Polled: true})
 		d.wait("the harness-changes band", func() bool { return m.bannerShowing() == bannerHarnessChanges })
 
 		d.key("ctrl+a")

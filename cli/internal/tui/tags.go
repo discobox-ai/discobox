@@ -3,6 +3,8 @@ package tui
 import (
 	"slices"
 	"strings"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The tags are the narrowest of the header filter's three (filter.go), after
@@ -22,7 +24,7 @@ const allTags = "all tags"
 
 // tagged reports whether a discobox carries every tag the list is filtered
 // to. Every discobox carries none at all.
-func (l *sandboxList) tagged(s Sandbox) bool {
+func (l *sandboxList) tagged(s console.Sandbox) bool {
 	for _, tag := range l.tags {
 		if !slices.Contains(s.Tags, tag) {
 			return false
@@ -50,18 +52,12 @@ func (l *sandboxList) addTag(tag string) {
 	if slices.Contains(l.tags, tag) {
 		return
 	}
-	key := tagKey(tag)
+	key := console.TagKey(tag)
 	// A fresh slice: the filter card works on a copy of the list, and
 	// appending into a shared backing array would mark the live one too.
-	l.tags = slices.DeleteFunc(slices.Clone(l.tags), func(t string) bool { return tagKey(t) == key })
+	l.tags = slices.DeleteFunc(slices.Clone(l.tags), func(t string) bool { return console.TagKey(t) == key })
 	l.tags = append(l.tags, tag)
 	slices.Sort(l.tags)
-}
-
-// tagKey is the key a tag sets, whether or not it gives a value.
-func tagKey(tag string) string {
-	key, _, _ := strings.Cut(tag, "=")
-	return key
 }
 
 // tagChoices are what the filter can narrow to: every tag the discoboxes
@@ -75,10 +71,10 @@ func (l *sandboxList) tagChoices() []string {
 	// a tag only those carry would narrow the list to nothing, since the
 	// creator they are drawn under does not carry it.
 	for _, s := range l.all {
-		if !l.onServer(s) || !l.folder.holds(s, l.session) {
+		if !l.onServer(s) || !l.folder.Holds(s, l.session) {
 			continue
 		}
-		if !l.showArchived && s.State == StateArchived {
+		if !l.showArchived && s.State == console.StateArchived {
 			continue
 		}
 		for _, tag := range s.Tags {
@@ -114,97 +110,4 @@ func tagsLabel(tags []string) string {
 		labels[i] = tagLabel(tag)
 	}
 	return strings.Join(labels, " ")
-}
-
-// A discobox's status tags say where it stands with a person, as the worker
-// skills tag it (worker, "Tags"): blocked on somebody, waiting for the owner to
-// answer a question on its screen, or ready for a human to merge its pull
-// request. They are the tags somebody scans a list of boxes for, so they are
-// drawn bold in color rather than dim — red for the two waiting on a person,
-// green for ready — and first among a row's tags so they are the last to give
-// way (sandboxList.row). `merged` is not among them: the work is done and asks
-// nothing of anyone.
-const (
-	statusBlocked    = "blocked"
-	statusNeedsInput = "needs-input"
-	statusReady      = "ready"
-)
-
-// statusTags are the status tag keys in the order a row draws them: the two
-// waiting on a person first, blocked ahead of a question since it is not on
-// the screen to be seen, then ready.
-var statusTags = []string{statusBlocked, statusNeedsInput, statusReady}
-
-// specialTags are the tag keys a row draws after its status and before the
-// rest, in this order: the pull request and the issue, which link to GitHub
-// (githubTagPaths) and say what the box is for, the pull request first since
-// it is the one most worth opening.
-var specialTags = []string{"pr", "issue"}
-
-// status is the status a discobox carries, the first of statusTags it is
-// tagged with, and empty for none.
-func (s Sandbox) status() string {
-	for _, v := range statusTags {
-		if slices.ContainsFunc(s.Tags, func(tag string) bool { return tagKey(tag) == v }) {
-			return v
-		}
-	}
-	return ""
-}
-
-// rowTags are the tags in the order a row draws them: its status tags
-// (statusTags), then its special ones (specialTags), each group in its own
-// fixed order, then the rest as they are kept.
-func (s Sandbox) rowTags() []string {
-	out := make([]string, 0, len(s.Tags))
-	for _, key := range slices.Concat(statusTags, specialTags) {
-		for _, tag := range s.Tags {
-			if tagKey(tag) == key {
-				out = append(out, tag)
-			}
-		}
-	}
-	for _, tag := range s.Tags {
-		if !isStatusTag(tag) && !slices.Contains(specialTags, tagKey(tag)) {
-			out = append(out, tag)
-		}
-	}
-	return out
-}
-
-// isStatusTag reports whether a tag is a status tag.
-func isStatusTag(tag string) bool {
-	return slices.Contains(statusTags, tagKey(tag))
-}
-
-// githubTagPaths are the tag keys that number something in the discobox's
-// GitHub repository, and where on GitHub that number is: `issue=4` is issue 4
-// and `pr=12` is pull request 12.
-var githubTagPaths = map[string]string{"issue": "issues", "pr": "pull"}
-
-// tagURL is where a tag points, for one that numbers an issue or a pull
-// request in the repository the discobox was cut from, and empty for any other
-// tag — including one of those keys on a discobox with no GitHub repository to
-// number it in, since `issue=4` alone does not say whose issue 4.
-func (s Sandbox) tagURL(tag string) string {
-	key, number, ok := strings.Cut(tag, "=")
-	where, linked := githubTagPaths[key]
-	if !ok || !linked || s.Repository == "" || !githubNumber(number) {
-		return ""
-	}
-	return s.Repository + "/" + where + "/" + number
-}
-
-// githubNumber reports whether value can be an issue or pull request number:
-// a positive decimal, written without a leading zero.
-func githubNumber(value string) bool {
-	if value == "" || value[0] == '0' {
-		return false
-	}
-	for _, r := range value {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
 }

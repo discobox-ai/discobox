@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The harness config card is the other card the window puts up to be read, so
@@ -192,7 +193,7 @@ func TestResettingAHarnessWithYourFilesAsksWhetherToKeepThem(t *testing.T) {
 		{"a", "reset with your files hc_claude"},
 	} {
 		ds := newFakeSource()
-		ds.harnesses[0].Files = append(ds.harnesses[0].Files, HarnessFile{Path: ".config/x.txt", Content: "mine", Source: HarnessFileOverride})
+		ds.harnesses[0].Files = append(ds.harnesses[0].Files, console.HarnessFile{Path: ".config/x.txt", Content: "mine", Source: console.HarnessFileOverride})
 		m := newTestModel(t, ds)
 		send(t, m, keyPress("f3"), keyPress("r"))
 		if m.dialog == nil || m.dialog.kind != dlgActions || m.dialog.items[0].key != "r" {
@@ -213,7 +214,7 @@ func TestHarnessesOfferNoSetup(t *testing.T) {
 	for i := range m.harnesses.all {
 		for _, a := range harnessActions(m.harnesses.all[i]) {
 			if a.key == "e" || a.key == "d" || strings.Contains(a.label, "enable") || strings.Contains(a.label, "configure") {
-				t.Fatalf("%s offers %q (%s), want no setup action", m.harnesses.all[i].displayName(), a.key, a.label)
+				t.Fatalf("%s offers %q (%s), want no setup action", m.harnesses.all[i].DisplayName(), a.key, a.label)
 			}
 		}
 	}
@@ -250,7 +251,7 @@ func TestHarnessesSetDefault(t *testing.T) {
 func TestHarnessesConfigCard(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
-	ds.secrets = []HarnessSecret{
+	ds.secrets = []console.HarnessSecret{
 		//nolint:gosec // These are the names of a variable and of a secret, not a credential.
 		{Name: "ANTHROPIC_API_KEY", Required: true, Declared: true,
 			SecretID: "sec_1", SecretType: "api_key", SecretName: "anthropic-api-key"},
@@ -283,13 +284,13 @@ func TestHarnessesConfigCard(t *testing.T) {
 func TestHarnessFileDetailNamesItsSource(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		file HarnessFile
+		file console.HarnessFile
 		want string
 	}{
-		{HarnessFile{Content: "{}", Source: HarnessFileFromBundle, CreateOnly: true}, "2 B · from the image · create-only"},
-		{HarnessFile{Content: "{}", Source: HarnessFileSaved, Shadows: []HarnessFileSource{HarnessFileFromBundle}}, "2 B · saved from a discobox · over the image's"},
-		{HarnessFile{Content: "{}", Source: HarnessFileOverride}, "2 B · yours"},
-		{HarnessFile{Content: "{}", Source: HarnessFileOverride, Shadows: []HarnessFileSource{HarnessFileSaved, HarnessFileFromBundle}}, "2 B · yours · over the saved one"},
+		{console.HarnessFile{Content: "{}", Source: console.HarnessFileFromBundle, CreateOnly: true}, "2 B · from the image · create-only"},
+		{console.HarnessFile{Content: "{}", Source: console.HarnessFileSaved, Shadows: []console.HarnessFileSource{console.HarnessFileFromBundle}}, "2 B · saved from a discobox · over the image's"},
+		{console.HarnessFile{Content: "{}", Source: console.HarnessFileOverride}, "2 B · yours"},
+		{console.HarnessFile{Content: "{}", Source: console.HarnessFileOverride, Shadows: []console.HarnessFileSource{console.HarnessFileSaved, console.HarnessFileFromBundle}}, "2 B · yours · over the saved one"},
 	} {
 		if got := harnessFileDetail(tc.file); got != tc.want {
 			t.Errorf("detail = %q, want %q", got, tc.want)
@@ -435,10 +436,10 @@ func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
 		for _, a := range harnessActions(harness) {
 			named := strings.Contains(hints, a.key+" "+a.label)
 			if a.enabled && !named {
-				t.Errorf("%s: %q applies but the hints do not name it: %q", harness.displayName(), a.key, hints)
+				t.Errorf("%s: %q applies but the hints do not name it: %q", harness.DisplayName(), a.key, hints)
 			}
 			if !a.enabled && named {
-				t.Errorf("%s: %q does not apply but the hints name it: %q", harness.displayName(), a.key, hints)
+				t.Errorf("%s: %q does not apply but the hints name it: %q", harness.DisplayName(), a.key, hints)
 			}
 		}
 		// The line has to fit as written. viewStatus truncates rather than
@@ -446,7 +447,7 @@ func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
 		// pass; what matters is whether there was room for the whole of it.
 		if got := lipgloss.Width("  " + hints); got > m.inner() {
 			t.Errorf("%s: the hint line needs %d columns of the %d there are: %q",
-				harness.displayName(), got, m.inner(), hints)
+				harness.DisplayName(), got, m.inner(), hints)
 		}
 	}
 }
@@ -542,7 +543,7 @@ func TestChoosingAHarnessMakesItTheDefault(t *testing.T) {
 func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
-	ds.harnesses = []Harness{{
+	ds.harnesses = []console.Harness{{
 		ID: "hc_shell", Name: "Shell", Slug: "shell",
 		BuiltIn: true, Shell: true,
 	}}
@@ -644,7 +645,7 @@ func TestTheTwoScreensReachEachOther(t *testing.T) {
 func TestHarnessChoicesOfferEveryHarness(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
-	m.opts.setHarnesses([]Harness{
+	m.opts.setHarnesses([]console.Harness{
 		{Slug: "shell"},
 		{Slug: "codex", Default: true},
 		{Slug: "claude"},

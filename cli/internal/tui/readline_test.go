@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // promptWith puts a model in front of the composer with text in it and the
@@ -181,7 +183,7 @@ func TestUndoDoesNotReachBehindARun(t *testing.T) {
 	m := promptWith(t, "")
 
 	send(t, m, typeString("reap the pool")...)
-	send(t, m, promptSpentMsg{req: RunRequest{Prompt: []string{"reap the pool"}}})
+	send(t, m, promptSpentMsg{req: console.RunRequest{Prompt: []string{"reap the pool"}}})
 	if got := m.prompt.Value(); got != "" {
 		t.Fatalf("prompt = %q, want it cleared by the run", got)
 	}

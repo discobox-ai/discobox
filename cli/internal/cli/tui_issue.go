@@ -7,8 +7,8 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/github"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // Issue reads a GitHub issue or pull request for the console's issue tab, as this machine's
@@ -17,14 +17,14 @@ import (
 // issue, so every string is made safe to draw on the way: a title or a
 // comment carrying an escape sequence is shown, not obeyed — the rule the
 // audit screen's records follow, less what a page is written with (pageSafe).
-func (d *apiDataSource) Issue(ctx context.Context, repository string, number int, full bool) (tui.Issue, error) {
+func (d *apiDataSource) Issue(ctx context.Context, repository string, number int, full bool) (console.Issue, error) {
 	owner, name, err := githubRepository(repository)
 	if err != nil {
-		return tui.Issue{}, err
+		return console.Issue{}, err
 	}
 	issue, err := githubClient().Issue(ctx, owner, name, number, full)
 	if err != nil {
-		return tui.Issue{}, err
+		return console.Issue{}, err
 	}
 	return tuiIssue(issue), nil
 }
@@ -77,9 +77,9 @@ var githubClient = sync.OnceValue(github.New)
 // diff, a label — where an invisible character is something to be shown, and keeps the
 // audit screen's rule (terminalSafe): two paths that differ are never drawn as
 // one on a tab that merges.
-func tuiIssue(in github.Issue) tui.Issue {
+func tuiIssue(in github.Issue) console.Issue {
 	safe, page := terminalSafe, pageSafe
-	out := tui.Issue{
+	out := console.Issue{
 		Repository:     safe(in.Repository),
 		Number:         in.Number,
 		Title:          page(in.Title),
@@ -92,7 +92,7 @@ func tuiIssue(in github.Issue) tui.Issue {
 		Milestone:      page(in.Milestone),
 		Locked:         in.Locked,
 		Comments:       in.Comments,
-		Reactions:      tui.IssueReactions(in.Reactions),
+		Reactions:      console.IssueReactions(in.Reactions),
 		PullRequest:    in.PullRequest,
 		SubIssuesTotal: in.SubIssuesTotal,
 		SubIssuesDone:  in.SubIssuesDone,
@@ -108,12 +108,12 @@ func tuiIssue(in github.Issue) tui.Issue {
 		out.SubIssues = append(out.SubIssues, tuiRef(sub))
 	}
 	for _, e := range in.Timeline {
-		event := tui.IssueEvent{
+		event := console.IssueEvent{
 			Kind:      safe(e.Kind),
 			Actor:     safe(e.Actor),
 			At:        e.At,
 			Body:      pageBlock(e.Body),
-			Reactions: tui.IssueReactions(e.Reactions),
+			Reactions: console.IssueReactions(e.Reactions),
 			Subject:   safe(e.Subject),
 			Message:   page(e.Message),
 			Review:    safe(e.Review),
@@ -131,11 +131,11 @@ func tuiIssue(in github.Issue) tui.Issue {
 			event.Source = &source
 		}
 		for _, thread := range e.Threads {
-			drawn := tui.ReviewThread{Path: safe(thread.Path), Line: thread.Line, Outdated: thread.Outdated, Hunk: codeBlock(thread.Hunk)}
+			drawn := console.ReviewThread{Path: safe(thread.Path), Line: thread.Line, Outdated: thread.Outdated, Hunk: codeBlock(thread.Hunk)}
 			for _, comment := range thread.Comments {
-				drawn.Comments = append(drawn.Comments, tui.ReviewComment{
+				drawn.Comments = append(drawn.Comments, console.ReviewComment{
 					Author: safe(comment.Author), At: comment.At, Body: pageBlock(comment.Body),
-					Reactions: tui.IssueReactions(comment.Reactions),
+					Reactions: console.IssueReactions(comment.Reactions),
 				})
 			}
 			event.Threads = append(event.Threads, drawn)
@@ -151,9 +151,9 @@ func tuiIssue(in github.Issue) tui.Issue {
 // tuiPull is the rest of a pull request's page, made safe: a branch name, a
 // check's name and a diff are as much a stranger's text as a comment is, and
 // none of them is prose.
-func tuiPull(in github.Pull) *tui.PullRequest {
+func tuiPull(in github.Pull) *console.PullRequest {
 	safe := terminalSafe
-	out := &tui.PullRequest{
+	out := &console.PullRequest{
 		Draft: in.Draft, Merged: in.Merged, MergedBy: safe(in.MergedBy), MergedAt: in.MergedAt,
 		Head: safe(in.Head), Base: safe(in.Base), HeadSHA: safe(in.HeadSHA), BaseSHA: safe(in.BaseSHA), HeadRef: safe(in.HeadRef),
 		Commits: in.Commits, Additions: in.Additions, Deletions: in.Deletions, ChangedFiles: in.ChangedFiles,
@@ -163,21 +163,21 @@ func tuiPull(in github.Pull) *tui.PullRequest {
 		out.MergeMethods = append(out.MergeMethods, safe(method))
 	}
 	for _, reviewer := range in.Reviewers {
-		out.Reviewers = append(out.Reviewers, tui.PullReviewer{Name: safe(reviewer.Name), State: safe(reviewer.State)})
+		out.Reviewers = append(out.Reviewers, console.PullReviewer{Name: safe(reviewer.Name), State: safe(reviewer.State)})
 	}
 	for _, check := range in.Checks {
-		out.Checks = append(out.Checks, tui.PullCheck{Name: safe(check.Name), State: safe(check.State), URL: safe(check.URL)})
+		out.Checks = append(out.Checks, console.PullCheck{Name: safe(check.Name), State: safe(check.State), URL: safe(check.URL)})
 	}
 	return out
 }
 
-func tuiLabel(in github.Label) tui.IssueLabel {
+func tuiLabel(in github.Label) console.IssueLabel {
 	// A label is picked by its name: two that differ are not drawn as one.
-	return tui.IssueLabel{Name: terminalSafe(in.Name), Color: terminalSafe(in.Color)}
+	return console.IssueLabel{Name: terminalSafe(in.Name), Color: terminalSafe(in.Color)}
 }
 
-func tuiRef(in github.Ref) tui.IssueRef {
-	return tui.IssueRef{
+func tuiRef(in github.Ref) console.IssueRef {
+	return console.IssueRef{
 		Repository: terminalSafe(in.Repository), Number: in.Number, Title: pageSafe(in.Title),
 		State: terminalSafe(in.State), PullRequest: in.PullRequest, Merged: in.Merged,
 	}

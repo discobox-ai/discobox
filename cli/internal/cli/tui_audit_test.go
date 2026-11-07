@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // auditBodyServer answers a discobox on pool-1 and, for its record http_42,
@@ -52,14 +52,14 @@ func TestAuditBodyReadsTheRecordingForTheConsole(t *testing.T) {
 		"response-body": `{"id":"msg_01","text":"hi\u001b[2J"}`,
 		"request-body":  "plain " + string(rune(0x1b)) + "[1A text",
 	})
-	got, err := ds.AuditBody(t.Context(), "sbx_1", "http_42", tui.AuditResponseBody)
+	got, err := ds.AuditBody(t.Context(), "sbx_1", "http_42", console.AuditResponseBody)
 	if err != nil {
 		t.Fatalf("response body: %v", err)
 	}
 	if !strings.Contains(got, "\n  \"id\": \"msg_01\"") {
 		t.Fatalf("a JSON body should be laid out:\n%s", got)
 	}
-	got, err = ds.AuditBody(t.Context(), "sbx_1", "http_42", tui.AuditRequestBody)
+	got, err = ds.AuditBody(t.Context(), "sbx_1", "http_42", console.AuditRequestBody)
 	if err != nil {
 		t.Fatalf("request body: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestAuditBodyReadsTheRecordingForTheConsole(t *testing.T) {
 func TestAuditBodyCutsALongRecording(t *testing.T) {
 	long := strings.Repeat("x", auditBodyShown+10)
 	ds := auditBodyServer(t, map[string]string{"response-body": long})
-	got, err := ds.AuditBody(t.Context(), "sbx_1", "http_42", tui.AuditResponseBody)
+	got, err := ds.AuditBody(t.Context(), "sbx_1", "http_42", console.AuditResponseBody)
 	if err != nil {
 		t.Fatalf("response body: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestAuditBodyCutsALongRecording(t *testing.T) {
 
 // The console names a recording the way the command's --part does.
 func TestAuditRecordingsAreTheCommandsParts(t *testing.T) {
-	if tui.AuditRequestBody != httpAuditPartRequest || tui.AuditResponseBody != httpAuditPartResponse || tui.AuditStream != httpAuditPartStream {
+	if console.AuditRequestBody != httpAuditPartRequest || console.AuditResponseBody != httpAuditPartResponse || console.AuditStream != httpAuditPartStream {
 		t.Fatal("the console's recordings and --part have drifted apart")
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // sandboxWithResources decodes a sandbox from the JSON the API actually
@@ -122,7 +122,7 @@ func TestTUIUsageNeedsADenominator(t *testing.T) {
 }
 
 func TestTUIUsageIsEmptyWithoutAReport(t *testing.T) {
-	if got := toTUIUsage(sandboxWithResources(t, "", poolCapacity)); got != (tui.Usage{}) {
+	if got := toTUIUsage(sandboxWithResources(t, "", poolCapacity)); got != (console.Usage{}) {
 		t.Errorf("usage = %+v, want zero for a sandbox that never reported", got)
 	}
 }

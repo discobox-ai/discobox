@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
@@ -34,12 +35,12 @@ func TestLeaderCOpensATerminalBesideThePrimary(t *testing.T) {
 		}
 		// It runs the harness the discobox already runs: the sandbox answers which
 		// one, so the request names none.
-		if m.terminals.panes[1].action != InteractTerminal {
+		if m.terminals.panes[1].action != console.InteractTerminal {
 			t.Fatalf("action = %q, want a terminal", m.terminals.panes[1].action)
 		}
 		// One box still, at the full width, with both terminals opened for it.
 		full, rows := m.paneCells(m.width)
-		for _, id := range []string{ExecPrimary, "exec_term1"} {
+		for _, id := range []string{console.ExecPrimary, "exec_term1"} {
 			if got := ds.execTerm(id).size(); got != [2]int{full, rows} {
 				t.Fatalf("%s is %v, want the whole window %dx%d", id, got, full, rows)
 			}
@@ -71,10 +72,10 @@ func TestThePrimaryIsAlwaysTheFirstTerminal(t *testing.T) {
 		gen := m.wsGen
 		d.dispatch(workspaceTermMsg{
 			gen:  gen,
-			exec: Exec{ID: "exec_late", Harness: "claude", Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 14, 0, 0, 0, time.UTC)},
+			exec: console.Exec{ID: "exec_late", Harness: "claude", Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 14, 0, 0, 0, time.UTC)},
 			term: newFakeTerminal(),
 		})
-		d.dispatch(workspaceTermMsg{gen: gen, exec: Exec{ID: ExecPrimary, Primary: true}, term: newFakeTerminal()})
+		d.dispatch(workspaceTermMsg{gen: gen, exec: console.Exec{ID: console.ExecPrimary, Primary: true}, term: newFakeTerminal()})
 
 		if m.terminals.len() != 2 {
 			t.Fatalf("terminals = %d, want both", m.terminals.len())
@@ -194,7 +195,7 @@ func TestATerminalStartedElsewhereJoinsTheLeftColumn(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
-		ds.addExec(Exec{
+		ds.addExec(console.Exec{
 			ID: "exec_other", Command: []string{"claude"}, Harness: "claude-code",
 			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 30, 0, 0, time.UTC),
 		})
@@ -377,8 +378,8 @@ func TestThePrimaryAndServicesHaveNoEndButton(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
-		ds.execs = []Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
+		ds.services = []console.Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
+		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
@@ -423,7 +424,7 @@ func TestAnEndedToolIsNotReopenedByThePoll(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.execs = []Exec{{
+		ds.execs = []console.Exec{{
 			ID: "exec_diff", Command: []string{"discobox-review"}, Tool: tools.DiffID,
 			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 		}}

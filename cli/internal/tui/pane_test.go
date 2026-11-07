@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -54,7 +55,7 @@ func openWorkspaceAt(t *testing.T, ds *fakeSource, act string, width int) (*driv
 	d.key(act)
 	d.wait("the workspace", func() bool { return m.focus == focusPane })
 	d.wait("the primary terminal", func() bool { return m.primary() != nil })
-	return d, m, ds.execTerm(ExecPrimary)
+	return d, m, ds.execTerm(console.ExecPrimary)
 }
 
 // Attaching draws the sandbox's terminal in the window rather than handing the
@@ -151,7 +152,7 @@ func TestATabSplitsTheScreen(t *testing.T) {
 		d.wait("the tab", func() bool { return m.shells.len() == 1 })
 
 		lcols, lrows := m.paneCells(m.width / 2)
-		if got := ds.execTerm(ExecPrimary).size(); got != [2]int{lcols, lrows} {
+		if got := ds.execTerm(console.ExecPrimary).size(); got != [2]int{lcols, lrows} {
 			t.Fatalf("the terminal is %v, want the left half %dx%d", got, lcols, lrows)
 		}
 		rcols, rrows := m.paneCells(m.width - m.width/2)
@@ -186,7 +187,7 @@ func TestLeaderZMaximizesTheFocusedColumn(t *testing.T) {
 		full, fullRows := m.paneCells(m.width)
 		for what, term := range map[string]*fakeTerminal{
 			"the tab":      ds.execTerm("exec_shell1"),
-			"the terminal": ds.execTerm(ExecPrimary),
+			"the terminal": ds.execTerm(console.ExecPrimary),
 		} {
 			if got := term.size(); got != [2]int{full, fullRows} {
 				t.Fatalf("%s is %v, want the whole window %dx%d", what, got, full, fullRows)
@@ -201,7 +202,7 @@ func TestLeaderZMaximizesTheFocusedColumn(t *testing.T) {
 		d.key("z")
 		d.wait("the split back", func() bool { return !m.maximized })
 		cols, rows := m.paneCells(m.width / 2)
-		if got := ds.execTerm(ExecPrimary).size(); got != [2]int{cols, rows} {
+		if got := ds.execTerm(console.ExecPrimary).size(); got != [2]int{cols, rows} {
 			t.Fatalf("the terminal is %v, want the left half %dx%d", got, cols, rows)
 		}
 	})
@@ -378,7 +379,7 @@ func TestAttachJoinsEveryLiveSession(t *testing.T) {
 		boxes := testSandboxes()
 		boxes[0].Name, boxes[0].TerminalTitle = "reaper", "reaper"
 		ds := newFakeSource(boxes...)
-		ds.execs = []Exec{
+		ds.execs = []console.Exec{
 			{ID: "exec_pri", Harness: "claude", Primary: true, Tty: true, Live: true, CreatedAt: now},
 			{ID: "exec_term", Command: []string{"claude"}, Harness: "claude", Tty: true, Live: true, CreatedAt: now.Add(2 * time.Minute)},
 			{ID: "exec_a", Command: []string{"/bin/bash"}, Tty: true, Live: true, CreatedAt: now.Add(time.Minute)},
@@ -420,7 +421,7 @@ func TestASessionStartedElsewhereBecomesATab(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
-		ds.addExec(Exec{
+		ds.addExec(console.Exec{
 			ID: "exec_other", Command: []string{"/usr/bin/fish"}, Tty: true, Live: true,
 			CreatedAt: time.Date(2026, 8, 7, 12, 30, 0, 0, time.UTC),
 		})
@@ -535,7 +536,7 @@ func TestAHeldPaneStillAnswersTheLeader(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
+		ds.services = []console.Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
@@ -609,7 +610,7 @@ func TestAFailedTabDegradesToAReport(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		now := time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
 		ds := newFakeSource(testSandboxes()...)
-		ds.execs = []Exec{
+		ds.execs = []console.Exec{
 			{ID: "exec_bad", Command: []string{"/bin/bash"}, Tty: true, Live: true, CreatedAt: now},
 		}
 		ds.openExecErrFor = map[string]error{"exec_bad": errors.New("session is sealed")}
@@ -637,13 +638,13 @@ func TestReconnectIsShownInThePane(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openWorkspace(t, ds, "enter")
 
-		term.events <- TerminalEvent{State: TerminalReconnecting}
+		term.events <- console.TerminalEvent{State: console.TerminalReconnecting}
 		d.wait("the reconnect", func() bool { return m.primary().status != "" })
 		if !strings.Contains(frameText(m), "reconnecting") {
 			t.Errorf("the pane should say it is reconnecting:\n%s", frameText(m))
 		}
 
-		term.events <- TerminalEvent{State: TerminalReconnected}
+		term.events <- console.TerminalEvent{State: console.TerminalReconnected}
 		d.wait("the reconnection", func() bool { return m.primary().status == "" })
 	})
 }
@@ -703,7 +704,7 @@ func TestPaneCursorLandsOnTheGridUnderTheCredentialBand(t *testing.T) {
 		d.wait("output", func() bool { return strings.Contains(frameText(m), "abc") })
 
 		ds.mu.Lock()
-		ds.requests = []CredentialRequest{waitingRequest()}
+		ds.requests = []console.CredentialRequest{waitingRequest()}
 		ds.mu.Unlock()
 		d.dispatch(tickMsg{})
 		d.wait("the band", func() bool { return m.bannerTop() == 1 })
@@ -1328,7 +1329,7 @@ func TestLeaderMovesBetweenTerminalAndTabs(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		now := time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
 		ds := newFakeSource(testSandboxes()...)
-		ds.execs = []Exec{
+		ds.execs = []console.Exec{
 			{ID: "exec_a", Command: []string{"/bin/bash"}, Tty: true, Live: true, CreatedAt: now},
 			{ID: "exec_b", Command: []string{"/bin/zsh"}, Tty: true, Live: true, CreatedAt: now.Add(time.Minute)},
 		}
@@ -1522,10 +1523,10 @@ func TestTheBannerFollowsTheListingsGitStatus(t *testing.T) {
 
 		// The agent reports a clean tree with committed work beyond spawn.
 		moved := testSandboxes()
-		moved[0].Git = GitState{
+		moved[0].Git = console.GitState{
 			Known: true, Branch: "main", Commit: "b17e004",
 		}
-		moved[0].Diff = DiffStat{Known: true, Added: 12, Deleted: 3, Files: 2}
+		moved[0].Diff = console.DiffStat{Known: true, Added: 12, Deleted: 3, Files: 2}
 		ds.mu.Lock()
 		ds.sandboxes = moved
 		ds.mu.Unlock()
@@ -1546,7 +1547,7 @@ func TestTheBannerCarriesTheListeningPorts(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		serving := testSandboxes()
-		serving[0].Ports = []Port{
+		serving[0].Ports = []console.Port{
 			{Number: 22, Protocol: "tcp"},
 			{Number: 5173, Protocol: "http"},
 			{Number: 8443, Protocol: "https"},
@@ -1597,7 +1598,7 @@ func TestTheBannerFollowsTheListingsPorts(t *testing.T) {
 		}
 
 		served := testSandboxes()
-		served[0].Ports = []Port{{Number: 5173, Protocol: "http"}}
+		served[0].Ports = []console.Port{{Number: 5173, Protocol: "http"}}
 		ds.mu.Lock()
 		ds.sandboxes = served
 		ds.mu.Unlock()
@@ -1615,7 +1616,7 @@ func TestTheBannerGivesUpItsEdgesBeforeItsMiddle(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		serving := testSandboxes()
-		serving[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+		serving[0].Ports = []console.Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
 		ds := newFakeSource(serving...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -1698,7 +1699,7 @@ func TestTheBannersMiddleDropsFieldsWholeAsItNarrows(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		serving := testSandboxes()
-		serving[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+		serving[0].Ports = []console.Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
 		ds := newFakeSource(serving...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 
@@ -1735,13 +1736,13 @@ func TestTheBannersMiddleDropsFieldsWholeAsItNarrows(t *testing.T) {
 func busyWorkspace(t *testing.T) (*driver, *Model, *fakeSource) {
 	t.Helper()
 	busy := testSandboxes()
-	busy[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
-	busy[0].Usage = Usage{
+	busy[0].Ports = []console.Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+	busy[0].Usage = console.Usage{
 		Known: true, CPUPercent: 12, MemoryBytes: 1_288_490_189, MemoryPercent: 4,
 		DiskKnown: true, DiskBytes: 3_650_722_202, DiskPercent: 10,
 	}
 	ds := newFakeSource(busy...)
-	ds.setResources(Resources{
+	ds.setResources(console.Resources{
 		Known:    true,
 		CPUVCPUs: 4.2, CPUCapacity: 24,
 		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
@@ -1768,8 +1769,8 @@ func TestTheBannerCarriesWhatTheDiscoboxAndMachineAreUsing(t *testing.T) {
 		}
 
 		busier := testSandboxes()
-		busier[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
-		busier[0].Usage = Usage{Known: true, CPUPercent: 87, MemoryBytes: 1_288_490_189, DiskKnown: true, DiskBytes: 3_650_722_202}
+		busier[0].Ports = []console.Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+		busier[0].Usage = console.Usage{Known: true, CPUPercent: 87, MemoryBytes: 1_288_490_189, DiskKnown: true, DiskBytes: 3_650_722_202}
 		ds.mu.Lock()
 		ds.sandboxes = busier
 		ds.mu.Unlock()
@@ -1864,7 +1865,7 @@ func TestTheBannerHoldsItsMiddleAsTheReadoutsChange(t *testing.T) {
 		}
 
 		// The machine stops reporting: the widest thing on the row goes.
-		ds.setResources(Resources{})
+		ds.setResources(console.Resources{})
 		d.dispatch(tickMsg{})
 		d.wait("the machine to go", func() bool { return !strings.Contains(nameRow(), "(4.2/24)") })
 		if got := at(); got != before {
@@ -1873,8 +1874,8 @@ func TestTheBannerHoldsItsMiddleAsTheReadoutsChange(t *testing.T) {
 
 		// And a figure that gains a digit does not move it either.
 		busier := testSandboxes()
-		busier[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
-		busier[0].Usage = Usage{Known: true, CPUPercent: 100, MemoryBytes: 1_288_490_189, DiskKnown: true, DiskBytes: 3_650_722_202}
+		busier[0].Ports = []console.Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+		busier[0].Usage = console.Usage{Known: true, CPUPercent: 100, MemoryBytes: 1_288_490_189, DiskKnown: true, DiskBytes: 3_650_722_202}
 		ds.mu.Lock()
 		ds.sandboxes = busier
 		ds.mu.Unlock()
@@ -1927,8 +1928,8 @@ func TestTheBannerSpendsNoRoomTheBrandGaveUp(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		busy := testSandboxes()
-		busy[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
-		busy[0].Usage = Usage{
+		busy[0].Ports = []console.Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+		busy[0].Usage = console.Usage{
 			Known: true, CPUPercent: 12, MemoryBytes: 1_288_490_189, MemoryPercent: 4,
 			DiskKnown: true, DiskBytes: 3_650_722_202, DiskPercent: 10,
 		}
@@ -1969,7 +1970,7 @@ func TestTheBannerDrawsTheMachineOnlyWhenAllOfItIsKnown(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		d, m, ds := busyWorkspace(t)
-		ds.setResources(Resources{DiskKnown: true, DiskFreeBytes: 34_896_609_280})
+		ds.setResources(console.Resources{DiskKnown: true, DiskFreeBytes: 34_896_609_280})
 		d.dispatch(tickMsg{})
 		d.dispatch(sizeMsg(270, 40))
 
@@ -2067,7 +2068,7 @@ func TestMovingBetweenPanesRepeatsWhileCtrlIsHeld(t *testing.T) {
 		if got := shell.typed(""); strings.Contains(got, "\x1b[D") {
 			t.Fatal("the pane that was left should not have received the key")
 		}
-		if got := ds.execTerm(ExecPrimary).typed("\x1b[D"); !strings.Contains(got, "\x1b[D") {
+		if got := ds.execTerm(console.ExecPrimary).typed("\x1b[D"); !strings.Contains(got, "\x1b[D") {
 			t.Fatalf("the focused pane should get the arrow once the run has ended: %q", got)
 		}
 	})
@@ -2081,7 +2082,7 @@ func TestLeaderDigitsJumpToPanes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		now := time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
 		ds := newFakeSource(testSandboxes()...)
-		ds.execs = []Exec{
+		ds.execs = []console.Exec{
 			{ID: "exec_a", Command: []string{"/bin/bash"}, Tty: true, Live: true, CreatedAt: now},
 			{ID: "exec_b", Command: []string{"/bin/zsh"}, Tty: true, Live: true, CreatedAt: now.Add(time.Minute)},
 		}
@@ -2369,7 +2370,7 @@ func TestDragSelectsWhatIsDrawnUnderThePointer(t *testing.T) {
 				d, m, term := openWorkspace(t, ds, "enter")
 				if band {
 					ds.mu.Lock()
-					ds.requests = []CredentialRequest{waitingRequest()}
+					ds.requests = []console.CredentialRequest{waitingRequest()}
 					ds.mu.Unlock()
 					d.dispatch(tickMsg{})
 					d.wait("the band", func() bool { return m.bannerTop() == 1 })

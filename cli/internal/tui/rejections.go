@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The refused credential: what the window says about a credential an upstream
@@ -41,15 +42,15 @@ type openRejectedMsg struct{}
 
 // secretRejectionsLoadedMsg carries the refused credentials read on the poll.
 type secretRejectionsLoadedMsg struct {
-	rejections []SecretRejection
+	rejections []console.SecretRejection
 	err        error
 }
 
 // rejectionRemedyMsg carries what a press needs to act: the secret to
 // replace. A harness's login needs nothing read to say how to replace it.
 type rejectionRemedyMsg struct {
-	rejection SecretRejection
-	secret    *Secret
+	rejection console.SecretRejection
+	secret    *console.Secret
 	err       error
 }
 
@@ -68,7 +69,7 @@ func (m *Model) loadSecretRejections() tea.Cmd {
 
 // setSecretRejections keeps what came back, oldest first: the credential that
 // has been failing longest is the one somebody has been living with.
-func (m *Model) setSecretRejections(rejections []SecretRejection) {
+func (m *Model) setSecretRejections(rejections []console.SecretRejection) {
 	sort.SliceStable(rejections, func(i, j int) bool { return rejections[i].FirstSeen.Before(rejections[j].FirstSeen) })
 	had := m.bannerCost()
 	m.rejections = rejections
@@ -85,7 +86,7 @@ func (m *Model) setSecretRejections(rejections []SecretRejection) {
 }
 
 // hasRejection reports whether this discobox is affected by one.
-func (m *Model) hasRejection(box Sandbox) bool {
+func (m *Model) hasRejection(box console.Sandbox) bool {
 	return len(m.rejectionsFor(box)) > 0
 }
 
@@ -95,14 +96,14 @@ func (m *Model) hasRejection(box Sandbox) bool {
 // dismissed; dismissing the band again then dismisses what it showed. With
 // nothing dismissed, or everything (the key reaches a band that is not drawn),
 // it is the oldest.
-func (m *Model) shownRejection(box Sandbox) (SecretRejection, bool) {
+func (m *Model) shownRejection(box console.Sandbox) (console.SecretRejection, bool) {
 	all := m.rejectionsFor(box)
 	if len(all) == 0 {
-		return SecretRejection{}, false
+		return console.SecretRejection{}, false
 	}
 	dismissed := m.dismissed[m.dismissalFor(bannerRejected, box)]
 	for _, rejection := range all {
-		if !slices.Contains(dismissed, rejection.occurrence()) {
+		if !slices.Contains(dismissed, rejection.Occurrence()) {
 			return rejection, true
 		}
 	}
@@ -116,16 +117,16 @@ func (m *Model) shownRejection(box Sandbox) (SecretRejection, bool) {
 // once, so it matches by harness rather than by where it happened to be seen.
 // Anything else matches the discobox that ran into it: a project secret that
 // failed in one box says nothing about a box that has never used it.
-func (m *Model) rejectionsFor(box Sandbox) []SecretRejection {
-	var out []SecretRejection
+func (m *Model) rejectionsFor(box console.Sandbox) []console.SecretRejection {
+	var out []console.SecretRejection
 	for _, rejection := range m.rejections {
 		// A credential belongs to one server, and IDs are only unique within
 		// one: a box on another server is running something else entirely.
-		if m.session.serverName(rejection.Server) != m.session.serverName(box.Server) {
+		if m.session.ServerName(rejection.Server) != m.session.ServerName(box.Server) {
 			continue
 		}
-		if rejection.harnessOwned() && box.HarnessID != "" && rejection.HarnessConfigID == box.HarnessID ||
-			!rejection.harnessOwned() && rejection.SandboxID == box.ID && box.ID != "" {
+		if rejection.HarnessOwned() && box.HarnessID != "" && rejection.HarnessConfigID == box.HarnessID ||
+			!rejection.HarnessOwned() && rejection.SandboxID == box.ID && box.ID != "" {
 			out = append(out, rejection)
 		}
 	}
@@ -173,11 +174,11 @@ func (m *Model) viewRejectedBanner(width int) string {
 // renew — and because the two words a reader might otherwise supply for
 // themselves, *your login inside this box*, are the ones that send them
 // somewhere nothing can be fixed.
-func rejectionHeadline(rejection SecretRejection) string {
-	if rejection.harnessOwned() {
+func rejectionHeadline(rejection console.SecretRejection) string {
+	if rejection.HarnessOwned() {
 		return rejection.HarnessConfigName + " sign-in refused"
 	}
-	return rejection.name() + " refused"
+	return rejection.Name() + " refused"
 }
 
 // rejectionCall is what pressing the band does, in the words of the gesture
@@ -186,8 +187,8 @@ func rejectionHeadline(rejection SecretRejection) string {
 //
 // A harness's login is replaced in the box, so its call says how; any other
 // secret is replaced out here, and its call says that.
-func rejectionCall(rejection SecretRejection) string {
-	if rejection.harnessOwned() {
+func rejectionCall(rejection console.SecretRejection) string {
+	if rejection.HarnessOwned() {
 		return "click to sign in again"
 	}
 	return "click to replace it on this machine"
@@ -199,19 +200,19 @@ func rejectionCall(rejection SecretRejection) string {
 // Both open over the workspace rather than taking you to another screen, and
 // both end back on the discobox you were watching: the session you were in the
 // middle of is still there when it is done.
-func (m *Model) openRejectedRemedy(box Sandbox) tea.Cmd {
+func (m *Model) openRejectedRemedy(box console.Sandbox) tea.Cmd {
 	rejection, ok := m.shownRejection(box)
 	if !ok {
 		return m.report(false, "nothing refused on this discobox")
 	}
-	if rejection.harnessOwned() {
+	if rejection.HarnessOwned() {
 		m.dialog = signInAgainDialog(rejection)
 		return nil
 	}
-	m.busy = "reading " + rejection.name() + "…"
+	m.busy = "reading " + rejection.Name() + "…"
 	// The credential's own server, not the one the header names: the fix goes
 	// where the credential lives (ADR 0131 §2).
-	ctx, ds, server := m.ctx, m.ds, m.session.serverName(rejection.Server)
+	ctx, ds, server := m.ctx, m.ds, m.session.ServerName(rejection.Server)
 	return func() tea.Msg {
 		secrets, err := ds.Secrets(ctx, server)
 		if err != nil {
@@ -230,7 +231,7 @@ func (m *Model) openRejectedRemedy(box Sandbox) tea.Cmd {
 // in a discobox, by the harness's own sign-in, and then saved. It is a message
 // rather than an action because the action is the person's, in the terminal
 // behind it.
-func signInAgainDialog(rejection SecretRejection) *dialog {
+func signInAgainDialog(rejection console.SecretRejection) *dialog {
 	name := rejection.HarnessConfigName
 	if name == "" {
 		name = "the harness"
@@ -249,9 +250,9 @@ func (m *Model) rejectionRemedy(msg rejectionRemedyMsg) tea.Cmd {
 	m.busy = ""
 	switch {
 	case msg.err != nil:
-		return m.report(true, "%s: %v", msg.rejection.name(), msg.err)
+		return m.report(true, "%s: %v", msg.rejection.Name(), msg.err)
 	case msg.secret != nil:
-		return m.editSecretForm(m.session.serverName(msg.rejection.Server), *msg.secret)
+		return m.editSecretForm(m.session.ServerName(msg.rejection.Server), *msg.secret)
 	}
 	return nil
 }
@@ -269,7 +270,7 @@ const (
 
 // rejectionSummary is one line about a refused credential for the secrets
 // screen's rows, where the reason is worth more room than a band has.
-func rejectionSummary(rejection SecretRejection) string {
+func rejectionSummary(rejection console.SecretRejection) string {
 	parts := []string{"refused at " + rejection.Host}
 	switch rejection.Reason {
 	case "unrefreshable":

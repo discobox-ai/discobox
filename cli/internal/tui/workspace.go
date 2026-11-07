@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/termpane"
 )
@@ -42,7 +43,7 @@ const workspacePollEvery = 2 * time.Second
 // the workspace's terminals, and every one after reconciles the tabs.
 type workspaceExecsMsg struct {
 	gen   int
-	execs []Exec
+	execs []console.Exec
 	err   error
 }
 
@@ -51,13 +52,13 @@ type workspaceExecsMsg struct {
 // asked for — which arrives with focus.
 type workspaceTermMsg struct {
 	gen  int
-	exec Exec
-	term Terminal
+	exec console.Exec
+	term console.Terminal
 	err  error
 	// asked is what the leader asked for, empty for a session the poll opened
 	// on its own. A create that failed carries no session record to say what
 	// it would have been, so this is what such a failure is reported as.
-	asked Interaction
+	asked console.Interaction
 	focus bool
 }
 
@@ -67,7 +68,7 @@ type workspaceTickMsg struct{ gen int }
 // workspaceServicesMsg is one answer from the service listing.
 type workspaceServicesMsg struct {
 	gen      int
-	services []Service
+	services []console.Service
 	err      error
 }
 
@@ -76,9 +77,9 @@ type workspaceServicesMsg struct {
 // process, or the card describing why there is none.
 type serviceTermMsg struct {
 	gen     int
-	service Service
+	service console.Service
 	order   int
-	term    Terminal
+	term    console.Terminal
 	err     error
 }
 
@@ -86,7 +87,7 @@ type serviceTermMsg struct {
 // the reason there is none.
 type workspaceForwardMsg struct {
 	gen     int
-	forward Forward
+	forward console.Forward
 	err     error
 }
 
@@ -104,7 +105,7 @@ type workspaceForwardChangedMsg struct{ gen int }
 type workspace struct {
 	// paneBox is the discobox the workspace is showing. Every pane on it is
 	// that one, and so is everything the leader's keys act on.
-	paneBox Sandbox
+	paneBox console.Sandbox
 
 	terminals column
 	shells    column
@@ -124,7 +125,7 @@ type workspace struct {
 	// forward holds the workspace's port forward while it is on screen: the
 	// local ports standing in for what the discobox is serving, which the
 	// header draws as arrows. A parked workspace has none. See workspace.go.
-	forward Forward
+	forward console.Forward
 	// pushHeld is the commit each source's automatic push failed on, keyed by
 	// slug, for as long as the workspace is open. A source is not pushed again
 	// while its branch still names the commit that was refused; see push.go.
@@ -168,13 +169,13 @@ func (w *workspace) closeStreams() {
 // the cursor. It replaces whatever was open: this is a different discobox, or
 // the same one started over, and either way what was on screen was about
 // something else.
-func (m *Model) openFromList(act Interaction, sandbox Sandbox) tea.Cmd {
+func (m *Model) openFromList(act console.Interaction, sandbox console.Sandbox) tea.Cmd {
 	// The workspace on screen is parked rather than closed, so the tree can
 	// switch back to it without attaching again. See tree.go.
 	m.parkWorkspace()
 	if ws := m.parked[m.boxRef(sandbox)]; ws != nil {
 		cmd := m.unparkWorkspace(ws)
-		if act == InteractShell {
+		if act == console.InteractShell {
 			cmd = tea.Batch(cmd, m.newShell())
 		}
 		return cmd
@@ -182,14 +183,14 @@ func (m *Model) openFromList(act Interaction, sandbox Sandbox) tea.Cmd {
 	m.paneBox = sandbox
 	// The workspace is the screen either way; asking for a shell opens it
 	// with a fresh one, focused.
-	return m.openWorkspace(sandbox, act == InteractShell)
+	return m.openWorkspace(sandbox, act == console.InteractShell)
 }
 
 // openWorkspace attaches to a discobox's workspace: list what is running,
 // then open the primary and a tab for every live session the listing reports.
 // The poll starts alongside and follows the server for as long as the screen
 // is up.
-func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
+func (m *Model) openWorkspace(sandbox console.Sandbox, freshShell bool) tea.Cmd {
 	m.paneBox = sandbox
 	// Nothing else can still have the window. The prompt can start a discobox
 	// and be on the harnesses screen by the time it is created, which is the
@@ -227,7 +228,7 @@ func (m *Model) showOpening() {
 
 // attachWorkspace starts everything an open workspace runs: the listings, the
 // attach they lead to, the port forward, and the automatic push.
-func (m *Model) attachWorkspace(gen int, sandbox Sandbox, freshShell bool) tea.Cmd {
+func (m *Model) attachWorkspace(gen int, sandbox console.Sandbox, freshShell bool) tea.Cmd {
 	// The attach waits for the discobox to become attachable, which behind a
 	// cold image pull is minutes (ADR 0039). Say what it is waiting for while
 	// it does; the watch reports nothing for a discobox that is already up, so
@@ -242,7 +243,7 @@ func (m *Model) attachWorkspace(gen int, sandbox Sandbox, freshShell bool) tea.C
 // sourceDeliveredMsg is the delivery a workspace ran before attaching, done.
 type sourceDeliveredMsg struct {
 	gen        int
-	sandbox    Sandbox
+	sandbox    console.Sandbox
 	freshShell bool
 	err        error
 }
@@ -259,7 +260,7 @@ type sourceDeliveredMsg struct {
 // still owed it; opening the workspace again joins the delivery still running
 // rather than starting a second beside it (deliverBeforeAttach), and takes its
 // answer, failure included.
-func (m *Model) deliverSource(gen int, sandbox Sandbox, freshShell bool) tea.Cmd {
+func (m *Model) deliverSource(gen int, sandbox console.Sandbox, freshShell bool) tea.Cmd {
 	feed, next := m.narrate()
 	ctx, ds := m.ctx, m.ds.ForServer(sandbox.Server)
 	deliver := func() tea.Msg {
@@ -281,10 +282,10 @@ func (m *Model) sourceDelivered(msg sourceDeliveredMsg) tea.Cmd {
 		m.busy = ""
 		m.closeWorkspace()
 		if m.attach != nil {
-			return m.exit(fmt.Errorf("%s: %w", InteractAttach, msg.err))
+			return m.exit(fmt.Errorf("%s: %w", console.InteractAttach, msg.err))
 		}
 		m.layout()
-		return tea.Batch(m.refresh(), m.report(true, "%s: %v", InteractAttach, msg.err))
+		return tea.Batch(m.refresh(), m.report(true, "%s: %v", console.InteractAttach, msg.err))
 	}
 	return m.attachWorkspace(msg.gen, msg.sandbox, msg.freshShell)
 }
@@ -328,7 +329,7 @@ func (m *Model) workspaceForward(msg workspaceForwardMsg) tea.Cmd {
 // forwardEvents waits for the next change to what is bound. Like the panes'
 // connection events it re-arms itself, and like them it stops when the window's
 // context ends or the channel closes.
-func (m *Model) forwardEvents(gen int, forward Forward) tea.Cmd {
+func (m *Model) forwardEvents(gen int, forward console.Forward) tea.Cmd {
 	ctx := m.ctx
 	return listen(func() tea.Msg {
 		select {
@@ -346,7 +347,7 @@ func (m *Model) forwardEvents(gen int, forward Forward) tea.Cmd {
 // forwardedPorts is what the header draws its arrows from: the sandbox port a
 // local one stands in for. Empty while nothing is forwarded, which is also what
 // every screen but the workspace sees.
-func (m *Model) forwardedPorts() map[portKey]int {
+func (m *Model) forwardedPorts() map[console.PortKey]int {
 	if m.forward == nil {
 		return nil
 	}
@@ -354,9 +355,9 @@ func (m *Model) forwardedPorts() map[portKey]int {
 	if len(bindings) == 0 {
 		return nil
 	}
-	forwarded := make(map[portKey]int, len(bindings))
+	forwarded := make(map[console.PortKey]int, len(bindings))
 	for _, binding := range bindings {
-		forwarded[binding.key()] = binding.Local
+		forwarded[binding.Key()] = binding.Local
 	}
 	return forwarded
 }
@@ -411,15 +412,15 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 		return nil
 	}
 	var cmds []tea.Cmd
-	first := m.primary() == nil && !m.connecting[ExecPrimary]
+	first := m.primary() == nil && !m.connecting[console.ExecPrimary]
 	if first {
 		// The primary is opened from the first answer whatever it says: a
 		// workspace is above all a view onto that session, and the sandbox
 		// resolves — and revives — it under the virtual id.
-		m.connecting[ExecPrimary] = true
+		m.connecting[console.ExecPrimary] = true
 	}
 
-	var open []Exec
+	var open []console.Exec
 	newShells := 0
 	if msg.err == nil {
 		for _, exec := range msg.execs {
@@ -470,7 +471,7 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	// has. See columns.
 	term, shells := m.columns(newShells + m.shells.len())
 	if first {
-		cmds = append(cmds, m.openExec(msg.gen, Exec{ID: ExecPrimary, Primary: true}, term))
+		cmds = append(cmds, m.openExec(msg.gen, console.Exec{ID: console.ExecPrimary, Primary: true}, term))
 	}
 	for _, exec := range open {
 		m.connecting[exec.ID] = true
@@ -505,7 +506,7 @@ func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
 		declared[service.ID] = true
 		paneID := servicePaneID(service.ID)
 		existing := m.paneByExec(paneID)
-		if !service.paneWorthy() {
+		if !service.PaneWorthy() {
 			// Stopped on purpose: the tab goes, because its absence is the
 			// right thing to say and a pane to dismiss would not be.
 			if existing != nil {
@@ -517,7 +518,7 @@ func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
 			continue
 		}
 		if existing != nil {
-			if existing.serviceRun == service.runKey() {
+			if existing.serviceRun == service.RunKey() {
 				continue
 			}
 			// The run moved on under it — restarted, stopped, fixed — so what
@@ -542,7 +543,7 @@ func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
 // openService connects one service's pane: its running process when it has
 // one, and otherwise the card saying why it does not, with whatever its last
 // run printed under it.
-func (m *Model) openService(gen int, service Service, order int) tea.Cmd {
+func (m *Model) openService(gen int, service console.Service, order int) tea.Cmd {
 	term, _ := m.columns(m.shells.len())
 	cols, rows := m.paneCells(term)
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
@@ -564,7 +565,7 @@ func (m *Model) openService(gen int, service Service, order int) tea.Cmd {
 			logs = nil
 		}
 		history := tailHistory(logs)
-		if service.live() && service.ExecID != "" {
+		if service.Live() && service.ExecID != "" {
 			stream, err := ds.OpenExec(ctx, id, service.ExecID, cols, rows)
 			if err != nil {
 				return serviceTermMsg{gen: gen, service: service, order: order, err: err}
@@ -578,7 +579,7 @@ func (m *Model) openService(gen int, service Service, order int) tea.Cmd {
 		// the one thing there is to say about it. Its output is part of that:
 		// after a crash the output is the reason, and a reason you have to go
 		// and ask for is one you find out about later than you needed to.
-		return serviceTermMsg{gen: gen, service: service, order: order, term: newTextTerminal(service.card(history))}
+		return serviceTermMsg{gen: gen, service: service, order: order, term: newTextTerminal(serviceCard(service, history))}
 	}
 }
 
@@ -609,17 +610,17 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 		stream: msg.term,
 		// A service is never typed at, so its pane is read-only whether it is
 		// drawing a live process or a card.
-		action:       InteractService,
+		action:       console.InteractService,
 		sandbox:      m.paneBox,
 		execID:       paneID,
-		title:        msg.service.displayName() + msg.service.tabMark(),
+		title:        msg.service.DisplayName() + msg.service.TabMark(),
 		service:      msg.service.ID,
-		serviceName:  msg.service.displayName(),
+		serviceName:  msg.service.DisplayName(),
 		serviceOrder: msg.order,
-		serviceRun:   msg.service.runKey(),
+		serviceRun:   msg.service.RunKey(),
 	}
-	if !msg.service.live() {
-		p.status = msg.service.paneStatus()
+	if !msg.service.Live() {
+		p.status = msg.service.PaneStatus()
 	}
 	// A service never takes the keys on arrival. Nobody asked for it — it
 	// appeared because the discobox is running it — and it is read-only, so
@@ -627,7 +628,7 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 	// being worked in, by pointer rather than by index: the arrival may have
 	// shifted it along the strip.
 	working := m.terminals.visible()
-	m.terminals.insert(p, Exec{
+	m.terminals.insert(p, console.Exec{
 		ID: paneID, Service: msg.service.ID, ServiceName: msg.service.Name, ServiceOrder: msg.order,
 	}, m.column() == &m.terminals)
 	if working != nil {
@@ -659,7 +660,7 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 // a terminal is created in harness mode and carries the harness it runs, a
 // service carries the service it runs, so reopening the workspace draws the
 // same two columns anyone else's window would.
-func terminalExec(exec Exec) bool {
+func terminalExec(exec console.Exec) bool {
 	// A service is drawn on the left too, ahead of the terminals: it is the
 	// discobox running your own work, which belongs beside the harness working
 	// on it rather than among the shells you opened by hand.
@@ -668,12 +669,12 @@ func terminalExec(exec Exec) bool {
 
 // serviceExec reports whether a session is one of the discobox's declared
 // services, and so whether its pane is read-only and its lifecycle keys apply.
-func serviceExec(exec Exec) bool { return exec.Service != "" }
+func serviceExec(exec console.Exec) bool { return exec.Service != "" }
 
 // openExec connects one workspace terminal. The pane is sized before it is
 // opened: the size is what the far end is told, and a terminal that starts at
 // the wrong size draws itself wrong before anything can correct it.
-func (m *Model) openExec(gen int, exec Exec, width int) tea.Cmd {
+func (m *Model) openExec(gen int, exec console.Exec, width int) tea.Cmd {
 	cols, rows := m.paneCells(width)
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
@@ -694,7 +695,7 @@ func (m *Model) newShell() tea.Cmd {
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewShell(ctx, id, cols, rows)
-		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: InteractShell, focus: true}
+		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: console.InteractShell, focus: true}
 	}
 }
 
@@ -714,7 +715,7 @@ func (m *Model) newTerminal() tea.Cmd {
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewTerminal(ctx, id, cols, rows)
-		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: InteractTerminal, focus: true}
+		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: console.InteractTerminal, focus: true}
 	}
 }
 
@@ -737,26 +738,26 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	m.endNarration()
 	m.busy = ""
 	delete(m.connecting, msg.exec.ID)
-	primary := msg.exec.ID == ExecPrimary
+	primary := msg.exec.ID == console.ExecPrimary
 	if primary {
 		m.wsOpening = false
 	}
-	terminal := primary || terminalExec(msg.exec) || msg.asked == InteractTerminal
+	terminal := primary || terminalExec(msg.exec) || msg.asked == console.InteractTerminal
 
 	// What this pane is, in the words the list uses: the primary is the
 	// attach, another harness session is a terminal, and everything else is a
 	// shell. A create that failed carries no session record, so there what was
 	// asked for is what is reported.
-	action := InteractShell
+	action := console.InteractShell
 	switch {
 	case primary:
-		action = InteractAttach
+		action = console.InteractAttach
 	case serviceExec(msg.exec):
-		action = InteractService
+		action = console.InteractService
 	case msg.asked != "":
 		action = msg.asked
 	case terminal:
-		action = InteractTerminal
+		action = console.InteractTerminal
 	}
 
 	if msg.err != nil {
@@ -869,7 +870,7 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 // beats strict age here because the two kinds are used differently and are
 // numbered differently: the digits count along the terminals and shells, and
 // the leader's S chord counts along the services. See column.tabKey.
-func execBefore(a, b Exec) bool {
+func execBefore(a, b console.Exec) bool {
 	if serviceExec(a) != serviceExec(b) {
 		return serviceExec(a)
 	}
@@ -1178,7 +1179,7 @@ func (m *Model) jumpService(n int) tea.Cmd {
 // execTitle is what to call a tab before its application names itself: the
 // program its session is running, the harness it is, or as a last resort the
 // tail of its id.
-func execTitle(exec Exec) string {
+func execTitle(exec console.Exec) string {
 	// A service's name is the one thing about it a person chose, and its argv
 	// is the login shell every service shares.
 	if name := strings.TrimSpace(exec.ServiceName); name != "" && exec.Service != "" {

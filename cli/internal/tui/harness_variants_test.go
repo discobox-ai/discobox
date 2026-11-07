@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 func TestCreateHarnessVariantFromMenuRefreshesAndSelectsIt(t *testing.T) {
@@ -17,7 +19,7 @@ func TestCreateHarnessVariantFromMenuRefreshesAndSelectsIt(t *testing.T) {
 	}
 	parent := m.harnesses.current().ID
 	f := m.dialog.form
-	if f.value("parent") != m.harnesses.current().displayName() || f.answerable(0) {
+	if f.value("parent") != m.harnesses.current().DisplayName() || f.answerable(0) {
 		t.Fatal("selected parent is not fixed")
 	}
 	if !strings.Contains(m.dialog.body, "not copied") {
@@ -26,7 +28,7 @@ func TestCreateHarnessVariantFromMenuRefreshesAndSelectsIt(t *testing.T) {
 	f.set("name", "Work account")
 	f.set("slug", "work-account")
 	send(t, m, keyPress("enter"))
-	want := NewHarnessVariant{ParentID: parent, Name: "Work account", Slug: "work-account"}
+	want := console.NewHarnessVariant{ParentID: parent, Name: "Work account", Slug: "work-account"}
 	if len(ds.createdVariants) != 1 || ds.createdVariants[0] != want {
 		t.Fatalf("creates: %+v", ds.createdVariants)
 	}
@@ -91,7 +93,7 @@ func TestVariantCreationStaysOnCapturedServerAndDoesNotReplaceNewDialog(t *testi
 	parent := testHarnesses()[0]
 	m.newHarnessVariantForm(parent)
 	form := m.dialog
-	request := NewHarnessVariant{ParentID: parent.ID, Name: "Work", Slug: "work"}
+	request := console.NewHarnessVariant{ParentID: parent.ID, Name: "Work", Slug: "work"}
 	cmd := m.createHarnessVariant("work-server", request, form)
 	other := errorDialog("Other operation", "keep me")
 	m.dialog = other

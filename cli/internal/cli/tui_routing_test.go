@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 func TestConsoleSnapshotsKeepIndependentServersWithTheSameBoxID(t *testing.T) {
@@ -56,13 +56,13 @@ func TestConsoleSnapshotsKeepIndependentServersWithTheSameBoxID(t *testing.T) {
 	ds.mu.Lock()
 	ds.servers[0], ds.servers[1] = ds.servers[1], ds.servers[0]
 	ds.mu.Unlock()
-	if _, err := pinned.Do(context.Background(), tui.VerbStop, sandboxA, tui.CredentialUI{}); err != nil {
+	if _, err := pinned.Do(context.Background(), console.VerbStop, sandboxA, console.CredentialUI{}); err != nil {
 		t.Fatal(err)
 	}
 	if alphaStops.Load() != 1 || betaStops.Load() != 0 {
 		t.Fatalf("stop redirected: alpha=%d beta=%d", alphaStops.Load(), betaStops.Load())
 	}
-	if _, err := ds.ForServer("beta").Do(t.Context(), tui.VerbStop, sandboxA, tui.CredentialUI{}); err != nil {
+	if _, err := ds.ForServer("beta").Do(t.Context(), console.VerbStop, sandboxA, console.CredentialUI{}); err != nil {
 		t.Fatal(err)
 	}
 	if betaStops.Load() != 1 {

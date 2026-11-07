@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The window opens ready to type: no key is needed before the first character
@@ -222,7 +223,7 @@ func TestAFailedWorkingTreeCheckHandsThePromptBack(t *testing.T) {
 func TestTheServerTakingACreateLeavesADifferentPromptAlone(t *testing.T) {
 	t.Parallel()
 	m := promptWith(t, "the draft that came back")
-	send(t, m, promptSpentMsg{req: RunRequest{}})
+	send(t, m, promptSpentMsg{req: console.RunRequest{}})
 	if got := m.prompt.Value(); got != "the draft that came back" {
 		t.Fatalf("prompt = %q, want what was not sent kept", got)
 	}
@@ -297,7 +298,7 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 		{"enter", "false"},
 	} {
 		ds := newFakeSource()
-		ds.workspace = SourceWorkspace{Directory: "/home/ada/src/web", Repository: true, Carries: true}
+		ds.workspace = console.SourceWorkspace{Directory: "/home/ada/src/web", Repository: true, Carries: true}
 		m := newTestModel(t, ds)
 		send(t, m, keyPress("enter"), keyPress("enter"))
 		if m.dialog == nil {
@@ -333,7 +334,7 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 		{"enter", "true"},
 	} {
 		ds := newFakeSource()
-		ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+		ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 		m := newTestModel(t, ds)
 		send(t, m, keyPress("enter"), keyPress("enter"))
 		if m.dialog == nil {
@@ -366,7 +367,7 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 func TestEscOnDirectoryCopyQuestionCancelsCreation(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
-	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+	ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"), keyPress("enter"))
 	if m.dialog == nil || m.dialog.title != "Copy this directory?" {
@@ -395,14 +396,14 @@ func TestEscOnDirectoryCopyQuestionCancelsCreation(t *testing.T) {
 func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
-	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+	ds.workspace = console.SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"), keyPress("enter"))
 	if m.dialog.emphasis != "calculating…" {
 		t.Fatalf("emphasis = %q, want the walk to say it has nothing counted yet", m.dialog.emphasis)
 	}
 
-	ds.setTotal(DirectoryTotal{Bytes: 5 << 20, Files: 3})
+	ds.setTotal(console.DirectoryTotal{Bytes: 5 << 20, Files: 3})
 	send(t, m, directorySizeMsg{})
 	if m.dialog.emphasis != "5.0 MiB in 3 files, still counting…" {
 		t.Fatalf("emphasis = %q, want the running total", m.dialog.emphasis)
@@ -411,7 +412,7 @@ func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 		t.Fatal("the walk was stopped while the question was still up")
 	}
 
-	ds.setTotal(DirectoryTotal{Bytes: 7 << 20, Files: 4, Done: true})
+	ds.setTotal(console.DirectoryTotal{Bytes: 7 << 20, Files: 4, Done: true})
 	send(t, m, directorySizeMsg{})
 	if m.dialog.emphasis != "7.0 MiB in 4 files" {
 		t.Fatalf("emphasis = %q, want the final total stated as one", m.dialog.emphasis)
@@ -426,7 +427,7 @@ func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 func TestAnEmptyDirectoryWithNoRepositoryIsNotAskedAbout(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
-	ds.workspace = SourceWorkspace{Directory: "/home/ada/empty"}
+	ds.workspace = console.SourceWorkspace{Directory: "/home/ada/empty"}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("enter"), keyPress("enter"))
 
@@ -506,7 +507,7 @@ func TestTheArrowsClimbTheWindowAndStopAtItsEnds(t *testing.T) {
 // Refusing to move would leave no way to reach the one control that helps.
 func TestAnEmptyListLandsOnTheFilter(t *testing.T) {
 	t.Parallel()
-	m := newTestModel(t, newFakeSource(cutFrom(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning}, "/src/elsewhere")))
+	m := newTestModel(t, newFakeSource(cutFrom(console.Sandbox{ID: "sbx_one", Name: "one", State: console.StateRunning}, "/src/elsewhere")))
 	if len(m.list.rows()) != 0 {
 		t.Fatalf("expected an empty list, got %d rows", len(m.list.rows()))
 	}
@@ -519,8 +520,8 @@ func TestAnEmptyListLandsOnTheFilter(t *testing.T) {
 	send(t, m, keyPress("enter"))
 	markFilter(t, m, "/src/elsewhere")
 	send(t, m, keyPress("enter"))
-	if m.list.folder.key != testKey("/src/elsewhere") {
-		t.Fatalf("folder = %q, want the one with something in it", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/elsewhere") {
+		t.Fatalf("folder = %q, want the one with something in it", m.list.folder.Label)
 	}
 	if len(m.list.rows()) != 1 {
 		t.Fatalf("rows = %d, want the sandbox that was there all along", len(m.list.rows()))
@@ -627,7 +628,7 @@ func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
 	showAllFolders(t, m)
 	send(t, m, keyPress("A"), keyPress("G")) // the archived row is last
 
-	if got := m.list.current(); got == nil || got.State != StateArchived {
+	if got := m.list.current(); got == nil || got.State != console.StateArchived {
 		t.Fatalf("expected the cursor on an archived sandbox, got %+v", got)
 	}
 	send(t, m, keyPress("P"))
@@ -737,7 +738,7 @@ func TestRenameRefusedOnAnArchivedBox(t *testing.T) {
 	// As TestArchivedSandboxesCannotBeDiffed reaches the archived one.
 	showAllFolders(t, m)
 	send(t, m, keyPress("A"), keyPress("G"))
-	if targets := m.list.targets(); len(targets) != 1 || targets[0].State != StateArchived {
+	if targets := m.list.targets(); len(targets) != 1 || targets[0].State != console.StateArchived {
 		t.Fatalf("targets = %+v, want the archived box", targets)
 	}
 	send(t, m, keyPress("e"))
@@ -852,8 +853,8 @@ func TestArchivedSandboxesAreHiddenUntilAskedFor(t *testing.T) {
 func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	if m.list.folder.key != testKey("/src/disco2") {
-		t.Fatalf("folder = %q, want the directory the window is running in", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the directory the window is running in", m.list.folder.Label)
 	}
 	for _, s := range m.list.rows() {
 		if s.OriginKey != testKey("/src/disco2") {
@@ -863,8 +864,8 @@ func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 
 	// "Every folder" is the one choice that is not a place.
 	filterTo(t, m, allFolders)
-	if m.list.folder.key != "" {
-		t.Fatalf("folder = %q, want every folder", m.list.folder.label)
+	if m.list.folder.Key != "" {
+		t.Fatalf("folder = %q, want every folder", m.list.folder.Label)
 	}
 	if got := len(m.list.rows()); got != 3 {
 		t.Fatalf("rows = %d, want every unarchived sandbox", got)
@@ -873,12 +874,12 @@ func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 	// And the folders something else was cut from: the repository URL's, a
 	// folder the way a directory is (ADR 0111), and the other directory's.
 	filterTo(t, m, "acme/foo")
-	if m.list.folder.key != testKey("https://github.com/acme/foo") {
-		t.Fatalf("folder = %q, want the repository URL's", m.list.folder.label)
+	if m.list.folder.Key != testKey("https://github.com/acme/foo") {
+		t.Fatalf("folder = %q, want the repository URL's", m.list.folder.Label)
 	}
 	filterTo(t, m, "/src/obot")
-	if m.list.folder.key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the other folder", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the other folder", m.list.folder.Label)
 	}
 	if got := len(m.list.rows()); got != 1 {
 		t.Fatalf("rows = %d, want just the one started there", got)
@@ -904,8 +905,8 @@ func TestTheFilterCardListsTheKnownFolders(t *testing.T) {
 
 	// The second choice is the other folder; Enter on it filters to it.
 	send(t, m, keyPress("down"), keyPress("enter"))
-	if m.list.folder.key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the choice that was made", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the choice that was made", m.list.folder.Label)
 	}
 	// And the cursor is back at the top: the rows under it are a different set
 	// of sandboxes now.
@@ -923,7 +924,7 @@ func TestTheFolderFilterAlwaysOffersThisDirectory(t *testing.T) {
 	for _, row := range m.filterDialog().filter.rows() {
 		choices = append(choices, row.label)
 	}
-	if len(choices) != 2 || choices[0] != m.session.folder().label || choices[1] != allFolders {
+	if len(choices) != 2 || choices[0] != m.session.Folder().Label || choices[1] != allFolders {
 		t.Fatalf("choices = %q", choices)
 	}
 }
@@ -955,9 +956,9 @@ func TestRefreshKeepsTheCursorOnItsSandbox(t *testing.T) {
 // other field and nothing is fetched on the list's behalf.
 func TestDiffstatArrivesWithTheListing(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(Sandbox{
-		ID: "sbx_one", Name: "one", State: StateRunning, OriginKey: testKey("/src/disco2"),
-		Diff: DiffStat{Known: true, Added: 3, Deleted: 1, Files: 2},
+	ds := newFakeSource(console.Sandbox{
+		ID: "sbx_one", Name: "one", State: console.StateRunning, OriginKey: testKey("/src/disco2"),
+		Diff: console.DiffStat{Known: true, Added: 3, Deleted: 1, Files: 2},
 	})
 	m := newTestModel(t, ds)
 
@@ -1031,8 +1032,8 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	}
 
 	filterTo(t, m, "/src/obot") // on to the other folder
-	if m.list.folder.key != testKey("/src/obot") {
-		t.Fatalf("folder = %q", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q", m.list.folder.Label)
 	}
 	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", req.Source)
@@ -1355,9 +1356,9 @@ func TestTheListOffersNoHostTools(t *testing.T) {
 
 // wedgedSandbox is what repair is for: a settled failure the reconciler will
 // never retry on its own (ADR 0017 §4).
-func wedgedSandbox() Sandbox {
-	return Sandbox{
-		ID: "sbx_wedged", Name: "wedged", State: StateError, HasRuntime: true,
+func wedgedSandbox() console.Sandbox {
+	return console.Sandbox{
+		ID: "sbx_wedged", Name: "wedged", State: console.StateError, HasRuntime: true,
 		Harness: "claude", OriginKey: testKey("/src/disco2"), Branch: "main", Commit: "a3f9c21",
 		Message: "create failed: no such file or directory",
 	}
@@ -1384,7 +1385,7 @@ func TestRepairRunsOnARunningBox(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"))
 	box := m.list.targets()[0]
-	if box.State != StateRunning {
+	if box.State != console.StateRunning {
 		t.Fatalf("state = %s, want the box under the cursor running", box.State)
 	}
 
@@ -1550,7 +1551,7 @@ func TestTheWindowOpensInThePromptWithNoDiscoboxes(t *testing.T) {
 		t.Fatalf("focus = %v, want the prompt", m.focus)
 	}
 
-	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}})
+	send(t, m, listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}})
 	if m.focus != focusPrompt {
 		t.Fatalf("focus = %v after a later listing, want the prompt still", m.focus)
 	}
@@ -1591,11 +1592,11 @@ func unloadedModel(t *testing.T) *Model {
 func TestTheOpeningWaitsForTheSession(t *testing.T) {
 	t.Parallel()
 	m := unloadedModel(t)
-	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}})
+	send(t, m, listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}})
 	if m.focus != focusPrompt {
 		t.Fatalf("focus = %v before the session, want it undecided in the prompt", m.focus)
 	}
-	send(t, m, sessionLoadedMsg{session: Session{DefaultProject: "default"}})
+	send(t, m, sessionLoadedMsg{session: console.Session{DefaultProject: "default"}})
 	if m.focus != focusList || m.list.cursor != 0 {
 		t.Fatalf("focus = %v cursor = %d, want the first discobox", m.focus, m.list.cursor)
 	}
@@ -1606,8 +1607,8 @@ func TestTheOpeningCountsOnlyTheRowsTheFiltersLeave(t *testing.T) {
 	t.Parallel()
 	m := unloadedModel(t)
 	send(t, m,
-		sessionLoadedMsg{session: Session{DefaultProject: "default", View: ListView{FolderKey: "elsewhere", FolderLabel: "/src/elsewhere"}}},
-		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
+		sessionLoadedMsg{session: console.Session{DefaultProject: "default", View: console.ListView{FolderKey: "elsewhere", FolderLabel: "/src/elsewhere"}}},
+		listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}},
 	)
 	if len(m.list.rows()) != 0 {
 		t.Fatalf("rows = %d, want the filter to leave none", len(m.list.rows()))
@@ -1621,8 +1622,8 @@ func TestTheOpeningCountsOnlyTheRowsTheFiltersLeave(t *testing.T) {
 	// a row the window is about to hide.
 	m = unloadedModel(t)
 	send(t, m,
-		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
-		sessionLoadedMsg{session: Session{DefaultProject: "default", View: ListView{FolderKey: "elsewhere", FolderLabel: "/src/elsewhere"}}},
+		listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}},
+		sessionLoadedMsg{session: console.Session{DefaultProject: "default", View: console.ListView{FolderKey: "elsewhere", FolderLabel: "/src/elsewhere"}}},
 	)
 	if m.focus != focusPrompt {
 		t.Fatalf("focus = %v with the session landing last, want the prompt", m.focus)
@@ -1635,13 +1636,13 @@ func TestTheOpeningWaitsOutASlowServer(t *testing.T) {
 	t.Parallel()
 	m := unloadedModel(t)
 	send(t, m,
-		sessionLoadedMsg{session: Session{DefaultProject: "default"}},
-		listLoadedMsg{listing: Listing{Waiting: []string{"beta"}}},
+		sessionLoadedMsg{session: console.Session{DefaultProject: "default"}},
+		listLoadedMsg{listing: console.Listing{Waiting: []string{"beta"}}},
 	)
 	if m.opened {
 		t.Fatal("an empty listing still waiting on a server decided the opening")
 	}
-	send(t, m, listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}})
+	send(t, m, listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}})
 	if m.focus != focusList {
 		t.Fatalf("focus = %v once the slow server answered, want the list", m.focus)
 	}
@@ -1658,8 +1659,8 @@ func TestAPasteDecidesTheOpeningAndAMotionDoesNot(t *testing.T) {
 	}
 	send(t, m, tea.PasteMsg{Content: "fix it"})
 	send(t, m,
-		sessionLoadedMsg{session: Session{DefaultProject: "default"}},
-		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
+		sessionLoadedMsg{session: console.Session{DefaultProject: "default"}},
+		listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}},
 	)
 	if m.focus != focusPrompt {
 		t.Fatalf("focus = %v after a paste, want the prompt", m.focus)
@@ -1683,8 +1684,8 @@ func TestARestoredDraftStillOpensOnTheList(t *testing.T) {
 	t.Parallel()
 	m := unloadedModel(t)
 	send(t, m,
-		sessionLoadedMsg{session: Session{DefaultProject: "default", Draft: "half a thought"}},
-		listLoadedMsg{listing: Listing{Sandboxes: testSandboxes()}},
+		sessionLoadedMsg{session: console.Session{DefaultProject: "default", Draft: "half a thought"}},
+		listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}},
 	)
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)

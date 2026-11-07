@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The console keeps three things across launches, one of each on this machine
@@ -109,7 +109,7 @@ func savePromptDraft(prompt string) error {
 
 // saveConsoleView records view as the header's filters. The zero view is the
 // default, and is stored as nothing at all.
-func saveConsoleView(view tui.ListView) error {
+func saveConsoleView(view console.ListView) error {
 	return updateConsoleState(func(s *consoleState) {
 		s.View = consoleView{
 			Server:       view.Server,
@@ -128,8 +128,8 @@ func saveLastSource(source string) error {
 	return updateConsoleState(func(s *consoleState) { s.LastSource = source })
 }
 
-func (v consoleView) listView() tui.ListView {
-	return tui.ListView{
+func (v consoleView) listView() console.ListView {
+	return console.ListView{
 		Server:       v.Server,
 		FolderKey:    v.FolderKey,
 		FolderLabel:  v.FolderLabel,

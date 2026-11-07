@@ -7,25 +7,25 @@ import (
 	"time"
 
 	api "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-func (d *apiDataSource) HarnessChanges(ctx context.Context, sandboxID string) (tui.HarnessChanges, error) {
+func (d *apiDataSource) HarnessChanges(ctx context.Context, sandboxID string) (console.HarnessChanges, error) {
 	res, err := d.client.GetSandboxHarnessConfigChanges(ctx, api.GetSandboxHarnessConfigChangesParams{ProjectId: d.projectID, SandboxId: sandboxID})
 	if err != nil {
-		return tui.HarnessChanges{}, fmt.Errorf("%s", terminalSafe(err.Error()))
+		return console.HarnessChanges{}, fmt.Errorf("%s", terminalSafe(err.Error()))
 	}
 	preview, err := expectResponse[api.HarnessConfigChanges](res)
 	if err != nil {
-		return tui.HarnessChanges{}, fmt.Errorf("%s", terminalSafe(err.Error()))
+		return console.HarnessChanges{}, fmt.Errorf("%s", terminalSafe(err.Error()))
 	}
 	return toTUIHarnessChanges(preview), nil
 }
 
-func toTUIHarnessChanges(p *api.HarnessConfigChanges) tui.HarnessChanges {
-	c := tui.HarnessChanges{CandidateID: p.CandidateId.Or(""), State: terminalSafe(p.State), Revision: p.ConfigRevision}
+func toTUIHarnessChanges(p *api.HarnessConfigChanges) console.HarnessChanges {
+	c := console.HarnessChanges{CandidateID: p.CandidateId.Or(""), State: terminalSafe(p.State), Revision: p.ConfigRevision}
 	for _, f := range p.Files {
-		c.Files = append(c.Files, tui.HarnessChangedFile{Path: terminalSafe(f.Path), Action: harnessChangeAction(f), Diff: harnessChangeDiff(f), Shadowed: f.Shadowed.Or(false)})
+		c.Files = append(c.Files, console.HarnessChangedFile{Path: terminalSafe(f.Path), Action: harnessChangeAction(f), Diff: harnessChangeDiff(f), Shadowed: f.Shadowed.Or(false)})
 	}
 	for _, credential := range p.Credentials {
 		text := fmt.Sprintf("%s %s (%s)", credential.Provider, credential.EnvName, credential.Type)
@@ -71,7 +71,7 @@ func (d *apiDataSource) DiscardHarnessChanges(ctx context.Context, sandboxID, ca
 // refreshHarnessChanges checks current shared state before offering a save.
 // Recheck every listing: another box can save the same candidate, and a later
 // shared edit can make it relevant again. No candidate is discarded here.
-func (d *apiDataSource) refreshHarnessChanges(ctx context.Context, boxes []tui.Sandbox) {
+func (d *apiDataSource) refreshHarnessChanges(ctx context.Context, boxes []console.Sandbox) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	slots := make(chan struct{}, 8)
@@ -80,7 +80,7 @@ func (d *apiDataSource) refreshHarnessChanges(ctx context.Context, boxes []tui.S
 		box := &boxes[i]
 		// Preview reads the running agent. Skip stopped rows; the server
 		// also observes without waking if a stop races this listing.
-		if box.HarnessConfigCandidate == "" || box.State != tui.StateRunning {
+		if box.HarnessConfigCandidate == "" || box.State != console.StateRunning {
 			continue
 		}
 		asked.Add(1)

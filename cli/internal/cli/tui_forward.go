@@ -6,8 +6,8 @@ import (
 	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/portforward"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // Forward starts the launcher's port forward: the same forwarder `discobox proxy`
@@ -19,7 +19,7 @@ import (
 // nobody is looking at would take numbers from the machine for no one's
 // benefit — the workspace is where the ports are shown, so it is where they
 // are held.
-func (d *apiDataSource) Forward(ctx context.Context, sandboxID string) (tui.Forward, error) {
+func (d *apiDataSource) Forward(ctx context.Context, sandboxID string) (console.Forward, error) {
 	dialer, err := d.app.sandboxPortDialer(d.projectID, sandboxID)
 	if err != nil {
 		return nil, err
@@ -55,11 +55,11 @@ type tuiForward struct {
 	closed bool
 }
 
-func (f *tuiForward) Bindings() []tui.Binding {
+func (f *tuiForward) Bindings() []console.Binding {
 	bound := f.forwarder.Bindings()
-	bindings := make([]tui.Binding, 0, len(bound))
+	bindings := make([]console.Binding, 0, len(bound))
 	for _, binding := range bound {
-		bindings = append(bindings, tui.Binding{
+		bindings = append(bindings, console.Binding{
 			Port:  binding.Target.Port,
 			UDP:   binding.Target.Network == portforward.UDP,
 			Local: binding.Local,

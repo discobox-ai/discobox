@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // Lifecycle and interaction keys are registered from the descriptors. A new
@@ -204,17 +206,17 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 func TestConsoleCommandEligibility(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	tests := []struct {
-		state   State
+		state   console.State
 		command string
 		enabled bool
 	}{
-		{StateRunning, "stop", true}, {StateSuspended, "stop", true}, {StateStopped, "stop", false},
-		{StateStopped, "start", true}, {StateSuspended, "start", true}, {StateArchived, "start", false},
-		{StateArchived, "rename", false}, {StateArchived, "settings", false}, {StateArchived, "purge", true},
-		{StateRunning, "purge", false}, {StateError, "repair", true},
+		{console.StateRunning, "stop", true}, {console.StateSuspended, "stop", true}, {console.StateStopped, "stop", false},
+		{console.StateStopped, "start", true}, {console.StateSuspended, "start", true}, {console.StateArchived, "start", false},
+		{console.StateArchived, "rename", false}, {console.StateArchived, "settings", false}, {console.StateArchived, "purge", true},
+		{console.StateRunning, "purge", false}, {console.StateError, "repair", true},
 	}
 	for _, tt := range tests {
-		box := Sandbox{ID: "box", State: tt.state}
+		box := console.Sandbox{ID: "box", State: tt.state}
 		found := false
 		for _, c := range m.consoleCommands(&box) {
 			if c.id == tt.command {

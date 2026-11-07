@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 func TestCredentialQuestionConsentCancelAndStaleFeed(t *testing.T) {
@@ -134,8 +135,8 @@ func TestCredentialExplanationFollowsSelectionAndHoverBeforeConfirm(t *testing.T
 }
 
 func TestCommandPreviewPreservesExplicitAsk(t *testing.T) {
-	options := newOptions(Session{GitCredentials: "ask"})
-	if command := options.commandFor(RunRequest{Source: "."}); !strings.Contains(command, "--git-credentials=ask") {
+	options := newOptions(console.Session{GitCredentials: "ask"})
+	if command := options.commandFor(console.RunRequest{Source: "."}); !strings.Contains(command, "--git-credentials=ask") {
 		t.Fatalf("preview drops ask override: %s", command)
 	}
 }

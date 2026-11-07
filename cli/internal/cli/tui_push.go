@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // PushSources is the launcher's end of the automatic push (ADR 26-09-05-008 on
@@ -13,14 +13,14 @@ import (
 // The window is a client with a terminal attached, so it pushes for the same
 // reason and by the same rule; what it adds is somewhere to say so. See
 // push_auto.go for the rule, and internal/tui/push.go for the beat it runs on.
-func (d *apiDataSource) PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]tui.SourcePush, error) {
+func (d *apiDataSource) PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]console.SourcePush, error) {
 	pushes, err := d.app.pushSandboxSources(ctx, d.client, d.projectID, sandboxID, held)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]tui.SourcePush, 0, len(pushes))
+	out := make([]console.SourcePush, 0, len(pushes))
 	for _, push := range pushes {
-		out = append(out, tui.SourcePush{
+		out = append(out, console.SourcePush{
 			Slug:     push.Slug,
 			Branch:   push.Branch,
 			Remote:   push.Remote,

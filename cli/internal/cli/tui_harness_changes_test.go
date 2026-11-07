@@ -13,7 +13,7 @@ import (
 	"time"
 
 	api "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 func TestHarnessPreviewEscapesUntrustedDisplayData(t *testing.T) {
@@ -260,7 +260,7 @@ func TestHarnessOfferDoesNotWakeStoppedBoxesOrSurvivePreviewFailure(t *testing.T
 		t.Fatal(err)
 	}
 	ds := &apiDataSource{client: client, projectID: "project-1"}
-	boxes := []tui.Sandbox{{ID: "stopped", State: tui.StateStopped, HarnessConfigCandidate: "candidate"}, {ID: "running", State: tui.StateRunning, HarnessConfigCandidate: "candidate"}}
+	boxes := []console.Sandbox{{ID: "stopped", State: console.StateStopped, HarnessConfigCandidate: "candidate"}, {ID: "running", State: console.StateRunning, HarnessConfigCandidate: "candidate"}}
 	ds.refreshHarnessChanges(context.Background(), boxes)
 	for _, box := range boxes {
 		if box.HarnessConfigPending {

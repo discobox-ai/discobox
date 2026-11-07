@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
@@ -87,7 +88,7 @@ func TestDesktopBinaryNotFound(t *testing.T) {
 // A workspace opens the primary first, then every other live terminal; the
 // console draws services, files-changed sessions and ended execs elsewhere.
 func TestDesktopExecsOpensLiveTerminals(t *testing.T) {
-	got := desktopExecs([]tui.Exec{
+	got := desktopExecs([]console.Exec{
 		{ID: "p", Primary: true, Live: true, Tty: true},
 		{ID: "sh", Command: []string{"/bin/bash", "-l"}, Live: true, Tty: true},
 		{ID: "claude", Harness: "claude", Command: []string{"claude"}, Live: true, Tty: true},
@@ -98,7 +99,7 @@ func TestDesktopExecsOpensLiveTerminals(t *testing.T) {
 		{ID: "pipe", Command: []string{"cat"}, Live: true},
 	})
 	want := []desktopExecInfo{
-		{ID: tui.ExecPrimary, Kind: "primary", Live: true},
+		{ID: console.ExecPrimary, Kind: "primary", Live: true},
 		{ID: "sh", Kind: "shell", Label: "bash", Live: true, Argv: []string{"/bin/bash", "-l"}},
 		{ID: "claude", Kind: "terminal", Label: "claude", Live: true, Argv: []string{"claude"}},
 		{ID: "diff", Kind: "tool", Label: "diff", Live: true},
@@ -112,15 +113,15 @@ func TestDesktopExecsOpensLiveTerminals(t *testing.T) {
 // harness without a display name is drawn by its slug.
 func TestDesktopListingPrefersKnownState(t *testing.T) {
 	created := time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)
-	got := desktopListing(tui.Listing{Sandboxes: []tui.Sandbox{{
+	got := desktopListing(console.Listing{Sandboxes: []console.Sandbox{{
 		ID: "sbx_1", Name: "one", State: "running", Harness: "claude", Branch: "stale", Commit: "old",
 		Created: created, CreatedBy: "sbx_0",
-		Git:   tui.GitState{Known: true, Branch: "main", Commit: "abc1234", Dirty: true},
-		Diff:  tui.DiffStat{Known: true, Added: 3, Deleted: 1},
-		Usage: tui.Usage{Known: true, CPUPercent: 12, MemoryBytes: 1 << 20},
+		Git:   console.GitState{Known: true, Branch: "main", Commit: "abc1234", Dirty: true},
+		Diff:  console.DiffStat{Known: true, Added: 3, Deleted: 1},
+		Usage: console.Usage{Known: true, CPUPercent: 12, MemoryBytes: 1 << 20},
 	}, {
 		ID: "sbx_2", Name: "two", HarnessName: "Codex", Harness: "codex", Branch: "feature",
-		Diff: tui.DiffStat{Added: 9}, Usage: tui.Usage{CPUPercent: 99},
+		Diff: console.DiffStat{Added: 9}, Usage: console.Usage{CPUPercent: 99},
 	}}})
 	if len(got) != 2 {
 		t.Fatalf("got %d rows", len(got))
@@ -137,7 +138,7 @@ func TestDesktopListingPrefersKnownState(t *testing.T) {
 	if one.ID != "sbx_1" || one.SandboxID != "sbx_1" || one.Parent != "sbx_0" {
 		t.Errorf("a primary server's box is keyed by its ID: %+v", one)
 	}
-	work := desktopListing(tui.Listing{Sandboxes: []tui.Sandbox{{ID: "sbx_1", Server: "work", CreatedBy: "sbx_0"}}})[0]
+	work := desktopListing(console.Listing{Sandboxes: []console.Sandbox{{ID: "sbx_1", Server: "work", CreatedBy: "sbx_0"}}})[0]
 	if work.ID != "work/sbx_1" || work.SandboxID != "sbx_1" || work.Server != "work" || work.Parent != "work/sbx_0" {
 		t.Errorf("another server's box is keyed by server and ID, its parent too: %+v", work)
 	}
@@ -237,21 +238,21 @@ func TestDesktopBridgeAnswersRequests(t *testing.T) {
 // fakeTerminal plays its output once, then ends.
 type fakeTerminal struct {
 	out    io.Reader
-	events chan tui.TerminalEvent
+	events chan console.TerminalEvent
 	closed chan struct{}
 	once   sync.Once
 }
 
 func newFakeTerminal(output string) *fakeTerminal {
-	return &fakeTerminal{out: strings.NewReader(output), events: make(chan tui.TerminalEvent), closed: make(chan struct{})}
+	return &fakeTerminal{out: strings.NewReader(output), events: make(chan console.TerminalEvent), closed: make(chan struct{})}
 }
 
-func (f *fakeTerminal) Read(p []byte) (int, error)       { return f.out.Read(p) }
-func (f *fakeTerminal) Write(p []byte) (int, error)      { return len(p), nil }
-func (f *fakeTerminal) Resize(int, int) error            { return nil }
-func (f *fakeTerminal) Repaint() error                   { return nil }
-func (f *fakeTerminal) Events() <-chan tui.TerminalEvent { return f.events }
-func (f *fakeTerminal) Close() error                     { f.once.Do(func() { close(f.closed) }); return nil }
+func (f *fakeTerminal) Read(p []byte) (int, error)           { return f.out.Read(p) }
+func (f *fakeTerminal) Write(p []byte) (int, error)          { return len(p), nil }
+func (f *fakeTerminal) Resize(int, int) error                { return nil }
+func (f *fakeTerminal) Repaint() error                       { return nil }
+func (f *fakeTerminal) Events() <-chan console.TerminalEvent { return f.events }
+func (f *fakeTerminal) Close() error                         { f.once.Do(func() { close(f.closed) }); return nil }
 
 // An attached terminal's output goes to the app on its stream, and its end is
 // one Exit frame, after which the stream is closed and forgotten.

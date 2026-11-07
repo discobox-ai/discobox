@@ -18,8 +18,8 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/coder/websocket"
 	api "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 	"github.com/discobox-ai/discobox/pkg/execstream/resume"
@@ -46,9 +46,9 @@ func TestDirectoryRetryCLIProcess(t *testing.T) {
 		}
 		ds := &apiDataSource{app: &App{serverURL: args[1]}, client: client, projectID: "project-1"}
 		if args[0] == "console-create" {
-			_, err = ds.Run(t.Context(), tui.RunRequest{Source: args[2], CopyDirectory: "true"}, nil, nil, func(sb tui.Sandbox) { fmt.Fprintln(os.Stderr, "accepted", sb.ID) })
+			_, err = ds.Run(t.Context(), console.RunRequest{Source: args[2], CopyDirectory: "true"}, nil, nil, func(sb console.Sandbox) { fmt.Fprintln(os.Stderr, "accepted", sb.ID) })
 		} else {
-			err = ds.DeliverSource(t.Context(), pushTestSandboxID, nil, tui.CredentialUI{})
+			err = ds.DeliverSource(t.Context(), pushTestSandboxID, nil, console.CredentialUI{})
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

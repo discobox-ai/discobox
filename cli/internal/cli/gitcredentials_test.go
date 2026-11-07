@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -125,7 +125,7 @@ func TestSavedGitConsentIsReadOnUseButExplicitChoiceStays(t *testing.T) {
 
 func TestNoninteractiveWindowNeverInstallsCredentialCallbacks(t *testing.T) {
 	ctx := sandboxgit.WithNoninteractive(t.Context())
-	ui := tui.CredentialUI{Confirm: func(context.Context, string) (bool, error) { t.Fatal("asked"); return false, nil }, Run: func(context.Context, *exec.Cmd) error { t.Fatal("terminal handoff"); return nil }}
+	ui := console.CredentialUI{Confirm: func(context.Context, string) (bool, error) { t.Fatal("asked"); return false, nil }, Run: func(context.Context, *exec.Cmd) error { t.Fatal("terminal handoff"); return nil }}
 	opts := tuiCredentialDeliveryOptions(ctx, ui)
 	if opts.ConfirmCredential != nil || opts.RunCredential != nil {
 		t.Fatal("noninteractive window can ask")

@@ -10,13 +10,14 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // testPull is pull request 9 of acme/foo, with something of everything its
 // page shows beyond an issue's.
-func testPull() Issue {
+func testPull() console.Issue {
 	opened := time.Now().Add(-48 * time.Hour)
-	return Issue{
+	return console.Issue{
 		Repository:  "acme/foo",
 		Number:      9,
 		Title:       "Reap only stopped boxes",
@@ -26,26 +27,26 @@ func testPull() Issue {
 		CreatedAt:   opened,
 		Comments:    1,
 		PullRequest: true,
-		Pull: &PullRequest{
+		Pull: &console.PullRequest{
 			Head: "fix-reaper", Base: "main", HeadSHA: "abc1234567890", BaseSHA: "0001112223334",
 			MergeMethods: []string{"squash", "rebase"},
 			Commits:      2, Additions: 12, Deletions: 3, ChangedFiles: 3,
 			Mergeable: "blocked",
-			Reviewers: []PullReviewer{{Name: "bob", State: "changes_requested"}, {Name: "erin", State: "requested"}},
-			Checks: []PullCheck{
+			Reviewers: []console.PullReviewer{{Name: "bob", State: "changes_requested"}, {Name: "erin", State: "requested"}},
+			Checks: []console.PullCheck{
 				{Name: "build", State: "success", URL: "https://ci.example/build"},
 				{Name: "lint", State: "failure", URL: "https://ci.example/lint"},
 				{Name: "e2e", State: "pending", URL: "file:///etc/passwd"},
 			},
 		},
-		Timeline: []IssueEvent{
+		Timeline: []console.IssueEvent{
 			{Kind: "committed", Actor: "Alice A", At: opened, Subject: "abc1234", Message: "reap only the stopped"},
 			{Kind: "committed", Actor: "Alice A", At: opened, Subject: "def5678", Message: "test it"},
 			{Kind: "review_requested", Actor: "alice", At: opened.Add(time.Hour), Subject: "bob"},
 			{Kind: "reviewed", Actor: "bob", At: opened.Add(2 * time.Hour), Review: "changes_requested", Body: "Nearly.",
-				Threads: []ReviewThread{{
+				Threads: []console.ReviewThread{{
 					Path: "reaper/reaper.go", Line: 3, Hunk: "@@ -1,3 +1,4 @@\n func reap() {\n-\tall()\n+\tstopped()",
-					Comments: []ReviewComment{
+					Comments: []console.ReviewComment{
 						{Author: "bob", At: opened.Add(2 * time.Hour), Body: "What about paused ones?"},
 						{Author: "alice", At: opened.Add(3 * time.Hour), Body: "Left alone."},
 					},
@@ -447,8 +448,8 @@ func TestAMergedPullRequestIsNotClosed(t *testing.T) {
 		pull := testPull()
 		pull.State, pull.Pull.Merged, pull.Pull.MergedBy, pull.Pull.MergedAt = "closed", true, "dave", time.Now().Add(-time.Hour)
 		pull.Timeline = append(pull.Timeline,
-			IssueEvent{Kind: "merged", Actor: "dave", At: pull.Pull.MergedAt, Subject: "fedcba9"},
-			IssueEvent{Kind: "closed", Actor: "dave", At: pull.Pull.MergedAt},
+			console.IssueEvent{Kind: "merged", Actor: "dave", At: pull.Pull.MergedAt, Subject: "fedcba9"},
+			console.IssueEvent{Kind: "closed", Actor: "dave", At: pull.Pull.MergedAt},
 		)
 		ds.issues["https://github.com/acme/foo#9"] = pull
 		d, m := openPullPane(t, ds)
@@ -512,7 +513,7 @@ func TestAnIssueTagOnAPullRequestIsAPullRequest(t *testing.T) {
 		boxes := githubTaggedSandboxes()
 		boxes[0].Tags = []string{"issue=9"}
 		ds := newFakeSource(boxes...)
-		ds.issues = map[string]Issue{"https://github.com/acme/foo#9": testPull()}
+		ds.issues = map[string]console.Issue{"https://github.com/acme/foo#9": testPull()}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key(m.leader())
 		d.key(issueKey)
@@ -559,18 +560,18 @@ func TestPullRequestEventsReadAsThePageWritesThem(t *testing.T) {
 	st := newStyles(false)
 	pull := testPull()
 	for _, tc := range []struct {
-		event IssueEvent
+		event console.IssueEvent
 		want  string
 	}{
-		{IssueEvent{Kind: "closed"}, "closed this"},
-		{IssueEvent{Kind: "merged", Subject: "abc1234"}, "merged commit abc1234 into main"},
-		{IssueEvent{Kind: "review_requested", Actor: "bob", Subject: "bob"}, "self-requested a review"},
-		{IssueEvent{Kind: "review_requested", Actor: "alice", Subject: "bob"}, "requested a review from bob"},
-		{IssueEvent{Kind: "ready_for_review"}, "marked this ready for review"},
-		{IssueEvent{Kind: "head_ref_deleted"}, "deleted the fix-reaper branch"},
-		{IssueEvent{Kind: "labeled", Label: &IssueLabel{Name: "bug"}}, "added the bug label"},
-		{IssueEvent{Kind: "copilot_work_started"}, "started a Copilot review"},
-		{IssueEvent{Kind: "some_new_event"}, "some new event"},
+		{console.IssueEvent{Kind: "closed"}, "closed this"},
+		{console.IssueEvent{Kind: "merged", Subject: "abc1234"}, "merged commit abc1234 into main"},
+		{console.IssueEvent{Kind: "review_requested", Actor: "bob", Subject: "bob"}, "self-requested a review"},
+		{console.IssueEvent{Kind: "review_requested", Actor: "alice", Subject: "bob"}, "requested a review from bob"},
+		{console.IssueEvent{Kind: "ready_for_review"}, "marked this ready for review"},
+		{console.IssueEvent{Kind: "head_ref_deleted"}, "deleted the fix-reaper branch"},
+		{console.IssueEvent{Kind: "labeled", Label: &console.IssueLabel{Name: "bug"}}, "added the bug label"},
+		{console.IssueEvent{Kind: "copilot_work_started"}, "started a Copilot review"},
+		{console.IssueEvent{Kind: "some_new_event"}, "some new event"},
 	} {
 		if got := pullEventText(st, tc.event, pull); got != tc.want {
 			t.Errorf("pullEventText(%s) = %q, want %q", tc.event.Kind, got, tc.want)
@@ -592,7 +593,7 @@ func TestThePullRequestBadge(t *testing.T) {
 		{"closed", false, false, "○ Closed"},
 		{"closed", false, true, "● Merged"},
 	} {
-		issue := Issue{State: tc.state, Pull: &PullRequest{Draft: tc.draft, Merged: tc.merged}}
+		issue := console.Issue{State: tc.state, Pull: &console.PullRequest{Draft: tc.draft, Merged: tc.merged}}
 		if got := pullState(st, issue); got != tc.want {
 			t.Errorf("pullState(%s, draft %v, merged %v) = %q, want %q", tc.state, tc.draft, tc.merged, got, tc.want)
 		}
@@ -600,7 +601,7 @@ func TestThePullRequestBadge(t *testing.T) {
 }
 
 // readyPull is the pull request with nothing left in its way.
-func readyPull() Issue {
+func readyPull() console.Issue {
 	pull := testPull()
 	pull.Pull.Mergeable = "clean"
 	return pull
@@ -735,9 +736,9 @@ func TestARefusedMergeSaysWhy(t *testing.T) {
 func TestADraftOrConflictedPullRequestIsNotMerged(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		for name, change := range map[string]func(*PullRequest){
-			"is a draft":     func(p *PullRequest) { p.Draft = true },
-			"conflicts with": func(p *PullRequest) { p.Mergeable = "dirty" },
+		for name, change := range map[string]func(*console.PullRequest){
+			"is a draft":     func(p *console.PullRequest) { p.Draft = true },
+			"conflicts with": func(p *console.PullRequest) { p.Mergeable = "dirty" },
 		} {
 			ds := pullSource()
 			pull := testPull()
@@ -1013,7 +1014,7 @@ func TestTheReadyBandsKeyIsNotPressedWhileWriting(t *testing.T) {
 func TestChecksNotAllReadSaySo(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
-	if got := checkRows(st, []PullCheck{{Name: "build", State: "success"}}, true, 80); len(got) == 0 || !strings.Contains(got[0], "1 passed · not all could be read") {
+	if got := checkRows(st, []console.PullCheck{{Name: "build", State: "success"}}, true, 80); len(got) == 0 || !strings.Contains(got[0], "1 passed · not all could be read") {
 		t.Errorf("partial checks = %q", got)
 	}
 	if got := checkRows(st, nil, true, 80); len(got) != 1 || !strings.Contains(got[0], "could not be read") {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
@@ -48,7 +49,7 @@ func TestATakenNameIsOfferedAsTheFirstFreeOne(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
-	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_dupe", Name: "github", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}})
+	ds.projectSecrets = append(ds.projectSecrets, console.Secret{ID: "sec_dupe", Name: "github", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}})
 	ds.mu.Unlock()
 	toNewCredential(t, m, time.Hour)
 	if got := m.dialog.form.value("name"); got != "github-2" {
@@ -146,7 +147,7 @@ func TestANewCredentialApprovalCanChooseWiderScope(t *testing.T) {
 func TestWiderScopeShowsIndependentCredentialConstraints(t *testing.T) {
 	m, _ := sourceWithRequest(t)
 	a := newApproval(waitingRequest(), nil, nil)
-	a.secrets = []Secret{{ID: "test", Name: "test", Routes: []secretroute.Route{{Hosts: []string{"*"}}}, RouteConstraints: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Paths: []string{"/one"}}}, {{Hosts: []string{"api.github.com"}, Paths: []string{"/blocked"}, Blocked: true}}}}}
+	a.secrets = []console.Secret{{ID: "test", Name: "test", Routes: []secretroute.Route{{Hosts: []string{"*"}}}, RouteConstraints: [][]secretroute.Route{{{Hosts: []string{"api.github.com"}, Paths: []string{"/one"}}}, {{Hosts: []string{"api.github.com"}, Paths: []string{"/blocked"}, Blocked: true}}}}}
 	m.approvalPart(a, false)
 	var text strings.Builder
 	for range 20 {

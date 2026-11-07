@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
@@ -47,7 +47,7 @@ func toolConfigDir() (string, error) {
 // ToolFilePath is where one tool file's copy lives, whether or not it is there
 // yet. Empty when there is no config directory to resolve it against, which the
 // picker draws as simply not saying.
-func (d *apiDataSource) ToolFilePath(file tui.ToolFile) string {
+func (d *apiDataSource) ToolFilePath(file console.ToolFile) string {
 	path, err := toolFilePath(file.Tool, file.Name)
 	if err != nil {
 		return ""
@@ -109,7 +109,7 @@ func ensureToolFile(tool string, file tools.File) (string, string, error) {
 // disk. Editing it directly means an editor that reopens where you left off, a
 // $VISUAL of "code --wait" that opens the actual file in your actual project
 // window, and a crash that loses nothing.
-func (d *apiDataSource) EditToolFile(ctx context.Context, file tui.ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error) {
+func (d *apiDataSource) EditToolFile(ctx context.Context, file console.ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error) {
 	path, before, err := ensureToolFile(file.Tool, tools.File{Name: file.Name, Home: file.Home, Default: file.Default})
 	if err != nil {
 		return false, err

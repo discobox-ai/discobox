@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -15,7 +16,7 @@ func routesFixture(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.projectSecrets = []Secret{
+	ds.projectSecrets = []console.Secret{
 		{ID: "sec_routed", Name: "copilot", Type: "token", MaxTTL: time.Hour, Routes: []secretroute.Route{
 			{Hosts: []string{"githubcopilot.com"}},
 			{Hosts: []string{"githubcopilot.com"}, Paths: []string{"/mcp"}, Blocked: true},

@@ -6,16 +6,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 )
-
-// CredentialUI asks on the active frontend and temporarily returns terminal
-// ownership to Git when no credential helper answers.
-type CredentialUI struct {
-	Report  func(string)
-	Confirm func(context.Context, string) (bool, error)
-	Run     func(context.Context, *exec.Cmd) error
-}
 
 type credentialQuestion struct {
 	remote string
@@ -30,8 +23,8 @@ type credentialProcess struct {
 	answer  chan error
 }
 
-func (n narration) credentials() CredentialUI {
-	return CredentialUI{
+func (n narration) credentials() console.CredentialUI {
+	return console.CredentialUI{
 		Report: n.report,
 		Confirm: func(ctx context.Context, remote string) (bool, error) {
 			answer := make(chan credentialAnswer, 1)

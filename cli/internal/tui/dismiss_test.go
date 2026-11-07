@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // Dismissing a band shows what was queued behind it, not an empty header: the
@@ -14,7 +15,7 @@ import (
 func TestDismissingABandShowsTheOneBehindIt(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
-	m.setCredentialRequests([]CredentialRequest{waitingRequest()})
+	m.setCredentialRequests([]console.CredentialRequest{waitingRequest()})
 
 	m.dismissBanner()
 	if got := m.bannerShowing(); got != bannerCredential {
@@ -35,14 +36,14 @@ func TestADismissedRefusalComesBackOnlyWhenItHappensAgain(t *testing.T) {
 	m, _ := workspaceWithRejection(t, rejection)
 	m.dismissBanner()
 
-	m.setSecretRejections([]SecretRejection{rejection})
+	m.setSecretRejections([]console.SecretRejection{rejection})
 	if got := m.bannerShowing(); got != bannerNone {
 		t.Fatalf("banner = %v, want the same refusal to stay dismissed across a poll", got)
 	}
 
 	again := rejection
 	again.FirstSeen = time.Now()
-	m.setSecretRejections([]SecretRejection{again})
+	m.setSecretRejections([]console.SecretRejection{again})
 	if got := m.bannerShowing(); got != bannerRejected {
 		t.Fatalf("banner = %v, want a refusal first seen since to show", got)
 	}
@@ -99,7 +100,7 @@ func TestAHarnessChangeQueuesBehindARequest(t *testing.T) {
 	m, _ := workspaceWithHarnessChanges(t)
 	req := waitingRequest()
 	req.SandboxID = m.paneBox.ID
-	m.setCredentialRequests([]CredentialRequest{req})
+	m.setCredentialRequests([]console.CredentialRequest{req})
 	if got := m.bannerShowing(); got != bannerCredential {
 		t.Fatalf("banner = %v, want the request over the harness change", got)
 	}
@@ -117,20 +118,20 @@ func TestADismissedRequestBandReturnsForANewRequest(t *testing.T) {
 	m.list.all[0].HarnessConfigPending, m.list.all[0].HarnessConfigCandidate = false, ""
 	first, second := waitingRequest(), waitingRequest()
 	first.ID, second.ID = "req_1", "req_2"
-	for _, req := range []*CredentialRequest{&first, &second} {
+	for _, req := range []*console.CredentialRequest{&first, &second} {
 		req.SandboxID = m.paneBox.ID
 	}
-	m.setCredentialRequests([]CredentialRequest{first, second})
+	m.setCredentialRequests([]console.CredentialRequest{first, second})
 	m.dismissBanner()
 
-	m.setCredentialRequests([]CredentialRequest{second})
+	m.setCredentialRequests([]console.CredentialRequest{second})
 	if got := m.bannerShowing(); got != bannerNone {
 		t.Fatalf("banner = %v, want a request already dismissed to stay dismissed", got)
 	}
 
 	third := second
 	third.ID = "req_3"
-	m.setCredentialRequests([]CredentialRequest{second, third})
+	m.setCredentialRequests([]console.CredentialRequest{second, third})
 	if got := m.bannerShowing(); got != bannerCredential {
 		t.Fatalf("banner = %v, want a new request to bring the band back", got)
 	}
@@ -159,7 +160,7 @@ func TestTheBandsCloseButtonDismissesIt(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.requests = []CredentialRequest{waitingRequest()}
+		ds.requests = []console.CredentialRequest{waitingRequest()}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the banner drawn", func() bool { return m.banner.live })
 
@@ -209,7 +210,7 @@ func TestTheRefusalKeyOpensItsRemedyFromAPane(t *testing.T) {
 		boxes := testSandboxes()
 		boxes[0].HarnessID = harnessRejection().HarnessConfigID
 		ds := newFakeSource(boxes...)
-		ds.rejections = []SecretRejection{harnessRejection()}
+		ds.rejections = []console.SecretRejection{harnessRejection()}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the refusal band", func() bool { return m.bannerShowing() == bannerRejected })
 		d.key("ctrl+a")
@@ -228,7 +229,7 @@ func TestASecondRefusalShowsPastADismissedFirst(t *testing.T) {
 
 	second := secretRejection()
 	second.SecretID, second.SecretName, second.FirstSeen = "sec_npm", "npm token", time.Now()
-	m.setSecretRejections([]SecretRejection{first, second})
+	m.setSecretRejections([]console.SecretRejection{first, second})
 	if got := m.bannerShowing(); got != bannerRejected {
 		t.Fatalf("banner = %v, want the second refusal shown past the dismissed first", got)
 	}
@@ -270,7 +271,7 @@ func TestTheDismissButtonIsOnlyItsCells(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
-		ds.requests = []CredentialRequest{waitingRequest()}
+		ds.requests = []console.CredentialRequest{waitingRequest()}
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the banner drawn", func() bool { return m.banner.live })
 

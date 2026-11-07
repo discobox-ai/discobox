@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // storedAnswerServer is a server whose discobox is not running: its reads are
@@ -171,10 +171,10 @@ func TestConsoleDataSourceReportsAStoredListingAsNotRunning(t *testing.T) {
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	app := storedAnswerServer(t, sandboxID, "stopped")
 	source := &apiDataSource{app: app, projectID: "project-1"}
-	if execs, err := source.Execs(t.Context(), sandboxID); !errors.Is(err, tui.ErrNotRunning) || len(execs) != 0 {
+	if execs, err := source.Execs(t.Context(), sandboxID); !errors.Is(err, console.ErrNotRunning) || len(execs) != 0 {
 		t.Fatalf("Execs = %v, %v; want tui.ErrNotRunning and no sessions", execs, err)
 	}
-	if services, err := source.Services(t.Context(), sandboxID); !errors.Is(err, tui.ErrNotRunning) || len(services) != 0 {
+	if services, err := source.Services(t.Context(), sandboxID); !errors.Is(err, console.ErrNotRunning) || len(services) != 0 {
 		t.Fatalf("Services = %v, %v; want tui.ErrNotRunning and no services", services, err)
 	}
 }

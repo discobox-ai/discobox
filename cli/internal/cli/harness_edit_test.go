@@ -14,7 +14,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 func editTestConfig() *apimodel.HarnessConfig {
@@ -37,8 +37,8 @@ func editTestConfig() *apimodel.HarnessConfig {
 func TestFindHarnessFileIsTheEffectiveFile(t *testing.T) {
 	cfg := editTestConfig()
 	file, ok := findHarnessFile(cfg, "settings.json")
-	if !ok || file.Source != tui.HarnessFileSaved || file.Content != "configured overlay" ||
-		len(file.Shadows) != 1 || file.Shadows[0] != tui.HarnessFileFromBundle {
+	if !ok || file.Source != console.HarnessFileSaved || file.Content != "configured overlay" ||
+		len(file.Shadows) != 1 || file.Shadows[0] != console.HarnessFileFromBundle {
 		t.Fatalf("findHarnessFile(settings.json) = %+v, %v; want the configured overlay over the bundle's", file, ok)
 	}
 	if _, ok := findHarnessFile(cfg, "missing"); ok {
@@ -46,8 +46,8 @@ func TestFindHarnessFileIsTheEffectiveFile(t *testing.T) {
 	}
 	cfg.FileOverrides = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{{Path: "settings.json", Content: "mine"}})
 	file, _ = findHarnessFile(cfg, "settings.json")
-	if file.Source != tui.HarnessFileOverride || file.Content != "mine" ||
-		len(file.Shadows) != 2 || file.Shadows[0] != tui.HarnessFileSaved {
+	if file.Source != console.HarnessFileOverride || file.Content != "mine" ||
+		len(file.Shadows) != 2 || file.Shadows[0] != console.HarnessFileSaved {
 		t.Fatalf("findHarnessFile(settings.json) = %+v; want the override over both", file)
 	}
 	if n := len(harnessEffectiveFiles(cfg)); n != 2 {

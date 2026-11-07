@@ -4,6 +4,7 @@ import (
 	"context"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // Saying what a slow operation is actually doing (ADR 0060).
@@ -169,7 +170,7 @@ func (m *Model) endNarration() {
 // It runs beside the attach rather than in front of it: the attach waits for
 // readiness on its own (ADR 0039) and this only says what that wait is for, so
 // a failure here costs a status line and never a terminal.
-func (m *Model) watchProvisioning(box Sandbox) tea.Cmd {
+func (m *Model) watchProvisioning(box console.Sandbox) tea.Cmd {
 	feed, next := m.narrate()
 	ctx, stop := context.WithCancel(m.ctx)
 	m.stopNarrating = stop

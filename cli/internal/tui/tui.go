@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // Run starts the launcher against the given data source and blocks until the
@@ -20,7 +21,7 @@ import (
 // and nil if the window was left before the create came back: the alternate
 // screen takes everything the window showed with it, so the command that opened
 // it is what is left to say which discobox it was.
-func Run(ctx context.Context, ds DataSource, options ...Option) (*Sandbox, error) {
+func Run(ctx context.Context, ds console.DataSource, options ...Option) (*console.Sandbox, error) {
 	model := New(ctx, ds, options...)
 	// For as long as the window is open: see Model.clipWatch.
 	model.clipWatch = clipwatch.Start(ctx)

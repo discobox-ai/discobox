@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 )
 
@@ -47,17 +47,17 @@ func TestPaneTerminalsE2E(t *testing.T) {
 	}
 	ds := &apiDataSource{app: app, client: client, projectID: app.projectID}
 
-	for _, action := range []tui.Interaction{tui.InteractShell, tui.InteractAttach} {
+	for _, action := range []console.Interaction{console.InteractShell, console.InteractAttach} {
 		t.Run(string(action), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
 
-			var term tui.Terminal
+			var term console.Terminal
 			var err error
-			if action == tui.InteractShell {
+			if action == console.InteractShell {
 				_, term, err = ds.NewShell(ctx, sandboxID, 80, 24)
 			} else {
-				term, err = ds.OpenExec(ctx, sandboxID, tui.ExecPrimary, 80, 24)
+				term, err = ds.OpenExec(ctx, sandboxID, console.ExecPrimary, 80, 24)
 			}
 			if err != nil {
 				t.Fatalf("open: %v", err)
@@ -81,7 +81,7 @@ func TestPaneTerminalsE2E(t *testing.T) {
 // readFor accumulates everything the terminal says within a window. It is a
 // window rather than a first-byte wait because a shell's own echo arrives ahead
 // of its prompt, and one byte of echo is not proof that anything is running.
-func readFor(ctx context.Context, term tui.Terminal, within time.Duration) string {
+func readFor(ctx context.Context, term console.Terminal, within time.Duration) string {
 	chunks := make(chan []byte, 64)
 	go func() {
 		defer close(chunks)

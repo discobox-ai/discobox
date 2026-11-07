@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The chip strip always names the resolved harness.
@@ -167,7 +169,7 @@ func TestNoSourceAsksForTheFlagAndNoDirectory(t *testing.T) {
 	if cmd := m.opts.command("do a thing"); !strings.Contains(cmd, "discobox run --no-source") || strings.Contains(cmd, "run .") {
 		t.Fatalf("command = %q, want --no-source in SOURCE's place", cmd)
 	}
-	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, noSourceChoice) {
+	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, console.NoSourceChoice) {
 		t.Fatalf("chips = %q, want the strip to say there is no source", chips)
 	}
 }
@@ -200,8 +202,8 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 
 	m.opts.chooseSource("/src/obot")
 	m.followSource()
-	if m.list.folder.key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the list to follow the source", m.list.folder.label)
+	if m.list.folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the list to follow the source", m.list.folder.Label)
 	}
 	// Followed there, the source is the folder again and emits no -C: the
 	// header already says where the next discobox is cut from.
@@ -211,8 +213,8 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 
 	m.opts.chooseSource("https://github.com/acme/foo")
 	m.followSource()
-	if m.list.folder.key != testKey("https://github.com/acme/foo") {
-		t.Fatalf("folder = %q, want the repository URL's own", m.list.folder.label)
+	if m.list.folder.Key != testKey("https://github.com/acme/foo") {
+		t.Fatalf("folder = %q, want the repository URL's own", m.list.folder.Label)
 	}
 	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "https://github.com/acme/foo" {
 		t.Fatalf("source = %q, want the remote repository", req.Source)
@@ -220,8 +222,8 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 
 	m.opts.chooseSource(sourceNone)
 	m.followSource()
-	if m.list.folder.key != m.session.OriginKey {
-		t.Fatalf("folder = %q, want the window's own: a sourceless discobox is filed under this machine", m.list.folder.label)
+	if m.list.folder.Key != m.session.OriginKey {
+		t.Fatalf("folder = %q, want the window's own: a sourceless discobox is filed under this machine", m.list.folder.Label)
 	}
 }
 
@@ -232,10 +234,10 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 func TestTheSourceRowOffersARepositoryOnce(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(
-		cutFrom(Sandbox{ID: "sbx_a", Name: "a", State: StateRunning}, "https://github.com/acme/foo.git"),
-		cutFrom(Sandbox{ID: "sbx_b", Name: "b", State: StateRunning}, "https://github.com/acme/foo"),
-		cutFrom(Sandbox{ID: "sbx_c", Name: "c", State: StateRunning}, "git@github.com:Acme/Foo.git"),
-		cutFrom(Sandbox{ID: "sbx_d", Name: "d", State: StateRunning}, "https://github.com/acme/foo@dev"),
+		cutFrom(console.Sandbox{ID: "sbx_a", Name: "a", State: console.StateRunning}, "https://github.com/acme/foo.git"),
+		cutFrom(console.Sandbox{ID: "sbx_b", Name: "b", State: console.StateRunning}, "https://github.com/acme/foo"),
+		cutFrom(console.Sandbox{ID: "sbx_c", Name: "c", State: console.StateRunning}, "git@github.com:Acme/Foo.git"),
+		cutFrom(console.Sandbox{ID: "sbx_d", Name: "d", State: console.StateRunning}, "https://github.com/acme/foo@dev"),
 	))
 	source := m.opts.opts[optSource]
 	var repos []string
@@ -272,13 +274,13 @@ func hasSourceValue(o *option, want string) bool {
 // source rather than carrying the "no source" sentinel into what it draws.
 func TestASourcelessFolderElsewhereCutsFromTheWindowsOwn(t *testing.T) {
 	t.Parallel()
-	far := Sandbox{ID: "sbx_far", Name: "far", State: StateRunning, HasRuntime: true,
+	far := console.Sandbox{ID: "sbx_far", Name: "far", State: console.StateRunning, HasRuntime: true,
 		OriginKey: farHostKey, OriginHostID: farHostID}
 	m := newTestModel(t, newFakeSource(append(testSandboxes(), far)...))
 
 	chosen := false
 	for _, f := range m.list.folders() {
-		if f.key == farHostKey {
+		if f.Key == farHostKey {
 			m.applyFilter(m.list.server, f, m.list.tags)
 			chosen = true
 		}
@@ -298,8 +300,8 @@ func TestASourcelessFolderElsewhereCutsFromTheWindowsOwn(t *testing.T) {
 }
 
 // testPools are a project's pools with the second one its default.
-func testPools() []Pool {
-	return []Pool{
+func testPools() []console.Pool {
+	return []console.Pool{
 		{ID: "pool-arm", Name: "arm", Platform: "linux/arm64"},
 		{ID: "pool-local", Name: "local", Platform: "linux/amd64", Default: true},
 		{ID: "pool-gpu", Name: "gpu"},
@@ -340,7 +342,7 @@ func TestThePoolRowSendsTheChosenPool(t *testing.T) {
 	}
 
 	// A refresh keeps the choice where it is, however the listing reorders.
-	m.opts.setPools([]Pool{testPools()[2], testPools()[1], testPools()[0]})
+	m.opts.setPools([]console.Pool{testPools()[2], testPools()[1], testPools()[0]})
 	if got := m.opts.opts[optPool].selected(); got != "arm" {
 		t.Fatalf("after a refresh the row is on %q, want arm", got)
 	}
@@ -350,8 +352,8 @@ func TestThePoolRowSendsTheChosenPool(t *testing.T) {
 // can say that picks one of them.
 func TestASharedPoolNameIsSentAsItsID(t *testing.T) {
 	t.Parallel()
-	o := newOptions(Session{Directory: "/src"})
-	o.setPools([]Pool{{ID: "p1", Name: "same", Default: true}, {ID: "p2", Name: "same"}})
+	o := newOptions(console.Session{Directory: "/src"})
+	o.setPools([]console.Pool{{ID: "p1", Name: "same", Default: true}, {ID: "p2", Name: "same"}})
 	if got := o.opts[optPool].values; !slices.Equal(got, []string{"", "p2"}) {
 		t.Fatalf("values = %q, want the second pool by ID", got)
 	}
@@ -362,8 +364,8 @@ func TestASharedPoolNameIsSentAsItsID(t *testing.T) {
 // create meets the server's answer about it.
 func TestARequestedPoolSurvivesTheListing(t *testing.T) {
 	t.Parallel()
-	o := newOptions(Session{Directory: "/src"})
-	o.prefill(RunRequest{Pool: "pool-gpu"})
+	o := newOptions(console.Session{Directory: "/src"})
+	o.prefill(console.RunRequest{Pool: "pool-gpu"})
 	o.setPools(testPools())
 	if got := o.opts[optPool].display(); got != "gpu" {
 		t.Fatalf("row shows %q, want the pool named by ID", got)
@@ -372,8 +374,8 @@ func TestARequestedPoolSurvivesTheListing(t *testing.T) {
 		t.Fatalf("Pool = %q, want gpu", req.Pool)
 	}
 
-	o = newOptions(Session{Directory: "/src"})
-	o.prefill(RunRequest{Pool: "elsewhere"})
+	o = newOptions(console.Session{Directory: "/src"})
+	o.prefill(console.RunRequest{Pool: "elsewhere"})
 	o.setPools(testPools())
 	if req := o.request("", "/src"); req.Pool != "elsewhere" {
 		t.Fatalf("Pool = %q, want the unlisted pool kept", req.Pool)
@@ -405,7 +407,7 @@ func TestThePoolRowIsHiddenWithNothingToChoose(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	ds.session.Servers = []string{"alpha", "beta"}
-	ds.pools = []Pool{{ID: "pool-local", Name: "local", Default: true}}
+	ds.pools = []console.Pool{{ID: "pool-local", Name: "local", Default: true}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("ctrl+o"))
 	if view := m.opts.view(m.st, &m.zones, 120, ""); strings.Contains(view, "Pool") {
@@ -431,16 +433,16 @@ func TestThePoolRowIsHiddenWithNothingToChoose(t *testing.T) {
 // of it — the default named outright included, which asks for no flag.
 func TestARequestedPoolAfterTheListingIsTheListedPool(t *testing.T) {
 	t.Parallel()
-	o := newOptions(Session{Directory: "/src"})
+	o := newOptions(console.Session{Directory: "/src"})
 	o.setPools(testPools())
-	o.prefill(RunRequest{Pool: "pool-gpu"})
+	o.prefill(console.RunRequest{Pool: "pool-gpu"})
 	if row := o.opts[optPool]; len(row.choices) != 3 || row.display() != "gpu" {
 		t.Fatalf("row = %q on %q, want the listed gpu and no copy of it", row.choices, row.display())
 	}
 
-	o = newOptions(Session{Directory: "/src"})
+	o = newOptions(console.Session{Directory: "/src"})
 	o.setPools(testPools())
-	o.prefill(RunRequest{Pool: "local"})
+	o.prefill(console.RunRequest{Pool: "local"})
 	if req := o.request("", "/src"); req.Pool != "" || len(o.opts[optPool].choices) != 3 {
 		t.Fatalf("Pool = %q with choices %q, want the default and no flag", req.Pool, o.opts[optPool].choices)
 	}
@@ -449,7 +451,7 @@ func TestARequestedPoolAfterTheListingIsTheListedPool(t *testing.T) {
 // A pool renamed between listings is still the pool that was chosen.
 func TestARenamedPoolStaysChosen(t *testing.T) {
 	t.Parallel()
-	o := newOptions(Session{Directory: "/src"})
+	o := newOptions(console.Session{Directory: "/src"})
 	o.setPools(testPools())
 	o.opts[optPool].idx = 1 // arm
 	renamed := testPools()

@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/termpane"
 )
 
@@ -66,7 +67,7 @@ const toolsTitle = "Tools"
 // came back, or why nothing did. It is kept across opens, so reopening the
 // picker draws the last answer while the next one is on its way.
 type resolvedTools struct {
-	tools []Tool
+	tools []console.Tool
 	err   string
 }
 
@@ -80,8 +81,8 @@ func toolRowKey(id string) string { return "tool:" + id }
 //
 // A catalog can hold a declaration the merge refused beside the tool it tried
 // to replace, under the same id (ADR 0125 §5). The one that runs is the tool.
-func (m *Model) toolByID(id string) (Tool, bool) {
-	var refused *Tool
+func (m *Model) toolByID(id string) (console.Tool, bool) {
+	var refused *console.Tool
 	catalog := m.toolCatalogs[m.boxRef(m.currentBox())].tools
 	for i, t := range catalog {
 		if t.ID != id {
@@ -97,7 +98,7 @@ func (m *Model) toolByID(id string) (Tool, bool) {
 	if refused != nil {
 		return *refused, true
 	}
-	return Tool{}, false
+	return console.Tool{}, false
 }
 
 // toolKeys decides which tools get the keys they ask for on a card whose other
@@ -107,7 +108,7 @@ func (m *Model) toolByID(id string) (Tool, bool) {
 // discobox's to change (ADR 0125 §5); then first come, first served, in the
 // catalog's order. A tool that loses its key is still on the card, reached by
 // moving to it.
-func toolKeys(catalog []Tool, taken ...string) map[string]string {
+func toolKeys(catalog []console.Tool, taken ...string) map[string]string {
 	used := map[string]bool{}
 	for _, key := range taken {
 		used[key] = true
@@ -129,14 +130,14 @@ func toolKeys(catalog []Tool, taken ...string) map[string]string {
 // declaration that cannot run with the reason, except one the merge refused
 // beside a tool that does run under its id — that row would be a second entry
 // for the same tool, and choosing either would mean the one that runs.
-func pickerTools(catalog []Tool) []Tool {
+func pickerTools(catalog []console.Tool) []console.Tool {
 	runs := map[string]bool{}
 	for _, t := range catalog {
 		if t.Problem == "" {
 			runs[t.ID] = true
 		}
 	}
-	out := make([]Tool, 0, len(catalog))
+	out := make([]console.Tool, 0, len(catalog))
 	for _, t := range catalog {
 		if t.Problem != "" && runs[t.ID] {
 			continue
@@ -152,7 +153,7 @@ func pickerTools(catalog []Tool) []Tool {
 // could not run a tool from there cannot from here either.
 func (m *Model) runToolWhenKnown(id string) tea.Cmd {
 	box := m.currentBox()
-	if why := attachWhy(true, []Sandbox{box}); why != "" {
+	if why := attachWhy(true, []console.Sandbox{box}); why != "" {
 		return status("%s: %s", id, why)
 	}
 	// A lookup that failed is not a known catalog: asking again is how the
@@ -167,19 +168,19 @@ func (m *Model) runToolWhenKnown(id string) tea.Cmd {
 
 // toolWant is a tool asked for by id before its discobox's catalog was known.
 type toolWant struct {
-	box boxRef
+	box console.BoxRef
 	id  string
 }
 
 // toolsMsg is one discobox's catalog, looked up.
 type toolsMsg struct {
-	box   boxRef
-	tools []Tool
+	box   console.BoxRef
+	tools []console.Tool
 	err   error
 }
 
 // resolveTools starts one discobox's catalog lookup.
-func (m *Model) resolveTools(box Sandbox) tea.Cmd {
+func (m *Model) resolveTools(box console.Sandbox) tea.Cmd {
 	if box.ID == "" {
 		return nil
 	}
@@ -196,7 +197,7 @@ func (m *Model) resolveTools(box Sandbox) tea.Cmd {
 // addressesResolved does.
 func (m *Model) toolsResolved(msg toolsMsg) tea.Cmd {
 	if m.toolCatalogs == nil {
-		m.toolCatalogs = map[boxRef]resolvedTools{}
+		m.toolCatalogs = map[console.BoxRef]resolvedTools{}
 	}
 	entry := resolvedTools{tools: msg.tools}
 	if msg.err != nil {
@@ -242,7 +243,7 @@ type openToolsMsg struct{}
 // running it, the way the action menu does.
 type runToolMsg struct {
 	id  string
-	box boxRef
+	box console.BoxRef
 }
 
 // toolFilesMsg is the picker's second action on the highlighted row: show that
@@ -250,16 +251,16 @@ type runToolMsg struct {
 // dialog closes over the model by value.
 type toolFilesMsg struct {
 	id  string
-	box boxRef
+	box console.BoxRef
 }
 
 // toolFileMsg is the file chosen out of that list, on its way to $EDITOR.
-type toolFileMsg struct{ file ToolFile }
+type toolFileMsg struct{ file console.ToolFile }
 
 // addressesMsg is one discobox's ssh and git addresses, looked up.
 type addressesMsg struct {
-	box  boxRef
-	addr Addresses
+	box  console.BoxRef
+	addr console.Addresses
 	err  error
 }
 
@@ -270,7 +271,7 @@ type copyAddressMsg struct{ text string }
 
 // toolFileDoneMsg is what came back from the editor.
 type toolFileDoneMsg struct {
-	file    ToolFile
+	file    console.ToolFile
 	changed bool
 	err     error
 }
@@ -280,8 +281,8 @@ type toolFileDoneMsg struct {
 type toolTermMsg struct {
 	gen  int
 	id   string
-	exec Exec
-	term Terminal
+	exec console.Exec
+	term console.Terminal
 	err  error
 	// show is whether this tool should take the screen when it arrives. The
 	// picker's do; the ones the poll picks up arrive minimized, as tabs after
@@ -294,7 +295,7 @@ type toolTermMsg struct {
 // on: the discobox's tools, and its addresses. Every tool is offered whatever
 // is running: the row says which are up, and choosing one is "show me that",
 // not "start another".
-func (m *Model) openTools(box Sandbox) tea.Cmd {
+func (m *Model) openTools(box console.Sandbox) tea.Cmd {
 	m.recordConsoleUse("tools")
 	// A receipt belongs to the press that earned it, not to the card: reopening
 	// the picker must not greet a reader with a "copied" from last time.
@@ -309,7 +310,7 @@ func (m *Model) openTools(box Sandbox) tea.Cmd {
 // toolsDialog is the picker's card, built from what is known right now. It is
 // separate from openTools because the addresses arrive after the card does, and
 // the card is then built again rather than patched — see addressesResolved.
-func (m *Model) toolsDialog(box Sandbox) *dialog {
+func (m *Model) toolsDialog(box console.Sandbox) *dialog {
 	ref := m.boxRef(box)
 	resolved, known := m.toolCatalogs[m.boxRef(box)]
 	catalog := pickerTools(resolved.tools)
@@ -324,8 +325,8 @@ func (m *Model) toolsDialog(box Sandbox) *dialog {
 		}
 		row := action{
 			key: toolRowKey(t.ID), press: keys[t.ID], label: t.Label, detail: detail,
-			enabled: box.attachable(),
-			why:     attachWhy(true, []Sandbox{box}),
+			enabled: box.Attachable(),
+			why:     attachWhy(true, []console.Sandbox{box}),
 		}
 		if t.Problem != "" {
 			row.enabled, row.why = false, t.Problem
@@ -341,7 +342,7 @@ func (m *Model) toolsDialog(box Sandbox) *dialog {
 	// An address is only worth printing for a discobox the config has a stanza
 	// for, which is the same boxes the tools apply to: an archived one is out
 	// of the listing the stanzas are rendered from.
-	addr, unreachable := m.addresses[m.boxRef(box)], attachWhy(true, []Sandbox{box})
+	addr, unreachable := m.addresses[m.boxRef(box)], attachWhy(true, []console.Sandbox{box})
 	ssh := addr.action(addressSSHKey, "ssh", addr.SSH, unreachable)
 	git := addr.action(addressGitKey, "git url", addr.Git, unreachable)
 	ssh.note, git.note = m.copiedNote(addr.SSH), m.copiedNote(addr.Git)
@@ -396,7 +397,7 @@ func (m *Model) toolsDialog(box Sandbox) *dialog {
 // keeps reopening the picker from starting a second one — so it is the presence
 // of the entry, not its contents, that means "already asked".
 type resolvedAddresses struct {
-	Addresses
+	console.Addresses
 	err string
 }
 
@@ -415,7 +416,7 @@ func (r resolvedAddresses) action(key, label, value, unreachable string) action 
 		row.detail, row.enabled = value, true
 	case r.err != "":
 		row.why = r.err
-	case r.Addresses == (Addresses{}):
+	case r.Addresses == (console.Addresses{}):
 		row.why = "looking it up…"
 	default:
 		// Resolved, and this half of it came back empty: a discobox whose
@@ -432,12 +433,12 @@ func (r resolvedAddresses) action(key, label, value, unreachable string) action 
 // What it failed at — writing an ssh config, reaching the server — is the kind
 // of thing that stops being true, and the retry is a person reopening the card
 // to see whether it has.
-func (m *Model) resolveAddresses(box Sandbox) tea.Cmd {
-	if box.ID == "" || !box.attachable() {
+func (m *Model) resolveAddresses(box console.Sandbox) tea.Cmd {
+	if box.ID == "" || !box.Attachable() {
 		return nil
 	}
 	if m.addresses == nil {
-		m.addresses = map[boxRef]resolvedAddresses{}
+		m.addresses = map[console.BoxRef]resolvedAddresses{}
 	}
 	if known, asked := m.addresses[m.boxRef(box)]; asked && known.err == "" {
 		return nil
@@ -463,7 +464,7 @@ func (m *Model) addressesResolved(msg addressesMsg) tea.Cmd {
 		entry.err = msg.err.Error()
 	}
 	if m.addresses == nil {
-		m.addresses = map[boxRef]resolvedAddresses{}
+		m.addresses = map[console.BoxRef]resolvedAddresses{}
 	}
 	m.addresses[msg.box] = entry
 
@@ -569,7 +570,7 @@ func (m *Model) openToolFiles(id string) tea.Cmd {
 // discobox, and where the copy being edited actually is — the second because a
 // file you can only reach through this window is one you cannot put in your
 // dotfiles.
-func (m *Model) toolFileDetail(file ToolFile) string {
+func (m *Model) toolFileDetail(file console.ToolFile) string {
 	detail := "→ ~/" + file.Home
 	if path := m.ds.ToolFilePath(file); path != "" {
 		detail += "  ·  " + path
@@ -579,7 +580,7 @@ func (m *Model) toolFileDetail(file ToolFile) string {
 
 // editToolFile hands the terminal to $EDITOR on the local copy, creating it
 // from the tool's default when there is none yet.
-func (m *Model) editToolFile(file ToolFile) tea.Cmd {
+func (m *Model) editToolFile(file console.ToolFile) tea.Cmd {
 	m.busy = "editing " + file.Name + "…"
 	var changed bool
 	run := &harnessExec{
@@ -647,7 +648,7 @@ func (m *Model) runTool(id string) tea.Cmd {
 // it is opened — for the window when it arrives showing, which is the only way
 // this is asked for — for the same reason every other pane is: the size is
 // what the far end is told.
-func (m *Model) newTool(t Tool, show bool) tea.Cmd {
+func (m *Model) newTool(t console.Tool, show bool) tea.Cmd {
 	if m.toolOpening == nil {
 		m.toolOpening = map[string]bool{}
 	}
@@ -665,7 +666,7 @@ func (m *Model) newTool(t Tool, show bool) tea.Cmd {
 // hostToolRanMsg is what came of handing a sandbox to a host tool.
 type hostToolRanMsg struct {
 	name string
-	tool Tool
+	tool console.Tool
 	err  error
 }
 
@@ -676,7 +677,7 @@ type hostToolRanMsg struct {
 // window, and the CLI's part is over as soon as it has been told which host to
 // connect to — so this is a request that returns, like a verb, rather than
 // something that owns the screen.
-func (m *Model) runHostTool(box Sandbox, t Tool) tea.Cmd {
+func (m *Model) runHostTool(box console.Sandbox, t console.Tool) tea.Cmd {
 	m.busy = t.ID + "…"
 	ctx, ds, id, name := m.ctx, m.ds.ForServer(box.Server), box.ID, box.Name
 	return func() tea.Msg {
@@ -700,7 +701,7 @@ func (m *Model) hostToolRan(msg hostToolRanMsg) tea.Cmd {
 // openToolExec attaches to a tool session the poll found already running: this
 // discobox's diff, left open by a window that has since exited, or by this one
 // before it was restarted.
-func (m *Model) openToolExec(gen int, exec Exec) tea.Cmd {
+func (m *Model) openToolExec(gen int, exec console.Exec) tea.Cmd {
 	if m.toolOpening == nil {
 		m.toolOpening = map[string]bool{}
 	}
@@ -752,7 +753,7 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 		id:      m.nextPaneID,
 		term:    termpane.New(m.paneOptions(false)...),
 		stream:  msg.term,
-		action:  Interaction(label),
+		action:  console.Interaction(label),
 		sandbox: m.paneBox,
 		execID:  msg.exec.ID,
 		title:   label,
@@ -822,7 +823,7 @@ func (m *Model) minimizeTool() tea.Cmd {
 // toolExec reports whether a session is a tool's. It is the exec's own label
 // that answers, so every window agrees — see ADR 26-08-27-302 on tool sessions — and it
 // is checked before the terminal/shell question, because a tool is neither.
-func toolExec(exec Exec) bool { return exec.Tool != "" }
+func toolExec(exec console.Exec) bool { return exec.Tool != "" }
 
 // toolControls is the tool window's chrome: `[-]` puts it away and `[x]` ends
 // it, set into the right end of its top border the way a column's maximize

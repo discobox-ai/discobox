@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -15,21 +16,21 @@ import (
 
 var ghCommand = []string{"gh", "auth", "token"}
 
-func refreshRequest() CredentialRequest {
-	return CredentialRequest{
+func refreshRequest() console.CredentialRequest {
+	return console.CredentialRequest{
 		ID:        "sreq_refresh",
 		SandboxID: "sbx_one",
 		Name:      "github",
 		Created:   time.Date(2026, 8, 7, 11, 58, 0, 0, time.UTC),
-		Refresh:   &RefreshAsk{SecretID: "sec_gh", Cause: "stale"},
+		Refresh:   &console.RefreshAsk{SecretID: "sec_gh", Cause: "stale"},
 	}
 }
 
 func sourceWithRefresh(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{refreshRequest()}
-	ds.projectSecrets = []Secret{{
+	ds.requests = []console.CredentialRequest{refreshRequest()}
+	ds.projectSecrets = []console.Secret{{
 		ID: "sec_gh", Name: "github", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}},
 		RefreshCommand: ghCommand, ValueTTL: 5 * time.Minute,
 	}}
@@ -81,7 +82,7 @@ func TestRunOnceRenewsWithTheCommandAndRemembersNothing(t *testing.T) {
 	// The next ask for the same token is a person's to answer again.
 	next := refreshRequest()
 	next.ID = "sreq_refresh_2"
-	send(t, m, credentialsLoadedMsg{requests: []CredentialRequest{next}})
+	send(t, m, credentialsLoadedMsg{requests: []console.CredentialRequest{next}})
 	if len(ds.renewals) != 1 {
 		t.Fatalf("renewals = %#v, want the second ask left waiting", ds.renewals)
 	}
@@ -95,7 +96,7 @@ func TestRunForTheSessionAnswersTheNextAskUnprompted(t *testing.T) {
 
 	next := refreshRequest()
 	next.ID = "sreq_refresh_2"
-	send(t, m, credentialsLoadedMsg{requests: []CredentialRequest{next}})
+	send(t, m, credentialsLoadedMsg{requests: []console.CredentialRequest{next}})
 	if len(ds.renewals) != 2 {
 		t.Fatalf("renewals = %#v, want the second ask answered by the session", ds.renewals)
 	}
@@ -120,7 +121,7 @@ func TestAnEditedCommandIsNotCoveredByTheSession(t *testing.T) {
 	ds.mu.Unlock()
 	next := refreshRequest()
 	next.ID = "sreq_refresh_2"
-	send(t, m, credentialsLoadedMsg{requests: []CredentialRequest{next}})
+	send(t, m, credentialsLoadedMsg{requests: []console.CredentialRequest{next}})
 	if len(ds.renewals) != 1 {
 		t.Fatalf("renewals = %#v, want the edited command left to a person", ds.renewals)
 	}
@@ -222,7 +223,7 @@ func TestAValueLifetimeCanBeChosenAndChanged(t *testing.T) {
 		t.Fatalf("value lifetime = %v, want the hour chosen", got)
 	}
 
-	secret := Secret{ID: "sec_gc", Name: "gcloud", Type: "token", RefreshCommand: []string{"gcloud", "auth", "print-access-token"}, ValueTTL: time.Hour}
+	secret := console.Secret{ID: "sec_gc", Name: "gcloud", Type: "token", RefreshCommand: []string{"gcloud", "auth", "print-access-token"}, ValueTTL: time.Hour}
 	drain(t, m, m.editSecretForm("", secret), 0)
 	if m.dialog.form.chosen("lasts") != "3600" {
 		t.Fatalf("edit card opens on %q, want the hour it has", m.dialog.form.chosen("lasts"))
@@ -252,8 +253,8 @@ func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
 	}
 	send(t, m, keyPress("esc"))
 
-	secret := Secret{ID: "sec_bx", Name: "boxd", Type: "exchange", Routes: []secretroute.Route{{Hosts: []string{"boxd.sh"}}},
-		Exchange: &SecretExchange{URL: "https://app.boxd.sh/api/v1/auth/token", Fields: []string{"api_key", "org"}}}
+	secret := console.Secret{ID: "sec_bx", Name: "boxd", Type: "exchange", Routes: []secretroute.Route{{Hosts: []string{"boxd.sh"}}},
+		Exchange: &console.SecretExchange{URL: "https://app.boxd.sh/api/v1/auth/token", Fields: []string{"api_key", "org"}}}
 	drain(t, m, m.editSecretForm("", secret), 0)
 	f := m.dialog.form
 	if f.chosen("kind") != "exchange" {
@@ -282,7 +283,7 @@ func TestASecretFromACommandIsNamedByItAndNotOfferedTwice(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
-	ds.projectSecrets = append(ds.projectSecrets, Secret{
+	ds.projectSecrets = append(ds.projectSecrets, console.Secret{
 		ID: "sec_ghcmd", Name: "github", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}}, RefreshCommand: ghCommand,
 	})
 	ds.mu.Unlock()
@@ -309,7 +310,7 @@ func TestARenewalThatLostTheRaceIsNotAFailure(t *testing.T) {
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
 	ds.mu.Lock()
-	ds.renewErr = ErrAlreadyAnswered
+	ds.renewErr = console.ErrAlreadyAnswered
 	ds.mu.Unlock()
 	refreshAnswer(t, m, "session")
 
