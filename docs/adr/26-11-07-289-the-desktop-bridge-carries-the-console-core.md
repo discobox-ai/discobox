@@ -1,7 +1,8 @@
 # 26-11-07-289 — The desktop bridge carries the console core
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-07
+- Accepted by the owner by merging #844, 2026-11-07
 - **Issue**: [#786](https://github.com/discobox-ai/discobox/issues/786) (epic), [#787](https://github.com/discobox-ai/discobox/issues/787)
 
 ## Context

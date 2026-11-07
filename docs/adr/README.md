@@ -81,11 +81,11 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [26-11-07-876](26-11-07-876-the-console-is-one-core-with-two-renderers.md) | The console is one core with two renderers | Proposed |
-| [26-11-07-983](26-11-07-983-discobox-desktop-downloads-its-app-and-serves-it-over-stdio.md) | `discobox desktop` downloads its app and serves it over stdio | Proposed |
-| [26-11-07-289](26-11-07-289-the-desktop-bridge-carries-the-console-core.md) | The desktop bridge carries the console core | Proposed |
-| [26-11-07-598](26-11-07-598-each-console-binds-commands-the-way-its-platform-does.md) | Each console binds commands the way its platform does | Proposed |
-| [26-11-07-363](26-11-07-363-the-desktop-keeps-the-console-identity-drawn-natively.md) | The desktop keeps the console's identity, drawn natively | Proposed |
+| [26-11-07-876](26-11-07-876-the-console-is-one-core-with-two-renderers.md) | The console is one core with two renderers | Accepted |
+| [26-11-07-983](26-11-07-983-discobox-desktop-downloads-its-app-and-serves-it-over-stdio.md) | `discobox desktop` downloads its app and serves it over stdio | Accepted |
+| [26-11-07-289](26-11-07-289-the-desktop-bridge-carries-the-console-core.md) | The desktop bridge carries the console core | Accepted |
+| [26-11-07-598](26-11-07-598-each-console-binds-commands-the-way-its-platform-does.md) | Each console binds commands the way its platform does | Accepted |
+| [26-11-07-363](26-11-07-363-the-desktop-keeps-the-console-identity-drawn-natively.md) | The desktop keeps the console's identity, drawn natively | Accepted |
 | [26-11-07-519](26-11-07-519-a-running-box-keeps-its-reconcile-failure-as-a-warning.md) | A running box keeps its reconcile failure as a warning | Accepted (supersedes 0034 §5's unconditional error-first precedence for a present, running sandbox; amends 26-10-29-316 §1 and 26-11-01-560 §2's event fields with `errorMessage`) |
 | [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) | Initial pool bootstrap waits on work evidence | Accepted (narrows 26-10-12-711 §6 and 0039 tier-1 stall rule for bounded initial-bootstrap operations; explicit-start and upgrade ceilings remain) |
 | [26-11-06-567](26-11-06-567-the-local-socket-follows-tmpdir-and-a-dev-shell-pins-its-address.md) | The local socket follows TMPDIR, and a development shell pins its address | Accepted (supersedes 26-11-04-074 §1 and 26-11-05-240; 26-11-04-074 §§2–4 remain) |
