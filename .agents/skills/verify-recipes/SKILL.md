@@ -295,6 +295,47 @@ dev pool's proxy unit by hand and run a stand-in edge inside a `-H shell` box:
   at start: append the edge cert to the bundle, restart
   `discobox-sandbox-agent.service`, then edit `credentialsUrl`.
 
+# Verifying the desktop app (`discobox desktop`, `desktop/`)
+
+The box has no cargo and no window system of its own, and this repository's
+flake has no Rust shell yet (#788). What worked: the `desktop` shell from the
+open Nix-shell PR (#847), unpacked out of the tree. It brings rustup (the
+toolchain `desktop/rust-toolchain.toml` names), the Wayland/X11 libraries and
+Mesa's software Vulkan (`$DISCOBOX_LAVAPIPE_ICD`). `Xvfb` is installed; `xwd`
+and ImageMagick come from `nix build --no-link --print-out-paths
+nixpkgs#xorg.xwd nixpkgs#imagemagick`.
+
+```bash
+git fetch https://github.com/discobox-ai/discobox pull/847/head:pr847
+mkdir -p $S/flake && git archive pr847 flake.nix flake.lock | tar -x -C $S/flake
+(cd $S/flake && git init -q && git add -A)          # a flake must be a git tree
+nix develop $S/flake#desktop --command go tool task build:desktop
+Xvfb :77 -screen 0 1600x1000x24 -nolisten tcp &
+nix develop $S/flake#desktop --command bash -c 'DISPLAY=:77 \
+  VK_ICD_FILENAMES="$DISCOBOX_LAVAPIPE_ICD" DISCOBOX_DESKTOP_DEBUG=1 \
+  ./build/discobox --server http://127.0.0.1:8080 desktop 2>$S/stderr.log'
+DISPLAY=:77 xwd -root -silent | magick xwd:- $S/shot.png   # what it drew
+```
+
+Once the repository's own flake has the shell, use `nix develop .#desktop`
+instead of the unpacked one.
+
+- `DISCOBOX_DESKTOP_DEBUG=1` logs every request and answer (`→ op …`, `← id …`)
+  to stderr, through the CLI's escaping. An idle list sends no request (the
+  listing is pushed); a right click on a row sends `actions`, a menu entry
+  `do`.
+- Drive it with `xdotool` (`mousemove X Y click 3`; keys after
+  `windowfocus` on `xdotool search --pid <app pid>`: there is no window
+  manager to give it focus). Ctrl+Shift+Q quits, and the CLI exits with it.
+- The app's environment is `/proc/<app pid>/environ`: no `DISCOBOX_*` but
+  `DISCOBOX_DESKTOP_*`. Plant a harmless `DISCOBOX_*` to see it dropped; a
+  planted `DISCOBOX_TOKEN` is also sent to the dev server by the CLI.
+- Attach, a new shell and End need a running box, so a dev pool that
+  bootstraps; the app alone runs without one (`cargo run --release` is the
+  mock).
+- `desktop/target` is gigabytes; `.dockerignore` keeps it out of the
+  root-context bundle builds.
+
 # Verifying a skill change (`.agents/skills`, discobox-ai/skills)
 
 The surface is an agent loading the skill. Install it the way

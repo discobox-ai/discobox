@@ -179,6 +179,13 @@ flowchart TD
   terminal from any stream; the CLI uses it. It depends on nothing else in
   this repository. See
   [`termpane/DESIGN.md`](termpane/DESIGN.md).
+- Desktop app: `desktop`, a Rust crate (not a Go module) on Rune that draws the
+  console natively. `discobox desktop` runs it as a child process and answers
+  its requests for the console's data over stdio, so it holds no credentials
+  and depends on no Go code; its spec (`desktop/src/spec.json`) is generated
+  from the CLI's `tui` package. The CLI side is in
+  [`cli/DESIGN.md`](cli/DESIGN.md); the app's own layout and what it does not
+  do yet are in [`desktop/README.md`](desktop/README.md).
 
 Pool-agent and sandbox-agent implementations cannot depend on packages under
 Go `internal/` outside their module. Provider implementations are part of the

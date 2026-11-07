@@ -14,6 +14,11 @@ Global review expectations:
   rewriting it. The move to `pkg/` missed `api/model/DESIGN.md`'s backticked
   `../../sandboxconfig/DESIGN.md`, and rewrote the GitHub labels
   `platform/windows` and `platform/macos` because they looked like paths.
+- A doc, README or skill names only commands, task targets, shells and
+  variables that exist in the commit it lands in; one that does not yet says
+  where it comes from and what to use until then. The desktop app's README,
+  then its verify recipe, both told readers to `nix develop .#desktop` before
+  the flake had that shell, and an agent follows a recipe literally.
 - Renaming an identifier a doc cites (a function, a type, a field): grep for
   the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
   comments, not only the Go callers the compiler finds. Renaming

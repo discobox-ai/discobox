@@ -34,6 +34,8 @@
 - `sandbox-agent`: nested Go module for the sandbox agent runtime environment, and the platform bundle's build context.
 - `access`: nested Go module for `discobox-access`, the in-sandbox client of the agent credentials protocol.
 - `termpane`: nested Go module; a reusable Bubble Tea component that draws a live terminal from any stream. No dependency on the rest of the repository.
+- `desktop`: the desktop app `discobox desktop` runs, a Rust crate on Rune;
+  `go tool task build:desktop` puts it beside `build/discobox`.
 - `pkg`: the root module's shared cross-module library packages (`pkg/execstream`,
   `pkg/agentcreds`, `pkg/sandboxconfig`, `pkg/sandboxuser`, `pkg/runcca`,
   `pkg/endpoint`, and more); see the package map in `DESIGN.md`. New shared

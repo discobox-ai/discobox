@@ -11,7 +11,7 @@ import (
 
 // The parity scenarios in testdata/parity are run by both consoles: here, with
 // each command's keys from this window's keymap in the spec, and by the desktop
-// app (console-rune) with its own. A scenario says what the workspace looks
+// app (desktop/) with its own. A scenario says what the workspace looks
 // like after each command, in terms both can answer, so the two are held to
 // one behavior while each keeps its platform's keys.
 

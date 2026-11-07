@@ -3459,6 +3459,24 @@ the newest one where the busy line goes.
 | `links.go` | where a pane's URLs and the header's links point, and opening one |
 | `util.go` | row helpers: padding, spreading, centering, fitting fields to a row |
 
+## The spec another console draws from
+
+The desktop app (`desktop/`) draws the console natively and reads what it
+looks like and what it can do from here: `Spec` (`spec.go`) exports the
+colours, the glyphs of states and agent reports, and every command with its
+keys for each frontend, and `ActionsFor` a box's actions menu with this
+window's rules and reasons. `discobox desktop` hands it to the app on `hello`;
+`desktop/src/spec.json`, which the app's mock runs with, is generated from it
+(`task generate`).
+
+`testdata/parity/*.json` are scenarios both consoles run, each with its own
+keys: `TestParityScenarios` here, `desktop/src/parity_tests.rs` there. A step
+names a command and what the workspace looks like after it, in terms both can
+answer.
+
+This is the prototype's arrangement: the spec moves to the console core, and
+the scenarios with it, when there is one (ADR 26-11-07-876).
+
 ## Looking at it without a terminal
 
 ```bash

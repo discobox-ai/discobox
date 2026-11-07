@@ -1,6 +1,6 @@
 {
   "name": "a shell opens beside the harness terminal, and the pane maximizes and restores",
-  "about": "Run by both consoles: cli/internal/tui/parity_test.go (keys from the spec's tui keymap) and console-rune (its desktop keymap). Each step is a command id from tui.Spec; expect is what the workspace looks like after it.",
+  "about": "Run by both consoles: cli/internal/tui/parity_test.go (keys from the spec's tui keymap) and desktop/src/parity_tests.rs (its desktop keymap). Each step is a command id from tui.Spec; expect is what the workspace looks like after it.",
   "attach": true,
   "steps": [
     {"command": "pane.newShell", "expect": {"shells": 1, "focus": "shells", "maximized": false}},
