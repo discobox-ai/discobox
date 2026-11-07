@@ -26,6 +26,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/health"
 	"github.com/discobox-ai/discobox/pkg/version"
 )
@@ -1796,6 +1797,7 @@ func TestServerShutdownFallsBackToDefaultHTTPWhenSocketMissing(t *testing.T) {
 		t.Fatalf("parse server URL: %v", err)
 	}
 	t.Setenv(serverEnv, "")
+	t.Setenv(endpoint.AddressEnv, "")
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Setenv("PORT", serverURL.Port())
 
