@@ -301,6 +301,7 @@ func sandboxEventData(sandbox *model.Sandbox, at time.Time) model.SandboxEventDa
 		State:        sandbox.State,
 		RuntimeState: sandbox.RuntimeState,
 		DisplayState: sandbox.DisplayState(),
+		ErrorMessage: sandbox.ErrorMessage,
 		// An empty map is no tags, as the listing serves it.
 		Tags: maps.Clone(sandbox.Tags),
 	}

@@ -81,7 +81,11 @@ are rows the store writes in the transaction of the change (`sandbox_events.go`)
   and purge cleanup. `created_by_sandbox_id` is projected too, and written only at
   create. `displayState` is `Sandbox.DisplayState` of the row, so its error
   and generations are read for it, and `UpdateSandbox`, their writer, notes
-  them.
+  them. Events also carry optional `errorMessage` (ADR 26-11-07-519): message
+  appearance, replacement and clearing produce updates with otherwise identical
+  state. Absence clears the previous snapshot's message. Startup backfill appends
+  current snapshots where old JSON lacks the recorded message, retaining history
+  and sequence numbers.
 - `Store.Transaction` records the batch just before the outermost transaction
   commits. Each noted sandbox is projected from the row as committed
   (`sandboxEventData`) and compared with its latest event, so a write that moved

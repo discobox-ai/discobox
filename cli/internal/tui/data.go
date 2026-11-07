@@ -235,12 +235,10 @@ type Sandbox struct {
 	// stream is measured against.
 	AgentObservedAt time.Time
 
-	// HasRuntime is the power axis, carried beside State because State
-	// collapses it. The server keeps existence and power as two fields
-	// (ADR 0034 §§1–2), and its displayState re-merges them error-first: a
-	// latched ErrorMessage reads `error` however healthily the container is
-	// running. That is the right thing to *draw* and the wrong thing to gate
-	// on, so the row keeps the second axis.
+	// HasRuntime records runtime presence, distinct from State, the server's
+	// composed display state. Running with a reconcile failure remains running
+	// with Message as a warning (ADR 26-11-07-519). Presence alone does not
+	// imply running and still matters for actions on stopped or failed boxes.
 	//
 	// It is true once the pool agent has observed a container for this box —
 	// running, stopped, or in transition. Absent is not `stopped`: it is a

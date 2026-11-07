@@ -91,6 +91,7 @@ type sandboxEventData struct {
 	DesiredState string               `json:"desiredState,omitempty"`
 	State        string               `json:"state,omitempty"`
 	RuntimeState string               `json:"runtimeState,omitempty"`
+	ErrorMessage *string              `json:"errorMessage,omitempty"`
 	Program      *sandboxEventProgram `json:"program,omitempty"`
 	// DisplayState, Tags and CreatedBySandboxID are ADR 26-11-01-560 §2's.
 	DisplayState       string            `json:"displayState,omitempty"`

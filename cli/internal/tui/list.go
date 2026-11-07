@@ -1295,7 +1295,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	name := s.Name
 	// Under the cursor the name gives way to what the state is about: the
 	// error a box settled on, or what a repair nobody typed is answering.
-	if (s.State == StateError || s.State == StateRepairing) && s.Message != "" && atCursor {
+	if (s.State == StateError || s.State == StateRepairing || s.State == StateRunning) && s.Message != "" && atCursor {
 		name = s.Message
 	} else if (s.Agent.State == programstatus.Blocked || s.Agent.State == programstatus.Error) && s.Agent.Msg != "" && atCursor {
 		// And to what an agent blocked on a person, or failed, said about it.
@@ -1388,6 +1388,9 @@ func (l *sandboxList) rowHead(st *styles, s Sandbox, atCursor bool) string {
 		// leaves the cell blank rather than closing it up, so the names stay
 		// in line.
 		head += l.stateStyle(st, s).Render(stateDot(s)) + " " + agentGlyph(st, s.Agent.State) + " "
+	}
+	if s.State == StateRunning && s.Message != "" {
+		head += st.statusWA.Render("⚠") + " "
 	}
 	return head
 }

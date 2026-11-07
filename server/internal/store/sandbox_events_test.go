@@ -598,3 +598,75 @@ func TestBackfillSandboxEventsUpdatesAStaleLatestEvent(t *testing.T) {
 		t.Fatalf("backfilled data = %+v, want its tags", data)
 	}
 }
+
+func TestSandboxEventsCarryReconcileWarnings(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, false)
+	createTestPool(t, s, "project-1", "pool-1")
+	box := &model.Sandbox{ID: "sandbox-warning", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "warning"}
+	box.DesiredState, box.State, box.RuntimeState = "present", "failed", "running"
+	if err := s.CreateSandbox(ctx, box); err != nil {
+		t.Fatal(err)
+	}
+	cursor := sandboxEvents(t, s, 0)[0].Seq
+	for _, message := range []string{"ensure failed", "ensure failed differently", ""} {
+		box.ErrorMessage = nil
+		if message != "" {
+			box.ErrorMessage = &message
+		}
+		if err := s.UpdateSandbox(ctx, box); err != nil {
+			t.Fatal(err)
+		}
+		events := sandboxEvents(t, s, cursor)
+		if len(events) != 1 || events[0].Type != model.SandboxEventUpdated {
+			t.Fatalf("message %q: events %+v", message, events)
+		}
+		data := eventData(t, events[0])
+		if data.State != "failed" || data.RuntimeState != "running" || data.DisplayState != "running" {
+			t.Fatalf("axes changed: %+v", data)
+		}
+		var wire map[string]any
+		if err := json.Unmarshal(events[0].Data, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if message == "" {
+			if _, ok := wire["errorMessage"]; ok {
+				t.Fatal("cleared error was not omitted")
+			}
+		} else if wire["errorMessage"] != message {
+			t.Fatalf("wire error: %+v", wire)
+		}
+		cursor = events[0].Seq
+		if err := s.UpdateSandbox(ctx, box); err != nil {
+			t.Fatal(err)
+		}
+		if events := sandboxEvents(t, s, cursor); len(events) != 0 {
+			t.Fatalf("unchanged warning emitted %+v", events)
+		}
+	}
+	// Old JSON is retained. Startup appends a snapshot carrying the current
+	// message even when all the existing fields and display state agree.
+	if err := db.Write.Model(&model.Sandbox{}).Where("id = ?", box.ID).UpdateColumn("error_message", "old ensure failure").Error; err != nil {
+		t.Fatal(err)
+	}
+	old := sandboxEvents(t, s, 0)
+	for range 2 {
+		if err := store.BackfillSandboxEvents(db.Write); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events := sandboxEvents(t, s, cursor)
+	if len(events) != 1 || events[0].Type != model.SandboxEventUpdated {
+		t.Fatalf("backfill: %+v", events)
+	}
+	data := eventData(t, events[0])
+	if data.ErrorMessage == nil || *data.ErrorMessage != "old ensure failure" || data.DisplayState != "running" {
+		t.Fatalf("backfilled %+v", data)
+	}
+	all := sandboxEvents(t, s, 0)
+	for i, event := range old {
+		if event.Seq != all[i].Seq || string(event.Data) != string(all[i].Data) {
+			t.Fatal("history was rewritten")
+		}
+	}
+}

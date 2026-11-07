@@ -47,6 +47,9 @@ type SandboxEventData struct {
 	// by the one rule (Sandbox.DisplayState), so no client combines them
 	// itself (ADR 26-11-01-560 §2).
 	DisplayState string `json:"displayState"`
+	// ErrorMessage is the recorded reconcile failure. Absence clears the
+	// previous snapshot's warning (ADR 26-11-07-519).
+	ErrorMessage *string `json:"errorMessage,omitempty"`
 	// Program is the primary session's program status, present only while
 	// the sandbox is running.
 	Program *SandboxEventProgram `json:"program,omitempty"`

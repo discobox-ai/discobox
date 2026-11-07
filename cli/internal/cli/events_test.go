@@ -154,3 +154,42 @@ func TestFollowSandboxEventsReportsARefusal(t *testing.T) {
 		t.Fatalf("asked %d times, want once", requests)
 	}
 }
+
+func TestSandboxEventJSONPreservesWarningSnapshots(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i, message := range []string{`,"errorMessage":"ensure failed"`, `,"errorMessage":"replacement failure"`, ``} {
+			fmt.Fprintf(w, "id: %d\nevent: sandbox.updated\ndata: {\"sandboxId\":\"sbx_a\",\"state\":\"failed\",\"displayState\":\"running\",\"runtimeState\":\"running\"%s}\n\n", i+1, message)
+		}
+	}))
+	defer server.Close()
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse, output: "json"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	_, err := app.readSandboxEvents(ctx, "proj_1", "", nil, func(event sandboxEvent) error { return app.writeSandboxEvent(cmd, event) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("output: %s", out.String())
+	}
+	for i, message := range []string{"ensure failed", "replacement failure", ""} {
+		var event struct {
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(lines[i]), &event); err != nil {
+			t.Fatal(err)
+		}
+		got, present := event.Data["errorMessage"]
+		if message == "" {
+			if present {
+				t.Fatal("cleared error remains")
+			}
+		} else if got != message {
+			t.Fatalf("error dropped: %s", lines[i])
+		}
+	}
+}

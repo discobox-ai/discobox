@@ -49,6 +49,15 @@ func TestSandboxDisplayState(t *testing.T) {
 		{name: "archived", desired: model.DesiredStateArchived, state: model.SandboxStateArchived, runtimeState: model.SandboxRuntimeStateRunning, generation: 4, observed: 4, want: "archived"},
 		{name: "failed", desired: model.DesiredStatePresent, state: model.SandboxStateFailed, generation: 2, observed: 2, want: "error"},
 		{name: "error recorded", desired: model.DesiredStatePresent, state: model.SandboxStateReady, runtimeState: model.SandboxRuntimeStateStopped, errMessage: "boom", generation: 2, observed: 2, want: "error"},
+		{name: "failed running", desired: "present", state: "failed", runtimeState: "running", errMessage: "", generation: 2, observed: 2, want: "running"},
+		{name: "failed running message", desired: "present", state: "failed", runtimeState: "running", errMessage: "boom", generation: 2, observed: 2, want: "running"},
+		{name: "ready running message", desired: "present", state: "ready", runtimeState: "running", errMessage: "boom", generation: 2, observed: 2, want: "running"},
+		{name: "failed stopped", desired: "present", state: "failed", runtimeState: "stopped", errMessage: "boom", generation: 2, observed: 2, want: "error"},
+		{name: "failed suspended", desired: "present", state: "failed", runtimeState: "suspended", errMessage: "boom", generation: 2, observed: 2, want: "error"},
+		{name: "failed starting", desired: "present", state: "failed", runtimeState: "starting", errMessage: "boom", generation: 2, observed: 2, want: "error"},
+		{name: "failed stopping", desired: "present", state: "failed", runtimeState: "stopping", errMessage: "boom", generation: 2, observed: 2, want: "error"},
+		{name: "failed running archived", desired: "archived", state: "failed", runtimeState: "running", errMessage: "boom", generation: 2, observed: 2, want: "error"},
+		{name: "failed running deleted", desired: "deleted", state: "failed", runtimeState: "running", errMessage: "boom", generation: 2, observed: 2, want: "error"},
 		{name: "invalid lifecycle", desired: "", state: "", want: "error"},
 
 		// A repair recorded and not yet landed answers before the failure it
@@ -56,7 +65,7 @@ func TestSandboxDisplayState(t *testing.T) {
 		// the thing being fixed (ADR 26-10-12-711 §8). Once its generation is
 		// observed it is whatever it became, and a later generation is not a
 		// repair at all.
-		{name: "repair of a failed sandbox in flight", desired: model.DesiredStatePresent, state: model.SandboxStateFailed, generation: 4, observed: 3, repair: 4, want: "repairing"},
+		{name: "repair of a failed sandbox in flight", desired: model.DesiredStatePresent, state: model.SandboxStateFailed, runtimeState: "running", generation: 4, observed: 3, repair: 4, want: "repairing"},
 		{name: "repair of a running sandbox in flight", desired: model.DesiredStatePresent, state: model.SandboxStateReady, runtimeState: model.SandboxRuntimeStateRunning, generation: 4, observed: 3, repair: 4, want: "repairing"},
 		{name: "repair landed", desired: model.DesiredStatePresent, state: model.SandboxStateReady, runtimeState: model.SandboxRuntimeStateStopped, generation: 4, observed: 4, repair: 4, want: "stopped"},
 		{name: "repair failed", desired: model.DesiredStatePresent, state: model.SandboxStateFailed, errMessage: "boom", generation: 4, observed: 4, repair: 4, want: "error"},
@@ -97,6 +106,27 @@ func TestSandboxDisplayStateProvisioning(t *testing.T) {
 			s := model.Sandbox{ResourceLifecycle: model.ResourceLifecycle{State: model.SandboxStateReady}, RuntimeState: tc.runtime, AgentStatus: model.RawJSON(tc.status)}
 			if got := s.DisplayState(); got != tc.want {
 				t.Fatalf("DisplayState() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFailedRunningDisplayStateProvisioning(t *testing.T) {
+	for _, tc := range []struct{ status, want string }{
+		{`{"provision":{"ready":false}}`, "starting"},
+		{`{"provision":{"ready":false,"error":"core failed"}}`, "error"},
+		{`{"provision":{"ready":true,"error":"async failed"}}`, "running"},
+		{`{}`, "running"},
+		{`invalid`, "running"},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
+			message := "ensure failed"
+			s := model.Sandbox{ResourceLifecycle: model.ResourceLifecycle{DesiredState: "present", State: "failed", ErrorMessage: &message}, RuntimeState: "running", AgentStatus: model.RawJSON(tc.status)}
+			if got := s.DisplayState(); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			if s.State != "failed" || s.ErrorMessage == nil || *s.ErrorMessage != message {
+				t.Fatal("projection changed the stored failure")
 			}
 		})
 	}
