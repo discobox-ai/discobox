@@ -26,9 +26,6 @@ func Listen(endpoint string) (net.Listener, string, func(), error) {
 		}
 		return listener, parsed.Value, func() {}, nil
 	case "unix":
-		if err := protectDefaultSocket(parsed.Value); err != nil {
-			return nil, "", nil, err
-		}
 		if err := os.MkdirAll(filepath.Dir(parsed.Value), 0o700); err != nil {
 			return nil, "", nil, fmt.Errorf("create socket directory: %w", err)
 		}

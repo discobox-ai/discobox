@@ -202,9 +202,6 @@ See "%[1]s run --help" for everything run takes.`, name),
 			if err := app.resolveServerName(serverChosen(cmd)); err != nil {
 				return err
 			}
-			if runtimePreparationNeeded(cmd) {
-				return app.prepareRuntimeDirectories(cmd)
-			}
 			return nil
 		},
 		// The words a bare `discobox` is given are refused, so nothing below
@@ -814,10 +811,10 @@ func (a *App) notify(text string) {
 // file is made absolute for the same reason `admin server --config-file` makes
 // its own so: a relative one would name a different file from the unit's
 // working directory.
-func localServerEnv(endpoint string) []string {
+func localServerEnv(listen string) []string {
 	env := []string{
-		"DISCOBOX_SERVER_LISTEN=" + endpoint,
-		"DISCOBOX_SERVER=" + endpoint,
+		"DISCOBOX_SERVER_LISTEN=" + listen,
+		"DISCOBOX_SERVER=" + listen,
 		// Where the autolaunch staged the server's images, so its pools load
 		// them rather than pull them (ADR 0113).
 		ImageCacheEnv + "=" + stagedImagesRoot(),
@@ -829,6 +826,9 @@ func localServerEnv(endpoint string) []string {
 		"ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR",
 		"DISCOBOX_POOLS_PROXY_MODE", "DISCOBOX_POOLS_PROXY_HTTP", "DISCOBOX_POOLS_PROXY_HTTPS",
 		"DISCOBOX_POOLS_PROXY_NO_PROXY", "DISCOBOX_POOLS_PROXY_CA_FILE",
+		// The server resolves its own default endpoint too (its pool providers
+		// hand it to guests), so it must resolve the one this CLI dials.
+		endpoint.AddressEnv,
 		"DATABASE_DSN",
 		"DATABASE_READ_DSN",
 		"DISCOBOX_CACHE_DIR",

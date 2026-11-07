@@ -1,6 +1,6 @@
 # 26-11-04-074 — Local server discovery is independent of shell temporary directories
 
-- **Status**: Accepted (§1's prohibition on repair narrowed by [26-11-05-240](26-11-05-240-runtime-directory-permission-repair-requires-human-consent.md)) (narrows ADR 0019 §3: an unreachable incumbent may fail startup with a diagnostic; reachable startup and known shutdown handoffs retain their waits)
+- **Status**: §1 superseded by [26-11-06-567](26-11-06-567-the-local-socket-follows-tmpdir-and-a-dev-shell-pins-its-address.md); §§2–4 Accepted (narrows ADR 0019 §3: an unreachable incumbent may fail startup with a diagnostic; reachable startup and known shutdown handoffs retain their waits)
 - **Date**: 2026-11-04
 
 Accepted by the owner by merging #599, 2026-11-04

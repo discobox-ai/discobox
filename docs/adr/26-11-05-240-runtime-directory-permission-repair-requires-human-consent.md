@@ -1,6 +1,6 @@
 # 26-11-05-240 — Runtime-directory permission repair requires human consent
 
-- **Status**: Accepted (narrows ADR 26-11-04-074 §1's prohibition on repairing unsafe runtime directories; its private-directory requirement remains)
+- **Status**: Superseded by [26-11-06-567](26-11-06-567-the-local-socket-follows-tmpdir-and-a-dev-shell-pins-its-address.md)
 - **Date**: 2026-11-05
 
 Accepted by the owner by merging #680, 2026-11-05

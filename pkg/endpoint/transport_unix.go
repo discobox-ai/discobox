@@ -15,9 +15,6 @@ func unixRoundTripper(socketPath string, base http.RoundTripper) (http.RoundTrip
 	}
 	transport := cloneTransport(base)
 	transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
-		if err := protectDefaultSocket(socketPath); err != nil {
-			return nil, err
-		}
 		var dialer net.Dialer
 		return dialer.DialContext(ctx, "unix", socketPath)
 	}

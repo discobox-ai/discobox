@@ -74,9 +74,6 @@ func (a *App) printVersion(cmd *cobra.Command) error {
 	// registry that does not parse is not a reason to withhold the answer: the
 	// server named as it was is asked instead.
 	_ = a.resolveServerName(serverChosen(cmd))
-	if err := a.prepareRuntimeDirectories(cmd); err != nil {
-		return err
-	}
 	_, err := fmt.Fprintf(out, "server version %s\n", a.serverVersion(cmd.Context()))
 	return err
 }

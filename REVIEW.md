@@ -170,14 +170,6 @@ Global review expectations:
   survive an in-place relaunch, so an unchanged ID and running status cannot
   distinguish recovery from a replacement program.
 
-- Default Unix socket privacy covers both ownership/mode bits and effective
-  ACL grants, including ancestors that could allow replacement. Darwin evaluates
-  ACL allow entries before mode bits: mode 0700 alone can still expose a moved
-  socket under shared `/tmp`. Reject unsafe directories before contacting listeners. Only the CLI may
-  offer mode-only repair of eligible user-owned runtime directories after fresh,
-  explicit human consent (ADR 26-11-05-240). Recheck the complete descriptor-walked
-  path after consent; ownership, symlinks and ACL refusals cannot be overridden.
-
 - A watcher build deadline stops the whole process tree before cleanup and
   retry. Docker starts buildx as a child, and builder setup is go → task →
   docker: killing only the parent leaves an exporter able to overwrite the

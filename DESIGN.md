@@ -485,19 +485,14 @@ its own, `vm-kernel/v*`.
 
 ## Local server discovery
 
-The default Unix endpoint uses `XDG_RUNTIME_DIR/discobox/server.sock`, or
-`/tmp/discobox-<uid>/discobox/server.sock` independently of shell temporary
-variables. `pkg/endpoint` validates ownership and privacy of the per-user
-directories before binding or dialing; it opens each path component without
-following user symlinks and allows the system `/tmp` alias on macOS. The CLI inspects the complete runtime path before connecting and offers mode-only
-repair after explicit human consent, defaulting to No. It displays each change and
-warns that prior exposure and listener integrity cannot be undone by chmod.
-Inspection and repair retain directory descriptors and recheck identity, ownership,
-modes and ACLs after the prompt; unsafe ACLs, symlinks and foreign owners remain
-errors. Noninteractive consumers fail with recovery information.
-Explicit
-endpoints retain their configured trust. Windows keeps its named pipe.
-See the [server singleton design](server/DESIGN.md#single-server-per-data-directory)
+`endpoint.DefaultEndpoint` is the local server's address on both ends: the
+server binds it and the CLI dials it. `DISCOBOX_SERVER_ADDRESS` names it
+outright; otherwise it is `XDG_RUNTIME_DIR/discobox/server.sock`, else
+`$TMPDIR/discobox-<uid>/discobox/server.sock` (on macOS, launchd's private
+per-user directory). Windows uses its named pipe. An environment that rewrites
+`TMPDIR` pins the address instead: the repository flake's `shellHook` sets it to
+what a plain shell resolves (ADR 26-11-06-567). The CLI forwards it to a server
+it autolaunches. See the [server singleton design](server/DESIGN.md#single-server-per-data-directory)
 for lock-holder discovery and startup handoffs (ADR 26-11-04-074).
 
 Pool outbound routing and additional trust share the domain contract in

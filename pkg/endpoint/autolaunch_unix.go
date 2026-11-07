@@ -16,9 +16,6 @@ import (
 )
 
 func acquireLaunchLock(path string) (func(), error) {
-	if err := protectDefaultSocket(strings.TrimSuffix(path, ".lock")); err != nil {
-		return nil, err
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
