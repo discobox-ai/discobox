@@ -29,7 +29,7 @@ func TestSocketErrorExposesPOSIXFailures(t *testing.T) {
 					t.Fatalf("network error = %v, want %s/%v", err, op, tc.errno)
 				}
 				var native *vz.NSError
-				if !errors.As(err, &native) || native != original || !strings.Contains(err.Error(), "native detail") {
+				if !errors.As(err, &native) || !errors.Is(native, original) || !strings.Contains(err.Error(), "native detail") {
 					t.Fatalf("native error lost: %v", err)
 				}
 			})
@@ -42,7 +42,7 @@ func TestSocketErrorPreservesOtherFailures(t *testing.T) {
 		&vz.NSError{Domain: "VZErrorDomain", Code: 54},
 		errors.New("plain failure"),
 	} {
-		if got := socketError("dial", "connect", original); got != original {
+		if got := socketError("dial", "connect", original); !errors.Is(got, original) {
 			t.Fatalf("error = %v, want original %v", got, original)
 		}
 	}
