@@ -3,12 +3,16 @@ package poolruntime
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -164,5 +168,35 @@ func TestCreateAlreadyExistsReadsBackOnBoundStream(t *testing.T) {
 	created, _, err := provider.Create(t.Context(), ref, nil, sandbox.CreateOptions{PoolID: "pool-1"})
 	if err != nil || created == nil || created.SandboxID != "sandbox-1" || reads != 1 {
 		t.Fatalf("create=%+v err=%v reads=%d", created, err, reads)
+	}
+}
+
+// VM transports normalize native POSIX failures before HTTP wraps them. A
+// discovery connection reset must wait for recovery rather than settle create.
+func TestCreateDiscoveryWaitsForVSOCKRecovery(t *testing.T) {
+	for _, errno := range []syscall.Errno{syscall.ECONNRESET, syscall.ECONNREFUSED} {
+		t.Run(errno.Error(), func(t *testing.T) {
+			runtime := newTestRuntimeProvider(t, "project-1", "pool-1")
+			var attempts atomic.Int32
+			transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+				if attempts.Add(1) == 1 {
+					return nil, fmt.Errorf("vzvm: connect to pool-1 guest port 3002: %w", &net.OpError{Op: "dial", Net: "vsock", Err: os.NewSyscallError("connect", errno)})
+				}
+				return (&net.Dialer{}).DialContext(ctx, network, address)
+			}}
+			t.Cleanup(transport.CloseIdleConnections)
+			runtime.client = &http.Client{Transport: transport}
+			manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
+			provider := New(runtime, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			created, _, err := provider.Create(ctx, sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
+			if err != nil || created == nil || created.SandboxID != "sandbox-1" {
+				t.Fatalf("create after VSOCK recovery = %+v, %v", created, err)
+			}
+			if attempts.Load() < 2 || manager.scheduledReconciles != 1 {
+				t.Fatalf("dial attempts=%d pool reconciles=%d", attempts.Load(), manager.scheduledReconciles)
+			}
+		})
 	}
 }
