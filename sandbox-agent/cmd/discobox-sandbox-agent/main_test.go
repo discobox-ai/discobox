@@ -6,10 +6,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
 var (
-	agentLink = regexp.MustCompile(`^\s*ln -sf /usr/local/bin/discobox-sandbox-agent "?([^"\s]+)"?$`)
+	agentLink = regexp.MustCompile(`^\s*ln -sf (?:/usr/local/bin/discobox-sandbox-agent|/opt/discobox/current/features/core/discobox-sandbox-agent) "?([^"\s]+)"?$`)
 	anyLink   = regexp.MustCompile(`\bln\b.*discobox-sandbox-agent`)
 	// agentItself is the link that installs the agent from its tree, which
 	// is no personality.
@@ -78,7 +80,16 @@ func TestImageLinksEveryPersonalityAndNothingElse(t *testing.T) {
 	// Core lays its own personalities, and the docker feature the two that
 	// are Docker's (ADR 26-10-16-423 §7).
 	scripts := []string{"../../features/core/link-agent.sh", "../../features/docker/link-personalities.sh"}
-	if got := linkedPaths(t, scripts...); !slices.Equal(got, want) {
+	got := linkedPaths(t, scripts...)
+	feature, err := provisionspec.LoadFeature("../../features/docker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range feature.Spec.Personalities {
+		got = append(got, "/usr/local/bin/"+name)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
 		t.Errorf("the features link the agent as %v, want %v", got, want)
 	}
 }

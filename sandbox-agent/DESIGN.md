@@ -9,6 +9,13 @@ It validates the sandbox's hard-coded project/sandbox identity, accepts
 short-lived control-plane-signed tokens, and owns the sandbox-local exec,
 terminal, and service runtime.
 
+Docker daemon activation has a separate configuration prerequisite, placed by
+`agentlayer` before boot. Bundle intake and proxy/trust preparation publish the
+selected inputs; the prerequisite and background feature share the provisioning
+runner's configuration phase. Managed Docker commands wait for feature readiness,
+while native socket consumers are fenced at daemon startup. See
+[`provision`](provision/DESIGN.md#daemon-configuration).
+
 ## Package Map
 
 | Package/path | Ownership |

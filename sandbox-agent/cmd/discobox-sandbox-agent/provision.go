@@ -46,6 +46,26 @@ func runProvisionCommand(args []string) int {
 		return usage()
 	}
 	switch args[0] {
+	case "configure":
+		if len(args) != 2 || args[1] != "docker" {
+			return usage()
+		}
+		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+		plan, err := provision.WaitConfigurationPlan(ctx, provision.ConfigurationPlanPath)
+		if err == nil {
+			platform, platformErr := provision.DetectPlatform("/")
+			err = platformErr
+			if err == nil {
+				runner := &provision.Runner{Root: "/", Records: provision.Records{Dir: provision.RecordsDir}, Platform: platform, Booted: true, LogDir: provision.LogDir}
+				err = runner.Configure(ctx, plan.Features, plan.Options, "docker")
+			}
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "discobox-provision: Docker configuration:", err)
+			return 1
+		}
+		return 0
 	case "wait":
 		flags := flag.NewFlagSet("discobox-provision wait", flag.ContinueOnError)
 		if err := flags.Parse(args[1:]); err != nil || flags.NArg() == 0 {

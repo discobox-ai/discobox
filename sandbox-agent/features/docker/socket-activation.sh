@@ -7,3 +7,8 @@ set -eu
 systemctl disable docker.service containerd.service
 systemctl enable docker.socket
 mkdir -p /var/lib/docker
+
+# Starting an already listening socket is a no-op and does not start Docker.
+# Reset limits left by a failed configuration prerequisite before reopening it.
+systemctl reset-failed docker.socket
+systemctl start docker.socket
