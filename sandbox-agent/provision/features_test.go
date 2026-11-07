@@ -186,6 +186,40 @@ steps:
 	}
 }
 
+// A step that links the adopted copy ahead of where the check found it -- the
+// node feature's select, /usr/local/bin/node to /usr/bin/node -- does not
+// move what the next run's check finds: it is told /usr/bin/node again, not
+// the link, so its check sees no drift.
+func TestLinkingAnAdoptedCopyAheadOnPathDoesNotMoveIt(t *testing.T) {
+	const spec = asyncHead + `adopt:
+  commands: [node]
+steps:
+  - name: select
+    check: check.sh
+    run: select.sh
+`
+	b := newBox(t)
+	told := filepath.Join(t.TempDir(), "told")
+	link := filepath.Join(b.root, "usr/local/bin/node")
+	b.feature("node", map[string]string{
+		provisionspec.FileName: spec,
+		"select.sh":            "#!/bin/sh\necho \"$DISCOBOX_PROVISION_ADOPTED_NODE\" >> " + told + "\nln -sfn ../../bin/node " + link + "\n",
+		"check.sh":             "#!/bin/sh\necho \"$DISCOBOX_PROVISION_ADOPTED_NODE\" >> " + told + "\n[ \"$DISCOBOX_PROVISION_ADOPTED_NODE\" = /usr/bin/node ]\n",
+	})
+	b.executable("usr/bin/node", "#!/bin/sh\n", 0o755)
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b.mustApply()
+	got := results(b.mustApply())
+	if got["node/select"] != Skipped {
+		t.Errorf("second run = %v, want select skipped", got)
+	}
+	if data, _ := os.ReadFile(told); string(data) != "/usr/bin/node\n/usr/bin/node\n" {
+		t.Errorf("told %q, want /usr/bin/node both runs", data)
+	}
+}
+
 // A copy that is not usable is not adopted: too old, a link into a user's
 // home, or one other users cannot run.
 func TestACopyThatIsNotUsableIsNotAdopted(t *testing.T) {

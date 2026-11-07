@@ -15,6 +15,9 @@ var (
 	// is no personality.
 	agentItself = regexp.MustCompile(`\bln\b.*\s/usr/local/bin/discobox-sandbox-agent$`)
 	linkLoop    = regexp.MustCompile(`for c in ([^;]+); do`)
+	// commandLink is core's link-command laying /usr/local/bin/NAME; its
+	// --check form lays nothing.
+	commandLink = regexp.MustCompile(`\blink-command (--check )?/usr/local/bin/discobox-sandbox-agent (\S+)$`)
 )
 
 // linkedPaths is every link to the agent that the features' scripts lay,
@@ -40,6 +43,12 @@ func scriptLinks(t *testing.T, script string) []string {
 	for line := range strings.SplitSeq(string(data), "\n") {
 		if m := linkLoop.FindStringSubmatch(line); m != nil {
 			loop = strings.Fields(m[1])
+		}
+		if m := commandLink.FindStringSubmatch(line); m != nil {
+			if m[1] == "" {
+				paths = append(paths, "/usr/local/bin/"+m[2])
+			}
+			continue
 		}
 		if !anyLink.MatchString(line) || agentItself.MatchString(line) {
 			continue

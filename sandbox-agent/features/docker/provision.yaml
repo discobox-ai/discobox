@@ -7,10 +7,12 @@
 # It installs no Docker: the image the box starts from has one.
 apiVersion: discobox.ai/provision/v1
 async: true
+requires: [core]
 steps:
   - name: socket-activation
     run: socket-activation.sh
   - name: personalities
+    check: check-personalities.sh
     run: link-personalities.sh
 
   # Merged over the box's own, so what a provider set that ours does not

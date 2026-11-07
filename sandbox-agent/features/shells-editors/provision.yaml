@@ -52,6 +52,7 @@ steps:
           sha256: da3fdcb3cf07e5e043fb8c75289fd67f68a06651a37d34687649c591b7608cec
   # Each on the system PATH, and nu a login shell.
   - name: commands
+    check: check-commands.sh
     run: link-commands.sh
   # A first zsh that is usable as it is, rather than its new-user wizard.
   - name: zsh-newuser
