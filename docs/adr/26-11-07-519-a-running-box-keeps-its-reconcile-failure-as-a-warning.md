@@ -1,7 +1,8 @@
 # 26-11-07-519 — A running box keeps its reconcile failure as a warning
 
-- **Status**: Proposed (supersedes 0034 §5's unconditional error-first precedence for a present, running sandbox; amends 26-10-29-316 §1 and 26-11-01-560 §2's event fields with `errorMessage`)
+- **Status**: Accepted (supersedes 0034 §5's unconditional error-first precedence for a present, running sandbox; amends 26-10-29-316 §1 and 26-11-01-560 §2's event fields with `errorMessage`)
 - **Date**: 2026-11-07
+- Accepted by the owner by merging #839, 2026-11-07
 - **Issue**: [#837](https://github.com/discobox-ai/discobox/issues/837)
 - **Relates to**: [0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md)
   §§1–2 and 7, separate writers for existence, power and recorded failure;
