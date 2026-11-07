@@ -1,6 +1,6 @@
 # 26-11-01-560 — `discobox-box` watches other boxes through the sandbox event stream
 
-- **Status**: Accepted
+- **Status**: Accepted (§2 amended with `errorMessage` by [26-11-07-519](26-11-07-519-a-running-box-keeps-its-reconcile-failure-as-a-warning.md))
 - Creator-scoped authority superseded by [26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves](26-11-03-970-a-discobox-adopts-another-as-its-child-when-a-person-approves.md): read the parent instead of the creator.
 - **Date**: 2026-11-01
 - **Amends**:

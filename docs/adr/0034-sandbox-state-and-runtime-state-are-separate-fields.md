@@ -1,6 +1,6 @@
 # 0034 — Sandbox `state` and `runtime_state` are separate fields
 
-- **Status**: Accepted (§2's empty `runtime_state` amended by [26-10-29-316](26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md): also an archived sandbox its pool has synced without)
+- **Status**: Accepted (§2's empty `runtime_state` amended by [26-10-29-316](26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md): also an archived sandbox its pool has synced without; §5's unconditional error-first precedence for a present, running sandbox superseded by [26-11-07-519](26-11-07-519-a-running-box-keeps-its-reconcile-failure-as-a-warning.md))
 - **Date**: 2026-08-12
 - **Supersedes**: [ADR 0017](0017-resource-state-is-desired-and-observed-with-no-operations.md)
   §7's derivation of `displayState` from a single `State` field. §§9–13 stand
