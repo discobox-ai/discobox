@@ -75,7 +75,7 @@ func TestPaletteChipOrdersAndEscape(t *testing.T) {
 		if m.palette.box == nil {
 			t.Fatal("tab did not chip box")
 		}
-		if slices.ContainsFunc(m.palette.rows, func(r paletteRow) bool { return r.command == nil || !r.command.targeted }) {
+		if slices.ContainsFunc(m.palette.rows, func(r paletteRow) bool { return r.command == nil || r.command.Target != console.TargetBox }) {
 			t.Fatal("box chip offers global results")
 		}
 		d.key("esc")
@@ -368,9 +368,9 @@ func TestPaletteCountsShortcutUseAtFlowEntry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		d, m, _ := openWorkspace(t, newFakeSource(testSandboxes()...), "enter")
 		d.leader("t")
-		d.wait("stop counted", func() bool { return m.paletteUsage["stop"] > 0 })
-		if m.paletteUsage["stop"] != 1 {
-			t.Fatalf("stop counted %d times", m.paletteUsage["stop"])
+		d.wait("stop counted", func() bool { return m.commands.Usage("stop") > 0 })
+		if m.commands.Usage("stop") != 1 {
+			t.Fatalf("stop counted %d times", m.commands.Usage("stop"))
 		}
 	})
 }

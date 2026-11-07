@@ -45,7 +45,7 @@ type serviceVerbMsg struct {
 
 // openServices asks for the discobox's services and opens the menu on them.
 func (m *Model) openServices() tea.Cmd {
-	m.recordConsoleUse("services")
+	m.commands.Use("services")
 	if m.paneBox.ID == "" {
 		return nil
 	}

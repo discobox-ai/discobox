@@ -15,13 +15,6 @@ import (
 // the listing that follows — the window says so and offers the upgrade, rather
 // than reporting a transport error and leaving the next move to be guessed.
 
-// opensBox reports whether an action needs the box's container: the ones an
-// unavailable image stops.
-func opensBox(key string) bool {
-	action, ok := interactions[key]
-	return ok && (action == console.InteractAttach || action == console.InteractShell)
-}
-
 // offerImageUpgrade puts the upgrade to the user for a box whose image is gone,
 // or says there is nothing to upgrade to.
 func (m *Model) offerImageUpgrade(box console.Sandbox) {

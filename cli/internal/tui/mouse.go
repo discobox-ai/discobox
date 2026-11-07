@@ -8,7 +8,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/tools"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
@@ -489,7 +488,7 @@ func (m *Model) menuFor(what hit) tea.Cmd {
 		}
 		m.pressRow(what.idx, 1)
 		targets := m.list.targets()
-		m.dialog = actionsDialog(actionTitle(targets), "", m.actions(targets), chooseAction(targets))
+		m.dialog = actionsDialog(actionTitle(targets), "", actions(targets), chooseAction(targets))
 		return nil
 	case hitHarnessRow:
 		if what.idx < 0 {
@@ -516,7 +515,7 @@ func (m *Model) pressRow(idx, clicks int) tea.Cmd {
 	}
 	m.list.moveTo(idx)
 	if clicks > 1 {
-		return m.actOn("a", []console.Sandbox{rows[idx]})
+		return m.dispatch("attach", rows[idx])
 	}
 	return nil
 }

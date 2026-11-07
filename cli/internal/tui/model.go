@@ -56,8 +56,9 @@ type Model struct {
 
 	palette       *palette
 	paletteRecent map[console.BoxRef]int
-	paletteUsage  map[string]int
-	paletteClock  int
+	// commands is the core's command registry, and this window's use of it.
+	commands     *console.Registry
+	paletteClock int
 
 	gitPolicyGen uint64
 	// reviewEnds counts the files changed sessions being ended in their
@@ -551,6 +552,7 @@ func New(ctx context.Context, ds console.DataSource, options ...Option) *Model {
 	session := console.Session{DefaultProject: "default", PrimaryServer: ds.PrimaryServer()}
 	m := &Model{
 		ctx:            ctx,
+		commands:       console.NewRegistry(ds),
 		ds:             ds,
 		st:             st,
 		list:           newSandboxList(session),
@@ -899,7 +901,7 @@ type verbThen struct {
 // action itself: a dialog closes over the model by value, so it emits the
 // choice and the update loop runs it against the live model.
 type runActionMsg struct {
-	key     string
+	id      string
 	targets []console.Sandbox
 }
 
@@ -1472,18 +1474,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.updateReview(msg)
 
 	case runActionMsg:
-		return m.actOn(msg.key, msg.targets)
-
-	case boxMenuChoiceMsg:
-		switch msg.key {
-		case paneServicesKey:
-			return m.openServices()
-		case auditKey:
-			return m.openAudit(m.currentBox())
-		case allBoxesKey:
-			return m.showAllBoxes()
-		}
-		return m.openTools(m.currentBox())
+		return m.dispatch(msg.id, msg.targets...)
 
 	case harnessesLoadedMsg:
 		return m.harnessesLoaded(msg)
@@ -1923,7 +1914,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 	if keyName(msg) == "f1" {
-		return m.dispatchConsoleCommand("help", console.Sandbox{})
+		return m.dispatch("help")
 	}
 	// The audit screen is drawn over the workspace and takes its keys: none of
 	// the panes under it is on screen to be typed at. See audit.go.
@@ -1973,7 +1964,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// frame exactly as it was — one press of the key the panel's own harness
 	// row advertises, doing nothing.
 	if keyName(msg) == optionsKey && !m.inPanes() {
-		m.recordConsoleUse("options")
+		m.commands.Use("options")
 		m.optionsOpen = !m.optionsOpen
 		if m.optionsOpen {
 			m.harnessesOpen, m.secretsOpen = false, false
@@ -2167,8 +2158,7 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		// never the selection: approving a credential for several boxes at
 		// once is not a thing anyone means to do.
 		if s := m.list.current(); s != nil {
-			m.recordConsoleUse("requests")
-			return m.openCredentialDialog(*s)
+			return m.dispatch("requests", *s)
 		}
 		return nil
 	case "down", "j":
@@ -2241,39 +2231,34 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		m.list.visual = false
 		return status("selection cleared")
 	case "A":
-		return m.dispatchConsoleCommand("archived", console.Sandbox{})
+		return m.dispatch("archived")
 	case "r":
-		return tea.Batch(m.dispatchConsoleCommand("refresh", console.Sandbox{}), status("refreshing"))
+		return tea.Batch(m.dispatch("refresh"), status("refreshing"))
 	case "?":
-		return m.dispatchConsoleCommand("help", console.Sandbox{})
+		return m.dispatch("help")
 	case "enter":
-		return m.act("a")
+		return m.act("attach")
 	case "delete":
 		// Del is where a hand reaches to be rid of a row, and being rid of a
 		// discobox here means archiving it: reversible, disk and all. It is
 		// the same key as x, filtered and refused the same way. Purge, which
 		// is not reversible, stays typed for.
-		return m.act("x")
-	case ".":
-		targets := m.list.targets()
-		m.recordConsoleUse("actions")
-		m.dialog = actionsDialog(actionTitle(targets), "", m.actions(targets), chooseAction(targets))
+		return m.act("archive")
 	default:
-		for _, c := range m.consoleCommands(m.list.current()) {
-			if c.key == keyName(msg) && c.key != "" {
-				if c.targeted {
-					for _, a := range m.actions(m.list.targets()) {
-						if a.key == c.key {
-							return m.act(c.key)
-						}
-					}
-					if box := m.list.current(); box != nil {
-						return m.dispatchConsoleCommand(c.id, *box)
-					}
-					return status("nothing selected")
-				}
-				return m.executeConsoleCommand(c, console.Sandbox{})
+		c, ok := console.ForTUIKey(keyName(msg))
+		if !ok {
+			return nil
+		}
+		switch {
+		case c.Lifecycle:
+			return m.act(c.ID)
+		case c.Target == console.TargetBox:
+			if box := m.list.current(); box != nil {
+				return m.dispatch(c.ID, *box)
 			}
+			return status("nothing selected")
+		default:
+			return m.dispatch(c.ID)
 		}
 	}
 	return nil
@@ -2460,87 +2445,32 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 // ---------------------------------------------------------------------------
 // actions
 
-// actions is the base level CLI, filtered against what the current targets can
-// actually do. Unavailable actions stay on the menu with the reason, rather
-// than disappearing and leaving you wondering where upgrade went.
-func (m *Model) actions(targets []console.Sandbox) []action {
-	one := len(targets) == 1
-	anyUpgrade, anyRepair, anyRunning, anyStopped := false, false, false, false
-	anyArchived, allArchived := false, len(targets) > 0
-	for _, s := range targets {
-		anyUpgrade = anyUpgrade || s.Upgrade
-		anyRepair = anyRepair || s.Repairable()
-		// A suspended box takes both: stop powers it off, start thaws it.
-		anyRunning = anyRunning || s.State == console.StateRunning || s.State == console.StateSuspended
-		anyStopped = anyStopped || s.Startable()
-		anyArchived = anyArchived || s.State == console.StateArchived
-		allArchived = allArchived && s.State == console.StateArchived
+// actions is the box's action menu for these targets: its lifecycle commands
+// as the registry has them (console.Lifecycle), each row the command's ID and
+// pressed by its list key. Unavailable actions stay on the menu with the
+// reason.
+func actions(targets []console.Sandbox) []action {
+	var out []action
+	for _, e := range console.Lifecycle(targets) {
+		out = append(out, commandAction(e))
 	}
-	attachable := one && targets[0].Attachable()
-	// The name is written into the box (ADR 26-10-12-026), which is started to
-	// take it. An archived one has nothing to start.
-	renameable, renameWhy := one, "takes exactly one box"
-	if one && targets[0].State == console.StateArchived {
-		renameable, renameWhy = false, "an archived box cannot be started to take a name — unarchive it first"
-	}
-	settable, settableWhy := one, "takes exactly one box"
-	if one && targets[0].State == console.StateArchived {
-		settable, settableWhy = false, "an archived box is unarchived before its settings change"
-	}
-	return []action{
-		{key: "a", press: "a", label: "attach", detail: "join the harness terminal", enabled: attachable,
-			why: attachWhy(one, targets)},
-		{key: "s", press: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
-			why: attachWhy(one, targets)},
-		{key: harnessChangesKey, press: harnessChangesKey, label: "review config", detail: "review and save local settings and logins", enabled: one && targets[0].State == console.StateRunning, why: "takes one running box"},
-		{key: renameKey, press: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
-			why: renameWhy},
-		{key: settingsKey, press: settingsKey, label: "settings", detail: "edit its configured name, harness, egress and discobox API access", enabled: settable,
-			why: settableWhy},
-		{key: "u", press: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
-			why: "already on the current image"},
-		{key: repairKey, press: repairKey, label: "repair", detail: "rebuild the box on the current image, keeping its work", enabled: anyRepair,
-			why: "an archived box is unarchived, not repaired"},
-		{key: "t", press: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
-			why: "not running"},
-		{key: "T", press: "T", label: "start", detail: "power a stopped box back on, or thaw a suspended one", enabled: anyStopped,
-			why: "already on, or archived"},
-		{key: "x", press: "x", label: "archive", detail: "put it away, disk and all, reversibly", enabled: !allArchived,
-			why: "already archived"},
-		{key: "U", press: "U", label: "unarchive", detail: "bring an archived box back", enabled: anyArchived,
-			why: "not archived"},
-		{key: "P", press: "P", label: "purge", detail: "destroy it and its data, for good", enabled: allArchived,
-			why: "archive it first — purge only takes archived boxes"},
-	}
+	return out
 }
 
-// attachWhy names what is missing, which for the two ways a box can have no
-// container is not the same thing. Archived is reversible by intent and says
-// so. Anything else with nothing to attach to is a create or rebuild that never
-// produced a container, and a settled failure is never retried on its own
-// (ADR 0017 §4) — repair is the intent that rebuilds it (ADR 0035).
-//
-// The state name is not the reason. "the box is error" described the row rather
-// than the obstacle, and it was wrong as often as not: the boxes it refused
-// mostly had a container and a stale error latched over it.
-func attachWhy(one bool, targets []console.Sandbox) string {
-	if !one {
-		return "takes exactly one box"
+// commandAction is a registry entry as a menu row, pressed by the key that
+// reaches it from where the menu is: its bare key, else its leader key, else
+// the last of its menu path.
+func commandAction(e console.Entry) action {
+	press := ""
+	switch b := e.Bindings.TUI; {
+	case len(b.Keys) > 0:
+		press = b.Keys[0]
+	case len(b.Leader) > 0:
+		press = b.Leader[0]
+	case len(b.Menu) > 0:
+		press = b.Menu[len(b.Menu)-1]
 	}
-	box := targets[0]
-	if box.ImageUnavailable {
-		if box.Upgrade {
-			return "its image is no longer available on its pool — upgrade moves it to its harness's current image"
-		}
-		return "its image is no longer available on its pool, and its harness has no newer image"
-	}
-	if box.Attachable() {
-		return ""
-	}
-	if box.State == console.StateArchived {
-		return "the box is archived — unarchive it first"
-	}
-	return "the box has no container; repair rebuilds it"
+	return action{key: e.ID, press: press, label: e.Label, detail: e.Detail, enabled: e.Enabled, why: e.Why}
 }
 
 func actionTitle(targets []console.Sandbox) string {
@@ -2550,125 +2480,12 @@ func actionTitle(targets []console.Sandbox) string {
 	return plural(len(targets), "box", "boxes") + " selected"
 }
 
-// chooseAction is the action menu's callback: it turns the chosen key into a
-// message, which the update loop runs against the live model.
+// chooseAction is the action menu's callback: it turns the chosen command into
+// a message, which the update loop dispatches against the live model.
 func chooseAction(targets []console.Sandbox) func(string) tea.Cmd {
-	return func(key string) tea.Cmd {
-		return func() tea.Msg { return runActionMsg{key: key, targets: targets} }
+	return func(id string) tea.Cmd {
+		return func() tea.Msg { return runActionMsg{id: id, targets: targets} }
 	}
-}
-
-func (m *Model) act(key string) tea.Cmd {
-	// A command acts on the visual range and ends the mode, the way staging a
-	// visual selection does in discobox-review.
-	targets := m.list.targets()
-	m.list.visual = false
-	return m.actOn(key, targets)
-}
-
-// actOn runs one action against the given sandboxes.
-//
-// The two kinds part here: a verb goes to the API and comes back, leaving the
-// window up; an interaction owns the terminal, so the window suspends and hands
-// over the real streams until it returns.
-func (m *Model) actOn(key string, targets []console.Sandbox) tea.Cmd {
-	if len(targets) == 0 {
-		return status("nothing selected")
-	}
-	var chosen *action
-	for _, a := range m.actions(targets) {
-		if a.key == key {
-			chosen = &a
-			break
-		}
-	}
-	if chosen == nil {
-		return nil
-	}
-	// Checked ahead of the guard: a box whose image is gone has no container to
-	// attach to, and the guard's answer — repair — is the heavier of the two
-	// ways out when an upgrade will do.
-	if len(targets) == 1 && targets[0].ImageUnavailable && opensBox(key) {
-		m.offerImageUpgrade(targets[0])
-		return nil
-	}
-	if !chosen.enabled {
-		m.dialog = errorDialog("Cannot "+chosen.label, chosen.why)
-		return nil
-	}
-
-	for _, s := range targets {
-		if m.ds.ForServer(s.Server) == nil {
-			return status("server %q is no longer available", s.Server)
-		}
-	}
-	m.recordConsoleUse(chosen.label)
-
-	if key == harnessChangesKey {
-		return m.reviewHarnessChanges(targets[0])
-	}
-	if key == renameKey {
-		return m.askRename(targets[0])
-	}
-	if key == settingsKey {
-		return m.askSettings(targets[0])
-	}
-	if action, ok := interactions[key]; ok {
-		// Every interaction is drawn in the window, and a pane shows one
-		// discobox. The enabled check has already said so with the reason; this
-		// is the menu's own path, where the key was not offered.
-		if len(targets) != 1 {
-			return status("%s takes exactly one box", action)
-		}
-		box := targets[0]
-		switch action {
-		case console.InteractAttach:
-			// On the workspace screen the terminal is already there — back to
-			// the primary, which is what attach means there: it is the session
-			// the workspace is a view onto. From the list it is the screen to
-			// open.
-			if m.inPanes() && m.boxRef(box) == m.boxRef(m.paneBox) {
-				// By pointer rather than by number: the primary is 0 in the
-				// digits, but the services sit ahead of it in the strip and a
-				// jump by position would land on one of those.
-				if primary := m.primary(); primary != nil {
-					m.focusPane(primary)
-				}
-				return nil
-			}
-			return m.openFromList(action, box)
-		case console.InteractShell:
-			if m.inPanes() && m.boxRef(box) == m.boxRef(m.paneBox) {
-				return m.newShell()
-			}
-			return m.openFromList(action, box)
-		default:
-			return nil
-		}
-	}
-
-	verb, ok := verbs[key]
-	if !ok {
-		return nil
-	}
-	if verb == console.VerbPurge {
-		// Archiving is reversible and needs no ceremony. Purging is not.
-		question := fmt.Sprintf("Purge %s? The disk and everything on it goes, and unarchive cannot bring it back.",
-			actionTitle(targets))
-		d := confirmDialog("Purge", question, func(string) tea.Cmd {
-			return func() tea.Msg { return runVerbMsg{verb: console.VerbPurge, targets: targets} }
-		})
-		// Enter means no: a destruction nobody can undo has to be typed for,
-		// not fallen into by answering the dialog the way every other one is.
-		d.defaultNo = true
-		m.dialog = d
-		return nil
-	}
-	if verb == console.VerbArchive && m.inPanes() && len(targets) == 1 && m.boxRef(targets[0]) == m.boxRef(m.paneBox) {
-		// From the workspace the one target is the discobox it shows.
-		return m.archiveWorkspace(targets[0])
-	}
-	return m.runVerb(verb, targets, verbThen{})
 }
 
 // runVerbMsg is a confirmed verb on its way back to the live model, for the
@@ -2676,26 +2493,6 @@ func (m *Model) actOn(key string, targets []console.Sandbox) tea.Cmd {
 type runVerbMsg struct {
 	verb    console.Verb
 	targets []console.Sandbox
-}
-
-// repairKey is the letter repair answers to. It is R rather than r, which
-// refreshes the list — and the shift is no loss on an action that rebuilds a
-// container, next to one that redraws a table.
-const repairKey = "R"
-
-var verbs = map[string]console.Verb{
-	"u":       console.VerbUpgrade,
-	repairKey: console.VerbRepair,
-	"t":       console.VerbStop,
-	"T":       console.VerbStart,
-	"x":       console.VerbArchive,
-	"U":       console.VerbUnarchive,
-	"P":       console.VerbPurge,
-}
-
-var interactions = map[string]console.Interaction{
-	"a": console.InteractAttach,
-	"s": console.InteractShell,
 }
 
 // runVerb applies a lifecycle verb to every target, in one command: the window
@@ -2876,11 +2673,6 @@ func (m *Model) verbNotes(msg verbDoneMsg) string {
 
 // ---------------------------------------------------------------------------
 // rename
-
-// renameKey is the letter rename answers to in the list. It is deliberately not
-// bound on the workspace screen: rename needs a name typed into a dialog, and
-// the discobox on screen is one you are already looking at by name.
-const renameKey = "e"
 
 // renameMsg is an accepted name on its way back to the live model, the same way
 // the action menu and a confirmation hand their answers back.
@@ -4539,9 +4331,9 @@ func (m *Model) hints() []hint {
 		// Only the actions the sandboxes under the cursor can actually take:
 		// a key list that offers purge on a running sandbox is a key list you
 		// stop reading.
-		for _, a := range m.actions(m.list.targets()) {
+		for _, a := range actions(m.list.targets()) {
 			if a.enabled {
-				out = append(out, keyed(a.key, a.key, a.label))
+				out = append(out, keyed(a.press, a.press, a.label))
 			}
 		}
 		out = append(out, keyed("Space", " ", "select"), keyed("V", "V", "range"))

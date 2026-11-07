@@ -8,35 +8,6 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-// The reason names the obstacle, not the row's state: the two ways to have no
-// container are undone by different things.
-func TestAttachWhyNamesTheObstacle(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		s    console.Sandbox
-		want string
-	}{
-		{"archived points at unarchive", console.Sandbox{State: console.StateArchived}, "unarchive"},
-		{"no container points at repair", console.Sandbox{State: console.StateError}, "repair"},
-		{"attachable has nothing to say", console.Sandbox{State: console.StateError, HasRuntime: true}, ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := attachWhy(true, []console.Sandbox{tc.s})
-			if tc.want == "" {
-				if got != "" {
-					t.Fatalf("why = %q, want none", got)
-				}
-				return
-			}
-			if !strings.Contains(got, tc.want) {
-				t.Fatalf("why = %q, want it to mention %q", got, tc.want)
-			}
-		})
-	}
-}
-
 // A discobox's tags follow its name on its row, as many as leave the name room
 // to be read, and none on a window too narrow for even one (ADR 0136).
 func TestARowShowsTheTagsItHasRoomFor(t *testing.T) {

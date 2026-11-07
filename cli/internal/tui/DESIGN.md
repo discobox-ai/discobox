@@ -122,7 +122,7 @@ flowchart LR
   released there still reaches its pane. The right button opens the row's
   menu: the box on screen's (below), or any other's list menu.
 - **A walk never starts a box** (`switchBox`, `landOn`). The leader's ↑↓ switch to
-  each box they land on, but attaching to one that is not `live` — stopped,
+  each box they land on, but attaching to one that is not `Live` (`console.Sandbox`) — stopped,
   suspended, or errored with a container that may be off — is what starts
   it, and passing over a row is not asking for that. So the walk stops
   there with only the tree's cursor — the list takes the keys, the workspace
@@ -200,6 +200,10 @@ flowchart LR
   has the leader's keys for itself (a tool). A pane's key line
   opens with this key, so
   stop, rename and archive are found where the reader is already looking.
+  Every row is a registry command (`console.Entry` as `commandAction`),
+  dispatched as its leader key is: tools, audit and services from the menu
+  do what the leader's `o`, `A` and `S` do, which over a page beside the
+  workspace is to show the workspace first.
 - **Maximizing a column hides the tree**, so a maximized column still has the
   whole terminal. Disco stands at the foot of the list when the rows left
   over can hold him, and sits out otherwise.
@@ -798,12 +802,12 @@ and red is too busy to read, and the cursor and selection are the only bands a
 row carries. `merged` is not colored: the work is done and asks nothing of
 anyone.
 
-A row draws its tags in three groups (`Sandbox.rowTags`), so the ones worth
+A row draws its tags in three groups (`console.Sandbox.RowTags`), so the ones worth
 scanning for are the last a long name pushes off or `+N` hides:
 
 1. **Status** (`statusTags`): `blocked`, `needs-input`, `ready`. The first a
-   box carries is its status (`Sandbox.status`); `blocked` and `needs-input`
-   make the box blocked (`Sandbox.standing`).
+   box carries is its status (`console.Sandbox.Status`); `blocked` and
+   `needs-input` make the box blocked (`console.Sandbox.Standing`).
 2. **Special** (`specialTags`): `pr`, then `issue` — what the box is for,
    and links to GitHub where its source is there (below); the pull request
    first as the one most worth opening.
@@ -813,7 +817,7 @@ The filter's tag choices are sorted by name (`tagChoices`), not in a row's
 order.
 
 A credential request waiting on a person, or an agent that reports it is
-`blocked` (below), makes the box blocked too (`Sandbox.standing`), tag or no
+`blocked` (below), makes the box blocked too (`console.Sandbox.Standing`), tag or no
 tag — an agent asking for a credential is as stuck as a pull request waiting on
 somebody. On the row that is the red `!` beside the harness (`PendingRequests`)
 and the agent's red `◆`; the workspace header says `blocked` in place of the git
@@ -864,7 +868,7 @@ clears it after a crash.
 
 The workspace header says it in the same colors (`paneHeaderFields`).
 `blocked` — the `blocked` or `needs-input` tag, a request waiting, or an
-agent reporting it is blocked (`Sandbox.standing`) — takes the git word's place, in
+agent reporting it is blocked (`console.Sandbox.Standing`) — takes the git word's place, in
 red, whatever git says, since waiting on a person outranks the work's state. It
 is a field of its own ahead of the git summary rather than the word itself: a
 narrowing header gives the word up early, because its mark is on the git
@@ -1445,18 +1449,18 @@ description — `repaired automatically 5m ago; it had failed with: …`, or
 that never landed —
 because a repair that worked cleared the failure from everywhere else.
 
-`attachable` asks that axis, not the state name: anything with a container can be
+`console.Sandbox.Attachable` asks that axis, not the state name: anything with a container can be
 joined, because the pool agent starts a stopped one on demand when the attach
 arrives (ADR 0017 §12), and only archived — no container by intent — and a box
 nothing ever reported on that is neither starting nor being repaired are refused. An errored discobox with a live container
-attaches, and `attachWhy` sends the one that has nothing behind it to repair
+attaches, and `console.AttachWhy` sends the one that has nothing behind it to repair
 (ADR 0035) rather than naming its state back at it. Guards written as a list of
 states are the wedge ADR 0017 §4 describes.
 
-`repairable` puts repair (`R`, `VerbRepair`) on the list for every box but an
+`console.Sandbox.Repairable` puts repair (`R`, `VerbRepair`) on the list for every box but an
 archived one, which unarchive brings back and the server refuses to repair
 (ADR 0035). A latched error and no container ever reported are the shapes ADR
-0035 exists for, and where `attachWhy` points, but a box can be broken behind
+0035 exists for, and where `console.AttachWhy` points, but a box can be broken behind
 any state — a running container whose harness is not, a create or repair that
 will never land — so the list leaves that call to the user, as the server does.
 Repair rebuilds on the current image (ADR 0064), which is why its detail says
@@ -1477,7 +1481,8 @@ not left to the next listing, which may be the poll's, requested before the
 failure was recorded. The dialog answers the attach the user just made, so it
 is not the unprompted interruption the list otherwise refuses to raise.
 
-**Rename is a third kind, and only in the list** (`renameKey`, `askRename`). It
+**Rename is a third kind** (the registry's `rename`: `e` in the list, the
+leader's `e` on the box on screen; `askRename`). It
 is not a `Verb` — a verb is a word the window already has, and this one needs a
 name typed first — so `e` opens the input dialog on the name the discobox
 *already has*: the usual edit is a word added to a name that is nearly right,
@@ -1496,10 +1501,7 @@ The dialog offers the box's resolved title alone (`boxTitle`), never the msg
 the row shows after it: `Sandbox.Name` carries that msg while the program
 works. An empty
 line clears a name that was given (`Sandbox.GivenName`), which puts the title
-back, as `discobox rename` with no name does. It is deliberately
-absent from `verbs`/`interactions`, which is what keeps it off the workspace
-screen: rename needs a name typed into a dialog, and a discobox you are
-already looking at is one you know the name of.
+back, as `discobox rename` with no name does.
 
 **Settings is `discobox admin box update` as one form** (`settingsKey` `E`,
 `settings.go`). It is a fourth kind, beside rename: one form over everything
@@ -2002,9 +2004,9 @@ session still running, and hiding that would leave no way back to it short of
 attaching again.
 
 `Model.paneBox` is the discobox the screen is showing, and every one of the
-list's own keys is bound behind the leader against it (`paneOptions` over
-`interactions` and `verbs`, dispatched through the list's own `actOn`) — one key
-map for the two screens, with the same enabled checks and the same
+list's own keys is bound behind the leader against it (`paneOptions` over the
+registry's lifecycle commands, dispatched through `console.Dispatch` as the
+list's are) — one key map for the two screens, with the same enabled checks and the same
 confirmations. `currentBox` re-reads it from the listing at dispatch time, since
 the workspace was opened on a snapshot and a diffstat that has since arrived
 changes what is offered. The leader plus `h`/`l` or the arrows moves along the
@@ -3464,8 +3466,8 @@ the newest one where the busy line goes.
 The desktop app (`desktop/`) draws the console natively and reads what it
 looks like and what it can do from here: `Spec` (`spec.go`) exports the
 colours, the glyphs of states and agent reports, and every command with its
-keys for each frontend, and `ActionsFor` a box's actions menu with this
-window's rules and reasons. `discobox desktop` hands it to the app on `hello`;
+keys for each frontend, and `ActionsFor` a box's actions menu: the core's
+lifecycle entries (`console.Lifecycle`) under the prototype's IDs. `discobox desktop` hands it to the app on `hello`;
 `desktop/src/spec.json`, which the app's mock runs with, is generated from it
 (`task generate`).
 
@@ -3572,16 +3574,21 @@ It owns keys, paste, mouse and the complete dimmed frame while open, replacing
 the trusted bare status row with a modal provenance label even without color; opening
 and closing disarm the leader. It does not intercept the composer's keys.
 
-`consoleCommands` (`commands.go`) builds descriptors from the lifecycle and
-interaction actions plus the window verbs. Pane prefix registration, list
-verb dispatch and palette results consume these descriptors, including the
-window verbs for terminals, detach, maximize, notices and mouse ownership.
-Bare keys, leader sequences and menu sequences are distinct metadata.
+The commands are the core's registry (`cli/internal/console`, `commands.go`),
+and the window is one of its frontends (`commands.go` here): `Model`
+implements `console.Frontend`, and every registry command — from a list key,
+a pane's leader binding, the action menu, a double click or the palette — is
+dispatched through `console.Dispatch` (`m.dispatch`), which checks it can run
+and counts its use before entering the window's flow. Pane prefix
+registration reads the registry's `tui` leader bindings, list keys its bare
+ones, and the action menu is its lifecycle commands (`actions`, over
+`console.Lifecycle`), so batch menus and single-box palette execution use the
+same rules. The commandContext the window hands the registry is where the
+window's navigation meets it: workspace, pane, the list's keys beside it, tree and one-box window.
 Coverage enumerates handwritten window key handling and pane registrations;
-only editing, motion, selection and terminal forwarding are gestures. Eligibility for
-lifecycle actions remains `actions`, so batch menus and single-box palette
-execution use the same rules. Targets are resolved again before dispatch.
-The registry coverage test rejects bindings without command metadata.
+only editing, motion, selection and terminal forwarding are gestures, and a
+binding without a registry entry fails. Targets are resolved again before
+dispatch.
 
 A palette holds a query, a stable result identity and at most one chip: a
 command or a server-and-box reference. Enter navigates to an unchipped box

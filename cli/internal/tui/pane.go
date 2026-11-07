@@ -251,8 +251,8 @@ func (m *Model) paneMouseHint() string { return m.leader() + " " + paneMouseKey 
 type toggleMouseMsg struct{}
 
 // paneActionMsg is the leader plus one of the list's own action keys: the same
-// command, on the discobox the screen is showing.
-type paneActionMsg struct{ key string }
+// lifecycle command, by its ID, on the discobox the screen is showing.
+type paneActionMsg struct{ id string }
 
 // movePaneMsg is the leader plus h or l: move focus that way, along the strip
 // the screen is — the terminals, then the shells.
@@ -274,12 +274,13 @@ type openServicesMsg struct{}
 // them.
 type jumpServiceMsg struct{ n int }
 
-// paneServiceVerbs are the list's own lifecycle keys, re-read as the focused
-// service's rather than the discobox's. They are the list's keys and not new
-// ones so that stopping the thing in front of you is the key you already know.
+// paneServiceVerbs are the list's own lifecycle commands, stop and start,
+// re-read as the focused service's rather than the discobox's. They are the
+// list's commands, on its keys, and not new ones so that stopping the thing in
+// front of you is the key you already know.
 var paneServiceVerbs = map[string]console.ServiceVerb{
-	"t": console.ServiceStop,
-	"T": console.ServiceStart,
+	"stop":  console.ServiceStop,
+	"start": console.ServiceStart,
 }
 
 // zoomPaneMsg is the leader plus z: give the focused column the whole window,
@@ -541,18 +542,19 @@ func (m *Model) paneOptions(readOnly bool) []termpane.Option {
 	for n := 1; n <= 9; n++ {
 		chords[paneServicesKey][strconv.Itoa(n)] = jumpServiceMsg{n: n}
 	}
-	for _, c := range m.consoleCommands(nil) {
-		if len(c.prefixKeys) == 0 || c.prefixKeys[0] == "" {
+	for _, c := range console.Commands() {
+		leader := c.Bindings.TUI.Leader
+		if len(leader) == 0 {
 			continue
 		}
-		msg := tea.Msg(consoleCommandMsg{id: c.id})
-		if c.action {
-			msg = paneActionMsg{key: c.key}
+		msg := tea.Msg(consoleCommandMsg{id: c.ID})
+		if c.Lifecycle {
+			msg = paneActionMsg{id: c.ID}
 		}
-		if len(c.prefixKeys) == 1 {
-			opts = append(opts, termpane.WithPrefixBinding(c.prefixKeys[0], msg))
+		if len(leader) == 1 {
+			opts = append(opts, termpane.WithPrefixBinding(leader[0], msg))
 		} else {
-			lead, key := c.prefixKeys[0], c.prefixKeys[1]
+			lead, key := leader[0], leader[1]
 			if chords[lead] == nil {
 				chords[lead] = map[string]tea.Msg{}
 			}
@@ -714,14 +716,14 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		// restart — which the list has no verb for — stays on the services
 		// menu rather than taking a key that means something else everywhere.
 		if p.service != "" {
-			if verb, ok := paneServiceVerbs[msg.key]; ok {
+			if verb, ok := paneServiceVerbs[msg.id]; ok {
 				return m.runServiceVerb(verb, console.Service{ID: p.service, Name: p.serviceName})
 			}
 		}
 		// The list's dispatcher, on the one discobox this screen is showing:
 		// the same enabled checks, the same confirmations, the same reports.
 		// Archive leaves the workspace as it starts (archiveWorkspace).
-		return m.actOn(msg.key, []console.Sandbox{m.currentBox()})
+		return m.dispatch(msg.id, m.currentBox())
 
 	case movePaneMsg:
 		if m.hasScreen(p) {
@@ -842,7 +844,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.closeWindow()
 
 	case consoleCommandMsg:
-		return m.dispatchConsoleCommand(msg.id, m.currentBox())
+		return m.dispatch(msg.id, m.currentBox())
 
 	case openPaletteMsg:
 		return m.openPalette()

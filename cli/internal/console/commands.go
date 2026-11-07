@@ -1,0 +1,634 @@
+package console
+
+import (
+	"fmt"
+	"slices"
+)
+
+// The command registry (ADR 26-11-06-671 §4, moved into the core by
+// 26-11-07-876 §1): every command the console offers, by a stable ID, with what
+// it is called, what it acts on, how each frontend reaches it (26-11-07-598
+// §2), whether it can act now and why not, and its dispatch. A frontend's
+// key registration, action menus and palette read it; a frontend that still
+// names a key elsewhere (the TUI's hints and help) is held to it by a test.
+
+// Target is what a command acts on.
+type Target int
+
+const (
+	// TargetNone is a command for the window, not for a box: new discobox,
+	// help, quit.
+	TargetNone Target = iota
+	// TargetBox takes one box, chosen explicitly — never inferred from what is
+	// on screen. The box's lifecycle commands also take a batch, from the
+	// list's selection.
+	TargetBox
+)
+
+// Bindings is how each frontend reaches a command, keyed by frontend
+// (598 §2). A command one frontend does not bind is reached there through the
+// palette.
+type Bindings struct {
+	TUI     TUIBinding
+	Desktop DesktopBinding
+}
+
+// TUIBinding is a command's keys in the terminal console.
+type TUIBinding struct {
+	// Keys are pressed bare, where the list or the workspace tree has the
+	// keys. The first is the one a hint shows.
+	Keys []string
+	// Leader is the sequence pressed after the leader, from a workspace's
+	// panes and the pages beside the tree: one key, or a chord of two.
+	Leader []string
+	// Menu is reached after the leader through a menu: the menu's key, then
+	// the entry's.
+	Menu []string
+}
+
+// DesktopBinding is a command's chords in the desktop app. A chord is written
+// with `primary`, which is ⌘ on macOS and Ctrl+Shift elsewhere, and never adds
+// shift to primary (598 §2).
+type DesktopBinding struct {
+	Keys []string
+}
+
+// Command is one entry of the registry.
+type Command struct {
+	// ID is stable: parity scenarios, usage counts and every frontend's
+	// bindings name commands by it.
+	ID     string
+	Label  string
+	Detail string
+	// Aliases are what the palette matches, the label first. A single-word
+	// alias of a box command commits it as the palette's chip (671 §2), so no
+	// two commands share one.
+	Aliases []string
+	Target  Target
+	// Lifecycle marks the box's own actions — attach, shell, the verbs, rename,
+	// settings, review config — which the box's action menu lists and which
+	// take a batch.
+	Lifecycle bool
+	Bindings  Bindings
+
+	// countedByFlow is a command whose flow counts its own use, because the
+	// flow is also entered by gestures outside the registry (a page's row in
+	// the tree, a menu). Dispatch counts every other command as it enters it.
+	countedByFlow bool
+	// verb is a lifecycle command's request to the server.
+	verb Verb
+	// opensBox is a command that needs the box's container, which an image
+	// that is no longer available stops.
+	opensBox bool
+}
+
+// Entry is a command as it stands for one context and target: whether it can
+// act, and why not.
+type Entry struct {
+	Command
+	Enabled bool
+	// Why is why it cannot act, when it cannot.
+	Why string
+	// Unavailable is why it cannot act from where it was asked at all, whatever
+	// its target: a workspace command with no workspace, a page in a window
+	// opened on one box.
+	Unavailable string
+}
+
+// Context is what a frontend tells the registry about where a command is
+// asked from. Navigation is the frontend's (876 §2); the registry is handed
+// the parts of it a rule depends on.
+type Context struct {
+	Session Session
+	// OneShot is the box a window opened on one box belongs to (a bare attach,
+	// a run's own window); nil in a console.
+	OneShot *Sandbox
+	// Workspace is the box whose workspace the window holds, on screen or
+	// behind a page; nil with none. Its own pages open there whatever the box
+	// can do now, since nothing has to be attached to reach them.
+	Workspace *Sandbox
+	// HasWorkspace is a workspace open in the window, on screen or behind a
+	// page; WorkspaceShown is one on screen, PaneFocused a pane of it with
+	// the focus, and ListHasKeys the list beside it with the keys instead.
+	HasWorkspace, WorkspaceShown, PaneFocused, ListHasKeys bool
+	// Tree is the list available beside the workspace, which the pages open
+	// next to; TreeFits is the window wide enough for it.
+	Tree, TreeFits bool
+	// Waiting reports credential requests waiting on a box, and Refused a
+	// refused credential shown for it. Nil reports none.
+	Waiting, Refused func(Sandbox) bool
+}
+
+// Registry is the command registry of one window: the commands, and how often
+// each has been used there (671 §6), which lives as long as the window does.
+type Registry struct {
+	ds    DataSource
+	usage map[string]int
+}
+
+// NewRegistry is a window's registry over its data source.
+func NewRegistry(ds DataSource) *Registry {
+	return &Registry{ds: ds, usage: map[string]int{}}
+}
+
+// Use counts one use of a command, entering its flow.
+func (r *Registry) Use(id string) { r.usage[id]++ }
+
+// Usage is how often a command has been used in this window.
+func (r *Registry) Usage(id string) int { return r.usage[id] }
+
+// Commands is every command, in the order the registry lists them.
+func Commands() []Command { return slices.Clone(registry) }
+
+// Lookup is one command by ID.
+func Lookup(id string) (Command, bool) {
+	i := slices.IndexFunc(registry, func(c Command) bool { return c.ID == id })
+	if i < 0 {
+		return Command{}, false
+	}
+	return registry[i], true
+}
+
+// ForTUIKey is the command a key pressed bare in the TUI's list runs.
+func ForTUIKey(key string) (Command, bool) {
+	i := slices.IndexFunc(registry, func(c Command) bool { return slices.Contains(c.Bindings.TUI.Keys, key) })
+	if i < 0 {
+		return Command{}, false
+	}
+	return registry[i], true
+}
+
+// Entries is every command as it stands in this context, for these targets:
+// none for the window's own commands, one box from the palette or a pane, a
+// batch from the list.
+func (r *Registry) Entries(ctx Context, targets []Sandbox) []Entry {
+	out := make([]Entry, 0, len(registry))
+	for _, c := range registry {
+		out = append(out, r.entry(ctx, c, targets))
+	}
+	return out
+}
+
+// Entry is one command as it stands in this context, for these targets.
+func (r *Registry) Entry(ctx Context, id string, targets []Sandbox) (Entry, bool) {
+	c, ok := Lookup(id)
+	if !ok {
+		return Entry{}, false
+	}
+	return r.entry(ctx, c, targets), true
+}
+
+func (r *Registry) entry(ctx Context, c Command, targets []Sandbox) Entry {
+	e := Entry{Command: c, Enabled: true}
+	one := len(targets) == 1
+	switch {
+	case c.Lifecycle:
+		e.Enabled, e.Why = lifecycleEligible(c.ID, targets)
+	case c.Target == TargetBox && one && ctx.Workspace != nil && sameBox(ctx.Session, targets[0], *ctx.Workspace):
+		// Already open: the page opens in the workspace there is.
+	case c.Target == TargetBox:
+		// Anything else opens the box's workspace first, which attaching does.
+		e.Enabled = one && targets[0].Attachable()
+		e.Why = AttachWhy(targets)
+	}
+	switch c.ID {
+	case "requests":
+		e.Enabled = one && ctx.Waiting != nil && ctx.Waiting(targets[0])
+		e.Why = "nothing waiting on this discobox"
+	case "rejections":
+		e.Enabled = one && ctx.Refused != nil && ctx.Refused(targets[0])
+		e.Why = "nothing refused on this discobox"
+	case "terminal", "end", "maximize", "detach", "mouse", "dismiss":
+		if !ctx.PaneFocused || !ctx.WorkspaceShown {
+			e.Unavailable = "requires a workspace pane"
+		}
+	case "actions":
+		// Away from a workspace, or with the list's keys beside one, it is the
+		// list's action menu, which needs no pane.
+		if ctx.WorkspaceShown && !ctx.PaneFocused && !ctx.ListHasKeys {
+			e.Unavailable = "requires a workspace pane"
+		}
+	case "all":
+		switch {
+		case ctx.OneShot == nil:
+			e.Unavailable = "available in a wide attach window"
+		case !ctx.TreeFits:
+			e.Unavailable = "the window is too narrow for the list beside the box"
+		}
+	case "new", "credentials", "harnesses":
+		if ctx.HasWorkspace && !ctx.Tree {
+			e.Unavailable = "the pages open beside the list; this window has no tree"
+		}
+	}
+	if ctx.OneShot != nil && slices.Contains([]string{"new", "credentials", "harnesses", "servers", "options"}, c.ID) {
+		e.Unavailable = "open discobox console for this page"
+	}
+	if one && (c.ID == "issue" || c.ID == "pr" || c.ID == "files") {
+		if _, ok := targets[0].WorkNumber(c.ID != "issue"); !ok {
+			e.Enabled, e.Why = false, "no matching repository tag"
+		}
+	}
+	if ctx.OneShot != nil && slices.ContainsFunc(targets, func(s Sandbox) bool { return !sameBox(ctx.Session, s, *ctx.OneShot) }) {
+		e.Unavailable = "this window belongs to one box; open another with discobox attach"
+	}
+	if e.Unavailable != "" {
+		e.Enabled, e.Why = false, e.Unavailable
+	}
+	return e
+}
+
+func sameBox(session Session, a, b Sandbox) bool {
+	return a.ID == b.ID && session.ServerName(a.Server) == session.ServerName(b.Server)
+}
+
+// Frontend is what a frontend does for the commands it dispatches through the
+// registry: one method per command, plus how it says a command cannot run.
+// R is what a frontend's handler returns (the TUI's tea.Cmd). A command is
+// added as a registry entry, a case in Dispatch and a method here together:
+// the compiler holds every frontend to the method, and TestEveryCommandDispatches
+// holds the registry to Dispatch. A frontend that cannot offer a command yet
+// says so (598 §1).
+type Frontend[R any] interface {
+	// Unavailable says a command cannot run from where it was asked.
+	Unavailable(why string) R
+	// Cannot says a command cannot act on its targets, and why.
+	Cannot(c Command, why string) R
+	// OfferUpgrade is asked instead of opening a box whose image is no longer
+	// available on its pool: upgrading it is the way out.
+	OfferUpgrade(box Sandbox) R
+
+	Attach(box Sandbox) R
+	Shell(box Sandbox) R
+	ReviewConfig(box Sandbox) R
+	Rename(box Sandbox) R
+	Settings(box Sandbox) R
+	// Do sends a lifecycle verb for every target, in one batch.
+	Do(verb Verb, targets []Sandbox) R
+
+	Tools(box Sandbox) R
+	Issue(box Sandbox) R
+	PullRequest(box Sandbox) R
+	FilesChanged(box Sandbox) R
+	Audit(box Sandbox) R
+	Services(box Sandbox) R
+	CredentialRequests(box Sandbox) R
+	RejectedCredentials(box Sandbox) R
+
+	NewBox() R
+	Credentials() R
+	Harnesses() R
+	Quit() R
+	Help() R
+	Refresh() R
+	Filters() R
+	AllBoxes() R
+	ToggleArchived() R
+	RunOptions() R
+	Repaint() R
+	Palette() R
+
+	NewTerminal() R
+	EndSession() R
+	Maximize() R
+	Detach() R
+	ToggleMouse() R
+	Actions() R
+	DismissBanner() R
+}
+
+// Dispatch runs one command against explicit targets: it refuses one with no
+// box to act on, a box on a server that is gone, a command the context rules
+// out, and a lifecycle command its targets cannot take; then it counts the use
+// and enters the command's flow in the frontend. A box command's other
+// preconditions — a tag to open, a request waiting — are its flow's to refuse,
+// in that flow's own words; Entry still reports them, for a frontend to offer
+// only what will act. A box command takes its targets as given and never falls
+// back to what is on screen; a window's command takes none. An unknown ID does
+// nothing.
+func Dispatch[R any](r *Registry, f Frontend[R], ctx Context, id string, targets []Sandbox) R {
+	var none R
+	c, ok := Lookup(id)
+	if !ok {
+		return none
+	}
+	if c.Target == TargetNone {
+		// A window's command takes no box, whichever the frontend had to hand.
+		targets = nil
+	}
+	if c.Target == TargetBox && len(targets) == 0 {
+		return f.Unavailable("nothing selected")
+	}
+	e := r.entry(ctx, c, targets)
+	if c.Lifecycle {
+		// Checked ahead of eligibility: a box whose image is gone has no
+		// container to open, and eligibility's answer — repair — is the
+		// heavier of the two ways out when an upgrade will do.
+		if c.opensBox && len(targets) == 1 && targets[0].ImageUnavailable {
+			return f.OfferUpgrade(targets[0])
+		}
+		if !e.Enabled {
+			return f.Cannot(c, e.Why)
+		}
+	}
+	for _, s := range targets {
+		if r.ds.ForServer(s.Server) == nil {
+			return f.Unavailable(fmt.Sprintf("server %q is no longer available", s.Server))
+		}
+	}
+	if e.Unavailable != "" {
+		return f.Unavailable(e.Unavailable)
+	}
+	if !c.countedByFlow {
+		r.Use(c.ID)
+	}
+	if c.verb != "" {
+		return f.Do(c.verb, targets)
+	}
+	var box Sandbox
+	if len(targets) > 0 {
+		box = targets[0]
+	}
+	switch c.ID {
+	case "attach":
+		return f.Attach(box)
+	case "shell":
+		return f.Shell(box)
+	case "review config":
+		return f.ReviewConfig(box)
+	case "rename":
+		return f.Rename(box)
+	case "settings":
+		return f.Settings(box)
+	case "tools":
+		return f.Tools(box)
+	case "issue":
+		return f.Issue(box)
+	case "pr":
+		return f.PullRequest(box)
+	case "files":
+		return f.FilesChanged(box)
+	case "audit":
+		return f.Audit(box)
+	case "services":
+		return f.Services(box)
+	case "requests":
+		return f.CredentialRequests(box)
+	case "rejections":
+		return f.RejectedCredentials(box)
+	case "new":
+		return f.NewBox()
+	case "credentials":
+		return f.Credentials()
+	case "harnesses":
+		return f.Harnesses()
+	case "quit":
+		return f.Quit()
+	case "help":
+		return f.Help()
+	case "refresh":
+		return f.Refresh()
+	case "servers":
+		return f.Filters()
+	case "all":
+		return f.AllBoxes()
+	case "archived":
+		return f.ToggleArchived()
+	case "options":
+		return f.RunOptions()
+	case "repaint":
+		return f.Repaint()
+	case "palette":
+		return f.Palette()
+	case "terminal":
+		return f.NewTerminal()
+	case "end":
+		return f.EndSession()
+	case "maximize":
+		return f.Maximize()
+	case "detach":
+		return f.Detach()
+	case "mouse":
+		return f.ToggleMouse()
+	case "actions":
+		return f.Actions()
+	case "dismiss":
+		return f.DismissBanner()
+	}
+	return none
+}
+
+// Lifecycle is the box's own actions as they stand for these targets: the
+// action menu's entries. Unavailable ones stay with the reason, rather than
+// disappearing and leaving you wondering where upgrade went.
+func Lifecycle(targets []Sandbox) []Entry {
+	var out []Entry
+	for _, c := range registry {
+		if c.Lifecycle {
+			e := Entry{Command: c}
+			e.Enabled, e.Why = lifecycleEligible(c.ID, targets)
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// lifecycleEligible is whether a lifecycle command can act on every target,
+// and why not.
+func lifecycleEligible(id string, targets []Sandbox) (bool, string) {
+	one := len(targets) == 1
+	anyUpgrade, anyRepair, anyRunning, anyStopped := false, false, false, false
+	anyArchived, allArchived := false, len(targets) > 0
+	for _, s := range targets {
+		anyUpgrade = anyUpgrade || s.Upgrade
+		anyRepair = anyRepair || s.Repairable()
+		// A suspended box takes both: stop powers it off, start thaws it.
+		anyRunning = anyRunning || s.State == StateRunning || s.State == StateSuspended
+		anyStopped = anyStopped || s.Startable()
+		anyArchived = anyArchived || s.State == StateArchived
+		allArchived = allArchived && s.State == StateArchived
+	}
+	switch id {
+	case "attach", "shell":
+		return one && targets[0].Attachable(), AttachWhy(targets)
+	case "review config":
+		return one && targets[0].State == StateRunning, "takes one running box"
+	case "rename":
+		// The name is written into the box (ADR 26-10-12-026), which is
+		// started to take it. An archived one has nothing to start.
+		if one && targets[0].State == StateArchived {
+			return false, "an archived box cannot be started to take a name — unarchive it first"
+		}
+		return one, "takes exactly one box"
+	case "settings":
+		if one && targets[0].State == StateArchived {
+			return false, "an archived box is unarchived before its settings change"
+		}
+		return one, "takes exactly one box"
+	case "upgrade":
+		return anyUpgrade, "already on the current image"
+	case "repair":
+		return anyRepair, "an archived box is unarchived, not repaired"
+	case "stop":
+		return anyRunning, "not running"
+	case "start":
+		return anyStopped, "already on, or archived"
+	case "archive":
+		return !allArchived, "already archived"
+	case "unarchive":
+		return anyArchived, "not archived"
+	case "purge":
+		return allArchived, "archive it first — purge only takes archived boxes"
+	}
+	return false, ""
+}
+
+// AttachWhy names what stops one box being opened, which for the two ways a
+// box can have no container is not the same thing; empty when nothing does.
+// Archived is reversible by intent and says so. Anything else with nothing to
+// attach to is a create or rebuild that never produced a container, and a
+// settled failure is never retried on its own (ADR 0017 §4) — repair is the
+// intent that rebuilds it (ADR 0035).
+//
+// The state name is not the reason. "the box is error" described the row rather
+// than the obstacle, and it was wrong as often as not: the boxes it refused
+// mostly had a container and a stale error latched over it.
+func AttachWhy(targets []Sandbox) string {
+	if len(targets) != 1 {
+		return "takes exactly one box"
+	}
+	box := targets[0]
+	if box.ImageUnavailable {
+		if box.Upgrade {
+			return "its image is no longer available on its pool — upgrade moves it to its harness's current image"
+		}
+		return "its image is no longer available on its pool, and its harness has no newer image"
+	}
+	if box.Attachable() {
+		return ""
+	}
+	if box.State == StateArchived {
+		return "the box is archived — unarchive it first"
+	}
+	return "the box has no container; repair rebuilds it"
+}
+
+// tui and desktop are bindings for one command, written beside it.
+func tui(keys ...string) TUIBinding { return TUIBinding{Keys: keys} }
+
+func (b TUIBinding) leader(keys ...string) TUIBinding { b.Leader = keys; return b }
+
+func (b TUIBinding) menu(keys ...string) TUIBinding { b.Menu = keys; return b }
+
+func desktop(keys ...string) DesktopBinding { return DesktopBinding{Keys: keys} }
+
+// registry is every command, in the order hints, menus and the palette list
+// them: the box's lifecycle first, as its action menu orders it.
+var registry = []Command{
+	{ID: "attach", Label: "attach", Detail: "join the harness terminal", Aliases: []string{"attach", "open"},
+		Target: TargetBox, Lifecycle: true, opensBox: true,
+		Bindings: Bindings{TUI: tui("a").leader("a"), Desktop: desktop("enter")}},
+	{ID: "shell", Label: "shell", Detail: "open a shell in the box", Aliases: []string{"shell"},
+		Target: TargetBox, Lifecycle: true, opensBox: true,
+		Bindings: Bindings{TUI: tui("s").leader("s"), Desktop: desktop("primary+t")}},
+	{ID: "review config", Label: "review config", Detail: "review and save local settings and logins", Aliases: []string{"review config"},
+		Target: TargetBox, Lifecycle: true,
+		Bindings: Bindings{TUI: tui("H").leader("H")}},
+	{ID: "rename", Label: "rename", Detail: "type a new name for the box", Aliases: []string{"rename"},
+		Target: TargetBox, Lifecycle: true,
+		Bindings: Bindings{TUI: tui("e").leader("e"), Desktop: desktop("f2")}},
+	{ID: "settings", Label: "settings", Detail: "edit its configured name, harness, egress and discobox API access", Aliases: []string{"settings"},
+		Target: TargetBox, Lifecycle: true,
+		Bindings: Bindings{TUI: tui("E").leader("E")}},
+	{ID: "upgrade", Label: "upgrade", Detail: "re-pin to the current harness image", Aliases: []string{"upgrade"},
+		Target: TargetBox, Lifecycle: true, verb: VerbUpgrade,
+		Bindings: Bindings{TUI: tui("u").leader("u")}},
+	// Repair is R rather than r, which refreshes the list — and the shift is
+	// no loss on an action that rebuilds a container, next to one that
+	// redraws a table.
+	{ID: "repair", Label: "repair", Detail: "rebuild the box on the current image, keeping its work", Aliases: []string{"repair"},
+		Target: TargetBox, Lifecycle: true, verb: VerbRepair,
+		Bindings: Bindings{TUI: tui("R").leader("R")}},
+	{ID: "stop", Label: "stop", Detail: "power the box off, keeping its disk", Aliases: []string{"stop"},
+		Target: TargetBox, Lifecycle: true, verb: VerbStop,
+		Bindings: Bindings{TUI: tui("t").leader("t")}},
+	{ID: "start", Label: "start", Detail: "power a stopped box back on, or thaw a suspended one", Aliases: []string{"start"},
+		Target: TargetBox, Lifecycle: true, verb: VerbStart,
+		Bindings: Bindings{TUI: tui("T").leader("T")}},
+	{ID: "archive", Label: "archive", Detail: "put it away, disk and all, reversibly", Aliases: []string{"archive", "rm"},
+		Target: TargetBox, Lifecycle: true, verb: VerbArchive,
+		Bindings: Bindings{TUI: tui("x", "delete").leader("x")}},
+	{ID: "unarchive", Label: "unarchive", Detail: "bring an archived box back", Aliases: []string{"unarchive"},
+		Target: TargetBox, Lifecycle: true, verb: VerbUnarchive,
+		Bindings: Bindings{TUI: tui("U").leader("U")}},
+	{ID: "purge", Label: "purge", Detail: "destroy it and its data, for good", Aliases: []string{"purge"},
+		Target: TargetBox, Lifecycle: true, verb: VerbPurge,
+		Bindings: Bindings{TUI: tui("P").leader("P")}},
+
+	{ID: "tools", Label: "tools", Detail: "open a diff viewer, an editor or your IDE on the box", Aliases: []string{"tools"},
+		Target: TargetBox, countedByFlow: true,
+		Bindings: Bindings{TUI: tui("o").leader("o")}},
+	{ID: "issue", Label: "issue", Detail: "open the tagged issue", Aliases: []string{"issue"},
+		Target:   TargetBox,
+		Bindings: Bindings{TUI: tui("i").leader("i")}},
+	{ID: "pr", Label: "pull request", Detail: "open the tagged pull request", Aliases: []string{"pull request", "pr"},
+		Target:   TargetBox,
+		Bindings: Bindings{TUI: tui("p").leader("p")}},
+	{ID: "audit", Label: "audit", Detail: "follow everything the box has done, as it happens", Aliases: []string{"audit"},
+		Target: TargetBox, countedByFlow: true,
+		Bindings: Bindings{TUI: tui().leader("A")}},
+	{ID: "new", Label: "new discobox", Detail: "open the new discobox card", Aliases: []string{"new discobox", "new"},
+		countedByFlow: true,
+		Bindings:      Bindings{TUI: tui("n").leader("n"), Desktop: desktop("primary+n")}},
+	{ID: "credentials", Label: "credentials", Detail: "manage credentials", Aliases: []string{"credentials", "secrets"},
+		countedByFlow: true,
+		Bindings:      Bindings{TUI: tui("f4").leader("f4")}},
+	{ID: "harnesses", Label: "harnesses", Detail: "manage harnesses", Aliases: []string{"harnesses"},
+		countedByFlow: true,
+		Bindings:      Bindings{TUI: tui("f3").leader("f3")}},
+	{ID: "quit", Label: "quit", Detail: "leave this window", Aliases: []string{"quit", "exit"},
+		Bindings: Bindings{TUI: tui("q").leader("q"), Desktop: desktop("primary+q")}},
+	{ID: "help", Label: "help", Detail: "show the console keys", Aliases: []string{"help"},
+		Bindings: Bindings{TUI: tui("f1", "?").leader("f1")}},
+	{ID: "refresh", Label: "refresh", Detail: "read the boxes again", Aliases: []string{"refresh"},
+		Bindings: Bindings{TUI: tui("r").leader("r")}},
+	{ID: "servers", Label: "servers", Detail: "choose the server, folder or tags", Aliases: []string{"servers", "tags", "filters"}},
+	{ID: "all", Label: "all discoboxes", Detail: "show every discobox, with this one beside them", Aliases: []string{"all discoboxes", "boxes"},
+		Bindings: Bindings{TUI: tui().menu(".", "l")}},
+	{ID: "services", Label: "services", Detail: "view output, start, stop or restart a service", Aliases: []string{"services"},
+		Target: TargetBox, countedByFlow: true,
+		Bindings: Bindings{TUI: tui().leader("S", "0")}},
+	{ID: "requests", Label: "credential requests", Detail: "answer this box's credential requests", Aliases: []string{"credential requests", "requests"},
+		Target:   TargetBox,
+		Bindings: Bindings{TUI: tui("C").leader("g")}},
+	{ID: "rejections", Label: "rejected credentials", Detail: "remedy a refused credential", Aliases: []string{"rejected credentials", "rejections"},
+		Target:   TargetBox,
+		Bindings: Bindings{TUI: tui("K").leader("K")}},
+	{ID: "files", Label: "files changed", Detail: "review the pull request's changes", Aliases: []string{"files changed", "diff"},
+		Target:   TargetBox,
+		Bindings: Bindings{TUI: tui("f").leader("f")}},
+	{ID: "archived", Label: "show archived", Detail: "show or hide archived boxes", Aliases: []string{"show archived"},
+		Bindings: Bindings{TUI: tui("A")}},
+	{ID: "options", Label: "run options", Detail: "choose defaults for the next discobox", Aliases: []string{"run options", "options"},
+		Bindings: Bindings{TUI: tui("ctrl+o")}},
+	{ID: "repaint", Label: "repaint", Detail: "redraw and reread the console", Aliases: []string{"repaint"},
+		Bindings: Bindings{TUI: tui("ctrl+l")}},
+
+	// These own a workspace pane rather than a box chosen from the list.
+	{ID: "terminal", Label: "new terminal", Detail: "open another harness terminal", Aliases: []string{"new terminal"},
+		Bindings: Bindings{TUI: tui().leader("c"), Desktop: desktop("primary+alt+t")}},
+	{ID: "end", Label: "end terminal", Detail: "end the focused session", Aliases: []string{"end terminal"},
+		Bindings: Bindings{TUI: tui().leader("X"), Desktop: desktop("primary+w")}},
+	{ID: "maximize", Label: "maximize", Detail: "maximize or restore the focused column", Aliases: []string{"maximize"},
+		Bindings: Bindings{TUI: tui().leader("z"), Desktop: desktop("primary+enter")}},
+	{ID: "detach", Label: "detach", Detail: "leave the workspace, keeping sessions running", Aliases: []string{"detach"},
+		Bindings: Bindings{TUI: tui().leader("d"), Desktop: desktop("primary+0")}},
+	{ID: "mouse", Label: "toggle mouse", Detail: "take or return the application's mouse", Aliases: []string{"toggle mouse"},
+		Bindings: Bindings{TUI: tui().leader("m")}},
+	{ID: "actions", Label: "actions", Detail: "open the focused box's action menu", Aliases: []string{"actions"},
+		Bindings: Bindings{TUI: tui(".").leader(".")}},
+	{ID: "dismiss", Label: "dismiss banner", Detail: "dismiss the current notice", Aliases: []string{"dismiss banner"},
+		Bindings: Bindings{TUI: tui().leader("b")}},
+	{ID: "palette", Label: "command palette", Detail: "find a box or command", Aliases: []string{"command palette", "palette"},
+		countedByFlow: true,
+		Bindings:      Bindings{TUI: tui(":").leader("k"), Desktop: desktop("primary+k", "primary+p")}},
+}

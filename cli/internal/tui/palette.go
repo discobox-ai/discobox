@@ -34,7 +34,7 @@ type palette struct {
 type paletteRow struct {
 	identity string
 	box      *console.Sandbox
-	command  *consoleCommand
+	command  *console.Entry
 	why      string
 	score    matchRank
 }
@@ -43,7 +43,7 @@ func (m *Model) openPalette() tea.Cmd {
 	if m.dialog != nil || m.optionsOpen || m.newOpen || m.focus == focusPrompt {
 		return nil
 	}
-	m.recordConsoleUse("palette")
+	m.commands.Use("palette")
 	ti := textinput.New()
 	ti.Prompt = "› "
 	ti.Placeholder = "Find a box or command"
@@ -190,9 +190,9 @@ func (m *Model) rebuildPalette(reset bool) {
 			}
 			why := ""
 			if p.command != "" {
-				for _, c := range m.consoleCommands(&s) {
-					if c.id == p.command && !c.enabled {
-						why = c.why
+				for _, c := range m.commandEntries(&s) {
+					if c.ID == p.command && !c.Enabled {
+						why = c.Why
 					}
 				}
 			}
@@ -205,26 +205,26 @@ func (m *Model) rebuildPalette(reset bool) {
 		if p.box != nil {
 			box = m.paletteBox(*p.box)
 		}
-		for _, c := range m.consoleCommands(box) {
-			if p.box != nil && !c.targeted {
+		for _, c := range m.commandEntries(box) {
+			if p.box != nil && c.Target != console.TargetBox {
 				continue
 			}
-			score, ok := paletteMatch(q, append([]string{c.label}, c.aliases...), []string{c.detail})
+			score, ok := paletteMatch(q, append([]string{c.Label}, c.Aliases...), []string{c.Detail})
 			if !ok {
 				continue
 			}
 			why := ""
-			if !c.targeted && !c.enabled {
-				why = c.why
+			if c.Target != console.TargetBox && !c.Enabled {
+				why = c.Why
 			}
 			if p.box != nil {
 				if box == nil {
 					why = "the box is no longer listed"
-				} else if !c.enabled {
-					why = c.why
+				} else if !c.Enabled {
+					why = c.Why
 				}
 			}
-			rows = append(rows, paletteRow{identity: "command:" + c.id, command: &c, score: score, why: why})
+			rows = append(rows, paletteRow{identity: "command:" + c.ID, command: &c, score: score, why: why})
 		}
 	}
 	eligible := slices.ContainsFunc(rows, func(r paletteRow) bool { return r.why == "" })
@@ -287,7 +287,7 @@ func (m *Model) rebuildPalette(reset bool) {
 			if r.box != nil {
 				return m.paletteRecent[m.boxRef(*r.box)]
 			}
-			return m.paletteUsage[r.command.id]
+			return m.commands.Usage(r.command.ID)
 		}
 		if n := cmp.Compare(usage(b), usage(a)); n != 0 {
 			return n
@@ -299,7 +299,7 @@ func (m *Model) rebuildPalette(reset bool) {
 			if r.box != nil {
 				return displayName(*r.box)
 			}
-			return r.command.label
+			return r.command.Label
 		}
 		if n := strings.Compare(label(a), label(b)); n != 0 {
 			return n
@@ -326,11 +326,11 @@ func (m *Model) paletteMove(delta int) {
 		p.reason = ""
 	}
 }
-func (m *Model) paletteChip(c *consoleCommand, box *console.Sandbox) {
+func (m *Model) paletteChip(c *console.Entry, box *console.Sandbox) {
 	p := m.palette
 	if c != nil {
-		p.command = c.id
-		if c.id == "purge" || c.id == "unarchive" {
+		p.command = c.ID
+		if c.ID == "purge" || c.ID == "unarchive" {
 			p.archived = true
 		}
 	}
@@ -364,23 +364,23 @@ func (m *Model) paletteChoose(complete bool) tea.Cmd {
 			m.closePalette()
 			return m.paletteNavigate(box)
 		}
-		if r.command.targeted {
+		if r.command.Target == console.TargetBox {
 			m.paletteChip(r.command, nil)
 			return nil
 		}
 		if complete {
-			p.input.SetValue(r.command.label)
+			p.input.SetValue(r.command.Label)
 			p.input.CursorEnd()
 			m.rebuildPalette(true)
 			return nil
 		}
 	}
 	var box console.Sandbox
-	var c *consoleCommand
+	var c *console.Entry
 	if r.box != nil {
 		box = *r.box
-		for _, cc := range m.consoleCommands(&box) {
-			if cc.id == p.command {
+		for _, cc := range m.commandEntries(&box) {
+			if cc.ID == p.command {
 				c = &cc
 				break
 			}
@@ -400,7 +400,10 @@ func (m *Model) paletteChoose(complete bool) tea.Cmd {
 		return nil
 	}
 	m.closePalette()
-	return m.executeConsoleCommand(*c, box)
+	if c.Target == console.TargetBox {
+		return m.dispatch(c.ID, box)
+	}
+	return m.dispatch(c.ID)
 }
 func (m *Model) paletteNavigate(box console.Sandbox) tea.Cmd {
 	if m.oneShot() {
@@ -418,11 +421,11 @@ func (m *Model) paletteCompleteAlias() {
 	if !ok || strings.HasPrefix(first, "sbx_") {
 		return
 	}
-	for _, c := range m.consoleCommands(nil) {
-		if !c.targeted {
+	for _, c := range m.commandEntries(nil) {
+		if c.Target != console.TargetBox {
 			continue
 		}
-		for _, a := range c.aliases {
+		for _, a := range c.Aliases {
 			if !strings.Contains(a, " ") && strings.EqualFold(first, a) {
 				m.paletteChip(&c, nil)
 				p.input.SetValue(rest)
@@ -539,7 +542,7 @@ func (m *Model) viewPalette(background string) string {
 			line = strings.Join(statusTags, " ") + " " + fmt.Sprintf("□ %s  %s  %s  %s  %s", displayName(*s), shortID(s.ID), s.State, s.RepositoryKey, m.session.ServerName(s.Server))
 		} else {
 			c := r.command
-			line = "› " + c.label + "  " + c.detail
+			line = "› " + c.Label + "  " + c.Detail
 		}
 		if r.why != "" {
 			line += " — " + r.why
@@ -551,7 +554,7 @@ func (m *Model) viewPalette(background string) string {
 			room = max(1, inner-11)
 		}
 		if r.command != nil {
-			binding := "[" + m.consoleCommandBinding(*r.command) + "]"
+			binding := "[" + m.commandBinding(r.command.Command) + "]"
 			binding = ansi.Truncate(binding, max(1, room-3), "…")
 			textRoom := max(1, room-2-ansi.StringWidth(binding)-1)
 			line = padANSI(ansi.Truncate(line, textRoom, "…"), textRoom) + " " + binding

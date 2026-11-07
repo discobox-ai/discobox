@@ -64,6 +64,20 @@
 
 ## Key routing
 
+- **A command's keys are the registry's** (`cli/internal/console`,
+  `commands.go`). Change one there and change the window's constant that
+  names it in hints, help and menus with it; `TestTheWindowsKeysAreTheRegistrys`
+  fails until both agree. A new key for a command goes in the registry first,
+  never only in a handwritten switch, or the hint names a key the binding
+  does not have.
+- **A renderer never rewrites an `Entry`'s `Enabled` or `Why`.** Whether a
+  command can act is the registry's, and the palette, menus and keys must
+  agree on it; a fact the rule needs from the window (the list has the keys,
+  the box whose workspace is open) goes into `console.Context` instead. Both
+  times this was got wrong, a menu offered what the palette greyed.
+- **A command travels by its registry ID** — menu rows (`action.key`), pane
+  messages, `runActionMsg` — never by the key that pressed it. The key is how
+  it was reached; the ID is what it is.
 - **What draws in front takes the keys.** `View`'s precedence is the contract:
   a modal (`modalUp` — a dialog, the run options), then a
   pane (`inPanes`), then the harnesses/secrets screens, then the console.

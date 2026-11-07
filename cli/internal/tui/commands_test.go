@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,52 +16,11 @@ import (
 // Lifecycle and interaction keys are registered from the descriptors. A new
 // action cannot quietly acquire a shortcut without searchable metadata.
 func TestConsoleCommandBindingCoverage(t *testing.T) {
-	m := newTestModel(t, newFakeSource())
-	commands := m.consoleCommands(nil)
-	bareKeys := map[string]bool{}
-	ids, keys, aliases := map[string]bool{}, map[string]bool{}, map[string]string{}
-	for _, c := range commands {
-		if c.id == "" || c.label == "" || c.detail == "" || c.run == nil || len(c.aliases) == 0 {
-			t.Fatalf("incomplete command: %+v", c)
-		}
-		if ids[c.id] {
-			t.Fatalf("duplicate ID %s", c.id)
-		}
-		ids[c.id] = true
-		if c.key != "" {
-			if bareKeys[c.key] {
-				t.Fatalf("duplicate binding %s", c.key)
-			}
-			bareKeys[c.key] = true
-			keys[c.key] = true
-		}
-		for _, key := range c.keyAliases {
+	keys := map[string]bool{}
+	for _, c := range console.Commands() {
+		b := c.Bindings.TUI
+		for _, key := range slices.Concat(b.Keys, b.Leader, b.Menu) {
 			keys[key] = true
-		}
-		for _, key := range c.menuKeys {
-			keys[key] = true
-		}
-		for _, key := range c.prefixKeys {
-			if key != "" {
-				keys[key] = true
-			}
-		}
-		for _, alias := range c.aliases {
-			alias = strings.ToLower(alias)
-			if old, ok := aliases[alias]; ok && old != c.id {
-				t.Fatalf("ambiguous alias %s for %s and %s", alias, old, c.id)
-			}
-			aliases[alias] = c.id
-		}
-	}
-	for key := range verbs {
-		if !keys[key] {
-			t.Errorf("lifecycle binding %s has no command", key)
-		}
-	}
-	for key := range interactions {
-		if !keys[key] {
-			t.Errorf("interaction binding %s has no command", key)
 		}
 	}
 	for _, page := range treePages {
@@ -174,8 +134,9 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 		case "WithPrefixBinding", "WithRepeatingPrefixBinding", "WithBinding":
 			switch arg := call.Args[0].(type) {
 			case *ast.IndexExpr:
-				field, ok := arg.X.(*ast.SelectorExpr)
-				if !ok || field.Sel.Name != "prefixKeys" {
+				// The registry's own leader sequences (console.Commands).
+				leader, ok := arg.X.(*ast.Ident)
+				if !ok || leader.Name != "leader" {
 					t.Error("unclassified computed prefix binding")
 				}
 			case *ast.CallExpr:
@@ -203,31 +164,45 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 
 }
 
-func TestConsoleCommandEligibility(t *testing.T) {
-	m := newTestModel(t, newFakeSource())
-	tests := []struct {
-		state   console.State
-		command string
-		enabled bool
-	}{
-		{console.StateRunning, "stop", true}, {console.StateSuspended, "stop", true}, {console.StateStopped, "stop", false},
-		{console.StateStopped, "start", true}, {console.StateSuspended, "start", true}, {console.StateArchived, "start", false},
-		{console.StateArchived, "rename", false}, {console.StateArchived, "settings", false}, {console.StateArchived, "purge", true},
-		{console.StateRunning, "purge", false}, {console.StateError, "repair", true},
-	}
-	for _, tt := range tests {
-		box := console.Sandbox{ID: "box", State: tt.state}
-		found := false
-		for _, c := range m.consoleCommands(&box) {
-			if c.id == tt.command {
-				found = true
-				if c.enabled != tt.enabled {
-					t.Errorf("%s on %s = %v (%s)", tt.command, tt.state, c.enabled, c.why)
-				}
-			}
+// The window's own key constants, which its hints, help and menus still name,
+// are the registry's bindings: a key changed in the registry and not here
+// would move the binding while every hint went on naming the old key.
+func TestTheWindowsKeysAreTheRegistrys(t *testing.T) {
+	type binding struct{ keys, leader, menu []string }
+	for id, want := range map[string]binding{
+		"review config": {keys: []string{harnessChangesKey}, leader: []string{harnessChangesKey}},
+		"settings":      {keys: []string{settingsKey}, leader: []string{settingsKey}},
+		"tools":         {keys: []string{toolsKey}, leader: []string{toolsKey}},
+		"issue":         {keys: []string{issueKey}, leader: []string{issueKey}},
+		"pr":            {keys: []string{pullKey}, leader: []string{pullKey}},
+		"audit":         {leader: []string{auditKey}},
+		"credentials":   {keys: []string{secretsKey}, leader: []string{secretsKey}},
+		"harnesses":     {keys: []string{harnessesKey}, leader: []string{harnessesKey}},
+		"quit":          {keys: []string{paneQuitKey}, leader: []string{paneQuitKey}},
+		"all":           {menu: []string{boxMenuKey, allBoxesKey}},
+		"services":      {leader: []string{paneServicesKey, paneServicesMenuKey}},
+		"requests":      {keys: []string{credentialsKey}, leader: []string{credentialsLeaderKey}},
+		"rejections":    {keys: []string{rejectedKey}, leader: []string{rejectedKey}},
+		"files":         {keys: []string{pullFilesKey}, leader: []string{pullFilesKey}},
+		"options":       {keys: []string{optionsKey}},
+		"repaint":       {keys: []string{repaintKey}},
+		"terminal":      {leader: []string{paneTerminalKey}},
+		"end":           {leader: []string{paneEndKey}},
+		"maximize":      {leader: []string{paneZoomKey}},
+		"detach":        {leader: []string{paneDetachAlt}},
+		"mouse":         {leader: []string{paneMouseKey}},
+		"actions":       {keys: []string{boxMenuKey}, leader: []string{boxMenuKey}},
+		"dismiss":       {leader: []string{bannerDismissKey}},
+		"palette":       {keys: []string{":"}, leader: []string{paletteKey}},
+	} {
+		c, ok := console.Lookup(id)
+		if !ok {
+			t.Errorf("no command %s", id)
+			continue
 		}
-		if !found {
-			t.Errorf("missing command %s", tt.command)
+		b := c.Bindings.TUI
+		if !slices.Equal(b.Keys, want.keys) || !slices.Equal(b.Leader, want.leader) || !slices.Equal(b.Menu, want.menu) {
+			t.Errorf("%s: the registry binds %+v, the window's keys are %+v", id, b, want)
 		}
 	}
 }

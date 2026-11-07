@@ -1347,7 +1347,7 @@ func TestTheListOffersNoHostTools(t *testing.T) {
 	if got := ds.openedEditors(); len(got) != 0 {
 		t.Fatalf("the list ran host tools: %v", got)
 	}
-	for _, a := range m.actions(m.list.targets()) {
+	for _, a := range actions(m.list.targets()) {
 		if a.label == "vscode" || a.label == "zed" {
 			t.Fatalf("the list's actions offer %s: %+v", a.label, a)
 		}
@@ -1406,8 +1406,8 @@ func TestRepairPointsAnArchivedBoxAtUnarchive(t *testing.T) {
 	showAllFolders(t, m)
 	send(t, m, keyPress("A"), keyPress("G"))
 
-	for _, a := range m.actions(m.list.targets()) {
-		if a.key != repairKey {
+	for _, a := range actions(m.list.targets()) {
+		if a.key != "repair" {
 			continue
 		}
 		if a.enabled {

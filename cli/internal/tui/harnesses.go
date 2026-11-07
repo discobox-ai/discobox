@@ -323,7 +323,7 @@ func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 
 // openHarnesses brings the screen up.
 func (m *Model) openHarnesses() tea.Cmd {
-	m.recordConsoleUse("harnesses")
+	m.commands.Use("harnesses")
 	m.harnessesOpen = true
 	m.optionsOpen = false
 	// The secrets screen is this one's peer, not what it is drawn over: one of

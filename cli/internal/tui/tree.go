@@ -95,7 +95,7 @@ func (m *Model) closePages() {
 // openNew opens the new discobox card: the composer, framed as a dialog and
 // modal like one.
 func (m *Model) openNew() {
-	m.recordConsoleUse("new")
+	m.commands.Use("new")
 	m.closePages()
 	m.newOpen = true
 	m.listFront, m.treeExpanded = false, false
@@ -533,11 +533,13 @@ func (m *Model) switchTo(box console.Sandbox) tea.Cmd {
 	if m.boxRef(box) == m.boxRef(m.paneBox) && (m.inPanes() || m.wsOpening) {
 		return nil
 	}
-	if m.parked[m.boxRef(box)] == nil {
-		for _, a := range m.actions([]console.Sandbox{box}) {
-			if interactions[a.key] == console.InteractAttach && !a.enabled {
-				return status("%s: %s", sandboxLabel(box), a.why)
-			}
+	// The box whose workspace is open needs no attach to be shown, whatever
+	// it can do now (console.Context.Workspace): it is parked and brought back
+	// like any parked one.
+	open := m.boxRef(box) == m.boxRef(m.paneBox) && m.hasWorkspace()
+	if m.parked[m.boxRef(box)] == nil && !open {
+		if !box.Attachable() {
+			return status("%s: %s", sandboxLabel(box), console.AttachWhy([]console.Sandbox{box}))
 		}
 	}
 	return m.openFromList(console.InteractAttach, box)
@@ -995,21 +997,22 @@ func (m *Model) boxMenu(box console.Sandbox) tea.Cmd {
 	targets := []console.Sandbox{box}
 	// Any other box's menu is the list's own, attach and all.
 	if m.boxRef(box) != m.boxRef(m.paneBox) || !m.hasWorkspace() {
-		m.dialog = actionsDialog(actionTitle(targets), "", m.actions(targets), chooseAction(targets))
+		m.dialog = actionsDialog(actionTitle(targets), "", actions(targets), chooseAction(targets))
 		return nil
 	}
 	// The box is already on screen, so attaching to it is not on offer; what
 	// is, is what the workspace itself can open for it.
-	onScreen := []action{
-		{key: paneServicesKey, press: paneServicesKey, label: "services", detail: "view output, start, stop or restart a service", enabled: true},
-		{key: toolsKey, press: toolsKey, label: "tools", detail: "open a diff viewer, an editor or your IDE on the box", enabled: true},
-		{key: auditKey, press: auditKey, label: "audit", detail: "follow everything the box has done, as it happens", enabled: true},
+	ctx := m.commandContext()
+	entry := func(id string) action {
+		e, _ := m.commands.Entry(ctx, id, targets)
+		return commandAction(e)
 	}
+	onScreen := []action{entry("services"), entry("tools"), entry("audit")}
 	var items []action
-	for _, a := range m.actions(targets) {
+	for _, a := range actions(targets) {
 		switch a.key {
-		case "a":
-		case "s":
+		case "attach":
+		case "shell":
 			items = append(append(items, a), onScreen...)
 		default:
 			items = append(items, a)
@@ -1018,20 +1021,10 @@ func (m *Model) boxMenu(box console.Sandbox) tea.Cmd {
 	if m.attach != nil {
 		// A window opened on this one box can become the whole window, with
 		// every discobox in the tree beside it and this one picked out.
-		why := ""
-		if m.screenWidth < treeMinScreen {
-			why = "the window is too narrow for the list beside the box"
-		}
-		items = append(items, action{key: allBoxesKey, press: allBoxesKey, label: "all discoboxes",
-			detail: "show every discobox, with this one beside them", enabled: why == "", why: why})
+		items = append(items, entry("all"))
 	}
-	choose := chooseAction(targets)
-	m.dialog = actionsDialog(actionTitle(targets), "", items, func(key string) tea.Cmd {
-		if key == toolsKey || key == auditKey || key == allBoxesKey || key == paneServicesKey {
-			return func() tea.Msg { return boxMenuChoiceMsg{key: key} }
-		}
-		return choose(key)
-	})
+	// Every row is a registry command, dispatched on this box like the rest.
+	m.dialog = actionsDialog(actionTitle(targets), "", items, chooseAction(targets))
 	return nil
 }
 
@@ -1057,10 +1050,6 @@ func (m *Model) showAllBoxes() tea.Cmd {
 	m.focusTree()
 	return tea.Batch(m.refresh(), m.restoreDraft(m.draft))
 }
-
-// boxMenuChoiceMsg is one of the workspace's own entries chosen from the box
-// menu, run once the menu has closed.
-type boxMenuChoiceMsg struct{ key string }
 
 // boxSourceLabel is where the box on screen was cut from, as the list spells
 // a source.

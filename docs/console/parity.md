@@ -13,9 +13,10 @@ bindings: the TUI in `go tool task ci:test`, the desktop app in
 ## What the ledger covers today
 
 The commands the console's spec carries (`cli/internal/tui/spec.go`, exported
-to `desktop/src/spec.json`), by their prototype IDs. When the command registry
-in `cli/internal/console` replaces that spec, its commands are the ones held to
-parity, and the entries below move to its IDs.
+to `desktop/src/spec.json`), by their prototype IDs. The spec reads the
+desktop chords from the command registry in `cli/internal/console`; when the
+registry replaces the spec, its commands are the ones held to parity, and the
+entries below move to its IDs.
 
 ## The desktop app lacks
 

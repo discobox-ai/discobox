@@ -169,7 +169,7 @@ var auditRecordings = []struct{ part, key, label string }{
 // discobox's trails. Opening it again starts over: the records are the
 // server's, and the screen holds only what it has been shown.
 func (m *Model) openAudit(box console.Sandbox) tea.Cmd {
-	m.recordConsoleUse("audit")
+	m.commands.Use("audit")
 	m.closeAudit()
 	m.auditGen++
 	ctx, stop := context.WithCancel(m.ctx)

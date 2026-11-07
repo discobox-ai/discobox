@@ -349,7 +349,7 @@ func (m *Model) loadSecrets() tea.Cmd {
 }
 
 func (m *Model) openSecrets() tea.Cmd {
-	m.recordConsoleUse("credentials")
+	m.commands.Use("credentials")
 	m.secretsOpen = true
 	m.optionsOpen = false
 	m.harnessesOpen = false

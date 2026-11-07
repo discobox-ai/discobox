@@ -1207,7 +1207,7 @@ func TestRunningWarningKeepsActions(t *testing.T) {
 	send(t, m, keyPress("tab"))
 	for _, label := range []string{"attach", "shell", "stop", "review config"} {
 		found := false
-		for _, action := range m.actions(m.list.targets()) {
+		for _, action := range actions(m.list.targets()) {
 			if action.label == label {
 				found = true
 				if !action.enabled {

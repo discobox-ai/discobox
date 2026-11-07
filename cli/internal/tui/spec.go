@@ -161,20 +161,21 @@ func specAgents() map[string]Glyph {
 	return out
 }
 
-// actionCommands names the list's action keys as commands.
-var actionCommands = map[string]string{
-	"a":               "box.attach",
-	"s":               "box.shell",
-	harnessChangesKey: "box.reviewConfig",
-	renameKey:         "box.rename",
-	settingsKey:       "box.settings",
-	"u":               "box.upgrade",
-	repairKey:         "box.repair",
-	"t":               "box.stop",
-	"T":               "box.start",
-	"x":               "box.archive",
-	"U":               "box.unarchive",
-	"P":               "box.purge",
+// specIDs names registry commands by the prototype's IDs, which the desktop
+// app still reads.
+var specIDs = map[string]string{
+	"attach":        "box.attach",
+	"shell":         "box.shell",
+	"review config": "box.reviewConfig",
+	"rename":        "box.rename",
+	"settings":      "box.settings",
+	"upgrade":       "box.upgrade",
+	"repair":        "box.repair",
+	"stop":          "box.stop",
+	"start":         "box.start",
+	"archive":       "box.archive",
+	"unarchive":     "box.unarchive",
+	"purge":         "box.purge",
 }
 
 func specCommands() []Command {
@@ -183,37 +184,40 @@ func specCommands() []Command {
 	}
 	// Never nil: a command no frontend binds yet is an empty list, not null.
 	keys := func(k ...string) []string { return append([]string{}, k...) }
+	// A registry command's desktop chords are the registry's, carried by the
+	// one entry here that stands for it. Shell's are carried by pane.newShell,
+	// which the app answers in the box on screen; box.shell is reached through
+	// menus and the palette.
+	carriers := map[string]string{"shell": "pane.newShell"}
+	desktop := func(specID, id string) []string {
+		if carrier, ok := carriers[id]; ok && carrier != specID {
+			return keys()
+		}
+		c, _ := console.Lookup(id)
+		return keys(c.Bindings.Desktop.Keys...)
+	}
 	var out []Command
 	// The box's verbs: the list's single letters in the window; the box menu,
 	// a row's context menu and the palette on the desktop.
-	for _, a := range (&Model{}).actions([]console.Sandbox{{}}) {
-		id := actionCommands[a.key]
-		if id == "" {
-			continue
+	for _, c := range console.Commands() {
+		if c.Lifecycle {
+			out = append(out, cmd(specIDs[c.ID], c.Label, "Box", keys(c.Bindings.TUI.Keys[0]), desktop(specIDs[c.ID], c.ID)))
 		}
-		desktop := keys()
-		switch id {
-		case "box.attach":
-			desktop = keys("enter")
-		case "box.rename":
-			desktop = keys("f2")
-		}
-		out = append(out, cmd(id, a.label, "Box", keys(a.key), desktop))
 	}
 	return append(out,
-		cmd("pane.newShell", "New shell", "Session", keys("leader+s"), keys("primary+t")),
-		cmd("pane.newTerminal", "New harness terminal", "Session", keys("leader+c"), keys("primary+alt+t")),
-		cmd("pane.end", "End session", "Session", keys("leader+X"), keys("primary+w")),
+		cmd("pane.newShell", "New shell", "Session", keys("leader+s"), desktop("pane.newShell", "shell")),
+		cmd("pane.newTerminal", "New harness terminal", "Session", keys("leader+c"), desktop("pane.newTerminal", "terminal")),
+		cmd("pane.end", "End session", "Session", keys("leader+X"), desktop("pane.end", "end")),
 		cmd("pane.next", "Next pane", "Session", keys("leader+l", "leader+right"), keys("ctrl+tab")),
 		cmd("pane.prev", "Previous pane", "Session", keys("leader+h", "leader+left"), keys("ctrl+shift+tab")),
-		cmd("pane.maximize", "Maximize pane", "View", keys("leader+z"), keys("primary+enter")),
+		cmd("pane.maximize", "Maximize pane", "View", keys("leader+z"), desktop("pane.maximize", "maximize")),
 		cmd("box.next", "Next discobox", "View", keys("leader+down", "ctrl+shift+j"), keys("primary+alt+down")),
 		cmd("box.prev", "Previous discobox", "View", keys("leader+up", "ctrl+shift+k"), keys("primary+alt+up")),
 		cmd("view.sidebar", "Show discoboxes", "View", keys("leader+h"), keys("primary+b")),
-		cmd("view.home", "All discoboxes", "View", keys("leader+d"), keys("primary+0")),
-		cmd("app.palette", "Find a box or command", "View", keys("leader+k", ":"), keys("primary+k", "primary+p")),
-		cmd("box.new", "New discobox", "Box", keys("leader+n", "n"), keys("primary+n")),
-		cmd("app.quit", "Quit", "App", keys("leader+q"), keys("primary+q")),
+		cmd("view.home", "All discoboxes", "View", keys("leader+d"), desktop("view.home", "detach")),
+		cmd("app.palette", "Find a box or command", "View", keys("leader+k", ":"), desktop("app.palette", "palette")),
+		cmd("box.new", "New discobox", "Box", keys("leader+n", "n"), desktop("box.new", "new")),
+		cmd("app.quit", "Quit", "App", keys("leader+q"), desktop("app.quit", "quit")),
 	)
 }
 
@@ -231,11 +235,11 @@ type Action struct {
 // ActionsFor is the window's actions menu for these boxes, for a frontend that
 // draws its own: the same entries, rules and reasons.
 func ActionsFor(targets []console.Sandbox) []Action {
-	actions := (&Model{}).actions(targets)
-	out := make([]Action, 0, len(actions))
-	for _, a := range actions {
+	menu := actions(targets)
+	out := make([]Action, 0, len(menu))
+	for _, a := range menu {
 		out = append(out, Action{
-			Command: actionCommands[a.key], Key: a.key, Label: a.label, Detail: a.detail,
+			Command: specIDs[a.key], Key: a.press, Label: a.label, Detail: a.detail,
 			Enabled: a.enabled, Why: a.why,
 		})
 	}

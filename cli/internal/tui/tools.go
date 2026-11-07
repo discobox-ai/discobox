@@ -153,7 +153,7 @@ func pickerTools(catalog []console.Tool) []console.Tool {
 // could not run a tool from there cannot from here either.
 func (m *Model) runToolWhenKnown(id string) tea.Cmd {
 	box := m.currentBox()
-	if why := attachWhy(true, []console.Sandbox{box}); why != "" {
+	if why := console.AttachWhy([]console.Sandbox{box}); why != "" {
 		return status("%s: %s", id, why)
 	}
 	// A lookup that failed is not a known catalog: asking again is how the
@@ -296,7 +296,7 @@ type toolTermMsg struct {
 // is running: the row says which are up, and choosing one is "show me that",
 // not "start another".
 func (m *Model) openTools(box console.Sandbox) tea.Cmd {
-	m.recordConsoleUse("tools")
+	m.commands.Use("tools")
 	// A receipt belongs to the press that earned it, not to the card: reopening
 	// the picker must not greet a reader with a "copied" from last time.
 	m.copied = ""
@@ -326,7 +326,7 @@ func (m *Model) toolsDialog(box console.Sandbox) *dialog {
 		row := action{
 			key: toolRowKey(t.ID), press: keys[t.ID], label: t.Label, detail: detail,
 			enabled: box.Attachable(),
-			why:     attachWhy(true, []console.Sandbox{box}),
+			why:     console.AttachWhy([]console.Sandbox{box}),
 		}
 		if t.Problem != "" {
 			row.enabled, row.why = false, t.Problem
@@ -342,7 +342,7 @@ func (m *Model) toolsDialog(box console.Sandbox) *dialog {
 	// An address is only worth printing for a discobox the config has a stanza
 	// for, which is the same boxes the tools apply to: an archived one is out
 	// of the listing the stanzas are rendered from.
-	addr, unreachable := m.addresses[m.boxRef(box)], attachWhy(true, []console.Sandbox{box})
+	addr, unreachable := m.addresses[m.boxRef(box)], console.AttachWhy([]console.Sandbox{box})
 	ssh := addr.action(addressSSHKey, "ssh", addr.SSH, unreachable)
 	git := addr.action(addressGitKey, "git url", addr.Git, unreachable)
 	ssh.note, git.note = m.copiedNote(addr.SSH), m.copiedNote(addr.Git)

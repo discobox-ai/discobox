@@ -1779,3 +1779,32 @@ func TestTreeDoubleClickDoesNotFollowAReplacedServerIdentity(t *testing.T) {
 		}
 	})
 }
+
+// The box whose workspace is open needs no attach to be shown again, so a
+// page of its own opened from beside it — here its audit, with the list
+// holding the keys — opens without being told the box cannot be attached,
+// whatever its container is doing now.
+func TestTheOpenWorkspacesBoxNeedsNoAttachToShow(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.leader("h")
+		if !m.listHasKeys() {
+			t.Fatal("the leader's h should give the list the keys")
+		}
+		box := m.currentBox()
+		box.State, box.HasRuntime = console.StateError, false
+		if box.Attachable() {
+			t.Fatal("the box should not be attachable for this test")
+		}
+		d.run(m.dispatch("audit", box))
+		d.settle()
+		if m.audit == nil {
+			t.Fatal("audit did not open on the workspace's own box")
+		}
+		if strings.Contains(m.status, "no container") {
+			t.Fatalf("status = %q, want no attach refusal for the open workspace's box", m.status)
+		}
+	})
+}
