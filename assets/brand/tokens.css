@@ -1,0 +1,183 @@
+/*
+ * The discobox design language's tokens, generated from tokens.json by
+ * scripts/brand-tokens.mjs (go tool task brand:tokens). Do not edit; change
+ * tokens.json. LANGUAGE.md says what each token is for.
+ *
+ * Dark is canonical and sits on :root. Light applies when the system prefers
+ * it and nothing chose otherwise, or when data-theme="light" is set.
+ */
+:root {
+  color-scheme: dark;
+  --ink: #0a0410;
+  --ink-raised: #150b1f;
+  --ink-sunken: #06020a;
+  --line: #2a1839;
+  --line-bright: #3d2352;
+  --text: #f4ecf9;
+  --text-muted: #b0a0bf;
+  --text-faint: #7c6a8c;
+  --magenta: #f45cff;
+  --brand: #9e4aa7;
+  --violet: #8b2fd6;
+  --gold: #ffd700;
+  --on-gold: #0a0410;
+  --ok: #5fff5f;
+  --green: #87ff87;
+  --salmon: #ffaf87;
+  --warn: #ffaf00;
+  --err: #ff6b62;
+  --info: #87afff;
+  --selection: #2a1530;
+  --glow: color-mix(in oklab, var(--magenta) 35%, transparent);
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-prose: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --step-3: 2.5rem;
+  --step-2: 1.75rem;
+  --step-1: 1.25rem;
+  --step-0: 1rem;
+  --step--1: 0.8125rem;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --radius-key: 4px;
+  --radius-row: 6px;
+  --radius-card: 10px;
+  --radius-frame: 12px;
+  --stroke-focus: 1.5px;
+  --stroke-quiet: 1px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --ink: #f7f4fa;
+    --ink-raised: #ffffff;
+    --ink-sunken: #eee8f4;
+    --line: #e1d8ea;
+    --line-bright: #c9bad8;
+    --text: #1d1424;
+    --text-muted: #5e4f6c;
+    --text-faint: #8a7b98;
+    --magenta: #a81fbd;
+    --brand: #9e4aa7;
+    --violet: #6d22b0;
+    --gold: #e8c200;
+    --on-gold: #0a0410;
+    --ok: #1a7a34;
+    --green: #237a3a;
+    --salmon: #b4532a;
+    --warn: #a35f00;
+    --err: #b3261e;
+    --info: #2c5fb8;
+    --selection: #f3defa;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ink: #f7f4fa;
+  --ink-raised: #ffffff;
+  --ink-sunken: #eee8f4;
+  --line: #e1d8ea;
+  --line-bright: #c9bad8;
+  --text: #1d1424;
+  --text-muted: #5e4f6c;
+  --text-faint: #8a7b98;
+  --magenta: #a81fbd;
+  --brand: #9e4aa7;
+  --violet: #6d22b0;
+  --gold: #e8c200;
+  --on-gold: #0a0410;
+  --ok: #1a7a34;
+  --green: #237a3a;
+  --salmon: #b4532a;
+  --warn: #a35f00;
+  --err: #b3261e;
+  --info: #2c5fb8;
+  --selection: #f3defa;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #0a0410;
+  --ink-raised: #150b1f;
+  --ink-sunken: #06020a;
+  --line: #2a1839;
+  --line-bright: #3d2352;
+  --text: #f4ecf9;
+  --text-muted: #b0a0bf;
+  --text-faint: #7c6a8c;
+  --magenta: #f45cff;
+  --brand: #9e4aa7;
+  --violet: #8b2fd6;
+  --gold: #ffd700;
+  --on-gold: #0a0410;
+  --ok: #5fff5f;
+  --green: #87ff87;
+  --salmon: #ffaf87;
+  --warn: #ffaf00;
+  --err: #ff6b62;
+  --info: #87afff;
+  --selection: #2a1530;
+}
+
+/*
+ * A surface that depicts a terminal (a terminal window, a capture of the
+ * console) stays dark in both themes: put .theme-dark on it, and everything
+ * inside reads the dark roles. .theme-light is the mirror, for a light card
+ * on a dark page.
+ */
+.theme-dark {
+  color-scheme: dark;
+  --ink: #0a0410;
+  --ink-raised: #150b1f;
+  --ink-sunken: #06020a;
+  --line: #2a1839;
+  --line-bright: #3d2352;
+  --text: #f4ecf9;
+  --text-muted: #b0a0bf;
+  --text-faint: #7c6a8c;
+  --magenta: #f45cff;
+  --brand: #9e4aa7;
+  --violet: #8b2fd6;
+  --gold: #ffd700;
+  --on-gold: #0a0410;
+  --ok: #5fff5f;
+  --green: #87ff87;
+  --salmon: #ffaf87;
+  --warn: #ffaf00;
+  --err: #ff6b62;
+  --info: #87afff;
+  --selection: #2a1530;
+  color: var(--text);
+}
+
+.theme-light {
+  color-scheme: light;
+  --ink: #f7f4fa;
+  --ink-raised: #ffffff;
+  --ink-sunken: #eee8f4;
+  --line: #e1d8ea;
+  --line-bright: #c9bad8;
+  --text: #1d1424;
+  --text-muted: #5e4f6c;
+  --text-faint: #8a7b98;
+  --magenta: #a81fbd;
+  --brand: #9e4aa7;
+  --violet: #6d22b0;
+  --gold: #e8c200;
+  --on-gold: #0a0410;
+  --ok: #1a7a34;
+  --green: #237a3a;
+  --salmon: #b4532a;
+  --warn: #a35f00;
+  --err: #b3261e;
+  --info: #2c5fb8;
+  --selection: #f3defa;
+  color: var(--text);
+}
