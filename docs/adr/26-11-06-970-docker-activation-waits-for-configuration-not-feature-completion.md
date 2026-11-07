@@ -1,7 +1,9 @@
 # 26-11-06-970 — Docker activation waits for configuration, not feature completion
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-06
+
+Accepted by the owner by merging #746, 2026-11-07.
 - **Issue**: [#724](https://github.com/discobox-ai/discobox/issues/724)
 - **Extends**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §5's readiness-on-use rule with a daemon activation boundary; preserves background provisioning and feature opt-outs.
 - **Related**: [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md)'s daemon proxy and nested runtime trust; [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)'s agent placement before bundle provisioning.
