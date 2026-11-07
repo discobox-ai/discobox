@@ -133,9 +133,11 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         return true;
     }
     if let Some(id) = command_for(s, ev) {
-        // Enter attaches from the list; in a pane it is the program's.
+        // A shortcut with no modifier (Enter attaches, F2 renames) is the list's; in a pane the
+        // key is the program's.
         let in_pane = s.focus == Focus::Panes && s.live_ws().is_some_and(|w| !w.panes.is_empty());
-        if !(id == "box.attach" && in_pane) {
+        let bare = !(ev.mods.ctrl || ev.mods.alt || ev.mods.shift || ev.mods.cmd);
+        if !(bare && in_pane) {
             run_command(s, &id, tx);
             return true;
         }

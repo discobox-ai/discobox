@@ -51,7 +51,7 @@ fn parse_hex(s: &str) -> rune::Color {
 
 /// The mark at `cell` points wide (cells are twice as tall as wide), on `ground`.
 pub fn view(cell: f32, ground: rune::Color) -> El {
-    let doc: Doc = serde_json::from_str(include_str!("logo.json")).expect("logo.json");
+    let doc: Doc = serde_json::from_str(include_str!("../../cli/internal/tui/logo.json")).expect("logo.json");
     let (cw, ch) = (cell, cell * 2.0);
     let mut out = el().size(doc.width as f32 * cw, doc.rows.len() as f32 * ch);
     for (y, row) in doc.rows.iter().enumerate() {

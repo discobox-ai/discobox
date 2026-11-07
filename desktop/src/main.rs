@@ -13,6 +13,8 @@ mod keys;
 mod logo;
 mod overlay;
 #[cfg(test)]
+mod command_tests;
+#[cfg(test)]
 mod parity_tests;
 mod term;
 mod theme;
@@ -102,7 +104,8 @@ pub enum Focus {
 enum Pending {
     Execs(String),
     Open(u32),
-    NewSession(u32),
+    /// A new session's answer, for its box and stream.
+    NewSession(String, u32),
     Actions(String, (f32, f32)),
     Do(String, String),
     Quiet,
@@ -238,7 +241,7 @@ impl State {
         self.focus = Focus::Panes;
         let op = if shell { "newShell" } else { "newTerminal" };
         let (cols, rows) = DEFAULT_SIZE;
-        self.ask(op, json!({"sandbox": id, "stream": stream, "cols": cols, "rows": rows}), Pending::NewSession(stream));
+        self.ask(op, json!({"sandbox": id, "stream": stream, "cols": cols, "rows": rows}), Pending::NewSession(id.clone(), stream));
     }
 
     fn end_focused(&mut self) {
@@ -254,7 +257,10 @@ impl State {
             *a = a.and_then(|a| if a == i { None } else if a > i { Some(a - 1) } else { Some(a) });
         }
         ws.fix_active();
-        self.ask("endExec", json!({"sandbox": id, "exec": pane.exec.id, "stream": pane.stream}), Pending::Quiet);
+        // A session still being made has no exec to end yet: it is ended when its answer comes.
+        if !pane.exec.id.is_empty() {
+            self.ask("endExec", json!({"sandbox": id, "exec": pane.exec.id, "stream": pane.stream}), Pending::Quiet);
+        }
     }
 
     pub fn select_pane(&mut self, i: usize) {
@@ -383,10 +389,16 @@ impl State {
                     }
                 }
             },
-            Pending::NewSession(stream) => match r {
+            Pending::NewSession(sandbox, stream) => match r {
                 Ok(v) => {
-                    if let (Ok(exec), Some(p)) = (serde_json::from_value::<Exec>(v), self.pane_mut(stream)) {
-                        p.exec = exec;
+                    let Ok(exec) = serde_json::from_value::<Exec>(v) else { return };
+                    match self.pane_mut(stream) {
+                        Some(p) => p.exec = exec,
+                        // Ended before it was made: end it now that it has an id.
+                        None => {
+                            self.ask("endExec", json!({"sandbox": sandbox, "exec": exec.id, "stream": stream}), Pending::Quiet);
+                            return;
+                        }
                     }
                     self.resend_size(stream);
                 }
@@ -429,7 +441,10 @@ pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
         "box.attach" => s.open_box(s.cursor),
         "box.shell" => {
             s.open_box(s.cursor);
-            s.new_session(true);
+            // A box that is not running is only pointed at: no shell in whichever box is on screen.
+            if s.live.is_some() && s.live == s.boxes.get(s.cursor).map(|b| b.id.clone()) {
+                s.new_session(true);
+            }
         }
         "box.stop" | "box.start" | "box.upgrade" | "box.repair" | "box.archive" | "box.unarchive" => {
             if let Some(b) = s.target() {
