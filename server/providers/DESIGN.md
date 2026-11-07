@@ -1214,6 +1214,12 @@ the helper, private settings and install script through Docker. Host commands
 run through that container, as they do in the host console. No registry fetch,
 agent, or outbound service is required on the guest beforehand.
 
+A direct boot configuration — no proxy and no additional trust — has nothing to
+install, so the engine skips the host step. Otherwise the relay goes under the
+engine's host state root (`<HostStateRoot>/host-outbound`, `/var/lib/discobox`
+on vz and libkrun), the one directory every backend guarantees executable; the
+install log, result markers, overlays and private settings stay boot-local in
+`/run/discobox-host-outbound`, which may be `noexec`.
 The install runs under guest systemd so it survives restarting Docker. It creates
 boot-local trust overlays over the shared read-only root, starts loopback and
 Docker-bridge byte relays, installs proxy/trust settings and restarts Docker

@@ -121,6 +121,12 @@
   The temporary command container keeps its init process in its own root: a
   chroot in init makes later Docker exec resolve paths in the host root.
 
+- Anything a VM host executes outside Docker lives under the engine's host
+  state root (`HostStateRoot`, else `/var/lib/discobox`) — the one directory
+  every VM backend guarantees writable and executable. `/run` and `/tmp` may be
+  `noexec`; keep only boot-local markers, logs, overlays and private settings
+  there, and read scripts with `sh` rather than executing them.
+
 - Initial bootstrap's attempt pin spans placement and compatible-client
   discovery. First registration starts fresh recovery/readiness clocks;
   incompatible discovery explicitly leaves bootstrap work policy. A clock

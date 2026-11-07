@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"path"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -18,17 +19,30 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/pooloutbound"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
 	relay "github.com/discobox-ai/discobox/server/providers/guestrelay"
 )
 
-const hostOutboundDir = "/run/discobox-host-outbound"
+// hostOutboundBootDir holds what belongs to this boot alone: the install log,
+// result markers, /etc overlays and the private settings the install reads.
+// It is tmpfs and may be noexec, so nothing here is executed directly.
+const hostOutboundBootDir = "/run/discobox-host-outbound"
+
+// hostOutboundProgramName is the directory, under the engine's host state
+// root, that holds the relay the VM host executes. The state root is the one
+// directory every VM backend guarantees writable and executable.
+const hostOutboundProgramName = "host-outbound"
 
 // VMOutbound describes both consumers of an owned VM's upstream. The driver
 // owns the raw VSOCK relay; the engine places everything the guest needs over
-// its existing Docker connection. No guest image helper is assumed.
+// its existing Docker connection. No guest image helper is assumed. A direct
+// boot configuration has nothing to install on the host, so it has no Host.
 func VMOutbound(ctx context.Context, cli *client.Client, boot, want pooloutbound.Resolved) (pooloutbound.Delivery, error) {
+	if boot.Direct() {
+		return pooloutbound.Delivery{Runtime: boot, AppliedRevision: boot.Revision(), RestartRequired: boot.Revision() != want.Revision()}, nil
+	}
 	network, err := cli.NetworkInspect(ctx, "bridge", client.NetworkInspectOptions{})
 	if err != nil {
 		return pooloutbound.Delivery{}, err
@@ -128,8 +142,9 @@ func (e *Engine) prepareHostOutbound(ctx context.Context, cli *client.Client, po
 	}
 	guest := provisioner.ContainerGuest{Client: cli, Container: name, Env: []string{"DISCOBOX_PROXY_ENVIRONMENT=managed"}}
 	revision := delivery.Host.Revision()
+	programDir := e.hostOutboundProgramDir()
 	readResult := func(suffix string) ([]byte, error) {
-		archive, err := guest.CopyFrom(ctx, "/host"+hostOutboundDir+"/"+revision+suffix)
+		archive, err := guest.CopyFrom(ctx, "/host"+hostOutboundBootDir+"/"+revision+suffix)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +166,7 @@ func (e *Engine) prepareHostOutbound(ctx context.Context, cli *client.Client, po
 	if err != nil {
 		return err
 	}
-	staged := map[string][]byte{"relay": binary, "install.sh": []byte(hostOutboundInstall)}
+	staged := map[string][]byte{"install.sh": []byte(hostOutboundInstall)}
 	for name, data := range files {
 		staged["root"+name] = data
 	}
@@ -171,21 +186,29 @@ func (e *Engine) prepareHostOutbound(ctx context.Context, cli *client.Client, po
 		return err
 	}
 	staged["revision"] = []byte(revision)
-	var archive bytes.Buffer
-	if err := hostArchive(&archive, staged, "relay"); err != nil {
+	var bootArchive, programArchive bytes.Buffer
+	if err := hostArchive(&bootArchive, staged, ""); err != nil {
+		return err
+	}
+	if err := hostArchive(&programArchive, map[string][]byte{"relay": binary}, "relay"); err != nil {
 		return err
 	}
 	var stderr bytes.Buffer
-	command := []string{"/relay", "--host-command", "--", "/bin/sh", "-ec", "install -d -m 700 " + hostOutboundDir + "; rm -f " + hostOutboundDir + "/" + revision + ".failed"}
+	command := []string{"/relay", "--host-command", "--", "/bin/sh", "-ec", `install -d -m 700 "$1" "$2"; rm -f "$1/$3.failed"`, "sh", hostOutboundBootDir, programDir, revision}
 	if code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: command}, nil, io.Discard, &stderr); err != nil {
-		return fmt.Errorf("prepare host directory: %w: %s", err, &stderr)
+		return fmt.Errorf("prepare host directories: %w: %s", err, &stderr)
 	} else if code != 0 {
-		return fmt.Errorf("prepare host directory exited %d: %s", code, &stderr)
+		return fmt.Errorf("prepare host directories exited %d: %s", code, &stderr)
 	}
-	if err := guest.CopyTo(ctx, "/host"+hostOutboundDir, &archive); err != nil {
+	if err := guest.CopyTo(ctx, "/host"+hostOutboundBootDir, &bootArchive); err != nil {
 		return err
 	}
-	command = []string{"/relay", "--host-command", "--", "systemd-run", "--unit=discobox-host-outbound-install", "--collect", "/bin/sh", hostOutboundDir + "/install.sh"}
+	if err := guest.CopyTo(ctx, "/host"+programDir, &programArchive); err != nil {
+		return err
+	}
+	// The script is read by sh, never executed, so noexec on the boot directory
+	// is harmless; the relay it starts is the only file executed.
+	command = []string{"/relay", "--host-command", "--", "systemd-run", "--unit=discobox-host-outbound-install", "--collect", "/bin/sh", hostOutboundBootDir + "/install.sh", programDir}
 	if code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: command}, nil, io.Discard, &stderr); err == nil && code != 0 {
 		return fmt.Errorf("start host installation exited %d: %s", code, &stderr)
 	}
@@ -205,7 +228,7 @@ func (e *Engine) prepareHostOutbound(ctx context.Context, cli *client.Client, po
 			return nil
 		}
 		if _, err := readResult(".failed"); err == nil {
-			return fmt.Errorf("host outbound installation failed; see %s/install.log on the pool host", hostOutboundDir)
+			return fmt.Errorf("host outbound installation failed; see %s/install.log on the pool host", hostOutboundBootDir)
 		}
 		select {
 		case <-ctx.Done():
@@ -213,6 +236,13 @@ func (e *Engine) prepareHostOutbound(ctx context.Context, cli *client.Client, po
 		case <-tick.C:
 		}
 	}
+}
+
+// hostOutboundProgramDir is the VM host's view of this engine's state root,
+// where the relay is placed: /var/lib/discobox on vz and libkrun, and the
+// relocated root on a backend that sets HostStateRoot.
+func (e *Engine) hostOutboundProgramDir() string {
+	return path.Join(layout.Container().HostMapping(e.cfg.HostStateRoot).HostRoot(), hostOutboundProgramName)
 }
 
 func hostArchive(writer io.Writer, files map[string][]byte, executable string) error {
@@ -232,11 +262,14 @@ func hostArchive(writer io.Writer, files map[string][]byte, executable string) e
 	return tw.Close()
 }
 
+// hostOutboundInstall runs as "sh install.sh PROGRAM_DIR". PROGRAM_DIR holds
+// the relay on storage that permits execution; $root may be noexec.
 const hostOutboundInstall = `set -eu
 root=/run/discobox-host-outbound
 exec >"$root/install.log" 2>&1
 revision=$(cat "$root/revision")
 trap 'echo "installation failed; see /run/discobox-host-outbound/install.log" > "$root/$revision.failed"' EXIT
+program=${1:?missing program directory}
 # The root disk is shared read-only. All writes belong to this boot alone.
 for target in /etc /usr/local/share/ca-certificates; do
  overlay=$root/overlay$(echo "$target" | tr / _)
@@ -248,19 +281,19 @@ done
 cp -a "$root/root/etc/." /etc/
 export DISCOBOX_POOL_OUTBOUND_REVISION=$revision
 sh /etc/discobox/install-pool-outbound
-cat > /etc/systemd/system/discobox-outbound.service <<'UNIT'
+cat > /etc/systemd/system/discobox-outbound.service <<UNIT
 [Unit]
 Description=Pool outbound byte forwarding
 [Service]
 Type=notify
-ExecStart=/run/discobox-host-outbound/relay --outbound /run/discobox-host-outbound/relay.json
+ExecStart=$program/relay --outbound $root/relay.json
 Restart=on-failure
 RestartSec=1
 UNIT
 systemctl daemon-reload
 systemctl restart discobox-outbound.service
 systemctl restart docker.service
-"$root/relay" --outbound-probe > "$root/result"
+"$program/relay" --outbound-probe > "$root/result"
 mv "$root/result" "$root/$revision.done"
 trap - EXIT
 `
