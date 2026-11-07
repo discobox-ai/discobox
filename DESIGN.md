@@ -504,3 +504,8 @@ Pool outbound routing and additional trust share the domain contract in
 [`pkg/pooloutbound`](pkg/pooloutbound/DESIGN.md). The server selects one complete
 configuration per pool; provider boot and provisioning deliver its resolved
 value before network bootstrap (ADR 26-11-05-814).
+
+The agent layer also places Docker and containerd's required configuration
+prerequisite before boot. Its configuration entry point shares the sandbox
+provisioner's selected inputs, step records and lock; it never waits on feature
+completion or starts a daemon. See [sandbox provisioning](sandbox-agent/provision/DESIGN.md#daemon-configuration).

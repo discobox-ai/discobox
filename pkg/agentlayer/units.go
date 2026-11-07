@@ -48,6 +48,9 @@ func (u Unit) linkDir() string {
 // section and its entry here say the same thing: the entry is what lays the
 // link where no systemctl runs, as in a container that has not started.
 var Units = []Unit{
+	{Name: "discobox-docker-configuration.service", Path: "/etc/systemd/system/discobox-docker-configuration.service"},
+	{Name: "docker-configuration.conf", Path: "/etc/systemd/system/docker.service.d/discobox-configuration.conf"},
+	{Name: "docker-configuration.conf", Path: "/etc/systemd/system/containerd.service.d/discobox-configuration.conf"},
 	{Name: "discobox-wire.service", Path: "/etc/systemd/system/discobox-wire.service", target: "sysinit.target", required: true},
 	{Name: "discobox-sandbox-agent.service", Path: "/etc/systemd/system/discobox-sandbox-agent.service"},
 	{Name: "discobox-sandbox-agent.path", Path: "/etc/systemd/system/discobox-sandbox-agent.path", target: "paths.target"},

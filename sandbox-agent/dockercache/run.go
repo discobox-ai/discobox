@@ -9,9 +9,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/provisionspec"
+	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 )
 
 // Run executes a user's docker command line and returns the exit code to use.
@@ -23,11 +27,25 @@ import (
 // A build is different: its result has to come back from the pool, and that is
 // three commands rather than one (push, pull, tag). See buildViaRegistry.
 func Run(args []string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	status, err := provision.Wait(ctx, provisionspec.StatusPath, []string{"docker"}, func(status provisionspec.Status, pending []string) {
+		notice("waiting for " + provision.Describe(status, pending))
+	})
+	if err == nil {
+		err = provision.Problem(status, "docker")
+		if _, reported := status.Features["docker"]; !reported && status.State == provisionspec.StateFailed {
+			err = fmt.Errorf("provisioning failed before Docker selection: %s", status.Error)
+		}
+	}
+	if err != nil {
+		notice(err.Error())
+		return 1
+	}
 	a := Rewrite(args)
 	if !a.Rewritten {
 		return execDirect(a.Argv)
 	}
-	ctx := context.Background()
 	if err := EnsureBuilder(ctx); err != nil {
 		// A builder that cannot be created leaves the build to fail against a
 		// missing instance with buildx's own error, which says far more than

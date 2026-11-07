@@ -58,6 +58,9 @@ type Spec struct {
 	// system PATH while it provisions in the background: run early, one says
 	// it is waiting, waits, and runs the real command (§5).
 	Commands []string `yaml:"commands,omitempty"`
+	// Personalities links agent command personalities before readiness, including
+	// for off features so their commands retain the opt-out diagnostic.
+	Personalities []string `yaml:"personalities,omitempty"`
 	// Snapshot, set false, leaves the whole feature out of a snapshot (§8):
 	// none of its steps is applied while one is taken, so each is applied on
 	// the box itself, at every boot it is not already recorded. Unset is in.
@@ -103,6 +106,9 @@ func (v Version) VersionArgs() []string {
 // it is unique within its feature.
 type Step struct {
 	Name string `yaml:"name"`
+	// Configuration marks daemon prerequisites: files, drop-ins, or a checked
+	// configuration script. These never start or restart services.
+	Configuration bool `yaml:"configuration,omitempty" json:",omitempty"`
 	// When selects the boxes the step applies to; unset matches every box.
 	When *Selector `yaml:"when,omitempty"`
 	// Check names a script in the feature's directory that exits 0 when what
@@ -496,7 +502,7 @@ func (s Spec) Validate() error {
 			return fmt.Errorf("requires: %q is not a valid feature name", name)
 		}
 	}
-	for _, command := range s.Commands {
+	for _, command := range append(slices.Clone(s.Commands), s.Personalities...) {
 		if !commandPattern.MatchString(command) {
 			return fmt.Errorf("commands: %q is not a command name", command)
 		}
@@ -517,6 +523,14 @@ func (s Spec) Validate() error {
 		names[step.Name] = true
 		if err := step.validate(); err != nil {
 			return fmt.Errorf("step %q: %w", step.Name, err)
+		}
+		if step.Configuration {
+			if step.Install || step.Async || step.Apt || step.Wiring() || (step.File == nil && step.Systemd == nil && (step.Run == "" || step.Check == "")) {
+				return fmt.Errorf("step %q: configuration must be a file, drop-in or checked configuration script", step.Name)
+			}
+			if step.Systemd != nil && (step.Systemd.DropIn == nil || len(step.Systemd.Enable) > 0 || len(step.Systemd.Mask) > 0) {
+				return fmt.Errorf("step %q: configuration cannot enable or mask units", step.Name)
+			}
 		}
 		if step.Install && s.Adopt == nil {
 			return fmt.Errorf("step %q: install: the feature has no adopt check, so it is always installed", step.Name)

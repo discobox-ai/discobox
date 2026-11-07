@@ -184,3 +184,32 @@ cancellation; a caller leaving does not cancel provisioning. Boot, terminal
 launches and command creation share this gate. A terminal startup deadline begins
 only after blocking provisioning is ready. Services use `AwaitFeatures` for their
 declared dependencies or the complete run.
+
+## Daemon configuration
+
+Steps marked `configuration` form the daemon startup prerequisite: files,
+drop-ins and checked scripts that only lay configuration. They never enable,
+start, restart or wait on a daemon. The runner and `provision configure docker`
+apply the same selected steps and records under a process-safe feature lock.
+Every activation validates files and script checks, including snapshot records;
+required reload failure fails the prerequisite. Pending restarts of inherited
+running daemons are journaled before writes, and run only in ordinary feature
+provisioning after releasing the lock and joining the prerequisite.
+
+`Apply` publishes a boot-local configuration plan after bundle intake and
+proxy/trust preparation, independently of general readiness and feature
+completion. Wiring-only boot does not publish one. A missing plan waits and
+fails closed on the unit's startup deadline; explicit off and absent features
+come from the resolved plan. The agent layer places required, ordered Docker
+and containerd dependencies before boot, including on socket-enabled images.
+The prerequisite validates on every activation and never waits for readiness.
+
+A feature's `personalities` are linked during pre-readiness wiring, including
+when off to retain the managed command's diagnostic. Docker's personality waits
+for its feature before dispatching the native CLI or the pool builder rewrite.
+Native clients are protected by the daemon prerequisite. Docker remains async
+and socket activated; unchanged configuration does not restart active daemons.
+
+The socket setup step checks that the enabled socket is listening. On recovery
+from configuration failure it resets the socket's trigger limit and starts the
+socket, without eagerly starting Docker or disturbing an existing listener.

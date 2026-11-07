@@ -9,5 +9,4 @@
 set -eu
 
 install -d -m 0755 /opt/discobox/bin
-ln -sf /usr/local/bin/discobox-sandbox-agent /opt/discobox/bin/runc
-ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/docker
+ln -sf /opt/discobox/current/features/core/discobox-sandbox-agent /opt/discobox/bin/runc

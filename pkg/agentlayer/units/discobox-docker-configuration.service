@@ -1,0 +1,11 @@
+[Unit]
+Description=Discobox Configure Docker Before Activation
+After=local-fs.target
+Before=docker.service containerd.service
+
+[Service]
+Type=oneshot
+# No RemainAfterExit: every activation validates this boot's selected inputs.
+# The command never starts, restarts or waits on a daemon or feature completion.
+ExecStart=/opt/discobox/current/features/core/discobox-sandbox-agent provision configure docker
+TimeoutStartSec=95

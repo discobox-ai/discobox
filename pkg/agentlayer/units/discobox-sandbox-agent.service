@@ -8,7 +8,7 @@ Wants=network-online.target docker.socket nix-daemon.socket
 Type=simple
 Environment=PATH=/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NIX_REMOTE=daemon
-ExecStartPre=/usr/bin/rm -f /run/discobox/provision.json
+ExecStartPre=/usr/bin/rm -f /run/discobox/provision.json /run/discobox/configuration-plan.yaml
 ExecStartPre=/usr/bin/install -d -m 0700 /run/discobox/agent-terminals
 ExecStartPre=/usr/bin/install -d -m 0755 /var/lib/discobox /workspace
 ExecStart=/opt/discobox/current/features/core/discobox-sandbox-agent --config /etc/discobox/sandbox.json

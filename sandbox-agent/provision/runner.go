@@ -2,6 +2,7 @@ package provision
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -136,7 +137,8 @@ type featurePlan struct {
 	// requires one with a step left out, and the step count when nothing is.
 	deferredFrom int
 	// changed is whether this run applied any of its steps.
-	changed bool
+	changed    bool
+	configured bool
 	// failed is why the feature failed.
 	failed error
 	done   chan struct{}
@@ -321,6 +323,16 @@ func (r *Runner) begin(ctx context.Context, features []provisionspec.Feature, op
 // later reaches no running session.
 func (r *Runner) wire(ctx context.Context, plans []*featurePlan, opts Options, record func([]Outcome, error)) error {
 	for _, plan := range plans {
+		for _, name := range plan.feature.Spec.Personalities {
+			target := r.path(filepath.Join("/usr/local/bin", name))
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			_ = os.Remove(target)
+			if err := os.Symlink("/opt/discobox/current/features/core/discobox-sandbox-agent", target); err != nil {
+				return err
+			}
+		}
 		if plan.off != "" {
 			continue
 		}
@@ -387,13 +399,46 @@ func (r *Runner) finish(plan *featurePlan) {
 func (r *Runner) runSteps(ctx context.Context, plan *featurePlan, want func(int, provisionspec.Step) bool) (outcomes []Outcome, err error) {
 	feature := plan.feature
 	var restart []string
+	var restartTicket []byte
+	if !plan.configured && plan.has(func(i int, step provisionspec.Step) bool { return want(i, step) && !step.Wiring() }) && plan.has(func(_ int, step provisionspec.Step) bool { return step.Configuration }) {
+		applied, configErr := r.configure(ctx, plan)
+		outcomes = append(outcomes, applied...)
+		for _, outcome := range applied {
+			if outcome.Result == Applied || outcome.Result == Reapplied {
+				plan.changed = true
+			}
+		}
+		if configErr == nil && r.Booted && feature.Name == "docker" {
+			// The prerequisite may be configuring concurrently. Join it only after
+			// releasing the configuration lock; it never waits on feature completion.
+			configErr = r.systemctl(ctx, plan.out, "start", DockerConfigurationUnit)
+		}
+		if configErr == nil {
+			restartTicket, configErr = os.ReadFile(r.restartPath(feature.Name))
+			if os.IsNotExist(configErr) {
+				configErr = nil
+			} else if configErr == nil {
+				var ticket restartTicketRecord
+				configErr = json.Unmarshal(restartTicket, &ticket)
+				restart = ticket.Units
+			}
+		}
+		if configErr != nil {
+			plan.failed = configErr
+			return outcomes, configErr
+		}
+		plan.configured = true
+	}
 	defer func() {
-		if len(restart) == 0 {
+		if len(restart) == 0 && !plan.configured {
 			return
 		}
 		out, outErr := r.output(plan)
 		if outErr == nil {
 			outErr = r.restartRunning(ctx, out, restart...)
+		}
+		if outErr == nil && plan.configured {
+			outErr = r.acknowledgeRestarts(ctx, feature.Name, restartTicket)
 		}
 		if outErr != nil {
 			plan.failed = errors.Join(plan.failed, fmt.Errorf("feature %q: restart %s: %w", feature.Name, strings.Join(restart, ", "), outErr))
@@ -401,7 +446,7 @@ func (r *Runner) runSteps(ctx context.Context, plan *featurePlan, want func(int,
 		}
 	}()
 	for i, step := range feature.Spec.Steps {
-		if !want(i, step) {
+		if !want(i, step) || step.Configuration && plan.configured {
 			continue
 		}
 		if step.Install && plan.adopted {

@@ -77,6 +77,12 @@ func Apply(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []s
 	if wireOnly {
 		return runner.Wire(ctx, loaded, opts)
 	}
+	if runner.Booted {
+		if err := publishConfigurationPlan(loaded, opts); err != nil {
+			tracker.Fail(err)
+			return err
+		}
+	}
 	_, err = runner.Provision(ctx, loaded, opts)
 	return err
 }

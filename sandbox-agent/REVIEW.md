@@ -766,3 +766,14 @@ user waits on every single start.
   Registration assigns a generated config ID; only the no-harness fallback
   uses the literal `shell`. Keep its startup argv empty, including after a
   pre-harness gate, or it nests a second shell and can consume prompts.
+
+- Daemon prerequisites select configuration without the full feature planner:
+  adoption probes can execute managed commands and wait on feature completion,
+  while off-feature profile pruning is outside a configuration-only entry point.
+  Preserve snapshot flags in the boot-local plan even though step digests exclude
+  them. A pre-core wrapper link targets the placed agent, never a link core has
+  yet to install.
+
+- A failed daemon prerequisite can exhaust a socket's trigger limit. A later
+  successful feature application checks that the socket is listening and reopens
+  it when needed, even when its persisted setup step digest still matches.
