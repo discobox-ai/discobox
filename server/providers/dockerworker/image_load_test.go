@@ -20,6 +20,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/pkg/imagecache/imagecachetest"
+	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -445,4 +446,66 @@ func loadTestImage(t *testing.T, engine *Engine, image string) error {
 	engine.cfg.SandboxBaseImage = image
 	_, err = engine.ensureImage(context.Background(), lease, "pool_1")
 	return err
+}
+
+// Only the server-side executor can grant this interval, before waiting on the
+// containerd response. A silent load must not depend on phase heartbeats.
+type extractionEvidenceManager struct {
+	sandbox.PoolManager
+	mu         sync.Mutex
+	facts      model.PoolBootstrap
+	sawBounded bool
+	failure    error
+}
+
+func (m *extractionEvidenceManager) ReportPoolBootstrap(_ context.Context, _ string, attempt string, generation int64, e model.BootstrapEvidence) (*model.PoolBootstrap, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if attempt != m.facts.Attempt || generation != m.facts.Generation {
+		return nil, fmt.Errorf("stale reporter")
+	}
+	m.facts.Accept(e, time.Now())
+	if e.Bounded {
+		m.sawBounded = true
+		if reason := m.facts.Expired(time.Now().Add(3 * time.Minute)); reason != "" {
+			m.failure = fmt.Errorf("silent extraction: %s", reason)
+		}
+	}
+	snapshot := m.facts
+	return &snapshot, m.failure
+}
+
+func TestContainerdLoadReportsFixedSilentExtractionAllowance(t *testing.T) {
+	cache, image := stagedCache(t)
+	daemon := newFakeLoadDaemon(true)
+	engine, _, _ := loadEngine(t, daemon, cache, image.Reference)
+	manager := &extractionEvidenceManager{facts: model.PoolBootstrap{Attempt: "initial", Generation: 1, ProgressAt: time.Now()}}
+	data, marshalErr := json.Marshal(manager.facts)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	pool := &model.Pool{ID: "pool_1", Bootstrap: data, ResourceLifecycle: model.ResourceLifecycle{Generation: 1}}
+	ctx := sandbox.WithBootstrapExecutor(context.Background(), manager, pool)
+	lease, err := engine.acquireDockerReady(ctx, pool.ID, engine.dockerReadyTimeout())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	engine.cfg.ProgressReporter = sandbox.PoolProgressReporterFor(manager)
+	if _, err := engine.ensureImage(ctx, lease, pool.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !manager.sawBounded {
+		t.Fatal("silent containerd extraction received no fixed allowance")
+	}
+	if manager.failure != nil {
+		t.Fatal(manager.failure)
+	}
+	if !manager.facts.Operations["extract_image:"+image.Reference].Done {
+		t.Fatal("extraction completion not recorded")
+	}
+}
+
+func (m *extractionEvidenceManager) ReportPoolProvisionProgress(context.Context, string, sandbox.PoolProvisionProgress) error {
+	return nil
 }

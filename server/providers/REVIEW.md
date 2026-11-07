@@ -120,3 +120,11 @@
   add a guest-image service or a new configuration protocol as a prerequisite.
   The temporary command container keeps its init process in its own root: a
   chroot in init makes later Docker exec resolve paths in the host root.
+
+- Initial bootstrap's attempt pin spans placement and compatible-client
+  discovery. First registration starts fresh recovery/readiness clocks;
+  incompatible discovery explicitly leaves bootstrap work policy. A clock
+  armed before a long apply is already expired when registration arrives.
+- A containerd image load exposes no incremental extraction counters after
+  archive transfer. Record its fixed executor deadline before waiting for
+  that silent response; phase heartbeat ticks are display only.

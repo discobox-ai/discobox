@@ -6,6 +6,7 @@
 package model
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -693,6 +694,7 @@ const (
 // runtime in place under the same pool identity; pool-local state survives in
 // named volumes.
 type Pool struct {
+	Bootstrap               RawJSON               `gorm:"column:bootstrap;type:text" json:"-"`
 	OutboundProbes          RawJSON               `gorm:"column:outbound_probes;type:text" json:"-"`
 	RuntimeOutbound         pooloutbound.Resolved `gorm:"-" json:"-"`
 	OutboundRestartRequired bool                  `gorm:"column:outbound_restart_required;not null;default:false" json:"-"`
@@ -790,6 +792,14 @@ func (p *Pool) BeforeCreate(_ *gorm.DB) error {
 		}
 	}
 	p.SetDefaults(DesiredStatePresent, PoolStatePending)
+	if p.RegisteredAt == nil && !p.Ready && p.State == PoolStatePending && len(p.Bootstrap) == 0 {
+		now := time.Now().UTC()
+		data, err := json.Marshal(PoolBootstrap{Attempt: rand.Text(), Generation: p.Generation, ProgressAt: now})
+		if err != nil {
+			return err
+		}
+		p.Bootstrap = data
+	}
 	if p.KeyType == "" {
 		p.KeyType = "ed25519"
 	}

@@ -743,7 +743,7 @@ func TestSchedulablePoolKeepsWaitingWhileTheDriverReportsProgress(t *testing.T) 
 	defer func() { <-done }()
 
 	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}
-	if _, err := provider.schedulablePool(context.Background(), sb); err != nil {
+	if _, err := provider.schedulablePool(context.Background(), sb, &poolWaitBudget{}); err != nil {
 		t.Fatalf("gave up on a pool that was reporting progress throughout: %v", err)
 	}
 }
@@ -770,7 +770,7 @@ func TestSchedulablePoolIgnoresProgressFromBeforeTheWait(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}
-	if _, err := provider.schedulablePool(ctx, sb); !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
+	if _, err := provider.schedulablePool(ctx, sb, &poolWaitBudget{}); !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
 		t.Fatalf("schedulablePool error = %v, want ErrNoSandboxCapacity on the plain budget", err)
 	}
 }
@@ -795,7 +795,7 @@ func TestSchedulablePoolGivesUpOnASilentPool(t *testing.T) {
 	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}
-	_, err := provider.schedulablePool(context.Background(), sb)
+	_, err := provider.schedulablePool(context.Background(), sb, &poolWaitBudget{})
 	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
 		t.Fatalf("schedulablePool error = %v, want ErrNoSandboxCapacity", err)
 	}
@@ -839,4 +839,159 @@ func newCreateProtocolTestServer(handler http.Handler) *httptest.Server {
 		}
 		handler.ServeHTTP(w, r)
 	}))
+}
+
+func (m *fakePoolManager) ReportPoolBootstrap(context.Context, string, string, int64, model.BootstrapEvidence) (*model.PoolBootstrap, error) {
+	return nil, nil
+}
+
+func TestBootstrapProviderGatesOutlastRecoveryCeiling(t *testing.T) {
+	oldCeiling, oldInterval := poolAgentWaitCeiling, poolCapacityPollInterval
+	poolAgentWaitCeiling = 10 * time.Millisecond
+	poolCapacityPollInterval = 20 * time.Millisecond
+	t.Cleanup(func() { poolAgentWaitCeiling = oldCeiling; poolCapacityPollInterval = oldInterval })
+	now := time.Now()
+	for _, bounded := range []bool{false, true} {
+		t.Run(fmt.Sprintf("bounded=%t", bounded), func(t *testing.T) {
+			facts := &model.PoolBootstrap{Attempt: "first", Generation: 1, ProgressAt: now}
+			facts.Accept(model.BootstrapEvidence{Operation: "apply", Bounded: bounded}, now)
+			data, marshalErr := json.Marshal(facts)
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			pool := activePool("pool-1")
+			pool.Generation = 1
+			pool.Bootstrap = data
+			manager := &fakePoolManager{pool: pool}
+			provider := New(nil, sandbox.ProviderDefinition{}, manager, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			calls := 0
+			lease, err := provider.awaitPoolAgentClient(ctx, pool, &poolWaitBudget{allowBootstrap: true}, func(context.Context, *model.Pool) (*transport.HTTPClientLease, error) {
+				calls++
+				if calls < 4 {
+					return nil, sandbox.ErrPoolNotReachable
+				}
+				return transport.NewHTTPClientLease(http.DefaultClient, func() {}), nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease.Release()
+			calls = 0
+			if err := provider.waitForPool(ctx, pool.ProjectID, pool.ID, &poolWaitBudget{allowBootstrap: true}, func(context.Context, *model.Pool) (bool, error) { calls++; return calls >= 4, nil }); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestBootstrapGatesFollowWorkThenGiveRegistrationFreshRecovery(t *testing.T) {
+	oldNow, oldPoll := poolWaitNow, poolCapacityPollInterval
+	now := time.Now()
+	poolWaitNow = func() time.Time { return now }
+	poolCapacityPollInterval = 0
+	t.Cleanup(func() { poolWaitNow = oldNow; poolCapacityPollInterval = oldPoll })
+	facts := &model.PoolBootstrap{Attempt: "first", Generation: 1, ProgressAt: now}
+	pool := activePool("pool-1")
+	pool.Generation = 1
+	manager := &fakePoolManager{pool: pool}
+	save := func() {
+		data, marshalErr := json.Marshal(facts)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		manager.pool.Bootstrap = data
+	}
+	save()
+	provider := New(nil, sandbox.ProviderDefinition{}, manager, nil)
+	calls := 0
+	budget := &poolWaitBudget{allowBootstrap: true}
+	err := provider.waitForPool(context.Background(), pool.ProjectID, pool.ID, budget, func(context.Context, *model.Pool) (bool, error) {
+		calls++
+		switch {
+		case calls <= 7:
+			facts.Accept(model.BootstrapEvidence{Operation: "transfer", Bytes: int64(calls)}, now)
+		case calls == 8:
+			facts.Accept(model.BootstrapEvidence{Operation: "apply", Bounded: true}, now)
+		case calls == 14:
+			facts.Accept(model.BootstrapEvidence{Operation: "apply", Complete: true, Registration: true}, now)
+		case calls == 15:
+			registered := now
+			manager.pool.RegisteredAt = &registered
+			manager.pool.Ready = false
+		case calls == 17:
+			return true, nil
+		}
+		save()
+		now = now.Add(time.Minute)
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("after %d simulated minutes: %v", calls, err)
+	}
+	if calls != 17 {
+		t.Fatalf("calls=%d", calls)
+	}
+}
+
+func TestBootstrapAcquireCannotFollowAnotherAttempt(t *testing.T) {
+	now := time.Now()
+	facts := &model.PoolBootstrap{Attempt: "first", Generation: 1, ProgressAt: now}
+	pool := activePool("pool-1")
+	pool.Generation = 1
+	var marshalErr error
+	pool.Bootstrap, marshalErr = json.Marshal(facts)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	manager := &fakePoolManager{pool: pool}
+	provider := New(nil, sandbox.ProviderDefinition{}, manager, nil)
+	calls := 0
+	_, err := provider.awaitPoolAgentClient(context.Background(), pool, &poolWaitBudget{allowBootstrap: true}, func(context.Context, *model.Pool) (*transport.HTTPClientLease, error) {
+		calls++
+		facts.Attempt = "second"
+		data, marshalErr := json.Marshal(facts)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		manager.pool.Bootstrap = data
+		return nil, sandbox.ErrPoolNotReachable
+	})
+	if err == nil || !strings.Contains(err.Error(), "attempt changed") || calls != 1 {
+		t.Fatalf("calls=%d err=%v", calls, err)
+	}
+}
+
+func TestInitialIncompatibleAgentUsesRecoveryInsteadOfBootstrapSilence(t *testing.T) {
+	oldNow, oldPoll := poolWaitNow, poolCapacityPollInterval
+	now := time.Now()
+	poolWaitNow = func() time.Time { return now }
+	poolCapacityPollInterval = 0
+	t.Cleanup(func() { poolWaitNow = oldNow; poolCapacityPollInterval = oldPoll })
+	facts := &model.PoolBootstrap{Attempt: "first", Generation: 1, ProgressAt: now}
+	pool := activePool("pool-1")
+	pool.Generation = 1
+	var marshalErr error
+	pool.Bootstrap, marshalErr = json.Marshal(facts)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	manager := &fakePoolManager{pool: pool}
+	provider := New(nil, sandbox.ProviderDefinition{}, manager, nil)
+	calls := 0
+	lease, err := provider.awaitPoolAgentClient(context.Background(), pool, &poolWaitBudget{allowBootstrap: true}, func(context.Context, *model.Pool) (*transport.HTTPClientLease, error) {
+		calls++
+		if calls == 5 {
+			return transport.NewHTTPClientLease(http.DefaultClient, func() {}), nil
+		}
+		now = now.Add(time.Minute)
+		stamp := now
+		manager.pool.ProvisionProgressAt = &stamp
+		return nil, sandbox.ErrPoolAgentUnsupported
+	})
+	if err != nil {
+		t.Fatalf("incompatible recovery after %d minutes: %v", calls, err)
+	}
+	lease.Release()
 }

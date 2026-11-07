@@ -20,6 +20,7 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/pool-agent/provisioner"
+	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -95,7 +96,7 @@ func (e *Engine) importCachedImage(ctx context.Context, cli *client.Client, pool
 			removeLoaded(ctx, cli, image)
 		}
 	}()
-	if err := e.loadCached(ctx, cli, poolID, cached, phase); err != nil {
+	if err := e.loadCached(ctx, cli, poolID, cached, phase, containerd); err != nil {
 		return err
 	}
 	if !containerd {
@@ -123,7 +124,29 @@ func usesContainerdStore(info system.Info) bool {
 // loadCached streams the image's archive into the daemon, reporting the bytes
 // written as a pull reports the bytes downloaded, and then the layers the
 // daemon extracts from it.
-func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID string, cached *imagecache.Image, phase sandbox.PoolProvisionPhase) error {
+func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID string, cached *imagecache.Image, phase sandbox.PoolProvisionPhase, containerd bool) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	extractionOperation := "extract_image:" + cached.Reference.Name()
+	extractionDeadline := make(chan time.Time, 1)
+	watcherDone := make(chan struct{})
+	if containerd {
+		go func() {
+			defer close(watcherDone)
+			select {
+			case deadline := <-extractionDeadline:
+				timer := time.NewTimer(max(time.Until(deadline), time.Duration(0)))
+				defer timer.Stop()
+				select {
+				case <-timer.C:
+					cancel()
+				case <-ctx.Done():
+				}
+			case <-ctx.Done():
+			}
+		}()
+		defer func() { cancel(); <-watcherDone }()
+	}
 	diffIDs, err := cached.DiffIDs()
 	if err != nil {
 		return err
@@ -174,6 +197,20 @@ func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID stri
 				report()
 			}
 		})
+		if err == nil && containerd {
+			facts, reportErr := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: extractionOperation, Bounded: true})
+			err = reportErr
+			if facts != nil {
+				if reason := facts.Expired(time.Now()); reason != "" {
+					err = fmt.Errorf("bootstrap %s: %s", extractionOperation, reason)
+				} else {
+					extractionDeadline <- facts.Allowance()
+				}
+			}
+			if err != nil {
+				cancel()
+			}
+		}
 		_ = writer.CloseWithError(err)
 		written <- err
 	}()
@@ -201,6 +238,15 @@ func (e *Engine) loadCached(ctx context.Context, cli *client.Client, poolID stri
 	_ = reader.Close()
 	if err := errors.Join(<-written, loadErr); err != nil {
 		return err
+	}
+	if containerd {
+		facts, err := sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Operation: extractionOperation, Complete: true})
+		if err != nil {
+			return err
+		}
+		if facts != nil && facts.Failure != "" {
+			return fmt.Errorf("bootstrap %s: %s", extractionOperation, facts.Failure)
+		}
 	}
 	progressMu.Lock()
 	// Whatever the daemon said along the way, every layer is in its store now.

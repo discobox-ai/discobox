@@ -444,6 +444,7 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 	if p.manager == nil {
 		return nil, nil, fmt.Errorf("pool manager is required")
 	}
+	budget := &poolWaitBudget{allowBootstrap: true}
 	if poolID, err := poolIDFromRuntimeState(state); err == nil {
 		// An existing runtime already lives on a pool; a state naming a
 		// different pool than the sandbox's is unplaceable.
@@ -454,7 +455,7 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 		if err != nil {
 			return nil, state, err
 		}
-		return p.createOnPool(ctx, ref, state, opts, pool)
+		return p.createOnPool(ctx, ref, state, opts, pool, budget)
 	} else if len(state) > 0 && !errors.Is(err, sandbox.ErrNotFound) {
 		return nil, state, err
 	}
@@ -464,11 +465,11 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 		PoolID:    opts.PoolID,
 		Platform:  opts.Platform,
 	}
-	pool, err := p.schedulablePool(ctx, sb)
+	pool, err := p.schedulablePool(ctx, sb, budget)
 	if err != nil {
 		return nil, nil, err
 	}
-	return p.createOnPool(ctx, ref, nil, opts, pool)
+	return p.createOnPool(ctx, ref, nil, opts, pool, budget)
 }
 
 // createOnPool sends the create to the pool's agent, and sends it again when
@@ -502,13 +503,13 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 // Attempts back off, because only the local driver's acquire can see that an
 // agent is not answering yet; every other driver hands out a lease at once,
 // and the wait between attempts is then the only pacing there is.
-func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions, pool *model.Pool) (*sandbox.Sandbox, []byte, error) {
+func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions, pool *model.Pool, budget *poolWaitBudget) (*sandbox.Sandbox, []byte, error) {
 	waitCtx := ctx
 	pause := poolCapacityPollInterval
 	var lost error
 	for {
 		// One lease per attempt: the call it is made for consumes it.
-		lease, err := p.awaitPoolAgentClient(waitCtx, pool, func(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
+		lease, err := p.awaitPoolAgentClient(waitCtx, pool, budget, func(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
 			return p.acquireCreateClient(ctx, pool, ref)
 		})
 		if err != nil {
@@ -532,6 +533,9 @@ func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, sta
 			return runtimeSandbox, created, err
 		}
 		if lost == nil {
+			// Dispatched work had its own lifetime. Recovery begins at its first
+			// unanswered result, retaining the admitted attempt and its outer ceiling.
+			*budget = poolWaitBudget{bootstrap: budget.bootstrap, protocolRecovery: true, recoverySince: poolWaitNow()}
 			slog.WarnContext(ctx, "pool agent went away during a sandbox create; sending it again once it is back",
 				"sandboxId", ref.SandboxID, "poolId", pool.ID, "error", err)
 			// Set once, on the first loss, so the defer runs once.
@@ -605,44 +609,36 @@ func poolAgentUnanswered(ctx context.Context, err error) bool {
 // reconcile it asks for; waiting on convergence returns at once. The wait is
 // bounded by poolAgentWaitCeiling, because progress stamps renew its stall
 // clock and a pool's routine reconciles stamp progress too.
-func (p *Provider) awaitPoolAgentClient(ctx context.Context, pool *model.Pool, acquire func(context.Context, *model.Pool) (*transport.HTTPClientLease, error)) (*transport.HTTPClientLease, error) {
-	ctx, cancel := context.WithTimeoutCause(ctx, poolAgentWaitCeiling, errPoolWaitExpired)
-	defer cancel()
-	lease, err := acquire(ctx, pool)
-	if err == nil {
-		return lease, nil
+func (p *Provider) awaitPoolAgentClient(ctx context.Context, pool *model.Pool, budget *poolWaitBudget, acquire func(context.Context, *model.Pool) (*transport.HTTPClientLease, error)) (*transport.HTTPClientLease, error) {
+	if p.manager == nil || pool == nil {
+		return acquire(ctx, pool)
 	}
-	var fatal *createDiscoveryFailure
-	if errors.As(err, &fatal) {
-		return nil, err
-	}
-	if ctx.Err() != nil || p.manager == nil || pool == nil || strings.TrimSpace(pool.ID) == "" {
-		return nil, err
-	}
-	if scheduleErr := p.manager.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); scheduleErr != nil {
-		return nil, scheduleErr
-	}
-	lastErr := err
-	err = p.waitForPool(ctx, pool.ProjectID, pool.ID, func(ctx context.Context, current *model.Pool) (bool, error) {
-		acquired, err := acquire(ctx, current)
-		if err != nil {
-			var fatal *createDiscoveryFailure
-			if errors.As(err, &fatal) {
-				return false, err
-			}
-			// An attempt cut off by the wait ending has nothing to say about
-			// the host; keep the last one that did.
-			if ctx.Err() == nil {
-				lastErr = err
-			}
-			return false, nil
+	var lease *transport.HTTPClientLease
+	var lastErr error
+	err := p.waitForPool(ctx, pool.ProjectID, pool.ID, budget, func(probeCtx context.Context, current *model.Pool) (bool, error) {
+		acquired, err := acquire(probeCtx, current)
+		if err == nil {
+			lease = acquired
+			return true, nil
 		}
-		lease = acquired
-		return true, nil
+		var fatal *createDiscoveryFailure
+		if errors.As(err, &fatal) {
+			return false, err
+		}
+		if probeCtx.Err() == nil {
+			lastErr = err
+		}
+		if errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
+			budget.enterProtocolRecovery(poolWaitNow())
+		}
+		if p.markPoolForReconcile(pool.ID) {
+			if scheduleErr := p.manager.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); scheduleErr != nil {
+				return false, scheduleErr
+			}
+		}
+		return false, nil
 	})
-	if errors.Is(err, errPoolWaitExpired) || errors.Is(context.Cause(ctx), errPoolWaitExpired) {
-		// The driver's own account of why the host cannot be reached says more
-		// than the wait running out.
+	if errors.Is(err, errPoolWaitExpired) && lastErr != nil {
 		return nil, lastErr
 	}
 	if err != nil {
@@ -653,9 +649,12 @@ func (p *Provider) awaitPoolAgentClient(ctx context.Context, pool *model.Pool, a
 
 // schedulablePool waits for the sandbox's pool to accept placement, on the
 // budget waitForPool gives a pool that is on its way up.
-func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*model.Pool, error) {
+func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox, budget *poolWaitBudget) (*model.Pool, error) {
 	pool, err := p.manager.SchedulablePoolForSandbox(ctx, sb)
 	if err == nil {
+		if _, _, err := budget.observe(pool, poolWaitNow()); err != nil {
+			return nil, err
+		}
 		return pool, nil
 	}
 	if !errors.Is(err, apperrors.ErrNotFound) {
@@ -669,7 +668,7 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*mod
 	if err := p.manager.SchedulePoolReconciliation(ctx, sb.ProjectID, sb.PoolID); err != nil {
 		return nil, err
 	}
-	err = p.waitForPool(ctx, sb.ProjectID, sb.PoolID, func(ctx context.Context, _ *model.Pool) (bool, error) {
+	err = p.waitForPool(ctx, sb.ProjectID, sb.PoolID, budget, func(ctx context.Context, _ *model.Pool) (bool, error) {
 		pool, err = p.manager.SchedulablePoolForSandbox(ctx, sb)
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return false, nil
@@ -700,44 +699,108 @@ var errPoolWaitExpired = errors.New("pool wait expired")
 // has settled into failure ends the wait with
 // that failure, because its recorded cause — a missing image, an unreachable
 // daemon — is what the caller should see.
-func (p *Provider) waitForPool(ctx context.Context, projectID, poolID string, attempt func(context.Context, *model.Pool) (bool, error)) error {
-	deadline := time.Now().Add(poolCapacityWaitTimeout)
-	var lastProgressAt *time.Time
+// poolWaitBudget belongs to one create (placement through discovery), never to
+// a provider. Protocol recovery leaves initial work policy permanently.
+type poolWaitBudget struct {
+	allowBootstrap   bool
+	bootstrap        model.BootstrapWait
+	protocolRecovery bool
+	recoverySince    time.Time
+	deadline         time.Time
+	lastProgressAt   *time.Time
+	wasBootstrap     bool
+}
+
+var poolWaitNow = time.Now
+
+func (b *poolWaitBudget) enterProtocolRecovery(now time.Time) {
+	if !b.protocolRecovery {
+		b.protocolRecovery = true
+		b.recoverySince = now
+		b.deadline = now.Add(poolProvisionStallTimeout)
+	}
+}
+
+func (b *poolWaitBudget) observe(pool *model.Pool, now time.Time) (time.Time, bool, error) {
+	if b.allowBootstrap && !b.protocolRecovery {
+		deadline, eligible, err := b.bootstrap.Observe(pool, now)
+		if err != nil {
+			return deadline, eligible, err
+		}
+		if eligible {
+			b.wasBootstrap = true
+			return deadline, true, nil
+		}
+	} else if b.bootstrap.Attempt != "" && !b.bootstrap.Finished {
+		facts := pool.BootstrapFacts()
+		if facts == nil || facts.Attempt != b.bootstrap.Attempt || facts.Generation != pool.Generation {
+			return time.Time{}, false, fmt.Errorf("pool %s: bootstrap attempt changed", pool.ID)
+		}
+	}
+	if b.recoverySince.IsZero() {
+		b.recoverySince = now
+	}
+	if b.deadline.IsZero() || b.wasBootstrap {
+		b.deadline = now.Add(poolCapacityWaitTimeout)
+		b.wasBootstrap = false
+		b.lastProgressAt = nil
+	}
+	at := pool.ProvisionProgressAt
+	if b.lastProgressAt == nil {
+		b.lastProgressAt = &time.Time{}
+		if at != nil {
+			*b.lastProgressAt = *at
+		}
+	} else if at != nil && at.After(*b.lastProgressAt) {
+		*b.lastProgressAt = *at
+		b.deadline = now.Add(poolProvisionStallTimeout)
+	}
+	deadline := b.deadline
+	if ceiling := b.recoverySince.Add(poolAgentWaitCeiling); ceiling.Before(deadline) {
+		deadline = ceiling
+	}
+	return deadline, false, nil
+}
+
+func (p *Provider) waitForPool(ctx context.Context, projectID, poolID string, budget *poolWaitBudget, attempt func(context.Context, *model.Pool) (bool, error)) error {
 	for {
 		pool, err := p.manager.GetPool(ctx, projectID, poolID)
 		if err != nil {
 			return err
 		}
-		done, err := attempt(ctx, pool)
-		if err != nil || done {
-			return err
-		}
 		if err := settledFailure(pool); err != nil {
 			return err
 		}
-		// The stamp as first read is the baseline, not movement: it is never
-		// cleared, so any pool that has ever been brought up carries one.
-		// A driver holding a phase restates it every few seconds, well inside
-		// the plain budget, so a live provision still renews the deadline.
-		at := pool.ProvisionProgressAt
-		if lastProgressAt == nil {
-			lastProgressAt = &time.Time{}
-			if at != nil {
-				*lastProgressAt = *at
-			}
-		} else if at != nil && at.After(*lastProgressAt) {
-			*lastProgressAt = *at
-			deadline = time.Now().Add(poolProvisionStallTimeout)
+		deadline, eligible, err := budget.observe(pool, poolWaitNow())
+		if err != nil {
+			return err
 		}
-		if poolCapacityWaitTimeout <= 0 || !time.Now().Before(deadline) {
+		if poolCapacityWaitTimeout > 0 && !poolWaitNow().Before(deadline) {
 			return errPoolWaitExpired
 		}
-		timer := time.NewTimer(poolCapacityPollInterval)
+		probeCtx, cancel := context.WithDeadline(ctx, deadline)
+		done, err := attempt(probeCtx, pool)
+		expired := probeCtx.Err() != nil
+		cancel()
+		if done && err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if eligible && expired {
+			continue
+		} // re-read work accepted while the probe ran
+		if err != nil {
+			return err
+		}
+		if !eligible && (!poolWaitNow().Before(deadline) || poolCapacityWaitTimeout <= 0) {
+			return errPoolWaitExpired
+		}
+		timer := time.NewTimer(min(poolCapacityPollInterval, max(time.Until(deadline), time.Duration(0))))
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
+			timer.Stop()
 			return ctx.Err()
 		case <-timer.C:
 		}

@@ -153,7 +153,8 @@ flowchart LR
   pool with assigned sandboxes is repaired in place (`RepairPool`); a runtime
   whose
   agent never registers within `poolRegistrationTimeout` (2m, armed with
-  `RequeueAt` only while waiting) is repaired, its new box enrolled anew;
+  `RequeueAt` only while waiting) is repaired for legacy rows. Initial attempts
+  with durable evidence instead expire without automatic replacement;
   delete refuses while sandboxes are assigned, removes the runtime, and then
   the row. Failure latching follows `EverCreated` (`RegisteredAt` set):
   never-registered pools fail terminally (`failed`); a created pool keeps its state and records the failure as
@@ -338,3 +339,14 @@ Reconciliation owns applied revisions, restart-required and context-specific
 observations; failed configuration apply retries without repairing/replacing a
 running host. VM boot changes retain the previous applied revision until an
 ordinary restart. A configuration change never deletes sandbox/data/cache state.
+
+## Initial bootstrap waits
+
+The reconciler binds executor reports to the durable attempt and generation
+before invoking the provider. `ReportPoolBootstrap` persists real work evidence
+through the required `PoolManager` contract, independently of display telemetry.
+Expired or failed attempts remain failed across automatic retries. Registration
+expiry consumes that same evidence: it cannot replace a host during a valid
+fixed apply window, and first registration has a fixed two-minute allowance
+from apply completion. Once registered, ordinary recovery policy applies.
+See ADR 26-11-07-306 and the model's evidence policy.

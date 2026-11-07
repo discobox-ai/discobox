@@ -2,13 +2,17 @@ package sandboxes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/database"
@@ -587,4 +591,126 @@ func (*provisioningProvider) ExportTree(context.Context, sandbox.SandboxRef, str
 
 func (*provisioningProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, _ platform.Platform, _ io.Reader) (string, error) {
 	return poolID, nil
+}
+
+func initialBootstrapFixture(t *testing.T) (*Service, *model.Pool) {
+	t.Helper()
+	service, _ := attachWaitFixture(t)
+	ctx := context.Background()
+	pool, err := service.store.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.ID = "initial-pool"
+	pool.Name = "initial-pool"
+	pool.Ready = false
+	pool.State = model.PoolStatePending
+	pool.Bootstrap = nil
+	if err := service.store.CreatePool(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.PoolID = pool.ID
+	sb.Pool = nil
+	if err := service.store.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatal(err)
+	}
+	return service, pool
+}
+
+func TestActionBootstrapApplyOutlastsRecoveryCeiling(t *testing.T) {
+	service, pool := initialBootstrapFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	b := pool.BootstrapFacts()
+	if _, err := service.store.RecordPoolBootstrap(ctx, pool.ID, b.Attempt, pool.Generation, model.BootstrapEvidence{Operation: "provision_pool_box", Bounded: true}); err != nil {
+		t.Fatal(err)
+	}
+	old := sandboxPoolHostWaitCeiling
+	sandboxPoolHostWaitCeiling = 10 * time.Millisecond
+	t.Cleanup(func() { sandboxPoolHostWaitCeiling = old })
+	started := time.Now()
+	calls := 0
+	_, err := service.awaitUsable(ctx, "project-1", "sb-1", services.SandboxAction("exec attach"), waitFromTheStart, func(ctx context.Context, _ *useWaitBudget) (*model.Sandbox, error) {
+		calls++
+		sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+		if err != nil {
+			return nil, err
+		}
+		if calls < 2 {
+			return sb, sandbox.ErrPoolNotReachable
+		}
+		return sb, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(started) <= sandboxPoolHostWaitCeiling {
+		t.Fatal("did not exercise recovery ceiling")
+	}
+}
+
+func TestActionGetsTerminalBootstrapFailureBeforeSandboxSettles(t *testing.T) {
+	service, pool := initialBootstrapFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	b := pool.BootstrapFacts()
+	if _, err := service.store.RecordPoolBootstrap(ctx, pool.ID, b.Attempt, pool.Generation, model.BootstrapEvidence{Operation: "apply", Failure: "apt exited with status 100"}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := service.AcquireSandboxHTTPClient(ctx, "project-1", "sb-1", nil, services.SandboxAction("exec attach"))
+	if err == nil || !strings.Contains(err.Error(), "apt exited with status 100") {
+		t.Fatalf("terminal failure: %v", err)
+	}
+}
+
+func TestActionFollowsBootstrapWorkAndResetsReadinessAfterRegistration(t *testing.T) {
+	service, pool := initialBootstrapFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	now := time.Now()
+	oldNow, oldPoll := sandboxWaitNow, sandboxReachablePollInterval
+	sandboxWaitNow = func() time.Time { return now }
+	sandboxReachablePollInterval = 0
+	t.Cleanup(func() { sandboxWaitNow = oldNow; sandboxReachablePollInterval = oldPoll })
+	facts := pool.BootstrapFacts()
+	calls := 0
+	_, err := service.awaitUsable(ctx, "project-1", "sb-1", services.SandboxAction("exec attach"), waitFromTheStart, func(ctx context.Context, _ *useWaitBudget) (*model.Sandbox, error) {
+		calls++
+		sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+		if err != nil {
+			return nil, err
+		}
+		updates := map[string]any{}
+		switch {
+		case calls <= 7:
+			facts.Accept(model.BootstrapEvidence{Operation: "transfer", Bytes: int64(calls)}, now)
+		case calls == 8:
+			facts.Accept(model.BootstrapEvidence{Operation: "apply", Bounded: true}, now)
+		case calls == 14:
+			facts.Accept(model.BootstrapEvidence{Operation: "apply", Complete: true, Registration: true}, now)
+		case calls == 15:
+			updates["registered_at"] = now
+		case calls == 17:
+			return sb, nil
+		}
+		data, marshalErr := json.Marshal(facts)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		updates["bootstrap"] = model.RawJSON(data)
+		if err := service.store.Transaction(ctx, func(_ *store.Store, tx *gorm.DB) error {
+			return tx.Model(&model.Pool{}).Where("id = ?", pool.ID).Updates(updates).Error
+		}); err != nil {
+			return nil, err
+		}
+		now = now.Add(time.Minute)
+		return sb, sandbox.ErrPoolNotReachable
+	})
+	if err != nil {
+		t.Fatalf("after %d simulated minutes: %v", calls, err)
+	}
 }

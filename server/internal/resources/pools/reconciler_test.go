@@ -1,6 +1,7 @@
 package pools
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -94,5 +95,51 @@ func TestArmRegistrationTimeoutAgreesWithRegistrationExpired(t *testing.T) {
 	}
 	if got := armRegistrationTimeout(pool); got.RequeueAt.After(time.Now()) {
 		t.Fatalf("RequeueAt = %s, want a deadline already passed", got.RequeueAt)
+	}
+}
+
+func TestBootstrapRegistrationRepairUsesApplyCompletion(t *testing.T) {
+	now := time.Now()
+	facts := &model.PoolBootstrap{Attempt: "first", Generation: 1, ProgressAt: now}
+	facts.Accept(model.BootstrapEvidence{Operation: "apply", Bounded: true}, now)
+	pool := &model.Pool{ID: "initial", ResourceLifecycle: model.ResourceLifecycle{Generation: 1, State: model.PoolStateRegistering, StateChangedAt: now.Add(-10 * time.Minute)}}
+	save := func() {
+		var marshalErr error
+		pool.Bootstrap, marshalErr = json.Marshal(facts)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+	}
+	save()
+	r := &PoolReconciler{}
+	if r.registrationExpired(pool) {
+		t.Fatal("registration repair interrupted active apply")
+	}
+	if got := armRegistrationTimeout(pool).RequeueAt; !got.Equal(now.Add(15 * time.Minute)) {
+		t.Fatalf("apply wake %s", got)
+	}
+	facts.Accept(model.BootstrapEvidence{Operation: "apply", Complete: true, Registration: true}, now.Add(8*time.Minute))
+	save()
+	want := now.Add(10 * time.Minute)
+	if got := armRegistrationTimeout(pool).RequeueAt; !got.Equal(want) {
+		t.Fatalf("registration window %s want %s", got, want)
+	}
+	facts.Accept(model.BootstrapEvidence{Operation: "apply", Complete: true, Registration: true}, now.Add(9*time.Minute))
+	save()
+	if got := armRegistrationTimeout(pool).RequeueAt; !got.Equal(want) {
+		t.Fatal("replayed completion moved allowance")
+	}
+	if reason := facts.Expired(want); reason != "pool agent did not register before timeout" {
+		t.Fatal(reason)
+	}
+	facts.Accept(model.BootstrapEvidence{Operation: "apply", Bounded: true}, want.Add(time.Minute))
+	save()
+	if facts.Failure == "" || r.registrationExpired(pool) {
+		t.Fatal("automatic retry regained a repair/apply window")
+	}
+	registered := now.Add(9 * time.Minute)
+	pool.RegisteredAt = &registered
+	if !armRegistrationTimeout(pool).RequeueAt.IsZero() {
+		t.Fatal("registered pool retained bootstrap timer")
 	}
 }

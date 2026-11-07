@@ -146,6 +146,19 @@ func (r *PoolReconciler) ScanDirty(ctx context.Context) ([]string, error) {
 }
 
 func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, generation int64) (reconcile.Result, error) {
+	if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Generation == generation {
+		if reason := b.Expired(time.Now()); reason != "" {
+			_, _ = r.store.RecordPoolBootstrap(ctx, pool.ID, b.Attempt, generation, model.BootstrapEvidence{Failure: reason})
+			failure := fmt.Sprintf("pool %s bootstrap %s: %s", pool.ID, b.Operation, reason)
+			r.failReconcile(pool, generation, failure)
+			if err := r.update(ctx, pool, generation); err != nil {
+				return reconcile.Result{}, err
+			}
+			return reconcile.Result{}, fmt.Errorf("%s", failure)
+		}
+		ctx = sandbox.WithBootstrapExecutor(ctx, r.pools, pool)
+	}
+
 	project, provider, runtimeProvider, err := r.resolve(ctx, pool)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -211,6 +224,14 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 			return reconcile.Result{}, err
 		}
 		if errors.Is(err, sandbox.ErrPoolConfigApply) {
+			r.failReconcile(pool, generation, err.Error())
+			if updateErr := r.update(ctx, pool, generation); updateErr != nil {
+				return reconcile.Result{}, updateErr
+			}
+			return reconcile.Result{}, err
+		}
+		if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Generation == generation {
+			_, _ = sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Failure: err.Error()})
 			r.failReconcile(pool, generation, err.Error())
 			if updateErr := r.update(ctx, pool, generation); updateErr != nil {
 				return reconcile.Result{}, updateErr
@@ -298,6 +319,9 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 // would put a timer on every healthy pool in the fleet, which is the drift
 // re-check the 60s scan already does.
 func armRegistrationTimeout(pool *model.Pool) reconcile.Result {
+	if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Generation == pool.Generation {
+		return reconcile.RequeueAt(b.Allowance())
+	}
 	if poolRegistrationTimeout <= 0 || pool.StateChangedAt.IsZero() {
 		return reconcile.Result{}
 	}
@@ -310,6 +334,10 @@ func armRegistrationTimeout(pool *model.Pool) reconcile.Result {
 // registrationExpired reports a pool whose runtime creation succeeded but
 // whose agent never registered within the timeout.
 func (r *PoolReconciler) registrationExpired(pool *model.Pool) bool {
+	if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Generation == pool.Generation {
+		return false
+	}
+
 	if poolRegistrationTimeout <= 0 {
 		return false
 	}

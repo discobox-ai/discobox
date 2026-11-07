@@ -185,23 +185,22 @@ mechanic behind them: the guest image fetch, which is hundreds of megabytes
 before there is a VM at all, and the development image build, which runs on the
 pool's own BuildKit after the machine is up and before its agent can be started.
 
-The record has a second reader. Placement waits for the sandbox's pool to become
-schedulable on a plain budget (`poolCapacityWaitTimeout`) that is renewed, up to
-`poolProvisionStallTimeout` at a time, whenever the pool's progress stamp moves:
-only silence spends it, so a cold VM pool that is fetching, booting, and pulling
-is not mistaken for a stuck one. A pool that has actually failed is caught
-immediately, by its settled failure rather than by a clock. A create reaching
-the agent of the pool it was placed on spends the same budget; see
-[Pool-agent client leases](#pool-agent-client-leases).
+Legacy placement and recovery waits also read this record. Their plain budget
+(`poolCapacityWaitTimeout`) renews, up to `poolProvisionStallTimeout` at a time,
+when the progress stamp moves, within the recovery ceiling. Eligible initial
+bootstrap never counts this display timestamp: placement and compatible-client
+acquisition share one attempt pin and consume authoritative executor counters
+and fixed operation deadlines instead. Settled failures end either policy
+immediately. See [Pool-agent client leases](#pool-agent-client-leases).
 
 Two rules make it cheap enough to write from a hot path. Reports are a narrow
 two-column update, so they never race the reconcile writing the rest of the row;
 and an image pull, the one phase with a denominator, is throttled to the rate a
 byte counter has to move to read as movement. A report that fails to store is
 dropped rather than failing the reconcile that produced it. Readers poll: the
-client for its status line, and an attach waiting on a sandbox hosted here, which
-reads the advancing timestamp as proof that a slow provision is still moving
-(ADR 0081).
+client for its status line, and ordinary readiness waits outside eligible
+initial bootstrap (ADR 0081). Initial bootstrap uses its independent work
+record, not these telemetry timestamps.
 
 ## Pool Image Acquisition
 
@@ -1112,8 +1111,9 @@ is noticed gone, so a pool whose container is being replaced or restarted is
 still handed out, and a create is one attempt that settles the sandbox failed.
 When the lease cannot be acquired, the create marks the pool for reconcile and
 polls the driver on the placement wait's budget, ending early on a settled
-failure and at `poolAgentWaitCeiling` regardless, since routine reconciles
-stamp progress too. It polls the driver, not the row: the mark is drift, which
+failure and at `poolAgentWaitCeiling` for recovery, since routine reconciles
+stamp progress too. Eligible initial bootstrap instead uses durable executor
+work evidence as described below. It polls the driver, not the row: the mark is drift, which
 bumps no generation, so the row reads converged throughout. Every other
 operation does not wait for the host: it retries once, after any reconcile the
 pool's pending intent already owes, because proxied traffic must not hang on a
@@ -1169,8 +1169,11 @@ would otherwise queue a reconcile per pass, each one re-running the host's
 drift checks and re-stamping the progress that the caller's own stall budget
 reads as movement.
 
-Pool placement waits allow two minutes without progress, including time for a
-post-restart heartbeat. Advancing driver progress renews that silence budget.
+Legacy placement and recovery waits allow two minutes without progress,
+including time for a post-restart heartbeat. Advancing display progress renews
+that silence budget within the recovery ceiling. Eligible initial bootstrap
+instead consumes authoritative executor evidence and fixed operation deadlines;
+display progress never renews that allowance.
 Expiry reports "timed out waiting for the pool agent to become ready" with the
 pool ID; settled runtime failures retain their concrete cause. A previous-run
 failure is not terminal during startup: its `ReconciledAt` must be at least the
@@ -1236,3 +1239,19 @@ Outbound rotation on Docker pools restarts the agent and proxy first, waits for
 the agent to render the new builder environment, then drains the mediator
 before restarting BuildKit and its registry. The mediator resumes only after
 those consumers have returned; sandbox workloads, disks and build caches stay.
+
+## Initial pool bootstrap execution
+
+Before initial readiness, the reconciler's context carries an attempt-fenced
+executor reporter. Image transfer/extraction reports advance independent
+high-water counters per identified operation; display phase holds never do.
+`ProvisionBox` records a fixed deadline before dispatch and reuses it across
+worker restarts, bounded by its existing fifteen-minute apply limit. Completion
+starts the fixed first-registration allowance exactly once.
+
+Placement and compatible-client acquisition consume `BootstrapWait` facts
+from the primary. Initial bootstrap has a two-minute silence budget, replaced
+by a fixed deadline during bounded apply. Recovery and incompatible-protocol
+transitions retain the five-minute ceiling; unanswered dispatched creates
+retain their separate resend budget. Legacy rows have no new entitlement.
+Unsupported stages without executor evidence use the silence budget.
