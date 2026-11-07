@@ -109,8 +109,24 @@
   `link-command`; a guard asks whether the tool is installed by its path in
   that prefix, never `command -v` (rustup's guard took one user's rustup for
   installed). The step gets a `check` that fails when the command left the
-  prefix or is shadowed again. See
+  prefix or is shadowed again. A feature *links* a name into
+  `/usr/local/bin` only through `link-command`, never `ln -sf`, which
+  deletes what the box had there. Two exceptions: core's own
+  `link-agent.sh`, which runs before `link-command` is laid, and a feature's
+  declared `personalities`, which the runner links itself and which replace
+  the box's entry, not yet moved aside. A `file` step
+  writes there only a `discobox-*` name, which no box's image ships; the
+  browser's `chromium` wrapper is the one that replaces a name a box may
+  have, and is not yet moved aside. See
   [`provision`](provision/DESIGN.md#where-a-feature-installs).
+- **A step fed by the adopt check must not change that check's answer.**
+  The node feature's `select` linked `/usr/local/bin/node` to the
+  `/usr/bin/node` it was told it adopted; the next boot's check found the
+  link first, told the step `/usr/local/bin/node`, and the step's own check
+  saw drift on a box that had none, and recorded Discobox's link as the
+  box's Node. `systemCommand` passes over a link to the same command later
+  on the system PATH; a new adopt probe keeps that property, and a test
+  applies twice with the link laid.
 - **A runtime integration reads `provision.json`, never the box.** Whether a
   feature is there is decided once, by provisioning (ADR 26-10-16-423 §4); a
   boot step or service that wires one checks `provisionspec.FeatureOff` (or

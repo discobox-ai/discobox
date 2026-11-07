@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -80,10 +82,24 @@ func (r *Runner) boxPath(path string) string {
 // systemCommand finds command on the system PATH, as every user reaches it,
 // and is its path under the runner's root. A command that is the agent's own
 // personality, or a placeholder, is not the box's copy.
+//
+// A link to the same command in a later system PATH directory is passed over
+// for that directory's own entry, so the answer does not move once a step
+// links the chosen copy ahead of where it was found: the node feature's
+// select links /usr/local/bin/node to the /usr/bin/node this chose, and the
+// next boot must choose /usr/bin/node again, not that link.
 func (r *Runner) systemCommand(command string) (string, error) {
 	var why error
-	for _, dir := range SystemPath {
+	for i, dir := range SystemPath {
 		candidate := r.path(filepath.Join(dir, command))
+		if target, err := os.Readlink(candidate); err == nil {
+			if !path.IsAbs(target) {
+				target = path.Join(dir, target)
+			}
+			if path.Base(target) == command && slices.Contains(SystemPath[i+1:], path.Dir(target)) {
+				continue
+			}
+		}
 		info, err := os.Stat(candidate)
 		if err != nil || info.IsDir() {
 			continue

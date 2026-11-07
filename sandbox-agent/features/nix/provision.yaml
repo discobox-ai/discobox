@@ -5,6 +5,7 @@
 # real binary.
 apiVersion: discobox.ai/provision/v1
 async: true
+requires: [core]
 steps:
   - name: install
     run: install-nix.sh
@@ -29,4 +30,5 @@ steps:
   - name: shim
     file: {path: /usr/local/lib/discobox/nix-shim, source: nix-shim, mode: "0755"}
   - name: shims
+    check: check-shims.sh
     run: link-shims.sh

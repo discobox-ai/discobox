@@ -150,12 +150,21 @@ closed to every other user), a dangling link, an older copy. So which copy
   feature's `npm-global`; rustup with `CARGO_HOME` at
   `/usr/local/lib/discobox/rust` (each user's toolchains, registry and
   `cargo install` stay in their own `~/.rustup` and `~/.cargo`); uv into
-  `/usr/local/lib/discobox/uv`; the downloads `shells-editors` unpacks.
+  `/usr/local/lib/discobox/uv`; bun into `/usr/local/lib/discobox/bun`; the
+  downloads `shells-editors` unpacks. Go stays under `/usr/local/go`,
+  upstream's layout, which no box's image claims and every PATH puts ahead of
+  `/usr/local/bin`; it links nothing.
 - **What it installs wins on PATH.** Each command is linked into
   `/usr/local/bin` by core's `link-command`
   (`/usr/local/libexec/discobox/link-command`, so a feature using it requires
   core); the chosen Node's `node`, `npm`, `npx` and `corepack` too, adopted
-  or installed, so a bare `node` in a launcher or capture script runs it.
+  or installed, so a bare `node` in a launcher or capture script runs it;
+  and every other name a feature puts there: `discobox` and
+  `discobox-review` from their bundle trees, and nix's shims. Two lay their
+  names otherwise: core's own `link-agent.sh` links with `ln`, since it runs
+  before `link-command` is laid, and the runner itself links a feature's
+  declared `personalities` (the `docker` personality), replacing what the
+  box had at the name rather than moving it aside.
   **The policy:** a name Discobox links is Discobox's. Whatever the box had
   there — a file, a link anywhere, dangling or not — is moved, never deleted,
   to `/usr/local/lib/discobox/displaced/` under its own path
@@ -165,9 +174,12 @@ closed to every other user), a dangling link, an older copy. So which copy
   moving it back from there. A name that belongs with a refused copy and has
   no counterpart in the chosen one — boxd's `corepack` beside a Node 25 that
   ships none — is moved aside with nothing in its place (`link-command
-  --aside`), rather than left running the refused copy.
+  --aside`), rather than left running the refused copy. The adopt check
+  passes over a link to the same command in a later system PATH directory,
+  so the copy it chose is chosen again once `select` links it into
+  `/usr/local/bin`.
 - **Each such step has a `check`** (`link-command --check`, `npm-global
-  check`, the select step's `check-node.sh`) that fails when the command left
+  check`, the select step's `check-node.sh`, each linking step's own) that fails when the command left
   the prefix or the link was shadowed again, so the step is applied again at
   the box's next boot; a box provisioned by the old scripts, whose CLIs went
   to npm's default prefix, is repaired that way.

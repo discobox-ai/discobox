@@ -3,7 +3,9 @@
 # beside this file.
 apiVersion: discobox.ai/provision/v1
 async: true
+requires: [core]
 commands: [discobox]
 steps:
   - name: binary
+    check: check-cli.sh
     run: link-cli.sh
