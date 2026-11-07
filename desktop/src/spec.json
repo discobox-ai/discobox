@@ -1,0 +1,401 @@
+{
+  "version": 1,
+  "leader": "ctrl+a",
+  "colors": {
+    "add": "#87ff87",
+    "band": "#303030",
+    "both": "#0087af",
+    "del": "#ffaf87",
+    "dim": "#585858",
+    "err": "#ff0000",
+    "gold": "#ffd700",
+    "grey": "#8a8a8a",
+    "greyedOut": "#444444",
+    "inactive": "#303030",
+    "info": "#87afff",
+    "mark": "#f45cff",
+    "ok": "#5fff5f",
+    "onGold": "#080808",
+    "rowCursor": "#3a3a3a",
+    "selected": "#005f87",
+    "warn": "#ffaf00"
+  },
+  "states": {
+    "archived": {
+      "glyph": "▪",
+      "color": "dim",
+      "word": "archived"
+    },
+    "error": {
+      "glyph": "✗",
+      "color": "err",
+      "word": "error"
+    },
+    "repairing": {
+      "glyph": "◐",
+      "color": "gold",
+      "word": "repairing"
+    },
+    "running": {
+      "glyph": "●",
+      "color": "ok",
+      "word": "running"
+    },
+    "starting": {
+      "glyph": "◐",
+      "color": "gold",
+      "word": "starting"
+    },
+    "stopped": {
+      "glyph": "○",
+      "color": "dim",
+      "word": "stopped"
+    },
+    "suspended": {
+      "glyph": "‖",
+      "color": "gold",
+      "word": "suspended"
+    }
+  },
+  "agents": {
+    "blocked": {
+      "glyph": "◆",
+      "color": "err",
+      "word": "blocked"
+    },
+    "done": {
+      "glyph": "✓",
+      "color": "add",
+      "word": "done"
+    },
+    "error": {
+      "glyph": "×",
+      "color": "err",
+      "word": "failed"
+    },
+    "idle": {
+      "glyph": "◇",
+      "color": "dim",
+      "word": "idle"
+    },
+    "working": {
+      "glyph": "▶",
+      "color": "text",
+      "word": "working"
+    }
+  },
+  "commands": [
+    {
+      "id": "box.attach",
+      "title": "attach",
+      "group": "Box",
+      "keys": {
+        "desktop": [
+          "enter"
+        ],
+        "tui": [
+          "a"
+        ]
+      }
+    },
+    {
+      "id": "box.shell",
+      "title": "shell",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "s"
+        ]
+      }
+    },
+    {
+      "id": "box.reviewConfig",
+      "title": "review config",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "H"
+        ]
+      }
+    },
+    {
+      "id": "box.rename",
+      "title": "rename",
+      "group": "Box",
+      "keys": {
+        "desktop": [
+          "f2"
+        ],
+        "tui": [
+          "e"
+        ]
+      }
+    },
+    {
+      "id": "box.settings",
+      "title": "settings",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "E"
+        ]
+      }
+    },
+    {
+      "id": "box.upgrade",
+      "title": "upgrade",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "u"
+        ]
+      }
+    },
+    {
+      "id": "box.repair",
+      "title": "repair",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "R"
+        ]
+      }
+    },
+    {
+      "id": "box.stop",
+      "title": "stop",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "t"
+        ]
+      }
+    },
+    {
+      "id": "box.start",
+      "title": "start",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "T"
+        ]
+      }
+    },
+    {
+      "id": "box.archive",
+      "title": "archive",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "x"
+        ]
+      }
+    },
+    {
+      "id": "box.unarchive",
+      "title": "unarchive",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "U"
+        ]
+      }
+    },
+    {
+      "id": "box.purge",
+      "title": "purge",
+      "group": "Box",
+      "keys": {
+        "desktop": [],
+        "tui": [
+          "P"
+        ]
+      }
+    },
+    {
+      "id": "pane.newShell",
+      "title": "New shell",
+      "group": "Session",
+      "keys": {
+        "desktop": [
+          "primary+t"
+        ],
+        "tui": [
+          "leader+s"
+        ]
+      }
+    },
+    {
+      "id": "pane.newTerminal",
+      "title": "New harness terminal",
+      "group": "Session",
+      "keys": {
+        "desktop": [
+          "primary+alt+t"
+        ],
+        "tui": [
+          "leader+c"
+        ]
+      }
+    },
+    {
+      "id": "pane.end",
+      "title": "End session",
+      "group": "Session",
+      "keys": {
+        "desktop": [
+          "primary+w"
+        ],
+        "tui": [
+          "leader+X"
+        ]
+      }
+    },
+    {
+      "id": "pane.next",
+      "title": "Next pane",
+      "group": "Session",
+      "keys": {
+        "desktop": [
+          "ctrl+tab"
+        ],
+        "tui": [
+          "leader+l",
+          "leader+right"
+        ]
+      }
+    },
+    {
+      "id": "pane.prev",
+      "title": "Previous pane",
+      "group": "Session",
+      "keys": {
+        "desktop": [
+          "ctrl+shift+tab"
+        ],
+        "tui": [
+          "leader+h",
+          "leader+left"
+        ]
+      }
+    },
+    {
+      "id": "pane.maximize",
+      "title": "Maximize pane",
+      "group": "View",
+      "keys": {
+        "desktop": [
+          "primary+enter"
+        ],
+        "tui": [
+          "leader+z"
+        ]
+      }
+    },
+    {
+      "id": "box.next",
+      "title": "Next discobox",
+      "group": "View",
+      "keys": {
+        "desktop": [
+          "primary+alt+down"
+        ],
+        "tui": [
+          "leader+down",
+          "ctrl+shift+j"
+        ]
+      }
+    },
+    {
+      "id": "box.prev",
+      "title": "Previous discobox",
+      "group": "View",
+      "keys": {
+        "desktop": [
+          "primary+alt+up"
+        ],
+        "tui": [
+          "leader+up",
+          "ctrl+shift+k"
+        ]
+      }
+    },
+    {
+      "id": "view.sidebar",
+      "title": "Show discoboxes",
+      "group": "View",
+      "keys": {
+        "desktop": [
+          "primary+b"
+        ],
+        "tui": [
+          "leader+h"
+        ]
+      }
+    },
+    {
+      "id": "view.home",
+      "title": "All discoboxes",
+      "group": "View",
+      "keys": {
+        "desktop": [
+          "primary+0"
+        ],
+        "tui": [
+          "leader+d"
+        ]
+      }
+    },
+    {
+      "id": "app.palette",
+      "title": "Find a box or command",
+      "group": "View",
+      "keys": {
+        "desktop": [
+          "primary+k",
+          "primary+p"
+        ],
+        "tui": [
+          "leader+k",
+          ":"
+        ]
+      }
+    },
+    {
+      "id": "box.new",
+      "title": "New discobox",
+      "group": "Box",
+      "keys": {
+        "desktop": [
+          "primary+n"
+        ],
+        "tui": [
+          "leader+n",
+          "n"
+        ]
+      }
+    },
+    {
+      "id": "app.quit",
+      "title": "Quit",
+      "group": "App",
+      "keys": {
+        "desktop": [
+          "primary+q"
+        ],
+        "tui": [
+          "leader+q"
+        ]
+      }
+    }
+  ]
+}
