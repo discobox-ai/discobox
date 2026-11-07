@@ -53,16 +53,25 @@ the epic, and does not yet follow the ADRs everywhere:
 go tool task build:desktop          # build/discobox-desktop, beside build/discobox
 build/discobox desktop              # against the configured server
 go tool task desktop:spec           # refresh src/spec.json, which the mock runs with (generate does too)
-cd desktop && cargo test --release  # unit and parity tests, on the mock
-cargo run --release                 # the app on the mock, without a CLI
+go tool task desktop:test           # unit and parity tests, on the mock
+go tool task desktop:snap           # every scene headless, to build/desktop/<scene>.png
+cd desktop && cargo run --release  # the app on the mock, without a CLI
 ```
 
 - **Debugging:** `DISCOBOX_DESKTOP_DEBUG=1` logs every bridge request and answer
   to stderr.
 - **Headless:** `--snap ws.png --scene workspace` renders a frame with no
   window.
-- **CI:** does not build or test the app yet (#788); the Go side, its parity
-  scenario included, runs in every job.
-- **Linux:** builds need `libxkbcommon-dev` and `libwayland-dev`. Without a GPU,
-  use `mesa-vulkan-drivers` with
-  `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`.
+- **Toolchain:** `nix develop .#desktop` is the repository's shell plus rustup
+  and, on Linux, the libraries the app builds and runs with. Without a GPU,
+  render on Mesa's software driver it carries:
+  `VK_ICD_FILENAMES="$DISCOBOX_LAVAPIPE_ICD"`. Outside Nix, Linux builds need
+  `libxkbcommon-dev` and `libwayland-dev`, and `mesa-vulkan-drivers` with
+  `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` for no GPU.
+- **CI:** the `desktop` job, on Linux only, runs `go tool task ci:desktop` in
+  that shell: `desktop:test`, then `desktop:snap`, every scene rendered
+  headless on the software driver and kept as the `desktop-scenes` artifact.
+  macOS and Windows do not build the app in CI yet. The Go side, its parity
+  scenarios included, runs in every job.
+- **Parity:** a command one console lacks is listed, with its reason, in
+  [`docs/console/parity.md`](../docs/console/parity.md).

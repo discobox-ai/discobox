@@ -290,13 +290,21 @@ flowchart TD
   and stays out of the default shell because that libkrun build is not in
   cache.nixos.org; `nix build .#libkrun-runtime` is the same closure for a
   machine that is not in a dev shell.
+  `devShells.desktop` adds what the desktop app (`desktop/`) builds with:
+  rustup (`desktop/rust-toolchain.toml` picks the toolchain, as `go.mod` picks
+  Go), and on Linux the window system's libraries and Mesa's software Vulkan
+  driver for rendering without a GPU.
 - `Taskfile.yml` owns every step. `go tool task --list` is the index; `task`,
   `golangci-lint`, and `ogen` are `go tool` dependencies pinned by `go.mod`, not
   by Nix.
 - `.github/workflows/` decides only *when* a target runs and on which runner.
   Every job body is one Taskfile target, run by the `.github/actions/task`
   composite action as `nix develop -c go tool task <target>` on Linux, or as
-  plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). Go's
+  plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). A
+  Linux job whose target needs a shell that extends the default names it
+  (`shell: desktop` runs `nix develop .#desktop`). The desktop app is built
+  and tested only there, in `ci:desktop`: its tests, parity scenarios
+  included, and its scenes rendered headless on that software driver. Go's
   build and test cache is Depot Cache, which Depot's runners set as
   `GOCACHEPROG` and every run, pull requests included, reads and writes per
   object; a runner without it builds cold. Any run but a pull request or a

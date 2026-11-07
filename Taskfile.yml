@@ -232,6 +232,22 @@ tasks:
     cmds:
       - cd desktop && cargo test --release --locked
 
+  desktop:snap:
+    desc: Render each of the desktop app's scenes headless, on its mock, to build/desktop/<scene>.png; without a GPU, set VK_ICD_FILENAMES="$DISCOBOX_LAVAPIPE_ICD"
+    dir: desktop
+    cmds:
+      - mkdir -p ../build/desktop
+      # The scenes are the ones the app registers (desktop/src/main.rs), asked
+      # of the app itself, so a new one is rendered without a change here. A
+      # frame that cannot be drawn, or no GPU adapter, exits non-zero.
+      - |
+        set -eu
+        scenes=$(cargo run --release --locked --quiet -- --list-scenes)
+        [ -n "$scenes" ] || { echo "the desktop app registers no scenes" >&2; exit 1; }
+        for scene in $scenes; do
+          cargo run --release --locked --quiet -- --snap "../build/desktop/$scene.png" --scene "$scene"
+        done
+
   desktop:spec:
     desc: Refresh the spec the desktop app runs with when no CLI serves it (desktop/src/spec.json)
     cmds:
@@ -1098,6 +1114,19 @@ tasks:
     cmds:
       - python3 -B test/ux-smoke/test_runner.py
       - timeout --signal=TERM --kill-after=60s 25m python3 test/ux-smoke/run.py
+
+  ci:desktop:
+    desc: "The desktop app's CI, on Linux only: its tests, parity scenarios included, and every scene rendered headless on Mesa's software Vulkan driver"
+    platforms: [linux]
+    # The runners have no GPU, so the frames are drawn on lavapipe, which only
+    # the desktop devShell carries: the job runs this in `nix develop
+    # .#desktop`. macOS and Windows do not build the app in CI yet.
+    preconditions:
+      - sh: test -n "$DISCOBOX_LAVAPIPE_ICD"
+        msg: "ci:desktop needs the desktop devShell (Rust, and the software Vulkan driver it draws on): run it inside `nix develop .#desktop`"
+    cmds:
+      - task: desktop:test
+      - VK_ICD_FILENAMES="$DISCOBOX_LAVAPIPE_ICD" go tool task desktop:snap
 
   ci:test:
     desc: Run every module's tests the way CI does

@@ -16,6 +16,10 @@ on:
   push:
     branches:
       - main
+      # The desktop console's integration branch (epic #786). Its pull
+      # requests run like any other; this runs the branch itself each time a
+      # merge moves it.
+      - feature/desktop-console
 
 permissions:
   contents: read
@@ -77,6 +81,27 @@ jobs:
       - uses: ./.github/actions/task
         with:
           target: verify
+
+  # The desktop app (desktop/), on Linux only: macOS and Windows run the Go
+  # suites as before and do not build it yet. Its devShell adds Rust and the
+  # window system's libraries, and Mesa's software Vulkan driver, on which the
+  # target renders the app's scenes headless; they are kept as an artifact.
+  desktop:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: ci:desktop
+          shell: desktop
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: desktop-scenes
+          path: build/desktop/*.png
+          if-no-files-found: ignore
+          retention-days: 7
 
   # The release artifacts, built on every change rather than only at tag time.
   # The Dagger release module rotted for months precisely because nothing but a

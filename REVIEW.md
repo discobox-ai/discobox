@@ -19,6 +19,8 @@ Global review expectations:
   where it comes from and what to use until then. The desktop app's README,
   then its verify recipe, both told readers to `nix develop .#desktop` before
   the flake had that shell, and an agent follows a recipe literally.
+  The change that lands what such a doc waits on rewrites it too: the
+  recipe kept its workaround after the shell landed until review caught it.
 - Renaming an identifier a doc cites (a function, a type, a field): grep for
   the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
   comments, not only the Go callers the compiler finds. Renaming

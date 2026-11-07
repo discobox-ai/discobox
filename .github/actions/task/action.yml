@@ -8,9 +8,11 @@ description: Run one Taskfile target in the repository's Nix devShell on Linux, 
 # The one thing this cannot do that ADR 0066 §2 describes is check out the
 # repository: a local composite action is only resolvable once the repository is
 # already on disk, so every job runs actions/checkout first. A job that needs a
-# second target adds a plain `run: nix develop -c go tool task <target>` step on
-# Linux, where Nix is installed by then, or `run: go tool task <target>` on macOS
-# and Windows. What such a step compiles reaches Depot Cache like the rest.
+# second target adds a plain `run: nix develop .#<shell> -c go tool task <target>`
+# step on Linux, where Nix is installed by then, naming the same shell as its
+# job's `shell` input (`default` unless it says otherwise), or
+# `run: go tool task <target>` on macOS and Windows. What such a step compiles
+# reaches Depot Cache like the rest.
 #
 # Nothing is cached here but through Depot Cache: Go's build and test cache and
 # golangci-lint's analysis cache are its, fetched per object, and modules come
@@ -22,6 +24,13 @@ inputs:
   target:
     description: The Taskfile target to run.
     required: true
+  shell:
+    description: >-
+      The flake devShell a Linux runner enters (`nix develop .#<shell>`). A
+      shell that extends the default, such as `desktop`, is for the job whose
+      target needs what it adds; macOS and Windows ignore it.
+    required: false
+    default: default
 
 runs:
   using: composite
@@ -101,7 +110,7 @@ runs:
     - name: go tool task ${{ inputs.target }}
       if: runner.os == 'Linux'
       shell: bash
-      run: nix develop -c go tool task ${{ inputs.target }}
+      run: nix develop .#${{ inputs.shell }} -c go tool task ${{ inputs.target }}
 
     - name: go tool task ${{ inputs.target }}
       if: runner.os != 'Linux'
