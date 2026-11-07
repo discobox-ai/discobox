@@ -62,6 +62,12 @@
   `discobox run --skills https://github.com/discobox-ai/skills`. A discobox made
   without it has none of these skills.
 - `docs`: user/developer documentation and ADRs (`docs/adr`).
+- `assets/brand`: the brand art and the design language every surface follows:
+  the console, the desktop app, the website and documents. `LANGUAGE.md` says
+  what each colour, typeface and component is for; `tokens.json` holds the
+  values (rendered to `tokens.css` by `go tool task brand:tokens`). Read it
+  before changing how anything looks, and change a value there, never in a
+  consumer.
 - `test`: Bats integration tests, the test-only harness stub image, and terminal performance tests.
 - `DESIGN.md` / `REVIEW.md`: package-local design and review notes. Read the closest files in the current package and its parents before making design-sensitive changes.
 

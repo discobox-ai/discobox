@@ -213,6 +213,11 @@ tasks:
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
 
 
+  brand:tokens:
+    desc: Render assets/brand/tokens.css from tokens.json (the design language's tokens; see assets/brand/LANGUAGE.md)
+    cmds:
+      - node scripts/brand-tokens.mjs
+
   build:clipwatch:
     desc: Cross-compile the Windows clipboard helper the Linux CLI embeds for WSL
     run: once
