@@ -367,10 +367,10 @@ func TestShellInstallsItsOwnReleaseWithoutAskingTheAPI(t *testing.T) {
 	}
 }
 
-func TestShellVerificationLeavesRuntimeMigrationForFirstUse(t *testing.T) {
+func TestShellVerificationDoesNotContactTheServer(t *testing.T) {
 	requireShell(t)
 	s := newServer(t, ladder)
-	got := runShell(t, s, s.script(t, "v1.1.0", ShellName), []string{"DISCOBOX_FAKE_UNSAFE_RUNTIME=1"})
+	got := runShell(t, s, s.script(t, "v1.1.0", ShellName), []string{"DISCOBOX_FAKE_SERVER_UNAVAILABLE=1"})
 	if got.err != nil || got.version != "v1.1.0" {
 		t.Fatalf("installed %q, err %v:\n%s", got.version, got.err, got.output)
 	}
@@ -540,7 +540,7 @@ func TestPowerShell(t *testing.T) {
 				want   string
 			}{
 				"its own release":                   {false, nil, "", "v1.1.0"},
-				"pending runtime migration":         {false, []string{"DISCOBOX_FAKE_UNSAFE_RUNTIME=1"}, "", "v1.1.0"},
+				"server unavailable":                {false, []string{"DISCOBOX_FAKE_SERVER_UNAVAILABLE=1"}, "", "v1.1.0"},
 				"its own release through iex":       {true, nil, "", "v1.1.0"},
 				"edge":                              {false, nil, "-Channel edge", "v1.3.0-alpha.1"},
 				"latest through iex":                {true, []string{"DISCOBOX_CHANNEL=latest"}, "", "v1.2.0"},
