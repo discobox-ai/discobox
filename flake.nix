@@ -175,6 +175,56 @@
         # at build time and the loader's search path is the whole mechanism. A
         # machine outside this shell names the path in the provider's
         # libkrunPath instead.
+        # The desktop app (desktop/, ADR 26-11-07-876) is Rust on Rune. Like the
+        # libkrun shell it extends the base rather than growing it, so nobody
+        # who never builds the app pays for a Rust toolchain and a window
+        # system's libraries.
+        #
+        # Rust is handled as Go is: Nix supplies rustup only, and the
+        # toolchain that compiles is the one desktop/rust-toolchain.toml
+        # names, fetched on first use.
+        #
+        # On Linux the app links xkbcommon and Wayland (found through
+        # pkg-config) and loads the X11 libraries and the Vulkan loader at run
+        # time, so they are on LD_LIBRARY_PATH. Mesa's software Vulkan driver
+        # comes too, for headless rendering where there is no GPU: name it with
+        # VK_ICD_FILENAMES="$DISCOBOX_LAVAPIPE_ICD". It is not the default,
+        # because a machine with a GPU should use it.
+        // {
+          desktop =
+            let
+              runtimeLibs = pkgs.lib.optionals isLinux [
+                pkgs.libxkbcommon
+                pkgs.wayland
+                pkgs.vulkan-loader
+                pkgs.libx11
+                pkgs.libxcursor
+                pkgs.libxi
+                pkgs.libxrandr
+              ];
+            in
+            mkDevShell (
+              baseShell
+              // {
+                packages =
+                  baseShell.packages
+                  ++ [ pkgs.rustup ]
+                  ++ pkgs.lib.optionals isLinux (
+                    [
+                      pkgs.pkg-config
+                      pkgs.mesa
+                    ]
+                    ++ runtimeLibs
+                  );
+                shellHook =
+                  baseShell.shellHook
+                  + pkgs.lib.optionalString isLinux ''
+                    export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                    export DISCOBOX_LAVAPIPE_ICD="${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.${pkgs.stdenv.hostPlatform.uname.processor}.json"
+                  '';
+              }
+            );
+        }
         // nixpkgs.lib.optionalAttrs (builtins.elem system buildSystems) {
           libkrun = mkDevShell (
             baseShell
