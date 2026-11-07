@@ -163,18 +163,6 @@
         {
           default = mkDevShell baseShell;
         }
-        # Running a libkrun pool needs libkrun itself, built with block and
-        # network support, and passt. That override is not the derivation
-        # cache.nixos.org has, so it stays out of the default shell rather than
-        # making every CI job build libkrun from source (ADR 0066 §3): a
-        # developer who runs libkrun pools enters this shell, and everyone else
-        # never builds it.
-        #
-        # LD_LIBRARY_PATH is how the launcher finds the library. It dlopens
-        # libkrun.so.1 by soname rather than linking it, so nothing resolves it
-        # at build time and the loader's search path is the whole mechanism. A
-        # machine outside this shell names the path in the provider's
-        # libkrunPath instead.
         # The desktop app (desktop/, ADR 26-11-07-876) is Rust on Rune. Like the
         # libkrun shell it extends the base rather than growing it, so nobody
         # who never builds the app pays for a Rust toolchain and a window
@@ -225,6 +213,18 @@
               }
             );
         }
+        # Running a libkrun pool needs libkrun itself, built with block and
+        # network support, and passt. That override is not the derivation
+        # cache.nixos.org has, so it stays out of the default shell rather than
+        # making every CI job build libkrun from source (ADR 0066 §3): a
+        # developer who runs libkrun pools enters this shell, and everyone else
+        # never builds it.
+        #
+        # LD_LIBRARY_PATH is how the launcher finds the library. It dlopens
+        # libkrun.so.1 by soname rather than linking it, so nothing resolves it
+        # at build time and the loader's search path is the whole mechanism. A
+        # machine outside this shell names the path in the provider's
+        # libkrunPath instead.
         // nixpkgs.lib.optionalAttrs (builtins.elem system buildSystems) {
           libkrun = mkDevShell (
             baseShell
