@@ -22,9 +22,6 @@ import (
 
 var t0 = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
-// hold is how long a test's run follows the stream.
-const hold = 150 * time.Millisecond
-
 // fakeAPI is the discobox API as a box with discoboxApi sees it: the
 // project's sandbox event stream (ADR 26-10-29-316 §4), and the secret
 // requests of the boxes it created.
@@ -64,7 +61,7 @@ type fakeEvent struct {
 }
 
 func newFake(t *testing.T) *fakeAPI {
-	f := &fakeAPI{boxes: map[string]map[string]any{}, now: t0.Add(-time.Hour)}
+	f := &fakeAPI{boxes: map[string]map[string]any{}, now: t0.Add(-time.Hour), cut: true}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -243,7 +240,8 @@ func newInstance(t *testing.T, f *fakeAPI, opts map[string]string) *instance {
 		Instance: "test",
 		State:    t.TempDir(),
 		Options:  opts,
-		Interval: hold,
+		// Content assertions wait for EOF, with ample time for a loaded host.
+		Interval: 30 * time.Second,
 		Getenv:   func(name string) string { return in.vars[name] },
 		Emit: func(ev monitors.Event) error {
 			in.events = append(in.events, ev)
@@ -315,6 +313,34 @@ func workers(f *fakeAPI) {
 	f.create("sbx_a", "issue-1", "working", worker, "sbx_lead")
 	f.create("sbx_b", "issue-2", "idle", worker, "sbx_lead")
 	f.create("sbx_c", "someone-else", "working", nil, "")
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+// Unlike content tests, this run keeps the stream open to exercise its deadline.
+func TestTheRunEndsAtItsStreamDeadline(t *testing.T) {
+	f := newFake(t)
+	f.cut = false
+	in := newInstance(t, f, map[string]string{"tag": "role=worker", "watch": "state"})
+	in.env.Interval = 150 * time.Millisecond
+	transport := f.srv.Client().Transport
+	f.srv.Client().Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		deadline, ok := r.Context().Deadline()
+		if !ok || time.Until(deadline) > in.env.Interval {
+			t.Errorf("stream deadline = %v (set: %v), want within %v", deadline, ok, in.env.Interval)
+			return nil, errors.New("incorrect stream deadline")
+		}
+		return transport.RoundTrip(r)
+	})
+	started := time.Now()
+	in.poll()
+	if elapsed := time.Since(started); elapsed < in.env.Interval {
+		t.Fatalf("run ended after %v, before its interval %v", elapsed, in.env.Interval)
+	}
 }
 
 func TestTheBaselineReportsNothingAndThenEachChange(t *testing.T) {
