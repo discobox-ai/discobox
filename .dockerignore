@@ -12,3 +12,6 @@ build
 
 # Development-only parser/build dependencies never enter an image context.
 **/node_modules
+# The desktop app's cargo output (go tool task build:desktop): gigabytes no
+# image builds from, sent with every root-context build otherwise.
+desktop/target

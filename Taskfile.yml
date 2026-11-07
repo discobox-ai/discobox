@@ -230,7 +230,9 @@ tasks:
   desktop:spec:
     desc: Refresh the spec the desktop app runs with when no CLI serves it (desktop/src/spec.json)
     cmds:
-      - cd cli && go run {{.CLI_MAIN}} desktop --print-spec > ../desktop/src/spec.json
+      # With the default leader, whatever DISCOBOX_LEADER this shell sets, so
+      # the file does not depend on who generated it.
+      - cd cli && DISCOBOX_LEADER= go run {{.CLI_MAIN}} desktop --print-spec > ../desktop/src/spec.json
 
   build:clipwatch:
     desc: Cross-compile the Windows clipboard helper the Linux CLI embeds for WSL
@@ -1022,6 +1024,9 @@ tasks:
       - cd server && go generate ./...
       # So is the CLI's, from clientconfig.Config.
       - cd cli && go generate ./...
+      # The desktop app's mock runs with the spec the CLI would hand it, so a
+      # change to the console's commands or glyphs reaches both consoles.
+      - task: desktop:spec
 
   generate:verify:
     desc: Fail when a generated file is stale
