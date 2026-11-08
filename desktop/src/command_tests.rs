@@ -3,7 +3,7 @@
 
 use rune::{Env, Key, KeyEvent, Mods, Runtime, Tx};
 
-use crate::{State, on_key, poll, run_command, view};
+use crate::{ANSWERED, Focus, State, on_key, poll, run_command, view};
 
 fn runtime() -> Runtime<State> {
     let mut rt = Runtime::new(State::new(), view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 });
@@ -48,8 +48,37 @@ fn a_shell_for_a_stopped_box_opens_nowhere() {
     let before = panes(&rt.state);
     let stopped = rt.state.boxes.iter().position(|b| !b.running()).expect("a box that is not running");
     rt.state.cursor = stopped;
-    run_command(&mut rt.state, "box.shell", &mut Tx::default());
+    rt.state.focus = Focus::List;
+    run_command(&mut rt.state, "shell", &mut Tx::default());
     settle(&mut rt);
     assert_eq!(rt.state.live.as_ref(), Some(&live));
     assert_eq!(panes(&rt.state), before, "a shell opened in {live}");
+}
+
+// Every registry command is answered here, or the parity ledger says why it is not and which
+// issue brings it (ADR 26-11-07-598 §1); and a command the app lacks says so when run.
+#[test]
+fn every_registry_command_is_answered_or_in_the_ledger() {
+    let ledger = include_str!("../../docs/console/parity.md");
+    let section = ledger.split("## The desktop app lacks").nth(1).expect("the ledger's desktop section");
+    let section = section.split("\n## ").next().unwrap();
+    let lacks: Vec<&str> = section.lines()
+        .filter_map(|l| l.strip_prefix("| `")).filter_map(|l| l.split('`').next()).collect();
+    let mut rt = runtime();
+    let ids: Vec<String> = rt.state.spec.commands.iter().map(|c| c.id.clone()).collect();
+    for id in &lacks {
+        assert!(ids.iter().any(|i| i == id), "the ledger lists {id}, which is no registry command");
+        assert!(!ANSWERED.contains(id), "the ledger lists {id}, which the app answers");
+    }
+    for id in &ids {
+        if id == "quit" {
+            continue; // it would end the runtime; it is answered.
+        }
+        let answered = ANSWERED.contains(&id.as_str());
+        assert!(answered || lacks.contains(&id.as_str()), "{id} is neither answered nor in the ledger");
+        run_command(&mut rt.state, id, &mut Tx::default());
+        settle(&mut rt);
+        let says_lacking = rt.state.message.as_deref().is_some_and(|m| m.contains("desktop app does not have") || m.contains("not in the desktop app"));
+        assert_eq!(says_lacking, !answered, "{id}: {:?}", rt.state.message);
+    }
 }

@@ -98,6 +98,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY pkg/agentcreds ./pkg/agentcreds
 COPY api ./api
+COPY assets/brand ./assets/brand
 COPY pkg/auditid ./pkg/auditid
 COPY pkg/copyarchive ./pkg/copyarchive
 COPY pkg/bindingplan ./pkg/bindingplan

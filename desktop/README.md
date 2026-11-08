@@ -26,11 +26,14 @@ the epic, and does not yet follow the ADRs everywhere:
   #798). Its messages are `hello`, `list`, `execs`, `open`, `newShell`,
   `newTerminal`, `endExec`, `actions` and `do`, plus a pushed `listing`, with
   terminal streams as execstream frames.
-- **The spec** (`cli/internal/tui/spec.go`) is exported from the TUI rather
-  than owned by a core (until #797). Its command IDs are the prototype's
-  dotted ones (`box.attach`, `pane.newShell`), here, in the parity scenarios
-  and in this app; ADR 26-11-07-598 keeps the core registry's (`attach`), and
-  they change with it.
+- **The spec** is the console core's (`cli/internal/console/spec.go`): the
+  registry's commands by their IDs (`attach`, `shell`) with each frontend's
+  bindings, the glyphs, and the design language's colour tokens in both
+  palettes. The app draws the dark one (both, following the system, with
+  #803). Moving between panes and boxes is the app's own navigation
+  (`keys::NAV`), not the spec's (ADR 26-11-07-876 §2). A registry command the
+  app does not answer (`ANSWERED` in `main.rs`) says so, and has an entry in
+  the parity ledger.
 - **The look** uses Inter and the system's monospace face, and draws some of the
   TUI's characters (until #803).
 - **The CLI** finds the app with `--binary`, then `DISCOBOX_DESKTOP_BINARY`, then
@@ -42,10 +45,11 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/backend.rs` | The bridge client (frames on stdin/stdout), and a mock with local shells for running without a CLI |
 | `src/view.rs` | The list, the sidebar, the workspace, frames and tabs |
 | `src/overlay.rs` | The palette and a box's actions menu |
-| `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere); keys as xterm bytes |
+| `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
 | `src/term.rs` | A pane's terminal (`alacritty_terminal`) and its screen as rows |
 | `src/logo.rs`, `src/theme.rs` | The mark from the TUI's `cli/internal/tui/logo.json`, and colours from the spec's tokens |
-| `src/parity_tests.rs` | Runs `cli/internal/tui/testdata/parity` with the desktop's keys |
+| `src/parity_tests.rs` | Runs `cli/internal/console/testdata/parity` with the desktop's keys |
+| `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
 
 ## Build, run, test
 

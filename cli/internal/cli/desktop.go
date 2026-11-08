@@ -20,7 +20,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
@@ -57,7 +56,7 @@ console.`,
 			if printSpec {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				return enc.Encode(tui.Spec(a.leader()))
+				return enc.Encode(console.NewSpec())
 			}
 			return a.runDesktop(cmd, binary)
 		},
@@ -106,7 +105,7 @@ func (a *App) runDesktop(cmd *cobra.Command, binary string) error {
 	if err := child.Start(); err != nil {
 		return fmt.Errorf("start the desktop app: %w", err)
 	}
-	b := &desktopBridge{ds: ds, out: toChild, streams: map[uint32]*desktopStream{}, boxes: map[string]desktopBoxRef{}, leader: a.leader()}
+	b := &desktopBridge{ds: ds, out: toChild, streams: map[uint32]*desktopStream{}, boxes: map[string]desktopBoxRef{}}
 	go b.serve(ctx, fromChild)
 	err = child.Wait()
 	stderr.flush()
@@ -210,8 +209,7 @@ func desktopBinary(flag string) (string, error) {
 const bridgeJSON byte = 255
 
 type desktopBridge struct {
-	ds     *apiDataSource
-	leader string
+	ds *apiDataSource
 
 	writeMu sync.Mutex
 	out     io.Writer
@@ -337,7 +335,7 @@ func (b *desktopBridge) reply(id int64, result any, err error) {
 func (b *desktopBridge) handle(ctx context.Context, req bridgeRequest) {
 	switch req.Op {
 	case "hello":
-		b.reply(req.ID, map[string]any{"spec": tui.Spec(b.leader)}, nil)
+		b.reply(req.ID, map[string]any{"spec": console.NewSpec()}, nil)
 	case "list":
 		listing, err := b.list(ctx)
 		b.reply(req.ID, desktopListing(listing), err)
@@ -355,7 +353,7 @@ func (b *desktopBridge) handle(ctx context.Context, req bridgeRequest) {
 				}
 			}
 		}
-		b.reply(req.ID, tui.ActionsFor(targets), nil)
+		b.reply(req.ID, desktopActions(console.Lifecycle(targets)), nil)
 	case "execs", "open", "newShell", "newTerminal", "endExec", "do":
 		ds, sandboxID, err := b.source(ctx, req.Sandbox)
 		if err != nil {
@@ -603,6 +601,29 @@ func desktopListing(l console.Listing) []desktopSandbox {
 			d.CPU, d.MemoryBytes = s.Usage.CPUPercent, s.Usage.MemoryBytes
 		}
 		out = append(out, d)
+	}
+	return out
+}
+
+// desktopAction is one entry of a box's action menu: the command it runs,
+// whether it can now, and why not when it cannot. The app shows its own
+// binding for the command beside it.
+type desktopAction struct {
+	Command string `json:"command"`
+	Label   string `json:"label"`
+	Detail  string `json:"detail"`
+	Enabled bool   `json:"enabled"`
+	Why     string `json:"why,omitempty"`
+}
+
+func desktopActions(entries []console.Entry) []desktopAction {
+	out := make([]desktopAction, 0, len(entries))
+	for _, e := range entries {
+		a := desktopAction{Command: e.ID, Label: e.Label, Detail: e.Detail, Enabled: e.Enabled}
+		if !e.Enabled {
+			a.Why = e.Why
+		}
+		out = append(out, a)
 	}
 	return out
 }

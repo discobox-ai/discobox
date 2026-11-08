@@ -2,9 +2,13 @@
 //! Cmd on macOS and Ctrl+Shift elsewhere (Ctrl belongs to the terminal there, as in GNOME
 //! Terminal and Windows Terminal). There is no leader. A key no shortcut takes goes to the
 //! list while it has focus, and otherwise to the focused pane, as the bytes an xterm sends.
+//!
+//! Moving between panes and boxes is navigation, which is the app's own rather than the
+//! console core's (ADR 26-11-07-876 §2): those shortcuts are in `NAV`, not the spec.
 
 use rune::{Key, KeyEvent, Shortcut, Tx};
 
+use crate::backend::Spec;
 use crate::{Focus, State, overlay, run_command};
 
 const MAC: bool = cfg!(target_os = "macos");
@@ -54,11 +58,47 @@ pub fn matches(binding: &str, ev: &KeyEvent) -> bool {
     has_ctrl == ctrl && has_cmd == cmd && m.alt == alt && m.shift == shift && key_name(ev).as_deref() == Some(key)
 }
 
-/// The command a key press runs, if any: the spec's shortcuts, then ⌘1–9 for tabs.
+/// One of the app's own navigation commands: an ID `run_command` answers, what it is called,
+/// and its shortcuts.
+pub struct Nav {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub keys: &'static [&'static str],
+}
+
+/// The app's navigation. ⌘1–9 go to a tab as well (`pane.goto.N`).
+pub const NAV: &[Nav] = &[
+    Nav { id: "nav.nextPane", label: "next pane", keys: &["ctrl+tab"] },
+    Nav { id: "nav.prevPane", label: "previous pane", keys: &["ctrl+shift+tab"] },
+    Nav { id: "nav.nextBox", label: "next discobox", keys: &["primary+alt+down"] },
+    Nav { id: "nav.prevBox", label: "previous discobox", keys: &["primary+alt+up"] },
+    Nav { id: "nav.sidebar", label: "show discoboxes", keys: &["primary+b"] },
+];
+
+/// A command's desktop shortcuts: the spec's for a registry command, `NAV`'s for navigation.
+pub fn bindings(spec: &Spec, id: &str) -> Vec<String> {
+    if let Some(c) = spec.command(id) {
+        return c.bindings.desktop.keys.clone();
+    }
+    NAV.iter().find(|n| n.id == id).map(|n| n.keys.iter().map(|k| k.to_string()).collect()).unwrap_or_default()
+}
+
+/// What a command is called: the registry's label, or the navigation's.
+pub fn label_of(spec: &Spec, id: &str) -> Option<String> {
+    spec.command(id).map(|c| c.label.clone()).or_else(|| NAV.iter().find(|n| n.id == id).map(|n| n.label.to_string()))
+}
+
+/// The command a key press runs, if any: the spec's shortcuts, the app's navigation, then
+/// ⌘1–9 for tabs.
 fn command_for(s: &State, ev: &KeyEvent) -> Option<String> {
     for c in &s.spec.commands {
-        if c.keys.get("desktop").into_iter().flatten().any(|b| matches(b, ev)) {
+        if c.bindings.desktop.keys.iter().any(|b| matches(b, ev)) {
             return Some(c.id.clone());
+        }
+    }
+    for n in NAV {
+        if n.keys.iter().any(|b| matches(b, ev)) {
+            return Some(n.id.to_string());
         }
     }
     for n in 1..=9 {
@@ -107,9 +147,7 @@ pub fn label(binding: &str) -> String {
 }
 
 /// The first desktop shortcut of a command, labelled.
-pub fn shortcut_of(s: &State, id: &str) -> Option<String> {
-    s.spec.command(id).and_then(|c| c.keys.get("desktop")).and_then(|k| k.first()).map(|b| label(b))
-}
+pub fn shortcut_of(s: &State, id: &str) -> Option<String> { bindings(&s.spec, id).first().map(|b| label(b)) }
 
 /// A spec shortcut as a native menu's key equivalent (macOS: `cmd+t`).
 pub fn menu_shortcut(binding: &str) -> Option<Shortcut> {
@@ -157,7 +195,7 @@ fn list_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         Key::Down => s.cursor = (s.cursor + 1).min(s.boxes.len().saturating_sub(1)),
         Key::Home => s.cursor = 0,
         Key::End => s.cursor = s.boxes.len().saturating_sub(1),
-        Key::Enter => run_command(s, "box.attach", tx),
+        Key::Enter => run_command(s, "attach", tx),
         Key::Escape | Key::Right if s.live.is_some() => s.focus = Focus::Panes,
         Key::ContextMenu => {
             if let Some(b) = s.boxes.get(s.cursor) {

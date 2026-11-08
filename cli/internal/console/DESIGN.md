@@ -32,8 +32,8 @@ implements it once (`cli.apiDataSource`); every frontend reads through it.
 What a box allows is answered from its own fields, here: `Attachable`,
 `Startable`, `Repairable`, `Live`, its standing and status tags (`tags.go`),
 its folder (`folder.go`), the issue or pull request it is tagged with
-(`WorkNumber`). Presentation of those answers — glyphs, colours, column
-budgets — is the renderer's.
+(`WorkNumber`). Presentation of those answers — layout, column budgets — is
+the renderer's; the glyphs and their colour tokens are the spec's.
 
 ## The list
 
@@ -127,3 +127,19 @@ flowchart LR
 - **The registry is tested here** for completeness (described, unambiguous
   aliases and keys, primary without shift, every command dispatching to a
   flow of its own); each frontend tests that its own bindings have entries.
+
+## The spec
+
+`spec.go` (876 §4). `NewSpec` is what every frontend draws the same way, as
+data: the registry's commands with each frontend's bindings, the state and
+agent glyphs (`StateGlyph`, `AgentGlyph`) by colour token, and every colour
+token in both palettes, read from the design language's tokens
+(`assets/brand`, 363 §4). `discobox desktop` hands it to the app on `hello`,
+and `task generate` writes it to `desktop/src/spec.json`; the TUI draws the
+same glyphs by each token's xterm index. Nothing in it is read out of a
+renderer. Lists on the wire are never null.
+
+- **The parity scenarios are here** (`testdata/parity`, 598 §5), written in
+  registry IDs; `TestParityScenariosNameRegistryCommands` holds each step to
+  a command both consoles bind from a pane. The TUI and the desktop app run
+  them, each pressing its own binding.

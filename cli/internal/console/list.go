@@ -956,10 +956,7 @@ func (s Sandbox) StateWord() string {
 	if s.State != StateRunning || s.Agent.State == "" {
 		return string(s.State)
 	}
-	if s.Agent.State == programstatus.Error {
-		return "failed"
-	}
-	return string(s.Agent.State)
+	return AgentGlyph(s.Agent.State).Word
 }
 
 // Remark is what a row says in place of its name when it is the one picked

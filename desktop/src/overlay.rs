@@ -1,9 +1,9 @@
 //! The palette and a box's actions menu: the desktop's ways in to every command.
 //!
-//! The palette lists every command the spec names, with its shortcut, and every box. The menu
-//! is a box's actions as the CLI's `tui.ActionsFor` gives them — the TUI's own entries, rules
-//! and reasons — natively on macOS and drawn in the window elsewhere, where a disabled entry
-//! says why it is.
+//! The palette lists every command the spec names and the app's navigation, with their
+//! shortcuts, and every box. The menu is a box's actions as the console core gives them (the
+//! TUI's own entries, rules and reasons), natively on macOS and drawn in the window elsewhere,
+//! where a disabled entry says why it is.
 
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Span, Tx, col, el, rich, row, spacer, text, text_input};
 
@@ -71,7 +71,7 @@ pub fn menu_view(s: &State) -> Option<El> {
         list = list.child(col().key(format!("menu-{}", a.command)).w_full().px(10.0).py(5.0).radius(6.0)
             .fill(if on && a.enabled { theme::mark().alpha(0.22) } else { Color::TRANSPARENT })
             .child(row().w_full().child(text(a.label.clone()).font(theme::UI).color(ink)).child(spacer())
-                .child(text(a.key.clone()).font(theme::UI_SMALL).color(theme::dim())))
+                .child(text(keys::shortcut_of(s, &a.command).unwrap_or_default()).font(theme::UI_SMALL).color(theme::dim())))
             .child(text(sub).font(theme::UI_SMALL).color(if a.enabled { theme::grey() } else { theme::warn().alpha(0.8) }).truncate())
             .on_hover(move |s: &mut State| if let Some(m) = s.menu.as_mut() { m.picked = i })
             .on_press_tx(move |s: &mut State, tx: &mut Tx| {
@@ -108,11 +108,19 @@ fn items(s: &State) -> Vec<Item> {
         title: b.name.clone(), group: "discobox".into(), shortcut: None, command: None, sandbox: Some(b.id.clone()),
     }).collect();
     for c in &s.spec.commands {
-        if fits(&c.title) {
+        if c.aliases.iter().chain([&c.label]).any(|a| fits(a)) {
             out.push(Item {
-                title: c.title.clone(), group: c.group.clone(),
-                shortcut: c.keys.get("desktop").and_then(|k| k.first()).map(|b| keys::label(b)),
+                title: c.label.clone(), group: if c.target == "box" { "box" } else { "console" }.into(),
+                shortcut: keys::shortcut_of(s, &c.id),
                 command: Some(c.id.clone()), sandbox: None,
+            });
+        }
+    }
+    for n in keys::NAV {
+        if fits(n.label) {
+            out.push(Item {
+                title: n.label.into(), group: "view".into(), shortcut: keys::shortcut_of(s, n.id),
+                command: Some(n.id.into()), sandbox: None,
             });
         }
     }

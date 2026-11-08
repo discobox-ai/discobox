@@ -1,5 +1,7 @@
-//! The console's colours: the TUI's own (`cli/internal/tui/theme.go`), given as the xterm-256
-//! values it names, so the native window reads as the same product.
+//! The console's colours: the design language's tokens (`assets/brand/tokens.json`), as the
+//! console core's spec hands them over, so the native window reads as the same product as the
+//! TUI, which draws the same tokens by their xterm indices. The dark palette for now; the light
+//! one and following the system's appearance come with the app's visual identity.
 
 use rune::{Color, TextStyle};
 
@@ -16,38 +18,43 @@ thread_local! {
     static TOKENS: std::cell::RefCell<std::collections::HashMap<String, Color>> = Default::default();
 }
 
-/// Takes the spec's colour tokens (`tui.Spec`), which the CLI reads from the TUI's own theme.
-pub fn set_tokens(colors: &std::collections::HashMap<String, String>) {
+/// Takes the spec's colour tokens, in their dark values.
+pub fn set_tokens(colors: &std::collections::HashMap<String, crate::backend::ColorToken>) {
     TOKENS.with_borrow_mut(|t| {
         for (k, v) in colors {
-            if let Ok(rgb) = u32::from_str_radix(v.trim_start_matches('#'), 16) {
+            if let Ok(rgb) = u32::from_str_radix(v.dark.trim_start_matches('#'), 16) {
                 t.insert(k.clone(), hex(rgb));
             }
         }
     });
 }
 
-/// A spec colour token, or `fallback` where the spec names none.
+/// A colour token by its name in the spec, or `fallback` where the spec names none.
 pub fn token(name: &str, fallback: u32) -> Color {
     TOKENS.with_borrow(|t| t.get(name).copied()).unwrap_or_else(|| hex(fallback))
 }
 
-/// Window ground: a terminal's black. Not a token: the TUI draws on the terminal's own.
-pub fn bg() -> Color { hex(0x0b0b0d) }
+/// Window ground: the page's ink. The TUI draws on the terminal's own.
+pub fn bg() -> Color { token("ink", 0x0a0410) }
 /// Plain text: the TUI's is the terminal's foreground.
-pub fn text() -> Color { token("text", 0xe4e4e4) }
-pub fn mark() -> Color { token("mark", 0xf45cff) }
-pub fn inactive() -> Color { token("inactive", 0x303030) }
+pub fn text() -> Color { token("text", 0xf4ecf9) }
+/// The accent: focus and the brand.
+pub fn mark() -> Color { token("magenta", 0xf45cff) }
+/// Hairlines and unfocused frames.
+pub fn inactive() -> Color { token("line", 0x2a1839) }
 pub fn gold() -> Color { token("gold", 0xffd700) }
-pub fn on_gold() -> Color { token("onGold", 0x080808) }
-pub fn dim() -> Color { token("dim", 0x585858) }
-pub fn grey() -> Color { token("grey", 0x8a8a8a) }
-pub fn row_cursor() -> Color { token("rowCursor", 0x3a3a3a) }
-pub fn band() -> Color { token("band", 0x303030) }
+pub fn on_gold() -> Color { token("on-gold", 0x0a0410) }
+/// Hints, disabled, metadata.
+pub fn dim() -> Color { token("text-faint", 0x7c6a8c) }
+/// Secondary text.
+pub fn grey() -> Color { token("text-muted", 0xb0a0bf) }
+pub fn row_cursor() -> Color { token("selection", 0x2a1530) }
+/// The list's title band, unfocused.
+pub fn band() -> Color { token("line", 0x2a1839) }
 pub fn warn() -> Color { token("warn", 0xffaf00) }
-pub fn done() -> Color { token("add", 0x87ff87) }
-pub fn salmon() -> Color { token("del", 0xffaf87) }
-pub fn err() -> Color { token("err", 0xff3b3b) }
+pub fn done() -> Color { token("green", 0x87ff87) }
+pub fn salmon() -> Color { token("salmon", 0xffaf87) }
+pub fn err() -> Color { token("err", 0xff6b62) }
 
 /// Chrome is set in the UI face; terminals in the mono one.
 pub const UI: TextStyle = TextStyle::new(13.0, 400.0);

@@ -9,7 +9,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/discobox-ai/discobox/cli/internal/console"
-	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
 
@@ -298,74 +297,6 @@ func (l *sandboxList) clamp() {
 	}
 	if l.offset < 0 {
 		l.offset = 0
-	}
-}
-
-func (l *sandboxList) stateStyle(st *styles, s console.Sandbox) lipgloss.Style {
-	switch s.State {
-	case console.StateRunning:
-		return st.stateRun
-	case console.StateStarting, console.StateRepairing, console.StateSuspended:
-		return st.stateBusy
-	case console.StateError:
-		return st.stateErr
-	default:
-		return st.stateOff
-	}
-}
-
-// agentGlyph draws what a discobox's agent reports (ADR 26-10-16-424 §5), a
-// blank cell for no report. Each is its own shape as well as its own color,
-// so working and blocked are told apart where the colors are close.
-func agentGlyph(st *styles, state programstatus.State) string {
-	mark := agentMark(state)
-	switch state {
-	case programstatus.Working:
-		return st.name.Render(mark)
-	case programstatus.Idle:
-		return st.dimText.Render(mark)
-	case programstatus.Blocked, programstatus.Error:
-		return st.statusER.Render(mark)
-	case programstatus.Done:
-		return st.add.Render(mark)
-	default:
-		return mark
-	}
-}
-
-// agentMark is the shape agentGlyph draws, uncolored, for the places that
-// take no color: the window title (statusTitlePrefix).
-func agentMark(state programstatus.State) string {
-	switch state {
-	case programstatus.Working:
-		return "▶"
-	case programstatus.Idle:
-		return "◇"
-	case programstatus.Blocked:
-		return "◆"
-	case programstatus.Done:
-		return "✓"
-	case programstatus.Error:
-		return "×"
-	default:
-		return " "
-	}
-}
-
-func stateDot(s console.Sandbox) string {
-	switch s.State {
-	case console.StateRunning:
-		return "●"
-	case console.StateStarting, console.StateRepairing:
-		return "◐"
-	case console.StateSuspended:
-		return "‖"
-	case console.StateError:
-		return "✗"
-	case console.StateArchived:
-		return "▪"
-	default:
-		return "○"
 	}
 }
 
@@ -782,7 +713,7 @@ func (l *sandboxList) rowHead(st *styles, s console.Sandbox, atCursor bool) stri
 		// the two read as one column pair; a box whose agent reports nothing
 		// leaves the cell blank rather than closing it up, so the names stay
 		// in line.
-		head += l.stateStyle(st, s).Render(stateDot(s)) + " " + agentGlyph(st, s.Agent.State) + " "
+		head += st.glyph(console.StateGlyph(s.State)) + " " + st.glyph(console.AgentGlyph(s.Agent.State)) + " "
 	}
 	if s.Warned() {
 		head += st.statusWA.Render("⚠") + " "

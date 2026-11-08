@@ -251,7 +251,7 @@ func TestARepairingBoxSaysWhatItIsAnswering(t *testing.T) {
 	boxes[0].HasRuntime = false
 	boxes[0].Message = "exec attach found it failed with no container (EOF)"
 
-	if got := stateDot(boxes[0]); got != stateDot(console.Sandbox{State: console.StateStarting}) {
+	if got := console.StateGlyph(boxes[0].State).Glyph; got != console.StateGlyph(console.StateStarting).Glyph {
 		t.Fatalf("glyph = %q, want the one a starting box has", got)
 	}
 

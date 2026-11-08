@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
 )
 
@@ -192,7 +191,7 @@ func (b *lockedBuffer) Bytes() []byte {
 // never hangs.
 func TestDesktopBridgeAnswersRequests(t *testing.T) {
 	out := &lockedBuffer{}
-	b := &desktopBridge{out: out, leader: "ctrl+a", streams: map[uint32]*desktopStream{}}
+	b := &desktopBridge{out: out, streams: map[uint32]*desktopStream{}}
 	b.handle(context.Background(), bridgeRequest{ID: 1, Op: "hello"})
 	b.handle(context.Background(), bridgeRequest{ID: 2, Op: "launchRockets"})
 
@@ -212,7 +211,7 @@ func TestDesktopBridgeAnswersRequests(t *testing.T) {
 	if err := json.Unmarshal(frames[0].payload, &hello); err != nil || hello.ID != 1 {
 		t.Fatalf("hello answer %s: %v", frames[0].payload, err)
 	}
-	want, err := json.Marshal(tui.Spec("ctrl+a"))
+	want, err := json.Marshal(console.NewSpec())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +223,7 @@ func TestDesktopBridgeAnswersRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(gotSpec, wantSpec) {
-		t.Errorf("hello's spec is not tui.Spec(leader)")
+		t.Errorf("hello's spec is not the console's spec")
 	}
 	var unknown struct {
 		ID    int64  `json:"id"`
@@ -381,4 +380,26 @@ type untilClosed struct{ closed <-chan struct{} }
 func (u untilClosed) Read([]byte) (int, error) {
 	<-u.closed
 	return 0, io.EOF
+}
+
+// A box's action menu is the core's lifecycle entries by their registry IDs,
+// with a reason only on what cannot act.
+func TestDesktopActionsAreTheCoresLifecycle(t *testing.T) {
+	box := console.Sandbox{ID: "b1", State: console.StateRunning, HasRuntime: true}
+	actions := desktopActions(console.Lifecycle([]console.Sandbox{box}))
+	entries := console.Lifecycle([]console.Sandbox{box})
+	if len(actions) != len(entries) || len(actions) == 0 {
+		t.Fatalf("%d actions for %d lifecycle entries", len(actions), len(entries))
+	}
+	for i, a := range actions {
+		if a.Command != entries[i].ID || a.Label != entries[i].Label || a.Enabled != entries[i].Enabled {
+			t.Errorf("action %d = %+v, want entry %s", i, a, entries[i].ID)
+		}
+		if a.Enabled && a.Why != "" {
+			t.Errorf("%s can act, and says why not: %q", a.Command, a.Why)
+		}
+		if !a.Enabled && a.Why == "" {
+			t.Errorf("%s cannot act, and does not say why", a.Command)
+		}
+	}
 }

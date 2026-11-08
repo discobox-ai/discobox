@@ -203,7 +203,7 @@ func (m *Model) syncProgramStatus() tea.Cmd {
 
 // statusTitlePrefix is what leads the window title on a terminal that does
 // not know the protocol: the primary box's status as the glyph its list row
-// draws (agentMark) and a space, or nothing with no status to show. A
+// draws (console.AgentGlyph), uncolored, and a space, or nothing with no status to show. A
 // terminal that knows the protocol, or has not said yet, shows the status
 // its own way, and the title carries none.
 func (m *Model) statusTitlePrefix() string {
@@ -214,7 +214,7 @@ func (m *Model) statusTitlePrefix() string {
 	if !ok {
 		return ""
 	}
-	return agentMark(rec.State) + " "
+	return console.AgentGlyph(rec.State).Glyph + " "
 }
 
 // clearProgramStatus takes back the status the window sent, once the program

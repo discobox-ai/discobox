@@ -1,0 +1,11 @@
+{
+  "name": "a shell opens beside the harness terminal, and the pane maximizes and restores",
+  "about": "Run by both consoles, each pressing its own binding for each step's command: cli/internal/tui/parity_test.go and desktop/src/parity_tests.rs. Each step is a registry command ID (cli/internal/console/commands.go), run from the workspace's focused pane; expect is what the workspace looks like after it.",
+  "attach": true,
+  "steps": [
+    {"command": "shell", "expect": {"shells": 1, "focus": "shells", "maximized": false}},
+    {"command": "maximize", "expect": {"shells": 1, "focus": "shells", "maximized": true}},
+    {"command": "maximize", "expect": {"shells": 1, "focus": "shells", "maximized": false}},
+    {"command": "shell", "expect": {"shells": 2, "focus": "shells", "maximized": false}}
+  ]
+}

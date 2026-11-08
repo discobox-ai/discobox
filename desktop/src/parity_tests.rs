@@ -1,6 +1,6 @@
-//! The parity scenarios in `cli/internal/tui/testdata/parity`, run here as the TUI runs them
-//! there (`parity_test.go`): each step is a command id, pressed with this app's desktop
-//! shortcut from the spec, and the workspace has to look the same afterwards.
+//! The parity scenarios in `cli/internal/console/testdata/parity`, run here as the TUI runs
+//! them (`cli/internal/tui/parity_test.go`): each step is a registry command, pressed with this
+//! app's desktop shortcut from the spec, and the workspace has to look the same afterwards.
 
 use rune::{Env, Key, KeyEvent, Mods, Runtime};
 use serde::Deserialize;
@@ -71,7 +71,7 @@ fn snapshot(s: &State) -> Expect {
 
 #[test]
 fn parity_scenarios() {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../cli/internal/tui/testdata/parity");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../cli/internal/console/testdata/parity");
     let mut ran = 0;
     for entry in std::fs::read_dir(dir).expect("the parity scenarios") {
         let path = entry.unwrap().path();
@@ -84,7 +84,7 @@ fn parity_scenarios() {
         settle(&mut rt);
         for (i, step) in sc.steps.iter().enumerate() {
             let binding = rt.state.spec.command(&step.command)
-                .and_then(|c| c.keys.get("desktop")).and_then(|k| k.first()).cloned()
+                .and_then(|c| c.bindings.desktop.keys.first()).cloned()
                 .unwrap_or_else(|| panic!("{} has no desktop key", step.command));
             rt.key(press(&binding));
             settle(&mut rt);

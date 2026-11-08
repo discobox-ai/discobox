@@ -37,7 +37,7 @@ pub fn list_order(boxes: Vec<Sandbox>) -> Vec<Sandbox> {
 fn glyph(s: &State, agent: bool, state: &str) -> (String, Color) {
     let table = if agent { &s.spec.agents } else { &s.spec.states };
     match table.get(state) {
-        Some(g) => (g.glyph.clone(), if g.color == "text" { theme::text() } else { theme::token(&g.color, 0x8a8a8a) }),
+        Some(g) => (g.glyph.clone(), theme::token(&g.color, 0xb0a0bf)),
         None => ((if agent { " " } else { "○" }).into(), theme::dim()),
     }
 }
@@ -51,14 +51,14 @@ fn shortcut_hints(s: &State, ids: &[&str]) -> El {
     let mut out = String::new();
     let mut spans = vec![];
     for id in ids {
-        let (Some(c), Some(k)) = (s.spec.command(id), keys::shortcut_of(s, id)) else { continue };
+        let (Some(label), Some(k)) = (keys::label_of(&s.spec, id), keys::shortcut_of(s, id)) else { continue };
         if !out.is_empty() {
             let a = out.len();
             out.push_str("   ·   ");
             spans.push(Span::new(a, out.len()).color(theme::inactive()));
         }
         let a = out.len();
-        out.push_str(&c.title.to_lowercase());
+        out.push_str(&label.to_lowercase());
         spans.push(Span::new(a, out.len()).color(theme::dim()));
         let a = out.len();
         out.push(' ');
@@ -161,7 +161,7 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
     })
     .on_double_press_tx(move |s: &mut State, tx: &mut Tx| {
         s.cursor = i;
-        run_command(s, "box.attach", tx);
+        run_command(s, "attach", tx);
     })
     .on_secondary_press(move |s: &mut State, p: PointerPress, _tx: &mut Tx| {
         s.cursor = i;
@@ -228,14 +228,14 @@ fn sidebar(s: &State) -> El {
         .child(row().w_full().center().child(logo::view(5.0, theme::bg())))
         .child(spacer())
         .child(el().h(1.0).w_full().fill(theme::inactive()))
-        .child(entry("+ new discobox", "box.new"))
-        .child(entry("find a box or command", "app.palette"))
-        .child(entry("all discoboxes", "view.home"));
+        .child(entry("+ new discobox", "new"))
+        .child(entry("find a box or command", "palette"))
+        .child(entry("all discoboxes", "detach"));
     col().key("sidebar").w(SIDEBAR_W).h_full().gap(4.0)
         .child(row().h(20.0).px(4.0).center_y().child(t("discobox", theme::grey())))
         .child(frame("sidebar-frame", focused, Some(tab("discoboxes", true, border)),
-            Some(button("‹", border, keys::shortcut_of(s, "view.sidebar").map(|k| format!("hide the sidebar  {k}")))
-                .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "view.sidebar", tx))), body).grow(1.0))
+            Some(button("‹", border, keys::shortcut_of(s, "nav.sidebar").map(|k| format!("hide the sidebar  {k}")))
+                .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "nav.sidebar", tx))), body).grow(1.0))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -261,22 +261,22 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
         let label = if two || idx.len() > 1 { pane_label(ws, i, sbx) } else { sbx.name.clone() };
         tabs = tabs.child(tab(&label, i == active, border).cursor(rune::Cursor::Pointer)
             .on_press(move |s: &mut State| s.select_pane(i))
-            .on_double_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, "pane.maximize", tx)));
+            .on_double_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, "maximize", tx)));
     }
     let mut buttons = row().gap(2.0);
     if two || ws.maximized {
-        let tip = keys::shortcut_of(s, "pane.maximize").map(|k| format!("{}  {k}", if ws.maximized { "restore" } else { "maximize" }));
+        let tip = keys::shortcut_of(s, "maximize").map(|k| format!("{}  {k}", if ws.maximized { "restore" } else { "maximize" }));
         buttons = buttons.child(button(if ws.maximized { "-" } else { "+" }, border, tip)
             .on_press_tx(move |s: &mut State, tx: &mut Tx| {
                 s.select_pane(active);
-                run_command(s, "pane.maximize", tx)
+                run_command(s, "maximize", tx)
             }));
     }
     if ws.panes[active].exec.kind != "primary" {
-        let tip = keys::shortcut_of(s, "pane.end").map(|k| format!("end this session  {k}"));
+        let tip = keys::shortcut_of(s, "end").map(|k| format!("end this session  {k}"));
         buttons = buttons.child(button("x", border, tip).on_press_tx(move |s: &mut State, tx: &mut Tx| {
             s.select_pane(active);
-            run_command(s, "pane.end", tx);
+            run_command(s, "end", tx);
         }));
     }
     let pane = &ws.panes[active];
@@ -302,8 +302,8 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
 fn header(s: &State, sbx: &Sandbox) -> El {
     let mut r = row().w_full().h(20.0).px(12.0).gap(18.0).center_y();
     if !s.sidebar {
-        r = r.child(button("›", theme::inactive(), keys::shortcut_of(s, "view.sidebar").map(|k| format!("show the sidebar  {k}")))
-            .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "view.sidebar", tx)));
+        r = r.child(button("›", theme::inactive(), keys::shortcut_of(s, "nav.sidebar").map(|k| format!("show the sidebar  {k}")))
+            .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "nav.sidebar", tx)));
     }
     r = r.child(t(source_label(sbx), theme::grey()))
         .child(t(sbx.shown_id().to_string(), theme::dim()));
@@ -332,7 +332,7 @@ fn workspace(s: &State, ws: &Workspace) -> El {
     let two = !ws.column(Side::Shells).is_empty() && !ws.column(Side::Terminals).is_empty();
     let mut cols = row().w_full().grow(1.0).gap(8.0).min_h(0.0);
     if let Some(e) = &ws.error {
-        let enter = keys::shortcut_of(s, "box.attach").unwrap_or_else(|| "Enter".into());
+        let enter = keys::shortcut_of(s, "attach").unwrap_or_else(|| "Enter".into());
         cols = cols.child(frame("failed", true, Some(tab(&sbx.name, true, theme::mark())), None,
             col().w_full().h_full().center().gap(8.0)
                 .child(t("could not open its sessions", theme::warn()))
@@ -353,7 +353,7 @@ fn workspace(s: &State, ws: &Workspace) -> El {
         .child(header(s, sbx))
         .child(cols)
         .child(row().h(20.0).px(12.0).center_y()
-            .child(status_line(s, &["pane.newShell", "pane.newTerminal", "pane.end", "pane.next", "pane.maximize", "box.next", "app.palette"])))
+            .child(status_line(s, &["shell", "terminal", "end", "nav.nextPane", "maximize", "nav.nextBox", "palette"])))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -373,14 +373,14 @@ fn home(s: &State) -> El {
             .child(t("❯", theme::grey()))
             .child(text_input(&TEXT_EDIT.with(|e| e.clone()), theme::UI.lh(20.0)).key("composer").single_line().grow(1.0).color(theme::text())
                 .placeholder("What should the new discobox do?", theme::dim())
-                .on_submit(|s: &mut State, tx: &mut Tx| run_command(s, "box.new", tx))))
+                .on_submit(|s: &mut State, tx: &mut Tx| run_command(s, "new", tx))))
         .child(rule());
     let body = col().w_full().h_full().gap(10.0).px(8.0).min_h(0.0)
         .child(header)
         .child(list_block(s, true))
         .child(spacer())
         .child(composer)
-        .child(row().h(20.0).px(18.0).center_y().child(status_line(s, &["box.attach", "box.new", "app.palette", "app.quit"])));
+        .child(row().h(20.0).px(18.0).center_y().child(status_line(s, &["attach", "new", "palette", "quit"])));
     frame("home", true, None, None, body)
 }
 

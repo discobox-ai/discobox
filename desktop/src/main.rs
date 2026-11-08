@@ -1,7 +1,7 @@
 //! `discobox desktop`: the discobox console as a native app, built with Rune.
 //!
 //! The CLI runs this with `--bridge` and serves the console's DataSource over stdin and stdout
-//! (`cli/internal/cli/desktop.go`), with the console's UX spec (`cli/internal/tui/spec.go`):
+//! (`cli/internal/cli/desktop.go`), with the console core's spec (`cli/internal/console/spec.go`):
 //! colours, glyphs and the commands. The layout is the TUI's; the interaction is a desktop
 //! app's — shortcuts and menus run the same commands the TUI's keys do.
 //!
@@ -431,25 +431,37 @@ impl State {
     }
 }
 
-/// Every command, by the id the spec gives it. The keys, the palette, the menus and a row's
-/// actions all come here.
+/// The registry's commands this app answers. Every other one says it is not here yet, and has
+/// an entry in the parity ledger (`docs/console/parity.md`) saying which issue brings it.
+pub const ANSWERED: &[&str] = &[
+    "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive",
+    "quit", "palette", "terminal", "end", "maximize", "detach",
+];
+
+/// Every command, by its registry ID (or, for navigation, the app's own; `keys::NAV`). The
+/// keys, the palette, the menus and a row's actions all come here.
 pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
     s.message = None;
     s.palette = None;
     s.menu = None;
     match id {
-        "box.attach" => s.open_box(s.cursor),
-        "box.shell" => {
-            s.open_box(s.cursor);
-            // A box that is not running is only pointed at: no shell in whichever box is on screen.
-            if s.live.is_some() && s.live == s.boxes.get(s.cursor).map(|b| b.id.clone()) {
-                s.new_session(true);
+        "attach" => s.open_box(s.cursor),
+        "shell" => {
+            // The box a shell opens in is the one on screen while its panes have the keys, and
+            // otherwise the list's; one that is not running is only pointed at, and no shell
+            // opens in whichever box is on screen.
+            if !(s.focus == Focus::Panes && s.live.is_some()) {
+                s.open_box(s.cursor);
+                if s.live.is_none() || s.live != s.boxes.get(s.cursor).map(|b| b.id.clone()) {
+                    return;
+                }
             }
+            s.new_session(true);
         }
-        "box.stop" | "box.start" | "box.upgrade" | "box.repair" | "box.archive" | "box.unarchive" => {
+        "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" => {
             if let Some(b) = s.target() {
-                let verb = id.trim_start_matches("box.").to_string();
-                let doing = match verb.as_str() {
+                let verb = id.to_string();
+                let doing = match id {
                     "stop" => "stopping",
                     "start" => "starting",
                     "upgrade" => "upgrading",
@@ -461,40 +473,43 @@ pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
                 s.ask("do", json!({"verb": verb, "sandbox": b.id}), Pending::Do(verb.clone(), b.name.clone()));
             }
         }
-        "box.purge" | "box.rename" | "box.settings" | "box.reviewConfig" | "box.new" => {
-            let title = s.spec.command(id).map(|c| c.title.clone()).unwrap_or_else(|| id.into());
-            s.message = Some(format!("{title} needs a dialog, which the prototype does not have yet"));
-        }
-        "pane.newShell" => s.new_session(true),
-        "pane.newTerminal" => s.new_session(false),
-        "pane.end" => s.end_focused(),
-        "pane.next" => s.step_pane(1),
-        "pane.prev" => s.step_pane(-1),
-        "pane.maximize" => {
+        "terminal" => s.new_session(false),
+        "end" => s.end_focused(),
+        "maximize" => {
             if let Some(ws) = s.live_ws_mut() {
                 ws.maximized = !ws.maximized;
             }
         }
-        "box.next" => s.step_box(1),
-        "box.prev" => s.step_box(-1),
-        "view.sidebar" => {
+        "detach" => {
+            s.live = None;
+            s.focus = Focus::List;
+        }
+        "palette" => s.palette = Some(Palette { query: { let mut q = TextEdit::new(""); q.focused = true; q }, picked: 0 }),
+        "quit" => tx.quit(),
+        "nav.nextPane" => s.step_pane(1),
+        "nav.prevPane" => s.step_pane(-1),
+        "nav.nextBox" => s.step_box(1),
+        "nav.prevBox" => s.step_box(-1),
+        "nav.sidebar" => {
             s.sidebar = !s.sidebar;
             if !s.sidebar {
                 s.focus = Focus::Panes;
             }
         }
-        "view.home" => {
-            s.live = None;
-            s.focus = Focus::List;
-        }
-        "app.palette" => s.palette = Some(Palette { query: { let mut q = TextEdit::new(""); q.focused = true; q }, picked: 0 }),
-        "app.quit" => tx.quit(),
         _ if id.starts_with("pane.goto.") => {
             if let Ok(n) = id.trim_start_matches("pane.goto.").parse::<usize>() {
                 s.goto_pane(n);
             }
         }
-        _ => s.message = Some(format!("unknown command {id}")),
+        _ => {
+            s.message = Some(match s.spec.command(id) {
+                Some(c) if matches!(id, "new" | "rename" | "settings" | "purge" | "review config") => {
+                    format!("{} needs a dialog, which the desktop app does not have yet", c.label)
+                }
+                Some(c) => format!("{} is not in the desktop app yet", c.label),
+                None => format!("unknown command {id}"),
+            })
+        }
     }
 }
 
@@ -565,17 +580,25 @@ fn boot_mock() -> Boot {
 }
 
 macro_rules! menu_commands {
-    ($($id:literal),* $(,)?) => {
-        &[$(($id, (|s: &mut State, tx: &mut Tx| run_command(s, $id, tx)) as fn(&mut State, &mut Tx))),*]
+    ($(($menu:literal, $id:literal)),* $(,)?) => {
+        &[$(($menu, $id, (|s: &mut State, tx: &mut Tx| run_command(s, $id, tx)) as fn(&mut State, &mut Tx))),*]
     };
 }
 
-/// The commands the native menu bar carries (macOS; elsewhere the palette is the menu).
-const MENU: &[(&str, fn(&mut State, &mut Tx))] = menu_commands![
-    "box.new", "pane.newShell", "pane.newTerminal", "pane.end",
-    "box.attach", "box.stop", "box.start", "box.upgrade", "box.repair", "box.archive", "box.unarchive",
-    "view.home", "view.sidebar", "app.palette", "pane.maximize", "pane.next", "pane.prev", "box.next", "box.prev",
+/// The commands the native menu bar carries, by the menu they are in (macOS; elsewhere the
+/// palette is the menu).
+const MENU: &[(&str, &str, fn(&mut State, &mut Tx))] = menu_commands![
+    ("Box", "new"), ("Shell", "shell"), ("Shell", "terminal"), ("Shell", "end"),
+    ("Box", "attach"), ("Box", "stop"), ("Box", "start"), ("Box", "upgrade"), ("Box", "repair"), ("Box", "archive"), ("Box", "unarchive"),
+    ("View", "detach"), ("View", "nav.sidebar"), ("View", "palette"), ("View", "maximize"),
+    ("View", "nav.nextPane"), ("View", "nav.prevPane"), ("View", "nav.nextBox"), ("View", "nav.prevBox"),
 ];
+
+/// A label as a menu's title: its first letter capitalised.
+fn title_case(label: &str) -> String {
+    let mut c = label.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+}
 
 fn main() {
     let bridged = std::env::args().any(|a| a == "--bridge");
@@ -611,14 +634,10 @@ fn main() {
         on_key: Some(on_key),
         ..AppSpec::new("discobox", (1440.0, 900.0), State::new, view::view)
     });
-    for &(id, action) in MENU {
-        let Some(c) = spec.command(id) else { continue };
-        let mut item = MenuItem::new(c.title.clone(), action).id(id).menu(match c.group.as_str() {
-            "Session" => "Shell",
-            "App" => "discobox",
-            g => g,
-        });
-        if let Some(sc) = c.keys.get("desktop").and_then(|k| k.first()).and_then(|k| keys::menu_shortcut(k)) {
+    for &(menu, id, action) in MENU {
+        let Some(label) = keys::label_of(&spec, id) else { continue };
+        let mut item = MenuItem::new(title_case(&label), action).id(id).menu(menu);
+        if let Some(sc) = keys::bindings(&spec, id).first().and_then(|k| keys::menu_shortcut(k)) {
             item = item.key_equivalent(sc);
         }
         app = app.menu_item(item);

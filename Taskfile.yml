@@ -251,9 +251,9 @@ tasks:
   desktop:spec:
     desc: Refresh the spec the desktop app runs with when no CLI serves it (desktop/src/spec.json)
     cmds:
-      # With the default leader, whatever DISCOBOX_LEADER this shell sets, so
-      # the file does not depend on who generated it.
-      - cd cli && DISCOBOX_LEADER= go run {{.CLI_MAIN}} desktop --print-spec > ../desktop/src/spec.json
+      # The console core's spec (cli/internal/console/spec.go), which depends
+      # on nothing of who generates it.
+      - cd cli && go run {{.CLI_MAIN}} desktop --print-spec > ../desktop/src/spec.json
 
   build:clipwatch:
     desc: Cross-compile the Windows clipboard helper the Linux CLI embeds for WSL

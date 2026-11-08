@@ -2,13 +2,21 @@ package tui
 
 import (
 	"os"
+	"strconv"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
+
+	"github.com/discobox-ai/discobox/assets/brand"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The palette is discobox-review's, which is git-gui's: lightsalmon,
-// lightgreen and gold over a terminal's own background. Nothing here paints a
+// lightgreen and gold over a terminal's own background. A role the design
+// language names (assets/brand/tokens.json) is drawn by its token's xterm
+// index, and TestThemeIsTheDesignLanguage holds each to it. The selection
+// bands (colSelectedBG, colBothBG) and the alert and offer bands and their
+// chips are this window's own: the tokens name no role for them yet. Nothing here paints a
 // full screen background — the panes are told apart by their title bars alone.
 //
 // They are held as 256-color indices rather than as lipgloss colors because
@@ -154,6 +162,10 @@ type styles struct {
 	stateBusy lipgloss.Style
 	stateOff  lipgloss.Style
 	stateErr  lipgloss.Style
+	// tokens paints a design-language color token by its xterm index, for
+	// what the core names by token: the state and agent glyphs. A token the
+	// TUI has no index for is the terminal's foreground.
+	tokens map[string]lipgloss.Style
 
 	name    lipgloss.Style
 	add     lipgloss.Style
@@ -235,6 +247,12 @@ func newStyles(color bool) *styles {
 	s.stateBusy = paint(colGold)
 	s.stateOff = paint(colDim)
 	s.stateErr = paint(colErr)
+	s.tokens = map[string]lipgloss.Style{}
+	for _, c := range brand.Colors() {
+		if c.XTerm != 0 {
+			s.tokens[c.Name] = paint(strconv.Itoa(c.XTerm))
+		}
+	}
 
 	s.name = lipgloss.NewStyle()
 	s.add = paint(colGreen)
@@ -258,4 +276,13 @@ func newStyles(color bool) *styles {
 	s.match = paint(colGold).Bold(true)
 	s.hover = paint(colGold).Bold(true)
 	return s
+}
+
+// glyph is one of the core's glyphs in its color token.
+func (s *styles) glyph(g console.Glyph) string {
+	style, ok := s.tokens[g.Color]
+	if !ok {
+		return g.Glyph
+	}
+	return style.Render(g.Glyph)
 }

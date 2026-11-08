@@ -70,7 +70,6 @@ pub struct Exec {
 #[serde(default)]
 pub struct Action {
     pub command: String,
-    pub key: String,
     pub label: String,
     pub detail: String,
     pub enabled: bool,
@@ -81,30 +80,62 @@ pub struct Action {
 #[serde(default)]
 pub struct Glyph {
     pub glyph: String,
+    /// The colour token it is drawn in.
     pub color: String,
     pub word: String,
 }
 
+/// A colour token in both palettes, as `#rrggbb`.
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct ColorToken {
+    pub dark: String,
+    pub light: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct DesktopBinding {
+    /// Chords, where `primary` is Cmd on macOS and Ctrl+Shift elsewhere.
+    pub keys: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Bindings {
+    pub desktop: DesktopBinding,
+}
+
+/// One command of the console core's registry.
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Command {
     pub id: String,
-    pub title: String,
-    pub group: String,
-    pub keys: HashMap<String, Vec<String>>,
+    pub label: String,
+    pub detail: String,
+    pub aliases: Vec<String>,
+    /// `box` for a command that takes a box, `window` for one that takes none.
+    pub target: String,
+    pub lifecycle: bool,
+    pub bindings: Bindings,
 }
 
-/// The console's UX as the CLI hands it over (`tui.Spec`): colour tokens, state glyphs, and
-/// the commands with each frontend's keys.
+/// The console's spec as the CLI hands it over (`console.NewSpec`, in
+/// `cli/internal/console/spec.go`): the colour tokens in both palettes, the state and agent
+/// glyphs, and the registry's commands with each frontend's bindings.
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Spec {
     pub version: u32,
-    pub colors: HashMap<String, String>,
+    pub colors: HashMap<String, ColorToken>,
     pub states: HashMap<String, Glyph>,
     pub agents: HashMap<String, Glyph>,
     pub commands: Vec<Command>,
 }
+
+/// The spec's shape this app reads (`console.SpecVersion`). A CLI that hands over another is
+/// refused at `hello`, rather than read into empty labels and bindings.
+pub const SPEC_VERSION: u32 = 2;
 
 impl Spec {
     /// The spec the CLI printed (`discobox desktop --print-spec`), for running without one.
@@ -195,7 +226,15 @@ impl Bridge {
                 if let Some(err) = v.get("error") {
                     return Err(err.to_string());
                 }
-                break serde_json::from_value(v["result"]["spec"].clone()).map_err(|e| e.to_string())?;
+                let spec = &v["result"]["spec"];
+                // Checked before the rest is read: another version's fields may not parse.
+                let version = spec["version"].as_u64().unwrap_or(0);
+                if version != SPEC_VERSION as u64 {
+                    return Err(format!(
+                        "this desktop app reads console spec version {SPEC_VERSION}, and the CLI handed over version {version}: run the app built with this CLI"
+                    ));
+                }
+                break serde_json::from_value(spec.clone()).map_err(|e| e.to_string())?;
             }
         };
         drop(input);
@@ -337,17 +376,22 @@ impl Backend for Mock {
                 Ok(Value::Null)
             }
             "actions" => {
+                // The registry's lifecycle commands, with the core's rules roughly: the CLI
+                // answers this from the core itself.
                 let running = self.boxes.iter().any(|b| b.id == sandbox && b.running());
-                Ok(json!([
-                    {"command": "box.attach", "key": "a", "label": "attach", "detail": "join the harness terminal", "enabled": running, "why": "the box has no container; repair rebuilds it"},
-                    {"command": "box.shell", "key": "s", "label": "shell", "detail": "open a shell in the box", "enabled": running},
-                    {"command": "box.rename", "key": "e", "label": "rename", "detail": "type a new name for the box", "enabled": true},
-                    {"command": "box.upgrade", "key": "u", "label": "upgrade", "detail": "re-pin to the current harness image", "enabled": false, "why": "already on the current image"},
-                    {"command": "box.stop", "key": "t", "label": "stop", "detail": "power the box off, keeping its disk", "enabled": running, "why": "not running"},
-                    {"command": "box.start", "key": "T", "label": "start", "detail": "power a stopped box back on", "enabled": !running, "why": "already on, or archived"},
-                    {"command": "box.archive", "key": "x", "label": "archive", "detail": "put it away, disk and all, reversibly", "enabled": true},
-                    {"command": "box.purge", "key": "P", "label": "purge", "detail": "destroy it and its data, for good", "enabled": false, "why": "archive it first — purge only takes archived boxes"},
-                ]))
+                let actions: Vec<Value> = Spec::bundled().commands.iter().filter(|c| c.lifecycle).map(|c| {
+                    let (enabled, why) = match c.id.as_str() {
+                        "attach" | "shell" => (running, "the box has no container; repair rebuilds it"),
+                        "review config" | "stop" => (running, "not running"),
+                        "start" => (!running, "already on, or archived"),
+                        "upgrade" => (false, "already on the current image"),
+                        "unarchive" => (false, "not archived"),
+                        "purge" => (false, "archive it first — purge only takes archived boxes"),
+                        _ => (true, ""),
+                    };
+                    json!({"command": c.id, "label": c.label, "detail": c.detail, "enabled": enabled, "why": if enabled { "" } else { why }})
+                }).collect();
+                Ok(Value::Array(actions))
             }
             "do" => {
                 let verb = args["verb"].as_str().unwrap_or("");
@@ -439,6 +483,13 @@ impl Pty {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // src/spec.json is the CLI's own spec (`task generate`), so a CLI whose spec changed shape
+    // fails this until the app reads the new one.
+    #[test]
+    fn the_bundled_spec_is_the_version_this_app_reads() {
+        assert_eq!(Spec::bundled().version, SPEC_VERSION);
+    }
 
     // The frame kinds are execstream's (pkg/execstream/frame/frame.go), which the CLI's side
     // of the bridge passes through unchanged.

@@ -3445,23 +3445,17 @@ the newest one where the busy line goes.
 | `links.go` | where a pane's URLs and the header's links point, and opening one |
 | `util.go` | row helpers: padding, spreading, centering, fitting fields to a row |
 
-## The spec another console draws from
+## What the core draws with it
 
-The desktop app (`desktop/`) draws the console natively and reads what it
-looks like and what it can do from here: `Spec` (`spec.go`) exports the
-colours, the glyphs of states and agent reports, and every command with its
-keys for each frontend, and `ActionsFor` a box's actions menu: the core's
-lifecycle entries (`console.Lifecycle`) under the prototype's IDs. `discobox desktop` hands it to the app on `hello`;
-`desktop/src/spec.json`, which the app's mock runs with, is generated from it
-(`task generate`).
-
-`testdata/parity/*.json` are scenarios both consoles run, each with its own
-keys: `TestParityScenarios` here, `desktop/src/parity_tests.rs` there. A step
-names a command and what the workspace looks like after it, in terms both can
-answer.
-
-This is the prototype's arrangement: the spec moves to the console core, and
-the scenarios with it, when there is one (ADR 26-11-07-876).
+The console's spec is the core's (`console.NewSpec`, ADR 26-11-07-876 §4);
+nothing here is exported for another console. The window draws the core's
+state and agent glyphs (`console.StateGlyph`, `console.AgentGlyph`) in their
+colour tokens, each by the token's xterm index (`styles.glyph`). The colour
+constants in `theme.go` for a role the design language names are its token's
+index (`TestThemeIsTheDesignLanguage`); the selection, alert and offer bands
+are the window's own, which the tokens do not name yet. `TestParityScenarios` runs the core's
+parity scenarios (`cli/internal/console/testdata/parity`) by pressing the
+leader and each command's registry binding.
 
 ## Looking at it without a terminal
 

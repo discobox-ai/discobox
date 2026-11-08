@@ -1,29 +1,104 @@
 {
-  "version": 1,
-  "leader": "ctrl+a",
+  "version": 2,
   "colors": {
-    "add": "#87ff87",
-    "band": "#303030",
-    "both": "#0087af",
-    "del": "#ffaf87",
-    "dim": "#585858",
-    "err": "#ff0000",
-    "gold": "#ffd700",
-    "grey": "#8a8a8a",
-    "greyedOut": "#444444",
-    "inactive": "#303030",
-    "info": "#87afff",
-    "mark": "#f45cff",
-    "ok": "#5fff5f",
-    "onGold": "#080808",
-    "rowCursor": "#3a3a3a",
-    "selected": "#005f87",
-    "warn": "#ffaf00"
+    "brand": {
+      "dark": "#9e4aa7",
+      "light": "#9e4aa7"
+    },
+    "err": {
+      "dark": "#ff6b62",
+      "light": "#b3261e",
+      "xterm": 196
+    },
+    "gold": {
+      "dark": "#ffd700",
+      "light": "#e8c200",
+      "xterm": 220
+    },
+    "green": {
+      "dark": "#87ff87",
+      "light": "#237a3a",
+      "xterm": 120
+    },
+    "info": {
+      "dark": "#87afff",
+      "light": "#2c5fb8",
+      "xterm": 111
+    },
+    "ink": {
+      "dark": "#0a0410",
+      "light": "#f7f4fa"
+    },
+    "ink-raised": {
+      "dark": "#150b1f",
+      "light": "#ffffff"
+    },
+    "ink-sunken": {
+      "dark": "#06020a",
+      "light": "#eee8f4"
+    },
+    "line": {
+      "dark": "#2a1839",
+      "light": "#e1d8ea",
+      "xterm": 236
+    },
+    "line-bright": {
+      "dark": "#3d2352",
+      "light": "#c9bad8",
+      "xterm": 238
+    },
+    "magenta": {
+      "dark": "#f45cff",
+      "light": "#a81fbd"
+    },
+    "ok": {
+      "dark": "#5fff5f",
+      "light": "#1a7a34",
+      "xterm": 83
+    },
+    "on-gold": {
+      "dark": "#0a0410",
+      "light": "#0a0410",
+      "xterm": 232
+    },
+    "salmon": {
+      "dark": "#ffaf87",
+      "light": "#b4532a",
+      "xterm": 216
+    },
+    "selection": {
+      "dark": "#2a1530",
+      "light": "#f3defa",
+      "xterm": 237
+    },
+    "text": {
+      "dark": "#f4ecf9",
+      "light": "#1d1424"
+    },
+    "text-faint": {
+      "dark": "#7c6a8c",
+      "light": "#8a7b98",
+      "xterm": 240
+    },
+    "text-muted": {
+      "dark": "#b0a0bf",
+      "light": "#5e4f6c",
+      "xterm": 245
+    },
+    "violet": {
+      "dark": "#8b2fd6",
+      "light": "#6d22b0"
+    },
+    "warn": {
+      "dark": "#ffaf00",
+      "light": "#a35f00",
+      "xterm": 214
+    }
   },
   "states": {
     "archived": {
       "glyph": "▪",
-      "color": "dim",
+      "color": "text-faint",
       "word": "archived"
     },
     "error": {
@@ -48,7 +123,7 @@
     },
     "stopped": {
       "glyph": "○",
-      "color": "dim",
+      "color": "text-faint",
       "word": "stopped"
     },
     "suspended": {
@@ -65,7 +140,7 @@
     },
     "done": {
       "glyph": "✓",
-      "color": "add",
+      "color": "green",
       "word": "done"
     },
     "error": {
@@ -75,7 +150,7 @@
     },
     "idle": {
       "glyph": "◇",
-      "color": "dim",
+      "color": "text-faint",
       "word": "idle"
     },
     "working": {
@@ -86,315 +161,950 @@
   },
   "commands": [
     {
-      "id": "box.attach",
-      "title": "attach",
-      "group": "Box",
-      "keys": {
-        "desktop": [
-          "enter"
-        ],
-        "tui": [
-          "a"
-        ]
+      "id": "attach",
+      "label": "attach",
+      "detail": "join the harness terminal",
+      "aliases": [
+        "attach",
+        "open"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "a"
+          ],
+          "leader": [
+            "a"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "enter"
+          ]
+        }
       }
     },
     {
-      "id": "box.shell",
-      "title": "shell",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "s"
-        ]
+      "id": "shell",
+      "label": "shell",
+      "detail": "open a shell in the box",
+      "aliases": [
+        "shell"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "s"
+          ],
+          "leader": [
+            "s"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+t"
+          ]
+        }
       }
     },
     {
-      "id": "box.reviewConfig",
-      "title": "review config",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "H"
-        ]
+      "id": "review config",
+      "label": "review config",
+      "detail": "review and save local settings and logins",
+      "aliases": [
+        "review config"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "H"
+          ],
+          "leader": [
+            "H"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.rename",
-      "title": "rename",
-      "group": "Box",
-      "keys": {
-        "desktop": [
-          "f2"
-        ],
-        "tui": [
-          "e"
-        ]
+      "id": "rename",
+      "label": "rename",
+      "detail": "type a new name for the box",
+      "aliases": [
+        "rename"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "e"
+          ],
+          "leader": [
+            "e"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "f2"
+          ]
+        }
       }
     },
     {
-      "id": "box.settings",
-      "title": "settings",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "E"
-        ]
+      "id": "settings",
+      "label": "settings",
+      "detail": "edit its configured name, harness, egress and discobox API access",
+      "aliases": [
+        "settings"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "E"
+          ],
+          "leader": [
+            "E"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.upgrade",
-      "title": "upgrade",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "u"
-        ]
+      "id": "upgrade",
+      "label": "upgrade",
+      "detail": "re-pin to the current harness image",
+      "aliases": [
+        "upgrade"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "u"
+          ],
+          "leader": [
+            "u"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.repair",
-      "title": "repair",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "R"
-        ]
+      "id": "repair",
+      "label": "repair",
+      "detail": "rebuild the box on the current image, keeping its work",
+      "aliases": [
+        "repair"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "R"
+          ],
+          "leader": [
+            "R"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.stop",
-      "title": "stop",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "t"
-        ]
+      "id": "stop",
+      "label": "stop",
+      "detail": "power the box off, keeping its disk",
+      "aliases": [
+        "stop"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "t"
+          ],
+          "leader": [
+            "t"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.start",
-      "title": "start",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "T"
-        ]
+      "id": "start",
+      "label": "start",
+      "detail": "power a stopped box back on, or thaw a suspended one",
+      "aliases": [
+        "start"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "T"
+          ],
+          "leader": [
+            "T"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.archive",
-      "title": "archive",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "x"
-        ]
+      "id": "archive",
+      "label": "archive",
+      "detail": "put it away, disk and all, reversibly",
+      "aliases": [
+        "archive",
+        "rm"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "x",
+            "delete"
+          ],
+          "leader": [
+            "x"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.unarchive",
-      "title": "unarchive",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "U"
-        ]
+      "id": "unarchive",
+      "label": "unarchive",
+      "detail": "bring an archived box back",
+      "aliases": [
+        "unarchive"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "U"
+          ],
+          "leader": [
+            "U"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.purge",
-      "title": "purge",
-      "group": "Box",
-      "keys": {
-        "desktop": [],
-        "tui": [
-          "P"
-        ]
+      "id": "purge",
+      "label": "purge",
+      "detail": "destroy it and its data, for good",
+      "aliases": [
+        "purge"
+      ],
+      "target": "box",
+      "lifecycle": true,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "P"
+          ],
+          "leader": [
+            "P"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "pane.newShell",
-      "title": "New shell",
-      "group": "Session",
-      "keys": {
-        "desktop": [
-          "primary+t"
-        ],
-        "tui": [
-          "leader+s"
-        ]
+      "id": "tools",
+      "label": "tools",
+      "detail": "open a diff viewer, an editor or your IDE on the box",
+      "aliases": [
+        "tools"
+      ],
+      "target": "box",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "o"
+          ],
+          "leader": [
+            "o"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "pane.newTerminal",
-      "title": "New harness terminal",
-      "group": "Session",
-      "keys": {
-        "desktop": [
-          "primary+alt+t"
-        ],
-        "tui": [
-          "leader+c"
-        ]
+      "id": "issue",
+      "label": "issue",
+      "detail": "open the tagged issue",
+      "aliases": [
+        "issue"
+      ],
+      "target": "box",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "i"
+          ],
+          "leader": [
+            "i"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "pane.end",
-      "title": "End session",
-      "group": "Session",
-      "keys": {
-        "desktop": [
-          "primary+w"
-        ],
-        "tui": [
-          "leader+X"
-        ]
+      "id": "pr",
+      "label": "pull request",
+      "detail": "open the tagged pull request",
+      "aliases": [
+        "pull request",
+        "pr"
+      ],
+      "target": "box",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "p"
+          ],
+          "leader": [
+            "p"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "pane.next",
-      "title": "Next pane",
-      "group": "Session",
-      "keys": {
-        "desktop": [
-          "ctrl+tab"
-        ],
-        "tui": [
-          "leader+l",
-          "leader+right"
-        ]
+      "id": "audit",
+      "label": "audit",
+      "detail": "follow everything the box has done, as it happens",
+      "aliases": [
+        "audit"
+      ],
+      "target": "box",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            "A"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "pane.prev",
-      "title": "Previous pane",
-      "group": "Session",
-      "keys": {
-        "desktop": [
-          "ctrl+shift+tab"
-        ],
-        "tui": [
-          "leader+h",
-          "leader+left"
-        ]
+      "id": "new",
+      "label": "new discobox",
+      "detail": "open the new discobox card",
+      "aliases": [
+        "new discobox",
+        "new"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "n"
+          ],
+          "leader": [
+            "n"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+n"
+          ]
+        }
       }
     },
     {
-      "id": "pane.maximize",
-      "title": "Maximize pane",
-      "group": "View",
-      "keys": {
-        "desktop": [
-          "primary+enter"
-        ],
-        "tui": [
-          "leader+z"
-        ]
+      "id": "credentials",
+      "label": "credentials",
+      "detail": "manage credentials",
+      "aliases": [
+        "credentials",
+        "secrets"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "f4"
+          ],
+          "leader": [
+            "f4"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.next",
-      "title": "Next discobox",
-      "group": "View",
-      "keys": {
-        "desktop": [
-          "primary+alt+down"
-        ],
-        "tui": [
-          "leader+down",
-          "ctrl+shift+j"
-        ]
+      "id": "harnesses",
+      "label": "harnesses",
+      "detail": "manage harnesses",
+      "aliases": [
+        "harnesses"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "f3"
+          ],
+          "leader": [
+            "f3"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.prev",
-      "title": "Previous discobox",
-      "group": "View",
-      "keys": {
-        "desktop": [
-          "primary+alt+up"
-        ],
-        "tui": [
-          "leader+up",
-          "ctrl+shift+k"
-        ]
+      "id": "quit",
+      "label": "quit",
+      "detail": "leave this window",
+      "aliases": [
+        "quit",
+        "exit"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "q"
+          ],
+          "leader": [
+            "q"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+q"
+          ]
+        }
       }
     },
     {
-      "id": "view.sidebar",
-      "title": "Show discoboxes",
-      "group": "View",
-      "keys": {
-        "desktop": [
-          "primary+b"
-        ],
-        "tui": [
-          "leader+h"
-        ]
+      "id": "help",
+      "label": "help",
+      "detail": "show the console keys",
+      "aliases": [
+        "help"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "f1",
+            "?"
+          ],
+          "leader": [
+            "f1"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "view.home",
-      "title": "All discoboxes",
-      "group": "View",
-      "keys": {
-        "desktop": [
-          "primary+0"
-        ],
-        "tui": [
-          "leader+d"
-        ]
+      "id": "refresh",
+      "label": "refresh",
+      "detail": "read the boxes again",
+      "aliases": [
+        "refresh"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "r"
+          ],
+          "leader": [
+            "r"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "app.palette",
-      "title": "Find a box or command",
-      "group": "View",
-      "keys": {
-        "desktop": [
-          "primary+k",
-          "primary+p"
-        ],
-        "tui": [
-          "leader+k",
-          ":"
-        ]
+      "id": "servers",
+      "label": "servers",
+      "detail": "choose the server, folder or tags",
+      "aliases": [
+        "servers",
+        "tags",
+        "filters"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "box.new",
-      "title": "New discobox",
-      "group": "Box",
-      "keys": {
-        "desktop": [
-          "primary+n"
-        ],
-        "tui": [
-          "leader+n",
-          "n"
-        ]
+      "id": "all",
+      "label": "all discoboxes",
+      "detail": "show every discobox, with this one beside them",
+      "aliases": [
+        "all discoboxes",
+        "boxes"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "menu": [
+            ".",
+            "l"
+          ]
+        },
+        "desktop": {
+          "keys": []
+        }
       }
     },
     {
-      "id": "app.quit",
-      "title": "Quit",
-      "group": "App",
-      "keys": {
-        "desktop": [
-          "primary+q"
-        ],
-        "tui": [
-          "leader+q"
-        ]
+      "id": "services",
+      "label": "services",
+      "detail": "view output, start, stop or restart a service",
+      "aliases": [
+        "services"
+      ],
+      "target": "box",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            "S",
+            "0"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "requests",
+      "label": "credential requests",
+      "detail": "answer this box's credential requests",
+      "aliases": [
+        "credential requests",
+        "requests"
+      ],
+      "target": "box",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "C"
+          ],
+          "leader": [
+            "g"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "rejections",
+      "label": "rejected credentials",
+      "detail": "remedy a refused credential",
+      "aliases": [
+        "rejected credentials",
+        "rejections"
+      ],
+      "target": "box",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "K"
+          ],
+          "leader": [
+            "K"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "files",
+      "label": "files changed",
+      "detail": "review the pull request's changes",
+      "aliases": [
+        "files changed",
+        "diff"
+      ],
+      "target": "box",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "f"
+          ],
+          "leader": [
+            "f"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "archived",
+      "label": "show archived",
+      "detail": "show or hide archived boxes",
+      "aliases": [
+        "show archived"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "A"
+          ],
+          "leader": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "options",
+      "label": "run options",
+      "detail": "choose defaults for the next discobox",
+      "aliases": [
+        "run options",
+        "options"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "ctrl+o"
+          ],
+          "leader": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "repaint",
+      "label": "repaint",
+      "detail": "redraw and reread the console",
+      "aliases": [
+        "repaint"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "ctrl+l"
+          ],
+          "leader": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "terminal",
+      "label": "new terminal",
+      "detail": "open another harness terminal",
+      "aliases": [
+        "new terminal"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            "c"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+alt+t"
+          ]
+        }
+      }
+    },
+    {
+      "id": "end",
+      "label": "end terminal",
+      "detail": "end the focused session",
+      "aliases": [
+        "end terminal"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            "X"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+w"
+          ]
+        }
+      }
+    },
+    {
+      "id": "maximize",
+      "label": "maximize",
+      "detail": "maximize or restore the focused column",
+      "aliases": [
+        "maximize"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            "z"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+enter"
+          ]
+        }
+      }
+    },
+    {
+      "id": "detach",
+      "label": "detach",
+      "detail": "leave the workspace, keeping sessions running",
+      "aliases": [
+        "detach"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            "d"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+0"
+          ]
+        }
+      }
+    },
+    {
+      "id": "mouse",
+      "label": "toggle mouse",
+      "detail": "take or return the application's mouse",
+      "aliases": [
+        "toggle mouse"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            "m"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "actions",
+      "label": "actions",
+      "detail": "open the focused box's action menu",
+      "aliases": [
+        "actions"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            "."
+          ],
+          "leader": [
+            "."
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "dismiss",
+      "label": "dismiss banner",
+      "detail": "dismiss the current notice",
+      "aliases": [
+        "dismiss banner"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            "b"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "palette",
+      "label": "command palette",
+      "detail": "find a box or command",
+      "aliases": [
+        "command palette",
+        "palette"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [
+            ":"
+          ],
+          "leader": [
+            "k"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+k",
+            "primary+p"
+          ]
+        }
       }
     }
   ]

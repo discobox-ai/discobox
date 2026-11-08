@@ -183,7 +183,7 @@ flowchart TD
   console natively. `discobox desktop` runs it as a child process and answers
   its requests for the console's data over stdio, so it holds no credentials
   and depends on no Go code; its spec (`desktop/src/spec.json`) is generated
-  from the CLI's `tui` package. The CLI side is in
+  from the console core (`cli/internal/console`). The CLI side is in
   [`cli/DESIGN.md`](cli/DESIGN.md); the app's own layout and what it does not
   do yet are in [`desktop/README.md`](desktop/README.md).
 
