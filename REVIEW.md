@@ -8,7 +8,11 @@ Global review expectations:
 - Keep changes scoped to the package responsibility.
 - A new shared root-module package goes under `pkg/`, not at the repository
   root; the root holds only components and `internal` (`DESIGN.md`, root module
-  package map).
+  package map). A Go package may sit outside `pkg/` only beside a non-Go file
+  it must `go:embed` and that has its one source there (`assets/brand` reads
+  `tokens.json`), because `go:embed` cannot reach a parent directory; it holds
+  only that file's reader, and anything shared beyond reading it goes in
+  `pkg/`.
 - Moving a directory: check backticked paths as well as markdown links, in docs
   and comments alike, and check that a backticked `a/b` is a path at all before
   rewriting it. The move to `pkg/` missed `api/model/DESIGN.md`'s backticked
