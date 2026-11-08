@@ -315,7 +315,7 @@ func (m *Model) mergePull(p *pane, method, sha string) tea.Cmd {
 	}
 	// Install progress before starting the merge: a fast refusal must not be
 	// overwritten by a sibling start notice. Keep the normal status expiry.
-	_, expires := m.Update(status("merging #%d…", number)())
+	expires := m.update(status("merging #%d…", number)())
 	return tea.Batch(merge, expires)
 }
 
