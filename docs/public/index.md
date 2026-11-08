@@ -1,9 +1,4 @@
-# Discobox v0.19 manual
-
-**Prerelease documentation.** This manual describes the v0.19 development
-line. It does not declare v0.19 stable. Use the exact product version and
-revision shown by the documentation site's snapshot manifest; a prerelease
-snapshot stays labeled prerelease until a reviewed stable import replaces it.
+# Discobox manual
 
 Discobox is a harness runtime. Give it a harness, a source and a task, and
 it runs the harness in its own sandbox with its own copy of the code. The

@@ -15,7 +15,7 @@ Claude Code, Codex, OpenCode, GitHub Copilot, omp, and pi are included; other te
 agents can be packaged in an image. Discobox supports macOS, Linux, and Windows
 and is under active development.
 
-Public documentation: [v0.19 prerelease manual](docs/public/index.md).
+Public documentation: [the manual](docs/public/index.md).
 
 ## Getting started
 

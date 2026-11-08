@@ -1,8 +1,8 @@
 # Getting started
 
-This is the **v0.19 prerelease** manual. The stable installer may install an
-older release; select the version recorded in your docs snapshot when you
-need these exact commands.
+This manual describes the release the documentation site shows it for. The
+installers below install the latest release on their channel; to run exactly
+these commands, install that release by its tag.
 
 ## Install
 
@@ -25,17 +25,20 @@ irm https://discobox.ai/install.ps1 | iex
 ```
 
 The edge installer includes release candidates and other prereleases. To
-choose a particular published version, pass its tag explicitly:
+choose a particular published version, pass its tag explicitly, replacing
+`TAG` with it (for example the release this manual describes):
 
 ```sh
-curl -sSfL https://discobox.ai | sh -s -- --version v0.19.0-rc.3
+curl -sSfL https://discobox.ai | sh -s -- --version TAG
 ```
 
-That example names an earlier candidate, not the revision containing this
-manual. Use your snapshot's exact tag. The product release containing the
-manual is selected after it lands. `discobox-dev` is Homebrew's latest dot
-release channel; it does not select an `-rc` tag. Stable and development
-clients share local state and cannot run their servers simultaneously.
+```powershell
+& ([scriptblock]::Create((irm https://discobox.ai/install.ps1))) -Version TAG
+```
+
+`discobox-dev` is Homebrew's latest dot release channel; it does not select
+an `-rc` tag. Stable and development clients share local state and cannot run
+their servers simultaneously.
 
 Discobox supports macOS, Linux and Windows. On Linux, the built-in provider
 needs Docker installed and accessible to the server user. First use can

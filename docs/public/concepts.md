@@ -1,7 +1,5 @@
 # Concepts
 
-This page describes the **v0.19 prerelease** line.
-
 ## Boxes and sources
 
 A discobox, or box, is the sandbox one harness runs in: its own writable
