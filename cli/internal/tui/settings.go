@@ -20,7 +20,7 @@ import (
 // the box menu. Lower-case e is rename, which is the name a person reads; this
 // is everything else a discobox is configured with, the configured name
 // among it.
-const settingsKey = "E"
+var settingsKey = bareKey("settings")
 
 // boxSettingsReadMsg is what the settings form opens on, read off the server,
 // with the card that was put up to wait for it.

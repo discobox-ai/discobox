@@ -8,9 +8,12 @@ import (
 // The command registry (ADR 26-11-06-671 §4, moved into the core by
 // 26-11-07-876 §1): every command the console offers, by a stable ID, with what
 // it is called, what it acts on, how each frontend reaches it (26-11-07-598
-// §2), whether it can act now and why not, and its dispatch. A frontend's
-// key registration, action menus and palette read it; a frontend that still
-// names a key elsewhere (the TUI's hints and help) is held to it by a test.
+// §2), whether it can act now and why not, and its dispatch. Every key a
+// frontend binds to reach a command or move between panes and boxes — the
+// TUI's list, tree, leader and panes, the desktop's shortcuts and list — is a
+// command's here or a gesture's (Gesture), and each frontend reads its key
+// registration, hints, help, menus and palette from it (598 §3). A screen's
+// own keys (an issue tab, a dialog, an open menu) are still that screen's.
 
 // Target is what a command acts on.
 type Target int
@@ -38,9 +41,20 @@ type TUIBinding struct {
 	// Keys are pressed bare, where the list or the workspace tree has the
 	// keys. The first is the one a hint shows.
 	Keys []string
-	// Leader is the sequence pressed after the leader, from a workspace's
-	// panes and the pages beside the tree: one key, or a chord of two.
-	Leader []string
+	// Leader is the sequences pressed after the leader, from a workspace's
+	// panes and the pages beside the tree: each one key, or a chord of two.
+	// The first is the one a hint shows; any other reaches the same command on
+	// another key (the arrows beside h and l).
+	Leader [][]string
+	// Repeats holds the leader open while its modifier is down, so a run of
+	// the command is the leader once and then its key again and again: the
+	// leader, then Ctrl-→ Ctrl-→ under a Ctrl leader.
+	Repeats bool
+	// Chords are pressed with no leader at all, from a pane as well: chords a
+	// classic terminal cannot encode, so no program in a pane is sent them
+	// (598 §3). One the window cannot act on where it is pressed goes on to
+	// the program, as it would have unbound.
+	Chords []string
 	// Menu is reached after the leader through a menu: the menu's key, then
 	// the entry's.
 	Menu []string
@@ -80,6 +94,11 @@ type Command struct {
 	// opensBox is a command that needs the box's container, which an image
 	// that is no longer available stops.
 	opensBox bool
+	// moves is a command that only moves focus — a pane along, a box down
+	// the list — which is not a use: 671 §6 counts a command entering its
+	// flow, not cursor movement, and a walk is pressed in runs that would put
+	// it at the top of the palette.
+	moves bool
 }
 
 // Entry is a command as it stands for one context and target: whether it can
@@ -109,11 +128,18 @@ type Context struct {
 	Workspace *Sandbox
 	// HasWorkspace is a workspace open in the window, on screen or behind a
 	// page; WorkspaceShown is one on screen, PaneFocused a pane of it with
-	// the focus, and ListHasKeys the list beside it with the keys instead.
+	// the focus, and ListHasKeys the list beside it — a workspace or a page,
+	// or expanded over them — with the keys instead.
 	HasWorkspace, WorkspaceShown, PaneFocused, ListHasKeys bool
 	// Tree is the list available beside the workspace, which the pages open
-	// next to; TreeFits is the window wide enough for it.
-	Tree, TreeFits bool
+	// next to; TreeShown is it drawn there now, not put away; TreeFits is the
+	// window wide enough for it.
+	Tree, TreeShown, TreeFits bool
+	// PageShown is a page (the harnesses, the secrets, the new card) in front
+	// of the right side, with the keys. The walk between panes reads it and
+	// ListHasKeys: the list is the leftmost thing on screen, and a page
+	// covers the panes.
+	PageShown bool
 	// Waiting reports credential requests waiting on a box, and Refused a
 	// refused credential shown for it. Nil reports none.
 	Waiting, Refused func(Sandbox) bool
@@ -151,7 +177,23 @@ func Lookup(id string) (Command, bool) {
 
 // ForTUIKey is the command a key pressed bare in the TUI's list runs.
 func ForTUIKey(key string) (Command, bool) {
-	i := slices.IndexFunc(registry, func(c Command) bool { return slices.Contains(c.Bindings.TUI.Keys, key) })
+	return find(func(b TUIBinding) bool { return slices.Contains(b.Keys, key) })
+}
+
+// ForTUILeader is the command one key pressed after the TUI's leader runs.
+func ForTUILeader(key string) (Command, bool) {
+	return find(func(b TUIBinding) bool {
+		return slices.ContainsFunc(b.Leader, func(seq []string) bool { return len(seq) == 1 && seq[0] == key })
+	})
+}
+
+// ForTUIChord is the command a leaderless chord runs in the TUI.
+func ForTUIChord(key string) (Command, bool) {
+	return find(func(b TUIBinding) bool { return slices.Contains(b.Chords, key) })
+}
+
+func find(bound func(TUIBinding) bool) (Command, bool) {
+	i := slices.IndexFunc(registry, func(c Command) bool { return bound(c.Bindings.TUI) })
 	if i < 0 {
 		return Command{}, false
 	}
@@ -214,6 +256,29 @@ func (r *Registry) entry(ctx Context, c Command, targets []Sandbox) Entry {
 			e.Unavailable = "available in a wide attach window"
 		case !ctx.TreeFits:
 			e.Unavailable = "the window is too narrow for the list beside the box"
+		}
+	case "next pane":
+		switch {
+		case ctx.ListHasKeys:
+			// The list hands the keys back to whatever is right of it: a
+			// workspace, one still opening, or a page.
+		case ctx.PageShown:
+			e.Unavailable = "the page is in front of the panes; Esc puts it away"
+		case !ctx.HasWorkspace:
+			e.Unavailable = "requires a workspace"
+		}
+	case "previous pane":
+		switch {
+		case ctx.ListHasKeys:
+			e.Unavailable = "the list is the leftmost; there is nothing left of it"
+		case ctx.PageShown && !ctx.TreeShown:
+			e.Unavailable = "there is no list beside this page"
+		case !ctx.PageShown && !ctx.HasWorkspace && !ctx.Tree:
+			e.Unavailable = "requires a workspace"
+		}
+	case "next box", "previous box", "sidebar":
+		if !ctx.Tree {
+			e.Unavailable = "there is no list beside a workspace in this window"
 		}
 	case "new", "credentials", "harnesses":
 		if ctx.HasWorkspace && !ctx.Tree {
@@ -294,6 +359,15 @@ type Frontend[R any] interface {
 	ToggleMouse() R
 	Actions() R
 	DismissBanner() R
+
+	// Moving between panes and boxes is the frontend's navigation (876 §2);
+	// the registry holds the commands and their keys, and each frontend moves
+	// its own focus.
+	NextPane() R
+	PreviousPane() R
+	NextBox() R
+	PreviousBox() R
+	ToggleSidebar() R
 }
 
 // Dispatch runs one command against explicit targets: it refuses one with no
@@ -338,7 +412,7 @@ func Dispatch[R any](r *Registry, f Frontend[R], ctx Context, id string, targets
 	if e.Unavailable != "" {
 		return f.Unavailable(e.Unavailable)
 	}
-	if !c.countedByFlow {
+	if !c.countedByFlow && !c.moves {
 		r.Use(c.ID)
 	}
 	if c.verb != "" {
@@ -413,6 +487,16 @@ func Dispatch[R any](r *Registry, f Frontend[R], ctx Context, id string, targets
 		return f.Actions()
 	case "dismiss":
 		return f.DismissBanner()
+	case "next pane":
+		return f.NextPane()
+	case "previous pane":
+		return f.PreviousPane()
+	case "next box":
+		return f.NextBox()
+	case "previous box":
+		return f.PreviousBox()
+	case "sidebar":
+		return f.ToggleSidebar()
 	}
 	return none
 }
@@ -515,7 +599,16 @@ func AttachWhy(targets []Sandbox) string {
 // tui and desktop are bindings for one command, written beside it.
 func tui(keys ...string) TUIBinding { return TUIBinding{Keys: keys} }
 
-func (b TUIBinding) leader(keys ...string) TUIBinding { b.Leader = keys; return b }
+// leader adds one sequence pressed after the leader; called again, another
+// sequence for the same command.
+func (b TUIBinding) leader(seq ...string) TUIBinding {
+	b.Leader = append(slices.Clone(b.Leader), seq)
+	return b
+}
+
+func (b TUIBinding) repeats() TUIBinding { b.Repeats = true; return b }
+
+func (b TUIBinding) chords(keys ...string) TUIBinding { b.Chords = keys; return b }
 
 func (b TUIBinding) menu(keys ...string) TUIBinding { b.Menu = keys; return b }
 
@@ -586,7 +679,7 @@ var registry = []Command{
 		countedByFlow: true,
 		Bindings:      Bindings{TUI: tui("f3").leader("f3")}},
 	{ID: "quit", Label: "quit", Detail: "leave this window", Aliases: []string{"quit", "exit"},
-		Bindings: Bindings{TUI: tui("q").leader("q"), Desktop: desktop("primary+q")}},
+		Bindings: Bindings{TUI: tui("q", "ctrl+c").leader("q"), Desktop: desktop("primary+q")}},
 	{ID: "help", Label: "help", Detail: "show the console keys", Aliases: []string{"help"},
 		Bindings: Bindings{TUI: tui("f1", "?").leader("f1")}},
 	{ID: "refresh", Label: "refresh", Detail: "read the boxes again", Aliases: []string{"refresh"},
@@ -631,4 +724,97 @@ var registry = []Command{
 	{ID: "palette", Label: "command palette", Detail: "find a box or command", Aliases: []string{"command palette", "palette"},
 		countedByFlow: true,
 		Bindings:      Bindings{TUI: tui(":").leader("k"), Desktop: desktop("primary+k", "primary+p")}},
+
+	// Moving between panes and boxes. Where focus goes is each frontend's
+	// (876 §2); the commands and their keys are the registry's like any other.
+	// Off the leftmost pane is the list beside the workspace.
+	{ID: "next pane", Label: "next pane", Detail: "move to the pane on the right", Aliases: []string{"next pane"},
+		moves:    true,
+		Bindings: Bindings{TUI: tui().leader("l").leader("right").repeats(), Desktop: desktop("ctrl+tab")}},
+	{ID: "previous pane", Label: "previous pane", Detail: "move to the pane on the left, and off the leftmost to the list", Aliases: []string{"previous pane"},
+		moves:    true,
+		Bindings: Bindings{TUI: tui().leader("h").leader("left").repeats(), Desktop: desktop("ctrl+shift+tab")}},
+	// The walk has leaderless chords as well: Ctrl-Shift-K and J reach no
+	// program, since a classic terminal cannot encode them and sends Ctrl-K
+	// and Ctrl-J instead — which are not these keys.
+	{ID: "next box", Label: "next discobox", Detail: "switch to the discobox below in the list", Aliases: []string{"next discobox"},
+		moves:    true,
+		Bindings: Bindings{TUI: tui().leader("down").leader("j").repeats().chords("ctrl+shift+j"), Desktop: desktop("primary+alt+down")}},
+	{ID: "previous box", Label: "previous discobox", Detail: "switch to the discobox above in the list", Aliases: []string{"previous discobox"},
+		moves:    true,
+		Bindings: Bindings{TUI: tui().leader("up").repeats().chords("ctrl+shift+k"), Desktop: desktop("primary+alt+up")}},
+	{ID: "sidebar", Label: "toggle list", Detail: "show or hide the discobox list beside the workspace", Aliases: []string{"toggle list", "sidebar"},
+		Bindings: Bindings{Desktop: desktop("primary+b")}},
+}
+
+// Gesture is a binding that is not a command (671 §4): moving a cursor,
+// choosing what it is on, jumping to a pane by its number. Each frontend acts
+// on one itself; it is never searched for in the palette, counted or
+// dispatched. Its keys are declared here beside the commands' so that every
+// key a frontend's list, tree, leader and panes bind is in the registry, and
+// classified.
+//
+// A numbered gesture's sequences end in a digit, which is the number it goes
+// to as that frontend numbers what it goes to: the TUI's panes from 0, the
+// primary, and its services from 1; the desktop's tabs from 1.
+type Gesture struct {
+	ID       string
+	Label    string
+	Bindings Bindings
+}
+
+// Gestures is every gesture, in the order the registry lists them.
+func Gestures() []Gesture { return slices.Clone(gestures) }
+
+// LookupGesture is one gesture by ID.
+func LookupGesture(id string) (Gesture, bool) {
+	i := slices.IndexFunc(gestures, func(g Gesture) bool { return g.ID == id })
+	if i < 0 {
+		return Gesture{}, false
+	}
+	return gestures[i], true
+}
+
+// digits are the keys from one digit to another, each a sequence after
+// whatever leads it.
+func digits(lead string, from, to int) TUIBinding {
+	var b TUIBinding
+	for n := from; n <= to; n++ {
+		if lead == "" {
+			b = b.leader(fmt.Sprint(n))
+		} else {
+			b = b.leader(lead, fmt.Sprint(n))
+		}
+	}
+	return b
+}
+
+// desktopDigits are the desktop's chords from one digit to another.
+func desktopDigits(from, to int) DesktopBinding {
+	var b DesktopBinding
+	for n := from; n <= to; n++ {
+		b.Keys = append(b.Keys, fmt.Sprintf("primary+%d", n))
+	}
+	return b
+}
+
+var gestures = []Gesture{
+	{ID: "up", Label: "move up", Bindings: Bindings{TUI: tui("up", "k"), Desktop: desktop("up")}},
+	{ID: "down", Label: "move down", Bindings: Bindings{TUI: tui("down", "j"), Desktop: desktop("down")}},
+	{ID: "page up", Label: "a screen up", Bindings: Bindings{TUI: tui("pgup")}},
+	{ID: "page down", Label: "a screen down", Bindings: Bindings{TUI: tui("pgdown")}},
+	{ID: "first", Label: "first", Bindings: Bindings{TUI: tui("home", "g"), Desktop: desktop("home")}},
+	{ID: "last", Label: "last", Bindings: Bindings{TUI: tui("end", "G"), Desktop: desktop("end")}},
+	{ID: "scroll left", Label: "read back along a long name", Bindings: Bindings{TUI: tui("left", "h")}},
+	{ID: "scroll right", Label: "read on along a long name", Bindings: Bindings{TUI: tui("right", "l")}},
+	{ID: "choose", Label: "choose", Bindings: Bindings{TUI: tui("enter")}},
+	{ID: "back", Label: "back", Bindings: Bindings{TUI: tui("esc"), Desktop: desktop("escape", "right")}},
+	{ID: "next field", Label: "next field", Bindings: Bindings{TUI: tui("tab")}},
+	{ID: "previous field", Label: "previous field", Bindings: Bindings{TUI: tui("shift+tab")}},
+	{ID: "select", Label: "select", Bindings: Bindings{TUI: tui(" ")}},
+	{ID: "range", Label: "select a range", Bindings: Bindings{TUI: tui("V")}},
+	{ID: "clear selection", Label: "clear the selection", Bindings: Bindings{TUI: tui("c")}},
+	{ID: "context menu", Label: "the row's menu", Bindings: Bindings{Desktop: desktop("contextmenu")}},
+	{ID: "pane", Label: "a pane by its number", Bindings: Bindings{TUI: digits("", 0, 9), Desktop: desktopDigits(1, 9)}},
+	{ID: "service", Label: "a service by its number", Bindings: Bindings{TUI: digits("S", 1, 9)}},
 }

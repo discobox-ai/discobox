@@ -19,8 +19,11 @@ desktop app's test `every_registry_command_is_answered_or_in_the_ledger`
 fails when a registry command is neither answered by the app nor listed
 below, and when an entry here names a command the app answers.
 
-Moving between panes and boxes is navigation, which each console owns
-(ADR 26-11-07-876 §2), and is not held here.
+Moving between panes and boxes is in the registry too (`next pane`,
+`previous box`, `sidebar`): where focus goes is each console's own (ADR
+26-11-07-876 §2), but the commands and their keys are the registry's, and
+held here like any other. Gestures (the list's cursor, a pane by its number)
+are declared in the registry with each console's keys, and are not commands.
 
 ## The desktop app lacks
 

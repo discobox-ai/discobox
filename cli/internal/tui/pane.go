@@ -31,30 +31,32 @@ import (
 // Every command the list offers is reachable from here behind the leader, on
 // the key it has there, and acts on the one discobox the screen is showing.
 
-const (
-	paneMouseKey = "m"
-	paneLeftKey  = "h"
-	paneRightKey = "l"
+// The workspace's keys, read from the registry (leaderKey). The comments say
+// what each one is for and why it is that key.
+var (
+	paneMouseKey = leaderKey("mouse")
+	paneLeftKey  = leaderKey("previous pane")
+	paneRightKey = leaderKey("next pane")
 	// paneDetachAlt is the detach key behind the leader, for a pane whose
 	// application needs Ctrl-C more than the window does. It is the d screen,
 	// tmux, and a plain `discobox attach` all detach on. The leader also carries
 	// the list's own keys, but none of them is d.
-	paneDetachAlt = "d"
+	paneDetachAlt = leaderKey("detach")
 	// paneTerminalKey opens another of the discobox's own terminals, beside
 	// the primary on the left. It is c because that is what screen and tmux
 	// create a window on, and this leader is screen's; t, the obvious letter,
 	// is stop — a command the list already has on it, and the workspace keeps
 	// the list's key map.
-	paneTerminalKey = "c"
+	paneTerminalKey = leaderKey("terminal")
 	// paneZoomKey maximizes the focused column over the other and restores it,
 	// the same toggle the boxes' own [+]/[-] button is. It is z because that is
 	// what tmux zooms a pane on, and because a workspace key nothing but a
 	// mouse can reach is one half the users cannot reach at all.
-	paneZoomKey = "z"
+	paneZoomKey = leaderKey("maximize")
 	// paneQuitKey quits the whole window from behind the leader. Ctrl-C quits
 	// everywhere else but belongs to the application inside a pane, so the
 	// leader carries the exit here — beside d, which only detaches.
-	paneQuitKey = "q"
+	paneQuitKey = leaderKey("quit")
 	// paneEndKey ends the session in front of you and takes its tab off the
 	// screen — the one thing on the workspace that kills something rather
 	// than closing a view onto it, which is why it is the shifted key beside
@@ -64,7 +66,7 @@ const (
 	// on the same screen: X ends what you are looking at. Only a shell, a tool
 	// or an extra terminal answers it — the primary ends the workspace and the
 	// services have their own verbs. See endPane.
-	paneEndKey = "X"
+	paneEndKey = leaderKey("end")
 	// paneInterruptKey is the application's everywhere, and never the window's.
 	// The one exception is a pane whose command has finished, where there is
 	// nothing left to interrupt and it means done like the rest of them.
@@ -86,12 +88,12 @@ const (
 	// S rather than s, which is a shell; the workspace carries the list's key
 	// map whole, and none of the verbs on it (t, T) could be reused here
 	// without meaning the discobox on one pane and a service on another.
-	paneServicesKey = "S"
+	paneServicesKey = leaderSeq("services")[0]
 	// paneServicesMenuKey is the digit that opens the services menu behind the
 	// S chord. Zero because the services themselves count from one, so the
 	// menu is the one number left over — and because it is where a hand
 	// already reaching for S1 can find it.
-	paneServicesMenuKey = "0"
+	paneServicesMenuKey = leaderSeq("services")[1]
 )
 
 // pane is one terminal in the window.
@@ -446,59 +448,57 @@ func (m *Model) paneOptions(readOnly bool) []termpane.Option {
 	if readOnly {
 		opts = append(opts, termpane.WithReadOnly())
 	}
-	opts = append(opts,
-		// Moving between the terminal and the tabs is something you do in
-		// runs, so it holds the leader open while its modifier is down:
-		// leader, then Ctrl-← Ctrl-← (Alt-← under an Alt leader) walks across
-		// without pressing the leader again. The
-		// arrows and the letters are the same binding, so neither has to be
-		// learned.
-		termpane.WithRepeatingPrefixBinding(paneLeftKey, movePaneMsg{delta: -1}),
-		termpane.WithRepeatingPrefixBinding(paneRightKey, movePaneMsg{delta: 1}),
-		termpane.WithRepeatingPrefixBinding("left", movePaneMsg{delta: -1}),
-		termpane.WithRepeatingPrefixBinding("right", movePaneMsg{delta: 1}),
-		// Up and down move along the workspace tree instead: the discobox on
-		// screen, rather than the pane in it. See tree.go.
-		termpane.WithRepeatingPrefixBinding("up", switchBoxMsg{delta: -1}),
-		termpane.WithRepeatingPrefixBinding("down", switchBoxMsg{delta: 1}),
-
-		termpane.WithRepeatingPrefixBinding("j", switchBoxMsg{delta: 1}),
-		// And without the leader at all, on the chords only an enhanced
-		// keyboard protocol encodes (boxStepBare). A window with no tree
-		// hands them back to the program (switchBoxMsg.chord).
-		termpane.WithBinding(boxUpKey, switchBoxMsg{delta: -1, chord: &boxUpChord}),
-		termpane.WithBinding(boxDownKey, switchBoxMsg{delta: 1, chord: &boxDownChord}),
-	)
-	// The digits jump straight to a pane by the number its label wears, the
-	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
-	for n := 0; n <= 9; n++ {
-		opts = append(opts, termpane.WithPrefixBinding(strconv.Itoa(n), jumpPaneMsg{n: n}))
-	}
-	// The services have the same alphabet one keystroke further in: S1 through
-	// S9 are their own tabs, and S0 is the menu that reaches the ones with no
-	// tab at all. See paneServicesKey.
-
-	chords := map[string]map[string]tea.Msg{paneServicesKey: {}}
-	for n := 1; n <= 9; n++ {
-		chords[paneServicesKey][strconv.Itoa(n)] = jumpServiceMsg{n: n}
+	// Every other key a pane keeps is the registry's: its commands, each by
+	// its leader sequences and its leaderless chords, and its numbered
+	// gestures — the digits jump straight to a pane by the number its label
+	// wears, the way tmux selects windows (0 is the terminal, 1 through 9 the
+	// tabs), and S1 through S9 to a service by its own. A sequence of two is a
+	// chord after the leader; all of them are gathered into one map per
+	// leading key.
+	chords := map[string]map[string]tea.Msg{}
+	bind := func(seq []string, repeats bool, msg tea.Msg) {
+		switch {
+		case len(seq) == 2:
+			if chords[seq[0]] == nil {
+				chords[seq[0]] = map[string]tea.Msg{}
+			}
+			chords[seq[0]][seq[1]] = msg
+		case repeats:
+			// Moving between the panes and along the tree is something you do
+			// in runs, so it holds the leader open while its modifier is
+			// down: leader, then Ctrl-← Ctrl-← (Alt-← under an Alt leader)
+			// walks across without pressing the leader again.
+			opts = append(opts, termpane.WithRepeatingPrefixBinding(seq[0], msg))
+		default:
+			opts = append(opts, termpane.WithPrefixBinding(seq[0], msg))
+		}
 	}
 	for _, c := range console.Commands() {
-		leader := c.Bindings.TUI.Leader
-		if len(leader) == 0 {
-			continue
-		}
+		b := c.Bindings.TUI
 		msg := tea.Msg(consoleCommandMsg{id: c.ID})
 		if c.Lifecycle {
 			msg = paneActionMsg{id: c.ID}
 		}
-		if len(leader) == 1 {
-			opts = append(opts, termpane.WithPrefixBinding(leader[0], msg))
-		} else {
-			lead, key := leader[0], leader[1]
-			if chords[lead] == nil {
-				chords[lead] = map[string]tea.Msg{}
-			}
-			chords[lead][key] = msg
+		for _, seq := range b.Leader {
+			bind(seq, b.Repeats, msg)
+		}
+		// And without the leader at all, on the chords only an enhanced
+		// keyboard protocol encodes. Where the command cannot act — a window
+		// with no tree to walk — the chord goes on to the program.
+		for _, chord := range b.Chords {
+			press := chordPress(chord)
+			opts = append(opts, termpane.WithBinding(chord, consoleCommandMsg{id: c.ID, chord: &press}))
+		}
+	}
+	jumps := map[string]func(n int) tea.Msg{
+		"pane":    func(n int) tea.Msg { return jumpPaneMsg{n: n} },
+		"service": func(n int) tea.Msg { return jumpServiceMsg{n: n} },
+	}
+	for id, jump := range jumps {
+		g, _ := console.LookupGesture(id)
+		for _, seq := range g.Bindings.TUI.Leader {
+			n, _ := strconv.Atoi(seq[len(seq)-1])
+			bind(seq, false, jump(n))
 		}
 	}
 	for lead, bindings := range chords {
@@ -693,12 +693,6 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		if m.hasScreen(p) {
 			return m.underScreen(p)
 		}
-		// A leaderless chord in a window with no tree to walk was never the
-		// window's: it goes on to the program, as it would have unbound.
-		if msg.chord != nil && !m.treeAvailable() {
-			p.term.SendKey(*msg.chord)
-			return nil
-		}
 		armed := p.term.PrefixArmed()
 		p.term.SetPrefixArmed(false)
 		cmd := m.switchBox(msg.delta)
@@ -712,16 +706,6 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			}
 		}
 		return cmd
-
-	case treePageMsg:
-		if m.hasScreen(p) {
-			return m.underScreen(p)
-		}
-		p.term.SetPrefixArmed(false)
-		if cmd, taken := m.treeEntry(msg.act); taken {
-			return cmd
-		}
-		return status("the list's entries open beside the list, which this window is not showing")
 
 	case jumpPaneMsg:
 		if m.hasScreen(p) {
@@ -784,6 +768,15 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.closeWindow()
 
 	case consoleCommandMsg:
+		// A leaderless chord the command cannot act on here — a walk in a
+		// window with no tree — was never the window's: it goes on to the
+		// program, as it would have unbound.
+		if msg.chord != nil {
+			if e, _ := m.commands.Entry(m.commandContext(), msg.id, []console.Sandbox{m.currentBox()}); !e.Enabled {
+				p.term.SendKey(*msg.chord)
+				return nil
+			}
+		}
 		return m.dispatch(msg.id, m.currentBox())
 
 	case openPaletteMsg:
@@ -949,7 +942,7 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 // chord is a key like any other, and goes where that pane sends its keys —
 // held behind a slow image paste in order with the rest, not ahead of them.
 func (m *Model) paneReserved(p *pane, key tea.KeyPressMsg) bool {
-	_, walk := boxStepBare(key)
+	_, walk := console.ForTUIChord(key.Keystroke())
 	return (walk && m.treeAvailable()) || p.term.PrefixPending() || keyName(key) == m.leader()
 }
 

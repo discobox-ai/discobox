@@ -64,12 +64,30 @@
 
 ## Key routing
 
-- **A command's keys are the registry's** (`cli/internal/console`,
-  `commands.go`). Change one there and change the window's constant that
-  names it in hints, help and menus with it; `TestTheWindowsKeysAreTheRegistrys`
-  fails until both agree. A new key for a command goes in the registry first,
-  never only in a handwritten switch, or the hint names a key the binding
-  does not have.
+- **Every key the list, the tree, the window's leader and the panes bind is
+  the registry's** (`cli/internal/console`, `commands.go`): a command's, or a
+  gesture's the registry declares. A name the window
+  spells a key by is read from it (`bareKey`, `leaderKey`, `chordKey`),
+  never a string written here, and the leader's keys outside a pane are
+  answered by command ID (`leaderCommand`), not by key. A new key goes in the
+  registry first; `TestConsoleCommandBindingCoverage` fails one bound only in
+  a switch or a pane option, and `TestTheHelpNamesEveryBoundCommand` one the
+  help does not name. A key's printed name goes through `keyLabel`, never a
+  spelling of its own (`strings.ToUpper` on `f3`): one moved to a chord would
+  print wrong.
+- **One command, one implementation, whichever way it is reached.** The
+  window's leader handling outside a pane dispatches a command it shares
+  with the panes — the walks between panes and boxes — by ID rather than
+  doing its work inline, so the palette, a pane's leader key and the
+  window's leader enter the same `Frontend` method. Next pane from
+  the palette once moved focus in a hidden workspace while the leader's `l`
+  handed the list's keys back, because the two were separate code.
+- **A `console.Context` field is filled from a `Model` method, never a
+  parallel expression** (`commandContext`): the list holding the keys is
+  `listInFront`, which the pane walk also acts on, beside `listHasKeys`,
+  which the routing reads. A field filled from an expression of its own
+  drifts from what the window does, and the palette offers what a key does
+  not.
 - **A renderer never rewrites an `Entry`'s `Enabled` or `Why`.** Whether a
   command can act is the registry's, and the palette, menus and keys must
   agree on it; a fact the rule needs from the window (the list has the keys,

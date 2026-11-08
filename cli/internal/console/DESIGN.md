@@ -87,8 +87,19 @@ flowchart LR
 thing the console does, by a stable ID: its label, detail and aliases, its
 target (the window, or one box — a batch for the box's lifecycle commands),
 and its bindings keyed by frontend (ADR 26-11-07-598 §2): `TUI` (bare keys,
-the leader sequence, the menu path) and `Desktop` (chords written with
-`primary`).
+the leader sequences, whether they repeat, leaderless chords, the menu path)
+and `Desktop` (chords written with `primary`). Moving between panes and
+boxes is commands like any other (`next pane`, `previous box`, `sidebar`):
+where focus goes is each frontend's, the key that moves it the registry's.
+
+- **Every key a frontend binds to reach a command or move between boxes
+  and panes is here** (598 §3): the TUI's list, tree, leader and panes, the
+  desktop app's shortcuts and list. A screen's own keys (an issue tab, the
+  audit screen, a dialog, the desktop's menus and palette) are still that
+  screen's. What is not a command —
+  a cursor's motion, choosing a row, a pane by its number — is a `Gesture`:
+  declared with each frontend's keys, never searched, counted or dispatched.
+  A numbered gesture's sequences end in the digit it goes to.
 
 ```mermaid
 flowchart LR
@@ -122,16 +133,22 @@ flowchart LR
   behind the methods — dialogs, workspaces, pages — are the frontend's.
 - **Use is counted once, as a flow is entered.** A command whose flow is
   also entered by gestures outside the registry (a page's row in the tree)
-  counts itself there (`countedByFlow`); `Use`/`Usage` are the window's
-  palette ranking (671 §6), and live as long as the `Registry` does.
+  counts itself there (`countedByFlow`). A command that only moves focus —
+  a pane along, a box down the list — is never a use (`moves`): 671 §6
+  counts a flow entered, not cursor movement, and a walk pressed in runs
+  would top the palette. `Use`/`Usage` are the window's palette ranking
+  (671 §6), and live as long as the `Registry` does.
 - **The registry is tested here** for completeness (described, unambiguous
-  aliases and keys, primary without shift, every command dispatching to a
-  flow of its own); each frontend tests that its own bindings have entries.
+  aliases, no key reaching two things in any frontend's layer, primary
+  without shift, every command dispatching to a flow of its own). Each
+  frontend tests that it binds no key the registry does not hand it: the
+  TUI's `TestConsoleCommandBindingCoverage`, the desktop app's
+  `no_shortcut_is_written_outside_the_spec`.
 
 ## The spec
 
 `spec.go` (876 §4). `NewSpec` is what every frontend draws the same way, as
-data: the registry's commands with each frontend's bindings, the state and
+data: the registry's commands and gestures with each frontend's bindings, the state and
 agent glyphs (`StateGlyph`, `AgentGlyph`) by colour token, and every colour
 token in both palettes, read from the design language's tokens
 (`assets/brand`, 363 §4). `discobox desktop` hands it to the app on `hello`,

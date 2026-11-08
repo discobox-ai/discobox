@@ -41,6 +41,9 @@ func TestSpecCoversTheConsole(t *testing.T) {
 	if len(spec.Commands) != len(registry) {
 		t.Fatalf("%d commands in the spec, %d in the registry", len(spec.Commands), len(registry))
 	}
+	if len(spec.Gestures) != len(gestures) {
+		t.Fatalf("%d gestures in the spec, %d in the registry", len(spec.Gestures), len(gestures))
+	}
 	for i, c := range spec.Commands {
 		if c.ID != registry[i].ID {
 			t.Errorf("command %d is %s, the registry's is %s", i, c.ID, registry[i].ID)

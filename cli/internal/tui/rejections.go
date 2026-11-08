@@ -35,7 +35,7 @@ import (
 // working — capital, because k and j move along the workspace tree. The
 // letters this window already spends are elsewhere — g is the credential
 // request.
-const rejectedKey = "K"
+var rejectedKey = bareKey("rejections")
 
 // openRejectedMsg is the leader plus that key inside a pane.
 type openRejectedMsg struct{}

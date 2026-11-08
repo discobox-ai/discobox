@@ -3,8 +3,10 @@
 //! Terminal and Windows Terminal). There is no leader. A key no shortcut takes goes to the
 //! list while it has focus, and otherwise to the focused pane, as the bytes an xterm sends.
 //!
-//! Moving between panes and boxes is navigation, which is the app's own rather than the
-//! console core's (ADR 26-11-07-876 §2): those shortcuts are in `NAV`, not the spec.
+//! Every shortcut and list key is the spec's (ADR 26-11-07-598 §2–3): a registry command's, or
+//! a gesture's — moving the list's cursor, a tab by its number — which the app acts on itself.
+//! An open menu or palette keeps its own keys (`overlay.rs`). Where focus
+//! goes is the app's (ADR 26-11-07-876 §2); which key moves it is the registry's.
 
 use rune::{Key, KeyEvent, Shortcut, Tx};
 
@@ -25,6 +27,9 @@ fn key_name(ev: &KeyEvent) -> Option<String> {
         Key::Down => "down".into(),
         Key::Left => "left".into(),
         Key::Right => "right".into(),
+        Key::Home => "home".into(),
+        Key::End => "end".into(),
+        Key::ContextMenu => "contextmenu".into(),
         Key::Function(n) => format!("f{n}"),
         _ => return None,
     })
@@ -58,55 +63,25 @@ pub fn matches(binding: &str, ev: &KeyEvent) -> bool {
     has_ctrl == ctrl && has_cmd == cmd && m.alt == alt && m.shift == shift && key_name(ev).as_deref() == Some(key)
 }
 
-/// One of the app's own navigation commands: an ID `run_command` answers, what it is called,
-/// and its shortcuts.
-pub struct Nav {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub keys: &'static [&'static str],
-}
-
-/// The app's navigation. ⌘1–9 go to a tab as well (`pane.goto.N`).
-pub const NAV: &[Nav] = &[
-    Nav { id: "nav.nextPane", label: "next pane", keys: &["ctrl+tab"] },
-    Nav { id: "nav.prevPane", label: "previous pane", keys: &["ctrl+shift+tab"] },
-    Nav { id: "nav.nextBox", label: "next discobox", keys: &["primary+alt+down"] },
-    Nav { id: "nav.prevBox", label: "previous discobox", keys: &["primary+alt+up"] },
-    Nav { id: "nav.sidebar", label: "show discoboxes", keys: &["primary+b"] },
-];
-
-/// A command's desktop shortcuts: the spec's for a registry command, `NAV`'s for navigation.
+/// A command's desktop shortcuts, from the spec.
 pub fn bindings(spec: &Spec, id: &str) -> Vec<String> {
-    if let Some(c) = spec.command(id) {
-        return c.bindings.desktop.keys.clone();
-    }
-    NAV.iter().find(|n| n.id == id).map(|n| n.keys.iter().map(|k| k.to_string()).collect()).unwrap_or_default()
+    spec.command(id).map(|c| c.bindings.desktop.keys.clone()).unwrap_or_default()
 }
 
-/// What a command is called: the registry's label, or the navigation's.
-pub fn label_of(spec: &Spec, id: &str) -> Option<String> {
-    spec.command(id).map(|c| c.label.clone()).or_else(|| NAV.iter().find(|n| n.id == id).map(|n| n.label.to_string()))
-}
+/// What a command is called: the registry's label.
+pub fn label_of(spec: &Spec, id: &str) -> Option<String> { spec.command(id).map(|c| c.label.clone()) }
 
-/// The command a key press runs, if any: the spec's shortcuts, the app's navigation, then
-/// ⌘1–9 for tabs.
+/// The command a key press runs, if any.
 fn command_for(s: &State, ev: &KeyEvent) -> Option<String> {
-    for c in &s.spec.commands {
-        if c.bindings.desktop.keys.iter().any(|b| matches(b, ev)) {
-            return Some(c.id.clone());
-        }
-    }
-    for n in NAV {
-        if n.keys.iter().any(|b| matches(b, ev)) {
-            return Some(n.id.to_string());
-        }
-    }
-    for n in 1..=9 {
-        if matches(&format!("primary+{n}"), ev) {
-            return Some(format!("pane.goto.{}", n - 1));
-        }
-    }
-    None
+    s.spec.commands.iter().find(|c| c.bindings.desktop.keys.iter().any(|b| matches(b, ev))).map(|c| c.id.clone())
+}
+
+/// The gesture a key press is, if any, and the binding it matched: the spec's gestures, never a
+/// key written here.
+fn gesture_for<'a>(s: &'a State, ev: &KeyEvent) -> Option<(&'a str, &'a str)> {
+    s.spec.gestures.iter().find_map(|g| {
+        g.bindings.desktop.keys.iter().find(|b| matches(b, ev)).map(|b| (g.id.as_str(), b.as_str()))
+    })
 }
 
 /// A shortcut as the platform writes it: `⌘⇧T`, or `Ctrl+Shift+T`.
@@ -170,6 +145,13 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         }
         return true;
     }
+    // A tab by its number (the pane gesture): ⌘1 is the first. The binding's digit is its number.
+    if let Some(("pane", binding)) = gesture_for(s, ev)
+        && let Some(n) = binding.chars().last().and_then(|c| c.to_digit(10))
+    {
+        s.goto_pane(n.saturating_sub(1) as usize);
+        return true;
+    }
     if let Some(id) = command_for(s, ev) {
         // A shortcut with no modifier (Enter attaches, F2 renames) is the list's; in a pane the
         // key is the program's.
@@ -189,15 +171,16 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     true
 }
 
-fn list_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
-    match &ev.key {
-        Key::Up => s.cursor = s.cursor.saturating_sub(1),
-        Key::Down => s.cursor = (s.cursor + 1).min(s.boxes.len().saturating_sub(1)),
-        Key::Home => s.cursor = 0,
-        Key::End => s.cursor = s.boxes.len().saturating_sub(1),
-        Key::Enter => run_command(s, "attach", tx),
-        Key::Escape | Key::Right if s.live.is_some() => s.focus = Focus::Panes,
-        Key::ContextMenu => {
+/// The list's keys: the spec's gestures. Enter is attach's own shortcut, which runs before this.
+fn list_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
+    let Some((gesture, _)) = gesture_for(s, ev) else { return false };
+    match gesture {
+        "up" => s.cursor = s.cursor.saturating_sub(1),
+        "down" => s.cursor = (s.cursor + 1).min(s.boxes.len().saturating_sub(1)),
+        "first" => s.cursor = 0,
+        "last" => s.cursor = s.boxes.len().saturating_sub(1),
+        "back" if s.live.is_some() => s.focus = Focus::Panes,
+        "context menu" => {
             if let Some(b) = s.boxes.get(s.cursor) {
                 let id = b.id.clone();
                 s.open_menu(id, (260.0, 120.0 + s.cursor as f32 * 28.0));

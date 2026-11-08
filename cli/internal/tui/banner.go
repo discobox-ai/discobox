@@ -137,7 +137,7 @@ func (m *Model) bannerWanted(kind bannerKind, box console.Sandbox) bool {
 
 // bannerDismissKey dismisses the band on screen, behind the leader: b, for
 // the band.
-const bannerDismissKey = "b"
+var bannerDismissKey = leaderKey("dismiss")
 
 // bannerClose is the band's own dismiss button, at its right end, after the
 // key. Its width is the hit test's, so the two are one constant.

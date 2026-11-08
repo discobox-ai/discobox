@@ -45,15 +45,18 @@ import (
 // the issue is theirs to read and the comment is theirs to post, and neither
 // goes through the discobox or the server.
 
-const (
+var (
 	// issueKey opens the tab behind the leader, or focuses it when it is open.
 	// I for issue: free in the key map the list and the workspace share.
-	issueKey = "i"
+	issueKey = bareKey("issue")
 	// pullKey does the same for the pull request. P for pull request, and
 	// free in the same key map.
-	pullKey = "p"
+	pullKey = bareKey("pr")
 	// pullFilesKey turns a pull request's tab to its files changed, and back.
-	pullFilesKey = "f"
+	pullFilesKey = bareKey("files")
+)
+
+const (
 	// issueReadKey reads the issue or pull request again, now.
 	issueReadKey = "r"
 	// issuePostKey posts the comment being written. Enter is a newline in a

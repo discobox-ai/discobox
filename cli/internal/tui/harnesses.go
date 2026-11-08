@@ -35,12 +35,12 @@ import (
 // harnessesKey opens and closes the screen. It is a function key because the
 // prompt takes every letter as text and the discobox list has spent them on its
 // own actions — which is the same reason help is on F1 and the editor on F2.
-const harnessesKey = "f3"
+var harnessesKey = bareKey("harnesses")
 
 // HarnessesKeyName is how that key is spelled to the user. It is exported
 // because `discobox configure` opens the window on this screen and says so in its
 // help, and a key named in two places is a key that ends up spelled two ways.
-const HarnessesKeyName = "F3"
+var HarnessesKeyName = keyLabel(harnessesKey)
 
 // harnessList is the screen's list: the harnesses, and where the cursor is in
 // them.

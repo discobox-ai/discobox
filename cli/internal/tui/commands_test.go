@@ -13,33 +13,43 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-// Lifecycle and interaction keys are registered from the descriptors. A new
-// action cannot quietly acquire a shortcut without searchable metadata.
+// Every key the list, the tree, the window's leader and the panes bind is the
+// registry's (ADR 26-11-06-671 §4, extended to every frontend by 26-11-07-598
+// §3): a command's, or a gesture's, which the registry declares as one. A
+// screen's own keys (an issue tab, the audit screen, a dialog) are that
+// screen's, and not read here. A new action cannot quietly acquire a
+// shortcut without searchable metadata, and a pane cannot bind a key the
+// registry does not hand it.
 func TestConsoleCommandBindingCoverage(t *testing.T) {
-	keys := map[string]bool{}
-	for _, c := range console.Commands() {
-		b := c.Bindings.TUI
-		for _, key := range slices.Concat(b.Keys, b.Leader, b.Menu) {
+	keys, ids := map[string]bool{}, map[string]bool{}
+	note := func(b console.TUIBinding) {
+		for _, seq := range b.Leader {
+			for _, key := range seq {
+				keys[key] = true
+			}
+		}
+		for _, key := range slices.Concat(b.Keys, b.Chords, b.Menu) {
 			keys[key] = true
 		}
 	}
+	for _, c := range console.Commands() {
+		note(c.Bindings.TUI)
+		ids[c.ID] = true
+	}
+	for _, g := range console.Gestures() {
+		note(g.Bindings.TUI)
+	}
 	for _, page := range treePages {
-		if !keys[page.key] {
-			t.Errorf("tree binding %s has no command", page.key)
+		if !ids[page.id] {
+			t.Errorf("tree entry %q opens %s, which is no command", page.label, page.id)
 		}
 	}
 
-	// Only cursor motion, selection and terminal forwarding are gestures. Real
-	// verbs must be described even when a handwritten window dispatch owns them.
-	gestures := map[string]bool{}
-	for _, key := range []string{"down", "up", "left", "right", "j", "k", "h", "l", "pgdown", "pgup", "home", "end", "g", "G", "esc", "tab", "shift+tab", "V", " ", "c", "enter", "ctrl+c", boxUpKey, boxDownKey} {
-		gestures[key] = true
-	}
-	constants := map[string]string{}
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
+	constants := map[string]string{}
 	parsed := map[string]*ast.File{}
 	for _, path := range files {
 		if strings.HasSuffix(path, "_test.go") {
@@ -55,17 +65,16 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 			if !ok || len(spec.Names) != 1 || len(spec.Values) != 1 {
 				return true
 			}
-			if literal, ok := spec.Values[0].(*ast.BasicLit); ok && literal.Kind == token.STRING {
-				value, _ := strconv.Unquote(literal.Value)
+			if value, ok := registryKey(spec.Values[0]); ok {
 				constants[spec.Names[0].Name] = value
 			}
 			return true
 		})
 	}
+	// A key is a literal, a name for one, or read from the registry.
 	resolve := func(expr ast.Expr) (string, bool) {
-		if lit, ok := expr.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-			value, err := strconv.Unquote(lit.Value)
-			return value, err == nil
+		if value, ok := registryKey(expr); ok {
+			return value, true
 		}
 		if id, ok := expr.(*ast.Ident); ok {
 			value, ok := constants[id.Name]
@@ -79,8 +88,8 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 			t.Errorf("unclassified computed window binding in %s", where)
 			return
 		}
-		if !keys[key] && !gestures[key] {
-			t.Errorf("window binding %q in %s has no command descriptor or gesture classification", key, where)
+		if !keys[key] {
+			t.Errorf("window binding %q in %s is neither a command's nor a gesture's in the registry", key, where)
 		}
 	}
 	isKey := func(expr ast.Expr) bool {
@@ -94,6 +103,21 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 		}
 		return false
 	}
+	// What the leader's key runs, the window answers by command ID.
+	isID := func(expr ast.Expr) bool {
+		id, ok := expr.(*ast.Ident)
+		return ok && id.Name == "id"
+	}
+	checkID := func(expr ast.Expr, where string) {
+		lit, ok := expr.(*ast.BasicLit)
+		if !ok {
+			return
+		}
+		id, _ := strconv.Unquote(lit.Value)
+		if !ids[id] {
+			t.Errorf("%s answers %q, which is no command", where, id)
+		}
+	}
 	for _, path := range []string{"model.go", "tree.go"} {
 		for _, decl := range parsed[path].Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -101,11 +125,15 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 				continue
 			}
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				if sw, ok := n.(*ast.SwitchStmt); ok && sw.Tag != nil && isKey(sw.Tag) {
+				if sw, ok := n.(*ast.SwitchStmt); ok && sw.Tag != nil {
 					for _, stmt := range sw.Body.List {
-						clause := stmt.(*ast.CaseClause)
-						for _, expr := range clause.List {
-							check(expr, fn.Name.Name)
+						for _, expr := range stmt.(*ast.CaseClause).List {
+							switch {
+							case isKey(sw.Tag):
+								check(expr, fn.Name.Name)
+							case isID(sw.Tag):
+								checkID(expr, fn.Name.Name)
+							}
 						}
 					}
 				}
@@ -115,12 +143,19 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 							check(bin.Y, fn.Name.Name)
 						}
 					}
+					if isID(bin.X) {
+						checkID(bin.Y, fn.Name.Name)
+					}
 				}
 				return true
 			})
 		}
 	}
 
+	// A pane binds only what paneOptions reads out of the registry: a leader
+	// sequence's key, a leaderless chord, and the one chord map per leading
+	// key it gathers them into. A key written into a binding by hand fails
+	// here.
 	ast.Inspect(parsed["pane.go"], func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -134,75 +169,119 @@ func TestConsoleCommandBindingCoverage(t *testing.T) {
 		case "WithPrefixBinding", "WithRepeatingPrefixBinding", "WithBinding":
 			switch arg := call.Args[0].(type) {
 			case *ast.IndexExpr:
-				// The registry's own leader sequences (console.Commands).
-				leader, ok := arg.X.(*ast.Ident)
-				if !ok || leader.Name != "leader" {
-					t.Error("unclassified computed prefix binding")
+				if seq, ok := arg.X.(*ast.Ident); !ok || seq.Name != "seq" {
+					t.Errorf("%s binds a key that is not a registry sequence's", sel.Sel.Name)
 				}
-			case *ast.CallExpr:
-				selector, ok := arg.Fun.(*ast.SelectorExpr)
-				if !ok || selector.Sel.Name != "Itoa" {
-					t.Error("unclassified computed prefix binding")
+			case *ast.Ident:
+				if arg.Name != "chord" {
+					t.Errorf("%s binds %s, which is not a registry chord", sel.Sel.Name, arg.Name)
 				}
 			default:
-				check(arg, sel.Sel.Name)
+				t.Errorf("%s binds a key written by hand", sel.Sel.Name)
 			}
 		case "WithPrefixChord":
-			// One generated chord map joins descriptor sequences with numeric service
-			// navigation. A new handwritten chord must join that registry instead.
 			lead, ok := call.Args[0].(*ast.Ident)
-			if !ok || lead.Name != "lead" {
-				t.Error("handwritten chord bypasses command registry")
-			}
-			bindings, ok := call.Args[1].(*ast.Ident)
-			if !ok || bindings.Name != "bindings" {
-				t.Error("handwritten chord bindings bypass command registry")
+			bindings, ok2 := call.Args[1].(*ast.Ident)
+			if !ok || !ok2 || lead.Name != "lead" || bindings.Name != "bindings" {
+				t.Error("a handwritten chord bypasses the registry")
 			}
 		}
 		return true
 	})
-
 }
 
-// The window's own key constants, which its hints, help and menus still name,
-// are the registry's bindings: a key changed in the registry and not here
-// would move the binding while every hint went on naming the old key.
-func TestTheWindowsKeysAreTheRegistrys(t *testing.T) {
-	type binding struct{ keys, leader, menu []string }
-	for id, want := range map[string]binding{
-		"review config": {keys: []string{harnessChangesKey}, leader: []string{harnessChangesKey}},
-		"settings":      {keys: []string{settingsKey}, leader: []string{settingsKey}},
-		"tools":         {keys: []string{toolsKey}, leader: []string{toolsKey}},
-		"issue":         {keys: []string{issueKey}, leader: []string{issueKey}},
-		"pr":            {keys: []string{pullKey}, leader: []string{pullKey}},
-		"audit":         {leader: []string{auditKey}},
-		"credentials":   {keys: []string{secretsKey}, leader: []string{secretsKey}},
-		"harnesses":     {keys: []string{harnessesKey}, leader: []string{harnessesKey}},
-		"quit":          {keys: []string{paneQuitKey}, leader: []string{paneQuitKey}},
-		"all":           {menu: []string{boxMenuKey, allBoxesKey}},
-		"services":      {leader: []string{paneServicesKey, paneServicesMenuKey}},
-		"requests":      {keys: []string{credentialsKey}, leader: []string{credentialsLeaderKey}},
-		"rejections":    {keys: []string{rejectedKey}, leader: []string{rejectedKey}},
-		"files":         {keys: []string{pullFilesKey}, leader: []string{pullFilesKey}},
-		"options":       {keys: []string{optionsKey}},
-		"repaint":       {keys: []string{repaintKey}},
-		"terminal":      {leader: []string{paneTerminalKey}},
-		"end":           {leader: []string{paneEndKey}},
-		"maximize":      {leader: []string{paneZoomKey}},
-		"detach":        {leader: []string{paneDetachAlt}},
-		"mouse":         {leader: []string{paneMouseKey}},
-		"actions":       {keys: []string{boxMenuKey}, leader: []string{boxMenuKey}},
-		"dismiss":       {leader: []string{bannerDismissKey}},
-		"palette":       {keys: []string{":"}, leader: []string{paletteKey}},
-	} {
-		c, ok := console.Lookup(id)
+// registryKey is a key an expression spells, when it is one: a string
+// literal, or one of the window's reads of the registry (bareKey and its
+// neighbors), evaluated.
+func registryKey(expr ast.Expr) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		if e.Kind != token.STRING {
+			return "", false
+		}
+		value, err := strconv.Unquote(e.Value)
+		return value, err == nil
+	case *ast.IndexExpr:
+		call, ok := e.X.(*ast.CallExpr)
+		idx, ok2 := e.Index.(*ast.BasicLit)
+		if !ok || !ok2 || len(call.Args) != 1 {
+			return "", false
+		}
+		fn, ok := call.Fun.(*ast.Ident)
+		arg, ok3 := call.Args[0].(*ast.BasicLit)
+		if !ok || !ok3 || fn.Name != "leaderSeq" {
+			return "", false
+		}
+		id, _ := strconv.Unquote(arg.Value)
+		i, _ := strconv.Atoi(idx.Value)
+		return leaderSeq(id)[i], true
+	case *ast.CallExpr:
+		fn, ok := e.Fun.(*ast.Ident)
+		if !ok || len(e.Args) != 1 {
+			return "", false
+		}
+		arg, ok := e.Args[0].(*ast.BasicLit)
 		if !ok {
-			t.Errorf("no command %s", id)
+			return "", false
+		}
+		id, _ := strconv.Unquote(arg.Value)
+		read := map[string]func(string) string{"bareKey": bareKey, "leaderKey": leaderKey, "chordKey": chordKey, "menuKey": menuKey}[fn.Name]
+		if read == nil {
+			return "", false
+		}
+		return read(id), true
+	}
+	return "", false
+}
+
+// The help is generated from the registry: every command the window binds is
+// named there by the keys the registry gives it — its list key, and its
+// sequence after the leader — so a command added with a key is in the help
+// without anyone writing it in, and a key moved in the registry moves there.
+func TestTheHelpNamesEveryBoundCommand(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	// The keys the help's rows name: each row's key column, `    F1 / ?   …`,
+	// split where it offers more than one.
+	named := map[string]bool{}
+	for _, line := range strings.Split(m.helpText(), "\n") {
+		if !strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "     ") {
 			continue
 		}
-		b := c.Bindings.TUI
-		if !slices.Equal(b.Keys, want.keys) || !slices.Equal(b.Leader, want.leader) || !slices.Equal(b.Menu, want.menu) {
-			t.Errorf("%s: the registry binds %+v, the window's keys are %+v", id, b, want)
+		column, _, _ := strings.Cut(strings.TrimPrefix(line, "    "), "  ")
+		for _, alt := range strings.Split(column, " / ") {
+			for _, key := range strings.Split(alt, " or ") {
+				named[key] = true
+			}
 		}
+	}
+	for _, c := range console.Commands() {
+		b := c.Bindings.TUI
+		if len(b.Keys) > 0 && !named[keyLabel(b.Keys[0])] {
+			t.Errorf("no row of the help is %s's key %s", c.ID, keyLabel(b.Keys[0]))
+		}
+		if len(b.Leader) > 0 && !named[m.leaderKeys(c.ID)] {
+			t.Errorf("no row of the help is %s's %s", c.ID, m.leaderKeys(c.ID))
+		}
+		for _, chord := range b.Chords {
+			if !named[keyLabel(chord)] {
+				t.Errorf("no row of the help is %s's chord %s", c.ID, keyLabel(chord))
+			}
+		}
+	}
+	for _, id := range []string{"pane", "service"} {
+		if !named[m.gestureKeys(id)] {
+			t.Errorf("no row of the help is the %s gesture's %s", id, m.gestureKeys(id))
+		}
+	}
+}
+
+// The palette spells a command's binding the way the help does.
+func TestThePaletteSpellsBindingsLikeTheHelp(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	if got, want := m.commandBinding(command("previous box")), m.leaderKeys("previous box"); got != want || !strings.Contains(got, "↑") {
+		t.Errorf("previous box is bound as %q, want %q", got, want)
+	}
+	if got := m.commandBinding(command("harnesses")); got != "F3" {
+		t.Errorf("harnesses is bound as %q, want F3", got)
 	}
 }

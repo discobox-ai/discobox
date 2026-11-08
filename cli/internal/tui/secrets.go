@@ -31,10 +31,10 @@ import (
 // secretsKey opens the screen, after F1 help, F2 the editor and F3 the
 // harnesses — the prompt takes every letter, so a screen of its own goes on a
 // function key.
-const secretsKey = "f4"
+var secretsKey = bareKey("credentials")
 
 // SecretsKeyName is how that key is spelled to the user.
-const SecretsKeyName = "F4"
+var SecretsKeyName = keyLabel(secretsKey)
 
 // secretList is the screen's list: the project's secrets and where the cursor
 // is in them.

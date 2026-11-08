@@ -26,7 +26,7 @@ func (s servers) ForServer(name string) DataSource {
 // alias two commands share would make the palette's space completion
 // ambiguous (ADR 26-11-06-671 §4).
 func TestEveryCommandIsDescribed(t *testing.T) {
-	ids, bare, aliases := map[string]bool{}, map[string]string{}, map[string]string{}
+	ids, aliases := map[string]bool{}, map[string]string{}
 	for _, c := range Commands() {
 		if c.ID == "" || c.Label == "" || c.Detail == "" || len(c.Aliases) == 0 {
 			t.Fatalf("incomplete command: %+v", c)
@@ -37,12 +37,6 @@ func TestEveryCommandIsDescribed(t *testing.T) {
 		ids[c.ID] = true
 		if c.Aliases[0] != c.Label {
 			t.Errorf("%s: the label is not its first alias", c.ID)
-		}
-		for _, key := range c.Bindings.TUI.Keys {
-			if old, ok := bare[key]; ok {
-				t.Fatalf("duplicate binding %s for %s and %s", key, old, c.ID)
-			}
-			bare[key] = c.ID
 		}
 		for _, alias := range c.Aliases {
 			alias = strings.ToLower(alias)
@@ -55,23 +49,99 @@ func TestEveryCommandIsDescribed(t *testing.T) {
 			t.Errorf("%s: a lifecycle command takes a box and has a list key", c.ID)
 		}
 	}
+	for _, g := range Gestures() {
+		if g.ID == "" || g.Label == "" {
+			t.Fatalf("incomplete gesture: %+v", g)
+		}
+		if ids[g.ID] {
+			t.Fatalf("gesture %s has a command's ID", g.ID)
+		}
+		ids[g.ID] = true
+	}
+}
+
+// No key reaches two things: in the TUI a bare key, a sequence after the
+// leader and a leaderless chord each name one command or gesture, and so does
+// a desktop chord. A sequence after the leader is one key or a chord of two,
+// and a chord's first key leads nothing else.
+func TestEveryBindingIsUnambiguous(t *testing.T) {
+	type bound struct {
+		id string
+		b  Bindings
+	}
+	var all []bound
+	for _, c := range Commands() {
+		all = append(all, bound{c.ID, c.Bindings})
+	}
+	for _, g := range Gestures() {
+		all = append(all, bound{g.ID, g.Bindings})
+	}
+	bare, leader, chords, desk := map[string]string{}, map[string]string{}, map[string]string{}, map[string]string{}
+	claim := func(layer map[string]string, key, id, what string) {
+		if old, ok := layer[key]; ok && old != id {
+			t.Errorf("%s %q binds both %s and %s", what, key, old, id)
+		}
+		layer[key] = id
+	}
+	leads := map[string]bool{}
+	for _, x := range all {
+		for _, key := range x.b.TUI.Keys {
+			claim(bare, key, x.id, "the bare key")
+		}
+		for _, seq := range x.b.TUI.Leader {
+			if len(seq) == 0 || len(seq) > 2 {
+				t.Errorf("%s: a leader sequence of %d keys", x.id, len(seq))
+				continue
+			}
+			if len(seq) == 2 {
+				leads[seq[0]] = true
+			}
+			claim(leader, strings.Join(seq, " "), x.id, "the leader sequence")
+		}
+		for _, key := range x.b.TUI.Chords {
+			claim(chords, key, x.id, "the chord")
+		}
+		for _, key := range x.b.Desktop.Keys {
+			claim(desk, key, x.id, "the desktop chord")
+		}
+	}
+	for lead := range leads {
+		if id, ok := leader[lead]; ok {
+			t.Errorf("the leader's %q both runs %s and leads a chord", lead, id)
+		}
+	}
+}
+
+// A numbered gesture's every sequence ends in its number.
+func TestNumberedGesturesEndInADigit(t *testing.T) {
+	for _, id := range []string{"pane", "service"} {
+		g, ok := LookupGesture(id)
+		if !ok {
+			t.Fatalf("no gesture %s", id)
+		}
+		for _, seq := range g.Bindings.TUI.Leader {
+			if last := seq[len(seq)-1]; len(last) != 1 || last[0] < '0' || last[0] > '9' {
+				t.Errorf("%s: %v does not end in a digit", id, seq)
+			}
+		}
+		for _, chord := range g.Bindings.Desktop.Keys {
+			if last := chord[len(chord)-1]; last < '0' || last > '9' {
+				t.Errorf("%s: %q does not end in a digit", id, chord)
+			}
+		}
+	}
 }
 
 // A desktop chord is written with primary, and never adds shift to it: off
 // macOS primary is Ctrl+Shift, so the two would be the same chord (ADR
 // 26-11-07-598 §2).
 func TestDesktopBindingsUsePrimaryWithoutShift(t *testing.T) {
-	seen := map[string]string{}
 	for _, c := range Commands() {
 		for _, chord := range c.Bindings.Desktop.Keys {
 			parts := strings.Split(chord, "+")
 			if slices.Contains(parts, "primary") && slices.Contains(parts, "shift") {
 				t.Errorf("%s: %q adds shift to primary", c.ID, chord)
 			}
-			if old, ok := seen[chord]; ok {
-				t.Errorf("%q binds both %s and %s", chord, old, c.ID)
-			}
-			seen[chord] = c.ID
 		}
 	}
 }
@@ -131,6 +201,15 @@ func TestTheContextRulesCommandsOut(t *testing.T) {
 		{"requests with none waiting", Context{}, "requests", []Sandbox{mine}, "nothing waiting on this discobox"},
 		{"requests waiting", Context{Waiting: func(Sandbox) bool { return true }}, "requests", []Sandbox{mine}, ""},
 		{"a box command on an archived box", Context{}, "tools", []Sandbox{{ID: "a", State: StateArchived}}, "the box is archived — unarchive it first"},
+		{"a pane walk with no workspace", Context{}, "next pane", nil, "requires a workspace"},
+		{"a pane walk from a page beside the tree", Context{Tree: true, TreeShown: true, PageShown: true}, "previous pane", nil, ""},
+		{"the previous pane from a page with the list put away", Context{Tree: true, PageShown: true, HasWorkspace: true}, "previous pane", nil, "there is no list beside this page"},
+		{"the next pane from the list beside a page, no workspace", Context{Tree: true, TreeShown: true, ListHasKeys: true}, "next pane", nil, ""},
+		{"the next pane over a page", Context{Tree: true, PageShown: true, HasWorkspace: true}, "next pane", nil, "the page is in front of the panes; Esc puts it away"},
+		{"the next pane from the list beside a workspace", Context{Tree: true, ListHasKeys: true, HasWorkspace: true}, "next pane", nil, ""},
+		{"the previous pane from the list", Context{Tree: true, ListHasKeys: true, HasWorkspace: true}, "previous pane", nil, "the list is the leftmost; there is nothing left of it"},
+		{"a box walk with no list beside the workspace", Context{HasWorkspace: true}, "next box", nil, "there is no list beside a workspace in this window"},
+		{"a box walk beside the list", Context{HasWorkspace: true, Tree: true}, "previous box", nil, ""},
 		{"a box command on the workspace's own box", Context{Workspace: &Sandbox{ID: "a"}}, "audit", []Sandbox{{ID: "a", State: StateError}}, ""},
 	}
 	for _, tt := range tests {
@@ -193,6 +272,11 @@ func (f *recorder) Detach() string         { return f.call("detach") }
 func (f *recorder) ToggleMouse() string    { return f.call("mouse") }
 func (f *recorder) Actions() string        { return f.call("actions") }
 func (f *recorder) DismissBanner() string  { return f.call("dismiss") }
+func (f *recorder) NextPane() string       { return f.call("next pane") }
+func (f *recorder) PreviousPane() string   { return f.call("previous pane") }
+func (f *recorder) NextBox() string        { return f.call("next box") }
+func (f *recorder) PreviousBox() string    { return f.call("previous box") }
+func (f *recorder) ToggleSidebar() string  { return f.call("sidebar") }
 
 // Every command dispatches to a flow of its own: a command in the registry
 // that no frontend method answers would do nothing at all.
@@ -200,7 +284,7 @@ func TestEveryCommandDispatches(t *testing.T) {
 	r := NewRegistry(servers{})
 	box := Sandbox{ID: "sbx_one", State: StateRunning, HasRuntime: true, Upgrade: true,
 		Repository: "https://github.com/acme/foo", Tags: []string{"issue=1", "pr=2"}}
-	ctx := Context{WorkspaceShown: true, PaneFocused: true, Tree: true, TreeFits: true,
+	ctx := Context{HasWorkspace: true, WorkspaceShown: true, PaneFocused: true, Tree: true, TreeFits: true,
 		Waiting: func(Sandbox) bool { return true }, Refused: func(Sandbox) bool { return true }}
 	flows := map[string]string{}
 	for _, c := range Commands() {
@@ -295,5 +379,22 @@ func TestAttachWhyNamesTheObstacle(t *testing.T) {
 				t.Fatalf("why = %q, want it to mention %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// Moving focus is not a use (671 §6): a walk pressed in a run would otherwise
+// put itself at the top of the palette.
+func TestAWalkIsNotAUse(t *testing.T) {
+	r := NewRegistry(servers{})
+	ctx := Context{HasWorkspace: true, Tree: true, WorkspaceShown: true, PaneFocused: true}
+	for _, id := range []string{"next pane", "previous pane", "next box", "previous box"} {
+		Dispatch(r, Frontend[string](&recorder{}), ctx, id, nil)
+		if n := r.Usage(id); n != 0 {
+			t.Errorf("%s counted %d uses", id, n)
+		}
+	}
+	Dispatch(r, Frontend[string](&recorder{}), ctx, "maximize", nil)
+	if r.Usage("maximize") != 1 {
+		t.Error("maximize was not counted")
 	}
 }

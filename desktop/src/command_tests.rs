@@ -82,3 +82,38 @@ fn every_registry_command_is_answered_or_in_the_ledger() {
         assert_eq!(says_lacking, !answered, "{id}: {:?}", rt.state.message);
     }
 }
+
+// Every shortcut is the registry's (ADR 26-11-07-598 §3): the app matches a key press only
+// against the spec's bindings — a command's, or a gesture's — so one written here instead, as
+// the navigation and the ⌘-digits once were, fails.
+#[test]
+fn no_shortcut_is_written_outside_the_spec() {
+    let files = [
+        ("keys.rs", include_str!("keys.rs")),
+        ("main.rs", include_str!("main.rs")),
+        ("view.rs", include_str!("view.rs")),
+        ("overlay.rs", include_str!("overlay.rs")),
+    ];
+    for (file, src) in files {
+        for (i, line) in src.lines().enumerate() {
+            let code = line.split("//").next().unwrap();
+            // A spec binding is converted by its `primary+` prefix (menu_shortcut); a chord is
+            // something more after it.
+            let chord = code.contains("\"primary+") && !code.contains("(\"primary+\")");
+            let by_hand = code.contains("matches(\"") || code.contains("matches(&format!") || chord;
+            assert!(!by_hand, "{file}:{}: a shortcut written by hand: {line}", i + 1);
+        }
+    }
+    let keys = include_str!("keys.rs");
+    let list_key = keys.split("fn list_key").nth(1).unwrap().split("\nfn ").next().unwrap();
+    assert!(!list_key.contains("Key::"), "the list matches a key by hand rather than by a gesture");
+    // And every gesture the spec binds here is one the app answers: an arm of list_key's match,
+    // or on_key's numbered gesture.
+    let on_key = keys.split("pub fn on_key").nth(1).unwrap().split("\nfn ").next().unwrap();
+    let rt = runtime();
+    for g in rt.state.spec.gestures.iter().filter(|g| !g.bindings.desktop.keys.is_empty()) {
+        let answered = list_key.contains(&format!("\"{}\" =>", g.id)) || list_key.contains(&format!("\"{}\" if", g.id))
+            || on_key.contains(&format!("Some((\"{}\"", g.id));
+        assert!(answered, "the gesture {} is bound but not answered", g.id);
+    }
+}

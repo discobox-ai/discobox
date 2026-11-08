@@ -151,14 +151,16 @@ flowchart LR
   and answered by the window from the list, a page, or a workspace still
   opening (`windowWalks`) — never from the composer, where the leader is not
   armed either. A pane that reads its own keys still hands them to termpane
-  (`paneReserved`), and a window with no tree to walk hands them back to the
-  program (`switchBoxMsg.chord`). Ctrl-Shift is the one modifier set nothing
+  (`paneReserved`), and where the registry says the walk cannot act — a
+  window with no tree — the pane hands the chord back to the program
+  (`consoleCommandMsg.chord`). Ctrl-Shift is the one modifier set nothing
   in a box reaches for, because a classic terminal cannot encode it: there it
   arrives as Ctrl-K/J, which stay the program's, and the walk is the
   leader's alone.
-- **The tree is the console's alone.** The leader's ↑/↓ do nothing in a
+- **The tree is the console's alone.** The leader's ↑/↓ move nothing in a
   window without one — a window that is one command's own, or one too
-  narrow (`switchBox`).
+  narrow — and say so on the status line: the registry rules the walk out
+  there, and `Dispatch` reports why rather than a key that looks broken.
 - **Beside the tree there is no detach** (`detaches`). Detaching meant going
   back to the list, and the list is already on screen: a box is left by
   switching to another, and the window by `leader q`. The key, its hints and
@@ -176,7 +178,8 @@ flowchart LR
   where the workspace header has it. A page covers the live workspace without
   closing it; choosing the live box again puts the page away (`showLive`).
   An entry shows its key only where the key works.
-- **The tree's entries are leader keys too** (`treePageMsg`, `treeEntry`):
+- **The tree's entries are leader keys too** (the `new`, `harnesses` and
+  `credentials` commands, `treeEntry`):
   `leader n`, `leader F3`/`F4` open the card or a page from a pane, the
   audit screen, a workspace opening, or another page — wherever the window has
   a tree, and the bare key belongs to something else. The bare keys and the
@@ -3573,10 +3576,22 @@ ones, and the action menu is its lifecycle commands (`actions`, over
 `console.Lifecycle`), so batch menus and single-box palette execution use the
 same rules. The commandContext the window hands the registry is where the
 window's navigation meets it: workspace, pane, the list's keys beside it, tree and one-box window.
-Coverage enumerates handwritten window key handling and pane registrations;
-only editing, motion, selection and terminal forwarding are gestures, and a
-binding without a registry entry fails. Targets are resolved again before
-dispatch.
+
+Every key the list, the tree, the window's leader and a workspace's panes
+bind is the registry's (ADR 26-11-07-598 §3); a screen's own keys — an
+issue tab's, the audit screen's, a page's, a dialog's — are still that
+screen's.
+`paneOptions` builds a pane's bindings only from it: each command's leader
+sequences (repeating where the registry says so), its leaderless chords —
+handed back to the program where the command cannot act — and the numbered
+gestures for the pane and service digits. The window's own leader handling
+outside a pane answers the key by its command ID (`leaderCommand`), and the
+key names the hints, help and menus use (`toolsKey`, `paneZoomKey`, …) are
+read from the registry (`bareKey`, `leaderKey`), never written. The help's
+command rows are generated from it (`helpRows`). Coverage fails a key in the
+list, tree or window handling that is neither a command's nor a declared
+gesture's, a pane binding not read from the registry, and a command whose
+keys the help does not name. Targets are resolved again before dispatch.
 
 A palette holds a query, a stable result identity and at most one chip: a
 command or a server-and-box reference. Enter navigates to an unchipped box

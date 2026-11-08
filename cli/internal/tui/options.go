@@ -378,11 +378,11 @@ const sourceHint = "SOURCE · where the discobox is cut from · Enter opens the 
 // optionsKey opens the run options panel and closes it. It is a window key
 // rather than each screen's own — see updateKey — so the panel is one press
 // away from wherever the window is, and one press from being put away again.
-const optionsKey = "ctrl+o"
+var optionsKey = bareKey("options")
 
 // harnessesHint is what the harness row says while nothing has been chosen on
 // it.
-const harnessesHint = "--harness · " + HarnessesKeyName + " enables, disables and picks the default harness"
+var harnessesHint = "--harness · " + HarnessesKeyName + " enables, disables and picks the default harness"
 
 // setHarnesses rebuilds the harness choices from the harnesses the window knows
 // about. The project default leads, so the common case is index zero and emits

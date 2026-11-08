@@ -36,11 +36,12 @@ import (
 // this screen's (DataSource.FollowAudit): the two are one reader, so what the
 // console shows and what the command prints cannot drift apart.
 
+// auditKey opens the screen behind the leader. A for audit: the workspace
+// carries the list's action keys, and none of them is A — on the list it
+// only shows the archived rows, which is not a key the workspace has.
+var auditKey = leaderKey("audit")
+
 const (
-	// auditKey opens the screen behind the leader. A for audit: the workspace
-	// carries the list's action keys, and none of them is A — on the list it
-	// only shows the archived rows, which is not a key the workspace has.
-	auditKey = "A"
 	// auditHistory is how many records the screen holds before it lets go of
 	// the oldest. A followed trail grows for as long as the screen is up, and
 	// a busy discobox records a request a second; the record itself is still

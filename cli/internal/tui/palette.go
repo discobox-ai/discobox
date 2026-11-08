@@ -15,7 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-const paletteKey = "k"
+var paletteKey = leaderKey("palette")
 
 type openPaletteMsg struct{}
 

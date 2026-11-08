@@ -1263,8 +1263,8 @@ func TestTheRejectedKeyIsCapitalK(t *testing.T) {
 	if rejectedKey != "K" {
 		t.Fatalf("rejectedKey = %q, want K", rejectedKey)
 	}
-	if delta, ok := boxStep("up"); !ok || delta != -1 {
-		t.Fatalf("up = %d %v, want the box above", delta, ok)
+	if id := leaderCommand("up"); id != "previous box" {
+		t.Fatalf("the leader's up runs %q, want the box above", id)
 	}
 }
 
@@ -1805,6 +1805,130 @@ func TestTheOpenWorkspacesBoxNeedsNoAttachToShow(t *testing.T) {
 		}
 		if strings.Contains(m.status, "no container") {
 			t.Fatalf("status = %q, want no attach refusal for the open workspace's box", m.status)
+		}
+	})
+}
+
+// The palette's next pane and previous pane are the leader's: with the list
+// holding the keys beside a workspace the next pane hands them back, and from
+// a page beside the tree the previous one is the tree. They are one
+// implementation (Model.NextPane, PreviousPane), so the two ways in agree.
+func TestThePalettesPaneWalkIsTheLeaders(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+
+		d.leader("h")
+		if !m.listHasKeys() {
+			t.Fatal("the leader's h should give the list the keys")
+		}
+		m.dispatch("next pane")
+		if m.listHasKeys() || !m.inPanes() || m.focus != focusPane {
+			t.Fatalf("listHasKeys %v, inPanes %v, focus %v; want the panes back", m.listHasKeys(), m.inPanes(), m.focus)
+		}
+
+		// From the list there is nothing further left: the workspace's own
+		// focus stays where it was.
+		d.leader("h")
+		before := m.onShells
+		m.dispatch("previous pane")
+		if !m.listHasKeys() || m.onShells != before {
+			t.Fatalf("listHasKeys %v, onShells %v; want the list keeping the keys and the panes untouched", m.listHasKeys(), m.onShells)
+		}
+		m.dispatch("next pane")
+
+		d.leader(harnessesKey)
+		d.wait("the harnesses", func() bool { return m.harnessesOpen })
+		// Over a page the panes are covered: the next pane moves nothing.
+		active := m.Terminals.Active
+		m.dispatch("next pane")
+		if !m.harnessesOpen || m.onShells != before || m.Terminals.Active != active || m.listHasKeys() {
+			t.Fatalf("harnesses %v, onShells %v; want the page in front and the panes untouched", m.harnessesOpen, m.onShells)
+		}
+		m.dispatch("previous pane")
+		if !m.listHasKeys() {
+			t.Fatal("previous pane from a page should give the tree the keys")
+		}
+	})
+}
+
+// With no workspace, a page opened from the home screen sits beside the list
+// all the same: the leader's h gives the list the keys, and its l — the next
+// pane — gives them back to the page.
+func TestTheNextPaneFromTheListGivesAPageItsKeysBack(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		m := New(t.Context(), ds)
+		m.logo = logo{}
+		d := newDriver(t, m)
+		d.start()
+		d.wait("the list", func() bool { return m.focus == focusList })
+		d.key(harnessesKey)
+		d.wait("the harnesses", func() bool { return m.harnessesOpen })
+		if m.hasWorkspace() || !m.treeShown() {
+			t.Fatalf("workspace %v, tree %v; want a page beside the list with no workspace", m.hasWorkspace(), m.treeShown())
+		}
+		d.leader(paneLeftKey)
+		if !m.listHasKeys() {
+			t.Fatal("the leader's h should give the list the keys")
+		}
+		d.leader(paneRightKey)
+		if m.listHasKeys() || !m.harnessesOpen {
+			t.Fatalf("listHasKeys %v, harnesses %v; want the page with the keys again", m.listHasKeys(), m.harnessesOpen)
+		}
+
+		// Expanding the list closes the page, and with no workspace there is
+		// no tree left for the list to be in front in: it is the home
+		// screen's list again, with the keys.
+		d.leader(paneLeftKey)
+		d.leader(paneZoomKey)
+		if m.listFront || m.harnessesOpen || m.focus != focusList {
+			t.Fatalf("listFront %v, harnesses %v, focus %v; want the home screen's list", m.listFront, m.harnessesOpen, m.focus)
+		}
+	})
+}
+
+// The list expanded over the workspace still has the keys: the leader's l
+// collapses it and gives the panes the keys back, and the previous pane is
+// refused there rather than moving the focus of a workspace nobody can see.
+func TestTheNextPaneFromTheExpandedListGivesThePanesTheKeys(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.leader(paneLeftKey)
+		d.leader(paneZoomKey)
+		if !m.treeExpanded || !m.listFront {
+			t.Fatalf("expanded %v, listFront %v; want the whole home screen", m.treeExpanded, m.listFront)
+		}
+		before := m.onShells
+		m.dispatch("previous pane")
+		if !m.treeExpanded || !m.listFront || m.onShells != before {
+			t.Fatal("previous pane from the expanded list should move nothing")
+		}
+		d.leader(paneRightKey)
+		if m.treeExpanded || m.listFront || !m.inPanes() || m.focus != focusPane {
+			t.Fatalf("expanded %v, listFront %v, inPanes %v; want the panes back", m.treeExpanded, m.listFront, m.inPanes())
+		}
+	})
+}
+
+// A window narrowed past the tree while the list has the keys gives them back
+// to the panes: a list nobody can see keeps none.
+func TestNarrowingPastTheTreeGivesThePanesTheKeys(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		d.leader(paneLeftKey)
+		if !m.listHasKeys() {
+			t.Fatal("the leader's h should give the list the keys")
+		}
+		d.dispatch(tea.WindowSizeMsg{Width: treeMinScreen - 10, Height: 40})
+		if m.listFront || !m.inPanes() || m.focus != focusPane {
+			t.Fatalf("listFront %v, inPanes %v, focus %v; want the panes with the keys", m.listFront, m.inPanes(), m.focus)
 		}
 	})
 }

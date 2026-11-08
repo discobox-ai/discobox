@@ -30,10 +30,13 @@ the epic, and does not yet follow the ADRs everywhere:
   registry's commands by their IDs (`attach`, `shell`) with each frontend's
   bindings, the glyphs, and the design language's colour tokens in both
   palettes. The app draws the dark one (both, following the system, with
-  #803). Moving between panes and boxes is the app's own navigation
-  (`keys::NAV`), not the spec's (ADR 26-11-07-876 §2). A registry command the
-  app does not answer (`ANSWERED` in `main.rs`) says so, and has an entry in
-  the parity ledger.
+  #803). Every shortcut and every list key is the spec's: a registry
+  command's, moving between panes and boxes included, or a gesture's (the
+  list's cursor, ⌘1–9 for a tab). The menus and the palette keep their own
+  keys while they are open. Where focus goes is the app's own (ADR 26-11-07-876 §2); which key
+  moves it is the registry's, and `no_shortcut_is_written_outside_the_spec`
+  fails on one matched by hand. A registry command the app does not answer
+  (`ANSWERED` in `main.rs`) says so, and has an entry in the parity ledger.
 - **The look** uses Inter and the system's monospace face, and draws some of the
   TUI's characters (until #803).
 - **The CLI** finds the app with `--binary`, then `DISCOBOX_DESKTOP_BINARY`, then

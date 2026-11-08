@@ -38,15 +38,9 @@ const (
 	treeMinScreen = 90
 )
 
-// switchBoxMsg is the leader's ↑/↓ (or j for down), or a leaderless chord: move to
-// the discobox above or below in the tree.
-type switchBoxMsg struct {
-	delta int
-	// chord is the leaderless key that asked, which a pane bound with no
-	// prefix took from its program. A window with no tree to walk hands it
-	// back, so the binding takes nothing where it does nothing.
-	chord *tea.KeyPressMsg
-}
+// switchBoxMsg is the walk along the tree from a pane — the next box and the
+// previous box commands: move to the discobox above or below.
+type switchBoxMsg struct{ delta int }
 
 // treeShown reports whether the tree is drawn: in the workspace, or while one
 // is opening, and on a window wide enough to give it the cells. A window
@@ -136,26 +130,22 @@ func (m *Model) openPage(a treeAction) tea.Cmd {
 	return nil
 }
 
-// treePages are the tree's fixed entries under the list, in order. The first
-// is the new discobox card; the rest are pages, each on its function key.
+// treePages are the tree's fixed entries under the list, in order, each the
+// registry command that opens it. The first is the new discobox card; the
+// rest are pages, each on its function key.
 var treePages = []struct {
-	act        treeAction
-	label, key string
+	act       treeAction
+	label, id string
 }{
-	{treeNew, "+ new discobox", "n"},
-	{treeHarnesses, "  harnesses", harnessesKey},
-	{treeSecrets, "  secrets", secretsKey},
+	{treeNew, "+ new discobox", "new"},
+	{treeHarnesses, "  harnesses", "harnesses"},
+	{treeSecrets, "  secrets", "credentials"},
 }
 
-// treePageMsg is a tree entry's key behind the leader in a pane, so the
-// entries open from wherever the box is being typed at, not only from the
-// list.
-type treePageMsg struct{ act treeAction }
-
-// treePageFor is the tree entry a key opens, if any.
-func treePageFor(key string) (treeAction, bool) {
+// treePageOf is the tree entry a command opens, if any.
+func treePageOf(id string) (treeAction, bool) {
 	for _, p := range treePages {
-		if p.key == key {
+		if p.id == id {
 			return p.act, true
 		}
 	}
@@ -360,7 +350,7 @@ func (m *Model) treeKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	// The pages' keys open them right of the tree, from the list compact or
 	// expanded, and from a page — they are the way between the pages.
 	for _, p := range treePages[1:] {
-		if keyName(msg) == p.key && (m.listFront || m.treeExpanded || m.pageOpen()) {
+		if keyName(msg) == bareKey(p.id) && (m.listFront || m.treeExpanded || m.pageOpen()) {
 			return m.treeEntry(p.act)
 		}
 	}
@@ -390,7 +380,7 @@ func (m *Model) treeKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		m.backToPanes()
 		return nil, true
-	case "n":
+	case bareKey("new"):
 		m.openNew()
 		return nil, true
 	case "enter":
@@ -426,48 +416,16 @@ func (m *Model) syncWidth() bool {
 	return true
 }
 
-// boxStep is how far along the tree the leader plus a key moves: ↑ and ↓,
-// with j as an alias for down. The key is as the window's leader matching leaves it, with the
-// leader's own modifier already forgiven (updateKey).
-func boxStep(key string) (int, bool) {
-	switch key {
-	case "up":
-		return -1, true
-	case "down", "j":
-		return 1, true
-	}
-	return 0, false
-}
-
 // boxUpKey and boxDownKey walk the tree with no leader, from anywhere beside
-// it. They are Ctrl-Shift chords because nothing a box runs reaches for those:
-// a classic terminal cannot even encode them, and sends Ctrl-K and Ctrl-J
-// instead — which are not these keys, and go on to the program as before. So
-// on such a terminal the walk is the leader's ↑↓ alone. Every terminal that
-// speaks the Kitty keyboard protocol, which the window always asks for, sends
-// them as themselves.
-const (
-	boxUpKey   = "ctrl+shift+k"
-	boxDownKey = "ctrl+shift+j"
-)
-
-// boxChords are the leaderless chords as key presses, for the pane that binds
-// them to hand back where there is no tree to walk.
+// it: the previous and next box commands' chords (console's registry says
+// why they are Ctrl-Shift chords). On a terminal that cannot encode them the
+// walk is the leader's ↑↓ alone. Every terminal that speaks the Kitty
+// keyboard protocol, which the window always asks for, sends them as
+// themselves.
 var (
-	boxUpChord   = tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl | tea.ModShift}
-	boxDownChord = tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift}
+	boxUpKey   = chordKey("previous box")
+	boxDownKey = chordKey("next box")
 )
-
-// boxStepBare is how far along the tree a leaderless chord moves.
-func boxStepBare(msg tea.KeyPressMsg) (int, bool) {
-	switch msg.Keystroke() {
-	case boxUpKey:
-		return -1, true
-	case boxDownKey:
-		return 1, true
-	}
-	return 0, false
-}
 
 // switchBox moves the workspace to the discobox delta rows away in the tree.
 // It stops at the ends rather than wrapping, as moving between panes does.
@@ -848,10 +806,7 @@ func (m *Model) viewTree() string {
 		if m.zones.hovering(1, y, inner, 1) {
 			label = m.st.hover
 		}
-		k := p.key
-		if strings.HasPrefix(k, "f") && len(k) > 1 {
-			k = strings.ToUpper(k)
-		}
+		k := keyLabel(bareKey(p.id))
 		// A key is shown only where it works: all of them with the list's
 		// keys, and the function keys from a page too. See treeKey.
 		if !m.listFront && (!m.pageOpen() || p.act == treeNew) {
@@ -962,7 +917,7 @@ func (m *Model) viewNewCard() string {
 	if msg := m.statusMessage(inner); msg != "" {
 		parts = append(parts, msg)
 	}
-	parts = append(parts, m.st.dimText.Render(truncate("Enter creates · Shift-Tab harness · Ctrl-O options · Alt-E editor · Esc cancels", inner)))
+	parts = append(parts, m.st.dimText.Render(truncate("Enter creates · Shift-Tab harness · "+keyLabel(optionsKey)+" options · Alt-E editor · Esc cancels", inner)))
 	return m.st.dialog.Width(dialogWidth(m.width)).Render(strings.Join(parts, "\n"))
 }
 
@@ -975,7 +930,7 @@ func (m *Model) detaches() bool {
 
 // boxMenuKey, behind the leader, is the actions menu for the box on screen —
 // the menu `.` opens on a row of the list.
-const boxMenuKey = "."
+var boxMenuKey = bareKey("actions")
 
 // boxMenuMsg is the leader's boxMenuKey in a pane.
 type boxMenuMsg struct{}
@@ -1025,7 +980,7 @@ func (m *Model) boxMenu(box console.Sandbox) tea.Cmd {
 
 // allBoxesKey, in the box menu of a window opened on one box, turns it into
 // the whole window: see showAllBoxes.
-const allBoxesKey = "l"
+var allBoxesKey = menuKey("all")
 
 // showAllBoxes turns a window opened on one discobox — `discobox attach`, or
 // the run that made it — into the console: the tree beside the workspace,
@@ -1103,7 +1058,7 @@ func (m *Model) pageFrame(body []string) string {
 
 	quit := pressing(m.leader()+" "+paneQuitKey+" quit", m.leader(), paneQuitKey)
 	if m.focus == focusPrompt {
-		quit = pressing("Ctrl-C quit", "ctrl+c")
+		quit = keyed(keyLabel(quitAnywhereKey), quitAnywhereKey, "quit")
 	}
 	qw := lipgloss.Width(quit.text)
 	qx := max(m.width-1-boxPad-qw, 0)
@@ -1134,10 +1089,37 @@ func (m *Model) pageFrame(body []string) string {
 	return strings.Join(out, "\n")
 }
 
-// listHasKeys reports whether the list in the tree beside the window has
-// the keys, so nothing right of it does.
+// listHasKeys reports whether the list in the tree drawn beside the window
+// has the keys, so nothing right of it does: what the window's routing,
+// hints and status line read.
 func (m *Model) listHasKeys() bool {
 	return m.listFront && m.treeShown()
+}
+
+// dropStaleListFront ends the list's hold on the keys once there is no tree
+// for it to be in front in: a window narrowed past it, the last page closed
+// with no workspace behind (the expanded home screen closes the pages). With
+// something right of it, that gets the keys back — a list nobody can see
+// keeps none, or every key typed would go to it. With nothing, the list is
+// just the home screen's, and keeps them. layout runs it, after every key,
+// click and resize, so no path leaves the hold stale.
+func (m *Model) dropStaleListFront() {
+	if !m.listFront || m.treeAvailable() {
+		return
+	}
+	if m.hasWorkspace() || m.wsOpening || m.pageOpen() {
+		m.backToPanes()
+		return
+	}
+	m.listFront = false
+}
+
+// listInFront reports whether the list has the keys at all, drawn beside the
+// right side or expanded over it (or with a column maximized over it): what
+// the registry's rules read (console.Context.ListHasKeys), and what the next
+// pane hands back from. It is listHasKeys wherever the tree is drawn.
+func (m *Model) listInFront() bool {
+	return m.listFront && m.treeAvailable()
 }
 
 // treeBlocked reports whether something modal has the input: the tree is

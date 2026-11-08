@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "colors": {
     "brand": {
       "dark": "#9e4aa7",
@@ -176,8 +176,12 @@
             "a"
           ],
           "leader": [
-            "a"
+            [
+              "a"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -202,8 +206,12 @@
             "s"
           ],
           "leader": [
-            "s"
+            [
+              "s"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -228,8 +236,12 @@
             "H"
           ],
           "leader": [
-            "H"
+            [
+              "H"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -252,8 +264,12 @@
             "e"
           ],
           "leader": [
-            "e"
+            [
+              "e"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -278,8 +294,12 @@
             "E"
           ],
           "leader": [
-            "E"
+            [
+              "E"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -302,8 +322,12 @@
             "u"
           ],
           "leader": [
-            "u"
+            [
+              "u"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -326,8 +350,12 @@
             "R"
           ],
           "leader": [
-            "R"
+            [
+              "R"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -350,8 +378,12 @@
             "t"
           ],
           "leader": [
-            "t"
+            [
+              "t"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -374,8 +406,12 @@
             "T"
           ],
           "leader": [
-            "T"
+            [
+              "T"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -400,8 +436,12 @@
             "delete"
           ],
           "leader": [
-            "x"
+            [
+              "x"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -424,8 +464,12 @@
             "U"
           ],
           "leader": [
-            "U"
+            [
+              "U"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -448,8 +492,12 @@
             "P"
           ],
           "leader": [
-            "P"
+            [
+              "P"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -472,8 +520,12 @@
             "o"
           ],
           "leader": [
-            "o"
+            [
+              "o"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -496,8 +548,12 @@
             "i"
           ],
           "leader": [
-            "i"
+            [
+              "i"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -521,8 +577,12 @@
             "p"
           ],
           "leader": [
-            "p"
+            [
+              "p"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -543,8 +603,12 @@
         "tui": {
           "keys": [],
           "leader": [
-            "A"
+            [
+              "A"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -568,8 +632,12 @@
             "n"
           ],
           "leader": [
-            "n"
+            [
+              "n"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -595,8 +663,12 @@
             "f4"
           ],
           "leader": [
-            "f4"
+            [
+              "f4"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -619,8 +691,12 @@
             "f3"
           ],
           "leader": [
-            "f3"
+            [
+              "f3"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -641,11 +717,16 @@
       "bindings": {
         "tui": {
           "keys": [
-            "q"
+            "q",
+            "ctrl+c"
           ],
           "leader": [
-            "q"
+            [
+              "q"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -671,8 +752,12 @@
             "?"
           ],
           "leader": [
-            "f1"
+            [
+              "f1"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -695,8 +780,12 @@
             "r"
           ],
           "leader": [
-            "r"
+            [
+              "r"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -719,6 +808,8 @@
         "tui": {
           "keys": [],
           "leader": [],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -740,6 +831,8 @@
         "tui": {
           "keys": [],
           "leader": [],
+          "repeats": false,
+          "chords": [],
           "menu": [
             ".",
             "l"
@@ -763,9 +856,13 @@
         "tui": {
           "keys": [],
           "leader": [
-            "S",
-            "0"
+            [
+              "S",
+              "0"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -789,8 +886,12 @@
             "C"
           ],
           "leader": [
-            "g"
+            [
+              "g"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -814,8 +915,12 @@
             "K"
           ],
           "leader": [
-            "K"
+            [
+              "K"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -839,8 +944,12 @@
             "f"
           ],
           "leader": [
-            "f"
+            [
+              "f"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -863,6 +972,8 @@
             "A"
           ],
           "leader": [],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -886,6 +997,8 @@
             "ctrl+o"
           ],
           "leader": [],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -908,6 +1021,8 @@
             "ctrl+l"
           ],
           "leader": [],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -928,8 +1043,12 @@
         "tui": {
           "keys": [],
           "leader": [
-            "c"
+            [
+              "c"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -952,8 +1071,12 @@
         "tui": {
           "keys": [],
           "leader": [
-            "X"
+            [
+              "X"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -976,8 +1099,12 @@
         "tui": {
           "keys": [],
           "leader": [
-            "z"
+            [
+              "z"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -1000,8 +1127,12 @@
         "tui": {
           "keys": [],
           "leader": [
-            "d"
+            [
+              "d"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -1024,8 +1155,12 @@
         "tui": {
           "keys": [],
           "leader": [
-            "m"
+            [
+              "m"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -1048,8 +1183,12 @@
             "."
           ],
           "leader": [
-            "."
+            [
+              "."
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -1070,8 +1209,12 @@
         "tui": {
           "keys": [],
           "leader": [
-            "b"
+            [
+              "b"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -1095,8 +1238,12 @@
             ":"
           ],
           "leader": [
-            "k"
+            [
+              "k"
+            ]
           ],
+          "repeats": false,
+          "chords": [],
           "menu": []
         },
         "desktop": {
@@ -1104,6 +1251,573 @@
             "primary+k",
             "primary+p"
           ]
+        }
+      }
+    },
+    {
+      "id": "next pane",
+      "label": "next pane",
+      "detail": "move to the pane on the right",
+      "aliases": [
+        "next pane"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            [
+              "l"
+            ],
+            [
+              "right"
+            ]
+          ],
+          "repeats": true,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "ctrl+tab"
+          ]
+        }
+      }
+    },
+    {
+      "id": "previous pane",
+      "label": "previous pane",
+      "detail": "move to the pane on the left, and off the leftmost to the list",
+      "aliases": [
+        "previous pane"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            [
+              "h"
+            ],
+            [
+              "left"
+            ]
+          ],
+          "repeats": true,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "ctrl+shift+tab"
+          ]
+        }
+      }
+    },
+    {
+      "id": "next box",
+      "label": "next discobox",
+      "detail": "switch to the discobox below in the list",
+      "aliases": [
+        "next discobox"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            [
+              "down"
+            ],
+            [
+              "j"
+            ]
+          ],
+          "repeats": true,
+          "chords": [
+            "ctrl+shift+j"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+alt+down"
+          ]
+        }
+      }
+    },
+    {
+      "id": "previous box",
+      "label": "previous discobox",
+      "detail": "switch to the discobox above in the list",
+      "aliases": [
+        "previous discobox"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            [
+              "up"
+            ]
+          ],
+          "repeats": true,
+          "chords": [
+            "ctrl+shift+k"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+alt+up"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sidebar",
+      "label": "toggle list",
+      "detail": "show or hide the discobox list beside the workspace",
+      "aliases": [
+        "toggle list",
+        "sidebar"
+      ],
+      "target": "window",
+      "lifecycle": false,
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+b"
+          ]
+        }
+      }
+    }
+  ],
+  "gestures": [
+    {
+      "id": "up",
+      "label": "move up",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "up",
+            "k"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "up"
+          ]
+        }
+      }
+    },
+    {
+      "id": "down",
+      "label": "move down",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "down",
+            "j"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "down"
+          ]
+        }
+      }
+    },
+    {
+      "id": "page up",
+      "label": "a screen up",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "pgup"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "page down",
+      "label": "a screen down",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "pgdown"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "first",
+      "label": "first",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "home",
+            "g"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "home"
+          ]
+        }
+      }
+    },
+    {
+      "id": "last",
+      "label": "last",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "end",
+            "G"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "end"
+          ]
+        }
+      }
+    },
+    {
+      "id": "scroll left",
+      "label": "read back along a long name",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "left",
+            "h"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "scroll right",
+      "label": "read on along a long name",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "right",
+            "l"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "choose",
+      "label": "choose",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "enter"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "back",
+      "label": "back",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "esc"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "escape",
+            "right"
+          ]
+        }
+      }
+    },
+    {
+      "id": "next field",
+      "label": "next field",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "tab"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "previous field",
+      "label": "previous field",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "shift+tab"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "select",
+      "label": "select",
+      "bindings": {
+        "tui": {
+          "keys": [
+            " "
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "range",
+      "label": "select a range",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "V"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "clear selection",
+      "label": "clear the selection",
+      "bindings": {
+        "tui": {
+          "keys": [
+            "c"
+          ],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
+        }
+      }
+    },
+    {
+      "id": "context menu",
+      "label": "the row's menu",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "contextmenu"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pane",
+      "label": "a pane by its number",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            [
+              "0"
+            ],
+            [
+              "1"
+            ],
+            [
+              "2"
+            ],
+            [
+              "3"
+            ],
+            [
+              "4"
+            ],
+            [
+              "5"
+            ],
+            [
+              "6"
+            ],
+            [
+              "7"
+            ],
+            [
+              "8"
+            ],
+            [
+              "9"
+            ]
+          ],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "primary+1",
+            "primary+2",
+            "primary+3",
+            "primary+4",
+            "primary+5",
+            "primary+6",
+            "primary+7",
+            "primary+8",
+            "primary+9"
+          ]
+        }
+      }
+    },
+    {
+      "id": "service",
+      "label": "a service by its number",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [
+            [
+              "S",
+              "1"
+            ],
+            [
+              "S",
+              "2"
+            ],
+            [
+              "S",
+              "3"
+            ],
+            [
+              "S",
+              "4"
+            ],
+            [
+              "S",
+              "5"
+            ],
+            [
+              "S",
+              "6"
+            ],
+            [
+              "S",
+              "7"
+            ],
+            [
+              "S",
+              "8"
+            ],
+            [
+              "S",
+              "9"
+            ]
+          ],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": []
         }
       }
     }

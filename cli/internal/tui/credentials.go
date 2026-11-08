@@ -36,7 +36,7 @@ import (
 // list and on the secrets screen. C rather than g, because g is the top of a
 // list on both of those screens, and capitalized because answering for a
 // credential is not a keystroke to hit by accident.
-const credentialsKey = "C"
+var credentialsKey = bareKey("requests")
 
 // credentialsLeaderKey is the same thing behind the leader in the workspace,
 // where the banner names it.
@@ -47,7 +47,7 @@ const credentialsKey = "C"
 // them consequential and reached for in a hurry, on a screen whose banner is
 // asking you to hurry. There is no list here for g to be the top of, so g is
 // free, and it is the letter of the thing it does.
-const credentialsLeaderKey = "g"
+var credentialsLeaderKey = leaderKey("requests")
 
 // openCredentialsMsg is the leader plus that key inside a pane: the workspace's
 // way to reach the request it is already telling you about.

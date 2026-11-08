@@ -9,7 +9,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-const harnessChangesKey = "H"
+var harnessChangesKey = bareKey("review config")
 
 type harnessChangesLoadedMsg struct {
 	box     console.Sandbox

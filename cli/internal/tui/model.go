@@ -1649,7 +1649,7 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 // every terminal there has been — readline's, vi's, screen's, tmux's — and a
 // window drawn over by something outside it is exactly the moment a person
 // reaches for it without thinking.
-const repaintKey = "ctrl+l"
+var repaintKey = bareKey("repaint")
 
 // reportUnreachable says which servers the list is missing, once, when that
 // changes (ADR 0116 §4). The list is polled, and a window that repeats the
@@ -1792,9 +1792,9 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// or while a workspace opens and no pane is there to take it — under
 	// nothing modal, and never from the composer, where the leader is not
 	// armed either. A pane binds the same chords itself (paneOptions).
-	if delta, ok := boxStepBare(msg); ok && m.windowWalks() {
+	if c, ok := console.ForTUIChord(msg.Keystroke()); ok && m.windowWalks() {
 		m.leaderArmed = false
-		return m.switchBox(delta)
+		return m.dispatch(c.ID)
 	}
 	// The leader is the window's own prefix outside a pane, where there is no
 	// termpane to own one. It exists so the way out is the same key sequence
@@ -1818,47 +1818,46 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if key != m.leader() {
 			key = strings.TrimPrefix(key, keys.Modifier(m.leader()))
 		}
-		if key == paletteKey {
+		// The key is the registry's command after the leader, answered here
+		// by its ID as each screen without a pane takes it.
+		id := leaderCommand(key)
+		switch id {
+		case "palette":
 			return m.openPalette()
-		}
-		if key == paneQuitKey {
+		case "quit":
 			return m.closeWindow()
 		}
 		// The tree's entries — the new card and the pages — open behind the
 		// leader from every screen beside the tree, as they do from a pane.
-		if a, ok := treePageFor(key); ok {
+		if a, ok := treePageOf(id); ok {
 			if cmd, taken := m.treeEntry(a); taken {
 				return cmd
 			}
 		}
+		walk := id == "next box" || id == "previous box"
 		// The list in the tree has the keys: the leader's l goes back to the
 		// panes, and z swaps it for the whole home screen and back.
 		if m.listFront {
-			switch key {
-			case paneRightKey, "right":
-				m.backToPanes()
-				return nil
-			case paneZoomKey:
+			switch id {
+			case "next pane":
+				return m.dispatch(id)
+			case "maximize":
 				m.toggleTreeExpanded()
 				return nil
 			}
 			// A walk the leader's ↑↓ stopped on a stopped box (switchBox)
 			// carries on from it.
-			if delta, ok := boxStep(key); ok && !m.treeExpanded {
-				return m.switchBox(delta)
+			if walk && !m.treeExpanded {
+				return m.dispatch(id)
 			}
 		}
 		// A page right of the tree has no pane to own the leader either: h is
 		// the way to the tree, and ↑↓ switch boxes, as they do from a pane.
 		if m.pageOpen() && !m.listFront && m.treeShown() {
-			if delta, ok := boxStep(key); ok {
-				return m.switchBox(delta)
-			}
-			switch key {
-			case paneLeftKey, "left":
-				m.focusTree()
-				return nil
-			case boxMenuKey:
+			switch id {
+			case "next box", "previous box", "previous pane":
+				return m.dispatch(id)
+			case "actions":
 				if m.hasWorkspace() {
 					return m.boxMenu(m.Box)
 				}
@@ -1867,16 +1866,14 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// A workspace on its way up has no pane to own the leader, so the
 		// tree's keys are answered here until it does.
 		if m.wsOpening {
-			if delta, ok := boxStep(key); ok {
-				return m.switchBox(delta)
-			}
-			switch key {
-			case paneLeftKey, "left":
+			switch id {
+			case "next box", "previous box":
+				return m.dispatch(id)
+			case "previous pane":
 				if m.treeShown() {
-					m.focusTree()
-					return nil
+					return m.dispatch(id)
 				}
-			case paneDetachAlt:
+			case "detach":
 				if !m.detaches() {
 					return nil
 				}
@@ -1890,14 +1887,14 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// the panes the screen covers, or the band would be a sentence rather
 		// than a button and its key would move the list instead.
 		if m.audit != nil && m.inPanes() {
-			switch key {
-			case credentialsLeaderKey:
+			switch id {
+			case "requests":
 				return m.openCredentialDialog(m.Box)
-			case rejectedKey:
+			case "rejections":
 				return m.openRejectedRemedy(m.currentBox())
-			case harnessChangesKey:
+			case "review config":
 				return m.reviewHarnessChanges(m.currentBox())
-			case bannerDismissKey:
+			case "dismiss":
 				return m.dismissBanner()
 			}
 		}
@@ -1913,7 +1910,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if cmd, taken := m.treeKey(msg); taken {
 		return cmd
 	}
-	if keyName(msg) == "f1" {
+	if keyName(msg) == bareKey("help") {
 		return m.dispatch("help")
 	}
 	// The audit screen is drawn over the workspace and takes its keys: none of
@@ -2466,7 +2463,7 @@ func commandAction(e console.Entry) action {
 	case len(b.Keys) > 0:
 		press = b.Keys[0]
 	case len(b.Leader) > 0:
-		press = b.Leader[0]
+		press = b.Leader[0][0]
 	case len(b.Menu) > 0:
 		press = b.Menu[len(b.Menu)-1]
 	}
@@ -3525,6 +3522,7 @@ const promptMaxRows = 3
 
 func (m *Model) layout() {
 	m.syncWidth()
+	m.dropStaleListFront()
 	if m.width <= 0 || m.height <= 0 {
 		return
 	}
@@ -3948,10 +3946,10 @@ func (m *Model) headerHints() []hint {
 	// both; this is what the window offers, not all it accepts.
 	quit := pressing(m.leader()+" "+paneQuitKey+" quit", m.leader(), paneQuitKey)
 	if m.focus == focusPrompt {
-		quit = pressing("Ctrl-C quit", "ctrl+c")
+		quit = keyed(keyLabel(quitAnywhereKey), quitAnywhereKey, "quit")
 	}
 	return []hint{
-		keyed("F1", "f1", "help"),
+		bareHint("help", "help"),
 		keyed(HarnessesKeyName, harnessesKey, "harnesses"),
 		keyed(SecretsKeyName, secretsKey, "secrets"),
 		quit,
@@ -4323,7 +4321,7 @@ func (m *Model) hints() []hint {
 				pressing("V or Esc cancel", "V"),
 			}
 		}
-		out := []hint{keyed(":", ":", "find box or command")}
+		out := []hint{bareHint("palette", "find box or command")}
 		if m.list.nameFull > m.list.nameWidth {
 			// Only worth saying on a row that has more name than column.
 			out = append(out, says("←→ read the rest of the name"))
@@ -4338,9 +4336,9 @@ func (m *Model) hints() []hint {
 		}
 		out = append(out, keyed("Space", " ", "select"), keyed("V", "V", "range"))
 		if m.list.Filter.Archived {
-			out = append(out, keyed("A", "A", "hide archived"))
+			out = append(out, bareHint("archived", "hide archived"))
 		} else if m.list.ArchivedCount() > 0 {
-			out = append(out, keyed("A", "A", "show archived"))
+			out = append(out, bareHint("archived", "show archived"))
 		}
 		return append(out, pressing("↑ or Tab filter", "tab"), pressing("Esc prompt", "esc"))
 	default:
@@ -4353,7 +4351,7 @@ func (m *Model) hints() []hint {
 		return []hint{
 			out,
 			keyed("Shift-Tab", "shift+tab", "harness"),
-			keyed("Ctrl-O", "ctrl+o", "options"),
+			bareHint("options", "options"),
 			keyed("Alt-E", "alt+e", "editor"),
 			says("Shift/Ctrl-Enter newline"),
 			keyed("Ctrl-D", "ctrl+d", "quit"),
@@ -4424,8 +4422,8 @@ func (m *Model) paneHints() []hint {
 		// service from the pane you are looking at — the two verbs that
 		// mean this service here rather than the discobox.
 		hints = append(append([]hint{says("read-only")}, leave...),
-			pressing(leader+" t stop", leader, "t"),
-			pressing(leader+" T start", leader, "T"),
+			m.leaderHint("stop", "stop"),
+			m.leaderHint("start", "start"),
 			// The one place the services menu is advertised. It is where
 			// restart lives, and where the services with no tab are, and
 			// a pane onto one is where you would think to look.
@@ -4461,7 +4459,7 @@ func (m *Model) paneHints() []hint {
 	// a distinction most people never need. It is in the help, under the key
 	// that opens it.
 	if p.Service == "" {
-		hints = append(hints, pressing(leader+" s shell", leader, "s"))
+		hints = append(hints, m.leaderHint("shell", "shell"))
 	}
 	// Beside it, because they are the pair: one opens a session and the other
 	// ends the one in front of you. Only on a pane that has one to end, so the
@@ -4553,417 +4551,404 @@ func (m *Model) helpText() string {
 		"───────────────────────────────────────────────────────────────",
 		"Anywhere",
 		"",
-		"    F1             this help (? does the same on the lists)",
-		"    Ctrl-L         repaint and re-read the list; inside a pane, the",
-		"                   program in it is repainted too",
-		"    Ctrl-C         quit, from every screen but a pane, where it goes",
-		"                   to the program running there. " + leader + " " + paneQuitKey + " is the quit",
-		"                   inside one",
-		"",
-		"  Everywhere but inside a pane, where every key goes to the program:",
-		"",
-		"    " + HarnessesKeyName + "             the harnesses",
-		"    " + SecretsKeyName + "             the project's secrets",
-		"    Ctrl-O         run options",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The prompt",
-		"",
-		"    Enter          run the prompt in a new discobox. Empty, it just",
-		"                   creates one and attaches to it. It first asks",
-		"                   where to cut it from, and Enter there creates.",
-		"                   Tab on that card shows its options: the harness,",
-		"                   the server where there are several, and",
-		"                   additional sources",
-		"    Shift-Enter    newline. Ctrl-Enter, Alt-Enter and Ctrl-J too",
-		"    Alt-E or F2    edit the prompt in $EDITOR",
-		"    Tab            to the discobox list",
-		"    Shift-Tab      switch the harness",
-		"    Ctrl-D         quit, when the prompt is empty",
-		"    /exit, /quit   quit, when that is all the prompt holds",
-		"    ↑ ↓            move a line, wrapped rows included. On the first",
-		"                   or last line, to the start or end of it",
-		"",
-		"  ↑ on an empty prompt goes to the discobox list, to the row the",
-		"  cursor was last on. With text in the prompt it stays put, and Tab",
-		"  is the way out. ↓ never leaves the prompt.",
-		"",
-		"  The field is an emacs-mode readline:",
-		"",
-		"    Ctrl-A / Ctrl-E    start / end of the line",
-		"    Ctrl-B / Ctrl-F    back / forward a character (← → too)",
-		"    Ctrl-← / Ctrl-→    back / forward a word (Alt-B and Alt-F too)",
-		"    Ctrl-P / Ctrl-N    up / down a line",
-		"    Alt-< / Alt->      start / end of the whole prompt",
-		"    Ctrl-W             kill the word behind the cursor",
-		"    Alt-D              kill the word ahead of it",
-		"    Ctrl-K / Ctrl-U    kill to the end / start of the line",
-		"    Ctrl-Y             yank the last kill back. A run of kills is",
-		"                       one yank",
-		"    Ctrl-_             undo. A run of typing is one change",
-		"    Ctrl-T / Alt-T     transpose characters / words",
-		"    Alt-U / Alt-L / Alt-C   upper / lower / capitalize the next word",
-		"",
-		"  The prompt is remembered: what is in it when the window closes is",
-		"  there the next time one opens, wherever it is opened. Running it",
-		"  or clearing it discards it.",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The discobox list",
-		"",
-		"    : or " + m.leader() + " k    find a box or command",
-		"    In the palette: Tab composes a box or command, Enter chooses.",
-		"    Esc drops the chip, clears the text, then closes.",
-		"",
-		"    ↑ ↓ / k j      move",
-		"    g / G          first / last (pgup and pgdn move a screen)",
-		"    ← →            read the rest of a name too long for its column",
-		"    Space          select, for acting on several at once",
-		"    V              draw a range: ↑ ↓ extend it, Space selects the",
-		"                   whole of it, V or Esc cancels",
-		"    c              clear the selection",
-		"    Tab            to the filter",
-		"    Esc            back to the prompt, and so does ↓ past the end",
-		"",
-		"    Enter  attach          s  shell",
-		"    v      open it in VS Code, in its own window",
-		"    z      open it in Zed, in its own window",
-		"    u      upgrade to the current image",
-		"    R      repair — rebuild the discobox in place on the",
-		"           current image, keeping its workspace and changes",
-		"    " + credentialsKey + "      answer the credential request waiting on it",
-		"    H      review and save harness settings and logins",
-		"    e      rename          E  settings",
-		"    t      stop",
-		"    T      start           x  archive (Del too)",
-		"    U      unarchive       P  purge",
-		"    A      show or hide archived discoboxes",
-		"    r      refresh now (the list also refreshes on its own)",
-		"    .      every action, as a menu",
-		"",
-		"  The bottom line offers only the keys the discoboxes under the",
-		"  cursor accept. Archiving is reversible and asks nothing; purge",
-		"  destroys the disk and asks first.",
-		"",
-		"  attach and shell open a workspace on one discobox. vscode and zed",
-		"  edit the box over SSH in a separate window.",
-		"",
-		"  settings edits what `discobox admin box update` does: the",
-		"  configured name, the harness (on a stopped box), the box's own",
-		"  egress level and its discobox API access.",
-		"",
-		"  rename opens the current name for editing. Enter accepts, Esc",
-		"  cancels. The name you give a box replaces the title its harness",
-		"  set, and emptying a name you gave gives the title back.",
-		"",
-		"  A row is: state, name, harness, git position, age, cpu, memory and",
-		"  disk use, and lines changed.",
-		"",
-		"      ● running    ◐ starting    ○ stopped    ▪ archived",
-		"      ✗ error — the message shows under the cursor",
-		"      ↑ an upgrade to the current harness image is available",
-		"      ! an agent is waiting on a credential; " + credentialsKey + " answers it",
-		"",
-		"  Without color, the glyph is replaced by the state spelled out in a",
-		"  column.",
-		"",
-		"  main@a3f9c21 is the branch and commit the discobox's agent last",
-		"  reported, or the commit it was cut from until it reports. The mark",
-		"  beside it is the state of the work, most losable first:",
-		"",
-		"      *  dirty      uncommitted changes, held only by the discobox.",
-		"                    Archiving now loses them",
-		"      ⇡  ready      clean committed work ahead of the spawn commit",
-		"         clean      as it was cut",
-		"         -          the agent has not reported yet",
-		"",
-		"  +N −N is lines added and deleted against the commit it was cut",
-		"  from, not counting pulled upstream work.",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The filter",
-		"",
-		"  The header says what the list is narrowed to: the server, when",
-		"  there is more than one, the folder — the directory or repository",
-		"  URL the discoboxes were cut from — and the tags, once anything is",
-		"  tagged. It names only what is narrowed; `all discoboxes` is",
-		"  everything. The window's own folder lists this machine's",
-		"  discoboxes with no source too. Whatever is left open, the list is",
-		"  in a section per value: per folder, per server, or per",
-		"  `folder on server`.",
-		"",
-		"  The server and folder on screen are where the prompt creates: a",
-		"  run goes where you are looking, and `all servers` creates on the",
-		"  primary — the server `--server`, DISCOBOX_SERVER or the local",
-		"  default points at. The run options' Server and Source rows are the",
-		"  same choices from the other side: changing them moves the list",
-		"  too. The harnesses and secrets screens are that server's, or the",
-		"  primary's while every server is showing; ← → there moves it. A",
-		"  credential request is marked wherever its discobox is, and",
-		"  answered on its server.",
-		"",
-		"  The filters are remembered on this machine: the next window opens",
-		"  where the last one left them, wherever it is opened, or on every",
-		"  server, folder and tag when nothing was narrowed. --server, when",
-		"  given, opens on the server it names instead.",
-		"",
-		"    ↑              reach it, from the top of the discobox list",
-		"    Enter          open it: every server, folder and tag, with how",
-		"                   many discoboxes each would list",
-		"    ↓              back down into the discoboxes",
-		"",
-		"  On the card, ↑ ↓ move, Space marks a choice in its group, and",
-		"  Enter picks the one under the cursor and shows everything marked.",
-		"  Tags are boxes rather than dots: Space turns each on and off, and",
-		"  the list shows the discoboxes carrying every tag marked.",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The list beside the workspace",
-		"",
-		"  On a window wide enough for it, the discobox list stays down the",
-		"  left of the workspace, and the box on the right is switched in",
-		"  place. A box switched away from keeps running and stays attached,",
-		"  so switching back is instant. Under the list are the harnesses",
-		"  and secrets, which open on the right, and + new discobox.",
-		"",
-		"    " + leader + " h       to the list, from the leftmost pane; Esc back",
-		"    " + leader + " ↑ / ↓   the discobox above or below; j also moves down",
-		"    Ctrl-Shift-K / Ctrl-Shift-J",
-		"                   the same, with no leader, in a terminal that",
-		"                   speaks the Kitty keyboard protocol",
-		"  A stopped discobox is not started by passing it: the walk, or a",
-		"  click on its row, stops there, and Enter or a double click",
-		"  starts it.",
-		"    " + leader + " " + paneZoomKey + "       on the list, the whole home screen and back",
-		"    n              on the list, a new discobox",
-		"    " + leader + " n / F3 / F4",
-		"                   the same as the list's entries, from anywhere",
-		"                   beside it: a new discobox, the harnesses, the",
-		"                   secrets",
-		"",
-		"  Beside the list there is nothing to detach to: a box is left by",
-		"  switching to another, and the window by quitting.",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The workspace screen",
-		"",
-		"  One discobox as the server has it: terminals on the left, shells",
-		"  on the right, one of each visible at a time. The primary terminal",
-		"  is the first one. Attaching joins every session, including ones",
-		"  started from another window or another machine; harness terminals",
-		"  go on the left, everything else on the right.",
-		"",
-		"  Each pane shows the key that reaches it. Terminals and shells are",
-		"  numbered from the primary, which is always 0. Services are",
-		"  numbered separately, S1, S2, in the order the repository declares",
-		"  them.",
-		"",
-	}, detach, []string{
-		"    " + leader + " " + paneQuitKey + "       quit the window, leaving every session running",
-		"    " + leader + " " + boxMenuKey + "       the discobox's actions: tools, audit, rename,",
-		"                   stop, archive and the rest",
-		"    " + leader + " a       back to the primary terminal",
-		"    " + leader + " " + paneTerminalKey + "       another terminal beside the primary: a fresh",
-		"                   session of the harness this discobox runs",
-		"    " + leader + " s       a new shell, in a new tab",
-		"    " + leader + " " + paneEndKey + "       end the shell or terminal you are looking at and",
-		"                   take its tab off the screen. Same as the [x]",
-		"                   button on its top border, and only ever the one",
-		"                   pane: the tabs beside it keep running. The",
-		"                   primary and the services have no [x] — detach or",
-		"                   quit leaves the workspace, and a service is",
-		"                   stopped with " + leader + " t",
-		"    " + leader + " ← / " + leader + " →  move along the screen — services, terminals,",
-		"                   then shells — or h and l. Hold Ctrl to keep",
-		"                   going: " + leader + " ^→ ^→ walks across without",
-		"                   pressing the leader again",
-		"    " + leader + " 0-9     jump to a terminal or shell by its number",
-		"    " + leader + " " + paneServicesKey + "1-9    jump to a service by its number",
-		"    " + leader + " " + paneServicesKey + paneServicesMenuKey + "      every service, running or not, with start,",
-		"                   stop and restart for each",
-		"    " + leader + " " + toolsKey + "       the tools, as a picker",
-		"    " + leader + " " + auditKey + "       the audit trail: everything recorded about this",
-		"                   discobox, followed as it is recorded. ↑ ↓ move,",
-		"                   Enter opens a record in full, End follows the",
-		"                   newest again, Esc goes back to the box. Calls in",
-		"                   a row with one method, status, scheme and host fold into",
-		"                   one line with a count: Enter or → opens it, ←",
-		"                   folds it. On an http record, b r and s read its",
-		"                   response body, request body and stream. / filters",
-		"                   as you type, fzf-style — the letters in order, not",
-		"                   together — and lights what matched; ↑ ↓ move",
-		"                   while typing, Enter keeps the filter, Esc clears it",
-		"    " + leader + " " + issueKey + "       the GitHub issue the discobox is tagged issue=N",
-		"                   with, as a tab on the right — a plain click on the",
-		"                   header's issue #N does the same, Ctrl-click opens",
-		"                   the page. ↑ ↓ scroll, c writes a comment (Ctrl-S",
-		"                   posts it, Alt-E edits it in $EDITOR), x closes or",
-		"                   reopens the issue, o opens the page, r reads it",
-		"                   again, q closes the tab",
-		"    " + leader + " " + pullKey + "       the pull request it is tagged pr=N with, the same",
-		"                   way and with the same keys — and its reviewers,",
-		"                   checks and reviews, and whether it is ready to",
-		"                   merge. m merges it, asking which way: squash, a",
-		"                   merge commit, or rebase. f turns to the files",
-		"                   changed and back: a list, where ↑ ↓ move, Enter",
-		"                   opens a file's diff, n and p turn to the next and",
-		"                   the one before, and Esc goes back to the list",
-		"    " + leader + " " + credentialsLeaderKey + "       answer the credential request in the banner",
-		"    " + leader + " " + bannerDismissKey + "       dismiss the banner, like its ✕; it comes back",
-		"                   when what it says happens again",
-		"    " + leader + " " + paneZoomKey + "       give the focused column the whole window, or",
-		"                   give the window back. Same as the [+] / [-]",
-		"                   button on its top border. What is hidden stays",
-		"                   connected and running",
-		"    " + m.paneMouseHint() + "       take the mouse from a box that is using it, to",
-		"                   select and copy; press again to give it back",
-		"    " + leader + " u       upgrade      " + leader + " t / T   stop / start",
-		"    " + leader + " x / U   archive / unarchive",
-		"    " + leader + " R       repair",
-		"",
-		"  Every other key goes to the focused pane, Ctrl-C included: there it",
-		"  belongs to the program, in a harness as much as in a shell.",
-		"",
-		"  Images paste from this machine. Ctrl-V or Alt-V in a harness",
-		"  terminal with an image on the clipboard, or a dragged image file,",
-		"  copies the image into the discobox and pastes its path there.",
-		"",
-		"  A shell or terminal that exits leaves its last screen up to be",
-		"  read. ↑ ↓, pgup, pgdn, g and G scroll output longer than the pane,",
-		"  and q, Esc or Enter dismisses it. When the primary exits, the",
-		"  screen closes.",
-		"",
-		"  Services are tabs on the left, after the terminals: the scripts",
-		"  under .discobox/services, started when the discobox booted. A",
-		"  service pane is read-only. One that failed, ended, or cannot run",
-		"  still has a tab, marked, with the reason and its output; one you",
-		"  stopped yourself has no tab. A tab is marked • when the service",
-		"  has printed something since you last looked.",
-		"",
-		"  On a service pane, " + leader + " t and " + leader + " T stop and start that",
-		"  service instead of the discobox, and restart is on " + leader + " " + paneServicesKey + paneServicesMenuKey + ".",
-		"  Every other key still acts on the discobox.",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The tools (" + leader + " " + toolsKey + ")",
-		"",
-		"  Programs that run beside the agent, each declared in a file: by",
-		"  this CLI, by the discobox's image, by its .discobox/tools, or by",
-		"  you. The picker lists the ones this discobox offers, each on the",
-		"  key it asks for; discobox tools ls lists them from a shell.",
-		"",
-		"    " + toolFileKey + "              the highlighted tool's config, in $EDITOR",
-		"    " + addressSSHKey + "              copy the ssh command for this discobox",
-		"    " + addressGitKey + "              copy its git url",
-		"",
-		"  A tool that runs in the discobox opens a window over the workspace,",
-		"  which keeps running underneath:",
-		"",
-		"    [-]            put it away, into a tab after the shells. The",
-		"                   session keeps running and stays attached. " + m.detachHint(),
-		"                   does the same, and the tab's [+] or " + leader + " " + paneZoomKey,
-		"                   gives it the window again",
-		"    [x]            close it, ending the session. " + leader + " " + paneEndKey + " does the",
-		"                   same, in the window or on its tab",
-		"",
-		"  A tool that runs here — vscode, zed — is handed the box over SSH",
-		"  and opens on its own.",
-		"",
-		"  Tool sessions live in the discobox, not in this window. Quit the",
-		"  console with a diff open and the next attach picks it back up,",
-		"  put away beside the shells.",
-		"",
-		"  A tool can carry a config, kept on this machine and copied into a",
-		"  discobox the first time that tool runs in one without it. fresh",
-		"  does this, and " + toolFileKey + " in the picker edits it. It is a default, not",
-		"  a sync: a copy already in a discobox is never overwritten, so an",
-		"  edit only affects the next discobox.",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The harnesses (" + HarnessesKeyName + ")",
-		"",
-		"  The harnesses a discobox can run on, and everything you do to",
-		"  them. `discobox configure` opens the window here.",
-		"",
-		"    ↑ ↓ / k j      move            g / G   first / last",
-		"    s              make it the project default, used by any",
-		"                   discobox without a harness of its own",
-		"    v or Enter     its full configuration: what it runs, which",
-		"                   secret answers each variable it needs, and the",
-		"                   files it carries",
-		"    f              edit one of those files in $EDITOR",
-		"    r              reset it to its bundle's defaults, forgetting",
-		"                   the settings and logins saved to it from",
-		"                   discoboxes. It asks first",
-		"    .              every action, as a menu",
-		"    Esc or " + HarnessesKeyName + "      leave this screen",
-		"",
-		"      ★ the project default",
-		"",
-		"  Every harness runs: one with no login starts signed out, and",
-		"  you sign in inside the discobox. What changes there is saved",
-		"  from the green band on that box. The default is listed first.",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The secrets (" + SecretsKeyName + ")",
-		"",
-		"  Two tables: the project's secrets, and the requests waiting on",
-		"  you. Tab crosses between them, and ↓ off the bottom of one",
-		"  reaches the next.",
-		"",
-		"    n              a new secret",
-		"    " + bindingCreateKey + "              bind it before anything asks",
-		"    h              binding history and answered requests",
-		"    e              edit it: its name, routes, limit, value",
-		"    d              delete it",
-		"    Enter          what is bound to it. There, Enter reads a binding,",
-		"                   " + unbindKey + " takes one back, and the first row binds the",
-		"                   secret. On a request, Enter answers it",
-		"    r              refresh",
-		"    Esc or " + SecretsKeyName + "      leave this screen",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"Run options (Ctrl-O)",
-		"",
-		"    ↑ ↓            move            ← →   change the value",
-		"    Enter          on Source, the whole list of them and a path of",
-		"                   your own; on env or secrets, add one; on any other",
-		"                   row the same as →",
-		"    Backspace      drop the last env / secret (- too)",
-		"    Ctrl-R         run with these options",
-		"    Esc            put the panel away (Tab and Ctrl-O too)",
-		"",
-		"  The source follows the folder in the header: switching folders",
-		"  also switches where a new discobox is cut from. Setting it here",
-		"  overrides that.",
-		"",
-		"  The strip below the prompt always shows what is set. The panel",
-		"  shows the equivalent `discobox run` command, live.",
-		"",
-		"───────────────────────────────────────────────────────────────",
-		"The mouse",
-		"",
-		"  Everything on screen responds to it. A press on a row points at",
-		"  it, a second press opens it. The right button opens that row's",
-		"  menu, the same one . opens. The wheel scrolls whatever is under",
-		"  the pointer without moving the keyboard focus.",
-		"",
-		"  Anything that names a key is a button for that key: the " + HarnessesKeyName + " in the",
-		"  header, the a attach on the status line, the ‹ › on a run option.",
-		"  Controls highlight under the pointer.",
-		"",
-		"  The window reads the mouse, so your terminal does not: drag to",
-		"  select here rather than there, double-click for a word,",
-		"  triple-click for a line, middle button pastes the last selection.",
-		"  A finished selection goes to the clipboard; the right button over",
-		"  one copies it again and clears it, as do Ctrl-Shift-C and ⌘-C.",
-		"  Hold Shift for your terminal's own selection, as in tmux.",
-		"",
-		"  Inside a pane the box only sees the mouse while a program there",
-		"  has asked for it; " + m.paneMouseHint() + " takes it back.",
-		"",
-		"  Press Esc to close.",
-	}), "\n")
+	}, helpRow(keyLabel(bareKey("help")), "this help ("+keyLabel(command("help").Bindings.TUI.Keys[1])+" does the same on the lists)"),
+		helpRow(keyLabel(repaintKey), "repaint and re-read the list; inside a pane, the", "program in it is repainted too"),
+		helpRow(keyLabel(command("quit").Bindings.TUI.Keys[1]), "quit, from every screen but a pane, where it goes",
+			"to the program running there. "+m.leaderKeys("quit")+" is the quit", "inside one"),
+		[]string{
+			"",
+			"  Everywhere but inside a pane, where every key goes to the program:",
+			"",
+		},
+		helpRow(HarnessesKeyName, "the harnesses"),
+		helpRow(SecretsKeyName, "the project's secrets"),
+		helpRow(keyLabel(optionsKey), "run options"),
+		[]string{
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The prompt",
+			"",
+			"    Enter          run the prompt in a new discobox. Empty, it just",
+			"                   creates one and attaches to it. It first asks",
+			"                   where to cut it from, and Enter there creates.",
+			"                   Tab on that card shows its options: the harness,",
+			"                   the server where there are several, and",
+			"                   additional sources",
+			"    Shift-Enter    newline. Ctrl-Enter, Alt-Enter and Ctrl-J too",
+			"    Alt-E or F2    edit the prompt in $EDITOR",
+			"    Tab            to the discobox list",
+			"    Shift-Tab      switch the harness",
+			"    Ctrl-D         quit, when the prompt is empty",
+			"    /exit, /quit   quit, when that is all the prompt holds",
+			"    ↑ ↓            move a line, wrapped rows included. On the first",
+			"                   or last line, to the start or end of it",
+			"",
+			"  ↑ on an empty prompt goes to the discobox list, to the row the",
+			"  cursor was last on. With text in the prompt it stays put, and Tab",
+			"  is the way out. ↓ never leaves the prompt.",
+			"",
+			"  The field is an emacs-mode readline:",
+			"",
+			"    Ctrl-A / Ctrl-E    start / end of the line",
+			"    Ctrl-B / Ctrl-F    back / forward a character (← → too)",
+			"    Ctrl-← / Ctrl-→    back / forward a word (Alt-B and Alt-F too)",
+			"    Ctrl-P / Ctrl-N    up / down a line",
+			"    Alt-< / Alt->      start / end of the whole prompt",
+			"    Ctrl-W             kill the word behind the cursor",
+			"    Alt-D              kill the word ahead of it",
+			"    Ctrl-K / Ctrl-U    kill to the end / start of the line",
+			"    Ctrl-Y             yank the last kill back. A run of kills is",
+			"                       one yank",
+			"    Ctrl-_             undo. A run of typing is one change",
+			"    Ctrl-T / Alt-T     transpose characters / words",
+			"    Alt-U / Alt-L / Alt-C   upper / lower / capitalize the next word",
+			"",
+			"  The prompt is remembered: what is in it when the window closes is",
+			"  there the next time one opens, wherever it is opened. Running it",
+			"  or clearing it discards it.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The discobox list",
+			"",
+		}, helpRow(keyLabel(bareKey("palette"))+" or "+m.leaderKeys("palette"), "find a box or command"), []string{
+			"    In the palette: Tab composes a box or command, Enter chooses.",
+			"    Esc drops the chip, clears the text, then closes.",
+			"",
+			"    ↑ ↓ / k j      move",
+			"    g / G          first / last (pgup and pgdn move a screen)",
+			"    ← →            read the rest of a name too long for its column",
+			"    Space          select, for acting on several at once",
+			"    V              draw a range: ↑ ↓ extend it, Space selects the",
+			"                   whole of it, V or Esc cancels",
+			"    c              clear the selection",
+			"    Tab            to the filter",
+			"    Esc            back to the prompt, and so does ↓ past the end",
+			"",
+		}, helpRow("Enter", "attach, the same as "+keyLabel(bareKey("attach"))), []string{}, helpRows(listCommands()), []string{
+			"",
+			"  The bottom line offers only the keys the discoboxes under the",
+			"  cursor accept. Archiving is reversible and asks nothing; purge",
+			"  destroys the disk and asks first.",
+			"",
+			"  attach and shell open a workspace on one discobox. vscode and zed",
+			"  edit the box over SSH in a separate window.",
+			"",
+			"  settings edits what `discobox admin box update` does: the",
+			"  configured name, the harness (on a stopped box), the box's own",
+			"  egress level and its discobox API access.",
+			"",
+			"  rename opens the current name for editing. Enter accepts, Esc",
+			"  cancels. The name you give a box replaces the title its harness",
+			"  set, and emptying a name you gave gives the title back.",
+			"",
+			"  A row is: state, name, harness, git position, age, cpu, memory and",
+			"  disk use, and lines changed.",
+			"",
+			"      ● running    ◐ starting    ○ stopped    ▪ archived",
+			"      ✗ error — the message shows under the cursor",
+			"      ↑ an upgrade to the current harness image is available",
+			"      ! an agent is waiting on a credential; " + credentialsKey + " answers it",
+			"",
+			"  Without color, the glyph is replaced by the state spelled out in a",
+			"  column.",
+			"",
+			"  main@a3f9c21 is the branch and commit the discobox's agent last",
+			"  reported, or the commit it was cut from until it reports. The mark",
+			"  beside it is the state of the work, most losable first:",
+			"",
+			"      *  dirty      uncommitted changes, held only by the discobox.",
+			"                    Archiving now loses them",
+			"      ⇡  ready      clean committed work ahead of the spawn commit",
+			"         clean      as it was cut",
+			"         -          the agent has not reported yet",
+			"",
+			"  +N −N is lines added and deleted against the commit it was cut",
+			"  from, not counting pulled upstream work.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The filter",
+			"",
+			"  The header says what the list is narrowed to: the server, when",
+			"  there is more than one, the folder — the directory or repository",
+			"  URL the discoboxes were cut from — and the tags, once anything is",
+			"  tagged. It names only what is narrowed; `all discoboxes` is",
+			"  everything. The window's own folder lists this machine's",
+			"  discoboxes with no source too. Whatever is left open, the list is",
+			"  in a section per value: per folder, per server, or per",
+			"  `folder on server`.",
+			"",
+			"  The server and folder on screen are where the prompt creates: a",
+			"  run goes where you are looking, and `all servers` creates on the",
+			"  primary — the server `--server`, DISCOBOX_SERVER or the local",
+			"  default points at. The run options' Server and Source rows are the",
+			"  same choices from the other side: changing them moves the list",
+			"  too. The harnesses and secrets screens are that server's, or the",
+			"  primary's while every server is showing; ← → there moves it. A",
+			"  credential request is marked wherever its discobox is, and",
+			"  answered on its server.",
+			"",
+			"  The filters are remembered on this machine: the next window opens",
+			"  where the last one left them, wherever it is opened, or on every",
+			"  server, folder and tag when nothing was narrowed. --server, when",
+			"  given, opens on the server it names instead.",
+			"",
+			"    ↑              reach it, from the top of the discobox list",
+			"    Enter          open it: every server, folder and tag, with how",
+			"                   many discoboxes each would list",
+			"    ↓              back down into the discoboxes",
+			"",
+			"  On the card, ↑ ↓ move, Space marks a choice in its group, and",
+			"  Enter picks the one under the cursor and shows everything marked.",
+			"  Tags are boxes rather than dots: Space turns each on and off, and",
+			"  the list shows the discoboxes carrying every tag marked.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The list beside the workspace",
+			"",
+			"  On a window wide enough for it, the discobox list stays down the",
+			"  left of the workspace, and the box on the right is switched in",
+			"  place. A box switched away from keeps running and stays attached,",
+			"  so switching back is instant. Under the list are the harnesses",
+			"  and secrets, which open on the right, and + new discobox.",
+			"",
+		}, helpRow(m.leaderKeys("previous pane"), "to the list, from the leftmost pane; Esc back"),
+		helpRow(m.leaderKeys("previous box")+" / "+m.leaderKeys("next box"), "the discobox above or below; "+m.otherLeaderKeys("next box")+" also moves down"),
+		helpRow(keyLabel(boxUpKey)+" / "+keyLabel(boxDownKey), "the same, with no leader, in a terminal that", "speaks the Kitty keyboard protocol"),
+		[]string{
+			"  A stopped discobox is not started by passing it: the walk, or a",
+			"  click on its row, stops there, and Enter or a double click",
+			"  starts it.",
+		},
+		helpRow(m.leaderKeys("maximize"), "on the list, the whole home screen and back"),
+		helpRow(keyLabel(bareKey("new")), "on the list, a new discobox"),
+		helpRow(m.leaderKeys("new")+" / "+m.leaderKeys("harnesses")+" / "+m.leaderKeys("credentials"),
+			"the same as the list's entries, from anywhere", "beside it: a new discobox, the harnesses, the", "secrets"),
+		[]string{
+			"",
+			"  Beside the list there is nothing to detach to: a box is left by",
+			"  switching to another, and the window by quitting.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The workspace screen",
+			"",
+			"  One discobox as the server has it: terminals on the left, shells",
+			"  on the right, one of each visible at a time. The primary terminal",
+			"  is the first one. Attaching joins every session, including ones",
+			"  started from another window or another machine; harness terminals",
+			"  go on the left, everything else on the right.",
+			"",
+			"  Each pane shows the key that reaches it. Terminals and shells are",
+			"  numbered from the primary, which is always 0. Services are",
+			"  numbered separately, S1, S2, in the order the repository declares",
+			"  them.",
+			"",
+		}, detach, []string{
+			"    " + leader + " " + paneQuitKey + "       quit the window, leaving every session running",
+			"    " + leader + " " + boxMenuKey + "       the discobox's actions: tools, audit, rename,",
+			"                   stop, archive and the rest",
+		}, helpRow(m.leaderKeys("attach"), "back to the primary terminal"), []string{
+			"    " + leader + " " + paneTerminalKey + "       another terminal beside the primary: a fresh",
+			"                   session of the harness this discobox runs",
+		}, helpRow(m.leaderKeys("shell"), "a new shell, in a new tab"), []string{
+			"    " + leader + " " + paneEndKey + "       end the shell or terminal you are looking at and",
+			"                   take its tab off the screen. Same as the [x]",
+			"                   button on its top border, and only ever the one",
+			"                   pane: the tabs beside it keep running. The",
+			"                   primary and the services have no [x] — detach or",
+			"                   quit leaves the workspace, and a service is",
+			"                   stopped with " + m.leaderKeys("stop"),
+		}, helpRow(m.leaderKeys("previous pane")+" / "+m.leaderKeys("next pane"),
+			"move along the screen — services, terminals,",
+			"then shells — or "+m.otherLeaderKeys("previous pane")+" and "+m.otherLeaderKeys("next pane")+". Hold Ctrl to keep",
+			"going: "+leader+" ^"+m.otherLeaderKeys("next pane")+" ^"+m.otherLeaderKeys("next pane")+" walks across without",
+			"pressing the leader again"),
+		helpRow(m.gestureKeys("pane"), "jump to a terminal or shell by its number"),
+		helpRow(m.gestureKeys("service"), "jump to a service by its number"),
+		[]string{
+			"    " + leader + " " + paneServicesKey + paneServicesMenuKey + "      every service, running or not, with start,",
+			"                   stop and restart for each",
+			"    " + leader + " " + toolsKey + "       the tools, as a picker",
+			"    " + leader + " " + auditKey + "       the audit trail: everything recorded about this",
+			"                   discobox, followed as it is recorded. ↑ ↓ move,",
+			"                   Enter opens a record in full, End follows the",
+			"                   newest again, Esc goes back to the box. Calls in",
+			"                   a row with one method, status, scheme and host fold into",
+			"                   one line with a count: Enter or → opens it, ←",
+			"                   folds it. On an http record, b r and s read its",
+			"                   response body, request body and stream. / filters",
+			"                   as you type, fzf-style — the letters in order, not",
+			"                   together — and lights what matched; ↑ ↓ move",
+			"                   while typing, Enter keeps the filter, Esc clears it",
+			"    " + leader + " " + issueKey + "       the GitHub issue the discobox is tagged issue=N",
+			"                   with, as a tab on the right — a plain click on the",
+			"                   header's issue #N does the same, Ctrl-click opens",
+			"                   the page. ↑ ↓ scroll, c writes a comment (Ctrl-S",
+			"                   posts it, Alt-E edits it in $EDITOR), x closes or",
+			"                   reopens the issue, o opens the page, r reads it",
+			"                   again, q closes the tab",
+			"    " + leader + " " + pullKey + "       the pull request it is tagged pr=N with, the same",
+			"                   way and with the same keys — and its reviewers,",
+			"                   checks and reviews, and whether it is ready to",
+			"                   merge. m merges it, asking which way: squash, a",
+			"                   merge commit, or rebase. f turns to the files",
+			"                   changed and back: a list, where ↑ ↓ move, Enter",
+			"                   opens a file's diff, n and p turn to the next and",
+			"                   the one before, and Esc goes back to the list",
+			"    " + leader + " " + credentialsLeaderKey + "       answer the credential request in the banner",
+			"    " + leader + " " + bannerDismissKey + "       dismiss the banner, like its ✕; it comes back",
+			"                   when what it says happens again",
+			"    " + leader + " " + paneZoomKey + "       give the focused column the whole window, or",
+			"                   give the window back. Same as the [+] / [-]",
+			"                   button on its top border. What is hidden stays",
+			"                   connected and running",
+			"    " + m.paneMouseHint() + "       take the mouse from a box that is using it, to",
+			"                   select and copy; press again to give it back",
+		}, helpRows(m.leaderCommands(lifecycleBesideTheScreen()...)),
+		helpRows(m.leaderCommands("rejections", "files", "refresh", "help")), []string{
+			"",
+			"  Every other key goes to the focused pane, Ctrl-C included: there it",
+			"  belongs to the program, in a harness as much as in a shell.",
+			"",
+			"  Images paste from this machine. Ctrl-V or Alt-V in a harness",
+			"  terminal with an image on the clipboard, or a dragged image file,",
+			"  copies the image into the discobox and pastes its path there.",
+			"",
+			"  A shell or terminal that exits leaves its last screen up to be",
+			"  read. ↑ ↓, pgup, pgdn, g and G scroll output longer than the pane,",
+			"  and q, Esc or Enter dismisses it. When the primary exits, the",
+			"  screen closes.",
+			"",
+			"  Services are tabs on the left, after the terminals: the scripts",
+			"  under .discobox/services, started when the discobox booted. A",
+			"  service pane is read-only. One that failed, ended, or cannot run",
+			"  still has a tab, marked, with the reason and its output; one you",
+			"  stopped yourself has no tab. A tab is marked • when the service",
+			"  has printed something since you last looked.",
+			"",
+			"  On a service pane, " + m.leaderKeys("stop") + " and " + m.leaderKeys("start") + " stop and start that",
+			"  service instead of the discobox, and restart is on " + leader + " " + paneServicesKey + paneServicesMenuKey + ".",
+			"  Every other key still acts on the discobox.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The tools (" + leader + " " + toolsKey + ")",
+			"",
+			"  Programs that run beside the agent, each declared in a file: by",
+			"  this CLI, by the discobox's image, by its .discobox/tools, or by",
+			"  you. The picker lists the ones this discobox offers, each on the",
+			"  key it asks for; discobox tools ls lists them from a shell.",
+			"",
+			"    " + toolFileKey + "              the highlighted tool's config, in $EDITOR",
+			"    " + addressSSHKey + "              copy the ssh command for this discobox",
+			"    " + addressGitKey + "              copy its git url",
+			"",
+			"  A tool that runs in the discobox opens a window over the workspace,",
+			"  which keeps running underneath:",
+			"",
+			"    [-]            put it away, into a tab after the shells. The",
+			"                   session keeps running and stays attached. " + m.detachHint(),
+			"                   does the same, and the tab's [+] or " + leader + " " + paneZoomKey,
+			"                   gives it the window again",
+			"    [x]            close it, ending the session. " + leader + " " + paneEndKey + " does the",
+			"                   same, in the window or on its tab",
+			"",
+			"  A tool that runs here — vscode, zed — is handed the box over SSH",
+			"  and opens on its own.",
+			"",
+			"  Tool sessions live in the discobox, not in this window. Quit the",
+			"  console with a diff open and the next attach picks it back up,",
+			"  put away beside the shells.",
+			"",
+			"  A tool can carry a config, kept on this machine and copied into a",
+			"  discobox the first time that tool runs in one without it. fresh",
+			"  does this, and " + toolFileKey + " in the picker edits it. It is a default, not",
+			"  a sync: a copy already in a discobox is never overwritten, so an",
+			"  edit only affects the next discobox.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The harnesses (" + HarnessesKeyName + ")",
+			"",
+			"  The harnesses a discobox can run on, and everything you do to",
+			"  them. `discobox configure` opens the window here.",
+			"",
+			"    ↑ ↓ / k j      move            g / G   first / last",
+			"    s              make it the project default, used by any",
+			"                   discobox without a harness of its own",
+			"    v or Enter     its full configuration: what it runs, which",
+			"                   secret answers each variable it needs, and the",
+			"                   files it carries",
+			"    f              edit one of those files in $EDITOR",
+			"    r              reset it to its bundle's defaults, forgetting",
+			"                   the settings and logins saved to it from",
+			"                   discoboxes. It asks first",
+			"    .              every action, as a menu",
+			"    Esc or " + HarnessesKeyName + "      leave this screen",
+			"",
+			"      ★ the project default",
+			"",
+			"  Every harness runs: one with no login starts signed out, and",
+			"  you sign in inside the discobox. What changes there is saved",
+			"  from the green band on that box. The default is listed first.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The secrets (" + SecretsKeyName + ")",
+			"",
+			"  Two tables: the project's secrets, and the requests waiting on",
+			"  you. Tab crosses between them, and ↓ off the bottom of one",
+			"  reaches the next.",
+			"",
+			"    n              a new secret",
+			"    " + bindingCreateKey + "              bind it before anything asks",
+			"    h              binding history and answered requests",
+			"    e              edit it: its name, routes, limit, value",
+			"    d              delete it",
+			"    Enter          what is bound to it. There, Enter reads a binding,",
+			"                   " + unbindKey + " takes one back, and the first row binds the",
+			"                   secret. On a request, Enter answers it",
+			"    r              refresh",
+			"    Esc or " + SecretsKeyName + "      leave this screen",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"Run options (" + keyLabel(optionsKey) + ")",
+			"",
+			"    ↑ ↓            move            ← →   change the value",
+			"    Enter          on Source, the whole list of them and a path of",
+			"                   your own; on env or secrets, add one; on any other",
+			"                   row the same as →",
+			"    Backspace      drop the last env / secret (- too)",
+			"    Ctrl-R         run with these options",
+			"    Esc            put the panel away (Tab and " + keyLabel(optionsKey) + " too)",
+			"",
+			"  The source follows the folder in the header: switching folders",
+			"  also switches where a new discobox is cut from. Setting it here",
+			"  overrides that.",
+			"",
+			"  The strip below the prompt always shows what is set. The panel",
+			"  shows the equivalent `discobox run` command, live.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"The mouse",
+			"",
+			"  Everything on screen responds to it. A press on a row points at",
+			"  it, a second press opens it. The right button opens that row's",
+			"  menu, the same one " + boxMenuKey + " opens. The wheel scrolls whatever is under",
+			"  the pointer without moving the keyboard focus.",
+			"",
+			"  Anything that names a key is a button for that key: the " + HarnessesKeyName + " in the",
+			"  header, the " + bareKey("attach") + " attach on the status line, the ‹ › on a run option.",
+			"  Controls highlight under the pointer.",
+			"",
+			"  The window reads the mouse, so your terminal does not: drag to",
+			"  select here rather than there, double-click for a word,",
+			"  triple-click for a line, middle button pastes the last selection.",
+			"  A finished selection goes to the clipboard; the right button over",
+			"  one copies it again and clears it, as do Ctrl-Shift-C and ⌘-C.",
+			"  Hold Shift for your terminal's own selection, as in tmux.",
+			"",
+			"  Inside a pane the box only sees the mouse while a program there",
+			"  has asked for it; " + m.paneMouseHint() + " takes it back.",
+			"",
+			"  Press Esc to close.",
+		}), "\n")
 }
 
 // sandboxLabel is what to call a discobox on screen: its name when it has one,

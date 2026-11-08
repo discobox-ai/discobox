@@ -436,10 +436,11 @@ impl State {
 pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive",
     "quit", "palette", "terminal", "end", "maximize", "detach",
+    "next pane", "previous pane", "next box", "previous box", "sidebar",
 ];
 
-/// Every command, by its registry ID (or, for navigation, the app's own; `keys::NAV`). The
-/// keys, the palette, the menus and a row's actions all come here.
+/// Every command, by its registry ID. The keys, the palette, the menus and a row's actions all
+/// come here.
 pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
     s.message = None;
     s.palette = None;
@@ -486,19 +487,14 @@ pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
         }
         "palette" => s.palette = Some(Palette { query: { let mut q = TextEdit::new(""); q.focused = true; q }, picked: 0 }),
         "quit" => tx.quit(),
-        "nav.nextPane" => s.step_pane(1),
-        "nav.prevPane" => s.step_pane(-1),
-        "nav.nextBox" => s.step_box(1),
-        "nav.prevBox" => s.step_box(-1),
-        "nav.sidebar" => {
+        "next pane" => s.step_pane(1),
+        "previous pane" => s.step_pane(-1),
+        "next box" => s.step_box(1),
+        "previous box" => s.step_box(-1),
+        "sidebar" => {
             s.sidebar = !s.sidebar;
             if !s.sidebar {
                 s.focus = Focus::Panes;
-            }
-        }
-        _ if id.starts_with("pane.goto.") => {
-            if let Ok(n) = id.trim_start_matches("pane.goto.").parse::<usize>() {
-                s.goto_pane(n);
             }
         }
         _ => {
@@ -590,8 +586,8 @@ macro_rules! menu_commands {
 const MENU: &[(&str, &str, fn(&mut State, &mut Tx))] = menu_commands![
     ("Box", "new"), ("Shell", "shell"), ("Shell", "terminal"), ("Shell", "end"),
     ("Box", "attach"), ("Box", "stop"), ("Box", "start"), ("Box", "upgrade"), ("Box", "repair"), ("Box", "archive"), ("Box", "unarchive"),
-    ("View", "detach"), ("View", "nav.sidebar"), ("View", "palette"), ("View", "maximize"),
-    ("View", "nav.nextPane"), ("View", "nav.prevPane"), ("View", "nav.nextBox"), ("View", "nav.prevBox"),
+    ("View", "detach"), ("View", "sidebar"), ("View", "palette"), ("View", "maximize"),
+    ("View", "next pane"), ("View", "previous pane"), ("View", "next box"), ("View", "previous box"),
 ];
 
 /// A label as a menu's title: its first letter capitalised.

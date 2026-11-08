@@ -15,7 +15,7 @@ import (
 
 // SpecVersion is the spec's shape. It changes when a field is removed or
 // changes meaning, never for a field added.
-const SpecVersion = 2
+const SpecVersion = 3
 
 // Glyph is how a state is drawn: its shape, the color token it is drawn in,
 // and the word that stands for it where there is no color. An empty Color is
@@ -82,6 +82,10 @@ type Spec struct {
 	States   map[string]Glyph `json:"states"`
 	Agents   map[string]Glyph `json:"agents"`
 	Commands []SpecCommand    `json:"commands"`
+	// Gestures are the bindings that are not commands (Gesture): every key a
+	// frontend's list, tree, leader and panes bind is a command's or one of
+	// these.
+	Gestures []SpecGesture `json:"gestures"`
 }
 
 // SpecColor is one color token: its dark and light values as #rrggbb, and
@@ -114,14 +118,23 @@ type SpecBindings struct {
 
 // SpecTUIBinding is TUIBinding on the wire.
 type SpecTUIBinding struct {
-	Keys   []string `json:"keys"`
-	Leader []string `json:"leader"`
-	Menu   []string `json:"menu"`
+	Keys    []string   `json:"keys"`
+	Leader  [][]string `json:"leader"`
+	Repeats bool       `json:"repeats"`
+	Chords  []string   `json:"chords"`
+	Menu    []string   `json:"menu"`
 }
 
 // SpecDesktopBinding is DesktopBinding on the wire.
 type SpecDesktopBinding struct {
 	Keys []string `json:"keys"`
+}
+
+// SpecGesture is one gesture as a frontend is handed it.
+type SpecGesture struct {
+	ID       string       `json:"id"`
+	Label    string       `json:"label"`
+	Bindings SpecBindings `json:"bindings"`
 }
 
 // NewSpec is the console's spec.
@@ -132,6 +145,7 @@ func NewSpec() Spec {
 		States:   map[string]Glyph{},
 		Agents:   map[string]Glyph{},
 		Commands: make([]SpecCommand, 0, len(registry)),
+		Gestures: make([]SpecGesture, 0, len(gestures)),
 	}
 	for _, c := range brand.Colors() {
 		spec.Colors[c.Name] = SpecColor{Dark: c.Dark, Light: c.Light, XTerm: c.XTerm}
@@ -150,13 +164,25 @@ func NewSpec() Spec {
 		spec.Commands = append(spec.Commands, SpecCommand{
 			ID: c.ID, Label: c.Label, Detail: c.Detail, Aliases: nonNil(c.Aliases),
 			Target: target, Lifecycle: c.Lifecycle,
-			Bindings: SpecBindings{
-				TUI:     SpecTUIBinding{Keys: nonNil(c.Bindings.TUI.Keys), Leader: nonNil(c.Bindings.TUI.Leader), Menu: nonNil(c.Bindings.TUI.Menu)},
-				Desktop: SpecDesktopBinding{Keys: nonNil(c.Bindings.Desktop.Keys)},
-			},
+			Bindings: specBindings(c.Bindings),
 		})
 	}
+	for _, g := range gestures {
+		spec.Gestures = append(spec.Gestures, SpecGesture{ID: g.ID, Label: g.Label, Bindings: specBindings(g.Bindings)})
+	}
 	return spec
+}
+
+func specBindings(b Bindings) SpecBindings {
+	leader := make([][]string, 0, len(b.TUI.Leader))
+	for _, seq := range b.TUI.Leader {
+		leader = append(leader, nonNil(seq))
+	}
+	return SpecBindings{
+		TUI: SpecTUIBinding{Keys: nonNil(b.TUI.Keys), Leader: leader, Repeats: b.TUI.Repeats,
+			Chords: nonNil(b.TUI.Chords), Menu: nonNil(b.TUI.Menu)},
+		Desktop: SpecDesktopBinding{Keys: nonNil(b.Desktop.Keys)},
+	}
 }
 
 // nonNil is a copy that is never nil, so the wire carries [] rather than null.

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/termpane"
 )
@@ -23,9 +24,11 @@ func (m *Model) commandContext() console.Context {
 		HasWorkspace:   m.hasWorkspace(),
 		WorkspaceShown: m.workspaceShown(),
 		PaneFocused:    m.focusedPane() != nil,
-		ListHasKeys:    m.workspaceShown() && m.listHasKeys(),
+		ListHasKeys:    m.listInFront(),
 		Tree:           m.treeAvailable(),
+		TreeShown:      m.treeShown(),
 		TreeFits:       m.screenWidth >= treeMinScreen,
+		PageShown:      m.pageOpen() && !m.listInFront(),
 		Waiting:        func(box console.Sandbox) bool { return len(m.pendingFor(box)) > 0 },
 		Refused: func(box console.Sandbox) bool {
 			_, ok := m.shownRejection(box)
@@ -70,26 +73,108 @@ func (m *Model) act(id string) tea.Cmd {
 // for the palette's rows.
 func (m *Model) commandBinding(c console.Command) string {
 	b := c.Bindings.TUI
+	menu := func() string {
+		var keys []string
+		for _, key := range b.Menu {
+			keys = append(keys, keyLabel(key))
+		}
+		return m.leader() + " " + strings.Join(keys, " then ")
+	}
 	if m.inPanes() || m.wsOpening || m.pageOpen() {
 		if len(b.Leader) > 0 {
-			return m.leader() + " " + strings.Join(b.Leader, " ")
+			return m.leaderKeys(c.ID)
 		}
 		if len(b.Menu) > 0 {
-			return m.leader() + " " + strings.Join(b.Menu, " then ")
+			return menu()
 		}
 		return "palette"
 	}
 	if len(b.Keys) > 0 {
-		return b.Keys[0]
+		return keyLabel(b.Keys[0])
 	}
 	if len(b.Leader) > 0 {
-		return m.leader() + " " + strings.Join(b.Leader, " ")
+		return m.leaderKeys(c.ID)
 	}
 	return "palette"
 }
 
-// consoleCommandMsg is a command's leader binding, delivered by a pane.
-type consoleCommandMsg struct{ id string }
+// The window's keys are the registry's (ADR 26-11-07-598 §3): the constants
+// its hints, help and menus name a key by are read from it here, so a key
+// moved in the registry moves everywhere the window spells it.
+
+// command is a registry command the window names a key of. A missing one is
+// the window naming a command the registry does not have.
+func command(id string) console.Command {
+	c, ok := console.Lookup(id)
+	if !ok {
+		panic("tui: no command " + id + " in the registry")
+	}
+	return c
+}
+
+// bareKey is a command's key on the list: the first, which hints show.
+func bareKey(id string) string { return command(id).Bindings.TUI.Keys[0] }
+
+// leaderSeq is a command's sequence after the leader: the first, which hints
+// show.
+func leaderSeq(id string) []string { return command(id).Bindings.TUI.Leader[0] }
+
+// leaderKey is a command's one key after the leader.
+func leaderKey(id string) string { return leaderSeq(id)[0] }
+
+// chordKey is a command's leaderless chord.
+func chordKey(id string) string { return command(id).Bindings.TUI.Chords[0] }
+
+// menuKey is the key of a command's entry in the menu that reaches it.
+func menuKey(id string) string {
+	path := command(id).Bindings.TUI.Menu
+	return path[len(path)-1]
+}
+
+// quitAnywhereKey is quit's key on every screen but a pane: Ctrl-C, which
+// inside one is the program's.
+var quitAnywhereKey = command("quit").Bindings.TUI.Keys[1]
+
+// bareHint is a key-line offer of a command's list key.
+func bareHint(id, label string) hint { return keyed(keyLabel(bareKey(id)), bareKey(id), label) }
+
+// leaderHint is a key-line offer of a command's sequence after the leader.
+func (m *Model) leaderHint(id, label string) hint {
+	return pressing(m.leaderKeys(id)+" "+label, append([]string{m.leader()}, leaderSeq(id)...)...)
+}
+
+// leaderCommand is the command one key after the leader runs, by ID, if any.
+func leaderCommand(key string) string {
+	c, _ := console.ForTUILeader(key)
+	return c.ID
+}
+
+// chordPress is a leaderless chord as the key press a pane hands back to its
+// program, where the window has nothing for it to do: `ctrl+shift+j`.
+func chordPress(chord string) tea.KeyPressMsg {
+	parts := strings.Split(chord, "+")
+	var press tea.KeyPressMsg
+	for _, mod := range parts[:len(parts)-1] {
+		switch mod {
+		case "ctrl":
+			press.Mod |= tea.ModCtrl
+		case "shift":
+			press.Mod |= tea.ModShift
+		case "alt":
+			press.Mod |= tea.ModAlt
+		}
+	}
+	press.Code = []rune(parts[len(parts)-1])[0]
+	return press
+}
+
+// consoleCommandMsg is a command's binding, delivered by a pane. chord is the
+// leaderless chord that asked, if one did: where the command cannot act, it
+// goes on to the program instead, as it would have unbound.
+type consoleCommandMsg struct {
+	id    string
+	chord *tea.KeyPressMsg
+}
 
 // Unavailable says it on the status line.
 func (m *Model) Unavailable(why string) tea.Cmd { return status("%s", why) }
@@ -298,10 +383,227 @@ func (m *Model) Actions() tea.Cmd {
 	return m.toFocusedPane(boxMenuMsg{})
 }
 
+// NextPane and PreviousPane move along the strip; off the leftmost pane is
+// the list beside it. They are the one implementation of both, from a pane's
+// leader key, the window's leader beside a page or the list, and the palette:
+// with the list holding the keys beside a workspace the next pane is the
+// workspace's, and from a page beside the tree, or a workspace still opening,
+// the previous one is the tree. Where neither can act — a page covering the
+// panes, the list with nothing left of it — the registry says so
+// (console.Context.ListHasKeys, PageShown), and Dispatch never gets here.
+func (m *Model) NextPane() tea.Cmd {
+	// The list has the keys, drawn beside the right side or expanded over
+	// it: the next pane puts it back beside and gives the right side the keys.
+	if m.listInFront() {
+		m.backToPanes()
+		return nil
+	}
+	return m.toFocusedPane(movePaneMsg{delta: 1})
+}
+
+func (m *Model) PreviousPane() tea.Cmd {
+	if (m.pageOpen() || m.wsOpening) && m.treeShown() {
+		m.focusTree()
+		return nil
+	}
+	return m.toFocusedPane(movePaneMsg{delta: -1})
+}
+
+// NextBox and PreviousBox walk the list beside the workspace: from a pane,
+// carrying the leader on through a run of them; from anywhere else, the walk
+// alone.
+func (m *Model) NextBox() tea.Cmd { return m.walkBox(1) }
+
+func (m *Model) PreviousBox() tea.Cmd { return m.walkBox(-1) }
+
+func (m *Model) walkBox(delta int) tea.Cmd {
+	if m.inPanes() && m.focusedPane() != nil {
+		return m.toFocusedPane(switchBoxMsg{delta: delta})
+	}
+	return m.switchBox(delta)
+}
+
+// ToggleSidebar hides the list beside the workspace, or shows it again.
+func (m *Model) ToggleSidebar() tea.Cmd {
+	if !m.treeHidden {
+		return m.treeAct(treeHide)
+	}
+	m.treeHidden = false
+	if m.syncWidth() {
+		m.layout()
+	}
+	return nil
+}
+
 func (m *Model) toFocusedPane(msg tea.Msg) tea.Cmd {
 	p := m.focusedPane()
 	if p == nil {
 		return status("requires a workspace pane")
 	}
 	return m.updatePaneMsg(paneMsg{id: p.id, msg: msg})
+}
+
+// The help's keys are the registry's too: each row names a command by the
+// keys the registry gives it, and the rows that only list commands are
+// generated from it.
+
+// keyLabel is a key as the help spells it: ↑ for up, Enter, F3, Ctrl-O.
+func keyLabel(key string) string {
+	if key == " " {
+		return "Space"
+	}
+	parts := strings.Split(key, "+")
+	name := parts[len(parts)-1]
+	switch name {
+	case "up":
+		name = "↑"
+	case "down":
+		name = "↓"
+	case "left":
+		name = "←"
+	case "right":
+		name = "→"
+	case "delete":
+		name = "Del"
+	case "pgup":
+		name = "PgUp"
+	case "pgdown":
+		name = "PgDn"
+	default:
+		if len(name) > 1 {
+			name = strings.ToUpper(name[:1]) + name[1:]
+		}
+	}
+	mods := parts[:len(parts)-1]
+	if len(mods) > 0 && len(name) == 1 {
+		// A modified letter is written in capitals, as terminals print it.
+		name = strings.ToUpper(name)
+	}
+	for i := len(mods) - 1; i >= 0; i-- {
+		name = strings.ToUpper(mods[i][:1]) + mods[i][1:] + "-" + name
+	}
+	return name
+}
+
+// seqLabel is a sequence after the leader as the help spells it: `h`, `S0`.
+func seqLabel(seq []string) string {
+	out := ""
+	for _, key := range seq {
+		out += keyLabel(key)
+	}
+	return out
+}
+
+// leaderKeys is a command's first sequence after the leader, with the
+// leader: `ctrl+b h`.
+func (m *Model) leaderKeys(id string) string {
+	return m.leader() + " " + seqLabel(leaderSeq(id))
+}
+
+// otherLeaderKeys is a command's other sequences after the leader, without
+// it: the `l` beside `→`.
+func (m *Model) otherLeaderKeys(id string) string {
+	var out []string
+	for _, seq := range command(id).Bindings.TUI.Leader[1:] {
+		out = append(out, seqLabel(seq))
+	}
+	return strings.Join(out, " and ")
+}
+
+// gestureKeys is a numbered gesture's sequences as one range, with the
+// leader: `ctrl+b 0-9`, `ctrl+b S1-9`.
+func (m *Model) gestureKeys(id string) string {
+	g, _ := console.LookupGesture(id)
+	seqs := g.Bindings.TUI.Leader
+	first, last := seqs[0], seqs[len(seqs)-1]
+	return m.leader() + " " + seqLabel(first) + "-" + last[len(last)-1]
+}
+
+// helpEntry is one row of the help's key reference.
+type helpEntry struct{ keys, text string }
+
+// helpRow is a key and what it does, as the help lays one out: the key in a
+// column of its own and the text beside it, or under it when the key is
+// wider than the column.
+func helpRow(keys string, text ...string) []string {
+	const column = 15
+	indent := strings.Repeat(" ", 4+column)
+	var out []string
+	if w := lipgloss.Width(keys); w < column {
+		out = append(out, "    "+keys+strings.Repeat(" ", column-w)+text[0])
+		text = text[1:]
+	} else {
+		out = append(out, "    "+keys)
+	}
+	for _, line := range text {
+		out = append(out, indent+line)
+	}
+	return out
+}
+
+// helpRows is a run of rows, each a command's description wrapped to the
+// help's width beside its key.
+func helpRows(entries []helpEntry) []string {
+	var out []string
+	for _, e := range entries {
+		out = append(out, helpRow(e.keys, wrapWords(e.text, helpTextWidth)...)...)
+	}
+	return out
+}
+
+// helpTextWidth is the help's text column: its rule, less the key column.
+const helpTextWidth = 63 - 4 - 15
+
+// wrapWords breaks text into lines of at most width cells, between words.
+func wrapWords(text string, width int) []string {
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(text) {
+		if line != "" && lipgloss.Width(line)+1+lipgloss.Width(word) > width {
+			lines = append(lines, line)
+			line = ""
+		}
+		if line != "" {
+			line += " "
+		}
+		line += word
+	}
+	return append(lines, line)
+}
+
+// listCommands is every command the list has a key for, with its keys and
+// what it does.
+func listCommands() []helpEntry {
+	var out []helpEntry
+	for _, c := range console.Commands() {
+		var keys []string
+		for _, key := range c.Bindings.TUI.Keys {
+			keys = append(keys, keyLabel(key))
+		}
+		if len(keys) > 0 {
+			out = append(out, helpEntry{strings.Join(keys, " / "), c.Detail})
+		}
+	}
+	return out
+}
+
+// leaderCommands is commands by their keys after the leader.
+func (m *Model) leaderCommands(ids ...string) []helpEntry {
+	var out []helpEntry
+	for _, id := range ids {
+		out = append(out, helpEntry{m.leaderKeys(id), command(id).Detail})
+	}
+	return out
+}
+
+// lifecycleBesideTheScreen is the box's own commands the workspace reaches
+// behind the leader beyond attach and shell, which its help describes apart.
+func lifecycleBesideTheScreen() []string {
+	var out []string
+	for _, c := range console.Commands() {
+		if c.Lifecycle && c.ID != "attach" && c.ID != "shell" {
+			out = append(out, c.ID)
+		}
+	}
+	return out
 }

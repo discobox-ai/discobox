@@ -81,5 +81,5 @@ func paneKeys(t *testing.T, m *Model, id string) []string {
 	if len(c.Bindings.TUI.Leader) == 0 {
 		t.Fatalf("command %s has no leader binding to reach it from a pane", id)
 	}
-	return append([]string{m.leader()}, c.Bindings.TUI.Leader...)
+	return append([]string{m.leader()}, c.Bindings.TUI.Leader[0]...)
 }

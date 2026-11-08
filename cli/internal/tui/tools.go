@@ -31,11 +31,12 @@ import (
 // restarted — pick a running diff back up instead of drawing it as a stray
 // shell. See ADR 26-08-27-302 on tool sessions.
 
+// toolsKey opens the picker behind the leader. Not t, which is stop in the
+// key map the list and the workspace share, and not x, which is archive in
+// it; o is what the picker does — open one of them.
+var toolsKey = bareKey("tools")
+
 const (
-	// toolsKey opens the picker behind the leader. Not t, which is stop in the
-	// key map the list and the workspace share, and not x, which is archive in
-	// it; o is what the picker does — open one of them.
-	toolsKey = "o"
 	// toolFileKey opens the files of the tool the picker's cursor is on. It is
 	// the picker's second action, on a key no tool answers to, because a row
 	// there means "run this" and its files are the other thing you might want

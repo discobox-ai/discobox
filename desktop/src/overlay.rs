@@ -116,14 +116,6 @@ fn items(s: &State) -> Vec<Item> {
             });
         }
     }
-    for n in keys::NAV {
-        if fits(n.label) {
-            out.push(Item {
-                title: n.label.into(), group: "view".into(), shortcut: keys::shortcut_of(s, n.id),
-                command: Some(n.id.into()), sandbox: None,
-            });
-        }
-    }
     out
 }
 

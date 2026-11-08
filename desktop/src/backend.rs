@@ -106,6 +106,16 @@ pub struct Bindings {
     pub desktop: DesktopBinding,
 }
 
+/// One gesture of the registry: a binding that is not a command (moving a cursor, a pane by
+/// its number), which the app acts on itself and never runs as a command.
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Gesture {
+    pub id: String,
+    pub label: String,
+    pub bindings: Bindings,
+}
+
 /// One command of the console core's registry.
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]
@@ -131,17 +141,22 @@ pub struct Spec {
     pub states: HashMap<String, Glyph>,
     pub agents: HashMap<String, Glyph>,
     pub commands: Vec<Command>,
+    /// Every binding that is not a command's: with the commands', every shortcut and list key
+    /// the app takes (an open menu or palette keeps its own).
+    pub gestures: Vec<Gesture>,
 }
 
 /// The spec's shape this app reads (`console.SpecVersion`). A CLI that hands over another is
 /// refused at `hello`, rather than read into empty labels and bindings.
-pub const SPEC_VERSION: u32 = 2;
+pub const SPEC_VERSION: u32 = 3;
 
 impl Spec {
     /// The spec the CLI printed (`discobox desktop --print-spec`), for running without one.
     pub fn bundled() -> Spec { serde_json::from_str(include_str!("spec.json")).expect("spec.json") }
 
     pub fn command(&self, id: &str) -> Option<&Command> { self.commands.iter().find(|c| c.id == id) }
+
+    pub fn gesture(&self, id: &str) -> Option<&Gesture> { self.gestures.iter().find(|g| g.id == id) }
 }
 
 /// What arrives for the window.

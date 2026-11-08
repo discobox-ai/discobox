@@ -234,8 +234,8 @@ fn sidebar(s: &State) -> El {
     col().key("sidebar").w(SIDEBAR_W).h_full().gap(4.0)
         .child(row().h(20.0).px(4.0).center_y().child(t("discobox", theme::grey())))
         .child(frame("sidebar-frame", focused, Some(tab("discoboxes", true, border)),
-            Some(button("‹", border, keys::shortcut_of(s, "nav.sidebar").map(|k| format!("hide the sidebar  {k}")))
-                .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "nav.sidebar", tx))), body).grow(1.0))
+            Some(button("‹", border, keys::shortcut_of(s, "sidebar").map(|k| format!("hide the sidebar  {k}")))
+                .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx))), body).grow(1.0))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -302,8 +302,8 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
 fn header(s: &State, sbx: &Sandbox) -> El {
     let mut r = row().w_full().h(20.0).px(12.0).gap(18.0).center_y();
     if !s.sidebar {
-        r = r.child(button("›", theme::inactive(), keys::shortcut_of(s, "nav.sidebar").map(|k| format!("show the sidebar  {k}")))
-            .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "nav.sidebar", tx)));
+        r = r.child(button("›", theme::inactive(), keys::shortcut_of(s, "sidebar").map(|k| format!("show the sidebar  {k}")))
+            .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx)));
     }
     r = r.child(t(source_label(sbx), theme::grey()))
         .child(t(sbx.shown_id().to_string(), theme::dim()));
@@ -353,7 +353,7 @@ fn workspace(s: &State, ws: &Workspace) -> El {
         .child(header(s, sbx))
         .child(cols)
         .child(row().h(20.0).px(12.0).center_y()
-            .child(status_line(s, &["shell", "terminal", "end", "nav.nextPane", "maximize", "nav.nextBox", "palette"])))
+            .child(status_line(s, &["shell", "terminal", "end", "next pane", "maximize", "next box", "palette"])))
 }
 
 // ---------------------------------------------------------------------------------------------
