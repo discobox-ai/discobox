@@ -222,7 +222,7 @@ func TestABoxLinkInAnAttachWindowSaysHowToOpenIt(t *testing.T) {
 
 		// Attach opens from its given box before the listing arrives. The
 		// link needs that listing to identify the other box.
-		d.wait("the box listing", func() bool { return m.list.loaded })
+		d.wait("the box listing", func() bool { return m.list.Loaded() })
 
 		x, y := printBoxLink(t, d, m, term, "discobox:///sbx_two")
 		clickWindow(d, x+1, y)

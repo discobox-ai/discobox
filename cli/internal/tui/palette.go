@@ -36,7 +36,7 @@ type paletteRow struct {
 	box      *console.Sandbox
 	command  *console.Entry
 	why      string
-	score    matchRank
+	score    console.Rank
 }
 
 func (m *Model) openPalette() tea.Cmd {
@@ -71,100 +71,9 @@ func (m *Model) closePalette() {
 	m.disarmPaletteLeader()
 }
 
-// matchRank carries the evidence used by the palette without changing the
-// acceptance rules of the filters that also use fuzzyQuery.
-type matchRank struct{ tier, gaps, start int }
-
-func (a matchRank) compare(b matchRank) int {
-	if n := cmp.Compare(a.tier, b.tier); n != 0 {
-		return n
-	}
-	if n := cmp.Compare(a.gaps, b.gaps); n != 0 {
-		return n
-	}
-	return cmp.Compare(a.start, b.start)
-}
-func paletteMatch(q fuzzyQuery, primary, detail []string) (matchRank, bool) {
-	rank := matchRank{}
-	for _, term := range q.terms {
-		best := matchRank{tier: 99}
-		for group, fields := range [][]string{primary, detail} {
-			for _, field := range fields {
-				hits := map[int]bool{}
-				rr := []rune(field)
-				if !q.matchTerm(rr, term, hits) {
-					continue
-				}
-				lo, hi := len(rr), 0
-				for i := range hits {
-					lo = min(lo, i)
-					hi = max(hi, i)
-				}
-				r := matchRank{tier: 3, gaps: hi - lo + 1 - len(term), start: lo}
-				if r.gaps == 0 {
-					r.tier = 2
-					if lo == 0 {
-						r.tier = 1
-						if len(rr) == len(term) {
-							r.tier = 0
-						}
-					}
-				}
-				if group == 1 {
-					r.tier = 4
-				}
-				if r.compare(best) < 0 {
-					best = r
-				}
-			}
-		}
-		if best.tier == 99 {
-			return matchRank{}, false
-		}
-		rank.tier = max(rank.tier, best.tier)
-		rank.gaps += best.gaps
-		rank.start += best.start
-	}
-	if !q.empty() {
-		var terms []string
-		for _, t := range q.terms {
-			terms = append(terms, string(t))
-		}
-		query := strings.Join(terms, " ")
-		for _, field := range primary {
-			same := field == query
-			if !q.caseSensitive {
-				same = strings.EqualFold(field, query)
-			}
-			if same {
-				return matchRank{}, true
-			}
-		}
-	}
-	return rank, true
-}
-
 func (m *Model) boxRef(s console.Sandbox) console.BoxRef {
 	return console.BoxRef{Server: m.session.ServerName(s.Server), ID: s.ID}
 }
-func (m *Model) paletteBox(ref console.BoxRef) *console.Sandbox {
-	for _, s := range m.list.all {
-		if m.boxRef(s) == ref {
-			return &s
-		}
-	}
-	return nil
-}
-func (m *Model) paletteFields(s console.Sandbox) ([]string, []string) {
-	primary := []string{s.ID, strings.TrimPrefix(s.ID, "sbx_"), s.Name, s.ConfigName, s.GivenName}
-	detail := []string{s.Description, s.Repository, s.RepositoryKey, s.Source, s.Branch, s.Git.Branch, s.Harness, s.HarnessName, s.Pool, s.PoolID, m.session.ServerName(s.Server), string(s.State)}
-	for _, tag := range s.Tags {
-		detail = append(detail, tag)
-		detail = append(detail, strings.SplitN(tag, "=", 2)...)
-	}
-	return primary, detail
-}
-
 func (m *Model) rebuildPalette(reset bool) {
 	p := m.palette
 	if p == nil {
@@ -176,18 +85,13 @@ func (m *Model) rebuildPalette(reset bool) {
 		p.offset = 0
 		p.reason = ""
 	}
-	q := parseFuzzy(p.input.Value())
+	q := console.ParseQuery(p.input.Value())
 	var rows []paletteRow
 	if p.box == nil {
-		for _, s := range m.list.all {
-			if s.State == console.StateArchived && !p.archived {
-				continue
-			}
-			primary, detail := m.paletteFields(s)
-			score, ok := paletteMatch(q, primary, detail)
-			if !ok {
-				continue
-			}
+		// Every listed server's boxes, whatever the list is filtered to
+		// (console.List.Search).
+		for _, hit := range m.list.Search(q, p.archived) {
+			s, score := hit.Box, hit.Rank
 			why := ""
 			if p.command != "" {
 				for _, c := range m.commandEntries(&s) {
@@ -203,13 +107,13 @@ func (m *Model) rebuildPalette(reset bool) {
 	if p.command == "" {
 		var box *console.Sandbox
 		if p.box != nil {
-			box = m.paletteBox(*p.box)
+			box = m.list.Find(*p.box)
 		}
 		for _, c := range m.commandEntries(box) {
 			if p.box != nil && c.Target != console.TargetBox {
 				continue
 			}
-			score, ok := paletteMatch(q, append([]string{c.Label}, c.Aliases...), []string{c.Detail})
+			score, ok := console.MatchFields(q, append([]string{c.Label}, c.Aliases...), []string{c.Detail})
 			if !ok {
 				continue
 			}
@@ -232,7 +136,7 @@ func (m *Model) rebuildPalette(reset bool) {
 		rows = slices.DeleteFunc(rows, func(r paletteRow) bool { return r.why != "" })
 	}
 	idQuery := strings.HasPrefix(p.input.Value(), "sbx_")
-	if !q.empty() {
+	if !q.Empty() {
 		for _, r := range rows {
 			if r.box != nil && strings.Contains(strings.ToLower(r.box.ID), strings.ToLower(p.input.Value())) {
 				idQuery = true
@@ -246,7 +150,7 @@ func (m *Model) rebuildPalette(reset bool) {
 		current = m.boxRef(*s)
 	}
 	slices.SortStableFunc(rows, func(a, b paletteRow) int {
-		if q.empty() {
+		if q.Empty() {
 			priority := func(r paletteRow) int {
 				if r.box != nil {
 					ref := m.boxRef(*r.box)
@@ -271,7 +175,7 @@ func (m *Model) rebuildPalette(reset bool) {
 					}
 					return 1
 				}
-				if r.command != nil && r.score.tier == 0 {
+				if r.command != nil && r.score.Tier == 0 {
 					return 0
 				}
 				return 1
@@ -279,7 +183,7 @@ func (m *Model) rebuildPalette(reset bool) {
 			if n := cmp.Compare(priority(a), priority(b)); n != 0 {
 				return n
 			}
-			if n := a.score.compare(b.score); n != 0 {
+			if n := a.score.Compare(b.score); n != 0 {
 				return n
 			}
 		}
@@ -292,7 +196,7 @@ func (m *Model) rebuildPalette(reset bool) {
 		if n := cmp.Compare(usage(b), usage(a)); n != 0 {
 			return n
 		}
-		if q.empty() {
+		if q.Empty() {
 			return 0
 		}
 		label := func(r paletteRow) string {
@@ -388,7 +292,7 @@ func (m *Model) paletteChoose(complete bool) tea.Cmd {
 	} else {
 		c = r.command
 		if p.box != nil {
-			s := m.paletteBox(*p.box)
+			s := m.list.Find(*p.box)
 			if s == nil {
 				p.reason = "the box is no longer listed"
 				return nil
@@ -567,7 +471,7 @@ func (m *Model) viewPalette(background string) string {
 		if r.box != nil && p.command == "" && p.box == nil {
 			line += " [commands]"
 		}
-		if hits, ok := parseFuzzy(p.input.Value()).match(ansi.Strip(line)); ok {
+		if hits, ok := console.ParseQuery(p.input.Value()).Match(ansi.Strip(line)); ok {
 			line = litRunes(ansi.Strip(line), hits, 0, m.st.dimText, m.st.emphasis)
 		}
 		if r.identity == p.selected {
@@ -580,16 +484,13 @@ func (m *Model) viewPalette(background string) string {
 	if len(p.rows) == 0 {
 		lines = append(lines, ansi.Truncate("No applicable matches for "+fmt.Sprintf("%q", p.input.Value()), inner, "…"))
 	}
-	if len(m.list.waiting) > 0 || len(m.list.unreachable) > 0 {
-		lines = append(lines, ansi.Truncate("Partial results: "+strings.Join(append(slices.Clone(m.list.waiting), m.list.unreachable...), ", "), inner, "…"))
+	if partial := m.list.Partial(); len(partial) > 0 {
+		lines = append(lines, ansi.Truncate("Partial results: "+strings.Join(partial, ", "), inner, "…"))
 	}
 	var stale []string
-	for name := range m.list.listed {
-		if age := m.list.listedAgo(name); age != "" {
-			stale = append(stale, m.session.ServerName(name)+" "+age)
-		}
+	for _, note := range m.list.Stale() {
+		stale = append(stale, note.Server+" "+note.Detail)
 	}
-	slices.Sort(stale)
 	if len(stale) > 0 {
 		lines = append(lines, ansi.Truncate(strings.Join(stale, " · "), inner, "…"))
 	}
@@ -703,27 +604,23 @@ func (m *Model) paletteMouse(msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
-// paletteReveal is a navigation-only view. It never becomes a saved filter.
+// paletteReveal is a navigation-only view. It never becomes a saved filter:
+// saved is the filter it stands in for, put back when the window leaves the
+// box it revealed.
 type paletteReveal struct {
-	target   console.BoxRef
-	server   string
-	folder   console.Folder
-	tags     []string
-	archived bool
+	target console.BoxRef
+	saved  console.Filter
 }
 
 func (m *Model) revealPaletteBox(box console.Sandbox) {
 
 	m.restorePaletteView()
-	visible := slices.ContainsFunc(m.list.rows(), func(s console.Sandbox) bool { return m.boxRef(s) == m.boxRef(box) })
+	visible := slices.ContainsFunc(m.list.Rows(), func(s console.Sandbox) bool { return m.boxRef(s) == m.boxRef(box) })
 	if visible {
 		return
 	}
-	m.paletteReveal = &paletteReveal{target: m.boxRef(box), server: m.list.server, folder: m.list.folder, tags: slices.Clone(m.list.tags), archived: m.list.showArchived}
-	m.list.server = ""
-	m.list.folder = everyFolder
-	m.list.tags = nil
-	m.list.showArchived = box.State == console.StateArchived
+	m.paletteReveal = &paletteReveal{target: m.boxRef(box), saved: m.list.Filter}
+	m.list.Filter = console.Revealing(box)
 
 	m.status = "Showing the palette result outside your filters; the filters return when you leave"
 	m.list.clamp()
@@ -735,7 +632,7 @@ func (m *Model) restorePaletteView() {
 	}
 
 	m.paletteReveal = nil
-	m.list.server, m.list.folder, m.list.tags, m.list.showArchived = r.server, r.folder, r.tags, r.archived
+	m.list.Filter = r.saved
 	m.list.clamp()
 }
 

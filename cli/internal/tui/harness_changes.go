@@ -244,7 +244,7 @@ func (m *Model) harnessChangesToExplain() (console.Sandbox, bool) {
 			return box, true
 		}
 	}
-	for _, box := range m.list.all {
+	for _, box := range m.list.All() {
 		if box.HarnessConfigPending {
 			return box, true
 		}

@@ -137,7 +137,7 @@ func specStates() map[string]Glyph {
 	out := map[string]Glyph{}
 	for _, s := range []console.State{console.StateRunning, console.StateStarting, console.StateRepairing, console.StateStopped, console.StateSuspended, console.StateArchived, console.StateError} {
 		box := console.Sandbox{State: s}
-		out[string(s)] = Glyph{Glyph: stateDot(box), Color: color(s), Word: stateWord(box)}
+		out[string(s)] = Glyph{Glyph: stateDot(box), Color: color(s), Word: box.StateWord()}
 	}
 	return out
 }

@@ -78,7 +78,7 @@ func TestADismissedHarnessChangeComesBackForANewCandidate(t *testing.T) {
 		t.Fatalf("banner = %v, want the harness change dismissed", got)
 	}
 
-	boxes := m.list.all
+	boxes := m.list.All()
 	m.list.setAll(boxes)
 	m.pruneDismissed()
 	if got := m.bannerShowing(); got != bannerNone {
@@ -115,7 +115,7 @@ func TestAHarnessChangeQueuesBehindARequest(t *testing.T) {
 func TestADismissedRequestBandReturnsForANewRequest(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithHarnessChanges(t)
-	m.list.all[0].HarnessConfigPending, m.list.all[0].HarnessConfigCandidate = false, ""
+	m.list.All()[0].HarnessConfigPending, m.list.All()[0].HarnessConfigCandidate = false, ""
 	first, second := waitingRequest(), waitingRequest()
 	first.ID, second.ID = "req_1", "req_2"
 	for _, req := range []*console.CredentialRequest{&first, &second} {
@@ -142,7 +142,7 @@ func TestADismissedRequestBandReturnsForANewRequest(t *testing.T) {
 func TestADismissalIsForOneDiscobox(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithHarnessChanges(t)
-	boxes := m.list.all
+	boxes := m.list.All()
 	boxes[1].HarnessID, boxes[1].HarnessName = "harness_claude", "Claude Code"
 	boxes[1].HarnessConfigPending, boxes[1].HarnessConfigCandidate = true, "cand_1"
 	m.list.setAll(boxes)

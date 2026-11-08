@@ -11,7 +11,7 @@ import (
 
 // The header's filter is one control: a line saying what the list is narrowed
 // to, and one card that changes all of it. The server, the folder and the tags
-// are one filter (sandboxList.nest), so they are chosen on one card rather
+// are one filter (console.List.Rows), so they are chosen on one card rather
 // than three dropdowns: each dropdown answered one question with the other two
 // held still, where the card shows every choice at once, counted against
 // the others as they are marked, and applies them together.
@@ -79,7 +79,7 @@ func (m *Model) filterDialog() *dialog {
 func (p *filterPicker) rows() []filterRow {
 	l := &p.list
 	var rows []filterRow
-	if servers := l.session.Servers; len(servers) > 1 {
+	if servers := l.Session.Servers; len(servers) > 1 {
 		choices := servers
 		if !p.config {
 			choices = append([]string{""}, servers...)
@@ -92,32 +92,32 @@ func (p *filterPicker) rows() []filterRow {
 			rows = append(rows, filterRow{
 				group: "Server", label: label, detail: p.serverDetail(name),
 				marked: p.shows(name),
-				mark:   func(l *sandboxList) { l.server = name },
+				mark:   func(l *sandboxList) { l.Filter.Server = name },
 			})
 		}
 	}
 	if p.config {
 		return rows
 	}
-	for _, f := range append(l.folders(), everyFolder) {
+	for _, f := range append(l.Folders(), console.EveryFolder) {
 		rows = append(rows, filterRow{
 			group: "Folder", label: f.Label, detail: p.folderDetail(f),
-			marked: l.folder.Key == f.Key,
-			mark:   func(l *sandboxList) { l.folder = f },
+			marked: l.Filter.Folder.Key == f.Key,
+			mark:   func(l *sandboxList) { l.Filter.Folder = f },
 		})
 	}
-	if tags := l.tagChoices(); len(tags) > 0 {
+	if tags := l.TagChoices(); len(tags) > 0 {
 		rows = append(rows, filterRow{
 			group: "Tag", label: allTags, detail: p.tagDetail(""),
-			marked: len(l.tags) == 0, several: true,
-			mark: func(l *sandboxList) { l.tags = nil },
+			marked: len(l.Filter.Tags) == 0, several: true,
+			mark: func(l *sandboxList) { l.Filter.Tags = nil },
 		})
 		for _, tag := range tags {
 			rows = append(rows, filterRow{
 				group: "Tag", label: tagLabel(tag), detail: p.tagDetail(tag),
-				marked: slices.Contains(l.tags, tag), several: true,
-				mark:   func(l *sandboxList) { l.addTag(tag) },
-				unmark: func(l *sandboxList) { l.toggleTag(tag) },
+				marked: slices.Contains(l.Filter.Tags, tag), several: true,
+				mark:   func(l *sandboxList) { l.Filter.AddTag(tag) },
+				unmark: func(l *sandboxList) { l.Filter.ToggleTag(tag) },
 			})
 		}
 	}
@@ -129,10 +129,10 @@ func (p *filterPicker) rows() []filterRow {
 // marked there — without the list being moved onto it, which an Enter that
 // changed nothing would otherwise do behind the screen.
 func (p *filterPicker) shows(name string) bool {
-	if p.config && p.list.server == "" {
-		return name == p.list.session.Servers[0]
+	if p.config && p.list.Filter.Server == "" {
+		return name == p.list.Session.Servers[0]
 	}
-	return p.list.server == name
+	return p.list.Filter.Server == name
 }
 
 // count is how many discoboxes the list would show with one more choice
@@ -140,21 +140,21 @@ func (p *filterPicker) shows(name string) bool {
 func (p *filterPicker) count(mark func(l *sandboxList)) int {
 	l := p.list
 	mark(&l)
-	return l.count()
+	return l.Count()
 }
 
 // serverDetail is what a server is worth knowing beside its count: which one
 // is the primary — where a create goes when the filter names none — and which
 // did not answer.
 func (p *filterPicker) serverDetail(name string) string {
-	if slices.Contains(p.list.unreachable, name) {
+	if slices.Contains(p.list.Unreachable(), name) {
 		return "not answering"
 	}
-	detail := plural(p.count(func(l *sandboxList) { l.server = name }), "box", "boxes")
+	detail := plural(p.count(func(l *sandboxList) { l.Filter.Server = name }), "box", "boxes")
 	switch name {
 	case "":
-		detail += " · created on " + p.list.session.Servers[0]
-	case p.list.session.Servers[0]:
+		detail += " · created on " + p.list.Session.Servers[0]
+	case p.list.Session.Servers[0]:
 		detail += " · the primary"
 	}
 	return detail
@@ -163,8 +163,8 @@ func (p *filterPicker) serverDetail(name string) string {
 // folderDetail is a folder's count, and whether it is the one this window is
 // running in.
 func (p *filterPicker) folderDetail(f console.Folder) string {
-	detail := plural(p.count(func(l *sandboxList) { l.folder = f }), "box", "boxes")
-	if f.Key != "" && f.Key == p.list.session.Folder().Key {
+	detail := plural(p.count(func(l *sandboxList) { l.Filter.Folder = f }), "box", "boxes")
+	if f.Key != "" && f.Key == p.list.Session.Folder().Key {
 		detail += " · where this window is running"
 	}
 	return detail
@@ -173,9 +173,9 @@ func (p *filterPicker) folderDetail(f console.Folder) string {
 // tagDetail is a tag's count alongside the tags marked, and for a key=value
 // tag what the value is of. The empty tag is `all tags`, counted with none.
 func (p *filterPicker) tagDetail(tag string) string {
-	mark := func(l *sandboxList) { l.addTag(tag) }
+	mark := func(l *sandboxList) { l.Filter.AddTag(tag) }
 	if tag == "" {
-		mark = func(l *sandboxList) { l.tags = nil }
+		mark = func(l *sandboxList) { l.Filter.Tags = nil }
 	}
 	detail := plural(p.count(mark), "box", "boxes")
 	if key, _, ok := strings.Cut(tag, "="); ok {
@@ -226,7 +226,7 @@ func (p *filterPicker) pick(i int) {
 
 // chosen is the card's answer: the three filters as marked.
 func (p *filterPicker) chosen() tea.Cmd {
-	msg := filterChosenMsg{server: p.list.server, folder: p.list.folder, tags: p.list.tags}
+	msg := filterChosenMsg{server: p.list.Filter.Server, folder: p.list.Filter.Folder, tags: p.list.Filter.Tags}
 	return func() tea.Msg { return msg }
 }
 
@@ -377,14 +377,14 @@ func (m *Model) filterLabel() string {
 // listFilterLabel is what the discobox list is narrowed to.
 func (m *Model) listFilterLabel() string {
 	var parts []string
-	if m.list.server != "" && m.manyServers() {
-		parts = append(parts, "server "+m.list.server)
+	if m.list.Filter.Server != "" && m.manyServers() {
+		parts = append(parts, "server "+m.list.Filter.Server)
 	}
-	if m.list.folder.Key != "" {
-		parts = append(parts, m.list.folder.Label)
+	if m.list.Filter.Folder.Key != "" {
+		parts = append(parts, m.list.Filter.Folder.Label)
 	}
-	if len(m.list.tags) > 0 {
-		parts = append(parts, tagsLabel(m.list.tags))
+	if len(m.list.Filter.Tags) > 0 {
+		parts = append(parts, tagsLabel(m.list.Filter.Tags))
 	}
 	if len(parts) == 0 {
 		return "all discoboxes"
@@ -422,12 +422,12 @@ func (m *Model) styleFilter(label string, hovered, focused bool) string {
 // of discoboxes now, and leaving it on row four of a list that has been
 // replaced points it at something nobody chose.
 func (m *Model) applyFilter(server string, f console.Folder, tags []string) tea.Cmd {
-	serverMoved, folderMoved := server != m.list.server, f.Key != m.list.folder.Key
-	if !serverMoved && !folderMoved && slices.Equal(tags, m.list.tags) {
+	serverMoved, folderMoved := server != m.list.Filter.Server, f.Key != m.list.Filter.Folder.Key
+	if !serverMoved && !folderMoved && slices.Equal(tags, m.list.Filter.Tags) {
 		return nil
 	}
 	was := m.configServer()
-	m.list.server, m.list.folder, m.list.tags = server, f, tags
+	m.list.Filter.Server, m.list.Filter.Folder, m.list.Filter.Tags = server, f, tags
 	// Where the window is listing from is where it creates from. Every server
 	// at once is no answer to which server, so a create from there falls back
 	// to the primary, which is where `discobox run` puts it with no --server
@@ -466,7 +466,7 @@ func (m *Model) updateFilter(msg tea.KeyPressMsg) tea.Cmd {
 		// Down moves into the list, the way it does everywhere else in the
 		// window: up and down cross between panes, and opening the card is
 		// what Enter is for.
-		if len(m.list.rows()) == 0 {
+		if len(m.list.Rows()) == 0 {
 			// An empty list is nothing to move through, so Down carries on to
 			// the prompt — which is where Down always ends up, and what the
 			// empty list itself says to do.

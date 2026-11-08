@@ -60,7 +60,7 @@ func TestATagNarrowsTheList(t *testing.T) {
 	}
 	rows := func() []string {
 		var ids []string
-		for _, s := range m.list.rows() {
+		for _, s := range m.list.Rows() {
 			ids = append(ids, s.ID)
 		}
 		return ids
@@ -70,19 +70,19 @@ func TestATagNarrowsTheList(t *testing.T) {
 	}
 
 	filterTo(t, m, "#wip")
-	if got := rows(); !slices.Equal(m.list.tags, []string{"wip"}) || len(got) != 2 {
-		t.Fatalf("tags %q list %v, want both boxes tagged wip", m.list.tags, got)
+	if got := rows(); !slices.Equal(m.list.Filter.Tags, []string{"wip"}) || len(got) != 2 {
+		t.Fatalf("tags %q list %v, want both boxes tagged wip", m.list.Filter.Tags, got)
 	}
 	filterTo(t, m, "#ticket=ENG-12")
-	if !slices.Equal(m.list.tags, []string{"ticket=ENG-12", "wip"}) || !strings.Contains(headerLine(m), "#ticket=ENG-12 #wip") {
-		t.Fatalf("tags = %q, header = %q, want both tags", m.list.tags, headerLine(m))
+	if !slices.Equal(m.list.Filter.Tags, []string{"ticket=ENG-12", "wip"}) || !strings.Contains(headerLine(m), "#ticket=ENG-12 #wip") {
+		t.Fatalf("tags = %q, header = %q, want both tags", m.list.Filter.Tags, headerLine(m))
 	}
 	if got := rows(); len(got) != 1 || got[0] != "sbx_one" {
 		t.Fatalf("rows = %v, want only the box carrying both tags", got)
 	}
 	filterTo(t, m, allTags)
-	if len(m.list.tags) != 0 || strings.Contains(headerLine(m), "#") {
-		t.Fatalf("tags = %q, header = %q, want every box and no tag named", m.list.tags, headerLine(m))
+	if len(m.list.Filter.Tags) != 0 || strings.Contains(headerLine(m), "#") {
+		t.Fatalf("tags = %q, header = %q, want every box and no tag named", m.list.Filter.Tags, headerLine(m))
 	}
 }
 
@@ -91,14 +91,14 @@ func TestATagNarrowsTheList(t *testing.T) {
 func TestAChosenTagOutlivesItsLastBox(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(taggedSandboxes()...))
-	m.list.tags = []string{"wip"}
+	m.list.Filter.Tags = []string{"wip"}
 	untagged := testSandboxes()
 	m.list.setAll(untagged)
 	if got := tagRows(m); !slices.Contains(got, "#wip") || !strings.Contains(headerLine(m), "#wip") {
 		t.Fatalf("header = %q, tags = %q, want the filter still naming #wip", headerLine(m), got)
 	}
-	if len(m.list.rows()) != 0 {
-		t.Fatalf("rows = %d, want none: nothing carries the tag now", len(m.list.rows()))
+	if len(m.list.Rows()) != 0 {
+		t.Fatalf("rows = %d, want none: nothing carries the tag now", len(m.list.Rows()))
 	}
 }
 
@@ -110,7 +110,7 @@ func TestSpaceTogglesTagsAndEnterOnlyMarks(t *testing.T) {
 	m := newTestModel(t, newFakeSource(taggedSandboxes()...))
 	m.dialog = m.filterDialog()
 	p := m.dialog.filter
-	marked := func() []string { return p.list.tags }
+	marked := func() []string { return p.list.Filter.Tags }
 
 	markFilter(t, m, "#wip")
 	markFilter(t, m, "#ticket=ENG-12")
@@ -131,14 +131,14 @@ func TestSpaceTogglesTagsAndEnterOnlyMarks(t *testing.T) {
 
 	markFilter(t, m, "#wip")
 	send(t, m, keyPress("enter"))
-	if !slices.Equal(m.list.tags, []string{"wip"}) {
-		t.Fatalf("tags = %q after Enter on a marked tag, want it kept", m.list.tags)
+	if !slices.Equal(m.list.Filter.Tags, []string{"wip"}) {
+		t.Fatalf("tags = %q after Enter on a marked tag, want it kept", m.list.Filter.Tags)
 	}
 
 	m.dialog = m.filterDialog()
 	markFilter(t, m, "#ticket=ENG-12")
 	markFilter(t, m, allTags)
-	if got := m.dialog.filter.list.tags; len(got) != 0 {
+	if got := m.dialog.filter.list.Filter.Tags; len(got) != 0 {
 		t.Fatalf("marked %q after all tags, want none", got)
 	}
 }
@@ -148,15 +148,15 @@ func TestSpaceTogglesTagsAndEnterOnlyMarks(t *testing.T) {
 func TestATagReplacesAnotherValueOfItsKey(t *testing.T) {
 	t.Parallel()
 	var l sandboxList
-	l.addTag("wip")
-	l.addTag("ticket=ENG-12")
-	l.addTag("ticket=ENG-13")
-	if want := []string{"ticket=ENG-13", "wip"}; !slices.Equal(l.tags, want) {
-		t.Fatalf("tags = %q, want %q", l.tags, want)
+	l.Filter.AddTag("wip")
+	l.Filter.AddTag("ticket=ENG-12")
+	l.Filter.AddTag("ticket=ENG-13")
+	if want := []string{"ticket=ENG-13", "wip"}; !slices.Equal(l.Filter.Tags, want) {
+		t.Fatalf("tags = %q, want %q", l.Filter.Tags, want)
 	}
-	l.addTag("ticket")
-	if want := []string{"ticket", "wip"}; !slices.Equal(l.tags, want) {
-		t.Fatalf("tags = %q, want a bare key in place of its value: %q", l.tags, want)
+	l.Filter.AddTag("ticket")
+	if want := []string{"ticket", "wip"}; !slices.Equal(l.Filter.Tags, want) {
+		t.Fatalf("tags = %q, want a bare key in place of its value: %q", l.Filter.Tags, want)
 	}
 }
 

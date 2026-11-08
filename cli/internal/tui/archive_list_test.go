@@ -28,7 +28,7 @@ func TestArchivingFromTheListShowsAtOnce(t *testing.T) {
 		d.key("x")
 		d.wait("the archive asked", func() bool { return m.busy == "archive…" })
 
-		for _, row := range m.list.rows() {
+		for _, row := range m.list.Rows() {
 			if row.ID == box.ID && row.State != console.StateArchived {
 				t.Errorf("row %s still listed as %q while its archive is out; want it gone or marked archiving at once", box.ID, row.State)
 			}
@@ -45,7 +45,7 @@ func archiveSent(t *testing.T, ds *fakeSource, id, cursorOn string) *Model {
 	t.Helper()
 	m := newTestModel(t, ds)
 	send(t, m, listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}})
-	m.list.folder = console.Folder{} // every folder, so there are rows on both sides
+	m.list.Filter.Folder = console.Folder{} // every folder, so there are rows on both sides
 	if !m.listCursorTo(console.Sandbox{ID: cursorOn}) {
 		t.Fatalf("%s is not listed", cursorOn)
 	}
@@ -57,9 +57,9 @@ func archiveSent(t *testing.T, ds *fakeSource, id, cursorOn string) *Model {
 }
 
 func listedState(m *Model, id string) (console.State, bool) {
-	for _, s := range m.list.all {
+	for _, s := range m.list.All() {
 		if s.ID == id {
-			return s.State, m.list.shown(s)
+			return s.State, m.list.Shown(s)
 		}
 	}
 	return "", false
@@ -112,8 +112,8 @@ func TestAListingOlderThanTheArchiveDoesNotBringTheRowBack(t *testing.T) {
 	after := testSandboxes()
 	after[0].State = console.StateArchived
 	landed(m, after)
-	if len(m.list.archiving) != 0 {
-		t.Errorf("archive marks = %v once a listing after the answer landed, want none", m.list.archiving)
+	if len(m.list.Archiving()) != 0 {
+		t.Errorf("archive marks = %v once a listing after the answer landed, want none", m.list.Archiving())
 	}
 }
 
@@ -136,7 +136,7 @@ func TestAFailedArchivePutsTheRowBack(t *testing.T) {
 	if got := m.list.current(); got == nil || got.ID != "sbx_two" {
 		t.Fatalf("the cursor is on %v after the row came back, want it kept on sbx_two", got)
 	}
-	if len(m.list.archiving) != 0 {
-		t.Errorf("archive marks = %v after a failed archive, want none", m.list.archiving)
+	if len(m.list.Archiving()) != 0 {
+		t.Errorf("archive marks = %v after a failed archive, want none", m.list.Archiving())
 	}
 }

@@ -186,7 +186,7 @@ func TestPressingTheRefusedBandExplainsSigningInAgain(t *testing.T) {
 func TestARefusedHarnessLoginStaysUpOverAHarnessChange(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
-	boxes := m.list.all
+	boxes := m.list.All()
 	boxes[0].HarnessConfigPending, boxes[0].HarnessConfigCandidate = true, "cand_1"
 	m.list.setAll(boxes)
 	if got := m.bannerShowing(); got != bannerRejected {
@@ -346,7 +346,7 @@ func TestTheRefusedBandsRemedyGoesToTheCredentialsServer(t *testing.T) {
 			m.session.Servers = []string{"alpha", "beta"}
 			// The header is on the primary; the box and its credential are on
 			// beta.
-			m.list.server = ""
+			m.list.Filter.Server = ""
 			m.paneBox.Server = "beta"
 			m.setSecretRejections([]console.SecretRejection{rejection})
 			ds.secretsOn = map[string][]console.Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "token"}}}

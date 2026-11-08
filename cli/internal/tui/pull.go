@@ -64,7 +64,7 @@ func pullByline(st *styles, issue console.Issue, now time.Time) string {
 	return pullState(st, issue) + "  " + st.emphasis.Render(who) + " " +
 		st.dimText.Render(verb+" "+plural(pull.Commits, "commit", "commits")+" into ") + pull.Base +
 		st.dimText.Render(" from ") + pull.Head +
-		st.dimText.Render(" · "+ago(when, now)+" · "+plural(issue.Comments, "comment", "comments"))
+		st.dimText.Render(" · "+console.Ago(when, now)+" · "+plural(issue.Comments, "comment", "comments"))
 }
 
 // reviewerRows is the page's Reviewers list, a reviewer a row.
@@ -392,7 +392,7 @@ func (m *Model) reviewLines(v *issuePane, e console.IssueEvent, width int, now t
 	case "dismissed":
 		said = st.attentionHint.Render("reviewed — since dismissed")
 	}
-	out := groupBar(st, st.attentionText.Render(e.Actor)+" "+said, st.attentionHint.Render(ago(e.At, now)), width)
+	out := groupBar(st, st.attentionText.Render(e.Actor)+" "+said, st.attentionHint.Render(console.Ago(e.At, now)), width)
 	if strings.TrimSpace(e.Body) != "" {
 		out = append(out, m.markdown(v, e.Body, width)...)
 	}
@@ -417,7 +417,7 @@ func (m *Model) reviewLines(v *issuePane, e console.IssueEvent, width int, now t
 			}
 		}
 		for _, comment := range thread.Comments {
-			out = append(out, indent+truncate(st.emphasis.Render(comment.Author)+" "+st.dimText.Render(ago(comment.At, now)), room))
+			out = append(out, indent+truncate(st.emphasis.Render(comment.Author)+" "+st.dimText.Render(console.Ago(comment.At, now)), room))
 			for _, line := range m.markdown(v, comment.Body, room) {
 				out = append(out, indent+line)
 			}

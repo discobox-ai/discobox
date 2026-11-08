@@ -84,7 +84,7 @@ type auditScreen struct {
 	// while it is, the letters are the query's and ↑↓ still move, the way
 	// they do in fzf.
 	query  string
-	search fuzzyQuery
+	search console.Query
 	typing bool
 	// following is whether the cursor rides the newest record.
 	following bool
@@ -347,7 +347,7 @@ func (m *Model) pasteQuery(msg tea.PasteMsg) tea.Cmd {
 // setQuery changes the search and lays the rows out again under it.
 func (a *auditScreen) setQuery(query string) {
 	a.relayout(func() {
-		a.query, a.search = query, parseFuzzy(query)
+		a.query, a.search = query, console.ParseQuery(query)
 	})
 }
 
@@ -364,10 +364,10 @@ func matchText(source, summary string) string { return source + " " + summary }
 // take its trailing letters from there, letting through rows nothing lit on
 // screen explains.
 func (a *auditScreen) matches(r console.AuditRecord) bool {
-	if _, ok := a.search.match(matchText(r.Source, r.Summary)); ok {
+	if _, ok := a.search.Match(matchText(r.Source, r.Summary)); ok {
 		return true
 	}
-	_, ok := a.search.match(r.ID)
+	_, ok := a.search.Match(r.ID)
 	return ok
 }
 
@@ -405,7 +405,7 @@ func (a *auditScreen) relayout(change func()) {
 	change()
 	a.shown = a.shown[:0]
 	for i, r := range a.records {
-		if a.search.empty() {
+		if a.search.Empty() {
 			a.shown = append(a.shown, i)
 		} else if a.matches(r) {
 			a.shown = append(a.shown, i)
@@ -429,7 +429,7 @@ func (a *auditScreen) relayout(change func()) {
 		}
 		i = j + 1
 	}
-	if a.search.empty() {
+	if a.search.Empty() {
 		// A run whose head the history let go of is not coming back. Under a
 		// search a run can start at a different record, so what was opened
 		// is kept for when the search is put away.
@@ -760,7 +760,7 @@ func (a *auditScreen) row(st *styles, i, width int, now time.Time) string {
 	}
 	// What the search found is lit where it is drawn: matched against the
 	// row as it reads, so a run is lit where its own line matches.
-	hits, _ := a.search.match(matchText(r.Source, summary))
+	hits, _ := a.search.Match(matchText(r.Source, summary))
 	source := litRunes(pad(r.Source, auditSourceWidth), hits, 0, lipgloss.NewStyle(), st.match)
 	lead := marker + st.dimText.Render(pad(auditTime(r.Time, now), auditTimeWidth)) + "  " +
 		source + "  " + st.dimText.Render(fold)

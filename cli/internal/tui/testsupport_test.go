@@ -1544,8 +1544,8 @@ func newTestModel(t *testing.T, ds console.DataSource) *Model {
 	// package in TestMain.
 	m := New(t.Context(), ds)
 	m.logo = logo{}
-	m.list.now = func() time.Time { return time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC) }
-	m.harnesses.now = m.list.now
+	m.list.Now = func() time.Time { return time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC) }
+	m.harnesses.now = m.list.Now
 	// The runtime is what releases the terminal around an action; there is none
 	// here, so the action is simply run and its result handed back.
 	m.exec = func(c tea.ExecCommand, done tea.ExecCallback) tea.Cmd {
@@ -1808,9 +1808,9 @@ func frameText(m *Model) string { return strings.Join(frame(m), "\n") }
 func showAllFolders(t *testing.T, m *Model) {
 	t.Helper()
 	send(t, m, keyPress("tab"))
-	filterTo(t, m, allFolders)
-	if m.list.folder.Key != "" {
-		t.Fatalf("folder filter is %q, want every folder", m.list.folder.Label)
+	filterTo(t, m, console.AllFolders)
+	if m.list.Filter.Folder.Key != "" {
+		t.Fatalf("folder filter is %q, want every folder", m.list.Filter.Folder.Label)
 	}
 	if m.focus == focusFilter {
 		send(t, m, keyPress("down"))

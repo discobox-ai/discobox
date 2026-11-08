@@ -442,7 +442,7 @@ func (m *Model) currentBox() console.Sandbox {
 
 // boxByRef reads a box from the same server as its workspace or operation.
 func (m *Model) boxByRef(ref console.BoxRef) console.Sandbox {
-	for _, s := range m.list.all {
+	for _, s := range m.list.All() {
 		if m.boxRef(s) == ref {
 			return s
 		}
@@ -596,7 +596,7 @@ func (m *Model) leavePanes() {
 	// mean two presses to act on the one you were just looking at.
 	m.prompt.Blur()
 	m.focus = focusList
-	if len(m.list.rows()) == 0 {
+	if len(m.list.Rows()) == 0 {
 		m.backToPrompt()
 	}
 }
@@ -1960,7 +1960,7 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	// stopped keeping up says so here before any of it — and is given up
 	// last, since a header that dropped it would be passing off old git
 	// state as current. The list band says the same thing in the same words.
-	if age := m.list.listedAgo(box.Server); age != "" {
+	if age := m.list.ListedAgo(box.Server); age != "" {
 		fields = append(fields, textField(m.st.statusWA.Render(age)))
 	}
 	if work := workField(m.st, box); !work.empty() {

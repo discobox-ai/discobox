@@ -509,7 +509,7 @@ func (m *Model) pressRow(idx, clicks int) tea.Cmd {
 	if idx < 0 {
 		return nil
 	}
-	rows := m.list.rows()
+	rows := m.list.Rows()
 	if idx >= len(rows) {
 		return nil
 	}

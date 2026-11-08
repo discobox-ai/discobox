@@ -131,7 +131,7 @@ func (m *Model) setCredentialRequests(requests []console.CredentialRequest) {
 	}
 	had := m.bannerCost()
 	m.requests = byBox
-	m.list.setPending(byBox)
+	m.list.SetPending(byBox)
 	m.syncRequestRows()
 	m.pruneDismissed()
 	// The band takes a row from the panes rather than adding one to the

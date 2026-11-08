@@ -203,5 +203,5 @@ func shortID(id string) string {
 }
 
 func requestAge(r console.CredentialRequest, now time.Time) string {
-	return ago(r.Created, now)
+	return console.Ago(r.Created, now)
 }

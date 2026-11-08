@@ -871,7 +871,7 @@ func (m *Model) issueLines(v *issuePane, issue console.Issue, width int, now tim
 		opened = "opened this pull request"
 	}
 	byline := issueState(st, issue) + "  " + st.emphasis.Render(issue.Author) + " " +
-		st.dimText.Render(opened+" "+ago(issue.CreatedAt, now)+" · "+plural(issue.Comments, "comment", "comments"))
+		st.dimText.Render(opened+" "+console.Ago(issue.CreatedAt, now)+" · "+plural(issue.Comments, "comment", "comments"))
 	if issue.Pull != nil {
 		byline = pullByline(st, issue, now)
 	}
@@ -1038,7 +1038,7 @@ func eventRows(st *styles, run []eventRow, who, width int, now time.Time) []stri
 	room := max(width-lead, 1)
 	var out []string
 	for _, row := range run {
-		head := st.dimText.Render(pad(ago(row.at, now), eventTimeWidth))
+		head := st.dimText.Render(pad(console.Ago(row.at, now), eventTimeWidth))
 		if who > 0 {
 			head += pad(truncate(row.who, who), who) + "  "
 		}
@@ -1057,7 +1057,7 @@ func eventRows(st *styles, run []eventRow, who, width int, now time.Time) []stri
 // the reactions under it.
 func (m *Model) commentLines(v *issuePane, author, verb string, at time.Time, body string, reactions console.IssueReactions, width int, now time.Time) []string {
 	st := m.st
-	out := groupBar(st, st.attentionText.Render(author)+" "+st.attentionHint.Render(verb), st.attentionHint.Render(ago(at, now)), width)
+	out := groupBar(st, st.attentionText.Render(author)+" "+st.attentionHint.Render(verb), st.attentionHint.Render(console.Ago(at, now)), width)
 	if strings.TrimSpace(body) == "" {
 		return append(out, st.dimText.Render("No description provided."))
 	}

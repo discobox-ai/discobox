@@ -50,7 +50,7 @@ func (m *Model) onConfigScreen() bool { return m.harnessesOpen || m.secretsOpen 
 // always the server the next create goes to, which is why one list of
 // harnesses serves the screen, the run options and the questions a run asks.
 // Empty with one server, where the data source needs no name.
-func (m *Model) configServer() string { return m.session.ServerName(m.list.server) }
+func (m *Model) configServer() string { return m.session.ServerName(m.list.Filter.Server) }
 
 // manyServers reports whether there is a server to choose, which is what puts
 // the servers on the filter's card.
@@ -64,7 +64,7 @@ func (m *Model) cycleServer(delta int) tea.Cmd {
 		return status("no other servers to show")
 	}
 	at := m.serverIndex(choices)
-	return m.applyFilter(choices[(at+delta+len(choices))%len(choices)], m.list.folder, m.list.tags)
+	return m.applyFilter(choices[(at+delta+len(choices))%len(choices)], m.list.Filter.Folder, m.list.Filter.Tags)
 }
 
 // serverIndex is where the server those screens show sits among the choices.
@@ -120,9 +120,9 @@ func (m *Model) followServer() tea.Cmd {
 	// following it always lands the list on one, wherever it was before.
 	name := row.selected()
 	var reload tea.Cmd
-	if name != m.list.server {
+	if name != m.list.Filter.Server {
 		was := m.configServer()
-		m.list.server = name
+		m.list.Filter.Server = name
 		m.list.resetCursor()
 		m.layout()
 		reload = m.configServerChanged(was)

@@ -17,10 +17,10 @@ func TestNothingSavedOpensOnEverything(t *testing.T) {
 	ds.nothingSaved = true
 	m := newTestModel(t, ds)
 
-	if m.list.server != "" || m.list.folder.Key != "" || len(m.list.tags) != 0 {
+	if m.list.Filter.Server != "" || m.list.Filter.Folder.Key != "" || len(m.list.Filter.Tags) != 0 {
 		t.Fatalf("view = %+v, want every server, folder and tag", m.currentView())
 	}
-	if got := len(m.list.rows()); got != 3 {
+	if got := len(m.list.Rows()); got != 3 {
 		t.Fatalf("rows = %d, want every unarchived discobox", got)
 	}
 	// Opening on the default is no choice anybody made, so nothing is saved.
@@ -45,7 +45,7 @@ func TestASavedViewIsWhereTheWindowOpens(t *testing.T) {
 	}
 	m := newTestModel(t, ds)
 
-	if m.list.server != "beta" || m.list.folder.Key != testKey("/src/obot") || !slices.Equal(m.list.tags, []string{"wip"}) {
+	if m.list.Filter.Server != "beta" || m.list.Filter.Folder.Key != testKey("/src/obot") || !slices.Equal(m.list.Filter.Tags, []string{"wip"}) {
 		t.Fatalf("view = %+v, want the one saved", m.currentView())
 	}
 	if m.opts.folder != "/src/obot" {
@@ -64,8 +64,8 @@ func TestASavedServerThatIsGoneIsEveryServer(t *testing.T) {
 	ds.session.Servers = []string{"alpha", "beta"}
 	ds.session.View = console.ListView{Server: "gamma"}
 	m := newTestModel(t, ds)
-	if m.list.server != "" {
-		t.Fatalf("server = %q, want every server", m.list.server)
+	if m.list.Filter.Server != "" {
+		t.Fatalf("server = %q, want every server", m.list.Filter.Server)
 	}
 }
 
@@ -77,8 +77,8 @@ func TestChangingAFilterIsSaved(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	filterTo(t, m, m.session.Folder().Label)
-	if m.list.folder.Key != testKey("/src/disco2") {
-		t.Fatalf("folder = %q, want the window's own", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the window's own", m.list.Filter.Folder.Label)
 	}
 	send(t, m, tickMsg{})
 	if len(ds.views) != 1 || ds.views[0].FolderKey != testKey("/src/disco2") {
@@ -90,7 +90,7 @@ func TestChangingAFilterIsSaved(t *testing.T) {
 	}
 
 	// Back to every folder is a change too, and closing the window saves it.
-	filterTo(t, m, allFolders)
+	filterTo(t, m, console.AllFolders)
 	send(t, m, keyPress("ctrl+c"))
 	if len(ds.views) != 2 || !ds.views[1].IsZero() {
 		t.Fatalf("views = %+v, want the default saved on the way out", ds.views)
@@ -108,10 +108,10 @@ func TestTheCommandLineNarrowsTheView(t *testing.T) {
 	ds.nothingSaved = true
 	m := newTestModel(t, ds)
 
-	if m.list.server != "alpha" {
-		t.Fatalf("server = %q, want the one --server named", m.list.server)
+	if m.list.Filter.Server != "alpha" {
+		t.Fatalf("server = %q, want the one --server named", m.list.Filter.Server)
 	}
-	if m.list.folder.Key != "" || len(m.list.tags) != 0 {
+	if m.list.Filter.Folder.Key != "" || len(m.list.Filter.Tags) != 0 {
 		t.Fatalf("view = %+v, want every folder and tag", m.currentView())
 	}
 	send(t, m, tickMsg{})
@@ -130,7 +130,7 @@ func TestTheCommandLineOutranksASavedView(t *testing.T) {
 	ds.session.ServerChosen = true
 	ds.session.View = console.ListView{Server: "beta", Tags: []string{"wip"}}
 	m := newTestModel(t, ds)
-	if m.list.server != "alpha" || !slices.Equal(m.list.tags, []string{"wip"}) {
+	if m.list.Filter.Server != "alpha" || !slices.Equal(m.list.Filter.Tags, []string{"wip"}) {
 		t.Fatalf("view = %+v, want the named server with the saved tags", m.currentView())
 	}
 	send(t, m, tickMsg{})
@@ -147,8 +147,8 @@ func TestTheOwnFolderIsRestoredFromTheSession(t *testing.T) {
 	ds.session.View = console.ListView{FolderKey: testKey("/src/disco2"), FolderLabel: "/src/disco2 @ old", FolderSource: "/src/disco2@old"}
 	m := newTestModel(t, ds)
 	own := ds.session.Folder()
-	if m.list.folder != own {
-		t.Fatalf("folder = %+v, want the session's own %+v", m.list.folder, own)
+	if m.list.Filter.Folder != own {
+		t.Fatalf("folder = %+v, want the session's own %+v", m.list.Filter.Folder, own)
 	}
 	if m.opts.folder != own.Source {
 		t.Fatalf("the run options cut from %q, want %q", m.opts.folder, own.Source)

@@ -373,45 +373,12 @@ func scaleBytesPair(used, total int64) (float64, float64, int) {
 	return float64(used) / div, float64(total) / div, exp
 }
 
-// since is how long ago something was, in one unit and two characters where it
-// can manage it: the column is there to rank rows by recency, not to time them.
-func since(t time.Time, now time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	d := now.Sub(t)
-	switch {
-	case d < time.Minute:
-		return "now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
-}
-
-// ago is how long before now t was, as a column says it: "5m ago", "3d ago",
-// and "just now" for anything under a minute, which since spells "now" and
-// "now ago" would not. Empty for a time nothing recorded.
-func ago(t, now time.Time) string {
-	switch age := since(t, now); age {
-	case "":
-		return ""
-	case "now":
-		return "just now"
-	default:
-		return age + " ago"
-	}
-}
-
 // createdText is the column: the sandbox's age with "ago" on it. Creation is
 // the one timestamp a user's action put there — nothing yet records real
 // access — so the row says how old the discobox is rather than pretending to
 // know when it was last touched.
 func createdText(s console.Sandbox, now time.Time) string {
-	return ago(s.Created, now)
+	return console.Ago(s.Created, now)
 }
 
 // renderTitle draws a pane title bar with an optional right aligned suffix.

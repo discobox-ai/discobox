@@ -860,17 +860,12 @@ func (o *optionSet) sourceDetail(value string) string {
 }
 
 // sourceKey tells one thing to cut from from another however it is spelled
-// — a repository's https URL with or without .git, in any case on GitHub, is
-// one — so the row offers each once (sourceref.Ref.CloneKey, ADR 26-10-15-664
-// §4). The transport is part of it: an ssh, http or git:// spelling of the
-// same repository is fetched another way, with other credentials or none, so
-// merging it would run a URL nobody chose.
+// (console.SourceKey). The Source row's own no-source answer is its own key.
 func sourceKey(value string) string {
-	source, err := sourceref.Parse(value)
-	if value == sourceNone || err != nil {
+	if value == sourceNone {
 		return value
 	}
-	return source.CloneKey()
+	return console.SourceKey(value)
 }
 
 // sameSource reports whether two values name one source.

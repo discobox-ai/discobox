@@ -182,7 +182,7 @@ func TestATypedSourceSurvivesARefresh(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	m.opts.chooseSource("/src/elsewhere@main")
-	m.opts.setSources(m.list.sources())
+	m.opts.setSources(m.list.Sources())
 
 	if got := m.opts.request("", m.opts.opts[optSource].selected()).Source; got != "/src/elsewhere@main" {
 		t.Fatalf("source = %q, want the one that was typed", got)
@@ -202,8 +202,8 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 
 	m.opts.chooseSource("/src/obot")
 	m.followSource()
-	if m.list.folder.Key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the list to follow the source", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the list to follow the source", m.list.Filter.Folder.Label)
 	}
 	// Followed there, the source is the folder again and emits no -C: the
 	// header already says where the next discobox is cut from.
@@ -213,8 +213,8 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 
 	m.opts.chooseSource("https://github.com/acme/foo")
 	m.followSource()
-	if m.list.folder.Key != testKey("https://github.com/acme/foo") {
-		t.Fatalf("folder = %q, want the repository URL's own", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("https://github.com/acme/foo") {
+		t.Fatalf("folder = %q, want the repository URL's own", m.list.Filter.Folder.Label)
 	}
 	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "https://github.com/acme/foo" {
 		t.Fatalf("source = %q, want the remote repository", req.Source)
@@ -222,8 +222,8 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 
 	m.opts.chooseSource(sourceNone)
 	m.followSource()
-	if m.list.folder.Key != m.session.OriginKey {
-		t.Fatalf("folder = %q, want the window's own: a sourceless discobox is filed under this machine", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != m.session.OriginKey {
+		t.Fatalf("folder = %q, want the window's own: a sourceless discobox is filed under this machine", m.list.Filter.Folder.Label)
 	}
 }
 
@@ -279,9 +279,9 @@ func TestASourcelessFolderElsewhereCutsFromTheWindowsOwn(t *testing.T) {
 	m := newTestModel(t, newFakeSource(append(testSandboxes(), far)...))
 
 	chosen := false
-	for _, f := range m.list.folders() {
+	for _, f := range m.list.Folders() {
 		if f.Key == farHostKey {
-			m.applyFilter(m.list.server, f, m.list.tags)
+			m.applyFilter(m.list.Filter.Server, f, m.list.Filter.Tags)
 			chosen = true
 		}
 	}

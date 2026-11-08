@@ -251,10 +251,10 @@ func (m *Model) Filters() tea.Cmd {
 func (m *Model) AllBoxes() tea.Cmd { return m.showAllBoxes() }
 
 func (m *Model) ToggleArchived() tea.Cmd {
-	m.list.showArchived = !m.list.showArchived
+	m.list.Filter.Archived = !m.list.Filter.Archived
 	m.list.clamp()
 	m.layout()
-	if m.list.showArchived {
+	if m.list.Filter.Archived {
 		return status("showing archived discoboxes")
 	}
 	return status("hiding archived discoboxes")

@@ -274,7 +274,7 @@ func (l *secretList) row(st *styles, s console.Secret, i int, focused bool) stri
 
 // secretAge is the age column, the same shape the other screens use.
 func secretAge(s console.Secret, now time.Time) string {
-	return ago(s.Updated, now)
+	return console.Ago(s.Updated, now)
 }
 
 // bindingLimit is a secret's ceiling on binding lifetimes, said in the words it was
@@ -521,7 +521,7 @@ func (m *Model) askForBinding() tea.Cmd {
 	// A binding names a discobox on the secret's own server: one on another
 	// server is not one this secret can ever reach.
 	var boxes []choice
-	for _, box := range m.list.all {
+	for _, box := range m.list.All() {
 		if m.session.ServerName(box.Server) == m.configServer() {
 			boxes = append(boxes, choice{key: box.ID, label: box.Name, hint: box.ID})
 		}
@@ -772,7 +772,7 @@ func describeSecret(secret console.Secret, now time.Time) []section {
 		credential.fields = append(credential.fields, f)
 	}
 	if !secret.StaleAt.IsZero() {
-		stale := "stale " + ago(secret.StaleAt, now) + "; renewed when next needed"
+		stale := "stale " + console.Ago(secret.StaleAt, now) + "; renewed when next needed"
 		if secret.StaleAt.After(now) {
 			stale = "stale at " + secret.StaleAt.Local().Format("15:04")
 		}
@@ -817,7 +817,7 @@ func describeSecret(secret console.Secret, now time.Time) []section {
 // is ordinary rather than broken.
 func accessTokenExpiry(at, now time.Time) string {
 	if at.Before(now) {
-		return "expired " + ago(at, now) + ", renewed on next use"
+		return "expired " + console.Ago(at, now) + ", renewed on next use"
 	}
 	return "in " + shortDuration(at.Sub(now).Round(time.Minute))
 }
@@ -845,7 +845,7 @@ func (m *Model) bindingTarget(b console.SecretBinding) string {
 		}
 		return "harness " + b.TargetID
 	case console.BindingSandbox:
-		for _, box := range m.list.all {
+		for _, box := range m.list.All() {
 			if box.ID == b.TargetID {
 				return "discobox " + box.Name
 			}

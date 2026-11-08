@@ -11,40 +11,13 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-func TestPaletteMatchesFieldsAndRanks(t *testing.T) {
-	tests := []struct {
-		query           string
-		primary, detail []string
-		want            bool
-		tier            int
-	}{
-		{"hcp", []string{"sbx_hcp123"}, nil, true, 2},
-		{"hcp", []string{"hcp123"}, nil, true, 1},
-		{"hcp", []string{"hcp"}, nil, true, 0},
-		{"hcp", []string{"h---c---p"}, nil, true, 3},
-		{"hcp", nil, []string{"issue=hcp"}, true, 4},
-		{"Repository 717", []string{"box"}, []string{"Repository", "issue=717"}, true, 4},
-		{"Repository", nil, []string{"repository"}, false, 0},
-		{"ab", []string{"a", "b"}, nil, false, 0},
-		{"hcp missing", []string{"hcp"}, nil, false, 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.query, func(t *testing.T) {
-			got, ok := paletteMatch(parseFuzzy(tt.query), tt.primary, tt.detail)
-			if ok != tt.want || ok && got.tier != tt.tier {
-				t.Fatalf("got %+v %v, want tier %d %v", got, ok, tt.tier, tt.want)
-			}
-		})
-	}
-}
-
 func TestPaletteChipOrdersAndEscape(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		m := newTestModel(t, ds)
 		d := newDriver(t, m)
 		d.start()
-		d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+		d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 		m.focus = focusList
 		d.key(":")
 		if m.palette == nil {
@@ -91,7 +64,7 @@ func TestPaletteKeepsDisappearedSelectionAndConsumesOutsideClick(t *testing.T) {
 		m := newTestModel(t, newFakeSource(testSandboxes()...))
 		d := newDriver(t, m)
 		d.start()
-		d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+		d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 		m.focus = focusList
 		d.key(":")
 		m.palette.input.SetValue("sbx_one")
@@ -99,7 +72,7 @@ func TestPaletteKeepsDisappearedSelectionAndConsumesOutsideClick(t *testing.T) {
 		if len(m.palette.rows) == 0 {
 			t.Fatal("no selected box")
 		}
-		m.list.all = slices.DeleteFunc(m.list.all, func(s console.Sandbox) bool { return s.ID == "sbx_one" })
+		m.list.setAll(slices.DeleteFunc(slices.Clone(m.list.All()), func(s console.Sandbox) bool { return s.ID == "sbx_one" }))
 		d.key("enter")
 		if m.palette == nil || !strings.Contains(m.palette.reason, "no longer") {
 			t.Fatal("missing target was replaced")
@@ -135,7 +108,7 @@ func TestPaletteFitsSmallScreens(t *testing.T) {
 			m := newTestModel(t, newFakeSource(testSandboxes()...))
 			d := newDriver(t, m)
 			d.startAt(size[0], size[1])
-			d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+			d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 			m.focus = focusList
 			d.key(":")
 			frame := plainFrame(m)
@@ -154,7 +127,7 @@ func TestPaletteMouseCanChooseBoxCommandsAndDropChip(t *testing.T) {
 		m := newTestModel(t, newFakeSource(testSandboxes()...))
 		d := newDriver(t, m)
 		d.start()
-		d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+		d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 		m.focus = focusList
 		d.key(":")
 		m.View()
@@ -187,9 +160,9 @@ func TestPaletteNavigationTemporarilyRevealsFilteredBox(t *testing.T) {
 		m := newTestModel(t, newFakeSource(boxes...))
 		d := newDriver(t, m)
 		d.start()
-		d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+		d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 		d.settle()
-		m.list.tags = []string{"missing-tag"}
+		m.list.Filter.Tags = []string{"missing-tag"}
 		original := m.currentView()
 
 		m.focus = focusList
@@ -200,7 +173,7 @@ func TestPaletteNavigationTemporarilyRevealsFilteredBox(t *testing.T) {
 
 		d.key("enter")
 		if m.paletteReveal == nil {
-			t.Fatalf("filtered result was not revealed: palette=%+v tags=%v focus=%v status=%s rows=%+v", m.palette, m.list.tags, m.focus, m.status, m.list.rows())
+			t.Fatalf("filtered result was not revealed: palette=%+v tags=%v focus=%v status=%s rows=%+v", m.palette, m.list.Filter.Tags, m.focus, m.status, m.list.Rows())
 		}
 		if _, ok := m.viewToSave(); ok {
 			t.Fatal("temporary reveal would be saved")
@@ -264,7 +237,7 @@ func TestPaletteLongQueryKeepsInputAndHitRowsAligned(t *testing.T) {
 		m := newTestModel(t, newFakeSource(box))
 		d := newDriver(t, m)
 		d.startAt(80, 24)
-		d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+		d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 		d.settle()
 		m.focus = focusList
 		d.key(":")
@@ -292,11 +265,11 @@ func TestPaletteColorlessMarkerAndStaleListings(t *testing.T) {
 		m := newTestModel(t, newFakeSource(testSandboxes()...))
 		d := newDriver(t, m)
 		d.start()
-		d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+		d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 		d.settle()
 		m.focus = focusList
 		d.key(":")
-		m.list.listed = map[string]time.Time{"hidden-server": m.list.now().Add(-time.Minute)}
+		m.list.SetListed(map[string]time.Time{"hidden-server": m.list.Now().Add(-time.Minute)})
 		before := plainFrame(m)
 		if !strings.Contains(before, "hidden-server listed") {
 			t.Fatal("stale server outside filters was omitted")
@@ -317,9 +290,9 @@ func TestPaletteLiveNavigationKeepsTemporaryReveal(t *testing.T) {
 		m := newTestModel(t, newFakeSource(testSandboxes()...))
 		d := newDriver(t, m)
 		d.start()
-		d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+		d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 		d.settle()
-		m.list.tags = []string{"missing-tag"}
+		m.list.Filter.Tags = []string{"missing-tag"}
 		original := m.currentView()
 		m.focus = focusList
 		d.key(":")
@@ -389,7 +362,7 @@ func TestPaletteRoutesSameIDLifecycleAndWorkspacesToTheirServers(t *testing.T) {
 		m := newTestModel(t, root)
 		d := newDriver(t, m)
 		d.start()
-		d.wait("list", func() bool { return m.list.loaded && m.sessionRead })
+		d.wait("list", func() bool { return m.list.Loaded() && m.sessionRead })
 		d.settle()
 		m.focus = focusList
 		d.key(":")

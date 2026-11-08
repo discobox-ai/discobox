@@ -474,7 +474,7 @@ func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 		t.Fatalf("a request with no discobox is not shown on the operator's screen:\n%s", body)
 	}
 	// And no row is marked for it, since there is no row it belongs to.
-	for _, s := range m.list.all {
+	for _, s := range m.list.All() {
 		if s.PendingRequests != 0 {
 			t.Fatalf("%s is marked for a request no discobox owns", s.ID)
 		}

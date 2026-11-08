@@ -603,7 +603,7 @@ func (m *Model) made() *console.Sandbox {
 	if !m.oneRun || m.attach == nil {
 		return nil
 	}
-	for _, s := range m.list.all {
+	for _, s := range m.list.All() {
 		if m.boxRef(s) == m.boxRef(*m.attach) {
 			return &s
 		}
@@ -691,7 +691,7 @@ const refreshEvery = 5 * time.Second
 const listingSlowAfter = refreshEvery
 
 // listingStaleAfter is how old the rows on screen may get before they say how
-// old they are (sandboxList.listedAgo). Three refreshes: an ordinary poll
+// old they are (console.List.ListedAgo). Three refreshes: an ordinary poll
 // leaves them at most one refresh and a round trip old, and a server that
 // takes a few seconds to list is merely remote — but rows that have missed
 // two refreshes in a row are rows that have stopped following the server,
@@ -1037,7 +1037,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return tea.Batch(m.report(true, "cannot read the session: %v", msg.err), m.startPendingRun())
 		}
 		m.session = msg.session
-		m.list.session = msg.session
+		m.list.Session = msg.session
 		m.sessionRead = true
 		cmd := m.restoreDraft(msg.session.Draft)
 		// The window opens on the filters the last window was left on, and on
@@ -1046,12 +1046,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// view.go.
 		m.restoreView(msg.session.View)
 		m.opts = newOptions(msg.session)
-		m.opts.setFolder(m.list.folder.Source)
+		m.opts.setFolder(m.list.Filter.Folder.Source)
 		m.opts.openOnLastCut(msg.session.LastSource)
-		m.opts.setServer(m.list.server)
+		m.opts.setServer(m.list.Filter.Server)
 		// The listing can land first, and what it says the project was cut
 		// from is what the Source row and the create card offer.
-		m.opts.setSources(m.list.sources())
+		m.opts.setSources(m.list.Sources())
 		// The two loads race, and either order has to end with the panel
 		// offering the harnesses that are actually there.
 		m.opts.setHarnesses(m.harnesses.all)
@@ -1070,13 +1070,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// What decides is how long the refresh that is out has been out, not
 		// that this timer went off: the timer may belong to a refresh that
 		// landed long ago. See poll.late.
-		m.list.slow = m.listPoll.late(m.now(), listingSlowAfter)
+		m.list.Slow = m.listPoll.late(m.now(), listingSlowAfter)
 		return nil
 
 	case listLoadedMsg:
-		m.list.slow = false
+		m.list.Slow = false
 		// Which read this listing is, which says whether it knows of an
-		// archive answered here (sandboxList.settleArchives). One listing is
+		// archive answered here (console.List.SettleArchives). One listing is
 		// out at a time, so the poll's last is this one.
 		asked := m.listPoll.sent
 		// Whatever was asked for while this was out is asked for now, on an
@@ -1088,7 +1088,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.err != nil {
 			return tea.Batch(again, m.report(true, "cannot list discoboxes: %v", msg.err))
 		}
-		m.list.settleArchives(asked)
+		m.list.SettleArchives(asked)
 		m.list.setAll(msg.listing.Sandboxes)
 		// Before the layout below: a dismissal whose occurrence the listing
 		// shows is over goes, and its band — if it has happened again — is
@@ -1096,13 +1096,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.pruneDismissed()
 		// The servers that did not answer, so their sections say so rather
 		// than their rows simply being missing.
-		m.list.setUnreachable(msg.listing.Unreachable)
+		m.list.SetUnreachable(msg.listing.Unreachable)
 		// And the ones it is still asking, which say so where their rows go.
-		m.list.setWaiting(msg.listing.Waiting)
-		m.list.setListed(msg.listing.Listed)
+		m.list.SetWaiting(msg.listing.Waiting)
+		m.list.SetListed(msg.listing.Listed)
 		// The rows are replaced wholesale, so the marks are stamped back onto
 		// them: the two reads land independently and either can be the later.
-		m.list.setPending(m.requests)
+		m.list.SetPending(m.requests)
 		// A box opened before the listing had it — one just created — gets
 		// the tree's cursor once it lands. Only while it is open: the box a
 		// closed workspace leaves in paneBox is no longer the cursor's to
@@ -1113,7 +1113,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// What the project has been cut from is read off the same listing the
 		// filter's folders are, for the same reason: the sources worth offering
 		// are exactly the ones something is already sitting in.
-		m.opts.setSources(m.list.sources())
+		m.opts.setSources(m.list.Sources())
 		m.openOnList()
 		m.layout()
 		// Last, once the screen the listing leaves up is settled: the
@@ -2164,7 +2164,7 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 	case "down", "j":
 		// Visual mode holds you in the list: falling out of the bottom of a
 		// range you are still drawing would throw the range away.
-		if m.list.cursor >= len(m.list.rows())-1 && !m.list.visual {
+		if m.list.cursor >= len(m.list.Rows())-1 && !m.list.visual {
 			m.backToPrompt()
 			return nil
 		}
@@ -2193,7 +2193,7 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 	case "home", "g":
 		m.list.moveTo(0)
 	case "end", "G":
-		m.list.moveTo(len(m.list.rows()) - 1)
+		m.list.moveTo(len(m.list.Rows()) - 1)
 
 	case "esc":
 		if m.list.visual {
@@ -2276,14 +2276,14 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 // before that has already said where the keys should go (touched), and a
 // listing that arrived a moment later must not take them somewhere else.
 func (m *Model) openOnList() {
-	if m.opened || !m.sessionRead || !m.list.loaded {
+	if m.opened || !m.sessionRead || !m.list.Loaded() {
 		return
 	}
-	if len(m.list.rows()) == 0 && len(m.list.waiting) > 0 {
+	if len(m.list.Rows()) == 0 && len(m.list.Waiting()) > 0 {
 		return
 	}
 	m.opened = true
-	if m.oneShot() || m.focus != focusPrompt || len(m.list.rows()) == 0 {
+	if m.oneShot() || m.focus != focusPrompt || len(m.list.Rows()) == 0 {
 		return
 	}
 	m.leavePrompt(landFirst)
@@ -2341,7 +2341,7 @@ func (m *Model) setSubmitting(on bool) {
 // so landing on it beats refusing to move and leaving no way to reach it.
 func (m *Model) leavePrompt(landing listLanding) {
 	m.prompt.Blur()
-	if len(m.list.rows()) == 0 {
+	if len(m.list.Rows()) == 0 {
 		m.focus = focusFilter
 		return
 	}
@@ -2353,7 +2353,7 @@ func (m *Model) leavePrompt(landing listLanding) {
 		return
 	}
 	if landing == landLast {
-		m.list.moveTo(len(m.list.rows()) - 1)
+		m.list.moveTo(len(m.list.Rows()) - 1)
 		return
 	}
 	m.list.moveTo(0)
@@ -2377,8 +2377,8 @@ const (
 // header and the Source row are one control in both directions: the header
 // moves the source (applyFilter), and the source moves the header here.
 func (m *Model) followSource() tea.Cmd {
-	if f, ok := m.opts.followSource(); ok && f.Key != m.list.folder.Key {
-		m.list.folder = f
+	if f, ok := m.opts.followSource(); ok && f.Key != m.list.Filter.Folder.Key {
+		m.list.Filter.Folder = f
 		m.list.resetCursor()
 		m.layout()
 	}
@@ -2552,7 +2552,7 @@ func (m *Model) archiveWorkspace(box console.Sandbox) tea.Cmd {
 	// Read before the workspace closes: the tree is drawn only beside one.
 	var next *console.Sandbox
 	if m.treeAvailable() {
-		next = m.list.neighbor(box)
+		next = m.list.Neighbor(box)
 	}
 	m.closeWorkspace()
 	m.layout()
@@ -2625,7 +2625,7 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 				answered = append(answered, box)
 			}
 		}
-		m.list.answeredArchives(answered, m.listPoll.sent)
+		m.list.AnsweredArchives(answered, m.listPoll.sent)
 		m.list.unmarkArchiving(refused)
 	}
 	// The archive that left a one-command window's workspace was waiting for
@@ -4149,7 +4149,7 @@ func repairNote(r console.AutomaticRepair, now time.Time) string {
 	if r.Failed {
 		note = "automatic repair failed"
 	}
-	if when := ago(r.At, now); when != "" {
+	if when := console.Ago(r.At, now); when != "" {
 		note += " " + when
 	}
 	if r.Failure != "" {
@@ -4337,9 +4337,9 @@ func (m *Model) hints() []hint {
 			}
 		}
 		out = append(out, keyed("Space", " ", "select"), keyed("V", "V", "range"))
-		if m.list.showArchived {
+		if m.list.Filter.Archived {
 			out = append(out, keyed("A", "A", "hide archived"))
-		} else if m.list.archivedCount() > 0 {
+		} else if m.list.ArchivedCount() > 0 {
 			out = append(out, keyed("A", "A", "show archived"))
 		}
 		return append(out, pressing("↑ or Tab filter", "tab"), pressing("Esc prompt", "esc"))

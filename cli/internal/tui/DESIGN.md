@@ -16,7 +16,7 @@ flowchart LR
     CLI["cli.apiDataSource"] -->|implements| DS["DataSource"]
     DS --> M["Model"]
     M --> P["prompt (composer)"]
-    M --> L["sandboxList"]
+    M --> L["sandboxList (renders console.List)"]
     M --> O["optionSet (Ctrl-O)"]
     M --> A["harnessList (F3)"]
     M --> D["dialog (menu, confirm, input, form, help, wait)"]
@@ -131,7 +131,7 @@ flowchart LR
   gives the panes back the keys, as Esc does — to a workspace still opening
   too, whose keys are the leader's until its pane arrives (`backToPanes`).
 - **An archive beside the tree goes on to the next box** (`archiveWorkspace`,
-  `sandboxList.neighbor`, `archivedOnTo`). Wherever the walk works
+  `console.List.Neighbor`, `archivedOnTo`). Wherever the walk works
   (`treeAvailable`), the leader's `x` closes the archived box's workspace —
   not parked: the box is going away — and puts the list's cursor on the row
   after it, or the one before from the last. Once the archive is answered, a
@@ -813,7 +813,7 @@ scanning for are the last a long name pushes off or `+N` hides:
    first as the one most worth opening.
 3. **The rest**, in the order they are kept. `repo` and `job` are among them.
 
-The filter's tag choices are sorted by name (`tagChoices`), not in a row's
+The filter's tag choices are sorted by name (`console.List.TagChoices`), not in a row's
 order.
 
 A credential request waiting on a person, or an agent that reports it is
@@ -1044,7 +1044,7 @@ drawn in the box a tool window would have and takes the keys and the mouse
   `audit http --body` read, escaped, JSON laid out, cut at 1 MiB with the
   command for the rest.
 - **`/` filters, fzf-style.** Each word must appear in order, not
-  together; every word must match; smart case (`fuzzy.go`, fzf's first
+  together; every word must match; smart case (`console.Query`, fzf's first
   algorithm, so the lit window is the tight one). Matched against what a row
   says, or its ID on its own — never a line with the ID appended, since every
   http ID starts "http" and a term would borrow its letters. Results stay in
@@ -1192,9 +1192,9 @@ different things:
 
 - `Listing.Waiting` names the servers a poll left in flight with nothing of
   theirs to show, and each gets the section a server that did not answer gets,
-  saying `still listing` rather than `not answering` (`sandboxList.waiting`).
+  saying `still listing` rather than `not answering` (`console.List.WaitingOn`).
   Their rows are on the way, not missing, and the two read differently.
-- `sandboxList.slow` puts `still listing` on the band where the count goes, for
+- `console.List.Slow` puts `still listing` on the band where the count goes, for
   the *whole listing* being late — still out when the next refresh was due
   (`listingSlowAfter`, one `refreshEvery`). That is the window with one server,
   which has no other server's rows to draw and no name to put a note under; a
@@ -1213,27 +1213,27 @@ hung, or a window with one server whose last read failed. Those rows look
 current and are not, which is a window that looks stuck. `Listing.Listed` says
 when each server's rows were answered (`""` for a window with one server), and
 once they are older than `listingStaleAfter` (three refreshes, so an ordinary
-poll never trips it) `sandboxList.listedAgo` says so — `listed 40s ago`:
+poll never trips it) `console.List.ListedAgo` says so — `listed 40s ago`:
 
 - on the band, in place of the count, when the rows on screen are one
-  server's (`oneServer`: a window with one server, or the header filtered to
+  server's (`console.List.OneServer`: a window with one server, or the header filtered to
   one); it outranks `still listing`, being the same news with its size;
 - otherwise as a note after the rows, `server beta  listed 1m ago`, beside the
-  ones for a server not answering or still listing (`behind`): the rows sit
+  ones for a server not answering or still listing (`console.List.Notes`): the rows sit
   among every other server's in their folders, so the note is what says which
   of them are old;
 - in the workspace header, right after the id (`paneHeaderFields`), since
   everything after the id is read off the same listing.
 
 None of these touch the invitation to create the first discobox. That waits
-on `sandboxList.loaded`: until a listing has landed, "no discoboxes here yet" is
+on `console.List.Loaded`: until a listing has landed, "no discoboxes here yet" is
 an answer about the project that nobody has. Once one has, it stays put whether
 or not the next refresh is late — the one screen a new user reads must not blink
 at them every time a poll runs long.
 
 **The header's filter is one control** (`filter.go`). The list can be
-narrowed to one server (`server.go`, `sandboxList.server`), one folder
-(`folder.go`) and any number of tags (`tags.go`, `sandboxList.tags`), and the header
+narrowed to one server (`server.go`, `console.Filter.Server`), one folder
+(`console.Filter.Folder`) and any number of tags (`tags.go`, `console.Filter.Tags`), and the header
 carries all three as one line naming only what is narrowed — `server beta ·
 ~/src/foo @ main · #wip #ticket=ENG-12 ▾`, or `all discoboxes ▾` (a folder
 that is a GitHub repository reads `owner/repo on github`, with no directory or
@@ -1264,10 +1264,12 @@ chosen folder or tag stays among the choices after its last box leaves it, so
 the choice never vanishes from under what the list is showing. The tags narrow
 the list only; unlike the other two they say nothing about where a create goes.
 
-**The filters are one filter.** `sandboxList.rows` applies the server, the
-folder and the tags together, and everything that counts discoboxes counts what it
-draws (`sandboxList.count`) — the band, the archived offer — so a filter added
-to one count cannot be forgotten in another. The card counts the same way: it holds a copy of the list carrying
+**The filters are one filter**, and the core's (`console.Filter`; the rules
+are in [`console/DESIGN.md`](../console/DESIGN.md#the-list)). `console.List.Rows`
+applies the server, the folder and the tags together, and everything that
+counts discoboxes counts what it draws (`console.List.Count`) — the band, the
+archived offer — so a filter added to one count cannot be forgotten in
+another. The card counts the same way: it holds a copy of the list carrying
 the marks so far, and each choice's count is what the list would show with
 that choice marked beside the others. The folders offered are the ones on the
 server marked and the tags the ones inside both, re-read as marks change,
@@ -1300,13 +1302,13 @@ exists to prevent. The secrets screen's request table is its server's
 
 The machine line is the primary's figures
 (`DataSource.Resources`), and is drawn only while the list shows the primary's
-discoboxes (`sandboxList.onPrimary`) — unnamed above a list narrowed to another
+discoboxes (`console.List.OnPrimary`) — unnamed above a list narrowed to another
 server, it reads as that server's capacity, which is the number checked before
 creating there.
 
 **The list is sectioned by folder, and by nothing else**
 ([ADR 26-10-14-585](../../../docs/adr/26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md);
-`sandboxList.grouped`, `sectionOf`): on `all folders`, in the card's order,
+`console.List.Grouped`, `Section`): on `all folders`, in the card's order,
 the window's own first, since the rows carry no folder column. A list narrowed
 to one folder has no sections, because the header has said the name. Rows are
 newest-first within a section, a created discobox under its creator (see "A
@@ -1356,7 +1358,7 @@ mouse walks past it onto the block (`drawn.rows`, marked from the walk that
 draws). Scrolling counts headers as the lines they are, which is why the window
 adjusts its own offset where it draws rather than in `clamp`: only the draw
 knows what a row costs. A server that did not answer is said where its
-discoboxes would have been and nowhere else (`sandboxList.missing`): showing
+discoboxes would have been and nowhere else (`console.List.Missing`): showing
 every server, or showing that one. It is also reported once, when that changes
 (`reportUnreachable`) — the list is polled, and a complaint on every refresh is
 one you stop reading.
@@ -1413,9 +1415,9 @@ exception: putting that discobox away also detaches its local streams and
 returns to the list, where the result is reported — or, beside the tree, goes
 on to the next box (see the workspace tree). An archive takes its rows off
 the list as it is sent, not once it is answered and the list read again
-(`sandboxList.markArchiving`): they are listed as archived from the press, a
+(`console.List.MarkArchiving`): they are listed as archived from the press, a
 listing asked for before the answer cannot put them back
-(`settleArchives`, by the count of reads `listPoll` has sent), and a refused archive puts them
+(`SettleArchives`, by the count of reads `listPoll` has sent), and a refused archive puts them
 back at once. An `Interaction` is drawn in
 the window (`pane.go`/`workspace.go`, over the `termpane` module): attach and
 shell open the workspace screen onto the discobox's own terminals. Every interaction takes exactly one
@@ -3009,14 +3011,14 @@ dot sits in the cell its figure would have — with two layouts, resizing the
 cells puts the dots under the wrong columns.
 
 **The folder is a header control, not a column.** The label in the header is
-which folder's sandboxes are listed (`folder.go`). A folder is a GitHub
+which folder's sandboxes are listed (`console.Filter.Folder`). A folder is a GitHub
 repository when the source resolved to one (above). Otherwise it is an origin key
 ([ADR 0111](../../../docs/adr/0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md)):
 a machine, and where the discoboxes in it had their source from — a directory or
 a repository URL — matched by the key the server stored on each row
 (`Sandbox.OriginKey`) and named by that source, so a URL is a folder the way a
 directory is. The header opens on the folder the saved view names,
-or on `allFolders` (see "The header's filters are kept, one set per machine"); the window's
+or on `console.AllFolders` (see "The header's filters are kept, one set per machine"); the window's
 own folder (`Session.RepositoryKey` when its checkout is on GitHub, otherwise
 `Session.OriginKey`, where a discobox cut here is filed) leads the
 filter card's folders, with every folder something is filed in beside it. A folder of this machine's also holds its
@@ -3028,43 +3030,27 @@ always, since that is where a new sandbox would go). Because every row on screen
 has already been filtered to one folder — or is nested under one that has —
 the row carries no folder column: it would repeat one value down the whole list.
 
-**A discobox a discobox created is drawn under it** (`Sandbox.CreatedBy`,
-`sandboxList.nest`). A lead and the workers it launched are one piece of work,
-so the rows are ordered as trees: a created discobox directly under its
-creator, behind a dim branch (`├ `, `└ `) that sits after the state glyph —
-the glyphs stay one column — and comes out of the name's width. Tops, and the
-rows under one creator, keep the listing's order.
+**A discobox a discobox created is drawn under it** (`Sandbox.CreatedBy`).
+Which row nests under which, in what order and in which section, is the
+core's (`console.List.Rows`, `Nesting`; see
+[`console/DESIGN.md`](../console/DESIGN.md#the-list)): every discobox is on
+one row, under the nearest creator the filter shows, wherever it is filed
+itself. The window draws it: a dim branch (`├ `, `└ `, `│ `) after the state
+glyph — the glyphs stay one column — that comes out of the name's width
+(`sandboxList.tree`, from `console.Nest`). One row per discobox is what lets
+the tree's walk (`switchBox`) find the box on screen by its ID; a second row
+of it was a second place the walk could start from.
 
-Nesting does not re-file anything. A discobox's folder is still its own — the
-key the server stored, or its GitHub repository (below) — and a created discobox's is often not its creator's:
-one cut from a checkout inside the creator records the creator as the machine
-and a path inside it, and nothing makes a creator and what it creates share a
-source. So a discobox is drawn under its creator wherever the creator is
-drawn, whatever folder it is filed in, and only there: **every discobox is on
-one row**. It is a top in its own folder only where no creator of it is drawn —
-that folder narrowed to on the header — and then carries the `from …`
-qualifier below. A row nested under its creator drops that qualifier, which
-would name the creator as a machine. One row per discobox is what lets the
-tree's walk (`switchBox`) find the box on screen by its ID; a second row of it
-was a second place the walk could start from.
-
-The filters that are about the discobox itself — server, tags, archived —
-apply to a nested row as to any (`shown`); only the folder does not. A row
-nests under the nearest creator that is shown, so one whose creator is
-archived and hidden, or lacks a tag the header names, moves up a level, or is
-drawn in its own folder alone. Creators are looked up per server, since an ID
-is one server's.
-
-Every count is of the discoboxes the list draws (`sandboxList.count`): the
+Every count is of the discoboxes the list draws (`console.List.Count`): the
 band, a section, the filter card's choices, the archived offer, a committed
 visual range. So a folder's count on the card includes what is nested under
 its discoboxes, and can be more than `discobox ls` lists there. The tags the
-card offers are the folder's own discoboxes' (`tagChoices`): a tag only a
+card offers are the folder's own discoboxes' (`console.List.TagChoices`): a tag only a
 nested row carries would narrow the list to nothing, since its creator lacks
 it.
 
 **A discobox created on another machine says so beside its name**
-(`Sandbox.elsewhere`). A folder's name cannot say it: two machines can hold the
+(`Sandbox.Elsewhere`, `console.List.Origin`). A folder's name cannot say it: two machines can hold the
 same path, and under "all folders" their discoboxes sit side by side with
 nothing else on the row to tell them apart. So the row carries
 `OriginHostID`/`OriginHost` and the window carries `Session.HostID`, and a row
@@ -3109,7 +3095,7 @@ it differs from what the header says — a strip repeating the header is one you
 stop reading.
 
 **The Source row is a selector, and it moves the header back** (`options.go`).
-It offers what the project has actually been cut from — `sandboxList.sources()`,
+It offers what the project has actually been cut from — `console.List.Sources`,
 off the same listing the filter's folders are built from — plus `no source`.
 Left and right cycle in place and Enter opens the whole list, whose last row is
 the one entry that is not a source but the input field for a source the
@@ -3118,9 +3104,9 @@ ADR 26-10-15-664).
 
 **One source is one choice.** Discoboxes cut from one repository may have
 spelled it several ways — with or without `.git`, with or without a trailing
-slash, in any case on GitHub — and the row and `sources()` offer those once,
+slash, in any case on GitHub — and the row and `console.List.Sources` offer those once,
 comparing by
-`sourceref.Ref.CloneKey` (`sourceKey`, `sameSource`): only spellings fetched
+`sourceref.Ref.CloneKey` (`console.SourceKey`, `sourceKey`, `sameSource`): only spellings fetched
 over one transport merge, so choosing the https one never runs another
 discobox's ssh, http or `git://` URL, which is a choice of its own. A ref is
 part of which source it is, so `owner/repo@dev` is its own choice too. A local
@@ -3415,12 +3401,11 @@ the newest one where the busy line goes.
 | --- | --- |
 | `harnesses.go` | the harnesses screen: the list, its actions, the config card, `F3` |
 | `filter.go` | the header's filter: the line naming what is narrowed, the card that marks a server, folder and tags, and applying them together |
-| `folder.go` | a folder: the origin key it files under, and what it holds |
 | `server.go` | the server the list shows and a create goes to, and the config screens' ←→ over it |
-| `tags.go` | the tags the list can be narrowed to, and how one reads |
+| `tags.go` | how a tag and the chosen tags read |
 | `shimmer.go` | the opening glint over "discobox" in the placeholder |
 | `model.go` | the window: update, actions, run, layout, view, help |
-| `list.go` | the sandbox pane: filters, selection, visual range, row rendering |
+| `list.go` | the sandbox pane, a renderer of `console.List`: cursor, selection, visual range, scrolling, row rendering and the branch a nested row is drawn with |
 | `options.go` | `discobox run`'s flags as a panel, the chip strip, the command preview |
 | `create.go` | the create card Enter opens: the source list, the settings under it reached by Tab |
 | `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, and the `/` search over a scrolling body |
@@ -3447,7 +3432,6 @@ the newest one where the busy line goes.
 | `pull.go` | what a pull request's page adds to the issue tab: the badge and branches, the merge bar and merging, reviewers, checks, and pushes and reviews with their threads |
 | `pullreview.go` | a pull request's files changed: discobox-review run in the discobox between the pull request's two commits (`DataSource.PullReview`), a session each `f`, drawn in the tab with its keys but the leader, ended with the window, the tab, the workspace and the console (`EndReviews`) |
 | `audit.go` | the audit screen: the followed timeline over the workspace, its search, and a record's card |
-| `fuzzy.go` | the fzf-style matcher the audit search filters and lights with |
 | `narration.go` | what a slow operation is doing, on the busy line |
 | `tui.go` | `Run`: the program the CLI starts against a `DataSource` |
 | `secrets.go` | the secrets screen (`F4`): the three tables' focus and frame, the secrets table, a secret's card and bindings, the secret and binding forms |
@@ -3599,13 +3583,17 @@ alias followed by space completes the command, including in pasted text.
 Rows select on press and choose on double-click; box rows also expose their
 commands. The chip and key hints are clickable.
 
-Search reads the unfiltered listing, across all listed servers, using
-`fuzzyQuery` term acceptance within individual fields. Rank evidence orders
-exact, prefix, contiguous, scattered and detail-only hits. Partial listings
+Search is the core's (`console.List.Search`): the unfiltered listing, across
+all listed servers, matched by `console.MatchFields` term by term within
+individual fields. Its rank evidence (`console.Rank`) orders exact, prefix,
+contiguous, scattered and detail-only hits; the palette ranks those among
+commands. Partial listings
 remain labelled. Archived boxes require the palette's own scope toggle;
 unarchive and purge enable it when selected. Search does not edit the header
 filters. Navigation to a filtered-out result temporarily reveals it, suppresses
-view persistence and restores the original filters when the navigation ends.
+view persistence and restores the original filters when the navigation ends:
+the reveal is the core's `console.Revealing` filter, held in place of the
+person's `console.Filter` and never saved.
 
 Usage counts and at most 100 recent box references live on `Model` for this
 window only. Successful workspace navigation records recency; cursor movement

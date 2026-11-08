@@ -221,7 +221,7 @@ func (l *harnessList) row(st *styles, h console.Harness, i int) string {
 // harnessAge is how long ago the harness was last changed, in the discobox
 // list's own spelling.
 func harnessAge(h console.Harness, now time.Time) string {
-	return ago(h.Updated, now)
+	return console.Ago(h.Updated, now)
 }
 
 // ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ func TestTheHeaderDescribesTheActiveFilters(t *testing.T) {
 	ds.session.Servers = []string{"alpha", "beta"}
 	m := newTestModel(t, ds)
 
-	filterTo(t, m, allFolders)
+	filterTo(t, m, console.AllFolders)
 	if got := headerLine(m); !strings.HasSuffix(got, "all discoboxes ▾") {
 		t.Fatalf("header = %q, want it to say nothing is narrowed", got)
 	}
@@ -36,7 +36,7 @@ func TestTheFilterCardAppliesEveryMarkOnEnter(t *testing.T) {
 	ds := newFakeSource(onServer("alpha", taggedSandboxes())...)
 	ds.session.Servers = []string{"alpha", "beta"}
 	m := newTestModel(t, ds)
-	filterTo(t, m, allFolders)
+	filterTo(t, m, console.AllFolders)
 
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgFilter {
@@ -52,19 +52,19 @@ func TestTheFilterCardAppliesEveryMarkOnEnter(t *testing.T) {
 	markFilter(t, m, "alpha")
 	markFilter(t, m, own.Label)
 	markFilter(t, m, "#wip")
-	if m.list.server != "" || m.list.folder.Key != "" || len(m.list.tags) != 0 {
-		t.Fatalf("the list moved before Enter: server %q, folder %q, tags %q", m.list.server, m.list.folder.Label, m.list.tags)
+	if m.list.Filter.Server != "" || m.list.Filter.Folder.Key != "" || len(m.list.Filter.Tags) != 0 {
+		t.Fatalf("the list moved before Enter: server %q, folder %q, tags %q", m.list.Filter.Server, m.list.Filter.Folder.Label, m.list.Filter.Tags)
 	}
 
 	send(t, m, keyPress("enter"))
 	if m.dialog != nil {
 		t.Fatal("Enter should close the card")
 	}
-	if m.list.server != "alpha" || m.list.folder.Key != own.Key || !slices.Equal(m.list.tags, []string{"wip"}) {
-		t.Fatalf("server %q, folder %q, tags %q, want alpha, the window's own and wip", m.list.server, m.list.folder.Label, m.list.tags)
+	if m.list.Filter.Server != "alpha" || m.list.Filter.Folder.Key != own.Key || !slices.Equal(m.list.Filter.Tags, []string{"wip"}) {
+		t.Fatalf("server %q, folder %q, tags %q, want alpha, the window's own and wip", m.list.Filter.Server, m.list.Filter.Folder.Label, m.list.Filter.Tags)
 	}
-	for _, s := range m.list.rows() {
-		if s.Server != "alpha" || s.OriginKey != own.Key || !m.list.tagged(s) {
+	for _, s := range m.list.Rows() {
+		if s.Server != "alpha" || s.OriginKey != own.Key || !m.list.Filter.Tagged(s) {
 			t.Fatalf("row %s is outside the filter", s.ID)
 		}
 	}
@@ -74,13 +74,13 @@ func TestTheFilterCardAppliesEveryMarkOnEnter(t *testing.T) {
 func TestEscDropsTheMarks(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	was := m.list.folder.Key
+	was := m.list.Filter.Folder.Key
 
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter"))
-	markFilter(t, m, allFolders)
+	markFilter(t, m, console.AllFolders)
 	send(t, m, keyPress("esc"))
-	if m.dialog != nil || m.list.folder.Key != was {
-		t.Fatalf("folder = %q after Esc, want it unchanged", m.list.folder.Label)
+	if m.dialog != nil || m.list.Filter.Folder.Key != was {
+		t.Fatalf("folder = %q after Esc, want it unchanged", m.list.Filter.Folder.Label)
 	}
 	if m.focus != focusFilter {
 		t.Fatalf("focus = %v, want the filter the card was opened from", m.focus)
@@ -92,7 +92,7 @@ func TestEscDropsTheMarks(t *testing.T) {
 func TestTheCardCountsAgainstWhatIsMarked(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(taggedSandboxes()...))
-	filterTo(t, m, allFolders)
+	filterTo(t, m, console.AllFolders)
 	m.dialog = m.filterDialog()
 	detail := func(label string) string {
 		for _, row := range m.dialog.filter.rows() {
@@ -103,11 +103,11 @@ func TestTheCardCountsAgainstWhatIsMarked(t *testing.T) {
 		t.Fatalf("no %q on the card", label)
 		return ""
 	}
-	if got := detail(allFolders); !strings.HasPrefix(got, plural(len(m.list.rows()), "box", "boxes")) {
+	if got := detail(console.AllFolders); !strings.HasPrefix(got, plural(len(m.list.Rows()), "box", "boxes")) {
 		t.Fatalf("all folders = %q, want every row counted", got)
 	}
 	markFilter(t, m, "#ticket=ENG-12")
-	if got := detail(allFolders); !strings.HasPrefix(got, "1 box") {
+	if got := detail(console.AllFolders); !strings.HasPrefix(got, "1 box") {
 		t.Fatalf("all folders = %q with #ticket=ENG-12 marked, want the one box carrying it", got)
 	}
 }
@@ -127,8 +127,8 @@ func TestAnUntouchedCardOverTheConfigScreensMovesNothing(t *testing.T) {
 		t.Fatalf("the card does not mark the primary the screen shows:\n%s", got)
 	}
 	send(t, m, keyPress(" "), keyPress("enter"))
-	if m.list.server != "" {
-		t.Fatalf("the list is on %q after an untouched card, want every server", m.list.server)
+	if m.list.Filter.Server != "" {
+		t.Fatalf("the list is on %q after an untouched card, want every server", m.list.Filter.Server)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestTheFilterCardScrollsInAShortWindow(t *testing.T) {
 func TestEnterPicksTheRowUnderTheCursor(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(taggedSandboxes()...))
-	filterTo(t, m, allFolders)
+	filterTo(t, m, console.AllFolders)
 
 	send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter"))
 	markFilter(t, m, m.session.Folder().Label)
@@ -178,7 +178,7 @@ func TestEnterPicksTheRowUnderTheCursor(t *testing.T) {
 		send(t, m, keyPress("down"))
 	}
 	send(t, m, keyPress("enter"))
-	if m.list.folder.Key != m.session.OriginKey || !slices.Equal(m.list.tags, []string{"wip"}) {
-		t.Fatalf("folder %q, tags %q, want the folder Space marked and the tag Enter was on", m.list.folder.Label, m.list.tags)
+	if m.list.Filter.Folder.Key != m.session.OriginKey || !slices.Equal(m.list.Filter.Tags, []string{"wip"}) {
+		t.Fatalf("folder %q, tags %q, want the folder Space marked and the tag Enter was on", m.list.Filter.Folder.Label, m.list.Filter.Tags)
 	}
 }

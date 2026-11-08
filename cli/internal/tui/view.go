@@ -14,57 +14,20 @@ import (
 // part is when, which is when the draft is written: on the listing's clock
 // while it is open, and on the way out.
 
-// restoreView puts the header back on what the last window left it on. A
-// server that is no longer registered is every server, since a filter naming
-// nothing on the list would list nothing.
-//
-// What the command line named outranks what was saved: --server is the
-// primary. That is where the window opens, not a choice made in it, so the
-// store is taken to have it — it is saved only once the filters move off it,
-// and a window opened without the flag goes back to what was saved before.
+// restoreView puts the header back on what the last window left it on
+// (console.Session.Restore). A server that is no longer registered is every
+// server, since a filter naming nothing on the list would list nothing, and
+// --server outranks what was saved. Whether the archived are listed is not
+// saved, and stays as it is.
 func (m *Model) restoreView(view console.ListView) {
-	if m.session.ServerChosen && len(m.session.Servers) > 0 {
-		view.Server = m.session.Servers[0]
-	}
-	m.savedView = view
-	// The window's own folder is the session's, not the copy saved: its label
-	// carries the branch checked out now, which is not part of the key the
-	// view was saved under.
-	switch view.FolderKey {
-	case "":
-		m.list.folder = everyFolder
-	case m.session.OriginKey, m.session.Folder().Key:
-		// Its origin key is what a view saved before the window's folder was
-		// its repository names it by.
-		m.list.folder = m.session.Folder()
-	default:
-		m.list.folder = console.Folder{Key: view.FolderKey, Label: view.FolderLabel, Source: view.FolderSource, Local: view.FolderLocal}
-	}
-	m.list.server = ""
-	if view.Server != "" && m.manyServers() && m.knownServer(view.Server) {
-		m.list.server = view.Server
-	}
-	m.list.tags = view.Tags
+	archived := m.list.Filter.Archived
+	m.savedView, m.list.Filter = m.session.Restore(view)
+	m.list.Filter.Archived = archived
 }
 
-// knownServer reports whether name is among the servers the window lists.
-func (m *Model) knownServer(name string) bool {
-	for _, s := range m.session.Servers {
-		if s == name {
-			return true
-		}
-	}
-	return false
-}
-
-// currentView is the header's filters as they stand. Every folder is no
-// folder at all, so its label is not carried: the zero view is the default.
+// currentView is the header's filters as they stand (console.Filter.View).
 func (m *Model) currentView() console.ListView {
-	view := console.ListView{Server: m.list.server, Tags: m.list.tags}
-	if f := m.list.folder; f.Key != "" {
-		view.FolderKey, view.FolderLabel, view.FolderSource, view.FolderLocal = f.Key, f.Label, f.Source, f.Local
-	}
-	return view
+	return m.list.Filter.View()
 }
 
 // saveView writes the filters if they have moved since the store last had

@@ -147,7 +147,7 @@ func (m *Model) paneServer(p *pane) string {
 	if p != nil && p.sandbox.ID != "" {
 		return m.boxByRef(m.boxRef(p.sandbox)).Server
 	}
-	if servers := m.list.session.Servers; len(servers) > 0 {
+	if servers := m.list.Session.Servers; len(servers) > 0 {
 		return servers[0]
 	}
 	return ""
@@ -157,7 +157,7 @@ func (m *Model) paneServer(p *pane) string {
 // prefix only one of its discoboxes has, from what the listing last said.
 func (m *Model) focusAddressed(server, ref, uri string) tea.Cmd {
 	var found []console.Sandbox
-	for _, box := range m.list.all {
+	for _, box := range m.list.All() {
 		if box.Server != server {
 			continue
 		}
@@ -186,7 +186,7 @@ func (m *Model) focusAddressed(server, ref, uri string) tea.Cmd {
 		return m.landOn(found[0])
 	case len(found) > 1:
 		return say("%q: %q is more than one discobox on %s", uri, ref, on)
-	case slices.Contains(m.list.unreachable, server):
+	case slices.Contains(m.list.Unreachable(), server):
 		return say("%q: %s isn't answering", uri, on)
 	}
 	return say("%q: no discobox %q on %s", uri, ref, on)

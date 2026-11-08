@@ -1219,7 +1219,7 @@ func TestRunningWarningKeepsActions(t *testing.T) {
 			t.Errorf("action %s absent", label)
 		}
 	}
-	if got := m.list.count(); got != len(boxes) {
+	if got := m.list.Count(); got != len(boxes) {
 		t.Fatalf("count %d, want %d", got, len(boxes))
 	}
 	send(t, m, keyPress("H"))

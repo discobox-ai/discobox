@@ -34,7 +34,7 @@ func nestBoxes() []console.Sandbox {
 
 func rowNames(l *sandboxList) []string {
 	var out []string
-	for _, s := range l.rows() {
+	for _, s := range l.Rows() {
 		out = append(out, l.tree(s)+s.Name)
 	}
 	return out
@@ -44,7 +44,7 @@ func rowNames(l *sandboxList) []string {
 // is in, though the folder it is filed in itself is a path inside the creator.
 func TestADiscoboxIsNestedUnderTheOneThatCreatedIt(t *testing.T) {
 	l := listForTest(nestSession, nestBoxes())
-	l.folder = nestSession.Folder()
+	l.Filter.Folder = nestSession.Folder()
 
 	want := []string{"solo", "lead", "├ newer child", "└ older child", "  └ grandchild"}
 	if got := rowNames(l); strings.Join(got, "|") != strings.Join(want, "|") {
@@ -72,15 +72,15 @@ func TestADiscoboxIsNestedUnderTheOneThatCreatedIt(t *testing.T) {
 // Only a folder that does not draw its creator lists it as a top.
 func TestADiscoboxFiledApartFromItsCreatorIsDrawnOnceUnderIt(t *testing.T) {
 	l := listForTest(nestSession, nestBoxes())
-	l.folder = everyFolder
+	l.Filter.Folder = console.EveryFolder
 
 	want := []string{"solo", "lead", "├ newer child", "└ older child", "  └ grandchild"}
 	if got := rowNames(l); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("rows = %q, want %q", got, want)
 	}
 	// A nested row is in the section of the row its tree hangs from.
-	for _, s := range l.rows() {
-		if got := l.sectionOf(s); got != "here:/src/app" {
+	for _, s := range l.Rows() {
+		if got := l.Section(s); got != "here:/src/app" {
 			t.Fatalf("%s is in section %q, want its creator's", s.Name, got)
 		}
 	}
@@ -95,7 +95,7 @@ func TestADiscoboxFiledApartFromItsCreatorIsDrawnOnceUnderIt(t *testing.T) {
 
 	// Its own folder lists it as the server filed it when its creator is not
 	// drawn there.
-	l.folder = console.Folder{Key: "box:sbx_lead:/workspace/source"}
+	l.Filter.Folder = console.Folder{Key: "box:sbx_lead:/workspace/source"}
 	if got := rowNames(l); strings.Join(got, "|") != "newer child|older child|└ grandchild" {
 		t.Fatalf("rows in the created discoboxes' folder = %q", got)
 	}
@@ -107,9 +107,9 @@ func TestADiscoboxFiledWithItsCreatorIsDrawnOnce(t *testing.T) {
 		{ID: "sbx_child", Name: "child", CreatedBy: "sbx_lead", OriginKey: "here"},
 		{ID: "sbx_lead", Name: "lead", OriginKey: "here"},
 	}
-	for _, f := range []console.Folder{everyFolder, {Key: "here"}} {
+	for _, f := range []console.Folder{console.EveryFolder, {Key: "here"}} {
 		l := listForTest(nestSession, boxes)
-		l.folder = f
+		l.Filter.Folder = f
 		if got := rowNames(l); strings.Join(got, "|") != "lead|└ child" {
 			t.Fatalf("rows in %q = %q", f.Key, got)
 		}
@@ -126,19 +126,19 @@ func TestTheArchivedOfferCountsTheNestedOnes(t *testing.T) {
 		}
 	}
 	l := listForTest(nestSession, boxes)
-	l.folder = nestSession.Folder()
-	if got := l.archivedCount(); got != 1 {
+	l.Filter.Folder = nestSession.Folder()
+	if got := l.ArchivedCount(); got != 1 {
 		t.Fatalf("archivedCount = %d, want 1", got)
 	}
-	if got := l.count(); got != 4 {
+	if got := l.Count(); got != 4 {
 		t.Fatalf("count = %d, want 4", got)
 	}
 	// A tag only a nested row carries is not offered: its creator lacks it,
 	// so choosing it would draw nothing.
 	boxes[3].Tags = []string{"ready"}
 	l.setAll(boxes)
-	if got := l.tagChoices(); len(got) != 0 {
-		t.Fatalf("tagChoices = %q", got)
+	if got := l.TagChoices(); len(got) != 0 {
+		t.Fatalf("TagChoices = %q", got)
 	}
 }
 
@@ -146,7 +146,7 @@ func TestTheArchivedOfferCountsTheNestedOnes(t *testing.T) {
 // not.
 func TestTheCursorStaysOnANestedDiscobox(t *testing.T) {
 	l := listForTest(nestSession, nestBoxes())
-	l.folder = everyFolder
+	l.Filter.Folder = console.EveryFolder
 	l.moveTo(4) // "grandchild", two levels down
 	l.setAll(append([]console.Sandbox{{ID: "sbx_fresh", Name: "fresh", OriginKey: "here:/src/app", OriginHostID: "host_here"}}, nestBoxes()...))
 	if s := l.current(); s == nil || s.ID != "sbx_grand" {
@@ -164,7 +164,7 @@ func TestARowNestsUnderTheNearestCreatorOnScreen(t *testing.T) {
 		}
 	}
 	l := listForTest(nestSession, boxes)
-	l.folder = nestSession.Folder()
+	l.Filter.Folder = nestSession.Folder()
 	want := []string{"solo", "lead", "├ grandchild", "└ newer child"}
 	if got := rowNames(l); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("rows with a creator archived = %q, want %q", got, want)
@@ -172,7 +172,7 @@ func TestARowNestsUnderTheNearestCreatorOnScreen(t *testing.T) {
 
 	// A row nested under nothing says where it is from, creator listed or not.
 	l = listForTest(nestSession, boxes[:1])
-	l.folder = everyFolder
+	l.Filter.Folder = console.EveryFolder
 	l.width = 140
 	if got := rowNames(l); len(got) != 1 || got[0] != "grandchild" {
 		t.Fatalf("rows with the creator gone = %q", got)
@@ -201,7 +201,7 @@ func TestALoopOfCreatorsStillListsEveryRow(t *testing.T) {
 		{ID: "sbx_a", Name: "a", CreatedBy: "sbx_b"},
 		{ID: "sbx_b", Name: "b", CreatedBy: "sbx_a"},
 	})
-	if got := l.rows(); len(got) != 2 {
+	if got := l.Rows(); len(got) != 2 {
 		t.Fatalf("rows = %d, want 2", len(got))
 	}
 }

@@ -256,7 +256,7 @@ func (m *Model) pruneDismissed() {
 
 // listedBox is the listing's row for a dismissal's discobox.
 func (m *Model) listedBox(key string) (console.Sandbox, bool) {
-	for _, box := range m.list.all {
+	for _, box := range m.list.All() {
 		if m.session.ServerName(box.Server)+"\x00"+box.ID == key {
 			return box, true
 		}

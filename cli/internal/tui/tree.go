@@ -340,7 +340,7 @@ func (m *Model) syncListCursor() {
 // listCursorTo puts the list's cursor on one box's row, reporting whether the
 // list has it.
 func (m *Model) listCursorTo(box console.Sandbox) bool {
-	for i, s := range m.list.rows() {
+	for i, s := range m.list.Rows() {
 		if m.boxRef(s) == m.boxRef(box) {
 			m.list.moveTo(i)
 			return true
@@ -718,7 +718,7 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 		// The right button is the row's menu, as it is on the list screen,
 		// without switching to it.
 		if ev.Button == tea.MouseRight && where.what.kind == hitRow {
-			rows := m.list.rows()
+			rows := m.list.Rows()
 			if i := where.what.idx; i >= 0 && i < len(rows) {
 				m.list.moveTo(i)
 				return nil, m.boxMenu(rows[i]), true
@@ -731,7 +731,7 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 		case hitTree:
 			return nil, m.treeAct(treeAction(where.what.idx)), true
 		case hitRow:
-			rows := m.list.rows()
+			rows := m.list.Rows()
 			if where.what.idx < 0 || where.what.idx >= len(rows) {
 				m.focusTree()
 				return nil, nil, true
@@ -988,7 +988,7 @@ type boxMenuMsg struct{}
 // boxMenu opens the actions menu for one discobox, read from the list when it
 // is there so the menu answers for the box as it is now.
 func (m *Model) boxMenu(box console.Sandbox) tea.Cmd {
-	for _, s := range m.list.rows() {
+	for _, s := range m.list.Rows() {
 		if m.boxRef(s) == m.boxRef(box) {
 			box = s
 			break

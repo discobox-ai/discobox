@@ -587,8 +587,8 @@ func TestTheHarnessChangesKeyAnswersOverTheAuditScreen(t *testing.T) {
 		d.key("ctrl+a")
 		d.key(harnessChangesKey)
 		d.wait("the review", func() bool { return m.dialog != nil && strings.Contains(m.dialog.title, "Harness changes") })
-		if len(m.audit.search.terms) != 0 {
-			t.Fatalf("audit search = %v, want the key not typed into it", m.audit.search.terms)
+		if !m.audit.search.Empty() {
+			t.Fatalf("audit search = %q, want the key not typed into it", m.audit.query)
 		}
 	})
 }

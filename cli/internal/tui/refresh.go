@@ -145,7 +145,7 @@ func refreshAsk(req console.CredentialRequest, secret console.Secret, now time.T
 	if req.SandboxID != "" {
 		fields = append(fields, field{label: "needed by", value: req.SandboxID, tone: toneDim})
 	}
-	if when := ago(req.Created, now); when != "" {
+	if when := console.Ago(req.Created, now); when != "" {
 		fields = append(fields, field{label: "asked", value: when, tone: toneDim})
 	}
 	if req.Server != "" {

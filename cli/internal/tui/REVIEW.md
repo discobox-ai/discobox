@@ -235,6 +235,11 @@
   cursor lands on whichever box slid into its row. The first cut of the
   archive marks did that, and broke the tree's move to the next box after an
   archive.
+- **Change the rows through `sandboxList`'s own methods, never the embedded
+  `console.List`'s** (`setAll`, `markArchiving`, `unmarkArchiving`, not
+  `SetAll`, `MarkArchiving`, `UnmarkArchiving`). The list embeds the core's,
+  so the core's compile on it, and they skip `keepingCursor`: the cursor
+  stays at its row number and lands on whichever box slid into it.
 
 ## Saved state
 
@@ -254,7 +259,7 @@
 - **A driver test waits for what it asserts.** A fake records a call from the
   command's goroutine, before the window has the answer: wait on the window's
   state, not on the fake's.
-- **An attach test that needs other boxes waits for `m.list.loaded`.**
+- **An attach test that needs other boxes waits for `m.list.Loaded()`.**
   The primary terminal can open before the first listing, since attach starts
   from its given box. Waiting for terminal output alone left the box-link test
   clicking before it could identify the other box and reporting it missing.

@@ -99,8 +99,8 @@ func TestTheCreateCardOffersTheServerWhenThereIsMoreThanOne(t *testing.T) {
 		send(t, m, keyPress("tab"))
 	}
 	send(t, m, keyPress("right"))
-	if m.list.server != "beta" {
-		t.Fatalf("the list is showing %q, want it to follow the row to beta", m.list.server)
+	if m.list.Filter.Server != "beta" {
+		t.Fatalf("the list is showing %q, want it to follow the row to beta", m.list.Filter.Server)
 	}
 	send(t, m, keyPress("enter"))
 	if len(ds.runs) != 1 || ds.runs[0].Server != "beta" {

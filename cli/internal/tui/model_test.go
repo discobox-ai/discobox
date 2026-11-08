@@ -494,7 +494,7 @@ func TestTheArrowsClimbTheWindowAndStopAtItsEnds(t *testing.T) {
 
 	// And down out of the bottom of the list still returns to it.
 	send(t, m, keyPress("tab"))
-	for range len(m.list.rows()) {
+	for range len(m.list.Rows()) {
 		send(t, m, keyPress("down"))
 	}
 	if m.focus != focusPrompt {
@@ -508,8 +508,8 @@ func TestTheArrowsClimbTheWindowAndStopAtItsEnds(t *testing.T) {
 func TestAnEmptyListLandsOnTheFilter(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(cutFrom(console.Sandbox{ID: "sbx_one", Name: "one", State: console.StateRunning}, "/src/elsewhere")))
-	if len(m.list.rows()) != 0 {
-		t.Fatalf("expected an empty list, got %d rows", len(m.list.rows()))
+	if len(m.list.Rows()) != 0 {
+		t.Fatalf("expected an empty list, got %d rows", len(m.list.Rows()))
 	}
 
 	send(t, m, keyPress("tab"))
@@ -520,11 +520,11 @@ func TestAnEmptyListLandsOnTheFilter(t *testing.T) {
 	send(t, m, keyPress("enter"))
 	markFilter(t, m, "/src/elsewhere")
 	send(t, m, keyPress("enter"))
-	if m.list.folder.Key != testKey("/src/elsewhere") {
-		t.Fatalf("folder = %q, want the one with something in it", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("/src/elsewhere") {
+		t.Fatalf("folder = %q, want the one with something in it", m.list.Filter.Folder.Label)
 	}
-	if len(m.list.rows()) != 1 {
-		t.Fatalf("rows = %d, want the sandbox that was there all along", len(m.list.rows()))
+	if len(m.list.Rows()) != 1 {
+		t.Fatalf("rows = %d, want the sandbox that was there all along", len(m.list.Rows()))
 	}
 }
 
@@ -838,11 +838,11 @@ func TestArchivedSandboxesAreHiddenUntilAskedFor(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	showAllFolders(t, m)
-	if got := len(m.list.rows()); got != 3 {
+	if got := len(m.list.Rows()); got != 3 {
 		t.Fatalf("rows = %d, want 3 with the archived one hidden", got)
 	}
 	send(t, m, keyPress("A"))
-	if got := len(m.list.rows()); got != 4 {
+	if got := len(m.list.Rows()); got != 4 {
 		t.Fatalf("rows = %d, want 4 with archived shown", got)
 	}
 }
@@ -853,35 +853,35 @@ func TestArchivedSandboxesAreHiddenUntilAskedFor(t *testing.T) {
 func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	if m.list.folder.Key != testKey("/src/disco2") {
-		t.Fatalf("folder = %q, want the directory the window is running in", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("/src/disco2") {
+		t.Fatalf("folder = %q, want the directory the window is running in", m.list.Filter.Folder.Label)
 	}
-	for _, s := range m.list.rows() {
+	for _, s := range m.list.Rows() {
 		if s.OriginKey != testKey("/src/disco2") {
 			t.Fatalf("row cut from %q should be filtered out", s.Source)
 		}
 	}
 
 	// "Every folder" is the one choice that is not a place.
-	filterTo(t, m, allFolders)
-	if m.list.folder.Key != "" {
-		t.Fatalf("folder = %q, want every folder", m.list.folder.Label)
+	filterTo(t, m, console.AllFolders)
+	if m.list.Filter.Folder.Key != "" {
+		t.Fatalf("folder = %q, want every folder", m.list.Filter.Folder.Label)
 	}
-	if got := len(m.list.rows()); got != 3 {
+	if got := len(m.list.Rows()); got != 3 {
 		t.Fatalf("rows = %d, want every unarchived sandbox", got)
 	}
 
 	// And the folders something else was cut from: the repository URL's, a
 	// folder the way a directory is (ADR 0111), and the other directory's.
 	filterTo(t, m, "acme/foo")
-	if m.list.folder.Key != testKey("https://github.com/acme/foo") {
-		t.Fatalf("folder = %q, want the repository URL's", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("https://github.com/acme/foo") {
+		t.Fatalf("folder = %q, want the repository URL's", m.list.Filter.Folder.Label)
 	}
 	filterTo(t, m, "/src/obot")
-	if m.list.folder.Key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the other folder", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the other folder", m.list.Filter.Folder.Label)
 	}
-	if got := len(m.list.rows()); got != 1 {
+	if got := len(m.list.Rows()); got != 1 {
 		t.Fatalf("rows = %d, want just the one started there", got)
 	}
 }
@@ -897,7 +897,7 @@ func TestTheFilterCardListsTheKnownFolders(t *testing.T) {
 		t.Fatal("enter on the filter should open its card")
 	}
 	view := m.dialog.view(m.st, &m.zones, 120, 40)
-	for _, want := range []string{"/src/disco2", "/src/obot", "acme/foo", allFolders, "where this window is running"} {
+	for _, want := range []string{"/src/disco2", "/src/obot", "acme/foo", console.AllFolders, "where this window is running"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the card is missing %q:\n%s", want, view)
 		}
@@ -905,8 +905,8 @@ func TestTheFilterCardListsTheKnownFolders(t *testing.T) {
 
 	// The second choice is the other folder; Enter on it filters to it.
 	send(t, m, keyPress("down"), keyPress("enter"))
-	if m.list.folder.Key != testKey("/src/obot") {
-		t.Fatalf("folder = %q, want the choice that was made", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q, want the choice that was made", m.list.Filter.Folder.Label)
 	}
 	// And the cursor is back at the top: the rows under it are a different set
 	// of sandboxes now.
@@ -924,7 +924,7 @@ func TestTheFolderFilterAlwaysOffersThisDirectory(t *testing.T) {
 	for _, row := range m.filterDialog().filter.rows() {
 		choices = append(choices, row.label)
 	}
-	if len(choices) != 2 || choices[0] != m.session.Folder().Label || choices[1] != allFolders {
+	if len(choices) != 2 || choices[0] != m.session.Folder().Label || choices[1] != console.AllFolders {
 		t.Fatalf("choices = %q", choices)
 	}
 }
@@ -962,11 +962,11 @@ func TestDiffstatArrivesWithTheListing(t *testing.T) {
 	})
 	m := newTestModel(t, ds)
 
-	if got := m.list.all[0].Diff; !got.Known || got.Added != 3 {
+	if got := m.list.All()[0].Diff; !got.Known || got.Added != 3 {
 		t.Fatalf("diffstat = %+v, want the listed one", got)
 	}
 	send(t, m, tickMsg{})
-	if got := m.list.all[0].Diff; !got.Known || got.Added != 3 {
+	if got := m.list.All()[0].Diff; !got.Known || got.Added != 3 {
 		t.Fatalf("diffstat = %+v after refresh, want the listed one kept", got)
 	}
 }
@@ -1032,8 +1032,8 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	}
 
 	filterTo(t, m, "/src/obot") // on to the other folder
-	if m.list.folder.Key != testKey("/src/obot") {
-		t.Fatalf("folder = %q", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != testKey("/src/obot") {
+		t.Fatalf("folder = %q", m.list.Filter.Folder.Label)
 	}
 	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", req.Source)
@@ -1085,7 +1085,7 @@ func TestUpFromThePromptLandsOnTheLastRow(t *testing.T) {
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)
 	}
-	if want := len(m.list.rows()) - 1; m.list.cursor != want {
+	if want := len(m.list.Rows()) - 1; m.list.cursor != want {
 		t.Fatalf("cursor = %d, want the last row %d", m.list.cursor, want)
 	}
 	if want := "sbx_two"; m.list.current().ID != want {
@@ -1567,7 +1567,7 @@ func TestTypingBeforeTheListingKeepsThePrompt(t *testing.T) {
 	send(t, m, tea.KeyPressMsg{Code: 'f', Text: "f"})
 	drain(t, m, m.Init(), 0)
 
-	if len(m.list.rows()) == 0 {
+	if len(m.list.Rows()) == 0 {
 		t.Fatal("the listing did not land")
 	}
 	if m.focus != focusPrompt {
@@ -1610,8 +1610,8 @@ func TestTheOpeningCountsOnlyTheRowsTheFiltersLeave(t *testing.T) {
 		sessionLoadedMsg{session: console.Session{DefaultProject: "default", View: console.ListView{FolderKey: "elsewhere", FolderLabel: "/src/elsewhere"}}},
 		listLoadedMsg{listing: console.Listing{Sandboxes: testSandboxes()}},
 	)
-	if len(m.list.rows()) != 0 {
-		t.Fatalf("rows = %d, want the filter to leave none", len(m.list.rows()))
+	if len(m.list.Rows()) != 0 {
+		t.Fatalf("rows = %d, want the filter to leave none", len(m.list.Rows()))
 	}
 	if m.focus != focusPrompt {
 		t.Fatalf("focus = %v, want the prompt", m.focus)

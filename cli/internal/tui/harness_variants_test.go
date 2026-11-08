@@ -89,7 +89,7 @@ func TestVariantCreationStaysOnCapturedServerAndDoesNotReplaceNewDialog(t *testi
 	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	m.list.server = "work-server"
+	m.list.Filter.Server = "work-server"
 	parent := testHarnesses()[0]
 	m.newHarnessVariantForm(parent)
 	form := m.dialog
@@ -97,7 +97,7 @@ func TestVariantCreationStaysOnCapturedServerAndDoesNotReplaceNewDialog(t *testi
 	cmd := m.createHarnessVariant("work-server", request, form)
 	other := errorDialog("Other operation", "keep me")
 	m.dialog = other
-	m.list.server = "other-server"
+	m.list.Filter.Server = "other-server"
 	send(t, m, cmd())
 	if !slices.Contains(ds.onServer, "CreateHarnessVariant@work-server") {
 		t.Fatal("creation changed server")

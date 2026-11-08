@@ -80,7 +80,7 @@ func TestTheFocusedBoxsStatusIsSentAsFocusMoves(t *testing.T) {
 func TestTheWorkspacesBoxSpeaksFromItsStream(t *testing.T) {
 	m := statusModel(t)
 	m.statusTerminal = statusSpoken
-	box := m.list.all[1] // working-box, polled working
+	box := m.list.All()[1] // working-box, polled working
 	p := &pane{id: 1, primary: true, sandbox: box}
 	m.paneBox = box
 	m.terminals.panes = append(m.terminals.panes, p)
@@ -109,10 +109,10 @@ func TestTheWorkspacesBoxSpeaksFromItsStream(t *testing.T) {
 	// A poll observed since the stream last spoke carries what the shim
 	// dropped that the pane could not see: it wins.
 	p.observeProgramStatus([]byte("7501;state=working"))
-	for i := range m.list.all {
-		if m.list.all[i].ID == box.ID {
-			m.list.all[i].Agent = programstatus.Status{State: programstatus.Idle}
-			m.list.all[i].AgentObservedAt = p.reportedAt.Add(time.Second)
+	for i := range m.list.All() {
+		if m.list.All()[i].ID == box.ID {
+			m.list.All()[i].Agent = programstatus.Status{State: programstatus.Idle}
+			m.list.All()[i].AgentObservedAt = p.reportedAt.Add(time.Second)
 		}
 	}
 	if rec, ok := m.focusedProgramStatus(); !ok || rec.State != programstatus.Idle {

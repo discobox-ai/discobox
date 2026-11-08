@@ -1,6 +1,7 @@
-package tui
+package console
 
 import (
+	"slices"
 	"sort"
 	"testing"
 )
@@ -37,25 +38,42 @@ func TestFuzzyQueryMatchesTheWayFzfDoes(t *testing.T) {
 		{"ab", "a_xab", true, []int{3, 4}},
 		{"", "anything", true, nil},
 	} {
-		hits, ok := parseFuzzy(tc.query).match(tc.text)
+		hits, ok := ParseQuery(tc.query).Match(tc.text)
 		if ok != tc.ok {
 			t.Errorf("%q in %q: ok = %v, want %v", tc.query, tc.text, ok, tc.ok)
 			continue
 		}
-		if got := positions(hits); ok && len(got)+len(tc.lit) > 0 && !equalInts(got, tc.lit) {
+		if got := positions(hits); ok && len(got)+len(tc.lit) > 0 && !slices.Equal(got, tc.lit) {
 			t.Errorf("%q in %q: lit %v, want %v", tc.query, tc.text, got, tc.lit)
 		}
 	}
 }
 
-func equalInts(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
+// Every term matches inside one field, primary fields rank ahead of detail
+// ones, and the whole of a primary field is the best rank there is.
+func TestMatchFieldsRanksWithinFields(t *testing.T) {
+	tests := []struct {
+		query           string
+		primary, detail []string
+		want            bool
+		tier            int
+	}{
+		{"hcp", []string{"sbx_hcp123"}, nil, true, 2},
+		{"hcp", []string{"hcp123"}, nil, true, 1},
+		{"hcp", []string{"hcp"}, nil, true, 0},
+		{"hcp", []string{"h---c---p"}, nil, true, 3},
+		{"hcp", nil, []string{"issue=hcp"}, true, 4},
+		{"Repository 717", []string{"box"}, []string{"Repository", "issue=717"}, true, 4},
+		{"Repository", nil, []string{"repository"}, false, 0},
+		{"ab", []string{"a", "b"}, nil, false, 0},
+		{"hcp missing", []string{"hcp"}, nil, false, 0},
 	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			got, ok := MatchFields(ParseQuery(tt.query), tt.primary, tt.detail)
+			if ok != tt.want || ok && got.Tier != tt.tier {
+				t.Fatalf("got %+v %v, want tier %d %v", got, ok, tt.tier, tt.want)
+			}
+		})
 	}
-	return true
 }

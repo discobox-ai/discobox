@@ -294,14 +294,14 @@ type Sandbox struct {
 
 	// CreatedBy is the ID of the discobox that created this one, on the same
 	// server, and empty for one a person created. The list draws it under
-	// that discobox (sandboxList.nest).
+	// that discobox (List.Rows).
 	CreatedBy string
 
 	// OriginKey is where the discobox is filed on the client that created it
 	// (ADR 0111): that host and where its source came from, or the host alone
 	// when it has none. It is not a column on the row — it is what the header
 	// filter's folder matches, so every row on screen already shares it, bar
-	// the ones nested under a creator filed there (sandboxList.nest).
+	// the ones nested under a creator filed there (List.Rows).
 	OriginKey string
 
 	// OriginHostID identifies the machine the sandbox was created on, and
@@ -334,7 +334,7 @@ type Sandbox struct {
 	// RepositoryKey tells Repository apart from every other GitHub
 	// repository, as `owner/repo` lower-cased: the same for a clone, the
 	// shorthand and every spelling of the URL (sourceref.GitHubKey).
-	// It is the folder the discobox is in when it is set (Sandbox.folder).
+	// It is the folder the discobox is in when it is set (Sandbox.Folder).
 	RepositoryKey string
 
 	Branch string

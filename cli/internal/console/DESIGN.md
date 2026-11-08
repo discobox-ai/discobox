@@ -35,6 +35,52 @@ its folder (`folder.go`), the issue or pull request it is tagged with
 (`WorkNumber`). Presentation of those answers — glyphs, colours, column
 budgets — is the renderer's.
 
+## The list
+
+`list.go`, `query.go`. `List` is the box listing as the console shows it
+(876 §1); a renderer embeds it and adds the cursor, the marks, scrolling and
+drawing. It is a value, so a renderer tries a filter on a copy (the filter
+card's counts) without touching the one on screen; a copy shares the listing,
+so taking a listing or its marks is the original's to do.
+
+```mermaid
+flowchart LR
+    L["Listing (SetAll, SetUnreachable, SetWaiting, SetListed)"] --> List
+    F["Filter: server, folder, tags, archived"] --> List
+    List --> R["Rows: sections, then trees"]
+    List --> N["Nesting: depth, last, rules"]
+    List --> T["Notes: servers not answering, still listing, behind"]
+    List --> S["Search: every server, no filter"]
+```
+
+- **Order is the core's.** `Rows` is the filtered rows as drawn: on every
+  folder (`Grouped`), sections in `Folders` order — the window's own first —
+  each newest-first as the listing has them; inside one, each box followed by
+  the boxes it created (ADR 0111 §3). A box is drawn under the nearest
+  creator the filter shows, wherever it is filed itself, and only there.
+- **Nesting is structure, not glyphs.** `Nesting` says how deep a row is,
+  whether it is its creator's last, and where a branch carries on above it;
+  the renderer draws the branch (`├ └ │` in the TUI).
+- **The filter is a value** (`Filter`): server, folder, tags (one value per
+  key, `AddTag`) and the archived. `Revealing` is the view that shows one
+  box whatever the person's filter hid (671 §5); a renderer holds it in
+  place of theirs and puts theirs back, never saving it. `Filter.View` is
+  the filter as saved (`Session.View`) and `Session.Restore` the filter a
+  saved view opens on.
+- **Row text is the core's.** `Sandbox.Remark` is what a row says in place
+  of its name when picked out — naming the command that answers it, never a
+  key, which is each frontend's binding — `StateWord` its state as a word,
+  `List.Origin` where it came from (nothing on a nested row); `Notes` and
+  `ListedAgo` are what the list says about servers. Glyphs, colours and
+  column budgets are the renderer's.
+- **An archive is listed from the press** (`MarkArchiving`) until a listing
+  sent after its answer lands (`SettleArchives`), counted in listings sent.
+- **Search ignores the filter** (`Search`, 671 §5): every listed server,
+  archived only when asked for, matched by `Query` (fzf-style, smart case)
+  within one field at a time (`MatchFields`), ranked by `Rank`; `Partial` and
+  `Stale` are what it says about servers it has no or old rows from. Ranking
+  boxes among commands is the palette's.
+
 ## The command registry
 
 `commands.go` (ADR 26-11-06-671 §4, moved here by 876 §1). One `Command` per

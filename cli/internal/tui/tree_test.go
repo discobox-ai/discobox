@@ -374,7 +374,7 @@ func TestArchivingTheLastRowGoesBackToAParkedBox(t *testing.T) {
 		first := m.primary()
 		d.leader("down")
 		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
-		if rows := m.list.rows(); rows[len(rows)-1].ID != "sbx_two" {
+		if rows := m.list.Rows(); rows[len(rows)-1].ID != "sbx_two" {
 			t.Fatalf("the tree's last row is %s, want sbx_two", rows[len(rows)-1].ID)
 		}
 
@@ -452,14 +452,14 @@ func TestABoxsNeighborIsTheRowAfterItOrBefore(t *testing.T) {
 	l := listForTest(console.Session{}, treeTagBoxes())
 	for id, want := range map[string]string{"sbx_a": "sbx_b", "sbx_b": "sbx_c", "sbx_c": "sbx_b", "sbx_gone": ""} {
 		got := ""
-		if n := l.neighbor(console.Sandbox{ID: id}); n != nil {
+		if n := l.Neighbor(console.Sandbox{ID: id}); n != nil {
 			got = n.ID
 		}
 		if got != want {
 			t.Errorf("neighbor(%s) = %q, want %q", id, got, want)
 		}
 	}
-	if n := listForTest(console.Session{}, treeTagBoxes()[:1]).neighbor(console.Sandbox{ID: "sbx_a"}); n != nil {
+	if n := listForTest(console.Session{}, treeTagBoxes()[:1]).Neighbor(console.Sandbox{ID: "sbx_a"}); n != nil {
 		t.Errorf("the only row's neighbor = %s, want none", n.ID)
 	}
 }
@@ -565,12 +565,12 @@ func TestTheLeaderWalksThroughNestedBoxes(t *testing.T) {
 		ds := newFakeSource(boxes...)
 		ds.nothingSaved = true
 		d, m, _ := openWorkspace(t, ds, "enter")
-		if !m.list.grouped() {
-			t.Fatalf("the list is narrowed to %q, want every folder", m.list.folder.Key)
+		if !m.list.Grouped() {
+			t.Fatalf("the list is narrowed to %q, want every folder", m.list.Filter.Folder.Key)
 		}
 
 		var ids []string
-		for _, s := range m.list.rows() {
+		for _, s := range m.list.Rows() {
 			ids = append(ids, s.ID)
 		}
 		if want := []string{"sbx_one", "sbx_kid", "sbx_grand", "sbx_two"}; !slices.Equal(ids, want) {
@@ -1227,7 +1227,7 @@ func TestAllDiscoboxesTurnsAnAttachIntoTheConsole(t *testing.T) {
 		box := testSandboxes()[1]
 		d, m := openAttached(t, ds, box)
 		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
-		d.wait("the listing", func() bool { return len(m.list.all) > 0 })
+		d.wait("the listing", func() bool { return len(m.list.All()) > 0 })
 		if m.treeShown() {
 			t.Fatal("an attach window has no tree until it is asked for")
 		}
@@ -1345,7 +1345,7 @@ func TestSwitchingBoxesNeedsTheTree(t *testing.T) {
 			ds := newFakeSource(testSandboxes()...)
 			d, m := openAttached(t, ds, testSandboxes()[0])
 			d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
-			d.wait("the listing", func() bool { return len(m.list.all) > 0 })
+			d.wait("the listing", func() bool { return len(m.list.All()) > 0 })
 			check(t, d, m, ds)
 		})
 	})
@@ -1763,12 +1763,12 @@ func TestTreeDoubleClickDoesNotFollowAReplacedServerIdentity(t *testing.T) {
 		if m.clickBox.Server != "alpha" {
 			t.Fatalf("first click identity: %+v", m.clickBox)
 		}
-		for i := range m.list.all {
-			if m.list.all[i].ID == boxes[1].ID {
-				m.list.all[i].Server = "beta"
+		for i := range m.list.All() {
+			if m.list.All()[i].ID == boxes[1].ID {
+				m.list.All()[i].Server = "beta"
 			}
 		}
-		m.list.setAll(m.list.all)
+		m.list.setAll(m.list.All())
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		d.settle()
 		if got := primaryOpens(ds, boxes[1].ID); got != 0 {

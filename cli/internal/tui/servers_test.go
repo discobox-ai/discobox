@@ -159,21 +159,21 @@ func TestServersAreNotSections(t *testing.T) {
 		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/disco2")},
 		{ID: "sbx_a2", Name: "two", Server: "alpha", State: console.StateRunning, OriginKey: testKey("/src/disco2")},
 	})
-	l.folder = console.Folder{Key: testKey("/src/disco2"), Label: "/src/disco2"}
-	if l.grouped() {
+	l.Filter.Folder = console.Folder{Key: testKey("/src/disco2"), Label: "/src/disco2"}
+	if l.Grouped() {
 		t.Fatal("one folder on two servers is drawn in sections")
 	}
 	out := l.view(newStyles(false), &zones{}, true)
 	if strings.Contains(out, "server alpha") || strings.Contains(out, "server beta") {
 		t.Fatalf("the list names a server over its rows:\n%s", out)
 	}
-	if rows := l.rows(); rows[0].Name != "three" || rows[1].Name != "one" || rows[2].Name != "two" {
+	if rows := l.Rows(); rows[0].Name != "three" || rows[1].Name != "one" || rows[2].Name != "two" {
 		t.Fatalf("rows = %+v, want the listing's own order", rows)
 	}
 
 	// A server that did not answer is a section with no rows, so the
 	// discoboxes missing from the listing say why.
-	l.setUnreachable([]string{"gamma"})
+	l.SetUnreachable([]string{"gamma"})
 	if out = l.view(newStyles(false), &zones{}, true); !strings.Contains(out, "server gamma") || !strings.Contains(out, "not answering") {
 		t.Fatalf("view does not say gamma is not answering:\n%s", out)
 	}
@@ -184,8 +184,8 @@ func TestServersAreNotSections(t *testing.T) {
 // sections it either.
 func TestTheListHasNoSectionsWithOneServer(t *testing.T) {
 	l := listForTest(console.Session{}, []console.Sandbox{{ID: "sbx_a1", Name: "one", State: console.StateRunning, OriginKey: testKey("/src/disco2")}})
-	l.folder = console.Folder{Key: testKey("/src/disco2"), Label: "/src/disco2"}
-	if l.grouped() {
+	l.Filter.Folder = console.Folder{Key: testKey("/src/disco2"), Label: "/src/disco2"}
+	if l.Grouped() {
 		t.Fatal("the list is grouped with one server")
 	}
 	out := l.view(newStyles(false), &zones{}, true)
@@ -228,7 +228,7 @@ func TestTheCursorStaysOnScreenAmongSections(t *testing.T) {
 func listForTest(session console.Session, boxes []console.Sandbox) *sandboxList {
 	l := newSandboxList(session)
 	l.width, l.height = 100, 20
-	l.now = func() time.Time { return time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC) }
+	l.Now = func() time.Time { return time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC) }
 	l.setAll(boxes)
 	return l
 }
@@ -239,7 +239,7 @@ func listForTest(session console.Session, boxes []console.Sandbox) *sandboxList 
 // a primary with none of its own draws an entirely blank list.
 func TestUnreachableSectionsDrawBeforeTheSessionArrives(t *testing.T) {
 	l := listForTest(console.Session{}, nil)
-	l.setUnreachable([]string{"beta"})
+	l.SetUnreachable([]string{"beta"})
 	out := l.view(newStyles(false), &zones{}, true)
 	if !strings.Contains(out, "beta") || !strings.Contains(out, "not answering") {
 		t.Fatalf("view does not say beta is not answering:\n%s", out)
@@ -255,7 +255,7 @@ func TestAServerStillBeingAskedSaysSoWhereItsRowsGo(t *testing.T) {
 	l := listForTest(console.Session{Servers: []string{"alpha", "beta"}}, []console.Sandbox{
 		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning},
 	})
-	l.setWaiting([]string{"beta"})
+	l.SetWaiting([]string{"beta"})
 
 	out := l.view(newStyles(false), &zones{}, true)
 	if !strings.Contains(out, "one") {
@@ -279,7 +279,7 @@ func TestTheBandSaysAListingIsSlowOnlyWhileItIs(t *testing.T) {
 	if out := l.view(newStyles(false), &zones{}, true); strings.Contains(out, "still listing") {
 		t.Fatalf("the band says a listing is slow when none is:\n%s", out)
 	}
-	l.slow = true
+	l.Slow = true
 	out := l.view(newStyles(false), &zones{}, true)
 	if !strings.Contains(out, "still listing") {
 		t.Fatalf("the band does not say the listing is slow:\n%s", out)
@@ -290,7 +290,7 @@ func TestTheBandSaysAListingIsSlowOnlyWhileItIs(t *testing.T) {
 	// listing is late, or the one screen a new user reads would blink at them
 	// every time a poll ran long.
 	empty := listForTest(console.Session{}, nil)
-	empty.slow = true
+	empty.Slow = true
 	if out := empty.view(newStyles(false), &zones{}, true); !strings.Contains(out, "no discoboxes here yet") {
 		t.Fatalf("a project known to be empty stopped saying so while a refresh was out:\n%s", out)
 	}
@@ -301,7 +301,7 @@ func TestTheBandSaysAListingIsSlowOnlyWhileItIs(t *testing.T) {
 func TestTheInvitationWaitsForTheFirstListing(t *testing.T) {
 	fresh := newSandboxList(console.Session{})
 	fresh.width, fresh.height = 100, 20
-	fresh.now = func() time.Time { return time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC) }
+	fresh.Now = func() time.Time { return time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC) }
 	if out := fresh.view(newStyles(false), &zones{}, true); strings.Contains(out, "no discoboxes here yet") {
 		t.Fatalf("a list with no listing yet was reported as an empty project:\n%s", out)
 	}
@@ -320,7 +320,7 @@ func TestTheInvitationWaitsForTheFirstListing(t *testing.T) {
 func TestTheWindowSaysARefreshIsSlowAfterTheWait(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	m.update(listingSlowMsg{})
-	if m.list.slow {
+	if m.list.Slow {
 		t.Fatal("the window called a listing slow with no refresh out")
 	}
 
@@ -328,19 +328,19 @@ func TestTheWindowSaysARefreshIsSlowAfterTheWait(t *testing.T) {
 	// it: the refresh key pressed just before the beat's timer comes due.
 	m.refresh()
 	m.update(listingSlowMsg{})
-	if m.list.slow {
+	if m.list.Slow {
 		t.Fatalf("a refresh out for no time was called late by a stale timer")
 	}
 
 	// And the same refresh, once it really has been out that long.
 	m.listPoll.since = m.now().Add(-listingSlowAfter)
 	m.update(listingSlowMsg{})
-	if !m.list.slow {
+	if !m.list.Slow {
 		t.Fatal("a refresh still out after the wait was not reported")
 	}
 
 	m.update(listLoadedMsg{})
-	if m.list.slow || !m.listPoll.since.IsZero() {
+	if m.list.Slow || !m.listPoll.since.IsZero() {
 		t.Fatal("a listing that landed left the window saying it was still listing")
 	}
 }
@@ -384,7 +384,7 @@ func TestTheNotAnsweringSectionSurvivesAFullList(t *testing.T) {
 		}
 	}
 	l := listForTest(console.Session{}, boxes)
-	l.setUnreachable([]string{"beta"})
+	l.SetUnreachable([]string{"beta"})
 
 	out := l.view(newStyles(false), &zones{}, true)
 	if !strings.Contains(out, "not answering") {
@@ -412,10 +412,10 @@ func TestTheWindowOpensOnEveryServer(t *testing.T) {
 	ds.session.Servers = []string{"alpha", "beta"}
 	m := newTestModel(t, ds)
 
-	if m.list.server != "" {
-		t.Fatalf("the window opened on %q, want every server", m.list.server)
+	if m.list.Filter.Server != "" {
+		t.Fatalf("the window opened on %q, want every server", m.list.Filter.Server)
 	}
-	if rows := m.list.rows(); len(rows) != 2 {
+	if rows := m.list.Rows(); len(rows) != 2 {
 		t.Fatalf("rows = %+v, want both servers'", rows)
 	}
 	out := plainFrame(m)
@@ -424,16 +424,16 @@ func TestTheWindowOpensOnEveryServer(t *testing.T) {
 	}
 	// Both servers' rows are one list: which server a row is on is the
 	// filter's to answer, not a band's.
-	if m.list.grouped() || strings.Contains(out, "server alpha") {
+	if m.list.Grouped() || strings.Contains(out, "server alpha") {
 		t.Fatalf("the list is sectioned by server:\n%s", out)
 	}
 
 	// And narrowing to one is a choice on the card.
 	filterTo(t, m, "alpha")
-	if m.list.server != "alpha" {
-		t.Fatalf("the list is showing %q, want alpha", m.list.server)
+	if m.list.Filter.Server != "alpha" {
+		t.Fatalf("the list is showing %q, want alpha", m.list.Filter.Server)
 	}
-	if m.list.grouped() {
+	if m.list.Grouped() {
 		t.Fatal("the list is sectioned by server while it is showing one")
 	}
 	out = plainFrame(m)
@@ -472,8 +472,8 @@ func TestTheHeaderServerIsWhereThePromptRuns(t *testing.T) {
 	}
 	markFilter(t, m, "beta")
 	send(t, m, keyPress("enter"))
-	if m.list.server != "beta" {
-		t.Fatalf("the list is showing %q, want beta", m.list.server)
+	if m.list.Filter.Server != "beta" {
+		t.Fatalf("the list is showing %q, want beta", m.list.Filter.Server)
 	}
 	if got := m.opts.command("fix it"); !strings.Contains(got, "--server beta") {
 		t.Fatalf("command = %q, want --server beta", got)
@@ -500,8 +500,8 @@ func TestEveryServerStillCreatesOnThePrimary(t *testing.T) {
 	// window never having been touched.
 	filterTo(t, m, "beta")
 	filterTo(t, m, allServers)
-	if m.list.server != "" {
-		t.Fatalf("the list is showing %q, want every server", m.list.server)
+	if m.list.Filter.Server != "" {
+		t.Fatalf("the list is showing %q, want every server", m.list.Filter.Server)
 	}
 	if got := m.opts.command("fix it"); strings.Contains(got, "--server") {
 		t.Fatalf("command = %q, want no --server, which is the primary", got)
@@ -519,12 +519,12 @@ func TestTheRunOptionsServerRowMovesTheList(t *testing.T) {
 	m.optionsOpen = true
 	m.opts.moveTo(optServer)
 	send(t, m, keyPress("right"))
-	if m.list.server != "beta" {
-		t.Fatalf("the list is showing %q, want the server the row moved to", m.list.server)
+	if m.list.Filter.Server != "beta" {
+		t.Fatalf("the list is showing %q, want the server the row moved to", m.list.Filter.Server)
 	}
 	send(t, m, keyPress("left"))
-	if m.list.server != "alpha" {
-		t.Fatalf("the list is showing %q, want alpha", m.list.server)
+	if m.list.Filter.Server != "alpha" {
+		t.Fatalf("the list is showing %q, want alpha", m.list.Filter.Server)
 	}
 }
 
@@ -536,13 +536,13 @@ func TestTheNotAnsweringSectionFollowsTheFilter(t *testing.T) {
 	l := listForTest(console.Session{Servers: []string{"alpha", "beta"}}, []console.Sandbox{
 		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning},
 	})
-	l.setUnreachable([]string{"beta"})
+	l.SetUnreachable([]string{"beta"})
 
-	l.server = "alpha"
+	l.Filter.Server = "alpha"
 	if out := l.view(newStyles(false), &zones{}, true); strings.Contains(out, "not answering") {
 		t.Fatalf("showing alpha, the list says beta is missing:\n%s", out)
 	}
-	l.server = "beta"
+	l.Filter.Server = "beta"
 	out := l.view(newStyles(false), &zones{}, true)
 	if !strings.Contains(out, "not answering") {
 		t.Fatalf("showing beta, the list does not say it is not answering:\n%s", out)
@@ -643,8 +643,8 @@ func TestTheConfigScreensAreTheHeadersServer(t *testing.T) {
 		ds.session.Servers = []string{"alpha", "beta"}
 		m := newTestModel(t, ds)
 		filterTo(t, m, "beta")
-		if m.list.server != "beta" {
-			t.Fatalf("the list is showing %q, want beta", m.list.server)
+		if m.list.Filter.Server != "beta" {
+			t.Fatalf("the list is showing %q, want beta", m.list.Filter.Server)
 		}
 		send(t, m, keyPress(key))
 
@@ -685,8 +685,8 @@ func TestTheConfigScreensNameThePrimaryFromEveryServer(t *testing.T) {
 		t.Fatalf("calls = %v, want the primary's secrets", ds.calls())
 	}
 	send(t, m, keyPress("esc"))
-	if m.list.server != "" {
-		t.Fatalf("the list is showing %q after the secrets screen, want every server", m.list.server)
+	if m.list.Filter.Server != "" {
+		t.Fatalf("the list is showing %q after the secrets screen, want every server", m.list.Filter.Server)
 	}
 }
 
@@ -721,8 +721,8 @@ func TestTheArrowsMoveTheConfigScreensServer(t *testing.T) {
 		t.Fatalf("→ from beta reached %q, want alpha", m.configServer())
 	}
 	send(t, m, keyPress("left"), keyPress("esc"))
-	if m.list.server != "beta" {
-		t.Fatalf("the list is showing %q after beta's secrets, want beta", m.list.server)
+	if m.list.Filter.Server != "beta" {
+		t.Fatalf("the list is showing %q after beta's secrets, want beta", m.list.Filter.Server)
 	}
 }
 
@@ -802,11 +802,11 @@ func TestTheArchivedOfferCountsTheServerOnScreen(t *testing.T) {
 		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning},
 		{ID: "sbx_b1", Name: "gone", Server: "beta", State: console.StateArchived},
 	})
-	if n := l.archivedCount(); n != 1 {
+	if n := l.ArchivedCount(); n != 1 {
 		t.Fatalf("every server: archived = %d, want 1", n)
 	}
-	l.server = "alpha"
-	if n := l.archivedCount(); n != 0 {
+	l.Filter.Server = "alpha"
+	if n := l.ArchivedCount(); n != 0 {
 		t.Fatalf("narrowed to alpha: archived = %d, want beta's left out", n)
 	}
 }
@@ -844,8 +844,8 @@ func TestTheCardsFoldersAreTheMarkedServers(t *testing.T) {
 	if _, ok := folder("/src/obot"); ok {
 		t.Fatal("alpha marked: the folders offer /src/obot, which only beta has")
 	}
-	if m.list.server != "" {
-		t.Fatalf("the list moved to %q before Enter", m.list.server)
+	if m.list.Filter.Server != "" {
+		t.Fatalf("the list moved to %q before Enter", m.list.Filter.Server)
 	}
 	onAlpha := 0
 	for _, s := range boxes {
@@ -853,12 +853,12 @@ func TestTheCardsFoldersAreTheMarkedServers(t *testing.T) {
 			onAlpha++
 		}
 	}
-	if row, _ := folder(allFolders); row.detail != plural(onAlpha, "box", "boxes") {
+	if row, _ := folder(console.AllFolders); row.detail != plural(onAlpha, "box", "boxes") {
 		t.Fatalf("all folders detail = %q, want %d boxes, counted on alpha", row.detail, onAlpha)
 	}
 	send(t, m, keyPress("enter"))
-	if m.list.server != "alpha" {
-		t.Fatalf("the list is showing %q, want alpha", m.list.server)
+	if m.list.Filter.Server != "alpha" {
+		t.Fatalf("the list is showing %q, want alpha", m.list.Filter.Server)
 	}
 }
 
@@ -883,8 +883,8 @@ func TestTheMachineLineIsOnlyOverThePrimary(t *testing.T) {
 		if step.choice != "" {
 			filterTo(t, m, step.choice)
 		}
-		if m.list.server != step.server {
-			t.Fatalf("the list is showing %q, want %q", m.list.server, step.server)
+		if m.list.Filter.Server != step.server {
+			t.Fatalf("the list is showing %q, want %q", m.list.Filter.Server, step.server)
 		}
 		if got := strings.Contains(plainFrame(m), "cpu 4.2/24"); got != step.shown {
 			t.Fatalf("showing %q: machine line drawn = %v, want %v:\n%s", step.server, got, step.shown, plainFrame(m))
@@ -922,7 +922,7 @@ func TestAFolderIsOneSectionAcrossServers(t *testing.T) {
 	}
 
 	// Narrowed to one server, the folders are still what is told apart.
-	l.server = "alpha"
+	l.Filter.Server = "alpha"
 	l.view(newStyles(false), &zones{}, true)
 	if want := []int{-1, 0, -1, 1}; !slices.Equal(l.drawn.rows, want) {
 		t.Fatalf("drawn rows = %v, want %v", l.drawn.rows, want)
@@ -930,12 +930,12 @@ func TestAFolderIsOneSectionAcrossServers(t *testing.T) {
 
 	// Narrowed to one folder there is one section, and so none, on one server
 	// or on every one.
-	l.folder = session.Folder()
-	if l.grouped() {
+	l.Filter.Folder = session.Folder()
+	if l.Grouped() {
 		t.Fatal("the list is sectioned while it shows one folder")
 	}
-	l.server = ""
-	if out = l.view(newStyles(false), &zones{}, true); l.grouped() || strings.Contains(out, "server alpha") {
+	l.Filter.Server = ""
+	if out = l.view(newStyles(false), &zones{}, true); l.Grouped() || strings.Contains(out, "server alpha") {
 		t.Fatalf("one folder's list is sectioned by server:\n%s", out)
 	}
 }
@@ -1005,7 +1005,7 @@ func TestAGitHubRepositoryIsOneFolder(t *testing.T) {
 	// The filter offers the repository once, and none of the places its
 	// discoboxes are filed under.
 	var labels []string
-	for _, f := range l.folders() {
+	for _, f := range l.Folders() {
 		labels = append(labels, f.Label)
 	}
 	if want := []string{"discobox-ai/discobox on github", "/src/obot", "/src/other"}; !slices.Equal(labels, want) {
@@ -1013,12 +1013,12 @@ func TestAGitHubRepositoryIsOneFolder(t *testing.T) {
 	}
 	// It cuts from the window's own source, and narrowed to it the list is
 	// every one of the repository's discoboxes.
-	own := l.folders()[0]
+	own := l.Folders()[0]
 	if own.Source != "/src/disco2" || !own.Local {
 		t.Fatalf("the repository's folder = %+v, want this machine's, cutting from /src/disco2", own)
 	}
-	l.folder = own
-	if got := len(l.rows()); got != 4 {
+	l.Filter.Folder = own
+	if got := len(l.Rows()); got != 4 {
 		t.Fatalf("the repository's folder lists %d discoboxes, want 4", got)
 	}
 }
@@ -1032,14 +1032,14 @@ func TestARepositoryFolderCutsFromWhatCanBeCutFromHere(t *testing.T) {
 	far := console.Sandbox{ID: "sbx_1", Name: "one", State: console.StateRunning, OriginKey: testKey("far"), Source: "/home/wilma/disco", Repository: repository, RepositoryKey: key, OriginHostID: farHostID}
 	near := console.Sandbox{ID: "sbx_2", Name: "two", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: repository, RepositoryKey: key, OriginHostID: testHostID}
 
-	if f := listForTest(session, []console.Sandbox{far}).folders()[1]; f.Source != repository || f.Local {
+	if f := listForTest(session, []console.Sandbox{far}).Folders()[1]; f.Source != repository || f.Local {
 		t.Fatalf("another machine's clone: folder = %+v, want one cutting from %s", f, repository)
 	}
-	if f := listForTest(session, []console.Sandbox{near, far}).folders()[1]; f.Source != "/src/disco2" || !f.Local {
+	if f := listForTest(session, []console.Sandbox{near, far}).Folders()[1]; f.Source != "/src/disco2" || !f.Local {
 		t.Fatalf("this machine's clone: folder = %+v, want one cutting from /src/disco2", f)
 	}
 	// This machine's wherever in the listing its clone is.
-	if f := listForTest(session, []console.Sandbox{far, near}).folders()[1]; !f.Local {
+	if f := listForTest(session, []console.Sandbox{far, near}).Folders()[1]; !f.Local {
 		t.Fatalf("folder = %+v, want this machine's", f)
 	}
 }
@@ -1057,7 +1057,7 @@ func TestAViewSavedOnTheWindowsOriginKeyOpensOnItsRepository(t *testing.T) {
 	ds.session.View = console.ListView{FolderKey: ds.session.OriginKey, FolderLabel: "/src/disco2", FolderSource: "/src/disco2", FolderLocal: true}
 	m := newTestModel(t, ds)
 
-	if got := m.list.folder; got.Key != "discobox-ai/discobox" || got.Label != "discobox-ai/discobox on github" {
+	if got := m.list.Filter.Folder; got.Key != "discobox-ai/discobox" || got.Label != "discobox-ai/discobox on github" {
 		t.Fatalf("the window opened on %+v, want the repository's folder", got)
 	}
 	if !strings.Contains(headerLine(m), "discobox-ai/discobox on github") {
@@ -1065,7 +1065,7 @@ func TestAViewSavedOnTheWindowsOriginKeyOpensOnItsRepository(t *testing.T) {
 	}
 	// Its own discoboxes, filed under the key and resolved to nothing, are
 	// still in it.
-	if len(m.list.rows()) == 0 {
+	if len(m.list.Rows()) == 0 {
 		t.Fatal("the window's folder lists none of the discoboxes filed under its key")
 	}
 }
@@ -1082,14 +1082,14 @@ func TestADiscoboxFromTheWindowsDirectoryIsInTheRepositoryItWasCutFrom(t *testin
 		{ID: "sbx_2", Name: "upstream", State: console.StateRunning, OriginKey: testKey("/src/disco2"), Source: "/src/disco2", Repository: "https://github.com/discobox-ai/discobox", RepositoryKey: "discobox-ai/discobox"},
 	})
 	var labels []string
-	for _, f := range l.folders() {
+	for _, f := range l.Folders() {
 		labels = append(labels, f.Label)
 	}
 	if want := []string{"me/discobox on github", "discobox-ai/discobox on github"}; !slices.Equal(labels, want) {
 		t.Fatalf("folders = %q, want %q", labels, want)
 	}
-	l.folder = session.Folder()
-	if rows := l.rows(); len(rows) != 1 || rows[0].Name != "fork" {
+	l.Filter.Folder = session.Folder()
+	if rows := l.Rows(); len(rows) != 1 || rows[0].Name != "fork" {
 		t.Fatalf("the window's folder lists %+v, want the fork's discobox alone", rows)
 	}
 }
@@ -1100,15 +1100,15 @@ func TestADiscoboxFromTheWindowsDirectoryIsInTheRepositoryItWasCutFrom(t *testin
 // always-on indicator nobody reads.
 func TestRowsThatStopKeepingUpSayHowOld(t *testing.T) {
 	l := listForTest(console.Session{}, []console.Sandbox{{ID: "sbx_a1", Name: "one", State: console.StateRunning}})
-	now := l.now()
+	now := l.Now()
 
-	l.setListed(map[string]time.Time{"": now.Add(-refreshEvery)})
+	l.SetListed(map[string]time.Time{"": now.Add(-refreshEvery)})
 	if out := l.view(newStyles(false), &zones{}, true); strings.Contains(out, "listed") {
 		t.Fatalf("rows one refresh old say how old they are:\n%s", out)
 	}
 
-	l.setListed(map[string]time.Time{"": now.Add(-40 * time.Second)})
-	l.slow = true
+	l.SetListed(map[string]time.Time{"": now.Add(-40 * time.Second)})
+	l.Slow = true
 	out := l.view(newStyles(false), &zones{}, true)
 	if !strings.Contains(out, "listed 40s ago") {
 		t.Fatalf("the band does not say the rows are 40s old:\n%s", out)
@@ -1118,7 +1118,7 @@ func TestRowsThatStopKeepingUpSayHowOld(t *testing.T) {
 		t.Fatalf("the band says both how old the rows are and that it is still listing:\n%s", out)
 	}
 
-	l.setListed(map[string]time.Time{"": now.Add(-3 * time.Minute)})
+	l.SetListed(map[string]time.Time{"": now.Add(-3 * time.Minute)})
 	if out := l.view(newStyles(false), &zones{}, true); !strings.Contains(out, "listed 3m ago") {
 		t.Fatalf("the band does not say the rows are 3m old:\n%s", out)
 	}
@@ -1133,10 +1133,10 @@ func TestOnlyTheServerThatFellBehindSaysHowOldItsRowsAre(t *testing.T) {
 		{ID: "sbx_a1", Name: "one", Server: "alpha", State: console.StateRunning},
 		{ID: "sbx_b1", Name: "two", Server: "beta", State: console.StateRunning},
 	})
-	now := l.now()
+	now := l.Now()
 	// gamma is behind too, but has nothing on screen to be old: a note about
 	// rows nobody can see is a note about somewhere else.
-	l.setListed(map[string]time.Time{"alpha": now, "beta": now.Add(-time.Minute), "gamma": now.Add(-time.Minute)})
+	l.SetListed(map[string]time.Time{"alpha": now, "beta": now.Add(-time.Minute), "gamma": now.Add(-time.Minute)})
 
 	out := l.view(newStyles(false), &zones{}, true)
 	if strings.Contains(out, "server gamma") {
@@ -1166,7 +1166,7 @@ func TestOnlyTheServerThatFellBehindSaysHowOldItsRowsAre(t *testing.T) {
 		t.Fatalf("no line was marked as a note rather than a row: %v", l.drawn.rows)
 	}
 
-	l.server = "beta"
+	l.Filter.Server = "beta"
 	out = l.view(newStyles(false), &zones{}, true)
 	if strings.Contains(out, "server beta") {
 		t.Fatalf("filtered to beta, the note is drawn as well as the band:\n%s", out)
@@ -1189,7 +1189,7 @@ func TestTheWorkspaceHeaderSaysHowOldTheListingIs(t *testing.T) {
 	}
 	// Through a listing landing, as the data source reports it.
 	ds.mu.Lock()
-	ds.listed = map[string]time.Time{"": m.list.now().Add(-20 * time.Second)}
+	ds.listed = map[string]time.Time{"": m.list.Now().Add(-20 * time.Second)}
 	ds.mu.Unlock()
 	drain(t, m, m.refresh(), 0)
 	if got := m.paneHeaderFields().text(); !strings.Contains(got, "listed 20s ago") {
@@ -1273,8 +1273,8 @@ func TestCtrlLReReadsTheListing(t *testing.T) {
 	ds.mu.Unlock()
 
 	press(t, m, "ctrl+l")
-	if len(m.list.all) != 1 || m.list.all[0].ID != "sbx_new" {
-		t.Fatalf("Ctrl-L did not re-read the listing: %+v", m.list.all)
+	if len(m.list.All()) != 1 || m.list.All()[0].ID != "sbx_new" {
+		t.Fatalf("Ctrl-L did not re-read the listing: %+v", m.list.All())
 	}
 
 	m.listPoll.since = m.now().Add(-12 * time.Second)

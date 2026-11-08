@@ -244,17 +244,17 @@ func TestPressingTheFilterOpensIt(t *testing.T) {
 	}
 
 	// A press marks the choice without applying it; Enter applies.
-	x, y = at(t, m, allFolders)
+	x, y = at(t, m, console.AllFolders)
 	tap(t, m, x, y)
-	if m.dialog == nil || m.dialog.filter.list.folder.Key != "" {
+	if m.dialog == nil || m.dialog.filter.list.Filter.Folder.Key != "" {
 		t.Fatal("pressing a choice should mark it and leave the card up")
 	}
-	if m.list.folder.Key == "" {
+	if m.list.Filter.Folder.Key == "" {
 		t.Fatal("a marked choice should not move the list before Enter")
 	}
 	send(t, m, keyPress("enter"))
-	if m.list.folder.Key != "" {
-		t.Fatalf("folder = %q, want every folder", m.list.folder.Label)
+	if m.list.Filter.Folder.Key != "" {
+		t.Fatalf("folder = %q, want every folder", m.list.Filter.Folder.Label)
 	}
 }
 

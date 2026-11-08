@@ -319,7 +319,7 @@ func TestAnEmptyCurrentHarnessDiffSuppressesBandAndExplainer(t *testing.T) {
 	m, _ := workspaceWithHarnessChanges(t)
 	m.explainHarnessChanges = true
 	for _, pending := range []bool{false, true, false, true} {
-		boxes := m.list.all
+		boxes := m.list.All()
 		boxes[0].HarnessConfigPending = pending
 		m.list.setAll(boxes)
 		m.paneBox = boxes[0]
