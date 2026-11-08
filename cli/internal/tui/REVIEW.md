@@ -189,7 +189,17 @@
   second create started in between overwrites too.
 - Install an operation's progress status before launching its asynchronous
   work. Batching the start notice with the operation lets a fast completion
-  arrive first; a late "merging…" once erased GitHub's merge refusal.
+  arrive first; a late "merging…" once erased GitHub's merge refusal, and a
+  late "copying…" an image paste's "disk full" (a Windows CI flake). Put it
+  up with `m.update(status(…)())` and batch what that returns (its expiry): a
+  handler already runs inside `Update`, which does its after-message work
+  once, around the whole message.
+- Never batch a one-time notice (an error, which does not time out) beside an
+  operation that reports its own outcome. Whichever lands last stays, so the
+  notice can replace the failure for good; and installing it first does not
+  help, since the operation's progress replaces it at once, unread. Say it only
+  on a path with nothing else to report, or in the operation's own report
+  (`imagesRead`'s clipboard watch notice).
 - **Anything a pane started that answers it later finds it with `heldPane`.**
   A parked workspace's panes are still attached and still running; an issue
   read, a files changed session or an image paste that looks its pane up on
