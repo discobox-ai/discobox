@@ -102,10 +102,10 @@ func (p *pane) observePrompt(data []byte) {
 // clocks compared are the sandbox's and this machine's.
 func (m *Model) focusedProgramStatus() (programstatus.Record, bool) {
 	var box console.Sandbox
-	switch p := m.primary(); {
+	switch p := m.Primary(); {
 	case p != nil:
 		box = m.currentBox()
-		if !p.exited && !p.reportedAt.IsZero() && p.reportedAt.After(box.AgentObservedAt) {
+		if !p.Exited && !p.reportedAt.IsZero() && p.reportedAt.After(box.AgentObservedAt) {
 			status, ok := p.reported.Effective()
 			if !ok {
 				return programstatus.Record{}, false
@@ -172,7 +172,7 @@ func (m *Model) primaryTitle() string {
 	if rec, ok := m.focusedProgramStatus(); ok {
 		msg = rec.Msg
 	}
-	if p := m.primary(); p != nil {
+	if p := m.Primary(); p != nil {
 		title = p.term.Title()
 	}
 	box := m.currentBox()
@@ -207,7 +207,7 @@ func (m *Model) syncProgramStatus() tea.Cmd {
 // terminal that knows the protocol, or has not said yet, shows the status
 // its own way, and the title carries none.
 func (m *Model) statusTitlePrefix() string {
-	if m.statusTerminal != statusTitled || m.primary() == nil {
+	if m.statusTerminal != statusTitled || m.Primary() == nil {
 		return ""
 	}
 	rec, ok := m.focusedProgramStatus()

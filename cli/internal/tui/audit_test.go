@@ -171,7 +171,7 @@ func TestTheAuditScreenOpensARecordAndClosesBackToTheBox(t *testing.T) {
 			_, stops, _ := ds.auditState()
 			return stops == 1
 		})
-		if m.focus != focusPane || m.primary() == nil {
+		if m.focus != focusPane || m.Primary() == nil {
 			t.Fatal("closing the audit screen should leave the workspace as it was")
 		}
 	})

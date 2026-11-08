@@ -264,7 +264,7 @@ func (m *Model) treeControls(edge lipgloss.Style, width, left int) string {
 // hasWorkspace reports whether a workspace is open, whether or not the list is
 // in front of it.
 func (m *Model) hasWorkspace() bool {
-	return m.terminals.len() > 0 || m.toolShown != nil
+	return m.Terminals.Len() > 0 || m.toolShown != nil
 }
 
 // workspaceShown reports whether the workspace is drawn: open, and not covered
@@ -332,8 +332,8 @@ func (m *Model) toggleTreeExpanded() {
 // syncListCursor puts the list's cursor on the box the workspace is showing,
 // which is what the tree draws as picked out while the panes have the keys.
 func (m *Model) syncListCursor() {
-	if m.listCursorTo(m.paneBox) {
-		m.cursorOn = m.boxRef(m.paneBox)
+	if m.listCursorTo(m.Box) {
+		m.cursorOn = m.boxRef(m.Box)
 	}
 }
 
@@ -396,7 +396,7 @@ func (m *Model) treeKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case "enter":
 		// The box a page covers is still the live one: choosing it puts the
 		// page away rather than attaching again.
-		if cur := m.list.current(); cur != nil && m.boxRef(*cur) == m.boxRef(m.paneBox) && m.pageOpen() && m.hasWorkspace() {
+		if cur := m.list.current(); cur != nil && m.boxRef(*cur) == m.boxRef(m.Box) && m.pageOpen() && m.hasWorkspace() {
 			m.showLive()
 			return nil, true
 		}
@@ -493,7 +493,7 @@ func (m *Model) switchBox(delta int) tea.Cmd {
 	if next == nil {
 		return nil
 	}
-	if m.boxRef(*next) == m.boxRef(m.paneBox) {
+	if m.boxRef(*next) == m.boxRef(m.Box) {
 		if m.listFront && m.hasWorkspace() {
 			m.backToPanes()
 		}
@@ -526,17 +526,17 @@ func (m *Model) landOn(box console.Sandbox) tea.Cmd {
 // and otherwise a fresh attach — refused, with the reason, on a box the list
 // would not attach to either.
 func (m *Model) switchTo(box console.Sandbox) tea.Cmd {
-	if m.boxRef(box) == m.boxRef(m.paneBox) && m.hasWorkspace() && m.pageOpen() {
+	if m.boxRef(box) == m.boxRef(m.Box) && m.hasWorkspace() && m.pageOpen() {
 		m.showLive()
 		return nil
 	}
-	if m.boxRef(box) == m.boxRef(m.paneBox) && (m.inPanes() || m.wsOpening) {
+	if m.boxRef(box) == m.boxRef(m.Box) && (m.inPanes() || m.wsOpening) {
 		return nil
 	}
 	// The box whose workspace is open needs no attach to be shown, whatever
 	// it can do now (console.Context.Workspace): it is parked and brought back
 	// like any parked one.
-	open := m.boxRef(box) == m.boxRef(m.paneBox) && m.hasWorkspace()
+	open := m.boxRef(box) == m.boxRef(m.Box) && m.hasWorkspace()
 	if m.parked[m.boxRef(box)] == nil && !open {
 		if !box.Attachable() {
 			return status("%s: %s", sandboxLabel(box), console.AttachWhy([]console.Sandbox{box}))
@@ -552,31 +552,28 @@ func (m *Model) switchTo(box console.Sandbox) tea.Cmd {
 // What only the screen runs goes as it does on a detach (endLiveScreen), and
 // so do its local ports: they live exactly as long as the screen that shows
 // them, and come back with it. Its push loop is the exception, and goes on
-// under its pushGen while it is attached.
+// under its PushGen while it is attached.
 func (m *Model) parkWorkspace() {
-	if m.primary() == nil {
+	if !m.Parkable() {
 		m.closeWorkspace()
 		return
 	}
 	m.endLiveScreen()
-	if m.forward != nil {
-		_ = m.forward.Close()
-		m.forward = nil
-	}
+	m.Park()
 	ws := m.workspace
-	m.workspace = workspace{paneBox: m.paneBox}
+	m.workspace = workspace{Box: m.Box}
 	if m.parked == nil {
 		m.parked = map[console.BoxRef]*workspace{}
 	}
-	m.parked[m.boxRef(ws.paneBox)] = &ws
+	m.parked[m.boxRef(ws.Box)] = &ws
 }
 
 // unparkWorkspace puts a parked workspace back on screen and restarts what
 // only the screen runs. Its push loop is already running, and is not started
 // a second time.
 func (m *Model) unparkWorkspace(ws *workspace) tea.Cmd {
-	m.recordPaletteVisit(ws.paneBox)
-	delete(m.parked, m.boxRef(ws.paneBox))
+	m.recordPaletteVisit(ws.Box)
+	delete(m.parked, m.boxRef(ws.Box))
 	m.workspace = *ws
 	m.harnessesOpen = false
 	m.connecting = map[string]bool{}
@@ -593,7 +590,7 @@ func (m *Model) unparkWorkspace(ws *workspace) tea.Cmd {
 // parkedPane finds a pane by id among the parked workspaces.
 func (m *Model) parkedPane(id int) (*workspace, *pane) {
 	for _, ws := range m.parked {
-		for _, p := range ws.attached() {
+		for _, p := range ws.Attached() {
 			if p.id == id {
 				return ws, p
 			}
@@ -610,30 +607,28 @@ func (m *Model) parkedPane(id int) (*workspace, *pane) {
 func (m *Model) updateParkedPane(ws *workspace, p *pane, msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case termpane.ClosedMsg:
-		box := sandboxLabel(ws.paneBox)
-		switch {
-		case p.primary:
-			delete(m.parked, m.boxRef(ws.paneBox))
-			ws.closeStreams()
+		box := sandboxLabel(ws.Box)
+		switch p.End(msg.Err) {
+		case console.EndsWorkspace:
+			delete(m.parked, m.boxRef(ws.Box))
+			ws.Release()
 			if msg.Err != nil {
-				return m.report(true, "%s: %s: %v", box, p.action, msg.Err)
+				return m.report(true, "%s: %s: %v", box, p.Action, msg.Err)
 			}
 			return status("%s: the session ended", box)
-		case p.tool == "" && msg.Err == nil:
-			p.exited = true
-			p.status = "finished"
+		case console.EndsHeld:
 			return nil
 		}
-		if i := ws.terminals.index(p); i >= 0 {
-			ws.terminals.close(i)
-		} else if i := ws.shells.index(p); i >= 0 {
-			ws.shells.close(i)
+		if i := ws.Terminals.Index(p); i >= 0 {
+			ws.Terminals.Close(i)
+		} else if i := ws.Shells.Index(p); i >= 0 {
+			ws.Shells.Close(i)
 		}
 		if ws.toolShown == p {
 			ws.toolShown = nil
 		}
 		if msg.Err != nil {
-			return m.report(true, "%s: %s: %v", box, p.action, msg.Err)
+			return m.report(true, "%s: %s: %v", box, p.Action, msg.Err)
 		}
 		return nil
 	case paneEventMsg:
@@ -650,7 +645,7 @@ func (m *Model) updateParkedPane(ws *workspace, p *pane, msg tea.Msg) tea.Cmd {
 // out.
 func (m *Model) closeParked() {
 	for id, ws := range m.parked {
-		ws.closeStreams()
+		ws.Release()
 		delete(m.parked, id)
 	}
 }
@@ -745,7 +740,7 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 			clicks, prev := m.countClick(mouse.X, mouse.Y), m.clickBox
 			m.clickBox = m.boxRef(box)
 			if clicks > 1 && prev == m.boxRef(box) {
-				if m.boxRef(box) == m.boxRef(m.paneBox) {
+				if m.boxRef(box) == m.boxRef(m.Box) {
 					if m.hasWorkspace() || m.wsOpening {
 						m.showLive()
 					}
@@ -753,11 +748,11 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 				}
 				return nil, m.switchTo(box), true
 			}
-			if m.boxRef(box) == m.boxRef(m.paneBox) && m.pageOpen() && m.hasWorkspace() {
+			if m.boxRef(box) == m.boxRef(m.Box) && m.pageOpen() && m.hasWorkspace() {
 				m.showLive()
 				return nil, nil, true
 			}
-			if m.boxRef(box) == m.boxRef(m.paneBox) {
+			if m.boxRef(box) == m.boxRef(m.Box) {
 				m.focusTree()
 				return nil, nil, true
 			}
@@ -925,7 +920,7 @@ func (m *Model) viewOpening(width, height int) string {
 	if what == "" {
 		what = "attach…"
 	}
-	out := []string{titledEdge(m.st, m.st.rule, sandboxLabel(m.paneBox), "", inner)}
+	out := []string{titledEdge(m.st, m.st.rule, sandboxLabel(m.Box), "", inner)}
 	side := m.st.rule.Render("│")
 	for i := 0; i < max(height-2, 0); i++ {
 		row := ""
@@ -996,7 +991,7 @@ func (m *Model) boxMenu(box console.Sandbox) tea.Cmd {
 	}
 	targets := []console.Sandbox{box}
 	// Any other box's menu is the list's own, attach and all.
-	if m.boxRef(box) != m.boxRef(m.paneBox) || !m.hasWorkspace() {
+	if m.boxRef(box) != m.boxRef(m.Box) || !m.hasWorkspace() {
 		m.dialog = actionsDialog(actionTitle(targets), "", actions(targets), chooseAction(targets))
 		return nil
 	}
@@ -1054,7 +1049,7 @@ func (m *Model) showAllBoxes() tea.Cmd {
 // boxSourceLabel is where the box on screen was cut from, as the list spells
 // a source.
 func (m *Model) boxSourceLabel() string {
-	box := m.paneBox
+	box := m.Box
 	if box.Source == "" {
 		return console.NoSourceChoice
 	}

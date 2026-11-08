@@ -46,12 +46,12 @@ type serviceVerbMsg struct {
 // openServices asks for the discobox's services and opens the menu on them.
 func (m *Model) openServices() tea.Cmd {
 	m.commands.Use("services")
-	if m.paneBox.ID == "" {
+	if m.Box.ID == "" {
 		return nil
 	}
 	m.busy = "services…"
 	gen := m.wsGen
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		services, err := ds.Services(ctx, id)
 		return servicesMsg{gen: gen, services: services, err: err}
@@ -87,7 +87,7 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 		})
 	}
 	services := msg.services
-	m.dialog = actionsDialog("Services — "+m.paneBox.Name, "", items, func(key string) tea.Cmd {
+	m.dialog = actionsDialog("Services — "+m.Box.Name, "", items, func(key string) tea.Cmd {
 		for i, service := range services {
 			if itoa(i+1) == key {
 				return func() tea.Msg { return serviceMenuMsg{service: service} }
@@ -107,7 +107,7 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 // a service that has since moved on.
 func (m *Model) showServiceMenu(service console.Service) tea.Cmd {
 	items := []action{
-		{key: "v", press: "v", label: "view output", detail: "show the service log", enabled: m.terminals.byExec(servicePaneID(service.ID)) != nil, why: "no output pane is available"},
+		{key: "v", press: "v", label: "view output", detail: "show the service log", enabled: m.Terminals.ByExec(console.ServiceTabID(service.ID)) != nil, why: "no output pane is available"},
 		{key: "s", press: "s", label: "start", detail: "run it, or leave it running", enabled: service.Runnable(), why: service.Problem},
 		{key: "t", press: "t", label: "stop", detail: "end its run and keep what it printed", enabled: service.Runnable(), why: service.Problem},
 		{key: "R", press: "R", label: "restart", detail: "stop it if it is running, then start it", enabled: service.Runnable(), why: service.Problem},
@@ -134,11 +134,11 @@ func (m *Model) showServiceMenu(service console.Service) tea.Cmd {
 // that starts becomes a tab on its own, and one that stops takes its tab with
 // it.
 func (m *Model) runServiceVerb(verb console.ServiceVerb, service console.Service) tea.Cmd {
-	if m.paneBox.ID == "" {
+	if m.Box.ID == "" {
 		return nil
 	}
 	m.busy = string(verb) + "…"
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	name := service.DisplayName()
 	return func() tea.Msg {
 		err := ds.DoService(ctx, verb, id, service.ID)
@@ -160,13 +160,6 @@ func (m *Model) serviceDone(msg serviceDoneMsg) tea.Cmd {
 	}
 	return m.report(false, "%s", msg.verb.Done(msg.name))
 }
-
-// A service's pane is keyed by the service rather than by the exec running it.
-// The exec is the run; the service is the thing, and it outlives any run of
-// itself — stopped, restarted under the same id (ADR 0038), or never started at
-// all. Keying on the service is what lets one tab follow it through all of
-// that, and what lets a service with no exec have a tab at all.
-func servicePaneID(id string) string { return "service:" + id }
 
 // serviceCard is what a pane draws for a service with no stream of its own: what it
 // is, what state it is in, why, and then whatever its last run printed.

@@ -1105,9 +1105,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.list.SetPending(m.requests)
 		// A box opened before the listing had it — one just created — gets
 		// the tree's cursor once it lands. Only while it is open: the box a
-		// closed workspace leaves in paneBox is no longer the cursor's to
+		// closed workspace leaves in Box is no longer the cursor's to
 		// follow, and an archive beside the tree has put it on another.
-		if (m.hasWorkspace() || m.wsOpening) && !m.listFront && m.cursorOn != m.boxRef(m.paneBox) {
+		if (m.hasWorkspace() || m.wsOpening) && !m.listFront && m.cursorOn != m.boxRef(m.Box) {
 			m.syncListCursor()
 		}
 		// What the project has been cut from is read off the same listing the
@@ -1460,10 +1460,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case workspaceForwardChangedMsg:
 		// Nothing to apply: the header reads the forward itself. This is the
 		// redraw, and re-arming the wait is what keeps it coming.
-		if msg.gen != m.wsGen || m.forward == nil {
+		if msg.gen != m.wsGen || m.Forward == nil {
 			return nil
 		}
-		return m.forwardEvents(msg.gen, m.forward)
+		return m.forwardEvents(msg.gen, m.Forward)
 
 	case paneMsg:
 		// Addressed to the pane it came from, which may exist before the
@@ -1511,7 +1511,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.showServiceMenu(msg.service)
 
 	case serviceOutputMsg:
-		if p := m.terminals.byExec(servicePaneID(msg.id)); p != nil {
+		if p := m.Terminals.ByExec(console.ServiceTabID(msg.id)); p != nil {
 			m.focusPane(p)
 			return nil
 		}
@@ -1860,7 +1860,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 				return nil
 			case boxMenuKey:
 				if m.hasWorkspace() {
-					return m.boxMenu(m.paneBox)
+					return m.boxMenu(m.Box)
 				}
 			}
 		}
@@ -1892,7 +1892,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if m.audit != nil && m.inPanes() {
 			switch key {
 			case credentialsLeaderKey:
-				return m.openCredentialDialog(m.paneBox)
+				return m.openCredentialDialog(m.Box)
 			case rejectedKey:
 				return m.openRejectedRemedy(m.currentBox())
 			case harnessChangesKey:
@@ -3347,7 +3347,7 @@ func (m *Model) watchCreate(msg promptSpentMsg) tea.Cmd {
 	// Parking leaves the create's own narration running (endLiveScreen): its
 	// steps carry on in the frame of the workspace it is going to.
 	m.parkWorkspace()
-	m.paneBox = box
+	m.Box = box
 	m.showOpening()
 	msg.create.shown = true
 	m.syncWidth()
@@ -3358,7 +3358,7 @@ func (m *Model) watchCreate(msg promptSpentMsg) tea.Cmd {
 // createShowing reports whether the screen is still the workspace watchCreate
 // went to for this discobox, opening: nobody has walked off it since.
 func (m *Model) createShowing(id string) bool {
-	return m.wsOpening && m.paneBox.ID == id
+	return m.wsOpening && m.Box.ID == id
 }
 
 // promptSpent empties the composer. Clearing it is what makes the window
@@ -3920,7 +3920,7 @@ func (m *Model) headerHints() []hint {
 	// is over, so its keys are not the ones offered.
 	if p := m.focusedPane(); p != nil && m.workspaceShown() {
 		out := "detach"
-		if m.hasScreen(p) && p.tool != "" {
+		if m.hasScreen(p) && p.Tool != "" {
 			// The leader's way out of a screen is the same key; what it does
 			// here is put this window away, not leave the workspace.
 			out = "put away"
@@ -3988,7 +3988,7 @@ func (m *Model) headerHints() []hint {
 // protocol is there, and a program told that may stop putting its activity in
 // its title, so the title alone would say less than the program meant to.
 func (m *Model) windowTitle() string {
-	p := m.primary()
+	p := m.Primary()
 	if p == nil {
 		return ""
 	}
@@ -4384,9 +4384,9 @@ func (m *Model) paneHints() []hint {
 		}
 		return hints
 	}
-	if p.exited {
+	if p.Exited {
 		// Use the same completed-session status as the banner.
-		done := p.status
+		done := p.Status
 		if done == "" {
 			done = "finished"
 		}
@@ -4400,7 +4400,7 @@ func (m *Model) paneHints() []hint {
 		}
 		return out
 	}
-	if m.hasScreen(p) && p.tool != "" {
+	if m.hasScreen(p) && p.Tool != "" {
 		return m.toolHints(p)
 	}
 	// A workspace terminal is the discobox's own and you detach from the
@@ -4418,7 +4418,7 @@ func (m *Model) paneHints() []hint {
 	if m.hasScreen(p) {
 		hints = append([]hint{says("every key goes to the box")}, leave...)
 	}
-	if p.service != "" {
+	if p.Service != "" {
 		// A service reads no input, so the line does not open by promising
 		// it every key. What it offers instead is what can be done to the
 		// service from the pane you are looking at — the two verbs that
@@ -4444,11 +4444,11 @@ func (m *Model) paneHints() []hint {
 	// terminals are more tabs in the one box.
 	var zoom []hint
 	switch {
-	case p.tool != "" && !m.maximized:
+	case p.Tool != "" && !m.maximized:
 		// A tool put away beside the shells is one key from its window again,
 		// and that is what the zoom key means on its tab. See zoomPaneMsg.
 		zoom = []hint{pressing(leader+" "+paneZoomKey+" maximize", leader, paneZoomKey)}
-	case m.shells.len() > 0:
+	case m.Shells.Len() > 0:
 		zoom = []hint{pressing(leader+" "+paneZoomKey+" maximize", leader, paneZoomKey)}
 		if m.maximized {
 			hints = append(hints, pressing(leader+" "+paneZoomKey+" restore", leader, paneZoomKey))
@@ -4460,7 +4460,7 @@ func (m *Model) paneHints() []hint {
 	// like — and a hints line that names both spends its scarcest row teaching
 	// a distinction most people never need. It is in the help, under the key
 	// that opens it.
-	if p.service == "" {
+	if p.Service == "" {
 		hints = append(hints, pressing(leader+" s shell", leader, "s"))
 	}
 	// Beside it, because they are the pair: one opens a session and the other
@@ -4485,15 +4485,15 @@ func (m *Model) paneHints() []hint {
 	if _, ok := m.currentBox().WorkNumber(true); ok {
 		hints = append(hints, pressing(leader+" "+pullKey+" PR", leader, pullKey))
 	}
-	if len(m.panes()) > 1 {
+	if len(m.Attached()) > 1 {
 		hints = append(hints, says(leader+" ←/→ pane"))
-		if len(m.numbered()) > 1 {
+		if len(m.Numbered()) > 1 {
 			hints = append(hints, says(leader+" 0-9 jump"))
 		}
 		// The services' own alphabet is only worth a row when there are
 		// services to jump to; when there are none the chord is still how the
 		// menu opens, which the service pane's own line already says.
-		if len(m.services()) > 0 {
+		if len(m.ServiceTabs()) > 0 {
 			hints = append(hints, says(leader+" "+paneServicesKey+"1-9 service"))
 		}
 	}

@@ -162,12 +162,12 @@ func TestTheLeaderOpensThePullRequest(t *testing.T) {
 		d.key(m.leader())
 		d.key(issueKey)
 		d.wait("the issue", func() bool { return strings.Contains(plainFrame(m), "The reaper eats the wrong boxes") })
-		if got := len(m.shells.all()); got != 2 {
+		if got := len(m.Shells.Tabs); got != 2 {
 			t.Fatalf("%d tabs with the issue and the pull request open, want 2", got)
 		}
 		d.key(m.leader())
 		d.key(pullKey)
-		if m.focusedPane() != pull || len(m.shells.all()) != 2 {
+		if m.focusedPane() != pull || len(m.Shells.Tabs) != 2 {
 			t.Errorf("leader %s with the pull request open did not go back to its tab", pullKey)
 		}
 	})
@@ -229,7 +229,7 @@ func TestThePullRequestShowsItsFilesChanged(t *testing.T) {
 
 		d.key("f")
 		d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
-		if want := []string{m.paneBox.ID + ": 0001112223334...abc1234567890"}; !slices.Equal(ds.pullReviews, want) {
+		if want := []string{m.Box.ID + ": 0001112223334...abc1234567890"}; !slices.Equal(ds.pullReviews, want) {
 			t.Errorf("the files changed were started as %q, want %q", ds.pullReviews, want)
 		}
 		hints := hintLine(m.hints())
@@ -386,11 +386,11 @@ func TestTheFilesChangedAreNotATab(t *testing.T) {
 		d, m := openPullPane(t, ds)
 		d.key("f")
 		d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })
-		tabs := m.shells.len()
+		tabs := m.Shells.Len()
 		d.dispatch(workspaceTickMsg{gen: m.wsGen})
 		d.settle()
-		if m.shells.len() != tabs {
-			t.Errorf("the listing opened the files changed as a tab: %d tabs, want %d", m.shells.len(), tabs)
+		if m.Shells.Len() != tabs {
+			t.Errorf("the listing opened the files changed as a tab: %d tabs, want %d", m.Shells.Len(), tabs)
 		}
 		attaches := 0
 		for _, open := range ds.execOpened() {
@@ -933,13 +933,13 @@ func TestAPushWhileTheTabIsOpenIsSaid(t *testing.T) {
 			t.Errorf("f after r: head %q, pushed %q; want the new head's window", v.review.head, v.pushed)
 		}
 		// The new head is still ready to merge, and the tab still says so.
-		if !strings.HasSuffix(p.title, " ●") {
-			t.Errorf("the tab is titled %q, want it marked ready", p.title)
+		if !strings.HasSuffix(p.Title, " ●") {
+			t.Errorf("the tab is titled %q, want it marked ready", p.Title)
 		}
 		want := []string{
-			m.paneBox.ID + ": 0001112223334...abc1234567890",
-			m.paneBox.ID + ": 0001112223334...eee8888000222",
-			m.paneBox.ID + ": 0001112223334...fff9999000111",
+			m.Box.ID + ": 0001112223334...abc1234567890",
+			m.Box.ID + ": 0001112223334...eee8888000222",
+			m.Box.ID + ": 0001112223334...fff9999000111",
 		}
 		if !slices.Equal(ds.pullReviews, want) {
 			t.Errorf("sessions started: %q, want one a head, %q", ds.pullReviews, want)

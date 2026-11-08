@@ -102,8 +102,8 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 	ready[0].HarnessID = "harness_claude"
 	m.list.setAll(ready)
 	box := ready[0]
-	m.paneBox = box
-	m.toolShown = &pane{tool: "diff"}
+	m.Box = box
+	m.toolShown = &pane{Tool: "diff"}
 	m.setSecretRejections(ds.rejections)
 
 	if got := m.bannerShowing(); got != bannerRejected {
@@ -138,7 +138,7 @@ func TestAQueuedRequestBehindARefusalDoesNotThrob(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
 	m.st = newStyles(true)
-	m.requests = map[string][]console.CredentialRequest{m.paneBox.ID: {waitingRequest()}}
+	m.requests = map[string][]console.CredentialRequest{m.Box.ID: {waitingRequest()}}
 
 	if cmd := m.armBannerPulse(); cmd != nil || m.pulsing {
 		t.Fatal("a request behind a refusal started the throb")
@@ -165,7 +165,7 @@ func TestPressingTheRefusedBandExplainsSigningInAgain(t *testing.T) {
 	m, ds := workspaceWithRejection(t, harnessRejection())
 	before := len(ds.calls())
 
-	drain(t, m, m.openRejectedRemedy(m.paneBox), 0)
+	drain(t, m, m.openRejectedRemedy(m.Box), 0)
 
 	if m.dialog == nil || m.dialog.kind != dlgMessage {
 		t.Fatalf("dialog = %s, want the sign-in explanation", describe(m.dialog))
@@ -220,7 +220,7 @@ func TestPressingTheRefusedBandOpensTheSecretCard(t *testing.T) {
 	m, ds := workspaceWithRejection(t, secretRejection())
 	ds.projectSecrets = []console.Secret{{ID: "sec_gh", Name: "GitHub token", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 
-	drain(t, m, m.openRejectedRemedy(m.paneBox), 0)
+	drain(t, m, m.openRejectedRemedy(m.Box), 0)
 
 	if m.dialog == nil || !strings.Contains(m.dialog.title, "GitHub token") {
 		t.Fatalf("dialog = %s, want the card for the refused credential", describe(m.dialog))
@@ -317,10 +317,10 @@ func workspaceWithRejection(t *testing.T, rejection console.SecretRejection) (*M
 	// workspace's does.
 	boxes[0].HarnessID = "harness_claude"
 	m.list.setAll(boxes)
-	m.paneBox = boxes[0]
+	m.Box = boxes[0]
 	// A tool window is a workspace as far as the band is concerned: the bar is
 	// drawn over whatever the screen is showing.
-	m.toolShown = &pane{tool: "diff"}
+	m.toolShown = &pane{Tool: "diff"}
 	m.setSecretRejections(ds.rejections)
 	return m, ds
 }
@@ -347,11 +347,11 @@ func TestTheRefusedBandsRemedyGoesToTheCredentialsServer(t *testing.T) {
 			// The header is on the primary; the box and its credential are on
 			// beta.
 			m.list.Filter.Server = ""
-			m.paneBox.Server = "beta"
+			m.Box.Server = "beta"
 			m.setSecretRejections([]console.SecretRejection{rejection})
 			ds.secretsOn = map[string][]console.Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "token"}}}
 
-			drain(t, m, m.openRejectedRemedy(m.paneBox), 0)
+			drain(t, m, m.openRejectedRemedy(m.Box), 0)
 
 			calls := strings.Join(ds.calls(), " ")
 			if !strings.Contains(calls, tc.want) {

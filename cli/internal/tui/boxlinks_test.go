@@ -25,7 +25,7 @@ func printBoxLink(t *testing.T, d *driver, m *Model, term *fakeTerminal, output 
 		_, ok := m.zones.find(hitBoxLink)
 		return ok
 	})
-	return m.paneOrigin(m.primary())
+	return m.paneOrigin(m.Primary())
 }
 
 // A bare discobox:///<id> in a pane is a link to that box on the pane's own
@@ -37,13 +37,13 @@ func TestClickingABareBoxLinkFocusesTheBox(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openWorkspace(t, ds, "enter")
 		term.send("\x1b[?1000h\x1b[?1006h")
-		d.wait("mouse mode", func() bool { return m.primary().term.MouseMode() != termpane.MouseNone })
+		d.wait("mouse mode", func() bool { return m.Primary().term.MouseMode() != termpane.MouseNone })
 
 		x, y := printBoxLink(t, d, m, term, "discobox:///sbx_two is the worker")
 		d.windowMouse(tea.MouseClickMsg{X: x + 3, Y: y, Button: tea.MouseLeft})
 		d.windowMouse(tea.MouseReleaseMsg{X: x + 3, Y: y, Button: tea.MouseLeft})
 
-		d.wait("the linked box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the linked box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		if got := term.typed("\x1b[<"); strings.Contains(got, "\x1b[<") {
 			t.Fatalf("the program was sent %q, want the press and release kept from it", got)
 		}
@@ -70,7 +70,7 @@ func TestAnEmittedBoxLinkIsTheWindowsToOpen(t *testing.T) {
 
 		d.windowMouse(tea.MouseClickMsg{X: x + 1, Y: y, Button: tea.MouseLeft, Mod: tea.ModCtrl})
 		d.windowMouse(tea.MouseReleaseMsg{X: x + 1, Y: y, Button: tea.MouseLeft, Mod: tea.ModCtrl})
-		d.wait("the linked box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the linked box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 	})
 }
 
@@ -86,7 +86,7 @@ func TestAFullBoxLinkOnAListedServerFocusesTheBox(t *testing.T) {
 
 		x, y := printBoxLink(t, d, m, term, "see "+server+"/sbx_two")
 		clickWindow(d, x+6, y)
-		d.wait("the linked box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the linked box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 	})
 }
 
@@ -104,8 +104,8 @@ func TestABoxLinkOnAnUnknownServerSaysSo(t *testing.T) {
 		if !strings.Contains(m.status, `discobox attach "discobox://elsewhere.example.com/sbx_two"`) {
 			t.Fatalf("status = %q, want the command that registers the server", m.status)
 		}
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("the workspace moved to %s, want it left where it was", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("the workspace moved to %s, want it left where it was", m.Box.ID)
 		}
 	})
 }
@@ -134,8 +134,8 @@ func TestABoxLinkToNoBoxOrAStoppedOne(t *testing.T) {
 		time.Sleep(2 * clickRun)
 		clickWindow(d, x+1, y)
 		d.wait("the stopped box", func() bool { return strings.Contains(m.status, "enter starts it") })
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("the workspace moved to %s, want a stopped box pointed at, not opened", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("the workspace moved to %s, want a stopped box pointed at, not opened", m.Box.ID)
 		}
 	})
 }
@@ -162,8 +162,8 @@ func TestABoxLinkLightsAndASeizedMouseSelectsIt(t *testing.T) {
 			t.Fatal("a seized mouse still marks the link")
 		}
 		clickWindow(d, x+2, y)
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("a seized press followed the link to %s", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("a seized press followed the link to %s", m.Box.ID)
 		}
 	})
 }
@@ -179,8 +179,8 @@ func TestALocalBoxLinkIsOnThePanesServer(t *testing.T) {
 		ds := newFakeSource(boxes...)
 		ds.session.Servers = []string{"alpha", "beta"}
 		d, m, term := openWorkspace(t, ds, "enter")
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("opened %s, want sbx_one", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("opened %s, want sbx_one", m.Box.ID)
 		}
 
 		x, y := printBoxLink(t, d, m, term, "discobox:///sbx_two")
@@ -227,8 +227,8 @@ func TestABoxLinkInAnAttachWindowSaysHowToOpenIt(t *testing.T) {
 		x, y := printBoxLink(t, d, m, term, "discobox:///sbx_two")
 		clickWindow(d, x+1, y)
 		d.wait("the refusal", func() bool { return strings.Contains(m.status, `discobox attach "sbx_two"`) })
-		if m.paneBox.ID != "sbx_one" || !m.bare() {
-			t.Fatalf("the attach window moved to %s (bare %v), want it left on its own box", m.paneBox.ID, m.bare())
+		if m.Box.ID != "sbx_one" || !m.bare() {
+			t.Fatalf("the attach window moved to %s (bare %v), want it left on its own box", m.Box.ID, m.bare())
 		}
 	})
 }
@@ -262,8 +262,8 @@ func TestALateBoxLinkAnswerIsDropped(t *testing.T) {
 		if cmd := m.boxLinkServer(boxLinkServerMsg{uri: "discobox://x/sbx_two", sandbox: "sbx_two", known: true, from: console.BoxRef{Server: "", ID: "sbx_other"}}); cmd != nil {
 			t.Fatalf("a late answer did something: %#v", cmd())
 		}
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("the workspace moved to %s on a late answer", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("the workspace moved to %s on a late answer", m.Box.ID)
 		}
 	})
 }

@@ -98,8 +98,8 @@ func TestLeavingTheOpeningWorkspaceStopsTheAttachUnderIt(t *testing.T) {
 	if m.dialog != nil {
 		t.Fatal("the launcher's create put a wait up over the workspace it opens")
 	}
-	if !m.wsOpening || m.paneBox.ID != "sbx_1" {
-		t.Fatalf("opening %v, box %s; want the new box's workspace on its way up", m.wsOpening, m.paneBox.ID)
+	if !m.wsOpening || m.Box.ID != "sbx_1" {
+		t.Fatalf("opening %v, box %s; want the new box's workspace on its way up", m.wsOpening, m.Box.ID)
 	}
 	opening := m.wsGen
 
@@ -123,8 +123,8 @@ func TestALateAcceptAfterAFailedCreateGoesNowhere(t *testing.T) {
 	watch := &createWatch{}
 	m.created(createdMsg{sandbox: box, create: watch, accepted: true, err: errors.New("push failed")})
 	m.update(promptSpentMsg{sandbox: box, create: watch})
-	if m.wsOpening || m.paneBox.ID == box.ID {
-		t.Fatalf("opening %v, box %s; want the screen left alone by an accept that came after the failure", m.wsOpening, m.paneBox.ID)
+	if m.wsOpening || m.Box.ID == box.ID {
+		t.Fatalf("opening %v, box %s; want the screen left alone by an accept that came after the failure", m.wsOpening, m.Box.ID)
 	}
 }
 
@@ -138,8 +138,8 @@ func TestALateAcceptAfterADoneCreateLeavesTheAttach(t *testing.T) {
 	m.created(createdMsg{sandbox: box, create: watch, accepted: true})
 	gen := m.wsGen
 	m.update(promptSpentMsg{sandbox: box, create: watch})
-	if m.wsGen != gen || !m.wsOpening || m.paneBox.ID != box.ID {
-		t.Fatalf("gen %d→%d, opening %v, box %s; want the attach left running", gen, m.wsGen, m.wsOpening, m.paneBox.ID)
+	if m.wsGen != gen || !m.wsOpening || m.Box.ID != box.ID {
+		t.Fatalf("gen %d→%d, opening %v, box %s; want the attach left running", gen, m.wsGen, m.wsOpening, m.Box.ID)
 	}
 }
 
@@ -152,19 +152,19 @@ func TestAFirstCreateDoesNotTakeTheScreenFromASecond(t *testing.T) {
 	wa, wb := &createWatch{}, &createWatch{}
 	m.update(promptSpentMsg{sandbox: a, create: wa})
 	m.update(promptSpentMsg{sandbox: b, create: wb})
-	if !m.wsOpening || m.paneBox.ID != b.ID {
-		t.Fatalf("opening %v, box %s; want the second create's workspace", m.wsOpening, m.paneBox.ID)
+	if !m.wsOpening || m.Box.ID != b.ID {
+		t.Fatalf("opening %v, box %s; want the second create's workspace", m.wsOpening, m.Box.ID)
 	}
 	send(t, m, createdMsg{sandbox: a, create: wa, accepted: true})
-	if m.paneBox.ID != b.ID || !m.wsOpening {
-		t.Fatalf("box %s, opening %v; want the second create's workspace kept", m.paneBox.ID, m.wsOpening)
+	if m.Box.ID != b.ID || !m.wsOpening {
+		t.Fatalf("box %s, opening %v; want the second create's workspace kept", m.Box.ID, m.wsOpening)
 	}
 	if !strings.Contains(m.status, "created first") {
 		t.Fatalf("status %q; want the first create reported", m.status)
 	}
 	m.created(createdMsg{sandbox: b, create: wb, accepted: true})
-	if m.paneBox.ID != b.ID || !m.wsOpening || m.connecting == nil {
-		t.Fatalf("box %s, opening %v; want the second create attaching", m.paneBox.ID, m.wsOpening)
+	if m.Box.ID != b.ID || !m.wsOpening || m.connecting == nil {
+		t.Fatalf("box %s, opening %v; want the second create attaching", m.Box.ID, m.wsOpening)
 	}
 }
 

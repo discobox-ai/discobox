@@ -213,7 +213,7 @@ type issueEditedMsg struct {
 
 // issueTab is the open tab on an issue, if there is one.
 func (m *Model) issueTab(repository string, number int) *pane {
-	for _, p := range m.shells.all() {
+	for _, p := range m.Shells.Tabs {
 		if p.issue != nil && p.issue.repository == repository && p.issue.number == number {
 			return p
 		}
@@ -245,17 +245,17 @@ func (m *Model) openIssue(box console.Sandbox, number int, pull bool) tea.Cmd {
 		return nil
 	}
 	m.nextPaneID++
-	_, width := m.columns(m.shells.len() + 1)
+	_, width := m.columns(m.Shells.Len() + 1)
 	cols, rows := m.paneCells(width)
 	term := termpane.New(m.paneOptions(true)...)
 	term.SetSize(cols, rows)
 	p := &pane{
 		id: m.nextPaneID, term: term, sandbox: box,
-		title: v.label(),
+		Tab:   console.Tab{Title: v.label(), Created: time.Now()},
 		issue: v,
 	}
-	at := m.shells.insert(p, console.Exec{CreatedAt: time.Now()}, m.onShells)
-	m.onShells, m.shells.active = true, at
+	at := m.Shells.Insert(p, m.onShells)
+	m.onShells, m.Shells.Active = true, at
 	m.layout()
 	return tea.Batch(m.loadIssue(p, true), issueTick(p.id))
 }
@@ -334,7 +334,7 @@ func (m *Model) issueLoaded(msg issueLoadedMsg) tea.Cmd {
 	v.issue, v.err = &issue, ""
 	v.conversation.lines = nil
 	v.pull = issue.PullRequest
-	v.url, p.title = v.address(), v.label()
+	v.url, p.Title = v.address(), v.label()
 	if issue.Pull == nil {
 		v.files = false
 		v.closeReview()
@@ -351,7 +351,7 @@ func (m *Model) issueLoaded(msg issueLoadedMsg) tea.Cmd {
 	}
 	if pullReady(issue) {
 		// On the tab itself, so it is seen from whichever pane has the keys.
-		p.title += " ●"
+		p.Title += " ●"
 	}
 	if v.reviewOnRead {
 		v.reviewOnRead = false

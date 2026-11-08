@@ -9,3 +9,7 @@
   the listing's slice and maps; a setter that reuses a slice it was handed
   (`append(x[:0], …)`) writes into every copy's — an open filter card
   showing another refresh's servers. Clone what a setter keeps.
+- **A workspace rule goes in `workspace.go`, never in a renderer or the
+  bridge.** Which sessions open, their column, order, title and number, and
+  what an ending does are answered there; a renderer or the bridge that
+  re-derives one from `Exec` fields is the copy ADR 26-11-07-876 rejected.

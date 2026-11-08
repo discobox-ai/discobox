@@ -37,10 +37,10 @@ func TestAnAttachOpensOnItsDiscobox(t *testing.T) {
 		box := testSandboxes()[1]
 		d, m := openAttached(t, ds, box)
 		d.wait("the workspace", func() bool { return m.focus == focusPane })
-		d.wait("the primary terminal", func() bool { return m.primary() != nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil })
 
-		if m.paneBox.ID != box.ID {
-			t.Fatalf("the window opened on %q, want the discobox it was given (%q)", m.paneBox.ID, box.ID)
+		if m.Box.ID != box.ID {
+			t.Fatalf("the window opened on %q, want the discobox it was given (%q)", m.Box.ID, box.ID)
 		}
 		term := ds.execTerm(console.ExecPrimary)
 		term.send("hello from the discobox")
@@ -75,7 +75,7 @@ func TestDetachingAnAttachClosesTheWindow(t *testing.T) {
 		d, m := openAttached(t, ds, testSandboxes()[0])
 		// Past the wait screen the window opens on, which has the keys while it is
 		// up.
-		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
 
 		d.key("ctrl+a")
 		d.key(paneDetachAlt)
@@ -84,7 +84,7 @@ func TestDetachingAnAttachClosesTheWindow(t *testing.T) {
 		if m.exitErr != nil {
 			t.Fatalf("exitErr = %v, want a detach to be an ordinary exit", m.exitErr)
 		}
-		if m.primary() != nil {
+		if m.Primary() != nil {
 			t.Fatal("the workspace should be closed behind the window")
 		}
 	})
@@ -101,7 +101,7 @@ func TestDetachingTheLauncherKeepsTheWindow(t *testing.T) {
 
 		d.key("ctrl+a")
 		d.key(paneDetachAlt)
-		d.wait("the list", func() bool { return m.primary() == nil })
+		d.wait("the list", func() bool { return m.Primary() == nil })
 
 		if m.quit {
 			t.Fatal("detaching from the launcher should not close the window")
@@ -117,7 +117,7 @@ func TestAnAttachEndsWithItsSession(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openAttached(t, ds, testSandboxes()[0])
-		d.wait("the primary terminal", func() bool { return m.primary() != nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil })
 
 		ds.execTerm(console.ExecPrimary).Close()
 		d.wait("the window to close", func() bool { return m.quit })
@@ -263,7 +263,7 @@ func TestARunWindowWaitsOnItsOwnScreen(t *testing.T) {
 			}
 		}
 		close(ds.runGate)
-		d.wait("the workspace", func() bool { return m.primary() != nil })
+		d.wait("the workspace", func() bool { return m.Primary() != nil })
 	})
 }
 
@@ -275,7 +275,7 @@ func TestARunWindowBecomesTheAttachOnWhatItMade(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
 		// Past the wait screen, which has the keys while it is up.
-		d.wait("the workspace", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the workspace", func() bool { return m.Primary() != nil && m.dialog == nil })
 
 		if m.attach == nil || m.attach.ID != ds.createdID {
 			t.Fatalf("attach = %+v, want the discobox this window made", m.attach)
@@ -358,7 +358,7 @@ func TestAOneShotWindowLeavesTheDraftAlone(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.session.Draft = "the sentence I was in the middle of"
 		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
-		d.wait("the workspace", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the workspace", func() bool { return m.Primary() != nil && m.dialog == nil })
 
 		d.key("ctrl+a")
 		d.key(paneQuitKey)
@@ -385,7 +385,7 @@ func TestEscOnAOneShotWaitLeavesTheDiscoboxStarting(t *testing.T) {
 		if m.exitErr != nil {
 			t.Fatalf("exitErr = %v, want leaving to be an ordinary exit", m.exitErr)
 		}
-		if m.primary() != nil {
+		if m.Primary() != nil {
 			t.Fatal("leaving the wait should not attach to anything")
 		}
 		if made := m.made(); made != nil {
@@ -401,9 +401,9 @@ func TestARunOpensItsWorkspaceWithoutInput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openRun(t, ds, console.RunRequest{Prompt: []string{"fix", "the", "tests"}})
-		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
-		if m.paneBox.ID != ds.createdID {
-			t.Fatalf("opened %q, want the created discobox %q", m.paneBox.ID, ds.createdID)
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
+		if m.Box.ID != ds.createdID {
+			t.Fatalf("opened %q, want the created discobox %q", m.Box.ID, ds.createdID)
 		}
 		ds.execTerm(console.ExecPrimary).send("hello from the new discobox")
 		d.wait("output", func() bool { return strings.Contains(frameText(m), "hello from the new discobox") })
@@ -556,7 +556,7 @@ func TestARunWindowsWarningIsOnTheWorkspace(t *testing.T) {
 		// it.
 		d.wait("the workspace showing the warning", func() bool {
 			frame := plainFrame(m)
-			return m.primary() != nil && m.dialog == nil && strings.Contains(frame, "! /src/disco2:") && strings.Contains(frame, "from the last commit")
+			return m.Primary() != nil && m.dialog == nil && strings.Contains(frame, "! /src/disco2:") && strings.Contains(frame, "from the last commit")
 		})
 	})
 }
@@ -570,7 +570,7 @@ func TestArchivingFromARunWindowClosesTheWindow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
-		d.wait("the workspace", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the workspace", func() bool { return m.Primary() != nil && m.dialog == nil })
 
 		ds.doGate = make(chan struct{})
 		d.key("ctrl+a")
@@ -610,7 +610,7 @@ func TestAFailedArchiveFromAnAttachEndsWithTheError(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.doErr = errors.New("server said no")
 		d, m := openAttached(t, ds, testSandboxes()[0])
-		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
 
 		d.key("ctrl+a")
 		d.key("x")
@@ -637,7 +637,7 @@ func TestArchivingFromTheLauncherKeepsTheWindow(t *testing.T) {
 		if m.quit {
 			t.Fatal("archiving from the launcher should not close the window")
 		}
-		if m.primary() != nil {
+		if m.Primary() != nil {
 			t.Fatal("the workspace should be closed")
 		}
 	})
@@ -650,7 +650,7 @@ func TestStoppingFromAnAttachKeepsTheWindow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openAttached(t, ds, testSandboxes()[0])
-		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
 
 		d.key("ctrl+a")
 		d.key("t")
@@ -659,7 +659,7 @@ func TestStoppingFromAnAttachKeepsTheWindow(t *testing.T) {
 		if m.quit {
 			t.Fatal("a stop's answer should not close the window")
 		}
-		if m.primary() == nil {
+		if m.Primary() == nil {
 			t.Fatal("the workspace should still be open")
 		}
 	})

@@ -15,7 +15,7 @@ import (
 func openBare(t *testing.T, ds *fakeSource) (*driver, *Model, *fakeTerminal) {
 	t.Helper()
 	d, m := openAttached(t, ds, ds.sandboxes[0])
-	d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+	d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
 	if !m.bare() {
 		t.Fatalf("an attach with only its primary should be bare:\n%s", plainFrame(m))
 	}
@@ -38,7 +38,7 @@ func TestABareAttachIsTheTerminalAndOneLine(t *testing.T) {
 		d, m, term := openBare(t, ds)
 
 		d.wait("the primary at the whole screen", func() bool { return term.size() == [2]int{120, 39} })
-		if x, y := m.paneOrigin(m.primary()); x != 0 || y != 0 {
+		if x, y := m.paneOrigin(m.Primary()); x != 0 || y != 0 {
 			t.Fatalf("the grid starts at %d,%d, want the screen's origin", x, y)
 		}
 
@@ -91,7 +91,7 @@ func TestABareAttachStillReportsTheMouse(t *testing.T) {
 			t.Fatal("a bare window should still report the mouse")
 		}
 		term.send("\x1b[?1000h\x1b[?1006hCLICKS")
-		d.wait("mouse mode", func() bool { return m.primary().term.MouseMode() != 0 })
+		d.wait("mouse mode", func() bool { return m.Primary().term.MouseMode() != 0 })
 		d.dispatch(tea.MouseClickMsg{X: 4, Y: 2, Button: tea.MouseLeft})
 		if got := term.typed("\x1b[<"); !strings.Contains(got, "\x1b[<0;5;3") {
 			t.Fatalf("typed %q, want a click at grid cell 4,2", got)
@@ -116,16 +116,16 @@ func TestOpeningAShellRestoresTheChrome(t *testing.T) {
 		d.wait("the primary at the whole screen", func() bool { return term.size() == [2]int{120, 39} })
 
 		d.leader("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
 		if m.bare() {
 			t.Fatal("a workspace with a shell in it is not bare")
 		}
-		cols, rows := m.paneCells(m.paneWidthOf(m.primary()))
+		cols, rows := m.paneCells(m.paneWidthOf(m.Primary()))
 		if cols == 120 || rows == 39 {
 			t.Fatalf("the primary's box is %dx%d, want it inside the chrome", cols, rows)
 		}
 		d.wait("the primary resized into its box", func() bool { return term.size() == [2]int{cols, rows} })
-		if x, y := m.paneOrigin(m.primary()); x == 0 || y == 0 {
+		if x, y := m.paneOrigin(m.Primary()); x == 0 || y == 0 {
 			t.Fatalf("the grid starts at %d,%d, want it inside the border", x, y)
 		}
 		lines := strings.Split(plainFrame(m), "\n")
@@ -167,7 +167,7 @@ func TestABareAttachCentersItsLinks(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(desktopSandboxes()...)
 		d, m, _ := openBare(t, ds)
-		d.wait("the forward", func() bool { return m.forward != nil })
+		d.wait("the forward", func() bool { return m.Forward != nil })
 		ds.forward.bind(console.Binding{Port: 6900, Local: 6901})
 		d.wait("the desktop", func() bool { return strings.Contains(bareStatus(m), "Desktop") })
 
@@ -197,7 +197,7 @@ func TestRunningServicesAloneKeepAttachBare(t *testing.T) {
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
 		d, m := openAttached(t, ds, ds.sandboxes[0])
 		d.wait("primary and service loaded", func() bool {
-			return m.primary() != nil && m.dialog == nil && m.terminals.len() == 2
+			return m.Primary() != nil && m.dialog == nil && m.Terminals.Len() == 2
 		})
 		if !m.bare() {
 			t.Fatal("running services alone restored the chrome; want the minimal attach screen")
@@ -226,7 +226,7 @@ func TestRunWithServicesStartsBare(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.services = []console.Service{runningService("api", "API", "exec_api")}
 		d, m := openRun(t, ds, console.RunRequest{IncludeDirty: "false"})
-		d.wait("primary and service", func() bool { return m.primary() != nil && m.dialog == nil && m.terminals.len() == 2 })
+		d.wait("primary and service", func() bool { return m.Primary() != nil && m.dialog == nil && m.Terminals.Len() == 2 })
 		if !m.bare() {
 			t.Fatalf("run with services should be bare:\n%s", plainFrame(m))
 		}
@@ -243,7 +243,7 @@ func TestServicesArrivingDuringAttachKeepItBare(t *testing.T) {
 		ds.serviceLogs = map[string][]byte{"api": []byte("API is listening\r\n")}
 		ds.mu.Unlock()
 		d.dispatch(workspaceTickMsg{gen: m.wsGen})
-		d.wait("service pane", func() bool { return m.terminals.len() == 2 })
+		d.wait("service pane", func() bool { return m.Terminals.Len() == 2 })
 		if !m.bare() {
 			t.Fatal("service arrival restored chrome")
 		}
@@ -281,17 +281,17 @@ func TestAdditionalInteractivePanesAndBannersRestoreAttachChrome(t *testing.T) {
 				ds := newFakeSource(testSandboxes()...)
 				ds.services = []console.Service{runningService("api", "API", "exec_api")}
 				d, m, _ := openBare(t, ds)
-				d.wait("service pane", func() bool { return m.terminals.len() == 2 })
+				d.wait("service pane", func() bool { return m.Terminals.Len() == 2 })
 				switch extra {
 				case "shell":
 					d.leader("s")
-					d.wait("shell", func() bool { return m.shells.len() == 1 })
+					d.wait("shell", func() bool { return m.Shells.Len() == 1 })
 				case "terminal":
 					ds.mu.Lock()
 					ds.execs = append(ds.execs, console.Exec{ID: "exec_other", Harness: "shell", Live: true, Tty: true})
 					ds.mu.Unlock()
 					d.dispatch(workspaceTickMsg{gen: m.wsGen})
-					d.wait("second terminal", func() bool { return m.terminals.len() == 3 })
+					d.wait("second terminal", func() bool { return m.Terminals.Len() == 3 })
 				case "banner":
 					ds.mu.Lock()
 					ds.requests = []console.CredentialRequest{waitingRequest()}
@@ -313,7 +313,7 @@ func TestBareAttachActionsCanInspectBrokenServices(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.services = []console.Service{{ID: "broken", Name: "Broken", Status: "stopped", Problem: "script is not executable"}}
 		d, m, _ := openBare(t, ds)
-		d.wait("diagnostic pane", func() bool { return m.terminals.len() == 2 })
+		d.wait("diagnostic pane", func() bool { return m.Terminals.Len() == 2 })
 		d.leader(boxMenuKey)
 		d.key(paneServicesKey)
 		d.wait("services", func() bool { return m.dialog != nil && strings.HasPrefix(m.dialog.title, "Services") })

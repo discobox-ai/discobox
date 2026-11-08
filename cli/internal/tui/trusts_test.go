@@ -103,7 +103,7 @@ func TestDenyingATrustAnswersTheTrustRequest(t *testing.T) {
 func TestTheBannerNamesATrustRequest(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithTrust(t)
-	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
+	m.Box = console.Sandbox{ID: "sbx_one", Name: "one"}
 	banner := m.viewCredentialBanner(120)
 	if !strings.Contains(banner, "trust request") || !strings.Contains(banner, "34.70.64.109:443") {
 		t.Fatalf("banner = %q", banner)

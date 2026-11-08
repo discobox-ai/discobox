@@ -58,7 +58,7 @@ func TestFrames(t *testing.T) {
 		// opened on the discobox the workspace would have been showing.
 		{"tools", func(m *Model) {
 			send(t, m, keyPress("tab"))
-			m.paneBox = console.Sandbox{ID: "sbx_one"}
+			m.Box = console.Sandbox{ID: "sbx_one"}
 			// The addresses come from a lookup this frame has no runtime to
 			// run, so they are seeded as one that finished would have left
 			// them; the rows are the frame worth looking at.

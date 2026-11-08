@@ -96,6 +96,10 @@ const (
 
 // pane is one terminal in the window.
 type pane struct {
+	// Tab is what the pane is as the workspace holds it: its session, what it
+	// is called, and whether it is over (console.Tab).
+	console.Tab
+
 	// id addresses this pane in the messages its own commands produce. Without
 	// it a pane closing would be reported as "a pane closed", and with several
 	// of them the window would have to guess which — and a guess that lands on
@@ -104,81 +108,37 @@ type pane struct {
 
 	term    *termpane.Model
 	stream  console.Terminal
-	action  console.Interaction
 	sandbox console.Sandbox
-	status  string
 
-	// execID keys the pane to the server session it is drawing, which is what
-	// lets the workspace's poll tell a session it already shows from one it
-	// has to open.
-	execID string
-	// title is what to call the tab until the application names itself.
-	title string
-	// created is when the session was created, which is the tab order.
-	created time.Time
-
-	// primary marks the discobox's primary terminal, which is the one pane on
-	// the screen whose ending ends the workspace. It is the first tab of the
-	// terminals column and always wears 0.
-	primary bool
 	// reported is what the primary's program has reported of itself over
 	// OSC 7501 since the pane attached, and reportedAt when it last did; see
 	// focusedProgramStatus. Only the primary watches.
 	reported   programstatus.Set
 	reportedAt time.Time
 
-	// service is the declared service this pane is drawing, empty for every
-	// other pane. It is what the lifecycle keys act on, and its presence is
-	// what makes the pane read-only: there is nothing at the far end reading
-	// stdin.
-	service string
-	// serviceName is the service's display name, kept beside its id so a verb
-	// run from this pane can report on it without going back to the listing.
-	serviceName string
-	// serviceOrder is where the service sits in the repository's declaration
-	// order, which is what orders the service tabs. It is kept on the pane
-	// because insert compares an arriving session against the ones already in
-	// the strip, and a pane described without it would sort as though it were
-	// declared first.
-	serviceOrder int
-	// unread marks a service whose output has moved on since it was last on
-	// screen. A service is the one pane you deliberately look away from — that
-	// is what running it in the background means — so its tab is where it has
-	// to say that something happened. seenOutput is the reading it was last
-	// seen at.
-	unread     bool
+	// seenOutput is the reading of a service's output it was last on screen
+	// at, which is what sets its tab's Unread.
 	seenOutput uint64
-	// serviceRun identifies the run this pane was opened on, so the poll can
-	// tell a pane that is still looking at what the server reports from one
-	// whose service has since restarted, stopped or been fixed. See
-	// Service.runKey.
-	serviceRun string
 
 	// issue is the GitHub issue or pull request this pane draws in place of a terminal, nil
 	// for every pane that draws a terminal. Its term is never attached; it is
 	// there for the key map. See issue.go.
 	issue *issuePane
 
-	// tool is the tool this pane is running, and empty for every pane that is
-	// not one. A tool pane is not in the strip and wears no number: it is a
-	// window over the workspace, put away rather than moved between. See
-	// tools.go.
-	tool string
-
 	// imageBusy is set while a paste into this pane that meant an image is
 	// being read and carried into the discobox, and imageHeld is the input
 	// that arrived meanwhile, delivered after it. See imagepaste.go.
 	imageBusy bool
 	imageHeld []tea.Msg
-
-	// exited is set when what was running in the pane finished and the pane
-	// was kept anyway, so its last screen can be read.
-	exited bool
 }
 
-// close ends what the pane is drawing from: its stream, and for a pull
+// TabState is the pane's tab, which the workspace's columns order, number and
+// reconcile by.
+func (p *pane) TabState() *console.Tab { return &p.Tab }
+
+// Close ends what the pane is drawing from: its stream, and for a pull
 // request's tab the files changed's reads.
-func (p *pane) close() {
+func (p *pane) Close() {
 	_ = p.term.Close()
 	if p.issue != nil {
 		p.issue.closeReview()
@@ -191,15 +151,9 @@ func (p *pane) name() string {
 	// An issue's tab keeps the name it was opened with: the issue, not
 	// whatever the reader inside it reports.
 	if p.issue != nil {
-		return p.title
+		return p.Title
 	}
-	if title := strings.TrimSpace(p.term.Title()); title != "" {
-		return title
-	}
-	if p.title != "" {
-		return p.title
-	}
-	return string(p.action)
+	return p.Name(p.term.Title())
 }
 
 // paneName is what to call a pane on screen. The primary terminal answers to
@@ -213,7 +167,7 @@ func (p *pane) name() string {
 // program retitles itself. Every other pane is what its program says it is
 // (pane.name).
 func (m *Model) paneName(p *pane) string {
-	if p.primary {
+	if p.Primary {
 		return m.primaryTitle()
 	}
 	return p.name()
@@ -362,7 +316,7 @@ func (m *Model) heldPane(id int) *pane {
 // anything addressing a pane by identity walks — never what counts positions,
 // which is panes().
 func (m *Model) allPanes() []*pane {
-	return append(append([]*pane{}, m.terminals.panes...), m.shells.panes...)
+	return append(append([]*pane{}, m.Terminals.Tabs...), m.Shells.Tabs...)
 }
 
 // inPanes reports whether the window is showing terminals rather than the list.
@@ -387,7 +341,7 @@ func (m *Model) focusedPane() *pane {
 	if p := m.screenPane(); p != nil {
 		return p
 	}
-	return m.column().visible()
+	return m.column().Visible()
 }
 
 // column is the side of the workspace the keys are in: the shells while the
@@ -398,35 +352,21 @@ func (m *Model) column() *column { return m.columnFor(m.onShells) }
 // which side they were drawn on rather than which side has the focus.
 func (m *Model) columnFor(shells bool) *column {
 	if shells {
-		return &m.shells
+		return &m.Shells
 	}
-	return &m.terminals
+	return &m.Terminals
 }
 
 // paneColumn is the column a pane is in and where it sits in it, or nil and -1
 // for one that is in neither — a pane already closed.
 func (m *Model) paneColumn(p *pane) (*column, int) {
-	if i := m.terminals.index(p); i >= 0 {
-		return &m.terminals, i
+	if i := m.Terminals.Index(p); i >= 0 {
+		return &m.Terminals, i
 	}
-	if i := m.shells.index(p); i >= 0 {
-		return &m.shells, i
+	if i := m.Shells.Index(p); i >= 0 {
+		return &m.Shells, i
 	}
 	return nil, -1
-}
-
-// primary is the discobox's primary terminal, or nil before it has arrived. It
-// is the head of the terminals in the left column — every other session is
-// created later, and the primary is attached under a virtual id with no
-// creation time at all, so it sorts first whatever order the attaches land in
-// — but not the head of the column, which the services take. See execBefore.
-func (m *Model) primary() *pane {
-	for _, p := range m.terminals.panes {
-		if p.primary {
-			return p
-		}
-	}
-	return nil
 }
 
 // currentBox is the discobox the workspace is showing, as the list last saw
@@ -437,7 +377,7 @@ func (m *Model) primary() *pane {
 // It is what the keys dispatch against and what the header reads, so the two
 // answer from the same listing, keeping the header and actions in sync.
 func (m *Model) currentBox() console.Sandbox {
-	return m.boxByRef(m.boxRef(m.paneBox))
+	return m.boxByRef(m.boxRef(m.Box))
 }
 
 // boxByRef reads a box from the same server as its workspace or operation.
@@ -447,11 +387,11 @@ func (m *Model) boxByRef(ref console.BoxRef) console.Sandbox {
 			return s
 		}
 	}
-	if m.boxRef(m.paneBox) == ref {
-		return m.paneBox
+	if m.boxRef(m.Box) == ref {
+		return m.Box
 	}
 	if ws := m.parked[ref]; ws != nil {
-		return ws.paneBox
+		return ws.Box
 	}
 	return console.Sandbox{ID: ref.ID, Server: ref.Server}
 }
@@ -638,7 +578,7 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 	// A pane whose command has finished is a screen to read, not a terminal to
 	// type at. Its keys are the reader's — except the leader's, which are the
 	// window's wherever you are.
-	if p.exited {
+	if p.Exited {
 		if key, ok := msg.(tea.KeyPressMsg); ok {
 			return m.finishedKey(p, key)
 		}
@@ -715,9 +655,9 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		// meaning for a service, so they keep meaning the discobox, and
 		// restart — which the list has no verb for — stays on the services
 		// menu rather than taking a key that means something else everywhere.
-		if p.service != "" {
+		if p.Service != "" {
 			if verb, ok := paneServiceVerbs[msg.id]; ok {
-				return m.runServiceVerb(verb, console.Service{ID: p.service, Name: p.serviceName})
+				return m.runServiceVerb(verb, console.Service{ID: p.Service, Name: p.ServiceName})
 			}
 		}
 		// The list's dispatcher, on the one discobox this screen is showing:
@@ -747,7 +687,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			return m.underScreen(p)
 		}
 		p.term.SetPrefixArmed(false)
-		return m.boxMenu(m.paneBox)
+		return m.boxMenu(m.Box)
 
 	case switchBoxMsg:
 		if m.hasScreen(p) {
@@ -808,7 +748,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.openServices()
 
 	case zoomPaneMsg:
-		if p.tool != "" {
+		if p.Tool != "" {
 			// A tool's own window is what maximizing it means: on its tab the
 			// key gives it the window again, and in the window it hands the
 			// window back. A maximized column is restored first, like any
@@ -824,7 +764,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			}
 			return nil
 		}
-		if m.hasScreen(p) || m.shells.len() == 0 {
+		if m.hasScreen(p) || m.Shells.Len() == 0 {
 			// Nothing beside it to maximize over: the box already has the
 			// window, and saying so beats a key that looks broken.
 			return status("nothing to maximize — the box has the window")
@@ -859,7 +799,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.toggleIssue(m.currentBox(), msg.pull)
 
 	case openCredentialsMsg:
-		return m.openCredentialDialog(m.paneBox)
+		return m.openCredentialDialog(m.Box)
 
 	// The band's other two keys. A binding's message comes back tagged with
 	// its pane, and one this switch does not name is handed to the terminal,
@@ -871,7 +811,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.dismissBanner()
 
 	case termpane.DetachMsg:
-		if p.tool != "" && m.hasScreen(p) {
+		if p.Tool != "" && m.hasScreen(p) {
 			// A tool is put away rather than closed: its session keeps running
 			// and its stream stays attached, so choosing it again shows where
 			// it has got to. Ending it is the other key. See tools.go.
@@ -900,9 +840,9 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 	case paneEventMsg:
 		switch msg.event.State {
 		case console.TerminalReconnecting:
-			p.status = "reconnecting…"
+			p.Status = "reconnecting…"
 		case console.TerminalReconnected:
-			p.status = ""
+			p.Status = ""
 		}
 		return fromPane(p.id, m.paneEvents(p.stream))
 	}
@@ -929,7 +869,7 @@ func (m *Model) underScreen(p *pane) tea.Cmd {
 // A pane on screen is a pane being read, so its output counts as seen the
 // moment it arrives.
 func (m *Model) noteOutput(p *pane) {
-	if p.service == "" {
+	if p.Service == "" {
 		return
 	}
 	seq := p.term.OutputSeq()
@@ -937,10 +877,10 @@ func (m *Model) noteOutput(p *pane) {
 		return
 	}
 	if m.isOnScreen(p) {
-		p.seenOutput, p.unread = seq, false
+		p.seenOutput, p.Unread = seq, false
 		return
 	}
-	p.unread = true
+	p.Unread = true
 }
 
 // markSeen clears the mark on whatever is on screen, which is what looking at
@@ -948,10 +888,10 @@ func (m *Model) noteOutput(p *pane) {
 // that is, rather than at each of the several places one can.
 func (m *Model) markSeen() {
 	for _, p := range m.onScreen() {
-		if p == nil || p.service == "" {
+		if p == nil || p.Service == "" {
 			continue
 		}
-		p.seenOutput, p.unread = p.term.OutputSeq(), false
+		p.seenOutput, p.Unread = p.term.OutputSeq(), false
 	}
 }
 
@@ -965,18 +905,16 @@ func (m *Model) isOnScreen(p *pane) bool {
 	return false
 }
 
-// paneClosed handles a session or command ending on its own.
-//
-// Where the pane sits decides what happens: the primary terminal ending ends
-// the workspace, since a workspace is a view onto that session; a tool ending
-// takes its window with it, since the window was the program; a shell tab and
-// a finished command hold their last screen to be read — a short session may end in a moment, and a pane that vanished would be a
-// screen you never got to read. Only an error closes one of those unread, and
-// is reported instead.
+// paneClosed handles a session or command ending on its own. What it does to
+// the workspace is the core's (console.Tab.End): the primary ending ends it, a
+// tool takes its window with it, and a shell or terminal that finished holds
+// its last screen to be read, since a pane that vanished would be a screen you
+// never got to read. Only an error closes one of those unread, and is reported
+// instead.
 func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
-	action := p.action
-	switch {
-	case p.primary:
+	action := p.Action
+	switch p.End(msg.Err) {
+	case console.EndsWorkspace:
 		m.closeWorkspace()
 		if m.attach != nil {
 			// The attach is over when its session is, exactly as a plain
@@ -988,33 +926,20 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		}
 		return tea.Batch(m.refresh(), status("the session ended"))
 
-	case p.tool != "":
-		// A tool is the program, not a transcript of one: quitting
-		// discobox-review or fresh is how you say you are done with it, and a
-		// held screen captioned with its exit would be one more thing to
-		// dismiss after every look at the diff. So the window — or the tab, if
-		// it was put away — goes when the program does, however it ended.
-		//
-		// A stream that broke is the other thing, and is still reported: the
-		// screen that would have carried the reason went with the window.
-		m.closeTab(p)
-		gone := m.refresh()
-		if msg.Err != nil {
-			return tea.Batch(gone, m.report(true, "%s: %v", action, msg.Err))
-		}
-		return gone
-
-	case msg.Err == nil:
+	case console.EndsHeld:
 		// Keep the last screen up to be read; the keys that mean done take it
 		// away.
-		p.exited = true
-		p.status = "finished"
 		return m.refresh()
-
-	default:
-		m.closeTab(p)
-		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
 	}
+	// A tool goes however it ended — quitting it is how you say you are done
+	// with it — and any other tab goes when its stream broke. The reason is
+	// still reported: the screen that would have carried it went with the tab.
+	m.closeTab(p)
+	gone := m.refresh()
+	if msg.Err != nil {
+		return tea.Batch(gone, m.report(true, "%s: %v", action, msg.Err))
+	}
+	return gone
 }
 
 // paneReserved reports whether a key is one of the window's own a pane
@@ -1191,7 +1116,7 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 	case tea.MouseWheelMsg:
 		// A finished pane has no application left to consult about the
 		// wheel; its held screen scrolls directly.
-		if p.exited {
+		if p.Exited {
 			p.term.Scroll(wheelLines(ev))
 			return nil
 		}
@@ -1242,11 +1167,11 @@ func (m *Model) onScreen() []*pane {
 	case m.screenPane() != nil:
 		return []*pane{m.screenPane()}
 	case m.split():
-		return []*pane{m.terminals.visible(), m.shells.visible()}
+		return []*pane{m.Terminals.Visible(), m.Shells.Visible()}
 	case m.maximized && m.onShells:
-		return []*pane{m.shells.visible()}
+		return []*pane{m.Shells.Visible()}
 	default:
-		return []*pane{m.terminals.visible()}
+		return []*pane{m.Terminals.Visible()}
 	}
 }
 
@@ -1259,8 +1184,8 @@ func (m *Model) focusPane(p *pane) {
 	if col == nil {
 		return
 	}
-	m.onShells = col == &m.shells
-	col.active = i
+	m.onShells = col == &m.Shells
+	col.Active = i
 }
 
 // tabSpan is where one tab label sits on the boxes' top border row, in
@@ -1325,9 +1250,9 @@ func (m *Model) pressButton(span buttonSpan) (tea.Cmd, bool) {
 	case buttonClose:
 		return m.endPane(m.showingTool()), true
 	case buttonEnd:
-		return m.endPane(m.columnFor(span.shells).visible()), true
+		return m.endPane(m.columnFor(span.shells).Visible()), true
 	case buttonZoom:
-		if p := m.columnFor(span.shells).visible(); p != nil && p.tool != "" && !m.maximized {
+		if p := m.columnFor(span.shells).Visible(); p != nil && p.Tool != "" && !m.maximized {
 			// On a tool's tab the button gives the tool its window back. See
 			// columnControls.
 			m.showTool(p)
@@ -1372,7 +1297,7 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 	}
 	if shells, i, ok := m.tabAt(x, y); ok {
 		m.onShells = shells
-		m.column().active = i
+		m.column().Active = i
 		return nil, false
 	}
 	if p := m.paneBoxAt(x, y); p != nil {
@@ -1391,7 +1316,7 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 func (m *Model) toggleMaximized(shells bool) {
 	m.maximized = !m.maximized
 	if m.maximized {
-		m.onShells = shells && m.shells.len() > 0
+		m.onShells = shells && m.Shells.Len() > 0
 	}
 	m.layout()
 }
@@ -1421,12 +1346,12 @@ func (m *Model) paneBoxAt(x, y int) *pane {
 		return nil
 	}
 	if m.split() && x >= m.width/2 {
-		return m.shells.visible()
+		return m.Shells.Visible()
 	}
 	if !m.split() && m.maximized && m.onShells {
-		return m.shells.visible()
+		return m.Shells.Visible()
 	}
-	return m.terminals.visible()
+	return m.Terminals.Visible()
 }
 
 // copyText puts text on the clipboard: the OS clipboard first, and OSC 52 only
@@ -1491,7 +1416,7 @@ func (m *Model) paneCells(width int) (cols, rows int) {
 
 // split reports whether the workspace is drawn as two columns: it has tabs to
 // put beside the terminal, and neither side has been maximized over the other.
-func (m *Model) split() bool { return m.shells.len() > 0 && !m.maximized }
+func (m *Model) split() bool { return m.Shells.Len() > 0 && !m.maximized }
 
 // columns is the box widths of the workspace's two sides, for the given number
 // of tabs. It takes the count rather than reading it off the model because the
@@ -1521,8 +1446,8 @@ func (m *Model) paneWidthOf(p *pane) int {
 		// width; given the window, it is resized to the window.
 		return max(m.width, 4)
 	}
-	term, shells := m.columns(m.shells.len())
-	if m.shells.index(p) >= 0 {
+	term, shells := m.columns(m.Shells.Len())
+	if m.Shells.Index(p) >= 0 {
 		return shells
 	}
 	return term
@@ -1556,7 +1481,7 @@ func (m *Model) paneOrigin(p *pane) (x, y int) {
 	// translated through it, so an offset applied anywhere else would move one
 	// and not the other.
 	top := 2 + m.bannerTop()
-	if p != nil && m.shells.index(p) >= 0 {
+	if p != nil && m.Shells.Index(p) >= 0 {
 		// A shell tab: its box starts where the terminals' box ends, or at the
 		// window's edge when it is the maximized one.
 		return m.shellLeft() + 1 + boxPad, top
@@ -1612,7 +1537,7 @@ func (m *Model) viewPaneWindow() string {
 	live := !m.listFront
 	var body string
 	switch {
-	case m.terminals.len() == 0 && m.wsOpening:
+	case m.Terminals.Len() == 0 && m.wsOpening:
 		body = m.viewOpening(m.width, m.paneRows()+2)
 	case m.audit != nil:
 		body = m.viewAuditBox(m.width)
@@ -1622,16 +1547,16 @@ func (m *Model) viewPaneWindow() string {
 		// The terminals on the left, the shells on the right; the right half
 		// takes any cell the division left over so the row comes out exactly
 		// the width.
-		left := m.viewColumnBox(&m.terminals, false, 0, m.width/2, live && !m.onShells)
-		right := m.viewColumnBox(&m.shells, true, m.width/2, m.width-m.width/2, live && m.onShells)
+		left := m.viewColumnBox(&m.Terminals, false, 0, m.width/2, live && !m.onShells)
+		right := m.viewColumnBox(&m.Shells, true, m.width/2, m.width-m.width/2, live && m.onShells)
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	case m.maximized && m.onShells:
 		// Maximized: the column with focus has the window and the other is not
 		// drawn at all — still attached, still emulating, and back where it was
 		// the moment the button gives the window back.
-		body = m.viewColumnBox(&m.shells, true, 0, m.width, live)
+		body = m.viewColumnBox(&m.Shells, true, 0, m.width, live)
 	default:
-		body = m.viewColumnBox(&m.terminals, false, 0, m.width, live)
+		body = m.viewColumnBox(&m.Terminals, false, 0, m.width, live)
 	}
 	bodyRows := strings.Split(body, "\n")
 	// The message rides the boxes' bottom edge, the way a pane's title rides
@@ -1718,8 +1643,8 @@ func (m *Model) viewPaneHeader(w int) string {
 	// that is neither drawn nor marked.
 	hints := m.headerHints()
 	keys, pinned := strings.Repeat(" ", hintsWidth(hints, headerSep)), false
-	if p := m.focusedPane(); p != nil && p.status != "" {
-		keys, pinned = m.st.statusWA.Render(p.status), true
+	if p := m.focusedPane(); p != nil && p.Status != "" {
+		keys, pinned = m.st.statusWA.Render(p.Status), true
 	}
 
 	// Each concession is the row with one more edge given up, widest first.
@@ -2117,7 +2042,7 @@ func (m *Model) groupFields(groups []resourceGroup, machine bool) paneHeaderFiel
 // terminals side by side and every key going to one of them, which one that is
 // has to be visible without looking for it.
 func (m *Model) viewColumnBox(col *column, shells bool, left, width int, focused bool) string {
-	p := col.visible()
+	p := col.Visible()
 	if p == nil {
 		return ""
 	}
@@ -2140,7 +2065,7 @@ func (m *Model) viewColumnBox(col *column, shells bool, left, width int, focused
 	// second span for the same button is a click target nothing needs.
 	control := m.columnControls(edge, p, shells, left, width)
 	top := titledEdge(m.st, edge, m.paneName(p), control, inner)
-	if len(m.panes()) > 1 {
+	if len(m.Attached()) > 1 {
 		top = m.tabbedEdge(col, shells, left, control, edge, inner)
 	}
 	return m.viewPaneBox(p, top, edge, width)
@@ -2241,7 +2166,7 @@ func (m *Model) columnControls(edge lipgloss.Style, p *pane, shells bool, left, 
 		return ""
 	}
 	var actions []buttonAction
-	if m.shells.len() > 0 || (p != nil && p.tool != "") {
+	if m.Shells.Len() > 0 || (p != nil && p.Tool != "") {
 		actions = append(actions, buttonZoom)
 	}
 	if _, ok := m.endablePane(p); ok {

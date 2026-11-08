@@ -84,14 +84,16 @@ func TestDesktopBinaryNotFound(t *testing.T) {
 	}
 }
 
-// A workspace opens the primary first, then every other live terminal; the
-// console draws services, files-changed sessions and ended execs elsewhere.
-func TestDesktopExecsOpensLiveTerminals(t *testing.T) {
+// A workspace opens what the console core says it does, in its order: the
+// primary first, then the terminals and shells oldest first, then the tools;
+// services, files-changed sessions, ended execs and pipes reach it otherwise.
+func TestDesktopExecsOpensWhatTheCoreOpens(t *testing.T) {
+	at := func(s int) time.Time { return time.Date(2026, 11, 8, 0, 0, s, 0, time.UTC) }
 	got := desktopExecs([]console.Exec{
 		{ID: "p", Primary: true, Live: true, Tty: true},
-		{ID: "sh", Command: []string{"/bin/bash", "-l"}, Live: true, Tty: true},
-		{ID: "claude", Harness: "claude", Command: []string{"claude"}, Live: true, Tty: true},
-		{ID: "diff", Tool: "diff", Live: true, Tty: true},
+		{ID: "diff", Tool: "diff", Live: true, Tty: true, CreatedAt: at(1)},
+		{ID: "claude", Harness: "claude", Command: []string{"claude"}, Live: true, Tty: true, CreatedAt: at(3)},
+		{ID: "sh", Command: []string{"/bin/bash", "-l"}, Live: true, Tty: true, CreatedAt: at(2)},
 		{ID: "svc", Service: "web", Live: true, Tty: true},
 		{ID: "files", FilesChanged: true, Live: true, Tty: true},
 		{ID: "ended", Command: []string{"bash"}, Tty: true},
@@ -105,6 +107,15 @@ func TestDesktopExecsOpensLiveTerminals(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
+	}
+}
+
+// A terminal the app asked for is a terminal, though its record names no
+// harness.
+func TestDesktopExecAskedTerminal(t *testing.T) {
+	got := desktopExec(console.Exec{ID: "t", Command: []string{"zsh"}, Live: true}, console.InteractTerminal)
+	if got.Kind != "terminal" || got.Label != "zsh" {
+		t.Fatalf("got %+v, want a terminal called zsh", got)
 	}
 }
 

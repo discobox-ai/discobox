@@ -1051,7 +1051,7 @@ type Exec struct {
 	// Harness is the harness slug when this exec is a harness terminal, and
 	// empty for a plain shell. It is also which column the workspace draws the
 	// session in: a harness terminal is a terminal and goes on the left, and a
-	// shell goes on the right. See terminalExec.
+	// shell goes on the right. See Exec.Side.
 	Harness string
 
 	// Tool is the tool this session is running — "diff", "fresh" — and empty

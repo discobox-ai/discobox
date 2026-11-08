@@ -373,7 +373,7 @@ func TestTheWorkspaceHeaderCarriesTheBoxsOtherTags(t *testing.T) {
 	t.Parallel()
 	st := newStyles(true)
 	m := newColorModel(t, newFakeSource())
-	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one", Repository: "https://github.com/acme/disco",
+	m.Box = console.Sandbox{ID: "sbx_one", Name: "one", Repository: "https://github.com/acme/disco",
 		Tags: []string{"issue=4", "ready", "area=tui", "kind=bug"}}
 	got := m.paneHeaderFields().text()
 	if !strings.Contains(got, st.dimText.Render("#area=tui #kind=bug")) {
@@ -382,7 +382,7 @@ func TestTheWorkspaceHeaderCarriesTheBoxsOtherTags(t *testing.T) {
 	if strings.Contains(got, "#issue") || strings.Contains(got, "#ready") {
 		t.Fatalf("header = %q, want the issue and the status said once, their own way", got)
 	}
-	m.paneBox.Tags = []string{"issue=4"}
+	m.Box.Tags = []string{"issue=4"}
 	if got := m.paneHeaderFields(); len(got) != 2 {
 		t.Fatalf("header = %q, want the id and the issue and no tags field for a box with none left to say", got.text())
 	}

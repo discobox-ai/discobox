@@ -31,7 +31,7 @@ func TestAdoptionInboxAndBannerNameTheChild(t *testing.T) {
 		t.Fatalf("inbox subject = %q", got)
 	}
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	m.paneBox = testSandboxes()[0]
+	m.Box = testSandboxes()[0]
 	m.requests = map[string][]console.CredentialRequest{"sbx_one": {req}}
 	banner := ansi.Strip(m.viewCredentialBanner(150))
 	if !strings.Contains(banner, "adoption request") || !strings.Contains(banner, "feature") || strings.Contains(banner, "credential request") {

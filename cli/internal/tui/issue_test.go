@@ -53,7 +53,7 @@ func issueSource() *fakeSource {
 
 // issueTabOf is the open issue tab, or nil.
 func issueTabOf(m *Model) *pane {
-	for _, p := range m.shells.all() {
+	for _, p := range m.Shells.Tabs {
 		if p.issue != nil {
 			return p
 		}
@@ -105,8 +105,8 @@ func TestClickingTheHeaderIssueOpensItAsATab(t *testing.T) {
 			t.Fatalf("the issue is not the focused tab of the right column: tab %v, focused %v, onShells %v, split %v",
 				p != nil, m.focusedPane() == p, m.onShells, m.split())
 		}
-		term, shells := m.columns(m.shells.len())
-		if m.paneWidthOf(m.primary()) != term || m.paneWidthOf(p) != shells {
+		term, shells := m.columns(m.Shells.Len())
+		if m.paneWidthOf(m.Primary()) != term || m.paneWidthOf(p) != shells {
 			t.Errorf("the issue is not drawn as a column of the split")
 		}
 
@@ -126,11 +126,11 @@ func TestClickingTheHeaderIssueOpensItAsATab(t *testing.T) {
 		}
 
 		// Clicking it again goes to the tab rather than opening another.
-		m.focusPane(m.primary())
+		m.focusPane(m.Primary())
 		x, y = at(t, m, "issue #4")
 		slowClock(m)
 		tap(t, m, x, y)
-		if issueTabs := len(m.shells.all()); issueTabs != 1 || m.focusedPane() != p {
+		if issueTabs := len(m.Shells.Tabs); issueTabs != 1 || m.focusedPane() != p {
 			t.Errorf("a second click: %d tabs, focused on the issue %v; want the one tab, focused", issueTabs, m.focusedPane() == p)
 		}
 	})
@@ -179,7 +179,7 @@ func TestTheIssueIsATabLikeAnyOther(t *testing.T) {
 		}
 		d.key(m.leader())
 		d.key("left")
-		if m.focusedPane() != m.primary() {
+		if m.focusedPane() != m.Primary() {
 			t.Fatalf("leader ← from the issue did not reach the terminal")
 		}
 		d.key(m.leader())
@@ -192,7 +192,7 @@ func TestTheIssueIsATabLikeAnyOther(t *testing.T) {
 		if issueTabOf(m) != nil {
 			t.Fatalf("leader %s left the issue tab open", paneEndKey)
 		}
-		if got := m.paneWidthOf(m.primary()); got != m.width {
+		if got := m.paneWidthOf(m.Primary()); got != m.width {
 			t.Errorf("the terminal is %d wide after the issue closed, want the window's %d", got, m.width)
 		}
 		d.key(m.leader())

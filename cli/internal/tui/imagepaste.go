@@ -83,14 +83,14 @@ func imageKey(msg tea.KeyPressMsg) bool {
 // boxSession reports whether a pane is typing at a session in a discobox: the
 // one kind of pane an image can be carried to.
 func boxSession(p *pane) bool {
-	return p.execID != "" && p.service == "" && p.issue == nil && p.sandbox.ID != ""
+	return p.ExecID != "" && p.Service == "" && p.issue == nil && p.sandbox.ID != ""
 }
 
 // harnessTerminal reports whether a pane is one of the discobox's harness
 // terminals, the panes the image keys are taken on.
 func (m *Model) harnessTerminal(p *pane) bool {
 	column, _ := m.paneColumn(p)
-	return column == &m.terminals && boxSession(p) && p.tool == ""
+	return column == &m.Terminals && boxSession(p) && p.Tool == ""
 }
 
 // imageInput takes a key or a paste that may mean an image, and holds the
@@ -261,7 +261,7 @@ func (m *Model) releaseImageInput(p *pane, first tea.Msg) tea.Cmd {
 	p.imageBusy = false
 	held := p.imageHeld
 	p.imageHeld = nil
-	if p.exited {
+	if p.Exited {
 		return nil
 	}
 	var cmds []tea.Cmd

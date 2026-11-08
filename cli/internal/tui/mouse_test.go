@@ -150,8 +150,8 @@ func TestADoublePressOnARowAttaches(t *testing.T) {
 	x, y := rowAt(t, m, boxes[0])
 	doublePress(t, m, x, y)
 
-	if m.paneBox.ID != boxes[0].ID {
-		t.Fatalf("the workspace opened on %q, want an attach to %s", m.paneBox.ID, boxes[0].ID)
+	if m.Box.ID != boxes[0].ID {
+		t.Fatalf("the workspace opened on %q, want an attach to %s", m.Box.ID, boxes[0].ID)
 	}
 }
 
@@ -168,8 +168,8 @@ func TestADoublePressActsOnTheRowUnderThePointer(t *testing.T) {
 	x, y := rowAt(t, m, boxes[1])
 	doublePress(t, m, x, y)
 
-	if m.paneBox.ID != boxes[1].ID {
-		t.Fatalf("the workspace opened on %q, want the row pressed (%s)", m.paneBox.ID, boxes[1].ID)
+	if m.Box.ID != boxes[1].ID {
+		t.Fatalf("the workspace opened on %q, want the row pressed (%s)", m.Box.ID, boxes[1].ID)
 	}
 }
 

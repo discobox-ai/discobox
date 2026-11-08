@@ -136,9 +136,9 @@ func TestClickingATabLabelSelectsIt(t *testing.T) {
 		for want := 1; want <= 2; want++ {
 			d.key("ctrl+a")
 			d.key("s")
-			d.wait("the tabs", func() bool { return m.shells.len() == want })
+			d.wait("the tabs", func() bool { return m.Shells.Len() == want })
 		}
-		d.wait("the second tab focused", func() bool { return m.onShells && m.shells.active == 1 })
+		d.wait("the second tab focused", func() bool { return m.onShells && m.Shells.Active == 1 })
 
 		// Drawing the strips is what records where the labels are: the primary
 		// wears one too now that there is more than one pane to number.
@@ -155,8 +155,8 @@ func TestClickingATabLabelSelectsIt(t *testing.T) {
 		span := spans[0]
 		x := (span.start + span.end) / 2
 		clickWindow(d, x, 1)
-		if !m.onShells || m.shells.active != 0 {
-			t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.shells.active)
+		if !m.onShells || m.Shells.Active != 0 {
+			t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.Shells.Active)
 		}
 	})
 }
@@ -170,7 +170,7 @@ func TestClickingABorderFocusesItsPane(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		d.wait("the tab focused", func() bool { return m.onShells })
 
 		// The terminal's title row, left of the split.
@@ -197,7 +197,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		d.wait("the tab focused", func() bool { return m.onShells })
 
 		// Drawing the boxes is what records where their buttons are.
@@ -209,7 +209,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 		if !m.maximized || m.onShells {
 			t.Fatalf("maximized=%v onShells=%v, want the terminal with the window", m.maximized, m.onShells)
 		}
-		if got := m.paneWidthOf(m.primary()); got != m.width {
+		if got := m.paneWidthOf(m.Primary()); got != m.width {
 			t.Fatalf("the terminal is %d cells wide, want the whole window (%d)", got, m.width)
 		}
 		if strings.Contains(frameText(m), "1 zsh") {
@@ -231,7 +231,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 		if !m.maximized || !m.onShells {
 			t.Fatalf("maximized=%v onShells=%v, want the tabs with the window", m.maximized, m.onShells)
 		}
-		if got := m.paneWidthOf(m.shells.panes[0]); got != m.width {
+		if got := m.paneWidthOf(m.Shells.Tabs[0]); got != m.width {
 			t.Fatalf("the tab is %d cells wide, want the whole window (%d)", got, m.width)
 		}
 	})
@@ -247,9 +247,9 @@ func TestAMaximizedShellBoxIsStillClickable(t *testing.T) {
 		for want := 1; want <= 2; want++ {
 			d.key("ctrl+a")
 			d.key("s")
-			d.wait("the tabs", func() bool { return m.shells.len() == want })
+			d.wait("the tabs", func() bool { return m.Shells.Len() == want })
 		}
-		d.wait("the second tab focused", func() bool { return m.onShells && m.shells.active == 1 })
+		d.wait("the second tab focused", func() bool { return m.onShells && m.Shells.Active == 1 })
 
 		m.toggleMaximized(true)
 		_ = rawFrame(m)
@@ -258,8 +258,8 @@ func TestAMaximizedShellBoxIsStillClickable(t *testing.T) {
 		}
 		span := m.tabSpans[0]
 		clickAt(d, (span.start+span.end)/2, 1)
-		if !m.onShells || m.shells.active != 0 {
-			t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.shells.active)
+		if !m.onShells || m.Shells.Active != 0 {
+			t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.Shells.Active)
 		}
 
 		// The grid moved with the box: a press past the old split lands in it.
@@ -287,9 +287,9 @@ func TestClickingTheEndButtonEndsThatPane(t *testing.T) {
 			d.key("ctrl+a")
 			d.key("s")
 		}
-		d.wait("the tabs", func() bool { return m.shells.len() == 2 })
-		m.shells.active = 0
-		ended, kept := m.shells.panes[0].execID, m.shells.panes[1].execID
+		d.wait("the tabs", func() bool { return m.Shells.Len() == 2 })
+		m.Shells.Active = 0
+		ended, kept := m.Shells.Tabs[0].ExecID, m.Shells.Tabs[1].ExecID
 
 		// Drawing the boxes is what records where their buttons are. The terminal
 		// box shows the primary, which wears no [x] at all.
@@ -305,8 +305,8 @@ func TestClickingTheEndButtonEndsThatPane(t *testing.T) {
 			t.Fatalf("ended = %v, want the visible shell %q", got, ended)
 		}
 		d.settle()
-		if m.shells.len() != 1 || m.shells.panes[0].execID != kept {
-			t.Fatalf("shells = %d, want only %q left", m.shells.len(), kept)
+		if m.Shells.Len() != 1 || m.Shells.Tabs[0].ExecID != kept {
+			t.Fatalf("shells = %d, want only %q left", m.Shells.Len(), kept)
 		}
 		// The press was the button's own: it must not also have started a
 		// drag-select of the border it sits on.

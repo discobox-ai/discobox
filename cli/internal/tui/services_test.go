@@ -42,20 +42,20 @@ func TestARunningServiceIsATabBeforeTheTerminals(t *testing.T) {
 		ds.services = []console.Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
-		if m.shells.len() != 0 {
-			t.Fatalf("shells = %d, want none: a service is not a shell", m.shells.len())
+		if m.Shells.Len() != 0 {
+			t.Fatalf("shells = %d, want none: a service is not a shell", m.Shells.Len())
 		}
-		if m.primary() == nil || m.terminals.panes[1] != m.primary() {
+		if m.Primary() == nil || m.Terminals.Tabs[1] != m.Primary() {
 			t.Fatal("the primary must stay the head of the terminals, behind the services")
 		}
-		p := m.terminals.panes[0]
-		if p.service != "discobox-api" {
-			t.Errorf("pane service = %q, want discobox-api", p.service)
+		p := m.Terminals.Tabs[0]
+		if p.Service != "discobox-api" {
+			t.Errorf("pane service = %q, want discobox-api", p.Service)
 		}
-		if p.action != console.InteractService {
-			t.Errorf("action = %q, want %q", p.action, console.InteractService)
+		if p.Action != console.InteractService {
+			t.Errorf("action = %q, want %q", p.Action, console.InteractService)
 		}
 		if got := p.name(); got != "Discobox API" {
 			t.Errorf("tab name = %q, want %q", got, "Discobox API")
@@ -80,14 +80,14 @@ func TestABrokenDeclarationGetsATabSayingWhy(t *testing.T) {
 			Problem:  "front matter: yaml: line 2: mapping values are not allowed in this context",
 		}}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
-		p := m.terminals.panes[0]
-		if p.service != "discobox-api" {
-			t.Fatalf("pane service = %q, want discobox-api", p.service)
+		p := m.Terminals.Tabs[0]
+		if p.Service != "discobox-api" {
+			t.Fatalf("pane service = %q, want discobox-api", p.Service)
 		}
-		if p.status != "cannot run" {
-			t.Errorf("pane status = %q, want %q", p.status, "cannot run")
+		if p.Status != "cannot run" {
+			t.Errorf("pane status = %q, want %q", p.Status, "cannot run")
 		}
 		// The tab is marked, so the strip says something is wrong without it
 		// having to be opened.
@@ -120,7 +120,7 @@ func TestAFailedServiceShowsItsLastOutput(t *testing.T) {
 		}}
 		ds.serviceLogs = map[string][]byte{"otel": []byte("docker: permission denied\n")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 		focusService(d, m)
 		d.wait("the card", func() bool { return strings.Contains(plainFrame(m), "permission denied") })
 
@@ -130,8 +130,8 @@ func TestAFailedServiceShowsItsLastOutput(t *testing.T) {
 				t.Errorf("the pane should say %q:\n%s", want, frame)
 			}
 		}
-		if p := m.terminals.panes[0]; p.status != "failed" {
-			t.Errorf("pane status = %q, want failed", p.status)
+		if p := m.Terminals.Tabs[0]; p.Status != "failed" {
+			t.Errorf("pane status = %q, want failed", p.Status)
 		}
 	})
 }
@@ -147,7 +147,7 @@ func TestARunningServicePaneOpensOnItsHistory(t *testing.T) {
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		ds.serviceLogs = map[string][]byte{"otel": []byte("Dashboard is running\r\n")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 		focusService(d, m)
 		d.wait("the history", func() bool { return strings.Contains(plainFrame(m), "Dashboard is running") })
 
@@ -188,11 +188,11 @@ func TestAServiceDoesNotTakeTheFocus(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 		d.settle()
 
-		if m.terminals.visible() != m.primary() {
-			t.Fatalf("active = %d, want the primary", m.terminals.active)
+		if m.Terminals.Visible() != m.Primary() {
+			t.Fatalf("active = %d, want the primary", m.Terminals.Active)
 		}
 		if m.onShells {
 			t.Fatal("the keys must stay in the terminals column")
@@ -218,17 +218,17 @@ func TestThePrimaryTakesTheFocusWhenItArrivesAfterAService(t *testing.T) {
 			service: runningService("otel", "OTEL", "exec_svc1"),
 			term:    newFakeTerminal(),
 		})
-		if m.terminals.len() != 1 {
-			t.Fatalf("terminals = %d, want the service", m.terminals.len())
+		if m.Terminals.Len() != 1 {
+			t.Fatalf("terminals = %d, want the service", m.Terminals.Len())
 		}
 		d.dispatch(workspaceTermMsg{gen: gen, exec: console.Exec{ID: console.ExecPrimary, Primary: true}, term: newFakeTerminal()})
 
-		if m.terminals.len() != 2 {
-			t.Fatalf("terminals = %d, want both", m.terminals.len())
+		if m.Terminals.Len() != 2 {
+			t.Fatalf("terminals = %d, want both", m.Terminals.Len())
 		}
-		if m.primary() == nil || m.terminals.visible() != m.primary() {
+		if m.Primary() == nil || m.Terminals.Visible() != m.Primary() {
 			t.Fatalf("active = %d (%q), want the primary",
-				m.terminals.active, m.terminals.panes[m.terminals.active].execID)
+				m.Terminals.Active, m.Terminals.Tabs[m.Terminals.Active].ExecID)
 		}
 	})
 }
@@ -268,18 +268,18 @@ func TestAnArrivingServiceLeavesTheWorkingPaneAlone(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key(paneTerminalKey)
-		d.wait("the terminal", func() bool { return m.terminals.len() == 2 })
-		if m.terminals.active != 1 {
-			t.Fatalf("active = %d, want the terminal just opened", m.terminals.active)
+		d.wait("the terminal", func() bool { return m.Terminals.Len() == 2 })
+		if m.Terminals.Active != 1 {
+			t.Fatalf("active = %d, want the terminal just opened", m.Terminals.Active)
 		}
-		working := m.terminals.panes[1]
+		working := m.Terminals.Tabs[1]
 
 		ds.setServices([]console.Service{{ID: "otel", Name: "OTEL", Status: "failed"}})
-		d.wait("the service tab", func() bool { return m.terminals.len() == 3 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 3 })
 
-		if m.terminals.visible() != working {
+		if m.Terminals.Visible() != working {
 			t.Fatalf("the keys moved to %q; they belong to the pane being worked in",
-				m.terminals.panes[m.terminals.active].execID)
+				m.Terminals.Tabs[m.Terminals.Active].ExecID)
 		}
 	})
 }
@@ -298,7 +298,7 @@ func TestStopAndStartOnAServicePaneActOnTheService(t *testing.T) {
 				ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 				ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 				d, m, _ := openWorkspace(t, ds, "enter")
-				d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+				d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 				focusService(d, m)
 
 				d.key("ctrl+a")
@@ -326,7 +326,7 @@ func TestStopOnATerminalPaneStillActsOnTheDiscobox(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		// The primary has the keys, as it does by default.
 		d.key("ctrl+a")
@@ -351,7 +351,7 @@ func TestAnUnrelatedVerbOnAServicePaneActsOnTheDiscobox(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 		focusService(d, m)
 
 		d.key("ctrl+a")
@@ -373,7 +373,7 @@ func TestTheHintsLineOnAServiceOffersItsVerbs(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		// On the primary it is the discobox's line, opening on its actions.
 		if got := hintLine(m.hints()); !strings.HasPrefix(got, m.leader()+" "+boxMenuKey+" actions") {
@@ -405,11 +405,11 @@ func TestAServiceTabMarksOutputYouHaveNotSeen(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		// The primary has the screen, so the service is the one not being read.
 		ds.execTerm("exec_svc1").send("a request arrived\r\n")
-		d.wait("the mark", func() bool { return m.terminals.panes[0].unread })
+		d.wait("the mark", func() bool { return m.Terminals.Tabs[0].Unread })
 
 		if !strings.Contains(plainFrame(m), "•") {
 			t.Fatalf("the strip should mark the service:\n%s", plainFrame(m))
@@ -417,7 +417,7 @@ func TestAServiceTabMarksOutputYouHaveNotSeen(t *testing.T) {
 
 		// Looking at it is what clears the mark.
 		focusService(d, m)
-		d.wait("the mark to clear", func() bool { return !m.terminals.panes[0].unread })
+		d.wait("the mark to clear", func() bool { return !m.Terminals.Tabs[0].Unread })
 		if strings.Contains(plainFrame(m), "•") {
 			t.Fatalf("the mark outlived being read:\n%s", plainFrame(m))
 		}
@@ -433,13 +433,13 @@ func TestOutputOnAVisibleServiceIsNotMarked(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 		focusService(d, m)
 
 		ds.execTerm("exec_svc1").send("a request arrived\r\n")
 		d.wait("the output", func() bool { return strings.Contains(plainFrame(m), "a request arrived") })
 
-		if m.terminals.panes[0].unread {
+		if m.Terminals.Tabs[0].Unread {
 			t.Fatal("output on the pane being read was marked unread")
 		}
 	})
@@ -454,7 +454,7 @@ func TestAShellIsNotMarked(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
 		// Back to the primary, so the shell is the one not being read.
 		d.key("ctrl+a")
 		d.key(paneLeftKey)
@@ -463,7 +463,7 @@ func TestAShellIsNotMarked(t *testing.T) {
 		ds.execTerm("exec_shell1").send("building…\r\n")
 		d.settle()
 
-		if m.shells.panes[0].unread {
+		if m.Shells.Tabs[0].Unread {
 			t.Fatal("a shell was marked unread")
 		}
 	})
@@ -479,11 +479,11 @@ func TestAStoppedServiceHasNoTab(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.settle()
 
-		if m.terminals.len() != 1 {
-			t.Fatalf("terminals = %d, want just the primary", m.terminals.len())
+		if m.Terminals.Len() != 1 {
+			t.Fatalf("terminals = %d, want just the primary", m.Terminals.Len())
 		}
-		if m.shells.len() != 0 {
-			t.Fatalf("shells = %d, want none", m.shells.len())
+		if m.Shells.Len() != 0 {
+			t.Fatalf("shells = %d, want none", m.Shells.Len())
 		}
 	})
 }
@@ -498,13 +498,13 @@ func TestAServicePaneFollowsItsService(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		ds.setServices([]console.Service{{ID: "otel", Name: "OTEL", Status: "stopped"}})
-		d.wait("the tab to go", func() bool { return m.terminals.len() == 1 })
+		d.wait("the tab to go", func() bool { return m.Terminals.Len() == 1 })
 
 		ds.setServices([]console.Service{runningService("otel", "OTEL", "exec_svc2")})
-		d.wait("the tab to come back", func() bool { return m.terminals.len() == 2 })
+		d.wait("the tab to come back", func() bool { return m.Terminals.Len() == 2 })
 	})
 }
 
@@ -518,14 +518,14 @@ func TestARestartedServiceReopensItsPane(t *testing.T) {
 		ds.services = []console.Service{first}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
-		before := m.terminals.panes[0].id
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
+		before := m.Terminals.Tabs[0].id
 
 		restarted := first
 		restarted.StartedAt = first.StartedAt.Add(time.Minute)
 		ds.setServices([]console.Service{restarted})
 		d.wait("the pane to be reopened", func() bool {
-			return m.terminals.len() == 2 && m.terminals.panes[0].id != before
+			return m.Terminals.Len() == 2 && m.Terminals.Tabs[0].id != before
 		})
 	})
 }
@@ -537,10 +537,10 @@ func TestADeletedDeclarationLosesItsTab(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.services = []console.Service{{ID: "otel", Name: "OTEL", Status: "failed"}}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		ds.setServices(nil)
-		d.wait("the tab to go", func() bool { return m.terminals.len() == 1 })
+		d.wait("the tab to go", func() bool { return m.Terminals.Len() == 1 })
 	})
 }
 
@@ -567,18 +567,18 @@ func TestServicesSortBeforeTerminalsInDeclarationOrder(t *testing.T) {
 			},
 		}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("every session", func() bool { return m.terminals.len() == 4 })
+		d.wait("every session", func() bool { return m.Terminals.Len() == 4 })
 
 		var got []string
-		for _, p := range m.terminals.panes {
-			got = append(got, p.execID)
+		for _, p := range m.Terminals.Tabs {
+			got = append(got, p.ExecID)
 		}
-		want := []string{servicePaneID("otel"), servicePaneID("api"), console.ExecPrimary, "exec_term1"}
+		want := []string{console.ServiceTabID("otel"), console.ServiceTabID("api"), console.ExecPrimary, "exec_term1"}
 		if !slices.Equal(got, want) {
 			t.Fatalf("left column = %v, want %v", got, want)
 		}
-		if m.shells.len() != 0 {
-			t.Fatalf("shells = %d, want none", m.shells.len())
+		if m.Shells.Len() != 0 {
+			t.Fatalf("shells = %d, want none", m.Shells.Len())
 		}
 	})
 }
@@ -592,7 +592,7 @@ func TestServicesDoNotSplitTheWindow(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		if m.split() {
 			t.Fatal("a service must not split the window; it is a tab in the box the primary already has")
@@ -612,11 +612,11 @@ func TestAServicePaneIsReadOnly(t *testing.T) {
 		ds.services = []console.Service{runningService("otel", "OTEL", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		d.key("ctrl+a")
 		d.key(paneRightKey)
-		d.wait("focus on the service", func() bool { return m.terminals.active == 1 })
+		d.wait("focus on the service", func() bool { return m.Terminals.Active == 1 })
 		d.key("h")
 		d.key("i")
 
@@ -645,8 +645,8 @@ func TestANonTTYExecThatIsNotAServiceIsNotATab(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.settle()
 
-		if m.shells.len() != 0 || m.terminals.len() != 1 {
-			t.Fatalf("terminals = %d shells = %d, want just the primary", m.terminals.len(), m.shells.len())
+		if m.Shells.Len() != 0 || m.Terminals.Len() != 1 {
+			t.Fatalf("terminals = %d shells = %d, want just the primary", m.Terminals.Len(), m.Shells.Len())
 		}
 	})
 }
@@ -790,7 +790,7 @@ func paneWhich(p *pane) string {
 	if p == nil {
 		return "no pane"
 	}
-	return p.execID
+	return p.ExecID
 }
 
 // focusService moves the keys onto the service tab beside the primary, which
@@ -800,8 +800,8 @@ func focusService(d *driver, m *Model) {
 	d.key(paneServicesKey)
 	d.key("1")
 	d.wait("focus on the service", func() bool {
-		p := m.column().visible()
-		return p != nil && p.service != ""
+		p := m.column().Visible()
+		return p != nil && p.Service != ""
 	})
 }
 
@@ -820,19 +820,19 @@ func TestTheSChordJumpsToAServiceByItsNumber(t *testing.T) {
 			serviceExecRecord("exec_otel", "otel", "OTEL"),
 		}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("both service tabs", func() bool { return m.terminals.len() == 3 })
+		d.wait("both service tabs", func() bool { return m.Terminals.Len() == 3 })
 
 		d.key("ctrl+a")
 		d.key(paneServicesKey)
 		d.key("2")
-		if got := m.column().visible(); got == nil || got.service != "otel" {
+		if got := m.column().Visible(); got == nil || got.Service != "otel" {
 			t.Fatalf("S2 landed on %s, want otel", paneWhich(got))
 		}
 
 		d.key("ctrl+a")
 		d.key(paneServicesKey)
 		d.key("1")
-		if got := m.column().visible(); got == nil || got.service != "api" {
+		if got := m.column().Visible(); got == nil || got.Service != "api" {
 			t.Fatalf("S1 landed on %s, want api", paneWhich(got))
 		}
 	})
@@ -846,7 +846,7 @@ func TestAnUnknownServiceNumberIsReported(t *testing.T) {
 		ds.services = []console.Service{runningService("api", "API", "exec_api")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_api", "api", "API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		d.key("ctrl+a")
 		d.key(paneServicesKey)
@@ -867,10 +867,10 @@ func TestServiceTabsWearSNumbersAndLeaveTheDigitsAlone(t *testing.T) {
 		ds.services = []console.Service{runningService("api", "API", "exec_api")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_api", "api", "API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
 
 		frame := plainFrame(m)
 		for _, want := range []string{"[ S1 API ]", "[ 0 reaper ]", "[ 1 zsh ]"} {
@@ -890,15 +890,15 @@ func TestAServiceStartingDoesNotRenumberAShell(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
-		shell := m.shells.panes[0]
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
+		shell := m.Shells.Tabs[0]
 
 		ds.setServices([]console.Service{runningService("api", "API", "exec_api")})
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		d.key("ctrl+a")
 		d.key("1")
-		if got := m.column().visible(); got != shell {
+		if got := m.column().Visible(); got != shell {
 			t.Fatalf("1 landed on %s, want the shell it landed on before the service started", paneWhich(got))
 		}
 	})
@@ -913,19 +913,19 @@ func TestLeaderAGoesBackToThePrimaryPastTheServices(t *testing.T) {
 		ds.services = []console.Service{runningService("api", "API", "exec_api")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_api", "api", "API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 		focusService(d, m)
 
 		d.key("ctrl+a")
 		d.key("a")
-		if got := m.column().visible(); got != m.primary() {
+		if got := m.column().Visible(); got != m.Primary() {
 			t.Fatalf("a landed on %s, want the primary", paneWhich(got))
 		}
 
 		focusService(d, m)
 		d.key("ctrl+a")
 		d.key("0")
-		if got := m.column().visible(); got != m.primary() {
+		if got := m.column().Visible(); got != m.Primary() {
 			t.Fatalf("0 landed on %s, want the primary", paneWhich(got))
 		}
 	})

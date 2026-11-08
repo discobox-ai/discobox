@@ -58,9 +58,9 @@ func workspaceWithHarnessChanges(t *testing.T) (*Model, *fakeSource) {
 	m := newTestModel(t, ds)
 	boxes[0].HarnessID, boxes[0].HarnessName = "harness_claude", "Claude Code"
 	boxes[0].HarnessConfigPending, boxes[0].HarnessConfigCandidate = true, "cand_1"
-	m.paneBox = boxes[0]
+	m.Box = boxes[0]
 	m.list.setAll(boxes)
-	m.toolShown = &pane{tool: "diff"}
+	m.toolShown = &pane{Tool: "diff"}
 	return m, ds
 }
 
@@ -99,7 +99,7 @@ func TestAHarnessChangeQueuesBehindARequest(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithHarnessChanges(t)
 	req := waitingRequest()
-	req.SandboxID = m.paneBox.ID
+	req.SandboxID = m.Box.ID
 	m.setCredentialRequests([]console.CredentialRequest{req})
 	if got := m.bannerShowing(); got != bannerCredential {
 		t.Fatalf("banner = %v, want the request over the harness change", got)
@@ -119,7 +119,7 @@ func TestADismissedRequestBandReturnsForANewRequest(t *testing.T) {
 	first, second := waitingRequest(), waitingRequest()
 	first.ID, second.ID = "req_1", "req_2"
 	for _, req := range []*console.CredentialRequest{&first, &second} {
-		req.SandboxID = m.paneBox.ID
+		req.SandboxID = m.Box.ID
 	}
 	m.setCredentialRequests([]console.CredentialRequest{first, second})
 	m.dismissBanner()
@@ -148,7 +148,7 @@ func TestADismissalIsForOneDiscobox(t *testing.T) {
 	m.list.setAll(boxes)
 	m.dismissBanner()
 
-	m.paneBox = boxes[1]
+	m.Box = boxes[1]
 	if got := m.bannerShowing(); got != bannerHarnessChanges {
 		t.Fatalf("banner = %v, want the other box's band still up", got)
 	}
@@ -255,7 +255,7 @@ func TestASecondRefusalShowsPastADismissedFirst(t *testing.T) {
 func TestTheRefusalIsChosenAndDrawnFromTheSameRow(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
-	m.paneBox.HarnessID = ""
+	m.Box.HarnessID = ""
 
 	if got := m.bannerShowing(); got != bannerRejected {
 		t.Fatalf("banner = %v, want the refusal the listing's row is affected by", got)

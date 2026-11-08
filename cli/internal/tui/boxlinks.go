@@ -110,7 +110,7 @@ func (m *Model) pressBoxLink(p *pane, uri string, x, y int) tea.Cmd {
 	if address.Local() {
 		return m.focusAddressed(m.paneServer(p), address.Sandbox, uri)
 	}
-	ctx, ds, from := m.ctx, m.ds, m.boxRef(m.paneBox)
+	ctx, ds, from := m.ctx, m.ds, m.boxRef(m.Box)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(ctx, addressedServerTimeout)
 		defer cancel()
@@ -123,7 +123,7 @@ func (m *Model) pressBoxLink(p *pane, uri string, x, y int) tea.Cmd {
 func (m *Model) boxLinkServer(msg boxLinkServerMsg) tea.Cmd {
 	// An answer that took its time is for the screen it was asked from: a
 	// person who has moved to another box since is not sent back.
-	if m.boxRef(m.paneBox) != msg.from {
+	if m.boxRef(m.Box) != msg.from {
 		return nil
 	}
 	switch {
@@ -178,7 +178,7 @@ func (m *Model) focusAddressed(server, ref, uri string) tea.Cmd {
 		// A window that is one command's own shows its one box and never
 		// the list (REVIEW.md), so it switches to no other: it says which
 		// box the link is, and how to open it.
-		if m.boxRef(found[0]) == m.boxRef(m.paneBox) {
+		if m.boxRef(found[0]) == m.boxRef(m.Box) {
 			return nil
 		}
 		return say("%q is %s on %s — this window is one command's; `discobox attach %q` opens it", uri, sandboxLabel(found[0]), on, found[0].ID)

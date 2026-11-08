@@ -211,7 +211,7 @@ func mergeBandKeyFits(width int) bool {
 // pushedNotice says the branch was pushed to since the tab last showed the
 // person its head: what was read before then is not what would be merged.
 func pushedNotice(was, now string) string {
-	return "commits were pushed since " + shortCommit(was) + " was read here: the head is now " + shortCommit(now)
+	return "commits were pushed since " + console.ShortCommit(was) + " was read here: the head is now " + console.ShortCommit(now)
 }
 
 // pullSettle reads a pull request again soon when GitHub had yet to say
@@ -292,7 +292,7 @@ func (m *Model) askMerge(p *pane) tea.Cmd {
 	// The commit that will be merged is named: the tab reads itself again on
 	// its own clock, so the head here may be newer than the diff that was read.
 	sha := pull.HeadSHA
-	body += "\n\nat " + shortCommit(sha)
+	body += "\n\nat " + console.ShortCommit(sha)
 	if v.pushed != "" {
 		body += " — " + pushedNotice(v.pushed, sha)
 	}

@@ -1069,7 +1069,7 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 // middle of it throbs, and why it is the only thing in the window that moves
 // without something having happened. See banner.go for the bar and its beat.
 func (m *Model) viewCredentialBanner(width int) string {
-	pending := m.pendingFor(m.paneBox)
+	pending := m.pendingFor(m.Box)
 	if len(pending) == 0 {
 		return ""
 	}

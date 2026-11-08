@@ -81,9 +81,9 @@ func TestTheWorkspacesBoxSpeaksFromItsStream(t *testing.T) {
 	m := statusModel(t)
 	m.statusTerminal = statusSpoken
 	box := m.list.All()[1] // working-box, polled working
-	p := &pane{id: 1, primary: true, sandbox: box}
-	m.paneBox = box
-	m.terminals.panes = append(m.terminals.panes, p)
+	p := &pane{id: 1, Primary: true, sandbox: box}
+	m.Box = box
+	m.Terminals.Tabs = append(m.Terminals.Tabs, p)
 
 	rec, ok := m.focusedProgramStatus()
 	if !ok || rec.State != programstatus.Working {

@@ -93,7 +93,7 @@ func TestTheRequestsCallThrobs(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithRequest(t)
 	m.st = newStyles(true)
-	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
+	m.Box = console.Sandbox{ID: "sbx_one", Name: "one"}
 
 	beats := make([]string, len(bannerPulseHues))
 	for beat := range bannerPulseHues {
@@ -125,10 +125,10 @@ func TestTheThrobsClockRunsOnlyWhileTheBandIsUp(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithRequest(t)
 	m.st = newStyles(true)
-	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
+	m.Box = console.Sandbox{ID: "sbx_one", Name: "one"}
 	// A tool window is a workspace as far as the band is concerned: the bar is
 	// drawn over whatever the screen is showing.
-	m.toolShown = &pane{tool: "diff"}
+	m.toolShown = &pane{Tool: "diff"}
 
 	if cmd := m.armBannerPulse(); cmd == nil || !m.pulsing {
 		t.Fatal("no clock started behind the request's band")

@@ -216,7 +216,7 @@ func TestResizingAcrossTheThresholdShowsAndHidesTheTree(t *testing.T) {
 		if !m.treeShown() || m.width != treeMinScreen-treeWidth {
 			t.Fatalf("at %d columns: tree %v, window %d; want the tree and the rest", treeMinScreen, m.treeShown(), m.width)
 		}
-		cols, rows := m.paneCells(m.paneWidthOf(m.primary()))
+		cols, rows := m.paneCells(m.paneWidthOf(m.Primary()))
 		d.wait("the primary resized beside the tree", func() bool { return term.size() == [2]int{cols, rows} })
 
 		d.dispatch(sizeMsg(treeMinScreen-1, 40))
@@ -234,13 +234,13 @@ func TestTheLeaderSwitchesBoxesAndParksTheOneLeft(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openWorkspace(t, ds, "enter")
-		first := m.primary()
+		first := m.Primary()
 		if got := primaryOpens(ds, "sbx_one"); got != 1 {
 			t.Fatalf("sbx_one's primary attached %d times, want once", got)
 		}
 
 		d.leader("down")
-		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the second box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		if m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil {
 			t.Fatal("the box switched away from should be parked")
 		}
@@ -261,8 +261,8 @@ func TestTheLeaderSwitchesBoxesAndParksTheOneLeft(t *testing.T) {
 
 		// Up brings the parked workspace back.
 		d.leader("up")
-		d.wait("the first box", func() bool { return m.paneBox.ID == "sbx_one" && m.primary() != nil })
-		if m.primary() != first {
+		d.wait("the first box", func() bool { return m.Box.ID == "sbx_one" && m.Primary() != nil })
+		if m.Primary() != first {
 			t.Fatal("switching back should bring the parked primary back, not a new one")
 		}
 		if m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] != nil || m.parked[console.BoxRef{Server: "", ID: "sbx_two"}] == nil {
@@ -274,8 +274,8 @@ func TestTheLeaderSwitchesBoxesAndParksTheOneLeft(t *testing.T) {
 		}
 		// The ends stop rather than wrap.
 		d.leader("up")
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("↑ off the top switched to %s", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("↑ off the top switched to %s", m.Box.ID)
 		}
 	})
 }
@@ -308,7 +308,7 @@ func TestArchivingBesideTheTreeGoesOnToTheNextBox(t *testing.T) {
 		}
 
 		close(ds.doGate)
-		d.wait("the next box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the next box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		if got := ds.verbs(); len(got) != 1 || got[0] != "archive sbx_one" {
 			t.Fatalf("did = %v, want the box on screen archived", got)
 		}
@@ -371,16 +371,16 @@ func TestArchivingTheLastRowGoesBackToAParkedBox(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
-		first := m.primary()
+		first := m.Primary()
 		d.leader("down")
-		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the second box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		if rows := m.list.Rows(); rows[len(rows)-1].ID != "sbx_two" {
 			t.Fatalf("the tree's last row is %s, want sbx_two", rows[len(rows)-1].ID)
 		}
 
 		d.leader("x")
-		d.wait("the box before", func() bool { return m.paneBox.ID == "sbx_one" && m.primary() != nil && m.busy == "" })
-		if m.primary() != first {
+		d.wait("the box before", func() bool { return m.Box.ID == "sbx_one" && m.Primary() != nil && m.busy == "" })
+		if m.Primary() != first {
 			t.Fatal("the parked box should come back as it was, not be attached again")
 		}
 		if got := primaryOpens(ds, "sbx_one"); got != 1 {
@@ -417,7 +417,7 @@ func TestArchivingBesideTheTreePointsAtAStoppedNextBox(t *testing.T) {
 			t.Fatalf("workspace %v, tree %v, list front %v; want the home screen", m.hasWorkspace(), m.treeShown(), m.listFront)
 		}
 		d.key("enter")
-		d.wait("the stopped box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the stopped box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 	})
 }
 
@@ -477,8 +477,8 @@ func TestTheLeaderStopsOnAStoppedBoxUntilEnter(t *testing.T) {
 
 		d.leader("down")
 		d.settle()
-		if m.paneBox.ID != "sbx_one" || m.primary() == nil || len(m.parked) != 0 {
-			t.Fatalf("box %s, parked %d; want sbx_one left on screen", m.paneBox.ID, len(m.parked))
+		if m.Box.ID != "sbx_one" || m.Primary() == nil || len(m.parked) != 0 {
+			t.Fatalf("box %s, parked %d; want sbx_one left on screen", m.Box.ID, len(m.parked))
 		}
 		if got := m.list.current(); !m.listFront || got == nil || got.ID != "sbx_two" {
 			t.Fatalf("list front %v, cursor %v; want the tree's cursor on the stopped box", m.listFront, got)
@@ -492,13 +492,13 @@ func TestTheLeaderStopsOnAStoppedBoxUntilEnter(t *testing.T) {
 
 		d.leader("up")
 		d.settle()
-		if m.listFront || m.focus != focusPane || m.paneBox.ID != "sbx_one" {
-			t.Fatalf("list front %v, focus %v, box %s; want back in sbx_one's panes", m.listFront, m.focus, m.paneBox.ID)
+		if m.listFront || m.focus != focusPane || m.Box.ID != "sbx_one" {
+			t.Fatalf("list front %v, focus %v, box %s; want back in sbx_one's panes", m.listFront, m.focus, m.Box.ID)
 		}
 
 		d.leader("down")
 		d.key("enter")
-		d.wait("the stopped box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the stopped box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		if got := primaryOpens(ds, "sbx_two"); got != 1 {
 			t.Fatalf("sbx_two's primary attached %d times, want once on Enter", got)
 		}
@@ -521,26 +521,26 @@ func TestCtrlShiftWalksTheTreeWithoutTheLeader(t *testing.T) {
 
 		d.dispatch(down)
 		d.settle()
-		if got := m.list.current(); m.paneBox.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
-			t.Fatalf("box %s, list front %v, cursor %v; want the walk stopped on the stopped sbx_two", m.paneBox.ID, m.listFront, got)
+		if got := m.list.current(); m.Box.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
+			t.Fatalf("box %s, list front %v, cursor %v; want the walk stopped on the stopped sbx_two", m.Box.ID, m.listFront, got)
 		}
 		d.dispatch(down)
-		d.wait("the box past it", func() bool { return m.paneBox.ID == "sbx_three" && m.primary() != nil })
+		d.wait("the box past it", func() bool { return m.Box.ID == "sbx_three" && m.Primary() != nil })
 		if got := primaryOpens(ds, "sbx_two"); got != 0 {
 			t.Fatalf("sbx_two's primary attached %d times, want the walk to start nothing", got)
 		}
 		d.dispatch(up)
 		d.settle()
 		d.dispatch(up)
-		d.wait("the first box", func() bool { return m.paneBox.ID == "sbx_one" && m.focus == focusPane })
+		d.wait("the first box", func() bool { return m.Box.ID == "sbx_one" && m.focus == focusPane })
 		if got := term.inputSoFar(); strings.ContainsAny(got, "jkJK\n") {
 			t.Fatalf("the program received %q; the chords are the window's", got)
 		}
 
 		d.dispatch(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl})
 		d.wait("ctrl+j at the program", func() bool { return strings.Contains(term.inputSoFar(), "\n") })
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("ctrl+j switched to %s; it is the program's", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("ctrl+j switched to %s; it is the program's", m.Box.ID)
 		}
 	})
 }
@@ -580,16 +580,16 @@ func TestTheLeaderWalksThroughNestedBoxes(t *testing.T) {
 		walk := []string{"sbx_kid", "sbx_grand", "sbx_two"}
 		for _, id := range walk {
 			d.leader("down")
-			d.wait(id, func() bool { return m.paneBox.ID == id && m.primary() != nil })
+			d.wait(id, func() bool { return m.Box.ID == id && m.Primary() != nil })
 		}
 		d.leader("down")
 		d.settle()
-		if m.paneBox.ID != "sbx_two" {
-			t.Fatalf("↓ off the bottom switched to %s", m.paneBox.ID)
+		if m.Box.ID != "sbx_two" {
+			t.Fatalf("↓ off the bottom switched to %s", m.Box.ID)
 		}
 		for _, id := range []string{"sbx_grand", "sbx_kid", "sbx_one"} {
 			d.leader("up")
-			d.wait(id, func() bool { return m.paneBox.ID == id && m.primary() != nil })
+			d.wait(id, func() bool { return m.Box.ID == id && m.Primary() != nil })
 		}
 	})
 }
@@ -607,8 +607,8 @@ func TestTheLeaderStopsOnAnErroredBox(t *testing.T) {
 
 		d.leader("down")
 		d.settle()
-		if got := m.list.current(); m.paneBox.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
-			t.Fatalf("box %s, list front %v, cursor %v; want the walk stopped on the errored sbx_two", m.paneBox.ID, m.listFront, got)
+		if got := m.list.current(); m.Box.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
+			t.Fatalf("box %s, list front %v, cursor %v; want the walk stopped on the errored sbx_two", m.Box.ID, m.listFront, got)
 		}
 		if got := primaryOpens(ds, "sbx_two"); got != 0 {
 			t.Fatalf("sbx_two's primary attached %d times, want the walk to attach nothing", got)
@@ -638,8 +638,8 @@ func TestAWalkStoppedOnARowLeavesNoLeaderArmed(t *testing.T) {
 		}
 		d.key("ctrl+j")
 		d.wait("ctrl+j at the program", func() bool { return strings.Contains(term.inputSoFar(), "\n") })
-		if m.listFront || m.paneBox.ID != "sbx_one" {
-			t.Fatalf("list front %v, box %s; ctrl+j walked again", m.listFront, m.paneBox.ID)
+		if m.listFront || m.Box.ID != "sbx_one" {
+			t.Fatalf("list front %v, box %s; ctrl+j walked again", m.listFront, m.Box.ID)
 		}
 	})
 }
@@ -651,13 +651,13 @@ func TestTheChordReachesTheProgramWithNoTree(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openAttached(t, ds, testSandboxes()[0])
-		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
 		term := ds.execTerm(console.ExecPrimary)
 		before := term.inputSoFar()
 		d.dispatch(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift})
 		d.wait("the chord at the program", func() bool { return len(term.inputSoFar()) > len(before) })
-		if m.paneBox.ID != "sbx_one" || len(m.parked) != 0 {
-			t.Fatalf("box %s, parked %d; want nothing switched", m.paneBox.ID, len(m.parked))
+		if m.Box.ID != "sbx_one" || len(m.parked) != 0 {
+			t.Fatalf("box %s, parked %d; want nothing switched", m.Box.ID, len(m.parked))
 		}
 	})
 }
@@ -676,8 +676,8 @@ func TestTheChordDoesNotWalkOutOfTheNewCard(t *testing.T) {
 		}
 		d.dispatch(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift})
 		d.settle()
-		if !m.newOpen || m.focus != focusPrompt || m.paneBox.ID != "sbx_one" || len(m.parked) != 0 {
-			t.Fatalf("new open %v, focus %v, box %s; want the card left as it was", m.newOpen, m.focus, m.paneBox.ID)
+		if !m.newOpen || m.focus != focusPrompt || m.Box.ID != "sbx_one" || len(m.parked) != 0 {
+			t.Fatalf("new open %v, focus %v, box %s; want the card left as it was", m.newOpen, m.focus, m.Box.ID)
 		}
 	})
 }
@@ -696,15 +696,15 @@ func TestAClickOnAStoppedRowPointsAndADoubleClickStartsIt(t *testing.T) {
 		x, y := at(t, m, "exec/terminal cons")
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		d.settle()
-		if got := m.list.current(); m.paneBox.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
-			t.Fatalf("box %s, list front %v, cursor %v; want the click to point at the stopped sbx_two", m.paneBox.ID, m.listFront, got)
+		if got := m.list.current(); m.Box.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
+			t.Fatalf("box %s, list front %v, cursor %v; want the click to point at the stopped sbx_two", m.Box.ID, m.listFront, got)
 		}
 		if got := primaryOpens(ds, "sbx_two"); got != 0 {
 			t.Fatalf("sbx_two's primary attached %d times, want a single click to start nothing", got)
 		}
 
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-		d.wait("the stopped box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the stopped box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		if m.listFront || m.focus != focusPane {
 			t.Fatalf("list front %v, focus %v; want the started box's panes to have the keys", m.listFront, m.focus)
 		}
@@ -724,7 +724,7 @@ func TestADoubleClickOnALiveRowLeavesItsPanesTheKeys(t *testing.T) {
 		x, y := at(t, m, "exec/terminal cons")
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the second box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		d.settle()
 		if m.listFront || m.focus != focusPane {
 			t.Fatalf("list front %v, focus %v; want sbx_two's panes to have the keys", m.listFront, m.focus)
@@ -742,10 +742,10 @@ func TestAParkedWorkspaceKeepsItsOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openWorkspace(t, ds, "enter")
-		first := m.primary()
+		first := m.Primary()
 
 		d.leader("j")
-		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the second box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		term.send("said while parked")
 		d.wait("the parked pane to take it", func() bool {
 			return strings.Contains(strings.Join(first.term.View(), "\n"), "said while parked")
@@ -755,7 +755,7 @@ func TestAParkedWorkspaceKeepsItsOutput(t *testing.T) {
 		}
 
 		d.leader("up")
-		d.wait("the first box", func() bool { return m.paneBox.ID == "sbx_one" })
+		d.wait("the first box", func() bool { return m.Box.ID == "sbx_one" })
 		if !strings.Contains(plainFrame(m), "said while parked") {
 			t.Fatalf("the output should be there on the way back:\n%s", plainFrame(m))
 		}
@@ -775,12 +775,12 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 		ds.pushes = []console.SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Pushed: true}}
 		d, m, term := openWorkspace(t, ds, "enter")
 		d.wait("the first look", func() bool { return len(ds.pushedCalls()) > 0 })
-		gen := m.pushGen
+		gen := m.PushGen
 
 		d.leader("down")
-		d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the second box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 		ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]
-		if ws == nil || ws.pushGen != gen {
+		if ws == nil || ws.PushGen != gen {
 			t.Fatalf("parked = %v, want sbx_one parked under generation %d", ws, gen)
 		}
 		return d, m, ds, term, gen
@@ -814,7 +814,7 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 			before := len(ds.pushedCalls())
 			d.leader("up")
 			d.wait("the first box", func() bool {
-				return m.paneBox.ID == "sbx_one" && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil
+				return m.Box.ID == "sbx_one" && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil
 			})
 			d.settle()
 			// Back on screen it is the loop it already had: showing it starts no
@@ -822,8 +822,8 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 			if after := len(ds.pushedCalls()); after != before {
 				t.Fatalf("looks = %d, want none started by showing the box again (%d)", after, before)
 			}
-			if m.pushGen != gen {
-				t.Fatalf("pushGen = %d, want the loop it was opened with (%d)", m.pushGen, gen)
+			if m.PushGen != gen {
+				t.Fatalf("pushGen = %d, want the loop it was opened with (%d)", m.PushGen, gen)
 			}
 			d.dispatch(autoPushTickMsg{box: console.BoxRef{Server: "", ID: "sbx_one"}, gen: gen})
 			d.wait("the same loop's next look", func() bool { return len(ds.pushedCalls()) > before })
@@ -847,7 +847,7 @@ func TestAParkedWorkspaceKeepsPushing(t *testing.T) {
 			if after := len(ds.pushedCalls()); after != before {
 				t.Fatalf("looks = %d, want the loop to have ended with the parked workspace (%d)", after, before)
 			}
-			if m.paneBox.ID != "sbx_two" || m.primary() == nil {
+			if m.Box.ID != "sbx_two" || m.Primary() == nil {
 				t.Fatal("the box on screen should be left as it was")
 			}
 		})
@@ -961,11 +961,11 @@ func TestThePagesOpenRightOfTheTreeAndNameTheirKeysWhereTheyWork(t *testing.T) {
 
 		// The workspace under the page is still there, and Esc puts the page
 		// away onto it.
-		if m.primary() == nil {
+		if m.Primary() == nil {
 			t.Fatal("the page should leave the workspace attached under it")
 		}
 		d.key("esc")
-		if m.harnessesOpen || !m.inPanes() || m.focus != focusPane || m.primary() == nil {
+		if m.harnessesOpen || !m.inPanes() || m.focus != focusPane || m.Primary() == nil {
 			t.Fatalf("harnesses %v, inPanes %v, focus %v; want the workspace back after the page", m.harnessesOpen, m.inPanes(), m.focus)
 		}
 	})
@@ -982,7 +982,7 @@ func TestTheLeaderOpensTheTreesEntriesFromAnywhereBesideIt(t *testing.T) {
 
 		d.leader(harnessesKey)
 		d.wait("the harnesses", func() bool { return m.harnessesOpen })
-		if !m.treeShown() || m.listFront || m.primary() == nil {
+		if !m.treeShown() || m.listFront || m.Primary() == nil {
 			t.Fatalf("tree %v, listFront %v; want the page beside the tree over the live workspace", m.treeShown(), m.listFront)
 		}
 		// From the page, the leader's next key is another page.
@@ -1068,8 +1068,8 @@ func TestNewDiscoboxIsAModalCardBesideTheTree(t *testing.T) {
 		// A click on another box in the tree goes nowhere.
 		x, y := at(t, m, "exec/terminal co")
 		tap(t, m, x, y)
-		if m.paneBox.ID != "sbx_one" || !m.newOpen {
-			t.Fatalf("box %s, card %v; want the click on the blocked tree to do nothing", m.paneBox.ID, m.newOpen)
+		if m.Box.ID != "sbx_one" || !m.newOpen {
+			t.Fatalf("box %s, card %v; want the click on the blocked tree to do nothing", m.Box.ID, m.newOpen)
 		}
 
 		d.key("esc")
@@ -1089,7 +1089,7 @@ func TestMaximizingAColumnHidesTheTree(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.leader("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 && m.onShells })
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 && m.onShells })
 
 		d.leader(paneZoomKey)
 		if !m.maximized {
@@ -1101,7 +1101,7 @@ func TestMaximizingAColumnHidesTheTree(t *testing.T) {
 		if strings.Contains(plainFrame(m), "discoboxes") {
 			t.Fatalf("the tree should not be drawn beside a maximized column:\n%s", plainFrame(m))
 		}
-		if got := m.paneWidthOf(m.shells.panes[0]); got != m.screenWidth {
+		if got := m.paneWidthOf(m.Shells.Tabs[0]); got != m.screenWidth {
 			t.Fatalf("the shell is %d cells, want the screen's %d", got, m.screenWidth)
 		}
 
@@ -1121,7 +1121,7 @@ func TestTheLeaderDDoesNothingBesideTheTree(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openWorkspace(t, ds, "enter")
 		d.leader("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
 
 		for _, onShells := range []bool{true, false} {
 			if onShells != m.onShells {
@@ -1129,9 +1129,9 @@ func TestTheLeaderDDoesNothingBesideTheTree(t *testing.T) {
 			}
 			d.leader(paneDetachAlt)
 			d.settle()
-			if !m.inPanes() || m.primary() == nil || m.shells.len() != 1 || m.focus != focusPane {
+			if !m.inPanes() || m.Primary() == nil || m.Shells.Len() != 1 || m.focus != focusPane {
 				t.Fatalf("onShells=%v: inPanes %v, shells %d, focus %v; want the leader's d to leave the workspace alone",
-					onShells, m.inPanes(), m.shells.len(), m.focus)
+					onShells, m.inPanes(), m.Shells.Len(), m.focus)
 			}
 		}
 		select {
@@ -1211,8 +1211,8 @@ func TestTheBoxMenuOffersTheWorkspacesOwnActions(t *testing.T) {
 		// Choosing tools opens the picker on this box.
 		d.key(toolsKey)
 		waitPicker(d, m)
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("the picker is over %s, want the box on screen", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("the picker is over %s, want the box on screen", m.Box.ID)
 		}
 	})
 }
@@ -1226,7 +1226,7 @@ func TestAllDiscoboxesTurnsAnAttachIntoTheConsole(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		box := testSandboxes()[1]
 		d, m := openAttached(t, ds, box)
-		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
 		d.wait("the listing", func() bool { return len(m.list.All()) > 0 })
 		if m.treeShown() {
 			t.Fatal("an attach window has no tree until it is asked for")
@@ -1239,8 +1239,8 @@ func TestAllDiscoboxesTurnsAnAttachIntoTheConsole(t *testing.T) {
 		}
 		d.key(allBoxesKey)
 		d.wait("the tree", func() bool { return m.treeShown() })
-		if m.attach != nil || m.paneBox.ID != box.ID || m.primary() == nil {
-			t.Fatalf("attach %v, box %s; want the same workspace, now the console's", m.attach, m.paneBox.ID)
+		if m.attach != nil || m.Box.ID != box.ID || m.Primary() == nil {
+			t.Fatalf("attach %v, box %s; want the same workspace, now the console's", m.attach, m.Box.ID)
 		}
 		if got := m.list.current(); got == nil || got.ID != box.ID {
 			t.Fatalf("the tree's cursor is on %v, want the box on screen", got)
@@ -1274,7 +1274,7 @@ func switchToSecond(d *driver, m *Model) {
 	d.t.Helper()
 	d.leader("down")
 	d.wait("the second box", func() bool {
-		return m.paneBox.ID == "sbx_two" && m.primary() != nil && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] != nil
+		return m.Box.ID == "sbx_two" && m.Primary() != nil && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] != nil
 	})
 }
 
@@ -1286,22 +1286,22 @@ func TestParkingClosesTheForwardAndUnparkingReopensIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(forwardSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the forward", func() bool { return m.forward != nil })
+		d.wait("the forward", func() bool { return m.Forward != nil })
 		first := ds.forward
 
 		switchToSecond(d, m)
 		if !first.isClosed() {
 			t.Fatal("parking should close the first box's forward")
 		}
-		if ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]; ws.forward != nil {
+		if ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]; ws.Forward != nil {
 			t.Fatal("a parked workspace should hold no forward")
 		}
 
 		d.leader("up")
 		d.wait("the first box with a forward", func() bool {
-			return m.paneBox.ID == "sbx_one" && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil && m.forward != nil
+			return m.Box.ID == "sbx_one" && m.parked[console.BoxRef{Server: "", ID: "sbx_one"}] == nil && m.Forward != nil
 		})
-		if m.forward == console.Forward(first) {
+		if m.Forward == console.Forward(first) {
 			t.Fatal("unparking should open a new forward, not hold the closed one")
 		}
 		asked := ds.forwardsAskedFor()
@@ -1327,12 +1327,12 @@ func TestSwitchingBoxesNeedsTheTree(t *testing.T) {
 	t.Parallel()
 	check := func(t *testing.T, d *driver, m *Model, ds *fakeSource) {
 		t.Helper()
-		box, opened := m.paneBox.ID, len(ds.execOpened())
+		box, opened := m.Box.ID, len(ds.execOpened())
 		for _, key := range []string{"down", "j"} {
 			d.leader(key)
 			d.settle()
-			if m.paneBox.ID != box || len(m.parked) != 0 || m.primary() == nil {
-				t.Fatalf("leader %s: box %s, parked %d; want %s left on screen", key, m.paneBox.ID, len(m.parked), box)
+			if m.Box.ID != box || len(m.parked) != 0 || m.Primary() == nil {
+				t.Fatalf("leader %s: box %s, parked %d; want %s left on screen", key, m.Box.ID, len(m.parked), box)
 			}
 		}
 		if got := len(ds.execOpened()); got != opened {
@@ -1344,7 +1344,7 @@ func TestSwitchingBoxesNeedsTheTree(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			ds := newFakeSource(testSandboxes()...)
 			d, m := openAttached(t, ds, testSandboxes()[0])
-			d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+			d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
 			d.wait("the listing", func() bool { return len(m.list.All()) > 0 })
 			check(t, d, m, ds)
 		})
@@ -1370,7 +1370,7 @@ func TestADragOutOfAPaneOverTheTreeEndsInThePane(t *testing.T) {
 		term.send("hello world")
 		d.wait("output", func() bool { return strings.Contains(plainFrame(m), "hello world") })
 
-		x, y := screenOrigin(m, m.primary())
+		x, y := screenOrigin(m, m.Primary())
 		d.dispatch(tea.MouseClickMsg{X: x + 4, Y: y, Button: tea.MouseLeft})
 		if m.mouseCapture == 0 {
 			t.Fatal("a press in the pane should capture the gesture")
@@ -1380,11 +1380,11 @@ func TestADragOutOfAPaneOverTheTreeEndsInThePane(t *testing.T) {
 		if m.mouseCapture != 0 {
 			t.Fatal("the release over the tree should have reached the pane and ended the gesture")
 		}
-		if m.listFront || m.paneBox.ID != "sbx_one" {
-			t.Fatalf("listFront %v, box %s; want the gesture kept from the tree", m.listFront, m.paneBox.ID)
+		if m.listFront || m.Box.ID != "sbx_one" {
+			t.Fatalf("listFront %v, box %s; want the gesture kept from the tree", m.listFront, m.Box.ID)
 		}
 		d.wait("the copy", func() bool { return m.status == "copied" })
-		if got := m.primary().term.SelectionText(); got != "hello" {
+		if got := m.Primary().term.SelectionText(); got != "hello" {
 			t.Fatalf("selected %q, want the row to the pane's edge", got)
 		}
 	})
@@ -1413,8 +1413,8 @@ func TestTheTreesMenuForAnotherBoxIsTheLists(t *testing.T) {
 		if !strings.Contains(m.dialog.title, "exec/terminal consolidation") {
 			t.Fatalf("menu title = %q, want the box right-clicked", m.dialog.title)
 		}
-		if m.paneBox.ID != "sbx_one" {
-			t.Fatalf("box = %s, want a right click to switch to nothing", m.paneBox.ID)
+		if m.Box.ID != "sbx_one" {
+			t.Fatalf("box = %s, want a right click to switch to nothing", m.Box.ID)
 		}
 	})
 }
@@ -1464,7 +1464,7 @@ func TestAllDiscoboxesRestoresTheDraft(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		ds.session.Draft = "an old thought"
 		d, m := openAttached(t, ds, testSandboxes()[0])
-		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil && m.dialog == nil })
 		d.wait("the session", func() bool { return m.draft == "an old thought" })
 		if v := m.prompt.Value(); v != "" {
 			t.Fatalf("composer = %q, want the draft kept out of an attach window", v)
@@ -1498,9 +1498,9 @@ func TestAParkedPaneThatEndsIsSettled(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.leader("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
-		shell := m.shells.panes[0]
-		m.focusPane(m.primary())
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
+		shell := m.Shells.Tabs[0]
+		m.focusPane(m.Primary())
 		switchToSecond(d, m)
 		return d, m, shell
 	}
@@ -1511,7 +1511,7 @@ func TestAParkedPaneThatEndsIsSettled(t *testing.T) {
 			d, m, shell := open(t)
 			d.dispatch(paneMsg{id: shell.id, msg: termpane.ClosedMsg{}})
 			ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]
-			if ws == nil || ws.shells.len() != 1 || !ws.shells.panes[0].exited {
+			if ws == nil || ws.Shells.Len() != 1 || !ws.Shells.Tabs[0].Exited {
 				t.Fatal("a parked shell that finished should stay as a tab, exited")
 			}
 		})
@@ -1523,7 +1523,7 @@ func TestAParkedPaneThatEndsIsSettled(t *testing.T) {
 			d, m, shell := open(t)
 			d.dispatch(paneMsg{id: shell.id, msg: termpane.ClosedMsg{Err: errors.New("stream reset")}})
 			ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]
-			if ws == nil || ws.shells.len() != 0 {
+			if ws == nil || ws.Shells.Len() != 0 {
 				t.Fatal("a parked shell that broke should lose its tab, leaving the workspace parked")
 			}
 			d.wait("the report", func() bool { return strings.Contains(m.status, "stream reset") })
@@ -1541,11 +1541,11 @@ func TestAParkedPaneThatEndsIsSettled(t *testing.T) {
 			tool := m.showingTool()
 			d.leader(paneDetachAlt) // put the tool away, a tab
 			d.wait("the workspace back", func() bool { return m.showingTool() == nil })
-			m.focusPane(m.primary())
+			m.focusPane(m.Primary())
 			switchToSecond(d, m)
 			d.dispatch(paneMsg{id: tool.id, msg: termpane.ClosedMsg{}})
 			ws := m.parked[console.BoxRef{Server: "", ID: "sbx_one"}]
-			if ws == nil || slices.Contains(ws.shells.panes, tool) || ws.toolShown == tool {
+			if ws == nil || slices.Contains(ws.Shells.Tabs, tool) || ws.toolShown == tool {
 				t.Fatal("a parked tool that ended should lose its tab")
 			}
 		})
@@ -1560,7 +1560,7 @@ func TestAParkedIssueTabTakesItsRead(t *testing.T) {
 		ds := issueSource()
 		d, m := openIssuePane(t, ds)
 		p := issueTabOf(m)
-		m.focusPane(m.primary())
+		m.focusPane(m.Primary())
 		switchToSecond(d, m)
 		if m.paneByID(p.id) != nil || m.heldPane(p.id) != p {
 			t.Fatal("the issue tab should be held parked, not on screen")
@@ -1592,7 +1592,7 @@ func TestTheActionsAreNotOfferedOverAScreen(t *testing.T) {
 		}
 		d.leader(paneDetachAlt)
 		d.wait("the workspace back", func() bool { return m.showingTool() == nil })
-		m.focusPane(m.primary())
+		m.focusPane(m.Primary())
 		if got := hintLine(m.hints()); !strings.HasPrefix(got, m.leader()+" "+boxMenuKey+" actions") {
 			t.Fatalf("hints on the primary = %q, want the actions first", got)
 		}
@@ -1626,8 +1626,8 @@ func TestADragInTheNewDiscoboxCardEndsInTheComposer(t *testing.T) {
 		if m.promptCapture {
 			t.Fatal("the release over the tree should have reached the composer and ended the gesture")
 		}
-		if !m.newOpen || m.paneBox.ID != "sbx_one" {
-			t.Fatalf("card %v, box %s; want the gesture kept from the tree", m.newOpen, m.paneBox.ID)
+		if !m.newOpen || m.Box.ID != "sbx_one" {
+			t.Fatalf("card %v, box %s; want the gesture kept from the tree", m.newOpen, m.Box.ID)
 		}
 	})
 }
@@ -1652,7 +1652,7 @@ func TestAParkedFilesChangedCannotCopy(t *testing.T) {
 			copied = append(copied, text)
 			return nil
 		}
-		m.focusPane(m.primary())
+		m.focusPane(m.Primary())
 		switchToSecond(d, m)
 		if m.heldPane(p.id) != p {
 			t.Fatal("the pull request tab should be held parked")
@@ -1687,7 +1687,7 @@ func TestTheNewCardGoesToTheBoxOnceTheServerHasIt(t *testing.T) {
 		}
 		d.key("enter")
 		d.key("enter")
-		d.wait("the new box's workspace", func() bool { return m.wsOpening && m.paneBox.ID == "sbx_created" })
+		d.wait("the new box's workspace", func() bool { return m.wsOpening && m.Box.ID == "sbx_created" })
 		if m.newOpen || m.dialog != nil || !m.treeShown() || m.focus != focusPane {
 			t.Fatalf("card %v, dialog %v, tree %v, focus %v; want the opening workspace beside the tree", m.newOpen, m.dialog != nil, m.treeShown(), m.focus)
 		}
@@ -1704,7 +1704,7 @@ func TestTheNewCardGoesToTheBoxOnceTheServerHasIt(t *testing.T) {
 		}
 
 		close(ds.deliverGate)
-		d.wait("the attach", func() bool { return m.primary() != nil && m.paneBox.ID == "sbx_created" })
+		d.wait("the attach", func() bool { return m.Primary() != nil && m.Box.ID == "sbx_created" })
 		if m.dialog != nil {
 			t.Fatal("a wait was put up over the workspace the create is narrated in")
 		}
@@ -1728,18 +1728,18 @@ func TestACreateWalkedOffDoesNotTakeTheScreenBack(t *testing.T) {
 		}
 		d.key("enter")
 		d.key("enter")
-		d.wait("the new box's workspace", func() bool { return m.wsOpening && m.paneBox.ID == "sbx_created" })
+		d.wait("the new box's workspace", func() bool { return m.wsOpening && m.Box.ID == "sbx_created" })
 
 		d.leader("h")
 		d.wait("the tree", func() bool { return m.listFront })
 		m.listCursorTo(console.Sandbox{ID: "sbx_two"})
 		d.key("enter")
-		d.wait("the other box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+		d.wait("the other box", func() bool { return m.Box.ID == "sbx_two" && m.Primary() != nil })
 
 		close(ds.deliverGate)
 		d.wait("the create's report", func() bool { return strings.Contains(m.status, "created") })
-		if m.paneBox.ID != "sbx_two" {
-			t.Fatalf("box %s; want the screen left on the box walked to", m.paneBox.ID)
+		if m.Box.ID != "sbx_two" {
+			t.Fatalf("box %s; want the screen left on the box walked to", m.Box.ID)
 		}
 		for _, opened := range ds.execOpened() {
 			if strings.HasPrefix(opened, "sbx_created ") {

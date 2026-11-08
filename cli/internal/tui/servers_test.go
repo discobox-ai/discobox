@@ -1182,7 +1182,7 @@ func TestTheWorkspaceHeaderSaysHowOldTheListingIs(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
+	m.Box = console.Sandbox{ID: "sbx_one", Name: "one"}
 
 	if got := m.paneHeaderFields().text(); strings.Contains(got, "listed") {
 		t.Fatalf("a header with nothing stale says how old it is: %q", got)
@@ -1224,7 +1224,7 @@ func TestTheWorkspaceHeaderSaysThePullRequestStatus(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newColorModel(t, newFakeSource())
-			m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one", Branch: "main", Commit: "1111111", Git: tc.git, Tags: tc.tags, PendingRequests: tc.pending}
+			m.Box = console.Sandbox{ID: "sbx_one", Name: "one", Branch: "main", Commit: "1111111", Git: tc.git, Tags: tc.tags, PendingRequests: tc.pending}
 			got := m.paneHeaderFields().text()
 			if !strings.Contains(got, tc.want) {
 				t.Fatalf("header = %q, want %q in it", got, tc.want)
@@ -1242,7 +1242,7 @@ func TestTheWorkspaceHeaderSaysThePullRequestStatus(t *testing.T) {
 func TestANarrowWorkspaceHeaderKeepsBlocked(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
-	m.paneBox = console.Sandbox{
+	m.Box = console.Sandbox{
 		ID: "sbx_one", Name: "one", Branch: "main", Commit: "1111111", Tags: []string{"blocked"},
 		Git: console.GitState{Known: true, Branch: "main", Commit: "2222222", Dirty: true},
 	}

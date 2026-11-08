@@ -29,7 +29,7 @@ func TestAnAttachDeliversAParkedSourceBeforeItAttaches(t *testing.T) {
 		ds := newFakeSource(box)
 		ds.deliverSteps = []string{"pushing source"}
 		d, m := openAttached(t, ds, box)
-		d.wait("the primary terminal", func() bool { return m.primary() != nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil })
 
 		ds.mu.Lock()
 		delivered := slices.Clone(ds.delivered)
@@ -51,7 +51,7 @@ func TestAnAttachToARunningDiscoboxDeliversNothing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openAttached(t, ds, testSandboxes()[0])
-		d.wait("the primary terminal", func() bool { return m.primary() != nil })
+		d.wait("the primary terminal", func() bool { return m.Primary() != nil })
 
 		ds.mu.Lock()
 		delivered := slices.Clone(ds.delivered)
@@ -105,7 +105,7 @@ func TestAWorkspaceThatCannotDeliverReturnsToTheList(t *testing.T) {
 		d.key("enter")
 		d.wait("the report", func() bool { return strings.Contains(frameText(m), "/src/gone") })
 
-		if m.primary() != nil || m.quit {
+		if m.Primary() != nil || m.quit {
 			t.Fatal("the workspace should close back to the list")
 		}
 	})

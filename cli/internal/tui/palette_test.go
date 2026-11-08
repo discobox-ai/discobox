@@ -299,7 +299,7 @@ func TestPaletteLiveNavigationKeepsTemporaryReveal(t *testing.T) {
 		m.palette.input.SetValue("sbx_two")
 		m.rebuildPalette(true)
 		d.key("enter")
-		d.wait("workspace", func() bool { return m.primary() != nil && m.paneBox.ID == "sbx_two" })
+		d.wait("workspace", func() bool { return m.Primary() != nil && m.Box.ID == "sbx_two" })
 		if m.paletteReveal == nil {
 			t.Fatal("opening the live result restored the filters too early")
 		}
@@ -312,7 +312,7 @@ func TestPaletteLiveNavigationKeepsTemporaryReveal(t *testing.T) {
 		m.palette.input.SetValue("sbx_two")
 		m.rebuildPalette(true)
 		d.key("enter")
-		d.wait("reopened workspace", func() bool { return m.primary() != nil })
+		d.wait("reopened workspace", func() bool { return m.Primary() != nil })
 		if m.paletteReveal == nil {
 			t.Fatal("reopening detached result lost reveal")
 		}
@@ -324,7 +324,7 @@ func TestPaletteNewShortcutKeepsAttachAndNarrowWindowOwnership(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		d, m, _ := openBare(t, newFakeSource(testSandboxes()...))
 		d.leader("n")
-		if m.newOpen || !m.oneShot() || m.paneBox.ID != "sbx_one" {
+		if m.newOpen || !m.oneShot() || m.Box.ID != "sbx_one" {
 			t.Fatal("leader-n escaped the one-shot window")
 		}
 	})
@@ -379,12 +379,12 @@ func TestPaletteRoutesSameIDLifecycleAndWorkspacesToTheirServers(t *testing.T) {
 		m.palette.input.SetValue("alpha")
 		m.rebuildPalette(true)
 		d.key("enter")
-		d.wait("alpha workspace", func() bool { return m.primary() != nil && m.paneBox.Server == "alpha" })
+		d.wait("alpha workspace", func() bool { return m.Primary() != nil && m.Box.Server == "alpha" })
 		d.leader(paletteKey)
 		m.palette.input.SetValue("beta")
 		m.rebuildPalette(true)
 		d.key("enter")
-		d.wait("beta workspace", func() bool { return m.primary() != nil && m.paneBox.Server == "beta" })
+		d.wait("beta workspace", func() bool { return m.Primary() != nil && m.Box.Server == "beta" })
 		if m.parked[console.BoxRef{Server: "alpha", ID: a.ID}] == nil {
 			t.Fatal("switching same ID across servers lost the alpha workspace")
 		}

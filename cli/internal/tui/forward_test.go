@@ -31,7 +31,7 @@ func TestWorkspaceOpensAForward(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(forwardSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the forward", func() bool { return m.forward != nil })
+		d.wait("the forward", func() bool { return m.Forward != nil })
 
 		ds.mu.Lock()
 		opened := ds.forwardsOpen
@@ -50,7 +50,7 @@ func TestWorkspaceHeaderShowsBoundPortsAsTheyArrive(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(forwardSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the forward", func() bool { return m.forward != nil })
+		d.wait("the forward", func() bool { return m.Forward != nil })
 
 		if frame := ansi.Strip(frameText(m)); !strings.Contains(frame, "http:8080") {
 			t.Fatalf("the header should list the port before it is bound:\n%s", frame)
@@ -82,11 +82,11 @@ func TestDetachingClosesTheForward(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(forwardSandboxes()...)
 		d, m, _ := openNarrowWorkspace(t, ds, "enter")
-		d.wait("the forward", func() bool { return m.forward != nil })
+		d.wait("the forward", func() bool { return m.Forward != nil })
 
 		d.key("ctrl+a")
 		d.key("d")
-		d.wait("the workspace to close", func() bool { return m.forward == nil })
+		d.wait("the workspace to close", func() bool { return m.Forward == nil })
 
 		ds.mu.Lock()
 		closed := ds.forwardsClose
@@ -115,10 +115,10 @@ func TestAForwardThatFailsLeavesTheWorkspaceOpen(t *testing.T) {
 			return strings.Contains(m.status, "ports are not being forwarded")
 		})
 
-		if m.primary() == nil {
+		if m.Primary() == nil {
 			t.Fatal("the workspace should still be open")
 		}
-		if m.forward != nil {
+		if m.Forward != nil {
 			t.Fatal("a forward that failed should leave nothing to close")
 		}
 		frame := ansi.Strip(frameText(m))
@@ -151,7 +151,7 @@ func TestClickingAHeaderLinkOpensIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(desktopSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the forward", func() bool { return m.forward != nil })
+		d.wait("the forward", func() bool { return m.Forward != nil })
 		// Wide enough that the header beside the tree has room for every link.
 		d.dispatch(sizeMsg(160, 40))
 
@@ -225,7 +225,7 @@ func TestAHeaderLinkLightsUnderThePointer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(desktopSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the forward", func() bool { return m.forward != nil })
+		d.wait("the forward", func() bool { return m.Forward != nil })
 		// The frame is rebuilt with color on, so what a real terminal is sent is
 		// what the test looks at.
 		m.st = newStyles(true)

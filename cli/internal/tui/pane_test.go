@@ -54,7 +54,7 @@ func openWorkspaceAt(t *testing.T, ds *fakeSource, act string, width int) (*driv
 
 	d.key(act)
 	d.wait("the workspace", func() bool { return m.focus == focusPane })
-	d.wait("the primary terminal", func() bool { return m.primary() != nil })
+	d.wait("the primary terminal", func() bool { return m.Primary() != nil })
 	return d, m, ds.execTerm(console.ExecPrimary)
 }
 
@@ -98,16 +98,16 @@ func TestShellOpensTheWorkspaceWithAFreshTab(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		if !m.onShells {
 			t.Fatal("the fresh shell should have focus")
 		}
-		if m.shells.panes[0].execID != "exec_shell1" {
-			t.Fatalf("tab = %q, want the created shell", m.shells.panes[0].execID)
+		if m.Shells.Tabs[0].ExecID != "exec_shell1" {
+			t.Fatalf("tab = %q, want the created shell", m.Shells.Tabs[0].ExecID)
 		}
 		// And the primary is there too, on the left.
-		if m.primary() == nil {
+		if m.Primary() == nil {
 			t.Fatal("the workspace should still hold the primary terminal")
 		}
 	})
@@ -121,7 +121,7 @@ func TestPaneOpensAtTheSizeItWillBeDrawnAt(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		_, m, term := openWorkspace(t, ds, "enter")
 
-		cols, rows := m.paneCells(m.paneWidthOf(m.primary()))
+		cols, rows := m.paneCells(m.paneWidthOf(m.Primary()))
 		if got := term.size(); got != [2]int{cols, rows} {
 			t.Fatalf("opened at %v, want %dx%d", got, cols, rows)
 		}
@@ -133,7 +133,7 @@ func TestPaneOpensAtTheSizeItWillBeDrawnAt(t *testing.T) {
 		if rows != m.height-4 || cols != m.width-2-2*boxPad {
 			t.Fatalf("pane is %dx%d in a %d-row window", cols, rows, m.height)
 		}
-		if got := len(m.primary().term.View()); got != rows {
+		if got := len(m.Primary().term.View()); got != rows {
 			t.Fatalf("the pane drew %d rows, want %d", got, rows)
 		}
 	})
@@ -149,7 +149,7 @@ func TestATabSplitsTheScreen(t *testing.T) {
 
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		lcols, lrows := m.paneCells(m.width / 2)
 		if got := ds.execTerm(console.ExecPrimary).size(); got != [2]int{lcols, lrows} {
@@ -160,8 +160,8 @@ func TestATabSplitsTheScreen(t *testing.T) {
 			t.Fatalf("the shell is %v, want the right half %dx%d", got, rcols, rrows)
 		}
 		// The new shell has focus: it is the thing you just asked for.
-		if !m.onShells || m.shells.active != 0 {
-			t.Fatalf("onShells=%v activeShell=%d, want the new tab focused", m.onShells, m.shells.active)
+		if !m.onShells || m.Shells.Active != 0 {
+			t.Fatalf("onShells=%v activeShell=%d, want the new tab focused", m.onShells, m.Shells.Active)
 		}
 	})
 }
@@ -177,7 +177,7 @@ func TestLeaderZMaximizesTheFocusedColumn(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		d.wait("the tab focused", func() bool { return m.onShells })
 
 		d.key("ctrl+a")
@@ -234,14 +234,14 @@ func TestClosingTheLastTabDropsTheMaximize(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		m.toggleMaximized(true)
 
-		m.closeTab(m.shells.panes[0])
+		m.closeTab(m.Shells.Tabs[0])
 		if m.maximized {
 			t.Fatal("the last tab closing should give the window back")
 		}
-		if got := m.paneWidthOf(m.primary()); got != m.width {
+		if got := m.paneWidthOf(m.Primary()); got != m.width {
 			t.Fatalf("the terminal is %d cells wide, want the whole window (%d)", got, m.width)
 		}
 	})
@@ -256,7 +256,7 @@ func TestResizingTheWindowResizesTheTerminal(t *testing.T) {
 
 		d.dispatch(sizeMsg(100, 30))
 		d.settle()
-		cols, rows := m.paneCells(m.paneWidthOf(m.primary()))
+		cols, rows := m.paneCells(m.paneWidthOf(m.Primary()))
 		if got := term.size(); got != [2]int{cols, rows} {
 			t.Fatalf("resized to %v, want %dx%d", got, cols, rows)
 		}
@@ -292,7 +292,7 @@ func TestDetachLeavesTheWholeWorkspace(t *testing.T) {
 		d, m, _ := openNarrowWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		d.key("ctrl+a")
 		d.key("d")
@@ -303,7 +303,7 @@ func TestDetachLeavesTheWholeWorkspace(t *testing.T) {
 		if m.focus != focusList {
 			t.Fatalf("focus = %v, want the list", m.focus)
 		}
-		if m.shells.len() != 0 {
+		if m.Shells.Len() != 0 {
 			t.Fatal("detach should take the tabs with it")
 		}
 		for i, term := range ds.terminals {
@@ -388,16 +388,16 @@ func TestAttachJoinsEveryLiveSession(t *testing.T) {
 			{ID: "exec_pipe", Command: []string{"make"}, Live: true, CreatedAt: now},
 		}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the tabs", func() bool { return m.shells.len() == 2 && m.terminals.len() == 2 })
+		d.wait("the tabs", func() bool { return m.Shells.Len() == 2 && m.Terminals.Len() == 2 })
 
 		// The primary leads the terminals whatever order the attaches landed in,
 		// and the harness terminal is beside it rather than among the shells.
-		if !m.terminals.panes[0].primary || m.terminals.panes[1].execID != "exec_term" {
+		if !m.Terminals.Tabs[0].Primary || m.Terminals.Tabs[1].ExecID != "exec_term" {
 			t.Fatalf("terminals = %s | %s, want the primary then the harness terminal",
-				m.terminals.panes[0].execID, m.terminals.panes[1].execID)
+				m.Terminals.Tabs[0].ExecID, m.Terminals.Tabs[1].ExecID)
 		}
-		if m.shells.panes[0].execID != "exec_a" || m.shells.panes[1].execID != "exec_b" {
-			t.Fatalf("tabs = %s | %s, want session order", m.shells.panes[0].execID, m.shells.panes[1].execID)
+		if m.Shells.Tabs[0].ExecID != "exec_a" || m.Shells.Tabs[1].ExecID != "exec_b" {
+			t.Fatalf("tabs = %s | %s, want session order", m.Shells.Tabs[0].ExecID, m.Shells.Tabs[1].ExecID)
 		}
 		if m.onShells {
 			t.Fatal("focus starts on the primary terminal")
@@ -426,10 +426,10 @@ func TestASessionStartedElsewhereBecomesATab(t *testing.T) {
 			CreatedAt: time.Date(2026, 8, 7, 12, 30, 0, 0, time.UTC),
 		})
 		d.dispatch(workspaceTickMsg{gen: m.wsGen})
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
-		if m.shells.panes[0].execID != "exec_other" {
-			t.Fatalf("tab = %q, want the session started elsewhere", m.shells.panes[0].execID)
+		if m.Shells.Tabs[0].ExecID != "exec_other" {
+			t.Fatalf("tab = %q, want the session started elsewhere", m.Shells.Tabs[0].ExecID)
 		}
 		if m.onShells {
 			t.Fatal("a tab arriving on its own does not steal focus")
@@ -446,12 +446,12 @@ func TestThePollDoesNotReopenASessionAlreadyShown(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		d.dispatch(workspaceTickMsg{gen: m.wsGen})
 		d.settle()
-		if m.shells.len() != 1 {
-			t.Fatalf("tabs = %d, want the poll to leave the shown session alone", m.shells.len())
+		if m.Shells.Len() != 1 {
+			t.Fatalf("tabs = %d, want the poll to leave the shown session alone", m.Shells.Len())
 		}
 		attaches := 0
 		for _, open := range ds.execOpened() {
@@ -499,7 +499,7 @@ func TestAnExitedShellStaysReadableUntilDismissed(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		shell := ds.execTerm("exec_shell1")
 		shell.send("make: everything built\r\n")
@@ -509,7 +509,7 @@ func TestAnExitedShellStaysReadableUntilDismissed(t *testing.T) {
 		// would be.
 		ds.endExec("exec_shell1")
 		shell.Close()
-		d.wait("the pager", func() bool { return m.shells.len() == 1 && m.shells.panes[0].exited })
+		d.wait("the pager", func() bool { return m.Shells.Len() == 1 && m.Shells.Tabs[0].Exited })
 
 		if !strings.Contains(plainFrame(m), "everything built") {
 			t.Errorf("the last screen should still be up:\n%s", plainFrame(m))
@@ -519,8 +519,8 @@ func TestAnExitedShellStaysReadableUntilDismissed(t *testing.T) {
 		}
 
 		d.key("q")
-		d.wait("the tab to close", func() bool { return m.shells.len() == 0 })
-		if m.primary() == nil || m.focus != focusPane {
+		d.wait("the tab to close", func() bool { return m.Shells.Len() == 0 })
+		if m.Primary() == nil || m.focus != focusPane {
 			t.Fatal("dismissing a tab should leave the workspace up")
 		}
 		if m.onShells {
@@ -540,29 +540,29 @@ func TestAHeldPaneStillAnswersTheLeader(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		shell := ds.execTerm("exec_shell1")
 		ds.endExec("exec_shell1")
 		shell.Close()
-		d.wait("the held screen", func() bool { return m.shells.len() == 1 && m.shells.panes[0].exited })
+		d.wait("the held screen", func() bool { return m.Shells.Len() == 1 && m.Shells.Tabs[0].Exited })
 
-		if m.focusedPane() != m.shells.panes[0] {
+		if m.focusedPane() != m.Shells.Tabs[0] {
 			t.Fatal("the shell that exited should still have the keys")
 		}
 
 		// A second shell, asked for from the screen that is over.
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the second tab", func() bool { return m.shells.len() == 2 })
-		if !m.shells.panes[0].exited {
+		d.wait("the second tab", func() bool { return m.Shells.Len() == 2 })
+		if !m.Shells.Tabs[0].Exited {
 			t.Fatal("the held screen should still be held")
 		}
 
 		// A chord too: its second keystroke goes to the pane that opened it,
 		// rather than being read as a key on the held screen.
 		m.focusOrdinal(1)
-		if m.focusedPane() != m.shells.panes[0] {
+		if m.focusedPane() != m.Shells.Tabs[0] {
 			t.Fatal("the held screen should be the one the chord is typed on")
 		}
 		d.key("ctrl+a")
@@ -574,7 +574,7 @@ func TestAHeldPaneStillAnswersTheLeader(t *testing.T) {
 
 		// Everything else is still the reader's, dismissal included.
 		d.key("q")
-		d.wait("the tab to close", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab to close", func() bool { return m.Shells.Len() == 1 })
 	})
 }
 
@@ -618,10 +618,10 @@ func TestAFailedTabDegradesToAReport(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the report", func() bool { return m.statusE })
 
-		if m.primary() == nil || m.focus != focusPane {
+		if m.Primary() == nil || m.focus != focusPane {
 			t.Fatal("the workspace should survive a tab that cannot open")
 		}
-		if m.shells.len() != 0 {
+		if m.Shells.Len() != 0 {
 			t.Fatal("the failed session should not be a tab")
 		}
 		if !strings.Contains(m.status, "session is sealed") {
@@ -639,13 +639,13 @@ func TestReconnectIsShownInThePane(t *testing.T) {
 		d, m, term := openWorkspace(t, ds, "enter")
 
 		term.events <- console.TerminalEvent{State: console.TerminalReconnecting}
-		d.wait("the reconnect", func() bool { return m.primary().status != "" })
+		d.wait("the reconnect", func() bool { return m.Primary().Status != "" })
 		if !strings.Contains(frameText(m), "reconnecting") {
 			t.Errorf("the pane should say it is reconnecting:\n%s", frameText(m))
 		}
 
 		term.events <- console.TerminalEvent{State: console.TerminalReconnected}
-		d.wait("the reconnection", func() bool { return m.primary().status == "" })
+		d.wait("the reconnection", func() bool { return m.Primary().Status == "" })
 	})
 }
 
@@ -752,7 +752,7 @@ func TestTheFrameNeverWraps(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openWorkspace(t, ds, "enter")
 
-		cols, _ := m.paneCells(m.paneWidthOf(m.primary()))
+		cols, _ := m.paneCells(m.paneWidthOf(m.Primary()))
 		term.send(strings.Repeat("X", cols))
 		d.wait("a full-width row", func() bool { return strings.Contains(frameText(m), strings.Repeat("X", cols)) })
 
@@ -778,7 +778,7 @@ func TestApplicationTitleIsSetIntoTheBorder(t *testing.T) {
 		d, m, term := openWorkspace(t, ds, "enter")
 
 		term.send("\x1b]2;go test ./...\x07")
-		d.wait("the title", func() bool { return m.primary().term.Title() == "go test ./..." })
+		d.wait("the title", func() bool { return m.Primary().term.Title() == "go test ./..." })
 
 		border := ansi.Strip(windowLines(m)[1])
 		if !strings.Contains(border, "go test ./...") {
@@ -811,7 +811,7 @@ func TestALongTitleLeavesTheBorderAlone(t *testing.T) {
 
 		long := strings.Repeat("very long title ", 12)
 		term.send("\x1b]2;" + long + "\x07")
-		d.wait("the title", func() bool { return m.primary().term.Title() == long })
+		d.wait("the title", func() bool { return m.Primary().term.Title() == long })
 
 		border := ansi.Strip(windowLines(m)[1])
 		if strings.Contains(border, "very long title very long") {
@@ -1118,19 +1118,19 @@ func TestClickFocusesThePaneUnderIt(t *testing.T) {
 
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the first tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the first tab", func() bool { return m.Shells.Len() == 1 })
 		d.wait("the tab to have focus", func() bool { return m.onShells })
 
 		click := func(x, y int) {
 			d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 			d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
 		}
-		x, y := screenOrigin(m, m.primary())
+		x, y := screenOrigin(m, m.Primary())
 		click(x, y)
 		if m.onShells {
 			t.Fatal("clicking the terminal should focus it")
 		}
-		x, y = screenOrigin(m, m.shells.panes[0])
+		x, y = screenOrigin(m, m.Shells.Tabs[0])
 		click(x, y)
 		if !m.onShells {
 			t.Fatal("clicking the tab should focus it back")
@@ -1179,7 +1179,7 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 		d.wait("the title", func() bool { return m.View().WindowTitle == "go test ./..." })
 
 		// What the server reports once the box's meta file names it.
-		if err := ds.Rename(t.Context(), m.paneBox.ID, "Reaper race"); err != nil {
+		if err := ds.Rename(t.Context(), m.Box.ID, "Reaper race"); err != nil {
 			t.Fatal(err)
 		}
 		d.dispatch(tickMsg{})
@@ -1190,7 +1190,7 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 
 		// The harness retitling itself does not move the name.
 		term.send("\x1b]2;go vet ./...\x07")
-		d.wait("the new title in the pane", func() bool { return m.primary().term.Title() == "go vet ./..." })
+		d.wait("the new title in the pane", func() bool { return m.Primary().term.Title() == "go vet ./..." })
 		if got := m.View().WindowTitle; got != "Reaper race" {
 			t.Fatalf("window title after a retitle = %q, want the given name alone", got)
 		}
@@ -1198,11 +1198,11 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 		// With a second pane the primary's tab in the strip wears it too.
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
 		d.wait("the primary's tab", func() bool { return strings.Contains(frameText(m), "0 Reaper race") })
 
 		// Cleared, the harness's title is back.
-		if err := ds.Rename(t.Context(), m.paneBox.ID, ""); err != nil {
+		if err := ds.Rename(t.Context(), m.Box.ID, ""); err != nil {
 			t.Fatal(err)
 		}
 		d.dispatch(tickMsg{})
@@ -1226,7 +1226,7 @@ func TestTheProgramsMsgFollowsTheGivenName(t *testing.T) {
 		term.send("\x1b]7501;state=working:app=claude-code:msg=" + msg + "\x1b\\")
 		d.wait("the title and the msg", func() bool { return m.View().WindowTitle == "Reaper cleanup: Fix the reaper race" })
 
-		if err := ds.Rename(t.Context(), m.paneBox.ID, "Reaper"); err != nil {
+		if err := ds.Rename(t.Context(), m.Box.ID, "Reaper"); err != nil {
 			t.Fatal(err)
 		}
 		d.dispatch(tickMsg{})
@@ -1252,7 +1252,7 @@ func TestTheTerminalTitleIgnoresTheFocusedTab(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openWorkspace(t, ds, "s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		d.wait("the tab to have focus", func() bool { return m.onShells })
 
 		term.send("\x1b]2;go test ./...\x07")
@@ -1261,9 +1261,9 @@ func TestTheTerminalTitleIgnoresTheFocusedTab(t *testing.T) {
 		// The poll can open a second stream before NewShell's answer arrives.
 		// The pane keeps the first arrival and closes the other, while execTerm
 		// records the latest open. Send to the stream this pane actually kept.
-		m.shells.panes[0].stream.(*fakeTerminal).send("\x1b]2;less config.yaml\x07")
+		m.Shells.Tabs[0].stream.(*fakeTerminal).send("\x1b]2;less config.yaml\x07")
 		d.wait("the tab's own title", func() bool {
-			return strings.TrimSpace(m.shells.panes[0].term.Title()) == "less config.yaml"
+			return strings.TrimSpace(m.Shells.Tabs[0].term.Title()) == "less config.yaml"
 		})
 		if got, want := m.View().WindowTitle, "go test ./..."; got != want {
 			t.Fatalf("title = %q, want the primary's %q", got, want)
@@ -1281,16 +1281,16 @@ func TestLeaderSOpensAnotherShell(t *testing.T) {
 
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the first tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the first tab", func() bool { return m.Shells.Len() == 1 })
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the second tab", func() bool { return m.shells.len() == 2 })
+		d.wait("the second tab", func() bool { return m.Shells.Len() == 2 })
 
-		if !m.onShells || m.shells.visible().execID != "exec_shell2" {
+		if !m.onShells || m.Shells.Visible().ExecID != "exec_shell2" {
 			t.Fatal("the newest shell should have focus")
 		}
 		// Both are the same discobox.
-		if m.shells.panes[0].sandbox.ID != m.shells.panes[1].sandbox.ID {
+		if m.Shells.Tabs[0].sandbox.ID != m.Shells.Tabs[1].sandbox.ID {
 			t.Fatal("a shell belongs to the discobox it was opened in")
 		}
 	})
@@ -1305,7 +1305,7 @@ func TestLeaderAFocusesTheTerminal(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		if !m.onShells {
 			t.Fatal("the fresh shell should have focus")
 		}
@@ -1334,30 +1334,30 @@ func TestLeaderMovesBetweenTerminalAndTabs(t *testing.T) {
 			{ID: "exec_b", Command: []string{"/bin/zsh"}, Tty: true, Live: true, CreatedAt: now.Add(time.Minute)},
 		}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the tabs", func() bool { return m.shells.len() == 2 })
+		d.wait("the tabs", func() bool { return m.Shells.Len() == 2 })
 
 		if m.onShells {
 			t.Fatal("focus starts on the terminal")
 		}
 		d.key("ctrl+a")
 		d.key("l")
-		if !m.onShells || m.shells.active != 0 {
-			t.Fatalf("onShells=%v tab=%d, want the first tab", m.onShells, m.shells.active)
+		if !m.onShells || m.Shells.Active != 0 {
+			t.Fatalf("onShells=%v tab=%d, want the first tab", m.onShells, m.Shells.Active)
 		}
 		d.key("ctrl+a")
 		d.key("l")
-		if m.shells.active != 1 {
-			t.Fatalf("tab = %d, want the second", m.shells.active)
+		if m.Shells.Active != 1 {
+			t.Fatalf("tab = %d, want the second", m.Shells.Active)
 		}
 		d.key("ctrl+a")
 		d.key("l")
-		if m.shells.active != 1 {
+		if m.Shells.Active != 1 {
 			t.Fatal("the right edge should stop rather than wrap")
 		}
 		d.key("ctrl+a")
 		d.key("h")
-		if m.shells.active != 0 {
-			t.Fatalf("tab = %d, want the first again", m.shells.active)
+		if m.Shells.Active != 0 {
+			t.Fatalf("tab = %d, want the first again", m.Shells.Active)
 		}
 		d.key("ctrl+a")
 		d.key("h")
@@ -1382,7 +1382,7 @@ func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
 		d, m, harness := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		shell := ds.execTerm("exec_shell1")
 
 		// The shell has focus, and ctrl+c is its own.
@@ -1390,7 +1390,7 @@ func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
 		if got := shell.typed("\x03"); !strings.Contains(got, "\x03") {
 			t.Fatalf("shell typed %q, want the interrupt", got)
 		}
-		if !m.inPanes() || m.shells.len() != 1 {
+		if !m.inPanes() || m.Shells.Len() != 1 {
 			t.Fatal("ctrl+c in a shell should not detach anything")
 		}
 		// Beside the tree the way out is quitting, offered in the header.
@@ -1421,7 +1421,7 @@ func TestSplitPanesShareTheScreen(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		ds.execTerm("exec_shell1").send("in the shell")
 		d.wait("output", func() bool { return strings.Contains(frameText(m), "in the shell") })
 
@@ -1485,7 +1485,7 @@ func TestTheDiscoboxIDIsCenteredInTheBanner(t *testing.T) {
 		// The transport's status displaces the keys rather than the name, and does
 		// not move it: it is centered in the row, not in what is left of it.
 		before := strings.Index(nameRow(), "sbx_one")
-		m.primary().status = "reconnecting…"
+		m.Primary().Status = "reconnecting…"
 		if after := strings.Index(nameRow(), "sbx_one"); before != after {
 			t.Fatalf("the id moved when a status appeared: %d then %d", before, after)
 		}
@@ -1494,10 +1494,10 @@ func TestTheDiscoboxIDIsCenteredInTheBanner(t *testing.T) {
 		}
 
 		// And one name over the whole workspace, not one per pane.
-		m.primary().status = ""
+		m.Primary().Status = ""
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 		if got := strings.Count(nameRow(), "sbx_one"); got != 1 {
 			t.Fatalf("the id appears %d times over the split, want once", got)
 		}
@@ -1674,7 +1674,7 @@ func TestTheBannerKeepsATransportStatusAsItNarrows(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "enter")
-		m.primary().status = "reconnecting…"
+		m.Primary().Status = "reconnecting…"
 
 		nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 		for _, width := range []int{140, 100, 80, 60} {
@@ -1993,7 +1993,7 @@ func TestStreamingOutputDoesNotMoveScrolledViewport(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, term := openWorkspace(t, ds, "enter")
-		p := m.primary()
+		p := m.Primary()
 
 		_, rows := m.paneCells(m.paneWidthOf(p))
 		var out strings.Builder
@@ -2032,7 +2032,7 @@ func TestMovingBetweenPanesRepeatsWhileCtrlIsHeld(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		// The arrows work like h and l.
 		d.key("ctrl+a")
@@ -2087,12 +2087,12 @@ func TestLeaderDigitsJumpToPanes(t *testing.T) {
 			{ID: "exec_b", Command: []string{"/bin/zsh"}, Tty: true, Live: true, CreatedAt: now.Add(time.Minute)},
 		}
 		d, m, term := openWorkspace(t, ds, "enter")
-		d.wait("the tabs", func() bool { return m.shells.len() == 2 })
+		d.wait("the tabs", func() bool { return m.Shells.Len() == 2 })
 
 		d.key("ctrl+a")
 		d.key("2")
-		if !m.onShells || m.shells.active != 1 {
-			t.Fatalf("onShells=%v tab=%d, want the second tab", m.onShells, m.shells.active)
+		if !m.onShells || m.Shells.Active != 1 {
+			t.Fatalf("onShells=%v tab=%d, want the second tab", m.onShells, m.Shells.Active)
 		}
 		d.key("ctrl+a")
 		d.key("0")
@@ -2129,7 +2129,7 @@ func TestAKeyAfterARunIsNotACommand(t *testing.T) {
 		d, m, harness := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		// A run back to the terminal, then a bare letter with Ctrl let go.
 		d.key("ctrl+a")
@@ -2377,7 +2377,7 @@ func TestDragSelectsWhatIsDrawnUnderThePointer(t *testing.T) {
 				}
 				d.dispatch(statusMsg{text: "cannot create the discobox: no space left on device", err: true})
 
-				cols, rows := m.paneCells(m.paneWidthOf(m.primary()))
+				cols, rows := m.paneCells(m.paneWidthOf(m.Primary()))
 				d.wait("the pane at its size", func() bool { return term.size() == [2]int{cols, rows} })
 				term.send("first" + strings.Repeat("\r\n", rows-1) + "final")
 				d.wait("output", func() bool {

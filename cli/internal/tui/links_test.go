@@ -14,7 +14,7 @@ import (
 // rather than the address.
 func TestForwardedURLPointsAtTheLocalEnd(t *testing.T) {
 	t.Parallel()
-	m := &Model{forward: newFakeForward(
+	m := &Model{Forward: newFakeForward(
 		console.Binding{Port: 8080, Local: 8081},
 		console.Binding{Port: 443, Local: 8443},
 		console.Binding{Port: 80, Local: 8000},

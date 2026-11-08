@@ -318,7 +318,7 @@ func (m *Model) toolsDialog(box console.Sandbox) *dialog {
 	items := make([]action, 0, len(catalog)+3)
 	for _, t := range catalog {
 		detail := t.Detail
-		if m.toolPane(t.ID) != nil {
+		if m.Tool(t.ID) != nil {
 			// Every tool pane is a running one: a tool that exits takes its
 			// window with it (see paneClosed).
 			detail = t.Detail + " · running"
@@ -634,7 +634,7 @@ func (m *Model) runTool(id string) tea.Cmd {
 		// screen with nothing under it.
 		return status("%s opens over a workspace — attach first", t.Label)
 	}
-	if p := m.toolPane(t.ID); p != nil {
+	if p := m.Tool(t.ID); p != nil {
 		m.showTool(p)
 		return nil
 	}
@@ -656,7 +656,7 @@ func (m *Model) newTool(t console.Tool, show bool) tea.Cmd {
 	m.busy = t.Label + "…"
 	gen := m.wsGen
 	cols, rows := m.paneCells(max(m.width, 4))
-	ctx, ds, box, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID, t.ID
+	ctx, ds, box, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID, t.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewTool(ctx, box, id, cols, rows)
 		return toolTermMsg{gen: gen, id: id, exec: exec, term: term, err: err, show: show}
@@ -707,9 +707,9 @@ func (m *Model) openToolExec(gen int, exec console.Exec) tea.Cmd {
 	}
 	m.toolOpening[exec.Tool] = true
 	// It arrives put away, as one more tab in the shells column.
-	_, width := m.columns(m.shells.len() + 1)
+	_, width := m.columns(m.Shells.Len() + 1)
 	cols, rows := m.paneCells(width)
-	ctx, ds, box := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, box := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		term, err := ds.OpenExec(ctx, box, exec.ID, cols, rows)
 		return toolTermMsg{gen: gen, id: exec.Tool, exec: exec, term: term, err: err}
@@ -738,7 +738,7 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 	if msg.err != nil {
 		return m.report(true, "%s: %v", label, msg.err)
 	}
-	if existing := m.toolPane(msg.id); existing != nil {
+	if existing := m.Tool(msg.id); existing != nil {
 		// The poll and the picker raced onto the same tool; the pane that
 		// arrived first is the pane.
 		_ = msg.term.Close()
@@ -750,20 +750,15 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 
 	m.nextPaneID++
 	p := &pane{
+		Tab:     console.ToolTab(msg.exec, msg.id, label),
 		id:      m.nextPaneID,
 		term:    termpane.New(m.paneOptions(false)...),
 		stream:  msg.term,
-		action:  console.Interaction(label),
-		sandbox: m.paneBox,
-		execID:  msg.exec.ID,
-		title:   label,
-		tool:    msg.id,
+		sandbox: m.Box,
 	}
-	// Its place is after the shells (execBefore), and a tool arriving beside
-	// the tab being looked at must not move the focus onto it.
-	exec := msg.exec
-	exec.Tool = msg.id
-	m.shells.insert(p, exec, m.onShells)
+	// Its place is after the shells (console.Exec.Before), and a tool arriving
+	// beside the tab being looked at must not move the focus onto it.
+	m.Shells.Insert(p, m.onShells)
 	if msg.show {
 		m.showTool(p)
 	}
@@ -772,17 +767,6 @@ func (m *Model) toolOpened(msg toolTermMsg) tea.Cmd {
 		fromPane(p.id, p.term.Attach(msg.term)),
 		fromPane(p.id, m.paneEvents(msg.term)),
 	)
-}
-
-// toolPane is the pane running one tool, showing or put away, or nil when that
-// tool is not open in this window.
-func (m *Model) toolPane(id string) *pane {
-	for _, p := range m.shells.panes {
-		if p.tool == id {
-			return p
-		}
-	}
-	return nil
 }
 
 // showingTool is the tool pane with the window, or nil when the workspace
@@ -796,7 +780,7 @@ func (m *Model) showingTool() *pane { return m.toolShown }
 // the tool away gives back the workspace as it was, with the tool's tab beside
 // whatever the column was showing.
 func (m *Model) showTool(p *pane) {
-	if m.shells.index(p) < 0 {
+	if m.Shells.Index(p) < 0 {
 		return
 	}
 	m.toolShown = p
@@ -819,11 +803,6 @@ func (m *Model) minimizeTool() tea.Cmd {
 	return status("%s put away beside the shells — %s %s on its tab gives it the window again",
 		p.name(), m.leader(), paneZoomKey)
 }
-
-// toolExec reports whether a session is a tool's. It is the exec's own label
-// that answers, so every window agrees — see ADR 26-08-27-302 on tool sessions — and it
-// is checked before the terminal/shell question, because a tool is neither.
-func toolExec(exec console.Exec) bool { return exec.Tool != "" }
 
 // toolControls is the tool window's chrome: `[-]` puts it away and `[x]` ends
 // it, set into the right end of its top border the way a column's maximize

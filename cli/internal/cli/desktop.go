@@ -429,19 +429,21 @@ func (b *desktopBridge) handleBox(ctx context.Context, ds console.DataSource, re
 		b.reply(req.ID, map[string]any{"stream": req.Stream}, err)
 	case "newShell", "newTerminal":
 		var (
-			ex   console.Exec
-			term console.Terminal
-			err  error
+			ex    console.Exec
+			term  console.Terminal
+			err   error
+			asked = console.InteractShell
 		)
 		if req.Op == "newShell" {
 			ex, term, err = ds.NewShell(ctx, req.Sandbox, req.Cols, req.Rows)
 		} else {
+			asked = console.InteractTerminal
 			ex, term, err = ds.NewTerminal(ctx, req.Sandbox, req.Cols, req.Rows)
 		}
 		if err == nil {
 			b.attach(req.Stream, term)
 		}
-		b.reply(req.ID, desktopExec(ex), err)
+		b.reply(req.ID, desktopExec(ex, asked), err)
 	case "endExec":
 		b.closeStream(req.Stream)
 		b.reply(req.ID, nil, ds.EndExec(ctx, req.Sandbox, req.Exec))
@@ -636,35 +638,32 @@ type desktopExecInfo struct {
 	Argv  []string `json:"argv,omitempty"`
 }
 
-// desktopExecs is what a workspace opens, as the console's does: the primary,
-// and every other live terminal; services and files-changed sessions are drawn
-// by the console in other ways, which the desktop app does not have yet.
+// desktopExecs is what a workspace opens, by the console core's rule
+// (console.Sessions): the primary, then every session the exec listing opens
+// as a tab, in tab order. Services come from their own listing, which the
+// desktop app does not read yet.
 func desktopExecs(execs []console.Exec) []desktopExecInfo {
-	out := []desktopExecInfo{{ID: console.ExecPrimary, Kind: "primary", Live: true}}
-	for _, e := range execs {
-		if e.Primary || e.Service != "" || e.FilesChanged || !e.Live || !e.Tty {
-			continue
-		}
-		out = append(out, desktopExec(e))
+	out := []desktopExecInfo{desktopExec(console.Exec{ID: console.ExecPrimary, Primary: true, Live: true}, "")}
+	for _, e := range console.Sessions(execs) {
+		out = append(out, desktopExec(e, ""))
 	}
 	return out
 }
 
-func desktopExec(e console.Exec) desktopExecInfo {
+// desktopExec is one session as the app draws its tab: what the core says it
+// is (console.SessionTab) and the column it goes in, as a kind. asked is what
+// was asked for when the app created it, which a terminal is called by even
+// when its record does not say so.
+func desktopExec(e console.Exec, asked console.Interaction) desktopExecInfo {
+	tab := console.SessionTab(e, asked)
 	kind := "shell"
 	switch {
-	case e.Primary:
+	case tab.Primary:
 		kind = "primary"
-	case e.Harness != "":
-		kind = "terminal"
-	case e.Tool != "":
+	case tab.Tool != "":
 		kind = "tool"
+	case tab.Side() == console.SideTerminals:
+		kind = "terminal"
 	}
-	label := e.Harness
-	if e.Tool != "" {
-		label = e.Tool
-	} else if label == "" && len(e.Command) > 0 {
-		label = filepath.Base(e.Command[0])
-	}
-	return desktopExecInfo{ID: e.ID, Kind: kind, Label: label, Live: e.Live, Argv: e.Command}
+	return desktopExecInfo{ID: e.ID, Kind: kind, Label: tab.Title, Live: e.Live, Argv: e.Command}
 }

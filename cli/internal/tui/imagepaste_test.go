@@ -44,7 +44,7 @@ func TestCtrlVCarriesTheClipboardImageIntoTheBox(t *testing.T) {
 				d.wait("the path pasted", func() bool { return strings.Contains(term.inputSoFar(), "/tmp/discobox-paste/") })
 
 				puts := ds.putImagesSoFar()
-				if len(puts) != 1 || puts[0].sandboxID != m.primary().sandbox.ID || string(puts[0].data) != "pixels" ||
+				if len(puts) != 1 || puts[0].sandboxID != m.Primary().sandbox.ID || string(puts[0].data) != "pixels" ||
 					!strings.HasSuffix(puts[0].name, "-clipboard.png") {
 					t.Fatalf("put %+v, want the clipboard's image into the discobox on screen", puts)
 				}
@@ -79,7 +79,7 @@ func TestCtrlVInAShellIsNotAnImagePaste(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m, _ := openWorkspace(t, ds, "s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
 		var asked atomic.Int32
 		m.readClipboard = func(context.Context) ([]clipimage.Image, error) {
 			asked.Add(1)

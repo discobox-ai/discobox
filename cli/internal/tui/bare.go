@@ -21,17 +21,17 @@ func (m *Model) bare() bool {
 	if m.attach == nil || m.screenPane() != nil || m.audit != nil || m.wsOpening {
 		return false
 	}
-	if m.shells.len() != 0 || m.bannerShowing() != bannerNone {
+	if m.Shells.Len() != 0 || m.bannerShowing() != bannerNone {
 		return false
 	}
-	primary := m.primary()
-	for _, p := range m.terminals.all() {
-		if p != primary && p.service == "" {
+	primary := m.Primary()
+	for _, p := range m.Terminals.Tabs {
+		if p != primary && p.Service == "" {
 			return false
 		}
 	}
-	p := m.terminals.visible()
-	return p != nil && p == primary && !p.exited && p.issue == nil
+	p := m.Terminals.Visible()
+	return p != nil && p == primary && !p.Exited && p.issue == nil
 }
 
 // viewBare draws the primary terminal over the whole screen but its last row,
@@ -40,7 +40,7 @@ func (m *Model) viewBare() string {
 	m.tabSpans, m.buttonSpans = m.tabSpans[:0], m.buttonSpans[:0]
 	m.banner = bannerSpan{}
 
-	p := m.terminals.visible()
+	p := m.Terminals.Visible()
 	lines := p.term.View()
 	x, y := m.paneOrigin(p)
 	m.markBoxLinks(p, lines, x, y)

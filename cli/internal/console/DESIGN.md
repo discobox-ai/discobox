@@ -143,3 +143,55 @@ renderer. Lists on the wire are never null.
   registry IDs; `TestParityScenariosNameRegistryCommands` holds each step to
   a command both consoles bind from a pane. The TUI and the desktop app run
   them, each pressing its own binding.
+
+## Workspaces
+
+`workspace.go` (876 §1). `Workspace[P]` is one box's sessions as a window
+holds them; a renderer instantiates it with its own pane type (`Tabbed`: the
+pane's `Tab`, and closing its view) and adds focus, maximize and drawing. The
+desktop app reaches the same rules through the bridge (`Sessions`,
+`SessionTab`), never a copy of them.
+
+```mermaid
+flowchart LR
+    X["exec listing"] -->|Reconcile| O["Opens: primary, sessions, tools"]
+    V["service listing"] -->|ReconcileServices| SO["open / close service tabs"]
+    O --> C["Column: Insert by Exec.Before, Number"]
+    SO --> C
+    C --> W["Workspace: Terminals, Shells, Ending, Forward, PushHeld"]
+    W -->|Park / Release| R["renderer keeps or drops it"]
+    PS["PushSources answer"] -->|Pushed| W
+```
+
+- **The session's record says where it goes** (`Exec.Side`): the primary,
+  harness terminals and services on the left, shells and then tools on the
+  right. `Exec.Before` orders a column: services first in declaration order,
+  tools last, the rest oldest first.
+- **What opens is the core's.** `OpensAsTab`/`Sessions` is what an exec
+  listing opens; `Reconcile` is that against what a workspace holds, is
+  ending, and the renderer says it is already opening. It never closes:
+  streams deliver their own exits. `ReconcileServices` both opens and
+  closes, since the service listing is the whole truth about a declaration.
+- **A tab is the core's, its drawing the renderer's.** `SessionTab`,
+  `ServiceTab` and `ToolTab` say what a tab is and is called; `Tab.Name`
+  prefers what the program titles itself. `Column.Number` is the number a tab
+  wears — services counted apart, so one starting never renumbers a shell —
+  and spelling it as a key is each frontend's binding.
+- **An ending is decided once** (`Tab.End`): the primary ends the workspace,
+  a tool or a broken stream ends the tab, a finished program holds its last
+  screen. The renderer applies it to a workspace on screen and a parked one
+  alike.
+- **Parking keeps the streams and the push loop** (`Parkable`, `Park`): only a
+  workspace with its primary is parked, and its port forward goes with the
+  screen. `Release` closes every view; no session is ended by either.
+- **The loops are the core's; only their clock is the renderer's.** The poll
+  reads the exec and service listings every `WorkspacePollEvery` while the
+  workspace is on screen, and each answer means what `Reconcile` and
+  `ReconcileServices` say. The push loop makes one look (`PushLook`: skipped
+  for a box this window does not push, holds copied, a whole-call failure
+  answering nothing), applies it (`Pushed`: a refused source is held at the
+  refused commit until a new one) and looks again `PushEvery` later, parked
+  or not; `PushedText`/`PushFailure` narrate it. A renderer runs these on its
+  own event loop — the TUI's ticks are Bubble Tea commands its tests drive
+  one at a time — and drops an answer for a workspace it has left; it decides
+  nothing about what a look does or means.

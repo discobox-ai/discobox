@@ -317,7 +317,7 @@ func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
 func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 	t.Parallel()
 	m, _ := sourceWithRequest(t)
-	m.paneBox = console.Sandbox{ID: "sbx_one", Name: "one"}
+	m.Box = console.Sandbox{ID: "sbx_one", Name: "one"}
 
 	banner := m.viewCredentialBanner(80)
 	if banner == "" {
@@ -337,7 +337,7 @@ func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 
 	// And nothing at all for a discobox with none: the row is only there while
 	// somebody is waiting.
-	m.paneBox = console.Sandbox{ID: "sbx_two"}
+	m.Box = console.Sandbox{ID: "sbx_two"}
 	if banner := m.viewCredentialBanner(80); banner != "" {
 		t.Fatalf("banner = %q on a discobox with no request", banner)
 	}
@@ -381,7 +381,7 @@ func TestTheBannerCountsSeveralRequests(t *testing.T) {
 	second := waitingRequest()
 	second.ID, second.Name = "sreq_2", "npm"
 	m.setCredentialRequests([]console.CredentialRequest{waitingRequest(), second})
-	m.paneBox = console.Sandbox{ID: "sbx_one"}
+	m.Box = console.Sandbox{ID: "sbx_one"}
 
 	banner := m.viewCredentialBanner(80)
 	if !strings.Contains(banner, "2 credential requests") {
@@ -470,13 +470,13 @@ func TestTheBandMovesTheChromeItPushesDown(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		rowsBefore, tabRowBefore := m.paneRows(), 1
 		if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore); !ok {
 			t.Fatal("no tab where the strip is drawn with no banner")
 		}
-		_, originBefore := m.paneOrigin(m.terminals.visible())
+		_, originBefore := m.paneOrigin(m.Terminals.Visible())
 		if got := len(frame(m)); got != m.height {
 			t.Fatalf("frame = %d rows with no band, want the window's %d", got, m.height)
 		}
@@ -497,7 +497,7 @@ func TestTheBandMovesTheChromeItPushesDown(t *testing.T) {
 		}
 		// The grid — and so the cursor drawn in it — moves down by the top band
 		// alone. The band below it takes height, not position.
-		if _, origin := m.paneOrigin(m.terminals.visible()); origin != originBefore+1 {
+		if _, origin := m.paneOrigin(m.Terminals.Visible()); origin != originBefore+1 {
 			t.Fatalf("pane origin = %d, want one below %d: only the top band moves the grid", origin, originBefore)
 		}
 		if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore); ok {

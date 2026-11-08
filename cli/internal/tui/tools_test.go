@@ -165,17 +165,17 @@ func TestTheToolsPickerRunsDiffInTheBox(t *testing.T) {
 			t.Fatalf("tool runs = %v, want discobox-review as the diff tool", got)
 		}
 		p := m.showingTool()
-		if p.tool != tools.DiffID {
-			t.Fatalf("showing %q, want the diff tool", p.tool)
+		if p.Tool != tools.DiffID {
+			t.Fatalf("showing %q, want the diff tool", p.Tool)
 		}
 		// The whole window, over the workspace that is still attached underneath.
 		if got := m.paneWidthOf(p); got != m.width {
 			t.Errorf("tool width = %d, want the window's %d", got, m.width)
 		}
-		if m.primary() == nil {
+		if m.Primary() == nil {
 			t.Error("the workspace should still be attached under the tool")
 		}
-		ds.execTerm(p.execID).send("changed files")
+		ds.execTerm(p.ExecID).send("changed files")
 		d.wait("the tool's output", func() bool { return strings.Contains(frameText(m), "changed files") })
 		if frame := frameText(m); !strings.Contains(frame, "[-]") || !strings.Contains(frame, "[x]") {
 			t.Errorf("the tool window should wear its buttons:\n%s", frame)
@@ -203,7 +203,7 @@ func TestMinimizingAToolKeepsItsSessionAndReopensIt(t *testing.T) {
 		if got := ds.endedExecs(); len(got) != 0 {
 			t.Fatalf("ended = %v, want a put-away tool to keep running", got)
 		}
-		if m.toolPane(tools.DiffID) == nil {
+		if m.Tool(tools.DiffID) == nil {
 			t.Fatal("the tool pane should still be attached while it is put away")
 		}
 
@@ -232,8 +232,8 @@ func TestAPutAwayToolIsATabAfterTheShells(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
-		shell := m.shells.visible()
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
+		shell := m.Shells.Visible()
 
 		d.key("ctrl+a")
 		d.key(toolsKey)
@@ -248,8 +248,8 @@ func TestAPutAwayToolIsATabAfterTheShells(t *testing.T) {
 		if m.focusedPane() != shell {
 			t.Fatalf("focus = %q, want the shell it was on before the tool", m.focusedPane().name())
 		}
-		if m.shells.index(tool) != 1 {
-			t.Fatalf("tool at %d in the shells column, want after the shell", m.shells.index(tool))
+		if m.Shells.Index(tool) != 1 {
+			t.Fatalf("tool at %d in the shells column, want after the shell", m.Shells.Index(tool))
 		}
 		if got, want := m.paneWidthOf(tool), m.width-m.width/2; got != want {
 			t.Errorf("put-away tool is %d wide, want the shells column's %d", got, want)
@@ -258,9 +258,9 @@ func TestAPutAwayToolIsATabAfterTheShells(t *testing.T) {
 		// A shell opened afterwards still goes ahead of it.
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the second shell", func() bool { return m.shells.len() == 3 })
-		if m.shells.index(tool) != 2 {
-			t.Fatalf("tool at %d, want it to stay after the shells", m.shells.index(tool))
+		d.wait("the second shell", func() bool { return m.Shells.Len() == 3 })
+		if m.Shells.Index(tool) != 2 {
+			t.Fatalf("tool at %d, want it to stay after the shells", m.Shells.Index(tool))
 		}
 		if frame := frameText(m); !strings.Contains(frame, "3 "+tool.name()) {
 			t.Errorf("the tool's tab should be in the strip after the shells:\n%s", frame)
@@ -281,8 +281,8 @@ func TestAPutAwayToolSplitsTheWindowOnItsOwn(t *testing.T) {
 		d.key(paneDetachAlt)
 		d.wait("the workspace back", func() bool { return m.showingTool() == nil })
 
-		if !m.split() || m.shells.visible() != tool {
-			t.Fatalf("split=%v, right column showing %v, want the tool beside the terminal", m.split(), m.shells.visible())
+		if !m.split() || m.Shells.Visible() != tool {
+			t.Fatalf("split=%v, right column showing %v, want the tool beside the terminal", m.split(), m.Shells.Visible())
 		}
 		if m.onShells {
 			t.Error("putting the tool away should give the keys back to the terminal")
@@ -341,7 +341,7 @@ func TestAPutAwayToolsTabMaximizesAndCloses(t *testing.T) {
 		}
 		clickWindow(d, end, 1)
 		d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
-		if m.toolPane(tools.DiffID) != nil || m.shells.len() != 0 {
+		if m.Tool(tools.DiffID) != nil || m.Shells.Len() != 0 {
 			t.Error("[x] on the tool's tab should take the tab with the session")
 		}
 	})
@@ -389,8 +389,8 @@ func TestKeysUnderAToolWindowAnswer(t *testing.T) {
 				t.Fatalf("%s moved the window off the tool", key)
 			}
 		}
-		if m.shells.len() != 1 || m.terminals.len() != 1 {
-			t.Fatalf("keys under the tool opened something: %d shells, %d terminals", m.shells.len(), m.terminals.len())
+		if m.Shells.Len() != 1 || m.Terminals.Len() != 1 {
+			t.Fatalf("keys under the tool opened something: %d shells, %d terminals", m.Shells.Len(), m.Terminals.Len())
 		}
 	})
 }
@@ -402,7 +402,7 @@ func TestClosingAToolEndsItsSession(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openTool(t, ds, "f")
-		execID := m.showingTool().execID
+		execID := m.showingTool().ExecID
 
 		d.key("ctrl+a")
 		d.key(paneEndKey)
@@ -411,7 +411,7 @@ func TestClosingAToolEndsItsSession(t *testing.T) {
 		if got := ds.endedExecs(); got[0] != execID {
 			t.Fatalf("ended %v, want the tool's own session %s", got, execID)
 		}
-		if m.toolPane("fresh") != nil {
+		if m.Tool("fresh") != nil {
 			t.Error("a closed tool should leave no pane behind")
 		}
 		if m.showingTool() != nil {
@@ -431,12 +431,12 @@ func TestAToolThatExitsTakesItsWindowWithIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ds := newFakeSource(testSandboxes()...)
 		d, m := openTool(t, ds, "d")
-		term := ds.execTerm(m.showingTool().execID)
+		term := ds.execTerm(m.showingTool().ExecID)
 
 		term.Close()
 		d.wait("the workspace back", func() bool { return m.showingTool() == nil })
 
-		if m.toolPane(tools.DiffID) != nil {
+		if m.Tool(tools.DiffID) != nil {
 			t.Error("a tool that exited should leave no pane behind")
 		}
 		if !m.inPanes() {
@@ -466,11 +466,11 @@ func TestTheToolWindowButtonsMinimizeAndClose(t *testing.T) {
 			t.Fatalf("ended = %v, want [-] to end nothing", got)
 		}
 
-		m.showTool(m.toolPane(tools.DiffID))
+		m.showTool(m.Tool(tools.DiffID))
 		m.View()
 		clickWindow(d, closeAt, 1)
 		d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
-		if m.toolPane(tools.DiffID) != nil {
+		if m.Tool(tools.DiffID) != nil {
 			t.Error("[x] should close the tool as well as ending it")
 		}
 	})
@@ -506,16 +506,16 @@ func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 		}}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the running tool", func() bool { return m.toolPane(tools.DiffID) != nil })
+		d.wait("the running tool", func() bool { return m.Tool(tools.DiffID) != nil })
 
 		if m.showingTool() != nil {
 			t.Error("a tool picked up off the listing should arrive put away")
 		}
-		if m.shells.len() != 1 || m.terminals.len() != 1 {
+		if m.Shells.Len() != 1 || m.Terminals.Len() != 1 {
 			t.Errorf("a put-away tool should be a tab in the shells column: %d shells, %d terminals",
-				m.shells.len(), m.terminals.len())
+				m.Shells.Len(), m.Terminals.Len())
 		}
-		if got := m.toolPane(tools.DiffID).execID; got != "exec_diff" {
+		if got := m.Tool(tools.DiffID).ExecID; got != "exec_diff" {
 			t.Errorf("tool exec = %q, want the session already running", got)
 		}
 
@@ -549,7 +549,7 @@ func TestDetachingLeavesTheToolSessionsRunning(t *testing.T) {
 		d.key(paneDetachAlt) // and leave the workspace
 		d.wait("the list", func() bool { return !m.inPanes() })
 
-		if m.shells.len() != 0 {
+		if m.Shells.Len() != 0 {
 			t.Error("detaching should close this window's view of every tool")
 		}
 		if got := ds.endedExecs(); len(got) != 0 {
@@ -730,7 +730,7 @@ func TestTheHintsLineDropsRatherThanOverrunning(t *testing.T) {
 		d.wait("the workspace", func() bool { return m.showingTool() == nil })
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("a shell", func() bool { return m.shells.len() > 0 })
+		d.wait("a shell", func() bool { return m.Shells.Len() > 0 })
 
 		narrowestAt := func(widths []int) string {
 			t.Helper()

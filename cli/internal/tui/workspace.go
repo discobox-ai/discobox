@@ -2,8 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"path"
-	"sort"
 	"strings"
 	"time"
 
@@ -25,7 +23,7 @@ import (
 // Which side a session is drawn on is the server's own answer rather than a
 // layout this window remembers: a declared service goes at the head of the
 // left column and a harness terminal on the left beside the primary, while
-// everything else is a shell and goes on the right. See terminalExec.
+// everything else is a shell and goes on the right. See console.Exec.Side.
 //
 // The poll is a poll rather than a subscription because the control plane has
 // no exec event stream yet — exec state lives on the sandbox and is proxied
@@ -33,11 +31,6 @@ import (
 // themselves already deliver every exit. The seam (DataSource.Execs) is a
 // snapshot so that a stream, when one exists, replaces the tick loop and
 // nothing else.
-
-// workspacePollEvery is how often the exec listing is re-read while the
-// workspace is open. It only has to catch sessions started elsewhere, so it is
-// paced like a refresh rather than a keystroke.
-const workspacePollEvery = 2 * time.Second
 
 // workspaceExecsMsg is one answer from the exec listing: the first one opens
 // the workspace's terminals, and every one after reconciles the tabs.
@@ -95,20 +88,17 @@ type workspaceForwardMsg struct {
 // carries nothing: the header redraws from the forward itself.
 type workspaceForwardChangedMsg struct{ gen int }
 
-// workspace is one discobox's workspace: what a window holds for it while it
-// is open, and all of what has to survive for it to come back as it was left
-// when it is switched away from in the tree (parkWorkspace). Model embeds the
-// live one; the parked ones are kept whole beside it (Model.parked).
+// workspace is one discobox's workspace as this window holds it: the core's
+// (console.Workspace — its columns of panes, what it is ending, its forward,
+// its push holds) and what is this renderer's alone, which has to survive with
+// it when it is switched away from in the tree (parkWorkspace). Model embeds
+// the live one; the parked ones are kept whole beside it (Model.parked).
 //
 // What is not here is the live screen's alone and goes with the generation
 // that ran it — the opens in flight, the polls, the audit.
 type workspace struct {
-	// paneBox is the discobox the workspace is showing. Every pane on it is
-	// that one, and so is everything the leader's keys act on.
-	paneBox console.Sandbox
+	console.Workspace[*pane]
 
-	terminals column
-	shells    column
 	// onShells is which of the two columns has the keys.
 	onShells bool
 	// maximized is whether one column has the whole window instead of the two
@@ -116,53 +106,11 @@ type workspace struct {
 	// is one visible box and it is always the one the keys go to. See
 	// toggleMaximized.
 	maximized bool
-	// ending is the exec ids this window has asked the server to kill, so the
-	// poll running behind the kill does not open the pane straight back up.
-	// Entries live for the workspace — exec ids are not reused, and the
-	// listings overlap, so no one answer is proof the kill has landed. See
-	// endPane.
-	ending map[string]bool
-	// forward holds the workspace's port forward while it is on screen: the
-	// local ports standing in for what the discobox is serving, which the
-	// header draws as arrows. A parked workspace has none. See workspace.go.
-	forward console.Forward
-	// pushHeld is the commit each source's automatic push failed on, keyed by
-	// slug, for as long as the workspace is open. A source is not pushed again
-	// while its branch still names the commit that was refused; see push.go.
-	pushHeld map[string]string
-	// pushGen is the generation the workspace's push loop runs under: the one
-	// it was opened in. It outlives the screen's own generation, because a
-	// parked workspace is still attached and so still pushes, and its loop
-	// carries on unbroken when it is shown again (pushLoop).
-	pushGen int
 	// toolShown is the tool with the whole window, or nil when the workspace
 	// is on screen. A tool's pane lives in the shells column, after the
 	// shells, whether or not it is showing: put away, it is a tab there like
 	// any other, still attached and still running. See tools.go.
 	toolShown *pane
-}
-
-// attached is every pane the workspace holds, either column.
-func (w *workspace) attached() []*pane {
-	return append(append([]*pane{}, w.terminals.panes...), w.shells.panes...)
-}
-
-// closeStreams lets go of everything the workspace holds — its panes'
-// streams and its port forward. Every session keeps running: this closes a
-// window onto them.
-func (w *workspace) closeStreams() {
-	w.terminals.closeAll()
-	// The tools go with the shells they sit after, and like every other
-	// session they keep running; the next attach picks them back up off the
-	// listing.
-	w.shells.closeAll()
-	if w.forward != nil {
-		// The local ports go with the screen that opened them. A forward left
-		// running behind a closed workspace is a listener nothing on screen
-		// accounts for.
-		_ = w.forward.Close()
-		w.forward = nil
-	}
 }
 
 // openFromList opens a terminal screen from the list, on the discobox under
@@ -180,7 +128,7 @@ func (m *Model) openFromList(act console.Interaction, sandbox console.Sandbox) t
 		}
 		return cmd
 	}
-	m.paneBox = sandbox
+	m.Box = sandbox
 	// The workspace is the screen either way; asking for a shell opens it
 	// with a fresh one, focused.
 	return m.openWorkspace(sandbox, act == console.InteractShell)
@@ -191,7 +139,7 @@ func (m *Model) openFromList(act console.Interaction, sandbox console.Sandbox) t
 // The poll starts alongside and follows the server for as long as the screen
 // is up.
 func (m *Model) openWorkspace(sandbox console.Sandbox, freshShell bool) tea.Cmd {
-	m.paneBox = sandbox
+	m.Box = sandbox
 	// Nothing else can still have the window. The prompt can start a discobox
 	// and be on the harnesses screen by the time it is created, which is the
 	// one way the two ever meet.
@@ -201,20 +149,18 @@ func (m *Model) openWorkspace(sandbox console.Sandbox, freshShell bool) tea.Cmd 
 		m.showOpening()
 	}
 	m.connecting = map[string]bool{}
-	m.ending = map[string]bool{}
-	// Nothing is held against a workspace that is only now opening: a refusal
-	// belongs to the session it happened in, and the first thing this one does
-	// is try again. See push.go.
-	m.pushHeld = map[string]string{}
 	gen := m.wsGen
-	m.pushGen = gen
+	// Nothing is held against a workspace that is only now opening: a kill or
+	// a refusal belongs to the session it happened in. Its push loop runs
+	// under this generation (push.go).
+	m.Open(sandbox, gen)
 	if sandbox.AwaitsDelivery {
 		return m.deliverSource(gen, sandbox, freshShell)
 	}
 	return m.attachWorkspace(gen, sandbox, freshShell)
 }
 
-// showOpening makes the workspace of paneBox the screen, tree and all, while
+// showOpening makes the workspace of Box the screen, tree and all, while
 // it is on its way up: the attach waiting, or a create that has the discobox
 // still delivering its source (watchCreate). Its frame says what the wait is
 // for (viewOpening), and the keys are the leader's until a pane arrives.
@@ -296,7 +242,7 @@ func (m *Model) sourceDelivered(msg sourceDeliveredMsg) tea.Cmd {
 // the reachable form of that list is what the screen shows from the moment it
 // is up.
 func (m *Model) startForward(gen int) tea.Cmd {
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		forward, err := ds.Forward(ctx, id)
 		return workspaceForwardMsg{gen: gen, forward: forward, err: err}
@@ -322,7 +268,7 @@ func (m *Model) workspaceForward(msg workspaceForwardMsg) tea.Cmd {
 	if msg.forward == nil {
 		return nil
 	}
-	m.forward = msg.forward
+	m.Forward = msg.forward
 	return m.forwardEvents(msg.gen, msg.forward)
 }
 
@@ -348,10 +294,10 @@ func (m *Model) forwardEvents(gen int, forward console.Forward) tea.Cmd {
 // local one stands in for. Empty while nothing is forwarded, which is also what
 // every screen but the workspace sees.
 func (m *Model) forwardedPorts() map[console.PortKey]int {
-	if m.forward == nil {
+	if m.Forward == nil {
 		return nil
 	}
-	bindings := m.forward.Bindings()
+	bindings := m.Forward.Bindings()
 	if len(bindings) == 0 {
 		return nil
 	}
@@ -370,7 +316,7 @@ func (m *Model) forwardedPorts() map[console.PortKey]int {
 // no exec to report — so a tab strip drawn from it alone is silent about
 // exactly the service you need to hear about.
 func (m *Model) listServices(gen int) tea.Cmd {
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		services, err := ds.Services(ctx, id)
 		return workspaceServicesMsg{gen: gen, services: services, err: err}
@@ -379,7 +325,7 @@ func (m *Model) listServices(gen int) tea.Cmd {
 
 // listExecs asks the server what is running in the workspace's discobox.
 func (m *Model) listExecs(gen int) tea.Cmd {
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		execs, err := ds.Execs(ctx, id)
 		return workspaceExecsMsg{gen: gen, execs: execs, err: err}
@@ -390,16 +336,16 @@ func (m *Model) listExecs(gen int) tea.Cmd {
 // off-switch: detaching bumps it, and a tick from a workspace that is gone is
 // dropped rather than answered.
 func (m *Model) workspaceTick(gen int) tea.Cmd {
-	return tick(workspacePollEvery, func(time.Time) tea.Msg {
+	return tick(console.WorkspacePollEvery, func(time.Time) tea.Msg {
 		return workspaceTickMsg{gen: gen}
 	})
 }
 
-// workspaceExecs reconciles the tabs against one answer from the listing:
-// every live TTY session that is not the primary and not already on screen is
-// opened as a tab. Nothing is ever closed here — the attach streams deliver
-// their own exits, and a held pane is a local artifact the listing knows
-// nothing about — so each transition has exactly one writer.
+// workspaceExecs opens what one answer from the exec listing asks the
+// workspace to (console.Workspace.Reconcile): the primary on the first answer,
+// whatever it says, and every session it does not hold yet — a tool put away,
+// after the shells, because attaching to a discobox should show you the
+// discobox.
 //
 // A listing that failed is not reported. The workspace is opened on a sandbox
 // that may still be provisioning, where the listing is answered "not yet" and
@@ -411,72 +357,35 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	if msg.gen != m.wsGen {
 		return nil
 	}
-	var cmds []tea.Cmd
-	first := m.primary() == nil && !m.connecting[console.ExecPrimary]
-	if first {
-		// The primary is opened from the first answer whatever it says: a
-		// workspace is above all a view onto that session, and the sandbox
-		// resolves — and revives — it under the virtual id.
-		m.connecting[console.ExecPrimary] = true
+	execs := msg.execs
+	if msg.err != nil {
+		execs = nil
 	}
-
-	var open []console.Exec
-	newShells := 0
-	if msg.err == nil {
-		for _, exec := range msg.execs {
-			// Services come from their own listing, not this one: a service
-			// that is not running has no exec here at all, and it is exactly
-			// the one whose absence has to be visible. See workspaceServices.
-			// A pull request's files changed are drawn by the issue tab
-			// that started them (pullreview.go), never as a tab here.
-			if !exec.Live || !exec.Tty || exec.Primary || exec.ID == "" || serviceExec(exec) || exec.FilesChanged {
-				continue
-			}
-			if m.paneByExec(exec.ID) != nil {
-				continue
-			}
-			// Above the tool branch, because a tool is killed the same way a
-			// shell is and the listing is the same poll behind either one.
-			if m.ending[exec.ID] {
-				continue
-			}
-			if toolExec(exec) {
-				// A tool is picked up so that a diff left running by a window
-				// that has since exited is the same diff when you ask for it
-				// again — put away, as a tab after the shells, because
-				// attaching to a discobox should show you the discobox.
-				if !m.toolOpening[exec.Tool] && m.toolPane(exec.Tool) == nil {
-					cmds = append(cmds, m.openToolExec(msg.gen, exec))
-					// It lands in the shells column, so it splits the window
-					// the way a shell would.
-					newShells++
-				}
-				continue
-			}
-			if m.connecting[exec.ID] {
-				continue
-			}
-			open = append(open, exec)
-			if !terminalExec(exec) {
-				newShells++
-			}
+	opens := m.Reconcile(execs, func(e console.Exec) bool {
+		if e.IsTool() {
+			return m.toolOpening[e.Tool]
 		}
-		sort.SliceStable(open, func(i, j int) bool { return execBefore(open[i], open[j]) })
-	}
+		return m.connecting[e.ID]
+	})
 
+	var cmds []tea.Cmd
+	for _, exec := range opens.Tools {
+		cmds = append(cmds, m.openToolExec(msg.gen, exec))
+	}
 	// Sized for the box they will be drawn in, counting the shells and tools
 	// about to arrive as well as the ones already here: the full window when
 	// there is one box, the halves when there are two. Only the right column
 	// decides that — another terminal is a tab in the box the primary already
 	// has. See columns.
-	term, shells := m.columns(newShells + m.shells.len())
-	if first {
+	term, shells := m.columns(opens.NewShells + m.Shells.Len())
+	if opens.Primary {
+		m.connecting[console.ExecPrimary] = true
 		cmds = append(cmds, m.openExec(msg.gen, console.Exec{ID: console.ExecPrimary, Primary: true}, term))
 	}
-	for _, exec := range open {
+	for _, exec := range opens.Sessions {
 		m.connecting[exec.ID] = true
 		width := shells
-		if terminalExec(exec) {
+		if exec.Side() == console.SideTerminals {
 			width = term
 		}
 		cmds = append(cmds, m.openExec(msg.gen, exec, width))
@@ -484,14 +393,11 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// workspaceServices reconciles the service tabs against one answer from the
-// service listing.
-//
-// Unlike the exec listing this one both opens and closes: a service is a
-// declaration, and the listing is the whole truth about it, so a pane whose
-// service has stopped, been fixed, or been deleted from the repository has
-// nothing left to draw. Each service therefore has exactly one writer — this —
-// and the pane follows the service rather than any one run of it.
+// workspaceServices applies one answer from the service listing
+// (console.Workspace.ReconcileServices): the tabs whose service stopped on
+// purpose, moved on to another run, or was deleted from the repository go,
+// and the services with no tab get one. Each service has one writer — this —
+// and its pane follows the service rather than any one run of it.
 //
 // A failed listing is not reported, for the reason the exec listing's is not:
 // a workspace can be opened on a sandbox that is still coming up, where this is
@@ -500,42 +406,17 @@ func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
 	if msg.gen != m.wsGen || msg.err != nil {
 		return nil
 	}
-	declared := make(map[string]bool, len(msg.services))
-	var cmds []tea.Cmd
-	for i, service := range msg.services {
-		declared[service.ID] = true
-		paneID := servicePaneID(service.ID)
-		existing := m.paneByExec(paneID)
-		if !service.PaneWorthy() {
-			// Stopped on purpose: the tab goes, because its absence is the
-			// right thing to say and a pane to dismiss would not be.
-			if existing != nil {
-				m.closeTab(existing)
-			}
-			continue
-		}
-		if m.connecting[paneID] {
-			continue
-		}
-		if existing != nil {
-			if existing.serviceRun == service.RunKey() {
-				continue
-			}
-			// The run moved on under it — restarted, stopped, fixed — so what
-			// it is drawing is not what the server is reporting.
-			m.closeTab(existing)
-		}
-		m.connecting[paneID] = true
-		cmds = append(cmds, m.openService(msg.gen, service, i))
+	open, closing := m.ReconcileServices(msg.services, func(id string) bool { return m.connecting[id] })
+	for _, p := range closing {
+		m.closeTab(p)
 	}
-	// A declaration deleted from the repository takes its tab with it.
-	for _, p := range append(m.terminals.all(), m.shells.all()...) {
-		if p.service != "" && !declared[p.service] {
-			m.closeTab(p)
-		}
-	}
-	if len(cmds) == 0 {
+	if len(open) == 0 {
 		return nil
+	}
+	cmds := make([]tea.Cmd, 0, len(open))
+	for _, o := range open {
+		m.connecting[console.ServiceTabID(o.Service.ID)] = true
+		cmds = append(cmds, m.openService(msg.gen, o.Service, o.Order))
 	}
 	return tea.Batch(cmds...)
 }
@@ -544,9 +425,9 @@ func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
 // one, and otherwise the card saying why it does not, with whatever its last
 // run printed under it.
 func (m *Model) openService(gen int, service console.Service, order int) tea.Cmd {
-	term, _ := m.columns(m.shells.len())
+	term, _ := m.columns(m.Shells.Len())
 	cols, rows := m.paneCells(term)
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		// The transcript is read for both kinds of pane, and read first.
 		//
@@ -594,46 +475,35 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 		}
 		return nil
 	}
-	paneID := servicePaneID(msg.service.ID)
-	delete(m.connecting, paneID)
+	tab := console.ServiceTab(msg.service, msg.order)
+	delete(m.connecting, tab.ExecID)
 	if msg.err != nil || msg.term == nil {
 		return nil
 	}
-	if existing := m.paneByExec(paneID); existing != nil {
+	if existing := m.ByExec(tab.ExecID); existing != nil {
 		_ = msg.term.Close()
 		return nil
 	}
 	m.nextPaneID++
+	// A service is never typed at, so its pane is read-only whether it is
+	// drawing a live process or a card.
 	p := &pane{
-		id:     m.nextPaneID,
-		term:   termpane.New(m.paneOptions(true)...),
-		stream: msg.term,
-		// A service is never typed at, so its pane is read-only whether it is
-		// drawing a live process or a card.
-		action:       console.InteractService,
-		sandbox:      m.paneBox,
-		execID:       paneID,
-		title:        msg.service.DisplayName() + msg.service.TabMark(),
-		service:      msg.service.ID,
-		serviceName:  msg.service.DisplayName(),
-		serviceOrder: msg.order,
-		serviceRun:   msg.service.RunKey(),
-	}
-	if !msg.service.Live() {
-		p.status = msg.service.PaneStatus()
+		Tab:     tab,
+		id:      m.nextPaneID,
+		term:    termpane.New(m.paneOptions(true)...),
+		stream:  msg.term,
+		sandbox: m.Box,
 	}
 	// A service never takes the keys on arrival. Nobody asked for it — it
 	// appeared because the discobox is running it — and it is read-only, so
 	// focus there is focus nowhere. The pane being worked in stays the pane
 	// being worked in, by pointer rather than by index: the arrival may have
 	// shifted it along the strip.
-	working := m.terminals.visible()
-	m.terminals.insert(p, console.Exec{
-		ID: paneID, Service: msg.service.ID, ServiceName: msg.service.Name, ServiceOrder: msg.order,
-	}, m.column() == &m.terminals)
+	working := m.Terminals.Visible()
+	m.Terminals.Insert(p, m.column() == &m.Terminals)
 	if working != nil {
-		if i := m.terminals.index(working); i >= 0 {
-			m.terminals.active = i
+		if i := m.Terminals.Index(working); i >= 0 {
+			m.Terminals.Active = i
 		}
 	}
 	if m.inPanes() {
@@ -650,33 +520,12 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 	)
 }
 
-// terminalExec reports whether a session belongs on the workspace's left: the
-// primary, another of the discobox's harness terminals, or one of its declared
-// services. Everything else is a shell and goes on the right — everything, that
-// is, that is on the strip at all: a tool session is neither, and is taken out
-// before this is asked. See toolExec.
-//
-// It is the server's own record that answers, not a layout this window keeps:
-// a terminal is created in harness mode and carries the harness it runs, a
-// service carries the service it runs, so reopening the workspace draws the
-// same two columns anyone else's window would.
-func terminalExec(exec console.Exec) bool {
-	// A service is drawn on the left too, ahead of the terminals: it is the
-	// discobox running your own work, which belongs beside the harness working
-	// on it rather than among the shells you opened by hand.
-	return exec.Primary || exec.Harness != "" || serviceExec(exec)
-}
-
-// serviceExec reports whether a session is one of the discobox's declared
-// services, and so whether its pane is read-only and its lifecycle keys apply.
-func serviceExec(exec console.Exec) bool { return exec.Service != "" }
-
 // openExec connects one workspace terminal. The pane is sized before it is
 // opened: the size is what the far end is told, and a terminal that starts at
 // the wrong size draws itself wrong before anything can correct it.
 func (m *Model) openExec(gen int, exec console.Exec, width int) tea.Cmd {
 	cols, rows := m.paneCells(width)
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		term, err := ds.OpenExec(ctx, id, exec.ID, cols, rows)
 		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err}
@@ -690,9 +539,9 @@ func (m *Model) openExec(gen int, exec console.Exec, width int) tea.Cmd {
 func (m *Model) newShell() tea.Cmd {
 	m.busy = "shell…"
 	gen := m.wsGen
-	_, shells := m.columns(m.shells.len() + 1)
+	_, shells := m.columns(m.Shells.Len() + 1)
 	cols, rows := m.paneCells(shells)
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewShell(ctx, id, cols, rows)
 		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: console.InteractShell, focus: true}
@@ -710,9 +559,9 @@ func (m *Model) newShell() tea.Cmd {
 func (m *Model) newTerminal() tea.Cmd {
 	m.busy = "terminal…"
 	gen := m.wsGen
-	term, _ := m.columns(m.shells.len())
+	term, _ := m.columns(m.Shells.Len())
 	cols, rows := m.paneCells(term)
-	ctx, ds, id := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewTerminal(ctx, id, cols, rows)
 		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: console.InteractTerminal, focus: true}
@@ -738,31 +587,19 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	m.endNarration()
 	m.busy = ""
 	delete(m.connecting, msg.exec.ID)
-	primary := msg.exec.ID == console.ExecPrimary
+	// What this pane is, in the words the list uses (console.SessionTab): the
+	// primary is the attach, another harness session a terminal, and
+	// everything else a shell. A create that failed carries no session record,
+	// so there what was asked for is what is reported.
+	tab := console.SessionTab(msg.exec, msg.asked)
+	primary, action := tab.Primary, tab.Action
 	if primary {
 		m.wsOpening = false
-	}
-	terminal := primary || terminalExec(msg.exec) || msg.asked == console.InteractTerminal
-
-	// What this pane is, in the words the list uses: the primary is the
-	// attach, another harness session is a terminal, and everything else is a
-	// shell. A create that failed carries no session record, so there what was
-	// asked for is what is reported.
-	action := console.InteractShell
-	switch {
-	case primary:
-		action = console.InteractAttach
-	case serviceExec(msg.exec):
-		action = console.InteractService
-	case msg.asked != "":
-		action = msg.asked
-	case terminal:
-		action = console.InteractTerminal
 	}
 
 	if msg.err != nil {
 		if primary {
-			box := m.paneBox
+			box := m.Box
 			m.closeWorkspace()
 			if m.attach != nil {
 				// The window was opened to be this attach and the attach never
@@ -783,10 +620,10 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	}
 
 	if primary {
-		m.recordPaletteVisit(m.paneBox)
+		m.recordPaletteVisit(m.Box)
 	}
 	if !primary {
-		if existing := m.paneByExec(msg.exec.ID); existing != nil {
+		if existing := m.ByExec(msg.exec.ID); existing != nil {
 			// The poll and a leader key race onto the same session; the tab
 			// that arrived first is the tab.
 			_ = msg.term.Close()
@@ -798,27 +635,15 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	}
 
 	m.nextPaneID++
-	// A service runs on pipes, so its pane draws and is navigated but is never
-	// typed at: there is no stdin at the far end to reach (ADR 0070 §7).
-	service := serviceExec(msg.exec)
-	// The primary is attached under the virtual id, which carries no session
-	// record to name it by: until its harness titles its own terminal it is
-	// what it is, the attach.
-	title := ""
-	if !primary {
-		title = execTitle(msg.exec)
-	}
 	p := &pane{
+		Tab:     tab,
 		id:      m.nextPaneID,
 		stream:  msg.term,
-		action:  action,
-		sandbox: m.paneBox,
-		execID:  msg.exec.ID,
-		title:   title,
-		primary: primary,
-		service: msg.exec.Service,
+		sandbox: m.Box,
 	}
-	opts := m.paneOptions(service)
+	// A service runs on pipes, so its pane draws and is navigated but is never
+	// typed at: there is no stdin at the far end to reach (ADR 0070 §7).
+	opts := m.paneOptions(tab.Service != "")
 	if primary {
 		// The primary is the box's agent, whose status the window speaks
 		// for while this box is the one it is on (programstatus.go).
@@ -829,22 +654,19 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	}
 	p.term = termpane.New(opts...)
 
-	col := &m.shells
-	if terminal {
-		col = &m.terminals
-	}
-	at := col.insert(p, msg.exec, m.column() == col)
+	col := m.Column(tab.Side())
+	at := col.Insert(p, m.column() == col)
 	if primary {
 		// The workspace lands on the primary: it is the session the screen is
 		// a view onto, and the one whose ending ends it. A tab that arrived
 		// while it was still launching — a service, a terminal opened
 		// elsewhere — must not be left holding the keys. It sets the index
 		// only, so a shell explicitly asked for still keeps them.
-		col.active = at
+		col.Active = at
 	}
 	if msg.focus {
-		m.onShells = col == &m.shells
-		col.active = at
+		m.onShells = col == &m.Shells
+		col.Active = at
 	}
 	// Focus moves to the screen only once there is a screen: a tab that lands
 	// before the primary keeps emulating off-screen until it does.
@@ -857,50 +679,6 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 		fromPane(p.id, p.term.Attach(msg.term)),
 		fromPane(p.id, m.paneEvents(msg.term)),
 	)
-}
-
-// execBefore orders tabs: by when their sessions were created, oldest first,
-// with the id as the tie-break so the order is stable whatever the listing's.
-//
-// Services are the exception, and sort ahead of everything else in their
-// column. The left side is [services, terminals]: the services are the
-// discobox's own standing furniture — the same ones in the same order every
-// time the workspace opens — while the terminals are what you add to it, so
-// putting them first is what lets a terminal keep the number it had. Grouping
-// beats strict age here because the two kinds are used differently and are
-// numbered differently: the digits count along the terminals and shells, and
-// the leader's S chord counts along the services. See column.tabKey.
-func execBefore(a, b console.Exec) bool {
-	if serviceExec(a) != serviceExec(b) {
-		return serviceExec(a)
-	}
-	// Tools go after everything else in the shells column for the same
-	// reason, the other way round: a tool is put there to be out of the way
-	// of the shells, and a shell opened later must not land beyond it.
-	if toolExec(a) != toolExec(b) {
-		return toolExec(b)
-	}
-	// Two services are ordered as the repository declares them, not by when
-	// their processes happened to start: that is what the numeric filename
-	// prefix is for, it is the order `discobox admin service ls` shows, and
-	// it holds still across a restart, which a start time does not. It is also
-	// what S1 and S2 mean, so it had better not move under them.
-	if serviceExec(a) && a.ServiceOrder != b.ServiceOrder {
-		return a.ServiceOrder < b.ServiceOrder
-	}
-	if !a.CreatedAt.Equal(b.CreatedAt) {
-		return a.CreatedAt.Before(b.CreatedAt)
-	}
-	return a.ID < b.ID
-}
-
-// paneByExec finds the pane drawing the given session on either side of the
-// workspace, held panes included.
-func (m *Model) paneByExec(execID string) *pane {
-	if p := m.terminals.byExec(execID); p != nil {
-		return p
-	}
-	return m.shells.byExec(execID)
 }
 
 // closeTab takes one pane off the screen: its stream is closed and it leaves
@@ -916,7 +694,7 @@ func (m *Model) closeTab(p *pane) {
 	if col == nil {
 		return
 	}
-	col.close(i)
+	col.Close(i)
 	if m.dialog != nil && m.dialog.over == p {
 		// The question was about this tab. See dialog.over.
 		m.dialog = nil
@@ -925,7 +703,7 @@ func (m *Model) closeTab(p *pane) {
 		// A tool that had the window gives it back to the workspace.
 		m.toolShown = nil
 	}
-	if m.shells.len() == 0 {
+	if m.Shells.Len() == 0 {
 		// Nothing left to share the window with, so there is nothing left to
 		// maximize over either; the terminals take it back on their own.
 		m.onShells = false
@@ -949,13 +727,13 @@ func (m *Model) endablePane(p *pane) (why string, ok bool) {
 	case p != nil && p.issue != nil:
 		// Not a session: ending it is closing the tab.
 		return "", true
-	case p == nil || p.execID == "":
+	case p == nil || p.ExecID == "":
 		return "nothing to end here", false
-	case p.primary && !m.detaches():
+	case p.Primary && !m.detaches():
 		return "the primary terminal is the workspace — it keeps running when you switch away or quit", false
-	case p.primary:
+	case p.Primary:
 		return "the primary terminal is the workspace — " + m.detachHint() + " leaves it, and the session keeps running", false
-	case p.service != "":
+	case p.Service != "":
 		return "a service is stopped rather than ended — " + m.leader() + " t stops it", false
 	}
 	return "", true
@@ -974,25 +752,25 @@ func (m *Model) endPane(p *pane) tea.Cmd {
 	if why, ok := m.endablePane(p); !ok {
 		return status("%s", why)
 	}
-	if p.exited {
+	if p.Exited {
 		return m.dismissPane(p)
 	}
 	if p.issue != nil {
 		m.closeTab(p)
 		return nil
 	}
-	name, execID, gen := p.name(), p.execID, m.wsGen
+	name, execID, gen := p.name(), p.ExecID, m.wsGen
 	// The listing is a poll behind the act, so the session it still reports as
 	// live is one this window has already closed the tab for. Remembering it
 	// is what keeps the next tick from opening the tab straight back up — for
 	// the rest of the workspace, since two listings can be in flight at once
 	// and the older of them can land last.
-	if m.ending == nil {
-		m.ending = map[string]bool{}
+	if m.Ending == nil {
+		m.Ending = map[string]bool{}
 	}
-	m.ending[execID] = true
+	m.Ending[execID] = true
 	m.closeTab(p)
-	ctx, ds, box := m.ctx, m.ds.ForServer(m.paneBox.Server), m.paneBox.ID
+	ctx, ds, box := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	// The report of the end comes from the same command as the kill, so it is
 	// said once the server has done it, and a refusal cannot land ahead of it
 	// and be written over.
@@ -1023,7 +801,7 @@ func (m *Model) endExecFailed(msg endExecFailedMsg) tea.Cmd {
 	if msg.gen != m.wsGen {
 		return nil
 	}
-	delete(m.ending, msg.execID)
+	delete(m.Ending, msg.execID)
 	return m.report(true, "could not end %s: %v — it is still running", msg.name, msg.err)
 }
 
@@ -1031,16 +809,16 @@ func (m *Model) endExecFailed(msg endExecFailedMsg) tea.Cmd {
 // terminal and every tab — and every session keeps running. Bumping
 // the generation is what ends the poll and orphans any open still in flight.
 func (m *Model) closeWorkspace() {
-	if m.paletteReveal != nil && (m.hasWorkspace() || m.wsOpening) && m.paletteReveal.target == m.boxRef(m.paneBox) {
+	if m.paletteReveal != nil && (m.hasWorkspace() || m.wsOpening) && m.paletteReveal.target == m.boxRef(m.Box) {
 		m.restorePaletteView()
 	}
 	m.wsOpening = false
 	m.listFront, m.treeExpanded = false, false
 	m.endLiveScreen()
-	m.closeStreams()
+	m.Release()
 	// The push loop ends with the workspace (pushLoop), and what it was
 	// holding against it goes too.
-	m.workspace = workspace{paneBox: m.paneBox}
+	m.workspace = workspace{Box: m.Box}
 	m.leavePanes()
 }
 
@@ -1066,67 +844,27 @@ func (m *Model) endLiveScreen() {
 	}
 }
 
-// panes is the whole screen as one strip, left to right: the services, the
-// terminals with the primary at their head, then the shells. It is what the
-// leader's movement walks along, so ← and → cross the screen in the order the
-// tabs are drawn in.
-//
-// The digits count along a shorter strip — see numbered.
-func (m *Model) panes() []*pane {
-	return append(append([]*pane{}, m.terminals.panes...), m.shells.panes...)
-}
-
-// numbered is the strip the leader's digits count along: every pane on the
-// screen except the services, left to right, so a pane wears the same number
-// wherever the focus happens to be.
-//
-// The services are counted separately because they are not yours to arrange:
-// they start and stop as the discobox runs them, and a numbering they shared
-// would move a shell out from under the digit you were reaching for. See
-// services and column.tabKey.
-func (m *Model) numbered() []*pane {
-	out := make([]*pane, 0, m.terminals.len()+m.shells.len())
-	for _, p := range m.panes() {
-		if p.service == "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// services is the strip the leader's S chord counts along, from one: every
-// service pane on the screen, in the order its repository declares them.
-func (m *Model) services() []*pane {
-	out := make([]*pane, 0, m.terminals.len())
-	for _, p := range m.panes() {
-		if p.service != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 // paneOrdinal is where the focused pane sits in that strip, or -1 when nothing
 // on the workspace has the keys.
 func (m *Model) paneOrdinal() int {
-	if m.column().visible() == nil {
+	if m.column().Visible() == nil {
 		return -1
 	}
 	if m.onShells {
-		return m.terminals.len() + m.shells.active
+		return m.Terminals.Len() + m.Shells.Active
 	}
-	return m.terminals.active
+	return m.Terminals.Active
 }
 
 // focusOrdinal puts the keys on the pane wearing that number, clamped to the
 // strip's ends.
 func (m *Model) focusOrdinal(n int) {
-	n = min(max(n, 0), max(m.terminals.len()+m.shells.len()-1, 0))
-	if n < m.terminals.len() {
-		m.onShells, m.terminals.active = false, n
+	n = min(max(n, 0), max(m.Terminals.Len()+m.Shells.Len()-1, 0))
+	if n < m.Terminals.Len() {
+		m.onShells, m.Terminals.Active = false, n
 		return
 	}
-	m.onShells, m.shells.active = true, n-m.terminals.len()
+	m.onShells, m.Shells.Active = true, n-m.Terminals.Len()
 }
 
 // movePane shifts focus along that strip. It stops at the ends rather than
@@ -1152,7 +890,7 @@ func (m *Model) movePane(delta int) tea.Cmd {
 // across the screen from it. A number with no pane under it is answered rather
 // than swallowed — a jump that lands nowhere should say so.
 func (m *Model) jumpPane(n int) tea.Cmd {
-	numbered := m.numbered()
+	numbered := m.Numbered()
 	if n < 0 || n >= len(numbered) {
 		return status("no pane %d", n)
 	}
@@ -1168,58 +906,12 @@ func (m *Model) jumpPane(n int) tea.Cmd {
 // running whether you look at it or not. A number with no service under it is
 // answered the same way a pane number with nothing under it is.
 func (m *Model) jumpService(n int) tea.Cmd {
-	services := m.services()
+	services := m.ServiceTabs()
 	if n < 1 || n > len(services) {
 		return status("no service %s%d", paneServicesKey, n)
 	}
 	m.focusPane(services[n-1])
 	return nil
-}
-
-// execTitle is what to call a tab before its application names itself: the
-// program its session is running, the harness it is, or as a last resort the
-// tail of its id.
-func execTitle(exec console.Exec) string {
-	// A service's name is the one thing about it a person chose, and its argv
-	// is the login shell every service shares.
-	if name := strings.TrimSpace(exec.ServiceName); name != "" && exec.Service != "" {
-		return name
-	}
-	if exec.Service != "" {
-		return exec.Service
-	}
-	if len(exec.Command) > 0 {
-		if base := path.Base(exec.Command[0]); base != "" && base != "." && base != "/" {
-			return base
-		}
-	}
-	if exec.Harness != "" {
-		return exec.Harness
-	}
-	if len(exec.ID) > 6 {
-		return exec.ID[len(exec.ID)-6:]
-	}
-	return exec.ID
-}
-
-// tabBase is where a column's digits start: the terminals from 0, the primary
-// among them, and the shells straight after them. One press of the leader and
-// a digit therefore means one pane on the whole screen.
-//
-// The services sit in the left column but not in its digits, so they do not
-// count toward where the shells begin — that is what keeps a shell's number
-// still while the discobox starts and stops services around it.
-func (m *Model) tabBase(shells bool) int {
-	if !shells {
-		return 0
-	}
-	base := 0
-	for _, p := range m.terminals.panes {
-		if p.service == "" {
-			base++
-		}
-	}
-	return base
 }
 
 // tabbedEdge is a column's top border with its tab strip laid into it — a
@@ -1252,15 +944,19 @@ func (m *Model) tabbedEdge(col *column, shells bool, left int, control string, e
 	// The strip is a click target as well as a label row, so where each tab
 	// lands is recorded as it is drawn — the drawing loop is the one place
 	// that knows. Columns are box-relative: the corner is cell zero.
-	base := m.tabBase(shells)
-	labels := make([]string, col.len())
-	widths := make([]int, col.len())
-	for i := range col.panes {
-		labels[i] = col.label(i, base, m.paneName(col.panes[i]))
+	side := console.SideTerminals
+	if shells {
+		side = console.SideShells
+	}
+	base := m.TabBase(side)
+	labels := make([]string, col.Len())
+	widths := make([]int, col.Len())
+	for i := range col.Tabs {
+		labels[i] = tabLabel(col, i, base, m.paneName(col.Tabs[i]))
 		widths[i] = len([]rune(labels[i])) + 4 // brackets and their padding
 	}
 
-	active := min(max(col.active, 0), len(labels)-1)
+	active := min(max(col.Active, 0), len(labels)-1)
 	avail := inner - 2 - reserve // a cell of rule survives at each end
 	if widths[active] > avail {
 		// Even alone the visible tab does not fit: shorten its label as a last

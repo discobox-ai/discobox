@@ -25,7 +25,7 @@ flowchart LR
     L -->|u R t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|E| Settings["settings form → BoxSettings / UpdateBox"]
-    L -->|Enter a s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
+    L -->|Enter a s| WS["workspace (renders console.Workspace) → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
     WS -->|poll| Svc["services → Services / ServiceLogs"]
     WS -->|leader S0| SvcMenu["services menu → DoService"]
     WS -->|open| Fwd["port forward → DataSource.Forward"]
@@ -91,7 +91,10 @@ flowchart LR
   tree draws against hit zones of its own (`treeZones`) for the same reason.
 - **A workspace switched away from is parked, not closed**
   (`parkWorkspace`). A workspace is one value (`workspace`, embedded in
-  `Model`), so parking moves it aside whole and unparking moves it back. Its
+  `Model`: the core's `console.Workspace` and the renderer's focus, maximize
+  and showing tool), so parking moves it aside whole and unparking moves it
+  back. Whether it can be parked, what parking lets go of, and what a pane's
+  ending does are the core's (`Parkable`, `Park`, `console.Tab.End`). Its
   streams stay attached and its panes keep emulating off screen
   (`updateParkedPane`), so switching back is instant and shows where it is
   now: a pane that ends while parked is settled as one on screen would be,
@@ -101,7 +104,7 @@ flowchart LR
   (`endLiveScreen`). Its local ports go with the screen and come back with it,
   since they live exactly as long as the screen that shows them. Its push
   loop does not end: it is still an attach, so it still pushes (ADR
-  26-09-05-008 §1), under the generation it was opened in (`pushGen`,
+  26-09-05-008 §1), under the generation it was opened in (`PushGen`,
   `pushLoop`), and the same loop carries on when it is shown again, so no
   second push races the first. A report from a parked one names the box. A
   parked primary that ends takes its workspace with it, as an open one's
@@ -1077,8 +1080,10 @@ touched, so this happens automatically.
 **The trigger is an attach, and the workspace is one.** The rule is not about
 this window: a client with a terminal attached pushes, which is why `discobox
 attach --raw` does it too (`internal/cli/push_auto.go`). Here that means opening
-the workspace — which attaches — and its own 5s beat (`autoPushEvery`, the
-listing's) for as long as it stays open. The cursor moving down the list pushes
+the workspace — which attaches — and its own 5s beat (`console.PushEvery`) for
+as long as it stays open. Each look and what its answer holds are the core's
+(`console.Workspace.PushLook`, `Pushed`); the loop here is the window's clock
+for them. The cursor moving down the list pushes
 nothing: nothing is attached to that row. The loop is push → answer → schedule
 rather than a free-running tick, so a transfer that outlasts the beat is never
 overlapped by the next one, and it ends with the workspace's generation like
@@ -1107,7 +1112,7 @@ are fixed at create.
 **Nothing is forced, and a refusal is reported once.** The push is
 `discobox push` with no flags, so the lease and the related-history check are
 ADR 0058 §6's and the window never overrides them. A source that was refused is
-held at the commit it failed on (`pushHeld`, passed back as `held`) and resolved
+held at the commit it failed on (`console.Workspace.PushHeld`, settled by `Workspace.Pushed`, passed back as `held`) and resolved
 but not re-sent until the branch moves — or until the origin turns out to hold
 that commit anyway, which is what answering the refusal by hand looks like from
 here, since `discobox push --force` moves the lease rather than the branch.
@@ -1637,7 +1642,7 @@ service and keep meaning the discobox, and restart — which the list has no ver
 for — stays on the services menu rather than taking a key that means something
 else on every other pane.
 
-**A service tab says when it has something you have not read** (`pane.unread`,
+**A service tab says when it has something you have not read** (`console.Tab.Unread`,
 `termpane.Model.OutputSeq`). A service is the one pane you deliberately look
 away from — that is what running it in the background means — so its tab is
 where it has to say that something happened. Only services are marked: a shell
@@ -1648,8 +1653,8 @@ of the several places focus can move, so no new way to move it can forget.
 
 Unlike the exec listing, the service listing **both opens and closes** panes: a
 service is a declaration and the listing is the whole truth about it, so each
-service has exactly one writer. A pane records the run it was opened on
-(`pane.serviceRun`, `Service.runKey`) so the poll can tell one still looking at
+service has exactly one writer (`console.Workspace.ReconcileServices`). A pane
+records the run it was opened on (`console.Tab.ServiceRun`, `Service.RunKey`) so the poll can tell one still looking at
 what the server reports from one whose service has since restarted — which
 keeps the same exec id (ADR 0038) and moves only its start time — stopped, or
 been fixed.
@@ -1660,12 +1665,13 @@ side is what you opened by hand. Only shells — and tools put away after them �
 split the window, so a discobox
 with three services and no shell still draws its terminal at the full width.
 Within the column the two kinds are *grouped* rather than strictly aged
-(`execBefore`), and the services come first: they are the discobox's own
+(`console.Exec.Before`), and the services come first: they are the discobox's own
 standing furniture — the same ones in the same order every time the workspace
 opens — while the terminals are what you add to it, so a group that never
-moves goes above the group that does. `column.insert` carries `pane.service`
-into the comparison, since a pane described by id and age alone would sort as
-though it were a terminal. Services are then ordered among themselves by
+moves goes above the group that does. `console.Column.Insert` compares a pane
+by its tab's whole session (`console.Tab.Session`), service and tool included,
+since one described by id and age alone would sort as though it were a
+terminal. Services are then ordered among themselves by
 `Exec.ServiceOrder`, their position in the repository's declaration order, so
 the strip reads the way `.discobox/services` does — and the way `discobox admin
 service ls` does — and holds still across a restart, which is also what `S1`
@@ -1691,14 +1697,17 @@ remain selectable to inspect their diagnostic pane, with lifecycle verbs disable
 **The workspace screen is one discobox as the server has it** (`workspace.go`).
 Opening it attaches to the primary terminal — the virtual `ExecPrimary` id,
 which the sandbox resolves and revives itself — *and* to every other live TTY
-session the exec listing reports. Both sides are the same thing, a `column`
-(`column.go`): a strip of panes with one visible at a time, in
-session-creation order. `Model.terminals` is the left, `Model.shells` the
-right, and `onShells` says which has the keys — unless one column has been
+session the exec listing reports. Both sides are the same thing, a `console.Column`
+of panes (`column.go` names it `column`): a strip with one visible at a time,
+in session order. The workspace is the core's (`console.Workspace`, ADR
+26-11-07-876), which the window's `workspace` embeds with what is only the
+renderer's: `Model.Terminals` is the left, `Model.Shells` the right, and `onShells` says which has the keys — unless one column has been
 maximized over the other, below.
 
 **Which side a session is drawn on is the server's own record, not a layout
-this window keeps** (`terminalExec`, ADR-0054). A harness terminal — the
+this window keeps** (`console.Exec.Side`, ADR-0054). Which sessions open is
+the core's too (`console.Workspace.Reconcile`), and the desktop app opens the
+same ones through the bridge (`console.Sessions`). A harness terminal — the
 primary, or any exec created in terminal mode, which carries the harness it
 runs — is a terminal and goes on the left; everything else is a shell and goes
 on the right. So the workspace mirrors the server rather than remembering what
@@ -1715,16 +1724,17 @@ column.
 **The primary is pane 0, always, and always the leftmost terminal tab.** It is
 attached under the virtual id, which carries no creation time, so it sorts to
 the head of the terminals whatever order the attaches land in — and it is the
-one pane whose ending ends the workspace (`pane.primary`). It is not the
-head of its *column*, which the services take, so `Model.primary` finds it by
-its flag and `a` focuses it by pointer.
+one pane whose ending ends the workspace (`console.Tab.Primary`,
+`console.Tab.End`). It is not the head of its *column*, which the services
+take, so `console.Workspace.Primary` finds it by its flag and `a` focuses it by pointer.
 
-**There are two countings, because there are two kinds of pane** (`column.tabKey`).
-A terminal or a shell wears a bare digit, counted across the screen from the
-primary — terminals then shells, `tabBase` being where each column's digits
-start — and that is what the leader's digits jump along (`numbered`,
-`jumpPane`). A service wears `S1`, `S2`, counted within the left column from
-one, and answers to the leader's `S` chord (`services`, `jumpService`).
+**There are two countings, because there are two kinds of pane** (`console.Column.Number`,
+spelled as keys by `tabKey`). A terminal or a shell wears a bare digit, counted
+across the screen from the primary — terminals then shells,
+`console.Workspace.TabBase` being where each column's numbers start — and that
+is what the leader's digits jump along (`Numbered`, `jumpPane`). A service
+wears `S1`, `S2`, counted within the left column from one, and answers to the
+leader's `S` chord (`ServiceTabs`, `jumpService`).
 
 One shared set of numbers would not hold still. A service starts and stops on
 the discobox's schedule rather than yours, so one appearing would renumber
@@ -1834,7 +1844,7 @@ now.
 
 **The tools are a third kind of pane, and the only one that outlives being
 looked at** (`tools.go`, ADR-26-08-27-302, ADR-0134). A tool's pane lives in the shells
-column, sorted after every shell (`execBefore`), and `Model.toolShown` is the one
+column, sorted after every shell (`console.Exec.Before`), and `Model.toolShown` is the one
 with the whole window, if any; `screenPane` is the one pane with the whole
 screen, the showing tool.
 
@@ -1857,8 +1867,8 @@ screen, the showing tool.
   created with no workdir so it lands in the discobox's primary source
   directory. `NewTool` takes the id and the data source looks the declaration
   up again, so what runs is what the declarations say now. A labeled session is
-  a tool whether or not the catalog has arrived, so a reattach draws it first. `Exec.Tool` carries it back off the listing; `toolExec` is asked
-  before `terminalExec`, because a tool is neither a terminal nor a shell.
+  a tool whether or not the catalog has arrived, so a reattach draws it first. `Exec.Tool` carries it back off the listing; `console.Exec.Side`
+  asks `IsTool` first, because a tool is neither a terminal nor a shell.
 - The two buttons are not the same button (`toolControls`). `[-]` puts the
   window away — the leader's own way out of a screen does the same — and the
   tool becomes its tab after the shells: drawn at the column's width, session
@@ -1873,7 +1883,7 @@ screen, the showing tool.
   same key and the same bracket a column's own end button wears
   (`columnControls`) — in the window or on the tab, `X` ends what you are
   looking at. The kill goes out after the pane is already gone and the exec id
-  is recorded in `Model.ending`, so the poll that still lists the session does
+  is recorded in `console.Workspace.Ending`, so the poll that still lists the session does
   not pick the tool straight back up.
 - A tool keeps the strip's whole key map, since it is in the strip either way.
   While it has the window, the keys that would move or open something under it
@@ -1890,7 +1900,7 @@ screen, the showing tool.
 - The sessions live in the discobox, so the poll picks up every labeled one it
   finds and puts it away — a tab after the shells — rather than showing it:
   attaching to a discobox should show you the discobox. That is what makes a diff survive quitting the
-  console, and the only client-side state it needs is `ending`, which says
+  console, and the only client-side state it needs is `Ending` (`console.Workspace`), which says
   which of them this window has just killed.
 - A tool can carry a **config** (`ToolFile`, `tui_tools.go`), declared as
   `files:` with its default beside the declaration. The copy lives on
@@ -1991,7 +2001,7 @@ It is the one place this window ends a session rather than closing a view of
 one — the tool window's `[x]` is the same call on the pane that has the window
 — and it goes the same way round every time: the pane goes first and
 `DataSource.EndExec` is sent after it, since what the press asked for is that
-this session is gone. The exec id is then recorded in `Model.ending`, which
+this session is gone. The exec id is then recorded in `console.Workspace.Ending`, which
 `workspaceExecs` skips over — the poll runs behind the kill, and without it the
 very next tick would open the pane straight back up off a listing that still
 reports it live.
@@ -2005,7 +2015,7 @@ is the one thing that takes an id back out — a kill the server refused leaves 
 session still running, and hiding that would leave no way back to it short of
 attaching again.
 
-`Model.paneBox` is the discobox the screen is showing, and every one of the
+`Model.Box` (`console.Workspace.Box`) is the discobox the screen is showing, and every one of the
 list's own keys is bound behind the leader against it (`paneOptions` over the
 registry's lifecycle commands, dispatched through `console.Dispatch` as the
 list's are) — one key map for the two screens, with the same enabled checks and the same

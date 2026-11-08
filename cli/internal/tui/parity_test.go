@@ -59,10 +59,10 @@ func TestParityScenarios(t *testing.T) {
 						if m.onShells {
 							focus = "shells"
 						}
-						return m.shells.len() == want.Shells && focus == want.Focus && m.maximized == want.Maximized
+						return m.Shells.Len() == want.Shells && focus == want.Focus && m.maximized == want.Maximized
 					})
 					if t.Failed() {
-						t.Fatalf("step %d (%s, keys %v): shells=%d onShells=%v maximized=%v", i, step.Command, keys, m.shells.len(), m.onShells, m.maximized)
+						t.Fatalf("step %d (%s, keys %v): shells=%d onShells=%v maximized=%v", i, step.Command, keys, m.Shells.Len(), m.onShells, m.maximized)
 					}
 				}
 			})

@@ -33,11 +33,11 @@ func (m *Model) commandContext() console.Context {
 		},
 	}
 	if m.oneShot() {
-		box := m.paneBox
+		box := m.Box
 		ctx.OneShot = &box
 	}
 	if m.hasWorkspace() {
-		box := m.paneBox
+		box := m.Box
 		ctx.Workspace = &box
 	}
 	return ctx
@@ -110,11 +110,11 @@ func (m *Model) OfferUpgrade(box console.Sandbox) tea.Cmd {
 // which is what attach means there: it is the session the workspace is a view
 // onto. From the list it is the screen to open.
 func (m *Model) Attach(box console.Sandbox) tea.Cmd {
-	if m.inPanes() && m.boxRef(box) == m.boxRef(m.paneBox) {
+	if m.inPanes() && m.boxRef(box) == m.boxRef(m.Box) {
 		// By pointer rather than by number: the primary is 0 in the digits,
 		// but the services sit ahead of it in the strip and a jump by
 		// position would land on one of those.
-		if primary := m.primary(); primary != nil {
+		if primary := m.Primary(); primary != nil {
 			m.focusPane(primary)
 		}
 		return nil
@@ -123,7 +123,7 @@ func (m *Model) Attach(box console.Sandbox) tea.Cmd {
 }
 
 func (m *Model) Shell(box console.Sandbox) tea.Cmd {
-	if m.inPanes() && m.boxRef(box) == m.boxRef(m.paneBox) {
+	if m.inPanes() && m.boxRef(box) == m.boxRef(m.Box) {
 		return m.newShell()
 	}
 	return m.openFromList(console.InteractShell, box)
@@ -149,7 +149,7 @@ func (m *Model) Do(verb console.Verb, targets []console.Sandbox) tea.Cmd {
 		m.dialog = d
 		return nil
 	}
-	if verb == console.VerbArchive && m.inPanes() && len(targets) == 1 && m.boxRef(targets[0]) == m.boxRef(m.paneBox) {
+	if verb == console.VerbArchive && m.inPanes() && len(targets) == 1 && m.boxRef(targets[0]) == m.boxRef(m.Box) {
 		// From the workspace the one target is the discobox it shows.
 		return m.archiveWorkspace(targets[0])
 	}

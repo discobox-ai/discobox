@@ -181,7 +181,7 @@ func TestPressingTheHarnessChangesBandOpensTheReview(t *testing.T) {
 		t.Fatalf("dialog = %s, want the review", describe(m.dialog))
 	}
 	send(t, m, keyPress("s"))
-	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save "+m.paneBox.ID+" cand_1" {
+	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save "+m.Box.ID+" cand_1" {
 		t.Fatalf("writes = %v, want the reviewed candidate saved", ds.harnessChangesWrites)
 	}
 	// Saved, the band goes at once rather than when the box next reports,
@@ -322,7 +322,7 @@ func TestAnEmptyCurrentHarnessDiffSuppressesBandAndExplainer(t *testing.T) {
 		boxes := m.list.All()
 		boxes[0].HarnessConfigPending = pending
 		m.list.setAll(boxes)
-		m.paneBox = boxes[0]
+		m.Box = boxes[0]
 		want := bannerNone
 		if pending {
 			want = bannerHarnessChanges

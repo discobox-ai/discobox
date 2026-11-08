@@ -23,20 +23,20 @@ func TestLeaderCOpensATerminalBesideThePrimary(t *testing.T) {
 
 		d.key("ctrl+a")
 		d.key(paneTerminalKey)
-		d.wait("the terminal", func() bool { return m.terminals.len() == 2 })
+		d.wait("the terminal", func() bool { return m.Terminals.Len() == 2 })
 
-		if m.onShells || m.shells.len() != 0 {
+		if m.onShells || m.Shells.Len() != 0 {
 			t.Fatalf("onShells=%v shells=%d, want a terminal on the left and no tabs",
-				m.onShells, m.shells.len())
+				m.onShells, m.Shells.Len())
 		}
-		if m.terminals.active != 1 || m.terminals.panes[1].execID != "exec_term1" {
+		if m.Terminals.Active != 1 || m.Terminals.Tabs[1].ExecID != "exec_term1" {
 			t.Fatalf("active=%d id=%q, want the new terminal focused",
-				m.terminals.active, m.terminals.panes[1].execID)
+				m.Terminals.Active, m.Terminals.Tabs[1].ExecID)
 		}
 		// It runs the harness the discobox already runs: the sandbox answers which
 		// one, so the request names none.
-		if m.terminals.panes[1].action != console.InteractTerminal {
-			t.Fatalf("action = %q, want a terminal", m.terminals.panes[1].action)
+		if m.Terminals.Tabs[1].Action != console.InteractTerminal {
+			t.Fatalf("action = %q, want a terminal", m.Terminals.Tabs[1].Action)
 		}
 		// One box still, at the full width, with both terminals opened for it.
 		full, rows := m.paneCells(m.width)
@@ -63,11 +63,11 @@ func TestThePrimaryIsAlwaysTheFirstTerminal(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key(paneTerminalKey)
-		d.wait("the terminal", func() bool { return m.terminals.len() == 2 })
+		d.wait("the terminal", func() bool { return m.Terminals.Len() == 2 })
 
 		// Start over with the primary's attach held up behind the other one: the
 		// window is left, and what comes back is a fresh workspace.
-		primary := m.primary()
+		primary := m.Primary()
 		m.closeWorkspace()
 		gen := m.wsGen
 		d.dispatch(workspaceTermMsg{
@@ -77,14 +77,14 @@ func TestThePrimaryIsAlwaysTheFirstTerminal(t *testing.T) {
 		})
 		d.dispatch(workspaceTermMsg{gen: gen, exec: console.Exec{ID: console.ExecPrimary, Primary: true}, term: newFakeTerminal()})
 
-		if m.terminals.len() != 2 {
-			t.Fatalf("terminals = %d, want both", m.terminals.len())
+		if m.Terminals.Len() != 2 {
+			t.Fatalf("terminals = %d, want both", m.Terminals.Len())
 		}
-		if got := m.terminals.panes[0]; !got.primary || got == primary {
-			t.Fatalf("terminal 0 is %q, want the primary that just arrived", got.execID)
+		if got := m.Terminals.Tabs[0]; !got.Primary || got == primary {
+			t.Fatalf("terminal 0 is %q, want the primary that just arrived", got.ExecID)
 		}
-		if m.terminals.panes[1].execID != "exec_late" {
-			t.Fatalf("terminal 1 = %q, want the one that arrived first", m.terminals.panes[1].execID)
+		if m.Terminals.Tabs[1].ExecID != "exec_late" {
+			t.Fatalf("terminal 1 = %q, want the one that arrived first", m.Terminals.Tabs[1].ExecID)
 		}
 	})
 }
@@ -98,10 +98,10 @@ func TestDigitsCountAcrossBothColumns(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key(paneTerminalKey)
-		d.wait("the terminal", func() bool { return m.terminals.len() == 2 })
+		d.wait("the terminal", func() bool { return m.Terminals.Len() == 2 })
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		for _, tc := range []struct {
 			key    string
@@ -114,9 +114,9 @@ func TestDigitsCountAcrossBothColumns(t *testing.T) {
 		} {
 			d.key("ctrl+a")
 			d.key(tc.key)
-			if m.onShells != tc.shells || m.column().active != tc.at {
+			if m.onShells != tc.shells || m.column().Active != tc.at {
 				t.Fatalf("leader %s: onShells=%v active=%d, want %v/%d",
-					tc.key, m.onShells, m.column().active, tc.shells, tc.at)
+					tc.key, m.onShells, m.column().Active, tc.shells, tc.at)
 			}
 		}
 		// And past the end it says so rather than moving anything.
@@ -136,10 +136,10 @@ func TestMovingWalksTheTerminalsThenTheShells(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key(paneTerminalKey)
-		d.wait("the terminal", func() bool { return m.terminals.len() == 2 })
+		d.wait("the terminal", func() bool { return m.Terminals.Len() == 2 })
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tab", func() bool { return m.shells.len() == 1 })
+		d.wait("the tab", func() bool { return m.Shells.Len() == 1 })
 
 		m.focusOrdinal(0)
 		for _, want := range []int{1, 2, 2} {
@@ -170,16 +170,16 @@ func TestATerminalThatEndsIsHeldAndDismissed(t *testing.T) {
 		d.key("ctrl+a")
 		d.key(paneTerminalKey)
 		// Open, and the pane keys go to: the press that dismisses it is its own.
-		d.wait("the terminal", func() bool { return m.terminals.len() == 2 && m.terminals.active == 1 })
+		d.wait("the terminal", func() bool { return m.Terminals.Len() == 2 && m.Terminals.Active == 1 })
 
 		ds.execTerm("exec_term1").Close()
-		d.wait("the held screen", func() bool { return m.terminals.len() == 2 && m.terminals.panes[1].exited })
+		d.wait("the held screen", func() bool { return m.Terminals.Len() == 2 && m.Terminals.Tabs[1].Exited })
 		if !m.inPanes() {
 			t.Fatal("a terminal ending should not take the workspace with it")
 		}
 
 		d.key("q")
-		d.wait("the terminal dismissed", func() bool { return m.terminals.len() == 1 })
+		d.wait("the terminal dismissed", func() bool { return m.Terminals.Len() == 1 })
 		if !m.inPanes() || m.onShells {
 			t.Fatal("the workspace should be back on the primary")
 		}
@@ -200,17 +200,17 @@ func TestATerminalStartedElsewhereJoinsTheLeftColumn(t *testing.T) {
 			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 30, 0, 0, time.UTC),
 		})
 		d.dispatch(workspaceTickMsg{gen: m.wsGen})
-		d.wait("the terminal", func() bool { return m.terminals.len() == 2 })
+		d.wait("the terminal", func() bool { return m.Terminals.Len() == 2 })
 
-		if m.shells.len() != 0 {
-			t.Fatalf("shells = %d, want a harness terminal on the left instead", m.shells.len())
+		if m.Shells.Len() != 0 {
+			t.Fatalf("shells = %d, want a harness terminal on the left instead", m.Shells.Len())
 		}
-		if m.terminals.panes[1].execID != "exec_other" {
-			t.Fatalf("terminal 1 = %q, want the session started elsewhere", m.terminals.panes[1].execID)
+		if m.Terminals.Tabs[1].ExecID != "exec_other" {
+			t.Fatalf("terminal 1 = %q, want the session started elsewhere", m.Terminals.Tabs[1].ExecID)
 		}
 		// It arrived on its own, so it does not take the keys off the primary.
-		if m.onShells || m.terminals.active != 0 {
-			t.Fatalf("onShells=%v active=%d, want the primary still focused", m.onShells, m.terminals.active)
+		if m.onShells || m.Terminals.Active != 0 {
+			t.Fatalf("onShells=%v active=%d, want the primary still focused", m.onShells, m.Terminals.Active)
 		}
 	})
 }
@@ -227,8 +227,8 @@ func TestAFailedTerminalReports(t *testing.T) {
 		d.key("ctrl+a")
 		d.key(paneTerminalKey)
 		d.wait("the report", func() bool { return strings.Contains(m.status, "terminal:") })
-		if !m.inPanes() || m.terminals.len() != 1 {
-			t.Fatalf("terminals = %d, want the workspace up with just the primary", m.terminals.len())
+		if !m.inPanes() || m.Terminals.Len() != 1 {
+			t.Fatalf("terminals = %d, want the workspace up with just the primary", m.Terminals.Len())
 		}
 	})
 }
@@ -242,8 +242,8 @@ func TestLeaderXEndsTheFocusedShell(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
-		execID := m.shells.panes[0].execID
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
+		execID := m.Shells.Tabs[0].ExecID
 
 		d.key("ctrl+a")
 		d.key(paneEndKey)
@@ -251,14 +251,14 @@ func TestLeaderXEndsTheFocusedShell(t *testing.T) {
 		if got := ds.endedExecs(); got[0] != execID {
 			t.Fatalf("ended = %v, want the focused shell %q", got, execID)
 		}
-		if m.shells.len() != 0 {
-			t.Fatalf("shells = %d, want the tab gone with the session", m.shells.len())
+		if m.Shells.Len() != 0 {
+			t.Fatalf("shells = %d, want the tab gone with the session", m.Shells.Len())
 		}
 		// The window goes back to the terminals, which take the width back.
 		if m.onShells {
 			t.Error("focus should leave a column with nothing left in it")
 		}
-		if got := m.paneWidthOf(m.primary()); got != m.width {
+		if got := m.paneWidthOf(m.Primary()); got != m.width {
 			t.Fatalf("the terminal is %d cells wide, want the whole window (%d)", got, m.width)
 		}
 	})
@@ -275,10 +275,10 @@ func TestEndingAShellLeavesTheTabsBesideIt(t *testing.T) {
 			d.key("ctrl+a")
 			d.key("s")
 		}
-		d.wait("the shells", func() bool { return m.shells.len() == 3 })
-		m.shells.active = 1
-		ended := m.shells.panes[1].execID
-		kept := []string{m.shells.panes[0].execID, m.shells.panes[2].execID}
+		d.wait("the shells", func() bool { return m.Shells.Len() == 3 })
+		m.Shells.Active = 1
+		ended := m.Shells.Tabs[1].ExecID
+		kept := []string{m.Shells.Tabs[0].ExecID, m.Shells.Tabs[2].ExecID}
 
 		d.key("ctrl+a")
 		d.key(paneEndKey)
@@ -287,11 +287,11 @@ func TestEndingAShellLeavesTheTabsBesideIt(t *testing.T) {
 			t.Fatalf("ended = %v, want only the visible shell %q", got, ended)
 		}
 		d.settle()
-		if m.shells.len() != 2 {
-			t.Fatalf("shells = %d, want the other two still open", m.shells.len())
+		if m.Shells.Len() != 2 {
+			t.Fatalf("shells = %d, want the other two still open", m.Shells.Len())
 		}
 		for i, id := range kept {
-			if got := m.shells.panes[i].execID; got != id {
+			if got := m.Shells.Tabs[i].ExecID; got != id {
 				t.Fatalf("shell %d is %q, want %q left where it was", i, got, id)
 			}
 		}
@@ -307,8 +307,8 @@ func TestAnEndedShellIsNotReopenedByThePoll(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
-		execID := m.shells.panes[0].execID
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
+		execID := m.Shells.Tabs[0].ExecID
 		// The answer a poll started before the kill comes back with.
 		stale, _ := ds.Execs(t.Context(), "")
 
@@ -318,11 +318,11 @@ func TestAnEndedShellIsNotReopenedByThePoll(t *testing.T) {
 
 		d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: stale})
 		d.settle()
-		if m.shells.len() != 0 {
-			t.Fatalf("shells = %d, want the tab to stay closed", m.shells.len())
+		if m.Shells.Len() != 0 {
+			t.Fatalf("shells = %d, want the tab to stay closed", m.Shells.Len())
 		}
-		if !m.ending[execID] {
-			t.Fatalf("ending = %v, want the killed session remembered", m.ending)
+		if !m.Ending[execID] {
+			t.Fatalf("ending = %v, want the killed session remembered", m.Ending)
 		}
 
 		// It is remembered for as long as the workspace is, rather than until some
@@ -333,12 +333,12 @@ func TestAnEndedShellIsNotReopenedByThePoll(t *testing.T) {
 		d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: current})
 		d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: stale})
 		d.settle()
-		if m.shells.len() != 0 {
-			t.Fatalf("shells = %d, want an answer older than the kill still ignored", m.shells.len())
+		if m.Shells.Len() != 0 {
+			t.Fatalf("shells = %d, want an answer older than the kill still ignored", m.Shells.Len())
 		}
 		m.closeWorkspace()
-		if m.ending != nil {
-			t.Fatalf("ending = %v, want it dropped with the workspace", m.ending)
+		if m.Ending != nil {
+			t.Fatalf("ending = %v, want it dropped with the workspace", m.Ending)
 		}
 	})
 }
@@ -352,21 +352,21 @@ func TestAShellTheServerWillNotEndComesBack(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the shell", func() bool { return m.shells.len() == 1 })
-		execID := m.shells.panes[0].execID
+		d.wait("the shell", func() bool { return m.Shells.Len() == 1 })
+		execID := m.Shells.Tabs[0].ExecID
 		ds.endExecErr = errors.New("still going")
 
 		d.key("ctrl+a")
 		d.key(paneEndKey)
 		d.wait("the refusal", func() bool { return strings.Contains(m.status, "could not end") })
-		if m.ending[execID] {
-			t.Fatalf("ending = %v, want a refused kill forgotten", m.ending)
+		if m.Ending[execID] {
+			t.Fatalf("ending = %v, want a refused kill forgotten", m.Ending)
 		}
 
 		listing, _ := ds.Execs(t.Context(), "")
 		d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: listing})
-		d.wait("the tab back", func() bool { return m.shells.len() == 1 })
-		if got := m.shells.panes[0].execID; got != execID {
+		d.wait("the tab back", func() bool { return m.Shells.Len() == 1 })
+		if got := m.Shells.Tabs[0].ExecID; got != execID {
 			t.Fatalf("shell = %q, want the session that is still running (%q)", got, execID)
 		}
 	})
@@ -381,19 +381,19 @@ func TestThePrimaryAndServicesHaveNoEndButton(t *testing.T) {
 		ds.services = []console.Service{runningService("discobox-api", "Discobox API", "exec_svc1")}
 		ds.execs = []console.Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
 		// The primary, which the workspace is a view onto.
 		d.key("ctrl+a")
 		d.key(paneEndKey)
 		d.wait("the report", func() bool { return strings.Contains(m.status, "primary terminal") })
-		if _, ok := m.endablePane(m.primary()); ok {
+		if _, ok := m.endablePane(m.Primary()); ok {
 			t.Error("the primary should wear no [x]")
 		}
 
 		// And the service, which the discobox starts and stops on its own.
-		service := m.terminals.panes[0]
-		if service.service == "" {
+		service := m.Terminals.Tabs[0]
+		if service.Service == "" {
 			t.Fatalf("pane 0 is %q, want the service tab", service.name())
 		}
 		m.focusPane(service)
@@ -429,18 +429,18 @@ func TestAnEndedToolIsNotReopenedByThePoll(t *testing.T) {
 			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 		}}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the running tool", func() bool { return m.toolPane(tools.DiffID) != nil })
+		d.wait("the running tool", func() bool { return m.Tool(tools.DiffID) != nil })
 		// The answer a poll started before the kill comes back with.
 		stale, _ := ds.Execs(t.Context(), "")
 
-		m.showTool(m.toolPane(tools.DiffID))
+		m.showTool(m.Tool(tools.DiffID))
 		d.key("ctrl+a")
 		d.key(paneEndKey)
 		d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
 
 		d.dispatch(workspaceExecsMsg{gen: m.wsGen, execs: stale})
 		d.settle()
-		if p := m.toolPane(tools.DiffID); p != nil {
+		if p := m.Tool(tools.DiffID); p != nil {
 			t.Fatalf("the tool came back as %q, want a closed tool to stay closed", p.name())
 		}
 	})
