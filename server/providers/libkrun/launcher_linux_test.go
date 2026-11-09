@@ -191,6 +191,14 @@ func TestProviderRejectsMissingHostDependencies(t *testing.T) {
 	if strings.Contains(err.Error(), "nix develop") {
 		t.Fatalf("checkout-dependent hint: %v", err)
 	}
+	// It becomes the one-line warning the CLI prints when the server falls
+	// back to Docker, which escapes a line break to a literal \n.
+	if strings.Contains(err.Error(), "\n") {
+		t.Errorf("error spans lines: %q", err)
+	}
+	if n := strings.Count(err.Error(), "#libkrun-on-linux"); n != 1 {
+		t.Errorf("error links the install instructions %d times, want once: %v", n, err)
+	}
 }
 
 func TestDependencyCheckHonorsPasstOverride(t *testing.T) {
