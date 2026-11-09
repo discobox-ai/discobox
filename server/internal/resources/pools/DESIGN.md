@@ -154,10 +154,11 @@ flowchart LR
   whose
   agent never registers within `poolRegistrationTimeout` (2m, armed with
   `RequeueAt` only while waiting) is repaired for legacy rows. Initial attempts
-  with durable evidence instead expire without automatic replacement;
+  with durable evidence instead end, and the next pass starts a new attempt
+  with a repair ("Initial bootstrap waits" below);
   delete refuses while sandboxes are assigned, removes the runtime, and then
   the row. Failure latching follows `EverCreated` (`RegisteredAt` set):
-  never-registered pools fail terminally (`failed`); a created pool keeps its state and records the failure as
+  never-registered pools show `failed` and are retried with a new attempt; a created pool keeps its state and records the failure as
   `ErrorMessage` — its runtime keeps serving what it already hosts, so a
   failed convergence is not a phase. It names no sandbox image to the
   provider: every sandbox container is the provider's sandbox base image with
@@ -345,8 +346,31 @@ ordinary restart. A configuration change never deletes sandbox/data/cache state.
 The reconciler binds executor reports to the durable attempt and generation
 before invoking the provider. `ReportPoolBootstrap` persists real work evidence
 through the required `PoolManager` contract, independently of display telemetry.
-Expired or failed attempts remain failed across automatic retries. Registration
-expiry consumes that same evidence: it cannot replace a host during a valid
-fixed apply window, and first registration has a fixed two-minute allowance
-from apply completion. Once registered, ordinary recovery policy applies.
-See ADR 26-11-07-306 and the model's evidence policy.
+Registration expiry consumes that same evidence: it cannot replace a host
+during a valid fixed apply window, and first registration has a fixed
+two-minute allowance from apply completion. Once registered, ordinary recovery
+policy applies. See ADR 26-11-07-306 and the model's evidence policy.
+
+An ended attempt does not end a never-registered pool (ADR 26-11-09-593):
+
+- The pass that sees expiry or a provider error records it as the attempt's
+  `Failure`, shows the pool `failed`, and returns the error. Every failure is
+  retried; there is no cap.
+- A later pass, once the provider is callable, replaces the ended attempt
+  (failed, or from an earlier generation) through the fenced
+  `store.ReplacePoolBootstrap`. A failed one is replaced only after the
+  engine's backoff schedule (`reconcile.Backoff`, 2s doubling to 5m) for the
+  attempts that failed before it, counted on the attempt: the engine's own
+  count resets on every clean pass, so an agent that never registers after a
+  successful repair would otherwise be retried every silence budget. New
+  intent is not paced. A lost fence settles as superseded.
+- The new attempt owes a `RepairPool` (the runtime the last attempt left is
+  not trusted). The debt is stored on the attempt and cleared by the
+  executor's `Repaired` report, so a pass that dies first repairs on the next.
+  A repair error, `ErrPoolNotReachable` included, ends the attempt: it may
+  come before anything was replaced.
+- Waiters stay pinned to their attempt and end on a new one ("bootstrap attempt
+  changed"); the acquisition gate refuses actions with the failure while the
+  pool backs off, and an action arriving during a new attempt waits on it.
+- A registered pool, or a legacy row with no bootstrap document, never gets an
+  attempt.

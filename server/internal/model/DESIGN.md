@@ -375,9 +375,13 @@ private runtime material is always excluded from JSON.
 ## Initial pool bootstrap evidence
 
 `Pool.Bootstrap` is an additive nullable JSON column. New pending pools record
-an attempt and generation before dispatch; existing rows are not backfilled.
-`PoolBootstrap` retains per-operation counter high-water marks, fixed deadlines,
-first-registration deadline and terminal failure independently of display stamps.
+an attempt and generation before dispatch (`NewPoolBootstrap`); existing rows
+are not backfilled. `PoolBootstrap` retains per-operation counter high-water
+marks, fixed deadlines, first-registration deadline and the attempt's failure
+(with when it was recorded) independently of display stamps. A failure ends the
+attempt, not the pool: `Next` builds the attempt that replaces an ended one,
+owing a runtime repair (`Repair`, cleared by `Repaired` evidence) and counting
+the failed attempts before it (`Failed`) for pacing (ADR 26-11-09-593).
 First registration permanently ends eligibility. `BootstrapWait` pins a caller
 to its admitted attempt and applies the same evidence policy at every gate
 (ADR 26-11-07-306). Whole-row lifecycle and manifest writers omit this column.

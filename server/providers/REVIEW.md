@@ -30,7 +30,9 @@
   only for a VM this process runs and reaches without a network: for any other,
   a silent daemon may be the path's fault, and a restart kills a healthy pool.
   Never invoke repair from a pool host delete path.
-- Terminal `failed` is only for pools that never completed create. Gate any
+- `failed` is only for pools that never completed create, and even there it
+  is the last attempt's verdict: the pool reconciler starts a new bootstrap
+  attempt after backoff, so never treat it as abandonment. Gate any
   new terminal-failure transition on `!Pool.EverCreated()`. A created pool
   that fails a reconcile/repair keeps its state and records the error against
   that generation (`offline` only when its heartbeat is also stale) and keeps
