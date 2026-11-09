@@ -108,7 +108,7 @@ func newPoolAgentTestService(t *testing.T) (*service.Service, *store.Store, *dat
 	}
 	appStore := store.New(db.Write, db.Read)
 	// Registration marks the pool dirty, so these tests need a real engine.
-	svc := service.New(appStore, newTestReconcileEngine(t, db.Write), service.Options{})
+	svc := service.New(appStore, newTestReconcileEngine(t, db.Write), service.Options{AssetDir: t.TempDir()})
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID)
 	if err != nil {
 		t.Fatalf("init defaults: %v", err)

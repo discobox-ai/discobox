@@ -27,6 +27,7 @@ func TestAuthRequiredServesNoDefaultUser(t *testing.T) {
 	opts := DefaultAppOptions()
 	opts.DiscobotPublicKey = public
 	opts.AuthRequired = true
+	opts.AssetDir = t.TempDir()
 	router, _, _, stop, err := NewApp(ctx, db.Write, db.Read, opts)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
