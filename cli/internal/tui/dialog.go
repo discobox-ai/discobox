@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -179,6 +180,11 @@ type dialog struct {
 	// Any other status card is some operation's own, which a create's progress
 	// must neither overwrite nor close: a statusDialog alone is not this.
 	windowWait bool
+
+	// heldUntil is when the card starts taking keys, for one that comes up
+	// unasked over something the person may be typing into (holdUntilQuiet).
+	// Zero takes keys at once.
+	heldUntil time.Time
 
 	// onCancel runs when the dialog is dismissed without answering. Most
 	// dialogs have nothing to do there, but a question whose two answers are
@@ -392,6 +398,32 @@ func (d *dialog) nextEnabled(from, delta int) int {
 		}
 	}
 	return from
+}
+
+// keyQuiet is how long the keyboard has to be still before a card that came
+// up unasked takes a key. Typing runs a key every tenth of a second or so;
+// this outlasts the gaps in it, and is short enough not to be noticed by
+// somebody who stopped to read.
+const keyQuiet = 750 * time.Millisecond
+
+// holdUntilQuiet makes a card that comes up unasked — over a terminal being
+// signed in at, or a prompt being written — ignore keys until the keyboard
+// has been quiet for keyQuiet, rather than wait for a screen with nothing
+// being typed into before coming up at all. Its answers are single letters,
+// and the one the person was typing as it came up is not one.
+func (d *dialog) holdUntilQuiet(now time.Time) *dialog {
+	d.heldUntil = now.Add(keyQuiet)
+	return d
+}
+
+// holdKeys reports whether a key pressed at now is swallowed by the hold, and
+// if it is, starts the quiet over: a key still coming is typing still going.
+func (d *dialog) holdKeys(now time.Time) bool {
+	if !now.Before(d.heldUntil) {
+		return false
+	}
+	d.heldUntil = now.Add(keyQuiet)
+	return true
 }
 
 // update handles a key press, returning a command and whether to close.

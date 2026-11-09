@@ -325,11 +325,11 @@
   covers the panes but still draws the band. The harness-changes band's H was
   added to the first and not the second, and over the audit it typed into the
   search.
-- **Nothing unprompted that answers to single letters comes up over typing**:
-  not over a focused terminal, nor over the composer while it holds a draft or
-  was typed into in the last few seconds (`writingPrompt`). The explainer was
-  first guarded against the terminal only, and the composer is the list's
-  default focus.
+- **Nothing unprompted that answers to single letters takes a key typed
+  before it came up.** A card that opens unasked over a focused terminal or the
+  composer holds its keys until the keyboard is quiet
+  (`dialog.holdUntilQuiet`); one that does not lets the letter somebody was
+  typing into their sign-in answer it.
 - **A flag the box reports never takes down a refusal the control plane
   recorded.** `HarnessConfigPending` is the box's word; a refused login
   standing aside for it once let a box turn the red refusal into the green
@@ -337,12 +337,12 @@
 - **The harness-changes band's occurrence is its candidate.** Keyed on the box
   alone, a dismissal would hide every later change; keyed on nothing, it would
   come back on every listing.
-- **The explainer is recorded whichever way it is answered**, and only shown
-  with nothing else in front (`explainHarnessChangesIfOwed`). A path that opens
-  it over another dialog or a focused terminal — where the person
-  is likely still typing their sign-in, and a typed letter answers it — or
-  that records it without showing it, loses the one explanation the project
-  gets.
+- **The explainer is recorded whichever way it is answered**, comes up the
+  first listing that reports a change with no other dialog in front — over a
+  terminal too, which is where the person just signed in — and holds its keys
+  until typing stops (`explainHarnessChangesIfOwed`). A path that opens it
+  without the hold, or records it without showing it, loses the one
+  explanation the project gets.
 
 - Scope addition-preview promises to the addition action. The add-or-replace
   dialog offers both outcomes; an unqualified footer saying the rest stays

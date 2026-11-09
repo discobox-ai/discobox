@@ -138,13 +138,9 @@ type Model struct {
 	// refreshed on the listing's beat and drawn in the header. Zero until the
 	// first report arrives, which draws nothing rather than zeroes.
 	resources Resources
-	// promptTypedAt is when a key last went into the composer, so something
-	// unprompted that acts on single letters can wait for the person to stop
-	// (explainHarnessChangesIfOwed).
-	promptTypedAt time.Time
-	prompt        textarea.Model
-	opts          *optionSet
-	logo          logo
+	prompt    textarea.Model
+	opts      *optionSet
+	logo      logo
 
 	// draft is the prompt as the store last had it. The window writes only
 	// when the field has moved away from it, so an idle window writes nothing
@@ -1759,9 +1755,6 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// prompt is being written is exactly the one that would otherwise be
 	// wiped by the first letter of it, unread.
 	typing := m.typingIntoPrompt(msg)
-	if typing {
-		m.promptTypedAt = m.now()
-	}
 	if !m.statusE || !typing {
 		m.status, m.statusE, m.statusW = "", false, false
 		m.statusGen++
@@ -1772,6 +1765,12 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// selection when it started reporting the mouse, and its chords with it.
 	if cmd, taken := m.copyChord(msg); taken {
 		return cmd
+	}
+
+	// A card that came up unasked over typing takes no answer until the typing
+	// stops: the letter that would answer it was meant for what it covered.
+	if m.dialog != nil && m.dialog.holdKeys(m.now()) {
+		return nil
 	}
 
 	// Ctrl-C quits the window, but never from inside a pane: there it belongs
