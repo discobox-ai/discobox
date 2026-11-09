@@ -120,9 +120,20 @@ transport helpers where OpenAPI does not model the stream.
   transport, login and reconnect is this CLI's, and the app gets none of them:
   its environment is this one's less every `DISCOBOX_*` variable but its own
   (`DISCOBOX_DESKTOP_*`). What the app writes to stderr is printed here, so it
-  goes through `terminalSafeMultiline` a line at a time. The app is found by
-  `--binary`, `DISCOBOX_DESKTOP_BINARY`, beside this executable, then on PATH;
-  `desktop/README.md` says what the app does not draw yet.
+  goes through `terminalSafeMultiline` a line at a time. `desktopResolver`
+  finds the app (ADR 26-11-07-983 §§2–4): `--binary`, then
+  `DISCOBOX_DESKTOP_BINARY`, run as named on any platform. Otherwise, off
+  Linux (`desktopOSes`), the command says the platform is not yet supported.
+  On Linux, a release CLI stages the app its linked desktop manifest pins
+  (`pkg/desktopstage`: downloaded with no client of its own, so with the
+  environment's proxy, verified by SHA-256, unpacked into
+  `<discobox state>/desktop/<digest>/`, beside the staged servers and never
+  the pool-shared `~/.cache`; with no state directory it stages nothing),
+  and a development CLI, with no
+  manifest, runs the `discobox-desktop` beside it. PATH is never searched, as
+  for the server. The staged app is held in use until it exits, so another
+  CLI's prune leaves it alone; `desktop/README.md` says what the app does not
+  draw yet.
 - `discobox configure` is the same console opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harnesses*.
 - `discobox run` and `discobox attach` are the same console, opened on one run
@@ -454,7 +465,8 @@ it stands for, so a create reads it alike from anywhere.
 ## Uninstall (`discobox admin uninstall`)
 
 `internal/cli/uninstall.go` removes what Discobox keeps on this machine except
-the discobox command: `<discobox state>` (CLI state, staged servers, images),
+the discobox command: `<discobox state>` (CLI state, staged servers, images,
+staged desktop apps),
 the server's data, config, cache and state directories (from their defaults and
 the `DISCOBOX_*_DIR` variables), the VM providers' `<XDG data>/discobox`,
 `<XDG config>/discobox` (where `server.yaml`, `client.yaml`, `servers.json` and

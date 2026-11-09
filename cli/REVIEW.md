@@ -259,9 +259,11 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   that tell someone to download into it pin the file's sha256, check it, and run
   a checked copy in the box's own home, never the cached file or a link to it;
   an `-x` test proves nothing. The first `tools --help` worked example missed
-  this (#513). It governs what this package delivers and recommends; the
-  image's own cache volumes that hold programs (`~/.vscode-server`,
-  `~/.rustup`, ...) are the image's decision, not this rule's.
+  this (#513), and so did the first desktop app staging (#801), which put the
+  digest directories it runs under `~/.cache`. It governs what this package
+  delivers and recommends; the image's own cache volumes that hold programs
+  (`~/.vscode-server`, `~/.rustup`, ...) are the image's decision, not this
+  rule's.
 - **The console runs a host tool with no terminal.**
   `apiDataSource.RunHostTool` gives it empty stdin and discards its output, so
   anything that documents a host tool's console key (`tools --help`, a skill)

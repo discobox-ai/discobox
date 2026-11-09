@@ -106,6 +106,7 @@ COPY pkg/configfile ./pkg/configfile
 COPY pkg/controlplane ./pkg/controlplane
 COPY pkg/credentialpolicy ./pkg/credentialpolicy
 COPY pkg/declared ./pkg/declared
+COPY pkg/desktopstage ./pkg/desktopstage
 COPY pkg/endpoint ./pkg/endpoint
 COPY pkg/execstream ./pkg/execstream
 COPY pkg/fsdurable ./pkg/fsdurable

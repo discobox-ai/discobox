@@ -1,22 +1,24 @@
 package cli
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
-)
 
-// desktopAppName is the file name the CLI looks for the app under.
-func desktopAppName() string {
-	if runtime.GOOS == "windows" {
-		return "discobox-desktop.exe"
-	}
-	return "discobox-desktop"
-}
+	"github.com/discobox-ai/discobox/pkg/desktopstage"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
+)
 
 func writeExecutable(t *testing.T, path string) {
 	t.Helper()
@@ -25,54 +27,154 @@ func writeExecutable(t *testing.T, path string) {
 	}
 }
 
-// The app is found by the flag, then the environment, then beside this
-// executable, then on PATH (ADR 26-11-07-983 §3), and a CLI that finds none
-// says how to build one.
-func TestDesktopBinaryOrder(t *testing.T) {
-	onPath := t.TempDir()
-	writeExecutable(t, filepath.Join(onPath, desktopAppName()))
-	t.Setenv("PATH", onPath)
-	t.Setenv(desktopBinaryEnv, "")
-
-	got, err := desktopBinary("")
-	if err != nil || got != filepath.Join(onPath, desktopAppName()) {
-		t.Fatalf("on PATH: got %q, %v", got, err)
-	}
-
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	beside := filepath.Join(filepath.Dir(self), desktopAppName())
-	writeExecutable(t, beside)
-	t.Cleanup(func() { _ = os.Remove(beside) })
-	if got, err := desktopBinary(""); err != nil || got != beside {
-		t.Fatalf("beside the CLI: got %q, %v, want %q", got, err, beside)
-	}
-
-	t.Setenv(desktopBinaryEnv, "/from/env")
-	if got, _ := desktopBinary(""); got != "/from/env" {
-		t.Fatalf("environment: got %q", got)
-	}
-	if got, _ := desktopBinary("/from/flag"); got != "/from/flag" {
-		t.Fatalf("flag: got %q", got)
+// testDesktopResolver is a Linux resolver with nothing named, no manifest,
+// and an executable in a temporary directory.
+func testDesktopResolver(t *testing.T) desktopResolver {
+	t.Helper()
+	return desktopResolver{
+		goos:       "linux",
+		executable: filepath.Join(t.TempDir(), "discobox"),
+		stageRoot:  filepath.Join(t.TempDir(), "desktop"),
+		manifest:   func() (desktopstage.Manifest, error) { return desktopstage.Manifest{}, desktopstage.ErrNoManifest },
 	}
 }
 
-func TestDesktopBinaryNotFound(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	t.Setenv(desktopBinaryEnv, "")
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
+// The app is the one named, then (with no manifest) the one beside this
+// executable (ADR 26-11-07-983 §3). PATH is not searched.
+func TestDesktopResolveOrder(t *testing.T) {
+	r := testDesktopResolver(t)
+	onPath := t.TempDir()
+	writeExecutable(t, filepath.Join(onPath, "discobox-desktop"))
+	t.Setenv("PATH", onPath)
+	if _, _, err := r.resolve(context.Background()); err == nil {
+		t.Fatal("found an app on PATH")
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(self), desktopAppName())); err == nil {
-		t.Skip("a desktop app sits beside the test binary")
+
+	beside := filepath.Join(filepath.Dir(r.executable), "discobox-desktop")
+	writeExecutable(t, beside)
+	if got, _, err := r.resolve(context.Background()); err != nil || got != beside {
+		t.Fatalf("beside the CLI: got %q, %v, want %q", got, err, beside)
 	}
-	_, err = desktopBinary("")
+
+	named := filepath.Join(t.TempDir(), "mine")
+	writeExecutable(t, named)
+	r.binary = named
+	if got, _, err := r.resolve(context.Background()); err != nil || got != named {
+		t.Fatalf("named: got %q, %v", got, err)
+	}
+	r.binary = filepath.Join(t.TempDir(), "missing")
+	if _, _, err := r.resolve(context.Background()); err == nil {
+		t.Fatal("a named app that does not exist was accepted")
+	}
+}
+
+func TestDesktopResolveNamesTheWaysOut(t *testing.T) {
+	_, _, err := testDesktopResolver(t).resolve(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "build:desktop") || !strings.Contains(err.Error(), desktopBinaryEnv) {
 		t.Fatalf("got %v, want an error naming build:desktop and %s", err, desktopBinaryEnv)
 	}
+}
+
+// On macOS and Windows the desktop app is not yet supported: no release has
+// one for them, so a CLI there says so rather than looking for one. An app
+// named explicitly still runs.
+func TestDesktopIsNotYetSupportedOffLinux(t *testing.T) {
+	for goos, name := range map[string]string{"darwin": "macOS", "windows": "Windows"} {
+		r := testDesktopResolver(t)
+		r.goos = goos
+		r.manifest = func() (desktopstage.Manifest, error) {
+			t.Fatalf("%s consulted a manifest", goos)
+			return desktopstage.Manifest{}, nil
+		}
+		writeExecutable(t, filepath.Join(filepath.Dir(r.executable), desktopAppName(goos)))
+		_, _, err := r.resolve(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "not yet supported on "+name) || !strings.Contains(err.Error(), "Linux") {
+			t.Fatalf("%s: got %v, want not yet supported", goos, err)
+		}
+		named := filepath.Join(t.TempDir(), "mine")
+		writeExecutable(t, named)
+		r.binary = named
+		if got, _, err := r.resolve(context.Background()); err != nil || got != named {
+			t.Fatalf("%s, named: got %q, %v", goos, got, err)
+		}
+	}
+}
+
+// A release CLI downloads the app its manifest pins, verifies it, and runs it
+// from its staging directory, ahead of anything beside it; a tampered download
+// is refused.
+func TestDesktopResolveStagesThePinnedApp(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the desktop app is staged on Linux only")
+	}
+	archive := desktopArchive(t, "app")
+	served := archive
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(served) }))
+	t.Cleanup(server.Close)
+	sum := sha256.Sum256(archive)
+	manifest := desktopstage.Manifest{
+		Version: "v9.9.9", OS: "linux", Arch: runtime.GOARCH, Command: "discobox-desktop",
+		Asset: serverstage.Asset{Name: "app.tar.gz", URLs: []string{server.URL + "/app.tar.gz"}, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(archive))},
+	}
+	r := testDesktopResolver(t)
+	r.manifest = func() (desktopstage.Manifest, error) { return manifest, nil }
+	writeExecutable(t, filepath.Join(filepath.Dir(r.executable), "discobox-desktop"))
+
+	served = desktopArchive(t, "tampered")
+	manifest.Asset.Size = int64(len(served))
+	if _, _, err := r.resolve(context.Background()); err == nil || !strings.Contains(err.Error(), "digest") {
+		t.Fatalf("tampered: got %v, want a digest refusal", err)
+	}
+
+	served = archive
+	manifest.Asset.Size = int64(len(archive))
+	got, release, err := r.resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if want := filepath.Join(r.stageRoot, manifest.Asset.SHA256, "discobox-desktop"); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if body, _ := os.ReadFile(got); string(body) != "app" {
+		t.Fatalf("ran %q", body)
+	}
+}
+
+// With no state directory there is nowhere this user's alone to keep the app,
+// so a release CLI stages nothing rather than falling back to a shared one.
+func TestDesktopResolveNeedsAStateDirectory(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the desktop app is staged on Linux only")
+	}
+	r := testDesktopResolver(t)
+	r.stageRoot = ""
+	r.manifest = func() (desktopstage.Manifest, error) {
+		return desktopstage.Manifest{Version: "v1", OS: runtime.GOOS, Arch: runtime.GOARCH}, nil
+	}
+	if _, _, err := r.resolve(context.Background()); err == nil || !strings.Contains(err.Error(), "state directory") {
+		t.Fatalf("got %v, want a refusal naming the state directory", err)
+	}
+}
+
+func desktopArchive(t *testing.T, body string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "discobox-desktop", Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(body))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 // The app gets no discobox credential or server address from this process's

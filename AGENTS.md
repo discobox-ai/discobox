@@ -51,6 +51,7 @@
   platform and harness bundle, rebuild watcher), `discobox-dev-lock` (one `task dev` loop per checkout),
   `discobox-gzip` (portable file compression for the build),
   `discobox-server-manifest` (the server manifest a release CLI is linked with),
+  `discobox-desktop-manifest` (the desktop app manifest linked in beside it),
   `discobox-installers` (stamps the install scripts a release uploads with that
   release and its binaries' digests), `discobox-installer-logo` (draws the console's
   mark into those scripts, from the console's own cell data), `discobox-winres` (the

@@ -61,6 +61,20 @@ func stagedServerRoot() string {
 	return filepath.Join(os.TempDir(), "discobox-server-state")
 }
 
+// stagedDesktopRoot is where the desktop app is staged, one directory per
+// digest (ADR 26-11-07-983 §2): a sibling of the staged servers, and for their
+// reason. It is run without being hashed again, so it must be this user's
+// alone, and the user cache is not: in a discobox ~/.cache is shared by every
+// box in the pool. Empty when there is no state directory: unlike the
+// server's, there is no fallback under the shared temporary directory, where
+// another user could create the digest's directory first.
+func stagedDesktopRoot() string {
+	if root := discoboxStateDir(); root != "" {
+		return filepath.Join(root, "desktop")
+	}
+	return ""
+}
+
 // stagedImagesRoot is the image cache an autolaunch stages the server's images
 // into, and the one every server this CLI runs is told to load them from (ADR
 // 0109). A sibling of the staged servers, for the reason those are a sibling of

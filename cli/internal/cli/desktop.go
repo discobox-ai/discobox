@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -18,6 +19,8 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/console/bridge"
+	"github.com/discobox-ai/discobox/pkg/desktopstage"
+	"github.com/discobox-ai/discobox/pkg/serverstage"
 )
 
 // `discobox desktop` opens the console as a native app: the same console as
@@ -31,7 +34,8 @@ import (
 // is built so far.
 
 // desktopBinaryEnv names a desktop binary to run in place of the one this CLI
-// would run — for developing the desktop app against a released CLI.
+// would run — for developing the desktop app against a released CLI, or
+// running it on a machine that cannot download it.
 const desktopBinaryEnv = "DISCOBOX_DESKTOP_BINARY"
 
 func (a *App) newDesktopCommand() *cobra.Command {
@@ -68,10 +72,19 @@ console.`,
 func (a *App) runDesktop(cmd *cobra.Command, binary string) error {
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
-	path, err := desktopBinary(binary)
+	resolver := a.desktopResolver(binary)
+	progress := a.serverStartupLine()
+	resolver.onProgress = func(report serverstage.Progress) {
+		progress.set(desktopStageText(report))
+	}
+	path, release, err := resolver.resolve(ctx)
+	progress.clear()
 	if err != nil {
 		return err
 	}
+	// Held until the app has exited: it marks the app's directory in use, so
+	// no other CLI prunes it from under the running app.
+	defer release()
 	projectID, err := a.projectIDValue()
 	if err != nil {
 		return err
@@ -169,29 +182,160 @@ func (t *terminalSafeLines) flush() {
 	}
 }
 
-// desktopBinary finds the desktop app: the flag, then the environment, then one
-// beside this executable (where `go tool task build:desktop` puts it), then one
-// on PATH. A released CLI downloads the app its manifest pins instead (ADR
-// 26-11-07-983 §2); until that lands, this is the only way it is found.
-func desktopBinary(flag string) (string, error) {
-	if flag != "" {
-		return flag, nil
+// desktopOSes are the platforms `discobox desktop` runs on. Linux only for now
+// (ADR 26-11-07-983 §4): the app is built and tested only there, so no release
+// has an app for anywhere else to download.
+var desktopOSes = []string{"linux"}
+
+// desktopResolver answers "which desktop app does this CLI run", staging the
+// one its release pins when that is what it takes.
+//
+// It holds what it consults rather than reading it from the process, so a test
+// can give it a platform, an executable, a cache and a manifest and get the
+// answers a user would.
+type desktopResolver struct {
+	// binary is --binary, or DISCOBOX_DESKTOP_BINARY.
+	binary string
+	goos   string
+	// executable is the running discobox; a development build looks beside it.
+	executable string
+	// stageRoot holds one unpacked app per digest. Empty when this machine
+	// has no state directory, and then nothing is staged.
+	stageRoot string
+	// manifest is the desktop manifest this build was linked with.
+	manifest   func() (desktopstage.Manifest, error)
+	onProgress func(serverstage.Progress)
+}
+
+func (a *App) desktopResolver(flag string) desktopResolver {
+	binary := flag
+	if binary == "" {
+		binary = strings.TrimSpace(os.Getenv(desktopBinaryEnv))
 	}
-	if env := os.Getenv(desktopBinaryEnv); env != "" {
-		return env, nil
-	}
-	name := "discobox-desktop"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	if self, err := os.Executable(); err == nil {
-		beside := filepath.Join(filepath.Dir(self), name)
-		if _, err := os.Stat(beside); err == nil {
-			return beside, nil
+	executable, err := os.Executable()
+	if err == nil {
+		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+			executable = resolved
 		}
 	}
-	if found, err := exec.LookPath(name); err == nil {
-		return found, nil
+	return desktopResolver{
+		binary:     binary,
+		goos:       runtime.GOOS,
+		executable: executable,
+		stageRoot:  stagedDesktopRoot(),
+		manifest:   desktopstage.Default,
 	}
-	return "", errors.New("no desktop app found: build it with `go tool task build:desktop`, or name one with --binary or " + desktopBinaryEnv)
+}
+
+// resolve returns the app to run and what to call once it has exited.
+//
+// The order is ADR 26-11-07-983 §3's: --binary, then DISCOBOX_DESKTOP_BINARY,
+// run as named on any platform, for developing the app or running it offline.
+// Then, where the desktop app is supported, the app this release pins,
+// downloaded and verified; a development build, which pins none, runs the one
+// beside it. PATH is not searched, for the server's reason (ADR 0099 §6).
+func (r desktopResolver) resolve(ctx context.Context) (string, func(), error) {
+	if r.binary != "" {
+		named, err := filepath.Abs(r.binary)
+		if err != nil {
+			return "", nil, fmt.Errorf("desktop app %s: %w", r.binary, err)
+		}
+		if _, err := os.Stat(named); err != nil {
+			return "", nil, fmt.Errorf("desktop app %s: %w", named, err)
+		}
+		return named, func() {}, nil
+	}
+	if !slices.Contains(desktopOSes, r.goos) {
+		return "", nil, fmt.Errorf("discobox desktop is not yet supported on %s; it runs on %s",
+			desktopOSName(r.goos), strings.Join(desktopOSNames(), ", "))
+	}
+	manifest, err := r.manifest()
+	if errors.Is(err, desktopstage.ErrNoManifest) {
+		if beside, ok := r.beside(); ok {
+			return beside, func() {}, nil
+		}
+		return "", nil, fmt.Errorf("%w, and there is no %s beside %s\nBuild one with `go tool task build:desktop`, or name one with --binary or %s",
+			err, desktopAppName(r.goos), r.executableName(), desktopBinaryEnv)
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	if !manifest.ForThisPlatform() {
+		return "", nil, fmt.Errorf("this build's desktop app is for %s, and this is %s/%s", manifest.Platform(), runtime.GOOS, runtime.GOARCH)
+	}
+	if r.stageRoot == "" {
+		return "", nil, fmt.Errorf("there is no state directory to keep the desktop app in: set HOME or XDG_STATE_HOME, or name an app with --binary or %s", desktopBinaryEnv)
+	}
+	if err := ensureStateDir(r.stageRoot); err != nil {
+		return "", nil, err
+	}
+	// No client of its own: staging's honors the environment's proxy
+	// settings, as the server's download does.
+	app, err := desktopstage.Stage(ctx, manifest, desktopstage.Options{
+		Root:       r.stageRoot,
+		OnProgress: r.onProgress,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	return app.Path, func() { _ = app.Close() }, nil
+}
+
+// beside is a desktop app next to this executable, where `go tool task
+// build:desktop` puts one.
+func (r desktopResolver) beside() (string, bool) {
+	if r.executable == "" {
+		return "", false
+	}
+	path := filepath.Join(filepath.Dir(r.executable), desktopAppName(r.goos))
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return "", false
+	}
+	return path, true
+}
+
+func (r desktopResolver) executableName() string {
+	if r.executable == "" {
+		return "discobox"
+	}
+	return r.executable
+}
+
+// desktopAppName is what a development build of the app is called.
+func desktopAppName(goos string) string {
+	if goos == "windows" {
+		return "discobox-desktop.exe"
+	}
+	return "discobox-desktop"
+}
+
+// desktopOSName is a GOOS as a person calls it.
+func desktopOSName(goos string) string {
+	switch goos {
+	case "darwin":
+		return "macOS"
+	case "windows":
+		return "Windows"
+	case "linux":
+		return "Linux"
+	}
+	return goos
+}
+
+func desktopOSNames() []string {
+	names := make([]string, 0, len(desktopOSes))
+	for _, goos := range desktopOSes {
+		names = append(names, desktopOSName(goos))
+	}
+	return names
+}
+
+// desktopStageText says what staging the desktop app is doing, in
+// serverStageText's words.
+func desktopStageText(report serverstage.Progress) string {
+	if report.Done {
+		return "Desktop app downloaded"
+	}
+	return "Downloading desktop app" + bytesSuffix(report.Current, report.Total, 0, 0)
 }

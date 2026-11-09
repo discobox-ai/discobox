@@ -48,8 +48,11 @@ the epic, and does not yet follow the ADRs everywhere:
   (`ANSWERED` in `main.rs`) says so, and has an entry in the parity ledger.
 - **The look** uses Inter and the system's monospace face, and draws some of the
   TUI's characters (until #803).
-- **The CLI** finds the app with `--binary`, then `DISCOBOX_DESKTOP_BINARY`, then
-  beside itself, then on PATH. Downloading on demand comes with #801.
+- **The CLI** runs the app named with `--binary` or `DISCOBOX_DESKTOP_BINARY`.
+  Otherwise, on Linux, a release CLI downloads the app its desktop manifest
+  pins into `<discobox state>/desktop/<digest>/`, and a development CLI runs the
+  one beside it. On macOS and Windows it says the platform is not yet supported
+  (ADR 26-11-07-983 §4).
 
 | File | What |
 | --- | --- |

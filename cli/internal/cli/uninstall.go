@@ -240,6 +240,7 @@ func uninstallLocations() []uninstallLocation {
 		{path: cliStateDir(), what: "CLI state: this machine's identity, SSH keys and configs, history"},
 		{path: stagedServerRoot(), what: "downloaded servers"},
 		{path: stagedImagesRoot(), what: "downloaded images", env: envNamed(ImageCacheEnv)},
+		{path: stagedDesktopRoot(), what: "downloaded desktop apps"},
 		{path: serverDataDir(), what: "server data: database, keys", env: envNamed("DISCOBOX_DATA_DIR")},
 		// VM providers keep their pool disks and guest images here whatever
 		// the server's data directory is.
