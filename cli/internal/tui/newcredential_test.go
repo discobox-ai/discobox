@@ -64,15 +64,15 @@ func TestANewCredentialForAnyOtherAskIsFilledFromIt(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	toNewCredential(t, m, lifetime.Day)
 	f := m.dialog.form
-	if f.chosen("kind") != "token" || f.value("name") != "github" || f.value(secretRouteKey+"0") != "api.github.com" || f.chosen("source") != "value" {
-		t.Fatalf("form = kind %q name %q route %q source %q, want the request's", f.chosen("kind"), f.value("name"), f.value(secretRouteKey+"0"), f.chosen("source"))
+	if f.chosen("kind") != "token" || f.value("name") != "github" || f.value(console.SecretRouteKey+"0") != "api.github.com" || f.chosen("source") != "value" {
+		t.Fatalf("form = kind %q name %q route %q source %q, want the request's", f.chosen("kind"), f.value("name"), f.value(console.SecretRouteKey+"0"), f.chosen("source"))
 	}
 	send(t, m, keyPress("enter"))
 	if len(ds.createdSecrets) != 0 || !onNewCredentialForm(m) || f.err == "" {
 		t.Fatalf("created = %#v, dialog = %s, want an empty token refused on the form", ds.createdSecrets, describe(m.dialog))
 	}
 	for _, row := range f.rows {
-		if row.key == "token" && !row.masked {
+		if row.Key == "token" && !row.Masked {
 			t.Fatal("the token is drawn in the clear")
 		}
 	}

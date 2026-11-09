@@ -55,15 +55,15 @@ func TestRoutesAreEditedRowByRow(t *testing.T) {
 	m, ds := routesFixture(t)
 
 	send(t, m, keyPress("e"))
-	if got := formValue(t, m, secretRouteKey+"1"); got != "githubcopilot.com/mcp=blocked" {
+	if got := formValue(t, m, console.SecretRouteKey+"1"); got != "githubcopilot.com/mcp=blocked" {
 		t.Fatalf("second route row = %q", got)
 	}
-	if got := formValue(t, m, secretRouteKey+"3"); got != "" {
+	if got := formValue(t, m, console.SecretRouteKey+"3"); got != "" {
 		t.Fatalf("fourth route row = %q, want it empty for another", got)
 	}
-	clearRow(t, m, secretRouteKey+"0")
-	clearRow(t, m, secretRouteKey+"2")
-	typeInto(t, m, secretRouteKey+"3", "api.github.com/repos/ = blocked")
+	clearRow(t, m, console.SecretRouteKey+"0")
+	clearRow(t, m, console.SecretRouteKey+"2")
+	typeInto(t, m, console.SecretRouteKey+"3", "api.github.com/repos/ = blocked")
 	drain(t, m, submitForm(t, m), 0)
 	want := []secretroute.Route{
 		{Hosts: []string{"githubcopilot.com"}, Paths: []string{"/mcp"}, Blocked: true},
@@ -89,7 +89,7 @@ func TestRoutesAreClearedAndAnUntouchedCardSendsNone(t *testing.T) {
 
 	send(t, m, keyPress("up"), keyPress("e"))
 	for i := range 3 {
-		clearRow(t, m, secretRouteKey+string(rune('0'+i)))
+		clearRow(t, m, console.SecretRouteKey+string(rune('0'+i)))
 	}
 	drain(t, m, submitForm(t, m), 0)
 	if len(ds.updated) != 2 || ds.updated[1].Routes == nil || len(*ds.updated[1].Routes) != 0 {
@@ -104,7 +104,7 @@ func TestAMalformedRouteKeepsTheCardUp(t *testing.T) {
 	m, ds := routesFixture(t)
 
 	send(t, m, keyPress("e"))
-	typeInto(t, m, secretRouteKey+"3", "github.com/a=Read-only queries")
+	typeInto(t, m, console.SecretRouteKey+"3", "github.com/a=Read-only queries")
 	send(t, m, keyPress("ctrl+s"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("dialog = %s, want the card kept up", describe(m.dialog))
@@ -126,7 +126,7 @@ func TestANewSecretTakesARoute(t *testing.T) {
 	send(t, m, keyPress("n"))
 	typeInto(t, m, "name", "github")
 	typeInto(t, m, "token", "ghp_example")
-	typeInto(t, m, secretRouteKey+"0", "POST api.github.com,*.github.com/graphql graphql=mutation:createPullRequest")
+	typeInto(t, m, console.SecretRouteKey+"0", "POST api.github.com,*.github.com/graphql graphql=mutation:createPullRequest")
 	drain(t, m, submitForm(t, m), 0)
 	want := []secretroute.Route{{
 		Hosts:   []string{"*.github.com", "api.github.com"},

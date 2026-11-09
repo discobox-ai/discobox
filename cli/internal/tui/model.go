@@ -2687,26 +2687,16 @@ type renameDoneMsg struct {
 // common edit — a word added to a name that is nearly right — is a word typed
 // rather than a name retyped.
 func (m *Model) askRename(box console.Sandbox) tea.Cmd {
-	// Enter on what is shown asks for nothing, whichever name that is: on a
-	// box nobody has named it is the title its harness set, and accepting it
-	// would freeze that as the box's name. An empty line takes a
-	// given name away, which puts the title back; on a box with none there is
-	// nothing to take.
-	question := "What should this discobox be called?"
-	if box.GivenName != "" {
-		question += " An empty name gives back the title its harness set."
-	}
 	// The box's resolved title is offered without the msg its program puts
 	// after it on the row (sandboxmeta.Title): the msg is the program's, and
 	// accepting it would make it part of the name. The row's own text,
 	// box.Name, carries that msg while the program works.
-	current := boxTitle(box, box.TerminalTitle)
-	m.dialog = inputDialog("Rename", question, "name", current,
-		func(name string) tea.Cmd {
-			if name == current || (name == "" && box.GivenName == "") {
+	m.dialog = inputDialog("Rename", console.RenameForm(box, boxTitle(box, box.TerminalTitle)),
+		func(r console.Rename) tea.Cmd {
+			if r.Unchanged {
 				return status("name unchanged")
 			}
-			return func() tea.Msg { return renameMsg{box: box, name: name} }
+			return func() tea.Msg { return renameMsg{box: box, name: r.Name} }
 		})
 	return nil
 }
@@ -2790,10 +2780,10 @@ func (m *Model) askForSource(value, problem string, card *createCard) {
 	if problem != "" {
 		body = problem
 	}
-	d := inputDialog("Source", body, m.opts.sourceLabel(), value,
-		func(v string) tea.Cmd {
+	d := inputDialog("Source", console.SourceForm(body, m.opts.sourceLabel(), value),
+		func(source string) tea.Cmd {
 			return func() tea.Msg {
-				return sourceChosenMsg{source: strings.TrimSpace(v), typed: true, card: card}
+				return sourceChosenMsg{source: source, typed: true, card: card}
 			}
 		})
 	d.err = problem != ""
@@ -2851,7 +2841,7 @@ func (m *Model) askForItem(opt *option, value, problem string, card *createCard)
 	if problem != "" {
 		body = problem
 	}
-	d := inputDialog("Add "+opt.label, body, opt.example, value, func(v string) tea.Cmd {
+	d := inputDialog("Add "+opt.label, console.ItemForm(body, opt.example, value), func(v string) tea.Cmd {
 		switch {
 		case v == "":
 			return nil

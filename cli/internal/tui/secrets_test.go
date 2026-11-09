@@ -199,7 +199,7 @@ func TestANewSecretIsNamedRoutedAndStoredMasked(t *testing.T) {
 	}
 	// The row being answered says what it means, so what a route covers is
 	// on screen while it is being typed rather than a question ago.
-	typeInto(t, m, secretRouteKey+"0", "registry.npmjs.org")
+	typeInto(t, m, console.SecretRouteKey+"0", "registry.npmjs.org")
 	if !strings.Contains(dialogText(m), "* for any host") {
 		t.Fatalf("the form does not say what a route may be: %q", dialogText(m))
 	}
@@ -277,10 +277,10 @@ func TestTheRoutesCanBeEditedAndCleared(t *testing.T) {
 	}
 	// It opens on what the secret has, so editing is editing rather than
 	// retyping.
-	if got := formValue(t, m, secretRouteKey+"0"); got != "github.com" {
+	if got := formValue(t, m, console.SecretRouteKey+"0"); got != "github.com" {
 		t.Fatalf("route row = %q, want the current route", got)
 	}
-	clearRow(t, m, secretRouteKey+"0")
+	clearRow(t, m, console.SecretRouteKey+"0")
 	drain(t, m, submitForm(t, m), 0)
 	if len(ds.updated) != 1 || ds.updated[0].Routes == nil || len(*ds.updated[0].Routes) != 0 {
 		t.Fatalf("updated = %#v, want the routes cleared", ds.updated)
@@ -606,7 +606,7 @@ func TestABindingIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 	}
 	clearRow(t, m, "envVar")
 	send(t, m, typeString("GH_TOKEN")...)
-	typeInto(t, m, secretRouteKey+"0", "api.github.com")
+	typeInto(t, m, console.SecretRouteKey+"0", "api.github.com")
 	customTTL(t, m, "ttl", "900")
 	send(t, m, keyPress("enter"))
 
@@ -674,12 +674,12 @@ func TestTheFormIsTheSameHeightOnEveryRow(t *testing.T) {
 				f.focus()
 				height := len(strings.Split(m.dialog.view(m.st, &m.zones, width, 60), "\n"))
 				if rows == 0 {
-					rows, on = height, f.rows[i].key
+					rows, on = height, f.rows[i].Key
 					continue
 				}
 				if height != rows {
 					t.Fatalf("%s at %d columns: %d rows on %q, %d on %q",
-						open.what, width, rows, on, height, f.rows[i].key)
+						open.what, width, rows, on, height, f.rows[i].Key)
 				}
 			}
 			send(t, m, keyPress("esc"))
@@ -703,7 +703,7 @@ func chooseTTL(t *testing.T, m *Model, row, preset string) {
 // appears behind it.
 func customTTL(t *testing.T, m *Model, row, howLong string) {
 	t.Helper()
-	chooseTTL(t, m, row, ttlCustom)
+	chooseTTL(t, m, row, console.LifetimeCustom)
 	clearRow(t, m, row+"Custom")
 	send(t, m, typeString(howLong)...)
 }
@@ -712,7 +712,7 @@ func customTTL(t *testing.T, m *Model, row, howLong string) {
 // is still on the card, saying why.
 func rowShown(m *Model, key string) bool {
 	for i, row := range m.dialog.form.rows {
-		if row.key == key {
+		if row.Key == key {
 			return m.dialog.form.answerable(i)
 		}
 	}
@@ -925,7 +925,7 @@ func TestAnOAuthSecretIsRegisteredFromTheWindow(t *testing.T) {
 	typeInto(t, m, "name", "claude")
 	onRow(t, m, "kind")
 	send(t, m, keyPress("right"))
-	typeInto(t, m, secretRouteKey+"0", "api.anthropic.com")
+	typeInto(t, m, console.SecretRouteKey+"0", "api.anthropic.com")
 	typeInto(t, m, "access", "sk-ant-oat01-access")
 	typeInto(t, m, "refresh", "sk-ant-ort01-refresh")
 	typeInto(t, m, "tokenURL", "https://console.anthropic.com/v1/oauth/token")
@@ -1107,7 +1107,7 @@ func TestAnOddLimitSurvivesAnEditThatDoesNotTouchIt(t *testing.T) {
 	m.secrets.all[0].MaxTTL = time.Second
 
 	send(t, m, keyPress("e"))
-	if got := m.dialog.form.chosen("ttl"); got != ttlCustom {
+	if got := m.dialog.form.chosen("ttl"); got != console.LifetimeCustom {
 		t.Fatalf("ttl row = %q, want a limit that is no preset on the custom row", got)
 	}
 	send(t, m, keyPress("enter"))
@@ -1162,7 +1162,7 @@ func TestTheBindingLimitIsEditedAndZeroMeansForever(t *testing.T) {
 
 	// Forever is one of the presets, because zero is a meaningful answer here
 	// rather than an empty field.
-	chooseTTL(t, m, "ttl", ttlNever)
+	chooseTTL(t, m, "ttl", console.LifetimeNever)
 	if got := m.dialog.form.chosenLabel("ttl"); got != "no limit" {
 		t.Fatalf("zero reads as %q, want it to say there is no limit", got)
 	}
@@ -1269,7 +1269,7 @@ func onRow(t *testing.T, m *Model, key string) {
 	t.Helper()
 	f := m.dialog.form
 	for i, row := range f.rows {
-		if row.key == key {
+		if row.Key == key {
 			f.cursor = i
 			f.focus()
 			return
@@ -1300,12 +1300,10 @@ func formValue(t *testing.T, m *Model, row string) string {
 	return m.dialog.form.value(row)
 }
 
-// submitForm answers the whole card, the way Enter does.
+// submitForm answers the whole card, the way Enter does. A refusal stays on
+// the card, for the test to read.
 func submitForm(t *testing.T, m *Model) tea.Cmd {
 	t.Helper()
-	if why := m.dialog.form.submit(); why != "" {
-		t.Fatalf("the form refused: %s", why)
-	}
 	return m.dialog.submit(m.dialog.form)
 }
 

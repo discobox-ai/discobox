@@ -482,15 +482,8 @@ type harnessVariantCreatedMsg struct {
 
 func (m *Model) newHarnessVariantForm(parent console.Harness) tea.Cmd {
 	server := m.configServer()
-	parentRow := textRow("parent", "Parent", "", parent.DisplayName())
-	parentRow.locked, parentRow.why = true, parent.DisplayName()
-	name := textRow("name", "Name", parent.Name+" (work)", "")
-	name.required = "give the variant a name"
-	slug := textRow("slug", "Slug", parent.Slug+"-work", "")
-	slug.required = "give the variant a slug"
 	var d *dialog
-	d = formDialog("Create variant", newForm(parentRow, name, slug), func(f *form) tea.Cmd {
-		variant := console.NewHarnessVariant{ParentID: parent.ID, Name: strings.TrimSpace(f.value("name")), Slug: strings.TrimSpace(f.value("slug"))}
+	d = formDialog("Create variant", console.HarnessVariantForm(parent), func(variant console.NewHarnessVariant) tea.Cmd {
 		return m.createHarnessVariant(server, variant, d)
 	})
 	d.body = "Follows the parent's bundle updates. Starts with its own account: saved logins, secret bindings and personal files are not copied."

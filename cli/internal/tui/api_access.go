@@ -6,7 +6,7 @@ import (
 )
 
 func approvalDialog(title string, f *form, submit func(*form) tea.Cmd) *dialog {
-	d := formDialog(title, f, submit)
+	d := &dialog{kind: dlgForm, title: title, form: f, submit: submit}
 	d.formActions = []action{{key: "accept", label: "Accept", enabled: true}, {key: "deny", label: "Deny", enabled: true}}
 	d.formActionAt = -1
 	if len(f.rows) == 0 {

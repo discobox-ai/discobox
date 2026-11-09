@@ -193,7 +193,7 @@ func TestCombinedApprovalStagesIndependentDecisions(t *testing.T) {
 					t.Fatal("first part committed before delegation review")
 				}
 				locked := use == "accept"
-				if m.dialog.form.rows[0].locked != locked || m.dialog.form.rows[1].locked != locked {
+				if m.dialog.form.rows[0].Locked != locked || m.dialog.form.rows[1].Locked != locked {
 					t.Fatal("credential/duration locks disagree with use decision")
 				}
 				m.dialog.form.choose("scope", "anywhere")
@@ -364,7 +364,7 @@ func TestNewCredentialEditorScrollsFieldsOnCompactTerminal(t *testing.T) {
 	for _, key := range []string{"name", "token", "format"} {
 		f := m.dialog.form
 		for i, r := range f.rows {
-			if r.key == key {
+			if r.Key == key {
 				f.moveTo(i)
 				break
 			}
@@ -376,7 +376,7 @@ func TestNewCredentialEditorScrollsFieldsOnCompactTerminal(t *testing.T) {
 	}
 	f := m.dialog.form
 	for i, r := range f.rows {
-		if r.key == "token" {
+		if r.Key == "token" {
 			f.moveTo(i)
 		}
 	}
@@ -390,7 +390,7 @@ func TestNewCredentialEditorScrollsFieldsOnCompactTerminal(t *testing.T) {
 }
 
 func TestScrolledFormHoverMatchesVisibleMouseRegion(t *testing.T) {
-	f := newForm(textRow("one", "One", "", "1"), textRow("two", "Two", "", "2"), textRow("three", "Three", "", "3"), textRow("four", "Four", "", "4"), textRow("five", "Five", "", "5"))
+	f := newForm(console.Field{Key: "one", Label: "One", Value: "1"}, console.Field{Key: "two", Label: "Two", Value: "2"}, console.Field{Key: "three", Label: "Three", Value: "3"}, console.Field{Key: "four", Label: "Four", Value: "4"}, console.Field{Key: "five", Label: "Five", Value: "5"})
 	f.rowRoom = 3
 	f.moveTo(4)
 	st := newStyles(false)

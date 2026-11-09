@@ -113,7 +113,7 @@ func TestANewSecretTakesAFormat(t *testing.T) {
 	send(t, m, keyPress("n"))
 	typeInto(t, m, "name", "claude")
 	typeInto(t, m, "token", "sk-ant-oat01-real")
-	typeInto(t, m, secretRouteKey+"0", "api.anthropic.com")
+	typeInto(t, m, console.SecretRouteKey+"0", "api.anthropic.com")
 	typeInto(t, m, "format", "sk-ant-oat01-{base64url:95}")
 	drain(t, m, submitForm(t, m), 0)
 	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].Format != "sk-ant-oat01-{base64url:95}" {

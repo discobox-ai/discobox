@@ -212,3 +212,44 @@ flowchart LR
   own event loop — the TUI's ticks are Bubble Tea commands its tests drive
   one at a time — and drops an answer for a workspace it has left; it decides
   nothing about what a look does or means.
+
+## Forms
+
+`form.go` and the `forms_*.go` beside it (876 §1). Every question the console
+asks as a card is a `Form[T]` here: its `Field`s — label, section, hint,
+`Choice`s, the value it opens on, `When` it applies, `Locked`, `Required` — and
+its `Submit`, which reads the `Answers` and returns the `T` they make (the
+`BoxSettingsUpdate`, `NewSecret`, `NewBinding`…) or a `Refusal`.
+
+```mermaid
+flowchart LR
+    C["a flow (rename, settings, a secret, a request's card)"] -->|"XForm(...)"| F["Form[T]: fields + Submit"]
+    F --> R["renderer: input state, cursor, drawing"]
+    R -->|"Answers"| A["Form.Answer"]
+    A -->|"Refusal (field, why)"| R
+    A -->|"T"| C2["the flow sends it (DataSource)"]
+```
+
+- **Validation is the form's, never the renderer's.** `Answer` refuses a
+  required field that applies and is empty, then whatever `Submit` refuses; a
+  renderer shows the refusal on the card, against the field it names, and keeps
+  what was typed. It never checks an answer itself.
+- **An answer is only what changed** on a form that edits something stored
+  (`SettingsForm`, `EditSecretForm`): compared with what its field opened
+  holding (`Form.Opening`, each value as a field holds it: `OneLine`), so a
+  save never writes back what nobody touched.
+- **A field that does not apply is still a field**, with `Why` in place of its
+  value: the renderer draws it, dimmed and stepped over.
+- **Accept-or-decline cards** (the credential inbox: `ApprovalPartForm`,
+  `TrustForm`, `RefreshForm`) check only the accept. What their answers say,
+  unchecked, is read here too (`ReadApprovalPart`, `ReadTrust`,
+  `ReadRefresh`): for declining, and for what the card shows as it is
+  answered. A renderer never decodes an answer's keys itself.
+- **An option's key is the answer**, not its place in a list: a renderer
+  that had to rebuild the list to decode a position would hold a second copy
+  of it.
+- **What the form is for stays with its flow**: the title, the explanation
+  around it, the waits and the call that sends the answer are the frontend's
+  and the `DataSource`'s. The create card's source and item fields are forms
+  (`SourceForm`, `ItemForm`); the run options the card is otherwise made of
+  are the composer's.

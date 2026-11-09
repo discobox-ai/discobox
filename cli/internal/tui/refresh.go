@@ -66,36 +66,25 @@ func (m *Model) askAboutRefresh(req console.CredentialRequest, secrets []console
 		m.dialog = errorDialog("Refresh request", "The token this request is about is no longer in the project.")
 		return nil
 	}
-	source := pickRow("source", "New value", choice{key: "command", label: "Run saved command", hint: "Run locally as you, without a shell"}, choice{key: "manual", label: "Paste a value", hint: "Enter a replacement token; the field stays masked"})
-	if len(secret.RefreshCommand) == 0 {
-		source.choices = source.choices[1:]
-	}
-	permission := pickRow("permission", "Run permission", choice{key: "once", label: "Once"}, choice{key: "session", label: "While this window is open", hint: "Run again without asking for this exact credential and command"})
-	permission.when = func(f *form) bool { return f.chosen("source") == "command" }
-	permission.why = "No command runs for a pasted value"
-	value := textRow("value", "Token", "Paste the replacement token", "")
-	value.masked = true
-	value.when = func(f *form) bool { return f.chosen("source") == "manual" }
-	value.why = "The command supplies the value"
-	f := newForm(source, permission, value)
+	q := console.RefreshForm(secret)
+	f := newForm(q.Fields...)
 	var d *dialog
 	d = approvalDialog("Refresh "+secret.Name+"?", f, func(*form) tea.Cmd {
 		if d.formActions[d.formActionAt].key == "dismiss" {
 			f.set("value", "")
 			return m.denyCredential(req)
 		}
-		if f.chosen("source") == "manual" {
-			token := strings.TrimSpace(f.value("value"))
-			if token == "" {
-				f.err = "Enter a replacement token."
-				return nil
-			}
+		refresh, ok := answer(f, q)
+		if !ok {
+			return nil
+		}
+		if refresh.Manual {
 			f.set("value", "")
-			return m.renew(req, secret.Name, console.Renewal{RequestID: req.ID, SecretID: secret.ID, Value: token}, false, "")
+			return m.renew(req, secret.Name, console.Renewal{RequestID: req.ID, SecretID: secret.ID, Value: refresh.Value}, false, "")
 		}
 		renewal := console.Renewal{RequestID: req.ID, SecretID: secret.ID, Command: secret.RefreshCommand}
 		key := ""
-		if f.chosen("permission") == "session" {
+		if refresh.Session {
 			key = sessionKey(m.session.ServerName(req.Server), secret.ID, secret.RefreshCommand)
 			if m.renewSession == nil {
 				m.renewSession = map[string]bool{}
@@ -109,11 +98,12 @@ func (m *Model) askAboutRefresh(req console.CredentialRequest, secrets []console
 	d.onCancel = func() tea.Cmd { f.set("value", ""); return nil }
 	d.refreshSections = func() {
 		d.sections = refreshAsk(req, secret, m.secrets.now())
-		if f.chosen("source") == "manual" {
+		refresh := console.ReadRefresh(f.answers())
+		if refresh.Manual {
 			d.sections = append(d.sections, section{label: "Paste a replacement", lines: []line{{text: "No command will run. The masked value replaces the project token."}}})
 		} else {
 			permission := "Run once, then ask again next time."
-			if f.chosen("permission") == "session" {
+			if refresh.Session {
 				permission = "Run this exact command again without asking while this console window stays open."
 			}
 			d.sections = append(d.sections, section{label: "Command permission", lines: []line{{text: "Runs locally as you, without a shell."}, {text: permission, tone: toneAccent}}})

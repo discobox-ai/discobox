@@ -131,14 +131,14 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 			t.Fatalf("%q cannot be chosen; every secret is an answer somebody may mean", item.label)
 		}
 	}
-	var openai choice
-	for _, item := range m.dialog.form.rows[0].choices {
-		if item.key == "sec_openai" {
+	var openai console.Choice
+	for _, item := range m.dialog.form.rows[0].Choices {
+		if item.Key == "sec_openai" {
 			openai = item
 		}
 	}
-	if !strings.Contains(openai.hint, "api.openai.com") {
-		t.Fatalf("detail = %q, want it to say what it is bound to", openai.hint)
+	if !strings.Contains(openai.Hint, "api.openai.com") {
+		t.Fatalf("detail = %q, want it to say what it is bound to", openai.Hint)
 	}
 }
 
@@ -182,9 +182,9 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 		t.Fatal("no dialog")
 	}
 	var order []string
-	for _, item := range m.dialog.form.rows[0].choices {
-		if item.key != "new" {
-			order = append(order, item.key)
+	for _, item := range m.dialog.form.rows[0].Choices {
+		if item.Key != "new" {
+			order = append(order, item.Key)
 		}
 	}
 	if len(order) != 3 || order[0] != "sec_gh" {
@@ -815,7 +815,7 @@ func TestAVariableHeldBySecretIsAnsweredWithIt(t *testing.T) {
 		t.Fatalf("dialog = %s, want the use card", describe(m.dialog))
 	}
 	row := m.dialog.form.rows[0]
-	if row.key != "credential" || !row.locked || len(row.choices) != 1 || row.choices[0].key != "sec_openai" {
+	if row.Key != "credential" || !row.Locked || len(row.Choices) != 1 || row.Choices[0].Key != "sec_openai" {
 		t.Fatalf("credential row = %#v, want it locked to the secret holding the variable", row)
 	}
 	if text := plainFrame(m); !strings.Contains(text, "GH_TOKEN already holds OpenAI key in this box") {
@@ -850,7 +850,7 @@ func TestAnAdditionWithAnotherSecretIsRefusedOnTheCard(t *testing.T) {
 		t.Fatalf("dialog = %s, want the use card", describe(m.dialog))
 	}
 	f := m.dialog.form
-	if f.rows[0].locked || len(f.rows[0].choices) != 3 {
+	if f.rows[0].Locked || len(f.rows[0].Choices) != 3 {
 		t.Fatalf("credential row = %#v, want every secret and a new credential offered", f.rows[0])
 	}
 	f.choose("credential", "sec_gh")

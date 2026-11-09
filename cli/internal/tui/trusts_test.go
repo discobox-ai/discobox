@@ -54,7 +54,7 @@ func TestATrustRequestAsksWhichCertificateToPin(t *testing.T) {
 	}
 	// The server's default is offered first, and the key pin last: it breaks
 	// the day the host rotates its key.
-	if len(m.dialog.form.rows[0].choices) != 2 {
+	if len(m.dialog.form.rows[0].Choices) != 2 {
 		t.Fatal("expected CA and key choices")
 	}
 
@@ -65,8 +65,8 @@ func TestApprovingATrustPinsForTheChosenLifetime(t *testing.T) {
 	m, ds := sourceWithTrust(t)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	for _, c := range m.dialog.form.rows[1].choices {
-		if c.key == "0" {
+	for _, c := range m.dialog.form.rows[1].Choices {
+		if c.Key == "0" {
 			t.Fatal("forever is offered for a trust")
 		}
 	}
@@ -107,19 +107,5 @@ func TestTheBannerNamesATrustRequest(t *testing.T) {
 	banner := m.viewCredentialBanner(120)
 	if !strings.Contains(banner, "trust request") || !strings.Contains(banner, "34.70.64.109:443") {
 		t.Fatalf("banner = %q", banner)
-	}
-}
-
-// The supplied CA is offered first when the agent gave one, since it is what
-// the server pins by default.
-func TestASuppliedCAIsOfferedFirst(t *testing.T) {
-	t.Parallel()
-	req := waitingTrust()
-	supplied := console.TrustCertificate{Subject: "CN=gke-ca", SHA256: strings.Repeat("f", 64), IsCA: true}
-	req.Trust.SuppliedCA = &supplied
-	req.Trust.DefaultPin = console.TrustPin{Kind: console.TrustPinCA, SHA256: supplied.SHA256}
-	options := trustPinOptions(*req.Trust)
-	if options[0].pin.SHA256 != supplied.SHA256 || len(options) != 3 {
-		t.Fatalf("options = %+v", options)
 	}
 }

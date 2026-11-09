@@ -246,8 +246,8 @@ func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("n"), keyPress("down"))
-	for _, c := range m.dialog.form.rows[1].choices {
-		if c.key == "exchange" {
+	for _, c := range m.dialog.form.rows[1].Choices {
+		if c.Key == "exchange" {
 			t.Fatal("the new card offers an exchange credential, whose recipe it cannot take")
 		}
 	}
@@ -260,7 +260,7 @@ func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
 	if f.chosen("kind") != "exchange" {
 		t.Fatalf("kind = %q, want exchange", f.chosen("kind"))
 	}
-	typeInto(t, m, exchangeFieldPrefix+"api_key", "bxd_secret")
+	typeInto(t, m, console.ExchangeFieldPrefix+"api_key", "bxd_secret")
 	if strings.Contains(m.View().Content, "bxd_secret") {
 		t.Fatal("the key is drawn in the clear")
 	}
@@ -268,7 +268,7 @@ func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
 	if len(ds.updated) != 0 {
 		t.Fatalf("half a replacement was saved: %#v", ds.updated)
 	}
-	typeInto(t, m, exchangeFieldPrefix+"org", "acme")
+	typeInto(t, m, console.ExchangeFieldPrefix+"org", "acme")
 	send(t, m, keyPress("enter"))
 	if len(ds.updated) != 1 || ds.updated[0].Value == nil ||
 		ds.updated[0].Value.Exchange["api_key"] != "bxd_secret" || ds.updated[0].Value.Exchange["org"] != "acme" {

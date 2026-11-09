@@ -766,7 +766,7 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 	case hitFormRow, hitFormChoice:
 		if d := m.dialog; d != nil && d.kind == dlgForm {
 			if d.form.listing {
-				d.form.listAt = min(max(d.form.listAt-lines, 0), len(d.form.rows[d.form.cursor].choices)-1)
+				d.form.listAt = min(max(d.form.listAt-lines, 0), len(d.form.rows[d.form.cursor].Choices)-1)
 				return nil
 			}
 			d.form.move(-sign(lines))

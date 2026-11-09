@@ -2,181 +2,91 @@ package tui
 
 import (
 	"fmt"
-	"strconv"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // Each part has its own decision and scope. Nothing is sent until both have
 // been reviewed; canceling leaves the whole request pending on the server.
-//
-// A variable the discobox's own bindings already deliver a secret in is
-// answered, on the use card, with that secret alone: the server refuses any
-// other there (heldBy), so the Credential row is locked to it, with no new
-// credential offered.
+// What the card asks and accepts is the core's (console.ApprovalPartForm).
 func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
-	holder, pinned := heldBy(a.held)
+	holder, pinned := console.HeldBy(a.held)
 	pinned = pinned && !delegate
-	var credentials []choice
-	if pinned {
-		held := heldSecret(a.secrets, holder)
-		credentials = []choice{{key: held.ID, label: held.Name, hint: "Already in " + variableOf(a.req) + " in this box"}}
-	} else {
-		for _, s := range secretsForRequest(a.secrets, a.req) {
-			credentials = append(credentials, choice{key: s.ID, label: s.Name, hint: secretDetail(s)})
-		}
-		credentials = append(credentials, choice{key: "new", label: "New credential…", hint: "Enter its value after reviewing both parts"})
-	}
-	credential := pickRow("credential", "Credential", credentials...)
-	var durations []choice
-	offered := a.req.AskedTTL
-	if a.partsChosen {
-		offered = a.ttl
-	}
-	for _, ttl := range lifetimeChoices(offered) {
-		durations = append(durations, choice{key: strconv.FormatInt(lifetime.Seconds(ttl), 10), label: lifetime.Label(ttl)})
-	}
-	durations = append(durations, choice{key: "custom", label: "Custom…", hint: "Type a duration such as 90m or 3d"})
-	duration := pickRow("duration", "Duration", durations...)
-	custom := textRow("customDuration", "Custom duration", "90m, 3d, 6mo or forever", "")
-	custom.when = func(f *form) bool { return f.chosen("duration") == "custom" }
-	custom.why = "Choose Custom to type a duration"
-	part, title := a.req.Use, "Allow credential use?"
+	locked := delegate && a.use == console.PartApprove
+	scope := a.useScope
 	if delegate {
-		part, title = a.req.Delegate, "Allow credential delegation?"
+		scope = a.delegateScope
+	}
+	ask := console.ApprovalPartAsk{
+		Request: a.req, Secrets: a.secrets, Held: a.held, Delegate: delegate, Settled: locked, PartsChosen: a.partsChosen,
+		Secret: a.secret, Fresh: a.fresh, TTL: a.ttl, Scope: scope, As: a.useAs, Raw: a.raw,
+	}
+	q := console.ApprovalPartForm(ask)
+	f := newForm(q.Fields...)
+	title := "Allow credential use?"
+	if delegate {
+		title = "Allow credential delegation?"
+	}
+	part := a.req.Use
+	if delegate {
+		part = a.req.Delegate
 	}
 	if part == nil {
 		part = &console.RequestPart{Routes: a.req.Routes()}
 	}
 	hosts := secretroute.OpenRouteHosts(part.Routes)
-	scope := pickRow("scope", "Scope", choice{key: "routes", label: "Requested routes", hint: "Keep methods, paths, protocol restrictions and blocked routes"}, choice{key: "hosts", label: "Requested hosts", hint: "Any method, path and protocol on open requested hosts; drops request blocks"}, choice{key: "anywhere", label: "Anywhere", hint: "No grant restriction; credential and parent limits still apply"})
-	rows := []formRow{credential, duration, custom, scope}
-	// Use choices belong to this part alone; delegation never changes delivery.
-	if !delegate {
-		rows = append(rows, pickRow("as", "Grant as", choice{key: string(bindingplan.Replace), label: "Replacement", hint: "Replaces existing use grants in this variable"}, choice{key: string(bindingplan.Add), label: "Addition", hint: "Existing grants remain; these routes have their own lifetime"}))
-		rows = append(rows, pickRow("delivery", "Delivery", choice{key: "sentinel", label: "Placeholder", hint: "The pool swaps in the value on its permitted routes"}, choice{key: "env", label: "Value in variable", hint: "Only if the credential allows raw delivery"}, choice{key: "file", label: "Value in memory file", hint: "Only if the credential allows raw delivery"}))
-	}
-	f := newForm(rows...)
-	locked := delegate && a.use == console.PartApprove
-	f.rows[0].locked, f.rows[1].locked = locked || pinned, locked
-	if a.secret.ID != "" {
-		f.choose("credential", a.secret.ID)
-	} else if a.fresh {
-		f.choose("credential", "new")
-	}
-	ttl := a.ttl
-	if !a.partsChosen {
-		ttl = a.req.AskedTTL
-		if ttl <= 0 || ttl%time.Second != 0 {
-			ttl = agentcreds.DefaultGrantTTL
-		}
-	}
-	f.choose("duration", strconv.FormatInt(lifetime.Seconds(ttl), 10))
-	f.moveTo(0)
-	if !delegate {
-		f.choose("as", string(a.useAs))
-		if a.raw != "" {
-			f.choose("delivery", a.raw)
-		}
-	}
-	chosenScope := a.useScope
-	if delegate {
-		chosenScope = a.delegateScope
-	}
-	if chosenScope != "" {
-		f.choose("scope", chosenScope)
-	}
-	var d *dialog
-	read := func() approval {
-		next := a
-		next.fresh = f.chosen("credential") == "new"
-		if !locked {
-			next.secret = console.Secret{}
-			if pinned {
-				next.secret = heldSecret(a.secrets, holder)
-			}
-			for _, s := range a.secrets {
-				if s.ID == f.chosen("credential") {
-					next.secret = s
-				}
-			}
-			seconds, _ := strconv.ParseInt(f.chosen("duration"), 10, 64)
-			next.ttl = time.Duration(seconds) * time.Second
-			if f.chosen("duration") == "custom" {
-				next.ttl, _ = lifetime.Parse(f.value("customDuration"))
-			}
-		}
+	// apply is the approval as the card's answers make it.
+	apply := func(p console.ApprovalPart) approval {
+		n := a
+		n.fresh, n.secret, n.ttl = p.Fresh, p.Secret, p.TTL
 		if delegate {
-			next.delegateScope = f.chosen("scope")
+			n.delegateScope = p.Scope
 		} else {
-			next.useScope = f.chosen("scope")
-			next.useAs = bindingplan.As(f.chosen("as"))
-			next.raw = f.chosen("delivery")
-			if next.raw == "sentinel" {
-				next.raw = ""
-			}
+			n.useScope, n.useAs, n.raw = p.Scope, p.As, p.Raw
 		}
-		return next
+		return n
 	}
+	read := func() approval { return apply(console.ReadApprovalPart(ask, f.answers())) }
+	var d *dialog
 	d = approvalDialog(title, f, func(f *form) tea.Cmd {
-		next := read()
 		if d.formActions[d.formActionAt].key == "raw" {
 			return m.showRawRequest(a.req, func() tea.Cmd { m.dialog = d; return nil })
 		}
-		answer := console.PartApprove
+		decision := console.PartApprove
+		n := read()
 		if d.formActions[d.formActionAt].key == "deny" {
-			answer = console.PartDeny
-		}
-		if answer == console.PartApprove {
-			if f.chosen("duration") == "custom" {
-				if _, err := lifetime.Parse(f.value("customDuration")); err != nil {
-					f.err = err.Error()
-					return nil
-				}
-			}
-			if f.chosen("scope") == "hosts" && len(hosts) == 0 {
-				f.err = "No open requested hosts; choose Requested routes or Anywhere."
+			decision = console.PartDeny
+		} else {
+			p, ok := answer(f, q)
+			if !ok {
 				return nil
 			}
-			if !next.fresh && !withinLimit(next.secret, next.ttl) {
-				f.err = "Credential allows at most " + lifetime.Label(next.secret.MaxTTL)
-				return nil
-			}
-			if !delegate && next.raw != "" && (next.fresh || !next.secret.AllowRaw || next.useAs == bindingplan.Add) {
-				f.err = "Raw delivery requires an existing credential that allows it and a replacement grant."
-				return nil
-			}
-			if !delegate && next.useAs == bindingplan.Add && !next.canAdd() {
-				f.err = variableOf(a.req) + " holds " + heldSecret(a.secrets, holder).Name + "; an addition stacks only on that credential. Choose it, or grant a replacement."
-				return nil
-			}
+			n = apply(p)
 		}
 		if delegate {
-			next.delegate = answer
+			n.delegate = decision
 		} else {
-			next.use = answer
-			if answer == console.PartDeny {
-				next.raw = ""
+			n.use = decision
+			if decision == console.PartDeny {
+				n.raw = ""
 			}
 		}
 		if !delegate && a.req.Delegate != nil {
-			next.partsChosen = true
-			return m.approvalPart(next, true)
+			n.partsChosen = true
+			return m.approvalPart(n, true)
 		}
-		next.partsChosen = true
-		if next.use != console.PartApprove && next.delegate != console.PartApprove {
+		n.partsChosen = true
+		if n.use != console.PartApprove && n.delegate != console.PartApprove {
 			return m.denyCredential(a.req)
 		}
-		if next.fresh {
-			return m.askNewCredentialForm(next)
+		if n.fresh {
+			return m.askNewCredentialForm(n)
 		}
-		return m.chooseSecret(next, next.secret.ID)
+		return m.chooseSecret(n, n.secret.ID)
 	})
 	if a.req.Raw != "" {
 		d.formActions = append(d.formActions, action{key: "raw", label: "Request JSON", enabled: true})
@@ -189,13 +99,14 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		}
 	}
 	d.refreshSections = func() {
-		next := read()
+		answered := console.ReadApprovalPart(ask, f.answers())
+		next := apply(answered)
 		d.sections = []section{{fields: []field{{label: "Box", value: a.req.SandboxID, tone: toneAccent}, {label: "Reason (box's words)", value: a.req.Justification}}}}
 		if a.req.Server != "" {
 			d.sections[0].fields = append(d.sections[0].fields, field{label: "Server", value: a.req.Server})
 		}
 		if !delegate {
-			d.sections[0].fields = append(d.sections[0].fields, field{label: "Variable", value: variableOf(a.req)})
+			d.sections[0].fields = append(d.sections[0].fields, field{label: "Variable", value: console.VariableOf(a.req)})
 		}
 		explain := "This box may use the credential."
 		if delegate {
@@ -203,7 +114,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		}
 		d.sections = append(d.sections, section{lines: []line{{text: explain}}})
 		if pinned {
-			d.sections = append(d.sections, section{lines: []line{{text: variableOf(a.req) + " already holds " + heldSecret(a.secrets, holder).Name + " in this box; no other credential can be granted there, so it answers this.", tone: toneAccent}}})
+			d.sections = append(d.sections, section{lines: []line{{text: console.VariableOf(a.req) + " already holds " + console.HeldSecret(a.secrets, holder).Name + " in this box; no other credential can be granted there, so it answers this.", tone: toneAccent}}})
 		}
 		if delegate && a.req.Use != nil {
 			state := "Use denied. Credential and duration remain editable."
@@ -212,7 +123,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 			}
 			d.sections = append(d.sections, section{lines: []line{{text: state, tone: toneAccent}}})
 		}
-		d.sections = append(d.sections, approvalGrantSection(f.chosen("scope"), part, hosts))
+		d.sections = append(d.sections, approvalGrantSection(answered.Scope, part, hosts))
 		for _, role := range part.Roles {
 			d.sections = append(d.sections, section{label: "Requested role (box's words)", lines: roleLines(role)})
 		}
@@ -230,11 +141,11 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 		}
 		d.sections = append(d.sections, limits)
 		if !delegate {
-			effect := "Replace existing use grants in " + variableOf(a.req) + " for " + lifetime.Label(next.ttl) + ". The final review shows each affected grant."
+			effect := "Replace existing use grants in " + console.VariableOf(a.req) + " for " + lifetime.Label(next.ttl) + ". The final review shows each affected grant."
 			if next.useAs == bindingplan.Add {
 				effect = "Add these routes for " + lifetime.Label(next.ttl) + ". Existing grants keep their routes and lifetimes."
 			}
-			d.sections = append(d.sections, section{label: "What accepting changes", fields: []field{{label: "Variable", value: variableOf(a.req)}}, lines: []line{{text: effect}, {text: rawDeliveryText(next.raw), tone: toneAlert}}})
+			d.sections = append(d.sections, section{label: "What accepting changes", fields: []field{{label: "Variable", value: console.VariableOf(a.req)}}, lines: []line{{text: effect}, {text: rawDeliveryText(next.raw), tone: toneAlert}}})
 			if next.raw == "" {
 				d.sections[len(d.sections)-1].lines[1] = line{text: "Placeholder delivery: the box never receives the credential value."}
 			}

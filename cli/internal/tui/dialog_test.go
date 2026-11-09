@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // A dialog takes most of a window with room to spare, and all of one without.
@@ -469,7 +470,7 @@ func TestEveryKindOfCardKeepsItsAnswersInTheWindow(t *testing.T) {
 		{key: "no", press: "d", label: "Deny", enabled: true},
 	}, nil)
 	status := statusDialog("Title", longBody())
-	form := formDialog("Title", newForm(textRow("field", "the field", "", "")), nil)
+	form := formDialog("Title", console.Form[struct{}]{Fields: []console.Field{{Key: "field", Label: "the field"}}}, nil)
 	form.body = longBody()
 	for _, tc := range []struct {
 		name   string
@@ -478,7 +479,7 @@ func TestEveryKindOfCardKeepsItsAnswersInTheWindow(t *testing.T) {
 	}{
 		{"a menu", menu, "Deny"},
 		{"a question", confirmDialog("Title", longBody(), nil), "yes (Enter)"},
-		{"a field", inputDialog("Title", longBody(), "", "", nil), "Enter accepts"},
+		{"a field", inputDialog("Title", askText(longBody(), ""), nil), "Enter accepts"},
 		{"a form", form, "the field"},
 		{"a report", status, "Esc stops watching"},
 		{"a message", errorDialog("Title", longBody()), "Esc closes"},
@@ -660,7 +661,7 @@ func TestANarrowCardStillFitsItsWindow(t *testing.T) {
 		{key: "yes", press: "a", label: "Approve", enabled: true},
 		{key: "no", press: "d", label: "Deny", enabled: true},
 	}, nil)
-	for _, d := range []*dialog{menu, inputDialog("Title", longBody(), "", "", nil), confirmDialog("Title", longBody(), nil)} {
+	for _, d := range []*dialog{menu, inputDialog("Title", askText(longBody(), ""), nil), confirmDialog("Title", longBody(), nil)} {
 		for width := 24; width <= 60; width++ {
 			for _, window := range []int{16, 20, 24, 40} {
 				text := ansi.Strip(d.view(newStyles(false), &zones{}, width, window))
@@ -698,7 +699,7 @@ func TestAWindowedMenuFitsTheFirstFrameAfterAResize(t *testing.T) {
 // not by the lines written.
 func TestAWrappedFieldDoesNotMoveTheKeyLinesMarks(t *testing.T) {
 	t.Parallel()
-	d := inputDialog("Title", "a question", "", strings.Repeat("x", 60), nil)
+	d := inputDialog("Title", askText("a question", strings.Repeat("x", 60)), nil)
 	for _, width := range []int{36, 44, 60, 100} {
 		z := &zones{}
 		lines := strings.Split(ansi.Strip(d.view(newStyles(false), z, width, 40)), "\n")
@@ -819,4 +820,9 @@ func TestAMenuThatWrapsFallsBackWhenItDoesNotFit(t *testing.T) {
 	if !strings.Contains(text, "…") || strings.Count(text, "choice ") != 2 {
 		t.Fatalf("a menu that did not ask to wrap changed:\n%s", text)
 	}
+}
+
+// askText is a form of one typed field, asking question and opening on value.
+func askText(question, value string) console.Form[string] {
+	return console.Form[string]{Fields: []console.Field{{Key: "text", Hint: question, Value: value}}}
 }

@@ -37,7 +37,7 @@ func TestThePickerOffersTheSecretNamedAsAskedFirst(t *testing.T) {
 	req := console.CredentialRequest{Name: "github", Use: &console.RequestPart{Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	other := console.Secret{ID: "sec-other", Name: "openai"}
 	named := console.Secret{ID: "sec-named", Name: "github"}
-	got := secretsForRequest([]console.Secret{other, named}, req)
+	got := console.SecretsForRequest([]console.Secret{other, named}, req)
 	if len(got) != 2 || got[0].ID != named.ID {
 		t.Fatalf("picker order = %v; want the secret named github first, and both offered", got)
 	}

@@ -2,9 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
-	"strings"
-	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
@@ -82,52 +79,13 @@ func (m *Model) settingsRead(msg boxSettingsReadMsg) tea.Cmd {
 	return nil
 }
 
-// settingsDialog is the card. The harness row is drawn on a box that is not
-// stopped, with why it cannot be changed, because the server refuses a harness
-// change on anything else and the card should say so before Enter does.
+// settingsDialog is the core's settings form (console.SettingsForm) as a card.
 func settingsDialog(box console.Sandbox, was console.BoxSettings, harnesses []console.Harness) *dialog {
-	name := textRow("name", "name", "the name it is configured with", was.Name)
-	name.required = "a discobox needs a configured name"
-	name.hint = "the handle it was created with, which commands take · the list shows the name rename gives it, or its agent's title"
-
-	harness := pickRow("harness", "harness", harnessChoices(was.HarnessID, box, harnesses)...)
-	harness.hint = "the new harness provisions on the next start · conversation state is not carried over"
-	harness.when = func(*form) bool { return box.State == console.StateStopped }
-	harness.why = "stop the box to change its harness"
-
-	deny := pickRow("deny", "restrict",
-		choice{key: "no", label: "no", hint: "this level restricts nothing · the project, pool or harness may still"},
-		choice{key: "yes", label: "deny by default", hint: "reach only every level's allow entries and the hosts its harness image declares"})
-	deny.section = "Egress"
-	allow := textRow("allow", "allow", "hosts, *.wildcards, IPs or CIDRs, comma-separated", strings.Join(was.Egress.Allow, ", "))
-	allow.section = "Egress"
-	allow.hint = "added to the allow list of a restricted box · an allow list alone restricts nothing · empty is none"
-	passthrough := textRow("passthrough", "passthrough", "hosts whose HTTPS is passed through unread", strings.Join(was.Egress.Passthrough, ", "))
-	passthrough.section = "Egress"
-	passthrough.hint = "spliced to the origin unread, TLS end to end: no credential is swapped in · it admits no host"
-
-	api := pickRow("api", "discobox API",
-		choice{key: "no", label: "no", hint: "the box cannot call the discobox API"},
-		choice{key: "yes", label: "yes", hint: "the box may call the discobox API through its pool, acting only on the discoboxes it leads"})
-	api.section = "Access"
-
-	f := newForm(name, harness, deny, allow, passthrough, api)
-	// The name is compared with what the field opened holding, not with what
-	// was read: the field drops a control character a stored name can carry,
-	// and a save of anything else would then rename the box as well.
-	opened := f.value("name")
-	if was.Egress.DenyByDefault {
-		f.choose("deny", "yes")
-	}
-	if was.DiscoboxAPI {
-		f.choose("api", "yes")
-	}
-
+	q := console.SettingsForm(box, was, harnesses)
 	// Named without the msg its program puts after the title (boxTitle), as
 	// rename's dialog is: the card names the box, not what it is doing.
 	var d *dialog
-	d = formDialog("Settings · "+boxTitle(box, box.TerminalTitle), f, func(f *form) tea.Cmd {
-		update := settingsUpdate(f, was, opened, box.State == console.StateStopped)
+	d = formDialog("Settings · "+boxTitle(box, box.TerminalTitle), q, func(update console.BoxSettingsUpdate) tea.Cmd {
 		if update.Empty() {
 			return status("settings unchanged")
 		}
@@ -139,72 +97,6 @@ func settingsDialog(box console.Sandbox, was console.BoxSettings, harnesses []co
 	}}}
 	d.keys = []hint{says("↑↓ moves"), pressing("enter saves", "enter"), pressing("esc leaves it alone", "esc")}
 	return d
-}
-
-// harnessChoices is every harness on the box's server, so the row opens on
-// what the box has.
-func harnessChoices(current string, box console.Sandbox, harnesses []console.Harness) []choice {
-	var choices []choice
-	found := false
-	for _, h := range harnesses {
-		found = found || h.ID == current
-		label := h.FlagName()
-		hint := h.Name
-		if h.ID == current {
-			hint = "what the box has now"
-		}
-		choices = append(choices, choice{key: h.ID, label: label, hint: hint})
-	}
-	if !found {
-		// A harness the listing does not hold — deleted, or the listing
-		// failed — is still the box's, and the row has to open on it.
-		label := box.Harness
-		if label == "" {
-			label = current
-		}
-		choices = append([]choice{{key: current, label: label, hint: "what the box has now"}}, choices...)
-	}
-	for i, c := range choices {
-		if c.key == current {
-			// The current harness leads, so the row opens on it.
-			choices = append(append([]choice{c}, choices[:i]...), choices[i+1:]...)
-			break
-		}
-	}
-	return choices
-}
-
-// settingsUpdate is what the answered form changes against what it opened on.
-// The name is measured against opened, what its field started as.
-func settingsUpdate(f *form, was console.BoxSettings, opened string, stopped bool) console.BoxSettingsUpdate {
-	var update console.BoxSettingsUpdate
-	if name := f.value("name"); name != opened {
-		update.Name = &name
-	}
-	if harness := f.chosen("harness"); stopped && harness != "" && harness != was.HarnessID {
-		update.Harness = &harness
-	}
-	if deny := f.chosen("deny") == "yes"; deny != was.Egress.DenyByDefault {
-		update.EgressDeny = &deny
-	}
-	if allow := hostList(f.value("allow")); !slices.Equal(allow, was.Egress.Allow) {
-		update.EgressAllow = &allow
-	}
-	if passthrough := hostList(f.value("passthrough")); !slices.Equal(passthrough, was.Egress.Passthrough) {
-		update.EgressPassthrough = &passthrough
-	}
-	if api := f.chosen("api") == "yes"; api != was.DiscoboxAPI {
-		update.DiscoboxAPI = &api
-	}
-	return update
-}
-
-// hostList is a typed list of egress entries: separated by commas or spaces,
-// since no entry holds either, with the empty ones a trailing comma leaves
-// dropped. Nothing typed is the empty list, never nil, so it compares equal to
-// a level that stores none.
-func hostList(text string) []string {
-	return append([]string{}, strings.FieldsFunc(text, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })...)
 }
 
 // saveSettings sends the form's answers, waiting behind a card as the read

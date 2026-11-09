@@ -191,7 +191,7 @@ func (m *Model) openCredentialDialog(box console.Sandbox) tea.Cmd {
 // and whether it came from one at all. It reads the secrets first, because the
 // question it asks is which of them answers this, and what holds the variable
 // the use part names, because a secret that already does is the only answer
-// the server takes (heldBy).
+// the server takes (console.HeldBy).
 func (m *Model) openCredentialRequest(req console.CredentialRequest) tea.Cmd {
 	if req.APIAccess {
 		return m.askAboutAPIAccess(req)
@@ -235,44 +235,6 @@ func (m *Model) askAboutCredential(req console.CredentialRequest, secrets []cons
 	return m.approvalPart(newApproval(req, secrets, held), req.Use == nil && req.Delegate != nil)
 }
 
-// heldBy is the secret the discobox's own bindings deliver in the use part's
-// variable, if any: pinned when one of the discobox's own bindings — a use
-// or an addition stacked on one — delivers it there. The server takes no
-// other secret in that variable from a request, whether added or replaced
-// (secrets.Service addBinding and replaceBindings), so it is the one answer.
-// Otherwise holder is the grant the variable's delivery stands on from the
-// discobox's harness config or project, which a replacement shadows but an
-// addition only stacks on with the same secret (approval.canAdd).
-func heldBy(held []console.HeldGrant) (holder console.HeldGrant, pinned bool) {
-	for _, grant := range held {
-		if grant.From == console.BindingSandbox {
-			return grant, true
-		}
-	}
-	for _, grant := range held {
-		if !grant.Adds {
-			return grant, false
-		}
-	}
-	return console.HeldGrant{}, false
-}
-
-// heldSecret is the secret holding the variable, as the project's secrets
-// list it. One the list does not have — gone, or not readable here — is still
-// named, since what the server binds is its ID.
-func heldSecret(secrets []console.Secret, holder console.HeldGrant) console.Secret {
-	for _, secret := range secrets {
-		if secret.ID == holder.SecretID {
-			return secret
-		}
-	}
-	name := holder.SecretName
-	if name == "" {
-		name = holder.SecretID
-	}
-	return console.Secret{ID: holder.SecretID, Name: name}
-}
-
 // showRawRequest is the request as the server sent it, as JSON highlighted
 // the way a code block in a comment is. back is the request card.
 func (m *Model) showRawRequest(req console.CredentialRequest, back func() tea.Cmd) tea.Cmd {
@@ -295,35 +257,6 @@ func (m *Model) showRawRequest(req console.CredentialRequest, back func() tea.Cm
 	d.onCancel = back
 	m.dialog = d
 	return nil
-}
-
-// withinLimit reports whether a binding of secret may last d: the secret
-// caps nothing, or d is no longer than its cap. Forever is longer than any.
-func withinLimit(secret console.Secret, d time.Duration) bool {
-	return secret.MaxTTL <= 0 || (d > 0 && d <= secret.MaxTTL)
-}
-
-// lifetimeChoices is the presets, with the lifetime the agent asked for in its
-// place among them when it is not already one: the row the card opens on has to
-// be a row on it. Forever stays last, since nothing an agent asks for is longer.
-//
-// A row's identity is its count of whole seconds, so an ask that is not one
-// cannot be a row: it would collide with the row whose count it shares —
-// forever's, for anything under a second — and the card would open on that
-// instead of on what was asked for. Such an ask is dropped here and the step
-// opens on agentcreds.DefaultGrantTTL, the same as an ask nobody made.
-func lifetimeChoices(asked time.Duration) []time.Duration {
-	if asked <= 0 || asked%time.Second != 0 || slices.Contains(lifetime.Presets, asked) {
-		return lifetime.Presets
-	}
-	at := len(lifetime.Presets)
-	for i, d := range lifetime.Presets {
-		if d <= 0 || d > asked {
-			at = i
-			break
-		}
-	}
-	return slices.Insert(slices.Clone(lifetime.Presets), at, asked)
 }
 
 // bindingSection is what the lifetime is being chosen for, so the card asking
@@ -565,7 +498,7 @@ func (a approval) grantedRoutes(delegate bool) []secretroute.Route {
 // compared as written (ADR 26-11-03-329 §5), and what replacing would do to
 // each.
 func heldSection(a approval) section {
-	variable := variableOf(a.req)
+	variable := console.VariableOf(a.req)
 	s := section{label: "holds in " + variable + " now"}
 	if len(a.held) == 0 {
 		s.fields = append(s.fields, field{label: "nothing", value: "an addition is the first grant there", tone: toneDim})
@@ -627,14 +560,6 @@ func heldSection(a approval) section {
 	return s
 }
 
-// variableOf is the variable a request's use part names, or a stand-in.
-func variableOf(req console.CredentialRequest) string {
-	if req.EnvVar != "" {
-		return req.EnvVar
-	}
-	return "its variable"
-}
-
 // roleLines is one role: its name and arguments, its description marked as
 // the discobox's own, what its routes grant, and anything a reader must not
 // miss about it.
@@ -676,119 +601,32 @@ func credentialName(req console.CredentialRequest) string {
 	return "a credential"
 }
 
-// secretNameTaken reports whether the project already holds a secret by this
-// name: a secret's name is unique in its project.
-func secretNameTaken(secrets []console.Secret, name string) bool {
-	name = strings.TrimSpace(name)
-	for _, secret := range secrets {
-		if strings.TrimSpace(secret.Name) == name {
-			return true
-		}
-	}
-	return false
-}
-
-// freeSecretName is name, or the first of name-2, name-3… the project does not
-// hold. It is a suggestion to type over, not a name anything is stored under
-// without being seen: one more collision than there are secrets is impossible,
-// which is where the count stops.
-func freeSecretName(secrets []console.Secret, name string) string {
-	if !secretNameTaken(secrets, name) {
-		return name
-	}
-	for n := 2; n <= len(secrets)+2; n++ {
-		candidate := fmt.Sprintf("%s-%d", name, n)
-		if !secretNameTaken(secrets, candidate) {
-			return candidate
-		}
-	}
-	return name
-}
-
-// secretsForRequest orders the secrets by how likely each is to be the answer:
-// the one named what the request asked for first, then the rest as listed.
-// Order is the whole of the opinion here — every one of them can be chosen.
-func secretsForRequest(secrets []console.Secret, req console.CredentialRequest) []console.Secret {
-	out := append([]console.Secret(nil), secrets...)
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Name == req.Name && out[j].Name != req.Name
-	})
-	return out
-}
-
-// secretDetail says what a secret is and where it may be sent. A credential
-// that caps how long its bindings may last says so here, beside the row.
-func secretDetail(secret console.Secret) string {
-	where := "sent nowhere"
-	if len(secret.Routes) > 0 {
-		where = console.RoutesText(secret.Routes)
-	}
-	detail := secretKind(secret) + " · " + where
-	if secret.MaxTTL > 0 {
-		detail += " · at most " + lifetime.Label(secret.MaxTTL)
-	}
-	return detail
-}
-
-// secretKind is what a secret is, said the way that matters when choosing it:
-// a token got from a command is named by the command, which is how its value
-// is kept current (ADR 26-09-25-122).
-func secretKind(secret console.Secret) string {
-	if len(secret.RefreshCommand) > 0 {
-		return "from " + refreshcmd.Join(secret.RefreshCommand)
-	}
-	return secret.Type
-}
-
 // askNewCredentialForm stores a credential the project does not have yet and
-// answers the request with it: the secrets screen's form (secretForm), filled
-// from the request (fillFromRequest), every field still the person's to
-// change. It comes after the lifetime, so the token typed into it is never
-// held by a card that can be gone back to: Esc here is the request, still
-// waiting.
+// answers the request with it: the secrets screen's form
+// (console.NewSecretForm), filled from the request — named as it asks, or the
+// first free name when the project already holds that one, and with the routes
+// it asks for — every field still the person's to change. It comes after the
+// lifetime, so the token typed into it is never held by a card that can be
+// gone back to: Esc here is the request, still waiting.
 func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
-	return m.newCredentialForm(a, section{label: "approves the request", fields: []field{
+	q := console.NewSecretForm(console.NewSecretAsk{
+		Name:      credentialName(a.req),
+		Secrets:   a.secrets,
+		Routes:    a.req.Routes(),
+		Approving: true,
+		BindFor:   a.ttl,
+	})
+	d := formDialog("New credential", q, func(secret console.NewSecret) tea.Cmd { return m.createAndApprove(a, secret) })
+	d.sections = []section{{label: "approves the request", fields: []field{
 		{label: "credential", value: credentialName(a.req), tone: toneAccent},
 		{label: "bound for", value: lifetime.Label(a.ttl), tone: toneAccent},
-	}}, "enter stores and approves", func(f *form, secret console.NewSecret) tea.Cmd {
-		// A limit shorter than the binding this approval is making is one the
-		// server would refuse the binding for, after the secret was stored.
-		if limit := time.Duration(secret.MaxTTLSeconds) * time.Second; limit > 0 && (a.ttl <= 0 || a.ttl > limit) {
-			f.err = "the binding limit is shorter than the " + lifetime.Label(a.ttl) + " this request is being approved for"
-			return nil
-		}
-		return m.createAndApprove(a, secret)
-	}, func() tea.Cmd { return m.askAboutCredential(a.req, a.secrets, a.held) })
-}
-
-// newCredentialForm is the new-secret form filled from a request, with what
-// storing it then does. about says so above the form, and back is where Esc
-// goes, nothing stored.
-func (m *Model) newCredentialForm(a approval, about section, store string, then func(*form, console.NewSecret) tea.Cmd, back func() tea.Cmd) tea.Cmd {
-	f := secretForm(nil, a.req.Routes())
-	fillFromRequest(f, a.req, a.secrets)
-	d := formDialog("New credential", f, func(f *form) tea.Cmd {
-		secret, ok := secretFromForm(f)
-		if !ok {
-			return nil
-		}
-		return then(f, secret)
-	})
-	d.sections = []section{about}
+	}}}
 	// Esc second: a key line is cut from its tail, and the way back — the
 	// request still waiting — is the one thing it must always say.
-	d.keys = []hint{pressing(store, "enter"), pressing("esc back, nothing stored", "esc"), says("↑↓ moves"), says("←→ chooses")}
-	d.onCancel = back
+	d.keys = []hint{pressing("enter stores and approves", "enter"), pressing("esc back, nothing stored", "esc"), says("↑↓ moves"), says("←→ chooses")}
+	d.onCancel = func() tea.Cmd { return m.askAboutCredential(a.req, a.secrets, a.held) }
 	m.dialog = d
 	return nil
-}
-
-// fillFromRequest fills the new-secret form from what a request asks for:
-// named as the request asks; the routes it asks for are the form's own rows
-// (newCredentialForm). A name the project already holds is the first free one
-// instead, which the server would otherwise refuse the create for.
-func fillFromRequest(f *form, req console.CredentialRequest, secrets []console.Secret) {
-	f.set("name", freeSecretName(secrets, credentialName(req)))
 }
 
 // createAndApprove stores the new credential and answers with it, for the
@@ -878,18 +716,10 @@ func newApproval(req console.CredentialRequest, secrets []console.Secret, held [
 	return a
 }
 
-// canAdd reports whether the use part can be granted as an addition with
-// the secret chosen: an addition stacks on what delivers the variable, so
-// it has to be that secret (ADR 26-11-03-329 §4).
-func (a approval) canAdd() bool {
-	holder, _ := heldBy(a.held)
-	return holder.SecretID == "" || (!a.fresh && holder.SecretID == a.secret.ID)
-}
-
 // chooseSecret reads live standing grants before the final confirmation.
 func (m *Model) chooseSecret(a approval, secretID string) tea.Cmd {
-	if holder, _ := heldBy(a.held); holder.SecretID == secretID {
-		a.secret = heldSecret(a.secrets, holder)
+	if holder, _ := console.HeldBy(a.held); holder.SecretID == secretID {
+		a.secret = console.HeldSecret(a.secrets, holder)
 	}
 	for _, secret := range a.secrets {
 		if secret.ID == secretID {

@@ -1529,7 +1529,7 @@ type RequestPart struct {
 type HeldGrant struct {
 	BindingID string
 	// SecretID and SecretName are the secret the grant delivers: what holds
-	// the variable, which an approval in it has to answer with (heldBy).
+	// the variable, which an approval in it has to answer with (HeldBy).
 	SecretID, SecretName string
 	Adds                 bool
 	// From is the level the binding is on: BindingSandbox, or a harness

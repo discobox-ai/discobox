@@ -278,13 +278,16 @@ at all. None of it is the credential: not the access token, not the refresh
 token. The rows under it are the bindings, each named by its variable, and the
 first one **makes one**, so a credential with nothing bound is somewhere to
 decide who gets it rather than a dead end naming another command. `n` stores a
-new credential and `e` edits one, both on the same form (`secretForm`); `d`
+new credential and `e` edits one, both on the same form (`console.NewSecretForm`, `console.EditSecretForm`); `d`
 deletes, saying how many live bindings go with it and defaulting to No. `C`
 answers the oldest request waiting anywhere in the project — including one no
 discobox owns, which the list's row mark cannot carry and which would otherwise
 have no home.
 
-**A decision is one card, not a run of questions** (`form.go`, `dlgForm`). A
+**A decision is one card, not a run of questions** (`form.go`, `dlgForm`). What a
+card asks, when each row applies, and whether its answers are accepted are the
+core's (`console.Form`, see `cli/internal/console/DESIGN.md`); `form.go` holds
+what is typed and chosen, and draws it. A
 binding or a new secret has seven or eight parts, and a sequence of
 modals is the wrong shape for a decision whose parts are read against each
 other: nothing can be revised without abandoning the run, the answers already
@@ -316,7 +319,7 @@ every row under the cursor shifting while somebody is reading them, on a card
 whose whole point is that it holds still. A sentence longer than the allowance
 is folded onto its last row and cut with an ellipsis.
 
-**Create and edit are the same form** (`secretForm`). Editing opens on what the
+**Create and edit are the same form** (`console.NewSecretForm`, `console.EditSecretForm`). Editing opens on what the
 credential is and takes everything the server will change: the name, the
 routes, the binding limit, and the value. A value cannot be read *back* — nothing
 here can — but it can be replaced, and a card that would not take one made
@@ -324,7 +327,7 @@ rotating a token a matter of deleting the secret and storing it again, taking
 every binding standing on it along with it. The value rows say
 `unchanged — type to replace it`, and leaving them empty is the ordinary answer.
 
-**A secret's routes are one row each** (`secretRouteRows`), straight under
+**A secret's routes are one row each** (`console.SecretRouteKey`), straight under
 its name and kind, with one empty row after them for another. Each is typed as
 the CLI's `--route` takes it,
 `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, a host
@@ -345,7 +348,7 @@ a secret that changes from one to the other — that is a new credential, and
 deleting the old one is somebody's decision rather than a side effect of an
 edit.
 
-**A value is replaced whole** (`replacementValue`). The server stores one value
+**A value is replaced whole** (`console.EditSecretForm`). The server stores one value
 per secret and overwrites it, so half an oauth credential is not a smaller
 change — it is the rest of it dropped. Touching any part of one means supplying
 all of it, and since the two tokens are exactly the part nobody can copy off the
@@ -354,7 +357,7 @@ credential means its access token too`. The renewal fields are prefilled from
 the stored credential, because those *are* readable, so rotating tokens does not
 mean retyping the endpoint.
 
-**The sentinel format is the card's last row** (`formFormat`), under its own
+**The sentinel format is the card's last row** (`console.NewSecretForm`), under its own
 heading, because it is an override almost nobody makes: the shape is read from
 the value, and the row sits off the path a person tabs down to store a
 credential. Only a *chosen* format opens filled in; one read from the value is
@@ -372,7 +375,7 @@ pointer, because absence has to be spelled differently from the values: an empty
 route list sends the secret nowhere and a zero limit allows bindings that never
 expire, so neither can stand for "unchanged".
 
-**A lifetime is asked as the answers people give** (`ttlRows`, `ttlSeconds`):
+**A lifetime is asked as the answers people give** (`console.LifetimeCustom`):
 1 hour, 1 day, 1 week, 1 month, forever, and a typed one behind `custom…`.
 Seconds alone was a field nobody could answer without arithmetic, and `604800`
 is not a week to anyone reading it back. The presets, their spelling and what
@@ -529,7 +532,7 @@ Role descriptions remain attributed to the box. Request JSON opens the original
 request; returning restores the selected choices.
 
 What holds the use part's variable is read with the secrets, when the request
-opens (`heldBy`). One of the box's own bindings there locks the use card's
+opens (`console.HeldBy`). One of the box's own bindings there locks the use card's
 credential to its secret, with no new credential offered: the server takes no
 other secret in that variable. One from the harness config or project leaves the
 choice open, but an addition is refused on the card unless it is that secret.
@@ -564,10 +567,10 @@ Settings remains the direct on/off control. See the server's sandbox and auth
 design docs for request intake and the bounded API role.
 
 **A new credential is the secrets screen's form, filled from the request**
-(`askNewCredentialForm`, `fillFromRequest`, `secretForm`, `secretFromForm`).
+(`askNewCredentialForm`, `console.NewSecretForm`).
 The form opens with the name the request asks for and a route row for each
 route it asks for. A name the project already holds is the first free one
-instead (`freeSecretName`, "github-2"), which the server would otherwise refuse
+instead (`console.NewSecretAsk.Secrets`, "github-2"), which the server would otherwise refuse
 the create for. Every field stays editable. Saving stores it and approves the
 request with it for the lifetime chosen (`createAndApprove`: a command is run by
 the data source, and a refusal after the store says what was already done); a
@@ -3423,7 +3426,7 @@ the newest one where the busy line goes.
 | `create.go` | the create card Enter opens: the source list, the settings under it reached by Tab |
 | `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, and the `/` search over a scrolling body |
 | `settings.go` | the settings form: `discobox admin box update` as one card over a box's name, harness, egress level and discobox API access |
-| `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |
+| `form.go` | the form dialog: the core's `console.Form` drawn as rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
 | `editor.go` | Alt-E or F2: the prompt in `$EDITOR` |

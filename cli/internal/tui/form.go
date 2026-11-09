@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // The form: one card that asks everything a decision needs, instead of a run of
@@ -27,52 +29,19 @@ import (
 // Rows are the same label/value column a card is read as, which is the point:
 // the thing being built looks like the thing it will be when it is read back.
 
-// choice is one option of a picker row.
-type choice struct {
-	key   string
-	label string
-	hint  string
-}
-
-// formRow is one line of a form: a label, and a value set either by typing or
-// by choosing. choices make it a picker; without them it takes text.
+// formRow is one field of a form as it is being answered: the core's
+// description of it (console.Field), and the state of answering it here — the
+// option a picker is on, or the text typed so far.
 type formRow struct {
-	key   string
-	label string
-	// section is the rule this row sits under. A row repeating the section of
-	// the row above it does not draw a second rule.
-	section string
-	hint    string
+	console.Field
 
-	choices []choice
-	at      int
-
+	at    int
 	input textinput.Model
-	// suffix is the unit a typed value is in, drawn after it: "seconds".
-	suffix string
-	// masked hides what is typed, for a row that takes a credential.
-	masked bool
-
-	// when decides whether the row applies, out of the answers already given. A
-	// nil when is a row that always applies.
-	//
-	// A row that does not apply is still drawn — dim, and stepped over — with
-	// why in place of its value. Taking it off the card would make choosing an
-	// OAuth credential produce four fields nobody knew were coming, and the
-	// point of a form over a run of questions is being able to see what is
-	// being asked before answering any of it.
-	when func(f *form) bool
-	// locked is a row this form never answers: what a credential already is, on
-	// the card that edits the parts of it that can change.
-	locked bool
-	// why stands in for the value on a row that cannot be answered, saying
-	// which it is: not applicable yet, or not editable at all.
-	why string
-	// required refuses an empty typed row on submit, saying why.
-	required string
 }
 
-// form is the rows and where the cursor is in them.
+// form is the rows and where the cursor is in them. What the rows ask, when
+// each applies and whether the answers are accepted is the core's
+// (console.Form); the form holds the answers and draws them.
 type form struct {
 	// listRoom bounds an open picker when its dialog must retain decisions. Zero is unbounded.
 	listRoom     int
@@ -91,49 +60,76 @@ type form struct {
 	err string
 }
 
-func newForm(rows ...formRow) *form {
-	f := &form{rows: rows}
-	for i := range f.rows {
-		if len(f.rows[i].choices) > 0 {
+// newForm opens a form on the core's fields, each holding what it opens on.
+func newForm(fields ...console.Field) *form {
+	f := &form{rows: make([]formRow, len(fields))}
+	for i, field := range fields {
+		row := formRow{Field: field}
+		if field.Picker() {
+			row.at = max(slices.IndexFunc(field.Choices, func(c console.Choice) bool { return c.Key == field.Opens() }), 0)
+			f.rows[i] = row
 			continue
 		}
+		row.input = textinput.New()
+		row.input.Placeholder = field.Placeholder
+		row.input.SetValue(field.Value)
 		// The label is the prompt here: a "› " in front of every value would
 		// be a second column of punctuation down a card that is already a
 		// column.
-		f.rows[i].input.Prompt = ""
-		if f.rows[i].masked {
-			f.rows[i].input.EchoMode = 1 // textinput.EchoPassword
+		row.input.Prompt = ""
+		if field.Masked {
+			row.input.EchoMode = 1 // textinput.EchoPassword
 		}
+		f.rows[i] = row
 	}
 	f.cursor = f.next(0, 1)
 	f.focus()
 	return f
 }
 
-// textRow is a row that takes typing, with what it starts as.
-func textRow(key, label, placeholder, value string) formRow {
-	ti := textinput.New()
-	ti.Placeholder = placeholder
-	ti.SetValue(value)
-	return formRow{key: key, label: label, input: ti}
+// answers are what the rows hold, by key, as the core reads them.
+func (f *form) answers() console.Answers {
+	a := make(console.Answers, len(f.rows))
+	for _, row := range f.rows {
+		if row.Picker() {
+			a[row.Key] = row.Choices[row.at].Key
+			continue
+		}
+		a[row.Key] = row.input.Value()
+	}
+	return a
 }
 
-// pickRow is a row that chooses between fixed options.
-func pickRow(key, label string, choices ...choice) formRow {
-	return formRow{key: key, label: label, choices: choices}
+// answer is the core's verdict on what the form holds: q's answer, or false
+// with the refusal on the form, against the row it names.
+func answer[T any](f *form, q console.Form[T]) (T, bool) {
+	v, refused := q.Answer(f.answers())
+	if refused != nil {
+		f.refuse(refused)
+		return v, false
+	}
+	f.err = ""
+	return v, true
+}
+
+// refuse puts a refusal on the form, and the cursor on the row it is about.
+func (f *form) refuse(r *console.Refusal) {
+	f.err = r.Why
+	for i, row := range f.rows {
+		if r.Field != "" && row.Key == r.Field && f.answerable(i) {
+			f.cursor = i
+			f.focus()
+		}
+	}
 }
 
 // answerable is whether a row takes an answer, given the answers above it. A
-// row that does not is drawn all the same; see formRow.when.
+// row that does not is drawn all the same; see console.Field.When.
 func (f *form) answerable(i int) bool {
 	if i < 0 || i >= len(f.rows) {
 		return false
 	}
-	row := f.rows[i]
-	if row.locked {
-		return false
-	}
-	return row.when == nil || row.when(f)
+	return f.rows[i].Applies(f.answers())
 }
 
 // next is the row a move lands on, stepping over the ones that take no answer.
@@ -160,7 +156,7 @@ func (f *form) next(from, delta int) int {
 // out of every other. Only the focused row draws a caret.
 func (f *form) focus() {
 	for i := range f.rows {
-		if len(f.rows[i].choices) > 0 {
+		if f.rows[i].Picker() {
 			continue
 		}
 		if i == f.cursor {
@@ -187,7 +183,7 @@ func (f *form) moveTo(i int) {
 // value is what a typed row holds, trimmed.
 func (f *form) value(key string) string {
 	for _, row := range f.rows {
-		if row.key == key {
+		if row.Key == key && !row.Picker() {
 			return strings.TrimSpace(row.input.Value())
 		}
 	}
@@ -197,8 +193,8 @@ func (f *form) value(key string) string {
 // chosen is the key of a picker row's current option.
 func (f *form) chosen(key string) string {
 	for _, row := range f.rows {
-		if row.key == key && len(row.choices) > 0 {
-			return row.choices[row.at].key
+		if row.Key == key && row.Picker() {
+			return row.Choices[row.at].Key
 		}
 	}
 	return ""
@@ -207,7 +203,7 @@ func (f *form) chosen(key string) string {
 // onPicker is whether the cursor is on a row with options to choose between,
 // where Enter lists them rather than accepting the form.
 func (f *form) onPicker() bool {
-	return len(f.rows[f.cursor].choices) > 1
+	return len(f.rows) > 0 && len(f.rows[f.cursor].Choices) > 1
 }
 
 // openList opens the cursor's picker as a list, on the option it holds.
@@ -230,11 +226,11 @@ func (f *form) updateList(msg tea.KeyPressMsg) {
 	case "up", "k", "shift+tab":
 		f.listAt = max(f.listAt-1, 0)
 	case "down", "j", "tab":
-		f.listAt = min(f.listAt+1, len(row.choices)-1)
+		f.listAt = min(f.listAt+1, len(row.Choices)-1)
 	case "home":
 		f.listAt = 0
 	case "end":
-		f.listAt = len(row.choices) - 1
+		f.listAt = len(row.Choices) - 1
 	case "enter", " ":
 		f.pick(f.listAt)
 	}
@@ -243,7 +239,7 @@ func (f *form) updateList(msg tea.KeyPressMsg) {
 // pick takes an option off the open list, as ←→ would have landed on it.
 func (f *form) pick(at int) {
 	row := &f.rows[f.cursor]
-	if at < 0 || at >= len(row.choices) {
+	if at < 0 || at >= len(row.Choices) {
 		return
 	}
 	f.listing = false
@@ -255,7 +251,7 @@ func (f *form) pick(at int) {
 // set replaces what a typed row holds.
 func (f *form) set(key, value string) {
 	for i := range f.rows {
-		if f.rows[i].key == key && len(f.rows[i].choices) == 0 {
+		if f.rows[i].Key == key && !f.rows[i].Picker() {
 			f.rows[i].input.SetValue(value)
 		}
 	}
@@ -264,11 +260,11 @@ func (f *form) set(key, value string) {
 // choose moves a picker row to the option with the given key.
 func (f *form) choose(key, option string) {
 	for i := range f.rows {
-		if f.rows[i].key != key {
+		if f.rows[i].Key != key {
 			continue
 		}
-		for j, c := range f.rows[i].choices {
-			if c.key == option {
+		for j, c := range f.rows[i].Choices {
+			if c.Key == option {
 				f.rows[i].at = j
 			}
 		}
@@ -279,8 +275,8 @@ func (f *form) choose(key, option string) {
 // the form is answered.
 func (f *form) chosenLabel(key string) string {
 	for _, row := range f.rows {
-		if row.key == key && len(row.choices) > 0 {
-			return row.choices[row.at].label
+		if row.Key == key && row.Picker() {
+			return row.Choices[row.at].Label
 		}
 	}
 	return ""
@@ -289,31 +285,14 @@ func (f *form) chosenLabel(key string) string {
 // cycle moves a picker row's option along, wrapping at either end.
 func (f *form) cycle(delta int) {
 	row := &f.rows[f.cursor]
-	if len(row.choices) == 0 {
+	if !row.Picker() {
 		return
 	}
-	row.at = ((row.at+delta)%len(row.choices) + len(row.choices)) % len(row.choices)
+	row.at = ((row.at+delta)%len(row.Choices) + len(row.Choices)) % len(row.Choices)
 	// A choice can take rows away or bring them back, and the cursor may be
 	// standing on one that has just gone.
 	f.cursor = f.next(f.cursor, 1)
 	f.focus()
-}
-
-// submit checks the rows this form is asking and reports the first that is not
-// answered, putting the cursor on it. Empty means the form is ready.
-func (f *form) submit() string {
-	for i, row := range f.rows {
-		if !f.answerable(i) || row.required == "" || len(row.choices) > 0 {
-			continue
-		}
-		if strings.TrimSpace(row.input.Value()) == "" {
-			f.cursor, f.err = i, row.required
-			f.focus()
-			return row.required
-		}
-	}
-	f.err = ""
-	return ""
 }
 
 // update handles a key. A picker takes the arrows; every other key goes to the
@@ -333,7 +312,7 @@ func (f *form) update(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	row := &f.rows[f.cursor]
-	if len(row.choices) > 0 {
+	if row.Picker() {
 		switch keyName(msg) {
 		case "left", "h":
 			f.cycle(-1)
@@ -353,7 +332,7 @@ func (f *form) update(msg tea.KeyPressMsg) tea.Cmd {
 
 func (f *form) paste(msg tea.PasteMsg) tea.Cmd {
 	row := &f.rows[f.cursor]
-	if len(row.choices) > 0 {
+	if row.Picker() {
 		return nil
 	}
 	var cmd tea.Cmd
@@ -368,7 +347,7 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 	focusRow := 0
 	labelW := 0
 	for _, row := range f.rows {
-		labelW = max(labelW, lipgloss.Width(row.label))
+		labelW = max(labelW, lipgloss.Width(row.Label))
 	}
 	labelW = min(labelW, max(inner/3, 8))
 	valueW := max(inner-labelW-4, 8)
@@ -377,8 +356,8 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 		var b strings.Builder
 		section := ""
 		for i, row := range f.rows {
-			if row.section != section {
-				section = row.section
+			if row.Section != section {
+				section = row.Section
 				if b.Len() > 0 {
 					b.WriteString("\n")
 				}
@@ -408,10 +387,10 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 			// A row that is typed into takes a caret from a press, so the value
 			// column is marked as the field it is. A picker's ‹ › are the cursor
 			// row's own keys and the row mark under them is enough.
-			if f.answerable(i) && len(row.choices) == 0 {
+			if f.answerable(i) && len(row.Choices) == 0 {
 				z.mark(hit{kind: hitInput, idx: i}, dialogPadLeft+labelW+4, y, valueW, 1)
 			}
-			b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.label, labelW)), labelW)+"  "+
+			b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.Label, labelW)), labelW)+"  "+
 				f.viewValue(st, i, valueW), inner))
 			b.WriteString("\n")
 			if f.listing && i == f.cursor {
@@ -452,22 +431,22 @@ func (f *form) viewList(st *styles, z *zones, top, labelW, inner int) string {
 	indent := strings.Repeat(" ", labelW+4)
 	width := max(inner-len(indent)-2, 8)
 	var b strings.Builder
-	start, end := 0, len(row.choices)
+	start, end := 0, len(row.Choices)
 	if f.listRoom > 0 && end > f.listRoom {
 		start = max(0, min(f.listAt-f.listRoom/2, end-f.listRoom))
 		end = start + f.listRoom
 	}
 	f.choiceRow = top + f.listAt - start
 	for j := start; j < end; j++ {
-		c := row.choices[j]
+		c := row.Choices[j]
 		mark, style := "  ", st.name
 		if j == f.listAt {
 			mark, style = st.key.Render("›")+" ", st.cursorName
 		}
-		text := style.Render(truncate(c.label, width))
-		if c.hint != "" {
-			if room := width - lipgloss.Width(c.label) - 3; room > 8 {
-				text += st.dimText.Render(" · " + truncate(c.hint, room))
+		text := style.Render(truncate(c.Label, width))
+		if c.Hint != "" {
+			if room := width - lipgloss.Width(c.Label) - 3; room > 8 {
+				text += st.dimText.Render(" · " + truncate(c.Hint, room))
 			}
 		}
 		z.markRow(hit{kind: hitFormChoice, idx: j}, top+j-start, inner+2*dialogPadLeft)
@@ -489,20 +468,20 @@ func (f *form) viewValue(st *styles, i, valueW int) string {
 		// carry. A locked row is the other way round — it exists to show what
 		// the credential already is — so it draws its value, unless the value
 		// is one nothing may draw.
-		text := row.why
-		if row.locked {
+		text := row.Why
+		if row.Locked {
 			switch {
-			case len(row.choices) > 0:
-				text = row.choices[row.at].label
-			case !row.masked && strings.TrimSpace(row.input.Value()) != "":
+			case row.Picker():
+				text = row.Choices[row.at].Label
+			case !row.Masked && strings.TrimSpace(row.input.Value()) != "":
 				text = row.input.Value()
 			}
 		}
 		return st.dimText.Render(truncate(text, valueW))
 	}
-	if len(row.choices) > 0 {
-		label := row.choices[row.at].label
-		if len(row.choices) == 1 {
+	if row.Picker() {
+		label := row.Choices[row.at].Label
+		if len(row.Choices) == 1 {
 			// Nothing to cycle through: it is a fact about the binding rather
 			// than a choice, and marks around it would offer a move that does
 			// nothing.
@@ -517,8 +496,8 @@ func (f *form) viewValue(st *styles, i, valueW int) string {
 	// The unit rides after the value, so the field is only as wide as what is
 	// left once it has its cell.
 	unit := ""
-	if row.suffix != "" {
-		unit = " " + row.suffix
+	if row.Suffix != "" {
+		unit = " " + row.Suffix
 	}
 	row.input.SetWidth(max(valueW-lipgloss.Width(unit)-1, 8))
 	value := row.input.View()
@@ -552,17 +531,17 @@ const hintRows = 2
 func (f *form) hint(st *styles, inner int) string {
 	style := st.dimText
 	row := f.rows[f.cursor]
-	hint := row.hint
+	hint := row.Hint
 	// A picker's options each explain themselves, so the line follows the
 	// option rather than the row: what "one harness" means is not what "every
 	// discobox in this project" means.
-	if len(row.choices) > 0 && row.choices[row.at].hint != "" {
-		hint = row.choices[row.at].hint
+	if row.Picker() && row.Choices[row.at].Hint != "" {
+		hint = row.Choices[row.at].Hint
 	}
 	// An open list is read one option at a time: the line says the whole of
 	// what the highlighted one means, which its row cuts short.
-	if f.listing && row.choices[f.listAt].hint != "" {
-		hint = row.choices[f.listAt].hint
+	if f.listing && row.Choices[f.listAt].Hint != "" {
+		hint = row.Choices[f.listAt].Hint
 	}
 	if f.err != "" {
 		// The refusal replaces the explanation: the row is being told why it

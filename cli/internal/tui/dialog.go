@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 type dialogKind int
@@ -125,6 +126,10 @@ type dialog struct {
 	page  int
 	input textinput.Model
 	err   bool
+	// answer is what a dlgInput does with what was typed: the core's verdict
+	// on it (console.Form), and what to do once it is accepted. A refusal keeps
+	// the field up, saying why in place of its question.
+	answer func(text string) (tea.Cmd, *console.Refusal)
 
 	// emphasis is the one line a question turns on — the size of a directory
 	// being measured behind it — drawn under the body in the window's accent
@@ -164,8 +169,8 @@ type dialog struct {
 	// that is not already on screen.
 	overflow bool
 
-	// action receives the result: the chosen action's key, the entered text,
-	// or "yes" for a confirmed question. It is not called on cancel.
+	// action receives the result: the chosen action's key, or "yes" for a
+	// confirmed question. It is not called on cancel.
 	action func(result string) tea.Cmd
 
 	// keys is the line under the card saying what the keys here do, made
@@ -331,10 +336,13 @@ func actionsDialog(title, body string, items []action, act func(string) tea.Cmd)
 	return d
 }
 
-func inputDialog(title, body, placeholder, value string, act func(string) tea.Cmd) *dialog {
+// inputDialog asks a form of one typed field (console.Form) as a single line:
+// its hint is the question, and act takes the accepted answer.
+func inputDialog[T any](title string, q console.Form[T], act func(T) tea.Cmd) *dialog {
+	field := q.Fields[0]
 	ti := textinput.New()
-	ti.Placeholder = placeholder
-	ti.SetValue(value)
+	ti.Placeholder = field.Placeholder
+	ti.SetValue(field.Value)
 	ti.CursorEnd()
 	ti.Focus()
 	// No character limit. The longest thing typed into one of these is a
@@ -343,7 +351,13 @@ func inputDialog(title, body, placeholder, value string, act func(string) tea.Cm
 	// it, which fails later as a wrong password rather than here as a refusal.
 	ti.SetWidth(44)
 	ti.Prompt = "› "
-	return &dialog{kind: dlgInput, title: title, body: body, input: ti, action: act}
+	return &dialog{kind: dlgInput, title: title, body: field.Hint, input: ti, answer: func(text string) (tea.Cmd, *console.Refusal) {
+		v, refused := q.Answer(console.Answers{field.Key: text})
+		if refused != nil || act == nil {
+			return nil, refused
+		}
+		return act(v), nil
+	}}
 }
 
 // statusDialog reports an operation the user started and now waits on.
@@ -355,8 +369,14 @@ func inputDialog(title, body, placeholder, value string, act func(string) tea.Cm
 // formDialog asks everything at once. Enter answers the whole card, so a form
 // is for a decision with one outcome — a binding made, a secret stored — rather
 // than for a menu of things that each do something different.
-func formDialog(title string, f *form, submit func(f *form) tea.Cmd) *dialog {
-	return &dialog{kind: dlgForm, title: title, form: f, submit: submit}
+func formDialog[T any](title string, q console.Form[T], act func(T) tea.Cmd) *dialog {
+	return &dialog{kind: dlgForm, title: title, form: newForm(q.Fields...), submit: func(f *form) tea.Cmd {
+		v, ok := answer(f, q)
+		if !ok || act == nil {
+			return nil
+		}
+		return act(v)
+	}}
 }
 
 func statusDialog(title, body string) *dialog {
@@ -551,18 +571,14 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		accept := len(d.formActions) == 0 && (keyName(msg) == "ctrl+s" || (keyName(msg) == "enter" && !d.form.listing && !d.form.onPicker()))
 		if accept {
 			d.form.closeList()
-			// A form that is not answered stays up with the reason on it: the
-			// alternative is a dialog that closes and reports a refusal onto
-			// the screen behind it, having thrown away everything typed.
-			if why := d.form.submit(); why != "" {
-				return nil, false
-			}
 			if d.submit == nil {
 				return nil, true
 			}
+			d.form.err = ""
 			cmd := d.submit(d.form)
-			// A submit that refused — a lifetime that cannot be read — says so
-			// on the form, and the form stays up holding everything typed.
+			// A form that is not answered stays up with the reason on it: the
+			// alternative is a dialog that closes and reports a refusal onto
+			// the screen behind it, having thrown away everything typed.
 			if d.form.err != "" {
 				return nil, false
 			}
@@ -583,10 +599,15 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case dlgInput:
 		if keyName(msg) == "enter" {
-			if d.action != nil {
-				return d.action(strings.TrimSpace(d.input.Value())), true
+			if d.answer == nil {
+				return nil, true
 			}
-			return nil, true
+			cmd, refused := d.answer(d.input.Value())
+			if refused != nil {
+				d.body, d.err = refused.Why, true
+				return nil, false
+			}
+			return cmd, true
 		}
 		var cmd tea.Cmd
 		d.input, cmd = d.input.Update(msg)
@@ -1101,7 +1122,7 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 				} else {
 					hint = strings.Split(d.form.hint(st, inner), "\n")[0]
 					if d.form.listing {
-						hint = fmt.Sprintf("%d of %d · ↑↓ or wheel moves · Enter chooses", d.form.listAt+1, len(d.form.rows[d.form.cursor].choices))
+						hint = fmt.Sprintf("%d of %d · ↑↓ or wheel moves · Enter chooses", d.form.listAt+1, len(d.form.rows[d.form.cursor].Choices))
 					}
 				}
 			}
@@ -1695,7 +1716,7 @@ func (d *dialog) formState() string {
 	}
 	var b strings.Builder
 	for _, r := range d.form.rows {
-		fmt.Fprintf(&b, "%s:%d:%q;", r.key, r.at, r.input.Value())
+		fmt.Fprintf(&b, "%s:%d:%q;", r.Key, r.at, r.input.Value())
 	}
 	return b.String()
 }

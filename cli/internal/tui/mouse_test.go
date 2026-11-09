@@ -535,7 +535,7 @@ func TestPressingAFormRowMovesTheCursorToIt(t *testing.T) {
 	before := m.dialog.form.cursor
 
 	// The row under the one the card opens on.
-	label := m.dialog.form.rows[before+1].label
+	label := m.dialog.form.rows[before+1].Label
 	x, y := at(t, m, label)
 	tap(t, m, x, y)
 
@@ -785,7 +785,7 @@ func TestPressingAFormFieldPlacesTheCaret(t *testing.T) {
 
 	row := -1
 	for i, r := range m.dialog.form.rows {
-		if len(r.choices) == 0 && m.dialog.form.answerable(i) {
+		if !r.Picker() && m.dialog.form.answerable(i) {
 			m.dialog.form.moveTo(i)
 			m.dialog.form.rows[i].input.SetValue("github")
 			row = i

@@ -114,16 +114,16 @@ func TestSettingsChangesTheHarnessOnlyWhenStopped(t *testing.T) {
 
 	f = openSettings(t, m, "sbx_stop")
 	harness := f.rows[1]
-	if !f.answerable(1) || harness.choices[0].key != "hc_claude" {
-		t.Fatalf("the stopped box's row should open on its harness, got %+v", harness.choices)
+	if !f.answerable(1) || harness.Choices[0].Key != "hc_claude" {
+		t.Fatalf("the stopped box's row should open on its harness, got %+v", harness.Choices)
 	}
 	// Every harness can run, so every one is offered.
 	offered := false
-	for _, c := range harness.choices {
-		offered = offered || c.key == "hc_other"
+	for _, c := range harness.Choices {
+		offered = offered || c.Key == "hc_other"
 	}
 	if !offered {
-		t.Fatalf("every harness should be offered, got %+v", harness.choices)
+		t.Fatalf("every harness should be offered, got %+v", harness.Choices)
 	}
 	f.choose("harness", "hc_codex")
 	send(t, m, keyPress("enter"))
@@ -165,8 +165,8 @@ func TestSettingsOpensWithoutTheHarnessListing(t *testing.T) {
 	ds.harnessErr = errors.New("no listing")
 	m := newTestModel(t, ds)
 	f := openSettings(t, m, "sbx_stop")
-	if row := f.rows[1]; len(row.choices) != 1 || row.choices[0].key != "hc_claude" {
-		t.Fatalf("harness row = %+v, want the box's own harness alone", row.choices)
+	if row := f.rows[1]; len(row.Choices) != 1 || row.Choices[0].Key != "hc_claude" {
+		t.Fatalf("harness row = %+v, want the box's own harness alone", row.Choices)
 	}
 }
 
@@ -218,26 +218,22 @@ func TestSettingsReadGivenUpOpensNothing(t *testing.T) {
 // something else is saved.
 func TestSettingsDoesNotRenameAcrossADroppedCharacter(t *testing.T) {
 	t.Parallel()
-	ds := settingsSource()
-	ds.settings["sbx_run"] = console.BoxSettings{Name: "odd\x07name", HarnessID: "hc_claude"}
-	m := newTestModel(t, ds)
-	f := openSettings(t, m, "sbx_run")
-	if f.value("name") == "odd\aname" {
-		t.Fatal("the field kept the control character; this test no longer covers a dropped one")
-	}
-	f.choose("api", "yes")
-	send(t, m, keyPress("enter"))
-	if len(ds.updates) != 1 || ds.updates[0].update.Name != nil {
-		t.Fatalf("updates = %+v, want the API alone", ds.updates)
-	}
-}
-
-func TestHostListSplitsOnCommasAndSpaces(t *testing.T) {
-	t.Parallel()
-	if got := hostList(" a.com,b.com  c.com, ,"); !slices.Equal(got, []string{"a.com", "b.com", "c.com"}) {
-		t.Fatalf("hostList = %q", got)
-	}
-	if got := hostList(""); got == nil || len(got) != 0 {
-		t.Fatalf("empty = %#v, want an empty list", got)
+	// Each name is one the field holds otherwise than it is stored: a control
+	// character dropped, a line break folded into a space each, a rune that
+	// does not decode dropped. The core compares with what the field holds
+	// (console.OneLine), so a save of something else renames nothing.
+	for _, name := range []string{"odd\x07name", "odd\r\nname", "odd\uFFFDname", "odd\xffname"} {
+		ds := settingsSource()
+		ds.settings["sbx_run"] = console.BoxSettings{Name: name, HarnessID: "hc_claude"}
+		m := newTestModel(t, ds)
+		f := openSettings(t, m, "sbx_run")
+		if f.value("name") == name {
+			t.Fatalf("%q: the field kept it as stored; this test no longer covers a changed one", name)
+		}
+		f.choose("api", "yes")
+		send(t, m, keyPress("enter"))
+		if len(ds.updates) != 1 || ds.updates[0].update.Name != nil {
+			t.Fatalf("%q: updates = %+v, want the API alone", name, ds.updates)
+		}
 	}
 }
