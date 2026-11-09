@@ -82,6 +82,16 @@ func newTestApp(ctx context.Context, t *testing.T, db *database.DB) *chi.Mux {
 	return router
 }
 
+// NewApp refuses an empty asset directory before it touches the database,
+// rather than keeping the blob store in the working directory.
+func TestNewAppRequiresAnAssetDir(t *testing.T) {
+	ctx := context.Background()
+	db := newAppTestDB(ctx, t)
+	if _, _, _, _, err := NewApp(ctx, db.Write, db.Read, DefaultAppOptions()); err == nil || !strings.Contains(err.Error(), "asset directory is required") {
+		t.Fatalf("NewApp with no AssetDir: err = %v, want the asset directory refused", err)
+	}
+}
+
 func TestNewOpenAPIRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 	stubs := newRouterTestServices()
 	router, err := NewOpenAPIRouter(services.Services{
