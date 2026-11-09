@@ -172,12 +172,19 @@
         # toolchain that compiles is the one desktop/rust-toolchain.toml
         # names, fetched on first use.
         #
-        # On Linux the app links xkbcommon and Wayland (found through
-        # pkg-config) and loads the X11 libraries and the Vulkan loader at run
-        # time, so they are on LD_LIBRARY_PATH. Mesa's software Vulkan driver
+        # On Linux the build finds xkbcommon and Wayland through pkg-config,
+        # but the linked app keeps neither: it loads Wayland, xkbcommon, the
+        # X11 libraries and the Vulkan loader at run time, so they are on
+        # LD_LIBRARY_PATH. Mesa's software Vulkan driver
         # comes too, for headless rendering where there is no GPU: name it with
         # VK_ICD_FILENAMES="$DISCOBOX_LAVAPIPE_ICD". It is not the default,
         # because a machine with a GPU should use it.
+        #
+        # A release app is linked by zig, through cargo-zigbuild
+        # (`release:desktop`), not by this shell's compiler: one built here would
+        # name this shell's loader and glibc, which exist on no user's machine.
+        # zig links against a glibc no newer than the release's floor, and
+        # cross-links arm64 from an amd64 runner.
         // {
           desktop =
             let
@@ -201,6 +208,8 @@
                     [
                       pkgs.pkg-config
                       pkgs.mesa
+                      pkgs.zig
+                      pkgs.cargo-zigbuild
                     ]
                     ++ runtimeLibs
                   );

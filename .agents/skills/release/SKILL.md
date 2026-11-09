@@ -332,6 +332,13 @@ darwin legs — darwin because cgo, the macOS SDK, and codesigning are
 native-only), `images` (multi-arch, pushed to ghcr), then `publish`, which
 creates the GitHub release and uploads `build/release/bin`.
 
+The linux leg also builds the desktop app that `discobox desktop` runs, for
+Linux only (amd64 and arm64; macOS and Windows have none yet), as
+`discobox-desktop-linux-<arch>.tar.gz` (`release:desktop`). Each Linux CLI is
+linked with that archive's digest, and `release:verify` fails the leg if an app
+would not start on a user's Linux or a CLI pins other bytes than the release
+carries. There is nothing to sign for Linux and no credential involved.
+
 ```bash
 gh run list --repo discobox-ai/discobox --workflow release.yml --limit 1
 gh run watch <run-id> --repo discobox-ai/discobox --exit-status
@@ -360,12 +367,23 @@ release's installer, so once the release is up it should name this tag:
 curl -sSfL https://edge.discobox.ai | grep -m1 '^release='
 ```
 
+And that both desktop apps were uploaded, since a Linux CLI downloads its own
+on the first `discobox desktop`:
+
+```bash
+gh release view vX.Y.Z --repo discobox-ai/discobox \
+  --json assets -q '.assets[].name | select(startswith("discobox-desktop-"))'
+```
+
 `release:image` separately decides whether ghcr's `:latest` moves, from
 `release:dot` — exactly `vMAJOR.MINOR.PATCH`. A dot release moves it; a
 `-rc`/`-alpha` tag does not.
 
 Every step is a Taskfile target that also runs locally (ADR 0066 §1):
-`release:build`, `release:images`, `release:publish`.
+`release:build`, `release:images`, `release:publish`. On Linux, run
+`release:build` inside `nix develop .#desktop`, as both workflows do: it
+builds the desktop app, and refuses to start without the shell's Rust, zig and
+cargo-zigbuild.
 
 ## 5. The Homebrew tap
 

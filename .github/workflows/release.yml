@@ -33,10 +33,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux also builds the desktop app, which the Linux CLIs are
+          # linked against (ADR 26-11-07-983), so it enters the desktop shell.
           - runs-on: depot-ubuntu-24.04-4
             artifact: linux
+            shell: desktop
           - runs-on: depot-macos-15
             artifact: darwin
+            shell: default
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 45
     steps:
@@ -44,6 +48,7 @@ jobs:
       - uses: ./.github/actions/task
         with:
           target: release:build
+          shell: ${{ matrix.shell }}
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-bin-${{ matrix.artifact }}

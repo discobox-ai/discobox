@@ -56,13 +56,17 @@ vars:
         repo="${repo%.git}"
       fi
       printf %s "$repo"
-  # The asset mirror a staged server is fetched from before the release URL
-  # (ADR 0106 §2), and the one repository whose releases it fronts. A fork
+  # The asset mirror a staged server and a staged desktop app are fetched from
+  # before the release URL (ADR 0106 §2), and the one repository whose releases it fronts. A fork
   # releases from GitHub alone: the mirror resolves namespaces its operator
   # listed, so pointing a fork's manifest at it would name assets that are not
   # there — caught by the digest, but only after a pointless round trip.
   ASSET_MIRROR_REPO: discobox-ai/discobox
   ASSET_MIRROR_BASE: https://assets.discobox.ai/discobox
+  # The oldest glibc a released desktop app runs on (release:desktop links
+  # against it; release:verify holds it to it): Debian 11, Ubuntu 20.04 and
+  # RHEL 9 are all at it or newer.
+  DESKTOP_GLIBC: "2.31"
   # The tag being acted on, in order: `task <target> -- v1.2.3`, RELEASE_TAG=,
   # then the tag a workflow is running for. Resolved once so a tag typed on the
   # command line reaches DOT_RELEASE below as well as the task using it —
@@ -1170,9 +1174,11 @@ tasks:
       - task: release:verify
 
   release:build:linux:
-    desc: Build the Linux and Windows release binaries
+    desc: Build the Linux and Windows release binaries, and the Linux desktop app
     platforms: [linux]
     cmds:
+      # First: each Linux CLI is linked with the digest of its app.
+      - task: release:desktop
       - task: release:binary
         vars: { TARGET_OS: linux, TARGET_ARCH: amd64 }
       - task: release:binary
@@ -1185,6 +1191,70 @@ tasks:
       - task: release:binary
         vars: { TARGET_OS: windows, TARGET_ARCH: arm64 }
       - task: release:windows-zip
+
+  release:desktop:
+    desc: Build the Linux desktop app's release archives (amd64, arm64) into build/release/bin, for release:binary to pin
+    platforms: [linux]
+    # Linux alone (ADR 26-11-07-983 §4): macOS and Windows have no app to
+    # download yet, and their CLIs say so.
+    #
+    # Both architectures are cross-linked from one runner by zig, through
+    # cargo-zigbuild, against a glibc no newer than DESKTOP_GLIBC. A build by
+    # the devShell's own compiler would carry a /nix/store loader and its
+    # RUNPATH, and need the shell's glibc (2.39 and up, for Rust's pidfd_spawnp),
+    # and start on no user's machine; release:verify checks each of those.
+    #
+    # The app loads Wayland, X11, xkbcommon and Vulkan at run time, so linking
+    # needs none of them, with one exception: Rune depends on the xkbcommon
+    # crate for its layer-shell surface, which this app never opens, and that
+    # crate asks the linker for -lxkbcommon. --as-needed drops it again because
+    # nothing references it, so an empty stub library for the target satisfies
+    # the request. Should the app ever reach that code, the link fails on its
+    # undefined symbols rather than shipping something that cannot load.
+    preconditions:
+      - sh: command -v cargo-zigbuild >/dev/null && command -v zig >/dev/null && command -v rustup >/dev/null
+        msg: "release:desktop needs the desktop devShell (Rust, zig and cargo-zigbuild): run it inside `nix develop .#desktop`"
+    cmds:
+      - mkdir -p build/release/bin
+      - |
+        set -eu
+        stubs="$PWD/desktop/target/link-stub"
+        set --
+        for arch in amd64 arm64; do
+          case "$arch" in
+            amd64) cpu=x86_64 ;;
+            arm64) cpu=aarch64 ;;
+          esac
+          (cd desktop && rustup target add "$cpu-unknown-linux-gnu" >/dev/null)
+          mkdir -p "$stubs/$cpu"
+          : > "$stubs/$cpu/empty.c"
+          zig cc -target "$cpu-linux-gnu.{{.DESKTOP_GLIBC}}" -shared -Wl,-soname,libxkbcommon.so.0 \
+            -o "$stubs/$cpu/libxkbcommon.so" "$stubs/$cpu/empty.c"
+          # Per target, so the host's own builds keep their flags and cache.
+          upper=$(echo "$cpu" | tr '[:lower:]' '[:upper:]')
+          export "CARGO_TARGET_${upper}_UNKNOWN_LINUX_GNU_RUSTFLAGS=-L native=$stubs/$cpu"
+          set -- "$@" --target "$cpu-unknown-linux-gnu.{{.DESKTOP_GLIBC}}"
+        done
+        (cd desktop && cargo zigbuild --release --locked "$@")
+      # One executable per archive, at its root, under the name the desktop
+      # manifest's -command gives (release:binary). Owner, times and order are
+      # fixed so the archive is a function of the executable alone.
+      - |
+        set -eu
+        work="$(mktemp -d)"
+        trap 'rm -rf "$work"' EXIT
+        for arch in amd64 arm64; do
+          case "$arch" in
+            amd64) cpu=x86_64 ;;
+            arm64) cpu=aarch64 ;;
+          esac
+          rm -rf "$work/stage" && mkdir "$work/stage"
+          cp "desktop/target/$cpu-unknown-linux-gnu/release/discobox-desktop" "$work/stage/discobox-desktop"
+          chmod 0755 "$work/stage/discobox-desktop"
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$work/stage" -cf - discobox-desktop |
+            gzip -n -9 > "build/release/bin/discobox-desktop-linux-$arch.tar.gz"
+          echo "build/release/bin/discobox-desktop-linux-$arch.tar.gz: $(wc -c < "build/release/bin/discobox-desktop-linux-$arch.tar.gz") bytes"
+        done
 
   release:build:darwin:
     desc: Build and sign the macOS release binary
@@ -1319,17 +1389,34 @@ tasks:
       - |
         set -eu
         manifest=""
+        desktop=""
         if [ -n "{{.PIN_TAG}}" ] && [ -n "{{.RELEASE_REPO}}" ]; then
+          # Order is the fallback order, the same for the server and the
+          # desktop app. The mirror is tried first because these are the
+          # heaviest downloads we serve (a server, and a ~12 MB app on every
+          # machine that opens one); the release URL is last because it is the
+          # one that outlives everything else.
+          bases=""
+          if [ "{{.RELEASE_REPO}}" = "{{.ASSET_MIRROR_REPO}}" ]; then
+            bases="{{.ASSET_MIRROR_BASE}}/{{.PIN_TAG}}"
+          fi
+          bases="$bases https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}"
+          # The desktop app's manifest, from the archive release:desktop built
+          # for this platform (ADR 26-11-07-983 §2), for Linux alone (§4). A
+          # tagged Linux CLI without one would ship a `discobox desktop` that
+          # has nothing to run, so a missing archive fails the build.
+          if [ "{{.TARGET_OS}}" = linux ]; then
+            app="build/release/bin/discobox-desktop-{{.TARGET_OS}}-{{.TARGET_ARCH}}.tar.gz"
+            [ -f "$app" ] || { echo "release:binary: $app was not built; run release:desktop first" >&2; exit 1; }
+            set -- -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}" \
+              -command discobox-desktop -asset "$app"
+            for base in $bases; do set -- "$@" -base-url "$base"; done
+            desktop="$(go run ./internal/cmd/discobox-desktop-manifest "$@")"
+          fi
           set -- -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}" \
             -command "{{.SERVER_NAME}}" \
             -asset "{{.SERVER_NAME}}={{.SERVER_OUT}}"
-          # Order is the fallback order. The mirror is tried first because
-          # staging a server is the heaviest download we serve; the release URL
-          # is last because it is the one that outlives everything else.
-          if [ "{{.RELEASE_REPO}}" = "{{.ASSET_MIRROR_REPO}}" ]; then
-            set -- "$@" -base-url "{{.ASSET_MIRROR_BASE}}/{{.PIN_TAG}}"
-          fi
-          set -- "$@" -base-url "https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}"
+          for base in $bases; do set -- "$@" -base-url "$base"; done
           # Export from a host build even when the server asset targets Windows.
           go run -ldflags="{{.SERVER_LDFLAGS}} -X github.com/discobox-ai/discobox/pkg/version.Version={{.PIN_TAG}}" \
             ./server/cmd/discobox-server manifest > "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
@@ -1337,7 +1424,7 @@ tasks:
         fi
         cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
           go build -trimpath \
-          -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/pkg/serverstage.DefaultManifest=$manifest}" \
+          -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/pkg/serverstage.DefaultManifest=$manifest}${desktop:+ -X github.com/discobox-ai/discobox/pkg/desktopstage.DefaultManifest=$desktop}" \
           -o "../{{.OUT}}" {{.CLI_MAIN}}
         cd ..
         if [ -n "$manifest" ]; then
@@ -1423,6 +1510,52 @@ tasks:
           name=$(basename "$binary")
           case "$name" in *.json) continue ;; esac
           found=$((found + 1))
+
+          # A desktop app archive (release:desktop): its one executable must
+          # start on a user's Linux, which nothing about building it shows. So
+          # the loader is the system's, there is no RUNPATH, it needs no
+          # library but glibc's (the window system and Vulkan are loaded at run
+          # time, and a user may have neither installed), and no glibc newer
+          # than DESKTOP_GLIBC. All read from the file, for both architectures;
+          # the host's own is run as well.
+          case "$name" in
+            discobox-desktop-linux-*.tar.gz)
+              arch=${name#discobox-desktop-linux-}
+              arch=${arch%.tar.gz}
+              members=$(tar -tzf "$binary")
+              [ "$members" = discobox-desktop ] ||
+                { echo "$name: holds $(echo "$members" | tr '\n' ' '), not the one executable discobox-desktop" >&2; exit 1; }
+              rm -rf "$work/app" && mkdir "$work/app"
+              tar -xzf "$binary" -C "$work/app"
+              app="$work/app/discobox-desktop"
+              interp=$(readelf -p .interp "$app" 2>/dev/null | sed -n 's/.*\[ *0\] *//p' | tr -d ' ')
+              case "$interp" in
+                /lib/*|/lib64/*) ;;
+                *) echo "$name: interpreter '${interp}' is not the system's" >&2; exit 1 ;;
+              esac
+              if readelf -d "$app" | grep -Eq '\((RPATH|RUNPATH)\)'; then
+                echo "$name: carries a library search path from the machine that built it:" >&2
+                readelf -d "$app" | grep -E '\((RPATH|RUNPATH)\)' >&2
+                exit 1
+              fi
+              for lib in $(readelf -d "$app" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+                case "$lib" in
+                  libc.so.6|libm.so.6|libpthread.so.0|libdl.so.2|libutil.so.1|librt.so.1|ld-linux-*) ;;
+                  *) echo "$name: needs $lib, which is not glibc's and may not be installed" >&2; exit 1 ;;
+                esac
+              done
+              newest=$(readelf -V -W "$app" | grep -o 'Name: GLIBC_[0-9.]*' | sed 's/Name: GLIBC_//' | sort -uV | tail -1)
+              if [ "$(printf '%s\n%s\n' "$newest" "{{.DESKTOP_GLIBC}}" | sort -V | tail -1)" != "{{.DESKTOP_GLIBC}}" ]; then
+                echo "$name: needs glibc $newest, newer than the release's floor of {{.DESKTOP_GLIBC}}" >&2
+                exit 1
+              fi
+              if [ "linux-$arch" = "$host" ]; then
+                "$app" --list-scenes >/dev/null || { echo "$name: cannot execute" >&2; exit 1; }
+              fi
+              echo "$name: interpreter $interp, glibc $newest"
+              continue
+              ;;
+          esac
 
           # Every server delivers this helper before a local VM can fetch
           # images or bundles; WSL also uses it for its control-plane channel.
@@ -1511,6 +1644,24 @@ tasks:
                     grep -q "discobox-server-$host" "$work/manifest.json" ||
                       { echo "$name: its server manifest does not name the $host server asset:" >&2; cat "$work/manifest.json" >&2; exit 1; }
                     echo "$name: stages $(grep -c '"sha256"' "$work/manifest.json") server asset(s) for $host"
+                  fi
+                  ;;
+              esac
+
+              # And, for a tagged Linux CLI, that it pins the desktop app this
+              # release built, by that archive's digest: the same -X hazard
+              # as the server's, and an archive rebuilt after the link would
+              # leave the CLI pinning bytes no release carries.
+              case "$name" in
+                discobox-linux-*)
+                  if [ -n "{{.PIN_TAG}}" ]; then
+                    asset="build/release/bin/discobox-desktop-$host.tar.gz"
+                    "$binary" desktop --print-manifest > "$work/desktop.json" ||
+                      { echo "$name: carries no desktop manifest: the manifest ldflag is not reaching the binary" >&2; exit 1; }
+                    sum=$(sha256sum "$asset" | cut -d' ' -f1)
+                    grep -q "\"discobox-desktop-$host.tar.gz\"" "$work/desktop.json" && grep -q "\"$sum\"" "$work/desktop.json" ||
+                      { echo "$name: its desktop manifest does not pin $asset ($sum):" >&2; cat "$work/desktop.json" >&2; exit 1; }
+                    echo "$name: pins discobox-desktop-$host.tar.gz"
                   fi
                   ;;
               esac
@@ -1623,8 +1774,8 @@ tasks:
     # Stamped with the tag and the SHA-256 of each CLI binary beside them, which
     # is exactly what release:publish is about to upload, so every digest an
     # installer checks describes a file its release carries (ADR 0110). The
-    # server binaries and the winget archives are left out: no installer
-    # downloads them.
+    # server binaries, the desktop apps and the winget archives are left out:
+    # no installer downloads them.
     cmds:
       - |
         set -eu
@@ -1637,7 +1788,7 @@ tasks:
         for bin in build/release/bin/discobox-*; do
           [ -f "$bin" ] || continue
           case "$(basename "$bin")" in
-            discobox-server-* | *.zip | *.json) ;;
+            discobox-server-* | discobox-desktop-* | *.zip | *.json) ;;
             *) set -- "$@" "$bin" ;;
           esac
         done

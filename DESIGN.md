@@ -298,8 +298,9 @@ flowchart TD
   machine that is not in a dev shell.
   `devShells.desktop` adds what the desktop app (`desktop/`) builds with:
   rustup (`desktop/rust-toolchain.toml` picks the toolchain, as `go.mod` picks
-  Go), and on Linux the window system's libraries and Mesa's software Vulkan
-  driver for rendering without a GPU.
+  Go), and on Linux the window system's libraries, Mesa's software Vulkan
+  driver for rendering without a GPU, and zig with cargo-zigbuild, which link
+  the released app (`release:desktop`).
 - `Taskfile.yml` owns every step. `go tool task --list` is the index; `task`,
   `golangci-lint`, and `ogen` are `go tool` dependencies pinned by `go.mod`, not
   by Nix.
@@ -308,10 +309,11 @@ flowchart TD
   composite action as `nix develop -c go tool task <target>` on Linux, or as
   plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). A
   Linux job whose target needs a shell that extends the default names it
-  (`shell: desktop` runs `nix develop .#desktop`). The desktop app is built and
-  tested only there, in `ci:desktop`: its tests, parity scenarios and the
+  (`shell: desktop` runs `nix develop .#desktop`). The desktop app is tested
+  only on Linux, in `ci:desktop`: its tests, parity scenarios and the
   bridge's contract suite included, and its scenes rendered headless on that
-  software driver. Go's build and test cache is Depot Cache, which Depot's
+  software driver. `release:build` also builds it on Linux, so the jobs that
+  run it (CI's `build`, the release's linux leg) enter that shell too. Go's build and test cache is Depot Cache, which Depot's
   runners set as `GOCACHEPROG` and every run, pull requests included, reads and
   writes per object; a runner without it builds cold. Any run but a pull
   request or a branch push turns Depot Cache off (a tag's release, a dispatched
@@ -332,6 +334,12 @@ builds from other files than Linux (`scripts/lint-darwin.sh`) and type-checks
 the rest; the Linux job already lints everything. Agent images are built once
 for both architectures by `depot build`, falling back to emulated `docker
 buildx`.
+
+The Linux job also builds the desktop app (`discobox desktop`, released for
+Linux only, ADR 26-11-07-983 §4) for both architectures, before the CLIs, each
+of which is linked with its app's digest. It is linked by zig against an old
+glibc floor rather than by the devShell's compiler, whose loader and glibc
+exist on no user's machine; `release:verify` holds each archive to that.
 
 A release passes through three states, and only the first is decided by the tag
 (ADR 0105). Pushing a tag publishes a GitHub **prerelease** and nothing more:
@@ -402,10 +410,10 @@ tests, and the secrets it needs belong to `discobox-ai/infra`. It fills from
 published releases and is never something a release pushes to, so it cannot
 break one.
 
-The server manifest names it first and the release URL last: staging tries each
-against the single digest the manifest carries and stops at the first whose
-bytes match, so the mirror takes the heaviest download we serve without a
-shipped binary coming to depend on it (ADR 0106). Both formulae and the winget
+The server manifest, and the desktop manifest a Linux CLI carries, name it
+first and the release URL last: staging tries each against the single digest
+the manifest carries and stops at the first whose bytes match, so the mirror
+takes the heaviest downloads we serve without a shipped binary coming to depend on it (ADR 0106). Both formulae and the winget
 manifest resolve `github.com` directly, because neither format has a fallback to
 express and a winget manifest, once merged, is permanent and not ours to amend.
 

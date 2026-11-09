@@ -115,6 +115,8 @@ jobs:
       - uses: ./.github/actions/task
         with:
           target: release:build
+          # The Linux desktop app is part of it (release:desktop).
+          shell: desktop
 
   # An arm64 Mac: the vz provider is cgo against Virtualization.framework, and
   # the entitlement it needs can only be applied by /usr/bin/codesign. Nothing

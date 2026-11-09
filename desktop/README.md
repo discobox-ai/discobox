@@ -53,6 +53,12 @@ the epic, and does not yet follow the ADRs everywhere:
   pins into `<discobox state>/desktop/<digest>/`, and a development CLI runs the
   one beside it. On macOS and Windows it says the platform is not yet supported
   (ADR 26-11-07-983 §4).
+- **The release** builds the app for Linux amd64 and arm64
+  (`go tool task release:desktop`, in `nix develop .#desktop`): cross-linked by
+  zig through cargo-zigbuild against glibc `DESKTOP_GLIBC` (Taskfile), and
+  packed as `discobox-desktop-linux-<arch>.tar.gz`, the executable alone.
+  Nothing it links but glibc: Wayland, X11, xkbcommon and Vulkan are loaded at
+  run time. `discobox desktop --print-manifest` shows what a CLI pins.
 
 | File | What |
 | --- | --- |
