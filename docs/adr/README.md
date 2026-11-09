@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-09-062](26-11-09-062-a-harness-change-wakes-the-pool-like-a-port.md) | A harness change wakes the pool like a port | Proposed (would narrow [26-11-03-815](26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md) §2's ports-only version and §4) |
 | [26-11-09-593](26-11-09-593-a-never-registered-pool-gets-a-new-bootstrap-attempt-after-one-ends.md) | A never-registered pool gets a new bootstrap attempt after one ends | Accepted (narrows [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) §3's automatic-retry rule to the waiters holding the ended attempt) |
 | [26-11-07-519](26-11-07-519-a-running-box-keeps-its-reconcile-failure-as-a-warning.md) | A running box keeps its reconcile failure as a warning | Accepted (supersedes 0034 §5's unconditional error-first precedence for a present, running sandbox; amends 26-10-29-316 §1 and 26-11-01-560 §2's event fields with `errorMessage`) |
 | [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) | Initial pool bootstrap waits on work evidence | Accepted (narrows 26-10-12-711 §6 and 0039 tier-1 stall rule for bounded initial-bootstrap operations; explicit-start and upgrade ceilings remain; §3's automatic-retry rule narrowed to waiters by [26-11-09-593](26-11-09-593-a-never-registered-pool-gets-a-new-bootstrap-attempt-after-one-ends.md)) |
