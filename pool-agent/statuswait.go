@@ -14,12 +14,14 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
-// The pool waits on every running sandbox's ports, so a port a program binds
-// reaches the control plane at once rather than at the next 15-second check-in
-// (ADR 26-11-03-815 §3). The sandbox agent may not call out (ADR 0030), so the
-// pool holds a request open instead: the agent answers it the moment its ports
-// change, or with nothing new once its own hold is up, and the waiter asks
-// again.
+// The pool waits on every running sandbox's status wait, so a port a program
+// binds, or a harness sign-in to save, reaches the control plane at once rather
+// than at the next 15-second check-in (ADR 26-11-03-815 §3, ADR 26-11-09-062).
+// The sandbox agent may not call out (ADR 0030), so the pool holds a request
+// open instead: the agent answers it the moment its ports or its harness
+// configuration capture change, or with nothing new once its own hold is up,
+// and the waiter asks again. The version is opaque here: the pool never learns
+// which of them moved it.
 //
 // A waiter only learns that something changed. The standing loop is what polls
 // the sandbox's status and pushes it, so reports reach the control plane in
@@ -136,7 +138,7 @@ func (p *sandboxAgentStatusPoller) startWaiterLocked(ctx context.Context, sandbo
 	}
 	waitCtx, cancel := context.WithCancel(ctx)
 	p.waiters[sandboxID] = cancel
-	go p.waitForPorts(waitCtx, sandboxID)
+	go p.waitForChanges(waitCtx, sandboxID)
 }
 
 func (p *sandboxAgentStatusPoller) stopWaiterLocked(sandboxID string) {
@@ -146,16 +148,16 @@ func (p *sandboxAgentStatusPoller) stopWaiterLocked(sandboxID string) {
 	}
 }
 
-// waitForPorts waits on one sandbox's ports until ctx ends, waking the loop
-// each time they change. The first call names no version and is answered at
+// waitForChanges waits on one sandbox's status wait until ctx ends, waking the
+// loop each time its version moves. The first call names no version and is answered at
 // once; each call after names the version last seen and is held until there
 // is a newer one.
 //
 // The first answer wakes the loop too. The waiter may have started with the
-// sandbox, before its agent was up, and a port bound while it was getting
-// there would otherwise wait for the tick; one extra check-in per waiter is the
+// sandbox, before its agent was up, and a port bound or a sign-in captured
+// while it was getting there would otherwise wait for the tick; one extra check-in per waiter is the
 // price.
-func (p *sandboxAgentStatusPoller) waitForPorts(ctx context.Context, sandboxID string) {
+func (p *sandboxAgentStatusPoller) waitForChanges(ctx context.Context, sandboxID string) {
 	var version string
 	for ctx.Err() == nil {
 		token, ok := p.ensureTokens(ctx, []string{sandboxID})[sandboxID]
@@ -173,7 +175,7 @@ func (p *sandboxAgentStatusPoller) waitForPorts(ctx context.Context, sandboxID s
 			sleepContext(ctx, sandboxAgentStatusWaitUnsupportedRetry)
 			continue
 		case err != nil:
-			p.logger.Debug("wait on sandbox-agent ports", "sandboxId", sandboxID, "error", err)
+			p.logger.Debug("wait on sandbox-agent status", "sandboxId", sandboxID, "error", err)
 			sleepContext(ctx, sandboxAgentStatusWaitRetry)
 			continue
 		}
@@ -234,8 +236,9 @@ func (p *sandboxAgentStatusPoller) waitOne(ctx context.Context, sandboxID, token
 	if err := json.Unmarshal(data, &body); err != nil {
 		return "", err
 	}
-	// An agent with no port watcher has no version to wait on: it is treated
-	// as one without the route.
+	// An agent with nothing to wait on answers no version: it is treated as
+	// one without the route. The field keeps its ports name across the
+	// harness change it now also versions (ADR 26-11-09-062 §1).
 	if body.PortsVersion == "" {
 		return "", errStatusWaitUnsupported
 	}

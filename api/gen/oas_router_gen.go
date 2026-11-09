@@ -8184,7 +8184,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 												switch method {
 												case "GET":
 													r.name = WaitSandboxAgentStatusOperation
-													r.summary = "Wait for the sandbox's listening ports to change."
+													r.summary = "Wait for the sandbox's ports or harness configuration to change."
 													r.operationID = "wait-sandbox-agent-status"
 													r.operationGroup = ""
 													r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/status/wait"

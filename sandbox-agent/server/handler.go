@@ -29,6 +29,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/services"
 	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
+	"github.com/discobox-ai/discobox/sandbox-agent/statuswait"
 	"github.com/discobox-ai/discobox/sandbox-agent/store"
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 	"github.com/go-faster/jx"
@@ -574,12 +575,15 @@ func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHa
 	return &response, nil
 }
 
-// WaitSandboxAgentStatus answers with the ports version, holding a caller that
-// names the current one until it changes (ADR 26-11-03-815 §2). The hold is
-// the watcher's to bound, and the request's context ends it early when the pool
-// hangs up.
+// WaitSandboxAgentStatus answers with the version of what wakes the pool — the
+// listening ports and the harness configuration capture — holding a caller
+// that names the current one until either changes (ADR 26-11-03-815 §2, ADR
+// 26-11-09-062). The hold is the agent's to bound, and the request's context
+// ends it early when the pool hangs up. The field keeps its ports name so a
+// pool and agent upgraded apart still read each other.
 func (h *handler) WaitSandboxAgentStatus(ctx context.Context, params sandboxapi.WaitSandboxAgentStatusParams) (*sandboxapi.SandboxAgentStatusWaitResponse, error) {
-	return &sandboxapi.SandboxAgentStatusWaitResponse{PortsVersion: h.ports.Wait(ctx, params.After.Or(""))}, nil
+	version := statuswait.Wait(ctx, params.After.Or(""), statuswait.Hold, h.ports.Changes(), h.terminals.HarnessConfigChangeSignal())
+	return &sandboxapi.SandboxAgentStatusWaitResponse{PortsVersion: version}, nil
 }
 
 // GetSandboxAgentStatus computes git/session/connection status fresh on every

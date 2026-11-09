@@ -32,8 +32,6 @@ package ports
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"log/slog"
 	"net/netip"
 	"slices"
@@ -42,6 +40,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/discobox-ai/discobox/sandbox-agent/statuswait"
 )
 
 // DefaultInterval is how often the watcher rescans the socket table: this
@@ -51,12 +51,6 @@ import (
 // has to reach the person's machine before their browser is sent to it, and the
 // pool waits on the snapshot rather than polling it (ADR 26-11-03-815).
 const DefaultInterval = platformInterval
-
-// waitHold is how long Wait holds a caller naming the current version before
-// answering with it unchanged. It is the agent's bound, never the caller's, and
-// is under the idle timeout of a proxy in front of a machine reached at its
-// public URL (ADR 26-11-03-815 §2).
-const waitHold = 25 * time.Second
 
 // probeConcurrency bounds how many listeners are probed at once. A sandbox that
 // just started a compose stack can bring up a dozen ports in one tick, and each
@@ -215,14 +209,9 @@ type Watcher struct {
 	mu       sync.Mutex
 	state    map[endpoint]*portState
 	snapshot []Port
-	// epoch and generation make the snapshot's version: the generation counts
-	// changes to it, and the epoch, drawn when the watcher is made, keeps a
-	// restarted agent's count from being mistaken for an unchanged one.
-	epoch      string
-	generation uint64
-	// changed is closed and replaced whenever the snapshot changes, waking
-	// every Wait held on the version before it.
-	changed chan struct{}
+	// changes moves whenever the snapshot does, for the status wait to hold
+	// on (ADR 26-11-03-815 §2).
+	changes statuswait.Signal
 }
 
 // portState is what the watcher remembers about one port between ticks. The
@@ -275,16 +264,7 @@ func New(cfg Config) *Watcher {
 		probe:    cfg.Probe,
 		logger:   cfg.Logger,
 		state:    map[endpoint]*portState{},
-		epoch:    newEpoch(),
-		changed:  make(chan struct{}),
 	}
-}
-
-// newEpoch is a token no earlier run of the agent drew.
-func newEpoch() string {
-	var b [8]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
 }
 
 // Run scans immediately and then on the configured interval until ctx is done.
@@ -306,48 +286,13 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 }
 
-// Version names the current snapshot: it changes whenever the snapshot does,
-// and is opaque to everyone but Wait.
-func (w *Watcher) Version() string {
+// Changes is the snapshot's change signal: its version moves whenever the
+// snapshot does. A nil watcher has none.
+func (w *Watcher) Changes() *statuswait.Signal {
 	if w == nil {
-		return ""
+		return nil
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.versionLocked()
-}
-
-func (w *Watcher) versionLocked() string {
-	return w.epoch + "-" + strconv.FormatUint(w.generation, 10)
-}
-
-// Wait answers with the current version, at once unless after is that
-// version: then it holds until the snapshot changes, waitHold passes or ctx
-// ends, and answers with whatever the version is then. Waiting is the caller's
-// to ask for by naming the version it has; one that names none, or an old
-// one, is answered straight away (ADR 26-11-03-815 §2).
-func (w *Watcher) Wait(ctx context.Context, after string) string {
-	if w == nil {
-		return ""
-	}
-	return w.wait(ctx, after, waitHold)
-}
-
-func (w *Watcher) wait(ctx context.Context, after string, hold time.Duration) string {
-	w.mu.Lock()
-	current, changed := w.versionLocked(), w.changed
-	w.mu.Unlock()
-	if after != current {
-		return current
-	}
-	timer := time.NewTimer(hold)
-	defer timer.Stop()
-	select {
-	case <-changed:
-	case <-timer.C:
-	case <-ctx.Done():
-	}
-	return w.Version()
+	return &w.changes
 }
 
 // Snapshot is the most recent observation, ordered by port, with a number's
@@ -589,9 +534,7 @@ func (w *Watcher) publish() {
 		return
 	}
 	w.snapshot = snapshot
-	w.generation++
-	close(w.changed)
-	w.changed = make(chan struct{})
+	w.changes.Changed()
 }
 
 // equal is whether two observations of a port say the same thing.

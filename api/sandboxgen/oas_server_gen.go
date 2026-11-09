@@ -368,11 +368,12 @@ type Handler interface {
 	UpdateSandboxAgentMeta(ctx context.Context, req *UpdateSandboxMetaBody, params UpdateSandboxAgentMetaParams) (*SandboxAgentMeta, error)
 	// WaitSandboxAgentStatus implements wait-sandbox-agent-status operation.
 	//
-	// Answers with the version of the sandbox's listening ports. A call without `after`, or with an
-	// `after` that is not the current version, is answered at once; a call naming the current version is
-	// held until the ports change or the agent's hold (25 seconds) passes, and then answered with the
-	// version as it is. The pool waits here so a newly bound port is reported at once rather than at the
-	// next status poll (ADR 26-11-03-815).
+	// Answers with the version of what wakes the pool, the sandbox's listening ports and its harness
+	// configuration capture. A call without `after`, or with an `after` that is not the current version,
+	// is answered at once; a call naming the current version is held until either changes or the agent's
+	// hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a
+	// newly bound port, or a harness sign-in to save, is reported at once rather than at the next status
+	// poll (ADR 26-11-03-815, ADR 26-11-09-062).
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait
 	WaitSandboxAgentStatus(ctx context.Context, params WaitSandboxAgentStatusParams) (*SandboxAgentStatusWaitResponse, error)

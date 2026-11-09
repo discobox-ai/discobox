@@ -83,7 +83,7 @@ func TestTheWaiterWakesTheLoopWhenThePortsChange(t *testing.T) {
 	poller := statusWaitTestPoller(t, map[string]*httptest.Server{"sandbox-1": agent})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	go poller.waitForPorts(ctx, "sandbox-1")
+	go poller.waitForChanges(ctx, "sandbox-1")
 
 	receiveWake(t, poller.wake, "the first answer")
 	select {
@@ -189,7 +189,7 @@ func TestTheWaiterDoesNotSpinOnAnAgentThatDoesNotHold(t *testing.T) {
 	poller := statusWaitTestPoller(t, map[string]*httptest.Server{"sandbox-1": agent})
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
-	poller.waitForPorts(ctx, "sandbox-1")
+	poller.waitForChanges(ctx, "sandbox-1")
 	mu.Lock()
 	defer mu.Unlock()
 	if calls > 3 {
@@ -251,7 +251,7 @@ func TestWakesForOneSandboxAreSpaced(t *testing.T) {
 	poller := statusWaitTestPoller(t, map[string]*httptest.Server{"sandbox-1": agent})
 	ctx, cancel := context.WithTimeout(t.Context(), sandboxAgentStatusWakeSpacing/2)
 	defer cancel()
-	poller.waitForPorts(ctx, "sandbox-1")
+	poller.waitForChanges(ctx, "sandbox-1")
 	mu.Lock()
 	defer mu.Unlock()
 	if wakes := len(poller.wake); wakes != 1 || calls != 1 {
