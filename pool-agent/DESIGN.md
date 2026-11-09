@@ -899,17 +899,19 @@ poll loop reach sandbox-agent's authenticated status route without discobox-
 server ever originating a request into a sandbox itself. See
 [ADR 0030](../docs/adr/0030-pool-agent-polls-and-pushes-sandbox-agent-status.md).
 
-Between ticks the poller **waits on each running sandbox's ports**
-(`statuswait.go`, [ADR 26-11-03-815](../docs/adr/26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md)):
+Between ticks the poller **waits on each running sandbox's ports and harness
+configuration** (`statuswait.go`, [ADR 26-11-03-815](../docs/adr/26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md),
+[ADR 26-11-09-062](../docs/adr/26-11-09-062-a-harness-change-wakes-the-pool-like-a-port.md)):
 one held `GET .../status/wait` per sandbox, with the same token. A waiter is
 started the moment the state watch reports a sandbox running (and stopped when
 it leaves running), and the tick starts and prunes them as a backstop — except
 for a sandbox whose state changed after the tick listed, which its list is
 older than. The
 first call names no version and is answered at once; each after names the
-last one seen and is held by the agent until the ports change or its 25s hold
-is up. A changed version — the first answer included, since a port may have
-been bound before the waiter connected — wakes the loop, which polls and
+last one seen and is held by the agent until its ports or its harness
+configuration capture change, or its 25s hold is up; the version is opaque and
+the pool never learns which moved it. A changed version — the first answer
+included, since a port may have been bound before the waiter connected — wakes the loop, which polls and
 pushes that sandbox's status then, on the same loop as the tick so reports
 stay ordered; queued wakes are drained into one batch. Wakes for one sandbox
 are at least 2s apart, since the box decides what its version is; a change

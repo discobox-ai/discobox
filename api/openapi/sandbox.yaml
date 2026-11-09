@@ -1046,7 +1046,7 @@ components:
             additionalProperties: false
             properties:
                 portsVersion:
-                    description: Opaque; changes whenever the sandbox's listening ports do, and is never the same across a restart of its agent.
+                    description: Opaque; changes whenever the sandbox's listening ports do or its harness configuration capture publishes a new candidate or state, and is never the same across a restart of its agent. Named for the ports alone, which were all it versioned at first; the name stays so a pool and an agent upgraded apart still read each other (ADR 26-11-09-062 §1).
                     type: string
             required:
                 - portsVersion
@@ -4062,7 +4062,7 @@ paths:
                 - Sandbox Status
     /api/projects/{projectId}/sandboxes/{sandboxId}/status/wait:
         get:
-            description: Answers with the version of the sandbox's listening ports. A call without `after`, or with an `after` that is not the current version, is answered at once; a call naming the current version is held until the ports change or the agent's hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a newly bound port is reported at once rather than at the next status poll (ADR 26-11-03-815).
+            description: Answers with the version of what wakes the pool, the sandbox's listening ports and its harness configuration capture. A call without `after`, or with an `after` that is not the current version, is answered at once; a call naming the current version is held until either changes or the agent's hold (25 seconds) passes, and then answered with the version as it is. The pool waits here so a newly bound port, or a harness sign-in to save, is reported at once rather than at the next status poll (ADR 26-11-03-815, ADR 26-11-09-062).
             operationId: wait-sandbox-agent-status
             parameters:
                 - description: Project that owns the sandbox.
@@ -4077,7 +4077,7 @@ paths:
                   required: true
                   schema:
                     type: string
-                - description: The ports version the caller already has. Naming the current one asks to be held until it changes; omitted, the call is answered at once.
+                - description: The version the caller already has. Naming the current one asks to be held until it changes; omitted, the call is answered at once.
                   in: query
                   name: after
                   schema:
@@ -4088,14 +4088,14 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/SandboxAgentStatusWaitResponse'
-                    description: The current ports version.
+                    description: The current version.
                 default:
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
-            summary: Wait for the sandbox's listening ports to change.
+            summary: Wait for the sandbox's ports or harness configuration to change.
             tags:
                 - Sandbox Status
     /api/projects/{projectId}/sandboxes/{sandboxId}/tools:

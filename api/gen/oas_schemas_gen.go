@@ -25613,8 +25613,10 @@ func (s *SandboxAgentStatusToken) SetToken(val string) {
 
 // Ref: #/components/schemas/SandboxAgentStatusWaitResponse
 type SandboxAgentStatusWaitResponse struct {
-	// Opaque; changes whenever the sandbox's listening ports do, and is never the same across a restart
-	// of its agent.
+	// Opaque; changes whenever the sandbox's listening ports do or its harness configuration capture
+	// publishes a new candidate or state, and is never the same across a restart of its agent. Named for
+	// the ports alone, which were all it versioned at first; the name stays so a pool and an agent
+	// upgraded apart still read each other (ADR 26-11-09-062 §1).
 	PortsVersion string `json:"portsVersion"`
 }
 

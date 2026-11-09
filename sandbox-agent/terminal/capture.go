@@ -24,6 +24,7 @@ import (
 	hc "github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/statuswait"
 )
 
 const CaptureStateDirectory = "/run/discobox/harness-capture"
@@ -63,7 +64,10 @@ type captureState struct {
 }
 
 type captureManager struct {
-	published    atomic.Pointer[hc.Preview]
+	published atomic.Pointer[hc.Preview]
+	// changes moves when the published candidate or state does, so the pool's
+	// status wait answers a sign-in at once (ADR 26-11-09-062).
+	changes      statuswait.Signal
 	execs        *execs.Manager
 	mu           sync.Mutex
 	definition   hc.Definition
@@ -581,7 +585,26 @@ func (m *captureManager) preview() hc.Preview {
 // publish is called with mu held. Status readers use the last completed
 // observation, rather than waiting for a native credential exporter (which can
 // take tens of seconds). Candidate contents are immutable once published.
-func (m *captureManager) publish() { p := m.preview(); m.published.Store(&p) }
+//
+// Only a new candidate or state moves the status wait's version: every observe
+// publishes, the 30-second backstop's included, and one that found the same
+// files would otherwise wake the pool for nothing (ADR 26-11-09-062 §1).
+func (m *captureManager) publish() {
+	p := m.preview()
+	if previous := m.published.Swap(&p); previous == nil || previous.CandidateID != p.CandidateID || previous.State != p.State {
+		m.changes.Changed()
+	}
+}
+
+// HarnessConfigChangeSignal is the signal the status wait holds on for a harness
+// configuration change: nil when this box captures nothing.
+func (s *Service) HarnessConfigChangeSignal() *statuswait.Signal {
+	if s == nil || s.capture == nil {
+		return nil
+	}
+	return &s.capture.changes
+}
+
 func (s *Service) HarnessConfigStatus() hc.Preview {
 	if s.capture == nil {
 		return hc.Preview{State: "unsupported"}

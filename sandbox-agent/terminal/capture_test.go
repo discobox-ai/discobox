@@ -1061,3 +1061,47 @@ func TestNothingIsOfferedBeforeTheHarnessFilesAreInstalled(t *testing.T) {
 		t.Fatalf("preview after install = %+v, want clean: the file is as delivered", p)
 	}
 }
+
+// The status wait's harness signal moves when the published candidate or state
+// does, and not when an observation finds the same files again — the backstop
+// observes every 30 seconds, and waking the pool for each would be a push of
+// the same status (ADR 26-11-09-062 §1).
+func TestCaptureSignalMovesOnlyWhenTheCandidateOrStateDoes(t *testing.T) {
+	s, _, _ := captureFixture(t)
+	ctx := context.Background()
+	signal := s.HarnessConfigChangeSignal()
+	before := signal.Version()
+	p, err := s.HarnessConfigChanges(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := signal.Version()
+	if p.CandidateID == "" || pending == before {
+		t.Fatalf("a new candidate %q left the version at %q", p.CandidateID, pending)
+	}
+	if _, err := s.HarnessConfigChanges(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if again := signal.Version(); again != pending {
+		t.Fatalf("observing the same files moved the version from %q to %q", pending, again)
+	}
+	if _, err := s.DiscardHarnessConfig(ctx, p.CandidateID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.HarnessConfigChanges(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if discarded := signal.Version(); discarded == pending {
+		t.Fatalf("discarding the candidate left the version at %q", discarded)
+	}
+}
+
+// A box that captures nothing has no harness signal to wait on.
+func TestNoCaptureNoSignal(t *testing.T) {
+	if signal := (&Service{}).HarnessConfigChangeSignal(); signal != nil {
+		t.Fatalf("signal = %p, want nil", signal)
+	}
+	if signal := (*Service)(nil).HarnessConfigChangeSignal(); signal != nil {
+		t.Fatalf("nil service signal = %p, want nil", signal)
+	}
+}

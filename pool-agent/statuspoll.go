@@ -57,8 +57,8 @@ func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, boo
 	}
 	// One loop, so each sandbox's reports come in the order they were observed
 	// (the control plane keeps the last status written, not the newest). A
-	// sandbox whose ports changed is checked in on it too, between ticks, for
-	// the same reason (ADR 26-11-03-815 §3).
+	// sandbox whose ports or harness configuration changed is checked in on it
+	// too, between ticks, for the same reason (ADR 26-11-03-815 §3).
 	go func() {
 		ticker := time.NewTicker(sandboxAgentStatusPollInterval)
 		defer ticker.Stop()
@@ -103,10 +103,10 @@ type sandboxAgentStatusPoller struct {
 	// converging holds the sandboxes a runtime-config delivery is under way
 	// for (convergeRuntimeConfig).
 	converging sync.Map
-	// wake carries a sandbox whose ports changed to the loop, which checks it
+	// wake carries a sandbox whose status wait answered a change to the loop, which checks it
 	// in at once (statuswait.go).
 	wake chan string
-	// waiters cancels the wait held on each running sandbox's ports, by
+	// waiters cancels the status wait held on each running sandbox, by
 	// sandbox ID; guarded by mu.
 	waiters map[string]context.CancelFunc
 	// stateChanges counts the starts and stops the runtime has reported, and

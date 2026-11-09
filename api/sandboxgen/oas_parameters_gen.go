@@ -8409,7 +8409,7 @@ type WaitSandboxAgentStatusParams struct {
 	ProjectId string
 	// Sandbox resource ID.
 	SandboxId string
-	// The ports version the caller already has. Naming the current one asks to be held until it changes;
+	// The version the caller already has. Naming the current one asks to be held until it changes;
 	// omitted, the call is answered at once.
 	After OptString `json:",omitempty,omitzero"`
 }
