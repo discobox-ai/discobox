@@ -125,13 +125,39 @@ type Options struct {
 	ScanInterval time.Duration
 
 	// BackoffBase is the first retry delay after a failed reconcile; it doubles
-	// per consecutive failure up to BackoffMax. Defaults 2s and 5m.
+	// per consecutive failure up to BackoffMax. Defaults DefaultBackoffBase and
+	// DefaultBackoffMax.
 	BackoffBase time.Duration
 	BackoffMax  time.Duration
 
 	// DefaultConcurrency caps simultaneous reconciles per resource type on this
 	// node when Register is not given WithConcurrency. Default 4.
 	DefaultConcurrency int
+}
+
+// The engine's default failure backoff: 2s, doubling per consecutive failure,
+// to a 5m ceiling.
+const (
+	DefaultBackoffBase = 2 * time.Second
+	DefaultBackoffMax  = 5 * time.Minute
+)
+
+// Backoff is the delay after the given number of consecutive failures before
+// it (0 for the first failure), base doubling to ceiling. The engine paces a
+// failing row with it; a reconciler whose own record outlives the row's
+// failure count (a successful pass resets it) paces itself with the same
+// schedule.
+func Backoff(base, ceiling time.Duration, failures int) time.Duration {
+	if failures < 0 {
+		failures = 0
+	}
+	if failures >= 63 {
+		return ceiling
+	}
+	if backoff := base << failures; backoff > 0 && backoff <= ceiling {
+		return backoff
+	}
+	return ceiling
 }
 
 func (o Options) withDefaults() Options {
@@ -151,10 +177,10 @@ func (o Options) withDefaults() Options {
 		o.ScanInterval = 60 * time.Second
 	}
 	if o.BackoffBase <= 0 {
-		o.BackoffBase = 2 * time.Second
+		o.BackoffBase = DefaultBackoffBase
 	}
 	if o.BackoffMax <= 0 {
-		o.BackoffMax = 5 * time.Minute
+		o.BackoffMax = DefaultBackoffMax
 	}
 	if o.DefaultConcurrency < 1 {
 		o.DefaultConcurrency = 4

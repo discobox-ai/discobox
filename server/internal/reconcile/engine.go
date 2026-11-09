@@ -377,10 +377,7 @@ func (e *Engine) complete(row dirtyRow, result Result) {
 // records why, so the dirty set itself says what is wrong rather than only the
 // log.
 func (e *Engine) release(row dirtyRow, cause error) {
-	backoff := e.opt.BackoffBase << row.Attempts
-	if backoff > e.opt.BackoffMax || backoff <= 0 {
-		backoff = e.opt.BackoffMax
-	}
+	backoff := Backoff(e.opt.BackoffBase, e.opt.BackoffMax, row.Attempts)
 	e.db.Model(&dirtyRow{}).
 		Where("resource_type = ? AND resource_id = ? AND claimed_by = ?", row.ResourceType, row.ResourceID, e.opt.WorkerID).
 		Updates(map[string]any{
