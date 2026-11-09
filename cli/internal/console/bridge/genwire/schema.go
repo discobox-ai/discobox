@@ -258,6 +258,11 @@ func (b *builder) object(t reflect.Type, docs *packageDocs) (*Schema, error) {
 				return nil, fmt.Errorf("%s.%s: a pointer that is not omitted when empty is written as null", t, f.Name)
 			}
 			ft = ft.Elem()
+			// Only a struct's absence reads apart from its zero value here:
+			// a pointer to a scalar would lose nil against false, "" or 0.
+			if ft.Kind() != reflect.Struct || ft == timeType {
+				return nil, fmt.Errorf("%s.%s: a pointer to a %s cannot be told from its zero value in the app; make it a value", t, f.Name, ft)
+			}
 		}
 		// encoding/json writes a struct even when it is empty.
 		optional := omitempty && (f.Type.Kind() == reflect.Pointer || ft.Kind() != reflect.Struct)

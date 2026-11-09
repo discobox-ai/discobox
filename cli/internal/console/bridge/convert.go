@@ -10,7 +10,7 @@ import (
 // its git state, its diff, its usage — wins over the listing's own fields.
 func wireBox(b console.Sandbox) Box {
 	out := Box{
-		Key: Key(b.Server, b.ID), ID: b.ID, Server: b.Server, Name: b.Name, State: string(b.State),
+		Key: Key(b.Server, b.ID), ID: b.ID, Server: b.Server, Name: b.Name, State: b.State,
 		Agent: string(b.Agent.State), AgentMsg: b.Agent.Msg, Harness: b.HarnessName, Source: b.Source,
 		Tags: nonNil(b.Tags), Branch: b.Branch, Commit: b.Commit, Dirty: b.Uncommitted(), Ahead: b.Ahead(),
 		Created: b.Created, Message: b.Message, Provisioning: b.Provisioning, Attachable: b.Attachable(),
@@ -38,16 +38,16 @@ func wireBox(b console.Sandbox) Box {
 // wireTab is a session as the app draws its tab: what the core says it is
 // (console.SessionTab), and its column and kind.
 func wireTab(t console.Tab, e console.Exec) Tab {
-	kind := "shell"
+	kind := TabShell
 	switch {
 	case t.Primary:
-		kind = "primary"
+		kind = TabPrimary
 	case t.Tool != "":
-		kind = "tool"
+		kind = TabTool
 	case t.Service != "":
-		kind = "service"
+		kind = TabService
 	case t.Side() == console.SideTerminals:
-		kind = "terminal"
+		kind = TabTerminal
 	}
 	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command)}
 }
@@ -59,16 +59,16 @@ func wireService(s console.Service) Service {
 // wireRequest is one item waiting on a person, by what it asks; box is the
 // key of the box that asked.
 func wireRequest(r console.CredentialRequest, box string) Request {
-	kind := "credential"
+	kind := RequestCredential
 	switch {
 	case r.Refresh != nil:
-		kind = "refresh"
+		kind = RequestRefresh
 	case r.Trust != nil:
-		kind = "trust"
+		kind = RequestTrust
 	case r.Adoption != nil:
-		kind = "adoption"
+		kind = RequestAdoption
 	case r.APIAccess:
-		kind = "apiAccess"
+		kind = RequestAPIAccess
 	}
 	return Request{
 		ID: r.ID, Box: box, Server: r.Server, Kind: kind, Name: r.Name, EnvVar: r.EnvVar,

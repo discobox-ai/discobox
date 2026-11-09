@@ -20,6 +20,15 @@
   `desktop/` is the drift the generated types exist to prevent. A new named
   string type on the wire declares its values as constants: they are its
   enum.
+- **A closed set on the wire is a named type, never a plain string.** A field
+  whose values the bridge or the core decides (a box's state, a tab's kind, a
+  request's kind, a command's target) is a named string type with its
+  constants, so the app matches a generated enum. As a plain `string` the app
+  had to compare it with literals it spelled itself, and a value renamed in Go
+  regenerated cleanly while the app quietly stopped matching. A set that is
+  open on purpose, such as an agent's reported state that the core draws even
+  when it does not know it, stays a string, and the app reads it only through
+  the spec.
 - **A waiting command has a way out.** Every wait on the app — a question, a
   form — selects on the command's context, which ends when the app goes.
 - **The registry is held only while it rules.** `Dispatch` runs under

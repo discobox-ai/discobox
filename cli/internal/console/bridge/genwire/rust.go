@@ -117,12 +117,14 @@ func (g *rustGen) enum(out *bytes.Buffer, name string, s *Schema) error {
 	out.WriteString("#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]\n")
 	fmt.Fprintf(out, "pub enum %s {\n", name)
 	seen := map[string]bool{}
+	var variants []string
 	for i, v := range s.OneOf {
 		variant := pascal(v.Const)
-		if variant == "" || seen[variant] {
+		if variant == "" || variant == "Self" || seen[variant] {
 			return fmt.Errorf("%s: %q has no variant name of its own", name, v.Const)
 		}
 		seen[variant] = true
+		variants = append(variants, variant)
 		if i > 0 {
 			out.WriteString("\n")
 		}
@@ -134,6 +136,14 @@ func (g *rustGen) enum(out *bytes.Buffer, name string, s *Schema) error {
 		fmt.Fprintf(out, "    %s,\n", variant)
 	}
 	out.WriteString("}\n")
+	// The value as the wire spells it, for where it is a key or is shown.
+	fmt.Fprintf(out, "\nimpl %s {\n", name)
+	out.WriteString("    /// The value as the wire spells it.\n")
+	out.WriteString("    pub fn as_str(&self) -> &'static str {\n        match self {\n")
+	for i, v := range s.OneOf {
+		fmt.Fprintf(out, "            %s::%s => %q,\n", name, variants[i], v.Const)
+	}
+	out.WriteString("        }\n    }\n}\n")
 	return nil
 }
 

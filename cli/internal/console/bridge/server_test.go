@@ -397,7 +397,7 @@ func TestSubscriptions(t *testing.T) {
 	sessions := a.expect(TypeSnapshot).Snapshot.Sessions
 	var got []string
 	for _, s := range sessions.Sessions {
-		got = append(got, s.Kind+":"+s.Exec+":"+s.Title)
+		got = append(got, string(s.Kind)+":"+s.Exec+":"+s.Title)
 	}
 	if want := []string{"primary:primary:", "shell:sh:bash", "terminal:claude:claude"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("sessions %q, want %q", got, want)

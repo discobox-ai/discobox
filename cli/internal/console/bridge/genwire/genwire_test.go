@@ -103,6 +103,10 @@ type withAny struct {
 	Value any `json:"value"`
 }
 
+type scalarPointer struct {
+	Flag *bool `json:"flag,omitempty"`
+}
+
 type recursive struct {
 	Parent *recursive `json:"parent,omitempty"`
 }
@@ -132,6 +136,7 @@ func TestRefused(t *testing.T) {
 		{reflect.TypeFor[withUndeclared](), "declare its values"},
 		{reflect.TypeFor[withAny](), "no wire form"},
 		{reflect.TypeFor[recursive](), "contains itself"},
+		{reflect.TypeFor[scalarPointer](), "cannot be told from its zero value"},
 		{reflect.TypeFor[withTime](), "writes itself"},
 		{reflect.TypeFor[withUnread](), "not a string literal"},
 	} {
@@ -173,6 +178,7 @@ func TestRust(t *testing.T) {
 		"    pub answers: HashMap<String, String>,\n",
 		"    #[default]\n    #[serde(rename = \"plain\")]\n    Plain,\n",
 		"    #[serde(rename = \"fieldErrors\")]\n    FieldErrors,\n",
+		"            fixtureKind::FieldErrors => \"fieldErrors\",\n",
 		"fn is_default<T: Default + PartialEq>",
 	} {
 		if !strings.Contains(string(rust), want) {
@@ -213,7 +219,7 @@ func TestNames(t *testing.T) {
 			t.Errorf("snake(%q) = %q, want %q", in, got, want)
 		}
 	}
-	for in, want := range map[string]string{"fieldErrors": "FieldErrors", "api-access": "ApiAccess", "done": "Done", "9lives": ""} {
+	for in, want := range map[string]string{"fieldErrors": "FieldErrors", "api-access": "ApiAccess", "done": "Done", "9lives": "", "self": "Self"} {
 		if got := pascal(in); got != want {
 			t.Errorf("pascal(%q) = %q, want %q", in, got, want)
 		}
@@ -225,5 +231,14 @@ func TestNames(t *testing.T) {
 		if _, err := ident(bad); err == nil {
 			t.Errorf("%q was taken as a field", bad)
 		}
+	}
+}
+
+// A value whose variant would be Rust's own Self is refused, not generated
+// into an enum that does not compile.
+func TestSelfIsNoVariant(t *testing.T) {
+	d := &Document{Defs: Ordered[*Schema]{{Key: "Scope", Value: &Schema{Type: "string", OneOf: []*Schema{{Const: "self"}}}}}}
+	if _, err := generateRust(d); err == nil || !strings.Contains(err.Error(), "no variant name") {
+		t.Fatalf("self as a variant: %v", err)
 	}
 }

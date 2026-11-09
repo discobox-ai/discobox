@@ -7,7 +7,7 @@
 
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Span, Tx, col, el, rich, row, spacer, text, text_input};
 
-use crate::wire::Entry;
+use crate::wire::{Entry, SpecTarget};
 use crate::{Focus, Menu, State, keys, run_command, theme};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
@@ -110,7 +110,7 @@ fn items(s: &State) -> Vec<Item> {
     for c in &s.spec.commands {
         if c.aliases.iter().chain([&c.label]).any(|a| fits(a)) {
             out.push(Item {
-                title: c.label.clone(), group: if c.target == "box" { "box" } else { "console" }.into(),
+                title: c.label.clone(), group: if c.target == SpecTarget::Box { "box" } else { "console" }.into(),
                 shortcut: keys::shortcut_of(s, &c.id),
                 command: Some(c.id.clone()), sandbox: None,
             });

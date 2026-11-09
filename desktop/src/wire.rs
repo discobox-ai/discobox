@@ -186,6 +186,33 @@ pub enum Type {
     Stream,
 }
 
+impl Type {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Type::Hello => "hello",
+            Type::Welcome => "welcome",
+            Type::Subscribe => "subscribe",
+            Type::Unsubscribe => "unsubscribe",
+            Type::Snapshot => "snapshot",
+            Type::Command => "command",
+            Type::Result => "result",
+            Type::Form => "form",
+            Type::Submit => "submit",
+            Type::FieldErrors => "fieldErrors",
+            Type::Question => "question",
+            Type::Answer => "answer",
+            Type::Progress => "progress",
+            Type::Edit => "edit",
+            Type::Saved => "saved",
+            Type::Upload => "upload",
+            Type::Open => "open",
+            Type::Close => "close",
+            Type::Stream => "stream",
+        }
+    }
+}
+
 /// Hello is the app's first message.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Hello {
@@ -260,12 +287,34 @@ pub struct SpecCommand {
 
     pub aliases: Vec<String>,
 
-    /// Target is "box" for a command that takes a box, "window" for one that takes none.
-    pub target: String,
+    pub target: SpecTarget,
 
     pub lifecycle: bool,
 
     pub bindings: SpecBindings,
+}
+
+/// SpecTarget is what a command takes, as a frontend is handed it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SpecTarget {
+    /// SpecTargetBox is a command that takes a box.
+    #[default]
+    #[serde(rename = "box")]
+    Box,
+
+    /// SpecTargetWindow is one that takes none: it acts on the window.
+    #[serde(rename = "window")]
+    Window,
+}
+
+impl SpecTarget {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SpecTarget::Box => "box",
+            SpecTarget::Window => "window",
+        }
+    }
 }
 
 /// SpecBindings is a command's bindings, keyed by frontend (598 §2).
@@ -375,6 +424,21 @@ pub enum Topic {
     Sessions,
 }
 
+impl Topic {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Topic::Listing => "listing",
+            Topic::Resources => "resources",
+            Topic::Requests => "requests",
+            Topic::Provisioning => "provisioning",
+            Topic::Audit => "audit",
+            Topic::Forwards => "forwards",
+            Topic::Sessions => "sessions",
+        }
+    }
+}
+
 /// Unsubscribe stops one.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Unsubscribe {
@@ -440,7 +504,7 @@ pub struct Box {
 
     pub name: String,
 
-    pub state: String,
+    pub state: State,
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub agent: String,
@@ -497,6 +561,57 @@ pub struct Box {
     pub attachable: bool,
 }
 
+/// State is a sandbox's user-facing lifecycle state, narrowed to the six the launcher draws. The
+/// server reports more of them — stopping, archiving, deleting — but a picker only has to
+/// answer "can I act on this", and the transitional states answer that the same way the state they
+/// are heading for does.
+///
+/// Repairing is kept apart from starting, which it is drawn like: a repair recorded and not yet
+/// landed, typed or automatic (ADR 26-10-12-711 §8). The box had failed, and the row says it is
+/// being rebuilt rather than that it is coming up for the first time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum State {
+    #[default]
+    #[serde(rename = "running")]
+    Running,
+
+    #[serde(rename = "starting")]
+    Starting,
+
+    #[serde(rename = "repairing")]
+    Repairing,
+
+    #[serde(rename = "stopped")]
+    Stopped,
+
+    /// StateSuspended is a box frozen whole, its memory kept (ADR 26-10-16-420): up as far as
+    /// acting on it goes — stop takes it — and off as far as anything inside it answering,
+    /// which a start or a use brings back.
+    #[serde(rename = "suspended")]
+    Suspended,
+
+    #[serde(rename = "archived")]
+    Archived,
+
+    #[serde(rename = "error")]
+    Error,
+}
+
+impl State {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            State::Running => "running",
+            State::Starting => "starting",
+            State::Repairing => "repairing",
+            State::Stopped => "stopped",
+            State::Suspended => "suspended",
+            State::Archived => "archived",
+            State::Error => "error",
+        }
+    }
+}
+
 /// Resources is the machine's capacity and use. Known is false until there is something measured to
 /// show.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -536,8 +651,8 @@ pub struct Requests {
     pub rejections: Vec<Rejection>,
 }
 
-/// Request is one item waiting on a person. Kind is credential, refresh, trust, adoption or
-/// apiAccess. Box is the key of the box that asked, as the listing names it.
+/// Request is one item waiting on a person. Box is the key of the box that asked, as the listing
+/// names it.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Request {
     pub id: String,
@@ -547,7 +662,7 @@ pub struct Request {
     #[serde(default, skip_serializing_if = "is_default")]
     pub server: String,
 
-    pub kind: String,
+    pub kind: RequestKind,
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub name: String,
@@ -562,6 +677,44 @@ pub struct Request {
     pub justification: String,
 
     pub created: String,
+}
+
+/// RequestKind is what a request waits on a person for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RequestKind {
+    /// RequestCredential is a credential the box asked for.
+    #[default]
+    #[serde(rename = "credential")]
+    Credential,
+
+    /// RequestRefresh is a credential to sign in again for.
+    #[serde(rename = "refresh")]
+    Refresh,
+
+    /// RequestTrust is a host whose certificate the box asked to trust.
+    #[serde(rename = "trust")]
+    Trust,
+
+    /// RequestAdoption is a box asking to be adopted.
+    #[serde(rename = "adoption")]
+    Adoption,
+
+    /// RequestAPIAccess is a box asking for access to the Discobox API.
+    #[serde(rename = "apiAccess")]
+    ApiAccess,
+}
+
+impl RequestKind {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RequestKind::Credential => "credential",
+            RequestKind::Refresh => "refresh",
+            RequestKind::Trust => "trust",
+            RequestKind::Adoption => "adoption",
+            RequestKind::ApiAccess => "apiAccess",
+        }
+    }
 }
 
 /// Rejection is a credential refused where a person is needed. Boxes are the listed boxes it
@@ -653,19 +806,56 @@ pub struct Sessions {
     pub services: Vec<Service>,
 }
 
-/// Tab is one session as the app draws its tab. Kind is the column and what it is: primary,
-/// terminal, shell, tool or service.
+/// Tab is one session as the app draws its tab. Kind is the column and what it is.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Tab {
     pub exec: String,
 
-    pub kind: String,
+    pub kind: TabKind,
 
     pub title: String,
 
     pub live: bool,
 
     pub argv: Vec<String>,
+}
+
+/// TabKind is what a session is, which says the column its tab is in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TabKind {
+    /// TabPrimary is the box's primary session, its harness.
+    #[default]
+    #[serde(rename = "primary")]
+    Primary,
+
+    /// TabTerminal is another harness terminal.
+    #[serde(rename = "terminal")]
+    Terminal,
+
+    /// TabShell is a shell.
+    #[serde(rename = "shell")]
+    Shell,
+
+    /// TabTool is a tool's session.
+    #[serde(rename = "tool")]
+    Tool,
+
+    /// TabService is a declared service's session.
+    #[serde(rename = "service")]
+    Service,
+}
+
+impl TabKind {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TabKind::Primary => "primary",
+            TabKind::Terminal => "terminal",
+            TabKind::Shell => "shell",
+            TabKind::Tool => "tool",
+            TabKind::Service => "service",
+        }
+    }
 }
 
 /// Service is one declared service.
@@ -802,6 +992,18 @@ pub enum Status {
     /// enters it — moving focus, opening a page or a menu, opening the box's workspace (Box).
     #[serde(rename = "enter")]
     Enter,
+}
+
+impl Status {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Status::Done => "done",
+            Status::Failed => "failed",
+            Status::Canceled => "canceled",
+            Status::Enter => "enter",
+        }
+    }
 }
 
 /// Entry is one command as it stands: whether it can act, and why not. Uses is how often this
@@ -1049,6 +1251,18 @@ pub enum StreamState {
 
     #[serde(rename = "reconnected")]
     Reconnected,
+}
+
+impl StreamState {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StreamState::Attached => "attached",
+            StreamState::Failed => "failed",
+            StreamState::Reconnecting => "reconnecting",
+            StreamState::Reconnected => "reconnected",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

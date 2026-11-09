@@ -29,8 +29,9 @@ flowchart LR
   `desktop/src/wire.rs`, from that schema alone. A field omitted when empty is
   optional; any other is required, and a pointer must be omitted when empty.
   It refuses what it cannot carry faithfully rather than guess: a type that
-  marshals itself, a type that contains itself, an enum constant that is not
-  a string literal, a name Rust cannot take or that the generated code uses.
+  marshals itself, a type that contains itself, a pointer to anything but a
+  struct (nil would read as the zero value), an enum constant that is not a
+  string literal, a name Rust cannot take or that the generated code uses.
   `task verify` fails on either file stale. The tests' fake app holds every
   message either way to the schema, so what the Go writes is what the app
   reads.

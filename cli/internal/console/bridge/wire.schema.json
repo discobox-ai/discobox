@@ -324,8 +324,7 @@
           }
         },
         "target": {
-          "description": "Target is \"box\" for a command that takes a box, \"window\" for one that takes none.",
-          "type": "string"
+          "$ref": "#/$defs/SpecTarget"
         },
         "lifecycle": {
           "type": "boolean"
@@ -342,6 +341,20 @@
         "target",
         "lifecycle",
         "bindings"
+      ]
+    },
+    "SpecTarget": {
+      "description": "SpecTarget is what a command takes, as a frontend is handed it.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "SpecTargetBox is a command that takes a box.",
+          "const": "box"
+        },
+        {
+          "description": "SpecTargetWindow is one that takes none: it acts on the window.",
+          "const": "window"
+        }
       ]
     },
     "SpecBindings": {
@@ -620,7 +633,7 @@
           "type": "string"
         },
         "state": {
-          "type": "string"
+          "$ref": "#/$defs/State"
         },
         "agent": {
           "type": "string"
@@ -701,6 +714,34 @@
         "attachable"
       ]
     },
+    "State": {
+      "description": "State is a sandbox's user-facing lifecycle state, narrowed to the six the launcher draws. The server reports more of them — stopping, archiving, deleting — but a picker only has to answer \"can I act on this\", and the transitional states answer that the same way the state they are heading for does.\n\nRepairing is kept apart from starting, which it is drawn like: a repair recorded and not yet landed, typed or automatic (ADR 26-10-12-711 §8). The box had failed, and the row says it is being rebuilt rather than that it is coming up for the first time.",
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "running"
+        },
+        {
+          "const": "starting"
+        },
+        {
+          "const": "repairing"
+        },
+        {
+          "const": "stopped"
+        },
+        {
+          "description": "StateSuspended is a box frozen whole, its memory kept (ADR 26-10-16-420): up as far as acting on it goes — stop takes it — and off as far as anything inside it answering, which a start or a use brings back.",
+          "const": "suspended"
+        },
+        {
+          "const": "archived"
+        },
+        {
+          "const": "error"
+        }
+      ]
+    },
     "Resources": {
       "description": "Resources is the machine's capacity and use. Known is false until there is something measured to show.",
       "type": "object",
@@ -775,7 +816,7 @@
       ]
     },
     "Request": {
-      "description": "Request is one item waiting on a person. Kind is credential, refresh, trust, adoption or apiAccess. Box is the key of the box that asked, as the listing names it.",
+      "description": "Request is one item waiting on a person. Box is the key of the box that asked, as the listing names it.",
       "type": "object",
       "properties": {
         "id": {
@@ -788,7 +829,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/RequestKind"
         },
         "name": {
           "type": "string"
@@ -812,6 +853,32 @@
         "box",
         "kind",
         "created"
+      ]
+    },
+    "RequestKind": {
+      "description": "RequestKind is what a request waits on a person for.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "RequestCredential is a credential the box asked for.",
+          "const": "credential"
+        },
+        {
+          "description": "RequestRefresh is a credential to sign in again for.",
+          "const": "refresh"
+        },
+        {
+          "description": "RequestTrust is a host whose certificate the box asked to trust.",
+          "const": "trust"
+        },
+        {
+          "description": "RequestAdoption is a box asking to be adopted.",
+          "const": "adoption"
+        },
+        {
+          "description": "RequestAPIAccess is a box asking for access to the Discobox API.",
+          "const": "apiAccess"
+        }
       ]
     },
     "Rejection": {
@@ -984,14 +1051,14 @@
       ]
     },
     "Tab": {
-      "description": "Tab is one session as the app draws its tab. Kind is the column and what it is: primary, terminal, shell, tool or service.",
+      "description": "Tab is one session as the app draws its tab. Kind is the column and what it is.",
       "type": "object",
       "properties": {
         "exec": {
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/TabKind"
         },
         "title": {
           "type": "string"
@@ -1012,6 +1079,32 @@
         "title",
         "live",
         "argv"
+      ]
+    },
+    "TabKind": {
+      "description": "TabKind is what a session is, which says the column its tab is in.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "TabPrimary is the box's primary session, its harness.",
+          "const": "primary"
+        },
+        {
+          "description": "TabTerminal is another harness terminal.",
+          "const": "terminal"
+        },
+        {
+          "description": "TabShell is a shell.",
+          "const": "shell"
+        },
+        {
+          "description": "TabTool is a tool's session.",
+          "const": "tool"
+        },
+        {
+          "description": "TabService is a declared service's session.",
+          "const": "service"
+        }
       ]
     },
     "Service": {

@@ -5,7 +5,7 @@
 
 use rune::{Color, Cx, El, PointerPress, Span, Tx, col, el, rich, row, spacer, text, text_input};
 
-use crate::wire::Box as Sandbox;
+use crate::wire::{Box as Sandbox, TabKind};
 use crate::theme::{self, CELL_H};
 use crate::{Focus, Side, State, Workspace, keys, logo, overlay, run_command};
 
@@ -121,7 +121,7 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
     let b = &s.boxes[i];
     let on = i == s.cursor;
     let live = s.live.as_deref() == Some(&b.key);
-    let (dot, dot_c) = glyph(s, false, &b.state);
+    let (dot, dot_c) = glyph(s, false, b.state.as_str());
     let (ag, ag_c) = glyph(s, true, &b.agent);
     let nested = if b.parent.is_empty() || s.box_by_id(&b.parent).is_none() { "" } else { "└ " };
     let name = match (b.note(), on) {
@@ -244,8 +244,8 @@ fn sidebar(s: &State) -> El {
 fn pane_label(ws: &Workspace, i: usize, sbx: &Sandbox) -> String {
     let p = &ws.panes[i];
     let n = ws.strip().iter().position(|&j| j == i).unwrap_or(0) + 1;
-    let name = match p.exec.kind.as_str() {
-        "primary" => sbx.name.clone(),
+    let name = match p.exec.kind {
+        TabKind::Primary => sbx.name.clone(),
         _ => p.screen.title.clone().filter(|t| !t.is_empty() && t.len() < 24).unwrap_or_else(|| p.exec.title.clone()),
     };
     format!("{n} {name}{}", if p.exited { " ·done" } else { "" })
@@ -272,7 +272,7 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
                 run_command(s, "maximize", tx)
             }));
     }
-    if ws.panes[active].exec.kind != "primary" {
+    if ws.panes[active].exec.kind != TabKind::Primary {
         let tip = keys::shortcut_of(s, "end").map(|k| format!("end this session  {k}"));
         buttons = buttons.child(button("x", border, tip).on_press_tx(move |s: &mut State, tx: &mut Tx| {
             s.select_pane(active);

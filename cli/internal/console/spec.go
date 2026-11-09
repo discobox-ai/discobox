@@ -99,16 +99,25 @@ type SpecColor struct {
 // SpecCommand is one registry command as a frontend is handed it. Every list
 // is present, empty where there is nothing in it.
 type SpecCommand struct {
-	ID      string   `json:"id"`
-	Label   string   `json:"label"`
-	Detail  string   `json:"detail"`
-	Aliases []string `json:"aliases"`
-	// Target is "box" for a command that takes a box, "window" for one that
-	// takes none.
-	Target    string       `json:"target"`
+	ID        string       `json:"id"`
+	Label     string       `json:"label"`
+	Detail    string       `json:"detail"`
+	Aliases   []string     `json:"aliases"`
+	Target    SpecTarget   `json:"target"`
 	Lifecycle bool         `json:"lifecycle"`
 	Bindings  SpecBindings `json:"bindings"`
 }
+
+// SpecTarget is what a command takes, as a frontend is handed it.
+type SpecTarget string
+
+// The targets.
+const (
+	// SpecTargetBox is a command that takes a box.
+	SpecTargetBox SpecTarget = "box"
+	// SpecTargetWindow is one that takes none: it acts on the window.
+	SpecTargetWindow SpecTarget = "window"
+)
 
 // SpecBindings is a command's bindings, keyed by frontend (598 §2).
 type SpecBindings struct {
@@ -157,9 +166,9 @@ func NewSpec() Spec {
 		spec.Agents[string(s)] = AgentGlyph(s)
 	}
 	for _, c := range registry {
-		target := "window"
+		target := SpecTargetWindow
 		if c.Target == TargetBox {
-			target = "box"
+			target = SpecTargetBox
 		}
 		spec.Commands = append(spec.Commands, SpecCommand{
 			ID: c.ID, Label: c.Label, Detail: c.Detail, Aliases: nonNil(c.Aliases),

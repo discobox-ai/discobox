@@ -184,18 +184,18 @@ type Box struct {
 	// Key is what the app names the box by in every message: its ID when one
 	// server is configured, the server's name and the ID otherwise. Opaque to
 	// the app, which shows ID.
-	Key      string   `json:"key"`
-	ID       string   `json:"id"`
-	Server   string   `json:"server,omitempty"`
-	Name     string   `json:"name"`
-	State    string   `json:"state"`
-	Agent    string   `json:"agent,omitempty"`
-	AgentMsg string   `json:"agentMsg,omitempty"`
-	Harness  string   `json:"harness"`
-	Source   string   `json:"source"`
-	Tags     []string `json:"tags"`
-	Branch   string   `json:"branch,omitempty"`
-	Commit   string   `json:"commit,omitempty"`
+	Key      string        `json:"key"`
+	ID       string        `json:"id"`
+	Server   string        `json:"server,omitempty"`
+	Name     string        `json:"name"`
+	State    console.State `json:"state"`
+	Agent    string        `json:"agent,omitempty"`
+	AgentMsg string        `json:"agentMsg,omitempty"`
+	Harness  string        `json:"harness"`
+	Source   string        `json:"source"`
+	Tags     []string      `json:"tags"`
+	Branch   string        `json:"branch,omitempty"`
+	Commit   string        `json:"commit,omitempty"`
 	// Dirty is uncommitted work; Ahead, clean commits beyond the spawn
 	// commit (console.Sandbox.Uncommitted, Ahead).
 	Dirty   bool `json:"dirty,omitempty"`
@@ -235,20 +235,36 @@ type Requests struct {
 	Rejections []Rejection `json:"rejections"`
 }
 
-// Request is one item waiting on a person. Kind is credential, refresh,
-// trust, adoption or apiAccess. Box is the key of the box that asked, as the
-// listing names it.
+// Request is one item waiting on a person. Box is the key of the box that
+// asked, as the listing names it.
 type Request struct {
-	ID            string    `json:"id"`
-	Box           string    `json:"box"`
-	Server        string    `json:"server,omitempty"`
-	Kind          string    `json:"kind"`
-	Name          string    `json:"name,omitempty"`
-	EnvVar        string    `json:"envVar,omitempty"`
-	Host          string    `json:"host,omitempty"`
-	Justification string    `json:"justification,omitempty"`
-	Created       time.Time `json:"created"`
+	ID            string      `json:"id"`
+	Box           string      `json:"box"`
+	Server        string      `json:"server,omitempty"`
+	Kind          RequestKind `json:"kind"`
+	Name          string      `json:"name,omitempty"`
+	EnvVar        string      `json:"envVar,omitempty"`
+	Host          string      `json:"host,omitempty"`
+	Justification string      `json:"justification,omitempty"`
+	Created       time.Time   `json:"created"`
 }
+
+// RequestKind is what a request waits on a person for.
+type RequestKind string
+
+// The request kinds.
+const (
+	// RequestCredential is a credential the box asked for.
+	RequestCredential RequestKind = "credential"
+	// RequestRefresh is a credential to sign in again for.
+	RequestRefresh RequestKind = "refresh"
+	// RequestTrust is a host whose certificate the box asked to trust.
+	RequestTrust RequestKind = "trust"
+	// RequestAdoption is a box asking to be adopted.
+	RequestAdoption RequestKind = "adoption"
+	// RequestAPIAccess is a box asking for access to the Discobox API.
+	RequestAPIAccess RequestKind = "apiAccess"
+)
 
 // Rejection is a credential refused where a person is needed. Boxes are the
 // listed boxes it affects (console.RejectionsFor): a harness's credential is
@@ -310,14 +326,31 @@ type Sessions struct {
 }
 
 // Tab is one session as the app draws its tab. Kind is the column and what it
-// is: primary, terminal, shell, tool or service.
+// is.
 type Tab struct {
 	Exec  string   `json:"exec"`
-	Kind  string   `json:"kind"`
+	Kind  TabKind  `json:"kind"`
 	Title string   `json:"title"`
 	Live  bool     `json:"live"`
 	Argv  []string `json:"argv"`
 }
+
+// TabKind is what a session is, which says the column its tab is in.
+type TabKind string
+
+// The tab kinds.
+const (
+	// TabPrimary is the box's primary session, its harness.
+	TabPrimary TabKind = "primary"
+	// TabTerminal is another harness terminal.
+	TabTerminal TabKind = "terminal"
+	// TabShell is a shell.
+	TabShell TabKind = "shell"
+	// TabTool is a tool's session.
+	TabTool TabKind = "tool"
+	// TabService is a declared service's session.
+	TabService TabKind = "service"
+)
 
 // Service is one declared service.
 type Service struct {

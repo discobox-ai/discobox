@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
-use wire::{Args, Box as Sandbox, Command, Context, Entry, Result as CommandResult, Sessions, Spec, Status, StreamState, Tab, Topic};
+use wire::{Args, Box as Sandbox, Command, Context, Entry, Result as CommandResult, Sessions, Spec, SpecTarget, Status, StreamState, Tab, TabKind, Topic};
 use rune::{App, AppSpec, KeyEvent, MenuItem, TextEdit, Tx, Waker};
 use term::Screen;
 
@@ -47,7 +47,7 @@ pub struct Pane {
 }
 
 impl Pane {
-    pub fn side(&self) -> Side { if matches!(self.exec.kind.as_str(), "shell" | "tool") { Side::Shells } else { Side::Terminals } }
+    pub fn side(&self) -> Side { if matches!(self.exec.kind, TabKind::Shell | TabKind::Tool) { Side::Shells } else { Side::Terminals } }
 }
 
 /// One box's live sessions. Switching away parks it: its streams stay attached and its
@@ -252,7 +252,7 @@ impl State {
         let Some(sbx) = self.boxes.get(index).cloned() else { return };
         self.cursor = index;
         if !sbx.running() && !self.workspaces.contains_key(&sbx.key) {
-            self.message = Some(format!("{} is {} — start it from its menu", sbx.name, sbx.state));
+            self.message = Some(format!("{} is {} — start it from its menu", sbx.name, sbx.state.as_str()));
             return;
         }
         self.ensure_workspace(&sbx.key);
@@ -426,7 +426,7 @@ impl State {
             }
         };
         let fresh: Vec<Tab> = sessions.into_iter()
-            .filter(|e| !ws.panes.iter().any(|p| p.exec.exec == e.exec) && (!making || e.kind == "primary"))
+            .filter(|e| !ws.panes.iter().any(|p| p.exec.exec == e.exec) && (!making || e.kind == TabKind::Primary))
             .collect();
         let mut opens = vec![];
         for e in fresh {
@@ -563,7 +563,7 @@ pub fn run_command(s: &mut State, id: &str, _tx: &mut Tx) {
         }
         _ => {
             let targets = match s.spec.command(id) {
-                Some(c) if c.target == "box" => s.target().map(|b| vec![b.key]).unwrap_or_default(),
+                Some(c) if c.target == SpecTarget::Box => s.target().map(|b| vec![b.key]).unwrap_or_default(),
                 _ => vec![],
             };
             s.command(id, targets, context, Args::default(), Pending::Enter(id.into()));

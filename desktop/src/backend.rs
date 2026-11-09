@@ -23,12 +23,12 @@ use serde_json::Value;
 
 use crate::wire::{
     Answer, Box as Sandbox, Command, Entry, Form, Hello, Message, Open, PROTOCOL, Progress, Question, ResizePayload,
-    Result as CommandResult, SPEC_VERSION, Sessions, Spec, SpecCommand, SpecGesture, Status, Stream, StreamState, Submit,
-    Subscribe, Tab, Topic, Type, Welcome, kind,
+    Result as CommandResult, SPEC_VERSION, Sessions, Spec, SpecCommand, SpecGesture, State, Status, Stream, StreamState,
+    Submit, Subscribe, Tab, TabKind, Topic, Type, Welcome, kind,
 };
 
 impl Sandbox {
-    pub fn running(&self) -> bool { self.state == "running" }
+    pub fn running(&self) -> bool { self.state == State::Running }
     /// What the cursor row says in place of the name, as the TUI's row does.
     pub fn note(&self) -> Option<&str> {
         [&self.provisioning, &self.message].into_iter().find(|s| !s.is_empty()).map(|s| s.as_str())
@@ -171,17 +171,30 @@ fn event(m: Message) -> Option<Event> {
 }
 
 /// A message the generated types could not read: never expected, since both sides are built
-/// from one schema, so it is always said. A result still ends its command, as failed, so
-/// nothing waits on it.
+/// from one schema, so it is always said. What the CLI waits on still gets its way out, read
+/// by its ID from the raw message: a result ends its command as failed, a question is
+/// declined and a form dismissed (as the app answers every one it reads, until #808), and a
+/// stream is failed, so its pane does not wait either.
 fn unreadable(payload: &[u8], e: serde_json::Error) -> Option<Event> {
     let v: Value = serde_json::from_slice(payload).unwrap_or_default();
-    eprintln!("desktop: a {} message from the CLI could not be read: {e}", v["type"].as_str().unwrap_or("JSON"));
-    if v["type"] != "result" {
-        return None;
+    let kind = v["type"].as_str().unwrap_or("JSON");
+    eprintln!("desktop: a {kind} message from the CLI could not be read: {e}");
+    let body = &v[kind];
+    let why = format!("the desktop app could not read the CLI's {kind}: {e}; run the app built with this CLI");
+    let title = || body["title"].as_str().unwrap_or("the CLI's message").to_string();
+    match kind {
+        "result" => {
+            let id = body["id"].as_u64()?;
+            Some(Event::Result(CommandResult { id, status: Status::Failed, why, ..Default::default() }))
+        }
+        "question" => Some(Event::Question(Question { id: body["id"].as_u64()?, title: title(), ..Default::default() })),
+        "form" => Some(Event::Form(Form { id: body["id"].as_u64()?, title: title(), ..Default::default() })),
+        "stream" => {
+            let stream = u32::try_from(body["stream"].as_u64()?).ok()?;
+            Some(Event::Stream(Stream { stream, state: StreamState::Failed, why }))
+        }
+        _ => None,
     }
-    let id = v["result"]["id"].as_u64()?;
-    let why = format!("the desktop app could not read the CLI's answer: {e}; run the app built with this CLI");
-    Some(Event::Result(CommandResult { id, status: Status::Failed, why, ..Default::default() }))
 }
 
 pub struct Bridge {
@@ -290,16 +303,16 @@ pub struct Mock {
     made: u64,
 }
 
-fn mock_exec(exec: &str, kind: &str, title: &str) -> Tab {
-    Tab { exec: exec.into(), kind: kind.into(), title: title.into(), live: true, argv: vec![] }
+fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
+    Tab { exec: exec.into(), kind, title: title.into(), live: true, argv: vec![] }
 }
 
 /// A made-up box, as the CLI would list it: one server, so its key is its ID.
 #[allow(clippy::too_many_arguments)]
-fn mock_box(id: &str, name: &str, state: &str, agent: &str, harness: &str, source: &str) -> Sandbox {
+fn mock_box(id: &str, name: &str, state: State, agent: &str, harness: &str, source: &str) -> Sandbox {
     Sandbox {
-        key: id.into(), id: id.into(), name: name.into(), state: state.into(), agent: agent.into(),
-        harness: harness.into(), source: source.into(), attachable: state == "running",
+        key: id.into(), id: id.into(), name: name.into(), state, agent: agent.into(),
+        harness: harness.into(), source: source.into(), attachable: state == State::Running,
         created: "2026-11-09T12:00:00Z".into(), ..Default::default()
     }
 }
@@ -310,22 +323,22 @@ impl Mock {
             Sandbox {
                 tags: vec!["wip".into(), "tui".into()], branch: "rune-console".into(), commit: "00541f9".into(),
                 dirty: true, added: 412, deleted: 37, cpu: 12, memory_bytes: 2_254_857_830,
-                ..mock_box("sbx_k2m9q4tz7wbf1xay", "rune console port", "running", "working", "claude", "discobox")
+                ..mock_box("sbx_k2m9q4tz7wbf1xay", "rune console port", State::Running, "working", "claude", "discobox")
             },
             Sandbox {
                 tags: vec!["ENG-12".into()], branch: "fix/reaper-race".into(), commit: "8be21c0".into(),
                 added: 58, deleted: 12, cpu: 3, memory_bytes: 1_503_238_553,
-                ..mock_box("sbx_p8c3n0vd6rgs2hkq", "reaper race", "running", "blocked", "codex", "discobox")
+                ..mock_box("sbx_p8c3n0vd6rgs2hkq", "reaper race", State::Running, "blocked", "codex", "discobox")
             },
             Sandbox {
                 branch: "docs/attach".into(), commit: "41d9e2a".into(), parent: "sbx_p8c3n0vd6rgs2hkq".into(),
-                ..mock_box("sbx_r5t1y7u3i9o0pzx2", "attach docs", "running", "done", "claude", "discobox")
+                ..mock_box("sbx_r5t1y7u3i9o0pzx2", "attach docs", State::Running, "done", "claude", "discobox")
             },
             Sandbox {
                 provisioning: "provisioning browser, build, bun…".into(), cpu: 2,
-                ..mock_box("sbx_v6svx9a5hndxswfp", "lucid_lalande", "starting", "", "shell", "")
+                ..mock_box("sbx_v6svx9a5hndxswfp", "lucid_lalande", State::Starting, "", "shell", "")
             },
-            mock_box("sbx_a1b2c3d4e5f6g7h8", "quiet_hopper", "stopped", "idle", "opencode", ""),
+            mock_box("sbx_a1b2c3d4e5f6g7h8", "quiet_hopper", State::Stopped, "idle", "opencode", ""),
         ];
         Mock { inbox, boxes, extra: HashMap::new(), ptys: HashMap::new(), made: 0 }
     }
@@ -354,10 +367,10 @@ impl Mock {
                 let sandbox = if c.command == "shell" { target } else { workspace };
                 self.made += 1;
                 let exec = if c.command == "shell" {
-                    mock_exec(&format!("exec_{}", self.made), "shell", "bash")
+                    mock_exec(&format!("exec_{}", self.made), TabKind::Shell, "bash")
                 } else {
                     let harness = self.sandbox(&sandbox).map(|b| b.harness.clone()).unwrap_or_default();
-                    mock_exec(&format!("exec_{}", self.made), "terminal", &harness)
+                    mock_exec(&format!("exec_{}", self.made), TabKind::Terminal, &harness)
                 };
                 let size = |n: i64| u16::try_from(n.max(1)).unwrap_or(u16::MAX);
                 if let Err(e) = self.spawn(&sandbox, &exec, c.args.stream, size(c.args.cols), size(c.args.rows)) {
@@ -383,9 +396,9 @@ impl Mock {
                 }
                 if let Some(b) = self.boxes.iter_mut().find(|b| b.key == target) {
                     match c.command.as_str() {
-                        "stop" => b.state = "stopped".into(),
-                        "start" => b.state = "running".into(),
-                        "archive" => b.state = "archived".into(),
+                        "stop" => b.state = State::Stopped,
+                        "start" => b.state = State::Running,
+                        "archive" => b.state = State::Archived,
                         _ => {}
                     }
                 }
@@ -421,7 +434,7 @@ impl Backend for Mock {
             Out::Subscribe { topic: Topic::Listing, .. } => self.inbox.push(Event::Listing(self.boxes.clone())),
             Out::Subscribe { sub, topic: Topic::Sessions, sandbox } => {
                 let running = self.sandbox(&sandbox).is_some_and(Sandbox::running);
-                let mut sessions = vec![mock_exec("primary", "primary", "")];
+                let mut sessions = vec![mock_exec("primary", TabKind::Primary, "")];
                 sessions.extend(self.extra.get(&sandbox).into_iter().flatten().cloned());
                 self.inbox.push(Event::Sessions(sub, Ok(Sessions { running, sessions, services: vec![] })));
             }
@@ -432,7 +445,7 @@ impl Backend for Mock {
                 self.inbox.push(Event::Result(r));
             }
             Out::Open { stream, sandbox, exec, cols, rows } => {
-                let kind = if exec == "primary" { "primary" } else { "shell" };
+                let kind = if exec == "primary" { TabKind::Primary } else { TabKind::Shell };
                 let state = match self.spawn(&sandbox, &mock_exec(&exec, kind, ""), stream, cols, rows) {
                     Ok(()) => Stream { stream, state: StreamState::Attached, why: String::new() },
                     Err(why) => Stream { stream, state: StreamState::Failed, why },
@@ -471,7 +484,7 @@ impl Pty {
         let mut cmd = CommandBuilder::new("bash");
         cmd.args(["--noprofile", "--norc", "-i"]);
         let host = sandbox.id.replace('_', "-");
-        let prompt = if matches!(exec.kind.as_str(), "primary" | "terminal") {
+        let prompt = if matches!(exec.kind, TabKind::Primary | TabKind::Terminal) {
             format!("\\[\\e[38;5;207m\\]{}\\[\\e[0m\\] \\[\\e[2m\\]{host}\\[\\e[0m\\] ❯ ", sandbox.harness)
         } else {
             format!("\\[\\e[32m\\]darren@{host}\\[\\e[0m\\]:\\[\\e[34m\\]\\w\\[\\e[0m\\]$ ")
@@ -486,7 +499,7 @@ impl Pty {
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-        if matches!(exec.kind.as_str(), "primary" | "terminal") {
+        if matches!(exec.kind, TabKind::Primary | TabKind::Terminal) {
             // A stand-in for the harness's own banner.
             let banner = format!(
                 "\x1b[1;38;5;207m{}\x1b[0m  \x1b[2m{} · mock session on a local PTY\x1b[0m\r\n\r\n",
@@ -553,7 +566,7 @@ mod tests {
         let Some(Event::Listing(boxes)) = read(r#"{"type":"snapshot","snapshot":{"sub":1,"topic":"listing","listing":{"boxes":[{"key":"work/b1","id":"b1","server":"work","name":"one","state":"running","harness":"claude","source":"","tags":[],"created":"2026-11-09T12:00:00Z","attachable":true}],"unreachable":[],"waiting":[]}}}"#) else { panic!("listing") };
         assert_eq!((boxes[0].key.as_str(), boxes[0].id.as_str()), ("work/b1", "b1"));
         let Some(Event::Sessions(2, Ok(s))) = read(r#"{"type":"snapshot","snapshot":{"sub":2,"topic":"sessions","sessions":{"running":true,"sessions":[{"exec":"primary","kind":"primary","title":"","live":true,"argv":[]}],"services":[]}}}"#) else { panic!("sessions") };
-        assert_eq!(s.sessions[0].kind, "primary");
+        assert_eq!(s.sessions[0].kind, TabKind::Primary);
         let Some(Event::Sessions(3, Err(e))) = read(r#"{"type":"snapshot","snapshot":{"sub":3,"topic":"sessions","error":"no discobox x is listed"}}"#) else { panic!("an error") };
         assert!(e.contains("x"));
         let Some(Event::Result(r)) = read(r#"{"type":"result","result":{"id":4,"status":"done","box":"b1","session":{"exec":"sh1","kind":"shell","title":"bash","live":true,"argv":["bash"]}}}"#) else { panic!("result") };
@@ -563,14 +576,21 @@ mod tests {
         assert!(read(r#"{"type":"fieldErrors","fieldErrors":{"form":1,"errors":[]}}"#).is_none());
     }
 
-    // A result the types cannot read still ends its command, as failed, rather than leaving it
-    // waiting; anything else unreadable is only said.
+    // What the types cannot read but something waits on still gets its way out: a result fails
+    // its command, a question is declined, a form dismissed, a stream failed; the rest is only
+    // said.
     #[test]
     fn an_unreadable_result_fails_its_command() {
         let unread = |s: &str| unreadable(s.as_bytes(), serde_json::from_str::<Message>(s).unwrap_err());
         let Some(Event::Result(r)) = unread(r#"{"type":"result","result":{"id":6,"status":"queued"}}"#) else { panic!("no result") };
         assert_eq!((r.id, r.status), (6, Status::Failed));
         assert!(r.why.contains("could not read"));
+        let Some(Event::Question(q)) = unread(r#"{"type":"question","question":{"id":7,"command":1,"title":"Trust?","choices":[{"key":1}]}}"#) else { panic!("no question") };
+        assert_eq!((q.id, q.title.as_str()), (7, "Trust?"));
+        let Some(Event::Form(f)) = unread(r#"{"type":"form","form":{"id":8,"command":1,"title":"Rename","fields":null}}"#) else { panic!("no form") };
+        assert_eq!(f.id, 8);
+        let Some(Event::Stream(st)) = unread(r#"{"type":"stream","stream":{"stream":9,"state":"paused"}}"#) else { panic!("no stream") };
+        assert_eq!((st.stream, st.state), (9, StreamState::Failed));
         assert!(unread(r#"{"type":"snapshot","snapshot":{"sub":1,"topic":"weather"}}"#).is_none());
     }
 
