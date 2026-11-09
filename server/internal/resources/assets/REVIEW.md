@@ -24,3 +24,8 @@
   a check made there runs once a response of the blob's `Content-Length` is
   already whole on the wire: the client reads a complete body that is not the
   blob. `imagecache`'s verifying reader withholds the completing read instead.
+- **Work that outlives a read goes through `detach` or `background`, never a
+  bare `go` or `context.WithoutCancel`.** Those are what `Stop` ends and waits
+  for; anything else can still be writing the blob store after `Stop`
+  returns, which a test's TempDir removal on Windows reports as a failure
+  (#891).

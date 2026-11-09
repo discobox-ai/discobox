@@ -540,7 +540,7 @@ func TestPruneRemovesWhatNoPinReaches(t *testing.T) {
 	// Nothing goes while the platform cannot be resolved.
 	f.registry.down = true
 	f.service.now = func() time.Time { return time.Now().Add(2 * (pruneGrace + releaseRetry)) }
-	f.service.platform = &releasePins{what: "platform bundle", ref: platformRef, resolve: f.service.resolve, now: f.service.now}
+	f.service.platform = f.service.releasePins("platform bundle", platformRef)
 	if _, err := f.service.Prune(context.Background()); err == nil {
 		t.Fatal("pruned with the platform unresolved")
 	}
@@ -715,4 +715,15 @@ func TestAPoolsBoxIsPlacedWithEveryBlobOfItsPoolBundle(t *testing.T) {
 			t.Fatalf("opened %s, which no box's store reads", digest)
 		}
 	}
+}
+
+// An empty Dir is refused: imagecache would clean it to ".", keeping the blob
+// store in whatever directory the process runs in.
+func TestNewRefusesAnEmptyDir(t *testing.T) {
+	defer func() {
+		if got := recover(); got != "assets: Options.Dir is required" {
+			t.Fatalf("New with an empty Dir: recovered %v, want the required-Dir panic", got)
+		}
+	}()
+	New(nil, Options{})
 }

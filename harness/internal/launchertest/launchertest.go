@@ -8,6 +8,7 @@
 package launchertest
 
 import (
+	"errors"
 	"maps"
 	"os"
 	"os/exec"
@@ -33,6 +34,24 @@ const SourceDataPath = "/.discobox/data-per-source/primary"
 // mount it attempts fails, and the launcher falls back the way it would in a
 // sandbox without the grant.
 func RunLauncher(t *testing.T, agent string, paths map[string]string, args []string) []string {
+	t.Helper()
+	out, status := Run(t, agent, nil, paths, args)
+	if status != 0 {
+		t.Fatalf("launch.sh %v: exit status %d", args, status)
+	}
+	trimmed := strings.TrimSuffix(out, "\n")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\n")
+}
+
+// Run runs ./launch.sh as RunLauncher does and returns its standard output and
+// exit status, so a test can drive a launcher whose agent fails. stubs maps
+// command names to POSIX shell scripts put ahead of PATH, replacing the agent
+// stub when one is named for the agent. A stub keeps any state it needs under
+// $HOME, the test directory the launcher runs with.
+func Run(t *testing.T, agent string, stubs, paths map[string]string, args []string) (string, int) {
 	t.Helper()
 	shell, err := exec.LookPath("sh")
 	if err != nil {
@@ -101,13 +120,15 @@ func RunLauncher(t *testing.T, agent string, paths map[string]string, args []str
 	// prompts a launcher test asks about: what it is proving is that words the
 	// shell split arrive as one argument, so an argument containing a newline
 	// would be testing the printf rather than the launcher.
-	stub := filepath.Join(dir, agent)
-	if err := os.WriteFile(stub, []byte("#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n"), 0o755); err != nil { //nolint:gosec // The stub is the agent the launcher execs; it has to be executable.
-		t.Fatal(err)
+	executables := map[string]string{
+		agent:  "#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n",
+		"sudo": "#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\"\n",
 	}
-	sudo := filepath.Join(dir, "sudo")
-	if err := os.WriteFile(sudo, []byte("#!/bin/sh\n[ \"$1\" = -n ] && shift\nexec \"$@\"\n"), 0o755); err != nil { //nolint:gosec // The stub stands in for sudo; it has to be executable.
-		t.Fatal(err)
+	maps.Copy(executables, stubs)
+	for name, body := range executables {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil { //nolint:gosec // A stub stands in for a command the launcher runs; it has to be executable.
+			t.Fatal(err)
+		}
 	}
 	cmd := exec.CommandContext(t.Context(), shell, append([]string{launcher}, args...)...)
 	cmd.Env = append(os.Environ(),
@@ -117,12 +138,12 @@ func RunLauncher(t *testing.T, agent string, paths map[string]string, args []str
 	cmd.Env = append(cmd.Env, captureEnv...)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return string(out), exit.ExitCode()
+	}
 	if err != nil {
 		t.Fatalf("launch.sh %v: %v", args, err)
 	}
-	trimmed := strings.TrimSuffix(string(out), "\n")
-	if trimmed == "" {
-		return nil
-	}
-	return strings.Split(trimmed, "\n")
+	return string(out), 0
 }

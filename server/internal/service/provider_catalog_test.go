@@ -268,7 +268,7 @@ func newProviderCatalogTestStore(t *testing.T) (*store.Store, string) {
 		t.Fatalf("migrate db: %v", err)
 	}
 	appStore := store.New(db.Write, db.Read)
-	svc := service.New(appStore, nil, service.Options{})
+	svc := service.New(appStore, nil, service.Options{AssetDir: t.TempDir()})
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -331,7 +331,7 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
 	var warnings []string
-	svc := service.New(appStore, nil, service.Options{StartupWarning: func(warning string) {
+	svc := service.New(appStore, nil, service.Options{AssetDir: t.TempDir(), StartupWarning: func(warning string) {
 		warnings = append(warnings, warning)
 	}})
 
@@ -440,7 +440,7 @@ func TestInitializeDefaultsLeavesEditedDefaultProviderConfigAlone(t *testing.T) 
 
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, nil, service.Options{})
+	svc := service.New(appStore, nil, service.Options{AssetDir: t.TempDir()})
 
 	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -490,7 +490,7 @@ func TestInitializeDefaultsDoesNotPersistDefaultDockerProviderImageFromEnv(t *te
 
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, nil, service.Options{})
+	svc := service.New(appStore, nil, service.Options{AssetDir: t.TempDir()})
 
 	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -770,7 +770,7 @@ func TestInitializeDefaultsSelectsLinuxProviderAndKeepsIt(t *testing.T) {
 			t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", tc.host)
 			appStore, projectID := newProviderCatalogTestStore(t)
 			var warnings []string
-			svc := service.New(appStore, nil, service.Options{ListenEndpoints: []string{"http://127.0.0.1:18471", "unix:///tmp/custom-server.sock"}, StartupWarning: func(w string) { warnings = append(warnings, w) }})
+			svc := service.New(appStore, nil, service.Options{AssetDir: t.TempDir(), ListenEndpoints: []string{"http://127.0.0.1:18471", "unix:///tmp/custom-server.sock"}, StartupWarning: func(w string) { warnings = append(warnings, w) }})
 			if _, err := svc.InitializeDefaults(t.Context(), service.DefaultUserID); err != nil {
 				t.Fatal(err)
 			}
@@ -793,7 +793,7 @@ func TestInitializeDefaultsSelectsLinuxProviderAndKeepsIt(t *testing.T) {
 			// A change in host capability must neither reseed nor repeat the warning,
 			// including when the service is recreated as it is on a server restart.
 			t.Setenv("DISCOBOX_TEST_LIBKRUN_HOST", "unavailable")
-			svc = service.New(appStore, nil, service.Options{StartupWarning: func(w string) { t.Errorf("repeated warning: %s", w) }})
+			svc = service.New(appStore, nil, service.Options{AssetDir: t.TempDir(), StartupWarning: func(w string) { t.Errorf("repeated warning: %s", w) }})
 			if _, err := svc.InitializeDefaults(t.Context(), service.DefaultUserID); err != nil {
 				t.Fatal(err)
 			}

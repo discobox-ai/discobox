@@ -337,3 +337,95 @@ func TestALeaderOnAnImageKeyIsTheLeader(t *testing.T) {
 		}
 	})
 }
+
+// The report of a copy that failed at once is not overwritten by anything
+// else the paste said: Bubble Tea runs a batch's commands on goroutines of
+// their own, so the failure may arrive before any of them. Neither the copy's
+// progress nor, on Windows, why the clipboard watch is off may land on top.
+func TestAnImageCopyFailureOutlastsItsProgress(t *testing.T) {
+	t.Parallel()
+	for name, watchErr := range map[string]error{
+		"progress":     nil,
+		"watch is off": errors.New("clipwatch helper exited"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				ds := newFakeSource(testSandboxes()...)
+				ds.putImageErr = errors.New("copy clipboard.png into the discobox: disk full")
+				_, m, _ := openWorkspace(t, ds, "enter")
+				p := m.Primary()
+				p.imageBusy = true
+
+				cmd := m.imagesRead(imageReadMsg{
+					pane: p.id, original: keyPress("ctrl+v"), watchErr: watchErr,
+					images: []clipimage.Image{{Name: "clipboard.png", Data: []byte("pixels")}},
+				})
+				// The copy's failure, and its report, come first; then the rest
+				// of the batch: an order a batch may run in. Only status lines
+				// are delivered, as they are what is being raced.
+				var put imagePutMsg
+				var rest []tea.Msg
+				for _, msg := range runAll(cmd) {
+					if msg, ok := msg.(imagePutMsg); ok {
+						put = msg
+						continue
+					}
+					rest = append(rest, msg)
+				}
+				for _, msg := range append(runAll(m.imagesPut(put)), rest...) {
+					if msg, ok := msg.(statusMsg); ok {
+						m.Update(msg)
+					}
+				}
+				if !m.statusE || !strings.Contains(m.status, "disk full") {
+					t.Fatalf("status = %q (error %v), want the copy's failure", m.status, m.statusE)
+				}
+			})
+		})
+	}
+}
+
+// Why the clipboard watch is off is said once, on a press that has nothing
+// else to say, and a press that has its own report leaves it to the next.
+func TestTheWatchBeingOffIsSaidOnAQuietPress(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, term := openWorkspace(t, ds, "enter")
+		watchErr := errors.New("clipwatch helper exited")
+		p := m.Primary()
+
+		p.imageBusy = true
+		d.run(m.imagesRead(imageReadMsg{pane: p.id, original: keyPress("ctrl+v"), watchErr: watchErr, err: errors.New("clipboard locked")}))
+		d.wait("the read's failure", func() bool { return strings.Contains(m.status, "clipboard locked") })
+		if m.clipWatchReported {
+			t.Fatal("the watch's notice was spent on a press that reported its own failure")
+		}
+
+		p.imageBusy = true
+		d.run(m.imagesRead(imageReadMsg{pane: p.id, original: keyPress("ctrl+v"), watchErr: watchErr}))
+		d.wait("the key", func() bool { return strings.Count(term.inputSoFar(), "\x16") == 2 })
+		if !m.statusE || !strings.Contains(m.status, "dictation through Ctrl-V is off: clipwatch helper exited") {
+			t.Fatalf("status = %q (error %v), want why dictation is off", m.status, m.statusE)
+		}
+	})
+}
+
+// runAll runs a command and every command its batches hold, and returns what
+// each one returned.
+func runAll(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		return []tea.Msg{msg}
+	}
+	var msgs []tea.Msg
+	for _, sub := range batch {
+		msgs = append(msgs, runAll(sub)...)
+	}
+	return msgs
+}

@@ -425,14 +425,18 @@ flowchart LR
   answers: nothing on this side runs it, and nothing checks a value came from it.
 - **Any value write answers it.** `store.UpdateSecret` stamps `ValueUpdatedAt`
   on a replaced value unless the writer stamped it already, and closes every
-  open refresh request (`via: update`). `RefreshSecret` closes them first with
+  open refresh request (`via: update`), on a replaced value or a restamped one
+  (below). `RefreshSecret` closes them first with
   the client's own account of the value (`SecretRefreshAnswer`), and when it
   names a request, the first answer wins: one already answered is a 409 and
   writes nothing.
 - **A refusal of a renewable token is not a rejection.** `Secret.Renewable`
   tokens skip `judgeRejection`: the value is marked stale and a refresh request
   opened (`renewableRejection`), except within `rejectionAfterRenewal` of a
-  write, when the report may be about the value just replaced.
+  stamp, when the report may be about the value just replaced. A restamp of
+  the same value opens that window too: a person has just vouched for it, and
+  a refusal still coming after the window asks again, so a token that is
+  refused and comes back unchanged is asked for at most once a window.
 - **A command's value lasts 5m unless named otherwise**
   (`model.DefaultRefreshTTL`).
 - **Refresh requests are their own record** (`SecretRefreshRequest`):
@@ -446,7 +450,14 @@ flowchart LR
   `value_updated_at` and `value_expires_at` out of a write that keeps the value,
   so a rename read before a rejection cannot put back what the rejection
   marked; `MarkSecretValueStale` refuses, in its `WHERE`, a value written within
-  `rejectionAfterRenewal`.
+  `rejectionAfterRenewal`. The exception is a **restamp**: a writer that
+  stamped the value (`ValueWritten`) past the stored stamp has the stamp
+  written though the bytes are the same, and its lifetime restarts. A refresh
+  command such as `gh auth token` hands back one token for as long as its login
+  lasts, and its answer must leave the value fresh. A copy read earlier carries
+  an older stamp, so it is not a restamp. A restamp answers open refresh
+  requests but keeps recorded rejections: the same bytes are still the
+  credential refused.
 - **A discobox never reads a refresh command.** The sandbox role lists
   secrets for names (ADR 0140 §4); a command a person wrote can name a vault
   path or carry a credential, so it is withheld from a sandbox principal

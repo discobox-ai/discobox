@@ -81,16 +81,18 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-11-09-593](26-11-09-593-a-never-registered-pool-gets-a-new-bootstrap-attempt-after-one-ends.md) | A never-registered pool gets a new bootstrap attempt after one ends | Accepted (narrows [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) §3's automatic-retry rule to the waiters holding the ended attempt) |
 | [26-11-07-876](26-11-07-876-the-console-is-one-core-with-two-renderers.md) | The console is one core with two renderers | Accepted |
 | [26-11-07-983](26-11-07-983-discobox-desktop-downloads-its-app-and-serves-it-over-stdio.md) | `discobox desktop` downloads its app and serves it over stdio | Accepted |
 | [26-11-07-289](26-11-07-289-the-desktop-bridge-carries-the-console-core.md) | The desktop bridge carries the console core | Accepted |
 | [26-11-07-598](26-11-07-598-each-console-binds-commands-the-way-its-platform-does.md) | Each console binds commands the way its platform does | Accepted |
 | [26-11-07-363](26-11-07-363-the-desktop-keeps-the-console-identity-drawn-natively.md) | The desktop keeps the console's identity, drawn natively | Accepted |
 | [26-11-07-519](26-11-07-519-a-running-box-keeps-its-reconcile-failure-as-a-warning.md) | A running box keeps its reconcile failure as a warning | Accepted (supersedes 0034 §5's unconditional error-first precedence for a present, running sandbox; amends 26-10-29-316 §1 and 26-11-01-560 §2's event fields with `errorMessage`) |
-| [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) | Initial pool bootstrap waits on work evidence | Accepted (narrows 26-10-12-711 §6 and 0039 tier-1 stall rule for bounded initial-bootstrap operations; explicit-start and upgrade ceilings remain) |
+| [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) | Initial pool bootstrap waits on work evidence | Accepted (narrows 26-10-12-711 §6 and 0039 tier-1 stall rule for bounded initial-bootstrap operations; explicit-start and upgrade ceilings remain; §3's automatic-retry rule narrowed to waiters by [26-11-09-593](26-11-09-593-a-never-registered-pool-gets-a-new-bootstrap-attempt-after-one-ends.md)) |
 | [26-11-06-567](26-11-06-567-the-local-socket-follows-tmpdir-and-a-dev-shell-pins-its-address.md) | The local socket follows TMPDIR, and a development shell pins its address | Accepted (supersedes 26-11-04-074 §1 and 26-11-05-240; 26-11-04-074 §§2–4 remain) |
 | [26-11-06-970](26-11-06-970-docker-activation-waits-for-configuration-not-feature-completion.md) | Docker activation waits for configuration, not feature completion | Accepted |
 | [26-11-06-664](26-11-06-664-common-apt-packages-are-built-into-the-docker-base-before-development-binaries.md) | Common apt packages are built into the Docker base before development binaries | Accepted |
+| [26-11-06-851](26-11-06-851-voxl-streams-the-desktop-at-two-times-density.md) | Voxl streams the desktop at two times density | Proposed |
 | [26-11-06-671](26-11-06-671-the-console-palette-composes-commands-and-boxes.md) | The console palette composes commands and boxes | Proposed |
 | [26-11-05-928](26-11-05-928-a-directory-snapshot-survives-until-source-delivery-is-confirmed.md) | A directory snapshot survives until source delivery is confirmed | Accepted (supersedes 0045 §4 and narrows 0045 §1 and 26-09-24-005 §2 for retained non-Git snapshots; origin-host restrictions remain) |
 | [26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md) | A start waits for a compatible pool and its pending upgrade | Accepted (narrows 26-11-04-167 §1 and extends §2; further narrows 26-10-12-711 §6 and 26-11-03-618 §2 for an existing sandbox's pending upgrade; source-delivery refusals remain) |

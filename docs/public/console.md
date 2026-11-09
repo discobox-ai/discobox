@@ -1,8 +1,7 @@
 # Console guide
 
-This guide describes the **v0.19 prerelease** console. Open it with
-`discobox console` (`c` is an alias). `discobox configure` opens its harnesses
-screen. `discobox run` and `discobox attach BOX` open a workspace directly.
+Open the console with `discobox console` (`c` is an alias). `discobox
+configure` opens its harnesses screen. `discobox run` and `discobox attach BOX` open a workspace directly.
 
 ## Create and find a task
 

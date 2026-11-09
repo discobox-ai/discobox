@@ -15,7 +15,7 @@ Claude Code, Codex, OpenCode, GitHub Copilot, omp, and pi are included; other te
 agents can be packaged in an image. Discobox supports macOS, Linux, and Windows
 and is under active development.
 
-Public documentation: [v0.19 prerelease manual](docs/public/index.md).
+Public documentation: [the manual](docs/public/index.md).
 
 ## Getting started
 
@@ -40,17 +40,15 @@ irm https://discobox.ai/install.ps1 | iex
 Each of those installs the stable channel. [Release channels](#release-channels)
 covers the newer ones and how to pin a version.
 
-For a guided first experience (on a release supporting repository startup
-scripts), run:
+For a guided first experience, run:
 
 ```bash
 discobox run discobox-ai/tour
 ```
 
-The menu runs inside the box before your selected harness. Try a shell, tools,
-and a disposable access request, then continue to your harness. No agent
-account is needed for the menu. See the [tour guide](docs/public/getting-started.md#take-the-tour)
-for exit, replay and cleanup.
+The tour opens full screen inside the box before your selected harness and
+needs no agent account. See the [tour guide](docs/public/getting-started.md#take-the-tour)
+for continuing, exiting, replay and cleanup.
 
 Open the console from your repository to create a box:
 

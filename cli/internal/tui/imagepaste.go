@@ -200,10 +200,18 @@ func (m *Model) imagesRead(msg imageReadMsg) tea.Cmd {
 	if p == nil {
 		return nil
 	}
-	if msg.watchErr != nil && !m.clipWatchReported {
+	// Why the watch is off is said on a press that has nothing else to say,
+	// and before anything that press starts. Batched beside a copy, or a
+	// failed read, it would race that one's report for the status line, and
+	// whichever landed last would be all that was ever said. A press that has
+	// its own report leaves it to the next: every press reads the watch's
+	// error again (readKey). Only someone whose every Ctrl-V carries an
+	// image is never told, and dictation is text: a press of theirs is the
+	// quiet one. An error starts no expiry, so update returns nothing to run, and
+	// the Update around this call does what follows every message.
+	if msg.watchErr != nil && !m.clipWatchReported && msg.err == nil && len(msg.images) == 0 {
 		m.clipWatchReported = true
-		cmd := m.imagesRead(imageReadMsg{pane: msg.pane, original: msg.original, images: msg.images, text: msg.text, err: msg.err})
-		return tea.Batch(cmd, m.report(true, "dictation through Ctrl-V is off: %v", msg.watchErr))
+		m.update(m.report(true, "dictation through Ctrl-V is off: %v", msg.watchErr)())
 	}
 	if msg.text != "" {
 		return m.releaseImageInput(p, tea.PasteMsg{Content: msg.text})
@@ -235,7 +243,11 @@ func (m *Model) imagesRead(msg imageReadMsg) tea.Cmd {
 		}
 		return imagePutMsg{pane: id, paths: paths}
 	}
-	return tea.Batch(put, status("copying %s into %s…", imageCount(len(images)), p.sandbox.Name))
+	// The progress goes up before the copy starts: batched beside it, a copy
+	// that fails at once could have its report land first and be overwritten
+	// by "copying…", which then times out and leaves nothing said.
+	expires := m.update(status("copying %s into %s…", imageCount(len(images)), p.sandbox.Name)())
+	return tea.Batch(put, expires)
 }
 
 // imagesPut pastes the paths the images were written to, in place of the

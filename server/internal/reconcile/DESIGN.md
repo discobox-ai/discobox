@@ -151,7 +151,15 @@ stateDiagram-v2
   capped at `BackoffMax`). The row stays dirty until a reconcile finally
   succeeds, which resets `attempts` and clears `last_error`. This also serves
   as flap damping for hot resources: a resource that keeps failing backs off
-  automatically. There is no attempt cap.
+  automatically. There is no attempt cap. The schedule is `Backoff`, with
+  `DefaultBackoffBase`/`DefaultBackoffMax` when the options leave it unset.
+- A success resets `attempts`, so a failure that recurs across clean passes
+  (a provider call that succeeds, then a timer that finds it did not work) is
+  not paced by the engine. A reconciler that needs that pacing counts the
+  failures on its own resource and returns `RequeueAt` from the same
+  `Backoff` schedule (the pool bootstrap attempt, see
+  [pools](../resources/pools/DESIGN.md) "Initial bootstrap waits"). It uses
+  the defaults, which every engine in the server runs with.
 - A future `not_before` therefore means one of two things, told apart by
   `attempts`: a failure backoff (`attempts > 0`, `last_error` set) or an armed
   reconciler timer (`attempts == 0`). Observers (`ListDirty`, the

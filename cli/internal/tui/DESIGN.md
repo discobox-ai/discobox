@@ -2691,7 +2691,9 @@ carried in as above; anything else lets the key through without reading the
 clipboard at all. What the clipboard held when the watch started is not a
 change, so it is never pasted as dictation. Off Windows and WSL the watch is
 never live and the key reads the clipboard when it arrives; a watch that should
-be running and is not is said once, on the first Ctrl-V. While one is in flight
+be running and is not is said once, on the first Ctrl-V that has nothing else
+to say (no image carried in, no read failed), so it never races a paste's own
+report for the status line. While one is in flight
 the pane's keys and pastes are held (`pane.imageHeld`) and delivered after it,
 so typing behind a paste does not overtake it — all but the leader and the key
 after it, which are the window's commands.

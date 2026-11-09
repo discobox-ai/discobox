@@ -146,7 +146,10 @@ func (r *PoolReconciler) ScanDirty(ctx context.Context) ([]string, error) {
 }
 
 func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, generation int64) (reconcile.Result, error) {
-	if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Generation == generation {
+	// An attempt that expired without saying so ends on this pass: record why,
+	// show the pool failed, and settle with the error. The next attempt starts
+	// on a later pass (ADR 26-11-09-593 §2).
+	if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && !b.Ended(generation) {
 		if reason := b.Expired(time.Now()); reason != "" {
 			_, _ = r.store.RecordPoolBootstrap(ctx, pool.ID, b.Attempt, generation, model.BootstrapEvidence{Failure: reason})
 			failure := fmt.Sprintf("pool %s bootstrap %s: %s", pool.ID, b.Operation, reason)
@@ -156,7 +159,6 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 			}
 			return reconcile.Result{}, fmt.Errorf("%s", failure)
 		}
-		ctx = sandbox.WithBootstrapExecutor(ctx, r.pools, pool)
 	}
 
 	project, provider, runtimeProvider, err := r.resolve(ctx, pool)
@@ -168,6 +170,44 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	}
 	if runtimeProvider == nil {
 		return reconcile.Result{}, nil // provider type does not own pool runtimes
+	}
+
+	// An ended attempt does not end a pool that never registered: a later pass
+	// starts the next one, whether the last one failed or belongs to an
+	// earlier generation (ADR 26-11-09-593 §1). A failed one is replaced once
+	// the engine's backoff schedule for the attempts that failed so far has
+	// passed. The engine's own count cannot pace this: an attempt whose
+	// provider call succeeds but whose agent never registers settles that
+	// pass cleanly, which resets it. New intent is not paced. The
+	// replacement happens only once the provider is callable, so that the
+	// new attempt's first provider call is the repair it owes (§3).
+	if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Ended(generation) {
+		if b.Failure != "" && b.Generation == generation {
+			due := b.EndedAt.Add(reconcile.Backoff(reconcile.DefaultBackoffBase, reconcile.DefaultBackoffMax, b.Failed))
+			if time.Now().Before(due) {
+				return reconcile.RequeueAt(due), nil
+			}
+		}
+		next, err := r.store.ReplacePoolBootstrap(ctx, pool.ID, b.Attempt, generation)
+		if errors.Is(err, store.ErrGenerationConflict) {
+			return reconcile.Result{}, reconcile.Superseded("pool bootstrap attempt changed")
+		}
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		data, err := json.Marshal(next)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		pool.Bootstrap = data
+	}
+	ctx = sandbox.WithBootstrapExecutor(ctx, r.pools, pool)
+	// repair names why this pass replaces the runtime rather than reconciling
+	// it in place; empty means reconcile. An attempt owes a repair until one
+	// succeeds, so a pass that dies before it leaves it owed (§3).
+	var repair string
+	if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Generation == generation {
+		repair = b.Repair
 	}
 
 	// Converged with no recorded error means this generation has already been
@@ -203,8 +243,13 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// place: the container/VM is replaced under the same pool identity, and
 	// its new box enrolled anew. Only a pool that never registered can be in this
 	// state, and repair (not delete) preserves the user-owned pool row.
-	if r.registrationExpired(pool) {
-		err = runtimeProvider.RepairPool(ctx, r.pools, project, provider, pool, "pool agent did not register before timeout", begin)
+	if repair == "" && r.registrationExpired(pool) {
+		repair = "pool agent did not register before timeout"
+	}
+	if repair != "" {
+		if err = runtimeProvider.RepairPool(ctx, r.pools, project, provider, pool, repair, begin); err == nil {
+			_, _ = sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Repaired: true})
+		}
 	} else if err = runtimeProvider.ReconcilePool(ctx, r.pools, project, provider, pool, begin); err != nil {
 		// A host that is still coming up is not a failed reconcile. Repairing
 		// one removes and recreates the container whose healthcheck has not
@@ -230,6 +275,13 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 			}
 			return reconcile.Result{}, err
 		}
+	}
+	// A repair's error is never read as a host coming up: it may come before
+	// the repair replaced anything (discovm's first lookup), and reconciling
+	// in place would then trust the runtime the repair was owed for.
+	if err != nil {
+		// The attempt ends with this error, and the pass settles failed. A
+		// later pass starts a new attempt (ADR 26-11-09-593 §2).
 		if b := pool.BootstrapFacts(); b != nil && pool.RegisteredAt == nil && b.Generation == generation {
 			_, _ = sandbox.ReportBootstrap(ctx, model.BootstrapEvidence{Failure: err.Error()})
 			r.failReconcile(pool, generation, err.Error())
@@ -238,6 +290,8 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 			}
 			return reconcile.Result{}, err
 		}
+	}
+	if err != nil && repair == "" {
 		if repairErr := r.repairAssignedPool(ctx, runtimeProvider, project, provider, pool, err, begin); repairErr != nil {
 			err = repairErr
 		} else {

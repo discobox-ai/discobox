@@ -1,8 +1,8 @@
 # Getting started
 
-This is the **v0.19 prerelease** manual. The stable installer may install an
-older release; select the version recorded in your docs snapshot when you
-need these exact commands.
+This manual describes the release the documentation site shows it for. The
+installers below install the latest release on their channel; to run exactly
+these commands, install that release by its tag.
 
 ## Install
 
@@ -25,17 +25,20 @@ irm https://discobox.ai/install.ps1 | iex
 ```
 
 The edge installer includes release candidates and other prereleases. To
-choose a particular published version, pass its tag explicitly:
+choose a particular published version, pass its tag explicitly, replacing
+`TAG` with it (for example the release this manual describes):
 
 ```sh
-curl -sSfL https://discobox.ai | sh -s -- --version v0.19.0-rc.3
+curl -sSfL https://discobox.ai | sh -s -- --version TAG
 ```
 
-That example names an earlier candidate, not the revision containing this
-manual. Use your snapshot's exact tag. The product release containing the
-manual is selected after it lands. `discobox-dev` is Homebrew's latest dot
-release channel; it does not select an `-rc` tag. Stable and development
-clients share local state and cannot run their servers simultaneously.
+```powershell
+& ([scriptblock]::Create((irm https://discobox.ai/install.ps1))) -Version TAG
+```
+
+`discobox-dev` is Homebrew's latest dot release channel; it does not select
+an `-rc` tag. Stable and development clients share local state and cannot run
+their servers simultaneously.
 
 Discobox supports macOS, Linux and Windows. On Linux, the built-in provider
 needs Docker installed and accessible to the server user. First use can
@@ -44,26 +47,22 @@ access. A remote server runs its pools on the server side.
 
 ## Take the tour
 
-With a version supporting repository startup scripts, start the guided tour
-from your host:
+Start the guided tour from your host:
 
 ```sh
 discobox run discobox-ai/tour
 ```
 
-Select a default harness if prompted. The menu runs in the Linux box before
-that harness starts, with chapters for shells, tools, access requests and
-leaving and returning. No agent account is needed for the menu; continuing
-into an agent may require its normal sign-in. You can choose the shell harness.
-The access chapter uses a disposable example value and can be denied or skipped.
+Select a default harness if prompted. The tour opens full screen in the box
+before that harness starts. Use the mouse or the keyboard and take the chapters
+in any order. It needs no agent account; the shell harness works too.
 
-**Continue to my harness** completes the tour and skips it on subsequent
-primary launches in this box. **Exit tour** or Ctrl-C leaves a shell without
-starting the harness. To replay, open a shell in the tour checkout and run
-`.discobox/scripts/pre-harness --replay`; returning from replay starts no
-additional harness. Detach with Ctrl-A then d and reconnect from your host
-with `discobox attach BOX`. After collecting any work, archive with
-`discobox rm BOX`. Replace BOX with its name or identifier.
+**Continue to my harness** starts the harness and skips the tour on later
+starts of this box. **Exit tour** leaves a shell without starting it. Replay
+the tour from a shell in the box with `.discobox/scripts/pre-harness --replay`.
+Detach with Ctrl-A then d, and come back from your host with
+`discobox attach BOX`. When you are done, archive the box with
+`discobox rm BOX`. Replace BOX with its name or ID.
 
 The tour is ordinary source code running inside the sandbox. See
 [Repository startup scripts](repository-scripts.md) for the execution contract.

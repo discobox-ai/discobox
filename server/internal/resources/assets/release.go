@@ -25,8 +25,11 @@ type releasePins struct {
 	what    string
 	ref     string
 	resolve func(ctx context.Context, ref string) (string, error)
-	now     func() time.Time
-	// moved is told, off the resolving read's path, each digest the
+	// detach is the context a resolution runs under, which outlives the
+	// read that started it: others wait on its answer.
+	detach func(ctx context.Context) (context.Context, func(), error)
+	now    func() time.Time
+	// moved is told, and must not block, each digest the
 	// reference resolves to that differs from the one before, the first
 	// included: sandboxes are pinned to it, and a stopped one follows it (ADR
 	// 26-10-16-423 §7).
@@ -71,13 +74,16 @@ func (p *releasePins) pins(ctx context.Context, fresh bool) ([]string, error) {
 		done := p.inFlight
 		p.mu.Unlock()
 		// Detached from this read, whose answer others are waiting on.
-		resolveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
-		digest, err := p.resolve(resolveCtx, p.ref)
-		cancel()
+		var digest string
+		resolveCtx, finish, err := p.detach(ctx)
+		if err == nil {
+			digest, err = p.resolve(resolveCtx, p.ref)
+			finish()
+		}
 		p.mu.Lock()
 		p.tried, p.lastErr, p.inFlight = p.now(), err, nil
 		if err == nil && digest != p.latest && p.moved != nil {
-			go p.moved(digest)
+			p.moved(digest)
 		}
 		if err == nil {
 			p.latest = digest

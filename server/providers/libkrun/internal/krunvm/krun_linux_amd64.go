@@ -24,6 +24,9 @@ const (
 	// defaultSoname is what a distribution or Nix package installs. The
 	// manifest can name an absolute path instead.
 	defaultSoname = "libkrun.so.1"
+	// installDocs is how to install libkrun and passt. An error about a
+	// missing prerequisite links it once, however many prerequisites it names.
+	installDocs = "https://github.com/discobox-ai/discobox#libkrun-on-linux"
 
 	krunDiskFormatRaw   = 0
 	krunKernelFormatELF = 1
@@ -64,7 +67,7 @@ func openLibrary(path string) (*krunLibrary, error) {
 	}
 	handle, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 	if err != nil {
-		return nil, fmt.Errorf("load %s: %w; install libkrun on the server host's dynamic loader path or set the provider's libkrunPath; see https://github.com/discobox-ai/discobox#libkrun-on-linux", path, err)
+		return nil, fmt.Errorf("load %s: %w; install libkrun on the server host's dynamic loader path or set the provider's libkrunPath", path, err)
 	}
 	lib := &krunLibrary{}
 	for name, target := range map[string]any{

@@ -111,3 +111,82 @@ func TestBootstrapExpiryIsDurableAndOldMarkersDoNotRenew(t *testing.T) {
 		t.Fatal("restart forgot expiry")
 	}
 }
+
+func TestBootstrapAttemptEndsOnFailureOrNewGeneration(t *testing.T) {
+	b := NewPoolBootstrap(3, time.Now().Add(-time.Hour))
+	if b.Ended(3) {
+		t.Fatal("an expired attempt with no recorded failure has not ended: the pass that sees it records why")
+	}
+	if !b.Ended(4) {
+		t.Fatal("an attempt for an earlier generation has ended")
+	}
+	b.Failure = "image not found"
+	if !b.Ended(3) {
+		t.Fatal("a failed attempt has ended")
+	}
+	if NewPoolBootstrap(3, time.Now()).Attempt == b.Attempt {
+		t.Fatal("attempts share an identity")
+	}
+}
+
+// A waiter pinned to an attempt never follows the attempt that replaces it;
+// one that arrives after the replacement waits on the new attempt.
+func TestBootstrapWaitNeverFollowsANewAttempt(t *testing.T) {
+	now := time.Now()
+	first := NewPoolBootstrap(1, now)
+	w := &BootstrapWait{}
+	if _, eligible, err := w.Observe(bootstrapPool(&first), now); err != nil || !eligible {
+		t.Fatalf("first attempt: eligible=%t err=%v", eligible, err)
+	}
+	first.Failure = "image not found"
+	if _, _, err := w.Observe(bootstrapPool(&first), now); err == nil || !strings.Contains(err.Error(), "image not found") {
+		t.Fatalf("failed attempt: %v", err)
+	}
+	second := NewPoolBootstrap(1, now.Add(time.Minute))
+	if _, _, err := w.Observe(bootstrapPool(&second), now.Add(time.Minute)); err == nil || !strings.Contains(err.Error(), "bootstrap attempt changed") {
+		t.Fatalf("pinned waiter on a new attempt: %v", err)
+	}
+	late := &BootstrapWait{}
+	deadline, eligible, err := late.Observe(bootstrapPool(&second), now.Add(time.Minute))
+	if err != nil || !eligible || !deadline.After(now.Add(time.Minute)) {
+		t.Fatalf("waiter arriving during the new attempt: deadline=%s eligible=%t err=%v", deadline, eligible, err)
+	}
+	if late.Attempt != second.Attempt {
+		t.Fatal("late waiter not pinned to the new attempt")
+	}
+}
+
+func TestNextAttemptOwesARepairAndCountsFailures(t *testing.T) {
+	now := time.Now()
+	b := NewPoolBootstrap(2, now)
+	b.Accept(BootstrapEvidence{Failure: "image not found"}, now.Add(time.Second))
+	if !b.EndedAt.Equal(now.Add(time.Second)) {
+		t.Fatalf("EndedAt = %s, want when the failure was recorded", b.EndedAt)
+	}
+	next := b.Next(2, now.Add(time.Minute))
+	if next.Attempt == b.Attempt || next.Failed != 1 || !strings.Contains(next.Repair, "image not found") || !next.ProgressAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("next = %+v", next)
+	}
+	if again := next.Next(2, now); again.Failed != 2 {
+		t.Fatalf("failures before the third attempt = %d, want 2", again.Failed)
+	}
+	if fresh := next.Next(3, now); fresh.Failed != 0 || fresh.Repair == "" {
+		t.Fatalf("attempt for new intent = %+v, want the count started over and a repair owed", fresh)
+	}
+
+	marker := next.Marker
+	next.Accept(BootstrapEvidence{Repaired: true}, now.Add(time.Minute))
+	if next.Repair != "" || next.Marker != marker {
+		t.Fatalf("after the repair: owed %q, marker %d -> %d; want it cleared and no progress", next.Repair, marker, next.Marker)
+	}
+}
+
+func TestExpiryRecordsWhenTheAttemptEnded(t *testing.T) {
+	now := time.Now()
+	b := NewPoolBootstrap(1, now)
+	at := now.Add(PoolBootstrapSilence)
+	b.Accept(BootstrapEvidence{Operation: "image", Bytes: 1}, at)
+	if b.Failure == "" || !b.EndedAt.Equal(at) {
+		t.Fatalf("failure %q ended %s, want expiry recorded at %s", b.Failure, b.EndedAt, at)
+	}
+}

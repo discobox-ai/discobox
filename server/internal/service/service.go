@@ -97,7 +97,7 @@ type Options struct {
 	// checked for.
 	WSLCCommand string
 	// AssetDir is the blob store bundles are served to pools from (ADR
-	// 26-10-16-423 §13).
+	// 26-10-16-423 §13). Required.
 	AssetDir string
 	// ArchiveRetention is the server-wide default an archived sandbox is kept
 	// for, which a project follows until it sets its own. Zero leaves the
@@ -263,20 +263,21 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.engine.Start(ctx); err != nil {
 		return err
 	}
-	s.assets.StartPruning(ctx)
-	go s.assets.ResolveRelease(ctx)
+	s.assets.Start(ctx)
 	s.StartPinningUndelivered(ctx)
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		_ = s.engine.Stop(stopCtx)
+		_ = s.assets.Stop(stopCtx)
 		return err
 	}
 	return nil
 }
 
 // Stop shuts down the reconcile engine, waiting for in-flight reconciles, then
-// closes every provider.
+// the asset service's background work, waiting until nothing writes its blob
+// store, then closes every provider.
 //
 // Provider close is what releases a backend's own resources -- for wslc, the
 // COM session whose lifetime is the pool VM's. Losing the handle when the
@@ -286,12 +287,14 @@ func (s *Service) Start(ctx context.Context) error {
 //
 // The engine stops first: a reconcile still in flight may be talking to a
 // provider, and closing underneath it would fail the operation rather than let
-// it finish.
+// it finish. The asset service stops after it for the same reason: a
+// reconcile may be fetching a bundle a pool's box is placed with.
 func (s *Service) Stop(ctx context.Context) error {
 	var err error
 	if s.engine != nil {
 		err = s.engine.Stop(ctx)
 	}
+	err = errors.Join(err, s.assets.Stop(ctx))
 	s.SandboxProviderManager().Shutdown()
 	return err
 }

@@ -385,6 +385,10 @@ runs in the same store transaction as the pool generation and dirty mark.
 `RecordPoolBootstrap` locks the pool and fences reports by attempt and target
 generation, writing only `bootstrap`. New pending pools initialize the document
 in `Pool.BeforeCreate`; additive migration leaves legacy documents NULL.
+`ReplacePoolBootstrap` is the only other writer: under the same lock it swaps
+an ended attempt of a never-registered pool for its successor, fenced on the
+attempt the caller read and the pool's generation (ADR 26-11-09-593 §1). It
+never creates a document for a legacy row.
 Enrollment and heartbeat writers read locked rows; manifest/lifecycle writers
 omit evidence. Control-plane bootstrap reads use the primary so stale replica
 observations cannot extend or revive an attempt.

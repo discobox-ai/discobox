@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -116,7 +117,7 @@ type AppOptions struct {
 	// checked for.
 	WSLCCommand string
 	// AssetDir is the blob store bundles are served to pools from (ADR
-	// 26-10-16-423 §13).
+	// 26-10-16-423 §13). Required.
 	AssetDir string
 
 	// ArchiveRetention is how long an archived sandbox is kept before it is
@@ -130,7 +131,8 @@ type AppOptions struct {
 	ConfiguredGateways gateways.Configured
 }
 
-// DefaultAppOptions returns the production defaults for the app.
+// DefaultAppOptions returns the production defaults for the app. It names no
+// AssetDir, which every caller sets.
 func DefaultAppOptions() AppOptions {
 	return AppOptions{
 		DispatcherPollInterval:         time.Second,
@@ -170,12 +172,12 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 // provider. It is separate from the router because a provider owns resources
 // outside this process -- a wslc pool VM, for one -- that outlive the HTTP
 // server unless something closes them.
-func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions) (*chi.Mux, services.Services, *store.Store, func(context.Context) error, error) {
-	opts := DefaultAppOptions()
-	if len(options) > 0 {
-		opts = options[0]
+func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, opts AppOptions) (*chi.Mux, services.Services, *store.Store, func(context.Context) error, error) {
+	// Before anything touches the database: an empty directory would put the
+	// blob store in the process's working directory.
+	if opts.AssetDir == "" {
+		return nil, services.Services{}, nil, nil, errors.New("asset directory is required")
 	}
-
 	if opts.UserID == "" {
 		opts.UserID = service.DefaultUserID
 	}

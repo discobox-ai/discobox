@@ -66,7 +66,9 @@ func newAppTestDB(ctx context.Context, t *testing.T) *database.DB {
 // Go is deleting.
 func newTestApp(ctx context.Context, t *testing.T, db *database.DB) *chi.Mux {
 	t.Helper()
-	router, _, _, stop, err := NewApp(ctx, db.Write, db.Read)
+	opts := DefaultAppOptions()
+	opts.AssetDir = t.TempDir()
+	router, _, _, stop, err := NewApp(ctx, db.Write, db.Read, opts)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -78,6 +80,16 @@ func newTestApp(ctx context.Context, t *testing.T, db *database.DB) *chi.Mux {
 		}
 	})
 	return router
+}
+
+// NewApp refuses an empty asset directory before it touches the database,
+// rather than keeping the blob store in the working directory.
+func TestNewAppRequiresAnAssetDir(t *testing.T) {
+	ctx := context.Background()
+	db := newAppTestDB(ctx, t)
+	if _, _, _, _, err := NewApp(ctx, db.Write, db.Read, DefaultAppOptions()); err == nil || !strings.Contains(err.Error(), "asset directory is required") {
+		t.Fatalf("NewApp with no AssetDir: err = %v, want the asset directory refused", err)
+	}
 }
 
 func TestNewOpenAPIRouterServesOpenAPIAndScalarDocs(t *testing.T) {

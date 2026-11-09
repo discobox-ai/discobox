@@ -2,7 +2,6 @@ package krunvm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -83,7 +82,7 @@ func Run(cfg Config) error {
 	log.Print("discobox pool VM launcher: loading libkrun")
 	lib, err := openLibrary(cfg.LibraryPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w; see %s", err, installDocs)
 	}
 
 	log.Print("discobox pool VM launcher: starting passt")
@@ -248,22 +247,44 @@ func hostIPv4Nameserver() (string, error) {
 
 // CheckDependencies probes host software without starting a VM or touching KVM.
 // It runs only in a short-lived launcher child.
+//
+// Every missing prerequisite is reported, each its own clause, with the
+// install instructions linked once at the end.
 func CheckDependencies(libraryPath, passtPath string) error {
-	lib, libraryErr := openLibrary(libraryPath)
-	if libraryErr == nil {
-		libraryErr = errors.Join(lib.requireFeature(krunFeatureBlk, "virtio-block"), lib.requireFeature(krunFeatureNet, "virtio-net"))
+	var causes []error
+	if lib, err := openLibrary(libraryPath); err != nil {
+		causes = append(causes, err)
+	} else {
+		for _, err := range []error{lib.requireFeature(krunFeatureBlk, "virtio-block"), lib.requireFeature(krunFeatureNet, "virtio-net")} {
+			if err != nil {
+				causes = append(causes, err)
+			}
+		}
 	}
-	passt, passtErr := exec.LookPath((Config{PasstPath: passtPath}).PasstExecutable())
-	if passtErr != nil {
-		passtErr = fmt.Errorf("install passt on the server host's PATH or set the provider's passtPath: %w; see https://github.com/discobox-ai/discobox#libkrun-on-linux", passtErr)
+	if passt, err := exec.LookPath((Config{PasstPath: passtPath}).PasstExecutable()); err != nil {
+		causes = append(causes, fmt.Errorf("install passt on the server host's PATH or set the provider's passtPath: %w", err))
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, passt, "--version")
 		cmd.WaitDelay = time.Second
 		if output, err := cmd.CombinedOutput(); err != nil {
-			passtErr = fmt.Errorf("run passt --version: %w: %s", err, strings.TrimSpace(string(output)))
+			causes = append(causes, fmt.Errorf("run passt --version: %w: %s", err, strings.TrimSpace(string(output))))
 		}
 	}
-	return errors.Join(libraryErr, passtErr)
+	return prerequisitesError(causes)
+}
+
+// prerequisitesError joins the causes, each still matchable with errors.Is and
+// errors.As, followed once by where the install instructions are.
+func prerequisitesError(causes []error) error {
+	if len(causes) == 0 {
+		return nil
+	}
+	format := strings.Repeat("%w; ", len(causes)) + "see %s"
+	args := make([]any, 0, len(causes)+1)
+	for _, cause := range causes {
+		args = append(args, cause)
+	}
+	return fmt.Errorf(format, append(args, installDocs)...)
 }

@@ -30,6 +30,7 @@ import (
 // Options configures a Service.
 type Options struct {
 	// Dir is the blob store: an OCI layout holding blobs no entry names.
+	// Required: an empty one would be the process's working directory.
 	Dir string
 	// PlatformBundle, AgentBundle and PoolBundle are the platform, agent and
 	// pool bundles the release pins, which every pool is answered: what a
@@ -66,6 +67,16 @@ type Service struct {
 	// content, so an entry never goes stale.
 	manifests sync.Map
 	now       func() time.Time
+
+	// life ends at Stop, and with it everything the service runs past the
+	// read that asked for it: its background work, and every resolution and
+	// fetch detached from a read, whoever started it. work is all of that,
+	// which Stop waits for, and none starts once life has ended: nothing
+	// fetches into the blob store once Stop returns.
+	life   context.Context
+	stop   context.CancelFunc
+	lifeMu sync.Mutex
+	work   sync.WaitGroup
 }
 
 // fetchTimeout bounds a fetch shared among reads, which runs past any one
@@ -83,6 +94,11 @@ func New(store *store.Store, opts Options) *Service {
 }
 
 func newService(store *store.Store, opts Options, sources, resolvers []source) *Service {
+	// imagecache cleans "" to ".", which would put the blob store wherever
+	// the process happens to run: a Go test's package directory, say.
+	if opts.Dir == "" {
+		panic("assets: Options.Dir is required")
+	}
 	release := map[string]bool{}
 	for _, ref := range append([]string{opts.PlatformBundle, opts.AgentBundle, opts.PoolBundle}, opts.ReleaseBundles...) {
 		if ref = strings.TrimSpace(ref); ref != "" {
@@ -97,10 +113,87 @@ func newService(store *store.Store, opts Options, sources, resolvers []source) *
 		resolvers: resolvers,
 		now:       time.Now,
 	}
-	s.platform = &releasePins{what: "platform bundle", ref: strings.TrimSpace(opts.PlatformBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
-	s.agent = &releasePins{what: "agent bundle", ref: strings.TrimSpace(opts.AgentBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
-	s.pool = &releasePins{what: "pool bundle", ref: strings.TrimSpace(opts.PoolBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
+	s.life, s.stop = context.WithCancel(context.Background())
+	s.platform = s.releasePins("platform bundle", opts.PlatformBundle)
+	s.agent = s.releasePins("agent bundle", opts.AgentBundle)
+	s.pool = s.releasePins("pool bundle", opts.PoolBundle)
 	return s
+}
+
+// releasePins is the release's bundle ref, named what in errors, resolved by
+// this service.
+func (s *Service) releasePins(what, ref string) *releasePins {
+	return &releasePins{what: what, ref: strings.TrimSpace(ref), resolve: s.resolve, detach: s.detach, now: func() time.Time { return s.now() }}
+}
+
+// Start runs the service's background work until ctx ends or Stop: the
+// store's sweep every pruneInterval, and resolving the release's bundle
+// references once now (ResolveRelease).
+func (s *Service) Start(ctx context.Context) {
+	s.background(ctx, s.prune)
+	s.background(ctx, s.ResolveRelease)
+}
+
+// Stop ends what the service runs past a read — its background work, and
+// every resolution and fetch detached from the read that started it — and
+// waits until all of it has returned, or ctx ends. Once stopped, the service
+// starts none of it again: a read that would fetch or resolve fails instead.
+func (s *Service) Stop(ctx context.Context) error {
+	s.lifeMu.Lock()
+	s.stop()
+	s.lifeMu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		s.work.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("stop asset service: %w", ctx.Err())
+	}
+}
+
+// background runs run in its own goroutine, which Stop waits for, with a
+// context that ends with ctx or at Stop. Once stopped, it runs nothing.
+func (s *Service) background(ctx context.Context, run func(context.Context)) {
+	s.lifeMu.Lock()
+	defer s.lifeMu.Unlock()
+	if s.life.Err() != nil {
+		return
+	}
+	s.work.Add(1)
+	go func() {
+		defer s.work.Done()
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		defer context.AfterFunc(s.life, cancel)()
+		run(ctx)
+	}()
+}
+
+// errStopped is a fetch or resolution asked of a stopped service.
+var errStopped = errors.New("asset service stopped")
+
+// detach is ctx's values for work that runs past the read that asked for
+// it, which others share: not ended by ctx, but by Stop or fetchTimeout. It
+// is the service's work, which Stop waits for until done is called, and a
+// stopped service refuses it.
+func (s *Service) detach(ctx context.Context) (detached context.Context, done func(), err error) {
+	s.lifeMu.Lock()
+	defer s.lifeMu.Unlock()
+	if s.life.Err() != nil {
+		return nil, nil, errStopped
+	}
+	s.work.Add(1)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
+	unlink := context.AfterFunc(s.life, cancel)
+	return ctx, func() {
+		unlink()
+		cancel()
+		s.work.Done()
+	}, nil
 }
 
 // releaseBundles is each bundle the release pins every pool is answered.
@@ -108,13 +201,14 @@ func (s *Service) releaseBundles() []*releasePins {
 	return []*releasePins{s.platform, s.agent, s.pool}
 }
 
-// OnReleaseMoved has moved run, detached from any read, each time one of
-// the release's bundle references — the platform's, the agent's, the pool's —
-// resolves to a digest other than the one before, the first resolution
-// included. Set it before the service is used.
+// OnReleaseMoved has moved run, detached from any read, as the service's
+// background work, each time one of the release's bundle references — the
+// platform's, the agent's, the pool's — resolves to a digest other than the
+// one before, the first resolution included. Set it before the service is
+// used.
 func (s *Service) OnReleaseMoved(moved func(ctx context.Context)) {
 	for _, bundle := range s.releaseBundles() {
-		bundle.moved = func(string) { moved(context.Background()) }
+		bundle.moved = func(string) { s.background(context.Background(), moved) }
 	}
 }
 
@@ -129,7 +223,7 @@ func (s *Service) ResolveRelease(ctx context.Context) {
 		}
 		if bundle.fixed() != "" {
 			if bundle.moved != nil {
-				go bundle.moved(bundle.fixed())
+				bundle.moved(bundle.fixed())
 			}
 			continue
 		}
@@ -436,8 +530,11 @@ func (s *Service) ensure(ctx context.Context, p pin, digest string, isManifest b
 		if s.has(digest) {
 			return nil, nil
 		}
-		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
-		defer cancel()
+		fetchCtx, done, err := s.detach(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer done()
 		var failures []error
 		for _, src := range s.sources {
 			err := src.fetch(fetchCtx, p, digest, isManifest, s.blobs)
