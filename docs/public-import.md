@@ -16,9 +16,12 @@ The complete initial import is these exact files, with no assets:
 | `docs/public/concepts.md` | `concepts` |
 | `docs/public/console.md` | `console` |
 | `docs/public/cli.md` | `cli` |
+| `docs/public/repository-scripts.md` | `repository-scripts` |
 
-All relative manual links target another allowlisted page. The importer owns
-rewriting them to its snapshot routes and must reject a missing input or an
+All relative manual links target another allowlisted page, and every page
+under `docs/public/` is allowlisted; the exporter's tests
+(`TestPublicPagesAreAllowlisted`) check both. The importer owns
+rewriting those links to its snapshot routes and must reject a missing input or an
 unresolved internal link. Edit links point back to the source path in this
 repository. Preserve source attribution. This contract itself is maintainer
 material, not a public page to import.
