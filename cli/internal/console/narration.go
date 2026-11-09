@@ -240,6 +240,25 @@ func Confirmation(verb Verb, targets []Sandbox) (Question, bool) {
 	}, true
 }
 
+// UpgradeOffer is what opening a box whose image is no longer available
+// asks instead (Frontend.OfferUpgrade): whether to upgrade it to its
+// harness's current image, a yes or no. A box whose harness has no newer
+// image cannot be offered one, and ok is false: q is then the refusal, its
+// title and why.
+func UpgradeOffer(box Sandbox) (q Question, ok bool) {
+	if !box.Upgrade {
+		body := box.Name + "'s image is no longer available on its pool, so it cannot start, and its harness has no newer image to move it to."
+		if box.Message != "" {
+			body += "\n\n" + box.Message
+		}
+		return Question{Title: "Cannot start " + box.Name, Body: body}, false
+	}
+	return Question{
+		Title: "Upgrade",
+		Body:  box.Name + "'s image is no longer available on its pool, so it cannot start. Upgrade it to its harness's current image? Its work is kept.",
+	}, true
+}
+
 // TargetsTitle names what a command acts on: the one box by name, or how many
 // are selected.
 func TargetsTitle(targets []Sandbox) string {

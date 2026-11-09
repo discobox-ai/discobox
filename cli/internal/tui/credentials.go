@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -164,23 +163,10 @@ func (m *Model) syncRequestRows() {
 	}
 }
 
-// pendingFor is the requests waiting on one discobox, oldest first: the one
-// that has been waiting longest is the one to answer.
-func (m *Model) pendingFor(box console.Sandbox) []console.CredentialRequest {
-	out := []console.CredentialRequest{}
-	for _, req := range m.requests[box.ID] {
-		if m.session.ServerName(req.Server) == m.session.ServerName(box.Server) {
-			out = append(out, req)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created) })
-	return out
-}
-
 // openCredentialDialog asks about the oldest request on the discobox the
 // workspace is showing.
 func (m *Model) openCredentialDialog(box console.Sandbox) tea.Cmd {
-	pending := m.pendingFor(box)
+	pending := console.RequestsFor(m.session, box, m.requests[box.ID])
 	if len(pending) == 0 {
 		return m.report(false, "nothing waiting on this discobox")
 	}
@@ -899,7 +885,7 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 // middle of it throbs, and why it is the only thing in the window that moves
 // without something having happened. See banner.go for the bar and its beat.
 func (m *Model) viewCredentialBanner(width int) string {
-	pending := m.pendingFor(m.Box)
+	pending := console.RequestsFor(m.session, m.Box, m.requests[m.Box.ID])
 	if len(pending) == 0 {
 		return ""
 	}

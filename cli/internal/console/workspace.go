@@ -22,6 +22,13 @@ import (
 // poll and push loop run on; what each look reads and what its answer means
 // are here.
 
+// ListPollEvery is how often the listing is re-read while the console is
+// open, and the machine's resources and the requests waiting on a person with
+// it. A box's state changes without anything here asking it to — it starts,
+// it stops, an upgrade appears — so the console follows the server rather than
+// waiting to be told.
+const ListPollEvery = 5 * time.Second
+
 // WorkspacePollEvery is how often an open workspace re-reads the exec and
 // service listings. It only has to catch sessions started elsewhere — the
 // attach streams deliver every exit — so it is paced like a refresh rather

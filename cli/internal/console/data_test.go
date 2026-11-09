@@ -1,6 +1,10 @@
 package console
 
-import "testing"
+import (
+	"slices"
+	"testing"
+	"time"
+)
 
 // The base column prefers the reported position and marks dirt or commits ahead.
 func TestSandboxBase(t *testing.T) {
@@ -134,5 +138,47 @@ func TestSandboxElsewhere(t *testing.T) {
 				t.Fatalf("elsewhere = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// A harness's refused credential affects every box running the harness; any
+// other affects the box that ran into it; neither crosses servers. Requests
+// are a box's own, oldest first.
+func TestRequestsAndRejectionsFor(t *testing.T) {
+	session := Session{}
+	a := Sandbox{ID: "a", HarnessID: "h"}
+	b := Sandbox{ID: "b", HarnessID: "h"}
+	elsewhere := Sandbox{ID: "a", HarnessID: "h", Server: "work"}
+	rejections := []SecretRejection{
+		{SecretID: "harness", SandboxID: "a", HarnessConfigID: "h"},
+		{SecretID: "project", SandboxID: "a"},
+	}
+	ids := func(rs []SecretRejection) (out []string) {
+		for _, r := range rs {
+			out = append(out, r.SecretID)
+		}
+		return out
+	}
+	if got := ids(RejectionsFor(session, a, rejections)); !slices.Equal(got, []string{"harness", "project"}) {
+		t.Errorf("a: %v", got)
+	}
+	if got := ids(RejectionsFor(session, b, rejections)); !slices.Equal(got, []string{"harness"}) {
+		t.Errorf("b: %v", got)
+	}
+	if got := RejectionsFor(session, elsewhere, rejections); len(got) != 0 {
+		t.Errorf("another server's box: %v", got)
+	}
+	requests := []CredentialRequest{
+		{ID: "late", SandboxID: "a", Created: time.Unix(2, 0)},
+		{ID: "early", SandboxID: "a", Created: time.Unix(1, 0)},
+		{ID: "b's", SandboxID: "b"},
+		{ID: "work", SandboxID: "a", Server: "work"},
+	}
+	var got []string
+	for _, r := range RequestsFor(session, a, requests) {
+		got = append(got, r.ID)
+	}
+	if !slices.Equal(got, []string{"early", "late"}) {
+		t.Errorf("requests for a: %v", got)
 	}
 }

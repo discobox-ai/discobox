@@ -10,6 +10,7 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/x/id"
@@ -600,6 +601,42 @@ func (r SecretRejection) Occurrence() string {
 // HarnessOwned reports whether configuring a harness again is the remedy.
 func (r SecretRejection) HarnessOwned() bool { return r.HarnessConfigID != "" }
 
+// RejectionsFor is every refused credential box is affected by, in the order
+// given (oldest first, as SecretRejections reads them).
+//
+// A harness's credential is refused for every discobox running that harness at
+// once, so it matches by harness rather than by where it happened to be seen.
+// Anything else matches the discobox that ran into it: a project secret that
+// failed in one box says nothing about a box that has never used it. A
+// credential belongs to one server, and IDs are only unique within one, so a
+// box on another server is never affected.
+func RejectionsFor(session Session, box Sandbox, rejections []SecretRejection) []SecretRejection {
+	var out []SecretRejection
+	for _, r := range rejections {
+		if session.ServerName(r.Server) != session.ServerName(box.Server) {
+			continue
+		}
+		if r.HarnessOwned() && box.HarnessID != "" && r.HarnessConfigID == box.HarnessID ||
+			!r.HarnessOwned() && r.SandboxID == box.ID && box.ID != "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// RequestsFor is every request waiting on a person about box, oldest first:
+// the ones its agent asked, on its own server.
+func RequestsFor(session Session, box Sandbox, requests []CredentialRequest) []CredentialRequest {
+	out := []CredentialRequest{}
+	for _, r := range requests {
+		if r.SandboxID == box.ID && session.ServerName(r.Server) == session.ServerName(box.Server) {
+			out = append(out, r)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b CredentialRequest) int { return a.Created.Compare(b.Created) })
+	return out
+}
+
 // Name is what to call the refused credential on one line: the variable it
 // arrives in where there is one, since that is what a harness's own card and
 // its error messages say, and the secret's name otherwise.
@@ -825,6 +862,24 @@ func (s Sandbox) Attachable() bool {
 		return false
 	}
 	return s.HasRuntime || s.State == StateStarting || s.State == StateRepairing
+}
+
+// Unnamed is what a box is called when nothing has named it: its configured
+// name, else its ID. It is the fallback of the box's resolved title
+// (sandboxmeta.Title), as the server's display name falls back.
+func (s Sandbox) Unnamed() string {
+	if s.ConfigName != "" {
+		return s.ConfigName
+	}
+	return s.ID
+}
+
+// Title is the box's resolved title without its program's msg
+// (sandboxmeta.Title with none): the name it was given, else the title its
+// primary terminal last set, else its configured name, else its ID. Renaming
+// opens on it, and a card about the box is called by it.
+func (s Sandbox) Title() string {
+	return sandboxmeta.Title(s.GivenName, s.TerminalTitle, s.Unnamed(), "")
 }
 
 // Startable reports whether start is offered for this box: powered off, or

@@ -38,3 +38,8 @@
   `Handover` wait for the reader, so each selects on its context: a create
   whose frontend stopped reading must still return, and its deferred cleanup
   (delivery locks) still run, once it is cancelled.
+- **Which requests and refused credentials a box is affected by is
+  `RequestsFor` and `RejectionsFor`, never a match written by hand.** A
+  harness's credential is refused for every box running that harness, and a
+  request or refusal is on one server; the bridge's first copy matched by
+  sandbox ID alone and refused `rejections` where the TUI opened it.

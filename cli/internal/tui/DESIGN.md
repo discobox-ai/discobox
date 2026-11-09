@@ -1207,7 +1207,7 @@ different things:
   Their rows are on the way, not missing, and the two read differently.
 - `console.List.Slow` puts `still listing` on the band where the count goes, for
   the *whole listing* being late — still out when the next refresh was due
-  (`listingSlowAfter`, one `refreshEvery`). That is the window with one server,
+  (`listingSlowAfter`, one `console.ListPollEvery`). That is the window with one server,
   which has no other server's rows to draw and no name to put a note under; a
   multi-server poll comes back inside `listPatience`, so its slowness shows up
   in the sections instead. `Model.listPoll` holds when the refresh still out
@@ -1510,7 +1510,7 @@ discobox is started to take it, as it is for a tag, so an archived one, which
 cannot be started, refuses it with the reason. Enter on what is shown is still
 "unchanged" on a box nobody has named: that text is the title its harness
 set, else its configured name, and accepting it would freeze it as the name.
-The dialog offers the box's resolved title alone (`boxTitle`), never the msg
+The dialog offers the box's resolved title alone (`console.Sandbox.Title`), never the msg
 the row shows after it: `Sandbox.Name` carries that msg while the program
 works. An empty
 line clears a name that was given (`Sandbox.GivenName`), which puts the title

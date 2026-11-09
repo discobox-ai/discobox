@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"fmt"
-
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
@@ -18,17 +16,13 @@ import (
 // offerImageUpgrade puts the upgrade to the user for a box whose image is gone,
 // or says there is nothing to upgrade to.
 func (m *Model) offerImageUpgrade(box console.Sandbox) {
-	if !box.Upgrade {
-		body := fmt.Sprintf("%s's image is no longer available on its pool, so it cannot start, and its harness has no newer image to move it to.", box.Name)
-		if box.Message != "" {
-			body += "\n\n" + box.Message
-		}
-		m.dialog = errorDialog("Cannot start "+box.Name, body)
+	q, ok := console.UpgradeOffer(box)
+	if !ok {
+		m.dialog = errorDialog(q.Title, q.Body)
 		return
 	}
-	question := fmt.Sprintf("%s's image is no longer available on its pool, so it cannot start. Upgrade it to its harness's current image? Its work is kept.", box.Name)
 	targets := []console.Sandbox{box}
-	m.dialog = confirmDialog("Upgrade", question, func(string) tea.Cmd {
+	m.dialog = confirmDialog(q.Title, q.Body, func(string) tea.Cmd {
 		return func() tea.Msg { return runVerbMsg{verb: console.VerbUpgrade, targets: targets} }
 	})
 }

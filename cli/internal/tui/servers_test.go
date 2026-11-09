@@ -754,7 +754,7 @@ func TestARequestOnAnotherServerIsAnsweredThere(t *testing.T) {
 	ds.secretsOn = map[string][]console.Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}}
 	m := newTestModel(t, ds)
 
-	if pending := m.pendingFor(console.Sandbox{ID: "sbx_one", Server: "beta"}); len(pending) != 1 {
+	if pending := console.RequestsFor(m.session, console.Sandbox{ID: "sbx_one", Server: "beta"}, m.requests["sbx_one"]); len(pending) != 1 {
 		t.Fatalf("pending on beta's discobox = %v, want its request", pending)
 	}
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -1102,7 +1102,7 @@ func TestRowsThatStopKeepingUpSayHowOld(t *testing.T) {
 	l := listForTest(console.Session{}, []console.Sandbox{{ID: "sbx_a1", Name: "one", State: console.StateRunning}})
 	now := l.Now()
 
-	l.SetListed(map[string]time.Time{"": now.Add(-refreshEvery)})
+	l.SetListed(map[string]time.Time{"": now.Add(-console.ListPollEvery)})
 	if out := l.view(newStyles(false), &zones{}, true); strings.Contains(out, "listed") {
 		t.Fatalf("rows one refresh old say how old they are:\n%s", out)
 	}

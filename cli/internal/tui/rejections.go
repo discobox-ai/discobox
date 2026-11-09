@@ -87,7 +87,7 @@ func (m *Model) setSecretRejections(rejections []console.SecretRejection) {
 
 // hasRejection reports whether this discobox is affected by one.
 func (m *Model) hasRejection(box console.Sandbox) bool {
-	return len(m.rejectionsFor(box)) > 0
+	return len(console.RejectionsFor(m.session, box, m.rejections)) > 0
 }
 
 // shownRejection is the refusal the band is about: the oldest one a dismissal
@@ -97,7 +97,7 @@ func (m *Model) hasRejection(box console.Sandbox) bool {
 // nothing dismissed, or everything (the key reaches a band that is not drawn),
 // it is the oldest.
 func (m *Model) shownRejection(box console.Sandbox) (console.SecretRejection, bool) {
-	all := m.rejectionsFor(box)
+	all := console.RejectionsFor(m.session, box, m.rejections)
 	if len(all) == 0 {
 		return console.SecretRejection{}, false
 	}
@@ -108,29 +108,6 @@ func (m *Model) shownRejection(box console.Sandbox) (console.SecretRejection, bo
 		}
 	}
 	return all[0], true
-}
-
-// rejectionsFor is every refused credential this discobox is affected by,
-// oldest first. Which of them the band is about is shownRejection's to say.
-//
-// A harness's credential is refused for every discobox running that harness at
-// once, so it matches by harness rather than by where it happened to be seen.
-// Anything else matches the discobox that ran into it: a project secret that
-// failed in one box says nothing about a box that has never used it.
-func (m *Model) rejectionsFor(box console.Sandbox) []console.SecretRejection {
-	var out []console.SecretRejection
-	for _, rejection := range m.rejections {
-		// A credential belongs to one server, and IDs are only unique within
-		// one: a box on another server is running something else entirely.
-		if m.session.ServerName(rejection.Server) != m.session.ServerName(box.Server) {
-			continue
-		}
-		if rejection.HarnessOwned() && box.HarnessID != "" && rejection.HarnessConfigID == box.HarnessID ||
-			!rejection.HarnessOwned() && rejection.SandboxID == box.ID && box.ID != "" {
-			out = append(out, rejection)
-		}
-	}
-	return out
 }
 
 // viewRejectedBanner is the workspace's line about a credential that does not
@@ -160,7 +137,7 @@ func (m *Model) viewRejectedBanner(width int) string {
 	// would leave the dead credential bound to the harness and the new one
 	// belonging to nobody. It is last in the sentence because it is the first
 	// thing a narrow window should drop.
-	if waiting := len(m.pendingFor(box)); waiting > 0 {
+	if waiting := len(console.RequestsFor(m.session, box, m.requests[box.ID])); waiting > 0 {
 		subject += st.attentionHint.Render("  ·  " + plural(waiting, "request", "requests") + " waiting behind it")
 	}
 	call := bannerChip(st, rejectionCall(rejection), colAlertChip)

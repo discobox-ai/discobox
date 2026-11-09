@@ -51,7 +51,7 @@ type boxSettingsDoneMsg struct {
 // workspace or another dialog would be drawn over it and take its keys. The
 // form replaces only that card; Esc on it gives the read up.
 func (m *Model) askSettings(box console.Sandbox) tea.Cmd {
-	wait := statusDialog("Settings", "reading the settings of "+boxTitle(box, box.TerminalTitle)+"…")
+	wait := statusDialog("Settings", "reading the settings of "+box.Title()+"…")
 	m.dialog = wait
 	return func() tea.Msg {
 		settings, err := m.ds.ForServer(box.Server).BoxSettings(m.ctx, box.ID)
@@ -82,10 +82,10 @@ func (m *Model) settingsRead(msg boxSettingsReadMsg) tea.Cmd {
 // settingsDialog is the core's settings form (console.SettingsForm) as a card.
 func settingsDialog(box console.Sandbox, was console.BoxSettings, harnesses []console.Harness) *dialog {
 	q := console.SettingsForm(box, was, harnesses)
-	// Named without the msg its program puts after the title (boxTitle), as
+	// Named without the msg its program puts after the title (Sandbox.Title), as
 	// rename's dialog is: the card names the box, not what it is doing.
 	var d *dialog
-	d = formDialog("Settings · "+boxTitle(box, box.TerminalTitle), q, func(update console.BoxSettingsUpdate) tea.Cmd {
+	d = formDialog("Settings · "+box.Title(), q, func(update console.BoxSettingsUpdate) tea.Cmd {
 		if update.Empty() {
 			return status("settings unchanged")
 		}

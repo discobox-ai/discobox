@@ -137,24 +137,7 @@ func recordTitle(box console.Sandbox) string {
 	if box.GivenName != "" {
 		return box.GivenName
 	}
-	return unnamedName(box)
-}
-
-// unnamedName is what a box is called when nothing has named it: its
-// configured name, else its ID. It is the fallback of the box's resolved title
-// (sandboxmeta.Title), as the server's display name falls back.
-func unnamedName(box console.Sandbox) string {
-	if box.ConfigName != "" {
-		return box.ConfigName
-	}
-	return box.ID
-}
-
-// boxTitle is box's resolved title without its program's msg (sandboxmeta.Title
-// with none): the name it was given, else terminalTitle, else its configured
-// name, else its ID.
-func boxTitle(box console.Sandbox, terminalTitle string) string {
-	return sandboxmeta.Title(box.GivenName, terminalTitle, unnamedName(box), "")
+	return box.Unnamed()
 }
 
 // primaryTitle is what the box in the workspace is called from the primary
@@ -179,7 +162,7 @@ func (m *Model) primaryTitle() string {
 	if strings.TrimSpace(title) == "" {
 		title = box.TerminalTitle
 	}
-	return sandboxmeta.Title(box.GivenName, title, unnamedName(box), msg)
+	return sandboxmeta.Title(box.GivenName, title, box.Unnamed(), msg)
 }
 
 // syncProgramStatus sends the focused box's status when it is not what was

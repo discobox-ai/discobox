@@ -109,7 +109,7 @@ func (m *Model) bannerWanted(kind bannerKind, box console.Sandbox) bool {
 	case bannerRejected:
 		return m.hasRejection(box)
 	case bannerCredential:
-		return len(m.pendingFor(box)) > 0
+		return len(console.RequestsFor(m.session, box, m.requests[box.ID])) > 0
 	case bannerHarnessChanges:
 		return box.HarnessConfigPending
 	}
@@ -172,7 +172,7 @@ func (m *Model) bannerInstance(kind bannerKind, box console.Sandbox) []string {
 	switch kind {
 	case bannerRejected:
 		var names []string
-		for _, rejection := range m.rejectionsFor(box) {
+		for _, rejection := range console.RejectionsFor(m.session, box, m.rejections) {
 			names = append(names, rejection.Occurrence())
 		}
 		return names
@@ -182,7 +182,7 @@ func (m *Model) bannerInstance(kind bannerKind, box console.Sandbox) []string {
 		}
 	case bannerCredential:
 		var ids []string
-		for _, req := range m.pendingFor(box) {
+		for _, req := range console.RequestsFor(m.session, box, m.requests[box.ID]) {
 			ids = append(ids, req.ID)
 		}
 		return ids

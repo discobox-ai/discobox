@@ -29,7 +29,9 @@ func (m *Model) commandContext() console.Context {
 		TreeShown:      m.treeShown(),
 		TreeFits:       m.screenWidth >= treeMinScreen,
 		PageShown:      m.pageOpen() && !m.listInFront(),
-		Waiting:        func(box console.Sandbox) bool { return len(m.pendingFor(box)) > 0 },
+		Waiting: func(box console.Sandbox) bool {
+			return len(console.RequestsFor(m.session, box, m.requests[box.ID])) > 0
+		},
 		Refused: func(box console.Sandbox) bool {
 			_, ok := m.shownRejection(box)
 			return ok

@@ -672,11 +672,6 @@ var tick = tea.Tick
 // has queued what the listener waits for (testsupport_test.go).
 var listen = func(cmd tea.Cmd) tea.Cmd { return cmd }
 
-// refreshEvery is how often the listing is re-read. A sandbox's state changes
-// without anything here asking it to — it starts, it stops, an upgrade appears
-// — so the window follows the server rather than waiting to be told.
-const refreshEvery = 5 * time.Second
-
 // listingSlowAfter is how long a refresh may be out before the window says it
 // is still listing: one refresh apart, so what is called late is a refresh
 // still out when the next one was due — the point at which the rows on screen
@@ -688,7 +683,7 @@ const refreshEvery = 5 * time.Second
 // A registered server slow enough to matter is named where its rows go
 // (Listing.Waiting) rather than here; this is the whole listing being late,
 // which is what a window with one server has instead.
-const listingSlowAfter = refreshEvery
+const listingSlowAfter = console.ListPollEvery
 
 // listingStaleAfter is how old the rows on screen may get before they say how
 // old they are (console.List.ListedAgo). Three refreshes: an ordinary poll
@@ -696,7 +691,7 @@ const listingSlowAfter = refreshEvery
 // takes a few seconds to list is merely remote — but rows that have missed
 // two refreshes in a row are rows that have stopped following the server,
 // and drawn as though they had not, they are a window that looks stuck.
-const listingStaleAfter = 3 * refreshEvery
+const listingStaleAfter = 3 * console.ListPollEvery
 
 // poll is one thing the window re-reads on the beat: when the request still
 // out was sent, and whether another read was asked for while it was out.
@@ -775,7 +770,7 @@ func (m *Model) rereadNow() tea.Cmd {
 }
 
 func (m *Model) tick() tea.Cmd {
-	return tick(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+	return tick(console.ListPollEvery, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
 func (m *Model) loadSession() tea.Cmd {
@@ -2691,7 +2686,7 @@ func (m *Model) askRename(box console.Sandbox) tea.Cmd {
 	// after it on the row (sandboxmeta.Title): the msg is the program's, and
 	// accepting it would make it part of the name. The row's own text,
 	// box.Name, carries that msg while the program works.
-	m.dialog = inputDialog("Rename", console.RenameForm(box, boxTitle(box, box.TerminalTitle)),
+	m.dialog = inputDialog("Rename", console.RenameForm(box, box.Title()),
 		func(r console.Rename) tea.Cmd {
 			if r.Unchanged {
 				return status("name unchanged")
