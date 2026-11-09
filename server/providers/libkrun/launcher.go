@@ -79,7 +79,10 @@ func CheckHost(ctx context.Context, cfg Config, requireKVM bool) error {
 		return fmt.Errorf("libkrun host prerequisites: %w", ctx.Err())
 	}
 	if err != nil {
-		return fmt.Errorf("libkrun host prerequisites: %w: %s", err, strings.TrimSpace(string(output)))
+		// The reason becomes a one-line fallback warning (and the provider's
+		// error), so whatever the child printed is folded onto one line: a
+		// line break there would be escaped to a literal \n.
+		return fmt.Errorf("libkrun host prerequisites: %w: %s", err, strings.Join(strings.Fields(string(output)), " "))
 	}
 	return nil
 }
