@@ -89,7 +89,7 @@ RUN set -eux \
 RUN set -eux \
     && install -m 0755 -d /etc/apt/keyrings \
     && . /etc/os-release \
-    && curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc \
+    && curl -fsSL --retry 5 --retry-all-errors "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
     && printf 'Types: deb\nURIs: https://download.docker.com/linux/%s\nSuites: %s\nComponents: stable\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/docker.asc\n' \
         "$ID" "$VERSION_CODENAME" "$(dpkg --print-architecture)" \
@@ -108,7 +108,7 @@ RUN set -eux \
 
 # gh, from GitHub's own repository, which tracks its releases.
 RUN set -eux \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && curl -fsSL --retry 5 --retry-all-errors https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update \
@@ -118,6 +118,11 @@ RUN set -eux \
 
 # Go and uv, each its upstream release, pinned with its checksum: Debian's Go
 # trails upstream, and Debian packages no uv.
+# Every curl in this image retries, any error included: one 504 from a release
+# host would otherwise fail the build (#871). curl's own backoff (1s doubling,
+# about 30s over five retries) rides out a short outage. curl -o discards a
+# failed attempt's partial file before retrying, and the checksum checks what
+# it kept.
 ARG GO_VERSION=1.27.3
 ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
@@ -132,10 +137,10 @@ RUN set -eux \
         *) echo "unsupported architecture $arch" >&2; exit 1 ;; \
     esac \
     && tmp="$(mktemp -d)" \
-    && curl -fsSL -o "$tmp/go.tar.gz" "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+    && curl -fsSL --retry 5 --retry-all-errors -o "$tmp/go.tar.gz" "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
     && echo "$go_sha  $tmp/go.tar.gz" | sha256sum -c - \
     && tar -C /usr/local -xzf "$tmp/go.tar.gz" \
-    && curl -fsSL -o "$tmp/uv.tar.gz" "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
+    && curl -fsSL --retry 5 --retry-all-errors -o "$tmp/uv.tar.gz" "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
     && echo "$uv_sha  $tmp/uv.tar.gz" | sha256sum -c - \
     && tar -C /usr/local/bin --strip-components=1 -xzf "$tmp/uv.tar.gz" "uv-${uv_arch}-unknown-linux-gnu/uv" "uv-${uv_arch}-unknown-linux-gnu/uvx" \
     && rm -rf "$tmp" \
