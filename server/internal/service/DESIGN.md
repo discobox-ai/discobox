@@ -102,15 +102,18 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
    resolves a provider. Then it starts the engine, whose reconciles resolve
    providers.
 4. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`, and
-   the asset store's hourly removal by reference (`assets.Service.StartPruning`).
+   the asset service (`assets.Service.Start`): its hourly removal by
+   reference, and resolving the release's bundle references.
 5. Runs `providers.Service.EnsureExistingSandboxProviderInstances`, resolving
    every enabled provider instance. An instance that does not resolve is
    logged and its pools marked for retry; only a store error stops the engine
    and returns.
 
 `Service.Stop(ctx)` stops the engine first, waiting for in-flight reconciles,
-then shuts down the provider manager so providers release backend resources
-(for example a wslc pool VM session) deterministically.
+then the asset service, waiting for every fetch and resolution in flight,
+whoever started it, and the work it runs when the release moves, then shuts
+down the provider manager so providers release backend resources (for example
+a wslc pool VM session) deterministically.
 
 The engine is runner infrastructure: registration, claiming, and wakeup
 ([`internal/reconcile/DESIGN.md`](../reconcile/DESIGN.md)). Startup

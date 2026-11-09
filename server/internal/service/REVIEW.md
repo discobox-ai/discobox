@@ -19,3 +19,8 @@
 - Provider operations return runtime state for the reconciler to persist; they
   do not write resource rows. Nothing publishes change events — there is no
   event broker (ADR 0081) — so a waiter polls the rows.
+- A test that calls `Service.Start` stops the whole service (`Service.Stop`),
+  not only its engine, in a cleanup registered after its `t.TempDir()`: the
+  asset service writes its blob store there from work the test did not start
+  (the release resolution, a fetch detached from a read), and on Windows a
+  blob still being written fails the TempDir's removal (#891).

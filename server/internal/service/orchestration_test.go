@@ -389,11 +389,14 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("start service: %v", err)
 	}
+	// The whole service, not only its engine: its asset store, in the
+	// TempDir testServiceOptions made, is written by work that outlives a
+	// read, and Windows cannot remove a file still open there.
 	t.Cleanup(func() {
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer stopCancel()
-		if err := engine.Stop(stopCtx); err != nil {
-			t.Fatalf("stop reconcile engine: %v", err)
+		if err := svc.Stop(stopCtx); err != nil {
+			t.Fatalf("stop service: %v", err)
 		}
 	})
 
@@ -491,17 +494,21 @@ var (
 	testBundleDigest         = "sha256:" + strings.Repeat("ab", 32)
 	testPlatformBundleDigest = "sha256:" + strings.Repeat("cd", 32)
 	testAgentBundleDigest    = "sha256:" + strings.Repeat("ef", 32)
+	testPoolBundleDigest     = "sha256:" + strings.Repeat("12", 32)
 )
 
-// testServiceOptions names a release whose platform and agent bundles are
-// pinned by digest, which resolve with no registry, so a sandbox on a bundle
-// can be created.
+// testServiceOptions names a release whose platform, agent and pool bundles
+// are pinned by digest, which resolve with no registry, so a sandbox on a
+// bundle can be created and a started service reaches no registry.
 func testServiceOptions(t *testing.T) service.Options {
 	t.Helper()
 	return service.Options{
-		AssetDir:       t.TempDir(),
-		Harnesses:      harnessdefs.References{PlatformBundle: "example.invalid/discobox-platform@" + testPlatformBundleDigest},
-		ServerDefaults: dockerworker.ServerDefaults{AgentBundle: "example.invalid/discobox-agent@" + testAgentBundleDigest},
+		AssetDir:  t.TempDir(),
+		Harnesses: harnessdefs.References{PlatformBundle: "example.invalid/discobox-platform@" + testPlatformBundleDigest},
+		ServerDefaults: dockerworker.ServerDefaults{
+			AgentBundle:     "example.invalid/discobox-agent@" + testAgentBundleDigest,
+			PoolAgentBundle: "example.invalid/discobox-pool@" + testPoolBundleDigest,
+		},
 	}
 }
 

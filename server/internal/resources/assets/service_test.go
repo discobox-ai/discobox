@@ -540,7 +540,7 @@ func TestPruneRemovesWhatNoPinReaches(t *testing.T) {
 	// Nothing goes while the platform cannot be resolved.
 	f.registry.down = true
 	f.service.now = func() time.Time { return time.Now().Add(2 * (pruneGrace + releaseRetry)) }
-	f.service.platform = &releasePins{what: "platform bundle", ref: platformRef, resolve: f.service.resolve, now: f.service.now}
+	f.service.platform = f.service.releasePins("platform bundle", platformRef)
 	if _, err := f.service.Prune(context.Background()); err == nil {
 		t.Fatal("pruned with the platform unresolved")
 	}
