@@ -70,14 +70,20 @@ type App struct {
 }
 
 // Close marks the app no longer in use by this process, so a later staging
-// may prune it. The process exiting does the same.
+// may prune it. The process exiting does the same, leaving the unlocked file
+// for a prune to remove.
+//
+// Released before it is removed: Windows will not delete a file that is still
+// open, so the other order left every lock file behind there. In between, a
+// prune may take the released lock and remove the file itself; the file name
+// is this process's alone, so nothing else ever holds it.
 func (a *App) Close() error {
 	if a == nil || a.lock == nil {
 		return nil
 	}
-	_ = os.Remove(a.lockPath)
 	err := a.lock.Release()
 	a.lock = nil
+	_ = os.Remove(a.lockPath)
 	return err
 }
 
@@ -273,8 +279,9 @@ func inUseDigests(dir string) map[string]bool {
 			inUse[digest] = true
 			continue
 		}
-		_ = os.Remove(path)
+		// Released first, as in Close: Windows will not delete an open file.
 		_ = lock.Release()
+		_ = os.Remove(path)
 	}
 	return inUse
 }
