@@ -182,8 +182,8 @@ func (m Manifest) Validate() error {
 	}
 	seen := make(map[string]bool, len(m.Assets))
 	for _, asset := range m.Assets {
-		if err := asset.validate(); err != nil {
-			return err
+		if err := asset.Validate(); err != nil {
+			return fmt.Errorf("server manifest: %w", err)
 		}
 		if seen[asset.Name] {
 			return fmt.Errorf("server manifest lists asset %q twice", asset.Name)
@@ -196,25 +196,29 @@ func (m Manifest) Validate() error {
 	return nil
 }
 
-func (a Asset) validate() error {
+// Validate reports whether the asset can be downloaded and verified safely.
+// Its errors name the asset and not the manifest it came from: the desktop
+// app's manifest (desktopstage) carries the same Asset, and says which
+// manifest an error is about itself.
+func (a Asset) Validate() error {
 	if a.Name == "" {
-		return errors.New("server manifest has an asset with no name")
+		return errors.New("an asset has no name")
 	}
 	// A bare filename. A manifest that could name ../ or an absolute path
 	// would be staging files outside the directory it is being staged into,
 	// which is the one thing verification cannot make safe.
 	if a.Name != filepath.Base(a.Name) || a.Name == "." || a.Name == ".." ||
 		strings.ContainsAny(a.Name, `/\`) || a.Name == manifestFileName {
-		return fmt.Errorf("server manifest asset name %q is not a plain file name", a.Name)
+		return fmt.Errorf("asset name %q is not a plain file name", a.Name)
 	}
 	if !sha256Pattern.MatchString(a.SHA256) {
-		return fmt.Errorf("server manifest asset %q has no usable sha256 digest", a.Name)
+		return fmt.Errorf("asset %q has no usable sha256 digest", a.Name)
 	}
 	if a.Size <= 0 {
-		return fmt.Errorf("server manifest asset %q declares no size", a.Name)
+		return fmt.Errorf("asset %q declares no size", a.Name)
 	}
 	if len(a.URLs) == 0 {
-		return fmt.Errorf("server manifest asset %q names nowhere to download from", a.Name)
+		return fmt.Errorf("asset %q names nowhere to download from", a.Name)
 	}
 	// Every entry, not just the first: a fallback that is only discovered to be
 	// unusable once the one in front of it has failed is a fallback that works
@@ -222,7 +226,7 @@ func (a Asset) validate() error {
 	for _, source := range a.URLs {
 		parsed, err := url.Parse(source)
 		if err != nil {
-			return fmt.Errorf("server manifest asset %q: %w", a.Name, err)
+			return fmt.Errorf("asset %q: %w", a.Name, err)
 		}
 		// Integrity is the digest's job, not the transport's, so plain HTTP is
 		// accepted rather than refused — it is what a mirror on a build network
@@ -232,10 +236,10 @@ func (a Asset) validate() error {
 		switch parsed.Scheme {
 		case "http", "https":
 		default:
-			return fmt.Errorf("server manifest asset %q has URL scheme %q; expected http or https", a.Name, parsed.Scheme)
+			return fmt.Errorf("asset %q has URL scheme %q; expected http or https", a.Name, parsed.Scheme)
 		}
 		if parsed.Host == "" {
-			return fmt.Errorf("server manifest asset %q has no host in URL %q", a.Name, source)
+			return fmt.Errorf("asset %q has no host in URL %q", a.Name, source)
 		}
 	}
 	return nil

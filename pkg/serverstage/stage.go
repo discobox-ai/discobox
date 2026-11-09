@@ -170,7 +170,7 @@ func Stage(ctx context.Context, m Manifest, opts Options) (string, error) {
 
 	reporter := newReporter(opts.OnProgress, len(m.Assets))
 	for index, asset := range m.Assets {
-		if err := download(ctx, opts.Client, asset, filepath.Join(temp, asset.Name), reporter.forAsset(asset.Name, index+1)); err != nil {
+		if err := Download(ctx, opts.Client, asset, filepath.Join(temp, asset.Name), reporter.forAsset(asset.Name, index+1)); err != nil {
 			return "", err
 		}
 	}
@@ -385,17 +385,22 @@ func migrateLegacyLayout(root string) {
 	}
 }
 
-// download fetches one asset, hashing it as it is written. The digest is
-// compared before the file is anything but a temporary name, so a mismatch
-// leaves nothing behind that could be run.
-// download fetches an asset, trying its URLs in order and stopping at the
-// first whose bytes match the manifest's digest (ADR 0106 §2).
+// Download fetches one asset to path, hashing it as it is written, trying its
+// URLs in order and stopping at the first whose bytes match the manifest's
+// digest (ADR 0106 §2). The digest is compared before the file is anything but
+// a temporary name, so a mismatch leaves nothing behind that could be run; path
+// must not exist yet, and is left behind only once it verifies.
+//
+// Exported for the desktop app's staging (desktopstage), which pins its asset
+// the same way and differs only in what it does with the file once verified.
+// report, when set, is called with bytes so far and the declared size; a nil
+// client is one that honors the environment's proxy settings.
 //
 // Order is the manifest's, so which source is preferred is a decision the
 // release made rather than one taken here. A source that fails costs the time
 // it took to fail; the digest decides success either way, so falling through
 // to the next one is never a fall back to something less verified.
-func download(ctx context.Context, client *http.Client, asset Asset, path string, report func(current, total int64)) error {
+func Download(ctx context.Context, client *http.Client, asset Asset, path string, report func(current, total int64)) error {
 	var failures []error
 	for _, source := range asset.URLs {
 		err := downloadFrom(ctx, client, asset, source, path, report)
