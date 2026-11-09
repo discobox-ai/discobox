@@ -307,22 +307,18 @@ flowchart TD
   composite action as `nix develop -c go tool task <target>` on Linux, or as
   plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). A
   Linux job whose target needs a shell that extends the default names it
-  (`shell: desktop` runs `nix develop .#desktop`). The desktop app is built
-  and tested only there, in `ci:desktop`: its tests, parity scenarios and
-  the bridge's contract suite included, and its scenes rendered headless on
-  that software driver. macOS and Windows run the bridge's contract suite
-  alone (`desktop:bridge`), whose crate has nothing of the window; their
-  Rust is the runner image's rustup, at the version
-  `desktop/rust-toolchain.toml` pins, since they have no devShell. Go's
-  build and test cache is Depot Cache, which Depot's runners set as
-  `GOCACHEPROG` and every run, pull requests included, reads and writes per
-  object; a runner without it builds cold. Any run but a pull request or a
-  branch push turns Depot Cache off (a tag's release, a dispatched one), since
-  a pull request can write what it would read.
-  golangci-lint's analysis cache is Depot Cache too, through the
-  `GOLANGCI_LINT_CACHEPROG` Depot's Linux runner sets. Nothing else is cached:
-  modules come from the module proxy each run, which measured no slower than
-  restoring an `actions/cache` tarball of them.
+  (`shell: desktop` runs `nix develop .#desktop`). The desktop app is built and
+  tested only there, in `ci:desktop`: its tests, parity scenarios and the
+  bridge's contract suite included, and its scenes rendered headless on that
+  software driver. Go's build and test cache is Depot Cache, which Depot's
+  runners set as `GOCACHEPROG` and every run, pull requests included, reads and
+  writes per object; a runner without it builds cold. Any run but a pull
+  request or a branch push turns Depot Cache off (a tag's release, a dispatched
+  one), since a pull request can write what it would read. golangci-lint's
+  analysis cache is Depot Cache too, through the `GOLANGCI_LINT_CACHEPROG`
+  Depot's Linux runner sets. Nothing else is cached: modules come from the
+  module proxy each run, which measured no slower than restoring an
+  `actions/cache` tarball of them.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by

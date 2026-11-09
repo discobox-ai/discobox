@@ -6,8 +6,9 @@
 //! framing, the opening `hello`, and a reader that hands each frame on as it arrives. What the
 //! app makes of a message is the app's (`desktop/src/backend.rs`).
 //!
-//! It has nothing of the window in it, so its contract suite (`tests/contract.rs`), which runs
-//! this client against the Go bridge over a fake of the core, builds on every platform.
+//! It is a library of its own, with nothing of the window in it, so its contract suite
+//! (`tests/contract.rs`) can drive the same client the app uses, against the Go bridge over a
+//! fake of the core, without building the app.
 
 pub mod wire;
 

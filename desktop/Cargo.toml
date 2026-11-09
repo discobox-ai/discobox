@@ -6,8 +6,9 @@ publish = false
 description = "discobox desktop: the console as a native app on Rune (ADR 26-11-07-876)."
 
 # The bridge client and the wire's generated types are their own crate, with
-# nothing of the window in it, so its contract suite builds and runs on every
-# platform CI has (README.md).
+# nothing of the window in it: its contract suite drives the client the app
+# uses without building the app, which a binary crate's tests cannot reach
+# (README.md).
 [workspace]
 members = ["bridge"]
 

@@ -73,7 +73,6 @@ go tool task build:desktop          # build/discobox-desktop, beside build/disco
 build/discobox desktop              # against the configured server
 go tool task desktop:spec           # refresh src/spec.json, which the mock runs with (generate does too)
 go tool task desktop:test           # unit, parity and contract tests
-go tool task desktop:bridge         # the bridge's contract suite alone: Rust and Go, no window
 go tool task desktop:snap           # every scene headless, to build/desktop/<scene>.png
 cd desktop && cargo run --release  # the app on the mock, without a CLI
 ```
@@ -91,9 +90,8 @@ cd desktop && cargo run --release  # the app on the mock, without a CLI
 - **CI:** the `desktop` job, on Linux only, runs `go tool task ci:desktop` in
   that shell: `desktop:test`, then `desktop:snap`, every scene rendered
   headless on the software driver and kept as the `desktop-scenes` artifact.
-  macOS and Windows do not build the app in CI yet; their
-  `desktop-bridge-*` jobs run the bridge's contract suite
-  (`desktop:bridge`). The Go side, its parity scenarios included, runs in
+  macOS and Windows do not build the app, or run the bridge's contract
+  suite, in CI yet. The Go side, its parity scenarios included, runs in
   every job.
 - **Parity:** a command one console lacks is listed, with its reason, in
   [`docs/console/parity.md`](../docs/console/parity.md).

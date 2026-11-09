@@ -43,7 +43,7 @@ flowchart LR
   `go test`: its boxes say what the core does, so each case — every message
   kind but `edit`, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
-  runs on Linux, macOS and Windows in CI.
+  runs in CI on Linux only, in `ci:desktop`.
 - **Versions**: `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.

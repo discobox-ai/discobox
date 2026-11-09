@@ -73,9 +73,6 @@ Global review expectations:
   git, and what the runner image ships. Those jobs have no Nix devShell (ADR
   26-11-02-173), so a target reaching for jq, shellcheck, bats or node works in
   a developer's shell and fails, or finds the image's own version, in CI.
-  `desktop:bridge` is the one that uses the image's rustup, and only with a
-  toolchain `desktop/rust-toolchain.toml` pins: a Rust target for those jobs
-  never takes whatever toolchain the image has.
 - A constructor that starts a goroutine reading into an object takes its own
   claim on that object first. `wstunnel.Client.DialNew` started a tunnel's
   reader before claiming its stream, so a server closing at once left nothing

@@ -82,11 +82,11 @@ jobs:
         with:
           target: verify
 
-  # The desktop app (desktop/), on Linux only: macOS and Windows do not build
-  # it yet, and run only its bridge's contract suite (desktop-bridge-*). Its
-  # devShell adds Rust and the window system's libraries, and Mesa's software
-  # Vulkan driver, on which the target renders the app's scenes headless; they
-  # are kept as an artifact.
+  # The desktop app (desktop/), its bridge's contract suite included, on Linux
+  # only: macOS and Windows run the Go suites as before and do not build it
+  # yet. Its devShell adds Rust and the window system's libraries, and Mesa's
+  # software Vulkan driver, on which the target renders the app's scenes
+  # headless; they are kept as an artifact.
   desktop:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
@@ -103,29 +103,6 @@ jobs:
           path: build/desktop/*.png
           if-no-files-found: ignore
           retention-days: 7
-
-  # The desktop bridge's contract suite (desktop/bridge) on macOS and Windows,
-  # where the app itself is not built in CI yet: the app's bridge client
-  # against the CLI's bridge, over a pipe. Linux runs it in the desktop job.
-  # Rust comes from the runner's rustup, at desktop/rust-toolchain.toml's
-  # version.
-  desktop-bridge-darwin:
-    runs-on: depot-macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/task
-        with:
-          target: desktop:bridge
-
-  desktop-bridge-windows:
-    runs-on: depot-windows-2025-8
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/task
-        with:
-          target: desktop:bridge
 
   # The release artifacts, built on every change rather than only at tag time.
   # The Dagger release module rotted for months precisely because nothing but a
