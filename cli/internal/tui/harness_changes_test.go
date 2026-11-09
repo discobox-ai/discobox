@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -202,7 +203,7 @@ func TestTheFirstHarnessChangeIsExplainedOnce(t *testing.T) {
 	if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
 		t.Fatalf("dialog = %s, want the explainer", describe(m.dialog))
 	}
-	for _, want := range []string{"Claude Code", "shared default for every discobox", "saved login", "Nothing is shared until you save"} {
+	for _, want := range []string{"Claude Code", "Nothing is shared until you save", "shared default every new launch", "same login"} {
 		if !strings.Contains(m.dialog.body, want) {
 			t.Fatalf("body = %q, want %q", m.dialog.body, want)
 		}
@@ -211,6 +212,7 @@ func TestTheFirstHarnessChangeIsExplainedOnce(t *testing.T) {
 		t.Fatalf("explained = %d, want it recorded once", ds.explained)
 	}
 
+	pastKeyQuiet(m)
 	send(t, m, keyPress("n"))
 	if m.dialog != nil {
 		t.Fatalf("dialog = %s, want Not now to close it", describe(m.dialog))
@@ -229,6 +231,7 @@ func TestTheExplainerOpensTheReview(t *testing.T) {
 	m := newTestModel(t, ds)
 	m.explainHarnessChanges = true
 	send(t, m, tickMsg{})
+	pastKeyQuiet(m)
 	send(t, m, keyPress("r"))
 
 	if m.dialog == nil || !strings.Contains(m.dialog.title, "Harness changes") {
@@ -276,11 +279,10 @@ func TestTheExplainerWaitsForAFreeScreen(t *testing.T) {
 	}
 }
 
-// Nor over a terminal that has the keys. The change is made by signing in
-// there, so the person may still be typing when the listing reports it, and
-// the explainer's actions are single letters: a typed "n" would spend the
-// project's one explanation.
-func TestTheExplainerWaitsWhileATerminalHasTheKeys(t *testing.T) {
+// It comes up over the terminal that has the keys — the one the person just
+// signed in at, the bare attach window's — rather than waiting for them to
+// leave it, which in that window they may never do.
+func TestTheExplainerComesUpOverATerminalWithTheKeys(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		boxes := pendingSandboxes()
@@ -288,30 +290,45 @@ func TestTheExplainerWaitsWhileATerminalHasTheKeys(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the workspace", func() bool { return m.inPanes() })
 		m.explainHarnessChanges = true
-		if cmd := m.explainHarnessChangesIfOwed(); cmd != nil || m.dialog != nil || !m.explainHarnessChanges {
-			t.Fatalf("dialog = %s, want the explainer held while a terminal has the keys", describe(m.dialog))
+		if cmd := m.explainHarnessChangesIfOwed(); cmd == nil || m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+			t.Fatalf("dialog = %s, want the explainer over the terminal", describe(m.dialog))
 		}
 	})
 }
 
-// Nor over a prompt being written in the composer, the list's default focus:
-// a box often captures its change while the person, back from signing in, is
-// typing their next prompt, and a typed letter would answer the explainer.
-func TestTheExplainerWaitsWhileAPromptIsBeingWritten(t *testing.T) {
+// Its answers are single letters, and it comes up over typing: a key pressed
+// before the keyboard has gone quiet is swallowed, and each one starts the
+// quiet over, so a "n" typed into a sign-in never spends the explanation.
+func TestTheExplainerTakesNoKeyUntilTypingStops(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(pendingSandboxes()...)
 	m := newTestModel(t, ds)
+	at := m.now()
+	m.now = func() time.Time { return at }
 	m.explainHarnessChanges = true
-	send(t, m, keyPress("n"), tickMsg{})
-	if m.dialog != nil || ds.explained != 0 {
-		t.Fatalf("dialog = %s, want nothing while a prompt is being written", describe(m.dialog))
-	}
-	send(t, m, keyPress("backspace"))
-	m.promptTypedAt = m.now().Add(-promptQuiet)
 	send(t, m, tickMsg{})
 	if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
-		t.Fatalf("dialog = %s, want the explainer once the composer is empty and quiet", describe(m.dialog))
+		t.Fatalf("dialog = %s, want the explainer", describe(m.dialog))
 	}
+	for range 3 {
+		at = at.Add(keyQuiet / 2)
+		send(t, m, keyPress("n"))
+		if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+			t.Fatalf("dialog = %s, want a key typed into the hold swallowed", describe(m.dialog))
+		}
+	}
+	at = at.Add(keyQuiet)
+	send(t, m, keyPress("n"))
+	if m.dialog != nil {
+		t.Fatalf("dialog = %s, want Not now answered once the keyboard was quiet", describe(m.dialog))
+	}
+}
+
+// pastKeyQuiet moves m's clock past an unasked card's hold on keys, for a
+// test that answers it.
+func pastKeyQuiet(m *Model) {
+	at := m.now().Add(keyQuiet)
+	m.now = func() time.Time { return at }
 }
 
 func TestAnEmptyCurrentHarnessDiffSuppressesBandAndExplainer(t *testing.T) {

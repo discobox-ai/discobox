@@ -672,11 +672,14 @@ one, and that nothing is shared until somebody saves. It offers the
 review or Not now, and either way records it on the project
 (`Project.harnessChangesExplained`, `MarkHarnessChangesExplained`): per project,
 not per machine. The window reads the flag
-when it opens (`WithHarnessChangesUnexplained`), and checks after every listing,
-so it waits for a screen with no dialog, run options or terminal with
-the keys in front: the change is made by signing in in that terminal, and the
-explainer's actions are single letters a person still typing there would
-answer it with.
+when it opens (`WithHarnessChangesUnexplained`) and checks after every listing.
+It comes up on the first listing that reports the change, over whatever has the
+keys — usually the bare attach window's terminal the person just signed in at,
+which is the moment it is for; only another dialog or the run options hold it.
+Its answers are single letters, so the card takes no key until the keyboard has
+been quiet for `keyQuiet` (`dialog.holdUntilQuiet`), each key pressed before
+then starting the quiet over: what was being typed as it came up was meant for
+the terminal.
 
 **The request's chip throbs** (`armBannerPulse`): the field under `click to
 answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,
