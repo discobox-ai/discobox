@@ -62,11 +62,13 @@ LEGACY_MEMORIES="$SOURCE_DATA/harnesses/codex/memories"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 LOCAL_MEMORIES="$CODEX_HOME_DIR/memories"
 
-if [ -d "$SOURCE_DATA" ]; then
+# Any step that cannot be taken leaves memories local, and Codex still starts.
+share_memories() {
+	[ -d "$SOURCE_DATA" ] || return 0
 	if ! sudo -n install -d -m 0755 "$SOURCE_DATA/users" ||
 		! sudo -n install -d -o "$(id -u)" -g "$(id -g)" -m 0700 "$USER_DATA"; then
 		printf '%s\n' "discobox: could not prepare source-scoped Codex memories; using local storage" >&2
-		exec codex "$@"
+		return 0
 	fi
 	if [ ! -e "$SHARED_MEMORIES" ] && [ -d "$LEGACY_MEMORIES" ] &&
 		[ "$(stat -c %u "$LEGACY_MEMORIES")" = "$(id -u)" ]; then
@@ -84,7 +86,7 @@ if [ -d "$SOURCE_DATA" ]; then
 			;;
 		*)
 			printf '%s\n' "discobox: Codex memories already link elsewhere; leaving them unchanged" >&2
-			exec codex "$@"
+			return 0
 			;;
 		esac
 	fi
@@ -96,6 +98,38 @@ if [ -d "$SOURCE_DATA" ]; then
 			printf '%s\n' "discobox: could not mount source-scoped Codex memories; using local storage" >&2
 		fi
 	fi
-fi
+}
+share_memories
 
-exec codex "$@"
+# Codex's TUI exits at bootstrap when its first requests cannot connect: a
+# signed-in start asks the ChatGPT backend for the account's workspace, and a
+# failure there ends Codex with "account/read failed ... workspace routing
+# discovery failed" and status 1 (issue #767). A box's first request out can
+# meet a transient failure, and a launch that ends there ends the box's job, so
+# a start that failed before it began a session is made again.
+#
+# Only status 1 is retried: 0 is a clean exit (also how a user quits the
+# sign-in screen), over 128 is a signal (the user or the terminal ended it),
+# and anything else (a usage error, a missing binary) would fail the same way
+# again. A session began if a rollout appeared under sessions/ during the
+# attempt, or one grew (a resume appends to the rollout it resumes): the prompt
+# is in it, so starting again would send it twice, and the failure is the
+# session's, not the start's. The rollouts are compared by name and size, not
+# by time, so no clock has to agree with another.
+SESSIONS="$CODEX_HOME_DIR/sessions"
+DELAYS="2 5 10 20"
+ATTEMPTS=1
+for delay in $DELAYS; do ATTEMPTS=$((ATTEMPTS + 1)); done
+attempt=1
+for delay in $DELAYS ''; do
+	before=$(find "$SESSIONS" -type f -exec wc -c {} + 2>/dev/null | sort)
+	status=0
+	codex "$@" || status=$?
+	if [ "$status" -ne 1 ] || [ -z "$delay" ] ||
+		[ "$(find "$SESSIONS" -type f -exec wc -c {} + 2>/dev/null | sort)" != "$before" ]; then
+		exit "$status"
+	fi
+	attempt=$((attempt + 1))
+	printf '%s\n' "discobox: Codex exited before its session started (status 1); starting it again in ${delay}s (attempt $attempt of $ATTEMPTS)" >&2
+	sleep "$delay"
+done

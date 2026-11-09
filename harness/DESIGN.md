@@ -775,6 +775,20 @@ machine.
   place by the server migration. Old sandbox bootstraps and capture checkpoints
   use the same bounded conversion on read. Unknown executable templates fail
   explicitly; migration never evaluates them or discards user preferences.
+- **The launcher starts Codex again when it failed before its session
+  began.** A signed-in Codex TUI exits with status 1 at bootstrap when its
+  first requests cannot connect (`account/read failed ... workspace routing
+  discovery failed`), with no retry of its own, and that ends the box's job. So
+  the launcher runs `codex` rather than exec'ing it, and on status 1 with no
+  rollout under `$CODEX_HOME/sessions` new or grown (a resume appends to its
+  rollout) it starts it again, five attempts in all, waiting 2, 5, 10 and 20
+  seconds. A new or grown rollout means the session began and holds the
+  prompt, so it is never started again; a clean exit (how a user quits
+  sign-in), a death by signal, and any other status (a usage error, a missing
+  binary) are left alone. Rollouts are compared by name and size, not by time,
+  so no clock has to agree with another. Claude Code's launcher has none: a
+  failed model request at its start leaves it on its screen, retrying the
+  request itself.
 
 ### OpenCode
 
