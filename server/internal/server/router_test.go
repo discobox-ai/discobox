@@ -66,7 +66,9 @@ func newAppTestDB(ctx context.Context, t *testing.T) *database.DB {
 // Go is deleting.
 func newTestApp(ctx context.Context, t *testing.T, db *database.DB) *chi.Mux {
 	t.Helper()
-	router, _, _, stop, err := NewApp(ctx, db.Write, db.Read)
+	opts := DefaultAppOptions()
+	opts.AssetDir = t.TempDir()
+	router, _, _, stop, err := NewApp(ctx, db.Write, db.Read, opts)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}

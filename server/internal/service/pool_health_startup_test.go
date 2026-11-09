@@ -43,7 +43,7 @@ func TestStartRequiresNewPoolHealthReports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := New(st, engine, Options{})
+	svc := New(st, engine, Options{AssetDir: t.TempDir()})
 	if err := svc.Start(ctx); err != nil {
 		t.Fatal(err)
 	}

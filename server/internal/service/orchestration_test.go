@@ -330,7 +330,7 @@ func TestCreateSandboxRequiresResolvedPool(t *testing.T) {
 
 	appStore := store.New(db.Write, db.Read)
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, testServiceOptions())
+	svc := service.New(appStore, engine, testServiceOptions(t))
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -376,7 +376,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 
 	appStore := store.New(db.Write, db.Read)
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, testServiceOptions())
+	svc := service.New(appStore, engine, testServiceOptions(t))
 
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
@@ -496,8 +496,10 @@ var (
 // testServiceOptions names a release whose platform and agent bundles are
 // pinned by digest, which resolve with no registry, so a sandbox on a bundle
 // can be created.
-func testServiceOptions() service.Options {
+func testServiceOptions(t *testing.T) service.Options {
+	t.Helper()
 	return service.Options{
+		AssetDir:       t.TempDir(),
 		Harnesses:      harnessdefs.References{PlatformBundle: "example.invalid/discobox-platform@" + testPlatformBundleDigest},
 		ServerDefaults: dockerworker.ServerDefaults{AgentBundle: "example.invalid/discobox-agent@" + testAgentBundleDigest},
 	}
@@ -548,7 +550,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 	}
 	_ = notifyContext
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, testServiceOptions())
+	svc := service.New(appStore, engine, testServiceOptions(t))
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)

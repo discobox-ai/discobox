@@ -30,6 +30,7 @@ import (
 // Options configures a Service.
 type Options struct {
 	// Dir is the blob store: an OCI layout holding blobs no entry names.
+	// Required: an empty one would be the process's working directory.
 	Dir string
 	// PlatformBundle, AgentBundle and PoolBundle are the platform, agent and
 	// pool bundles the release pins, which every pool is answered: what a
@@ -83,6 +84,11 @@ func New(store *store.Store, opts Options) *Service {
 }
 
 func newService(store *store.Store, opts Options, sources, resolvers []source) *Service {
+	// imagecache cleans "" to ".", which would put the blob store wherever
+	// the process happens to run: a Go test's package directory, say.
+	if opts.Dir == "" {
+		panic("assets: Options.Dir is required")
+	}
 	release := map[string]bool{}
 	for _, ref := range append([]string{opts.PlatformBundle, opts.AgentBundle, opts.PoolBundle}, opts.ReleaseBundles...) {
 		if ref = strings.TrimSpace(ref); ref != "" {

@@ -116,7 +116,7 @@ type AppOptions struct {
 	// checked for.
 	WSLCCommand string
 	// AssetDir is the blob store bundles are served to pools from (ADR
-	// 26-10-16-423 §13).
+	// 26-10-16-423 §13). Required.
 	AssetDir string
 
 	// ArchiveRetention is how long an archived sandbox is kept before it is

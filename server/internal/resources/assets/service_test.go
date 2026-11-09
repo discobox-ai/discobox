@@ -716,3 +716,14 @@ func TestAPoolsBoxIsPlacedWithEveryBlobOfItsPoolBundle(t *testing.T) {
 		}
 	}
 }
+
+// An empty Dir is refused: imagecache would clean it to ".", keeping the blob
+// store in whatever directory the process runs in.
+func TestNewRefusesAnEmptyDir(t *testing.T) {
+	defer func() {
+		if got := recover(); got != "assets: Options.Dir is required" {
+			t.Fatalf("New with an empty Dir: recovered %v, want the required-Dir panic", got)
+		}
+	}()
+	New(nil, Options{})
+}
