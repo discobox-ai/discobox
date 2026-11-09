@@ -20,24 +20,22 @@ const (
 	pruneGrace = time.Hour
 )
 
-// StartPruning sweeps the store every pruneInterval until ctx ends.
-func (s *Service) StartPruning(ctx context.Context) {
-	go func() {
-		ticker := time.NewTicker(pruneInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if removed, err := s.Prune(ctx); err != nil {
-					slog.Warn("asset store prune", "error", err)
-				} else if removed > 0 {
-					slog.Info("asset store prune", "removed", removed)
-				}
+// prune sweeps the store every pruneInterval until ctx ends (Start).
+func (s *Service) prune(ctx context.Context) {
+	ticker := time.NewTicker(pruneInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if removed, err := s.Prune(ctx); err != nil {
+				slog.Warn("asset store prune", "error", err)
+			} else if removed > 0 {
+				slog.Info("asset store prune", "removed", removed)
 			}
 		}
-	}()
+	}
 }
 
 // Prune removes every blob no pin reaches, and reports how many it removed.

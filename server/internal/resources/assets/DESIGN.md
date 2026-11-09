@@ -132,7 +132,14 @@ flowchart LR
   nothing in it is any one project's to keep from another.
 - **One fetch per digest**, shared by every read wanting it (singleflight),
   detached from the first reader's cancellation and bounded by
-  `fetchTimeout`.
+  `fetchTimeout` and the service's lifetime.
+- **The service owns what outlives a read.** `Start` runs the sweep and the
+  first resolution of the release, and a move is told (`OnReleaseMoved`) as
+  more of the same background work. A resolution or fetch detached from its
+  read is the service's work too, whoever started it — a pool's read, a
+  reconcile, the sandboxes' pinning. `Stop` ends all of it and waits for it,
+  and a stopped service refuses to fetch or resolve, so nothing fetches into
+  the store once `Stop` returns.
 - **Removal is by reference** (`Prune`, hourly): a blob goes once no pin
   reaches it — any project's harness config or sandbox, or a release
   bundle's digest this server answered — and it is older than an hour, so one
