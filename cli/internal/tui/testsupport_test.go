@@ -542,7 +542,7 @@ func (f *fakeSource) runRequests() []console.RunRequest {
 	return append([]console.RunRequest(nil), f.runs...)
 }
 
-func (f *fakeSource) Run(_ context.Context, req console.RunRequest, report, warn func(string), accepted func(console.Sandbox)) (console.Sandbox, error) {
+func (f *fakeSource) Run(_ context.Context, req console.RunRequest, n *console.Narration) (console.Sandbox, error) {
 	f.mu.Lock()
 	f.runs = append(f.runs, req)
 	gate := f.runGate
@@ -554,10 +554,10 @@ func (f *fakeSource) Run(_ context.Context, req console.RunRequest, report, warn
 	}
 	f.mu.Lock()
 	for _, step := range f.runSteps {
-		report(step)
+		n.Report(step)
 	}
 	for _, warning := range f.runWarnings {
-		warn(warning)
+		n.Warn(warning)
 	}
 	if err := f.runErr; err != nil {
 		f.mu.Unlock()
@@ -565,8 +565,8 @@ func (f *fakeSource) Run(_ context.Context, req console.RunRequest, report, warn
 	}
 	deliver, deliverErr := f.deliverGate, f.deliverErr
 	created := console.Sandbox{ID: f.createdID, Name: promptText(req), State: console.StateStarting}
-	accepted(created)
 	f.mu.Unlock()
+	n.Accept(context.Background(), created)
 	if deliver != nil {
 		<-deliver
 	}
@@ -581,17 +581,17 @@ func (f *fakeSource) Run(_ context.Context, req console.RunRequest, report, warn
 // that is already up — which is every discobox in these tests — so returning is
 // the faithful behavior for a fake with nothing staged, and it keeps a window
 // under test from waiting on a watch that will never say anything.
-func (f *fakeSource) WatchProvisioning(_ context.Context, sandboxID string, report func(string)) {
+func (f *fakeSource) WatchProvisioning(_ context.Context, sandboxID string, n *console.Narration) {
 	f.mu.Lock()
 	f.watched = append(f.watched, sandboxID)
 	lines := append([]string(nil), f.provisionLines...)
 	f.mu.Unlock()
 	for _, line := range lines {
-		report(line)
+		n.Report(line)
 	}
 }
 
-func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report func(string), _ console.CredentialUI) error {
+func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, n *console.Narration) error {
 	f.mu.Lock()
 	f.delivered = append(f.delivered, sandboxID)
 	f.execOpensAtDelivery = append(f.execOpensAtDelivery, len(f.execOpens))
@@ -599,7 +599,7 @@ func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report f
 	err := f.awaitedErr
 	f.mu.Unlock()
 	for _, step := range steps {
-		report(step)
+		n.Report(step)
 	}
 	return err
 }
@@ -671,7 +671,7 @@ func (f *fakeSource) stoppedCount() int {
 	return f.stopped
 }
 
-func (f *fakeSource) Do(_ context.Context, verb console.Verb, id string, _ console.CredentialUI) (string, error) {
+func (f *fakeSource) Do(_ context.Context, verb console.Verb, id string, _ *console.Narration) (string, error) {
 	if f.doGate != nil {
 		<-f.doGate
 	}

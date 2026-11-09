@@ -46,9 +46,21 @@ func TestDirectoryRetryCLIProcess(t *testing.T) {
 		}
 		ds := &apiDataSource{app: &App{serverURL: args[1]}, client: client, projectID: "project-1"}
 		if args[0] == "console-create" {
-			_, err = ds.Run(t.Context(), console.RunRequest{Source: args[2], CopyDirectory: "true"}, nil, nil, func(sb console.Sandbox) { fmt.Fprintln(os.Stderr, "accepted", sb.ID) })
+			n := console.NewNarration()
+			read := make(chan struct{})
+			go func() {
+				defer close(read)
+				for event := range n.Events() {
+					if event.Accepted != nil {
+						fmt.Fprintln(os.Stderr, "accepted", event.Accepted.ID)
+					}
+				}
+			}()
+			_, err = ds.Run(t.Context(), console.RunRequest{Source: args[2], CopyDirectory: "true"}, n)
+			n.Close()
+			<-read
 		} else {
-			err = ds.DeliverSource(t.Context(), pushTestSandboxID, nil, console.CredentialUI{})
+			err = ds.DeliverSource(t.Context(), pushTestSandboxID, nil)
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

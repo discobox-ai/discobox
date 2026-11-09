@@ -947,7 +947,7 @@ func (m *Model) boxMenu(box console.Sandbox) tea.Cmd {
 	targets := []console.Sandbox{box}
 	// Any other box's menu is the list's own, attach and all.
 	if m.boxRef(box) != m.boxRef(m.Box) || !m.hasWorkspace() {
-		m.dialog = actionsDialog(actionTitle(targets), "", actions(targets), chooseAction(targets))
+		m.dialog = actionsDialog(console.TargetsTitle(targets), "", actions(targets), chooseAction(targets))
 		return nil
 	}
 	// The box is already on screen, so attaching to it is not on offer; what
@@ -974,7 +974,7 @@ func (m *Model) boxMenu(box console.Sandbox) tea.Cmd {
 		items = append(items, entry("all"))
 	}
 	// Every row is a registry command, dispatched on this box like the rest.
-	m.dialog = actionsDialog(actionTitle(targets), "", items, chooseAction(targets))
+	m.dialog = actionsDialog(console.TargetsTitle(targets), "", items, chooseAction(targets))
 	return nil
 }
 

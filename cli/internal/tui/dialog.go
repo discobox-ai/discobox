@@ -190,6 +190,9 @@ type dialog struct {
 	// both answers — carry the uncommitted changes, or do not — has to hear
 	// "no" as well as "yes".
 	onCancel func() tea.Cmd
+	// waitedOn is a card standing for a question a running command waits on
+	// (Model.ask): every way it closes reaches onCancel.
+	waitedOn bool
 
 	// over is the pane a question stands over and is about, such as the
 	// issue a close is asked about. The question goes when that pane does — its
@@ -493,6 +496,13 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			}
 			return nil, false
 		case "q":
+			// A card a running command waits on is never closed unanswered:
+			// q leaves it as Esc does, and the command hears it was
+			// dismissed. Any other card closes as it always has — its Esc
+			// can be an answer of its own (the uncommitted changes card's).
+			if d.waitedOn {
+				return d.cancel(), true
+			}
 			return nil, true
 		default:
 			for _, it := range d.items {

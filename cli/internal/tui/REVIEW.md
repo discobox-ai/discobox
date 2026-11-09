@@ -218,7 +218,17 @@
   goroutine of its own, so a create's "server took it" (`promptSpentMsg`) can
   land after its "done" (`createdMsg`). What one learns of the other goes in a
   record both carry (`createWatch`), not in a window-wide field, which a
-  second create started in between overwrites too.
+  second create started in between overwrites too. The acceptance now comes
+  off the create's narration feed and so often lands after "done": whichever
+  of the two gives the composer back marks it (`createWatch.spent`), and the
+  other leaves the composer alone — it may be the next create's by then
+  (`TestALateAcceptLeavesTheNextCreatesComposer`).
+- **Every way a card closes reaches its `onCancel`** when the card stands for
+  a question a goroutine waits on (`m.ask` marks it `waitedOn`): Esc and `q`
+  alike. Only there: on other cards `q` just closes, since an Esc can be an
+  answer of its own (the uncommitted changes card's goes on to create). A card
+  that closed without it once left a delivery waiting in `Ask` for the life
+  of the window, holding the credential lock every other source waited on.
 - Install an operation's progress status before launching its asynchronous
   work. Batching the start notice with the operation lets a fast completion
   arrive first; a late "merging…" once erased GitHub's merge refusal.
@@ -307,8 +317,9 @@
 
 
 - Credential consent and Git prompting belong to the active operation's
-  narration feed. Serialize them across concurrently delivered sources; a
-  stale feed or dismissed question must release the worker with a decline.
+  narration feed (`console.Narration`). Serialize them across concurrently
+  delivered sources; a stale feed or dismissed question must release the
+  worker with a decline (`Asking.Decline`, `Handover.Done`).
   Return terminal ownership through `tea.ExecProcess`, and keep Git credential
   stdout captured by the delivery layer, never rendered.
 - Never pair the listing's name (`Sandbox.Name`) with a program's `msg`: it

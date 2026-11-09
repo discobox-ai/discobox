@@ -17,7 +17,7 @@ func TestNarrationReplacesTheBusyLine(t *testing.T) {
 	m.busy = "creating the discobox…"
 
 	feed, _ := m.narrate()
-	m.narrated(narrationMsg{source: feed, text: "pushing source"})
+	m.narrated(narrationMsg{source: feed, event: console.Event{Progress: &console.Progress{Text: "pushing source"}}})
 
 	if m.busy != "pushing source…" {
 		t.Fatalf("busy = %q, want the reported step", m.busy)
@@ -34,7 +34,7 @@ func TestNarrationFromAFinishedOperationIsDropped(t *testing.T) {
 	stale, _ := m.narrate()
 	m.endNarration()
 	m.busy = "attach…"
-	m.narrated(narrationMsg{source: stale, text: "pushing source"})
+	m.narrated(narrationMsg{source: stale, event: console.Event{Progress: &console.Progress{Text: "pushing source"}}})
 
 	if m.busy != "attach…" {
 		t.Fatalf("busy = %q, want the stale report ignored", m.busy)
@@ -52,11 +52,11 @@ func TestStartingANarrationEndsThePreviousOne(t *testing.T) {
 	second, _ := m.narrate()
 	m.busy = "attach…"
 
-	m.narrated(narrationMsg{source: first, text: "preparing source"})
+	m.narrated(narrationMsg{source: first, event: console.Event{Progress: &console.Progress{Text: "preparing source"}}})
 	if m.busy != "attach…" {
 		t.Fatalf("busy = %q, want the superseded feed ignored", m.busy)
 	}
-	m.narrated(narrationMsg{source: second, text: "creating the container"})
+	m.narrated(narrationMsg{source: second, event: console.Event{Progress: &console.Progress{Text: "creating the container"}}})
 	if m.busy != "creating the container…" {
 		t.Fatalf("busy = %q, want the current feed reported", m.busy)
 	}
@@ -110,8 +110,8 @@ func TestAWarningOutlastsTheStepsAfterIt(t *testing.T) {
 	m.setSubmitting(true)
 	feed, _ := m.narrate()
 
-	m.narrated(narrationMsg{source: feed, warning: true, text: "/src/app: 2 uncommitted changes left out (--include-dirty carries them); the discobox starts from the last commit"})
-	m.narrated(narrationMsg{source: feed, text: "pushing source"})
+	m.narrated(narrationMsg{source: feed, event: console.Event{Progress: &console.Progress{Text: "/src/app: 2 uncommitted changes left out (--include-dirty carries them); the discobox starts from the last commit", Warning: true}}})
+	m.narrated(narrationMsg{source: feed, event: console.Event{Progress: &console.Progress{Text: "pushing source"}}})
 	send(t, m, statusExpiredMsg{generation: m.statusGen})
 
 	if got := m.statusMessage(200); !strings.Contains(got, "2 uncommitted changes left out") {
@@ -141,7 +141,7 @@ func TestAMessageOtherThanTheCreatesReplacesAWarning(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	m.setSubmitting(true)
 	feed, _ := m.narrate()
-	m.narrated(narrationMsg{source: feed, warning: true, text: "/src/app: 1 uncommitted change left out"})
+	m.narrated(narrationMsg{source: feed, event: console.Event{Progress: &console.Progress{Text: "/src/app: 1 uncommitted change left out", Warning: true}}})
 
 	send(t, m, statusMsg{text: "beta is not answering"})
 	if got := m.statusMessage(200); !strings.Contains(got, "beta is not answering") || m.statusW {

@@ -83,29 +83,30 @@ func (m *Model) autoPushTick(id console.BoxRef, gen int) tea.Cmd {
 	})
 }
 
-// autoPushed reports what moved and schedules the next look. What the answer
-// holds against the next look is the core's (console.Workspace.Pushed): a
-// refused source is held at the commit it was refused on until a new one. A
-// look that failed as a whole arrives empty and reports nothing.
+// autoPushed reports what the core says a look did and schedules the next.
+// What the answer holds against the next look, and what it says, are the
+// core's (console.Workspace.Pushed): a refused source is held at the commit it
+// was refused on until a new one, and a refusal outranks a push. A look that
+// failed as a whole arrives empty and says nothing.
 func (m *Model) autoPushed(msg autoPushedMsg) tea.Cmd {
 	ws, parked := m.pushLoop(msg.box, msg.gen)
 	if ws == nil {
 		return nil
 	}
-	moved, failed := ws.Pushed(msg.pushes)
+	said := ws.Pushed(msg.pushes)
 	cmds := []tea.Cmd{m.autoPushTick(msg.box, msg.gen)}
+	if said.Text == "" {
+		return tea.Batch(cmds...)
+	}
 	// A parked box's report names it, since the box on screen is another.
 	who := ""
 	if parked {
 		who = sandboxLabel(m.boxByRef(msg.box)) + ": "
 	}
-	// A failure outranks a push: with several sources, the one that did not go
-	// is the half of the answer somebody has to act on.
-	switch {
-	case len(failed) > 0:
-		cmds = append(cmds, m.report(true, "%s%s", who, console.PushFailure(failed)))
-	case len(moved) > 0:
-		cmds = append(cmds, status("%s%s", who, console.PushedText(moved)))
+	if said.Warning {
+		cmds = append(cmds, m.report(true, "%s%s", who, said.Text))
+	} else {
+		cmds = append(cmds, status("%s%s", who, said.Text))
 	}
 	return tea.Batch(cmds...)
 }

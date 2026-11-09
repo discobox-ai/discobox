@@ -129,8 +129,8 @@ to obtain matching provider help. `docs:check` compares bytes without writing.
 Ordinary and administrative start, and typed repair, observe HTTP 102 request
 progress with `requestprogress.Observe`. The server's pool-wait phase is shown
 on the status line while the JSON response is pending; non-interactive status
-goes to stderr, preserving JSON stdout. The console passes its operation
-narration sink through `CredentialUI.Report`, sharing the busy status lifetime.
+goes to stderr, preserving JSON stdout. The console passes its operation's
+`console.Narration`, whose `Report` shares the busy status lifetime.
 
 Harness create and update accept `--extends` as a parent slug or ID, resolving it
 to the API's parent ID. A source update retains account data; `--bundle` detaches

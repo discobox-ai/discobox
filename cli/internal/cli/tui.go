@@ -1173,12 +1173,12 @@ func gitRoot(ctx context.Context, dir string) (string, bool) {
 // Run creates the sandbox Enter asked for and delivers its source, which is
 // exactly what `discobox run` does before it attaches — including saying which of
 // those steps is underway, on the same words the command uses (ADR 0060).
-func (d *apiDataSource) Run(ctx context.Context, req console.RunRequest, report, warn func(string), accepted func(console.Sandbox)) (console.Sandbox, error) {
+func (d *apiDataSource) Run(ctx context.Context, req console.RunRequest, n *console.Narration) (console.Sandbox, error) {
 	if d.servers == nil {
 		if req.Server != "" {
 			return console.Sandbox{}, fmt.Errorf("there is no server %s to create on; there is only the primary", req.Server)
 		}
-		return d.create(ctx, req, report, warn, accepted)
+		return d.create(ctx, req, "", n)
 	}
 	// Empty is the primary, which is `--server` unset (ADR 0116 §5).
 	target := d.servers[0]
@@ -1202,26 +1202,12 @@ func (d *apiDataSource) Run(ctx context.Context, req console.RunRequest, report,
 	if err != nil {
 		return console.Sandbox{}, err
 	}
-	// A box the server took is on this server whether or not the rest of
-	// the run goes through, and is known to be from the moment it is taken:
-	// the window goes to it then, and asks after it here.
-	locate := func(box console.Sandbox) console.Sandbox {
-		box.Server = target.name
-		return box
-	}
-	box, err := source.create(ctx, req, report, warn, func(box console.Sandbox) {
-		if accepted != nil {
-			accepted(locate(box))
-		}
-	})
-	if box.ID == "" {
-		return console.Sandbox{}, err
-	}
-	return locate(box), err
+	return source.create(ctx, req, target.name, n)
 }
 
-// create is Run on this data source's own server.
-func (d *apiDataSource) create(ctx context.Context, req console.RunRequest, report, warn func(string), accepted func(console.Sandbox)) (console.Sandbox, error) {
+// create is Run on this data source's own server, which the window names
+// server ("" for a window with one).
+func (d *apiDataSource) create(ctx context.Context, req console.RunRequest, server string, n *console.Narration) (console.Sandbox, error) {
 	ctx, err := resolveGitCredentials(ctx)
 	if err != nil {
 		return console.Sandbox{}, err
@@ -1246,16 +1232,15 @@ func (d *apiDataSource) create(ctx context.Context, req console.RunRequest, repo
 	// What each declared source resolved to, in the window's own form: it has
 	// no scrollback to keep a line in, so the report is narrated as it happens
 	// beside the step that is making it.
-	if report != nil {
+	if n != nil {
 		opts.ReportDeclaredSource = func(source sandboxcreate.DeclaredSource) {
-			report(declaredSourceLine(source))
+			n.Report(declaredSourceLine(source))
 		}
-		opts.ReportInlineSecret = func(line string) { report(terminalSafe(line)) }
-	}
-	// A warning is its own line, which the window keeps on screen: escaped,
-	// since a repository's files can be what it is about (cli/REVIEW.md).
-	if warn != nil {
-		opts.Warn = func(warning string) { warn(terminalSafe(warning)) }
+		opts.ReportInlineSecret = func(line string) { n.Report(terminalSafe(line)) }
+		// A warning is its own line, which the window keeps on screen:
+		// escaped, since a repository's files can be what it is about
+		// (cli/REVIEW.md).
+		opts.Warn = func(warning string) { n.Warn(terminalSafe(warning)) }
 	}
 	// An unset source is where the window is running, and with no source that
 	// is still where the create came from.
@@ -1288,22 +1273,20 @@ func (d *apiDataSource) create(ctx context.Context, req console.RunRequest, repo
 		return console.Sandbox{}, err
 	}
 
-	step := func(step sandboxcreate.Step) {
-		if report != nil {
-			report(string(step))
-		}
-	}
+	step := func(step sandboxcreate.Step) { n.Report(string(step)) }
 	sandbox, local, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, d.app.serverURL, opts, step)
 	if sandbox == nil {
 		return console.Sandbox{}, err
 	}
 	// From here the discobox exists, so a failure still returns it: the
 	// window names what it made either way (tui.DataSource.Run).
+	// A box the server took is on this server whether or not the rest of the
+	// run goes through, and is known to be from the moment it is taken: the
+	// window goes to it then, and asks after it there.
 	hostID, _ := hostid.Get()
 	made := toTUISandbox(*sandbox, hostID)
-	if accepted != nil {
-		accepted(made)
-	}
+	made.Server = server
+	n.Accept(ctx, made)
 	// Close releases temporary resources and delivery locks. Pending directory
 	// snapshots survive every failure until their aggregate delivery is confirmed.
 	defer local.Close()
@@ -1316,24 +1299,20 @@ func (d *apiDataSource) create(ctx context.Context, req console.RunRequest, repo
 	if err != nil {
 		return made, fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), d.app.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
-	err = sandboxcreate.DeliverSource(ctx, d.client, projectID, sandbox, local, gitServerURL, d.app.token, step, tuiCredentialDeliveryOptions(ctx, req.Credentials))
+	err = sandboxcreate.DeliverSource(ctx, d.client, projectID, sandbox, local, gitServerURL, d.app.token, step, tuiCredentialDeliveryOptions(ctx, n))
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
 		return made, fmt.Errorf("discobox %s is awaiting source%s; retry with %s: %w", sandbox.ID, local.RetainedSources(), d.app.sourceRetryCommand(projectID, sandbox.ID), err)
 	}
-	if report != nil {
-		report("syncing SSH config")
-	}
+	n.Report("syncing SSH config")
 	// Which key it enrolled and which files it wrote go on the busy line with
 	// everything else this create says. Nothing reaches the terminal: the
 	// window is a full-screen program on it, and a line written past the
 	// renderer draws over the frame, which is what a "wrote …/config" on the
 	// terminal's own stream would do.
 	notes := noteFunc(func(format string, args ...any) {
-		if report != nil {
-			report(fmt.Sprintf(format, args...))
-		}
+		n.Report(fmt.Sprintf(format, args...))
 	})
 	if err := d.app.syncSSHConfigAfterCreate(ctx, d.client, projectID, notes); err != nil {
 		return made, err
@@ -1343,25 +1322,25 @@ func (d *apiDataSource) create(ctx context.Context, req console.RunRequest, repo
 
 // WatchProvisioning says what a discobox that is not usable yet is being made
 // to do, on the same reading of the same record `discobox run` narrates from.
-func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string, report func(string)) {
-	d.app.watchProvisioning(ctx, d.projectID, sandboxID, report)
+func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string, n *console.Narration) {
+	d.app.watchProvisioning(ctx, d.projectID, sandboxID, n.Report)
 }
 
 // DeliverSource delivers the source a parked discobox is waiting for before
 // the workspace attaches to it (ADR 26-09-24-005); see deliverBeforeAttach.
-func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, report func(string), credentials console.CredentialUI) error {
+func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, n *console.Narration) error {
 	ctx, err := resolveGitCredentials(ctx)
 	if err != nil {
 		return err
 	}
-	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, report, tuiCredentialDeliveryOptions(ctx, credentials))
+	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, n.Report, tuiCredentialDeliveryOptions(ctx, n))
 }
 
 // Do runs a lifecycle verb against one sandbox. These go straight to the API
 // rather than through their Cobra commands: the commands print a sandbox table
 // on success, and the window reports on its own status line instead.
-func (d *apiDataSource) Do(ctx context.Context, verb console.Verb, sandboxID string, credentials console.CredentialUI) (string, error) {
-	ctx = requestprogress.Observe(ctx, credentials.Report)
+func (d *apiDataSource) Do(ctx context.Context, verb console.Verb, sandboxID string, n *console.Narration) (string, error) {
+	ctx = requestprogress.Observe(ctx, n.Report)
 	switch verb {
 	case console.VerbStart:
 		var err error
@@ -1369,7 +1348,7 @@ func (d *apiDataSource) Do(ctx context.Context, verb console.Verb, sandboxID str
 		if err != nil {
 			return "", err
 		}
-		delivered, err := d.app.deliverInsteadOfStart(ctx, d.client, d.projectID, sandboxID, nil, tuiCredentialDeliveryOptions(ctx, credentials))
+		delivered, err := d.app.deliverInsteadOfStart(ctx, d.client, d.projectID, sandboxID, nil, tuiCredentialDeliveryOptions(ctx, n))
 		if err != nil || delivered {
 			return "", err
 		}
@@ -1628,13 +1607,40 @@ func (d *apiDataSource) RunHostTool(ctx context.Context, sandboxID, toolID strin
 	return d.app.runHostTool(ctx, def, target, "", nil, strings.NewReader(""), io.Discard, io.Discard, silent)
 }
 
-func tuiCredentialDeliveryOptions(ctx context.Context, ui console.CredentialUI) sandboxcreate.DeliveryOptions {
+// tuiCredentialDeliveryOptions is how a delivery the console started asks for
+// Git credentials: on its narration, as a question the frontend answers
+// (gitCredentialQuestion), and with the frontend's terminal handed over for a
+// helper that prompts. A window that cannot ask, or a delivery nobody narrates,
+// installs neither: delivery then says how to answer it instead of asking, and
+// runs the helper without a terminal.
+func tuiCredentialDeliveryOptions(ctx context.Context, n *console.Narration) sandboxcreate.DeliveryOptions {
 	policy, path := sandboxcreate.GitCredentialPolicy(ctx)
 	options := sandboxcreate.DeliveryOptions{Credentials: policy, ConfigPath: path}
-	if !sandboxgit.Noninteractive(ctx) {
-		options.ConfirmCredential, options.RunCredential = ui.Confirm, ui.Run
+	if n != nil && !sandboxgit.Noninteractive(ctx) {
+		options.ConfirmCredential = func(ctx context.Context, remote string) (bool, error) {
+			key, err := n.Ask(ctx, gitCredentialQuestion(remote))
+			return key == gitLendKey, err
+		}
+		options.RunCredential = n.Handover
 	}
 	return options
+}
+
+// gitLendKey is the answer to gitCredentialQuestion that lends.
+const gitLendKey = "lend"
+
+// gitCredentialQuestion is what delivery asks a console when a remote needs
+// credentials to pull on the pool: the same choice `discobox run` picks
+// between on a terminal (sourcepull.go), in the same words.
+func gitCredentialQuestion(remote string) console.Question {
+	return console.Question{
+		Title: "Git credentials",
+		Body:  terminalSafe(remote) + " needs credentials to pull on the pool.",
+		Choices: []console.Choice{
+			{Key: gitLendKey, Label: sandboxcreate.GitLendLabel, Hint: sandboxcreate.GitLendExplanation},
+			{Key: "push", Label: sandboxcreate.GitLocalLabel, Hint: sandboxcreate.GitLocalExplanation},
+		},
+	}
 }
 
 func (d *apiDataSource) GitCredentialPolicy(ctx context.Context) (string, error) {

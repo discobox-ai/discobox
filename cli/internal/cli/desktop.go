@@ -448,22 +448,19 @@ func (b *desktopBridge) handleBox(ctx context.Context, ds console.DataSource, re
 		b.closeStream(req.Stream)
 		b.reply(req.ID, nil, ds.EndExec(ctx, req.Sandbox, req.Exec))
 	case "do":
-		note, err := ds.Do(ctx, console.Verb(req.Verb), req.Sandbox, desktopCredentials())
+		// The app draws no question yet. A verb that asks first is refused
+		// rather than sent unasked (console.Confirmation), and what a verb
+		// asks while it runs is declined; both say so.
+		verb := console.Verb(req.Verb)
+		if q, asks := console.Confirmation(verb, nil); asks {
+			b.reply(req.ID, nil, fmt.Errorf("%s asks first (%s), which the desktop app cannot ask yet", verb, q.Title))
+			return
+		}
+		n := console.NewNarration()
+		go n.Decline(errors.New("the desktop app cannot answer a question yet"))
+		note, err := ds.Do(ctx, verb, req.Sandbox, n)
+		n.Close()
 		b.reply(req.ID, map[string]any{"note": note}, err)
-	}
-}
-
-// desktopCredentials answers a verb's credential question while the desktop
-// app has no dialog for one: it declines, and says so.
-func desktopCredentials() console.CredentialUI {
-	return console.CredentialUI{
-		Report: func(string) {},
-		Confirm: func(context.Context, string) (bool, error) {
-			return false, errors.New("the desktop app cannot answer a credential question yet")
-		},
-		Run: func(context.Context, *exec.Cmd) error {
-			return errors.New("the desktop app cannot hand over the terminal")
-		},
 	}
 }
 

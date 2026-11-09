@@ -107,6 +107,7 @@ flowchart LR
     D --> E["entry: Context + targets → enabled, why, unavailable"]
     E -->|refused| F1["Frontend.Unavailable / Cannot / OfferUpgrade"]
     E -->|runs| U["Registry.Use"] --> F2["Frontend.<Command>"]
+    U -->|a verb that asks first| F3["Frontend.Confirm (Confirmation)"]
 ```
 
 - **Eligibility is the registry's.** `Entries`/`Entry` answer whether a
@@ -208,7 +209,9 @@ flowchart LR
   for a box this window does not push, holds copied, a whole-call failure
   answering nothing), applies it (`Pushed`: a refused source is held at the
   refused commit until a new one) and looks again `PushEvery` later, parked
-  or not; `PushedText`/`PushFailure` narrate it. A renderer runs these on its
+  or not, and says what it did as `Progress`: a refusal, as a warning,
+  outranks what moved, and a look that moved nothing says nothing. Naming a
+  box that is not on screen is the renderer's. A renderer runs these on its
   own event loop — the TUI's ticks are Bubble Tea commands its tests drive
   one at a time — and drops an answer for a workspace it has left; it decides
   nothing about what a look does or means.
@@ -253,3 +256,45 @@ flowchart LR
   and the `DataSource`'s. The create card's source and item fields are forms
   (`SourceForm`, `ItemForm`); the run options the card is otherwise made of
   are the composer's.
+
+## Narration and questions
+
+`narration.go` (876 §1, 289 §2). A command that reports as it goes, or asks
+while it runs, is handed a `*Narration`, never a frontend's function: `Run`,
+`DeliverSource`, `Do` and `WatchProvisioning` all take one. The frontend that
+started it reads `Events` until the starter closes it, and answers in its own
+way: the TUI with its dialogs; the desktop app, which draws no question yet,
+by declining every question and handover (`Decline`).
+
+```mermaid
+flowchart LR
+    C["a command (DataSource)"] -->|"Report / Warn"| P["Progress (dropped when behind)"]
+    C -->|Accept| A["Accepted: the box a create made"]
+    C -->|"Ask / Confirm"| Q["Asking: Question → Answer / Decline"]
+    C -->|Handover| H["Handover: a program for the terminal → Done"]
+    P & A & Q & H --> E["Events → the frontend"]
+```
+
+- **A step never blocks the work.** `Report` and `Warn` drop what a frontend
+  has no room for; `Accept`, `Ask` and `Handover` wait, since what follows
+  from them is not a status line. A reader drains until the feed closes.
+- **A question is a description** (`Question`): a title, a body, and either
+  `Choices` by key with a hint each, or none for a yes or no (`AnswerYes`,
+  `DefaultNo` for a destruction nobody can undo). Its asker words it and
+  reads its answer; the frontend draws it. Git's credential question is the
+  CLI's (`cli.gitCredentialQuestion`), in the words `discobox run` uses.
+- **Every question is answered exactly once**: a key, or `Decline` — dismissed
+  (`context.Canceled`) or unaskable (`ErrNoFrontend`). A nil `*Narration` is a
+  command nobody watches: it reports nowhere and declines every question, and
+  `Decline` is that for a frontend that cannot ask yet.
+- **What a command asks before it runs is the core's too**: `Confirmation`
+  says which lifecycle verbs ask first (purging, which nothing undoes; nothing
+  else, archiving included) and in what words, and `Dispatch` asks it on the
+  way in (`Frontend.Confirm`, which sends the verb only on yes). A path that
+  sends a verb outside the registry — the desktop's prototype bridge —
+  refuses one that asks rather than send it unasked.
+- **A yes or no is answered**, `AnswerYes` or `AnswerNo` — left any way but
+  yes, it is no. Only a pick of one can be dismissed unanswered.
+- **Which box is on screen stays the renderer's** (876 §2), and so does
+  whether a report names its box: the push loop's `Progress` never does.
+

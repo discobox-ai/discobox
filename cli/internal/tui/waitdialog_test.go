@@ -18,8 +18,8 @@ func TestWaitingDialogFollowsTheNarration(t *testing.T) {
 	m.dialog = statusDialog("Starting nimble_swan", "creating the discobox")
 	m.dialog.windowWait = true
 
-	feed := narration{gen: m.busyGen, ch: make(chan narrationLine, 1)}
-	m.narrated(narrationMsg{source: feed, text: "pulling the discobox image"})
+	feed := narration{gen: m.busyGen, Narration: console.NewNarration()}
+	m.narrated(narrationMsg{source: feed, event: console.Event{Progress: &console.Progress{Text: "pulling the discobox image"}}})
 
 	if m.dialog == nil {
 		t.Fatal("the dialog went away while there was still something to report")
@@ -177,13 +177,59 @@ func TestWindowWaitLeavesOtherStatusCardsAlone(t *testing.T) {
 	card := statusDialog("Settings", "saving…")
 	m.dialog = card
 
-	feed := narration{gen: m.busyGen, ch: make(chan narrationLine, 1)}
-	m.narrated(narrationMsg{source: feed, text: "pulling the discobox image"})
+	feed := narration{gen: m.busyGen, Narration: console.NewNarration()}
+	m.narrated(narrationMsg{source: feed, event: console.Event{Progress: &console.Progress{Text: "pulling the discobox image"}}})
 	if card.body != "saving…" {
 		t.Fatalf("body = %q, want the card's own", card.body)
 	}
 	m.update(provisioningDoneMsg{sandboxID: "sbx_1"})
 	if m.dialog != card {
 		t.Fatal("provisioning finishing took another operation's card down")
+	}
+}
+
+// The create's answer can overtake its acceptance on the feed. Then the
+// answer gives the composer back, and the late acceptance touches nothing —
+// not the next create's prompt, nor its hold on the composer.
+func TestALateAcceptLeavesTheNextCreatesComposer(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	a := console.Sandbox{ID: "sbx_a", Name: "first"}
+	reqA := console.RunRequest{Prompt: []string{"first prompt"}}
+	m.prompt.SetValue("first prompt")
+	m.setSubmitting(true)
+	wa := &createWatch{}
+	m.created(createdMsg{sandbox: a, req: reqA, create: wa, accepted: true})
+	if m.submitting || m.prompt.Value() != "" {
+		t.Fatalf("submitting %v, prompt %q; want the answer to give the composer back", m.submitting, m.prompt.Value())
+	}
+	// The person submits a second create before the first's acceptance lands.
+	m.prompt.SetValue("first prompt")
+	m.setSubmitting(true)
+	m.update(promptSpentMsg{req: reqA, sandbox: a, create: wa})
+	if !m.submitting || m.prompt.Value() != "first prompt" {
+		t.Fatalf("submitting %v, prompt %q; want the second create's composer left alone", m.submitting, m.prompt.Value())
+	}
+}
+
+// And in the usual order, the acceptance gives the composer back and the
+// answer after it leaves the composer as it now is.
+func TestAnAnswerAfterTheAcceptLeavesTheComposer(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	a := console.Sandbox{ID: "sbx_a", Name: "first"}
+	reqA := console.RunRequest{Prompt: []string{"first prompt"}, Detach: true}
+	m.prompt.SetValue("first prompt")
+	m.setSubmitting(true)
+	wa := &createWatch{}
+	m.update(promptSpentMsg{req: reqA, sandbox: a, create: wa})
+	if m.submitting || m.prompt.Value() != "" {
+		t.Fatalf("submitting %v, prompt %q; want the acceptance to give the composer back", m.submitting, m.prompt.Value())
+	}
+	m.prompt.SetValue("first prompt")
+	m.setSubmitting(true)
+	m.created(createdMsg{sandbox: a, req: reqA, create: wa, accepted: true})
+	if !m.submitting || m.prompt.Value() != "first prompt" {
+		t.Fatalf("submitting %v, prompt %q; want the next create's composer left alone", m.submitting, m.prompt.Value())
 	}
 }

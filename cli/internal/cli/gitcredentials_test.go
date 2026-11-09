@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -125,10 +124,14 @@ func TestSavedGitConsentIsReadOnUseButExplicitChoiceStays(t *testing.T) {
 
 func TestNoninteractiveWindowNeverInstallsCredentialCallbacks(t *testing.T) {
 	ctx := sandboxgit.WithNoninteractive(t.Context())
-	ui := console.CredentialUI{Confirm: func(context.Context, string) (bool, error) { t.Fatal("asked"); return false, nil }, Run: func(context.Context, *exec.Cmd) error { t.Fatal("terminal handoff"); return nil }}
-	opts := tuiCredentialDeliveryOptions(ctx, ui)
+	opts := tuiCredentialDeliveryOptions(ctx, console.NewNarration())
 	if opts.ConfirmCredential != nil || opts.RunCredential != nil {
 		t.Fatal("noninteractive window can ask")
+	}
+	// Nobody narrating is nobody to ask, as an empty CredentialUI was.
+	opts = tuiCredentialDeliveryOptions(t.Context(), nil)
+	if opts.ConfirmCredential != nil || opts.RunCredential != nil {
+		t.Fatal("a delivery nobody narrates can ask")
 	}
 }
 

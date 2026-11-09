@@ -1268,6 +1268,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.created(msg)
 
 	case promptSpentMsg:
+		if msg.create != nil {
+			if msg.create.spent {
+				// The create's answer arrived first and gave the composer back.
+				return nil
+			}
+			msg.create.spent = true
+		}
 		m.setSubmitting(false)
 		m.promptSpent(msg.req)
 		return m.watchCreate(msg)
@@ -2470,13 +2477,6 @@ func commandAction(e console.Entry) action {
 	return action{key: e.ID, press: press, label: e.Label, detail: e.Detail, enabled: e.Enabled, why: e.Why}
 }
 
-func actionTitle(targets []console.Sandbox) string {
-	if len(targets) == 1 {
-		return targets[0].Name
-	}
-	return plural(len(targets), "box", "boxes") + " selected"
-}
-
 // chooseAction is the action menu's callback: it turns the chosen command into
 // a message, which the update loop dispatches against the live model.
 func chooseAction(targets []console.Sandbox) func(string) tea.Cmd {
@@ -2509,7 +2509,7 @@ func (m *Model) runVerb(verb console.Verb, targets []console.Sandbox, then verbT
 		m.list.markArchiving(targets)
 	}
 	run := func() tea.Msg {
-		defer feed.close()
+		defer feed.Close()
 		errs := make([]error, len(targets))
 		notes := make([]string, len(targets))
 		for i, box := range targets {
@@ -2518,7 +2518,7 @@ func (m *Model) runVerb(verb console.Verb, targets []console.Sandbox, then verbT
 				errs[i] = fmt.Errorf("server %q is no longer available", targets[i].Server)
 				continue
 			}
-			notes[i], errs[i] = source.Do(m.ctx, verb, box.ID, feed.credentials())
+			notes[i], errs[i] = source.Do(m.ctx, verb, box.ID, feed.Narration)
 		}
 		return verbDoneMsg{verb: verb, targets: targets, errs: errs, notes: notes, then: then}
 	}
@@ -3257,41 +3257,28 @@ func (m *Model) create(req console.RunRequest) tea.Cmd {
 	// whole thing to a server that cannot reach this directory. Which of those
 	// is underway is knowable only here, so the shared creation path reports it
 	// and the busy line follows along (ADR 0060).
-	feed, next := m.narrate()
+	feed, _ := m.narrate()
 	m.createNarrating = true
-	// Both answers below are about this one create, and arrive on goroutines
-	// of their own in either order; this is where each learns what the other
-	// did (watchCreate, created).
+	// Both answers below are about this one create, and arrive in either
+	// order; this is where each learns what the other did (watchCreate,
+	// created).
 	watch := &createWatch{}
 	// The prompt is let go of as soon as the server has the create, not when
 	// the whole run is over: delivering the source and bringing the discobox
 	// up take a while, and a composer still holding a prompt that is already
 	// running reads as one that was not sent. Not before, either — a create
 	// the server refuses leaves the prompt where it was, to be sent again.
-	accepted := make(chan console.Sandbox, 1)
+	feed.accepted = func(box console.Sandbox) tea.Msg {
+		return promptSpentMsg{req: req, sandbox: box, create: watch}
+	}
 	create := func() tea.Msg {
-		defer feed.close()
-		defer close(accepted)
-		// Run calls accepted on this goroutine, so the flag needs no lock.
-		var taken bool
-		deliveryRequest := req
-		deliveryRequest.Credentials = feed.credentials()
-		sandbox, err := m.ds.Run(m.ctx, deliveryRequest, feed.report, feed.warn, func(box console.Sandbox) {
-			taken = true
-			select {
-			case accepted <- box:
-			default:
-			}
-		})
-		return createdMsg{sandbox: sandbox, req: req, create: watch, accepted: taken, err: err}
+		defer feed.Close()
+		sandbox, err := m.ds.Run(m.ctx, req, feed.Narration)
+		// A create the server took comes back with the discobox it made,
+		// failed or not; one it refused, with none (DataSource.Run).
+		return createdMsg{sandbox: sandbox, req: req, create: watch, accepted: sandbox.ID != "", err: err}
 	}
-	spent := func() tea.Msg {
-		if box, ok := <-accepted; ok {
-			return promptSpentMsg{req: req, sandbox: box, create: watch}
-		}
-		return nil
-	}
-	return tea.Batch(create, next, spent)
+	return tea.Batch(create, m.nextNarration(feed))
 }
 
 // promptSpentMsg says the server has taken a create, so the prompt it carried
@@ -3314,6 +3301,10 @@ type createWatch struct {
 	// answered is whether the create has finished (created), after which
 	// there is nothing for the window to go to the discobox and wait for.
 	answered bool
+	// spent is whether the composer was given back for it: on promptSpentMsg,
+	// or by the create's answer when that overtook it, since the acceptance
+	// is read off the create's feed and the answer is not.
+	spent bool
 }
 
 // watchCreate takes the window to the discobox a create has just made, the
@@ -3374,9 +3365,16 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 	shown := msg.create.shown
 	stillShown := shown && m.createShowing(msg.sandbox.ID)
 	// An accepted create gave the composer back on promptSpentMsg, and by now
-	// may be a later create's to hold; one turned down gives it back here.
-	if !msg.accepted {
+	// may be a later create's to hold; one turned down gives it back here, and
+	// so does one whose acceptance this answer overtook — no later create can
+	// have taken the composer before it was given back.
+	switch {
+	case !msg.accepted:
 		m.setSubmitting(false)
+	case !msg.create.spent:
+		msg.create.spent = true
+		m.setSubmitting(false)
+		m.promptSpent(msg.req)
 	}
 	if msg.err != nil {
 		// The wait is over and there is nothing to wait for, so it goes: the

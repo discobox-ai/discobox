@@ -180,12 +180,15 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	// accepted is marked among the steps, so where the server taking the
 	// create falls between them is checked with the rest of the order.
 	const accepted = "<accepted>"
-	var steps []string
+	n := console.NewNarration()
+	recorded := recordNarration(n, accepted)
 	sandbox, err := ds.Run(t.Context(), console.RunRequest{
 		Harness: "codex",
 		Source:  repo + "@HEAD",
 		Prompt:  []string{"fix the failing tests"},
-	}, func(step string) { steps = append(steps, step) }, nil, func(console.Sandbox) { steps = append(steps, accepted) })
+	}, n)
+	n.Close()
+	steps := recorded()
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -404,4 +407,28 @@ func TestTheWindowNeedsATerminalToOpenOn(t *testing.T) {
 	if canOpenWindow(cmd) {
 		t.Fatal("a command wired to buffers has no terminal to draw a window on")
 	}
+}
+
+// recordNarration reads n as a frontend does, until it is closed, and hands
+// back what it said: each step's text, and accepted where the server took a
+// create. Its questions are declined: nothing here can ask them.
+func recordNarration(n *console.Narration, accepted string) func() []string {
+	done := make(chan []string, 1)
+	go func() {
+		var said []string
+		for event := range n.Events() {
+			switch {
+			case event.Progress != nil:
+				said = append(said, event.Progress.Text)
+			case event.Accepted != nil:
+				said = append(said, accepted)
+			case event.Asking != nil:
+				event.Asking.Decline(console.ErrNoFrontend)
+			case event.Handover != nil:
+				event.Handover.Done(console.ErrNoFrontend)
+			}
+		}
+		done <- said
+	}()
+	return func() []string { return <-done }
 }

@@ -329,6 +329,10 @@ type Frontend[R any] interface {
 	Settings(box Sandbox) R
 	// Do sends a lifecycle verb for every target, in one batch.
 	Do(verb Verb, targets []Sandbox) R
+	// Confirm is asked instead of Do for a verb that asks first
+	// (Confirmation): it puts q to the person, and sends the verb, as Do
+	// would, only on AnswerYes.
+	Confirm(q Question, verb Verb, targets []Sandbox) R
 
 	Tools(box Sandbox) R
 	Issue(box Sandbox) R
@@ -373,7 +377,8 @@ type Frontend[R any] interface {
 // Dispatch runs one command against explicit targets: it refuses one with no
 // box to act on, a box on a server that is gone, a command the context rules
 // out, and a lifecycle command its targets cannot take; then it counts the use
-// and enters the command's flow in the frontend. A box command's other
+// and enters the command's flow in the frontend — through the question a verb
+// asks first, when it asks one (Confirmation). A box command's other
 // preconditions — a tag to open, a request waiting — are its flow's to refuse,
 // in that flow's own words; Entry still reports them, for a frontend to offer
 // only what will act. A box command takes its targets as given and never falls
@@ -416,6 +421,11 @@ func Dispatch[R any](r *Registry, f Frontend[R], ctx Context, id string, targets
 		r.Use(c.ID)
 	}
 	if c.verb != "" {
+		// What a verb asks before it is sent is the core's, and asked on
+		// the way in: a frontend never sends one it was not answered on.
+		if q, asks := Confirmation(c.verb, targets); asks {
+			return f.Confirm(q, c.verb, targets)
+		}
 		return f.Do(c.verb, targets)
 	}
 	var box Sandbox

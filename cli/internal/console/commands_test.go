@@ -253,6 +253,13 @@ func (f *recorder) Do(verb Verb, targets []Sandbox) string {
 	}
 	return f.call("do %s %s", verb, strings.Join(ids, ","))
 }
+func (f *recorder) Confirm(_ Question, verb Verb, targets []Sandbox) string {
+	ids := make([]string, len(targets))
+	for i, s := range targets {
+		ids[i] = s.ID
+	}
+	return f.call("confirm %s %s", verb, strings.Join(ids, ","))
+}
 func (f *recorder) NewBox() string         { return f.call("new") }
 func (f *recorder) Credentials() string    { return f.call("credentials") }
 func (f *recorder) Harnesses() string      { return f.call("harnesses") }

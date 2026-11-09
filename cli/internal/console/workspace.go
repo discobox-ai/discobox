@@ -703,14 +703,17 @@ func (w *Workspace[P]) PushLook(box Sandbox, ds DataSource) func(context.Context
 }
 
 // Pushed takes one look's answer from the automatic push, and returns what
-// moved and what was refused.
+// it says: what moved, or — outranking it — what was refused, as a warning,
+// since with several sources the one that did not go is the half of the
+// answer somebody has to act on. A look that moved nothing says nothing.
 //
 // A refused source is held at the commit it was refused on: a push's
 // failures are decisions rather than transients — a lease another machine
 // moved, a history nothing could rebase onto — so it is tried again only once
 // a new commit is made. A source already in the origin lets its hold go,
 // since after a refusal that means somebody answered it themselves.
-func (w *Workspace[P]) Pushed(pushes []SourcePush) (moved, failed []SourcePush) {
+func (w *Workspace[P]) Pushed(pushes []SourcePush) Progress {
+	var moved, failed []SourcePush
 	if w.PushHeld == nil {
 		w.PushHeld = map[string]string{}
 	}
@@ -726,13 +729,19 @@ func (w *Workspace[P]) Pushed(pushes []SourcePush) (moved, failed []SourcePush) 
 			delete(w.PushHeld, push.Slug)
 		}
 	}
-	return moved, failed
+	switch {
+	case len(failed) > 0:
+		return Progress{Text: pushFailure(failed), Warning: true}
+	case len(moved) > 0:
+		return Progress{Text: pushedText(moved)}
+	}
+	return Progress{}
 }
 
-// PushedText says what the automatic push moved, in the room a status line
+// pushedText says what the automatic push moved, in the room a status line
 // has. One source names where it landed, which is the branch to rebase onto in
 // the box; several name themselves.
-func PushedText(moved []SourcePush) string {
+func pushedText(moved []SourcePush) string {
 	if len(moved) == 1 {
 		push := moved[0]
 		text := "pushed " + ShortCommit(push.Commit)
@@ -752,9 +761,9 @@ func PushedText(moved []SourcePush) string {
 	return "pushed " + strings.Join(slugs, ", ") + " to the discobox's origin"
 }
 
-// PushFailure says why the automatic push refused a source: git's own reason,
+// pushFailure says why the automatic push refused a source: git's own reason,
 // or the push's, both written to be read by whoever has to answer them.
-func PushFailure(failed []SourcePush) string {
+func pushFailure(failed []SourcePush) string {
 	if len(failed) == 1 && failed[0].Err != nil {
 		return failed[0].Err.Error()
 	}

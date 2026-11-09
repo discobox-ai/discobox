@@ -1,0 +1,250 @@
+package console
+
+import (
+	"context"
+	"errors"
+	"os/exec"
+	"strconv"
+)
+
+// A running command's channel back to the console (ADR 26-11-07-876 §1,
+// 26-11-07-289 §2): what it reports, what it asks, and the terminal it needs.
+// The command writes; the frontend that started it reads Events until it is
+// closed, and answers what is asked with its own dialogs. Nothing the command
+// is handed is a frontend's function, so a frontend over the bridge answers
+// the same values the TUI does.
+
+// Progress is one thing a running command says: a step of its work, or a
+// warning about the work that is no step of it — uncommitted changes it left
+// out, a settings file it could not read all of — which a frontend keeps on
+// screen past the steps that follow.
+type Progress struct {
+	Text    string
+	Warning bool
+}
+
+// Question is what a running command, or a command before it runs, asks. With
+// Choices it is a pick of one, each Choice's Hint what choosing it means; with
+// none it is a yes or no, answered AnswerYes or AnswerNo — and a yes or no
+// dismissed is answered no, since that is what leaving it means.
+type Question struct {
+	Title string
+	Body  string
+	// Choices are the answers to pick from, by Key.
+	Choices []Choice
+	// DefaultNo is a yes or no whose quick answer is no: a destruction
+	// nobody can undo has to be chosen, not fallen into by answering the way
+	// every other question is answered.
+	DefaultNo bool
+}
+
+// The answers to a yes or no.
+const (
+	AnswerYes = "yes"
+	AnswerNo  = "no"
+)
+
+// ErrNoFrontend is the answer to a question nobody can be asked: a command
+// started with no narration, or a frontend that cannot ask it.
+var ErrNoFrontend = errors.New("nothing can answer this here")
+
+// Event is one thing a Narration delivers: exactly one field is set.
+type Event struct {
+	// Progress is a step or a warning. A frontend that falls behind loses
+	// steps, never the other events.
+	Progress *Progress
+	// Accepted is the box a create made, the moment the server took it:
+	// from then on it exists whatever the rest of the run does.
+	Accepted *Sandbox
+	// Asking is a question the command waits on.
+	Asking *Asking
+	// Handover is a program the command needs the terminal for.
+	Handover *Handover
+}
+
+// Asking is a question in flight. The frontend answers it exactly once: with
+// Answer, or Decline when it is taken down unanswered or cannot be asked.
+type Asking struct {
+	Question
+	answered chan answer
+}
+
+type answer struct {
+	key string
+	err error
+}
+
+// Answer gives the question's answer, by Choice key (AnswerYes or AnswerNo for
+// a yes or no).
+func (a *Asking) Answer(key string) { a.send(answer{key: key}) }
+
+// Decline leaves the question unanswered, saying why: context.Canceled for a
+// question dismissed, ErrNoFrontend for one nothing can ask.
+func (a *Asking) Decline(err error) { a.send(answer{err: err}) }
+
+func (a *Asking) send(ans answer) {
+	select {
+	case a.answered <- ans:
+	default:
+	}
+}
+
+// Handover is a program the command runs with the terminal: Git's credential
+// helper prompting for what no helper answered. The frontend runs Command with
+// the terminal its own and says how it ended with Done, exactly once; one with
+// no terminal to give says Done(ErrNoFrontend).
+type Handover struct {
+	Command *exec.Cmd
+	done    chan error
+}
+
+// Done says how the program ended, or why it was never run.
+func (h *Handover) Done(err error) {
+	select {
+	case h.done <- err:
+	default:
+	}
+}
+
+// narrationCapacity is how many events may wait unread. A command reports one
+// step at a time, but a pull reports twice a second and a frontend may be
+// mid-render, so there is room for a short burst before a step is dropped.
+const narrationCapacity = 8
+
+// Narration is one running command's feed. A nil Narration is a command
+// nobody is watching: its reports go nowhere and its questions are declined
+// with ErrNoFrontend.
+type Narration struct {
+	events chan Event
+}
+
+// NewNarration opens a feed for a command about to start. Whoever opens it
+// reads Events until Close, which the command's starter calls once the command
+// has returned.
+func NewNarration() *Narration {
+	return &Narration{events: make(chan Event, narrationCapacity)}
+}
+
+// Events is what the command says, in order, closed once it has finished.
+func (n *Narration) Events() <-chan Event { return n.events }
+
+// Close ends the feed. The command's starter calls it once the command has
+// returned, and never twice.
+func (n *Narration) Close() { close(n.events) }
+
+// Report says a step of the work as it begins. It never blocks: a status line
+// must not be able to stall the work it describes, so a step the frontend has
+// no room for is dropped.
+func (n *Narration) Report(text string) { n.progress(Progress{Text: text}) }
+
+// Warn says what is wrong with the work without being a step of it, on the
+// same terms as Report.
+func (n *Narration) Warn(text string) { n.progress(Progress{Text: text, Warning: true}) }
+
+func (n *Narration) progress(p Progress) {
+	if n == nil {
+		return
+	}
+	select {
+	case n.events <- Event{Progress: &p}:
+	default:
+	}
+}
+
+// Accept says the server has taken a create and made box. It waits for room
+// rather than being dropped, since what follows from it — letting the prompt
+// go — is not a status line; and it gives up only when ctx does, so a create
+// whose frontend stopped reading still returns once it is canceled.
+func (n *Narration) Accept(ctx context.Context, box Sandbox) {
+	if n == nil {
+		return
+	}
+	select {
+	case n.events <- Event{Accepted: &box}:
+	case <-ctx.Done():
+	}
+}
+
+// Ask puts q to the frontend and waits for its answer: the chosen key, or why
+// there is none.
+func (n *Narration) Ask(ctx context.Context, q Question) (string, error) {
+	if n == nil {
+		return "", ErrNoFrontend
+	}
+	asking := &Asking{Question: q, answered: make(chan answer, 1)}
+	select {
+	case n.events <- Event{Asking: asking}:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	select {
+	case ans := <-asking.answered:
+		return ans.key, ans.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// Confirm asks a yes or no, and is whether the answer was yes.
+func (n *Narration) Confirm(ctx context.Context, q Question) (bool, error) {
+	key, err := n.Ask(ctx, q)
+	return err == nil && key == AnswerYes, err
+}
+
+// Handover runs command with the frontend's terminal and waits for it to end.
+func (n *Narration) Handover(ctx context.Context, command *exec.Cmd) error {
+	if n == nil {
+		return ErrNoFrontend
+	}
+	handover := &Handover{Command: command, done: make(chan error, 1)}
+	select {
+	case n.events <- Event{Handover: handover}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case err := <-handover.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Decline answers every question and handover still to come on a feed whose
+// frontend can ask none, and drops its progress, until the command closes it:
+// a desktop verb before the app can draw a question.
+func (n *Narration) Decline(why error) {
+	for event := range n.events {
+		switch {
+		case event.Asking != nil:
+			event.Asking.Decline(why)
+		case event.Handover != nil:
+			event.Handover.Done(why)
+		}
+	}
+}
+
+// Confirmation is the question a lifecycle verb asks before it is sent, and
+// whether it asks one. Purging asks, since nothing can bring the disk back;
+// archiving is reversible and needs no ceremony, nor does anything else.
+// Dispatch asks it on the way to Frontend.Confirm; anything sending a verb
+// outside the registry refuses one that asks rather than skip the question.
+func Confirmation(verb Verb, targets []Sandbox) (Question, bool) {
+	if verb != VerbPurge {
+		return Question{}, false
+	}
+	return Question{
+		Title:     "Purge",
+		Body:      "Purge " + TargetsTitle(targets) + "? The disk and everything on it goes, and unarchive cannot bring it back.",
+		DefaultNo: true,
+	}, true
+}
+
+// TargetsTitle names what a command acts on: the one box by name, or how many
+// are selected.
+func TargetsTitle(targets []Sandbox) string {
+	if len(targets) == 1 {
+		return targets[0].Name
+	}
+	return strconv.Itoa(len(targets)) + " boxes selected"
+}

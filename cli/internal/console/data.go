@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -1196,7 +1195,6 @@ type Listing struct {
 // RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
 // nothing the command does not have.
 type RunRequest struct {
-	Credentials CredentialUI
 	// Prompt is what the harness is given to do, as the create takes it: the
 	// arguments. The composer holds one piece of text and sends it as one
 	// argument — splitting it would be inventing tokens nobody typed — while
@@ -2131,23 +2129,23 @@ type DataSource interface {
 	Resources(ctx context.Context) (Resources, error)
 
 	// Run creates a sandbox and delivers its source, which is what Enter does.
-	// It reports each step it passes through — the steps are this client's own
-	// work, so nothing else can say which one is underway — and the window puts
-	// them where it says what it is busy with.
+	// It narrates on n (Narration):
 	//
-	// warn is told what the create left out or found wrong that the person
-	// should hear about and that is no step of the work: uncommitted changes it
-	// did not carry in, a repository settings file it could not read all of.
-	// The window keeps it on screen past the steps that follow it.
+	//   - each step it passes through, reported — the steps are this client's
+	//     own work, so nothing else can say which one is underway;
+	//   - what the create left out or found wrong that the person should hear
+	//     about and that is no step of the work, warned: uncommitted changes it
+	//     did not carry in, a repository settings file it could not read all of;
+	//   - the discobox, accepted once, the moment the server has taken the
+	//     create and before the source is delivered: from then on the discobox
+	//     exists whatever the rest of the run does, so the prompt it was given
+	//     can no longer be lost. A create the server refused never accepts;
+	//   - Git's credential question and helper, asked and handed over.
 	//
-	// accepted is called once with the discobox, the moment the server has
-	// taken the create and before the source is delivered: from then on the
-	// discobox exists whatever the rest of the run does, so the prompt it was
-	// given can no longer be lost and the window lets go of it, and goes to
-	// the discobox to watch the rest from there. A create the server refused never
-	// calls it. A run that fails after it returns the discobox it made beside
-	// the error, so the window can still say which one it was.
-	Run(ctx context.Context, req RunRequest, report, warn func(string), accepted func(Sandbox)) (Sandbox, error)
+	// A run that fails after accepting returns the discobox it made beside the
+	// error, so the window can still say which one it was; one the server
+	// refused returns no discobox (a zero Sandbox).
+	Run(ctx context.Context, req RunRequest, n *Narration) (Sandbox, error)
 
 	// WatchProvisioning reports what a sandbox that is not usable yet is being
 	// made to do, until ctx ends. It blocks, and is meant to run beside a wait
@@ -2156,14 +2154,16 @@ type DataSource interface {
 	//
 	// It reports nothing for a sandbox with nothing left to provision, so a
 	// window that starts one against a running discobox draws no line at all.
-	WatchProvisioning(ctx context.Context, sandboxID string, report func(string))
+	// Each line is a step reported on n.
+	WatchProvisioning(ctx context.Context, sandboxID string, n *Narration)
 
 	// DeliverSource delivers the source a discobox is still waiting for, when
 	// this machine can, and does nothing otherwise: the delivery `discobox push`
 	// performs against a parked discobox, run by an attach before it dials
-	// (ADR 26-09-24-005). report is told each step as it begins. It returns once the
-	// discobox is free to start, or with why it could not be delivered.
-	DeliverSource(ctx context.Context, sandboxID string, report func(string), credentials CredentialUI) error
+	// (ADR 26-09-24-005). It reports each step on n as it begins, and asks
+	// there for Git credentials. It returns once the discobox is free to
+	// start, or with why it could not be delivered.
+	DeliverSource(ctx context.Context, sandboxID string, n *Narration) error
 
 	// Workspace reports what a create would carry in from the source directory,
 	// so the window can ask the questions still open before it creates anything.
@@ -2190,8 +2190,9 @@ type DataSource interface {
 	// Do runs a lifecycle verb against one sandbox. note, when not empty, is
 	// what the answer leaves the sandbox doing that the verb's name does not
 	// say — a repair that left it waiting for its source (ADR 26-11-03-618
-	// §2) — and the window reports it with the verb.
-	Do(ctx context.Context, verb Verb, sandboxID string, credentials CredentialUI) (note string, err error)
+	// §2) — and the window reports it with the verb. A start that delivers
+	// source narrates it on n, as DeliverSource does.
+	Do(ctx context.Context, verb Verb, sandboxID string, n *Narration) (note string, err error)
 
 	// Rename gives one sandbox a new name: the one in its meta, which its row
 	// shows from then on whatever its harness titles the terminal. It is not a
@@ -2618,14 +2619,6 @@ func (h Harness) HasOverrides() bool {
 		}
 	}
 	return false
-}
-
-// CredentialUI asks on the active frontend and temporarily returns terminal
-// ownership to Git when no credential helper answers.
-type CredentialUI struct {
-	Report  func(string)
-	Confirm func(context.Context, string) (bool, error)
-	Run     func(context.Context, *exec.Cmd) error
 }
 
 // HarnessChanges contains only the server's safe preview, never raw credentials.

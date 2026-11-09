@@ -28,3 +28,13 @@
 - **A renderer reads answers through the core.** A form's meaning — what an
   option key stands for, which answers count — is a `Read…` function or the
   form's `Submit` here, never `f.chosen("…") == "…"` in a renderer.
+- **A question a command asks before it runs is reached through `Dispatch`.**
+  Purge's confirmation was once a renderer's own check and then a free
+  function a renderer had to remember; either way the desktop bridge could
+  send a purge unasked. It lives in the core (`Confirmation`) and `Dispatch`
+  routes the verb to `Frontend.Confirm`; anything sending a verb outside the
+  registry refuses one that asks.
+- **A `Narration` send that waits has a way out.** `Accept`, `Ask` and
+  `Handover` wait for the reader, so each selects on its context: a create
+  whose frontend stopped reading must still return, and its deferred cleanup
+  (delivery locks) still run, once it is cancelled.

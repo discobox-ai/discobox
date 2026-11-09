@@ -264,22 +264,26 @@ func TestReconcileServices(t *testing.T) {
 func TestPushedHolds(t *testing.T) {
 	w := newWorkspace()
 	refused := errors.New("lease moved")
-	moved, failed := w.Pushed([]SourcePush{
+	// A refusal outranks what moved, and is a warning.
+	said := w.Pushed([]SourcePush{
 		{Slug: "a", Commit: "c1", Err: refused},
 		{Slug: "b", Commit: "c2", Pushed: true, Branch: "main"},
 	})
-	if len(moved) != 1 || len(failed) != 1 || w.PushHeld["a"] != "c1" {
-		t.Fatalf("moved %v failed %v held %v", moved, failed, w.PushHeld)
+	if said != (Progress{Text: "lease moved", Warning: true}) || w.PushHeld["a"] != "c1" {
+		t.Fatalf("said %+v held %v", said, w.PushHeld)
 	}
-	if got := PushedText(moved); got != "pushed c2 to origin/main in the discobox" {
-		t.Errorf("pushed text %q", got)
+	if said := w.Pushed([]SourcePush{{Slug: "b", Commit: "c3", Pushed: true, Branch: "main"}}); said != (Progress{Text: "pushed c3 to origin/main in the discobox"}) {
+		t.Errorf("pushed %+v", said)
 	}
-	if got := PushFailure(failed); got != "lease moved" {
-		t.Errorf("failure %q", got)
+	if said := w.Pushed([]SourcePush{{Slug: "a", UpToDate: true}}); said != (Progress{}) {
+		t.Errorf("a look that moved nothing says %+v", said)
 	}
-	w.Pushed([]SourcePush{{Slug: "a", UpToDate: true}})
 	if _, held := w.PushHeld["a"]; held {
 		t.Error("a source already in the origin lets its hold go")
+	}
+	two := w.Pushed([]SourcePush{{Slug: "a", Err: refused}, {Slug: "b", Err: refused}})
+	if two.Text != "could not push a, b to the discobox's origin; `discobox push` says why" || !two.Warning {
+		t.Errorf("two refused %+v", two)
 	}
 }
 

@@ -210,8 +210,8 @@ func (m *Model) deliverSource(gen int, sandbox console.Sandbox, freshShell bool)
 	feed, next := m.narrate()
 	ctx, ds := m.ctx, m.ds.ForServer(sandbox.Server)
 	deliver := func() tea.Msg {
-		defer feed.close()
-		err := ds.DeliverSource(ctx, sandbox.ID, feed.report, feed.credentials())
+		defer feed.Close()
+		err := ds.DeliverSource(ctx, sandbox.ID, feed.Narration)
 		return sourceDeliveredMsg{gen: gen, sandbox: sandbox, freshShell: freshShell, err: err}
 	}
 	return tea.Batch(deliver, next)

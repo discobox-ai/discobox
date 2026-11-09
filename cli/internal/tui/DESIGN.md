@@ -2813,7 +2813,7 @@ editing. This confirmation holds keys and pastes so they cannot change the
 buffer behind it. Ctrl-C cancels directly outside the confirmation.
 
 **Enter's prompt is spent when the server takes the create, and not before**
-(`submitting`, `promptSpentMsg`, `DataSource.Run`'s `accepted`). From Enter
+(`submitting`, `promptSpentMsg`, the create's `console.Narration.Accept`). From Enter
 until the server answers, the composer is read-only and a second Enter does
 nothing: its text is what is being sent. It is blurred for that stretch, so it
 draws as not taking input — no cursor, muted rules and chips — and its text
@@ -2839,7 +2839,10 @@ is leaving it: the create finishing says so on the status line and leaves the
 screen where it was. The create's two answers — taken, and done — arrive in
 either order and know of each other through a record of that one create
 (`createWatch`), so a create already done is not gone to, and a second create
-started meanwhile is not taken from by the first. A detached create stays where it
+started meanwhile is not taken from by the first. The acceptance is read off
+the create's narration feed, so the answer can overtake it; then the answer
+gives the composer back itself (`createWatch.spent`), and the acceptance that
+follows leaves the composer alone. A detached create stays where it
 was asked from.
 
 **The panes carry this window's keymap** (`paneKeymap`, `pane.go`). A pane's
@@ -3385,9 +3388,8 @@ while the attach waits. Both arrive as lines; the window's only job is to put
 the newest one where the busy line goes.
 
 - A warning is not a step, and the next step would replace it before anyone
-  read it. So it is a line of its own on the feed: `DataSource.Run` takes a
-  `warn` callback beside `report`, and the feed marks the line
-  (`narrationLine.warning`), never its text. It becomes a status of its own
+  read it. So it is a line of its own on the feed: the core's narration
+  (`console.Narration.Warn`) marks it (`Progress.Warning`), never its text. It becomes a status of its own
   (`statusW`) rather than the busy line. It does not go with `statusHolds`,
   the create finishing leaves it standing (`created` holds back its "created
   …"), and it goes with the next key or click, as any message does. Any other
@@ -3515,10 +3517,11 @@ it first: the signal loop a harness action's notify would start (`os/signal`).
 When the test ends the driver closes the workspace on screen and every parked
 one, since the bubble ends only once every goroutine in it has.
 
-Credential consent during source delivery uses the operation's narration feed:
-a question waits for the dialog's answer, and Git's credential process runs via
-`tea.ExecProcess` with stdout captured by the delivery layer. A stale feed
-answers no; dismissing the question falls back to client fetch and push.
+Credential consent during source delivery uses the operation's narration feed
+(`console.Narration`): a question waits for the dialog's answer, and Git's
+credential process is handed over and run via `tea.ExecProcess` with stdout
+captured by the delivery layer. A stale feed's question and handover are
+declined; dismissing the question cancels delivery.
 
 A selected sandbox with a pending harness capture offers `H` to review it; the
 same action is in its action menu and on the workspace leader plus `H`. Agent errors, blocking questions, and
@@ -3540,10 +3543,12 @@ not participate in account availability or bindings.
 
 ## Git source authentication questions
 
-The frontend carries questions and Git terminal handoffs through `CredentialUI`;
-the CLI data source supplies the resolved client policy to shared delivery.
-The Git credentials action dialog uses the labels and explanation text from
-`sandboxcreate`. Its persistent description below the choices follows keyboard
+Questions and Git terminal handoffs arrive on the operation's
+`console.Narration`; the CLI data source supplies the resolved client policy
+to shared delivery and words the question (`cli.gitCredentialQuestion`, with
+the labels and explanation text from `sandboxcreate`). `question.go` draws any
+core `Question` — a menu of its choices with each hint below, or a confirm —
+and purge's confirmation is the same, from `console.Confirmation`. Its persistent description below the choices follows keyboard
 selection and mouse hover; PageUp/PageDown reads overflowing text before
 confirmation. Escape cancels delivery instead of selecting local fetch.
 The session seeds the effective policy for command previews. A targeted

@@ -220,20 +220,20 @@ func (m *Model) Rename(box console.Sandbox) tea.Cmd { return m.askRename(box) }
 
 func (m *Model) Settings(box console.Sandbox) tea.Cmd { return m.askSettings(box) }
 
-// Do sends a verb. Archiving is reversible and needs no ceremony; purging is
-// not, and asks.
+// Confirm asks the question the core puts before a verb (purging's, which
+// nothing can undo), and sends the verb only on yes.
+func (m *Model) Confirm(q console.Question, verb console.Verb, targets []console.Sandbox) tea.Cmd {
+	m.dialog = questionDialog(q, func(key string) tea.Cmd {
+		if key != console.AnswerYes {
+			return nil
+		}
+		return func() tea.Msg { return runVerbMsg{verb: verb, targets: targets} }
+	})
+	return nil
+}
+
+// Do sends a verb. One that asks first came through Confirm.
 func (m *Model) Do(verb console.Verb, targets []console.Sandbox) tea.Cmd {
-	if verb == console.VerbPurge {
-		question := "Purge " + actionTitle(targets) + "? The disk and everything on it goes, and unarchive cannot bring it back."
-		d := confirmDialog("Purge", question, func(string) tea.Cmd {
-			return func() tea.Msg { return runVerbMsg{verb: console.VerbPurge, targets: targets} }
-		})
-		// Enter means no: a destruction nobody can undo has to be typed for,
-		// not fallen into by answering the dialog the way every other one is.
-		d.defaultNo = true
-		m.dialog = d
-		return nil
-	}
 	if verb == console.VerbArchive && m.inPanes() && len(targets) == 1 && m.boxRef(targets[0]) == m.boxRef(m.Box) {
 		// From the workspace the one target is the discobox it shows.
 		return m.archiveWorkspace(targets[0])
@@ -377,7 +377,7 @@ func (m *Model) DismissBanner() tea.Cmd { return m.toFocusedPane(dismissBannerMs
 func (m *Model) Actions() tea.Cmd {
 	if !m.workspaceShown() || m.listHasKeys() {
 		targets := m.list.targets()
-		m.dialog = actionsDialog(actionTitle(targets), "", actions(targets), chooseAction(targets))
+		m.dialog = actionsDialog(console.TargetsTitle(targets), "", actions(targets), chooseAction(targets))
 		return nil
 	}
 	return m.toFocusedPane(boxMenuMsg{})
