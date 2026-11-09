@@ -161,6 +161,40 @@ func TestRefreshAnswersTheRequestAndTheFirstAnswerWins(t *testing.T) {
 	}
 }
 
+// A refresh whose command prints the token already stored still renews it:
+// `gh auth token` hands back one token for as long as its login lasts, and a
+// value left stale after the answer would ask again on the next resolve.
+func TestRefreshingWithTheSameValueRestartsItsLifetime(t *testing.T) {
+	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
+	ctx := context.Background()
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
+		t.Fatal(err)
+	}
+	req := pendingRefresh(t, st, sec.ID)
+	if req == nil {
+		t.Fatal("no refresh request opened")
+	}
+
+	got, err := svc.RefreshSecret(testPrincipalContext(), "project-1", sec.ID, services.RefreshSecretBody{
+		Value:     "gho_old",
+		Via:       apigen.RefreshSecretBodyViaCommand,
+		Command:   apigen.NewOptNilStringArray([]string{"gh", "auth", "token"}),
+		RequestId: apigen.NewOptString(req.ID),
+	})
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if got.StaleAt == nil || time.Until(*got.StaleAt) < 4*time.Minute {
+		t.Fatalf("staleAt = %v, want a fresh lifetime for the value vouched for again", got.StaleAt)
+	}
+	if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com"); err != nil {
+		t.Fatal(err)
+	}
+	if again := pendingRefresh(t, st, sec.ID); again != nil {
+		t.Fatalf("refresh request = %+v after the same value was renewed, want none", again)
+	}
+}
+
 // An ordinary value write renews the token just as well, and closes the
 // request as such.
 func TestUpdatingTheValueClosesTheRefreshRequest(t *testing.T) {

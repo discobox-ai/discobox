@@ -242,7 +242,14 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 	// (ADR 26-09-25-122 §1). A writer that stamped it already — with the
 	// expiry the value carries — keeps its stamp; every other writer gets one
 	// here, so no path can put a new value behind an old value's clock.
-	if replacedValue && !stampedSince(secret, stored) {
+	//
+	// A writer can also stamp a value it did not change: a refresh whose
+	// command printed the token already stored (`gh auth token` hands back the
+	// same token for as long as its login lasts) has still vouched for it now,
+	// so its lifetime restarts. Leaving the stamp behind would keep the value
+	// stale, and every resolve would ask for it again.
+	restamped := stored != nil && stampedSince(secret, stored)
+	if replacedValue && !restamped {
 		secret.ValueWritten(time.Now().UTC(), nil)
 	}
 	sealed, err := s.sealSecretForWrite(ctx, secret)
@@ -262,7 +269,7 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 		// The revision advances in SQL rather than from the copy the caller
 		// read, so a concurrent writer's advance is never written back over.
 		omit := []string{"revision"}
-		if !replacedValue {
+		if !replacedValue && !restamped {
 			omit = append(omit, "value_updated_at", "value_expires_at")
 		}
 		if err := tx.Omit(omit...).Save(sealed).Error; err != nil {
