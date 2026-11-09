@@ -16,7 +16,7 @@
   message to it.
 - **A wire change is regenerated, never mirrored.** Change `wire.go` (or the
   console's `Spec`), run `go tool task generate`, and build the app against
-  the new `desktop/src/wire.rs`. A type the app reads written by hand in
+  the new `desktop/bridge/src/wire.rs`. A type the app reads written by hand in
   `desktop/` is the drift the generated types exist to prevent. A new named
   string type on the wire declares its values as constants: they are its
   enum.
@@ -50,3 +50,10 @@
   only narrowed the race: a relist wakes a follower as readily as its end,
   and the snapshot after an unsubscribe once went out after the next
   command's result.
+- **The contract suite reaches the core through commands.** A case the app
+  needs covered is a box in `TestContractCore` whose command does it, never
+  a control channel beside the bridge: the app's client sends only what the
+  app could.
+- **The suite covers every message kind but `edit`** (289 §4), which
+  nothing the core runs sends yet. The change that first makes the core send
+  one adds its case, with `saved` answering it, to the contract suite.

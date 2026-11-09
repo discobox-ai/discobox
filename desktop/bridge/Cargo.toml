@@ -1,0 +1,10 @@
+[package]
+name = "discobox-bridge"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The desktop app's side of the discobox desktop bridge (ADR 26-11-07-289): the wire's generated types and the client that speaks them."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

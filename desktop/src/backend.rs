@@ -10,30 +10,22 @@
 //! Without `--bridge` the `Mock` answers the same messages, with made-up boxes whose panes are
 //! local shells on PTYs, for developing the app and for headless snapshots.
 //!
-//! The wire's types are generated from the bridge's Go types, through its schema (`wire.rs`,
-//! `go tool task generate`); none is written here.
+//! The bridge's client and the wire's types are the `discobox_bridge` crate (`bridge/`); the
+//! types are generated from the bridge's Go types, through its schema (`go tool task generate`),
+//! and none is written here.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
+use discobox_bridge::{Client, Incoming};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
-use serde_json::Value;
 
 use crate::wire::{
-    Answer, Box as Sandbox, Command, Entry, Form, Hello, Message, Open, PROTOCOL, Progress, Question, ResizePayload,
-    Result as CommandResult, SPEC_VERSION, Sessions, Spec, SpecCommand, SpecGesture, State, Status, Stream, StreamState,
-    Submit, Subscribe, Tab, TabKind, Topic, Type, Welcome, kind,
+    Answer, Box as Sandbox, Command, Entry, Form, Message, Open, Progress, Question, Result as CommandResult, Sessions,
+    Spec, State, Status, Stream, StreamState, Submit, Subscribe, Tab, TabKind, Topic, Type,
 };
-
-impl Sandbox {
-    pub fn running(&self) -> bool { self.state == State::Running }
-    /// What the cursor row says in place of the name, as the TUI's row does.
-    pub fn note(&self) -> Option<&str> {
-        [&self.provisioning, &self.message].into_iter().find(|s| !s.is_empty()).map(|s| s.as_str())
-    }
-}
 
 /// What the app sends, by message: the type and its body.
 pub enum Out {
@@ -74,14 +66,8 @@ impl Out {
     }
 }
 
-impl Spec {
-    /// The spec the CLI printed (`discobox desktop --print-spec`), for running without one.
-    pub fn bundled() -> Spec { serde_json::from_str(include_str!("spec.json")).expect("spec.json") }
-
-    pub fn command(&self, id: &str) -> Option<&SpecCommand> { self.commands.iter().find(|c| c.id == id) }
-
-    pub fn gesture(&self, id: &str) -> Option<&SpecGesture> { self.gestures.iter().find(|g| g.id == id) }
-}
+/// The spec the CLI printed (`discobox desktop --print-spec`), for running without one.
+pub fn bundled_spec() -> Spec { serde_json::from_str(include_str!("spec.json")).expect("spec.json") }
 
 /// What arrives for the window.
 pub enum Event {
@@ -119,33 +105,7 @@ pub trait Backend {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The bridge: frames on stdin/stdout. kind (1), stream (u32), length (u32), payload.
-
-fn write_frame(w: &mut impl Write, kind: u8, stream: u32, payload: &[u8]) -> std::io::Result<()> {
-    let mut head = [0u8; 9];
-    head[0] = kind;
-    head[1..5].copy_from_slice(&stream.to_be_bytes());
-    head[5..9].copy_from_slice(&(payload.len() as u32).to_be_bytes());
-    w.write_all(&head)?;
-    w.write_all(payload)?;
-    w.flush()
-}
-
-fn read_frame(r: &mut impl Read) -> std::io::Result<(u8, u32, Vec<u8>)> {
-    let mut head = [0u8; 9];
-    r.read_exact(&mut head)?;
-    let stream = u32::from_be_bytes(head[1..5].try_into().unwrap());
-    let len = u32::from_be_bytes(head[5..9].try_into().unwrap()) as usize;
-    let mut payload = vec![0; len];
-    r.read_exact(&mut payload)?;
-    Ok((head[0], stream, payload))
-}
-
-/// Why this app and the CLI cannot talk: which side is older.
-pub fn mismatch(cli: i64) -> String {
-    let older = if cli < PROTOCOL { "the CLI is older" } else { "this desktop app is older" };
-    format!("this desktop app speaks bridge protocol {PROTOCOL} and the CLI speaks {cli}: {older}; run the app built with this CLI")
-}
+// The bridge: the client (`discobox_bridge`) on stdin and stdout.
 
 /// A message as the window's event, or nothing for one the app does not read.
 fn event(m: Message) -> Option<Event> {
@@ -170,125 +130,38 @@ fn event(m: Message) -> Option<Event> {
     }
 }
 
-/// A message the generated types could not read: never expected, since both sides are built
-/// from one schema, so it is always said. What the CLI waits on still gets its way out, read
-/// by its ID from the raw message: a result ends its command as failed, a question is
-/// declined and a form dismissed (as the app answers every one it reads, until #808), and a
-/// stream is failed, so its pane does not wait either.
-fn unreadable(payload: &[u8], e: serde_json::Error) -> Option<Event> {
-    let v: Value = serde_json::from_slice(payload).unwrap_or_default();
-    let kind = v["type"].as_str().unwrap_or("JSON");
-    eprintln!("desktop: a {kind} message from the CLI could not be read: {e}");
-    let body = &v[kind];
-    let why = format!("the desktop app could not read the CLI's {kind}: {e}; run the app built with this CLI");
-    let title = || body["title"].as_str().unwrap_or("the CLI's message").to_string();
-    match kind {
-        "result" => {
-            let id = body["id"].as_u64()?;
-            Some(Event::Result(CommandResult { id, status: Status::Failed, why, ..Default::default() }))
-        }
-        "question" => Some(Event::Question(Question { id: body["id"].as_u64()?, title: title(), ..Default::default() })),
-        "form" => Some(Event::Form(Form { id: body["id"].as_u64()?, title: title(), ..Default::default() })),
-        "stream" => {
-            let stream = u32::try_from(body["stream"].as_u64()?).ok()?;
-            Some(Event::Stream(Stream { stream, state: StreamState::Failed, why }))
-        }
-        _ => None,
-    }
-}
-
 pub struct Bridge {
-    out: Arc<Mutex<std::io::Stdout>>,
+    client: Client,
 }
 
 impl Bridge {
-    /// Says hello and waits for the welcome, then hands stdin to a reader thread.
+    /// Says hello and waits for the welcome; then what arrives goes to the inbox, until the CLI
+    /// is gone, when the app is too.
     pub fn connect(inbox: Inbox) -> Result<(Bridge, Spec), String> {
-        let out = Arc::new(Mutex::new(std::io::stdout()));
-        let hello = Message { r#type: Type::Hello, hello: Some(Hello { protocol: PROTOCOL }), ..Default::default() };
-        let hello = serde_json::to_vec(&hello).map_err(|e| e.to_string())?;
-        write_frame(&mut *out.lock().unwrap(), kind::JSON, 0, &hello).map_err(|e| e.to_string())?;
-        let mut input = std::io::stdin().lock();
-        let spec = loop {
-            let (k, _, payload) = read_frame(&mut input).map_err(|e| format!("the bridge closed: {e}"))?;
-            if k != kind::JSON {
-                continue;
-            }
-            // The protocol is read before anything else: another version's fields may not parse.
-            let mut v: Value = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
-            // Protocol 1 had no message types: a CLI speaking it answers this hello with an
-            // error of its own shape.
-            if v.get("type").is_none() {
-                return Err(mismatch(1));
-            }
-            if v["type"] != "welcome" {
-                continue;
-            }
-            let protocol = v["welcome"]["protocol"].as_i64().unwrap_or(0);
-            if protocol != PROTOCOL {
-                return Err(mismatch(protocol));
-            }
-            // So is the spec's version, for the same reason.
-            let version = v["welcome"]["spec"]["version"].as_i64().unwrap_or(0);
-            if version != SPEC_VERSION {
-                return Err(format!(
-                    "this desktop app reads console spec version {SPEC_VERSION}, and the CLI handed over version {version}: run the app built with this CLI"
-                ));
-            }
-            let welcome: Welcome = serde_json::from_value(v["welcome"].take()).map_err(|e| e.to_string())?;
-            break welcome.spec.ok_or("the CLI's welcome carried no spec")?;
-        };
-        drop(input);
-        std::thread::spawn(move || {
-            let mut input = std::io::stdin().lock();
-            while let Ok((k, stream, payload)) = read_frame(&mut input) {
-                match k {
-                    kind::JSON => {
-                        crate::debug(|| format!("← {}", String::from_utf8_lossy(&payload)));
-                        match serde_json::from_slice::<Message>(&payload) {
-                            Ok(m) => {
-                                if let Some(e) = event(m) {
-                                    inbox.push(e);
-                                }
-                            }
-                            Err(e) => {
-                                if let Some(e) = unreadable(&payload, e) {
-                                    inbox.push(e);
-                                }
-                            }
-                        }
-                    }
-                    kind::STDOUT | kind::STDERR => inbox.push(Event::Data(stream, payload)),
-                    kind::EXIT => inbox.push(Event::Exited(stream, String::from_utf8_lossy(&payload).into())),
-                    _ => {}
+        let (client, welcome) = Client::connect(std::io::stdin(), std::io::stdout(), move |incoming| match incoming {
+            Incoming::Message(m) => {
+                if let Some(e) = event(m) {
+                    inbox.push(e);
                 }
             }
-            // The CLI is gone: nothing more will arrive, and nothing can be sent.
-            std::process::exit(0);
-        });
-        Ok((Bridge { out }, spec))
-    }
-
-    fn frame(&self, kind: u8, stream: u32, payload: &[u8]) {
-        let _ = write_frame(&mut *self.out.lock().unwrap(), kind, stream, payload);
+            Incoming::Output(stream, bytes) => inbox.push(Event::Data(stream, bytes)),
+            Incoming::Exited(stream, why) => inbox.push(Event::Exited(stream, why)),
+            // Nothing more will arrive, and nothing can be sent.
+            Incoming::Closed => std::process::exit(0),
+        })?;
+        Ok((Bridge { client }, welcome.spec.ok_or("the CLI's welcome carried no spec")?))
     }
 }
 
 impl Backend for Bridge {
+    // A write fails only once the CLI is gone, and then the reader ends the app.
     fn send(&mut self, m: Out) {
-        let m = match serde_json::to_string(&m.message()) {
-            Ok(m) => m,
-            Err(e) => return eprintln!("desktop: a message could not be written: {e}"),
-        };
-        crate::debug(|| format!("→ {m}"));
-        self.frame(kind::JSON, 0, m.as_bytes());
-    }
-    fn input(&mut self, stream: u32, bytes: &[u8]) { self.frame(kind::INPUT, stream, bytes); }
-    fn resize(&mut self, stream: u32, cols: u16, rows: u16) {
-        if let Ok(size) = serde_json::to_vec(&ResizePayload { cols, rows }) {
-            self.frame(kind::RESIZE, stream, &size);
+        if let Err(e) = self.client.send(&m.message()) {
+            eprintln!("desktop: a message could not be written: {e}");
         }
     }
+    fn input(&mut self, stream: u32, bytes: &[u8]) { let _ = self.client.input(stream, bytes); }
+    fn resize(&mut self, stream: u32, cols: u16, rows: u16) { let _ = self.client.resize(stream, cols, rows); }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -413,7 +286,7 @@ impl Mock {
     /// The registry's lifecycle commands, with the core's rules roughly.
     fn actions(&self, sandbox: &str) -> Vec<Entry> {
         let running = self.sandbox(sandbox).is_some_and(Sandbox::running);
-        Spec::bundled().commands.iter().filter(|c| c.lifecycle).map(|c| {
+        bundled_spec().commands.iter().filter(|c| c.lifecycle).map(|c| {
             let (enabled, why) = match c.id.as_str() {
                 "attach" | "shell" => (running, "the box has no container; repair rebuilds it"),
                 "review config" | "stop" => (running, "not running"),
@@ -528,34 +401,13 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::wire::{Args, Context};
+    use crate::wire::{Args, Context, SPEC_VERSION};
 
     // src/spec.json is the CLI's own spec (`task generate`), so a CLI whose spec changed shape
     // fails this until the app reads the new one.
     #[test]
     fn the_bundled_spec_is_the_version_this_app_reads() {
-        assert_eq!(Spec::bundled().version, SPEC_VERSION);
-    }
-
-    // A frame is kind, stream and length big-endian, then the payload, as
-    // cli/internal/console/bridge writes and reads it.
-    #[test]
-    fn frames_round_trip() {
-        let mut wire = Vec::new();
-        write_frame(&mut wire, kind::STDOUT, 7, b"hello").unwrap();
-        write_frame(&mut wire, kind::JSON, 0, b"").unwrap();
-        assert_eq!(&wire[..9], &[1, 0, 0, 0, 7, 0, 0, 0, 5]);
-        let mut r = wire.as_slice();
-        assert_eq!(read_frame(&mut r).unwrap(), (kind::STDOUT, 7, b"hello".to_vec()));
-        assert_eq!(read_frame(&mut r).unwrap(), (kind::JSON, 0, vec![]));
-        assert!(read_frame(&mut r).is_err());
-    }
-
-    // A CLI of another protocol is refused, naming which side is older.
-    #[test]
-    fn a_mismatch_says_which_side_is_older() {
-        assert!(mismatch(PROTOCOL - 1).contains("the CLI is older"));
-        assert!(mismatch(PROTOCOL + 1).contains("this desktop app is older"));
+        assert_eq!(bundled_spec().version, SPEC_VERSION);
     }
 
     // The CLI's messages as it writes them (cli/internal/console/bridge/wire.go) read as the
@@ -574,24 +426,6 @@ mod tests {
         let Some(Event::Stream(st)) = read(r#"{"type":"stream","stream":{"stream":5,"state":"failed","why":"gone"}}"#) else { panic!("stream") };
         assert_eq!((st.stream, st.state), (5, StreamState::Failed));
         assert!(read(r#"{"type":"fieldErrors","fieldErrors":{"form":1,"errors":[]}}"#).is_none());
-    }
-
-    // What the types cannot read but something waits on still gets its way out: a result fails
-    // its command, a question is declined, a form dismissed, a stream failed; the rest is only
-    // said.
-    #[test]
-    fn an_unreadable_result_fails_its_command() {
-        let unread = |s: &str| unreadable(s.as_bytes(), serde_json::from_str::<Message>(s).unwrap_err());
-        let Some(Event::Result(r)) = unread(r#"{"type":"result","result":{"id":6,"status":"queued"}}"#) else { panic!("no result") };
-        assert_eq!((r.id, r.status), (6, Status::Failed));
-        assert!(r.why.contains("could not read"));
-        let Some(Event::Question(q)) = unread(r#"{"type":"question","question":{"id":7,"command":1,"title":"Trust?","choices":[{"key":1}]}}"#) else { panic!("no question") };
-        assert_eq!((q.id, q.title.as_str()), (7, "Trust?"));
-        let Some(Event::Form(f)) = unread(r#"{"type":"form","form":{"id":8,"command":1,"title":"Rename","fields":null}}"#) else { panic!("no form") };
-        assert_eq!(f.id, 8);
-        let Some(Event::Stream(st)) = unread(r#"{"type":"stream","stream":{"stream":9,"state":"paused"}}"#) else { panic!("no stream") };
-        assert_eq!((st.stream, st.state), (9, StreamState::Failed));
-        assert!(unread(r#"{"type":"snapshot","snapshot":{"sub":1,"topic":"weather"}}"#).is_none());
     }
 
     // What the app sends is what the CLI reads.

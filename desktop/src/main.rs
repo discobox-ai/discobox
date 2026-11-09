@@ -20,12 +20,12 @@ mod parity_tests;
 mod term;
 mod theme;
 mod view;
-mod wire;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
+use discobox_bridge::wire;
 use wire::{Args, Box as Sandbox, Command, Context, Entry, Result as CommandResult, Sessions, Spec, SpecTarget, Status, StreamState, Tab, TabKind, Topic};
 use rune::{App, AppSpec, KeyEvent, MenuItem, TextEdit, Tx, Waker};
 use term::Screen;
@@ -656,14 +656,6 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
     true
 }
 
-/// `DISCOBOX_DESKTOP_DEBUG=1` logs every message each way to stderr.
-pub fn debug(line: impl FnOnce() -> String) {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if *ON.get_or_init(|| std::env::var_os("DISCOBOX_DESKTOP_DEBUG").is_some()) {
-        eprintln!("desktop: {}", line());
-    }
-}
-
 fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool { keys::on_key(s, ev, tx) }
 
 type Boot = (Box<dyn Backend + Send>, Spec, Inbox, bool);
@@ -673,7 +665,7 @@ static BOOT: Mutex<Option<Boot>> = Mutex::new(None);
 
 fn boot_mock() -> Boot {
     let inbox = Inbox::default();
-    (Box::new(Mock::new(inbox.clone())), Spec::bundled(), inbox, false)
+    (Box::new(Mock::new(inbox.clone())), backend::bundled_spec(), inbox, false)
 }
 
 macro_rules! menu_commands {

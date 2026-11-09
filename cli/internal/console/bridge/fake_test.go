@@ -43,6 +43,8 @@ type fakeCore struct {
 	rejections []console.SecretRejection
 	// stopped answers Execs as a box that is not running.
 	stopped bool
+	// echo has every terminal echo what it is sent as its output (fakeTerm).
+	echo bool
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -132,6 +134,7 @@ func (f *fakeCore) Services(context.Context, string) ([]console.Service, error) 
 func (f *fakeCore) term(id string) *fakeTerm {
 	t := newFakeTerm()
 	f.mu.Lock()
+	t.echo = f.echo
 	f.opened[id] = t
 	f.mu.Unlock()
 	return t
@@ -200,9 +203,13 @@ func (f *fakeCore) Resources(context.Context) (console.Resources, error) {
 }
 
 // fakeTerm is a box's terminal: what the app wrote to it, the sizes it was
-// given, and output a test sends.
+// given, and output a test sends. One that echoes sends each of those back
+// as a line of its output, for an app that cannot see into it, and ends on
+// the input "exit\r".
 type fakeTerm struct {
 	mu      sync.Mutex
+	echo    bool
+	ended   bool
 	got     []string
 	out     chan []byte
 	events  chan console.TerminalEvent
@@ -217,8 +224,16 @@ func newFakeTerm() *fakeTerm {
 
 func (t *fakeTerm) note(s string) {
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.got = append(t.got, s)
-	t.mu.Unlock()
+	if !t.echo || t.ended {
+		return
+	}
+	t.out <- []byte(s + "\n")
+	if s == "input exit\r" {
+		t.ended = true
+		close(t.out)
+	}
 }
 
 func (t *fakeTerm) log() []string {

@@ -179,11 +179,14 @@ flowchart TD
   terminal from any stream; the CLI uses it. It depends on nothing else in
   this repository. See
   [`termpane/DESIGN.md`](termpane/DESIGN.md).
-- Desktop app: `desktop`, a Rust crate (not a Go module) on Rune that draws the
-  console natively. `discobox desktop` runs it as a child process and serves
-  it the console core over stdio (`cli/internal/console/bridge`), so it holds
-  no credentials and depends on no Go code; its spec (`desktop/src/spec.json`) is generated
-  from the console core (`cli/internal/console`). The CLI side is in
+- Desktop app: `desktop`, a Cargo workspace (not a Go module) on Rune that
+  draws the console natively: the app, and its bridge client
+  (`desktop/bridge`). `discobox desktop` runs it as a child process and
+  serves it the console core over stdio (`cli/internal/console/bridge`), so it
+  holds no credentials and links no Go code; its wire types and its spec
+  (`desktop/src/spec.json`) are generated from the console core
+  (`cli/internal/console`), and the bridge client's contract suite runs
+  against the Go bridge, which it builds. The CLI side is in
   [`cli/DESIGN.md`](cli/DESIGN.md); the app's own layout and what it does not
   do yet are in [`desktop/README.md`](desktop/README.md).
 
@@ -305,8 +308,12 @@ flowchart TD
   plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). A
   Linux job whose target needs a shell that extends the default names it
   (`shell: desktop` runs `nix develop .#desktop`). The desktop app is built
-  and tested only there, in `ci:desktop`: its tests, parity scenarios
-  included, and its scenes rendered headless on that software driver. Go's
+  and tested only there, in `ci:desktop`: its tests, parity scenarios and
+  the bridge's contract suite included, and its scenes rendered headless on
+  that software driver. macOS and Windows run the bridge's contract suite
+  alone (`desktop:bridge`), whose crate has nothing of the window; their
+  Rust is the runner image's rustup, at the version
+  `desktop/rust-toolchain.toml` pins, since they have no devShell. Go's
   build and test cache is Depot Cache, which Depot's runners set as
   `GOCACHEPROG` and every run, pull requests included, reads and writes per
   object; a runner without it builds cold. Any run but a pull request or a

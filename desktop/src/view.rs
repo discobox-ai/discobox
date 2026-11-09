@@ -117,6 +117,11 @@ fn button(glyph: &str, border: Color, tip: Option<String>) -> El {
 // ---------------------------------------------------------------------------------------------
 // The list
 
+/// What the cursor row says in place of a box's name, as the TUI's row does.
+fn note(b: &Sandbox) -> Option<&str> {
+    [&b.provisioning, &b.message].into_iter().find(|s| !s.is_empty()).map(|s| s.as_str())
+}
+
 fn list_row(s: &State, i: usize, wide: bool) -> El {
     let b = &s.boxes[i];
     let on = i == s.cursor;
@@ -124,7 +129,7 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
     let (dot, dot_c) = glyph(s, false, b.state.as_str());
     let (ag, ag_c) = glyph(s, true, &b.agent);
     let nested = if b.parent.is_empty() || s.box_by_id(&b.parent).is_none() { "" } else { "└ " };
-    let name = match (b.note(), on) {
+    let name = match (note(b), on) {
         (Some(m), true) => m.to_string(),
         _ => b.name.clone(),
     };

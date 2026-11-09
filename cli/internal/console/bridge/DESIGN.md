@@ -4,7 +4,8 @@ The desktop bridge (ADR 26-11-07-289): the CLI's side of the pipe to the
 desktop app. `discobox desktop` runs the app as its child and hands this
 package its stdin and stdout and the window's `console.DataSource`
 (`cli.apiDataSource`); `Server.Serve` serves the console core over them until
-the app goes. The app's side is `desktop/src/backend.rs`.
+the app goes. The app's side is the `discobox-bridge` crate
+(`desktop/bridge`), which `desktop/src/backend.rs` drives.
 
 ```mermaid
 flowchart LR
@@ -26,7 +27,7 @@ flowchart LR
   (`go generate`, from `go tool task generate`) writes their JSON Schema,
   `wire.schema.json`, by reflection, with their doc comments and each named
   string's constants as an enum; then the app's Rust types,
-  `desktop/src/wire.rs`, from that schema alone. A field omitted when empty is
+  `desktop/bridge/src/wire.rs`, from that schema alone. A field omitted when empty is
   optional; any other is required, and a pointer must be omitted when empty.
   It refuses what it cannot carry faithfully rather than guess: a type that
   marshals itself, a type that contains itself, a pointer to anything but a
@@ -35,6 +36,14 @@ flowchart LR
   `task verify` fails on either file stale. The tests' fake app holds every
   message either way to the schema, so what the Go writes is what the app
   reads.
+- **Contract suite** (289 §4): the app's real client
+  (`desktop/bridge/tests/contract.rs`) against this `Server` over a fake core
+  (`fakeCore`), across a pipe each way. The CLI's end is `TestContractCore`,
+  run from this package's test binary as its own process, and skipped under
+  `go test`: its boxes say what the core does, so each case — every message
+  kind but `edit`, frames before a stream attaches, a question while another
+  command runs, a CLI exiting mid-command — is reached with a command. It
+  runs on Linux, macOS and Windows in CI.
 - **Versions**: `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.

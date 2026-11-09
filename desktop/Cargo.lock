@@ -726,10 +726,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
+name = "discobox-bridge"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "discobox-desktop"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
+ "discobox-bridge",
  "portable-pty",
  "rune",
  "serde",

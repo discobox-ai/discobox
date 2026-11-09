@@ -5,11 +5,18 @@ edition = "2024"
 publish = false
 description = "discobox desktop: the console as a native app on Rune (ADR 26-11-07-876)."
 
+# The bridge client and the wire's generated types are their own crate, with
+# nothing of the window in it, so its contract suite builds and runs on every
+# platform CI has (README.md).
+[workspace]
+members = ["bridge"]
+
 [[bin]]
 name = "discobox-desktop"
 path = "src/main.rs"
 
 [dependencies]
+discobox-bridge = { path = "bridge" }
 # Rune is pre-release: pin a rev of `dev` (it is never rewritten).
 rune = { git = "https://github.com/anomalyco/rune", rev = "4ca683561a100e16b1ce32f3576f4ade61bd2924" }
 alacritty_terminal = "0.26"
