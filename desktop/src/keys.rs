@@ -10,7 +10,7 @@
 
 use rune::{Key, KeyEvent, Shortcut, Tx};
 
-use crate::backend::Spec;
+use crate::wire::Spec;
 use crate::{Focus, State, overlay, run_command};
 
 const MAC: bool = cfg!(target_os = "macos");
@@ -182,7 +182,7 @@ fn list_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
         "back" if s.live.is_some() => s.focus = Focus::Panes,
         "context menu" => {
             if let Some(b) = s.boxes.get(s.cursor) {
-                let id = b.id.clone();
+                let id = b.key.clone();
                 s.open_menu(id, (260.0, 120.0 + s.cursor as f32 * 28.0));
             }
         }

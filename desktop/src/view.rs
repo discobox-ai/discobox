@@ -5,7 +5,7 @@
 
 use rune::{Color, Cx, El, PointerPress, Span, Tx, col, el, rich, row, spacer, text, text_input};
 
-use crate::backend::Sandbox;
+use crate::wire::Box as Sandbox;
 use crate::theme::{self, CELL_H};
 use crate::{Focus, Side, State, Workspace, keys, logo, overlay, run_command};
 
@@ -21,13 +21,13 @@ pub fn list_order(boxes: Vec<Sandbox>) -> Vec<Sandbox> {
             sources.push(b.source.clone());
         }
     }
-    let ids: Vec<&str> = boxes.iter().map(|b| b.id.as_str()).collect();
+    let ids: Vec<&str> = boxes.iter().map(|b| b.key.as_str()).collect();
     let nested = |b: &Sandbox| !b.parent.is_empty() && ids.contains(&b.parent.as_str());
     let mut out = vec![];
     for src in sources {
         for b in boxes.iter().filter(|b| b.source == src && !nested(b)) {
             out.push(b.clone());
-            out.extend(boxes.iter().filter(|c| c.parent == b.id).cloned());
+            out.extend(boxes.iter().filter(|c| c.parent == b.key).cloned());
         }
     }
     out
@@ -120,7 +120,7 @@ fn button(glyph: &str, border: Color, tip: Option<String>) -> El {
 fn list_row(s: &State, i: usize, wide: bool) -> El {
     let b = &s.boxes[i];
     let on = i == s.cursor;
-    let live = s.live.as_deref() == Some(&b.id);
+    let live = s.live.as_deref() == Some(&b.key);
     let (dot, dot_c) = glyph(s, false, &b.state);
     let (ag, ag_c) = glyph(s, true, &b.agent);
     let nested = if b.parent.is_empty() || s.box_by_id(&b.parent).is_none() { "" } else { "└ " };
@@ -130,7 +130,7 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
     };
     let lit = s.focus == Focus::List || s.live.is_none();
     let fill = if on && lit { theme::row_cursor() } else if live { theme::band() } else { Color::TRANSPARENT };
-    let mut r = row().key(format!("box-{}", b.id)).w_full().h(ROW_H).px(6.0).gap(8.0).center_y().radius(5.0).fill(fill)
+    let mut r = row().key(format!("box-{}", b.key)).w_full().h(ROW_H).px(6.0).gap(8.0).center_y().radius(5.0).fill(fill)
         .cursor(rune::Cursor::Pointer)
         .child(t(if on { "❯" } else { " " }, theme::gold()).w(10.0))
         .child(t(dot, dot_c).w(12.0))
@@ -150,7 +150,7 @@ fn list_row(s: &State, i: usize, wide: bool) -> El {
             .child(t(if b.memory_bytes > 0 { format!("{:.1} GiB", b.memory_bytes as f64 / (1u64 << 30) as f64) } else { "·".into() }, theme::dim()).w(70.0))
             .child(diffstat(b).w(90.0));
     }
-    let id = b.id.clone();
+    let id = b.key.clone();
     r.on_press(move |s: &mut State| {
         s.cursor = i;
         s.focus = Focus::List;
@@ -246,7 +246,7 @@ fn pane_label(ws: &Workspace, i: usize, sbx: &Sandbox) -> String {
     let n = ws.strip().iter().position(|&j| j == i).unwrap_or(0) + 1;
     let name = match p.exec.kind.as_str() {
         "primary" => sbx.name.clone(),
-        _ => p.screen.title.clone().filter(|t| !t.is_empty() && t.len() < 24).unwrap_or_else(|| p.exec.label.clone()),
+        _ => p.screen.title.clone().filter(|t| !t.is_empty() && t.len() < 24).unwrap_or_else(|| p.exec.title.clone()),
     };
     format!("{n} {name}{}", if p.exited { " ·done" } else { "" })
 }
@@ -306,7 +306,7 @@ fn header(s: &State, sbx: &Sandbox) -> El {
             .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx)));
     }
     r = r.child(t(source_label(sbx), theme::grey()))
-        .child(t(sbx.shown_id().to_string(), theme::dim()));
+        .child(t(sbx.id.clone(), theme::dim()));
     if !sbx.branch.is_empty() {
         r = r.child(t(format!("{}@{}", sbx.branch, sbx.commit), theme::grey()));
     }
@@ -319,7 +319,7 @@ fn header(s: &State, sbx: &Sandbox) -> El {
     for tag in &sbx.tags {
         r = r.child(t(tag.clone(), theme::dim()));
     }
-    let id = sbx.id.clone();
+    let id = sbx.key.clone();
     r.child(spacer())
         .child(t(format!("cpu {}%  mem {:.1} GiB", sbx.cpu, sbx.memory_bytes as f64 / (1u64 << 30) as f64), theme::dim()))
         .child(button("…", theme::inactive(), Some("box actions".into()))

@@ -20,11 +20,13 @@ mod parity_tests;
 mod term;
 mod theme;
 mod view;
+mod wire;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use backend::{Action, Args, Backend, Bridge, CommandMsg, CommandResult, Context, Event, Exec, Inbox, Mock, Out, Sandbox, Spec};
+use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
+use wire::{Args, Box as Sandbox, Command, Context, Entry, Result as CommandResult, Sessions, Spec, Status, StreamState, Tab, Topic};
 use rune::{App, AppSpec, KeyEvent, MenuItem, TextEdit, Tx, Waker};
 use term::Screen;
 
@@ -37,7 +39,7 @@ pub enum Side {
 
 pub struct Pane {
     pub stream: u32,
-    pub exec: Exec,
+    pub exec: Tab,
     pub screen: Screen,
     pub exited: bool,
     /// Reconnecting, or why it ended.
@@ -124,7 +126,7 @@ pub struct Palette {
 pub struct Menu {
     pub sandbox: String,
     pub at: (f32, f32),
-    pub actions: Vec<Action>,
+    pub actions: Vec<Entry>,
     pub picked: usize,
 }
 
@@ -150,7 +152,7 @@ pub struct State {
     /// Each box's sessions subscription, by its ID, and the last snapshot it sent: a snapshot
     /// is sent only when it changes, so one held back while a session was made is taken again.
     subs: HashMap<u32, String>,
-    seen: HashMap<u32, Result<backend::Sessions, String>>,
+    seen: HashMap<u32, Result<Sessions, String>>,
     /// What arrived on a stream before its pane was made: a shell's first output can come
     /// before its result.
     early: HashMap<u32, Vec<Event>>,
@@ -167,7 +169,7 @@ impl State {
             sidebar: true, message: None, palette: None, menu: None, bridged, pending: HashMap::new(), next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), early: HashMap::new(),
         };
-        s.subscribe("listing", String::new());
+        s.subscribe(Topic::Listing, String::new());
         if !bridged {
             // The mock lists at once; taking it here lets a headless scene open a box.
             for e in s.inbox.drain() {
@@ -179,10 +181,10 @@ impl State {
         s
     }
 
-    fn subscribe(&mut self, topic: &'static str, sandbox: String) -> u32 {
+    fn subscribe(&mut self, topic: Topic, sandbox: String) -> u32 {
         let sub = self.next_sub;
         self.next_sub += 1;
-        if topic == "sessions" {
+        if topic == Topic::Sessions {
             self.subs.insert(sub, sandbox.clone());
         }
         self.backend.send(Out::Subscribe { sub, topic, sandbox });
@@ -211,7 +213,7 @@ impl State {
         let cid = self.next_id;
         self.next_id += 1;
         self.pending.insert(cid, why);
-        self.backend.send(Out::Command(CommandMsg { id: cid, command: id.into(), targets, context, args }));
+        self.backend.send(Out::Command(Command { id: cid, command: id.into(), targets, context, args }));
     }
 
     pub fn live_ws(&self) -> Option<&Workspace> { self.live.as_ref().and_then(|id| self.workspaces.get(id)) }
@@ -221,7 +223,7 @@ impl State {
         self.workspaces.get_mut(&id)
     }
 
-    pub fn box_by_id(&self, id: &str) -> Option<&Sandbox> { self.boxes.iter().find(|b| b.id == id) }
+    pub fn box_by_id(&self, id: &str) -> Option<&Sandbox> { self.boxes.iter().find(|b| b.key == id) }
 
     /// The box a box command acts on: the one on screen while its panes have the keys, else
     /// the list's cursor.
@@ -233,12 +235,12 @@ impl State {
     }
 
     fn take_listing(&mut self, boxes: Vec<Sandbox>) {
-        let at = self.boxes.get(self.cursor).map(|b| b.id.clone());
+        let at = self.boxes.get(self.cursor).map(|b| b.key.clone());
         self.boxes = view::list_order(boxes);
-        self.cursor = at.and_then(|id| self.boxes.iter().position(|b| b.id == id)).unwrap_or(self.cursor.min(self.boxes.len().saturating_sub(1)));
+        self.cursor = at.and_then(|id| self.boxes.iter().position(|b| b.key == id)).unwrap_or(self.cursor.min(self.boxes.len().saturating_sub(1)));
     }
 
-    fn new_pane(&mut self, exec: Exec) -> Pane {
+    fn new_pane(&mut self, exec: Tab) -> Pane {
         let stream = self.next_stream;
         self.next_stream += 1;
         Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None }
@@ -249,12 +251,12 @@ impl State {
     pub fn open_box(&mut self, index: usize) {
         let Some(sbx) = self.boxes.get(index).cloned() else { return };
         self.cursor = index;
-        if !sbx.running() && !self.workspaces.contains_key(&sbx.id) {
+        if !sbx.running() && !self.workspaces.contains_key(&sbx.key) {
             self.message = Some(format!("{} is {} — start it from its menu", sbx.name, sbx.state));
             return;
         }
-        self.ensure_workspace(&sbx.id);
-        self.live = Some(sbx.id);
+        self.ensure_workspace(&sbx.key);
+        self.live = Some(sbx.key);
         self.focus = Focus::Panes;
     }
 
@@ -264,7 +266,7 @@ impl State {
             self.workspaces.insert(sandbox.to_string(), Workspace {
                 sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true, error: None,
             });
-            self.subscribe("sessions", sandbox.to_string());
+            self.subscribe(Topic::Sessions, sandbox.to_string());
         }
     }
 
@@ -273,7 +275,7 @@ impl State {
     fn new_session(&mut self, shell: bool) {
         let (cmd, targets, sandbox) = if shell {
             let Some(b) = self.target() else { return };
-            ("shell", vec![b.id.clone()], b.id)
+            ("shell", vec![b.key.clone()], b.key)
         } else {
             ("terminal", vec![], self.live.clone().unwrap_or_default())
         };
@@ -281,7 +283,7 @@ impl State {
         self.next_stream += 1;
         let (cols, rows) = DEFAULT_SIZE;
         let context = self.context();
-        self.command(cmd, targets, context, Args { stream, cols, rows, exec: String::new() }, Pending::Session(stream, sandbox));
+        self.command(cmd, targets, context, Args { stream, cols: cols.into(), rows: rows.into(), exec: String::new() }, Pending::Session(stream, sandbox));
     }
 
     fn end_focused(&mut self) {
@@ -289,7 +291,7 @@ impl State {
         let ws = &self.workspaces[&id];
         let Some(i) = ws.focused() else { return };
         let pane = &ws.panes[i];
-        let args = Args { stream: pane.stream, exec: pane.exec.id.clone(), ..Default::default() };
+        let args = Args { stream: pane.stream, exec: pane.exec.exec.clone(), ..Default::default() };
         let context = self.context();
         let stream = args.stream;
         self.command("end", vec![], context, args, Pending::End(stream));
@@ -345,7 +347,7 @@ impl State {
             return;
         }
         self.cursor = (self.cursor as i32 + by).clamp(0, n - 1) as usize;
-        if self.boxes[self.cursor].running() || self.workspaces.contains_key(&self.boxes[self.cursor].id) {
+        if self.boxes[self.cursor].running() || self.workspaces.contains_key(&self.boxes[self.cursor].key) {
             self.open_box(self.cursor);
         } else {
             self.focus = Focus::List;
@@ -405,7 +407,7 @@ impl State {
 
     /// A sessions snapshot: a tab for every session the core opens that the workspace does not
     /// hold yet. Nothing is closed here; a stream says when it ends.
-    fn take_sessions(&mut self, sub: u32, r: Result<backend::Sessions, String>) {
+    fn take_sessions(&mut self, sub: u32, r: Result<Sessions, String>) {
         let Some(sbx) = self.subs.get(&sub).cloned() else { return };
         self.seen.insert(sub, r.clone());
         // A session still being made in this box is in no pane yet, and may already be listed:
@@ -423,13 +425,13 @@ impl State {
                 return;
             }
         };
-        let fresh: Vec<Exec> = sessions.into_iter()
-            .filter(|e| !ws.panes.iter().any(|p| p.exec.id == e.id) && (!making || e.kind == "primary"))
+        let fresh: Vec<Tab> = sessions.into_iter()
+            .filter(|e| !ws.panes.iter().any(|p| p.exec.exec == e.exec) && (!making || e.kind == "primary"))
             .collect();
         let mut opens = vec![];
         for e in fresh {
             let pane = self.new_pane(e);
-            opens.push((pane.exec.id.clone(), pane.stream));
+            opens.push((pane.exec.exec.clone(), pane.stream));
             self.workspaces.get_mut(&sbx).unwrap().panes.push(pane);
         }
         self.workspaces.get_mut(&sbx).unwrap().fix_active();
@@ -452,18 +454,18 @@ impl State {
 
     fn take_result(&mut self, r: CommandResult, tx: &mut Tx) {
         let Some(why) = self.pending.remove(&r.id) else { return };
-        let failed = r.status == "failed";
+        let failed = r.status == Status::Failed;
         match why {
-            Pending::Enter(id) if r.status == "enter" => enter(self, &id, &r, tx),
-            Pending::End(stream) if r.status == "done" => self.drop_pane(stream),
-            Pending::Session(stream, sandbox) if r.status == "done" => {
+            Pending::Enter(id) if r.status == Status::Enter => enter(self, &id, &r, tx),
+            Pending::End(stream) if r.status == Status::Done => self.drop_pane(stream),
+            Pending::Session(stream, sandbox) if r.status == Status::Done => {
                 let Some(exec) = r.session.clone() else { return };
-                self.ensure_workspace(&r.sandbox);
+                self.ensure_workspace(&r.r#box);
                 let pane = Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None };
-                let ws = self.workspaces.get_mut(&r.sandbox).unwrap();
+                let ws = self.workspaces.get_mut(&r.r#box).unwrap();
                 ws.panes.push(pane);
                 ws.show(ws.panes.len() - 1);
-                self.live = Some(r.sandbox.clone());
+                self.live = Some(r.r#box.clone());
                 self.focus = Focus::Panes;
                 for e in self.early.remove(&stream).unwrap_or_default() {
                     self.take_stream_event(e);
@@ -475,7 +477,7 @@ impl State {
                 self.early.remove(&stream);
                 self.retake_sessions(&sandbox);
             }
-            Pending::Actions(at) if r.status == "enter" => overlay::show_menu(self, r.sandbox.clone(), at, r.entries.clone(), tx),
+            Pending::Actions(at) if r.status == Status::Enter => overlay::show_menu(self, r.r#box.clone(), at, r.entries.clone(), tx),
             Pending::Verb(verb, name) if !failed => {
                 self.message = Some(if r.note.is_empty() { format!("{verb}: {name}") } else { r.note.clone() });
             }
@@ -556,12 +558,12 @@ pub fn run_command(s: &mut State, id: &str, _tx: &mut Tx) {
                     _ => "unarchiving",
                 };
                 s.message = Some(format!("{doing} {}…", b.name));
-                s.command(id, vec![b.id], context, Args::default(), Pending::Verb(id.into(), b.name.clone()));
+                s.command(id, vec![b.key], context, Args::default(), Pending::Verb(id.into(), b.name.clone()));
             }
         }
         _ => {
             let targets = match s.spec.command(id) {
-                Some(c) if c.target == "box" => s.target().map(|b| vec![b.id]).unwrap_or_default(),
+                Some(c) if c.target == "box" => s.target().map(|b| vec![b.key]).unwrap_or_default(),
                 _ => vec![],
             };
             s.command(id, targets, context, Args::default(), Pending::Enter(id.into()));
@@ -575,11 +577,11 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         // The core has ruled the box can be attached, whatever its state: its primary is
         // what waits for it.
         "attach" => {
-            if let Some(i) = s.boxes.iter().position(|b| b.id == r.sandbox) {
+            if let Some(i) = s.boxes.iter().position(|b| b.key == r.r#box) {
                 s.cursor = i;
             }
-            s.ensure_workspace(&r.sandbox);
-            s.live = Some(r.sandbox.clone());
+            s.ensure_workspace(&r.r#box);
+            s.live = Some(r.r#box.clone());
             s.focus = Focus::Panes;
         }
         "maximize" => {
@@ -620,9 +622,9 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
             Event::Listing(boxes) => s.take_listing(boxes),
             Event::Sessions(sub, r) => s.take_sessions(sub, r),
             Event::Result(r) => s.take_result(r, tx),
-            Event::Stream(st) => match st.state.as_str() {
-                "attached" => s.resend_size(st.stream),
-                "failed" => {
+            Event::Stream(st) => match st.state {
+                StreamState::Attached => s.resend_size(st.stream),
+                StreamState::Failed => {
                     if let Some(p) = s.pane_mut(st.stream) {
                         p.exited = true;
                         p.status = Some(st.why);
@@ -630,7 +632,7 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
                 }
                 state => {
                     if let Some(p) = s.pane_mut(st.stream) {
-                        p.status = (state == "reconnecting").then(|| "reconnecting…".into());
+                        p.status = (state == StreamState::Reconnecting).then(|| "reconnecting…".into());
                     }
                 }
             },

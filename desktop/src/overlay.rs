@@ -7,10 +7,10 @@
 
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Span, Tx, col, el, rich, row, spacer, text, text_input};
 
-use crate::backend::Action;
+use crate::wire::Entry;
 use crate::{Focus, Menu, State, keys, run_command, theme};
 
-pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Action>, tx: &mut Tx) {
+pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
     if actions.is_empty() {
         return;
     }
@@ -32,7 +32,7 @@ pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Ac
 
 /// Runs a box command on the box the menu was opened for.
 fn run_on(s: &mut State, sandbox: &str, id: &str, tx: &mut Tx) {
-    if let Some(i) = s.boxes.iter().position(|b| b.id == sandbox) {
+    if let Some(i) = s.boxes.iter().position(|b| b.key == sandbox) {
         s.cursor = i;
     }
     s.focus = Focus::List;
@@ -105,7 +105,7 @@ fn items(s: &State) -> Vec<Item> {
         query.chars().all(|q| it.any(|c| c == q))
     };
     let mut out: Vec<Item> = s.boxes.iter().filter(|b| fits(&b.name)).map(|b| Item {
-        title: b.name.clone(), group: "discobox".into(), shortcut: None, command: None, sandbox: Some(b.id.clone()),
+        title: b.name.clone(), group: "discobox".into(), shortcut: None, command: None, sandbox: Some(b.key.clone()),
     }).collect();
     for c in &s.spec.commands {
         if c.aliases.iter().chain([&c.label]).any(|a| fits(a)) {
@@ -125,7 +125,7 @@ fn pick(s: &mut State, i: usize, tx: &mut Tx) {
     let (cmd, sbx) = (it.command.clone(), it.sandbox.clone());
     s.palette = None;
     if let Some(id) = sbx
-        && let Some(i) = s.boxes.iter().position(|b| b.id == id)
+        && let Some(i) = s.boxes.iter().position(|b| b.key == id)
     {
         s.open_box(i);
         if !s.boxes[i].running() {

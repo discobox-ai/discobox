@@ -28,8 +28,9 @@ the epic, and does not yet follow the ADRs everywhere:
   its context), and the app enters its own flows when the result says `enter`;
   the listing and a workspace's sessions are subscriptions; terminals are
   execstream frames on streams the app allocates. The app draws no question or
-  form yet (#808): it declines each and says so. Its wire types are written
-  by hand in `backend.rs` until they are generated (#799).
+  form yet (#808): it declines each and says so. Its wire types are
+  generated (`src/wire.rs`), from the schema that is generated from the
+  bridge's Go types; none is written by hand.
 - **The list** is the boxes as the server lists them, which the app orders,
   groups and nests itself (`view::list_order`), until the listing carries the
   core's list (#804).
@@ -52,7 +53,8 @@ the epic, and does not yet follow the ADRs everywhere:
 | File | What |
 | --- | --- |
 | `src/main.rs` | State: boxes, workspaces (parked or live), panes, focus; commands, their results and the flows they enter; `run_command` |
-| `src/backend.rs` | The wire's types, the bridge client (frames on stdin/stdout), and a mock that answers the same messages with local shells, for running without a CLI |
+| `src/wire.rs` | The wire's types, generated (`go tool task generate`) from `cli/internal/console/bridge/wire.schema.json`, itself generated from the bridge's Go types: every message, the resize payload, the protocol and spec versions, the frame kinds. Never edited by hand |
+| `src/backend.rs` | The bridge client (frames on stdin/stdout), and a mock that answers the same messages with local shells, for running without a CLI |
 | `src/view.rs` | The list, the sidebar, the workspace, frames and tabs |
 | `src/overlay.rs` | The palette and a box's actions menu |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |

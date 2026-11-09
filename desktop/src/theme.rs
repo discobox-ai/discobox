@@ -19,7 +19,7 @@ thread_local! {
 }
 
 /// Takes the spec's colour tokens, in their dark values.
-pub fn set_tokens(colors: &std::collections::HashMap<String, crate::backend::ColorToken>) {
+pub fn set_tokens(colors: &std::collections::HashMap<String, crate::wire::SpecColor>) {
     TOKENS.with_borrow_mut(|t| {
         for (k, v) in colors {
             if let Ok(rgb) = u32::from_str_radix(v.dark.trim_start_matches('#'), 16) {
