@@ -50,21 +50,35 @@ func TestOpenExecAttachConnReconnectsForTTY(t *testing.T) {
 					return
 				}
 			}
+			// Counted before the websocket hijacks the connection: until then
+			// server.Close waits for this request, and after it this Add has
+			// already happened, so the cleanup's Wait never races an Add.
+			handlerWG.Add(1)
+			defer handlerWG.Done()
 			socket, err := websocket.Accept(w, r, nil)
 			if err != nil {
 				return
 			}
 			conn := websocket.NetConn(context.Background(), socket, websocket.MessageBinary)
-			accepted <- conn
-			handlerWG.Add(1)
-			defer handlerWG.Done()
 			defer conn.Close()
+			select {
+			case accepted <- conn:
+			default:
+			}
 			_ = stream.Attach(context.Background(), &directAttachFrames{conn: conn}, host.AttachOptions{})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
-	t.Cleanup(server.Close)
+	t.Cleanup(func() {
+		// Close stops new requests and waits for every one not yet hijacked,
+		// so no handler can reach handlerWG.Add after it returns; closing the
+		// host then ends the attached ones, and Wait sees them all out before
+		// the test's cleanup finishes.
+		server.Close()
+		close(hostDone)
+		handlerWG.Wait()
+	})
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -73,11 +87,9 @@ func TestOpenExecAttachConnReconnectsForTTY(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openExecAttachConn: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = conn.Close()
-		close(hostDone)
-		handlerWG.Wait()
-	})
+	// Registered after the server's cleanup, so it runs first: the client
+	// stops reconnecting before the server is closed and waited for.
+	t.Cleanup(func() { _ = conn.Close() })
 
 	first := <-accepted
 	readErr := make(chan error, 1)
