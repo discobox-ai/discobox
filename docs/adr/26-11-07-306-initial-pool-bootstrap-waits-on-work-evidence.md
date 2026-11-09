@@ -3,6 +3,7 @@
 - **Status**: Accepted (narrows [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) §6's pool-host ceiling for actions waiting on initial pool bootstrap, and [0039](0039-attach-waits-for-readiness-at-every-tier.md)'s tier-1 stall rule for bounded bootstrap operations without incremental progress)
 - **Date**: 2026-11-07
 - Accepted by the owner by merging #777, 2026-11-07
+- **Narrowed by**: [26-11-09-593](26-11-09-593-a-never-registered-pool-gets-a-new-bootstrap-attempt-after-one-ends.md) — §3's "automatic reconcile retries … cannot mint a fresh entitlement" holds for the waiters pinned to an ended attempt; the reconciler starts a new attempt for a never-registered pool once one ends.
 - **Issue**: [#772](https://github.com/discobox-ai/discobox/issues/772)
 - **Preserves**: [26-11-04-167](26-11-04-167-an-explicit-start-waits-for-its-pool-to-return.md) §2 and [26-11-05-143](26-11-05-143-a-start-waits-for-a-compatible-pool-and-its-pending-upgrade.md) §4's explicit-start and upgrade ceilings, protocol discovery and execution fencing; source-delivery gates and settled-failure semantics.
 
