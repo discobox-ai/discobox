@@ -168,7 +168,7 @@ func TestImageLaunchesCodexWithSourceScopedMemory(t *testing.T) {
 		`${CODEX_HOME:-$HOME/.codex}`,
 		`mountpoint -q "$LOCAL_MEMORIES"`,
 		`mount --bind "$SHARED_MEMORIES" "$LOCAL_MEMORIES"`,
-		`exec codex "$@"`,
+		`codex "$@" || status=$?`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("launch script is missing %q", required)
@@ -216,6 +216,86 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 			got := launchertest.RunLauncher(t, "codex", nil, tc.args)
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("codex argv = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestLaunchRetriesAStartThatFailedBeforeItsSession covers issue #767: Codex
+// exits with status 1 at TUI bootstrap ("account/read failed ... workspace
+// routing discovery failed") when its first request out cannot connect, and a
+// box's first request can meet a transient failure. The launcher starts Codex
+// again then, and only then: a session that began (it wrote a rollout) would
+// get its prompt a second time, a clean exit is how the user quits, and a
+// signal is the user or the terminal ending it, and any other status would
+// fail the same way again.
+func TestLaunchRetriesAStartThatFailedBeforeItsSession(t *testing.T) {
+	// The stub fails with $CODEX_TEST_STATUS for its first $CODEX_TEST_FAILS
+	// runs and succeeds after. Before failing it starts a session the way
+	// $CODEX_TEST_SESSION says: "new" writes a rollout, "resume" appends to
+	// the one already there. It counts its runs under $HOME and reports each
+	// on stdout, as the sleep stub reports each wait instead of waiting.
+	const codex = `#!/bin/sh
+printf 'x\n' >>"$HOME/runs"
+runs=$(wc -l <"$HOME/runs")
+printf 'codex %s\n' "$*"
+if [ "$runs" -le "$CODEX_TEST_FAILS" ]; then
+	case "$CODEX_TEST_SESSION" in
+	new) : >"$CODEX_HOME/sessions/rollout-$runs.jsonl" ;;
+	resume) printf '{}\n' >>"$CODEX_HOME/sessions/rollout-0.jsonl" ;;
+	esac
+	exit "$CODEX_TEST_STATUS"
+fi
+`
+	const sleep = "#!/bin/sh\nprintf 'sleep %s\\n' \"$1\"\n"
+	const run = "codex fix the tests"
+	for _, tc := range []struct {
+		name       string
+		args       []string
+		fails      int
+		status     int
+		session    string
+		wantStatus int
+		want       []string
+	}{
+		{"a bootstrap failure is started again", nil, 2, 1, "", 0,
+			[]string{run, "sleep 2", run, "sleep 5", run}},
+		{"a start that keeps failing gives up after five", nil, 9, 1, "", 1,
+			[]string{run, "sleep 2", run, "sleep 5", run, "sleep 10", run, "sleep 20", run}},
+		{"a clean exit is not retried", nil, 0, 0, "", 0, []string{run}},
+		{"a session that began is not started again", nil, 1, 1, "new", 1, []string{run}},
+		{"a death by signal is not retried", nil, 1, 130, "", 130, []string{run}},
+		{"a failure that would repeat is not retried", nil, 1, 127, "", 127, []string{run}},
+		{"a resume that failed to start is resumed again", []string{harness.ResumeFlag, "fix", "the", "tests"}, 1, 1, "", 0,
+			[]string{"codex resume --last", "sleep 2", "codex resume --last"}},
+		{"a resumed session is not resumed again", []string{harness.ResumeFlag, "fix", "the", "tests"}, 1, 1, "resume", 1,
+			[]string{"codex resume --last"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A session from an earlier launch is already there, as it is for
+			// a resume.
+			codexHome := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(codexHome, "sessions"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(codexHome, "sessions", "rollout-0.jsonl"), []byte("{}\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("CODEX_HOME", codexHome)
+			t.Setenv("CODEX_TEST_FAILS", strconv.Itoa(tc.fails))
+			t.Setenv("CODEX_TEST_STATUS", strconv.Itoa(tc.status))
+			t.Setenv("CODEX_TEST_SESSION", tc.session)
+			args := tc.args
+			if args == nil {
+				args = []string{"fix", "the", "tests"}
+			}
+			out, status := launchertest.Run(t, "codex",
+				map[string]string{"codex": codex, "sleep": sleep}, nil, args)
+			if status != tc.wantStatus {
+				t.Errorf("launcher exit status = %d, want %d", status, tc.wantStatus)
+			}
+			if got := strings.Split(strings.TrimSuffix(out, "\n"), "\n"); !slices.Equal(got, tc.want) {
+				t.Errorf("launcher ran %#v, want %#v", got, tc.want)
 			}
 		})
 	}
