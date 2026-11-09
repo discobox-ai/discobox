@@ -6,7 +6,6 @@
 package model
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -794,7 +793,7 @@ func (p *Pool) BeforeCreate(_ *gorm.DB) error {
 	p.SetDefaults(DesiredStatePresent, PoolStatePending)
 	if p.RegisteredAt == nil && !p.Ready && p.State == PoolStatePending && len(p.Bootstrap) == 0 {
 		now := time.Now().UTC()
-		data, err := json.Marshal(PoolBootstrap{Attempt: rand.Text(), Generation: p.Generation, ProgressAt: now})
+		data, err := json.Marshal(NewPoolBootstrap(p.Generation, now))
 		if err != nil {
 			return err
 		}

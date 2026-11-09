@@ -1,6 +1,7 @@
 package model
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -22,6 +23,16 @@ type PoolBootstrap struct {
 	RegistrationDeadline time.Time
 	Operations           map[string]BootstrapOperation
 	Failure              string
+	// EndedAt is when Failure was recorded.
+	EndedAt time.Time
+	// Failed counts the attempts for this generation that failed before this
+	// one; the attempt after this one is paced by it (ADR 26-11-09-593 §2).
+	Failed int
+	// Repair is the reason this attempt owes the runtime a replacement before
+	// anything else: what the attempt it replaced left is not trusted (§3).
+	// The executor clears it once the replacement succeeds, so a pass that
+	// dies first leaves it owed.
+	Repair string
 }
 
 type BootstrapOperation struct {
@@ -46,6 +57,30 @@ type BootstrapEvidence struct {
 	Complete        bool
 	Registration    bool
 	Failure         string
+	// Repaired reports that the replacement the attempt owed succeeded. It
+	// is not work evidence: it renews no budget.
+	Repaired bool
+}
+
+// NewPoolBootstrap starts a pool's first attempt for generation: a fresh
+// identity and a silence budget that runs from now.
+func NewPoolBootstrap(generation int64, now time.Time) PoolBootstrap {
+	return PoolBootstrap{Attempt: rand.Text(), Generation: generation, ProgressAt: now}
+}
+
+// Next is the attempt that replaces this ended one for generation
+// (ADR 26-11-09-593 §§1, 3). It owes the runtime a repair. A failure in the
+// same generation counts toward its pacing; new intent starts the count over.
+func (b *PoolBootstrap) Next(generation int64, now time.Time) PoolBootstrap {
+	next := NewPoolBootstrap(generation, now)
+	next.Repair = "previous bootstrap attempt ended"
+	if b.Failure != "" {
+		next.Repair += ": " + b.Failure
+	}
+	if b.Generation == generation {
+		next.Failed = b.Failed + 1
+	}
+	return next
 }
 
 func (p *Pool) BootstrapFacts() *PoolBootstrap {
@@ -57,6 +92,14 @@ func (p *Pool) BootstrapFacts() *PoolBootstrap {
 		return nil
 	}
 	return &b
+}
+
+// Ended reports an attempt that can make no further progress for a pass at
+// generation: it recorded a failure, or it belongs to an earlier generation.
+// Expiry not yet recorded is not ended: the pass that observes it records the
+// failure, and a later pass starts the new attempt (ADR 26-11-09-593 §§1-2).
+func (b *PoolBootstrap) Ended(generation int64) bool {
+	return b.Failure != "" || b.Generation != generation
 }
 
 func (b *PoolBootstrap) Allowance() time.Time {
@@ -90,11 +133,15 @@ func (b *PoolBootstrap) Accept(e BootstrapEvidence, now time.Time) {
 		return
 	}
 	if reason := b.Expired(now); reason != "" {
-		b.Failure = reason
+		b.Failure, b.EndedAt = reason, now
 		return
 	}
 	if e.Failure != "" {
-		b.Failure = e.Failure
+		b.Failure, b.EndedAt = e.Failure, now
+		return
+	}
+	if e.Repaired {
+		b.Repair = ""
 		return
 	}
 	if e.Operation == "" || !b.RegistrationDeadline.IsZero() {

@@ -597,16 +597,19 @@ persisted pool row.
 
 ## Pool Failure and Recovery
 
-Terminal failure is reserved for pools whose *initial create* never
-succeeded. A pool is stateful once its runtime has completed create and its
-agent registered (`Pool.EverCreated()`, keyed off `RegisteredAt`): it may own
+The `failed` phase is reserved for pools whose *initial create* never
+succeeded, and is retried, not terminal. A pool is stateful once its runtime
+has completed create and its agent registered (`Pool.EverCreated()`, keyed off `RegisteredAt`): it may own
 runtime volumes and assigned sandboxes, so the control plane makes every
 effort to reconcile it back to health instead of abandoning it.
 
-- A failed reconcile of a never-created pool latches the terminal `failed`
-  phase and clears ready/schedulable. A created pool keeps its state and
-  records the failure as its error message against that generation; it reads
-  `offline` only when its agent's heartbeat is also stale, since `offline` is a
+- A failed reconcile of a never-created pool shows the `failed` phase and
+  clears ready/schedulable. `failed` means the last attempt failed, not that
+  the pool is abandoned: the reconciler starts a new bootstrap attempt after
+  a backoff, beginning with `RepairPool`
+  (`server/internal/resources/pools/DESIGN.md`, "Initial bootstrap waits").
+  A created pool keeps its state and records the failure as its error
+  message against that generation; it reads `offline` only when its agent's heartbeat is also stale, since `offline` is a
   liveness verdict. Either way it is re-driven (`SchedulePoolRepair` bumps the
   generation so schedulers can tell a pending retry from a settled failure).
 - A reconcile failure while sandboxes are assigned repairs the runtime in

@@ -89,6 +89,15 @@ Finishing an attempt and starting the next one are separate passes:
 - The next pass finds the finished attempt, starts a new one, sets the pool
   back to `pending`, and calls the provider.
 
+*Amended during implementation, before anything shipped against it:* the
+engine's own failure count cannot pace attempts by itself, because a pass
+whose provider call succeeds settles cleanly and resets it, so an agent that
+never registers after a successful repair would be retried every silence
+budget. The attempt records how many attempts of its generation failed before
+it and when it failed, and the next attempt waits for the engine's backoff
+schedule for that count (the same 2s-to-5m steps, no new constants). The
+new attempt also records the repair it owes (§3) until the repair succeeds.
+
 This brings back what `failed` meant for a never-registered pool before
 work-evidence waits existed: the last try failed, and another one is
 scheduled. It does not mean the pool will never be tried again. Drift marks
