@@ -1,12 +1,17 @@
 //! Where boxes and their terminal streams come from.
 //!
-//! `discobox desktop` runs this app with `--bridge` and serves the console's DataSource on
-//! its stdin and stdout (`cli/internal/cli/desktop.go`). Every request is answered
-//! asynchronously into the `Inbox`, with the stream output and the listing the bridge pushes,
-//! and the window's poll drains it. Nothing here blocks the window but the opening `hello`.
+//! `discobox desktop` runs this app with `--bridge` and serves it the console core on its stdin
+//! and stdout (`cli/internal/console/bridge`, ADR 26-11-07-289): the app subscribes to what it
+//! draws, sends every registry command as a `command` for the core to rule on and run, and gets
+//! a `result` back — `enter` for a flow that is the app's own (focus, a menu, a workspace).
+//! Everything arrives asynchronously into the `Inbox`, with the stream output, and the window's
+//! poll drains it. Nothing here blocks the window but the opening `hello`.
 //!
-//! Without `--bridge` the `Mock` answers the same requests, with made-up boxes whose panes are
+//! Without `--bridge` the `Mock` answers the same messages, with made-up boxes whose panes are
 //! local shells on PTYs, for developing the app and for headless snapshots.
+//!
+//! The wire types below mirror `cli/internal/console/bridge/wire.go` by hand until they are
+//! generated from it (#799).
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -14,18 +19,25 @@ use std::sync::{Arc, Mutex};
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------------------------
 // The wire's shapes
 
+/// The bridge protocol this app speaks (`bridge.Protocol`). The CLI pins the app it runs, so a
+/// CLI that speaks another is a development override, and the app says which side is older.
+pub const PROTOCOL: u32 = 2;
+
+/// One box as its row is drawn.
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Sandbox {
     /// The key the CLI knows this box by, server and ID together: opaque here.
+    #[serde(rename = "key")]
     pub id: String,
     /// The box's ID on its server, which is what is shown.
+    #[serde(rename = "id")]
     pub sandbox_id: String,
     pub name: String,
     pub state: String,
@@ -57,15 +69,19 @@ impl Sandbox {
     }
 }
 
+/// One session as its tab is drawn (`bridge.Tab`).
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Exec {
+    #[serde(rename = "exec")]
     pub id: String,
-    /// primary, terminal, shell or tool.
+    /// primary, terminal, shell, tool or service.
     pub kind: String,
+    #[serde(rename = "title")]
     pub label: String,
 }
 
+/// One command as it stands for what it was asked about (`bridge.Entry`).
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Action {
@@ -74,6 +90,173 @@ pub struct Action {
     pub detail: String,
     pub enabled: bool,
     pub why: String,
+}
+
+/// Where a command is asked from: the app's navigation, which the core's rules read.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Context {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub workspace: String,
+    pub has_workspace: bool,
+    pub workspace_shown: bool,
+    pub pane_focused: bool,
+    pub list_has_keys: bool,
+    pub tree: bool,
+    pub tree_shown: bool,
+    pub tree_fits: bool,
+    pub page_shown: bool,
+}
+
+/// What a command takes beyond its targets: the stream a session it makes attaches to, and
+/// the session it acts on.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Args {
+    #[serde(skip_serializing_if = "is_zero")]
+    pub stream: u32,
+    #[serde(skip_serializing_if = "is_zero16")]
+    pub cols: u16,
+    #[serde(skip_serializing_if = "is_zero16")]
+    pub rows: u16,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub exec: String,
+}
+
+fn is_zero(n: &u32) -> bool { *n == 0 }
+fn is_zero16(n: &u16) -> bool { *n == 0 }
+
+/// A registry command for the core to rule on and run (`bridge.Command`).
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct CommandMsg {
+    pub id: u64,
+    pub command: String,
+    pub targets: Vec<String>,
+    pub context: Context,
+    pub args: Args,
+}
+
+/// How a command ended (`bridge.Result`).
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct CommandResult {
+    pub id: u64,
+    /// done, failed, canceled, or enter: the app's own flow, which the core has ruled can run.
+    pub status: String,
+    pub why: String,
+    pub note: String,
+    #[serde(rename = "box")]
+    pub sandbox: String,
+    pub session: Option<Exec>,
+    pub entries: Vec<Action>,
+}
+
+/// A topic's value, whole. Only the topics the app draws are read.
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Snapshot {
+    pub sub: u32,
+    pub topic: String,
+    pub error: String,
+    pub listing: Option<Listing>,
+    pub sessions: Option<Sessions>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Listing {
+    pub boxes: Vec<Sandbox>,
+}
+
+/// What a box's workspace opens, in the core's order.
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Sessions {
+    pub running: bool,
+    pub sessions: Vec<Exec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Question {
+    pub id: u64,
+    pub command: u64,
+    pub title: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Form {
+    pub id: u64,
+    pub command: u64,
+    pub title: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Progress {
+    pub command: u64,
+    pub text: String,
+    pub warning: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Stream {
+    pub stream: u32,
+    /// attached, failed, reconnecting or reconnected.
+    pub state: String,
+    pub why: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Welcome {
+    pub protocol: u32,
+    pub spec: Option<Spec>,
+}
+
+/// One JSON message on the bridge: its type, and that type's body under the same name.
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Message {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub welcome: Option<Welcome>,
+    pub snapshot: Option<Snapshot>,
+    pub result: Option<CommandResult>,
+    pub form: Option<Form>,
+    pub question: Option<Question>,
+    pub progress: Option<Progress>,
+    pub stream: Option<Stream>,
+}
+
+/// What the app sends, by message: the type and its body.
+pub enum Out {
+    Subscribe { sub: u32, topic: &'static str, sandbox: String },
+    Command(CommandMsg),
+    Open { stream: u32, sandbox: String, exec: String, cols: u16, rows: u16 },
+    /// A question left unanswered: the app draws none yet (#808).
+    Decline(u64),
+    /// A form dismissed: the app draws none yet (#808).
+    Dismiss(u64),
+}
+
+impl Out {
+    fn message(&self) -> Value {
+        match self {
+            Out::Subscribe { sub, topic, sandbox } => {
+                json!({"type": "subscribe", "subscribe": {"sub": sub, "topic": topic, "box": sandbox}})
+            }
+            Out::Command(c) => json!({"type": "command", "command": c}),
+            Out::Open { stream, sandbox, exec, cols, rows } => {
+                json!({"type": "open", "open": {"stream": stream, "box": sandbox, "exec": exec, "cols": cols, "rows": rows}})
+            }
+            Out::Decline(q) => json!({"type": "answer", "answer": {"question": q, "declined": true}}),
+            Out::Dismiss(f) => json!({"type": "submit", "submit": {"form": f, "answers": {}, "cancel": true}}),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -162,10 +345,15 @@ impl Spec {
 /// What arrives for the window.
 pub enum Event {
     Listing(Vec<Sandbox>),
-    Reply(u64, Result<Value, String>),
+    /// A sessions subscription's snapshot, or why it could not be read.
+    Sessions(u32, Result<Sessions, String>),
+    Result(CommandResult),
+    Stream(Stream),
+    Question(Question),
+    Form(Form),
+    Progress(Progress),
     Data(u32, Vec<u8>),
     Exited(u32, String),
-    StreamState(u32, String),
 }
 
 #[derive(Clone, Default)]
@@ -183,8 +371,8 @@ impl Inbox {
 }
 
 pub trait Backend {
-    /// Ask for something; the answer arrives as `Event::Reply` with the returned id.
-    fn request(&mut self, op: &str, args: Value) -> u64;
+    /// Send one message; what answers it arrives in the inbox.
+    fn send(&mut self, m: Out);
     fn input(&mut self, stream: u32, bytes: &[u8]);
     fn resize(&mut self, stream: u32, cols: u16, rows: u16);
 }
@@ -219,16 +407,44 @@ fn read_frame(r: &mut impl Read) -> std::io::Result<(u8, u32, Vec<u8>)> {
     Ok((head[0], stream, payload))
 }
 
+/// Why this app and the CLI cannot talk: which side is older.
+pub fn mismatch(cli: u32) -> String {
+    let older = if cli < PROTOCOL { "the CLI is older" } else { "this desktop app is older" };
+    format!("this desktop app speaks bridge protocol {PROTOCOL} and the CLI speaks {cli}: {older}; run the app built with this CLI")
+}
+
+/// A message as the window's event, or nothing for one the app does not read.
+fn event(m: Message) -> Option<Event> {
+    match m.kind.as_str() {
+        "snapshot" => {
+            let s = m.snapshot?;
+            match s.topic.as_str() {
+                "listing" => s.listing.map(|l| Event::Listing(l.boxes)),
+                "sessions" => Some(Event::Sessions(s.sub, match s.sessions {
+                    Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
+                _ => None,
+            }
+        }
+        "result" => m.result.map(Event::Result),
+        "stream" => m.stream.map(Event::Stream),
+        "question" => m.question.map(Event::Question),
+        "form" => m.form.map(Event::Form),
+        "progress" => m.progress.map(Event::Progress),
+        _ => None,
+    }
+}
+
 pub struct Bridge {
     out: Arc<Mutex<std::io::Stdout>>,
-    next: u64,
 }
 
 impl Bridge {
-    /// Says hello and waits for the spec, then hands stdin to a reader thread.
+    /// Says hello and waits for the welcome, then hands stdin to a reader thread.
     pub fn connect(inbox: Inbox) -> Result<(Bridge, Spec), String> {
         let out = Arc::new(Mutex::new(std::io::stdout()));
-        let hello = json!({"id": 0, "op": "hello"}).to_string();
+        let hello = json!({"type": "hello", "hello": {"protocol": PROTOCOL}}).to_string();
         write_frame(&mut *out.lock().unwrap(), JSON, 0, hello.as_bytes()).map_err(|e| e.to_string())?;
         let mut input = std::io::stdin().lock();
         let spec = loop {
@@ -236,21 +452,28 @@ impl Bridge {
             if kind != JSON {
                 continue;
             }
+            // The protocol is read before anything else: another version's fields may not parse.
             let v: Value = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
-            if v.get("id").and_then(Value::as_u64) == Some(0) {
-                if let Some(err) = v.get("error") {
-                    return Err(err.to_string());
-                }
-                let spec = &v["result"]["spec"];
-                // Checked before the rest is read: another version's fields may not parse.
-                let version = spec["version"].as_u64().unwrap_or(0);
-                if version != SPEC_VERSION as u64 {
-                    return Err(format!(
-                        "this desktop app reads console spec version {SPEC_VERSION}, and the CLI handed over version {version}: run the app built with this CLI"
-                    ));
-                }
-                break serde_json::from_value(spec.clone()).map_err(|e| e.to_string())?;
+            // Protocol 1 had no message types: a CLI speaking it answers this hello with an
+            // error of its own shape.
+            if v.get("type").is_none() {
+                return Err(mismatch(1));
             }
+            if v["type"] != "welcome" {
+                continue;
+            }
+            let protocol = v["welcome"]["protocol"].as_u64().unwrap_or(0) as u32;
+            if protocol != PROTOCOL {
+                return Err(mismatch(protocol));
+            }
+            let spec = &v["welcome"]["spec"];
+            let version = spec["version"].as_u64().unwrap_or(0);
+            if version != SPEC_VERSION as u64 {
+                return Err(format!(
+                    "this desktop app reads console spec version {SPEC_VERSION}, and the CLI handed over version {version}: run the app built with this CLI"
+                ));
+            }
+            break serde_json::from_value(spec.clone()).map_err(|e| e.to_string())?;
         };
         drop(input);
         std::thread::spawn(move || {
@@ -258,24 +481,9 @@ impl Bridge {
             while let Ok((kind, stream, payload)) = read_frame(&mut input) {
                 match kind {
                     JSON => {
-                        let Ok(v) = serde_json::from_slice::<Value>(&payload) else { continue };
-                        match v.get("event").and_then(Value::as_str) {
-                            Some("listing") => {
-                                let boxes = serde_json::from_value(v["listing"].clone()).unwrap_or_default();
-                                inbox.push(Event::Listing(boxes));
-                            }
-                            Some("stream") => inbox.push(Event::StreamState(
-                                v["stream"].as_u64().unwrap_or(0) as u32,
-                                v["state"].as_str().unwrap_or("").into(),
-                            )),
-                            _ => {
-                                let id = v["id"].as_u64().unwrap_or(0);
-                                let r = match v.get("error") {
-                                    Some(e) => Err(e.as_str().unwrap_or("error").to_string()),
-                                    None => Ok(v.get("result").cloned().unwrap_or(Value::Null)),
-                                };
-                                inbox.push(Event::Reply(id, r));
-                            }
+                        crate::debug(|| format!("← {}", String::from_utf8_lossy(&payload)));
+                        if let Some(e) = serde_json::from_slice::<Message>(&payload).ok().and_then(event) {
+                            inbox.push(e);
                         }
                     }
                     STDOUT | STDERR => inbox.push(Event::Data(stream, payload)),
@@ -286,7 +494,7 @@ impl Bridge {
             // The CLI is gone: nothing more will arrive, and nothing can be sent.
             std::process::exit(0);
         });
-        Ok((Bridge { out, next: 1 }, spec))
+        Ok((Bridge { out }, spec))
     }
 
     fn frame(&self, kind: u8, stream: u32, payload: &[u8]) {
@@ -295,13 +503,10 @@ impl Bridge {
 }
 
 impl Backend for Bridge {
-    fn request(&mut self, op: &str, mut args: Value) -> u64 {
-        let id = self.next;
-        self.next += 1;
-        args["id"] = json!(id);
-        args["op"] = json!(op);
-        self.frame(JSON, 0, args.to_string().as_bytes());
-        id
+    fn send(&mut self, m: Out) {
+        let m = m.message().to_string();
+        crate::debug(|| format!("→ {m}"));
+        self.frame(JSON, 0, m.as_bytes());
     }
     fn input(&mut self, stream: u32, bytes: &[u8]) { self.frame(INPUT, stream, bytes); }
     fn resize(&mut self, stream: u32, cols: u16, rows: u16) {
@@ -310,108 +515,94 @@ impl Backend for Bridge {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The mock: the same requests, answered here.
+// The mock: the same messages, answered here with the core's rules roughly. The CLI answers
+// them from the core itself.
 
 pub struct Mock {
     inbox: Inbox,
-    next: u64,
     boxes: Vec<Sandbox>,
     extra: HashMap<String, Vec<Exec>>,
     ptys: HashMap<u32, Pty>,
+    made: u64,
 }
 
 fn mock_box(v: Value) -> Sandbox { serde_json::from_value(v).unwrap() }
 
+fn mock_exec(id: &str, kind: &str, label: &str) -> Exec {
+    Exec { id: id.into(), kind: kind.into(), label: label.into() }
+}
+
 impl Mock {
     pub fn new(inbox: Inbox) -> Mock {
         let boxes = vec![
-            mock_box(json!({"id": "sbx_k2m9q4tz7wbf1xay", "name": "rune console port", "state": "running", "agent": "working",
+            mock_box(json!({"key": "sbx_k2m9q4tz7wbf1xay", "name": "rune console port", "state": "running", "agent": "working",
                 "harness": "claude", "source": "discobox", "tags": ["wip", "tui"], "branch": "rune-console", "commit": "00541f9",
                 "dirty": true, "added": 412, "deleted": 37, "cpu": 12, "memoryBytes": 2_254_857_830u64})),
-            mock_box(json!({"id": "sbx_p8c3n0vd6rgs2hkq", "name": "reaper race", "state": "running", "agent": "blocked",
+            mock_box(json!({"key": "sbx_p8c3n0vd6rgs2hkq", "name": "reaper race", "state": "running", "agent": "blocked",
                 "harness": "codex", "source": "discobox", "tags": ["ENG-12"], "branch": "fix/reaper-race", "commit": "8be21c0",
                 "added": 58, "deleted": 12, "cpu": 3, "memoryBytes": 1_503_238_553u64})),
-            mock_box(json!({"id": "sbx_r5t1y7u3i9o0pzx2", "name": "attach docs", "state": "running", "agent": "done",
+            mock_box(json!({"key": "sbx_r5t1y7u3i9o0pzx2", "name": "attach docs", "state": "running", "agent": "done",
                 "harness": "claude", "source": "discobox", "branch": "docs/attach", "commit": "41d9e2a", "parent": "sbx_p8c3n0vd6rgs2hkq"})),
-            mock_box(json!({"id": "sbx_v6svx9a5hndxswfp", "name": "lucid_lalande", "state": "starting", "harness": "shell",
+            mock_box(json!({"key": "sbx_v6svx9a5hndxswfp", "name": "lucid_lalande", "state": "starting", "harness": "shell",
                 "source": "", "provisioning": "provisioning browser, build, bun…", "cpu": 2})),
-            mock_box(json!({"id": "sbx_a1b2c3d4e5f6g7h8", "name": "quiet_hopper", "state": "stopped", "agent": "idle",
+            mock_box(json!({"key": "sbx_a1b2c3d4e5f6g7h8", "name": "quiet_hopper", "state": "stopped", "agent": "idle",
                 "harness": "opencode", "source": ""})),
         ];
-        inbox.push(Event::Listing(boxes.clone()));
-        Mock { inbox, next: 1, boxes, extra: HashMap::new(), ptys: HashMap::new() }
+        Mock { inbox, boxes, extra: HashMap::new(), ptys: HashMap::new(), made: 0 }
     }
 
+    fn sandbox(&self, key: &str) -> Option<&Sandbox> { self.boxes.iter().find(|b| b.id == key) }
+
     fn spawn(&mut self, sandbox: &str, exec: &Exec, stream: u32, cols: u16, rows: u16) -> Result<(), String> {
-        let sbx = self.boxes.iter().find(|b| b.id == sandbox).cloned().unwrap_or_default();
+        let sbx = self.sandbox(sandbox).cloned().unwrap_or_default();
         let pty = Pty::spawn(&sbx, exec, stream, cols, rows, self.inbox.clone())?;
         self.ptys.insert(stream, pty);
         Ok(())
     }
-}
 
-impl Backend for Mock {
-    fn request(&mut self, op: &str, args: Value) -> u64 {
-        let id = self.next;
-        self.next += 1;
-        let sandbox = args["sandbox"].as_str().unwrap_or("").to_string();
-        let stream = args["stream"].as_u64().unwrap_or(0) as u32;
-        let (cols, rows) = (args["cols"].as_u64().unwrap_or(80) as u16, args["rows"].as_u64().unwrap_or(24) as u16);
-        let result: Result<Value, String> = match op {
-            "list" => Ok(serde_json::to_value(self.boxes.iter().map(|b| b.id.clone()).collect::<Vec<_>>()).unwrap()),
-            "execs" => {
-                let mut v = vec![json!({"id": "primary", "kind": "primary"})];
-                for e in self.extra.get(&sandbox).into_iter().flatten() {
-                    v.push(json!({"id": e.id, "kind": e.kind, "label": e.label}));
-                }
-                Ok(Value::Array(v))
-            }
-            "open" => {
-                let exec = Exec { id: args["exec"].as_str().unwrap_or("").into(), kind: if args["exec"] == "primary" { "primary".into() } else { "shell".into() }, label: String::new() };
-                self.spawn(&sandbox, &exec, stream, cols, rows).map(|_| json!({"stream": stream}))
-            }
-            "newShell" | "newTerminal" => {
-                let shell = op == "newShell";
-                let exec = Exec {
-                    id: format!("exec_{id}"),
-                    kind: if shell { "shell" } else { "terminal" }.into(),
-                    label: if shell { "bash".into() } else { self.boxes.iter().find(|b| b.id == sandbox).map(|b| b.harness.clone()).unwrap_or_default() },
+    fn command(&mut self, c: CommandMsg) -> CommandResult {
+        let target = c.targets.first().cloned().unwrap_or_default();
+        let workspace = c.context.workspace.clone();
+        let on_pane = c.context.pane_focused && c.context.workspace_shown;
+        let fail = |why: &str| CommandResult { status: "failed".into(), why: why.into(), ..Default::default() };
+        let enter = |sandbox: &str| CommandResult { status: "enter".into(), sandbox: sandbox.into(), ..Default::default() };
+        let running = self.sandbox(&target).is_some_and(Sandbox::running);
+        match c.command.as_str() {
+            "attach" if running => enter(&target),
+            "attach" | "shell" if !running => fail("the box has no container; repair rebuilds it"),
+            "terminal" | "end" | "maximize" | "detach" if !on_pane => fail("requires a workspace pane"),
+            "shell" | "terminal" => {
+                let sandbox = if c.command == "shell" { target } else { workspace };
+                self.made += 1;
+                let exec = if c.command == "shell" {
+                    mock_exec(&format!("exec_{}", self.made), "shell", "bash")
+                } else {
+                    let harness = self.sandbox(&sandbox).map(|b| b.harness.clone()).unwrap_or_default();
+                    mock_exec(&format!("exec_{}", self.made), "terminal", &harness)
                 };
+                if let Err(e) = self.spawn(&sandbox, &exec, c.args.stream, c.args.cols.max(1), c.args.rows.max(1)) {
+                    return fail(&e);
+                }
                 self.extra.entry(sandbox.clone()).or_default().push(exec.clone());
-                self.spawn(&sandbox, &exec, stream, cols, rows).map(|_| json!({"id": exec.id, "kind": exec.kind, "label": exec.label}))
+                CommandResult { status: "done".into(), sandbox, session: Some(exec), ..Default::default() }
             }
-            "endExec" => {
-                if let Some(mut p) = self.ptys.remove(&stream) {
+            "end" if c.args.exec == "primary" => fail("the primary session ends with its box; stop the box instead"),
+            "end" => {
+                if let Some(mut p) = self.ptys.remove(&c.args.stream) {
                     let _ = p.child.kill();
                 }
-                let exec = args["exec"].as_str().unwrap_or("");
-                if let Some(v) = self.extra.get_mut(&sandbox) {
-                    v.retain(|e| e.id != exec);
+                if let Some(v) = self.extra.get_mut(&workspace) {
+                    v.retain(|e| e.id != c.args.exec);
                 }
-                Ok(Value::Null)
+                CommandResult { status: "done".into(), ..Default::default() }
             }
-            "actions" => {
-                // The registry's lifecycle commands, with the core's rules roughly: the CLI
-                // answers this from the core itself.
-                let running = self.boxes.iter().any(|b| b.id == sandbox && b.running());
-                let actions: Vec<Value> = Spec::bundled().commands.iter().filter(|c| c.lifecycle).map(|c| {
-                    let (enabled, why) = match c.id.as_str() {
-                        "attach" | "shell" => (running, "the box has no container; repair rebuilds it"),
-                        "review config" | "stop" => (running, "not running"),
-                        "start" => (!running, "already on, or archived"),
-                        "upgrade" => (false, "already on the current image"),
-                        "unarchive" => (false, "not archived"),
-                        "purge" => (false, "archive it first — purge only takes archived boxes"),
-                        _ => (true, ""),
-                    };
-                    json!({"command": c.id, "label": c.label, "detail": c.detail, "enabled": enabled, "why": if enabled { "" } else { why }})
-                }).collect();
-                Ok(Value::Array(actions))
-            }
-            "do" => {
-                let verb = args["verb"].as_str().unwrap_or("");
-                if let Some(b) = self.boxes.iter_mut().find(|b| b.id == sandbox) {
-                    match verb {
+            "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" => {
+                let actions = self.actions(&target);
+                if let Some(a) = actions.iter().find(|a| a.command == c.command && !a.enabled) {
+                    return fail(&format!("cannot {}: {}", a.label, a.why));
+                }
+                if let Some(b) = self.boxes.iter_mut().find(|b| b.id == target) {
+                    match c.command.as_str() {
                         "stop" => b.state = "stopped".into(),
                         "start" => b.state = "running".into(),
                         "archive" => b.state = "archived".into(),
@@ -419,12 +610,57 @@ impl Backend for Mock {
                     }
                 }
                 self.inbox.push(Event::Listing(self.boxes.clone()));
-                Ok(json!({"note": ""}))
+                CommandResult { status: "done".into(), ..Default::default() }
             }
-            _ => Err(format!("unknown op {op}")),
-        };
-        self.inbox.push(Event::Reply(id, result));
-        id
+            "actions" => CommandResult { status: "enter".into(), sandbox: target.clone(), entries: self.actions(&target), ..Default::default() },
+            _ => enter(""),
+        }
+    }
+
+    /// The registry's lifecycle commands, with the core's rules roughly.
+    fn actions(&self, sandbox: &str) -> Vec<Action> {
+        let running = self.sandbox(sandbox).is_some_and(Sandbox::running);
+        Spec::bundled().commands.iter().filter(|c| c.lifecycle).map(|c| {
+            let (enabled, why) = match c.id.as_str() {
+                "attach" | "shell" => (running, "the box has no container; repair rebuilds it"),
+                "review config" | "stop" => (running, "not running"),
+                "start" => (!running, "already on, or archived"),
+                "upgrade" => (false, "already on the current image"),
+                "unarchive" => (false, "not archived"),
+                "purge" => (false, "archive it first — purge only takes archived boxes"),
+                _ => (true, ""),
+            };
+            Action { command: c.id.clone(), label: c.label.clone(), detail: c.detail.clone(), enabled, why: if enabled { String::new() } else { why.into() } }
+        }).collect()
+    }
+}
+
+impl Backend for Mock {
+    fn send(&mut self, m: Out) {
+        match m {
+            Out::Subscribe { topic: "listing", .. } => self.inbox.push(Event::Listing(self.boxes.clone())),
+            Out::Subscribe { sub, topic: "sessions", sandbox } => {
+                let running = self.sandbox(&sandbox).is_some_and(Sandbox::running);
+                let mut sessions = vec![mock_exec("primary", "primary", "")];
+                sessions.extend(self.extra.get(&sandbox).into_iter().flatten().cloned());
+                self.inbox.push(Event::Sessions(sub, Ok(Sessions { running, sessions })));
+            }
+            Out::Subscribe { .. } => {}
+            Out::Command(c) => {
+                let mut r = self.command(c.clone());
+                r.id = c.id;
+                self.inbox.push(Event::Result(r));
+            }
+            Out::Open { stream, sandbox, exec, cols, rows } => {
+                let kind = if exec == "primary" { "primary" } else { "shell" };
+                let state = match self.spawn(&sandbox, &mock_exec(&exec, kind, ""), stream, cols, rows) {
+                    Ok(()) => Stream { stream, state: "attached".into(), why: String::new() },
+                    Err(why) => Stream { stream, state: "failed".into(), why },
+                };
+                self.inbox.push(Event::Stream(state));
+            }
+            Out::Decline(_) | Out::Dismiss(_) => {}
+        }
     }
 
     fn input(&mut self, stream: u32, bytes: &[u8]) {
@@ -439,7 +675,6 @@ impl Backend for Mock {
             let _ = p.master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
         }
     }
-
 }
 
 struct Pty {
@@ -514,7 +749,7 @@ mod tests {
     }
 
     // A frame is kind, stream and length big-endian, then the payload, as
-    // cli/internal/cli/desktop.go writes and reads it.
+    // cli/internal/console/bridge writes and reads it.
     #[test]
     fn frames_round_trip() {
         let mut wire = Vec::new();
@@ -525,5 +760,42 @@ mod tests {
         assert_eq!(read_frame(&mut r).unwrap(), (STDOUT, 7, b"hello".to_vec()));
         assert_eq!(read_frame(&mut r).unwrap(), (JSON, 0, vec![]));
         assert!(read_frame(&mut r).is_err());
+    }
+
+    // A CLI of another protocol is refused, naming which side is older.
+    #[test]
+    fn a_mismatch_says_which_side_is_older() {
+        assert!(mismatch(PROTOCOL - 1).contains("the CLI is older"));
+        assert!(mismatch(PROTOCOL + 1).contains("this desktop app is older"));
+    }
+
+    // The CLI's messages as it writes them (cli/internal/console/bridge/wire.go) read as the
+    // window's events.
+    #[test]
+    fn messages_read_as_events() {
+        let read = |s: &str| event(serde_json::from_str(s).unwrap());
+        let Some(Event::Listing(boxes)) = read(r#"{"type":"snapshot","snapshot":{"sub":1,"topic":"listing","listing":{"boxes":[{"key":"work/b1","id":"b1","name":"one","state":"running","tags":[]}],"unreachable":[],"waiting":[]}}}"#) else { panic!("listing") };
+        assert_eq!((boxes[0].id.as_str(), boxes[0].shown_id()), ("work/b1", "b1"));
+        let Some(Event::Sessions(2, Ok(s))) = read(r#"{"type":"snapshot","snapshot":{"sub":2,"topic":"sessions","sessions":{"running":true,"sessions":[{"exec":"primary","kind":"primary","title":"","live":true,"argv":[]}],"services":[]}}}"#) else { panic!("sessions") };
+        assert_eq!(s.sessions[0].kind, "primary");
+        let Some(Event::Sessions(3, Err(e))) = read(r#"{"type":"snapshot","snapshot":{"sub":3,"topic":"sessions","error":"no discobox x is listed"}}"#) else { panic!("an error") };
+        assert!(e.contains("x"));
+        let Some(Event::Result(r)) = read(r#"{"type":"result","result":{"id":4,"status":"done","box":"b1","session":{"exec":"sh1","kind":"shell","title":"bash","live":true,"argv":["bash"]}}}"#) else { panic!("result") };
+        assert_eq!((r.id, r.status.as_str(), r.sandbox.as_str(), r.session.unwrap().label.as_str()), (4, "done", "b1", "bash"));
+        let Some(Event::Stream(st)) = read(r#"{"type":"stream","stream":{"stream":5,"state":"failed","why":"gone"}}"#) else { panic!("stream") };
+        assert_eq!((st.stream, st.state.as_str()), (5, "failed"));
+        assert!(read(r#"{"type":"fieldErrors","fieldErrors":{"form":1,"errors":[]}}"#).is_none());
+    }
+
+    // What the app sends is what the CLI reads.
+    #[test]
+    fn a_command_is_written_as_the_cli_reads_it() {
+        let c = CommandMsg { id: 3, command: "shell".into(), targets: vec!["b1".into()], context: Context { pane_focused: true, ..Default::default() }, args: Args { stream: 7, ..Default::default() } };
+        let v = Out::Command(c).message();
+        assert_eq!(v["type"], "command");
+        assert_eq!(v["command"]["command"], "shell");
+        assert_eq!(v["command"]["context"]["paneFocused"], true);
+        assert_eq!(v["command"]["args"], json!({"stream": 7}));
+        assert_eq!(Out::Decline(9).message(), json!({"type": "answer", "answer": {"question": 9, "declined": true}}));
     }
 }

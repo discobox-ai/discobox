@@ -1,8 +1,9 @@
 //! `discobox desktop`: the discobox console as a native app, built with Rune.
 //!
-//! The CLI runs this with `--bridge` and serves the console's DataSource over stdin and stdout
-//! (`cli/internal/cli/desktop.go`), with the console core's spec (`cli/internal/console/spec.go`):
-//! colours, glyphs and the commands. The layout is the TUI's; the interaction is a desktop
+//! The CLI runs this with `--bridge` and serves the console core over stdin and stdout
+//! (`cli/internal/console/bridge`), with the core's spec (`cli/internal/console/spec.go`):
+//! colours, glyphs and the commands. Every command is the core's to rule on and run; the app
+//! enters the flows that are its own. The layout is the TUI's; the interaction is a desktop
 //! app's — shortcuts and menus run the same commands the TUI's keys do.
 //!
 //! Without `--bridge` it runs on a mock with local shells: `cargo run --release`, or headless
@@ -23,9 +24,8 @@ mod view;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use backend::{Action, Backend, Bridge, Event, Exec, Inbox, Mock, Sandbox, Spec};
+use backend::{Action, Args, Backend, Bridge, CommandMsg, CommandResult, Context, Event, Exec, Inbox, Mock, Out, Sandbox, Spec};
 use rune::{App, AppSpec, KeyEvent, MenuItem, TextEdit, Tx, Waker};
-use serde_json::{Value, json};
 use term::Screen;
 
 /// Which of the two columns a pane lives in: harness terminals left, shells right.
@@ -58,7 +58,8 @@ pub struct Workspace {
     pub focus: Side,
     pub maximized: bool,
     pub opening: bool,
-    /// Why listing its sessions failed; Enter asks again.
+    /// Why its sessions could not be read; the subscription keeps trying, and the next snapshot
+    /// read clears it.
     pub error: Option<String>,
 }
 
@@ -100,15 +101,18 @@ pub enum Focus {
     Panes,
 }
 
-/// What a request was for, so its answer lands in the right place.
+/// What a command was sent for, so its result lands in the right place.
 enum Pending {
-    Execs(String),
-    Open(u32),
-    /// A new session's answer, for its box and stream.
-    NewSession(String, u32),
-    Actions(String, (f32, f32)),
-    Do(String, String),
-    Quiet,
+    /// A command whose flow, if the core lets it run, is the app's own.
+    Enter(String),
+    /// A session a shell or terminal makes, on its stream, in a box.
+    Session(u32, String),
+    /// A box's action menu, where it was asked for.
+    Actions((f32, f32)),
+    /// A verb, for the box it is about.
+    Verb(String, String),
+    /// Ending the session on a stream.
+    End(u32),
 }
 
 pub struct Palette {
@@ -140,7 +144,16 @@ pub struct State {
     pub menu: Option<Menu>,
     pub bridged: bool,
     pending: HashMap<u64, Pending>,
+    next_id: u64,
+    next_sub: u32,
     next_stream: u32,
+    /// Each box's sessions subscription, by its ID, and the last snapshot it sent: a snapshot
+    /// is sent only when it changes, so one held back while a session was made is taken again.
+    subs: HashMap<u32, String>,
+    seen: HashMap<u32, Result<backend::Sessions, String>>,
+    /// What arrived on a stream before its pane was made: a shell's first output can come
+    /// before its result.
+    early: HashMap<u32, Vec<Event>>,
 }
 
 const DEFAULT_SIZE: (u16, u16) = (100, 30);
@@ -151,8 +164,10 @@ impl State {
         theme::set_tokens(&spec.colors);
         let mut s = State {
             backend, inbox, spec, boxes: vec![], cursor: 0, workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bridged, pending: HashMap::new(), next_stream: 1,
+            sidebar: true, message: None, palette: None, menu: None, bridged, pending: HashMap::new(), next_id: 1,
+            next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), early: HashMap::new(),
         };
+        s.subscribe("listing", String::new());
         if !bridged {
             // The mock lists at once; taking it here lets a headless scene open a box.
             for e in s.inbox.drain() {
@@ -164,10 +179,39 @@ impl State {
         s
     }
 
-    fn ask(&mut self, op: &str, args: Value, why: Pending) {
-        debug(|| format!("→ {op} {args}"));
-        let id = self.backend.request(op, args);
-        self.pending.insert(id, why);
+    fn subscribe(&mut self, topic: &'static str, sandbox: String) -> u32 {
+        let sub = self.next_sub;
+        self.next_sub += 1;
+        if topic == "sessions" {
+            self.subs.insert(sub, sandbox.clone());
+        }
+        self.backend.send(Out::Subscribe { sub, topic, sandbox });
+        sub
+    }
+
+    /// Where a command is asked from, for the core's rules: the box whose workspace is on
+    /// screen, and whether a pane or the list has the keys. The list is always beside it.
+    fn context(&self) -> Context {
+        let shown = self.live.is_some();
+        Context {
+            workspace: self.live.clone().unwrap_or_default(),
+            has_workspace: shown,
+            workspace_shown: shown,
+            pane_focused: shown && self.focus == Focus::Panes,
+            list_has_keys: self.focus == Focus::List,
+            tree: true,
+            tree_shown: self.sidebar,
+            tree_fits: true,
+            page_shown: false,
+        }
+    }
+
+    /// Send a command for the core to rule on and run; its result lands as `why` says.
+    fn command(&mut self, id: &str, targets: Vec<String>, context: Context, args: Args, why: Pending) {
+        let cid = self.next_id;
+        self.next_id += 1;
+        self.pending.insert(cid, why);
+        self.backend.send(Out::Command(CommandMsg { id: cid, command: id.into(), targets, context, args }));
     }
 
     pub fn live_ws(&self) -> Option<&Workspace> { self.live.as_ref().and_then(|id| self.workspaces.get(id)) }
@@ -194,10 +238,9 @@ impl State {
         self.cursor = at.and_then(|id| self.boxes.iter().position(|b| b.id == id)).unwrap_or(self.cursor.min(self.boxes.len().saturating_sub(1)));
     }
 
-    fn new_pane(&mut self, sandbox: &str, exec: Exec) -> Pane {
+    fn new_pane(&mut self, exec: Exec) -> Pane {
         let stream = self.next_stream;
         self.next_stream += 1;
-        let _ = sandbox;
         Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None }
     }
 
@@ -210,56 +253,58 @@ impl State {
             self.message = Some(format!("{} is {} — start it from its menu", sbx.name, sbx.state));
             return;
         }
-        if let Some(ws) = self.workspaces.get_mut(&sbx.id)
-            && ws.error.is_some()
-        {
-            ws.error = None;
-            ws.opening = true;
-            self.ask("execs", json!({"sandbox": sbx.id}), Pending::Execs(sbx.id.clone()));
-        }
-        if !self.workspaces.contains_key(&sbx.id) {
-            self.workspaces.insert(sbx.id.clone(), Workspace {
-                sandbox: sbx.id.clone(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true, error: None,
-            });
-            self.ask("execs", json!({"sandbox": sbx.id}), Pending::Execs(sbx.id.clone()));
-        }
+        self.ensure_workspace(&sbx.id);
         self.live = Some(sbx.id);
         self.focus = Focus::Panes;
     }
 
+    /// A box's workspace, made and subscribed to its sessions on first use.
+    fn ensure_workspace(&mut self, sandbox: &str) {
+        if !self.workspaces.contains_key(sandbox) {
+            self.workspaces.insert(sandbox.to_string(), Workspace {
+                sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true, error: None,
+            });
+            self.subscribe("sessions", sandbox.to_string());
+        }
+    }
+
+    /// Ask the core for a session in a box — a shell, or another of its harness's terminals —
+    /// on a stream allocated for its pane. The pane is made when the result says what it is.
     fn new_session(&mut self, shell: bool) {
-        let Some(id) = self.live.clone() else {
-            self.message = Some("open a discobox first".into());
-            return;
+        let (cmd, targets, sandbox) = if shell {
+            let Some(b) = self.target() else { return };
+            ("shell", vec![b.id.clone()], b.id)
+        } else {
+            ("terminal", vec![], self.live.clone().unwrap_or_default())
         };
-        let kind = if shell { "shell" } else { "terminal" };
-        let pane = self.new_pane(&id, Exec { id: String::new(), kind: kind.into(), label: "…".into() });
-        let stream = pane.stream;
-        let ws = self.workspaces.get_mut(&id).unwrap();
-        ws.panes.push(pane);
-        ws.show(ws.panes.len() - 1);
-        self.focus = Focus::Panes;
-        let op = if shell { "newShell" } else { "newTerminal" };
+        let stream = self.next_stream;
+        self.next_stream += 1;
         let (cols, rows) = DEFAULT_SIZE;
-        self.ask(op, json!({"sandbox": id, "stream": stream, "cols": cols, "rows": rows}), Pending::NewSession(id.clone(), stream));
+        let context = self.context();
+        self.command(cmd, targets, context, Args { stream, cols, rows, exec: String::new() }, Pending::Session(stream, sandbox));
     }
 
     fn end_focused(&mut self) {
         let Some(id) = self.live.clone() else { return };
-        let ws = self.workspaces.get_mut(&id).unwrap();
+        let ws = &self.workspaces[&id];
         let Some(i) = ws.focused() else { return };
-        if ws.panes[i].exec.kind == "primary" {
-            self.message = Some("the box's harness terminal cannot be ended".into());
-            return;
-        }
-        let pane = ws.panes.remove(i);
-        for a in ws.active.iter_mut() {
-            *a = a.and_then(|a| if a == i { None } else if a > i { Some(a - 1) } else { Some(a) });
-        }
-        ws.fix_active();
-        // A session still being made has no exec to end yet: it is ended when its answer comes.
-        if !pane.exec.id.is_empty() {
-            self.ask("endExec", json!({"sandbox": id, "exec": pane.exec.id, "stream": pane.stream}), Pending::Quiet);
+        let pane = &ws.panes[i];
+        let args = Args { stream: pane.stream, exec: pane.exec.id.clone(), ..Default::default() };
+        let context = self.context();
+        let stream = args.stream;
+        self.command("end", vec![], context, args, Pending::End(stream));
+    }
+
+    /// Takes a pane away once its session is ended.
+    fn drop_pane(&mut self, stream: u32) {
+        for ws in self.workspaces.values_mut() {
+            if let Some(i) = ws.panes.iter().position(|p| p.stream == stream) {
+                ws.panes.remove(i);
+                for a in ws.active.iter_mut() {
+                    *a = a.and_then(|a| if a == i { None } else if a > i { Some(a - 1) } else { Some(a) });
+                }
+                ws.fix_active();
+            }
         }
     }
 
@@ -339,8 +384,10 @@ impl State {
         }
     }
 
+    /// A box's action menu, from its row: the core's entries for it.
     pub fn open_menu(&mut self, sandbox: String, at: (f32, f32)) {
-        self.ask("actions", json!({"targets": [sandbox.clone()]}), Pending::Actions(sandbox, at));
+        let context = Context { list_has_keys: true, ..self.context() };
+        self.command("actions", vec![sandbox], context, Args::default(), Pending::Actions(at));
     }
 
     fn pane_mut(&mut self, stream: u32) -> Option<&mut Pane> {
@@ -356,77 +403,113 @@ impl State {
         }
     }
 
-    fn answer(&mut self, why: Pending, r: Result<Value, String>, tx: &mut Tx) {
+    /// A sessions snapshot: a tab for every session the core opens that the workspace does not
+    /// hold yet. Nothing is closed here; a stream says when it ends.
+    fn take_sessions(&mut self, sub: u32, r: Result<backend::Sessions, String>) {
+        let Some(sbx) = self.subs.get(&sub).cloned() else { return };
+        self.seen.insert(sub, r.clone());
+        // A session still being made in this box is in no pane yet, and may already be listed:
+        // while one is, only the primary opens, and the rest once it is made (retake_sessions).
+        let making = self.pending.values().any(|p| matches!(p, Pending::Session(_, b) if *b == sbx));
+        let Some(ws) = self.workspaces.get_mut(&sbx) else { return };
+        ws.opening = false;
+        let sessions = match r {
+            Ok(s) => {
+                ws.error = None;
+                s.sessions
+            }
+            Err(e) => {
+                ws.error = Some(e);
+                return;
+            }
+        };
+        let fresh: Vec<Exec> = sessions.into_iter()
+            .filter(|e| !ws.panes.iter().any(|p| p.exec.id == e.id) && (!making || e.kind == "primary"))
+            .collect();
+        let mut opens = vec![];
+        for e in fresh {
+            let pane = self.new_pane(e);
+            opens.push((pane.exec.id.clone(), pane.stream));
+            self.workspaces.get_mut(&sbx).unwrap().panes.push(pane);
+        }
+        self.workspaces.get_mut(&sbx).unwrap().fix_active();
+        for (exec, stream) in opens {
+            let (cols, rows) = DEFAULT_SIZE;
+            self.backend.send(Out::Open { stream, sandbox: sbx.clone(), exec, cols, rows });
+        }
+    }
+
+    /// Takes a box's last sessions snapshot again, once a session made there has a pane or
+    /// failed: what it held back opens now.
+    fn retake_sessions(&mut self, sandbox: &str) {
+        let subs: Vec<u32> = self.subs.iter().filter(|(_, b)| *b == sandbox).map(|(s, _)| *s).collect();
+        for sub in subs {
+            if let Some(r) = self.seen.get(&sub).cloned() {
+                self.take_sessions(sub, r);
+            }
+        }
+    }
+
+    fn take_result(&mut self, r: CommandResult, tx: &mut Tx) {
+        let Some(why) = self.pending.remove(&r.id) else { return };
+        let failed = r.status == "failed";
         match why {
-            Pending::Execs(sbx) => {
-                let execs: Vec<Exec> = r.as_ref().ok().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-                if let (Err(e), Some(ws)) = (&r, self.workspaces.get_mut(&sbx)) {
-                    ws.opening = false;
-                    ws.error = Some(e.clone());
-                    return;
+            Pending::Enter(id) if r.status == "enter" => enter(self, &id, &r, tx),
+            Pending::End(stream) if r.status == "done" => self.drop_pane(stream),
+            Pending::Session(stream, sandbox) if r.status == "done" => {
+                let Some(exec) = r.session.clone() else { return };
+                self.ensure_workspace(&r.sandbox);
+                let pane = Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None };
+                let ws = self.workspaces.get_mut(&r.sandbox).unwrap();
+                ws.panes.push(pane);
+                ws.show(ws.panes.len() - 1);
+                self.live = Some(r.sandbox.clone());
+                self.focus = Focus::Panes;
+                for e in self.early.remove(&stream).unwrap_or_default() {
+                    self.take_stream_event(e);
                 }
-                let mut opens = vec![];
-                let panes: Vec<Pane> = execs.into_iter().map(|e| self.new_pane(&sbx, e)).collect();
-                if let Some(ws) = self.workspaces.get_mut(&sbx) {
-                    ws.opening = false;
-                    for p in panes {
-                        opens.push((p.exec.id.clone(), p.stream));
-                        ws.panes.push(p);
-                    }
-                    ws.fix_active();
-                }
-                for (exec, stream) in opens {
-                    let (cols, rows) = DEFAULT_SIZE;
-                    self.ask("open", json!({"sandbox": sbx, "exec": exec, "stream": stream, "cols": cols, "rows": rows}), Pending::Open(stream));
+                self.resend_size(stream);
+                self.retake_sessions(&sandbox);
+            }
+            Pending::Session(stream, sandbox) => {
+                self.early.remove(&stream);
+                self.retake_sessions(&sandbox);
+            }
+            Pending::Actions(at) if r.status == "enter" => overlay::show_menu(self, r.sandbox.clone(), at, r.entries.clone(), tx),
+            Pending::Verb(verb, name) if !failed => {
+                self.message = Some(if r.note.is_empty() { format!("{verb}: {name}") } else { r.note.clone() });
+            }
+            _ => {}
+        }
+        if failed {
+            self.message = Some(r.why);
+        }
+    }
+
+    /// Output or an end on a stream: to its pane, or kept until the pane is made.
+    fn take_stream_event(&mut self, e: Event) {
+        let stream = match &e {
+            Event::Data(stream, _) | Event::Exited(stream, _) => *stream,
+            _ => return,
+        };
+        let Some(p) = self.pane_mut(stream) else {
+            if self.pending.values().any(|p| matches!(p, Pending::Session(s, _) if *s == stream)) {
+                self.early.entry(stream).or_default().push(e);
+            }
+            return;
+        };
+        match e {
+            Event::Data(_, bytes) => {
+                let reply = p.screen.feed(&bytes);
+                if !reply.is_empty() {
+                    self.backend.input(stream, &reply);
                 }
             }
-            Pending::Open(stream) => match r {
-                Ok(_) => self.resend_size(stream),
-                Err(e) => {
-                    if let Some(p) = self.pane_mut(stream) {
-                        p.exited = true;
-                        p.status = Some(e);
-                    }
-                }
-            },
-            Pending::NewSession(sandbox, stream) => match r {
-                Ok(v) => {
-                    let Ok(exec) = serde_json::from_value::<Exec>(v) else { return };
-                    match self.pane_mut(stream) {
-                        Some(p) => p.exec = exec,
-                        // Ended before it was made: end it now that it has an id.
-                        None => {
-                            self.ask("endExec", json!({"sandbox": sandbox, "exec": exec.id, "stream": stream}), Pending::Quiet);
-                            return;
-                        }
-                    }
-                    self.resend_size(stream);
-                }
-                Err(e) => {
-                    if let Some(p) = self.pane_mut(stream) {
-                        p.exited = true;
-                        p.status = Some(e);
-                    }
-                }
-            },
-            Pending::Actions(sandbox, at) => {
-                let actions: Vec<Action> = r.ok().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
-                overlay::show_menu(self, sandbox, at, actions, tx);
+            Event::Exited(_, msg) => {
+                p.exited = true;
+                p.status = (!msg.is_empty()).then_some(msg);
             }
-            Pending::Do(verb, name) => {
-                self.message = Some(match r {
-                    Ok(v) => match v["note"].as_str().filter(|n| !n.is_empty()) {
-                        Some(n) => n.to_string(),
-                        None => format!("{verb}: {name}"),
-                    },
-                    Err(e) => format!("{verb} {name}: {e}"),
-                });
-            }
-            Pending::Quiet => {
-                if let Err(e) = r {
-                    self.message = Some(e);
-                }
-            }
+            _ => {}
         }
     }
 }
@@ -440,28 +523,30 @@ pub const ANSWERED: &[&str] = &[
 ];
 
 /// Every command, by its registry ID. The keys, the palette, the menus and a row's actions all
-/// come here.
-pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
+/// come here, and go to the core, which rules on it and runs it; a flow that is the app's own is
+/// entered when the core says it can run (`enter`). A command the app does not answer yet says
+/// so, and is not sent.
+pub fn run_command(s: &mut State, id: &str, _tx: &mut Tx) {
     s.message = None;
     s.palette = None;
     s.menu = None;
-    match id {
-        "attach" => s.open_box(s.cursor),
-        "shell" => {
-            // The box a shell opens in is the one on screen while its panes have the keys, and
-            // otherwise the list's; one that is not running is only pointed at, and no shell
-            // opens in whichever box is on screen.
-            if !(s.focus == Focus::Panes && s.live.is_some()) {
-                s.open_box(s.cursor);
-                if s.live.is_none() || s.live != s.boxes.get(s.cursor).map(|b| b.id.clone()) {
-                    return;
-                }
+    if !ANSWERED.contains(&id) {
+        s.message = Some(match s.spec.command(id) {
+            Some(c) if matches!(id, "new" | "rename" | "settings" | "purge" | "review config") => {
+                format!("{} needs a dialog, which the desktop app does not have yet", c.label)
             }
-            s.new_session(true);
-        }
+            Some(c) => format!("{} is not in the desktop app yet", c.label),
+            None => format!("unknown command {id}"),
+        });
+        return;
+    }
+    let context = s.context();
+    match id {
+        "shell" => s.new_session(true),
+        "terminal" => s.new_session(false),
+        "end" => s.end_focused(),
         "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" => {
             if let Some(b) = s.target() {
-                let verb = id.to_string();
                 let doing = match id {
                     "stop" => "stopping",
                     "start" => "starting",
@@ -471,11 +556,32 @@ pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
                     _ => "unarchiving",
                 };
                 s.message = Some(format!("{doing} {}…", b.name));
-                s.ask("do", json!({"verb": verb, "sandbox": b.id}), Pending::Do(verb.clone(), b.name.clone()));
+                s.command(id, vec![b.id], context, Args::default(), Pending::Verb(id.into(), b.name.clone()));
             }
         }
-        "terminal" => s.new_session(false),
-        "end" => s.end_focused(),
+        _ => {
+            let targets = match s.spec.command(id) {
+                Some(c) if c.target == "box" => s.target().map(|b| vec![b.id]).unwrap_or_default(),
+                _ => vec![],
+            };
+            s.command(id, targets, context, Args::default(), Pending::Enter(id.into()));
+        }
+    }
+}
+
+/// A command's flow that is the app's own, once the core has ruled it can run.
+fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
+    match id {
+        // The core has ruled the box can be attached, whatever its state: its primary is
+        // what waits for it.
+        "attach" => {
+            if let Some(i) = s.boxes.iter().position(|b| b.id == r.sandbox) {
+                s.cursor = i;
+            }
+            s.ensure_workspace(&r.sandbox);
+            s.live = Some(r.sandbox.clone());
+            s.focus = Focus::Panes;
+        }
         "maximize" => {
             if let Some(ws) = s.live_ws_mut() {
                 ws.maximized = !ws.maximized;
@@ -497,24 +603,11 @@ pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
                 s.focus = Focus::Panes;
             }
         }
-        _ => {
-            s.message = Some(match s.spec.command(id) {
-                Some(c) if matches!(id, "new" | "rename" | "settings" | "purge" | "review config") => {
-                    format!("{} needs a dialog, which the desktop app does not have yet", c.label)
-                }
-                Some(c) => format!("{} is not in the desktop app yet", c.label),
-                None => format!("unknown command {id}"),
-            })
-        }
+        _ => {}
     }
 }
 
-fn setup(s: &mut State, waker: Waker) {
-    s.inbox.set_waker(waker);
-    if !s.bridged {
-        s.ask("list", json!({}), Pending::Quiet);
-    }
-}
+fn setup(s: &mut State, waker: Waker) { s.inbox.set_waker(waker); }
 
 /// Drain what the backend sent into the window.
 fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
@@ -525,38 +618,44 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
     for e in events {
         match e {
             Event::Listing(boxes) => s.take_listing(boxes),
-            Event::Reply(id, r) => {
-                debug(|| format!("← {id} {}", match &r { Ok(v) => v.to_string(), Err(e) => format!("error: {e}") }));
-                if let Some(why) = s.pending.remove(&id) {
-                    s.answer(why, r, tx);
-                }
-            }
-            Event::Data(stream, bytes) => {
-                if let Some(p) = s.pane_mut(stream) {
-                    let reply = p.screen.feed(&bytes);
-                    if !reply.is_empty() {
-                        s.backend.input(stream, &reply);
+            Event::Sessions(sub, r) => s.take_sessions(sub, r),
+            Event::Result(r) => s.take_result(r, tx),
+            Event::Stream(st) => match st.state.as_str() {
+                "attached" => s.resend_size(st.stream),
+                "failed" => {
+                    if let Some(p) = s.pane_mut(st.stream) {
+                        p.exited = true;
+                        p.status = Some(st.why);
                     }
                 }
+                state => {
+                    if let Some(p) = s.pane_mut(st.stream) {
+                        p.status = (state == "reconnecting").then(|| "reconnecting…".into());
+                    }
+                }
+            },
+            // The app draws no questions or forms yet (#808): each is left unanswered, and says so.
+            Event::Question(q) => {
+                s.backend.send(Out::Decline(q.id));
+                s.message = Some(format!("{}: the desktop app cannot answer this yet", q.title));
             }
-            Event::Exited(stream, msg) => {
-                if let Some(p) = s.pane_mut(stream) {
-                    p.exited = true;
-                    p.status = (!msg.is_empty()).then_some(msg);
+            Event::Form(f) => {
+                s.backend.send(Out::Dismiss(f.id));
+                s.message = Some(format!("{} needs a dialog, which the desktop app does not have yet", f.title));
+            }
+            Event::Progress(p) => {
+                if !p.text.is_empty() {
+                    s.message = Some(p.text);
                 }
             }
-            Event::StreamState(stream, state) => {
-                if let Some(p) = s.pane_mut(stream) {
-                    p.status = (state == "reconnecting").then(|| "reconnecting…".into());
-                }
-            }
+            e @ (Event::Data(..) | Event::Exited(..)) => s.take_stream_event(e),
         }
     }
     true
 }
 
-/// `DISCOBOX_DESKTOP_DEBUG=1` logs every request and answer to stderr.
-fn debug(line: impl FnOnce() -> String) {
+/// `DISCOBOX_DESKTOP_DEBUG=1` logs every message each way to stderr.
+pub fn debug(line: impl FnOnce() -> String) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *ON.get_or_init(|| std::env::var_os("DISCOBOX_DESKTOP_DEBUG").is_some()) {
         eprintln!("desktop: {}", line());
@@ -616,12 +715,15 @@ fn main() {
     let mut app = App::new(AppSpec::<State> {
         min_size: Some((760.0, 480.0)),
         scenes: &[
+            // A scene is one frame: what the mock answered is taken before it is drawn.
             ("workspace", |s| {
                 s.open_box(0);
                 s.new_session(true);
+                poll(s, 0.0, &mut Tx::default());
             }),
             ("palette", |s| {
                 s.open_box(0);
+                poll(s, 0.0, &mut Tx::default());
                 s.palette = Some(Palette { query: TextEdit::new(""), picked: 0 });
             }),
         ],

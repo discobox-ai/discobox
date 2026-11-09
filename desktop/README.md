@@ -5,8 +5,9 @@ The discobox console as a native app, in Rust on
 in `Cargo.toml`.
 
 `discobox desktop` runs this app as a child process with `--bridge`, and serves
-it the console over stdin and stdout (`cli/internal/cli/desktop.go`). The app
-holds no credentials and talks to no server.
+it the console core over stdin and stdout
+([`cli/internal/console/bridge`](../cli/internal/console/bridge/DESIGN.md)).
+The app holds no credentials and talks to no server.
 
 The design is in the accepted ADRs:
 - [26-11-07-876](../docs/adr/26-11-07-876-the-console-is-one-core-with-two-renderers.md): one core, two renderers;
@@ -22,10 +23,16 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** serves `DataSource` calls rather than the console core (until
-  #798). Its messages are `hello`, `list`, `execs`, `open`, `newShell`,
-  `newTerminal`, `endExec`, `actions` and `do`, plus a pushed `listing`, with
-  terminal streams as execstream frames.
+- **The bridge** is ADR 26-11-07-289's, protocol 2. Every registry command the
+  app answers goes to the core as a `command` (with the app's navigation as
+  its context), and the app enters its own flows when the result says `enter`;
+  the listing and a workspace's sessions are subscriptions; terminals are
+  execstream frames on streams the app allocates. The app draws no question or
+  form yet (#808): it declines each and says so. Its wire types are written
+  by hand in `backend.rs` until they are generated (#799).
+- **The list** is the boxes as the server lists them, which the app orders,
+  groups and nests itself (`view::list_order`), until the listing carries the
+  core's list (#804).
 - **The spec** is the console core's (`cli/internal/console/spec.go`): the
   registry's commands by their IDs (`attach`, `shell`) with each frontend's
   bindings, the glyphs, and the design language's colour tokens in both
@@ -44,8 +51,8 @@ the epic, and does not yet follow the ADRs everywhere:
 
 | File | What |
 | --- | --- |
-| `src/main.rs` | State: boxes, workspaces (parked or live), panes, focus; requests and their answers; `run_command` |
-| `src/backend.rs` | The bridge client (frames on stdin/stdout), and a mock with local shells for running without a CLI |
+| `src/main.rs` | State: boxes, workspaces (parked or live), panes, focus; commands, their results and the flows they enter; `run_command` |
+| `src/backend.rs` | The wire's types, the bridge client (frames on stdin/stdout), and a mock that answers the same messages with local shells, for running without a CLI |
 | `src/view.rs` | The list, the sidebar, the workspace, frames and tabs |
 | `src/overlay.rs` | The palette and a box's actions menu |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
@@ -65,7 +72,7 @@ go tool task desktop:snap           # every scene headless, to build/desktop/<sc
 cd desktop && cargo run --release  # the app on the mock, without a CLI
 ```
 
-- **Debugging:** `DISCOBOX_DESKTOP_DEBUG=1` logs every bridge request and answer
+- **Debugging:** `DISCOBOX_DESKTOP_DEBUG=1` logs every bridge message each way
   to stderr.
 - **Headless:** `--snap ws.png --scene workspace` renders a frame with no
   window.
