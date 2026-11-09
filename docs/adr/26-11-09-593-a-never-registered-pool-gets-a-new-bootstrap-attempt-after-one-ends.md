@@ -1,7 +1,8 @@
 # 26-11-09-593 — A never-registered pool gets a new bootstrap attempt after one ends
 
-- **Status**: Proposed (narrows [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) §3's "automatic reconcile retries … cannot mint a fresh entitlement" to the waiters holding the ended attempt)
+- **Status**: Accepted (narrows [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) §3's "automatic reconcile retries … cannot mint a fresh entitlement" to the waiters holding the ended attempt)
 - **Date**: 2026-11-09
+- Accepted by the owner by merging #867, 2026-11-09
 - **Issue**: [#866](https://github.com/discobox-ai/discobox/issues/866)
 - **Preserves**: 26-11-07-306 §§1–2 and 4, and §3's rules for waiters (pinned to one attempt, ended by expiry, by a terminal error, or by a newer attempt, and never following a new one);
   [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) §4's settled-failure semantics for registered pools;
