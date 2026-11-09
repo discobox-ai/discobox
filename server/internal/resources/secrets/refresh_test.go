@@ -195,6 +195,38 @@ func TestRefreshingWithTheSameValueRestartsItsLifetime(t *testing.T) {
 	}
 }
 
+// A value stale by its lifetime alone is renewed the same way, and an expiry
+// the refresh carries is the one it keeps, though the value did not change.
+func TestRefreshingAStaleValueWithItselfKeepsTheExpiryItCarries(t *testing.T) {
+	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
+	ctx := context.Background()
+	if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com"); err != nil {
+		t.Fatal(err)
+	}
+	if pendingRefresh(t, st, sec.ID) == nil {
+		t.Fatal("no refresh request opened for a stale value")
+	}
+
+	expires := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	got, err := svc.RefreshSecret(testPrincipalContext(), "project-1", sec.ID, services.RefreshSecretBody{
+		Value:     "gho_old",
+		Via:       apigen.RefreshSecretBodyViaEntered,
+		ExpiresAt: apigen.NewOptDateTime(expires),
+	})
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if got.StaleAt == nil || !got.StaleAt.Equal(expires) {
+		t.Fatalf("staleAt = %v, want the expiry the refresh carried, %v", got.StaleAt, expires)
+	}
+	if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com"); err != nil {
+		t.Fatal(err)
+	}
+	if again := pendingRefresh(t, st, sec.ID); again != nil {
+		t.Fatalf("refresh request = %+v after the same value was renewed, want none", again)
+	}
+}
+
 // An ordinary value write renews the token just as well, and closes the
 // request as such.
 func TestUpdatingTheValueClosesTheRefreshRequest(t *testing.T) {
@@ -210,6 +242,38 @@ func TestUpdatingTheValueClosesTheRefreshRequest(t *testing.T) {
 	}
 	if updated.StaleAt == nil || !updated.StaleAt.After(time.Now()) {
 		t.Fatalf("staleAt = %v, want the new value's lifetime", updated.StaleAt)
+	}
+	closed, err := st.GetSecretRefreshRequest(context.Background(), "project-1", req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.Status != model.SecretRefreshStatusAnswered || closed.Answer == nil || closed.Answer.Via != model.SecretRefreshViaUpdate {
+		t.Fatalf("request = %+v, want it answered by the update", closed)
+	}
+}
+
+// An update that writes the same value with an expiry restamps it, and answers
+// the open request as any value write does.
+func TestUpdatingTheSameValueWithAnExpiryClosesTheRefreshRequest(t *testing.T) {
+	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
+	if _, err := svc.ResolveSandboxSecret(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com"); err != nil {
+		t.Fatal(err)
+	}
+	req := pendingRefresh(t, st, sec.ID)
+	if req == nil {
+		t.Fatal("no refresh request opened for a stale value")
+	}
+	expires := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	value := apigen.SecretValue{Token: apigen.NewOptString("gho_old")}
+	updated, err := svc.UpdateSecret(testPrincipalContext(), "project-1", sec.ID, services.UpdateSecretBody{
+		Value:          apigen.NewOptSecretValue(value),
+		ValueExpiresAt: apigen.NewOptDateTime(expires),
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.StaleAt == nil || !updated.StaleAt.Equal(expires) {
+		t.Fatalf("staleAt = %v, want the expiry the update carried, %v", updated.StaleAt, expires)
 	}
 	closed, err := st.GetSecretRefreshRequest(context.Background(), "project-1", req.ID)
 	if err != nil {

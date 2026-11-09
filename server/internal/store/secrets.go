@@ -264,7 +264,8 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 		// When the value stays, so do the fields that describe it: they have
 		// a writer of their own (MarkSecretValueStale), and a row read before
 		// that write must not put the old ones back (store DESIGN, "Field
-		// Ownership on Whole-Row Writes").
+		// Ownership on Whole-Row Writes"). A restamp is the exception: its
+		// stamp is newer than the stored one, so it was not read before it.
 		//
 		// The revision advances in SQL rather than from the copy the caller
 		// read, so a concurrent writer's advance is never written back over.
@@ -283,11 +284,16 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 			Scan(&sealed.Revision).Error; err != nil {
 			return err
 		}
-		if !replacedValue {
+		if !replacedValue && !restamped {
 			return nil
 		}
-		if err := s.clearSecretRejections(tx, sealed.ProjectID, sealed.ID); err != nil {
-			return err
+		// A restamp keeps what was recorded against the value: the bytes are
+		// the same, so it is the same credential an upstream refused. It still
+		// answers the ask for a new value, which it has.
+		if replacedValue {
+			if err := s.clearSecretRejections(tx, sealed.ProjectID, sealed.ID); err != nil {
+				return err
+			}
 		}
 		return answerRefreshRequests(tx, sealed.ProjectID, sealed.ID, &model.SecretRefreshAnswer{
 			AnsweredAt: time.Now().UTC(),
