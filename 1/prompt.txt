@@ -1,0 +1,5 @@
+on sbx_2461ghedn8y6ebfs, i'm looking at it in the TUI and it keeps popping up saying the github credential was refreshed. which make sense because it's based on a command, but it's supposed to save for 8 hours so I don't know why it keeps showing that banner and then green refresh message. It happens every couple minutes
+
+---
+
+yes, put in an issue for this, if the value doesn't change, it doesn't change the timestamp
