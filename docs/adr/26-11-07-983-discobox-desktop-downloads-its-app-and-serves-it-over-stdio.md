@@ -1,8 +1,9 @@
 # 26-11-07-983 — `discobox desktop` downloads its app and serves it over stdio
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's staging directory and §4 amended before anything shipped: the app is staged in the CLI's state directory, and Linux comes first with macOS and Windows deferred; §5 and the Consequences amended with §4)
 - **Date**: 2026-11-07
 - Accepted by the owner by merging #844, 2026-11-07
+- §2, §4, §5 and the Consequences amended 2026-11-09 (#801), before anything shipped
 - **Issue**: [#786](https://github.com/discobox-ai/discobox/issues/786) (epic), [#787](https://github.com/discobox-ai/discobox/issues/787)
 
 ## Context
@@ -52,8 +53,16 @@ For each platform the manifest gives:
 
 The first `discobox desktop` downloads the asset through the CLI's own HTTP
 client and proxy settings, then verifies the digest. It unpacks the asset into
-the user cache under that digest (`<cache>/discobox/desktop/<digest>/`) and
-runs it from there.
+the CLI's state directory under that digest
+(`<discobox state>/desktop/<digest>/`, beside the staged servers) and runs it
+from there.
+
+*Amended 2026-11-09, before anything shipped.* This said the user cache
+(`<cache>/discobox/desktop/<digest>/`). A staged app is run without being
+hashed again, so its directory must be this user's alone. Inside a discobox,
+`~/.cache` is shared by every box in the pool, so another box could create the
+digest's directory first and choose what runs. The staged servers are in the
+state directory for the same reason.
 
 A later CLI release unpacks its own app beside the old one, never over a file
 that may be running. Old digests are pruned once no running app uses them. A
@@ -66,24 +75,33 @@ manifest's. A development CLI, built without a desktop manifest, looks for
 `discobox-desktop` beside its own executable. That is where
 `task build:desktop` puts it, and it survives the `task dev` loop's rebuilds.
 
-### 4. Platforms: macOS and Windows; Linux deferred
+### 4. Platforms: Linux first; macOS and Windows deferred *(amended 2026-11-09)*
 
-The desktop app is released for macOS (arm64 and amd64) and Windows (amd64
-and arm64).
+*Amended during implementation, before anything shipped.* This originally
+released the app for macOS (arm64 and amd64) and Windows (amd64 and arm64),
+and had Linux built and tested in CI but not released, with `discobox desktop`
+on Linux saying so. The owner then scoped the track to Linux: "I am fine if we
+just get it working on Linux first and do windows later as it is not well
+supported by rune anyhow", and "Scope the work to Linux only and keep it out of
+windows/Mac ci".
 
-Linux is built and tested in CI so the code stays portable, but it is not
-released and `discobox desktop` on Linux says so. Revisit Linux when both
-hold:
-- the in-window menus and dialogs needed for Windows (Rune's native menus are
-  macOS-only) are complete;
-- the app has been verified under Wayland and X11 with the distributions'
-  Vulkan and GL drivers.
+On Linux, `discobox desktop` downloads and runs the app (§2). On macOS and
+Windows it says the platform is not yet supported: their builds are kept out of
+CI, so a release has no app for them to download. An app named with `--binary`
+or `DISCOBOX_DESKTOP_BINARY` (§3) still runs anywhere.
+
+Revisit macOS and Windows when the owner brings them back into the desktop CI
+jobs; Windows waits on Rune's Windows support, including the in-window menus
+and dialogs it needs (Rune's native menus are macOS-only).
 
 ### 5. Signed packages
 
 - **macOS:** the asset is an app bundle (`discobox.app`), signed and notarized,
   so the app has its own name, Dock icon, menu bar and notifications.
 - **Windows:** the asset is a signed executable.
+- **Linux** *(amended 2026-11-09, with §4)*: the asset is a gzip-compressed
+  tar holding the executable. There is no platform signature to add; the
+  digest is the check.
 
 Each is verified by digest before anything is run, whatever the platform's
 own checks.
@@ -108,9 +126,10 @@ own checks.
 
 ## Consequences
 
-- The release pipeline builds the app for four targets, signs and notarizes
-  the macOS bundle, signs the Windows executable, uploads the assets, and
-  writes their digests into the desktop manifest the CLI is linked with.
+- The release pipeline builds the app for each supported platform (Linux
+  alone while §4 holds), uploads the assets, and writes their digests into the
+  desktop manifest the CLI is linked with. Signing and notarizing the macOS
+  bundle and signing the Windows executable come back with those platforms.
 - The first run needs network access to the release host. An offline machine
   can use `DISCOBOX_DESKTOP_BINARY`.
 - The prototype's `go:embed` path and `desktop` build tag are removed.

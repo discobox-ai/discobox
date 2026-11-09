@@ -83,7 +83,7 @@ duplicated number.
 | --- | --- | --- |
 | [26-11-09-593](26-11-09-593-a-never-registered-pool-gets-a-new-bootstrap-attempt-after-one-ends.md) | A never-registered pool gets a new bootstrap attempt after one ends | Accepted (narrows [26-11-07-306](26-11-07-306-initial-pool-bootstrap-waits-on-work-evidence.md) §3's automatic-retry rule to the waiters holding the ended attempt) |
 | [26-11-07-876](26-11-07-876-the-console-is-one-core-with-two-renderers.md) | The console is one core with two renderers | Accepted |
-| [26-11-07-983](26-11-07-983-discobox-desktop-downloads-its-app-and-serves-it-over-stdio.md) | `discobox desktop` downloads its app and serves it over stdio | Accepted |
+| [26-11-07-983](26-11-07-983-discobox-desktop-downloads-its-app-and-serves-it-over-stdio.md) | `discobox desktop` downloads its app and serves it over stdio | Accepted (§2's staging directory and §4 amended before anything shipped: staged in the CLI's state directory; Linux first, macOS and Windows deferred) |
 | [26-11-07-289](26-11-07-289-the-desktop-bridge-carries-the-console-core.md) | The desktop bridge carries the console core | Accepted |
 | [26-11-07-598](26-11-07-598-each-console-binds-commands-the-way-its-platform-does.md) | Each console binds commands the way its platform does | Accepted |
 | [26-11-07-363](26-11-07-363-the-desktop-keeps-the-console-identity-drawn-natively.md) | The desktop keeps the console's identity, drawn natively | Accepted |
