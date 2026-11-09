@@ -44,3 +44,9 @@
 - **Undo the view only once the box has acted.** `end` ends the session in
   the box first and closes its stream after: closing first left a pane with
   no stream and a session still running when the end failed.
+- **An ended subscription sends nothing.** Every snapshot goes out through
+  `follower.send`, which checks the subscription's context under `subMu`,
+  the lock `unsubscribe` holds to end it. A check in one follower's loop
+  only narrowed the race: a relist wakes a follower as readily as its end,
+  and the snapshot after an unsubscribe once went out after the next
+  command's result.

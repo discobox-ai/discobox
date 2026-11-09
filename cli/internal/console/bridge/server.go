@@ -40,7 +40,12 @@ type Server struct {
 	boxes      map[string]console.Sandbox
 	unanswered map[string]bool
 	// kick is closed to read the listing again now (relist).
-	kick  chan struct{}
+	kick chan struct{}
+	// subMu is held to write a snapshot (read) and to end a subscription
+	// (write): an unsubscribe the app sent before a command is never
+	// followed by a snapshot of that subscription, written by a follower
+	// that was already past its check of whether it had ended.
+	subMu sync.RWMutex
 	subs  map[uint32]context.CancelFunc
 	forms map[uint64]*mailbox
 	// inboxed is what waited on a person when it was last read, by the

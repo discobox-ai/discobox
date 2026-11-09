@@ -20,13 +20,15 @@ const auditKeep = 1000
 // until it is ended, and sends a snapshot whenever what it read changed.
 func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 	ctx, cancel := context.WithCancel(ctx)
+	s.subMu.Lock()
 	s.mu.Lock()
 	if old := s.subs[sub.Sub]; old != nil {
 		old()
 	}
 	s.subs[sub.Sub] = cancel
 	s.mu.Unlock()
-	f := &follower{s: s, sub: sub}
+	s.subMu.Unlock()
+	f := &follower{s: s, sub: sub, ctx: ctx}
 	switch sub.Topic {
 	case TopicListing:
 		go f.poll(ctx, console.ListPollEvery, true, f.listing)
@@ -75,7 +77,11 @@ func (f *follower) about(ctx context.Context, follow func()) {
 	}
 }
 
+// unsubscribe ends a subscription. Once it returns, nothing more of it is
+// sent: a snapshot being written is finished first (Server.subMu).
 func (s *Server) unsubscribe(sub uint32) {
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
 	s.mu.Lock()
 	cancel := s.subs[sub]
 	delete(s.subs, sub)
@@ -88,8 +94,10 @@ func (s *Server) unsubscribe(sub uint32) {
 // follower is one subscription: what it last sent, so only a change is sent
 // again.
 type follower struct {
-	s    *Server
-	sub  Subscribe
+	s   *Server
+	sub Subscribe
+	// ctx ends with the subscription; nothing is sent after it has.
+	ctx  context.Context
 	last []byte
 	// box and src are the box a topic about one box follows, and the source
 	// for its server.
@@ -97,11 +105,18 @@ type follower struct {
 	src console.DataSource
 }
 
-// send sends a snapshot unless it is the one sent last.
+// send sends a snapshot unless it is the one sent last, or the subscription
+// has ended. Every follower sends through here, so this is the one place
+// that holds an ended subscription to sending nothing, whatever woke it.
 func (f *follower) send(snap Snapshot) {
 	snap.Sub, snap.Topic = f.sub.Sub, f.sub.Topic
 	data, err := json.Marshal(snap)
 	if err != nil || bytes.Equal(data, f.last) {
+		return
+	}
+	f.s.subMu.RLock()
+	defer f.s.subMu.RUnlock()
+	if f.ctx.Err() != nil {
 		return
 	}
 	f.last = data
