@@ -3,6 +3,8 @@
 - **Status**: Accepted
 - **Date**: 2026-11-07
 - Accepted by the owner by merging #844, 2026-11-07
+- Amended 2026-11-09 by #798, before anything shipped against it: §1 drops
+  CloseInput from the app's frames, and bounds what is kept early
 - **Issue**: [#786](https://github.com/discobox-ai/discobox/issues/786) (epic), [#787](https://github.com/discobox-ai/discobox/issues/787)
 
 ## Context
@@ -39,11 +41,14 @@ payload, each way.
 - **Kind 255** is a JSON message on stream 0.
 - **Every other kind** is an execstream frame type on a non-zero stream:
   - Stdout, Stderr and Exit from the CLI;
-  - Input, Resize, Repaint and CloseInput from the app.
+  - Input, Resize and Repaint from the app. A box's terminal has no end of
+    input apart from its end (`console.Terminal`), so the app ends a session
+    with a command, and a CloseInput frame is dropped.
 
 A stream is allocated by the app before it is opened. The CLI buffers its
 input, resize and repaint frames until the stream is attached, so nothing sent
-early is lost.
+early is lost, up to a bound per stream (a megabyte): past it frames are
+dropped, and the app sends its pane's size again once the stream is attached.
 
 ### 2. Messages address the core
 

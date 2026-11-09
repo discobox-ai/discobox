@@ -180,9 +180,9 @@ flowchart TD
   this repository. See
   [`termpane/DESIGN.md`](termpane/DESIGN.md).
 - Desktop app: `desktop`, a Rust crate (not a Go module) on Rune that draws the
-  console natively. `discobox desktop` runs it as a child process and answers
-  its requests for the console's data over stdio, so it holds no credentials
-  and depends on no Go code; its spec (`desktop/src/spec.json`) is generated
+  console natively. `discobox desktop` runs it as a child process and serves
+  it the console core over stdio (`cli/internal/console/bridge`), so it holds
+  no credentials and depends on no Go code; its spec (`desktop/src/spec.json`) is generated
   from the console core (`cli/internal/console`). The CLI side is in
   [`cli/DESIGN.md`](cli/DESIGN.md); the app's own layout and what it does not
   do yet are in [`desktop/README.md`](desktop/README.md).

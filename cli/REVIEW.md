@@ -280,12 +280,6 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   credentials and knows no servers (ADR 26-11-07-983 §1), so `desktopEnv`
   drops `DISCOBOX_TOKEN` and the server variables; a new variable the app
   needs is named `DISCOBOX_DESKTOP_*`.
-- **The app knows a box by its server and ID together, and an op goes
-  through that server.** Two servers can list the same ID, so the bridge gives
-  each box an opaque key (`desktopBoxKey`), resolves it to the server and ID it
-  listed (`desktopBridge.source`) and calls `ForServer(server)`, never `b.ds`
-  directly and never a lookup by ID alone: this mistake was made in the
-  console's own data source, and twice in the bridge.
 
 ## Crossing into Windows from WSL
 

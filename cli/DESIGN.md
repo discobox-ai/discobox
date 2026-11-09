@@ -113,18 +113,16 @@ transport helpers where OpenAPI does not model the stream.
   a broken environment asks first is what they are running, so a leader key the
   environment spells wrong must not be what stops them hearing it.
 - **`discobox desktop` serves the desktop app, it does not draw anything.**
-  The app (`desktop/`) runs as its child with `--bridge` and asks, over its
-  stdin and stdout, for what the console's `DataSource` answers
-  (`internal/cli/desktop.go`; ADR 26-11-07-983 §1). So every transport, login
-  and reconnect is this CLI's, and the app gets none of them: its environment
-  is this one's less every `DISCOBOX_*` variable but its own
-  (`DISCOBOX_DESKTOP_*`). The app knows a box by a key that is its server and
-  ID together (`desktopBoxKey`), and a request about it goes to that server
-  (`ForServer`), as the console's do. What the app writes to stderr is
-  printed here, so it goes through `terminalSafeMultiline` a line at a time.
-  The app is found by `--binary`, `DISCOBOX_DESKTOP_BINARY`, beside this
-  executable, then on PATH; `desktop/README.md` says what the bridge does not
-  carry yet.
+  The app (`desktop/`) runs as its child with `--bridge`, and this process
+  serves it the console core over its stdin and stdout
+  ([`internal/console/bridge`](internal/console/bridge/DESIGN.md), over
+  `apiDataSource`; `internal/cli/desktop.go`; ADR 26-11-07-983 §1). So every
+  transport, login and reconnect is this CLI's, and the app gets none of them:
+  its environment is this one's less every `DISCOBOX_*` variable but its own
+  (`DISCOBOX_DESKTOP_*`). What the app writes to stderr is printed here, so it
+  goes through `terminalSafeMultiline` a line at a time. The app is found by
+  `--binary`, `DISCOBOX_DESKTOP_BINARY`, beside this executable, then on PATH;
+  `desktop/README.md` says what the app does not draw yet.
 - `discobox configure` is the same console opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harnesses*.
 - `discobox run` and `discobox attach` are the same console, opened on one run

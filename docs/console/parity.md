@@ -32,7 +32,7 @@ are declared in the registry with each console's keys, and are not commands.
 | `review config` | Reviewing a box's harness changes needs that review page. | #812 |
 | `rename` | Needs a form, which the app does not have yet; it says so. | #808 |
 | `settings` | Needs a form, which the app does not have yet; it says so. | #808 |
-| `purge` | Needs a confirmation, which the app does not have yet; it says so, and the bridge refuses a purge sent without one. | #808 |
+| `purge` | Needs a confirmation, which the app does not have yet; it says so. The core asks it over the bridge, and the app declines it. | #808 |
 | `new` | Creating a box needs the create flow, which the app does not have yet; it says so. | #810 |
 | `options` | The run options are part of the create flow. | #810 |
 | `tools` | Needs the tools picker and tool panes. | #815 |

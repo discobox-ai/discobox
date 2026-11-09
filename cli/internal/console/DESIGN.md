@@ -15,6 +15,9 @@ flowchart LR
     Core --> Desk["desktop (renderer, over the bridge)"]
 ```
 
+- **The desktop app reaches it through [`bridge`](bridge/DESIGN.md)**, which
+  serves the core over a pipe: commands through `Dispatch`, questions and
+  forms as descriptions, and what the app draws as subscriptions.
 - **It imports no frontend**: not `internal/tui`, not `internal/cli`, and
   nothing of Bubble Tea or termpane. A rule a renderer needs is moved here,
   never exported back out of a renderer.
@@ -263,8 +266,8 @@ flowchart LR
 while it runs, is handed a `*Narration`, never a frontend's function: `Run`,
 `DeliverSource`, `Do` and `WatchProvisioning` all take one. The frontend that
 started it reads `Events` until the starter closes it, and answers in its own
-way: the TUI with its dialogs; the desktop app, which draws no question yet,
-by declining every question and handover (`Decline`).
+way: the TUI with its dialogs; the desktop bridge by sending each question to
+the app, and declining a handover, which the app has no terminal for.
 
 ```mermaid
 flowchart LR
@@ -291,8 +294,8 @@ flowchart LR
   says which lifecycle verbs ask first (purging, which nothing undoes; nothing
   else, archiving included) and in what words, and `Dispatch` asks it on the
   way in (`Frontend.Confirm`, which sends the verb only on yes). A path that
-  sends a verb outside the registry — the desktop's prototype bridge —
-  refuses one that asks rather than send it unasked.
+  sends a verb outside the registry refuses one that asks rather than send it
+  unasked; the desktop bridge sends none (`bridge`).
 - **A yes or no is answered**, `AnswerYes` or `AnswerNo` — left any way but
   yes, it is no. Only a pick of one can be dismissed unanswered.
 - **Which box is on screen stays the renderer's** (876 §2), and so does

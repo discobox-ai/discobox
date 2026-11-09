@@ -1,0 +1,407 @@
+package bridge
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
+)
+
+// run rules on one command through the core's registry, then carries out
+// what it rules: the core's own work here (a verb, a form, a session made or
+// ended), and the app's flow — focus, a page, a menu — handed back to it as
+// StatusEnter.
+func (s *Server) run(ctx context.Context, c Command) Result {
+	if _, ok := console.Lookup(c.Command); !ok {
+		return failed(fmt.Sprintf("there is no command %q", c.Command))
+	}
+	targets := make([]console.Sandbox, 0, len(c.Targets))
+	for _, key := range c.Targets {
+		b, err := s.box(ctx, key)
+		if err != nil {
+			return failed(err.Error())
+		}
+		targets = append(targets, b)
+	}
+	cctx := s.context(ctx, c)
+	f := &frontend{s: s, ctx: ctx, c: c, cctx: cctx, targets: targets}
+	s.regMu.Lock()
+	outcome := console.Dispatch(s.reg, f, cctx, c.Command, targets)
+	s.regMu.Unlock()
+	return outcome()
+}
+
+// context is the core's Context for a command: the app's navigation as it
+// sent it, the box whose workspace it holds, and the credential inbox's
+// answers for a box, from what waits on a person as last read (inbox).
+func (s *Server) context(ctx context.Context, c Command) console.Context {
+	s.mu.Lock()
+	session := s.session
+	s.mu.Unlock()
+	x := c.Context
+	cctx := console.Context{
+		Session: session, HasWorkspace: x.HasWorkspace, WorkspaceShown: x.WorkspaceShown, PaneFocused: x.PaneFocused,
+		ListHasKeys: x.ListHasKeys, Tree: x.Tree, TreeShown: x.TreeShown, TreeFits: x.TreeFits, PageShown: x.PageShown,
+	}
+	// A workspace whose box is no longer listed is none: the window's
+	// commands still run, and the box's are refused for want of one.
+	if x.Workspace != "" {
+		if b, err := s.box(ctx, x.Workspace); err == nil {
+			cctx.Workspace = &b
+		}
+	}
+	// What waits on a person is read here, before the registry is held: a
+	// rule asks it while the registry rules, and a server slow to answer
+	// must not hold up every other command.
+	requests, rejections := s.inbox(ctx)
+	cctx.Waiting = func(b console.Sandbox) bool { return len(console.RequestsFor(session, b, requests)) > 0 }
+	cctx.Refused = func(b console.Sandbox) bool { return len(console.RejectionsFor(session, b, rejections)) > 0 }
+	return cctx
+}
+
+// outcome is what the frontend does for a command once the registry has
+// ruled on it, run after the registry is let go.
+type outcome func() Result
+
+func refused(why string) outcome { return func() Result { return failed(why) } }
+
+// frontend is the bridge as the registry's Frontend, for one command.
+type frontend struct {
+	s       *Server
+	ctx     context.Context
+	c       Command
+	cctx    console.Context
+	targets []console.Sandbox
+}
+
+var _ console.Frontend[outcome] = (*frontend)(nil)
+
+// enter hands a window command's flow to the app.
+func (f *frontend) enter() outcome { return func() Result { return Result{Status: StatusEnter} } }
+
+// enterBox hands the app a flow about one box.
+func (f *frontend) enterBox(box console.Sandbox) outcome {
+	return func() Result { return Result{Status: StatusEnter, Box: Key(box.Server, box.ID)} }
+}
+
+// enterIfAble hands the app a flow about one box whose other preconditions
+// — a tag to open, a request waiting — the registry leaves to the flow: the
+// app's flow does not rule on them, so they are refused here, in the words
+// the registry's entry gives.
+func (f *frontend) enterIfAble(box console.Sandbox) outcome {
+	if e, ok := f.s.reg.Entry(f.cctx, f.c.Command, []console.Sandbox{box}); ok && !e.Enabled {
+		return refused(e.Why)
+	}
+	return f.enterBox(box)
+}
+
+func (f *frontend) Unavailable(why string) outcome { return refused(why) }
+
+func (f *frontend) Cannot(c console.Command, why string) outcome {
+	return refused("cannot " + c.Label + ": " + why)
+}
+
+// OfferUpgrade asks the core's question for a box whose image is gone, and
+// upgrades it on yes.
+func (f *frontend) OfferUpgrade(box console.Sandbox) outcome {
+	return func() Result {
+		q, ok := console.UpgradeOffer(box)
+		if !ok {
+			return failed(q.Body)
+		}
+		return f.confirm(q, console.VerbUpgrade, []console.Sandbox{box})
+	}
+}
+
+// Attach delivers the source a box is still owed, narrating it, and then
+// hands the app the box's workspace to open.
+func (f *frontend) Attach(box console.Sandbox) outcome {
+	return func() Result {
+		if err := f.deliver(box); err != nil {
+			return failed(err.Error())
+		}
+		return f.enterBox(box)()
+	}
+}
+
+// Shell makes a shell in the box, attached to the command's stream.
+func (f *frontend) Shell(box console.Sandbox) outcome {
+	return func() Result {
+		if err := f.deliver(box); err != nil {
+			return failed(err.Error())
+		}
+		return f.session(box, console.InteractShell, console.DataSource.NewShell)
+	}
+}
+
+// NewTerminal makes another of the harness's terminals in the box whose
+// workspace is open.
+func (f *frontend) NewTerminal() outcome {
+	box := f.cctx.Workspace
+	if box == nil {
+		return refused("requires a workspace")
+	}
+	return func() Result { return f.session(*box, console.InteractTerminal, console.DataSource.NewTerminal) }
+}
+
+// deliver delivers what the box is owed before it is opened (ADR
+// 26-09-24-005), narrating it.
+func (f *frontend) deliver(box console.Sandbox) error {
+	if !box.AwaitsDelivery {
+		return nil
+	}
+	src := f.s.ds.ForServer(box.Server)
+	n, finished := f.s.narrate(f.ctx, f.c.ID)
+	err := src.DeliverSource(f.ctx, box.ID, n)
+	finished()
+	return err
+}
+
+func (f *frontend) session(box console.Sandbox, asked console.Interaction, start func(console.DataSource, context.Context, string, int, int) (console.Exec, console.Terminal, error)) Result {
+	stream := f.c.Args.Stream
+	if stream == 0 {
+		return failed("no stream to attach the session to")
+	}
+	if f.s.streams.get(stream) == nil {
+		return failed(fmt.Sprintf("stream %d has ended", stream))
+	}
+	cols, rows := size(f.c.Args.Cols, f.c.Args.Rows)
+	ex, term, err := start(f.s.ds.ForServer(box.Server), f.ctx, box.ID, cols, rows)
+	if err != nil {
+		f.s.streams.fail(stream, err)
+		return failed(err.Error())
+	}
+	tab := wireTab(console.SessionTab(ex, asked), ex)
+	if !f.s.streams.attach(stream, term) {
+		// Closed while it was made: the session goes on in the box, and the
+		// app, which closed it, is told what it was.
+		return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &tab, Note: "the pane closed before the session was made"}
+	}
+	return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &tab}
+}
+
+// EndSession ends the session named by the command, in the box whose
+// workspace is open, and closes its stream.
+func (f *frontend) EndSession() outcome {
+	box := f.cctx.Workspace
+	if box == nil {
+		return refused("requires a workspace")
+	}
+	exec := f.c.Args.Exec
+	switch exec {
+	case "":
+		return refused("no session to end")
+	case console.ExecPrimary:
+		return refused("the primary session ends with its box; stop the box instead")
+	}
+	return func() Result {
+		// Ended in the box first: a session that could not be ended goes on,
+		// and so does the pane showing it.
+		if err := f.s.ds.ForServer(box.Server).EndExec(f.ctx, box.ID, exec); err != nil {
+			return failed(err.Error())
+		}
+		if f.c.Args.Stream != 0 {
+			f.s.streams.close(f.c.Args.Stream)
+		}
+		return Result{Status: StatusDone, Box: Key(box.Server, box.ID)}
+	}
+}
+
+// Repaint asks the stream named by the command for its screen again.
+func (f *frontend) Repaint() outcome {
+	stream := f.c.Args.Stream
+	if stream == 0 {
+		return refused("no pane to repaint")
+	}
+	return func() Result {
+		if !f.s.streams.repaint(stream) {
+			return failed("that pane has no stream")
+		}
+		return Result{Status: StatusDone}
+	}
+}
+
+// Rename asks the core's rename form and renames the box.
+func (f *frontend) Rename(box console.Sandbox) outcome {
+	return func() Result {
+		r, ok, err := fill(f.ctx, f.s, f.c.ID, "Rename", console.RenameForm(box, box.Title()))
+		switch {
+		case err != nil:
+			return failed(err.Error())
+		case !ok:
+			return Result{Status: StatusCanceled}
+		case r.Unchanged:
+			return Result{Status: StatusDone, Note: "name unchanged"}
+		}
+		if err := f.s.ds.ForServer(box.Server).Rename(f.ctx, box.ID, r.Name); err != nil {
+			return failed("rename: " + err.Error())
+		}
+		f.s.relist()
+		if r.Name == "" {
+			return Result{Status: StatusDone, Note: "name cleared"}
+		}
+		return Result{Status: StatusDone, Note: "renamed to " + r.Name}
+	}
+}
+
+// Settings reads the box's settings, asks the core's settings form, and
+// saves what changed.
+func (f *frontend) Settings(box console.Sandbox) outcome {
+	return func() Result {
+		src := f.s.ds.ForServer(box.Server)
+		was, err := src.BoxSettings(f.ctx, box.ID)
+		if err != nil {
+			return failed(err.Error())
+		}
+		// The harnesses only fill the harness row; a listing that fails
+		// leaves it on the box's own.
+		harnesses, _ := src.Harnesses(f.ctx, box.Server)
+		update, ok, err := fill(f.ctx, f.s, f.c.ID, "Settings · "+box.Title(), console.SettingsForm(box, was, harnesses))
+		switch {
+		case err != nil:
+			return failed(err.Error())
+		case !ok:
+			return Result{Status: StatusCanceled}
+		case update.Empty():
+			return Result{Status: StatusDone, Note: "settings unchanged"}
+		}
+		if err := src.UpdateBox(f.ctx, box.ID, update); err != nil {
+			return failed("settings: " + err.Error())
+		}
+		f.s.relist()
+		return Result{Status: StatusDone, Note: "settings saved"}
+	}
+}
+
+// Do sends a verb to every target, narrating each.
+func (f *frontend) Do(verb console.Verb, targets []console.Sandbox) outcome {
+	return func() Result { return f.do(verb, targets) }
+}
+
+// Confirm asks the question the core puts before a verb, and sends it only
+// on yes.
+func (f *frontend) Confirm(q console.Question, verb console.Verb, targets []console.Sandbox) outcome {
+	return func() Result { return f.confirm(q, verb, targets) }
+}
+
+func (f *frontend) confirm(q console.Question, verb console.Verb, targets []console.Sandbox) Result {
+	key, err := f.s.ask(f.ctx, f.c.ID, q)
+	switch {
+	case errors.Is(err, context.Canceled) && f.ctx.Err() == nil:
+		return Result{Status: StatusCanceled}
+	case err != nil:
+		return failed(err.Error())
+	case key != console.AnswerYes:
+		return Result{Status: StatusCanceled}
+	}
+	return f.do(verb, targets)
+}
+
+func (f *frontend) do(verb console.Verb, targets []console.Sandbox) Result {
+	defer f.s.relist()
+	var notes, failures []string
+	for _, b := range targets {
+		n, finished := f.s.narrate(f.ctx, f.c.ID)
+		note, err := f.s.ds.ForServer(b.Server).Do(f.ctx, verb, b.ID, n)
+		finished()
+		name := b.Title()
+		switch {
+		case err != nil:
+			failures = append(failures, fmt.Sprintf("%s %s: %v", verb, name, err))
+		case note != "":
+			notes = append(notes, note)
+		default:
+			notes = append(notes, fmt.Sprintf("%s: %s", verb, name))
+		}
+	}
+	if len(failures) > 0 {
+		return Result{Status: StatusFailed, Why: strings.Join(failures, "; "), Note: strings.Join(notes, "; ")}
+	}
+	return Result{Status: StatusDone, Note: strings.Join(notes, "; ")}
+}
+
+// Refresh reads the listing again now, for every listing subscription.
+func (f *frontend) Refresh() outcome {
+	return func() Result {
+		f.s.relist()
+		return Result{Status: StatusDone}
+	}
+}
+
+// Palette hands the app the commands as they stand for the context and the
+// targets it asked with, and how often each was used here.
+func (f *frontend) Palette() outcome {
+	targets := f.paletteTargets()
+	entries := f.s.reg.Entries(f.cctx, targets)
+	out := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, wireEntry(e, f.s.reg.Usage(e.ID)))
+	}
+	return func() Result { return Result{Status: StatusEnter, Entries: out} }
+}
+
+// Actions hands the app a box's action menu, as the core rules on it for the
+// targets the app asked with.
+func (f *frontend) Actions() outcome {
+	targets := f.paletteTargets()
+	if len(targets) == 0 {
+		return refused("nothing selected")
+	}
+	entries := console.Lifecycle(targets)
+	out := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, wireEntry(e, 0))
+	}
+	r := Result{Status: StatusEnter, Box: Key(targets[0].Server, targets[0].ID), Entries: out}
+	return func() Result { return r }
+}
+
+// paletteTargets are the boxes the app named for a window's command that
+// lists commands for them: the registry ignores a window command's targets,
+// and the palette and the action menu are about the ones the app has picked.
+func (f *frontend) paletteTargets() []console.Sandbox {
+	out := make([]console.Sandbox, 0, len(f.c.Targets))
+	for _, key := range f.c.Targets {
+		f.s.mu.Lock()
+		b, ok := f.s.boxes[key]
+		f.s.mu.Unlock()
+		if ok {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// The flows that are the app's: the core has ruled the command can run, and
+// the app enters it.
+
+func (f *frontend) ReviewConfig(box console.Sandbox) outcome        { return f.enterBox(box) }
+func (f *frontend) Tools(box console.Sandbox) outcome               { return f.enterBox(box) }
+func (f *frontend) Issue(box console.Sandbox) outcome               { return f.enterIfAble(box) }
+func (f *frontend) PullRequest(box console.Sandbox) outcome         { return f.enterIfAble(box) }
+func (f *frontend) FilesChanged(box console.Sandbox) outcome        { return f.enterIfAble(box) }
+func (f *frontend) Audit(box console.Sandbox) outcome               { return f.enterBox(box) }
+func (f *frontend) Services(box console.Sandbox) outcome            { return f.enterBox(box) }
+func (f *frontend) CredentialRequests(box console.Sandbox) outcome  { return f.enterIfAble(box) }
+func (f *frontend) RejectedCredentials(box console.Sandbox) outcome { return f.enterIfAble(box) }
+
+func (f *frontend) NewBox() outcome         { return f.enter() }
+func (f *frontend) Credentials() outcome    { return f.enter() }
+func (f *frontend) Harnesses() outcome      { return f.enter() }
+func (f *frontend) Quit() outcome           { return f.enter() }
+func (f *frontend) Help() outcome           { return f.enter() }
+func (f *frontend) Filters() outcome        { return f.enter() }
+func (f *frontend) AllBoxes() outcome       { return f.enter() }
+func (f *frontend) ToggleArchived() outcome { return f.enter() }
+func (f *frontend) RunOptions() outcome     { return f.enter() }
+func (f *frontend) Maximize() outcome       { return f.enter() }
+func (f *frontend) Detach() outcome         { return f.enter() }
+func (f *frontend) ToggleMouse() outcome    { return f.enter() }
+func (f *frontend) DismissBanner() outcome  { return f.enter() }
+func (f *frontend) NextPane() outcome       { return f.enter() }
+func (f *frontend) PreviousPane() outcome   { return f.enter() }
+func (f *frontend) NextBox() outcome        { return f.enter() }
+func (f *frontend) PreviousBox() outcome    { return f.enter() }
+func (f *frontend) ToggleSidebar() outcome  { return f.enter() }
