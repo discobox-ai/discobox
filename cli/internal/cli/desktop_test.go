@@ -209,3 +209,52 @@ func TestDesktopStderrIsTerminalSafe(t *testing.T) {
 		t.Errorf("lines and tabs not kept: %q", got)
 	}
 }
+
+// --print-manifest prints the desktop manifest this build was linked with, and
+// a build linked with none says so rather than printing nothing: it is what
+// release:verify reads to check a release CLI pins the archive the release
+// built.
+func TestDesktopPrintManifest(t *testing.T) {
+	saved := desktopstage.DefaultManifest
+	t.Cleanup(func() { desktopstage.DefaultManifest = saved })
+
+	desktopstage.DefaultManifest = ""
+	root := NewRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"desktop", "--print-manifest"})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), desktopstage.ErrNoManifest.Error()) {
+		t.Fatalf("no manifest: got %v, want %v", err, desktopstage.ErrNoManifest)
+	}
+
+	pinned := desktopstage.Manifest{
+		Version: "v9.9.9", OS: "linux", Arch: "arm64", Command: "discobox-desktop",
+		Asset: serverstage.Asset{
+			Name:   "discobox-desktop-linux-arm64.tar.gz",
+			URLs:   []string{"https://example.com/v9.9.9/discobox-desktop-linux-arm64.tar.gz"},
+			SHA256: strings.Repeat("a", 64),
+			Size:   42,
+		},
+	}
+	encoded, err := desktopstage.EncodeManifest(pinned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desktopstage.DefaultManifest = encoded
+	root = NewRootCommand()
+	out.Reset()
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"desktop", "--print-manifest"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("pinned: %v\n%s", err, out.String())
+	}
+	got, err := desktopstage.ParseManifest(out.Bytes())
+	if err != nil {
+		t.Fatalf("printed %q: %v", out.String(), err)
+	}
+	if !reflect.DeepEqual(got, pinned) {
+		t.Fatalf("printed %+v, want %+v", got, pinned)
+	}
+}

@@ -40,8 +40,9 @@ const desktopBinaryEnv = "DISCOBOX_DESKTOP_BINARY"
 
 func (a *App) newDesktopCommand() *cobra.Command {
 	var (
-		binary    string
-		printSpec bool
+		binary        string
+		printSpec     bool
+		printManifest bool
 	)
 	cmd := &cobra.Command{
 		Use:   "desktop",
@@ -59,11 +60,24 @@ console.`,
 				enc.SetIndent("", "  ")
 				return enc.Encode(console.NewSpec())
 			}
+			if printManifest {
+				// What this build would download, and from where: the desktop
+				// app's counterpart of `admin server manifest`, and what
+				// release:verify checks against the archive the release built,
+				// since the linker accepts an -X for a symbol that does not
+				// exist without complaint.
+				manifest, err := desktopstage.Default()
+				if err != nil {
+					return err
+				}
+				return writeJSON(cmd.OutOrStdout(), manifest)
+			}
 			return a.runDesktop(cmd, binary)
 		},
 	}
 	cmd.Flags().BoolVar(&printSpec, "print-spec", false, "print the console's UX spec the desktop app is handed, and exit")
 	_ = cmd.Flags().MarkHidden("print-spec")
+	cmd.Flags().BoolVar(&printManifest, "print-manifest", false, "print the desktop app this build would download, and exit; a build that pins none says so and exits non-zero")
 	cmd.Flags().StringVar(&binary, "binary", "", "desktop app to run instead of the one this CLI would find (also "+desktopBinaryEnv+")")
 	_ = cmd.Flags().MarkHidden("binary")
 	return cmd
