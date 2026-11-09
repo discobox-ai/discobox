@@ -8,9 +8,10 @@ import (
 
 // The wire (ADR 26-11-07-289 §2–3): every JSON message either side sends, as
 // one envelope naming its type and carrying that type's body under the same
-// name. These structs are the schema; the app's types mirror them. No field
-// is ever null: a list is [] when empty, and a value that is absent is
-// omitted.
+// name. These structs are the wire: its JSON Schema (wire.schema.json) is
+// generated from them, and the app's Rust types from the schema (genwire,
+// generate.go). No field is ever null: a list is [] when empty, and a value
+// that is absent is omitted.
 
 // Protocol is the bridge's version, carried by hello and welcome. The CLI
 // pins the exact app it runs (983 §2), so two that differ are a development

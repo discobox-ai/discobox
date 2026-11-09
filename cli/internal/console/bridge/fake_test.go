@@ -1,18 +1,20 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // fakeCore is a console.DataSource for one server, and the window's root
@@ -283,6 +285,9 @@ type app struct {
 	// between.
 	seen []Message
 	done chan error
+	// offSchema is set by a test while it sends what the wire's schema does
+	// not describe on purpose, and cleared after.
+	offSchema bool
 }
 
 func dial(t *testing.T, ds console.DataSource) *app {
@@ -322,6 +327,7 @@ func (a *app) send(m Message) {
 	if err != nil {
 		a.t.Fatal(err)
 	}
+	a.conforms(wireMessage, data)
 	a.frame(KindJSON, 0, data)
 }
 
@@ -337,6 +343,7 @@ func (a *app) resize(stream uint32, cols, rows int) {
 	if err != nil {
 		a.t.Fatal(err)
 	}
+	a.conforms(wireResize, data)
 	a.frame(frame.Resize, stream, data)
 }
 
@@ -374,9 +381,7 @@ func (a *app) message() Message {
 		if f.Kind != KindJSON {
 			continue
 		}
-		if strings.Contains(string(f.Payload), "null") {
-			a.t.Errorf("null on the wire: %s", f.Payload)
-		}
+		a.conforms(wireMessage, f.Payload)
 		var m Message
 		if err := json.Unmarshal(f.Payload, &m); err != nil {
 			a.t.Fatalf("%s: %v", f.Payload, err)
@@ -435,5 +440,58 @@ func eventually(t *testing.T, what string, ok func() bool) {
 			t.Fatalf("never: %s", what)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// The wire's schema (wire.schema.json, generated from wire.go), which the
+// desktop app's types are generated from. Every message the fake app sends
+// or reads is held to it, so a message the Go writes that the schema does
+// not describe — a null where a list belongs — fails here rather than in the
+// app.
+var wireCompiler = sync.OnceValues(func() (*jsonschema.Compiler, error) {
+	data, err := os.ReadFile("wire.schema.json")
+	if err != nil {
+		return nil, err
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	c := jsonschema.NewCompiler()
+	return c, c.AddResource("wire.schema.json", doc)
+})
+
+var (
+	wireMessage = compileWire("wire.schema.json")
+	wireResize  = compileWire("wire.schema.json#/$defs/ResizePayload")
+)
+
+func compileWire(ref string) func() (*jsonschema.Schema, error) {
+	return sync.OnceValues(func() (*jsonschema.Schema, error) {
+		c, err := wireCompiler()
+		if err != nil {
+			return nil, err
+		}
+		return c.Compile(ref)
+	})
+}
+
+// conforms fails the test when payload is not what the schema describes.
+func (a *app) conforms(schema func() (*jsonschema.Schema, error), payload []byte) {
+	t := a.t
+	t.Helper()
+	if a.offSchema {
+		return
+	}
+	sch, err := schema()
+	if err != nil {
+		t.Fatalf("the wire's schema: %v", err)
+	}
+	v, err := jsonschema.UnmarshalJSON(bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("%s: %v", payload, err)
+	}
+	if err := sch.Validate(v); err != nil {
+		t.Errorf("%s is not on the wire's schema: %v", payload, err)
 	}
 }

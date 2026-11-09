@@ -84,7 +84,7 @@ func TestEveryCommandIsReachable(t *testing.T) {
 			case m.Type == TypeQuestion:
 				a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: m.Question.ID, Declined: true}})
 			case m.Type == TypeForm:
-				a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: m.Form.ID, Cancel: true}})
+				a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: m.Form.ID, Answers: map[string]string{}, Cancel: true}})
 			case m.Type == TypeResult && m.Result.ID == id:
 				r = *m.Result
 				break answer
@@ -206,7 +206,7 @@ func TestSettingsForm(t *testing.T) {
 
 	id = a.command(Command{Command: "rename", Targets: []string{"b1"}})
 	form = a.expect(TypeForm).Form
-	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: form.ID, Cancel: true}})
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: form.ID, Answers: map[string]string{}, Cancel: true}})
 	if r := a.result(id); r.Status != StatusCanceled {
 		t.Fatalf("a dismissed rename: %+v", r)
 	}
@@ -420,10 +420,14 @@ func TestSubscriptions(t *testing.T) {
 	if r := a.expect(TypeSnapshot).Snapshot.Requests; len(r.Requests) != 1 || r.Requests[0].Kind != "trust" || r.Requests[0].Box != "b3" {
 		t.Fatalf("requests %+v", r)
 	}
+	// A topic the schema does not have, and so neither does the app: the
+	// server still answers it, with why.
+	a.offSchema = true
 	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 5, Topic: "weather"}})
 	if s := a.expect(TypeSnapshot).Snapshot; s.Error == "" {
 		t.Fatalf("an unknown topic: %+v", s)
 	}
+	a.offSchema = false
 }
 
 // The palette and the action menu are the core's entries for what the app

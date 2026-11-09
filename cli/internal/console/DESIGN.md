@@ -158,7 +158,9 @@ token in both palettes, read from the design language's tokens
 (`assets/brand`, 363 §4). `discobox desktop` hands it to the app on `hello`,
 and `task generate` writes it to `desktop/src/spec.json`; the TUI draws the
 same glyphs by each token's xterm index. Nothing in it is read out of a
-renderer. Lists on the wire are never null.
+renderer. Lists on the wire are never null. Its types are on the bridge's
+wire, so the app's are generated from them with the bridge's
+([bridge](bridge/DESIGN.md)).
 
 - **The parity scenarios are here** (`testdata/parity`, 598 §5), written in
   registry IDs; `TestParityScenariosNameRegistryCommands` holds each step to

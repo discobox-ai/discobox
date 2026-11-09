@@ -20,8 +20,20 @@ flowchart LR
   big-endian, one pipe each way. `KindJSON` is a `Message` on stream 0; every
   other kind is an execstream frame type on a terminal stream.
 - **Messages** (`wire.go`, 289 §2): one envelope, `type` and the body of that
-  type under the same name. The structs are the schema the app's types mirror;
-  no field is null (lists are `[]`, absent values omitted).
+  type under the same name. No field is null (lists are `[]`, absent values
+  omitted).
+- **Generated types** (289 §3): the structs are the wire. `genwire`
+  (`go generate`, from `go tool task generate`) writes their JSON Schema,
+  `wire.schema.json`, by reflection, with their doc comments and each named
+  string's constants as an enum; then the app's Rust types,
+  `desktop/src/wire.rs`, from that schema alone. A field omitted when empty is
+  optional; any other is required, and a pointer must be omitted when empty.
+  It refuses what it cannot carry faithfully rather than guess: a type that
+  marshals itself, a type that contains itself, an enum constant that is not
+  a string literal, a name Rust cannot take or that the generated code uses.
+  `task verify` fails on either file stale. The tests' fake app holds every
+  message either way to the schema, so what the Go writes is what the app
+  reads.
 - **Versions**: `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.

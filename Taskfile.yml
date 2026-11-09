@@ -1043,7 +1043,8 @@ tasks:
       # The server's configuration schema is generated from config.Config, so
       # a new setting cannot ship without the schema that documents it.
       - cd server && go generate ./...
-      # So is the CLI's, from clientconfig.Config.
+      # So is the CLI's, from clientconfig.Config, and the desktop bridge's
+      # schema and the app's Rust types, from the bridge's wire types.
       - cd cli && go generate ./...
       # The desktop app's mock runs with the spec the CLI would hand it, so a
       # change to the console's commands or glyphs reaches both consoles.
