@@ -90,23 +90,36 @@ have open keeps working. Forwarding stops when the command does.`,
 	return cmd
 }
 
+// proxyStatusLines is how `discobox proxy` writes a line to status: a forward
+// event, or why the listing failed.
+//
+// Events arrive from every accept loop and every forwarded connection at once;
+// the writer behind them is one terminal. And nearly every value in a line is
+// the box's: a port's service name and ID, the address it reported to dial,
+// and a refused tunnel's message, which the in-box hop writes and the dial
+// error carries. So each line is made terminal-safe whole, as it is written,
+// rather than field by field: an error built from a field nobody escaped
+// would still reach the terminal raw.
+func proxyStatusLines(status io.Writer) func(string) {
+	var mu sync.Mutex
+	return func(line string) {
+		mu.Lock()
+		defer mu.Unlock()
+		fmt.Fprintln(status, terminalSafe(line))
+	}
+}
+
 func (a *App) runProxy(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, opts proxyOptions, requested []portforward.Target, status io.Writer) error {
 	dialer, err := a.sandboxPortDialer(projectID, sandboxID)
 	if err != nil {
 		return err
 	}
 
-	// Events arrive from every accept loop and every forwarded connection at
-	// once; the writer behind them is one terminal.
-	var writeMu sync.Mutex
+	say := proxyStatusLines(status)
 	forwarder := portforward.New(ctx, portforward.Options{
 		Dialer:      dialer,
 		BindAddress: opts.address,
-		Observe: func(event portforward.Event) {
-			writeMu.Lock()
-			defer writeMu.Unlock()
-			fmt.Fprintln(status, event)
-		},
+		Observe:     func(event portforward.Event) { say(event.String()) },
 	})
 	defer forwarder.Close()
 
@@ -130,9 +143,7 @@ func (a *App) runProxy(ctx context.Context, client *apiclientgen.Client, project
 			// failed is not a reason to drop the ports already bound: the
 			// tunnels through them are still good, and named ports do not
 			// depend on the listing at all.
-			writeMu.Lock()
-			fmt.Fprintf(status, "listing ports: %v\n", err)
-			writeMu.Unlock()
+			say(fmt.Sprintf("listing ports: %v", err))
 		} else {
 			reported = listed
 		}

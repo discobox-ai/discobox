@@ -39,6 +39,14 @@
   step off an exec onto an API call (the files API, ADR 26-10-22-499) moves
   the box's words out of a stderr that was escaped into an error message that
   is not, unless the call's error is (`sandboxFileResponse`).
+- **A line built from several box values is escaped as it is written.**
+  Escaping each field of a struct misses the error later built from another
+  one: `discobox proxy` escaped a port's service name and ID, while a failed
+  dial still carried the address the box reported and the in-box hop's
+  refusal raw (#925). Where a line mixes fields and errors, escape the whole
+  line at the writer (`proxyStatusLines`); a service listing the CLI prints
+  escapes every column the sandbox answered, its IDs included
+  (`writeSandboxServices`).
 
 - **A role a box named is never shown without what it grants.** A credential
   request's role names, descriptions and arguments are the asking discobox's

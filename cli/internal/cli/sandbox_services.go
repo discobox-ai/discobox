@@ -176,12 +176,16 @@ func actOnSandboxService(ctx context.Context, client *apiclientgen.Client, verb,
 	}
 }
 
+// writeSandboxServices prints the services listing. Every word of it but the
+// PID and exit code is the box's own: the sandbox answers the listing, and a
+// declaration's name, description and file name are what the box wrote. So it
+// is printed terminal-safe, the IDs included (cli/REVIEW.md).
 func (a *App) writeSandboxServices(cmd *cobra.Command, services []apimodel.SandboxService, observedAt time.Time) error {
 	if a.quiet {
-		return writeResourceIDs(cmd.OutOrStdout(), services, func(service apimodel.SandboxService) string { return service.ID })
+		return writeResourceIDs(cmd.OutOrStdout(), services, func(service apimodel.SandboxService) string { return terminalSafe(service.ID) })
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), storedAnswerJSON("services", services, observedAt))
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), storedAnswerJSON("services", services, observedAt))
 	}
 	defer noteStoredAnswer(cmd, observedAt)
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
@@ -196,13 +200,13 @@ func (a *App) writeSandboxServices(cmd *cobra.Command, services []apimodel.Sandb
 			exitCode = fmt.Sprint(value)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			service.ID,
-			service.Status,
+			terminalSafe(service.ID),
+			terminalSafe(string(service.Status)),
 			pid,
 			exitCode,
 			sandboxServicePorts(service),
-			service.Name,
-			truncateTableValue(sandboxServiceDetail(service), 60),
+			terminalSafe(service.Name),
+			truncateTableValue(terminalSafe(sandboxServiceDetail(service)), 60),
 		)
 	}
 	return tw.Flush()
@@ -242,9 +246,11 @@ func (a *App) listServiceCompletions(ctx context.Context, client *apiclientgen.C
 	}
 	completions := make([]string, 0, len(services))
 	for _, service := range services {
-		completion := service.ID
+		// The shell prints both halves on the user's terminal, and the
+		// sandbox wrote both.
+		completion := terminalSafe(service.ID)
 		if description := strings.TrimSpace(service.Description.Or("")); description != "" {
-			completion += "\t" + description
+			completion += "\t" + terminalSafe(description)
 		}
 		completions = append(completions, completion)
 	}
