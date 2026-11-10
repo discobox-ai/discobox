@@ -332,7 +332,10 @@
   typing into their sign-in answer it. The hold reaches every card an unasked
   card opens: the explainer's review card once took `s` with no hold, so
   "run tests" typed over the explainer opened the review on `r` and saved the
-  box's harness setup as the project's default on `s`. A held key is not
+  box's harness setup as the project's default on `s`. A hold proves only a
+  pause, not a reading, so a card reached from an unasked one never commits on
+  Enter or a single letter: the explainer's review puts its cursor on Refresh
+  and gives Save no letter. A held key is not
   thrown away: it goes on to what the card covers (`passHeldKey`), or the
   first words typed after a sign-in vanish.
 - **A flag the box reports never takes down a refusal the control plane

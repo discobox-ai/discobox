@@ -225,7 +225,8 @@ func TestTheFirstHarnessChangeIsExplainedOnce(t *testing.T) {
 
 // Review changes goes from the explainer straight to the box's review, which
 // holds its keys as the explainer did: typing that answered the explainer
-// ("r" of "run tests") must not go on to save ("s").
+// ("r" of "run tests") must not go on to save ("s"). Nor, once the hold has
+// passed, does a letter or a bare Enter save: Save is chosen with the arrows.
 func TestTheExplainerOpensTheReview(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(pendingSandboxes()...)
@@ -245,8 +246,15 @@ func TestTheExplainerOpensTheReview(t *testing.T) {
 	}
 	pastKeyQuiet(m)
 	send(t, m, keyPress("s"))
+	if len(ds.harnessChangesWrites) != 0 || m.dialog == nil {
+		t.Fatalf("writes = %v, want no one-letter save on a review the explainer opened", ds.harnessChangesWrites)
+	}
+	if it := m.dialog.items[m.dialog.cursor]; it.key != "r" {
+		t.Fatalf("cursor on %q, want Enter to land on Refresh, not Save", it.label)
+	}
+	send(t, m, keyPress("up"), keyPress("up"), keyPress("enter"))
 	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one cand_1" {
-		t.Fatalf("writes = %v, want the save once the keyboard was quiet", ds.harnessChangesWrites)
+		t.Fatalf("writes = %v, want Save chosen with the arrows to save", ds.harnessChangesWrites)
 	}
 }
 
