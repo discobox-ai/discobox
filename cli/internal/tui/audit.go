@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -351,23 +350,6 @@ func (a *auditScreen) setQuery(query string) {
 // rec is the record a row position names.
 func (a *auditScreen) rec(i int) console.AuditRecord { return a.records[a.shown[i]] }
 
-// matchText is what the search is matched against on a row: what it says,
-// its trail and its line.
-func matchText(source, summary string) string { return source + " " + summary }
-
-// matches reports whether the search lets a record through: by what its row
-// says, or by its ID on its own. The ID is not part of the line it is matched
-// against, because every http record's ID starts "http" — a fuzzy term would
-// take its trailing letters from there, letting through rows nothing lit on
-// screen explains.
-func (a *auditScreen) matches(r console.AuditRecord) bool {
-	if _, ok := a.search.Match(matchText(r.Source, r.Summary)); ok {
-		return true
-	}
-	_, ok := a.search.Match(r.ID)
-	return ok
-}
-
 // move moves the cursor, and follows again once it is back on the newest.
 func (a *auditScreen) move(delta int) {
 	if len(a.rows) == 0 {
@@ -400,14 +382,7 @@ func (a *auditScreen) relayout(change func()) {
 		keep = auditRowKey{id: a.rec(row.first).ID, member: row.member}
 	}
 	change()
-	a.shown = a.shown[:0]
-	for i, r := range a.records {
-		if a.search.Empty() {
-			a.shown = append(a.shown, i)
-		} else if a.matches(r) {
-			a.shown = append(a.shown, i)
-		}
-	}
+	a.shown = console.AuditSearch(a.search, a.records)
 	a.rows = a.rows[:0]
 	live := map[string]bool{}
 	shown := make([]console.AuditRecord, len(a.shown))
@@ -663,7 +638,7 @@ func (a *auditScreen) view(st *styles, z *zones, width, height int, now time.Tim
 		if a.typing {
 			prompt += st.key.Render("▏")
 		}
-		tally := st.dimText.Render(fmt.Sprintf("%d of %d", len(a.shown), len(a.records)))
+		tally := st.dimText.Render(console.AuditTally(len(a.shown), len(a.records)))
 		foot = append([]string{spread(truncate(prompt, max(width-lipgloss.Width(tally)-2, 1)), tally, width)}, foot...)
 	}
 
@@ -674,11 +649,7 @@ func (a *auditScreen) view(st *styles, z *zones, width, height int, now time.Tim
 		if row.run() && !a.expanded[a.rec(row.first).ID] {
 			through = row.last
 		}
-		one, many := "newer record", "newer records"
-		if a.query != "" {
-			one, many = "newer match", "newer matches"
-		}
-		state = st.statusWA.Render(plural(len(a.shown)-1-through, one, many) + " below")
+		state = st.statusWA.Render(console.AuditBelow(len(a.shown)-1-through, a.query != ""))
 	}
 	heads := st.dimText.Render(pad("  TIME", 2+auditTimeWidth+2) + pad("SOURCE", auditSourceWidth+2) + "RECORD")
 	out := []string{spread(heads, state, width)}
@@ -697,7 +668,7 @@ func (a *auditScreen) view(st *styles, z *zones, width, height int, now time.Tim
 		}
 	case len(a.rows) == 0 && a.query != "":
 		if a.page > 0 {
-			out = append(out, st.dimText.Render(truncate("  no records match — Esc clears the search", width)))
+			out = append(out, st.dimText.Render(truncate("  "+console.AuditNoMatch+" — Esc clears the search", width)))
 		}
 	default:
 		for i := a.offset; i < len(a.rows) && len(out)-1 < a.page; i++ {
@@ -751,12 +722,21 @@ func (a *auditScreen) row(st *styles, i, width int, now time.Time) string {
 	}
 	// What the search found is lit where it is drawn: matched against the
 	// row as it reads, so a run is lit where its own line matches.
-	hits, _ := a.search.Match(matchText(r.Source, summary))
-	source := litRunes(pad(r.Source, auditSourceWidth), hits, 0, lipgloss.NewStyle(), st.match)
+	inSource, inSummary := console.AuditLit(a.search, r.Source, summary)
+	source := litRunes(pad(r.Source, auditSourceWidth), runeSet(inSource), 0, lipgloss.NewStyle(), st.match)
 	lead := marker + st.dimText.Render(pad(console.AuditTime(r.Time, now), auditTimeWidth)) + "  " +
 		source + "  " + st.dimText.Render(fold)
 	summary = truncate(summary, max(width-lipgloss.Width(lead), 1))
-	return padANSI(lead+litRunes(summary, hits, len([]rune(r.Source))+1, text, st.match), width)
+	return padANSI(lead+litRunes(summary, runeSet(inSummary), 0, text, st.match), width)
+}
+
+// runeSet is the runes console.AuditLit found, as litRunes takes them.
+func runeSet(runes []int) map[int]bool {
+	set := make(map[int]bool, len(runes))
+	for _, i := range runes {
+		set[i] = true
+	}
+	return set
 }
 
 // litRunes draws text in base, with the runes a search found in hit. hits

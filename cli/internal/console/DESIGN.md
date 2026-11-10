@@ -514,6 +514,14 @@ is the data source's (`FollowAudit`, the reader `discobox admin audit ls
 - **Which records fold is the core's** (`AuditRuns`): consecutive records of
   one `Group` are one row, never across a record between them;
   `AuditRunSummary` is what that row says.
+- **What a search lets through is the core's** (`AuditMatches`,
+  `AuditSearch`): a `Query` matched against a row's trail and line, or the
+  record's ID on its own — never letters borrowed from an ID nothing on the
+  row shows; the runs fold over what it lets through. `AuditLit` is what it
+  lights on a row as it reads (a folded run's own line), by rune in each of
+  trail and line; `AuditTally`, `AuditBelow` (in `AuditBelowWords`, for a
+  renderer counting below its own cursor) and `AuditNoMatch` are what the
+  timeline says of it.
 - **A record's time is a clock time** (`AuditTime`), with the date for one
   from another day.
 - **What a record offers to read** (`AuditRecordDetail.AuditRecordings`): the
@@ -521,7 +529,7 @@ is the data source's (`FollowAudit`, the reader `discobox admin audit ls
   record and a recording are read under (`AuditRecordTitle`,
   `AuditRecordingTitle`), and what the timeline says with nothing to show
   (`AuditReading`, `AuditNothing`, `AuditUnreadable`). The cursor, following,
-  searching and which key reads what are each renderer's.
+  the search's field and which key reads what are each renderer's.
 
 ## Issues and pull requests
 

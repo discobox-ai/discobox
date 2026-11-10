@@ -7,10 +7,10 @@ import (
 )
 
 // The audit timeline's rules (876 §1), which the TUI's audit screen and the
-// desktop's audit view both draw: which records fold into one row, when a
-// record was recorded as the timeline says it, which of a record's
-// recordings can be read and what each is called, and what the timeline says
-// with no records to show. Which trails, and how they are read, is the data
+// desktop's audit view both draw: which records fold into one row, which a
+// search lets through and what it lights on each, when a record was recorded
+// as the timeline says it, which of a record's recordings can be read and
+// what each is called, and what the timeline says with no records to show. Which trails, and how they are read, is the data
 // source's (DataSource.FollowAudit), the one reader `discobox admin audit ls
 // --follow` prints from.
 
@@ -53,6 +53,86 @@ func AuditRuns(records []AuditRecord) []AuditRun {
 // common, from its newest, and how many there are.
 func AuditRunSummary(newest AuditRecord, count int) string {
 	return fmt.Sprintf("%s (count %d)", newest.GroupSummary, count)
+}
+
+// AuditMatches reports whether a search of the timeline lets a record
+// through: by what its row says — its trail and its line, as AuditLit lights
+// them — or by its ID on its own. The ID is not part of the line it is
+// matched against, because every http record's ID starts "http": a fuzzy
+// term would take its trailing letters from there, letting through rows
+// nothing lit on screen explains.
+func AuditMatches(q Query, r AuditRecord) bool {
+	if _, ok := q.Match(auditLine(r.Source, r.Summary)); ok {
+		return true
+	}
+	_, ok := q.Match(r.ID)
+	return ok
+}
+
+// AuditSearch is which of records, oldest first, a search lets through
+// (AuditMatches), by index, in order: every one for an empty query. The
+// timeline's runs fold over what it lets through (AuditRuns of those), so a
+// record it hides between two of a group joins them into one run.
+func AuditSearch(q Query, records []AuditRecord) []int {
+	shown := make([]int, 0, len(records))
+	for i, r := range records {
+		if q.Empty() || AuditMatches(q, r) {
+			shown = append(shown, i)
+		}
+	}
+	return shown
+}
+
+// AuditLit is where a search lights a row as it reads: matched against its
+// trail and what it says — a folded run's own line (AuditRunSummary) for a
+// run, so a run is lit where its line matches — the runes it found in each,
+// by rune index into each, in order. A row let through by its ID alone
+// lights nothing, and neither does an empty query.
+func AuditLit(q Query, source, summary string) (inSource, inSummary []int) {
+	hits, ok := q.Match(auditLine(source, summary))
+	if !ok {
+		return nil, nil
+	}
+	n := len([]rune(source))
+	for i := range len([]rune(auditLine(source, summary))) {
+		switch {
+		case !hits[i]:
+		case i < n:
+			inSource = append(inSource, i)
+		case i > n:
+			inSummary = append(inSummary, i-n-1)
+		}
+	}
+	return inSource, inSummary
+}
+
+// auditLine is what a row is searched by: its trail and what it says, as
+// one line.
+func auditLine(source, summary string) string { return source + " " + summary }
+
+// AuditTally is what a search of the timeline says of what it let through:
+// how many records, of how many the timeline holds.
+func AuditTally(shown, of int) string { return fmt.Sprintf("%d of %d", shown, of) }
+
+// AuditBelow is what the timeline says while the row being read is held off
+// the newest: how many records are newer than it, or under a search how many
+// matches, in the words AuditBelowWords gives.
+func AuditBelow(n int, searching bool) string {
+	one, many := AuditBelowWords(searching)
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
+}
+
+// AuditBelowWords are what AuditBelow says after the count, for one and for
+// any other number: a renderer that counts the rows below its own cursor
+// says them after it.
+func AuditBelowWords(searching bool) (one, many string) {
+	if searching {
+		return "newer match below", "newer matches below"
+	}
+	return "newer record below", "newer records below"
 }
 
 // AuditTime is when a record was recorded, as the timeline says it: a clock
@@ -127,6 +207,10 @@ const (
 	AuditReading = "reading the audit trails…"
 	AuditNothing = "nothing recorded yet — records appear here as they are"
 )
+
+// AuditNoMatch is what the timeline says when a search lets none of its
+// records through.
+const AuditNoMatch = "no records match"
 
 // AuditUnreadable is what the timeline says once the whole read failed, after
 // which nothing more arrives.
