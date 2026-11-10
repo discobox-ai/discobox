@@ -27,6 +27,8 @@ struct Step {
 /// What a step expects; a field it leaves out is not checked.
 #[derive(Deserialize, Debug, PartialEq, Default)]
 struct Expect {
+    r#box: Option<i64>,
+    terminals: Option<usize>,
     shells: Option<usize>,
     focus: Option<String>,
     maximized: Option<bool>,
@@ -78,6 +80,9 @@ fn settle(rt: &mut Runtime<State>) {
 fn snapshot(s: &State, want: &Expect) -> Expect {
     let ws = s.live_ws();
     Expect {
+        // The row the box on screen is on, -1 with none.
+        r#box: want.r#box.map(|_| s.live.as_ref().and_then(|k| s.row_of(k)).map_or(-1, |i| i as i64)),
+        terminals: want.terminals.and(ws.map(|w| w.column(Side::Terminals).len())),
         shells: want.shells.and(ws.map(|w| w.column(Side::Shells).len())),
         focus: want.focus.as_ref().and(ws.map(|w| if w.focus == Side::Shells { "shells" } else { "terminals" }.into())),
         maximized: want.maximized.and(ws.map(|w| w.maximized)),

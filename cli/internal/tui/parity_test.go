@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"testing/synctest"
 
@@ -26,6 +27,8 @@ type parityScenario struct {
 		Gesture string `json:"gesture"`
 		Expect  struct {
 			Shells    *int    `json:"shells"`
+			Terminals *int    `json:"terminals"`
+			Box       *int    `json:"box"`
 			Focus     *string `json:"focus"`
 			Maximized *bool   `json:"maximized"`
 			Targets   *int    `json:"targets"`
@@ -76,15 +79,17 @@ func TestParityScenarios(t *testing.T) {
 						if m.onShells {
 							focus = "shells"
 						}
-						return fmt.Sprintf("shells=%d focus=%s maximized=%v targets=%d selected=%d archived=%v",
-							m.Shells.Len(), focus, m.maximized, len(m.list.targets()), m.list.selectionCount(), m.list.Filter.Archived)
+						return fmt.Sprintf("box=%d terminals=%d shells=%d focus=%s maximized=%v targets=%d selected=%d archived=%v",
+							shownRow(m), m.Terminals.Len(), m.Shells.Len(), focus, m.maximized, len(m.list.targets()), m.list.selectionCount(), m.list.Filter.Archived)
 					}
-					d.wait(step.Command+step.Gesture, func() bool {
+					d.wait(step.Command+step.Gesture+" "+fmt.Sprint(keys)+" from "+got(), func() bool {
 						focus := "terminals"
 						if m.onShells {
 							focus = "shells"
 						}
 						return (want.Shells == nil || m.Shells.Len() == *want.Shells) &&
+							(want.Terminals == nil || m.Terminals.Len() == *want.Terminals) &&
+							(want.Box == nil || shownRow(m) == *want.Box) &&
 							(want.Focus == nil || focus == *want.Focus) &&
 							(want.Maximized == nil || m.maximized == *want.Maximized) &&
 							(want.Targets == nil || len(m.list.targets()) == *want.Targets) &&
@@ -98,6 +103,15 @@ func TestParityScenarios(t *testing.T) {
 			})
 		})
 	}
+}
+
+// shownRow is the row of the list the box whose workspace is on screen is
+// on, or -1 with none on screen.
+func shownRow(m *Model) int {
+	if !m.hasWorkspace() {
+		return -1
+	}
+	return slices.IndexFunc(m.list.Rows(), func(s console.Sandbox) bool { return m.boxRef(s) == m.boxRef(m.Box) })
 }
 
 // listKeys is the key that runs a command or a gesture from the list: its

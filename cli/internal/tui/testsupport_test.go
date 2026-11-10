@@ -213,7 +213,10 @@ type fakeSource struct {
 	// execs is what the workspace's poll is told is running; execsErr fails
 	// the listing, openExecErr every attach, openExecErrFor one exec's
 	// attach, newShellErr the shell create.
-	execs       []console.Exec
+	execs []console.Exec
+	// madeIn is the box each shell and terminal made here was made in: the
+	// listing of another box does not report it.
+	madeIn      map[string]string
 	execsErr    error
 	openExecErr error
 	// failedExecSandboxes, when set, replaces the listing as an attach fails:
@@ -853,13 +856,19 @@ func (f *fakeSource) addressLookups() []string {
 	return append([]string(nil), f.addressed...)
 }
 
-func (f *fakeSource) Execs(context.Context, string) ([]console.Exec, error) {
+func (f *fakeSource) Execs(_ context.Context, id string) ([]console.Exec, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.execsErr != nil {
 		return nil, f.execsErr
 	}
-	return append([]console.Exec(nil), f.execs...), nil
+	var out []console.Exec
+	for _, e := range f.execs {
+		if box, ok := f.madeIn[e.ID]; !ok || box == id {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeSource) OpenExec(_ context.Context, id, execID string, cols, rows int) (console.Terminal, error) {
@@ -973,6 +982,10 @@ func (f *fakeSource) NewShell(_ context.Context, id string, cols, rows int) (con
 		CreatedAt: time.Date(2026, 8, 7, 12, 0, f.newShellID, 0, time.UTC),
 	}
 	// The listing reports it from now on, the way the server would.
+	if f.madeIn == nil {
+		f.madeIn = map[string]string{}
+	}
+	f.madeIn[exec.ID] = id
 	f.execs = append(f.execs, exec)
 	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, exec.ID, cols, rows))
 	return exec, f.newExecTerminal(exec.ID), nil
@@ -998,6 +1011,10 @@ func (f *fakeSource) NewTerminal(_ context.Context, id string, cols, rows int) (
 		CreatedAt: time.Date(2026, 8, 7, 13, 0, f.newTerminalID, 0, time.UTC),
 	}
 	// The listing reports it from now on, the way the server would.
+	if f.madeIn == nil {
+		f.madeIn = map[string]string{}
+	}
+	f.madeIn[exec.ID] = id
 	f.execs = append(f.execs, exec)
 	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, exec.ID, cols, rows))
 	return exec, f.newExecTerminal(exec.ID), nil

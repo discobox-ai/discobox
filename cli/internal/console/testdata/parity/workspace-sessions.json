@@ -1,0 +1,11 @@
+{
+  "name": "another harness terminal opens beside the primary and a shell beside them, and ending each takes its tab",
+  "about": "Run by both consoles, each pressing its own binding for each step's command: cli/internal/tui/parity_test.go and desktop/src/parity_tests.rs. Each step is a registry command ID (cli/internal/console/commands.go), run from the workspace's focused pane; expect is what the workspace looks like after it: how many tabs each column holds, and which has the keys.",
+  "attach": true,
+  "steps": [
+    {"command": "terminal", "expect": {"terminals": 2, "shells": 0, "focus": "terminals"}},
+    {"command": "shell", "expect": {"terminals": 2, "shells": 1, "focus": "shells"}},
+    {"command": "end", "expect": {"terminals": 2, "shells": 0, "focus": "terminals"}},
+    {"command": "end", "expect": {"terminals": 1, "shells": 0, "focus": "terminals"}}
+  ]
+}
