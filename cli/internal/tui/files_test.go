@@ -222,6 +222,28 @@ func TestFilesDroppedFromThisMachineAreCopiedIn(t *testing.T) {
 		if view := ansi.Strip(m.viewFiles()); strings.Contains(view, "copy into") || len(ds.uploadsSoFar()) != 0 {
 			t.Fatalf("back in the panel, the drop should be gone; uploads %+v, panel:\n%s", ds.uploadsSoFar(), view)
 		}
+		// A click on the tree takes the keys by a path of its own through
+		// Update; the drop goes with them, and its offer copies nothing.
+		if !m.treeShown() {
+			t.Fatal("the workspace should be drawn beside its tree")
+		}
+		d.dispatch(tea.PasteMsg{Content: "'" + local + "'"})
+		d.wait("the drop to wait for enter", func() bool { return m.filesDrop != nil })
+		d.dispatch(tea.MouseClickMsg{X: 1, Y: 3, Button: tea.MouseLeft})
+		d.dispatch(tea.MouseReleaseMsg{X: 1, Y: 3, Button: tea.MouseLeft})
+		d.settle()
+		if m.filesDrop != nil || m.filesHasKeys() {
+			t.Fatalf("a click on the tree should take the keys and the drop; keys %v", m.filesHasKeys())
+		}
+		m.filesAct(filesDropCopy)
+		// Back in the panel by a click on it, with the cursor where it was.
+		x, y := m.filesLeft()+3, filesRowAt(m, "cmd/")
+		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+		d.settle()
+		if !m.filesHasKeys() || len(ds.uploadsSoFar()) != 0 {
+			t.Fatalf("a drop left behind should copy nothing; uploads %+v", ds.uploadsSoFar())
+		}
 		d.dispatch(tea.PasteMsg{Content: "'" + local + "'"})
 		d.wait("the drop to wait for enter", func() bool { return m.filesDrop != nil })
 		d.key("enter")
