@@ -2,14 +2,11 @@ package tui
 
 import (
 	"fmt"
-	"sort"
-	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/discobox-ai/discobox/cli/internal/console"
-	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
 
 // sandboxList is the upper pane: every sandbox in the project, as the
@@ -603,14 +600,14 @@ func (l *sandboxList) row(st *styles, z *zones, s console.Sandbox, i, y int, foc
 		// already been filtered to it — a column repeating the same value on every
 		// row is a column spent saying nothing.
 		//
-		baseStyle := gitStyle(st, s)
+		baseStyle := gitStyle(st, s.GitTone())
 		addCol(baseStyle.Render(pad(s.Base(), 14)), 15)
 		// The mark spelled out, in the mark's own color. It is added right after
 		// the position so the two survive a narrowing terminal together.
 		addCol(baseStyle.Render(pad(s.Changes(), 7)), 8)
 		addCol(st.dimText.Render(pad(createdText(s, l.Now()), 8)), 9)
 		addCol(usage(st, s), usageWidth+1)
-		addCol(padANSI(diffText(st, s), 11), 11)
+		addCol(padANSI(diffText(st, s.Changed()), 11), 11)
 	}
 	tail := cols.text
 
@@ -844,11 +841,12 @@ func (l *sandboxList) tagSpans(st *styles, z *zones, s console.Sandbox, tags []s
 //
 // It is one function rather than a switch per drawing site so the list row and
 // the workspace header cannot drift apart on what a color means.
-func gitStyle(st *styles, s console.Sandbox) lipgloss.Style {
-	switch {
-	case s.Uncommitted():
+// Which tone the work is in is the core's (Sandbox.GitTone).
+func gitStyle(st *styles, tone console.GitTone) lipgloss.Style {
+	switch tone {
+	case console.ToneDirty:
 		return st.statusWA
-	case s.Ahead():
+	case console.ToneAhead:
 		return st.name
 	default:
 		return st.dimText
@@ -856,100 +854,36 @@ func gitStyle(st *styles, s console.Sandbox) lipgloss.Style {
 }
 
 // diffText is the diffstat as both the row and the workspace header draw it:
-// what the sandbox has changed, in the diff's own two colors. Empty when
-// nothing has been reported or nothing has changed, which is the same answer
-// as far as anything drawing it is concerned.
-func diffText(st *styles, s console.Sandbox) string {
-	if !s.HasDiff() {
+// what the sandbox has changed (Sandbox.Changed), in the diff's own two
+// colors. Empty when there is nothing to say.
+func diffText(st *styles, d *console.DiffStat) string {
+	if d == nil {
 		return ""
 	}
-	return st.add.Render("+"+itoa(s.Diff.Added)) + " " + st.del.Render("−"+itoa(s.Diff.Deleted))
+	return st.add.Render("+"+itoa(d.Added)) + " " + st.del.Render("−"+itoa(d.Deleted))
 }
 
-// portsField is what the sandbox is serving, grouped by protocol:
+// portsField is what the sandbox is serving, grouped by protocol as the core
+// groups it (console.Header.Ports):
 //
 //	http:3000,5173,8080 · https:8443 · tcp:22,5432,6379 · udp:53,5353
 //
-// Grouped rather than one `protocol/port` per listening port, because the
-// protocol is the repetitive half: a sandbox running three dev servers said
-// "http" three times for no information. Naming it once per group is what keeps
-// this readable on a header row when a compose stack is up.
-//
-// The protocol leads its group because it is what decides whether a port is
-// worth opening at all — `http:5173` is a page, `tcp:5432` is a database — and
-// the groups run in that order of usefulness, web first. A protocol this CLI
-// does not know, from a newer agent, keeps its own name and follows them: it is
-// not this end's business to rename or drop what it was told.
-//
-// `unknown` is drawn as `?`. It is the longest word for the least information,
-// and a port whose probe has not answered yet is exactly the case where the
-// number is all there is to say.
-//
-// The separator is the hints line's own `·`, so a group reads as "and" rather
-// than as a new banner field, which is two spaces.
-//
-// forwarded is the workspace's port forward: the local port standing in for
-// each sandbox port, which turns that port's entry into `8082->8080` and, when
-// it speaks a web protocol, into a link to it. It is empty everywhere else —
-// the list has no forward, and a row that claimed one would be offering a port
-// nothing is listening on.
-//
-// The sandbox's own bind address is still not shown. A forward dials from
-// inside the sandbox, where a loopback-only listener answers exactly as a
-// wildcard one does, so the address would be a column that never changes what
-// you can do; the local port, which is the one you can type, is the half worth
-// the space.
-//
-// The desktop is not among them: it has its own header field (desktopField), so
-// a sandbox serving nothing else renders no port group at all.
-//
-// Empty when nothing is listening, which is also what a sandbox whose agent has
-// not reported yet looks like — there is no third thing to say and no room to
-// say it in.
-func portsField(st *styles, s console.Sandbox, forwarded map[console.PortKey]int) paneHeaderField {
-	if len(s.Ports) == 0 {
-		return paneHeaderField{}
-	}
-	groups := map[string][]console.Port{}
-	var order []string
-	for _, port := range s.Ports {
-		// The desktop is drawn as its own field, not as a number here. It is
-		// not a port somebody's program is serving and there is nothing useful
-		// to do with the number: "open the desktop" is the whole offer, and
-		// listing `http:6900` beside a dev server invites opening it as if it
-		// were one.
-		if port.ServiceID == sandboxservices.DesktopID {
-			continue
-		}
-		if _, seen := groups[port.Protocol]; !seen {
-			order = append(order, port.Protocol)
-		}
-		groups[port.Protocol] = append(groups[port.Protocol], port)
-	}
-	if len(order) == 0 {
-		return paneHeaderField{}
-	}
-	sort.SliceStable(order, func(i, j int) bool {
-		return protocolRank(order[i]) < protocolRank(order[j])
-	})
-
-	// Drawn span by span rather than as one string, because the numbers in it
-	// are separately pressable: every forwarded web port is a link of its own,
-	// and the header lights and opens the one under the pointer. The rest of
-	// the row — the protocol labels, the commas, the separators — is text.
+// Drawn span by span rather than as one string, because the numbers in it
+// are separately pressable: every forwarded web port is a link of its own,
+// and the header lights and opens the one under the pointer. The rest of the
+// row — the protocol labels, the commas, the separators — is text.
+func portsField(st *styles, groups []console.PortGroup) paneHeaderField {
 	field := paneHeaderField{}
-	for _, protocol := range order {
+	for _, group := range groups {
 		if len(field.spans) > 0 {
 			field.spans = append(field.spans, linkSpan(st, " · ", ""))
 		}
-		ports := groups[protocol]
-		sort.Slice(ports, func(i, j int) bool { return ports[i].Number < ports[j].Number })
-		field.spans = append(field.spans, linkSpan(st, protocolLabel(protocol)+":", ""))
-		for i, port := range ports {
+		field.spans = append(field.spans, linkSpan(st, group.Protocol+":", ""))
+		for i, port := range group.Ports {
 			if i > 0 {
 				field.spans = append(field.spans, linkSpan(st, ",", ""))
 			}
-			field.spans = append(field.spans, portEntry(st, port, forwarded))
+			field.spans = append(field.spans, linkSpan(st, port.Label, port.URL))
 		}
 	}
 	return field
@@ -966,151 +900,41 @@ func linkSpan(st *styles, text, url string) headerSpan {
 }
 
 // workField is the issue and the pull request the discobox's `issue=` and
-// `pr=` tags number, each a link to it on GitHub (Sandbox.tagURL): the work
-// this discobox is doing, one press from what is being said about it. Empty
-// when it has neither, or no GitHub repository for them to be numbered in.
+// `pr=` tags number, each a link to it on GitHub (console.Header.Work).
 //
 // Each opens as a workspace tab on a plain click (the issue tab) and on the
 // page on a Ctrl-click.
-func workField(st *styles, s console.Sandbox) paneHeaderField {
+func workField(st *styles, links []console.Link) paneHeaderField {
 	var field paneHeaderField
-	for _, tag := range s.Tags {
-		url := s.TagURL(tag)
-		if url == "" {
-			continue
-		}
-		key, number, _ := strings.Cut(tag, "=")
-		label := "issue #" + number
-		if key == "pr" {
-			label = "PR #" + number
-		}
+	for _, link := range links {
 		if !field.empty() {
 			field.spans = append(field.spans, linkSpan(st, " · ", ""))
 		}
-		span := linkSpan(st, label, url)
-		span.issue, _ = strconv.Atoi(number)
-		span.pull = key == "pr"
+		span := linkSpan(st, link.Label, link.URL)
+		span.issue, span.pull = link.Issue, link.Pull
 		field.spans = append(field.spans, span)
 	}
 	return field
 }
 
-// tagsField is the discobox's tags the header says nothing of otherwise, dim
-// and in the order they are kept. The ones it says already are left out: an
-// issue or pull request workField links, and a status tag, which the
-// header says through the git word (paneHeaderFields), on terms of its own
-// that a tag drawn beside it would contradict. Empty when that leaves none.
-func tagsField(st *styles, s console.Sandbox) paneHeaderField {
-	var labels []string
-	for _, tag := range s.Tags {
-		if s.TagURL(tag) == "" && !console.IsStatusTag(tag) {
-			labels = append(labels, console.TagLabel(tag))
-		}
-	}
+// tagsField is the discobox's tags the header says nothing of otherwise
+// (console.Header.Tags), dim and in the order they are kept. Empty when that
+// leaves none.
+func tagsField(st *styles, labels []string) paneHeaderField {
 	if len(labels) == 0 {
 		return paneHeaderField{}
 	}
 	return textField(st.dimText.Render(strings.Join(labels, " ")))
 }
 
-// desktopField is the sandbox's graphical desktop, as a link to the local end of
-// its forward.
-//
-// Its own field rather than a number in the protocol groups, because it is a
-// different kind of thing: a desktop to open, not a port to connect something
-// to. The client recognizes it by the id the image declared it under
-// (sandboxservices.DesktopID) rather than by a port number, so nothing here
-// hardcodes 6900 — see ADR 26-09-05-409 on image services.
-//
-// Drawn only when the forward has bound it, for the reason portEntry links only
-// forwarded ports: an offer to open a desktop that cannot be reached is worse
-// than not offering. The label is the declaration's own name, so the sandbox
-// says what to call it.
-func desktopField(st *styles, s console.Sandbox, forwarded map[console.PortKey]int) paneHeaderField {
-	for _, port := range s.Ports {
-		if port.ServiceID != sandboxservices.DesktopID {
-			continue
-		}
-		local, ok := forwarded[port.Key()]
-		if !ok {
-			return paneHeaderField{}
-		}
-		scheme, web := portScheme(port.Protocol)
-		if !web {
-			return paneHeaderField{}
-		}
-		label := port.ServiceName
-		if label == "" {
-			label = "Desktop"
-		}
-		return paneHeaderField{spans: []headerSpan{linkSpan(st, label, scheme+"://localhost:"+itoa(local))}}
+// desktopField is the sandbox's graphical desktop, as a link to the local end
+// of its forward (console.Header.Desktop): drawn only once the forward has
+// bound it, labeled with the declaration's own name.
+func desktopField(st *styles, link *console.Link) paneHeaderField {
+	if link == nil {
+		return paneHeaderField{}
 	}
-	return paneHeaderField{}
-}
-
-// portEntry is one port in its group: the number on its own, or `local->remote`
-// when the workspace's forward has had to move the port.
-//
-// The arrow is there to answer "which number do I type here", so it is drawn
-// only when the answer differs from the port the sandbox is serving. A forward
-// that got the port it asked for has nothing to correct, and `1234->1234` costs
-// header width to say the same number twice.
-//
-// A web port is also a link to the local end of it, so the port a sandbox is
-// serving is one click away rather than a URL to assemble by hand — an OSC 8
-// link for the terminal's Ctrl-click, and a marked span the header opens
-// itself when it is clicked plainly (see paneHeaderFields.render). Only the
-// forwarded ones: a link to a port nothing is listening on is worse than no
-// link. Only the web ones: OSC 8 hands the URL to whatever opens
-// `http://`, and there is nothing sensible for a browser to do with a Postgres
-// socket.
-func portEntry(st *styles, port console.Port, forwarded map[console.PortKey]int) headerSpan {
-	local, ok := forwarded[port.Key()]
-	if !ok {
-		return linkSpan(st, itoa(port.Number), "")
-	}
-	text := itoa(local)
-	if local != port.Number {
-		text += "->" + itoa(port.Number)
-	}
-	scheme, web := portScheme(port.Protocol)
-	if !web {
-		return linkSpan(st, text, "")
-	}
-	return linkSpan(st, text, scheme+"://localhost:"+itoa(local))
-}
-
-// portScheme is the URL scheme a protocol is reachable under, and whether it is
-// one at all. The forward is a byte pipe, so a port speaking https is https at
-// the local end too — with the certificate's name not matching, which is
-// inherent to forwarding it and not something a scheme choice here can fix.
-func portScheme(protocol string) (string, bool) {
-	switch protocol {
-	case "http", "https":
-		return protocol, true
-	default:
-		return "", false
-	}
-}
-
-// protocolOrder is the order the groups are drawn in: what you would act on
-// first. Anything not named here follows, in port order.
-var protocolOrder = []string{"http", "https", "tcp", "udp", "unknown"}
-
-func protocolRank(protocol string) int {
-	for rank, known := range protocolOrder {
-		if protocol == known {
-			return rank
-		}
-	}
-	return len(protocolOrder)
-}
-
-func protocolLabel(protocol string) string {
-	if protocol == "" || protocol == "unknown" {
-		return "?"
-	}
-	return protocol
+	return paneHeaderField{spans: []headerSpan{linkSpan(st, link.Label, link.URL)}}
 }
 
 // tailColumns budgets the fixed-width columns to the right of the name, left to

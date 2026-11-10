@@ -269,7 +269,7 @@ func TestTheWorkspaceHeaderLeavesAnUnnumberedIssueOut(t *testing.T) {
 	t.Parallel()
 	boxes := githubTaggedSandboxes()
 	boxes[0].Repository = ""
-	if field := workField(newStyles(false), boxes[0]); !field.empty() {
+	if field := workField(newStyles(false), boxes[0].WorkLinks()); !field.empty() {
 		t.Fatalf("workField = %q, want nothing without a repository", field.text())
 	}
 }

@@ -297,15 +297,7 @@ func (m *Model) forwardedPorts() map[console.PortKey]int {
 	if m.Forward == nil {
 		return nil
 	}
-	bindings := m.Forward.Bindings()
-	if len(bindings) == 0 {
-		return nil
-	}
-	forwarded := make(map[console.PortKey]int, len(bindings))
-	for _, binding := range bindings {
-		forwarded[binding.Key()] = binding.Local
-	}
-	return forwarded
+	return console.Forwarded(m.Forward.Bindings())
 }
 
 // listServices asks the server what the discobox's repository declares.

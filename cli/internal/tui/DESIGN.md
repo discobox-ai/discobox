@@ -739,7 +739,8 @@ A sandbox that ships a graphical desktop declares it as a service with the id
 `sandboxservices.DesktopID` ([ADR 26-09-05-409](../../../docs/adr/26-09-05-409-an-image-declares-services-in-the-format-a-repository-does.md)),
 and the workspace header draws it as its own field — the declaration's own name,
 hyperlinked to the local end of its forward — rather than as a number in
-`portsField`'s protocol groups.
+`portsField`'s protocol groups. Both answers are the core's
+(`console.Header`); the header draws them.
 
 It is a different offer. `http:6900` beside a dev server invites opening it as
 if it were one, and the port number is not the useful thing about a desktop:
@@ -752,9 +753,9 @@ to be on 6900 is still listed as a port. The id lives in the root module's
 matches it are in different nested modules, and a string duplicated across two
 modules is a string that drifts.
 
-The link is drawn only when the forward has bound it, the same rule
-`portEntry` follows: an offer to open something unreachable is worse than no
-offer.
+The link is drawn only when the forward has bound it, the rule every port
+link follows (`console.Header`): an offer to open something unreachable is
+worse than no offer.
 
 ## A row's tags in the tree are a line of their own
 
@@ -2078,55 +2079,33 @@ listing.
 
 **What the discobox is serving rides at the end of them** (`portsField`), from
 the same push
-([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)),
-grouped by protocol — `http:3000,5173,8080 · https:8443 · tcp:22,5432,6379 · udp:53`.
-Grouped rather than one `protocol/port` per port because the protocol is the
-repetitive half: a sandbox running three dev servers said "http" three times for
-no information, on the row least able to spare it. The protocol leads its group
-because it is what decides whether a port is worth opening — `http:5173` is a
-page, `tcp:5432` is a database — and the groups run in that order of usefulness,
-web first, with any protocol this CLI does not know keeping its own name and
-following them. `unknown` draws as `?`: the longest word for the least
-information, on the one port where the number is all there is to say. The
-separator is the hints line's own `·`, so a group reads as "and" rather than as
-a new banner field, which is two spaces.
+([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)):
+`http:8082->8080,3000 · tcp:5433->5432`. Which ports are listed, how they are
+grouped and ordered, when a number carries an arrow, and which link where are
+the core's ([console](../console/DESIGN.md), "Workspaces": the header). The
+header draws them span by span, in the links' color, with the hints line's
+own `·` between groups so a group reads as "and" rather than as a new banner
+field, which is two spaces.
 
-The bind address is left off entirely: a forward dials from *inside* the
-sandbox, where a loopback-only listener answers exactly as a wildcard one does,
-so the address would be a field that never changes what you can do. Nothing
-listening prints nothing, which is also what an agent that has not reported yet
-looks like.
-
-**The workspace forwards those ports, and the header says where to** —
-`http:8082->8080,3000->3000 · tcp:5433->5432`. Opening the workspace opens a port
+**The workspace forwards those ports.** Opening the workspace opens a port
 forward (`DataSource.Forward`, `startForward`) and detaching closes it, so the
 local ports live exactly as long as the screen that shows them; the mechanics
 are `internal/portforward`, the same forwarder `discobox proxy` runs, over the same
 tunnel. A port that gets bound while the screen is up appears on it with no key
 pressed: the forward wakes the window (`Forward.Events`) and the header redraws
-from `Forward.Bindings`. The forward is keyed by number *and* transport
-(`portKey`): a sandbox's `tcp:53` and `udp:53` are two ports, drawn in two
-groups, and the forward may have given them two local numbers
+from `Forward.Bindings` (`console.Forwarded`). A sandbox's `tcp:53` and `udp:53`
+are two ports, drawn in two groups, and the forward may have given them two
+local numbers
 ([ADR 0109](../../../docs/adr/0109-a-bound-udp-port-is-listed-and-forwarded-as-datagrams.md)).
 A URL on a pane's screen is only ever a TCP port's, so the link rewriter looks
 up only those.
 
-Both numbers are drawn even when they match. `3000->3000` says the port is
-reachable *here*, which a bare `3000` — the shape every unforwarded port already
-has — cannot; the arrow is the mark of "this one is open", and a mark that
-vanished exactly when the forward got the number it asked for would be the wrong
-way round.
-
-A forwarded **web** port is also an OSC 8 link to the local end of it
-(`portEntry`, `hyperlink`), so a dev server is one click away rather than a URL
-to assemble by hand. Only forwarded ones, because a link to a port nothing is
-listening on is worse than no link, and only web ones, because OSC 8 hands the
-URL to whatever opens `http://` and there is nothing for a browser to do with a
-Postgres socket. The sequences occupy no cells, so every measure and truncation
-on this row goes on working on the text; a terminal that does not know OSC 8
-shows `8082->8080` and drops the rest, which is why the label is the numbers
-rather than a word like "open" that would only mean something where the link
-works.
+A forwarded web port's link is an OSC 8 hyperlink (`hyperlink`), so a dev
+server is one click away rather than a URL to assemble by hand. The sequences
+occupy no cells, so every measure and truncation on this row goes on working
+on the text; a terminal that does not know OSC 8 shows `8082->8080` and drops
+the rest, which is why the label is the numbers rather than a word like "open"
+that would only mean something where the link works.
 
 **The window opens those links itself as well** (`hitURL`, `Model.openLink`,
 `openURL`). The OSC 8 is what a terminal's Ctrl-click follows; the gesture

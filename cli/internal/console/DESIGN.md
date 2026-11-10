@@ -186,8 +186,8 @@ wire, so the app's are generated from them with the bridge's
   what both consoles reach: in a workspace (`attach`), a command bound from a
   pane; in the list, a gesture or a command bound there — the desktop reaching
   a box's lifecycle through its row's menu. A step expects only what it names
-  (the workspace's shells, focus and maximize; the list's targets, marks and
-  archived). The TUI and the desktop app run
+  (the workspace's terminals, shells, focus and maximize, and the row of the
+  box on screen; the list's targets, marks and archived). The TUI and the desktop app run
   them, each pressing its own binding.
 
 ## Workspaces
@@ -209,6 +209,12 @@ flowchart LR
     PS["PushSources answer"] -->|Pushed| W
 ```
 
+- **A tab's place in its column is the core's until a person moves it.**
+  `Column.Insert` places what arrives (`Exec.Before`); a renderer may let a
+  person drag a tab elsewhere in its column (the desktop's chips, 876 §2:
+  how the console is operated is the renderer's), and then the order drawn,
+  and the numbers it wears, are that renderer's from then on. The TUI has no
+  such gesture.
 - **The session's record says where it goes** (`Exec.Side`): the primary,
   harness terminals and services on the left, shells and then tools on the
   right. `Exec.Before` orders a column: services first in declaration order,
@@ -230,6 +236,25 @@ flowchart LR
 - **Parking keeps the streams and the push loop** (`Parkable`, `Park`): only a
   workspace with its primary is parked, and its port forward goes with the
   screen. `Release` closes every view; no session is ended by either.
+- **The header is the core's** (`header.go`, `NewHeader`): what a
+  workspace's header says of its box — its id, the issue and pull request its
+  tags number (`WorkLinks`), its git position and word and how they read, its
+  diff, its desktop, the ports it serves, and the tags it says nothing of
+  otherwise (`HeaderTags`). The git tone and the diff are the list's column's
+  answers too (`GitTone`, `Changed`). The order the fields go in, their colors
+  and what is given up for room are each renderer's. The TUI draws it, and the
+  bridge serves it with the workspace's forward (`bridge`).
+  - **Ports** are grouped by protocol (`http:3000,5173 · tcp:5432`), web
+    first, a protocol this CLI does not know keeping its name and following,
+    `unknown` as `?`. The bind address is never said: a forward dials from
+    inside the box, where every reported port answers.
+  - **A forwarded port** reads `local->remote` only when the forward had to
+    move it; one that got its own number reads as the number.
+  - **Only a forwarded web port links**, to its local end: a link to a port
+    nothing listens on is worse than none, and a browser has nothing to do
+    with a database socket. The desktop (`sandboxservices.DesktopID`) is its
+    own link, labeled with its declaration's name, never a number among the
+    ports.
 - **The loops are the core's; only their clock is the renderer's.** The poll
   reads the exec and service listings every `WorkspacePollEvery` while the
   workspace is on screen, and each answer means what `Reconcile` and

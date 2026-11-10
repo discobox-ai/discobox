@@ -5,6 +5,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // An attach window that is only the primary terminal draws no chrome: no
@@ -80,8 +81,8 @@ func (m *Model) bareStatus() string {
 	left = ansi.Truncate(left, max(x-1, 0), "")
 
 	var fields paneHeaderFields
-	box := m.currentBox()
-	for _, f := range []paneHeaderField{desktopField(m.st, box, m.forwardedPorts()), portsField(m.st, box, m.forwardedPorts())} {
+	header := console.NewHeader(m.currentBox(), m.forwardedPorts())
+	for _, f := range []paneHeaderField{desktopField(m.st, header.Desktop), portsField(m.st, header.Ports)} {
 		if f.empty() {
 			continue
 		}

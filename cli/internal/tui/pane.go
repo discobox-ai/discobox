@@ -1871,9 +1871,12 @@ func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 // in place of the git word, and is given up only after the git position.
 func (m *Model) paneHeaderFields() paneHeaderFields {
 	box := m.currentBox()
-	git := gitStyle(m.st, box)
+	// What the header says is the core's (console.Header); the order of the
+	// fields, their colors and what is given up first are this window's.
+	header := console.NewHeader(box, m.forwardedPorts())
+	git := gitStyle(m.st, header.Tone)
 
-	fields := paneHeaderFields{textField(m.st.dimText.Render(box.ID))}
+	fields := paneHeaderFields{textField(m.st.dimText.Render(header.ID))}
 	// Everything after the id is read off the listing, so a listing that has
 	// stopped keeping up says so here before any of it — and is given up
 	// last, since a header that dropped it would be passing off old git
@@ -1881,53 +1884,47 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	if age := m.list.ListedAgo(box.Server); age != "" {
 		fields = append(fields, textField(m.st.statusWA.Render(age)))
 	}
-	if work := workField(m.st, box); !work.empty() {
+	if work := workField(m.st, header.Work); !work.empty() {
 		fields = append(fields, work)
 	}
-	// A box blocked on a person (Sandbox.standing) says so in place of the
-	// git word, in red, whatever the work's state: waiting on somebody
-	// outranks anything git says. It is a field of its own, ahead of the git
-	// summary rather than in it, so it is given up just after the git
-	// position rather than with the word — whose mark is on the position, a
-	// mark that says nothing about being blocked — and a press on it does
-	// not open the diff the summary opens.
-	blocked := box.Standing() == console.StandingBlocked
-	if blocked {
+	// A box blocked on a person says so in place of the git word, in red,
+	// whatever the work's state: waiting on somebody outranks anything git
+	// says. It is a field of its own, ahead of the git summary rather than in
+	// it, so it is given up just after the git position rather than with the
+	// word — whose mark is on the position, a mark that says nothing about
+	// being blocked — and a press on it does not open the diff the summary
+	// opens.
+	if header.Blocked {
 		fields = append(fields, textField(m.st.blockedText.Render(console.StatusBlocked)))
 	}
-	if base := box.Base(); base != "" {
-		fields = append(fields, gitField(git.Render(base)))
+	if header.Base != "" {
+		fields = append(fields, gitField(git.Render(header.Base)))
 	}
-	// The list pads this into a column, so it spells the empty answer as a
-	// dash; here there is no column to fill and nothing to say, so it is left
-	// off entirely.
-	//
-	// A ready pull request turns the work's own `ready` green, since the two
-	// agree — committed, and only a merge left — and it does not claim a state
-	// the work is not in.
-	switch changes := box.Changes(); {
-	case blocked:
-		// Said ahead of the git summary, in its own field.
-	case changes == "ready" && box.Standing() == console.StandingReady:
-		fields = append(fields, gitField(m.st.readyText.Render(changes)))
-	case changes != "-":
-		fields = append(fields, gitField(git.Render(changes)))
+	// The list pads the word into a column, spelling the empty answer as a
+	// dash; here there is no column to fill, so nothing is drawn for it. A
+	// ready pull request turns the work's own `ready` green, since the two
+	// agree.
+	switch {
+	case header.Ready:
+		fields = append(fields, gitField(m.st.readyText.Render(header.Changes)))
+	case header.Changes != "":
+		fields = append(fields, gitField(git.Render(header.Changes)))
 	}
-	if stat := diffText(m.st, box); stat != "" {
+	if stat := diffText(m.st, header.Diff); stat != "" {
 		fields = append(fields, gitField(stat))
 	}
 	// Ahead of the ports, because it is the one thing in this header a person
 	// opens rather than reads.
-	if desktop := desktopField(m.st, box, m.forwardedPorts()); !desktop.empty() {
+	if desktop := desktopField(m.st, header.Desktop); !desktop.empty() {
 		fields = append(fields, desktop)
 	}
-	if listening := portsField(m.st, box, m.forwardedPorts()); !listening.empty() {
+	if listening := portsField(m.st, header.Ports); !listening.empty() {
 		fields = append(fields, listening)
 	}
 	// The rest of its tags come last of all, the first thing given up: the
 	// tree beside the header draws them under the box's row already, and like
 	// the ports they have no bound on their width.
-	if tags := tagsField(m.st, box); !tags.empty() {
+	if tags := tagsField(m.st, header.Tags); !tags.empty() {
 		fields = append(fields, tags)
 	}
 	return fields

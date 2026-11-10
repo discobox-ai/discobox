@@ -28,8 +28,8 @@ import (
 // It is the name and not the address deliberately. Under WSL2 the Windows side
 // reaches a Linux listener by the name — `localhost` is what the port proxy is
 // published under — and a literal 127.0.0.1 handed to a browser over there is
-// that machine's own loopback, which is nothing. See also portEntry, which
-// spells the same URL out in the header.
+// that machine's own loopback, which is nothing. See also console.Header, whose
+// ports spell the same URL out in the header.
 //
 // Anything else is returned as it came: a URL to somewhere that is not this
 // sandbox is already right, and saying so is what keeps [termpane.Model] from

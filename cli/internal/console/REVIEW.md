@@ -13,6 +13,11 @@
   bridge.** Which sessions open, their column, order, title and number, and
   what an ending does are answered there; a renderer or the bridge that
   re-derives one from `Exec` fields is the copy ADR 26-11-07-876 rejected.
+- **What a workspace header says is `NewHeader`, never a renderer's.** Which
+  ports link and where, the desktop's link, the work links and which tags are
+  said: the TUI's header once held these rules alone, and the desktop app
+  would have needed a second copy. A renderer orders, colors and drops the
+  fields; it decides none of them.
 - **`OneLine` is rune for rune what the TUI's field holds** (bubbles'
   `textinput` sanitizer: `\r`, `\n` and `\t` each a space, U+FFFD and other
   control characters dropped). A form that answers only what changed compares
