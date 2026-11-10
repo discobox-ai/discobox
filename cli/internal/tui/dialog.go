@@ -186,6 +186,12 @@ type dialog struct {
 	// Zero takes keys at once.
 	heldUntil time.Time
 
+	// arrowsOnly is an actions card whose cursor moves on the arrow keys
+	// alone, not on j and k: one reached from a card that came up unasked
+	// over typing, where a word with a k in it would otherwise walk the
+	// cursor onto a commit for the Enter after it.
+	arrowsOnly bool
+
 	// onCancel runs when the dialog is dismissed without answering. Most
 	// dialogs have nothing to do there, but a question whose two answers are
 	// both answers — carry the uncommitted changes, or do not — has to hear
@@ -493,7 +499,11 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			}
 			return d.alt(d.items[d.cursor].key), true
 		}
-		switch keyName(msg) {
+		key := keyName(msg)
+		if d.arrowsOnly && (key == "k" || key == "j") {
+			return nil, false
+		}
+		switch key {
 		case "up", "k":
 			d.cursor = d.nextEnabled(max(d.cursor-1, 0), -1)
 		case "down", "j":
