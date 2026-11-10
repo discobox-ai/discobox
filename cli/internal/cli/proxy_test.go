@@ -67,6 +67,21 @@ func TestSandboxListeningPortsIsTheSameReport(t *testing.T) {
 	}
 }
 
+// A port's service name is its declaration's, which the box wrote, and the
+// pane header draws the desktop's as a link label outside every pane's
+// emulator: it arrives terminal-safe.
+func TestSandboxListeningPortsEscapesTheServiceName(t *testing.T) {
+	sandbox := sandboxWithPorts(t, []apimodel.SandboxAgentListeningPort{{
+		Port: 6900, Addresses: []string{"0.0.0.0"}, Protocol: "http",
+		ServiceId:   apiclientgen.NewOptString("ai.discobox.desktop"),
+		ServiceName: apiclientgen.NewOptString("Desk\x1b]0;pwned\x07top"),
+	}})
+	ports := sandboxListeningPorts(sandbox)
+	if len(ports) != 1 || ports[0].ServiceName != `Desk\x1b]0;pwned\atop` || ports[0].ServiceID != "ai.discobox.desktop" {
+		t.Fatalf("sandboxListeningPorts = %#v", ports)
+	}
+}
+
 // A loopback or wildcard bind dials the name, so both loopback families are
 // tried: a listener bound only to ::1 refuses 127.0.0.1.
 func TestDialHostForPortPrefersLoopback(t *testing.T) {

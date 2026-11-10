@@ -1180,12 +1180,10 @@ func (m *Model) jumpService(n int) tea.Cmd {
 // tail of its id.
 func execTitle(exec Exec) string {
 	// A service's name is the one thing about it a person chose, and its argv
-	// is the login shell every service shares.
-	if name := strings.TrimSpace(exec.ServiceName); name != "" && exec.Service != "" {
-		return name
-	}
+	// is the login shell every service shares. The data source names one that
+	// declared none by its ID, escaped; Service is the raw ID, never shown.
 	if exec.Service != "" {
-		return exec.Service
+		return strings.TrimSpace(exec.ServiceName)
 	}
 	if len(exec.Command) > 0 {
 		if base := path.Base(exec.Command[0]); base != "" && base != "." && base != "/" {
