@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "colors": {
     "brand": {
       "dark": "#9e4aa7",
@@ -2056,5 +2056,6 @@
     "discobox",
     "discobox+http",
     "discobox+https"
-  ]
+  ],
+  "promptQuiet": 5
 }

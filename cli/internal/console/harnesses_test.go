@@ -274,3 +274,94 @@ func TestNarrationEdit(t *testing.T) {
 		t.Fatalf("an edit nobody watches = %v", err)
 	}
 }
+
+// The explainer is about the box on screen when it has a change to save, else
+// the first listed box that does, and about none when nothing listed has one.
+func TestHarnessChangesToExplain(t *testing.T) {
+	t.Parallel()
+	plain := Sandbox{ID: "a"}
+	first := Sandbox{ID: "b", HarnessConfigPending: true}
+	shown := Sandbox{ID: "c", HarnessConfigPending: true}
+	listed := []Sandbox{plain, first, shown}
+	for _, c := range []struct {
+		workspace *Sandbox
+		listed    []Sandbox
+		want      string
+	}{
+		{nil, listed, "b"},
+		{&shown, listed, "c"},
+		{&plain, listed, "b"},
+		{nil, []Sandbox{plain}, ""},
+	} {
+		got, ok := HarnessChangesToExplain(c.workspace, c.listed)
+		if got.ID != c.want || ok != (c.want != "") {
+			t.Errorf("workspace %v: got %q %v, want %q", c.workspace, got.ID, ok, c.want)
+		}
+	}
+}
+
+// The explainer names its box and its harness, says what saving does, and
+// offers the review first and Not now second, by the keys a console answers.
+func TestHarnessChangesExplainerSaysWhatSavingDoes(t *testing.T) {
+	t.Parallel()
+	q := HarnessChangesExplainer(Sandbox{ID: "sbx_1", GivenName: "work", HarnessName: "Claude Code"})
+	if q.Title != "Saving harness changes" || q.Subject != "work" {
+		t.Fatalf("title %q subject %q", q.Title, q.Subject)
+	}
+	for _, want := range []string{"Claude Code in this discobox", "shared default for every discobox on Claude Code", "hooks and commands", "Nothing is shared until you save"} {
+		if !strings.Contains(q.Body, want) {
+			t.Errorf("body lacks %q:\n%s", want, q.Body)
+		}
+	}
+	if len(q.Choices) != 2 || q.Choices[0].Key != ExplainReview || q.Choices[1].Key != ExplainLater {
+		t.Fatalf("choices %+v", q.Choices)
+	}
+}
+
+// The screen is free with nothing in front, no terminal with the keys, and a
+// composer that has them only when empty and untyped in for PromptQuiet.
+func TestExplainerScreenFree(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		s    ExplainerScreen
+		want bool
+	}{
+		{"nothing", ExplainerScreen{}, true},
+		{"a sheet", ExplainerScreen{Covered: true, SinceTyped: time.Hour}, false},
+		{"a terminal", ExplainerScreen{Terminal: true, SinceTyped: time.Hour}, false},
+		{"a draft", ExplainerScreen{Composing: true, Draft: true, SinceTyped: time.Hour}, false},
+		{"typed just now", ExplainerScreen{Composing: true, SinceTyped: time.Second}, false},
+		{"quiet", ExplainerScreen{Composing: true, SinceTyped: PromptQuiet}, true},
+		{"a draft without the keys", ExplainerScreen{Draft: true}, true},
+	} {
+		if got := c.s.Free(); got != c.want {
+			t.Errorf("%s: free %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+type markSource struct {
+	DataSource
+	err   error
+	marks int
+}
+
+func (m *markSource) MarkHarnessChangesExplained(context.Context) error {
+	m.marks++
+	return m.err
+}
+
+// The record is the project's; one that does not land is said in the core's
+// words, and one that does says nothing.
+func TestExplainedHarnessChangesSaysAFailedRecord(t *testing.T) {
+	t.Parallel()
+	ok := &markSource{}
+	if said := ExplainedHarnessChanges(context.Background(), ok); said != "" || ok.marks != 1 {
+		t.Fatalf("said %q marks %d", said, ok.marks)
+	}
+	down := &markSource{err: errors.New("server down")}
+	if said := ExplainedHarnessChanges(context.Background(), down); !strings.Contains(said, "server down") {
+		t.Fatalf("said %q", said)
+	}
+}

@@ -101,3 +101,10 @@
   renewal that came back says and does (`Renewals.Finish`), which notice
   moves (`Notice.Urgent`), and the order of a page's requests (`RequestsOn`):
   each was first written in both the TUI and the bridge.
+- **When the explainer may come up is the core's rule
+  (`ExplainerScreen.Free`), not a renderer's.** Each console reports what has
+  its screen; the desktop, which cannot call the core, writes the same rule
+  over the same facts with the spec's `PromptQuiet`. The explainer's
+  free-screen check was written short twice: the TUI's first guarded the
+  terminal only, and the desktop's first had no quiet window, so the Enter
+  that sent a prompt could answer it.

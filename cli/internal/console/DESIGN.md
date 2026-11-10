@@ -454,7 +454,16 @@ and the desktop's page both draw:
   review says is the core's too: `Summary`, `HarnessChangesSaving`,
   `HarnessChangesNothing` for a candidate carrying nothing, and each file's
   heading (`HarnessChangedFile.Label`, the shadowed sentence included). The
-  TUI's band and explainer are the TUI's.
+  TUI's band is the TUI's.
+- **The explainer is the core's** (ADR 26-11-02-152): what it says
+  (`HarnessChangesExplainer`, a pick between `ExplainReview` and
+  `ExplainLater`), which box it is about (`HarnessChangesToExplain`: the one
+  on screen with a change to save, else the first listed), and that the
+  project owes it (`Session.ExplainHarnessChanges`, read from the project),
+  recording it once answered, whichever way, and the words of a record that
+  failed (`ExplainedHarnessChanges`), and whether the screen is free for it
+  (`ExplainerScreen.Free`, over what each console reports of its screen, with
+  `PromptQuiet`, which the spec carries to the desktop).
 
 ## Tools
 

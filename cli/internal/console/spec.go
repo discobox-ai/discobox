@@ -21,8 +21,8 @@ import (
 // field on the wire is required (the generated types have no defaults), so an
 // app reading a newer spec than its CLI's would otherwise stop on a missing
 // field rather than on this version. 4 added Dimensions; 5 the desktop's
-// Menus, and a desktop binding's Menu; 6 LinkSchemes.
-const SpecVersion = 6
+// Menus, and a desktop binding's Menu; 6 LinkSchemes; 7 PromptQuiet.
+const SpecVersion = 7
 
 // Glyph is how a state is drawn: its shape, the color token it is drawn in,
 // and the word that stands for it where there is no color. An empty Color is
@@ -101,6 +101,10 @@ type Spec struct {
 	// itself (BoxLinkSchemes): a press on one, plain or with the link
 	// modifier, is the console's and never the program's or the OS's.
 	LinkSchemes []string `json:"linkSchemes"`
+	// PromptQuiet is PromptQuiet in seconds: how long the composer goes
+	// untyped in before the explainer may come up over it
+	// (ExplainerScreen.Free).
+	PromptQuiet float64 `json:"promptQuiet"`
 }
 
 // SpecColor is one color token: its dark and light values as #rrggbb, and
@@ -175,6 +179,7 @@ func NewSpec() Spec {
 		Gestures:    make([]SpecGesture, 0, len(gestures)),
 		Menus:       slices.Clone(Menus),
 		LinkSchemes: slices.Clone(BoxLinkSchemes),
+		PromptQuiet: PromptQuiet.Seconds(),
 	}
 	for _, c := range brand.Colors() {
 		spec.Colors[c.Name] = SpecColor{Dark: c.Dark, Light: c.Light, XTerm: c.XTerm}

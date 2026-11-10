@@ -517,6 +517,14 @@ type Session struct {
 	// naming one is saying which you mean.
 	ServerChosen bool
 
+	// ExplainHarnessChanges is whether the project has yet to explain saving
+	// a discobox's harness changes: the window owes the explainer
+	// (HarnessChangesExplainer), once, and marks the project once it is
+	// answered, whichever way (ExplainedHarnessChanges). It is the project's, read as
+	// the window opens, so a second machine or a second person on the project
+	// is not explained to again.
+	ExplainHarnessChanges bool
+
 	// Servers are the servers a discobox can be created on, by the names the
 	// window lists them under, the primary first (ADR 0116 §5). Nil when there
 	// is only the primary, and then the run options offer no choice.
@@ -2236,8 +2244,8 @@ type DataSource interface {
 	SaveLastSource(ctx context.Context, source string) error
 
 	// MarkHarnessChangesExplained records that the project has explained
-	// saving a discobox's harness changes, so no window on it explains again.
-	// The project remembers: see harness_changes.go.
+	// saving a discobox's harness changes, so no window on it explains again
+	// (Session.ExplainHarnessChanges, HarnessChangesExplainer).
 	MarkHarnessChangesExplained(ctx context.Context) error
 
 	// List is the project's sandboxes, newest-created first, across every

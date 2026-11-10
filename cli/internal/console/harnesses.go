@@ -466,3 +466,106 @@ func RunHarnessChange(ctx context.Context, src DataSource, boxID string, change 
 	}
 	return "", fmt.Errorf("no harness change %q", change)
 }
+
+// The explainer (ADR 26-11-02-152): the first time a project's console sees a
+// discobox with a harness change to save, it says what saving one does before
+// anybody is asked to. The review says what changed; this says what Save
+// means — that the change stops being this box's and becomes every box's on
+// the harness, a login included — which is the one thing about it a person
+// cannot see from the diff.
+//
+// Once is per project, and the project is what remembers
+// (Session.ExplainHarnessChanges): a file on this machine would explain again
+// on a second machine and never to the second person on the project. A
+// console marks the project once the explainer is answered, whichever way,
+// leaving it included: explaining twice because somebody pressed Not now
+// would be the explainer outstaying its one job (ExplainedHarnessChanges).
+// Only a window that goes with it still up leaves it owed. It comes up
+// only on a free screen (ExplainerScreen.Free): what is on the screen is each
+// renderer's to report, and whether that leaves it free is the core's.
+
+// The explainer's answers.
+const (
+	// ExplainReview opens the box's harness changes for review.
+	ExplainReview = "review"
+	// ExplainLater leaves them, for the workspace's notice to raise again.
+	ExplainLater = "later"
+)
+
+// HarnessChangesToExplain is the box the explainer is about, when the window
+// owes it: the box on screen (workspace, nil for none) when it has a change
+// to save, else the first listed box that does. None when nothing listed has
+// one.
+func HarnessChangesToExplain(workspace *Sandbox, listed []Sandbox) (Sandbox, bool) {
+	if workspace != nil && workspace.HarnessConfigPending {
+		return *workspace, true
+	}
+	for _, box := range listed {
+		if box.HarnessConfigPending {
+			return box, true
+		}
+	}
+	return Sandbox{}, false
+}
+
+// HarnessChangesExplainer is the explainer for box: what saving its harness
+// changes does, asked as a pick between reviewing them and leaving them.
+// Leaving it unanswered is Not now.
+func HarnessChangesExplainer(box Sandbox) Question {
+	name := HarnessOf(box)
+	return Question{
+		Title:   "Saving harness changes",
+		Subject: box.Title(),
+		Body: name + " in this discobox changed its settings or signed in.\n\n" +
+			"Saving makes those settings, and that login, the shared default for every discobox on " + name + " in this project: " +
+			"new discoboxes start with them, and a saved login is the one all of them use.\n\n" +
+			"Settings can include hooks and commands, which then run in every discobox on " + name + ": read what changed before you save it.\n\n" +
+			"Nothing is shared until you save. Discarding the change, or leaving it, keeps it in this discobox only.\n\n" +
+			"Whenever a discobox has a change to save, its workspace says so above its terminal, and pressing that reviews it.",
+		Choices: []Choice{
+			{Key: ExplainReview, Label: "Review changes", Hint: "see what changed, then save or discard it"},
+			{Key: ExplainLater, Label: "Not now", Hint: "the workspace goes on saying so, to review it later"},
+		},
+	}
+}
+
+// PromptQuiet is how long the composer has to have gone untyped in before the
+// explainer may come up over it: a person typing a prompt would answer the
+// explainer with the next key they press.
+const PromptQuiet = 5 * time.Second
+
+// ExplainerScreen is what a console reports of its screen, for whether the
+// explainer may come up on it now.
+type ExplainerScreen struct {
+	// Covered is something in front of the window holding the keys: a
+	// dialog, a sheet, a menu, the palette, the run options.
+	Covered bool
+	// Terminal is a box's terminal with the keys — or about to have them, its
+	// workspace opened on its panes. The change is made by signing in there,
+	// so the person may still be typing in it when it lands.
+	Terminal bool
+	// Composing is the composer with the keys, Draft whether it holds a
+	// prompt, and SinceTyped how long since a key last went into it.
+	Composing  bool
+	Draft      bool
+	SinceTyped time.Duration
+}
+
+// Free is whether nothing else has the screen: nothing in front of the
+// window, no terminal with the keys, and no prompt being written — the
+// composer, if it has the keys, empty and untyped in for PromptQuiet.
+func (s ExplainerScreen) Free() bool {
+	writing := s.Composing && (s.Draft || s.SinceTyped < PromptQuiet)
+	return !s.Covered && !s.Terminal && !writing
+}
+
+// ExplainedHarnessChanges records on the project that the explainer was
+// answered, whichever way: what it returns is what a console says when the
+// record did not land, empty when it did. The explainer has been read either
+// way, and losing the record costs one repeated explanation.
+func ExplainedHarnessChanges(ctx context.Context, src DataSource) string {
+	if err := src.MarkHarnessChangesExplained(ctx); err != nil {
+		return "could not save that harness changes were explained: " + err.Error()
+	}
+	return ""
+}
