@@ -12,6 +12,8 @@
 mod backend;
 #[cfg(test)]
 mod command_tests;
+#[cfg(test)]
+mod create_tests;
 mod harnesses;
 #[cfg(test)]
 mod harness_tests;
@@ -42,9 +44,9 @@ use std::sync::Mutex;
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
 use wire::{
-    Args, Box as Sandbox, Command, Menu as DesktopMenu, Commands, Context, Entry, Filter, Header, Listing, Note, Palette as Found,
-    PaletteQuery, PaletteRow, Result as CommandResult, Row, Service, ServiceVerb, Sessions, Spec, SpecTarget, Status, Stream, StreamState,
-    Subscribe, Tab, TabEnd, TabKind, Topic,
+    Args, Box as Sandbox, Chip, Command, Composer, Menu as DesktopMenu, Commands, Context, Entry, Filter, Header, Listing, Note,
+    Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, Service, ServiceVerb, Sessions, Spec, SpecTarget,
+    Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Topic,
 };
 use rune::{App, AppSpec, Drag, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
 use term::Screen;
@@ -101,6 +103,10 @@ pub struct Workspace {
     header_sub: u32,
     /// What the header says of the box, as the core said it last.
     pub header: Option<Header>,
+    /// What a box that was not up when its workspace opened is being made to do (the
+    /// provisioning topic), until it says nothing more; its subscription, while it follows.
+    pub step: String,
+    provisioning_sub: u32,
     /// The terminals column's share of the width the two columns have.
     pub split: f32,
 }
@@ -204,6 +210,9 @@ enum Pending {
     Harness(String),
     /// Saving or discarding a box's harness changes.
     Change,
+    /// A create from the composer, and the prompt it was sent with: the composer lets go of it
+    /// once the server has taken the create.
+    Create(String),
 }
 
 /// The palette (ADR 26-11-06-671): the query, at most one chip — a command, or a box by its key —
@@ -400,6 +409,20 @@ pub struct State {
     /// What arrived on a stream before its pane was made: a shell's first output can come
     /// before its result.
     early: HashMap<u32, Vec<Event>>,
+    /// The composer: the prompt a create from it gives the new box (Return creates, Shift+Return
+    /// is a new line), and the line under it, which says what the create would be made with —
+    /// the core's summary of the run options (the composer topic).
+    pub composer: TextEdit,
+    pub summary: Vec<Chip>,
+    composer_sub: u32,
+    /// The prompt as the CLI was last told it (the draft), and when it last changed if it has
+    /// since: it is told again once it has been still a moment, and on the way out.
+    draft: String,
+    edited: Option<f64>,
+    now: f64,
+    /// A warning a running command gave (uncommitted changes left out, a settings file not read
+    /// whole): it stays on the status line past the steps that follow, until the next command.
+    warned: bool,
 }
 
 const DEFAULT_SIZE: (u16, u16) = (100, 30);
@@ -417,7 +440,7 @@ impl State {
     fn new() -> State { State::with(BOOT.lock().unwrap().take().unwrap_or_else(boot_mock)) }
 
     /// The window on what `main` connected, or on a mock a test made.
-    fn with((backend, spec, inbox, bridged): Boot) -> State {
+    fn with((backend, spec, inbox, bridged, draft): Boot) -> State {
         theme::set_tokens(&spec);
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
@@ -426,13 +449,24 @@ impl State {
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
+            composer: TextEdit::new(draft.clone()), summary: vec![], composer_sub: 0, draft: draft.clone(), edited: None, now: 0.0, warned: false,
         };
+        // The prompt the last window left is back: closing a window is not how one is lost.
+        if !draft.is_empty() {
+            s.composer.focus = s.composer.text.len();
+            s.composer.anchor = s.composer.focus;
+            s.message = Some("the prompt you left is back".into());
+        }
+        s.composer_sub = s.subscribe(Subscribe { topic: Topic::Composer, ..Default::default() });
         s.follow_listing(None, String::new());
         if !bridged {
-            // The mock lists at once; taking it here lets a headless scene open a box.
+            // The mock answers at once; taking it here lets a headless scene open a box, and draw
+            // the composer's line.
             for e in s.inbox.drain() {
-                if let Event::Listing(sub, l) = e {
-                    s.take_listing(sub, l);
+                match e {
+                    Event::Listing(sub, l) => s.take_listing(sub, l),
+                    Event::Composer(sub, c) => s.take_composer(sub, c),
+                    _ => {}
                 }
             }
         }
@@ -880,9 +914,12 @@ impl State {
         if self.live.as_deref() != Some(sandbox) {
             self.leave_workspace();
             if !self.workspaces.contains_key(sandbox) {
+                // A box not up yet says what it is being made to do while its workspace opens.
+                let up = self.box_by_id(sandbox).is_some_and(|b| b.running() && b.provisioning.is_empty());
+                let provisioning_sub = if up { 0 } else { self.subscribe(Subscribe { topic: Topic::Provisioning, r#box: sandbox.to_string(), ..Default::default() }) };
                 self.workspaces.insert(sandbox.to_string(), Workspace {
                     sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true,
-                    error: None, sessions_sub: 0, header_sub: 0, header: None, split: 0.5,
+                    error: None, sessions_sub: 0, header_sub: 0, header: None, split: 0.5, step: String::new(), provisioning_sub,
                 });
             }
             self.live = Some(sandbox.to_string());
@@ -931,6 +968,9 @@ impl State {
     fn release_workspace(&mut self, sandbox: &str) {
         self.unfollow_workspace(sandbox);
         let Some(ws) = self.workspaces.remove(sandbox) else { return };
+        if ws.provisioning_sub != 0 {
+            self.backend.send(Out::Unsubscribe(ws.provisioning_sub));
+        }
         for p in ws.panes.iter().filter(|p| !p.exited) {
             self.backend.send(Out::Close(p.stream));
         }
@@ -1302,6 +1342,55 @@ impl State {
         }
     }
 
+    /// What a create would be made with, said under the composer.
+    fn take_composer(&mut self, sub: u32, r: Result<Composer, String>) {
+        if sub == self.composer_sub && let Ok(c) = r {
+            self.summary = c.chips;
+        }
+    }
+
+    /// What a box opening is being made to do, for its workspace; once it says nothing more, the
+    /// box is up and the subscription goes.
+    fn take_provisioning(&mut self, sub: u32, r: Result<Provisioning, String>) {
+        let Some(ws) = self.workspaces.values_mut().find(|w| w.provisioning_sub == sub && sub != 0) else { return };
+        let Ok(p) = r else { return };
+        let done = p.step.is_empty() && !ws.step.is_empty();
+        ws.step = p.step;
+        if done {
+            ws.provisioning_sub = 0;
+            self.backend.send(Out::Unsubscribe(sub));
+        }
+    }
+
+    /// The composer's prompt changed: it is told to the CLI once it has been still a moment.
+    pub fn composer_changed(&mut self) { self.edited = Some(self.now); }
+
+    /// Tells the CLI the prompt if it changed and has been still for `still` seconds (`0` on the
+    /// way out, when a prompt still in the composer is told even unchanged: there is one draft on
+    /// the machine, and the window closed last is the one whose prompt comes back — the TUI's
+    /// rule. An empty composer that was never anything else tells nothing).
+    pub fn save_draft(&mut self, still: f64) {
+        let leaving = still == 0.0;
+        let due = self.edited.is_some_and(|at| self.now - at >= still);
+        let prompt = self.composer.text.clone();
+        if !(due || (leaving && !prompt.is_empty())) || (!leaving && prompt == self.draft) {
+            return;
+        }
+        self.edited = None;
+        self.draft = prompt.clone();
+        self.backend.send(Out::Draft(prompt));
+    }
+
+    /// The composer, on screen with the keys: where `new` goes from a workspace, as the TUI's
+    /// opens its composer card.
+    pub fn show_composer(&mut self) {
+        self.unreveal(None);
+        self.leave_workspace();
+        self.live = None;
+        self.focus = Focus::List;
+        self.composer.focused = true;
+    }
+
     /// A header snapshot, for the workspace that follows it.
     fn take_header(&mut self, sub: u32, r: Result<Header, String>) {
         let Some(sbx) = self.headers.get(&sub) else { return };
@@ -1401,6 +1490,26 @@ impl State {
                 self.message = (!r.note.is_empty()).then(|| r.note.clone());
             }
             Pending::Actions(at) if r.status == Status::Enter => overlay::show_menu(self, r.r#box.clone(), at, r.entries.clone(), tx),
+            // The new box's workspace, on its way up; or, left detached, what came of it.
+            // A harness's own way out typed into the composer: the window leaves, with the
+            // composer emptied so the next window does not open on it.
+            Pending::Create(_) if r.status == Status::Enter && r.r#box.is_empty() => {
+                self.composer = TextEdit::new("");
+                self.composer_changed();
+                self.save_draft(0.0);
+                tx.quit();
+            }
+            Pending::Create(_) if r.status == Status::Enter => {
+                if !self.warned {
+                    self.message = None;
+                }
+                if let Some(i) = self.row_of(&r.r#box) {
+                    self.cursor = i;
+                }
+                self.show_workspace(&r.r#box);
+            }
+            Pending::Create(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
+            Pending::Create(_) if r.status == Status::Canceled => self.message = None,
             Pending::Verb(verb, name) => {
                 // A verb that acted on anything is worth letting the marks go for: they were put
                 // there to run this, and leaving them invites running it twice (the TUI's rule).
@@ -1462,7 +1571,7 @@ pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive", "purge", "rename", "settings",
     "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
-    "refresh", "servers", "archived", "services", "harnesses", "review config",
+    "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options",
 ];
 
 /// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
@@ -1472,9 +1581,6 @@ pub fn lacking(spec: &Spec, id: &str) -> Option<String> {
         return None;
     }
     Some(match spec.command(id) {
-        Some(c) if id == "new" => {
-            format!("{} needs a dialog, which the desktop app does not have yet", c.label)
-        }
         Some(c) => format!("{} is not in the desktop app yet", c.label),
         None => format!("unknown command {id}"),
     })
@@ -1499,6 +1605,7 @@ pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
 pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
     s.close_overlays();
     s.message = None;
+    s.warned = false;
     if let Some(why) = lacking(&s.spec, id) {
         s.message = Some(why);
         return;
@@ -1548,6 +1655,21 @@ pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
             s.message = Some("refreshing…".into());
             s.command(id, vec![], context, Args::default(), Pending::Enter(id.into()));
         }
+        // From a workspace, the composer, to write what the box is for; from the composer, the
+        // create card for what it holds (the TUI's composer card, then its create card).
+        "new" if s.live.is_some() => {
+            s.show_composer();
+            s.message = Some("write what the new discobox should do, or create it with nothing".into());
+        }
+        "new" => {
+            let prompt = s.composer.text.clone();
+            s.save_draft(0.0);
+            s.command(id, vec![], context, Args { prompt: prompt.clone(), ..Default::default() }, Pending::Create(prompt));
+        }
+        "options" => {
+            let prompt = s.composer.text.clone();
+            s.command(id, vec![], context, Args { prompt, ..Default::default() }, Pending::Enter(id.into()));
+        }
         _ => s.command(id, targets, context, Args::default(), Pending::Enter(id.into())),
     }
 }
@@ -1594,7 +1716,10 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
             s.close_overlays();
             s.help = true;
         }
-        "quit" => tx.quit(),
+        "quit" => {
+            s.save_draft(0.0);
+            tx.quit();
+        }
         "next pane" => s.step_pane(1),
         "previous pane" => s.step_pane(-1),
         "next box" => s.step_box(1),
@@ -1626,10 +1751,50 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
     }
 }
 
+/// How long the composer is still before its prompt is told to the CLI, in seconds.
+const DRAFT_STILL: f64 = 1.0;
+
+impl State {
+    /// A running command's step or warning, said on the status line; and for a create, the box
+    /// the moment the server takes it: the prompt it carried is running now, and no longer the
+    /// composer's — not before, since a create refused leaves it there to send again.
+    fn take_progress(&mut self, p: wire::Progress) {
+        self.sheets.went_on(p.command);
+        if let Some(made) = p.accepted {
+            if let Some(Pending::Create(prompt)) = self.pending.get(&p.command)
+                && self.composer.text == *prompt
+            {
+                self.composer = TextEdit::new("");
+                self.composer_changed();
+            }
+            if !self.warned {
+                self.message = Some(format!("creating {}…", made.name));
+            }
+            return;
+        }
+        if p.warning {
+            self.message = Some(p.text);
+            self.warned = true;
+        } else if !p.text.is_empty() && !self.warned {
+            self.message = Some(p.text);
+        }
+    }
+}
+
+/// The window closing, however it is closed: the prompt in the composer is told to the CLI on
+/// the way out, and the app quits.
+fn close(s: &mut State, tx: &mut Tx) {
+    s.save_draft(0.0);
+    tx.quit();
+}
+
 fn setup(s: &mut State, waker: Waker) { s.inbox.set_waker(waker); }
 
 /// Drain what the backend sent into the window.
-fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
+fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
+    s.now = t;
+    s.save_draft(DRAFT_STILL);
+    s.sheets.reveal(tx);
     let events = s.inbox.drain();
     if events.is_empty() {
         return false;
@@ -1646,11 +1811,9 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
             Event::Form(f) => sheet::take_form(s, f),
             Event::FieldErrors(e) => sheet::take_errors(s, e),
             Event::Edit(e) => sheet::take_edit(s, e),
-            Event::Progress(p) => {
-                if !p.text.is_empty() {
-                    s.message = Some(p.text);
-                }
-            }
+            Event::Composer(sub, r) => s.take_composer(sub, r),
+            Event::Provisioning(sub, r) => s.take_provisioning(sub, r),
+            Event::Progress(p) => s.take_progress(p),
             e @ (Event::Data(..) | Event::Exited(..) | Event::Stream(..)) => s.take_stream_event(e),
         }
     }
@@ -1659,14 +1822,16 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
 
 fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool { keys::on_key(s, ev, tx) }
 
-type Boot = (Box<dyn Backend + Send>, Spec, Inbox, bool);
+/// What the window opens on: the backend, the spec, its inbox, whether it is the CLI's, and the
+/// prompt the last window left.
+type Boot = (Box<dyn Backend + Send>, Spec, Inbox, bool, String);
 
 /// What `main` connected, for `State::new` (an `AppSpec` init takes no arguments).
 static BOOT: Mutex<Option<Boot>> = Mutex::new(None);
 
 fn boot_mock() -> Boot {
     let inbox = Inbox::default();
-    (Box::new(Mock::new(inbox.clone())), backend::bundled_spec(), inbox, false)
+    (Box::new(Mock::new(inbox.clone())), backend::bundled_spec(), inbox, false, String::new())
 }
 
 macro_rules! menu_commands {
@@ -1680,7 +1845,7 @@ macro_rules! menu_commands {
 /// The commands the native menu bar carries, by the menu they are in (macOS; elsewhere the
 /// palette is the menu).
 const MENU: &[(&str, &str, fn(&mut State, &mut Tx))] = menu_commands![
-    ("Box", "new"), ("Shell", "shell"), ("Shell", "terminal"), ("Shell", "end"),
+    ("Box", "new"), ("Box", "options"), ("Shell", "shell"), ("Shell", "terminal"), ("Shell", "end"),
     ("Box", "attach"), ("Box", "rename"), ("Box", "settings"),
     ("Box", "stop"), ("Box", "start"), ("Box", "upgrade"), ("Box", "repair"), ("Box", "archive"), ("Box", "unarchive"), ("Box", "purge"),
     ("View", "detach"), ("View", "sidebar"), ("View", "palette"), ("View", "maximize"),
@@ -1699,7 +1864,7 @@ fn main() {
     let boot = if bridged {
         let inbox = Inbox::default();
         match Bridge::connect(inbox.clone()) {
-            Ok((bridge, spec)) => (Box::new(bridge) as Box<dyn Backend + Send>, spec, inbox, true),
+            Ok((bridge, spec, draft)) => (Box::new(bridge) as Box<dyn Backend + Send>, spec, inbox, true, draft),
             Err(e) => {
                 eprintln!("discobox desktop: {e}");
                 std::process::exit(1);
@@ -1816,6 +1981,38 @@ fn main() {
                     sheet::take_errors(s, wire::FieldErrors { form: id, errors: vec![wire::FieldError { field: "name".into(), why: "a discobox needs a configured name".into() }] });
                 }
             }),
+            // The composer holding a prompt, with what a create would be made with under it.
+            ("composer", |s| {
+                s.composer = TextEdit::new("fix the reaper race in the pool agent\nand add a test for it");
+                s.composer.focused = true;
+            }),
+            // The create card for the composer's prompt: where it is cut from, the card's
+            // settings, a skills directory added, and the command it would run.
+            ("new", |s| {
+                s.composer = TextEdit::new("fix the reaper race");
+                run_command(s, "new", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                if let Some(id) = s.sheets.form().map(|f| f.id) {
+                    s.backend.send(Out::Submit(wire::Submit { form: id, answers: [("skills:0".to_string(), "./team-skills".to_string())].into(), draft: true, ..Default::default() }));
+                    poll(s, 0.0, &mut Tx::default());
+                }
+            }),
+            // The run options: every row.
+            ("options", |s| {
+                run_command(s, "options", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // A box just created, on its way up: its workspace says what it is being made to do.
+            ("created", |s| {
+                s.composer = TextEdit::new("fix the reaper race");
+                run_command(s, "new", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                if let Some(id) = s.sheets.form().map(|f| f.id) {
+                    s.backend.send(Out::Submit(wire::Submit { form: id, ..Default::default() }));
+                }
+                poll(s, 0.0, &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
             ("purge", |s| {
                 let old = s.boxes.iter().find(|b| b.state == wire::State::Archived).map(|b| b.key.clone()).unwrap_or_default();
                 run_on(s, "purge", vec![old], &mut Tx::default());
@@ -1848,7 +2045,7 @@ fn main() {
         poll: Some(poll),
         on_key: Some(on_key),
         ..AppSpec::new("discobox", (1440.0, 900.0), State::new, view::view)
-    });
+    }).on_close(close);
     for &(menu, id, action) in MENU {
         let Some(label) = keys::label_of(&spec, id) else { continue };
         let mut item = MenuItem::new(title_case(&label), action).id(id).menu(menu);

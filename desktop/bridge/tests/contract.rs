@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, Close, Command, Context, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, ServiceVerb, State, Status,
+    Answer, Args, Close, Command, Context, Draft, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
 };
 use discobox_bridge::{Client, Incoming};
@@ -520,6 +520,44 @@ fn harnesses_edits_and_harness_changes_reach_the_app() {
 
 // A CLI that exits while a command is in flight closes the client: no result comes, the app is
 // told the bridge is gone, and what it sends after fails rather than hangs.
+// A create from the composer: the composer topic says what it would be made with as it is subscribed, a draft the
+// app sends is kept, the create card is a form with what it would run, and the create reports
+// its steps, says the box the moment the server takes it, and enters it.
+#[test]
+fn a_create_reaches_the_app() {
+    let mut cli = Cli::start("default");
+    cli.subscribe(1, Topic::Composer, "");
+    let composer = cli.take("the composer", |i| match i {
+        Incoming::Message(m) if m.r#type == Type::Snapshot => m.snapshot.as_ref().and_then(|s| s.composer.clone()),
+        _ => None,
+    });
+    // The project's harness, read as the topic is subscribed, and nobody's choice.
+    let chips: Vec<_> = composer.chips.iter().map(|c| (c.text.as_str(), c.chosen)).collect();
+    assert_eq!(chips, [("claude", false)], "{composer:?}");
+    cli.send(Message { r#type: Type::Draft, draft: Some(Draft { prompt: "half a thought".into() }), ..Default::default() });
+
+    let id = cli.command("new", &[], Context::default(), Args { prompt: "fix it".into(), ..Default::default() });
+    let form = cli.expect(Type::Form).form.unwrap();
+    assert_eq!((form.command, form.action.as_str()), (id, "Create"));
+    assert!(form.note.contains("-p 'fix it'"), "{}", form.note);
+    assert!(form.fields.iter().any(|f| f.key == "harness"), "{:?}", form.fields);
+    cli.submit(form.id, &[("skills:0", "./team")], true, false);
+    let again = cli.expect(Type::Form).form.unwrap();
+    assert_eq!(again.id, form.id);
+    cli.submit(form.id, &[], false, false);
+
+    let step = cli.expect(Type::Progress).progress.unwrap();
+    assert_eq!(step.command, id);
+    let mut steps = vec![step];
+    while steps.last().unwrap().accepted.is_none() {
+        steps.push(cli.expect(Type::Progress).progress.unwrap());
+    }
+    assert!(steps.iter().any(|p| p.text == "draft: half a thought"), "{steps:?}");
+    assert_eq!(steps.last().unwrap().accepted.as_ref().unwrap().key, "made");
+    let r = cli.result(id);
+    assert_eq!((r.status, r.r#box.as_str()), (Status::Enter, "made"));
+}
+
 #[test]
 fn a_cli_exiting_mid_command_closes_the_client() {
     let mut cli = Cli::start("default");

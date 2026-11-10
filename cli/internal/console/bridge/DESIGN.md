@@ -44,7 +44,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions**: `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 8; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -82,13 +82,38 @@ run after the registry is let go, whose `Result` ends the command:
   words. The action menu comes with the core's entries; the palette's
   opening counts its use, and what it finds is the palette topic's.
 
+Creating a box is the core's rules run here (`create.go`): the bridge holds
+the window's run options (`console.RunOptions`), read against the last
+listing's sources, the folder and server the app's list is on, that server's
+harnesses and pools, as `new` and `options` start. `options` fills
+`OptionsForm` and keeps the answer. `new` fills `CreateForm` for the prompt in
+`Args`, cuts from the source answered (where the next opens,
+`SaveLastSource`), asks the core's questions (`DefaultHarnessQuestion`,
+`AskAboutWorkspace`), then runs the create narrated: its steps as progress,
+the box as `accepted` the moment the server takes it, and `enter` with the box
+— or `done` for one left detached. The composer topic is the options'
+`Summary`, read as it is subscribed, and sent again as they change. They are
+read again — the TUI's follow its harness listing the same way — when the app
+subscribes the list with another folder or server (never on a listing's beat),
+after any harness action on the harnesses page (`frontend.harnesses`), and
+after a create's default-harness question sets a default (`NewBox`). The Server row follows the list's server,
+as the TUI's does, and its harnesses and pools are that row's server's; a
+server chosen on a sheet does not move the app's list back, since which server
+the list shows is the app's navigation (the TUI's header and row are one
+control); a `draft` message is the composer's
+prompt, saved in order on the reader (`SaveDraft`), and `welcome` carries the
+last one.
+
 A running command talks to the app through `narrate` (progress, the box a
 create made, questions, a file to edit as `edit`, answered by the app's
 `saved`: finished with, given up, or why it could not be opened) and `fill` (a form until the core accepts its answers;
 each field's `value` is what the core reads it holding, the app sends only
 the answers the person changed, merged onto the form's opening; a refusal is
 `fieldErrors`, a draft re-sends the form with `applies` and the values
-recomputed). Each question and form has its own ID, so one command waits on
+recomputed). A form submitted is done once its command sends anything else —
+a question, another form, a step — and the app takes the form down then, so a
+command never reports while its form is still up: it reports once `fill` has
+returned. Each question and form has its own ID, so one command waits on
 its answer while others run. What is submitted to a form is kept in order
 (`mailbox`): the pipe's reader never waits on a command, and drops nothing.
 

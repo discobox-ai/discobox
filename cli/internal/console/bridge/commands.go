@@ -251,7 +251,7 @@ func (f *frontend) Repaint() outcome {
 // Rename asks the core's rename form and renames the box.
 func (f *frontend) Rename(box console.Sandbox) outcome {
 	return func() Result {
-		r, ok, err := fill(f.ctx, f.s, f.c.ID, "Rename", console.RenameForm(box, box.Title()))
+		r, ok, err := fill(f.ctx, f.s, f.c.ID, "Rename", "", console.RenameForm(box, box.Title()))
 		switch {
 		case err != nil:
 			return failed(err.Error())
@@ -283,7 +283,7 @@ func (f *frontend) Settings(box console.Sandbox) outcome {
 		// The harnesses only fill the harness row; a listing that fails
 		// leaves it on the box's own.
 		harnesses, _ := src.Harnesses(f.ctx, box.Server)
-		update, ok, err := fill(f.ctx, f.s, f.c.ID, "Settings · "+box.Title(), console.SettingsForm(box, was, harnesses))
+		update, ok, err := fill(f.ctx, f.s, f.c.ID, "Settings · "+box.Title(), "", console.SettingsForm(box, was, harnesses))
 		switch {
 		case err != nil:
 			return failed(err.Error())
@@ -453,7 +453,7 @@ func (f *frontend) Harnesses() outcome {
 			note, err = console.EditHarness(f.ctx, f.s.ds, a.Server, h.ID, a.Path, n)
 			finished()
 		case console.HarnessActionVariant:
-			variant, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Create variant of "+h.DisplayName(), console.HarnessVariantForm(h))
+			variant, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Create variant of "+h.DisplayName(), "", console.HarnessVariantForm(h))
 			switch {
 			case fillErr != nil:
 				return failed(fillErr.Error())
@@ -490,6 +490,11 @@ func (f *frontend) asked(err error) (Result, bool) {
 // of them. One that cannot be read fails the page it would open, and leaves
 // an action that has run saying what it did.
 func (f *frontend) harnesses(server string, status Status, about, note string) Result {
+	// An action changed the harnesses: the run options' harness row, and the
+	// composer's line, follow them as the TUI's follow its listing.
+	if status == StatusDone {
+		f.s.readOptions(f.ctx)
+	}
 	listed, err := f.s.ds.Harnesses(f.ctx, server)
 	if err != nil {
 		why := "cannot list the harnesses: " + err.Error()
@@ -563,14 +568,12 @@ func (f *frontend) Audit(box console.Sandbox) outcome               { return f.e
 func (f *frontend) CredentialRequests(box console.Sandbox) outcome  { return f.enterIfAble(box) }
 func (f *frontend) RejectedCredentials(box console.Sandbox) outcome { return f.enterIfAble(box) }
 
-func (f *frontend) NewBox() outcome         { return f.enter() }
 func (f *frontend) Credentials() outcome    { return f.enter() }
 func (f *frontend) Quit() outcome           { return f.enter() }
 func (f *frontend) Help() outcome           { return f.enter() }
 func (f *frontend) Filters() outcome        { return f.enter() }
 func (f *frontend) AllBoxes() outcome       { return f.enter() }
 func (f *frontend) ToggleArchived() outcome { return f.enter() }
-func (f *frontend) RunOptions() outcome     { return f.enter() }
 func (f *frontend) Maximize() outcome       { return f.enter() }
 func (f *frontend) Detach() outcome         { return f.enter() }
 func (f *frontend) ToggleMouse() outcome    { return f.enter() }

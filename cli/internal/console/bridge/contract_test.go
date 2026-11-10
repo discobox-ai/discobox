@@ -40,6 +40,9 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //     reads back what the app saved there. b1's harness changes are a
 //     pending candidate, c1, changing settings.json.
 //
+// A create (new) is made on claude, the project's default, and makes the box
+// made: it reports the last draft the app sent as a step, and is taken.
+//
 // Archiving and unarchiving a box changes its state in the listing. Every
 // terminal echoes what it is sent (fakeTerm).
 func TestContractCore(t *testing.T) {
@@ -73,6 +76,18 @@ func TestContractCore(t *testing.T) {
 		Files: []console.HarnessFile{{Path: ".claude.json", Content: "{}", Source: console.HarnessFileSaved}}}}
 	core.changes = console.HarnessChanges{CandidateID: "c1", State: "pending", Revision: 1,
 		Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "update", Diff: "-a\n+b\n"}}}
+	core.run = func(ctx context.Context, _ console.RunRequest, n *console.Narration) (console.Sandbox, error) {
+		core.mu.Lock()
+		draft := ""
+		if len(core.drafts) > 0 {
+			draft = core.drafts[len(core.drafts)-1]
+		}
+		core.mu.Unlock()
+		made := running("made")
+		n.Report("draft: " + draft)
+		n.Accept(ctx, made)
+		return made, nil
+	}
 	switch scenario {
 	case "early":
 		core.gate = make(chan struct{})

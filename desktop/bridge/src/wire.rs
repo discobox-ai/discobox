@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 7;
+pub const PROTOCOL: i64 = 8;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 5;
@@ -105,6 +105,9 @@ pub struct Message {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream: Option<Stream>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft: Option<Draft>,
 }
 
 /// Type names a message.
@@ -184,6 +187,10 @@ pub enum Type {
     /// output and its end are frames on the stream.
     #[serde(rename = "stream")]
     Stream,
+
+    /// TypeDraft is the prompt in the app's composer, to be kept for the next window (app).
+    #[serde(rename = "draft")]
+    Draft,
 }
 
 impl Type {
@@ -209,6 +216,7 @@ impl Type {
             Type::Open => "open",
             Type::Close => "close",
             Type::Stream => "stream",
+            Type::Draft => "draft",
         }
     }
 }
@@ -421,6 +429,11 @@ pub struct Session {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub host: String,
+
+    /// Draft is the prompt the last window on this machine left in its composer, which this one
+    /// opens holding.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub draft: String,
 }
 
 /// Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the
@@ -505,6 +518,11 @@ pub enum Topic {
     /// in the core's order.
     #[serde(rename = "palette")]
     Palette,
+
+    /// TopicComposer is what a create from the composer would be made with, as the line under it
+    /// says it (console.RunOptions.Summary): sent again whenever the run options change.
+    #[serde(rename = "composer")]
+    Composer,
 }
 
 impl Topic {
@@ -520,6 +538,7 @@ impl Topic {
             Topic::Sessions => "sessions",
             Topic::Commands => "commands",
             Topic::Palette => "palette",
+            Topic::Composer => "composer",
         }
     }
 }
@@ -650,6 +669,9 @@ pub struct Snapshot {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub palette: Option<Palette>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composer: Option<Composer>,
 }
 
 /// Listing is the box listing as the console shows it (console.List): every box listed, and the
@@ -1330,6 +1352,23 @@ pub struct PaletteCommit {
     pub text: String,
 }
 
+/// Composer is the summary of what a create would be made with: the harness, and every other run
+/// option somebody chose (console.RunOptions.Summary).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Composer {
+    pub chips: Vec<Chip>,
+}
+
+/// Chip is one part of it: its words, and whether it was chosen rather than a default, which the
+/// app draws lit.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Chip {
+    pub text: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub chosen: bool,
+}
+
 /// Command runs a registry command. ID is the app's, unique for the bridge's life, and is what its
 /// result, forms, questions and progress name. Targets are box keys, explicit: a box command never
 /// falls back to what is on screen.
@@ -1347,9 +1386,9 @@ pub struct Command {
 }
 
 /// Args are what a command takes beyond its targets: the stream a session it makes is attached to
-/// and the size of its pane (shell, terminal), the session it acts on (end, repaint), and for
-/// services one of the box's services and the verb to run on it — without them, services lists
-/// them for its menu.
+/// and the size of its pane (shell, terminal), the session it acts on (end, repaint), for services
+/// one of the box's services and the verb to run on it — without them, services lists them for
+/// its menu — and for new the prompt in the composer, which the box is given to do.
 ///
 /// The harnesses command reads the harnesses of Server (the list's server; empty for the primary)
 /// for its page, or, with a Harness and an Action, does that to it: Path is the file a files action
@@ -1357,6 +1396,9 @@ pub struct Command {
 /// and the Candidate the review showed, saves or discards that candidate.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Args {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub prompt: String,
+
     #[serde(default, skip_serializing_if = "is_default")]
     pub stream: u32,
 
@@ -1554,7 +1596,9 @@ pub enum Status {
     Canceled,
 
     /// StatusEnter is one whose flow is the app's: the core has ruled it can run, and the app
-    /// enters it — moving focus, opening a page or a menu, opening the box's workspace (Box).
+    /// enters it — moving focus, opening a page or a menu, opening the box's workspace (Box). For
+    /// new it is the box made, or, with no Box, a prompt that is the window's way out
+    /// (console.LeavesWindow): the app leaves, as quit does.
     #[serde(rename = "enter")]
     Enter,
 }
@@ -1767,6 +1811,12 @@ pub struct ChangeOffer {
 
 /// Form is a form a command needs filled, described by the core. ID is the CLI's; it is sent again,
 /// same ID, with Applies recomputed, after a draft is submitted.
+///
+/// Fields can grow as they are answered — a repeated run option gains a field once its last is
+/// filled — so a form sent again after a draft may hold more fields than before, matched to what
+/// the app holds by Key. Note is what the answers so far add up to (the command a create would
+/// run), said under the fields; Action is what the button that submits it says, empty for the app's
+/// own word.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Form {
     pub id: u64,
@@ -1776,6 +1826,12 @@ pub struct Form {
     pub title: String,
 
     pub fields: Vec<Field>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub note: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub action: String,
 }
 
 /// Field is one field of a form (console.Field). Value is what it holds as the core reads it: as it
@@ -1867,6 +1923,8 @@ pub struct FieldError {
 
 /// Question is what a running command asks (console.Question). With Choices it is a pick of one;
 /// with none, a yes or no answered "yes" or "no".
+///
+/// Subject is what it is about, on a line of its own above the body.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Question {
     pub id: u64,
@@ -1874,6 +1932,9 @@ pub struct Question {
     pub command: u64,
 
     pub title: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub subject: String,
 
     pub body: String,
 
@@ -2053,6 +2114,13 @@ impl TabEnd {
             TabEnd::Held => "held",
         }
     }
+}
+
+/// Draft is the prompt in the composer as it stands. The last window to say one is the one whose
+/// prompt the next window opens holding; an empty one clears it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Draft {
+    pub prompt: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

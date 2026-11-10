@@ -73,6 +73,13 @@ type Server struct {
 	tabs      map[string]map[string]console.Tab
 	services  map[string]map[string]console.Service
 	following map[string]int
+
+	// shown is the filter of the app's list, as it last subscribed with one
+	// of its own: the folder and server the run options follow.
+	shown console.Filter
+	// optsMu guards options, the window's run options.
+	optsMu  sync.Mutex
+	options runOptions
 }
 
 // NewServer is a bridge serving ds, writing to the app on out.
@@ -91,6 +98,7 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		tabs:      map[string]map[string]console.Tab{},
 		services:  map[string]map[string]console.Service{},
 		following: map[string]int{},
+		options:   openOptions(console.Session{}, console.Filter{}),
 	}
 	s.streams = newStreams(s.w, s.send)
 	return s
@@ -175,10 +183,17 @@ func (s *Server) hello(ctx context.Context, h Hello) bool {
 	s.mu.Lock()
 	s.session, s.saved = session, saved
 	s.mu.Unlock()
+	_, shown := session.Restore(saved)
+	s.mu.Lock()
+	s.shown = shown
+	s.mu.Unlock()
+	s.optsMu.Lock()
+	s.options = openOptions(session, shown)
+	s.optsMu.Unlock()
 	spec := console.NewSpec()
 	s.send(Message{Type: TypeWelcome, Welcome: &Welcome{Protocol: Protocol, Spec: &spec, Session: &Session{
 		PrimaryServer: s.ds.PrimaryServer(), Project: session.Project,
-		Directory: session.Directory, Branch: session.Branch, Host: session.Host,
+		Directory: session.Directory, Branch: session.Branch, Host: session.Host, Draft: session.Draft,
 	}}})
 	return true
 }
@@ -196,6 +211,11 @@ func (s *Server) handle(ctx context.Context, m Message) {
 			r.ID = c.ID
 			s.send(Message{Type: TypeResult, Result: &r})
 		}()
+	case m.Type == TypeDraft && m.Draft != nil:
+		// In the order the app sent them, here on the reader: two drafts
+		// saved concurrently could land older last. It is one small local
+		// write, never a server's answer.
+		s.saveDraft(ctx, *m.Draft)
 	case m.Type == TypeSubmit && m.Submit != nil:
 		s.mu.Lock()
 		box := s.forms[m.Submit.Form]
@@ -408,9 +428,21 @@ func (s *Server) filter(ctx context.Context, asked *Filter) console.Filter {
 	s.mu.Unlock()
 	if asked == nil {
 		_, f := session.Restore(saved)
+		s.mu.Lock()
+		s.shown = f
+		s.mu.Unlock()
 		return f
 	}
 	f := consoleFilter(*asked)
+	s.mu.Lock()
+	moved := s.shown.Folder.Source != f.Folder.Source || s.shown.Server != f.Server
+	s.shown = f
+	s.mu.Unlock()
+	// The run options follow the list's folder and server: read again for
+	// it, and the composer told, once, as the filter moves.
+	if moved {
+		go s.readOptions(ctx)
+	}
 	// Whether to is the core's rule (Session.Saves). A write that fails
 	// leaves the next window opening on the view saved before, and there is
 	// no reply to a subscribe to say it in: it is marked saved anyway, as the
@@ -580,7 +612,7 @@ func (s *Server) ask(ctx context.Context, command uint64, q console.Question) (s
 		s.mu.Unlock()
 	}()
 	s.send(Message{Type: TypeQuestion, Question: &Question{
-		ID: id, Command: command, Title: q.Title, Body: q.Body, Choices: choices(q.Choices), DefaultNo: q.DefaultNo,
+		ID: id, Command: command, Title: q.Title, Subject: q.Subject, Body: q.Body, Choices: choices(q.Choices), DefaultNo: q.DefaultNo,
 	}})
 	select {
 	case a := <-ch:
@@ -626,7 +658,10 @@ func (s *Server) edit(ctx context.Context, command uint64, e *console.Editing) e
 // accepted, or it is dismissed (ok false). A refusal goes back as field
 // errors, and the form stays up holding what was typed; a draft is answered
 // with the form again, its fields' Applies recomputed for the draft.
-func fill[T any](ctx context.Context, s *Server, command uint64, title string, form console.Form[T]) (answer T, ok bool, err error) {
+//
+// action is what the button that submits it says, empty for the app's own
+// word.
+func fill[T any](ctx context.Context, s *Server, command uint64, title, action string, form console.Form[T]) (answer T, ok bool, err error) {
 	id := s.id()
 	box := newMailbox()
 	s.mu.Lock()
@@ -639,7 +674,10 @@ func fill[T any](ctx context.Context, s *Server, command uint64, title string, f
 	}()
 	answers := form.Opening()
 	for {
-		s.send(Message{Type: TypeForm, Form: &Form{ID: id, Command: command, Title: title, Fields: fields(form.Fields, answers)}})
+		s.send(Message{Type: TypeForm, Form: &Form{
+			ID: id, Command: command, Title: title, Action: action,
+			Fields: fields(form.FieldsFor(answers), answers), Note: form.NoteFor(answers),
+		}})
 		for {
 			sub, err := box.take(ctx)
 			if err != nil {

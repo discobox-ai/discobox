@@ -15,12 +15,17 @@
 //! (`open_in_editor`), and its sheet waits for them to say they
 //! are finished with it — Done answers `saved`, and Esc gives it up, which saves nothing.
 //!
+//! A form's fields can grow as they are answered (a repeated run option gains a field once its
+//! last is filled): the form comes back after a draft with more fields, and what was typed,
+//! chosen and changed is kept by key. Its note says what the answers add up to (the command a
+//! create would run), and its action is what its button says.
+//!
 //! Sheets queue: a question can arrive for one command while another's form is up, and the first
 //! to arrive is drawn until it is answered.
 
 use std::collections::HashMap;
 
-use rune::{Color, El, Key, KeyEvent, TextEdit, Tx, col, el, row, spacer, text, text_input};
+use rune::{Color, El, Key, KeyEvent, ScrollSpec, TextEdit, Tx, col, el, row, spacer, text, text_input};
 
 use crate::backend::Out;
 use crate::wire::{Answer, Edit, Field, FieldError, FieldErrors, Form, Question, Saved, Submit};
@@ -32,6 +37,10 @@ pub struct FormSheet {
     pub command: u64,
     pub title: String,
     pub fields: Vec<Field>,
+    /// What the answers so far add up to, as the core says it; and what the submit button says
+    /// (the app's own word when the core names none).
+    pub note: String,
+    pub action: String,
     /// What each typed field holds; a picker's is unused.
     pub edits: Vec<TextEdit>,
     /// Each picker's chosen option, by key; a typed field's is unused.
@@ -44,6 +53,9 @@ pub struct FormSheet {
     pub errors: Vec<FieldError>,
     /// Submitted, and not yet accepted or refused.
     pub sent: bool,
+    /// The field the keys moved to, to scroll into view on the next frame (`Sheets::reveal`):
+    /// the fields scroll inside the sheet, and the keys can move to one out of sight.
+    pub reveal: Option<String>,
 }
 
 /// A question a command waits on, and the answer the keys are on: for a yes or no, 0 is yes and 1
@@ -132,7 +144,27 @@ impl Sheets {
 
     /// Takes away the sheets of a command that has finished: whatever they asked is moot now.
     pub fn finished(&mut self, command: u64) { self.queue.retain(|s| s.command() != command); }
+
+    /// Scrolls the field the keys last moved to into view, once: called each frame.
+    pub fn reveal(&mut self, tx: &mut Tx) {
+        if let Some(Sheet::Form(f)) = self.queue.first_mut()
+            && let Some(key) = f.reveal.take()
+        {
+            tx.scroll_into_view_in("sheet-fields", row_key(&key));
+        }
+    }
+
+    /// A command whose form was submitted has gone on — it asks something else, has a file
+    /// edited, or says a step:
+    /// the core took the form, which goes, rather than staying over what the command asks next
+    /// until its result lands (a create's questions come long before its result).
+    pub fn went_on(&mut self, command: u64) {
+        self.queue.retain(|s| !matches!(s, Sheet::Form(f) if f.command == command && f.sent));
+    }
 }
+
+/// The key of a field's row in the sheet, which scrolling reveals.
+fn row_key(field: &str) -> String { format!("sheet-row-{field}") }
 
 /// Whether a field takes an answer: one locked, or that does not apply, is drawn with why.
 fn answerable(f: &Field) -> bool { f.applies && !f.locked }
@@ -149,7 +181,8 @@ impl FormSheet {
         let chosen = form.fields.iter().map(|f| f.value.clone()).collect();
         let touched = vec![false; form.fields.len()];
         let mut sheet = FormSheet {
-            id: form.id, command: form.command, title: form.title, fields: form.fields, edits, chosen, touched, at: 0, errors: vec![], sent: false,
+            id: form.id, command: form.command, title: form.title, fields: form.fields, note: form.note, action: form.action, edits, chosen, touched,
+            at: 0, errors: vec![], sent: false, reveal: None,
         };
         if let Some(i) = sheet.fields.iter().position(answerable) {
             sheet.focus(i);
@@ -168,6 +201,7 @@ impl FormSheet {
             e.focused = false;
         }
         self.at = i;
+        self.reveal = self.fields.get(i).map(|f| f.key.clone());
         match self.fields.get(i) {
             Some(f) if !picker(f) => {
                 self.edits[i].focused = true;
@@ -207,21 +241,48 @@ impl FormSheet {
 /// to a draft — takes its fields' standing and keeps what was typed and chosen.
 pub fn take_form(s: &mut State, form: Form) {
     s.close_overlays();
+    if !s.sheets.queue.iter().any(|sh| matches!(sh, Sheet::Form(f) if f.id == form.id)) {
+        s.sheets.went_on(form.command);
+    }
     let at = s.sheets.queue.iter_mut().find_map(|sh| match sh {
         Sheet::Form(f) if f.id == form.id => Some(f),
         _ => None,
     });
     match at {
-        Some(f) if f.fields.len() == form.fields.len() => {
-            f.fields = form.fields;
-            f.title = form.title;
-            // The keys leave a field that no longer applies.
-            if !f.fields.get(f.at()).is_some_and(answerable) {
-                f.step(1);
+        Some(f) => f.refit(form),
+        None => s.sheets.queue.push(Sheet::Form(FormSheet::new(form))),
+    }
+}
+
+impl FormSheet {
+    /// The same form again, after a draft: its fields' standing and its note are the core's
+    /// now, and what was typed, chosen and changed stays with each field by its key — a field
+    /// the form grew opens as the core sends it, and the keys stay on the field they were on.
+    fn refit(&mut self, form: Form) {
+        let at = self.fields.get(self.at()).map(|f| f.key.clone());
+        let mut held: HashMap<String, (TextEdit, String, bool)> = HashMap::new();
+        for (i, f) in self.fields.iter().enumerate() {
+            held.insert(f.key.clone(), (std::mem::take(&mut self.edits[i]), self.chosen[i].clone(), self.touched[i]));
+        }
+        let fresh = FormSheet::new(Form { id: self.id, command: self.command, ..form });
+        let (mut edits, mut chosen, mut touched) = (fresh.edits, fresh.chosen, fresh.touched);
+        for (i, f) in fresh.fields.iter().enumerate() {
+            if let Some((edit, choice, changed)) = held.remove(&f.key) {
+                (edits[i], chosen[i], touched[i]) = (edit, choice, changed);
             }
         }
-        Some(f) => *f = FormSheet::new(form),
-        None => s.sheets.queue.push(Sheet::Form(FormSheet::new(form))),
+        (self.fields, self.title, self.note, self.action) = (fresh.fields, fresh.title, fresh.note, fresh.action);
+        (self.edits, self.chosen, self.touched) = (edits, chosen, touched);
+        match at.and_then(|k| self.fields.iter().position(|f| f.key == k)) {
+            Some(i) => self.at = i,
+            None => self.at = 0,
+        }
+        // A refusal of a field that no longer applies is moot, and the keys leave it.
+        let open: Vec<String> = self.fields.iter().filter(|f| answerable(f)).map(|f| f.key.clone()).collect();
+        self.errors.retain(|e| e.field.is_empty() || open.contains(&e.field));
+        if !self.fields.get(self.at()).is_some_and(answerable) {
+            self.step(1);
+        }
     }
 }
 
@@ -245,6 +306,7 @@ pub fn take_errors(s: &mut State, refused: FieldErrors) {
 /// has to be chosen.
 pub fn take_question(s: &mut State, question: Question) {
     s.close_overlays();
+    s.sheets.went_on(question.command);
     let picked = usize::from(question.choices.is_empty() && question.default_no);
     s.sheets.queue.push(Sheet::Question(QuestionSheet { question, picked }));
 }
@@ -253,6 +315,7 @@ pub fn take_question(s: &mut State, question: Question) {
 pub fn take_edit(s: &mut State, edit: Edit) {
     s.close_overlays();
     s.message = None;
+    s.sheets.went_on(edit.command);
     let opened = open_in_editor(&edit.path);
     s.sheets.queue.push(Sheet::Edit(EditSheet { edit, opened }));
 }
@@ -499,6 +562,9 @@ fn panel(name: &str, width: f32, body: El) -> El {
 
 const LABEL_W: f32 = 150.0;
 
+/// How tall a form's fields grow before they scroll inside its sheet.
+const FIELDS_MAX_H: f32 = 420.0;
+
 /// One field: its label, then its value — typed, chosen, or why it takes none — and what the
 /// core refused about it.
 fn field_view(f: &FormSheet, i: usize, x: &Field, on: bool) -> El {
@@ -540,7 +606,7 @@ fn field_view(f: &FormSheet, i: usize, x: &Field, on: bool) -> El {
         }
         boxed
     };
-    let mut out = col().w_full().gap(4.0).child(row().w_full().gap(12.0).center_y().child(label).child(value));
+    let mut out = col().key(row_key(&x.key)).w_full().gap(4.0).child(row().w_full().gap(12.0).center_y().child(label).child(value));
     if let Some(why) = f.error(&x.key) {
         out = out.child(row().w_full().child(el().w(LABEL_W + 12.0)).child(text(why.to_string()).font(theme::UI_SMALL).color(theme::err()).wrap().shrink()));
     }
@@ -557,16 +623,20 @@ fn field_view(f: &FormSheet, i: usize, x: &Field, on: bool) -> El {
 fn form_view(f: &FormSheet) -> El {
     let at = f.at();
     let mut body = col().w_full().gap(10.0).child(text(f.title.clone()).font(theme::UI_BOLD).color(theme::text()));
+    // The fields scroll inside the sheet past a height, so its note and buttons stay on screen
+    // however many rows a form has (the run options have a dozen, and grow).
+    let mut rows = col().key("sheet-fields").w_full().gap(10.0).max_h(FIELDS_MAX_H).scroll(ScrollSpec { stick_bottom: false });
     let mut section = "";
     for (i, x) in f.fields.iter().enumerate() {
         if !x.section.is_empty() && x.section != section {
-            body = body.child(col().w_full().gap(4.0).pt(4.0)
+            rows = rows.child(col().w_full().gap(4.0).pt(4.0)
                 .child(text(x.section.clone()).font(theme::UI_SMALL).color(theme::gold()))
                 .child(el().h(1.0).w_full().fill(theme::line())));
         }
         section = &x.section;
-        body = body.child(field_view(f, i, x, i == at));
+        rows = rows.child(field_view(f, i, x, i == at));
     }
+    body = body.child(rows);
     // Why the field the keys are on is asked: a picker's chosen option says its own, when it has one.
     let why = f.fields.get(at).map(|x| {
         let chosen = x.choices.iter().find(|c| c.key == f.chosen[at]).map(|c| c.hint.as_str()).unwrap_or("");
@@ -578,20 +648,32 @@ fn form_view(f: &FormSheet) -> El {
     if let Some(e) = f.error("") {
         body = body.child(text(e.to_string()).font(theme::UI_SMALL).color(theme::err()).wrap().w_full());
     }
+    // What the answers add up to: the command a create would run, which a shell reproduces.
+    if !f.note.is_empty() {
+        body = body.child(col().key("sheet-note").w_full().gap(4.0).padding(10.0).radius(theme::r_row()).fill(theme::sunken())
+            .child(text("would run").font(theme::UI_SMALL).color(theme::dim()))
+            .child(text(f.note.clone()).font(theme::UI_SMALL).color(theme::grey()).wrap().w_full()));
+    }
     let mut buttons = row().w_full().gap(8.0).center_y()
         .child(hint("tab", "next")).child(hint("escape", "cancel")).child(spacer());
     if f.sent {
-        buttons = buttons.child(text("saving…").font(theme::UI_SMALL).color(theme::dim()));
+        let waiting = if f.action.is_empty() { "saving…" } else { "sent…" };
+        buttons = buttons.child(text(waiting).font(theme::UI_SMALL).color(theme::dim()));
     }
+    let action = if f.action.is_empty() { "Save" } else { f.action.as_str() };
     buttons = buttons
         .child(button("sheet-cancel", "Cancel", false, false, true).on_press(dismiss))
-        .child(button("sheet-submit", "Save", true, false, !f.sent).default_button().on_press(|s: &mut State| submit(s, false)));
+        .child(button("sheet-submit", action, true, false, !f.sent).default_button().on_press(|s: &mut State| submit(s, false)));
     panel("sheet", 600.0, body.child(buttons))
 }
 
 fn question_view(q: &QuestionSheet) -> El {
     let x = &q.question;
     let mut body = col().w_full().gap(12.0).child(text(x.title.clone()).font(theme::UI_BOLD).color(theme::text()));
+    // What it is about, on a line of its own: the directory a create would carry.
+    if !x.subject.is_empty() {
+        body = body.child(text(x.subject.clone()).font(theme::UI_BOLD).color(theme::mark()).wrap().w_full());
+    }
     if !x.body.is_empty() {
         body = body.child(text(x.body.clone()).font(theme::UI).color(theme::grey()).wrap().w_full());
     }

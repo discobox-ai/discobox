@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 7,
+  "x-protocol": 8,
   "x-specVersion": 5,
   "x-frameKinds": {
     "json": {
@@ -99,6 +99,9 @@
         },
         "stream": {
           "$ref": "#/$defs/Stream"
+        },
+        "draft": {
+          "$ref": "#/$defs/Draft"
         }
       },
       "required": [
@@ -178,6 +181,10 @@
         {
           "description": "TypeStream is a stream's state: attached, failed, reconnecting, reconnected (CLI). Its output and its end are frames on the stream.",
           "const": "stream"
+        },
+        {
+          "description": "TypeDraft is the prompt in the app's composer, to be kept for the next window (app).",
+          "const": "draft"
         }
       ]
     },
@@ -516,6 +523,10 @@
         },
         "host": {
           "type": "string"
+        },
+        "draft": {
+          "description": "Draft is the prompt the last window on this machine left in its composer, which this one opens holding.",
+          "type": "string"
         }
       },
       "required": [
@@ -599,6 +610,10 @@
         {
           "description": "TopicPalette is what the palette finds for a query (Context, Palette): the core's results, in the core's order.",
           "const": "palette"
+        },
+        {
+          "description": "TopicComposer is what a create from the composer would be made with, as the line under it says it (console.RunOptions.Summary): sent again whenever the run options change.",
+          "const": "composer"
         }
       ]
     },
@@ -749,6 +764,9 @@
         },
         "palette": {
           "$ref": "#/$defs/Palette"
+        },
+        "composer": {
+          "$ref": "#/$defs/Composer"
         }
       },
       "required": [
@@ -1661,6 +1679,36 @@
         "text"
       ]
     },
+    "Composer": {
+      "description": "Composer is the summary of what a create would be made with: the harness, and every other run option somebody chose (console.RunOptions.Summary).",
+      "type": "object",
+      "properties": {
+        "chips": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Chip"
+          }
+        }
+      },
+      "required": [
+        "chips"
+      ]
+    },
+    "Chip": {
+      "description": "Chip is one part of it: its words, and whether it was chosen rather than a default, which the app draws lit.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "chosen": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
     "Command": {
       "description": "Command runs a registry command. ID is the app's, unique for the bridge's life, and is what its result, forms, questions and progress name. Targets are box keys, explicit: a box command never falls back to what is on screen.",
       "type": "object",
@@ -1694,9 +1742,12 @@
       ]
     },
     "Args": {
-      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), and for services one of the box's services and the verb to run on it — without them, services lists them for its menu.\n\nThe harnesses command reads the harnesses of Server (the list's server; empty for the primary) for its page, or, with a Harness and an Action, does that to it: Path is the file a files action edits. The review config command reads a box's harness changes for its review, or, with a Change and the Candidate the review showed, saves or discards that candidate.",
+      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), for services one of the box's services and the verb to run on it — without them, services lists them for its menu — and for new the prompt in the composer, which the box is given to do.\n\nThe harnesses command reads the harnesses of Server (the list's server; empty for the primary) for its page, or, with a Harness and an Action, does that to it: Path is the file a files action edits. The review config command reads a box's harness changes for its review, or, with a Change and the Candidate the review showed, saves or discards that candidate.",
       "type": "object",
       "properties": {
+        "prompt": {
+          "type": "string"
+        },
         "stream": {
           "type": "integer",
           "format": "uint32"
@@ -1880,7 +1931,7 @@
           "const": "canceled"
         },
         {
-          "description": "StatusEnter is one whose flow is the app's: the core has ruled it can run, and the app enters it — moving focus, opening a page or a menu, opening the box's workspace (Box).",
+          "description": "StatusEnter is one whose flow is the app's: the core has ruled it can run, and the app enters it — moving focus, opening a page or a menu, opening the box's workspace (Box). For new it is the box made, or, with no Box, a prompt that is the window's way out (console.LeavesWindow): the app leaves, as quit does.",
           "const": "enter"
         }
       ]
@@ -2201,7 +2252,7 @@
       ]
     },
     "Form": {
-      "description": "Form is a form a command needs filled, described by the core. ID is the CLI's; it is sent again, same ID, with Applies recomputed, after a draft is submitted.",
+      "description": "Form is a form a command needs filled, described by the core. ID is the CLI's; it is sent again, same ID, with Applies recomputed, after a draft is submitted.\n\nFields can grow as they are answered — a repeated run option gains a field once its last is filled — so a form sent again after a draft may hold more fields than before, matched to what the app holds by Key. Note is what the answers so far add up to (the command a create would run), said under the fields; Action is what the button that submits it says, empty for the app's own word.",
       "type": "object",
       "properties": {
         "id": {
@@ -2220,6 +2271,12 @@
           "items": {
             "$ref": "#/$defs/Field"
           }
+        },
+        "note": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
         }
       },
       "required": [
@@ -2365,7 +2422,7 @@
       ]
     },
     "Question": {
-      "description": "Question is what a running command asks (console.Question). With Choices it is a pick of one; with none, a yes or no answered \"yes\" or \"no\".",
+      "description": "Question is what a running command asks (console.Question). With Choices it is a pick of one; with none, a yes or no answered \"yes\" or \"no\".\n\nSubject is what it is about, on a line of its own above the body.",
       "type": "object",
       "properties": {
         "id": {
@@ -2377,6 +2434,9 @@
           "format": "uint64"
         },
         "title": {
+          "type": "string"
+        },
+        "subject": {
           "type": "string"
         },
         "body": {
@@ -2620,6 +2680,18 @@
           "description": "EndHeld: the program finished, and the tab stays with its last screen to be read until it is dismissed; Status is what it says over it.",
           "const": "held"
         }
+      ]
+    },
+    "Draft": {
+      "description": "Draft is the prompt in the composer as it stands. The last window to say one is the one whose prompt the next window opens holding; an empty one clears it.",
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
       ]
     },
     "ResizePayload": {

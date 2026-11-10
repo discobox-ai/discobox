@@ -27,7 +27,7 @@ struct ServiceDecl {
     logs: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Step {
     #[serde(default)]
     command: String,
@@ -38,11 +38,14 @@ struct Step {
     service: String,
     #[serde(default)]
     verb: String,
+    /// What is written in the composer before the command: new creates with it.
+    #[serde(default)]
+    prompt: String,
     expect: Expect,
 }
 
 /// What a step expects; a field it leaves out is not checked.
-#[derive(Deserialize, Debug, PartialEq, Default)]
+#[derive(Deserialize, Debug, PartialEq, Default, Clone)]
 struct Expect {
     r#box: Option<i64>,
     terminals: Option<usize>,
@@ -54,6 +57,8 @@ struct Expect {
     archived: Option<bool>,
     services: Option<usize>,
     output: Option<String>,
+    /// The name of the box on screen when a create made it.
+    created: Option<String>,
 }
 
 /// A spec shortcut as the key event this platform delivers for it.
@@ -96,7 +101,7 @@ fn settle(rt: &mut Runtime<State>) {
     }
 }
 
-fn snapshot(s: &State, want: &Expect) -> Expect {
+fn snapshot(s: &State, want: &Expect, made: &[String]) -> Expect {
     let ws = s.live_ws();
     Expect {
         // The row the box on screen is on, -1 with none.
@@ -113,6 +118,12 @@ fn snapshot(s: &State, want: &Expect) -> Expect {
         output: want.output.as_ref().and_then(|o| {
             let shown = ws.and_then(|w| w.focused()).map(|i| ws.unwrap().panes[i].screen.text()).unwrap_or_default();
             Some(if shown.contains(o.as_str()) { o.clone() } else { shown })
+        }),
+        // The box on screen, when it is the one the last create made: the mock names a box it
+        // makes after its prompt.
+        created: want.created.as_ref().map(|_| {
+            let live = s.live.as_ref().and_then(|k| s.box_by_id(k)).map(|b| b.name.clone()).unwrap_or_default();
+            if made.last() == Some(&live) { live } else { String::new() }
         }),
     }
 }
@@ -150,6 +161,21 @@ fn run_service_step(rt: &mut Runtime<State>, step: &Step, path: &std::path::Path
 /// Runs one step the desktop's way: a command's or a gesture's shortcut from the spec; a box's
 /// lifecycle command with none, through its row's menu — the context menu key, then the entry.
 fn run_step(rt: &mut Runtime<State>, step: &Step, path: &std::path::Path, i: usize) -> String {
+    // A prompt is written in the composer, beside the list, before the command; and the create
+    // card the command opens is accepted as it opens.
+    if !step.prompt.is_empty() {
+        rt.update(|s, _| s.composer.focused = true);
+        settle(rt);
+        for c in step.prompt.chars() {
+            rt.key(KeyEvent { key: Key::Text(c.to_string()), mods: Mods::default() });
+            rt.frame(1.0 / 60.0);
+        }
+        let how = run_step(rt, &Step { prompt: String::new(), ..step.clone() }, path, i);
+        assert!(rt.state.sheets.form().is_some(), "{}: step {i}: {} opened no create card", path.display(), step.command);
+        rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+        settle(rt);
+        return format!("{how}, and Enter on the card");
+    }
     let keys = if step.gesture.is_empty() {
         rt.state.spec.command(&step.command).map(|c| c.bindings.desktop.keys.clone())
     } else {
@@ -189,7 +215,9 @@ fn parity_scenarios() {
         let sc: Scenario = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let inbox = Inbox::default();
         let services = sc.services.iter().map(|v| MockService::new(&v.id, &v.status, &v.logs)).collect();
-        let state = State::with((Box::new(Mock::with_services(inbox.clone(), services)), bundled_spec(), inbox, false));
+        let mock = Mock::with_services(inbox.clone(), services);
+        let record = mock.record();
+        let state = State::with((Box::new(mock), bundled_spec(), inbox, false, String::new()));
         let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
         rt.poll = Some(poll);
         rt.on_key = Some(on_key);
@@ -201,7 +229,8 @@ fn parity_scenarios() {
         for (i, step) in sc.steps.iter().enumerate() {
             let how = if step.service.is_empty() { run_step(&mut rt, step, &path, i) } else { run_service_step(&mut rt, step, &path, i) };
             let id = if !step.service.is_empty() { &format!("{} {}", step.verb, step.service) } else if step.gesture.is_empty() { &step.command } else { &step.gesture };
-            assert_eq!(snapshot(&rt.state, &step.expect), step.expect, "{}: step {i} ({id} as {how})", path.display());
+            let made = record.lock().unwrap().created.clone();
+            assert_eq!(snapshot(&rt.state, &step.expect, &made), step.expect, "{}: step {i} ({id} as {how})", path.display());
         }
         ran += 1;
     }

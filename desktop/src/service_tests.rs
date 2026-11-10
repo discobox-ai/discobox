@@ -140,7 +140,7 @@ fn the_services_menu_runs_a_verb() {
 #[test]
 fn a_box_with_no_services_says_so() {
     let inbox = Inbox::default();
-    let state = State::with((Box::new(Mock::with_services(inbox.clone(), Vec::<MockService>::new())), bundled_spec(), inbox, false));
+    let state = State::with((Box::new(Mock::with_services(inbox.clone(), Vec::<MockService>::new())), bundled_spec(), inbox, false, String::new()));
     let mut rt = runtime(state);
     rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
     settle(&mut rt);

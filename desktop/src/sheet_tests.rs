@@ -166,7 +166,7 @@ fn a_pick_of_one_answers_by_key() {
     let q = |id| Question {
         id, command: 99, title: "Git credentials".into(), body: "github.com asked for credentials".into(),
         choices: vec![Choice { key: "token".into(), label: "use a token".into(), hint: String::new() }, Choice { key: "skip".into(), label: "skip".into(), hint: "push nothing".into() }],
-        default_no: false,
+        default_no: false, ..Default::default()
     };
     rt.state.inbox.push(Event::Question(q(1)));
     rt.state.inbox.push(Event::Question(q(2)));

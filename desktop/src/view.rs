@@ -598,8 +598,9 @@ fn workspace(s: &State, ws: &Workspace) -> El {
                 .child(text(e.clone()).font(theme::UI_SMALL).color(theme::grey()).max_w(640.0).wrap())
                 .child(row().gap(6.0).center_y().child(keycap(enter)).child(t("tries again", theme::dim())))));
     } else if ws.opening {
+        let doing = if ws.step.is_empty() { "attaching…".to_string() } else { format!("{}…", ws.step) };
         cols = cols.child(frame("opening", true, Some(chip("opening-title", &sbx.name, true, true, None, None)), None,
-            col().w_full().h_full().center().child(t("attaching…", theme::dim()))));
+            col().w_full().h_full().center().child(t(doing, theme::dim()))));
     } else if ws.maximized {
         cols = cols.child(column(s, ws, sbx, ws.focus, two).grow(1.0));
     } else if two {
@@ -609,8 +610,13 @@ fn workspace(s: &State, ws: &Workspace) -> El {
     } else {
         cols = cols.child(column(s, ws, sbx, Side::Terminals, two).grow(1.0));
     }
+    // What a box on its way up is being made to do, while it says so.
+    let step = (!ws.opening && !ws.step.is_empty()).then(|| row().key("provisioning").w_full().h(20.0).px(12.0).gap(8.0).center_y()
+        .child(t("provisioning", theme::gold()).font(theme::UI_SMALL))
+        .child(t(ws.step.clone(), theme::grey()).font(theme::UI_SMALL).truncate().shrink()));
     col().key("workspace").grow(1.0).h_full().min_w(0.0).gap(4.0).motion(theme::SNAPPY)
         .child(header(s, ws, sbx))
+        .children(step)
         .child(cols)
         .child(row().w_full().h(24.0).px(12.0).center_y().min_w(0.0)
             .child(status_line(s)))
@@ -625,24 +631,41 @@ fn home(s: &State) -> El {
         .child(t("all discoboxes", theme::grey()))
         .child(spacer())
         .child(t(if s.bridged { "" } else { "mock data" }, theme::warn()).font(theme::UI_SMALL));
-    let composer = col().w_full().gap(8.0).px(18.0)
-        .child(text("Enter runs the prompt in a new discobox, or just creates one when it is empty").font(theme::UI_SMALL).color(theme::dim()))
-        .child(row().w_full().h(40.0).px(12.0).gap(10.0).center_y().radius(theme::r_row()).fill(theme::sunken()).border(theme::stroke_quiet(), theme::line())
-            .child(icon(&icons::CHEVRON, 14.0).color(theme::mark()))
-            .child(text_input(&TEXT_EDIT.with(|e| e.clone()), theme::UI.lh(20.0)).key("composer").single_line().grow(1.0).color(theme::text())
-                .placeholder("What should the new discobox do?", theme::dim())
-                .on_submit(|s: &mut State, tx: &mut Tx| run_command(s, "new", tx))));
     let body = col().w_full().h_full().gap(10.0).px(8.0).min_h(0.0)
         .child(header)
         .child(list_block(s, true))
         .child(spacer())
-        .child(composer)
+        .child(composer(s))
         .child(row().w_full().h(24.0).px(18.0).center_y().min_w(0.0).child(status_line(s)));
     frame("home", true, None, None, body)
 }
 
-thread_local! {
-    static TEXT_EDIT: rune::TextEdit = rune::TextEdit::new("");
+/// The composer: what the new discobox should do. Return creates it — through the create card,
+/// as the new command does — and Shift+Return is a new line; an empty prompt creates a box with
+/// nothing to do. Under it, what the create would be made with (the core's summary of the run
+/// options), lit where somebody chose it, and the run options to change it.
+fn composer(s: &State) -> El {
+    let field = text_input(&s.composer, theme::UI.lh(20.0)).key("composer").grow(1.0).color(theme::text())
+        .placeholder("What should the new discobox do?", theme::dim())
+        .on_edit(|s: &mut State| &mut s.composer)
+        .on_input_change(|s: &mut State, _| s.composer_changed())
+        .on_submit(|s: &mut State, tx: &mut Tx| run_command(s, "new", tx));
+    let mut summary = row().key("composer-summary").w_full().gap(6.0).center_y().min_w(0.0).flex_wrap();
+    for (i, c) in s.summary.iter().enumerate() {
+        if i > 0 {
+            summary = summary.child(t("·", theme::dim()).font(theme::UI_SMALL));
+        }
+        summary = summary.child(t(c.text.clone(), if c.chosen { theme::gold() } else { theme::dim() }).font(theme::UI_SMALL));
+    }
+    summary = summary.child(spacer()).child(offer(s, "options-offer", "run options".into(), "options"));
+    col().w_full().gap(6.0).px(18.0)
+        .child(text("Return runs the prompt in a new discobox, or just creates one when it is empty · Shift+Return is a new line")
+            .font(theme::UI_SMALL).color(theme::dim()))
+        .child(row().w_full().px(12.0).py(10.0).gap(10.0).items_start().radius(theme::r_row()).fill(theme::sunken())
+            .border(theme::stroke_quiet(), if s.composer.focused { theme::mark() } else { theme::line() })
+            .child(icon(&icons::CHEVRON, 14.0).color(theme::mark()).mt(3.0))
+            .child(rune::auto_grow(field, 1, 8).grow(1.0)))
+        .child(summary)
 }
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {

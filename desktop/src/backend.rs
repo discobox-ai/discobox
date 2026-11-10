@@ -23,8 +23,8 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
 
 use crate::wire::{
-    Answer, Box as Sandbox, ChoiceGroup, Close, Command, Commands, Choice, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice,
-    Form, GitTone, Header, Link, Listing, Message, Open, Palette, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
+    Answer, Box as Sandbox, ChoiceGroup, Chip, Close, Command, Commands, Choice, Composer, Draft, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice,
+    Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
     HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone,
@@ -46,6 +46,8 @@ pub enum Out {
     Answer(Answer),
     /// An edit finished with, or given up.
     Saved(Saved),
+    /// The prompt in the composer, kept for the next window.
+    Draft(String),
 }
 
 impl Out {
@@ -63,6 +65,7 @@ impl Out {
             Out::Answer(a) => Message { r#type: Type::Answer, answer: Some(a), ..Default::default() },
             Out::Submit(f) => Message { r#type: Type::Submit, submit: Some(f), ..Default::default() },
             Out::Saved(v) => Message { r#type: Type::Saved, saved: Some(v), ..Default::default() },
+            Out::Draft(prompt) => Message { r#type: Type::Draft, draft: Some(Draft { prompt }), ..Default::default() },
         }
     }
 }
@@ -82,6 +85,10 @@ pub enum Event {
     Palette(u32, Result<Palette, String>),
     /// A header subscription's snapshot, or why it could not be read.
     Header(u32, Result<Header, String>),
+    /// What a create from the composer would be made with, as the line under it says it.
+    Composer(u32, Result<Composer, String>),
+    /// What a box that is not usable yet is being made to do.
+    Provisioning(u32, Result<Provisioning, String>),
     Result(CommandResult),
     Stream(Stream),
     Question(Question),
@@ -145,6 +152,14 @@ fn event(m: Message) -> Option<Event> {
                     Some(v) if s.error.is_empty() => Ok(v),
                     _ => Err(s.error),
                 })),
+                Topic::Composer => Some(Event::Composer(s.sub, match s.composer {
+                    Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
+                Topic::Provisioning => Some(Event::Provisioning(s.sub, match s.provisioning {
+                    Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
                 _ => None,
             }
         }
@@ -165,8 +180,8 @@ pub struct Bridge {
 
 impl Bridge {
     /// Says hello and waits for the welcome; then what arrives goes to the inbox, until the CLI
-    /// is gone, when the app is too.
-    pub fn connect(inbox: Inbox) -> Result<(Bridge, Spec), String> {
+    /// is gone, when the app is too. Beside the spec, the prompt the last window left.
+    pub fn connect(inbox: Inbox) -> Result<(Bridge, Spec, String), String> {
         let (client, welcome) = Client::connect(std::io::stdin(), std::io::stdout(), move |incoming| match incoming {
             Incoming::Message(m) => {
                 if let Some(e) = event(m) {
@@ -178,7 +193,8 @@ impl Bridge {
             // Nothing more will arrive, and nothing can be sent.
             Incoming::Closed => std::process::exit(0),
         })?;
-        Ok((Bridge { client }, welcome.spec.ok_or("the CLI's welcome carried no spec")?))
+        let draft = welcome.session.as_ref().map(|s| s.draft.clone()).unwrap_or_default();
+        Ok((Bridge { client }, welcome.spec.ok_or("the CLI's welcome carried no spec")?, draft))
     }
 }
 
@@ -221,6 +237,11 @@ pub struct Mock {
     files: HashMap<(String, String), String>,
     /// Each box's harness changes, by its key: the first box has some to save.
     changes: HashMap<String, HarnessChanges>,
+    /// The run options a create is made with, and the composer topic that says them.
+    run: MockRun,
+    composer_sub: u32,
+    /// What the app sent that only the CLI would act on, for tests to read.
+    record: Arc<Mutex<MockRecord>>,
 }
 
 /// A mock harness, its actions as the core offers them (`console.Harness.Actions`).
@@ -282,6 +303,38 @@ fn mock_changes() -> HarnessChanges {
         offers: vec![offer(HarnessChange::Save, "Save reviewed changes"), offer(HarnessChange::Discard, "Discard candidate")],
     }
 }
+
+/// The mock's run options: the rows the core's forms ask, roughly.
+#[derive(Clone)]
+struct MockRun {
+    harness: String,
+    dirty: String,
+    detach: bool,
+    env: Vec<String>,
+    skills: Vec<String>,
+    include: Vec<String>,
+    /// Where the last create was cut from: where the next opens.
+    source: String,
+}
+
+impl Default for MockRun {
+    fn default() -> MockRun {
+        MockRun { harness: "claude".into(), dirty: "auto".into(), detach: false, env: vec![], skills: vec![], include: vec![], source: MOCK_DIR.into() }
+    }
+}
+
+/// What the mock was sent that a test reads back: every draft, and every create's prompt.
+#[derive(Default, Debug)]
+pub struct MockRecord {
+    pub drafts: Vec<String>,
+    pub created: Vec<String>,
+}
+
+/// Where the mock's window runs, which a create is cut from unless told otherwise.
+const MOCK_DIR: &str = "/src/discobox";
+/// The source field's choices that are not a directory, as the core keys them.
+const SOURCE_NONE: &str = "\u{0}no-source";
+const SOURCE_ENTER: &str = "\u{0}enter";
 
 /// A mock box's declared service: what it is doing, what its runs have written, and how many
 /// times it has started — its run, which moves on a start.
@@ -352,6 +405,9 @@ enum Ask {
     Variant(String),
     /// A harness's file, by its ID and path, written out to a file of this machine to edit.
     Edit(String, String, std::path::PathBuf),
+    /// The create card, for the prompt the composer held.
+    Create(String),
+    Options,
 }
 
 fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
@@ -419,8 +475,139 @@ impl Mock {
         let changes = HashMap::from([(boxes[0].key.clone(), mock_changes())]);
         Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
-            services, following: HashMap::new(), harnesses, files, changes,
+            services, following: HashMap::new(), harnesses, files, changes, run: MockRun::default(), composer_sub: 0, record: Arc::default(),
         }
+    }
+
+    /// What the app sent the mock that only the CLI would act on.
+    #[cfg(test)]
+    pub fn record(&self) -> Arc<Mutex<MockRecord>> { self.record.clone() }
+
+    /// The line under the composer, as the core's `RunOptions.Summary` says it: the harness, and
+    /// every other row somebody chose.
+    fn chips(&self) -> Composer {
+        let chosen = |text: String| Chip { text, chosen: true };
+        let mut chips = vec![Chip { text: self.run.harness.clone(), chosen: self.run.harness != "claude" }];
+        match self.run.dirty.as_str() {
+            "include" => chips.push(chosen("+dirty".into())),
+            "exclude" => chips.push(chosen("clean".into())),
+            _ => {}
+        }
+        if self.run.detach {
+            chips.push(chosen("detached".into()));
+        }
+        if !self.run.env.is_empty() {
+            chips.push(chosen(format!("{} env", self.run.env.len())));
+        }
+        if self.run.source != MOCK_DIR {
+            chips.push(chosen(if self.run.source == SOURCE_NONE { "no source".into() } else { self.run.source.clone() }));
+        }
+        Composer { chips }
+    }
+
+    fn send_chips(&self) {
+        if self.composer_sub != 0 {
+            self.inbox.push(Event::Composer(self.composer_sub, Ok(self.chips())));
+        }
+    }
+
+    /// The create card or the run options as the core's forms, roughly, for the answers so far:
+    /// a repeated row grows a field once its last is filled, and the note is the command.
+    fn run_form(&self, id: u64, c: &Command, card: bool, answers: &HashMap<String, String>) -> Form {
+        let get = |k: &str, opening: &str| answers.get(k).cloned().unwrap_or_else(|| opening.to_string());
+        let choice = |key: &str, label: &str| Choice { key: key.into(), label: label.into(), ..Default::default() };
+        let picker = |key: &str, label: &str, value: String, choices: Vec<Choice>| Field {
+            key: key.into(), label: label.into(), section: "Options".into(), value, choices, applies: true, ..Default::default()
+        };
+        let mut fields = vec![];
+        let source = get("source", &self.run.source);
+        if card {
+            fields.push(Field {
+                section: "Source".into(), hint: "SOURCE · where the discobox is cut from".into(),
+                ..picker("source", "cut from", source.clone(), vec![
+                    choice(MOCK_DIR, "~/src/discobox @ main"), choice(SOURCE_NONE, "no source"), choice(SOURCE_ENTER, "another…"),
+                ])
+            });
+            fields.push(Field {
+                key: "source:typed".into(), label: "source".into(), section: "Source".into(), value: get("source:typed", ""),
+                placeholder: "~/src/discobox".into(), applies: source == SOURCE_ENTER, why: "choose another… to type one".into(), ..Default::default()
+            });
+        }
+        let auto = if card { "auto (claude)" } else { "claude" };
+        fields.push(picker("harness", "harness", get("harness", &self.run.harness), vec![choice("claude", auto), choice("codex", "codex"), choice("opencode", "opencode")]));
+        if !card {
+            fields.push(picker("dirty", "uncommitted changes", get("dirty", &self.run.dirty), vec![choice("auto", "auto"), choice("include", "include"), choice("exclude", "exclude")]));
+            fields.push(picker("detach", "detach", get("detach", if self.run.detach { "on" } else { "off" }), vec![choice("off", "no"), choice("on", "yes")]));
+        }
+        let lists: Vec<(&str, &str, &Vec<String>)> = if card {
+            vec![("skills", "Skills", &self.run.skills), ("include", "Additional sources", &self.run.include)]
+        } else {
+            vec![("env", "Env", &self.run.env)]
+        };
+        for (key, label, items) in lists {
+            let mut n = items.len() + 1;
+            for i in 0.. {
+                let Some(v) = answers.get(&format!("{key}:{i}")) else { break };
+                if !v.trim().is_empty() {
+                    n = n.max(i + 2);
+                }
+            }
+            for i in 0..n {
+                fields.push(Field {
+                    key: format!("{key}:{i}"), label: if i == 0 { label.to_lowercase() } else { "and".into() }, section: label.into(),
+                    value: get(&format!("{key}:{i}"), items.get(i).map(String::as_str).unwrap_or("")), applies: true, ..Default::default()
+                });
+            }
+        }
+        let prompt = match self.asks.get(&id) {
+            Some((_, Ask::Create(p))) => p.clone(),
+            _ => c.args.prompt.clone(),
+        };
+        let mut note = format!("discobox run {}", if source == MOCK_DIR { "." } else if source == SOURCE_NONE { "--no-source" } else { source.as_str() });
+        if !prompt.is_empty() {
+            note += &format!(" -p '{prompt}'");
+        }
+        let harness = get("harness", &self.run.harness);
+        if harness != "claude" {
+            note += &format!(" --harness {harness}");
+        }
+        let (title, action) = if card { ("New discobox", "Create") } else { ("Run options", "") };
+        Form { id, command: c.id, title: title.into(), fields, note, action: action.into() }
+    }
+
+    /// A create answered: what it carries, then the box it made — taken the moment it exists,
+    /// and entered unless it was to be left detached.
+    fn create(&mut self, c: &Command, prompt: String, answers: &HashMap<String, String>) -> CommandResult {
+        let get = |k: &str| answers.get(k).cloned().unwrap_or_default();
+        if !get("harness").is_empty() {
+            self.run.harness = get("harness");
+        }
+        let source = match get("source").as_str() {
+            "" => self.run.source.clone(),
+            SOURCE_ENTER => get("source:typed").trim().to_string(),
+            s => s.to_string(),
+        };
+        self.run.source = source.clone();
+        self.made += 1;
+        let key = format!("sbx_new{}", self.made);
+        let name = if prompt.trim().is_empty() { format!("new box {}", self.made) } else { prompt.trim().to_string() };
+        let sandbox = Sandbox {
+            provisioning: "pulling the image".into(),
+            ..mock_box(&key, &name, State::Starting, "", &self.run.harness, if source == SOURCE_NONE { "" } else { "discobox" })
+        };
+        self.inbox.push(Event::Progress(Progress { command: c.id, text: "pushing the source".into(), ..Default::default() }));
+        if self.run.dirty == "exclude" {
+            self.inbox.push(Event::Progress(Progress { command: c.id, text: "uncommitted changes left out".into(), warning: true, ..Default::default() }));
+        }
+        self.inbox.push(Event::Progress(Progress { command: c.id, accepted: Some(sandbox.clone()), ..Default::default() }));
+        self.boxes.insert(0, sandbox);
+        self.record.lock().unwrap().created.push(prompt);
+        self.relist();
+        self.send_chips();
+        if self.run.detach {
+            return CommandResult { id: c.id, status: Status::Done, r#box: key, note: format!("created {name}, detached"), ..Default::default() };
+        }
+        CommandResult { id: c.id, status: Status::Enter, r#box: key, ..Default::default() }
     }
 
     /// A box's sessions as the core lists them: its services' tabs, the primary, and the sessions
@@ -540,7 +727,7 @@ impl Mock {
                 };
                 self.next_ask += 1;
                 self.asks.insert(id, (c.clone(), Ask::Reset(h.id.clone(), overrides)));
-                self.inbox.push(Event::Question(Question { id, command: c.id, title: "Reset".into(), body, choices, default_no: false }));
+                self.inbox.push(Event::Question(Question { id, command: c.id, title: "Reset".into(), body, choices, default_no: false, ..Default::default() }));
                 None
             }
             HarnessAction::Variant => {
@@ -550,7 +737,7 @@ impl Mock {
                 let fields = vec![field("name", "Name", format!("{} (work)", h.name)), field("slug", "Slug", format!("{}-work", h.name.to_lowercase()))];
                 self.next_ask += 1;
                 self.asks.insert(id, (c.clone(), Ask::Variant(h.id.clone())));
-                self.inbox.push(Event::Form(Form { id, command: c.id, title: format!("Create variant of {}", h.name), fields }));
+                self.inbox.push(Event::Form(Form { id, command: c.id, title: format!("Create variant of {}", h.name), fields, ..Default::default() }));
                 None
             }
             HarnessAction::Files => {
@@ -824,7 +1011,7 @@ impl Mock {
             "rename" => {
                 let b = self.sandbox(&target)?;
                 let name = Field { hint: "What should this discobox be called?".into(), placeholder: "name".into(), ..field("name", "name", &b.name) };
-                (Ask::Rename(target), Event::Form(Form { id, command: c.id, title: "Rename".into(), fields: vec![name] }))
+                (Ask::Rename(target), Event::Form(Form { id, command: c.id, title: "Rename".into(), fields: vec![name], ..Default::default() }))
             }
             "settings" => {
                 let b = self.sandbox(&target)?;
@@ -847,7 +1034,7 @@ impl Mock {
                 };
                 let name = Field { required: true, hint: "the handle it was created with".into(), ..field("name", "name", &b.name) };
                 let title = format!("Settings · {}", b.name);
-                (Ask::Settings(target), Event::Form(Form { id, command: c.id, title, fields: vec![name, harness, restrict, allow, api] }))
+                (Ask::Settings(target), Event::Form(Form { id, command: c.id, title, fields: vec![name, harness, restrict, allow, api], ..Default::default() }))
             }
             // The core refuses a purge none of its boxes can take before it asks anything.
             "purge" if !c.targets.iter().any(|t| self.sandbox(t).is_some_and(|b| b.state == State::Archived)) => return None,
@@ -857,8 +1044,12 @@ impl Mock {
                     many => format!("{} boxes selected", many.len()),
                 };
                 let body = format!("Purge {name}? The disk and everything on it goes, and unarchive cannot bring it back.");
-                (Ask::Purge(c.targets.clone()), Event::Question(Question { id, command: c.id, title: "Purge".into(), body, choices: vec![], default_no: true }))
+                (Ask::Purge(c.targets.clone()), Event::Question(Question { id, command: c.id, title: "Purge".into(), body, choices: vec![], default_no: true, ..Default::default() }))
             }
+            // A harness's own way out is the window's, as the core's `LeavesWindow` says: no card.
+            "new" if matches!(c.args.prompt.trim(), "/exit" | "/quit") => return None,
+            "new" => (Ask::Create(c.args.prompt.clone()), Event::Form(self.run_form(id, c, true, &HashMap::new()))),
+            "options" => (Ask::Options, Event::Form(self.run_form(id, c, false, &HashMap::new()))),
             _ => return None,
         };
         Some((ask, event))
@@ -883,6 +1074,30 @@ impl Mock {
         };
         let get = |k: &str| answers.get(k).or(opening.get(k)).map(|v| v.trim().to_string()).unwrap_or_default();
         let result = match ask {
+            Ask::Create(_) | Ask::Options if draft => {
+                self.inbox.push(Event::Form(self.run_form(id, &c, matches!(ask, Ask::Create(_)), answers)));
+                return;
+            }
+            Ask::Create(_) if answers.get("source").is_some_and(|v| v == SOURCE_ENTER) && get("source:typed") == "nowhere" => {
+                let errors = vec![FieldError { field: "source:typed".into(), why: "nowhere is not a directory".into() }];
+                self.inbox.push(Event::FieldErrors(FieldErrors { form: id, errors }));
+                return;
+            }
+            Ask::Create(prompt) => {
+                self.asks.remove(&id);
+                let r = self.create(&c, prompt, answers);
+                self.inbox.push(Event::Result(r));
+                return;
+            }
+            Ask::Options => {
+                let items = |key: &str| (0..).map_while(|i| answers.get(&format!("{key}:{i}")).cloned()).filter(|v| !v.trim().is_empty()).collect::<Vec<_>>();
+                self.run.harness = get("harness");
+                self.run.dirty = get("dirty");
+                self.run.detach = get("detach") == "on";
+                self.run.env = items("env");
+                self.send_chips();
+                done("run options saved".into())
+            }
             Ask::Rename(_) | Ask::Settings(_) if draft => {
                 // The form again under its ID, as the core sends it after a draft.
                 if let Some((_, form)) = self.put(id, &c) {
@@ -1052,6 +1267,15 @@ impl Backend for Mock {
                 let h = self.header(&r#box);
                 self.inbox.push(Event::Header(sub, Ok(h)));
             }
+            Out::Subscribe(Subscribe { sub, topic: Topic::Composer, .. }) => {
+                self.composer_sub = sub;
+                self.send_chips();
+            }
+            Out::Subscribe(Subscribe { sub, topic: Topic::Provisioning, r#box, .. }) => {
+                let step = self.sandbox(&r#box).map(|b| b.provisioning.clone()).unwrap_or_default();
+                self.inbox.push(Event::Provisioning(sub, Ok(Provisioning { step })));
+            }
+            Out::Draft(prompt) => self.record.lock().unwrap().drafts.push(prompt),
             Out::Unsubscribe(sub) => {
                 self.following.remove(&sub);
             }

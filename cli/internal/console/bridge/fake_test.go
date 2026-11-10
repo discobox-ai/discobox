@@ -67,6 +67,14 @@ type fakeCore struct {
 	harnesses      []console.Harness
 	harnessSecrets []console.HarnessSecret
 	changes        console.HarnessChanges
+	// workspace is what Workspace reads of every source; run answers Run,
+	// and made is the box a Run with none makes; drafts is every prompt
+	// SaveDraft was sent.
+	workspace console.SourceWorkspace
+	run       func(ctx context.Context, req console.RunRequest, n *console.Narration) (console.Sandbox, error)
+	made      console.Sandbox
+	ran       *console.RunRequest
+	drafts    []string
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -154,6 +162,29 @@ func (f *fakeCore) HarnessSecrets(_ context.Context, _, id string) ([]console.Ha
 	return f.harnessSecrets, nil
 }
 
+func (f *fakeCore) Pools(context.Context, string) ([]console.Pool, error) { return nil, nil }
+
+func (f *fakeCore) GitCredentialPolicy(context.Context) (string, error) { return "", nil }
+
+func (f *fakeCore) ResolveSource(_ context.Context, source string) (console.Source, error) {
+	if source == "nowhere" {
+		return console.Source{}, errors.New("nowhere is not a directory")
+	}
+	return console.Source{Value: "/abs/" + source}, nil
+}
+
+func (f *fakeCore) SaveLastSource(_ context.Context, source string) error {
+	f.call("last source %s", source)
+	return nil
+}
+
+func (f *fakeCore) SaveDraft(_ context.Context, prompt string) error {
+	f.mu.Lock()
+	f.drafts = append(f.drafts, prompt)
+	f.mu.Unlock()
+	return nil
+}
+
 func (f *fakeCore) DoHarness(_ context.Context, _ string, verb console.HarnessVerb, id string) error {
 	f.call("harness %s %s", verb, id)
 	if verb == console.HarnessSetDefault {
@@ -208,6 +239,36 @@ func (f *fakeCore) SaveHarnessChanges(_ context.Context, id, candidate string) (
 func (f *fakeCore) DiscardHarnessChanges(_ context.Context, id, candidate string) (string, error) {
 	f.call("discard changes %s %s", id, candidate)
 	return "discarded", nil
+}
+
+func (f *fakeCore) Workspace(context.Context, string) (console.SourceWorkspace, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.workspace, nil
+}
+
+// Run makes the box made (or what run says), says it was taken, and lists
+// it from then on.
+func (f *fakeCore) Run(ctx context.Context, req console.RunRequest, n *console.Narration) (console.Sandbox, error) {
+	f.mu.Lock()
+	f.ran = &req
+	run, made := f.run, f.made
+	f.mu.Unlock()
+	if run != nil {
+		return run(ctx, req, n)
+	}
+	n.Report("pushing the source")
+	n.Accept(ctx, made)
+	f.mu.Lock()
+	f.listing.Sandboxes = append(f.listing.Sandboxes, made)
+	f.mu.Unlock()
+	return made, nil
+}
+
+func (f *fakeCore) ranWith() *console.RunRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ran
 }
 
 func (f *fakeCore) UpdateBox(_ context.Context, id string, u console.BoxSettingsUpdate) error {

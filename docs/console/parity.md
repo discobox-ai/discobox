@@ -34,8 +34,6 @@ palette. On macOS the native menu bar is still a hand list of some commands
 
 | Command | Reason | Closed by |
 | --- | --- | --- |
-| `new` | Creating a box needs the create flow, which the app does not have yet; it says so. | #810 |
-| `options` | The run options are part of the create flow. | #810 |
 | `tools` | Needs the tools picker and tool panes. | #815 |
 | `audit` | Needs the audit view. | #816 |
 | `issue` | Needs the issue tab. | #817 |

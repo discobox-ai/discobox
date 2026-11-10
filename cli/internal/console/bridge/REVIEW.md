@@ -94,3 +94,15 @@
   declined when dismissed. The desktop's first sheet declined both on Esc,
   ending the same question differently from the TUI. The wire's `Answer`
   says so, so the next renderer of a question reads it there.
+- **A topic's first snapshot is read, never the zero value the bridge
+  holds.** The composer topic first sent the run options as `hello` built
+  them, before any harness was listed: an empty line until a create was run,
+  which the desktop's mock, answering with the harness from the start, hid.
+  A topic reads what it says as it is subscribed, and a mock answers what the
+  bridge would at the same moment.
+- **A command sends nothing else while its form is up.** The app takes a
+  submitted form down once its command asks, fills another form or reports a
+  step (`desktop/src/sheet.rs`, `went_on`): that is how a create's card gives
+  way to the questions after it, long before the create's result. A command
+  that reports while its form waits on the person would close the form under
+  them; report after `fill` returns.

@@ -22,8 +22,10 @@ import (
 // 6, a box's services as tabs among its sessions, and the services command's
 // menu and verbs; 7, the harnesses page (the harnesses command's harnesses,
 // actions and card), a box's harness changes reviewed, saved and discarded,
-// and edits answered with saved.
-const Protocol = 7
+// and edits answered with saved; 8, creating a box: the composer's draft and
+// summary, the run options' forms with what they add up to, and a question's
+// subject.
+const Protocol = 8
 
 // Type names a message.
 type Type string
@@ -70,6 +72,9 @@ const (
 	// TypeStream is a stream's state: attached, failed, reconnecting,
 	// reconnected (CLI). Its output and its end are frames on the stream.
 	TypeStream Type = "stream"
+	// TypeDraft is the prompt in the app's composer, to be kept for the next
+	// window (app).
+	TypeDraft Type = "draft"
 )
 
 // Message is one JSON message: its type, and the body of that type.
@@ -95,6 +100,7 @@ type Message struct {
 	Open        *Open        `json:"open,omitempty"`
 	Close       *Close       `json:"close,omitempty"`
 	Stream      *Stream      `json:"stream,omitempty"`
+	Draft       *Draft       `json:"draft,omitempty"`
 }
 
 // Hello is the app's first message.
@@ -120,6 +126,16 @@ type Session struct {
 	Directory string `json:"directory,omitempty"`
 	Branch    string `json:"branch,omitempty"`
 	Host      string `json:"host,omitempty"`
+	// Draft is the prompt the last window on this machine left in its
+	// composer, which this one opens holding.
+	Draft string `json:"draft,omitempty"`
+}
+
+// Draft is the prompt in the composer as it stands. The last window to say
+// one is the one whose prompt the next window opens holding; an empty one
+// clears it.
+type Draft struct {
+	Prompt string `json:"prompt"`
 }
 
 // Topic is what a subscription follows.
@@ -154,6 +170,10 @@ const (
 	// TopicPalette is what the palette finds for a query (Context, Palette):
 	// the core's results, in the core's order.
 	TopicPalette Topic = "palette"
+	// TopicComposer is what a create from the composer would be made with,
+	// as the line under it says it (console.RunOptions.Summary): sent again
+	// whenever the run options change.
+	TopicComposer Topic = "composer"
 )
 
 // Subscribe starts following a topic. Sub is the app's, unique for the
@@ -218,6 +238,20 @@ type Snapshot struct {
 	Sessions     *Sessions     `json:"sessions,omitempty"`
 	Commands     *Commands     `json:"commands,omitempty"`
 	Palette      *Palette      `json:"palette,omitempty"`
+	Composer     *Composer     `json:"composer,omitempty"`
+}
+
+// Composer is the summary of what a create would be made with: the harness,
+// and every other run option somebody chose (console.RunOptions.Summary).
+type Composer struct {
+	Chips []Chip `json:"chips"`
+}
+
+// Chip is one part of it: its words, and whether it was chosen rather than a
+// default, which the app draws lit.
+type Chip struct {
+	Text   string `json:"text"`
+	Chosen bool   `json:"chosen,omitempty"`
 }
 
 // Commands is every registry command as it stands, in the registry's order.
@@ -636,9 +670,9 @@ type Context struct {
 
 // Args are what a command takes beyond its targets: the stream a session it
 // makes is attached to and the size of its pane (shell, terminal), the
-// session it acts on (end, repaint), and for services one of the box's
-// services and the verb to run on it — without them, services lists them for
-// its menu.
+// session it acts on (end, repaint), for services one of the box's services
+// and the verb to run on it — without them, services lists them for its menu
+// — and for new the prompt in the composer, which the box is given to do.
 //
 // The harnesses command reads the harnesses of Server (the list's server;
 // empty for the primary) for its page, or, with a Harness and an Action, does
@@ -646,6 +680,7 @@ type Context struct {
 // command reads a box's harness changes for its review, or, with a Change and
 // the Candidate the review showed, saves or discards that candidate.
 type Args struct {
+	Prompt    string                `json:"prompt,omitempty"`
 	Stream    uint32                `json:"stream,omitempty"`
 	Cols      int                   `json:"cols,omitempty"`
 	Rows      int                   `json:"rows,omitempty"`
@@ -674,7 +709,9 @@ const (
 	StatusCanceled Status = "canceled"
 	// StatusEnter is one whose flow is the app's: the core has ruled it can
 	// run, and the app enters it — moving focus, opening a page or a menu,
-	// opening the box's workspace (Box).
+	// opening the box's workspace (Box). For new it is the box made, or, with
+	// no Box, a prompt that is the window's way out (console.LeavesWindow):
+	// the app leaves, as quit does.
 	StatusEnter Status = "enter"
 )
 
@@ -807,11 +844,20 @@ type Entry struct {
 // Form is a form a command needs filled, described by the core. ID is the
 // CLI's; it is sent again, same ID, with Applies recomputed, after a draft is
 // submitted.
+//
+// Fields can grow as they are answered — a repeated run option gains a field
+// once its last is filled — so a form sent again after a draft may hold more
+// fields than before, matched to what the app holds by Key. Note is what the
+// answers so far add up to (the command a create would run), said under the
+// fields; Action is what the button that submits it says, empty for the
+// app's own word.
 type Form struct {
 	ID      uint64  `json:"id"`
 	Command uint64  `json:"command"`
 	Title   string  `json:"title"`
 	Fields  []Field `json:"fields"`
+	Note    string  `json:"note,omitempty"`
+	Action  string  `json:"action,omitempty"`
 }
 
 // Field is one field of a form (console.Field). Value is what it holds as
@@ -868,10 +914,13 @@ type FieldError struct {
 
 // Question is what a running command asks (console.Question). With Choices it
 // is a pick of one; with none, a yes or no answered "yes" or "no".
+//
+// Subject is what it is about, on a line of its own above the body.
 type Question struct {
 	ID        uint64   `json:"id"`
 	Command   uint64   `json:"command"`
 	Title     string   `json:"title"`
+	Subject   string   `json:"subject,omitempty"`
 	Body      string   `json:"body"`
 	Choices   []Choice `json:"choices"`
 	DefaultNo bool     `json:"defaultNo,omitempty"`

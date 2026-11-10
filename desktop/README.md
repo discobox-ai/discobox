@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 7. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 8. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -103,7 +103,9 @@ the epic, and does not yet follow the ADRs everywhere:
     so Enter never purges. Esc answers a yes or no no, as the core says
     leaving one is, and declines a pick of one.
   - Sheets queue in the order they arrive; each goes when its command's result
-    lands, answered or not.
+    lands, answered or not, and a submitted form goes too once its command goes
+    on (asks, fills another form or reports a step), as a create's card gives
+    way to the questions after it.
 - **The harnesses page** (`harnesses.rs`) is the core's: the harnesses of
   the server the list is narrowed to, drawn beside the list in place of the
   workspace, each with its default, kind, secrets, files, age and bundle. Its
@@ -124,6 +126,23 @@ the epic, and does not yet follow the ADRs everywhere:
     core's offers, each saying why when it cannot act. It opens on reading
     it again, never on saving. Saving or discarding names the candidate the
     panel showed.
+- **Creating a box** is the core's (`console.RunOptions`, held by the bridge):
+  - the composer, under the list, is what the new box is given to do: Return
+    creates and Shift+Return is a new line; under it, what a create would be
+    made with (the composer topic), lit where somebody chose it, and the run
+    options. Its prompt is told to the CLI once it has been still a moment and
+    on the way out, and the next window opens on it;
+  - `new` (`primary+n`) from the composer opens the create card as a sheet —
+    where it is cut from, or a source typed, the harness, the pool and server
+    where there is a choice, skills and other sources, rows that grow as they
+    are filled, and the command it would run — then asks what the core asks
+    before a create (a default harness, uncommitted changes, copying a
+    directory), says its steps on the status line, takes the prompt out of the
+    composer once the server has the box, and opens its workspace, which says
+    what the box is being made to do (the provisioning topic). From a
+    workspace, `new` goes back to the composer first;
+  - `options` is every run option as a sheet; what it keeps is what the next
+    create is made with.
 - **The command surfaces** (ADR 26-11-07-598 §2) reach every registry command:
   - the palette (`primary+k`) is ADR 26-11-06-671's: a query and at most one
     chip, in either order. A box command's alias and a space make it the
@@ -200,6 +219,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `fonts/` | JetBrains Mono 2.304 at the weights the chrome sets and the italic, and its licence |
 | `src/parity_tests.rs` | Runs `cli/internal/console/testdata/parity` with the desktop's keys |
 | `src/service_tests.rs` | Services as tabs in the core's order, numbered apart, closed and reopened by the listing, stopped not ended; the services menu and its verbs |
+| `src/create_tests.rs` | The composer, the create card and the run options through their sheets on the mock: a source refused, rows that grow, a detached create, `new` from a workspace, the draft |
 | `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
 | `src/harness_tests.rs` | The page's harnesses and keys, actions as the core offers them, the card, a reset asked first, a file edited and given up, a variant's form, harness changes reviewed and saved |

@@ -57,6 +57,8 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 		go f.relisted(ctx, f.commands)
 	case TopicPalette:
 		go f.relisted(ctx, f.palette)
+	case TopicComposer:
+		go f.composer(ctx)
 	default:
 		f.send(Snapshot{Error: fmt.Sprintf("there is no topic %q", sub.Topic)})
 	}
