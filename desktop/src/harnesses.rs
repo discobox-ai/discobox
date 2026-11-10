@@ -63,6 +63,7 @@ pub fn open(s: &mut State) {
 /// choice rather than on a box no longer on screen.
 pub fn open_page(s: &mut State, server: String, r: &CommandResult) {
     s.close_overlays();
+    s.close_pages();
     s.focus = crate::Focus::List;
     s.harnesses = Some(HarnessPage { server, rows: r.harnesses.clone(), cursor: 0 });
     if let Some(p) = s.harnesses.as_mut()
@@ -267,7 +268,7 @@ pub fn panel_key(s: &mut State, ev: &KeyEvent) -> bool {
 
 const ROW_H: f32 = 28.0;
 
-fn t(s: impl Into<String>, c: Color) -> El { text(s).font(theme::UI).color(c) }
+pub(crate) fn t(s: impl Into<String>, c: Color) -> El { text(s).font(theme::UI).color(c) }
 
 fn harness_row(p: &HarnessPage, i: usize, h: &Harness) -> El {
     let on = i == p.cursor;
@@ -329,12 +330,12 @@ pub fn page_view(s: &State) -> El {
         .border(theme::stroke_focus(), theme::mark()).child(body)
 }
 
-fn hint(key: &str, what: &str) -> El {
+pub(crate) fn hint(key: &str, what: &str) -> El {
     row().gap(4.0).center_y().child(view::keycap(crate::keys::label(key))).child(text(what.to_string()).font(theme::UI_SMALL).color(theme::dim()))
 }
 
 /// A panel over the window, near its top: the card or the review.
-fn panel(name: &str, width: f32, body: El, dismiss: fn(&mut State)) -> El {
+pub(crate) fn panel(name: &str, width: f32, body: El, dismiss: fn(&mut State)) -> El {
     let card = col().key(name.to_string()).w(width).max_h(720.0).padding(18.0).gap(12.0).radius(theme::r_card())
         .fill(theme::raised()).border(theme::stroke_focus(), theme::mark()).shadow(16.0, 48.0, Color::BLACK.alpha(0.55))
         .child(body);
@@ -357,6 +358,7 @@ pub fn card_view(s: &State) -> Option<El> {
                 CardTone::Quiet => theme::dim(),
                 CardTone::Standout => theme::gold(),
                 CardTone::Command => theme::mark(),
+                CardTone::Alert => theme::err(),
                 CardTone::Plain => theme::text(),
             };
             value = value.child(t(span.text.clone(), ink));

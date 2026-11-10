@@ -29,6 +29,9 @@ mod paste;
 #[cfg(test)]
 mod paste_tests;
 #[cfg(test)]
+mod secret_tests;
+mod secrets;
+#[cfg(test)]
 mod service_tests;
 mod sheet;
 #[cfg(test)]
@@ -51,7 +54,7 @@ use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
 use wire::{
     Address, Args, Box as Sandbox, Chip, Command, Composer, Menu as DesktopMenu, Commands, Context, Entry, Filter, Follow, Header, Listing, Note,
-    Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, Service, ServiceVerb, Sessions, Spec, SpecTarget,
+    Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, SecretAction, Service, ServiceVerb, Sessions, Spec, SpecTarget,
     Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Tool, Topic,
 };
 use rune::{App, AppSpec, Drag, Ime, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
@@ -223,6 +226,10 @@ enum Pending {
     Harness(String),
     /// Saving or discarding a box's harness changes.
     Change,
+    /// The secrets page, asked of a server (the list's when it was asked; the primary for "").
+    Secrets(String),
+    /// One of the secrets page's actions, the page read again among them.
+    Secret(SecretAction),
     /// A create from the composer, and the prompt it was sent with: the composer lets go of it
     /// once the server has taken the create.
     Create(String),
@@ -341,6 +348,9 @@ pub enum MenuKind {
     /// One tool's files, in a box by its key, to pick the one to edit: each entry a file by its
     /// name.
     ToolFiles(String, Tool),
+    /// The secrets page's actions, on the secret under its keys by its ID (none when it has
+    /// none): each entry an action by its wire name, or reading it or the page again.
+    Secret(String),
 }
 
 /// The service menu's entry that shows the service's output: its tab.
@@ -407,6 +417,10 @@ pub struct State {
     pub card: Option<harnesses::Card>,
     /// A box's harness changes under review, over the window.
     pub review: Option<harnesses::Review>,
+    /// The secrets page, beside the list in place of the workspace while it is up.
+    pub secrets: Option<secrets::SecretPage>,
+    /// A secret, a binding, the history or a decision read over the window.
+    pub secret_panel: Option<secrets::Panel>,
     /// The boxes this window has gone to, latest first, which rank the palette's empty query
     /// (ADR 26-11-06-671 §6): at most `RECENT` of them, for as long as the window lasts.
     pub recent: Vec<String>,
@@ -486,7 +500,7 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, recent: vec![], reveal: None, point: None, find: None,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, recent: vec![], reveal: None, point: None, find: None,
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
@@ -674,7 +688,7 @@ impl State {
             MenuKind::Bar(menu) => self.in_menu(*menu),
             MenuKind::Pane => self.in_menu(DesktopMenu::Session),
             MenuKind::Actions(_) | MenuKind::Services(..) | MenuKind::Service(..) | MenuKind::Harness(_) | MenuKind::HarnessFiles(_)
-            | MenuKind::Tools(..) | MenuKind::ToolFiles(..) => return,
+            | MenuKind::Tools(..) | MenuKind::ToolFiles(..) | MenuKind::Secret(_) => return,
         };
         let entries = ids.iter().filter_map(|id| self.spec.command(id)).map(|c| {
             let why = lacking(&self.spec, &c.id).unwrap_or_default();
@@ -815,7 +829,19 @@ impl State {
     /// screen, and whether a pane or the list has the keys. The list is always beside it.
     /// Whether the box on screen's workspace is shown: one is live and no page covers it. What
     /// a workspace not shown does — its program's copies included — reaches nobody.
-    pub fn workspace_shown(&self) -> bool { self.live.is_some() && self.harnesses.is_none() }
+    pub fn workspace_shown(&self) -> bool { self.live.is_some() && !self.page_shown() }
+
+    /// Whether a page — the harnesses or the secrets — is up beside the list, covering the
+    /// workspace. One page is up at a time.
+    pub fn page_shown(&self) -> bool { self.harnesses.is_some() || self.secrets.is_some() }
+
+    /// Lets the page beside the list go, and whatever it had open over the window.
+    pub fn close_pages(&mut self) {
+        self.harnesses = None;
+        self.card = None;
+        self.secrets = None;
+        self.secret_panel = None;
+    }
 
     /// Whether the focused pane has the keys and the input method: its workspace is shown, the
     /// panes have the focus, and nothing in front of it — a sheet, a menu, the palette, help, a
@@ -832,6 +858,7 @@ impl State {
             && !self.help
             && self.card.is_none()
             && self.review.is_none()
+            && self.secret_panel.is_none()
     }
 
     fn context(&self) -> Context {
@@ -841,12 +868,12 @@ impl State {
             has_workspace: shown,
             // A page beside the list covers the workspace: it is held, not on screen.
             workspace_shown: self.workspace_shown(),
-            pane_focused: shown && self.focus == Focus::Panes && self.harnesses.is_none(),
+            pane_focused: shown && self.focus == Focus::Panes && !self.page_shown(),
             list_has_keys: self.focus == Focus::List,
             tree: true,
             tree_shown: self.sidebar,
             tree_fits: true,
-            page_shown: self.harnesses.is_some(),
+            page_shown: self.page_shown(),
         }
     }
 
@@ -871,7 +898,7 @@ impl State {
     /// the list's cursor.
     fn target(&self) -> Option<Sandbox> {
         match (&self.live, self.focus) {
-            (Some(id), Focus::Panes) if self.harnesses.is_none() => self.box_by_id(id).cloned(),
+            (Some(id), Focus::Panes) if !self.page_shown() => self.box_by_id(id).cloned(),
             _ => self.row_box(self.cursor).cloned(),
         }
     }
@@ -880,7 +907,7 @@ impl State {
     /// keys, else what the list's selection says.
     fn targets(&self) -> Vec<String> {
         match (&self.live, self.focus) {
-            (Some(id), Focus::Panes) if self.harnesses.is_none() => vec![id.clone()],
+            (Some(id), Focus::Panes) if !self.page_shown() => vec![id.clone()],
             _ => self.list_targets(),
         }
     }
@@ -972,7 +999,7 @@ impl State {
     /// view the palette revealed for another box is put back.
     fn show_workspace(&mut self, sandbox: &str) {
         // A box taking the screen takes it from the page beside the list.
-        self.harnesses = None;
+        self.close_pages();
         self.unreveal(Some(sandbox));
         self.visited(sandbox);
         if self.live.as_deref() != Some(sandbox) {
@@ -1832,7 +1859,7 @@ impl State {
         match why {
             // A form or question dismissed: nothing came of it, and nothing to say. A session's
             // cancel still lets its stream go below.
-            Pending::Enter(_) | Pending::Verb(..) | Pending::Harness(_) | Pending::Change if r.status == Status::Canceled => self.message = None,
+            Pending::Enter(_) | Pending::Verb(..) | Pending::Harness(_) | Pending::Change | Pending::Secret(_) if r.status == Status::Canceled => self.message = None,
             Pending::Enter(id) if r.status == Status::Enter => enter(self, &id, &r, tx),
             // What came of it (`renamed to …`, `settings saved`), or nothing to say.
             Pending::Enter(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
@@ -1882,6 +1909,8 @@ impl State {
             }
             Pending::Page(server) if r.status == Status::Enter => harnesses::open_page(self, server, &r),
             Pending::Harness(name) if r.status == Status::Done => harnesses::take(self, &name, &r),
+            Pending::Secrets(server) if r.status == Status::Enter => secrets::open_page(self, server, &r),
+            Pending::Secret(action) if r.status == Status::Done => secrets::take(self, action, &r),
             // The candidate is answered: the review goes, and the listing says what the box has
             // left to save.
             Pending::Change if r.status == Status::Done => {
@@ -1982,7 +2011,7 @@ pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive", "purge", "rename", "settings",
     "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions", "mouse", "repaint",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
-    "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options", "tools",
+    "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options", "tools", "credentials",
 ];
 
 /// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
@@ -2063,7 +2092,11 @@ pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
         }
         // The page reads the harnesses of the server the list is narrowed to.
         "harnesses" => harnesses::open(s),
+        // The page reads the secrets of the server the list is narrowed to.
+        "credentials" => secrets::open(s),
         "refresh" => {
+            // The secrets page, when it is up, is read again with the boxes.
+            secrets::reread(s);
             s.message = Some("refreshing…".into());
             s.command(id, vec![], context, Args::default(), Pending::Enter(id.into()));
         }
@@ -2477,6 +2510,24 @@ fn main() {
             }),
             ("harness-review", |s| {
                 run_command(s, "review config", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // The secrets page beside the list, its actions, a secret read with its bindings,
+            // and a secret's binding history.
+            ("secrets", |s| {
+                run_command(s, "credentials", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                secrets::open_menu(s, (900.0, 160.0));
+            }),
+            ("secret", |s| {
+                run_command(s, "credentials", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                secrets::open_secret(s);
+            }),
+            ("secret-history", |s| {
+                run_command(s, "credentials", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                secrets::act(s, wire::SecretAction::History, String::new());
                 poll(s, 0.0, &mut Tx::default());
             }),
         ],

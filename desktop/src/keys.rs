@@ -11,7 +11,7 @@
 use rune::{Key, KeyEvent, Shortcut, Tx};
 
 use crate::wire::Spec;
-use crate::{Focus, State, harnesses, overlay, run_command, sheet};
+use crate::{Focus, State, harnesses, overlay, run_command, secrets, sheet};
 
 pub const MAC: bool = cfg!(target_os = "macos");
 
@@ -98,6 +98,7 @@ pub fn label(binding: &str) -> String {
         "up" => "↑".into(),
         "space" => if MAC { "␣".into() } else { "Space".into() },
         "escape" => "Esc".into(),
+        "delete" => if MAC { "⌦".into() } else { "Del".into() },
         "down" => "↓".into(),
         "left" => "←".into(),
         "right" => "→".into(),
@@ -176,7 +177,13 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if s.card.is_some() || s.review.is_some() {
         return harnesses::panel_key(s, ev);
     }
+    if s.secret_panel.is_some() {
+        return secrets::panel_key(s, ev);
+    }
     if s.harnesses.is_some() && harnesses::page_key(s, ev, tx) {
+        return true;
+    }
+    if s.secrets.is_some() && secrets::page_key(s, ev, tx) {
         return true;
     }
     // A tab by its number (the pane gesture): ⌘1 is the first. The binding's digit is its number.
@@ -224,7 +231,7 @@ fn command_or_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         }
     }
     // Beside a page the list has the keys: a workspace the page covers never gets one.
-    if s.live.is_none() || s.focus == Focus::List || s.harnesses.is_some() {
+    if s.live.is_none() || s.focus == Focus::List || s.page_shown() {
         return list_key(s, ev, tx);
     }
     if let Some(bytes) = encode(s, ev) {

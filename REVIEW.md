@@ -54,9 +54,9 @@ Global review expectations:
   The first version opened it with `cmd /C start`, so a bundle could name a
   script, or put `&` in the extension, and run it on a Windows machine.
 - In the desktop app, whatever draws in front of the workspace takes the keys
-  and the commands' context: the harnesses page sets the list's focus, keeps
-  `pane_focused` and `workspace_shown` false, and keys it does not answer
-  never reach `encode`. Its first version left the focus on the panes, so a
+  and the commands' context: a page (the harnesses or the secrets,
+  `State::page_shown`) sets the list's focus, keeps `pane_focused` and
+  `workspace_shown` false, and keys it does not answer never reach `encode`. Its first version left the focus on the panes, so a
   letter typed on the page went to the terminal it covered, and a box command
   acted on that hidden box; the TUI learned it as "what draws in front takes
   the keys" (`cli/internal/tui/REVIEW.md`). Every input path is held to it,
@@ -90,6 +90,10 @@ Global review expectations:
   early and runs the rest as typed, and a pass per layer is quadratic in a
   clipboard a box can fill (OSC 52). The desktop's `Screen::paste` keeps
   both; termpane's `stripPasteMarkers` is still one pass (#927).
+- Code added just above a function goes above its doc comment, never between
+  the two: the comment then documents the new item, and the function has
+  none. One change did it twice, to `nonNil` in the desktop bridge's
+  `convert.go` and to the app's `debug` in `desktop/bridge/src/lib.rs`.
 - Renaming an identifier a doc cites (a function, a type, a field): grep for
   the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
   comments, not only the Go callers the compiler finds. Renaming

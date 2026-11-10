@@ -12,6 +12,7 @@
 
 pub mod wire;
 
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::sync::{Arc, Mutex};
 
@@ -53,6 +54,7 @@ pub enum Incoming {
 #[derive(Clone)]
 pub struct Client {
     out: Arc<Mutex<Box<dyn Write + Send>>>,
+    masked: Masked,
 }
 
 impl Client {
@@ -66,7 +68,8 @@ impl Client {
         R: Read + Send + 'static,
         W: Write + Send + 'static,
     {
-        let client = Client { out: Arc::new(Mutex::new(Box::new(output))) };
+        let client = Client { out: Arc::new(Mutex::new(Box::new(output))), masked: Masked::default() };
+        let masked = client.masked.clone();
         let hello = Message { r#type: Type::Hello, hello: Some(Hello { protocol: PROTOCOL }), ..Default::default() };
         client.send(&hello).map_err(|e| format!("the bridge closed: {e}"))?;
         let welcome = welcome(&mut input)?;
@@ -74,10 +77,14 @@ impl Client {
             while let Ok((k, stream, payload)) = read_frame(&mut input) {
                 match k {
                     kind::JSON => {
-                        debug(|| format!("← {}", String::from_utf8_lossy(&payload)));
                         match serde_json::from_slice::<Message>(&payload) {
-                            Ok(m) => on(Incoming::Message(m)),
+                            Ok(m) => {
+                                debug(|| format!("← {}", masked.incoming(&m)));
+                                on(Incoming::Message(m));
+                            }
                             Err(e) => {
+                                // Not the payload: one that cannot be read cannot be redacted.
+                                debug(|| format!("← unreadable ({} bytes): {e}", payload.len()));
                                 if let Some(m) = unreadable(&payload, e) {
                                     on(Incoming::Message(m));
                                 }
@@ -96,8 +103,8 @@ impl Client {
 
     /// Sends one message.
     pub fn send(&self, m: &Message) -> io::Result<()> {
+        debug(|| format!("→ {}", self.masked.outgoing(m)));
         let m = serde_json::to_string(m).map_err(io::Error::other)?;
-        debug(|| format!("→ {m}"));
         self.frame(kind::JSON, 0, m.as_bytes())
     }
 
@@ -232,7 +239,55 @@ fn unreadable(payload: &[u8], e: serde_json::Error) -> Option<Message> {
     })
 }
 
-/// `DISCOBOX_DESKTOP_DEBUG=1` logs every message each way to stderr.
+/// What the debug log writes in place of what a masked field holds.
+const REDACTED: &str = "•••";
+
+/// Which fields of each form the app was sent are masked, by the form's ID, with the command it
+/// is for: the debug log never writes what one holds, neither in the form as it comes nor in an
+/// answer to it as it goes. A secret's form carries its value in one, and every change to it is a
+/// draft sent and a form sent back. A form's masked fields only accumulate — a form sent again
+/// without one may still be answered in it — and go with the form when its command's result
+/// lands.
+#[derive(Clone, Default)]
+struct Masked(Arc<Mutex<HashMap<u64, (u64, HashSet<String>)>>>);
+
+impl Masked {
+    /// A message as it arrived, for the log: a form's masked values redacted, and its masked
+    /// fields kept, for what is answered to it.
+    fn incoming(&self, m: &Message) -> String {
+        let mut m = m.clone();
+        let mut forms = self.0.lock().unwrap();
+        if let Some(r) = m.result.as_ref() {
+            forms.retain(|_, (command, _)| *command != r.id);
+        }
+        if let Some(f) = m.form.as_mut() {
+            let (_, keys) = forms.entry(f.id).or_insert_with(|| (f.command, HashSet::new()));
+            keys.extend(f.fields.iter().filter(|x| x.masked).map(|x| x.key.clone()));
+            for x in f.fields.iter_mut().filter(|x| keys.contains(&x.key) && !x.value.is_empty()) {
+                x.value = REDACTED.into();
+            }
+        }
+        serde_json::to_string(&m).unwrap_or_default()
+    }
+
+    /// A message as it goes, for the log: an answer to a masked field redacted.
+    fn outgoing(&self, m: &Message) -> String {
+        let mut m = m.clone();
+        if let Some(sub) = m.submit.as_mut()
+            && let Some((_, keys)) = self.0.lock().unwrap().get(&sub.form)
+        {
+            for (k, v) in sub.answers.iter_mut() {
+                if keys.contains(k) && !v.is_empty() {
+                    *v = REDACTED.into();
+                }
+            }
+        }
+        serde_json::to_string(&m).unwrap_or_default()
+    }
+}
+
+/// `DISCOBOX_DESKTOP_DEBUG=1` logs every message each way to stderr, a masked field's value
+/// redacted (`Masked`).
 pub fn debug(line: impl FnOnce() -> String) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *ON.get_or_init(|| std::env::var_os("DISCOBOX_DESKTOP_DEBUG").is_some()) {
@@ -243,6 +298,31 @@ pub fn debug(line: impl FnOnce() -> String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The debug log never writes what a masked field holds: not in the form as it comes, nor in
+    // an answer to it as it goes. Other fields, and other forms, are written whole.
+    #[test]
+    fn the_debug_log_redacts_masked_fields() {
+        use crate::wire::{Field, Submit};
+        let masked = Masked::default();
+        let field = |key: &str, value: &str, mask: bool| Field { key: key.into(), value: value.into(), masked: mask, ..Default::default() };
+        let form = Form { id: 7, fields: vec![field("name", "github", false), field("value", "ghp_secret", true)], ..Default::default() };
+        let came = masked.incoming(&Message { r#type: Type::Form, form: Some(form), ..Default::default() });
+        assert!(!came.contains("ghp_secret") && came.contains("github") && came.contains(REDACTED), "{came}");
+        let answers = HashMap::from([("value".to_string(), "ghp_typed".to_string()), ("name".to_string(), "gh".to_string())]);
+        let sent = masked.outgoing(&Message { r#type: Type::Submit, submit: Some(Submit { form: 7, answers: answers.clone(), ..Default::default() }), ..Default::default() });
+        assert!(!sent.contains("ghp_typed") && sent.contains("\"gh\""), "{sent}");
+        let other = masked.outgoing(&Message { r#type: Type::Submit, submit: Some(Submit { form: 8, answers, ..Default::default() }), ..Default::default() });
+        assert!(other.contains("ghp_typed"), "a form with no masked field is written whole: {other}");
+        // Sent again without the masked field, it is still answered redacted; its command's
+        // result lets it go.
+        let again = Form { id: 7, command: 3, fields: vec![field("name", "github", false)], ..Default::default() };
+        masked.incoming(&Message { r#type: Type::Form, form: Some(again), ..Default::default() });
+        let sent = masked.outgoing(&Message { r#type: Type::Submit, submit: Some(Submit { form: 7, answers: HashMap::from([("value".to_string(), "ghp_typed".to_string())]), ..Default::default() }), ..Default::default() });
+        assert!(!sent.contains("ghp_typed"), "{sent}");
+        masked.incoming(&Message { r#type: Type::Result, result: Some(CommandResult { id: 0, ..Default::default() }), ..Default::default() });
+        assert!(masked.0.lock().unwrap().is_empty(), "a form outlived its command's result");
+    }
 
     // A frame is kind, stream and length big-endian, then the payload, as
     // cli/internal/console/bridge writes and reads it.

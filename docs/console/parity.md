@@ -38,7 +38,6 @@ palette. On macOS the native menu bar is still a hand list of some commands
 | `issue` | Needs the issue tab. | #817 |
 | `pr` | Needs the pull request tab. | #817 |
 | `files` | Needs the pull request's files-changed review. | #817 |
-| `credentials` | Needs the secrets page. | #813 |
 | `requests` | Needs the credential requests page. | #814 |
 | `rejections` | Needs the rejected credentials page. | #814 |
 | `dismiss` | The app has no notices to dismiss until it raises requests as notifications. | #814 |

@@ -27,7 +27,8 @@ use crate::wire::{
     Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
-    HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address, Upload,
+    HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address, Upload, Secret, SecretAction, SecretBinding, SecretStanding,
+    Decision, DetailSection, DetailField, SecretWords,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -256,6 +257,8 @@ pub struct Mock {
     files: HashMap<(String, String), String>,
     /// Each box's harness changes, by its key: the first box has some to save.
     changes: HashMap<String, HarnessChanges>,
+    /// The project's secrets, as the core lists them.
+    secrets: Vec<Secret>,
     /// The run options a create is made with, and the composer topic that says them.
     run: MockRun,
     composer_sub: u32,
@@ -432,6 +435,93 @@ enum Ask {
     /// The create card, for the prompt the composer held.
     Create(String),
     Options,
+    /// A secret's new one, edit, binding, delete or unbind, by the secret's ID (and the
+    /// binding's, for an unbind).
+    Secret(SecretAction, String, String),
+}
+
+/// A field of a card the core describes, in its tone.
+fn mock_field(label: &str, value: &str, tone: CardTone) -> DetailField { DetailField { label: label.into(), value: value.into(), tone } }
+
+/// A mock secret, as the core lists and reads it: its row, its card, its live bindings, each as
+/// (ID, variable or "given on", what it is on), and whether an upstream refuses it.
+fn mock_secret(id: &str, name: &str, kind: &str, routes: &[&str], bindings: &[(&str, &str, &str)], refused: &str) -> Secret {
+    let mut fields = vec![mock_field("kind", kind, CardTone::Plain), mock_field("binding limit", "none — bindings of it may last forever", CardTone::Plain)];
+    if routes.is_empty() {
+        fields.push(mock_field("may be sent to", "nowhere — it has no routes", CardTone::Alert));
+    }
+    for (i, r) in routes.iter().enumerate() {
+        fields.push(mock_field(if i == 0 { "route" } else { "or route" }, &format!("{r} · allowed"), CardTone::Quiet));
+    }
+    let bindings: Vec<SecretBinding> = bindings.iter().map(|(bid, var, target)| {
+        let card = vec![DetailSection { label: "the binding".into(), fields: vec![
+            mock_field("secret", name, CardTone::Standout), mock_field("bound to", target, CardTone::Plain),
+            mock_field("as variable", var, CardTone::Standout), mock_field("may go to", "where the secret's routes send it", CardTone::Quiet),
+            mock_field("expires", "never", CardTone::Plain),
+        ], lines: vec![] }];
+        SecretBinding { id: bid.to_string(), label: var.to_string(), detail: format!("{target} · never expires"), card }
+    }).collect();
+    let mut s = Secret {
+        id: id.into(), name: name.into(), r#where: if routes.is_empty() { "sent nowhere".into() } else { routes.join("; ") }, nowhere: routes.is_empty(),
+        age: "2d ago".into(), refused: refused.into(), card: vec![DetailSection { label: "the credential".into(), fields, lines: vec![] }], bindings,
+        ..Default::default()
+    };
+    mock_stand(&mut s);
+    s
+}
+
+/// What a mock secret's row says stands on it, as the core's `SecretStandingOf` says it.
+fn mock_stand(s: &mut Secret) {
+    let n = s.bindings.len();
+    (s.standing_text, s.standing) = match n {
+        _ if !s.refused.is_empty() => ("refused".into(), SecretStanding::Refused),
+        0 => ("—".into(), SecretStanding::Unbound),
+        1 => ("1 binding".into(), SecretStanding::Bound),
+        n => (format!("{n} bindings"), SecretStanding::Bound),
+    };
+    s.answer = match n {
+        0 => "nothing is bound to it".into(),
+        1 => "1 binding stands on it".into(),
+        n => format!("{n} bindings stand on it"),
+    };
+}
+
+/// The mock project's secrets: one bound twice, an oauth login bound to a harness, one sent
+/// nowhere and bound to nothing, and one an upstream refuses.
+fn mock_secrets() -> Vec<Secret> {
+    vec![
+        mock_secret("sec_gh", "github", "token", &["api.github.com", "github.com/discobox-ai/*"], &[
+            ("bind_gh1", "GH_TOKEN", "discobox rune console port"), ("bind_gh2", "GITHUB_TOKEN", "every discobox in the project"),
+        ], ""),
+        mock_secret("sec_claude", "claude-login", "oauth", &["api.anthropic.com"], &[("bind_cl1", "CLAUDE_CODE_OAUTH_TOKEN", "harness Claude")], ""),
+        mock_secret("sec_npm", "npm", "token", &[], &[], ""),
+        mock_secret("sec_openai", "openai", "token", &["api.openai.com"], &[("bind_oa1", "OPENAI_API_KEY", "harness Codex")], "refused at api.openai.com · nothing to renew"),
+    ]
+}
+
+/// What the secrets page says beside its secrets, as the core's words.
+fn mock_words() -> SecretWords {
+    SecretWords {
+        empty: "no secrets in this project yet".into(), bind: "Bind this secret…".into(), bind_detail: "hand it over before anything asks".into(),
+        history_title: "Binding history and answered requests".into(), history_note: "Latest 100 changes".into(),
+    }
+}
+
+/// A secret's binding history, as the core reads each decision.
+fn mock_history() -> Vec<Decision> {
+    let decision = |id: &str, at: &str, event: &str, actor: &str, var: &str| Decision {
+        id: id.into(), label: format!("{at} · {event} · {actor}"),
+        card: vec![DetailSection { label: "the decision".into(), fields: vec![
+            mock_field("event", event, CardTone::Plain), mock_field("event actor", actor, CardTone::Plain), mock_field("event at", at, CardTone::Plain),
+            mock_field("variable", var, CardTone::Plain), mock_field("expires", "forever", CardTone::Plain),
+            mock_field("effective limits", "not recorded for this historical change", CardTone::Plain),
+        ], lines: vec![] }],
+        delegation: vec![],
+    };
+    vec![
+        decision("ev_2", "2026-11-09T14:02:11Z", "binding.created", "darren", "GITHUB_TOKEN"),
+        decision("ev_1", "2026-11-08T09:30:00Z", "request.approved", "darren", "GH_TOKEN"),
+    ]
 }
 
 /// The tools every mock box declares, as the core lists them for one up or not: a diff viewer, an
@@ -517,7 +607,7 @@ impl Mock {
         let changes = HashMap::from([(boxes[0].key.clone(), mock_changes())]);
         Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
-            services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, run: MockRun::default(), composer_sub: 0, record: Arc::default(),
+            services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, secrets: mock_secrets(), run: MockRun::default(), composer_sub: 0, record: Arc::default(),
         }
     }
 
@@ -614,7 +704,7 @@ impl Mock {
             note += &format!(" --harness {harness}");
         }
         let (title, action) = if card { ("New discobox", "Create") } else { ("Run options", "") };
-        Form { id, command: c.id, title: title.into(), fields, note, action: action.into() }
+        Form { id, command: c.id, title: title.into(), fields, note, action: action.into(), ..Default::default() }
     }
 
     /// A create answered: what it carries, then the box it made — taken the moment it exists,
@@ -858,6 +948,120 @@ impl Mock {
                 None
             }
         }
+    }
+
+    /// A credentials result carrying the secrets as they stand, about one of them.
+    fn secreted(&self, status: Status, about: &str, note: String) -> CommandResult {
+        CommandResult { status, secrets: self.secrets.clone(), secret: about.into(), note, secret_words: Some(mock_words()), ..Default::default() }
+    }
+
+    /// The credentials command: the page's secrets, or an action done as the core does it. None
+    /// for one that waits on the app: a form, or a question asked first.
+    fn credentials(&mut self, c: &Command) -> Option<CommandResult> {
+        let fail = |why: String| Some(CommandResult { status: Status::Failed, why, ..Default::default() });
+        let Some(action) = c.args.secret_action else {
+            return Some(self.secreted(Status::Enter, "", String::new()));
+        };
+        if action == SecretAction::Read {
+            return Some(self.secreted(Status::Done, "", String::new()));
+        }
+        let id = self.next_ask;
+        let field = |key: &str, label: &str, value: &str| Field { key: key.into(), label: label.into(), value: value.into(), applies: true, ..Default::default() };
+        if action == SecretAction::New {
+            let fields = vec![
+                Field { required: true, placeholder: "e.g. github".into(), ..field("name", "name", "") },
+                Field { masked: true, ..field("value", "value", "") },
+            ];
+            self.next_ask += 1;
+            self.asks.insert(id, (c.clone(), Ask::Secret(action, String::new(), String::new())));
+            self.inbox.push(Event::Form(Form { id, command: c.id, title: "New secret".into(), fields, ..Default::default() }));
+            return None;
+        }
+        let Some(secret) = self.secrets.iter().find(|x| x.id == c.args.secret).cloned() else {
+            return fail(format!("no secret {} is listed", c.args.secret));
+        };
+        let ask = Ask::Secret(action, secret.id.clone(), c.args.binding.clone());
+        let event = match action {
+            SecretAction::History if secret.id == "sec_gh" => return Some(CommandResult { status: Status::Done, secret: secret.id, history: mock_history(), secret_words: Some(mock_words()), ..Default::default() }),
+            SecretAction::History => return Some(CommandResult { status: Status::Done, secret: secret.id, note: "no binding history".into(), ..Default::default() }),
+            SecretAction::Edit => {
+                let fields = vec![Field { required: true, ..field("name", "name", &secret.name) }, Field { masked: true, placeholder: "unchanged — type to replace it".into(), ..field("value", "value", "") }];
+                let kind = "the kind is the one thing it cannot be told: a token and an oauth credential renew differently, so that is a new credential rather than an edit";
+                let about = if secret.refused.is_empty() { kind.to_string() } else { format!("{}\n{kind}", secret.refused) };
+                Event::Form(Form { id, command: c.id, title: format!("Edit {}", secret.name), fields, about, ..Default::default() })
+            }
+            SecretAction::Bind => {
+                let choice = |key: &str, label: &str| Choice { key: key.into(), label: label.into(), ..Default::default() };
+                let target = Field { choices: vec![choice("project", "every discobox in this project"), choice("sandbox", "one discobox")], ..field("target", "bound to", "project") };
+                let var = field("envVar", "as variable", &secret.name.to_uppercase().replace('-', "_"));
+                let about = "a binding hands this credential over before anything asks for it".into();
+                Event::Form(Form { id, command: c.id, title: format!("Bind {}", secret.name), fields: vec![target, var], about, ..Default::default() })
+            }
+            SecretAction::Delete => {
+                let body = format!("Delete {}? Its live bindings ({}) are all taken back, and a discobox holding a sentinel for it keeps a placeholder that now resolves to nothing.", secret.name, secret.bindings.len());
+                Event::Question(Question { id, command: c.id, title: "Delete secret".into(), body, default_no: true, ..Default::default() })
+            }
+            SecretAction::Unbind => {
+                let Some(b) = secret.bindings.iter().find(|b| b.id == c.args.binding) else { return fail("that binding is no longer there".into()) };
+                let target = b.detail.split(" · ").next().unwrap_or_default();
+                let body = format!("Take back the binding of {} to {target} as {}? The credential stops resolving at once, wherever it is being used. The request that produced it stays approved, because it is history.", secret.name, b.label);
+                Event::Question(Question { id, command: c.id, title: "Unbind".into(), body, default_no: true, ..Default::default() })
+            }
+            SecretAction::New | SecretAction::Read => unreachable!(),
+        };
+        self.next_ask += 1;
+        self.asks.insert(id, (c.clone(), ask));
+        self.inbox.push(event);
+        None
+    }
+
+    /// A secret's form submitted or question answered, as the core carries it out.
+    fn secret_answered(&mut self, action: SecretAction, secret: &str, binding: &str, get: &dyn Fn(&str) -> String) -> CommandResult {
+        let canceled = CommandResult { status: Status::Canceled, ..Default::default() };
+        let name = self.secrets.iter().find(|x| x.id == secret).map(|x| x.name.clone()).unwrap_or_default();
+        let note = match action {
+            SecretAction::New => {
+                let name = get("name");
+                self.secrets.push(mock_secret(&format!("sec_{name}"), &name, "token", &[], &[], ""));
+                format!("stored {name}")
+            }
+            SecretAction::Edit => {
+                let to = get("name");
+                if to.is_empty() || to == name {
+                    format!("{name} is unchanged")
+                } else {
+                    if let Some(x) = self.secrets.iter_mut().find(|x| x.id == secret) {
+                        x.name = to.clone();
+                    }
+                    format!("renamed {name} to {to}")
+                }
+            }
+            SecretAction::Bind => {
+                let var = Some(get("envVar")).filter(|v| !v.is_empty()).unwrap_or_else(|| name.to_uppercase().replace('-', "_"));
+                let target = if get("target") == "sandbox" { "discobox rune console port" } else { "every discobox in the project" };
+                if let Some(x) = self.secrets.iter_mut().find(|x| x.id == secret) {
+                    let made = mock_secret("", &name, "", &[], &[(&format!("bind_{var}"), &var, target)], "");
+                    x.bindings.extend(made.bindings);
+                    mock_stand(x);
+                }
+                format!("bound {name} as {var}")
+            }
+            SecretAction::Delete if get("key") != "yes" => return canceled,
+            SecretAction::Delete => {
+                self.secrets.retain(|x| x.id != secret);
+                format!("deleted {name}")
+            }
+            SecretAction::Unbind if get("key") != "yes" => return canceled,
+            SecretAction::Unbind => {
+                if let Some(x) = self.secrets.iter_mut().find(|x| x.id == secret) {
+                    x.bindings.retain(|b| b.id != binding);
+                    mock_stand(x);
+                }
+                "unbound".into()
+            }
+            SecretAction::History | SecretAction::Read => String::new(),
+        };
+        self.secreted(Status::Done, secret, note)
     }
 
     /// An edit finished with, or given up: what was saved is read back, as the core does.
@@ -1312,6 +1516,13 @@ impl Mock {
                 CommandResult { id: command, ..self.harnessed(Status::Done, &h.id, format!("created variant {name:?}")) }
             }
             Ask::Edit(..) | Ask::ToolEdit(..) => return,
+            Ask::Secret(..) if draft => return,
+            Ask::Secret(SecretAction::New, ..) if get("name").is_empty() => {
+                let errors = vec![FieldError { field: "name".into(), why: "a secret needs a name".into() }];
+                self.inbox.push(Event::FieldErrors(FieldErrors { form: id, errors }));
+                return;
+            }
+            Ask::Secret(action, secret, binding) => CommandResult { id: command, ..self.secret_answered(action, &secret, &binding, &get) },
         };
         self.asks.remove(&id);
         self.inbox.push(Event::Result(result));
@@ -1455,6 +1666,11 @@ impl Backend for Mock {
             }
             Out::Command(c) if c.command == "tools" => {
                 if let Some(r) = self.tools(&c) {
+                    self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
+                }
+            }
+            Out::Command(c) if c.command == "credentials" => {
+                if let Some(r) = self.credentials(&c) {
                     self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
                 }
             }

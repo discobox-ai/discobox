@@ -41,6 +41,8 @@ pub struct FormSheet {
     /// (the app's own word when the core names none).
     pub note: String,
     pub action: String,
+    /// What the form is about, as the core says it, above its fields.
+    pub about: String,
     /// What each typed field holds; a picker's is unused.
     pub edits: Vec<TextEdit>,
     /// Each picker's chosen option, by key; a typed field's is unused.
@@ -181,7 +183,7 @@ impl FormSheet {
         let chosen = form.fields.iter().map(|f| f.value.clone()).collect();
         let touched = vec![false; form.fields.len()];
         let mut sheet = FormSheet {
-            id: form.id, command: form.command, title: form.title, fields: form.fields, note: form.note, action: form.action, edits, chosen, touched,
+            id: form.id, command: form.command, title: form.title, fields: form.fields, note: form.note, action: form.action, about: form.about, edits, chosen, touched,
             at: 0, errors: vec![], sent: false, reveal: None,
         };
         if let Some(i) = sheet.fields.iter().position(answerable) {
@@ -271,7 +273,7 @@ impl FormSheet {
                 (edits[i], chosen[i], touched[i]) = (edit, choice, changed);
             }
         }
-        (self.fields, self.title, self.note, self.action) = (fresh.fields, fresh.title, fresh.note, fresh.action);
+        (self.fields, self.title, self.note, self.action, self.about) = (fresh.fields, fresh.title, fresh.note, fresh.action, fresh.about);
         (self.edits, self.chosen, self.touched) = (edits, chosen, touched);
         match at.and_then(|k| self.fields.iter().position(|f| f.key == k)) {
             Some(i) => self.at = i,
@@ -623,6 +625,9 @@ fn field_view(f: &FormSheet, i: usize, x: &Field, on: bool) -> El {
 fn form_view(f: &FormSheet) -> El {
     let at = f.at();
     let mut body = col().w_full().gap(10.0).child(text(f.title.clone()).font(theme::UI_BOLD).color(theme::text()));
+    for line in f.about.lines() {
+        body = body.child(text(line.to_string()).font(theme::UI).color(theme::grey()).wrap().w_full());
+    }
     // The fields scroll inside the sheet past a height, so its note and buttons stay on screen
     // however many rows a form has (the run options have a dozen, and grow).
     let mut rows = col().key("sheet-fields").w_full().gap(10.0).max_h(FIELDS_MAX_H).scroll(ScrollSpec { stick_bottom: false });

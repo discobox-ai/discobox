@@ -12,7 +12,7 @@
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Tx, col, el, icon, row, spacer, text, text_input};
 
 use crate::wire::{ChoiceGroup, Entry, HarnessAction, Menu as DesktopMenu, PaletteRow, SpecTarget};
-use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, harnesses, icons, keys, lacking, row_id, run_command, run_on, theme, tools, view};
+use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, harnesses, icons, keys, lacking, row_id, run_command, run_on, secrets, theme, tools, view};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
     if actions.is_empty() {
@@ -80,6 +80,7 @@ fn choose_entry(s: &mut State, i: usize, tx: &mut Tx) {
         MenuKind::HarnessFiles(_) => harnesses::act(s, HarnessAction::Files, id, (0.0, 0.0)),
         MenuKind::Tools(sandbox, tools, addresses) => tools::choose(s, sandbox, tools, addresses, &id, tx),
         MenuKind::ToolFiles(sandbox, tool) => tools::edit(s, sandbox, &tool, id),
+        MenuKind::Secret(_) => secrets::pick(s, &id),
     }
 }
 

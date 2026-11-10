@@ -123,9 +123,10 @@ the epic, and does not yet follow the ADRs everywhere:
 - **The sheets** are the core's forms and questions (`sheet.rs`), drawn as a
   modal panel over the window, which takes no key or press until it is
   answered (on macOS the native menu's commands wait for it too): rename,
-  settings, purge's confirmation, a harness's reset and variant, and a file
-  open in the person's editor.
-  - A form is the core's fields, each opening on its value as the core reads
+  settings, purge's confirmation, a harness's reset and variant, a file
+  open in the person's editor, and a secret stored, edited, bound, deleted
+  or unbound.
+  - A form is what the core says it is about, then its fields, each opening on its value as the core reads
     it: typed, a picker of its choices, or dimmed with why it takes no answer
     (and stepped over); a masked value is never drawn. The app holds what is
     typed and chosen, sends a draft as an answer changes (the form comes back
@@ -179,6 +180,21 @@ the epic, and does not yet follow the ADRs everywhere:
     status line says so;
   - a tool's file is edited in the person's editor as a harness's is, and
     saving says it is what the next box to open the tool gets.
+- **The secrets page** (`secrets.rs`) is the core's, drawn as the harnesses
+  page is, and one page is up at a time: the secrets of the server the list
+  is narrowed to, each with where it may go, what stands on it (or that it
+  is refused) and its age. The arrows move, Enter reads a secret, Shift+F10
+  opens the page's actions (open, bind, edit, history, delete, a new
+  secret, read again), Esc leaves; `refresh` reads it again too.
+  - Reading a secret is a panel: the core's card, then "Bind this secret…"
+    and its live bindings; Enter reads a binding in full (or binds), Delete
+    takes one back, asking first as the core asks, No the quick answer.
+  - A new secret, an edit and a binding are the core's forms as sheets, each
+    with what the core says above it (why a refused secret's edit was
+    opened, what a binding is); a delete asks first. The page, and a panel on it, follow the secrets read
+    again after each.
+  - A secret's binding history is a panel of its decisions, each read in
+    full, and the delegation it was handed on under when that still stands.
 - **Creating a box** is the core's (`console.RunOptions`, held by the bridge):
   - the composer, under the list, is what the new box is given to do: Return
     creates and Shift+Return is a new line; under it, what a create would be
@@ -271,6 +287,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/tools.rs` | The tools menu, a tool's tab given the window, a tool on this machine handed the box, a tool's files edited, an address copied |
 | `src/harnesses.rs` | The harnesses page, a harness's actions, file picker and config card, and a box's harness changes reviewed |
 | `src/paste.rs` | Images pasted or dropped on a pane carried into its box, the pane's input held meanwhile; a folder dropped on the composer as the next source |
+| `src/secrets.rs` | The secrets page, its actions, and a secret, a binding, the history and a decision read as panels |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
 | `src/term.rs` | A pane's terminal (`alacritty_terminal`): its screen as rows, selection, the program's copies and links, mouse reporting, the wheel, paste, find, wide characters and the input method's composition |
 | `src/theme.rs` | The spec's tokens (colours in both palettes, and the appearance that picks one; space, radii and strokes), the bundled faces and type, and springs |
@@ -283,6 +300,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
 | `src/tool_tests.rs` | The tools menu as the core lists it, a tool given the window and put away, one running shown not started again, a host tool, a file edited and given up, an address copied |
+| `src/secret_tests.rs` | The page's secrets and keys, a secret and a binding read, an unbind asked first, a binding, an edit, a delete and a new secret through their sheets, the history, refresh |
 | `src/harness_tests.rs` | The page's harnesses and keys, actions as the core offers them, the card, a reset asked first, a file edited and given up, a variant's form, harness changes reviewed and saved |
 | `src/sheet_tests.rs` | Rename, settings and purge through their sheets on the mock: what applies, a refusal, Enter on a destruction, a pick of one, a sheet taking every key |
 | `src/surface_tests.rs` | Every command in a menu and found by the palette; the palette's two orders, Esc and reveal; the menu bar's keys; menus that say why not |
