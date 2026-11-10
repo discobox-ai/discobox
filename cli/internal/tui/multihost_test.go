@@ -50,7 +50,7 @@ func TestACardListsEachRouteOnItsOwnRow(t *testing.T) {
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/**"}, Methods: []string{"GET"}},
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/pulls"}, Methods: []string{"POST"}},
 	}}}
-	d := &dialog{sections: []section{bindingSection(approval{req: req, secret: console.Secret{Name: "github"}})}}
+	d := &dialog{sections: detailSections(console.RequestApproval{Request: req, Secret: console.Secret{Name: "github"}}.Review()[:1])}
 	rows := d.sectionLines(newStyles(false), 120)
 	for _, route := range req.Routes() {
 		want := secretroute.Format(route)

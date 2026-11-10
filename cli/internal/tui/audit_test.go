@@ -559,7 +559,7 @@ func TestTheBannerKeysAnswerOverTheAuditScreen(t *testing.T) {
 		ds.projectSecrets = []console.Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 		d, m, _ := openAuditScreen(t, ds)
 		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("first", "second", "third"), Polled: true})
-		d.wait("the banner", func() bool { return m.bannerShowing() != bannerNone })
+		d.wait("the banner", func() bool { return m.bannerShowing() != console.NoNotice })
 
 		d.key("ctrl+a")
 		d.key(credentialsLeaderKey)
@@ -582,7 +582,7 @@ func TestTheHarnessChangesKeyAnswersOverTheAuditScreen(t *testing.T) {
 		ds.harnessChanges = console.HarnessChanges{CandidateID: "cand_1", State: "pending", Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
 		d, m, _ := openAuditScreen(t, ds)
 		deliverAudit(d, ds, console.AuditUpdate{Records: auditRecords("first", "second"), Polled: true})
-		d.wait("the harness-changes band", func() bool { return m.bannerShowing() == bannerHarnessChanges })
+		d.wait("the harness-changes band", func() bool { return m.bannerShowing() == console.NoticeHarnessChanges })
 
 		d.key("ctrl+a")
 		d.key(harnessChangesKey)

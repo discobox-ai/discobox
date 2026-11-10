@@ -27,7 +27,7 @@ func TestAdoptionCardNamesAuthority(t *testing.T) {
 // Adoption is an approval request, but it never asks for a credential.
 func TestAdoptionInboxAndBannerNameTheChild(t *testing.T) {
 	req := console.CredentialRequest{ID: "adopt_1", SandboxID: "sbx_one", Adoption: &console.AdoptionAsk{ChildID: "sbx_child", ChildName: "feature"}}
-	if got := requestSubject(req); got != "adoption of feature" {
+	if got := console.RequestSubject(req); got != "adoption of feature" {
 		t.Fatalf("inbox subject = %q", got)
 	}
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
@@ -50,7 +50,7 @@ func TestAdoptionInboxAndBannerNameTheChild(t *testing.T) {
 		}
 	}
 	req.Adoption.ChildName = ""
-	if got := requestSubject(req); got != "adoption of sbx_child" {
+	if got := console.RequestSubject(req); got != "adoption of sbx_child" {
 		t.Fatalf("unnamed child = %q", got)
 	}
 }

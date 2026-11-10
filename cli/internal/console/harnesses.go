@@ -235,6 +235,8 @@ const (
 	// CardAlert is what is wrong: a credential sent nowhere, or one that
 	// cannot renew itself.
 	CardAlert CardTone = "alert"
+	// CardGood is what an answer adds: a route a binding gains.
+	CardGood CardTone = "good"
 )
 
 // CardSpan is a stretch of a card row's value, in its tone.

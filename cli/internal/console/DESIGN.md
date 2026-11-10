@@ -561,6 +561,63 @@ tone (`IssueTone`) and a mark (`IssueMark`) naming what a word is.
   typing at it is being done with it; one that ends untouched is held to be
   read (`Tab.End`, `Tab.Typed`).
 
+## Requests and approvals
+
+`requests.go`, `approval.go`, `notices.go` (876 §1). The credential inbox's
+rules, which the TUI's dialogs and band and the desktop's sheets, notice and
+requests table all draw. Nothing here decides what the server does: a card
+collects an answer, and the server makes the binding.
+
+```mermaid
+flowchart LR
+    R["CredentialRequest.Kind"] --> C["credential: RequestApproval"]
+    R --> T["trust: TrustForm + TrustCard"]
+    R --> F["refresh: RefreshForm + RefreshCard"]
+    R --> A["adoption, API access: their cards"]
+    C -->|"PartForm + PartCard, Decide"| S{"step"}
+    S -->|delegate part| C
+    S -->|new secret| N["NewCredentialAsk → ApproveWithNewSecret"]
+    S -->|review| V["ReadStanding → Review → ApproveRequest"]
+    S -->|deny| D["DenyRequest"]
+```
+
+- **What a request is called is the core's**: `Kind`, `RequestName`, its
+  row (`RequestSubject`, `Requester`, `RequestsOn` a page's server), a
+  workspace's words for it (`RequestNotice`, `RequestCall`), a notification's
+  (`RequestArrival`), and what answering says (`Answered`, `AnswerFailed`,
+  `StillWaiting`).
+- **A credential request is answered card by card** (`RequestApproval`, a
+  value copied at each step so any card can be gone back to): each part's
+  form and card (`PartForm`, `PartCard`), where its answer goes next
+  (`Decide`: the delegation's card, a denial, a new credential, the review),
+  what the approval would replace read once the secret is chosen
+  (`ReadStanding`), the review (`Review`: `ReplacedFields`, `RouteDiff`, what
+  holds the variable), and the one approval sent with its lifetime always said
+  (`Approval`, `ApproveRequest`, `ApproveWithNewSecret`). Route tables are
+  `RouteTable` and `GrantRestriction`, aligned for a fixed-width face.
+- **A card is answered by its actions** (`CardActions`, `CardAction`):
+  accept (a refresh's refresh), the decline, and a credential part's Request
+  JSON (`RawRequest`); only an accepting one is checked, and leaving a card
+  leaves the request waiting (`LeaveWaiting`).
+- **The other kinds have a card each**: `TrustCard`, `RefreshCard`,
+  `AdoptionCard`, `APIAccessCard`; `DenyRequest` answers any kind no, and
+  `ApproveAccess` and `TrustRequest` yes; a refresh's value is
+  `DataSource.RefreshSecret`, between `Renewals.Start` and `Finish`. A request is read again
+  before it is answered (`OfferedRequest`), as a secret is.
+- **A refresh may be allowed for the window** (`Renewals`: its
+  `RenewalPermits`, keyed by the server, the token and the exact command, and
+  the renewals out, one per request): `Due` and `RenewByPermit` answer later
+  refreshes without asking, and `Finish` says what came of any renewal and
+  revokes the permit of one that failed.
+- **A workspace shows one notice** (`notices.go`): a refused credential over
+  the request it provoked, a harness change last (`NoticeKinds`), what it says
+  (`Notice`, `NoticeFor`, `RejectionNotice`) and the command pressing it runs
+  (`NoticeCommand`). A dismissal is of what the notice was about then
+  (`Dismissals`: `Dismiss`, `Cover`, `Prune`, `ShownRejection`), the
+  window's own, never sent to the server.
+- **A refused credential's remedy** is signing in again for a harness's login
+  (`SignInAgain`) or editing the secret on its own server (`RefusedSecret`).
+
 ## Narration and questions
 
 `narration.go` (876 §1, 289 §2). A command that reports as it goes, or asks

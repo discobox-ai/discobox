@@ -125,11 +125,7 @@ func (m *Model) harnessChangesDone(msg harnessChangesDoneMsg) tea.Cmd {
 	// a save that worked as though it had not. It is taken down as a dismissal
 	// of this candidate, so a newer one the box captures still raises it.
 	if msg.candidateID != "" {
-		if m.dismissed == nil {
-			m.dismissed = map[dismissal][]string{}
-		}
-		d := m.dismissalFor(bannerHarnessChanges, msg.box)
-		m.dismissed[d] = append(m.dismissed[d], msg.candidateID)
+		m.dismissed.Cover(m.inbox(), console.NoticeHarnessChanges, msg.box, msg.candidateID)
 		m.layout()
 	}
 	return tea.Batch(m.refresh(), m.report(false, "harness changes: %s", msg.state))
@@ -143,30 +139,18 @@ func (m *Model) harnessChangesDone(msg harnessChangesDoneMsg) tea.Cmd {
 //
 // It is the offer's green rather than the alert's red, since nothing is wrong
 // and nothing is waiting; it is last in precedence for the same reason (see
-// bannerKind). Dismissing it holds for this candidate only: a box that captures
+// console.NoticeKind). Dismissing it holds for this candidate only: a box that captures
 // a different change has a new candidate, and the band comes back for it.
 // Pressing it opens the review, where Save is what takes it.
-
-// harnessChangesName is what the band calls the box's harness: its name, or
-// the slug the row shows when it has none.
-func harnessChangesName(box console.Sandbox) string {
-	if box.HarnessName != "" {
-		return box.HarnessName
-	}
-	if box.Harness != "" {
-		return box.Harness
-	}
-	return "the harness"
-}
 
 // viewHarnessChangesBanner is the workspace's line about a harness change to
 // save. Its key is the review's own, behind the leader, which is what the hint
 // line and the box's menu already spell.
 func (m *Model) viewHarnessChangesBanner(width int) string {
-	box := m.currentBox()
+	n := m.dismissed.NoticeOf(m.inbox(), console.NoticeHarnessChanges, m.currentBox())
 	st := m.st
-	subject := st.attentionText.Render(harnessChangesName(box) + " settings or login changed in this box")
-	call := bannerChip(st, "click to review and save", colOfferChip)
+	subject := st.attentionText.Render(n.Subject)
+	call := m.noticeChip(n, colOfferChip)
 	return bannerRow(st, offerPalette, width, subject, call, m.leader()+" "+harnessChangesKey)
 }
 
@@ -224,7 +208,7 @@ func (m *Model) explainHarnessChangesIfOwed() tea.Cmd {
 		{key: "r", press: "r", label: "Review changes", detail: "see what changed, then save or discard it", enabled: true},
 		{key: "n", press: "n", label: "Not now", detail: "the band and " + harnessChangesKey + " stay to review it later", enabled: true},
 	}
-	m.dialog = actionsDialog(harnessChangesExplainTitle, harnessChangesExplainBody(harnessChangesName(box)), items, func(key string) tea.Cmd {
+	m.dialog = actionsDialog(harnessChangesExplainTitle, harnessChangesExplainBody(console.HarnessOf(box)), items, func(key string) tea.Cmd {
 		if key == "r" {
 			return m.openHarnessChanges(box)
 		}

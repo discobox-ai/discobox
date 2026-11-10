@@ -202,7 +202,7 @@ func TestPressingTheHarnessChangesBandOpensTheReview(t *testing.T) {
 	}
 	// Saved, the band goes at once rather than when the box next reports,
 	// though the listing still names the candidate.
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v after the save, want it gone", got)
 	}
 }
@@ -339,9 +339,9 @@ func TestAnEmptyCurrentHarnessDiffSuppressesBandAndExplainer(t *testing.T) {
 		boxes[0].HarnessConfigPending = pending
 		m.list.setAll(boxes)
 		m.Box = boxes[0]
-		want := bannerNone
+		want := console.NoNotice
 		if pending {
-			want = bannerHarnessChanges
+			want = console.NoticeHarnessChanges
 		}
 		if got := m.bannerShowing(); got != want {
 			t.Fatalf("pending=%v banner=%v want=%v", pending, got, want)

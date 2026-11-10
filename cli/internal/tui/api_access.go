@@ -5,37 +5,48 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
-func approvalDialog(title string, f *form, submit func(*form) tea.Cmd) *dialog {
+// approvalDialog is a request's card as a form, answered with its actions as
+// the core offers them (console.CardActions).
+func approvalDialog(title string, f *form, offers []console.CardOffer, submit func(*form) tea.Cmd) *dialog {
 	d := &dialog{kind: dlgForm, title: title, form: f, submit: submit}
-	d.formActions = []action{{key: "accept", label: "Accept", enabled: true}, {key: "deny", label: "Deny", enabled: true}}
+	for _, o := range offers {
+		d.formActions = append(d.formActions, action{key: string(o.Action), label: o.Label, enabled: true})
+	}
 	d.formActionAt = -1
 	if len(f.rows) == 0 {
 		d.formActionAt = 0
 	}
 	d.requireEnd = true
 	d.decisionsBlocked = true
-	d.keys = []hint{says("Tab / arrows move"), pressing("Enter selects", "enter"), pressing("Esc leaves waiting", "esc")}
+	d.keys = []hint{says("Tab / arrows move"), pressing("Enter selects", "enter"), pressing("Esc "+console.LeaveWaiting, "esc")}
 
 	return d
 }
+
+// chosenAction is the card action a request's card was submitted with.
+func (d *dialog) chosenAction() console.CardAction {
+	return console.CardAction(d.formActions[d.formActionAt].key)
+}
+
+// askAboutAPIAccess is an API access request's card (console.APIAccessCard),
+// accepted or denied.
 func (m *Model) askAboutAPIAccess(req console.CredentialRequest) tea.Cmd {
 	var d *dialog
-	d = approvalDialog("Allow discobox API access?", newForm(), func(*form) tea.Cmd { return m.answerAPIAccess(req, d.formActions[d.formActionAt].key == "accept") })
-	d.sections = []section{
-		{fields: []field{{label: "Box", value: req.SandboxID, tone: toneAccent}, {label: "Reason (box's words)", value: req.Justification}}},
-		{label: "Project access", fields: []field{{label: "Discovery", value: "List boxes and watch project events"}, {label: "Create", value: "Launch boxes within its allowed egress, using project harness configs and their credentials"}}},
-		{label: "Authority over boxes it leads", fields: []field{{label: "Terminals/files", value: "Run commands; read and write files; read output and type input"}, {label: "Lifecycle", value: "Start, stop, restart, repair, upgrade and archive"}, {label: "Source/settings", value: "Deliver source and edit metadata"}, {label: "Services/ports", value: "Inspect and control services; reach HTTP ports"}, {label: "Credentials", value: "Answer eligible requests within its delegation"}}},
-		{label: "Limits", lines: []line{{text: "Management covers direct children in this project. Wider-egress children are read-only."}, {text: "Enabling API access grants no credential. Credential and egress restrictions still apply."}, {text: "Access stays on until a person turns it off in Settings. Deny leaves access unchanged."}}},
-	}
-	if req.Server != "" {
-		d.sections[0].fields = append(d.sections[0].fields, field{label: "Server", value: req.Server})
-	}
+	d = approvalDialog(console.APIAccessTitle, newForm(), console.CardActions(req, false), func(*form) tea.Cmd { return m.answerAccess(req, d.chosenAction().Accepts()) })
+	d.sections = detailSections(console.APIAccessCard(req))
 	m.dialog = d
 	return nil
 }
-func (m *Model) answerAPIAccess(req console.CredentialRequest, approve bool) tea.Cmd {
-	m.dialog = statusDialog("API access request", "answering…")
+
+// answerAccess answers an adoption or an API access request.
+func (m *Model) answerAccess(req console.CredentialRequest, approve bool) tea.Cmd {
+	if !approve {
+		return m.denyCredential(req)
+	}
+	title, _ := console.Denying(req)
+	m.dialog = statusDialog(title, "answering…")
 	return func() tea.Msg {
-		return credentialAnsweredMsg{request: req, approved: approve, err: m.ds.DecideAPIAccessRequest(m.ctx, req.Server, req.ID, approve)}
+		_, err := console.ApproveAccess(m.ctx, m.ds, req)
+		return credentialAnsweredMsg{request: req, approved: true, err: err}
 	}
 }

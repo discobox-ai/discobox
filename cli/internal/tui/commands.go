@@ -33,7 +33,7 @@ func (m *Model) commandContext() console.Context {
 			return len(console.RequestsFor(m.session, box, m.requests[box.ID])) > 0
 		},
 		Refused: func(box console.Sandbox) bool {
-			_, ok := m.shownRejection(box)
+			_, ok := m.dismissed.ShownRejection(m.inbox(), box)
 			return ok
 		},
 	}

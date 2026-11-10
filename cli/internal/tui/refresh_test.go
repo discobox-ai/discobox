@@ -323,8 +323,8 @@ func TestARenewalThatLostTheRaceIsNotAFailure(t *testing.T) {
 	if m.dialog != nil {
 		t.Fatalf("dialog = %s, want no error for an ask somebody else answered", describe(m.dialog))
 	}
-	if len(m.renewSession) != 1 {
-		t.Fatalf("session permissions = %v, want the one given kept", m.renewSession)
+	if len(m.renewals.Permits) != 1 {
+		t.Fatalf("session permissions = %v, want the one given kept", m.renewals.Permits)
 	}
 }
 
@@ -333,7 +333,7 @@ func TestARequestBeingRenewedIsNotRunAgain(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
-	m.renewing = map[string]bool{"sreq_refresh": true}
+	m.renewals.Start(console.CredentialRequest{ID: "sreq_refresh"})
 	refreshAnswer(t, m, "once")
 	if len(ds.renewals) != 0 {
 		t.Fatalf("renewals = %#v, want none while one is out", ds.renewals)

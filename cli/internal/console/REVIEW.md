@@ -91,3 +91,13 @@
   answers its questions through the narration; it never asks one of them
   itself, decides what an answer leads to, or reads a question's keys for
   meaning (`Choice.Means` says which choice is a yes or a no).
+- **What the inbox says and does is `requests.go`'s, `approval.go`'s and
+  `notices.go`'s.** A request's cards, where a part's answer goes next, the
+  review of what an approval replaces, which notice a workspace shows and what
+  a dismissal covers were the TUI's alone (its `approval` struct, its band);
+  the desktop would have needed a second copy. A renderer sequences the cards
+  and draws them; it never words a card or decides a step. That includes a
+  card's actions (`CardActions`: their keys, labels, which declines), what a
+  renewal that came back says and does (`Renewals.Finish`), which notice
+  moves (`Notice.Urgent`), and the order of a page's requests (`RequestsOn`):
+  each was first written in both the TUI and the bridge.

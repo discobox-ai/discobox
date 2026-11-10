@@ -484,16 +484,11 @@ func (m *Model) makeBinding(binding console.NewBinding) tea.Cmd {
 // screen shows, including the ones no discobox owns. Only that server's,
 // because its secrets are the only ones that can answer it.
 func (m *Model) openWaitingRequest() tea.Cmd {
-	var oldest *console.CredentialRequest
-	for i := range m.requestRows.all {
-		if oldest == nil || m.requestRows.all[i].Created.Before(oldest.Created) {
-			oldest = &m.requestRows.all[i]
-		}
+	oldest, ok := console.OldestRequest(m.requestRows.all)
+	if !ok {
+		return m.report(false, "%s", console.NothingWaiting)
 	}
-	if oldest == nil {
-		return m.report(false, "nothing is waiting")
-	}
-	return m.openCredentialRequest(*oldest)
+	return m.openCredentialRequest(oldest)
 }
 
 // showBindings lists what stands on the secret under the cursor, and lets one
@@ -568,7 +563,7 @@ func detailSections(in []console.DetailSection) []section {
 			s.fields = append(s.fields, field{label: f.Label, value: f.Value, tone: detailTone(f.Tone)})
 		}
 		for _, l := range sec.Lines {
-			s.lines = append(s.lines, line{text: l.Text, tone: detailTone(l.Tone)})
+			s.lines = append(s.lines, line{text: l.Text, tone: detailTone(l.Tone), bullet: l.Bullet})
 		}
 		out = append(out, s)
 	}
@@ -584,6 +579,8 @@ func detailTone(t console.CardTone) tone {
 		return toneAccent
 	case console.CardAlert:
 		return toneAlert
+	case console.CardGood:
+		return toneOK
 	}
 	return tonePlain
 }

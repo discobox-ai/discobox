@@ -18,11 +18,11 @@ func TestDismissingABandShowsTheOneBehindIt(t *testing.T) {
 	m.setCredentialRequests([]console.CredentialRequest{waitingRequest()})
 
 	m.dismissBanner()
-	if got := m.bannerShowing(); got != bannerCredential {
+	if got := m.bannerShowing(); got != console.NoticeRequest {
 		t.Fatalf("banner = %v, want the request once the refusal is dismissed", got)
 	}
 	m.dismissBanner()
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v, want none once both are dismissed", got)
 	}
 }
@@ -37,14 +37,14 @@ func TestADismissedRefusalComesBackOnlyWhenItHappensAgain(t *testing.T) {
 	m.dismissBanner()
 
 	m.setSecretRejections([]console.SecretRejection{rejection})
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v, want the same refusal to stay dismissed across a poll", got)
 	}
 
 	again := rejection
 	again.FirstSeen = time.Now()
 	m.setSecretRejections([]console.SecretRejection{again})
-	if got := m.bannerShowing(); got != bannerRejected {
+	if got := m.bannerShowing(); got != console.NoticeRejected {
 		t.Fatalf("banner = %v, want a refusal first seen since to show", got)
 	}
 }
@@ -70,25 +70,25 @@ func workspaceWithHarnessChanges(t *testing.T) (*Model, *fakeSource) {
 func TestADismissedHarnessChangeComesBackForANewCandidate(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithHarnessChanges(t)
-	if got := m.bannerShowing(); got != bannerHarnessChanges {
+	if got := m.bannerShowing(); got != console.NoticeHarnessChanges {
 		t.Fatalf("banner = %v, want the harness change", got)
 	}
 	m.dismissBanner()
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v, want the harness change dismissed", got)
 	}
 
 	boxes := m.list.All()
 	m.list.setAll(boxes)
 	m.pruneDismissed()
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v, want it to stay dismissed while the candidate is the same", got)
 	}
 
 	boxes[0].HarnessConfigCandidate = "cand_2"
 	m.list.setAll(boxes)
 	m.pruneDismissed()
-	if got := m.bannerShowing(); got != bannerHarnessChanges {
+	if got := m.bannerShowing(); got != console.NoticeHarnessChanges {
 		t.Fatalf("banner = %v, want the band back for a new candidate", got)
 	}
 }
@@ -101,11 +101,11 @@ func TestAHarnessChangeQueuesBehindARequest(t *testing.T) {
 	req := waitingRequest()
 	req.SandboxID = m.Box.ID
 	m.setCredentialRequests([]console.CredentialRequest{req})
-	if got := m.bannerShowing(); got != bannerCredential {
+	if got := m.bannerShowing(); got != console.NoticeRequest {
 		t.Fatalf("banner = %v, want the request over the harness change", got)
 	}
 	m.dismissBanner()
-	if got := m.bannerShowing(); got != bannerHarnessChanges {
+	if got := m.bannerShowing(); got != console.NoticeHarnessChanges {
 		t.Fatalf("banner = %v, want the harness change once the request is dismissed", got)
 	}
 }
@@ -125,14 +125,14 @@ func TestADismissedRequestBandReturnsForANewRequest(t *testing.T) {
 	m.dismissBanner()
 
 	m.setCredentialRequests([]console.CredentialRequest{second})
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v, want a request already dismissed to stay dismissed", got)
 	}
 
 	third := second
 	third.ID = "req_3"
 	m.setCredentialRequests([]console.CredentialRequest{second, third})
-	if got := m.bannerShowing(); got != bannerCredential {
+	if got := m.bannerShowing(); got != console.NoticeRequest {
 		t.Fatalf("banner = %v, want a new request to bring the band back", got)
 	}
 }
@@ -149,7 +149,7 @@ func TestADismissalIsForOneDiscobox(t *testing.T) {
 	m.dismissBanner()
 
 	m.Box = boxes[1]
-	if got := m.bannerShowing(); got != bannerHarnessChanges {
+	if got := m.bannerShowing(); got != console.NoticeHarnessChanges {
 		t.Fatalf("banner = %v, want the other box's band still up", got)
 	}
 }
@@ -177,7 +177,7 @@ func TestTheBandsCloseButtonDismissesIt(t *testing.T) {
 			t.Fatal("the dismiss button's hit test is not the button")
 		}
 		clickWindow(d, x, y)
-		d.wait("the band gone", func() bool { return m.bannerShowing() == bannerNone })
+		d.wait("the band gone", func() bool { return m.bannerShowing() == console.NoNotice })
 		if m.dialog != nil {
 			t.Fatalf("dialog = %s, want the dismiss to open nothing", describe(m.dialog))
 		}
@@ -195,10 +195,10 @@ func TestTheLeaderKeyDismissesTheBand(t *testing.T) {
 		boxes[0].HarnessConfigCandidate, boxes[0].HarnessConfigPending = "cand_1", true
 		ds := newFakeSource(boxes...)
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the harness change band", func() bool { return m.bannerShowing() == bannerHarnessChanges })
+		d.wait("the harness change band", func() bool { return m.bannerShowing() == console.NoticeHarnessChanges })
 		d.key("ctrl+a")
 		d.key(bannerDismissKey)
-		d.wait("the band dismissed", func() bool { return m.bannerShowing() == bannerNone })
+		d.wait("the band dismissed", func() bool { return m.bannerShowing() == console.NoNotice })
 	})
 }
 
@@ -212,7 +212,7 @@ func TestTheRefusalKeyOpensItsRemedyFromAPane(t *testing.T) {
 		ds := newFakeSource(boxes...)
 		ds.rejections = []console.SecretRejection{harnessRejection()}
 		d, m, _ := openWorkspace(t, ds, "enter")
-		d.wait("the refusal band", func() bool { return m.bannerShowing() == bannerRejected })
+		d.wait("the refusal band", func() bool { return m.bannerShowing() == console.NoticeRejected })
 		d.key("ctrl+a")
 		d.key(rejectedKey)
 		d.wait("the remedy", func() bool { return m.dialog != nil })
@@ -230,7 +230,7 @@ func TestASecondRefusalShowsPastADismissedFirst(t *testing.T) {
 	second := secretRejection()
 	second.SecretID, second.SecretName, second.FirstSeen = "sec_npm", "npm token", time.Now()
 	m.setSecretRejections([]console.SecretRejection{first, second})
-	if got := m.bannerShowing(); got != bannerRejected {
+	if got := m.bannerShowing(); got != console.NoticeRejected {
 		t.Fatalf("banner = %v, want the second refusal shown past the dismissed first", got)
 	}
 	// About the second: what it says, and what pressing it opens. The first
@@ -238,12 +238,12 @@ func TestASecondRefusalShowsPastADismissedFirst(t *testing.T) {
 	if row := ansi.Strip(m.viewBanner(140)); !strings.Contains(row, "npm token") || strings.Contains(row, "GitHub token") {
 		t.Fatalf("band = %q, want it to name the new refusal", row)
 	}
-	if got, _ := m.shownRejection(m.currentBox()); got.SecretID != "sec_npm" {
+	if got, _ := m.dismissed.ShownRejection(m.inbox(), m.currentBox()); got.SecretID != "sec_npm" {
 		t.Fatalf("the band acts on %s, want the new refusal", got.SecretID)
 	}
 	// Dismissed again, it stays down: both are covered now.
 	m.dismissBanner()
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v, want both refusals dismissed", got)
 	}
 }
@@ -257,7 +257,7 @@ func TestTheRefusalIsChosenAndDrawnFromTheSameRow(t *testing.T) {
 	m, _ := workspaceWithRejection(t, harnessRejection())
 	m.Box.HarnessID = ""
 
-	if got := m.bannerShowing(); got != bannerRejected {
+	if got := m.bannerShowing(); got != console.NoticeRejected {
 		t.Fatalf("banner = %v, want the refusal the listing's row is affected by", got)
 	}
 	if row := m.viewBanner(120); row == "" {

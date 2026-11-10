@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"slices"
-	"sort"
-
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
@@ -23,10 +20,10 @@ import (
 //
 // The remedy names a fresh discobox, not the one the refusal showed in: a box
 // can provoke a refusal, and a login typed into it is readable there. And the
-// refusal is never taken down by a change the box reports (bannerWanted).
+// refusal is never taken down by a change the box reports (console.Inbox.Wanted).
 //
 // It outranks every other band, including a credential request (see
-// bannerKind), because an agent that has just taken a 401 asks for a credential
+// console.NoticeKind), because an agent that has just taken a 401 asks for a credential
 // — so the request and the refusal are one event, and the request is the half
 // that cannot be usefully answered.
 
@@ -69,7 +66,7 @@ func (m *Model) loadSecretRejections() tea.Cmd {
 // setSecretRejections keeps what came back, oldest first: the credential that
 // has been failing longest is the one somebody has been living with.
 func (m *Model) setSecretRejections(rejections []console.SecretRejection) {
-	sort.SliceStable(rejections, func(i, j int) bool { return rejections[i].FirstSeen.Before(rejections[j].FirstSeen) })
+	console.SortRejections(rejections)
 	had := m.bannerCost()
 	m.rejections = rejections
 	// The secrets screen says which credential does not work from the same
@@ -84,31 +81,6 @@ func (m *Model) setSecretRejections(rejections []console.SecretRejection) {
 	}
 }
 
-// hasRejection reports whether this discobox is affected by one.
-func (m *Model) hasRejection(box console.Sandbox) bool {
-	return len(console.RejectionsFor(m.session, box, m.rejections)) > 0
-}
-
-// shownRejection is the refusal the band is about: the oldest one a dismissal
-// has not covered. A band back up for a second refusal is about that one — its
-// name, its host, its remedy — and not the first, which somebody already
-// dismissed; dismissing the band again then dismisses what it showed. With
-// nothing dismissed, or everything (the key reaches a band that is not drawn),
-// it is the oldest.
-func (m *Model) shownRejection(box console.Sandbox) (console.SecretRejection, bool) {
-	all := console.RejectionsFor(m.session, box, m.rejections)
-	if len(all) == 0 {
-		return console.SecretRejection{}, false
-	}
-	dismissed := m.dismissed[m.dismissalFor(bannerRejected, box)]
-	for _, rejection := range all {
-		if !slices.Contains(dismissed, rejection.Occurrence()) {
-			return rejection, true
-		}
-	}
-	return all[0], true
-}
-
 // viewRejectedBanner is the workspace's line about a credential that does not
 // work. Empty when this discobox has none.
 //
@@ -121,104 +93,52 @@ func (m *Model) viewRejectedBanner(width int) string {
 	// and the band that is drawn must be about the same row, or the panes give
 	// up two rows to a band that draws nothing.
 	box := m.currentBox()
-	rejection, ok := m.shownRejection(box)
-	if !ok {
+	n := m.dismissed.NoticeOf(m.inbox(), console.NoticeRejected, box)
+	if n.Kind == console.NoNotice {
 		return ""
 	}
 	st := m.st
-	subject := st.attentionText.Render(rejectionHeadline(rejection))
-	if rejection.Host != "" {
-		subject += st.attentionHint.Render("  ·  ") + st.attentionText.Render(rejection.Host)
+	subject := st.attentionText.Render(n.Subject)
+	if n.Detail != "" {
+		subject += st.attentionHint.Render("  ·  ") + st.attentionText.Render(n.Detail)
 	}
-	// A request waiting behind this one is usually the same event: the agent
-	// took the 401 and asked for a credential. Saying so is what stops the
-	// queued request being a mystery — and stops it being answered, which
-	// would leave the dead credential bound to the harness and the new one
-	// belonging to nobody. It is last in the sentence because it is the first
-	// thing a narrow window should drop.
-	if waiting := len(console.RequestsFor(m.session, box, m.requests[box.ID])); waiting > 0 {
-		subject += st.attentionHint.Render("  ·  " + plural(waiting, "request", "requests") + " waiting behind it")
+	// Last in the sentence, because it is the first thing a narrow window
+	// should drop.
+	if n.Behind != "" {
+		subject += st.attentionHint.Render("  ·  " + n.Behind)
 	}
-	call := bannerChip(st, rejectionCall(rejection), colAlertChip)
+	call := m.noticeChip(n, colAlertChip)
 	return bannerRow(st, alertPalette, width, subject, call, m.leader()+" "+rejectedKey)
 }
 
-// rejectionHeadline is the bar's sentence: what was refused, and by whom.
-//
-// It says "refused" rather than "expired" or "invalid" because refused is what
-// is actually known — the upstream said no to a credential this side could not
-// renew — and because the two words a reader might otherwise supply for
-// themselves, *your login inside this box*, are the ones that send them
-// somewhere nothing can be fixed.
-func rejectionHeadline(rejection console.SecretRejection) string {
-	if rejection.HarnessOwned() {
-		return rejection.HarnessConfigName + " sign-in refused"
-	}
-	return rejection.Name() + " refused"
-}
-
-// rejectionCall is what pressing the band does, in the words of the gesture
-// rather than of a button, so the sentence still says it with no color to draw
-// a chip with.
-//
-// A harness's login is replaced in the box, so its call says how; any other
-// secret is replaced out here, and its call says that.
-func rejectionCall(rejection console.SecretRejection) string {
-	if rejection.HarnessOwned() {
-		return "click to sign in again"
-	}
-	return "click to replace it on this machine"
-}
-
 // openRejectedRemedy answers a press on the band: how to sign in again for a
-// harness's shared login, and the secret's card for anything else.
+// harness's shared login (console.SignInAgain), and the secret's card for
+// anything else.
 //
 // Both open over the workspace rather than taking you to another screen, and
 // both end back on the discobox you were watching: the session you were in the
 // middle of is still there when it is done.
 func (m *Model) openRejectedRemedy(box console.Sandbox) tea.Cmd {
-	rejection, ok := m.shownRejection(box)
+	rejection, ok := m.dismissed.ShownRejection(m.inbox(), box)
 	if !ok {
-		return m.report(false, "nothing refused on this discobox")
+		return m.report(false, "%s", console.NothingRefusedHere)
 	}
 	if rejection.HarnessOwned() {
-		m.dialog = signInAgainDialog(rejection)
+		title, body := console.SignInAgain(rejection)
+		m.dialog = &dialog{kind: dlgMessage, title: title, body: body}
 		return nil
 	}
 	m.busy = "reading " + rejection.Name() + "…"
 	// The credential's own server, not the one the header names: the fix goes
 	// where the credential lives (ADR 0131 §2).
-	ctx, ds, server := m.ctx, m.ds, m.session.ServerName(rejection.Server)
+	ctx, ds, session := m.ctx, m.ds, m.session
 	return func() tea.Msg {
-		secrets, err := ds.Secrets(ctx, server)
+		secret, err := console.RefusedSecret(ctx, ds, session, rejection)
 		if err != nil {
 			return rejectionRemedyMsg{rejection: rejection, err: err}
 		}
-		for _, secret := range secrets {
-			if secret.ID == rejection.SecretID {
-				return rejectionRemedyMsg{rejection: rejection, secret: &secret}
-			}
-		}
-		return rejectionRemedyMsg{rejection: rejection, err: errNoSecret}
+		return rejectionRemedyMsg{rejection: rejection, secret: &secret}
 	}
-}
-
-// signInAgainDialog says how a harness's refused shared login is replaced:
-// in a discobox, by the harness's own sign-in, and then saved. It is a message
-// rather than an action because the action is the person's, in the terminal
-// behind it.
-func signInAgainDialog(rejection console.SecretRejection) *dialog {
-	name := rejection.HarnessConfigName
-	if name == "" {
-		name = "the harness"
-	}
-	body := name + "'s shared login was refused, and could not be renewed. Every discobox on " + name + " uses it.\n\n" +
-		"Sign in again in a new discobox on " + name + ", the way " + name + " signs in anywhere — its own login command, in its terminal. " +
-		"A login typed in a box can be read by the code running there, so use one whose code you trust rather than the box this refusal showed in.\n\n" +
-		"The new login shows up as a harness change on that box: save it, and it replaces the refused login for every discobox on " + name + ". " +
-		"Saving also shares the box's changed settings files, which can run commands in every discobox on " + name + ": read the review before you save."
-	d := &dialog{kind: dlgMessage, title: name + " sign-in refused", body: body}
-	return d
 }
 
 // rejectionRemedy opens whichever remedy came back.
@@ -232,14 +152,3 @@ func (m *Model) rejectionRemedy(msg rejectionRemedyMsg) tea.Cmd {
 	}
 	return nil
 }
-
-type rejectionError string
-
-func (e rejectionError) Error() string { return string(e) }
-
-const (
-	// The remedy has nothing to open when the listing no longer holds the
-	// secret: the thing that was refused is gone, which is reported rather
-	// than swallowed, since the band is still on screen saying otherwise.
-	errNoSecret = rejectionError("the credential is gone")
-)

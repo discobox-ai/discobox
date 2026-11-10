@@ -22,7 +22,7 @@ func (m *Model) bare() bool {
 	if m.attach == nil || m.screenPane() != nil || m.audit != nil || m.wsOpening {
 		return false
 	}
-	if m.Shells.Len() != 0 || m.bannerShowing() != bannerNone {
+	if m.Shells.Len() != 0 || m.bannerShowing() != console.NoNotice {
 		return false
 	}
 	primary := m.Primary()

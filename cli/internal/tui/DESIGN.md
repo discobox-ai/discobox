@@ -485,7 +485,7 @@ token's command before anything runs and offers to run it once, run it for the
 session, take a typed value, or dismiss. The command runs in the data source, on
 this machine, without a shell (`refreshcmd`). "For the session" is a permission
 in the window's memory, keyed by server, token, and the exact command
-(`sessionKey`): the poll answers that pair's next asks unprompted
+(`console.RenewalPermits`): the poll answers that pair's next asks unprompted
 (`renewBySession`), an edited command asks a person again, and a failure drops
 the permission. A request's "New credential…" is F4's own new-secret form,
 filled from the request (see below); F4's new token picks between entering a
@@ -534,7 +534,7 @@ There is no list in the workspace for `g` to be the top of, so it is free, and
 it is the letter of the thing it does.
 
 **Approval cards collect consent; the server enforces it.** Each credential
-part has a separate form (`credential_approval.go`) for credential, duration,
+part has a separate form (`credential_approval.go`, the core's `console.RequestApproval`) for credential, duration,
 scope, and Accept/Deny. Use also chooses addition/replacement and delivery.
 Scope starts at requested routes independently for each part; hosts and anywhere
 show the wider restriction without flattening credential constraints. Route
@@ -636,14 +636,14 @@ half.
 
 **Any band can be dismissed** — its `✕`, pinned after the key, or leader+`b` —
 and **a dismissal is of one occurrence, never of the band** (`banner.go`). Each
-band names what it is about (`bannerInstance`): the refusal by credential, host
+band names what it is about (`console.Inbox.Occurrence`): the refusal by credential, host
 and when it was first seen; the harness change by its candidate; the request
 by the requests waiting (a set: answering one leaves the rest dismissed, a new
 one shows). A dismissal holds its band down only while it covers everything the
 band would say, and every read that feeds a band — the listing, the refusals,
 the inbox — forgets what it shows is over (`pruneDismissed`), so something fixed
 and broken again is shown again even when nothing distinguishes the two. A band
-back up for something new is about the new thing (`shownRejection`), not what
+back up for something new is about the new thing (`console.Dismissals.ShownRejection`), not what
 was dismissed. Dismissing shows the band queued behind it. Dismissals are per
 discobox and the window's own: nothing reaches the server, and a new window
 shows whatever still applies.
@@ -664,12 +664,12 @@ looks exactly like Discobox failing to deliver one. Its call is the remedy that
 fits the credential. A harness's shared login is replaced the way it was made
 (ADR 26-11-02-152): the press says to sign in again in the box with the
 harness's own login and save the change, which replaces the refused login in
-place for every box on the harness (`signInAgainDialog`). Any other secret's
+place for every box on the harness (`console.SignInAgain`). Any other secret's
 value is replaced out here, from the same card the secrets screen opens, and
 its call says *on this machine*. The harness login's remedy names a fresh
 discobox, not the one the refusal showed in, and says that a save shares the
 box's settings files too. A refusal stays up over the harness-changes band
-(`bannerWanted`): the refusal is the control plane's record and a pending
+(`console.Inbox.Wanted`): the refusal is the control plane's record and a pending
 change is the box's own report, which must not be able to take it down. The
 rejections it draws from are polled
 beside the credential inbox and also mark the secrets screen's rows, so one

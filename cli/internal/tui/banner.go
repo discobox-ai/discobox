@@ -25,36 +25,14 @@ import (
 // they share the code for all three: bars that drift apart in where they sit
 // are bars that put the hardware cursor in different wrong places.
 
-// bannerKind is which band the workspace is showing. The order is the
-// precedence, and only one is ever on screen: a screen with two exception bars
-// on it has a header rather than an exception.
-//
-// **A refused credential outranks the request an agent makes about it.** That
-// ordering was the other way round at first, on the reasoning that somebody
-// blocked on a keystroke right now comes before a credential that has been dead
-// a while. In use it is backwards, because the two are usually the same event:
-// the agent takes the 401, concludes it needs a credential, and asks for one —
-// so the request *is* the symptom, and showing it hides the cause while
-// offering the one action that cannot help. Handing over another credential
-// leaves the dead one bound to the harness and the new one belonging to nobody;
-// the fix is to replace what is already there.
-//
-// So the refusal stays up until it is dealt with, and everything else queues
-// behind it. Nothing becomes unreachable by doing that: the leader keys for the
-// request (credentialsLeaderKey) and the refusal (rejectedKey) are both bound
-// whichever band is drawn, the list still marks a discobox with a request, and
-// the secrets screen still lists them. Only the bar prioritizes.
-type bannerKind int
-
-// **A harness change is last.** It is an offer, not a problem: nothing stops
-// while it waits, and it is still there to save once whatever outranks it is
-// dealt with.
-const (
-	bannerNone bannerKind = iota
-	bannerRejected
-	bannerCredential
-	bannerHarnessChanges
-)
+// Which band the workspace shows is the core's notice (console.NoticeKind),
+// whose order is the precedence, and only one is ever on screen: a screen with two exception bars on it has a header rather than an
+// exception. A refused credential outranks the request an agent makes about it,
+// and a harness change is last (console.NoticeKinds says why). Nothing becomes
+// unreachable by that: the leader keys for the request (credentialsLeaderKey)
+// and the refusal (rejectedKey) are both bound whichever band is drawn, the
+// list still marks a discobox with a request, and the secrets screen still
+// lists them. Only the bar prioritizes.
 
 // bannerSpan is where the band sits on screen, in absolute cells, both ends
 // inclusive. It is recorded as the band is drawn — the same way the tabs and
@@ -63,7 +41,7 @@ const (
 type bannerSpan struct {
 	// kind is which band was drawn, so a press answers the bar that is on
 	// screen rather than the one the model would compose now.
-	kind bannerKind
+	kind console.NoticeKind
 	// rows is every row the band was drawn on. There are two: one under the
 	// header and one above the status line, so the same bar is in reach
 	// wherever the eye is on a screen that is mostly terminal.
@@ -77,61 +55,28 @@ type bannerSpan struct {
 	live                 bool
 }
 
-// bannerKinds is every band, in the order of precedence bannerKind states.
-var bannerKinds = []bannerKind{bannerRejected, bannerCredential, bannerHarnessChanges}
+// inbox is what waits on a person as this window last read it: the requests
+// a discobox asked (m.requests, which the list marks), and the refusals.
+func (m *Model) inbox() console.Inbox {
+	var requests []console.CredentialRequest
+	for _, byBox := range m.requests {
+		requests = append(requests, byBox...)
+	}
+	return console.Inbox{Session: m.session, Requests: requests, Rejections: m.rejections}
+}
 
-// bannerShowing is the band the workspace has, if any: the first that has
-// something to say and has not been dismissed. Dismissing one shows what was
-// queued behind it rather than an empty header.
-func (m *Model) bannerShowing() bannerKind {
+// bannerShowing is the band the workspace has, if any: the core's notice for
+// the box on screen, as this window's dismissals leave it.
+func (m *Model) bannerShowing() console.NoticeKind {
 	if !m.inPanes() {
-		return bannerNone
+		return console.NoNotice
 	}
-	box := m.currentBox()
-	for _, kind := range bannerKinds {
-		if m.bannerWanted(kind, box) && !m.bannerDismissed(kind, box) {
-			return kind
-		}
-	}
-	return bannerNone
+	return m.dismissed.Showing(m.inbox(), m.currentBox())
 }
 
-// bannerWanted is whether a band has something to say about this discobox on
-// the screen as it is now.
-//
-// A refusal stays up over the harness-changes band, a refused harness login
-// included. The refusal is the control plane's record; a pending change is the
-// box's own report, and a box that could take a refusal down by reporting one
-// would turn "your login was refused" into "click to review and save" in front
-// of the person it wants to sign in.
-func (m *Model) bannerWanted(kind bannerKind, box console.Sandbox) bool {
-	switch kind {
-	case bannerRejected:
-		return m.hasRejection(box)
-	case bannerCredential:
-		return len(console.RequestsFor(m.session, box, m.requests[box.ID])) > 0
-	case bannerHarnessChanges:
-		return box.HarnessConfigPending
-	}
-	return false
-}
-
-// Dismissing a band.
-//
-// A dismissal is of one occurrence of a band, never of the band: dismissing a
-// refused credential must not hide the next one, nor a request the one that
-// arrives after it. So each band names its occurrence (bannerInstance) — the
-// refusal by the credential, host and when it was first seen; a request by the
-// requests waiting; a harness change by the candidate the box captured — and a
-// dismissal holds the band down only while that is still what it would say. A
-// box that captures another change has a new candidate, and the band comes
-// back for it.
-//
-// What it covered is forgotten the moment the window reads that it is over
-// (pruneDismissed). What is read once a poll can miss a change and its
-// reversal inside one poll; nothing that is shorter than that is anything a
-// person saw.
-//
+// Dismissing a band is the core's (console.Dismissals): of one occurrence of
+// it, never of the band, held only while that is still what it would say, and
+// forgotten the moment the window reads that it is over (pruneDismissed).
 // Dismissals are the window's own. Nothing is sent to the server, and a new
 // window shows every band that still applies.
 
@@ -146,122 +91,22 @@ const bannerClose = " ✕ "
 // dismissBannerMsg is the leader plus that key inside a pane.
 type dismissBannerMsg struct{}
 
-// dismissal is one band dismissed on one discobox. A band is about a discobox,
-// and one dismissed on this box says nothing about the same harness or request
-// seen from another.
-type dismissal struct {
-	box  string
-	kind bannerKind
-}
-
-// dismissalFor is a band's key on this discobox, which is its server as well
-// as its ID: IDs are only unique within a server.
-func (m *Model) dismissalFor(kind bannerKind, box console.Sandbox) dismissal {
-	return dismissal{box: m.session.ServerName(box.Server) + "\x00" + box.ID, kind: kind}
-}
-
-// bannerInstance names the occurrence a band would be about, or nothing when
-// there is none. It is what is true, without what is drawn: a band held down
-// by the screen (bannerWanted) is still happening, and a dismissal of it stays.
-//
-// It is a set rather than one name because requests and refusals arrive and
-// go one at a time: a dismissal covers the ones it saw, so one of them going
-// leaves the rest dismissed, and a new one brings the band back — including a
-// second refusal while the first is still outstanding.
-func (m *Model) bannerInstance(kind bannerKind, box console.Sandbox) []string {
-	switch kind {
-	case bannerRejected:
-		var names []string
-		for _, rejection := range console.RejectionsFor(m.session, box, m.rejections) {
-			names = append(names, rejection.Occurrence())
-		}
-		return names
-	case bannerHarnessChanges:
-		if box.HarnessConfigCandidate != "" {
-			return []string{box.HarnessConfigCandidate}
-		}
-	case bannerCredential:
-		var ids []string
-		for _, req := range console.RequestsFor(m.session, box, m.requests[box.ID]) {
-			ids = append(ids, req.ID)
-		}
-		return ids
-	}
-	return nil
-}
-
-// bannerDismissed is whether this band's occurrence on this discobox is one
-// somebody dismissed.
-func (m *Model) bannerDismissed(kind bannerKind, box console.Sandbox) bool {
-	dismissed, ok := m.dismissed[m.dismissalFor(kind, box)]
-	return ok && covers(dismissed, m.bannerInstance(kind, box))
-}
-
-// covers is whether every name in now was among those dismissed.
-func covers(dismissed, now []string) bool {
-	if len(now) == 0 {
-		return false
-	}
-	for _, name := range now {
-		if !slices.Contains(dismissed, name) {
-			return false
-		}
-	}
-	return true
-}
-
 // dismissBanner takes the band on screen down until what it is about changes.
 func (m *Model) dismissBanner() tea.Cmd {
-	kind := m.bannerShowing()
-	if kind == bannerNone {
-		return m.report(false, "no banner to dismiss")
+	if !m.inPanes() || m.dismissed.Dismiss(m.inbox(), m.currentBox()) == console.NoNotice {
+		return m.report(false, "%s", console.NothingToDismiss)
 	}
-	box := m.currentBox()
-	if m.dismissed == nil {
-		m.dismissed = map[dismissal][]string{}
-	}
-	m.dismissed[m.dismissalFor(kind, box)] = m.bannerInstance(kind, box)
 	// The band gives its two rows back to the panes — or hands them to the one
 	// queued behind it, which costs the same.
 	m.layout()
 	return nil
 }
 
-// pruneDismissed forgets what each dismissal covered that is now over, and the
-// dismissal once nothing it covered is left. It is run by everything that reads
-// what the bands are about: the listing, the refused credentials, the
-// credential inbox.
-//
-// It drops names rather than whole dismissals. Something new arriving beside
-// what was dismissed does not end the dismissal of the rest: the band comes
-// back for the new one (covers is false) and is about the new one
-// (shownRejection), and what was dismissed stays dismissed. A dismissal the
-// reads have not seen end is kept, including one whose discobox the listing is
-// not showing — a server that has stopped answering has not settled anything.
+// pruneDismissed forgets what each dismissal covered that is now over
+// (console.Dismissals.Prune). It is run by everything that reads what the
+// bands are about: the listing, the refused credentials, the credential inbox.
 func (m *Model) pruneDismissed() {
-	for d, dismissed := range m.dismissed {
-		box, ok := m.listedBox(d.box)
-		if !ok {
-			continue
-		}
-		now := m.bannerInstance(d.kind, box)
-		kept := slices.DeleteFunc(slices.Clone(dismissed), func(name string) bool { return !slices.Contains(now, name) })
-		if len(kept) == 0 {
-			delete(m.dismissed, d)
-			continue
-		}
-		m.dismissed[d] = kept
-	}
-}
-
-// listedBox is the listing's row for a dismissal's discobox.
-func (m *Model) listedBox(key string) (console.Sandbox, bool) {
-	for _, box := range m.list.All() {
-		if m.session.ServerName(box.Server)+"\x00"+box.ID == key {
-			return box, true
-		}
-	}
-	return console.Sandbox{}, false
+	m.dismissed.Prune(m.inbox(), m.list.All())
 }
 
 // bannerTop is how many rows stand between the header and the boxes: the top
@@ -271,7 +116,7 @@ func (m *Model) listedBox(key string) (console.Sandbox, bool) {
 // the hardware cursor, every mouse hit test — because they all measure down
 // from the header, and only what is above the boxes moves them.
 func (m *Model) bannerTop() int {
-	if m.bannerShowing() == bannerNone {
+	if m.bannerShowing() == console.NoNotice {
 		return 0
 	}
 	return 1
@@ -311,11 +156,11 @@ func (m *Model) viewBanner(width int) string {
 	m.banner = bannerSpan{kind: kind, closeEnd: -1}
 	var row string
 	switch kind {
-	case bannerRejected:
+	case console.NoticeRejected:
 		row = m.viewRejectedBanner(width)
-	case bannerHarnessChanges:
+	case console.NoticeHarnessChanges:
 		row = m.viewHarnessChangesBanner(width)
-	case bannerCredential:
+	case console.NoticeRequest:
 		row = m.viewCredentialBanner(width)
 	}
 	// Where the button is, read off the row that was composed rather than
@@ -336,11 +181,11 @@ func (m *Model) viewBanner(width int) string {
 // the dialog.
 func (m *Model) pressBanner() tea.Cmd {
 	switch m.banner.kind {
-	case bannerRejected:
+	case console.NoticeRejected:
 		return m.openRejectedRemedy(m.currentBox())
-	case bannerHarnessChanges:
+	case console.NoticeHarnessChanges:
 		return m.openHarnessChanges(m.currentBox())
-	case bannerCredential:
+	case console.NoticeRequest:
 		return m.openCredentialDialog(m.currentBox())
 	}
 	return nil
@@ -382,7 +227,8 @@ type bannerPulseMsg struct{ gen int }
 // so a band that goes and comes back is one clock rather than two beating
 // against each other.
 func (m *Model) armBannerPulse() tea.Cmd {
-	want := m.st.color && m.bannerShowing() == bannerCredential
+	kind := m.bannerShowing()
+	want := m.st.color && kind != console.NoNotice && m.dismissed.NoticeOf(m.inbox(), kind, m.currentBox()).Urgent
 	if want == m.pulsing {
 		return nil
 	}
@@ -477,4 +323,14 @@ func bannerChip(st *styles, text, bg string) string {
 		Foreground(lipgloss.Color(colChipLight)).
 		Background(lipgloss.Color(bg)).
 		Render("  " + text + "  ")
+}
+
+// noticeChip is a notice's call as a chip: on its band's still color, or on
+// the throb's current beat for the one notice the core says a person is being
+// waited on for (console.Notice.Urgent).
+func (m *Model) noticeChip(n console.Notice, still string) string {
+	if n.Urgent {
+		still = bannerPulseHues[m.pulse%len(bannerPulseHues)]
+	}
+	return bannerChip(m.st, n.Call, still)
 }

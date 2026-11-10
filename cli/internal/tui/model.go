@@ -93,12 +93,11 @@ type Model struct {
 	// beat, and the two answer different questions.
 	alertPoll poll
 
-	// renewSession is the tokens this window may renew without asking, each
-	// with the exact command it was allowed to run (sessionKey), for as long
-	// as the window runs (ADR 26-09-25-122 §5). renewing is the refresh
-	// requests a renewal is out for, so a beat does not start a second.
-	renewSession map[string]bool
-	renewing     map[string]bool
+	// renewals are the tokens this window may renew without asking, each
+	// with the exact command it was allowed to run, for as long as the window
+	// runs (ADR 26-09-25-122 §5), and the refresh requests a renewal is out
+	// for, so a beat does not start a second (console.Renewals).
+	renewals console.Renewals
 
 	ctx context.Context
 	ds  console.DataSource
@@ -180,7 +179,7 @@ type Model struct {
 
 	// dismissed is the bands somebody has dismissed, per discobox, each with
 	// the occurrence it was dismissed on. See banner.go.
-	dismissed map[dismissal][]string
+	dismissed console.Dismissals
 
 	// harnesses is the project's harnesses: the screen that manages them, and
 	// the listing the run options' harness choices are built from. It is read
@@ -1171,10 +1170,6 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case renewalAnsweredMsg:
 		return m.renewalAnswered(msg)
-
-	case renewalSkippedMsg:
-		delete(m.renewing, msg.requestID)
-		return nil
 
 	case tickMsg:
 		cmds := []tea.Cmd{m.reread(), m.tick()}

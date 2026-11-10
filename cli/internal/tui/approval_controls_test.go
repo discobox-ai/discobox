@@ -10,7 +10,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/discobox-ai/discobox/cli/internal/console"
-	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // Exercise the same scroll and keyboard submission path a person uses. Tests
@@ -52,7 +51,7 @@ func TestApprovalScrollGateAndChangedSummary(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	send(t, m, sizeMsg(80, 24))
 	called := 0
-	d := approvalDialog("Review access", newForm(), func(*form) tea.Cmd { called++; return nil })
+	d := approvalDialog("Review access", newForm(), console.CardActions(console.CredentialRequest{}, false), func(*form) tea.Cmd { called++; return nil })
 	d.sections = []section{{lines: []line{{text: strings.Repeat("Review these permissions carefully. ", 100)}}}}
 	m.dialog = d
 	plainFrame(m)
@@ -158,7 +157,7 @@ func TestApprovalMouseDecisionsUseTheGate(t *testing.T) {
 			m := newTestModel(t, newFakeSource())
 			send(t, m, sizeMsg(80, 24))
 			called := 0
-			d := approvalDialog("Review access", newForm(), func(*form) tea.Cmd { called++; return nil })
+			d := approvalDialog("Review access", newForm(), console.CardActions(console.CredentialRequest{}, false), func(*form) tea.Cmd { called++; return nil })
 			d.sections = []section{{lines: []line{{text: strings.Repeat("Review access. ", 100)}}}}
 			m.dialog = d
 			x, y := at(t, m, "[ "+button+" ]")
@@ -329,26 +328,6 @@ func TestRequestJSONPreservesIncompleteCustomDuration(t *testing.T) {
 		if m.dialog != original || m.dialog.form.chosen("duration") != "custom" || m.dialog.form.value("customDuration") != value {
 			t.Fatalf("custom input changed after JSON: %q", value)
 		}
-	}
-}
-
-func TestRouteTableBoundsCartesianOutputAndPreservesCompactRoutes(t *testing.T) {
-	hosts, paths := make([]string, 2000), make([]string, 2000)
-	for i := range hosts {
-		hosts[i] = fmt.Sprintf("host%d.example.com", i)
-		paths[i] = fmt.Sprintf("/path%d", i)
-	}
-	route := secretroute.Route{Hosts: hosts, Paths: paths}
-	if approvalTableFits([]secretroute.Route{route}) {
-		t.Fatal("unbounded Cartesian product admitted")
-	}
-	sec := approvalRouteSection("Routes", &console.RequestPart{Routes: []secretroute.Route{route}})
-	if len(sec.lines) != 2 || sec.lines[1].text != secretroute.Format(route) {
-		t.Fatal("fallback changed route restrictions")
-	}
-	route = secretroute.Route{Hosts: hosts[:100], MCP: &secretroute.MCP{Tools: []string{strings.Repeat("tool", 10000)}}}
-	if approvalTableFits([]secretroute.Route{route}) {
-		t.Fatal("repeated protocol bytes exceeded output bound")
 	}
 }
 

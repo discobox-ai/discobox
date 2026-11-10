@@ -43,6 +43,9 @@ const (
 	SecretActionHistory SecretAction = "history"
 	// SecretActionRead reads the secrets again, for a page already open.
 	SecretActionRead SecretAction = "read"
+	// SecretActionAnswer answers one of the requests waiting on the page's
+	// server: from its requests table, or a notification of one arriving.
+	SecretActionAnswer SecretAction = "answer"
 )
 
 // DetailSection is a stretch of a card read rather than answered: a heading,
@@ -61,10 +64,12 @@ type DetailField struct {
 	Tone         CardTone
 }
 
-// DetailLine is a sentence under a section's fields, in its tone.
+// DetailLine is a sentence under a section's fields, in its tone. A bullet
+// hangs its wrapped rows under its text.
 type DetailLine struct {
-	Text string
-	Tone CardTone
+	Text   string
+	Tone   CardTone
+	Bullet bool
 }
 
 // BindingLive is whether a binding still carries anything: it never expires,

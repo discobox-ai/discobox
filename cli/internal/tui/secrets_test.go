@@ -885,34 +885,6 @@ func TestBindingsCanBeMadeFromTheBindingsList(t *testing.T) {
 	}
 }
 
-// What a request row says it is about. The proxy's reactive path names
-// nothing — all it saw was a sentinel it could not resolve — and a person's
-// ask is not that.
-func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name string
-		req  console.CredentialRequest
-		want string
-	}{
-		{"an agent names the credential", console.CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "github"},
-		{"an ask to delegate says so", console.CredentialRequest{Name: "github", SandboxID: "sbx_1", Delegate: &console.RequestPart{}}, "github · to delegate"},
-		{"an ask for both says so", console.CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1", Use: &console.RequestPart{}, Delegate: &console.RequestPart{}}, "github · to use and to delegate"},
-		{"failing that, the variable", console.CredentialRequest{EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "GH_TOKEN"},
-		{"a discobox asked for a credential it did not name", console.CredentialRequest{SandboxID: "sbx_1"}, "a credential"},
-	} {
-		if got := requestSubject(tc.req); got != tc.want {
-			t.Errorf("%s: subject = %q, want %q", tc.name, got, tc.want)
-		}
-	}
-	if got := requesterLabel(console.CredentialRequest{}); got != "control plane" {
-		t.Errorf("requester = %q, want the control plane", got)
-	}
-	if got := requesterLabel(console.CredentialRequest{SandboxID: "sbx_abcdefghij"}); got != "agent · abcdefgh" {
-		t.Errorf("requester = %q, want the agent and a short id", got)
-	}
-}
-
 // An OAuth credential is more than one field, and all of them are asked for:
 // the access token travels, and the rest is what the control plane spends to
 // renew it when that token goes stale. Choosing the kind is what brings those

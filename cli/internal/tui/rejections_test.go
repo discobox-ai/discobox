@@ -63,11 +63,11 @@ func TestARefusedHarnessCredentialMarksEveryBoxOnThatHarness(t *testing.T) {
 	m, _ := workspaceWithRejection(t, harnessRejection())
 
 	onHarness := console.Sandbox{ID: "sbx_elsewhere", Name: "another box", HarnessID: "harness_claude"}
-	if !m.hasRejection(onHarness) {
+	if !m.inbox().Wanted(console.NoticeRejected, onHarness) {
 		t.Fatal("a second box on the same harness was not marked")
 	}
 	other := console.Sandbox{ID: "sbx_other", Name: "codex box", HarnessID: "harness_codex"}
-	if m.hasRejection(other) {
+	if m.inbox().Wanted(console.NoticeRejected, other) {
 		t.Fatal("a box on a different harness was marked")
 	}
 }
@@ -78,10 +78,10 @@ func TestARefusedProjectSecretMarksOnlyTheBoxThatSawIt(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, secretRejection())
 
-	if !m.hasRejection(console.Sandbox{ID: "sbx_one", HarnessID: "harness_claude"}) {
+	if !m.inbox().Wanted(console.NoticeRejected, console.Sandbox{ID: "sbx_one", HarnessID: "harness_claude"}) {
 		t.Fatal("the box that saw the rejection was not marked")
 	}
-	if m.hasRejection(console.Sandbox{ID: "sbx_two", HarnessID: "harness_claude"}) {
+	if m.inbox().Wanted(console.NoticeRejected, console.Sandbox{ID: "sbx_two", HarnessID: "harness_claude"}) {
 		t.Fatal("a box that never used the credential was marked")
 	}
 }
@@ -106,13 +106,13 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 	m.toolShown = &pane{Tool: "diff"}
 	m.setSecretRejections(ds.rejections)
 
-	if got := m.bannerShowing(); got != bannerRejected {
+	if got := m.bannerShowing(); got != console.NoticeRejected {
 		t.Fatalf("banner = %v, want the refused credential", got)
 	}
 
 	// The agent's own reaction to the 401 must not displace it.
 	m.requests = map[string][]console.CredentialRequest{box.ID: {waitingRequest()}}
-	if got := m.bannerShowing(); got != bannerRejected {
+	if got := m.bannerShowing(); got != console.NoticeRejected {
 		t.Fatalf("banner = %v, want the refusal to stay up with a request behind it", got)
 	}
 	// And it says the request is there, so a queued question is not a mystery.
@@ -123,11 +123,11 @@ func TestARefusedCredentialOutranksTheRequestItProvoked(t *testing.T) {
 
 	// Dealt with, and the queue moves on: the request is next, then nothing.
 	m.setSecretRejections(nil)
-	if got := m.bannerShowing(); got != bannerCredential {
+	if got := m.bannerShowing(); got != console.NoticeRequest {
 		t.Fatalf("banner = %v, want the request once the refusal is cleared", got)
 	}
 	m.requests = nil
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v, want no band once both are gone", got)
 	}
 }
@@ -189,27 +189,12 @@ func TestARefusedHarnessLoginStaysUpOverAHarnessChange(t *testing.T) {
 	boxes := m.list.All()
 	boxes[0].HarnessConfigPending, boxes[0].HarnessConfigCandidate = true, "cand_1"
 	m.list.setAll(boxes)
-	if got := m.bannerShowing(); got != bannerRejected {
+	if got := m.bannerShowing(); got != console.NoticeRejected {
 		t.Fatalf("banner = %v, want the refused login over the harness change", got)
 	}
 	m.dismissBanner()
-	if got := m.bannerShowing(); got != bannerHarnessChanges {
+	if got := m.bannerShowing(); got != console.NoticeHarnessChanges {
 		t.Fatalf("banner = %v, want the harness change once the refusal is dismissed", got)
-	}
-}
-
-// The refused login's remedy does not send the person back into the box it
-// showed in, which may be what provoked it, and says what a save shares.
-func TestTheSignInAgainDialogNamesAFreshBoxAndWhatASaveShares(t *testing.T) {
-	t.Parallel()
-	body := signInAgainDialog(harnessRejection()).body
-	for _, want := range []string{"new discobox", "rather than the box this refusal showed in", "can run commands"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("dialog body %q does not say %q", body, want)
-		}
-	}
-	if strings.Contains(body, "in this discobox") {
-		t.Fatalf("dialog body %q sends the person back into this box", body)
 	}
 }
 
@@ -265,11 +250,11 @@ func TestClearingARejectionTakesTheBandAway(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, harnessRejection())
 
-	if m.bannerShowing() != bannerRejected {
+	if m.bannerShowing() != console.NoticeRejected {
 		t.Fatalf("banner = %v, want the refused credential", m.bannerShowing())
 	}
 	m.setSecretRejections(nil)
-	if got := m.bannerShowing(); got != bannerNone {
+	if got := m.bannerShowing(); got != console.NoNotice {
 		t.Fatalf("banner = %v, want none once the credential was replaced", got)
 	}
 }
@@ -376,10 +361,10 @@ func TestARejectionOnlyMarksBoxesOnItsOwnServer(t *testing.T) {
 
 	onBeta := console.Sandbox{ID: "sbx_b", HarnessID: "harness_claude", Server: "beta"}
 	onAlpha := console.Sandbox{ID: "sbx_a", HarnessID: "harness_claude", Server: "alpha"}
-	if !m.hasRejection(onBeta) {
+	if !m.inbox().Wanted(console.NoticeRejected, onBeta) {
 		t.Fatal("a box on the credential's own server was not marked")
 	}
-	if m.hasRejection(onAlpha) {
+	if m.inbox().Wanted(console.NoticeRejected, onAlpha) {
 		t.Fatal("a box on another server was marked by a harness ID that only means something on beta")
 	}
 }

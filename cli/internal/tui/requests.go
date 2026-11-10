@@ -94,14 +94,14 @@ func (l *requestList) view(st *styles, z *zones, focused bool) string {
 	right := ""
 	if len(l.all) > 0 {
 		// In the error color, because every row is somebody blocked.
-		right = st.statusER.Render(plural(len(l.all), "waiting", "waiting"))
+		right = st.statusER.Render(console.RequestsWaiting(len(l.all)))
 	}
 	blank := strings.Repeat(" ", max(l.width, 0))
-	out := []string{renderTitle(titleStyle, "Requests", right, l.width)}
+	out := []string{renderTitle(titleStyle, console.RequestsTitle, right, l.width)}
 
 	body := make([]string, 0, l.height)
 	if len(l.all) == 0 {
-		body = append(body, st.dimText.Render(pad("  nothing is waiting", l.width)))
+		body = append(body, st.dimText.Render(pad("  "+console.NothingWaiting, l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
@@ -134,14 +134,14 @@ func (l *requestList) row(st *styles, r console.CredentialRequest, i int, focuse
 	// into the variable beside it.
 	addCol("  "+st.name.Render(pad(r.Where(), 23)), 26)
 	addCol(st.dimText.Render(pad(r.EnvVar, 18)), 19)
-	addCol(st.dimText.Render(pad(requesterLabel(r), 22)), 23)
+	addCol(st.dimText.Render(pad(console.Requester(r), 22)), 23)
 	addCol(st.dimText.Render(pad(requestAge(r, l.now()), 8)), 9)
 
 	marker := "  "
 	if atCursor {
 		marker = st.key.Render("❯") + " "
 	}
-	what := requestSubject(r)
+	what := console.RequestSubject(r)
 	nameW := max(l.width-lipgloss.Width(marker)-lipgloss.Width(tail), 4)
 	nameStyle := st.name
 	if atCursor {
@@ -152,54 +152,6 @@ func (l *requestList) row(st *styles, r console.CredentialRequest, i int, focuse
 		return highlight(st, line, colHighlightBG)
 	}
 	return line
-}
-
-// requestSubject is what is being asked for: the credential an agent names,
-// or failing that the variable it wants one in.
-func requestSubject(r console.CredentialRequest) string {
-	if r.Adoption != nil || r.APIAccess {
-		return credentialName(r)
-	}
-	if r.Trust != nil {
-		return "trust this host"
-	}
-	// An ask to delegate and an ask to use the same credential may both be
-	// waiting, and are different questions; one request may ask both.
-	switch {
-	case r.AsksBoth():
-		return credentialName(r) + " · to use and to delegate"
-	case r.DelegateOnly():
-		return credentialName(r) + " · to delegate"
-	}
-	switch {
-	case r.Name != "":
-		return r.Name
-	case r.EnvVar != "":
-		return r.EnvVar
-	default:
-		return "a credential"
-	}
-}
-
-// requesterLabel says who is waiting: the agent inside a discobox, or — for a
-// value gone stale with no discobox in the middle of using it — the control
-// plane that noticed.
-func requesterLabel(r console.CredentialRequest) string {
-	if r.SandboxID != "" {
-		return "agent · " + shortID(r.SandboxID)
-	}
-	return "control plane"
-}
-
-// shortID is an identifier at the width a column has for one.
-func shortID(id string) string {
-	if _, rest, ok := strings.Cut(id, "_"); ok {
-		id = rest
-	}
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
 }
 
 func requestAge(r console.CredentialRequest, now time.Time) string {

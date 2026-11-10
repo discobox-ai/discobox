@@ -323,7 +323,7 @@ func (m *Model) viewPalette(background string) string {
 					statusTags = append(statusTags, tag)
 				}
 			}
-			line = strings.Join(statusTags, " ") + " " + fmt.Sprintf("□ %s  %s  %s  %s  %s", displayName(*s), shortID(s.ID), s.State, s.RepositoryKey, m.session.ServerName(s.Server))
+			line = strings.Join(statusTags, " ") + " " + fmt.Sprintf("□ %s  %s  %s  %s  %s", displayName(*s), console.ShortID(s.ID), s.State, s.RepositoryKey, m.session.ServerName(s.Server))
 		} else {
 			c := r.command
 			line = "› " + c.Label + "  " + c.Detail

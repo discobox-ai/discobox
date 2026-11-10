@@ -297,7 +297,7 @@ func TestAdditionalInteractivePanesAndBannersRestoreAttachChrome(t *testing.T) {
 					ds.requests = []console.CredentialRequest{waitingRequest()}
 					ds.mu.Unlock()
 					d.dispatch(tickMsg{})
-					d.wait("credential band", func() bool { return m.bannerShowing() != bannerNone })
+					d.wait("credential band", func() bool { return m.bannerShowing() != console.NoNotice })
 				}
 				if m.bare() {
 					t.Fatalf("%s should restore chrome with background services", extra)
