@@ -75,7 +75,8 @@ func TestSpecCarriesNoNulls(t *testing.T) {
 // A parity scenario is written in registry commands, which each console runs
 // by its own binding: a step naming anything else is a scenario neither can
 // run. A service step is the services command's menu, reached from a pane,
-// and a verb the core offers there or a service's output.
+// and a verb the core offers there or a service's output. A palette step is
+// a command found in the palette and chosen there, which every command is.
 func TestParityScenariosNameRegistryCommands(t *testing.T) {
 	files, err := filepath.Glob("testdata/parity/*.json")
 	if err != nil || len(files) == 0 {
@@ -83,6 +84,7 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 	}
 	menu, _ := LookupGesture("context menu")
 	services, _ := Lookup("services")
+	palette, _ := Lookup("palette")
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
@@ -96,6 +98,7 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 				Service string `json:"service"`
 				Verb    string `json:"verb"`
 				Prompt  string `json:"prompt"`
+				Palette bool   `json:"palette"`
 			} `json:"steps"`
 		}
 		if err := json.Unmarshal(data, &sc); err != nil {
@@ -109,6 +112,10 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 			// sent with new: the one command it is for.
 			if step.Prompt != "" && (step.Command != "new" || sc.Attach) {
 				t.Errorf("%s step %d: a prompt is written in the list's composer and sent with new", file, i)
+			}
+			if step.Palette && (step.Service != "" || step.Gesture != "") {
+				t.Errorf("%s step %d: the palette finds a command, not a service or a gesture", file, i)
+				continue
 			}
 			if step.Service != "" {
 				verbs := []string{"output"}
@@ -125,6 +132,10 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 				case len(services.Bindings.TUI.Leader) == 0 || len(services.Bindings.Desktop.Keys) == 0:
 					t.Errorf("%s step %d: services is not bound from a pane in both consoles", file, i)
 				}
+				continue
+			}
+			if step.Palette && step.Command == "" {
+				t.Errorf("%s step %d: the palette finds a command, and the step names none", file, i)
 				continue
 			}
 			if (step.Command == "") == (step.Gesture == "") {
@@ -147,6 +158,22 @@ func TestParityScenariosNameRegistryCommands(t *testing.T) {
 			c, ok := Lookup(step.Command)
 			if !ok {
 				t.Errorf("%s step %d: %q is not a registry command", file, i, step.Command)
+				continue
+			}
+			if step.Palette {
+				// Through the palette: each console opens it its own way — the
+				// TUI with no leader, its chord from a pane and its bare key
+				// from the list — and finds the command by its label.
+				opener := palette.Bindings.TUI.Keys
+				if sc.Attach {
+					opener = palette.Bindings.TUI.Chords
+				}
+				if len(opener) == 0 || len(palette.Bindings.Desktop.Keys) == 0 {
+					t.Errorf("%s step %d: the palette is not opened with no leader in both consoles", file, i)
+				}
+				if step.Prompt != "" {
+					t.Errorf("%s step %d: a prompt is sent with new's own binding, not through the palette", file, i)
+				}
 				continue
 			}
 			if sc.Attach {

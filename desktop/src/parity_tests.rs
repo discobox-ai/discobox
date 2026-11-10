@@ -7,6 +7,7 @@ use rune::{Env, Key, KeyEvent, Mods, Runtime};
 use serde::Deserialize;
 
 use crate::backend::{Inbox, Mock, MockService, bundled_spec};
+use crate::wire::SpecTarget;
 use crate::{MenuKind, Side, State, on_key, poll, theme, view};
 
 #[derive(Deserialize)]
@@ -41,6 +42,10 @@ struct Step {
     /// What is written in the composer before the command: new creates with it.
     #[serde(default)]
     prompt: String,
+    /// The command is reached through the palette: opened with its shortcut, found by its label,
+    /// and chosen.
+    #[serde(default)]
+    palette: bool,
     expect: Expect,
 }
 
@@ -158,9 +163,38 @@ fn run_service_step(rt: &mut Runtime<State>, step: &Step, path: &std::path::Path
     format!("{binding} and the menus")
 }
 
+/// Runs a palette step the desktop's way: the palette's shortcut, the command's label typed, and
+/// Enter; a box's command, which Enter makes the chip, Enter again on the box picked first, the
+/// one the window is on.
+fn run_palette_step(rt: &mut Runtime<State>, step: &Step, path: &std::path::Path, i: usize) -> String {
+    let palette = rt.state.spec.command("palette").cloned().expect("the palette is a command");
+    let binding = palette.bindings.desktop.keys.first().cloned().expect("the palette has a desktop shortcut");
+    rt.key(press(&binding));
+    settle(rt);
+    assert!(rt.state.palette.is_some(), "{}: step {i}: {binding} opened no palette", path.display());
+    let command = rt.state.spec.command(&step.command).cloned().unwrap_or_else(|| panic!("{}: step {i}: no command {}", path.display(), step.command));
+    for c in command.label.chars() {
+        rt.key(KeyEvent { key: Key::Text(c.to_string()), mods: Mods::default() });
+        rt.frame(1.0 / 60.0);
+    }
+    settle(rt);
+    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+    settle(rt);
+    if command.target == SpecTarget::Box {
+        assert_eq!(rt.state.palette.as_ref().map(|p| p.command.as_str()), Some(step.command.as_str()), "{}: step {i}: Enter did not make {} the chip", path.display(), step.command);
+        rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+        settle(rt);
+    }
+    assert!(rt.state.palette.is_none(), "{}: step {i}: the palette is still open after {}", path.display(), step.command);
+    format!("{binding}, {:?} and Enter", command.label)
+}
+
 /// Runs one step the desktop's way: a command's or a gesture's shortcut from the spec; a box's
 /// lifecycle command with none, through its row's menu — the context menu key, then the entry.
 fn run_step(rt: &mut Runtime<State>, step: &Step, path: &std::path::Path, i: usize) -> String {
+    if step.palette {
+        return run_palette_step(rt, step, path, i);
+    }
     // A prompt is written in the composer, beside the list, before the command; and the create
     // card the command opens is accepted as it opens.
     if !step.prompt.is_empty() {

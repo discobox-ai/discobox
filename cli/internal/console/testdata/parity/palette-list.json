@@ -1,0 +1,8 @@
+{
+  "name": "the palette, opened from the list, shows and hides archived boxes",
+  "about": "Run by both consoles: cli/internal/tui/parity_test.go and desktop/src/parity_tests.rs. Each step is a registry command ID (cli/internal/console/commands.go) reached through the palette from the list: each console opens it with its own binding, types the command's label, and chooses it with Enter. expect is what the list looks like after it.",
+  "steps": [
+    {"command": "archived", "palette": true, "expect": {"archived": true}},
+    {"command": "archived", "palette": true, "expect": {"archived": false}}
+  ]
+}

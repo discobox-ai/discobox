@@ -1,0 +1,11 @@
+{
+  "name": "the palette, opened with no leader from a pane, runs a box's command on the box on screen and the workspace's own commands",
+  "about": "Run by both consoles: cli/internal/tui/parity_test.go and desktop/src/parity_tests.rs. Each step is a registry command ID (cli/internal/console/commands.go) reached through the palette: each console opens it with its own binding — the TUI with its leaderless chord — types the command's label, and chooses it with Enter; a box's command, Enter again on the box the workspace is on, which the palette lists first. expect is what the workspace looks like after it.",
+  "attach": true,
+  "steps": [
+    {"command": "shell", "palette": true, "expect": {"terminals": 1, "shells": 1, "focus": "shells"}},
+    {"command": "terminal", "palette": true, "expect": {"terminals": 2, "shells": 1, "focus": "terminals"}},
+    {"command": "maximize", "palette": true, "expect": {"terminals": 2, "shells": 1, "maximized": true}},
+    {"command": "maximize", "palette": true, "expect": {"terminals": 2, "shells": 1, "maximized": false}}
+  ]
+}

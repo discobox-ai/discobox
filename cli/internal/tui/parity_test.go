@@ -34,6 +34,7 @@ type parityScenario struct {
 		Service string `json:"service"`
 		Verb    string `json:"verb"`
 		Prompt  string `json:"prompt"`
+		Palette bool   `json:"palette"`
 		Expect  struct {
 			Shells    *int    `json:"shells"`
 			Terminals *int    `json:"terminals"`
@@ -88,6 +89,8 @@ func TestParityScenarios(t *testing.T) {
 					var keys []string
 					if step.Service != "" {
 						keys = serviceKeys(t, m, ds, step.Service, step.Verb)
+					} else if step.Palette {
+						keys = paletteKeys(t, sc.Attach, step.Command)
 					} else if sc.Attach {
 						keys = paneKeys(t, m, step.Command)
 					} else {
@@ -183,6 +186,32 @@ func listKeys(t *testing.T, command, gesture string) []string {
 		t.Fatalf("%s%s has no key in the list", command, gesture)
 	}
 	return b.Keys[:1]
+}
+
+// paletteKeys is the key presses that run a command through the palette:
+// its leaderless chord from a pane, or its bare key from the list, the
+// command's label, and Enter; for a box's command, which Enter makes the
+// chip, Enter again on the first box, the one the window is on.
+func paletteKeys(t *testing.T, attach bool, id string) []string {
+	t.Helper()
+	c, ok := console.Lookup(id)
+	if !ok {
+		t.Fatalf("no command %s in the registry", id)
+	}
+	palette := command("palette").Bindings.TUI
+	keys := palette.Keys[:1]
+	if attach {
+		keys = palette.Chords[:1]
+	}
+	keys = slices.Clone(keys)
+	for _, r := range c.Label {
+		keys = append(keys, string(r))
+	}
+	keys = append(keys, "enter")
+	if c.Target == console.TargetBox {
+		keys = append(keys, "enter")
+	}
+	return keys
 }
 
 // paneKeys is the key presses that run a command from a workspace's focused
