@@ -48,6 +48,8 @@ type fakeCore struct {
 	// view is the list's filter as the last window left it: what Session
 	// hands back and SaveView records.
 	view console.ListView
+	// lists is how many times the listing was read.
+	lists int
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -96,6 +98,7 @@ func (f *fakeCore) SaveView(_ context.Context, view console.ListView) error {
 func (f *fakeCore) List(context.Context) (console.Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lists++
 	return f.listing, nil
 }
 

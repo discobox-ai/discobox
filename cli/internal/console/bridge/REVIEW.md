@@ -68,3 +68,10 @@
 - **The suite covers every message kind but `edit`** (289 §4), which
   nothing the core runs sends yet. The change that first makes the core send
   one adds its case, with `saved` answering it, to the contract suite.
+- **A topic that waits for the next listing never lists, nor reads the
+  servers.** The commands and the palette are sent again whenever a listing
+  is read (`relisted`), so they rule from what was last read
+  (`cachedContext`, `cached`, `lastListing`), never through `Server.box` or
+  `inbox`. Their first version built its context the way a command does: a
+  workspace box missing from the listing listed again, which woke them
+  again, and the bridge listed every server without end.

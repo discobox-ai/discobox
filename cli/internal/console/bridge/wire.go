@@ -16,8 +16,9 @@ import (
 // Protocol is the bridge's version, carried by hello and welcome. The CLI
 // pins the exact app it runs (983 §2), so two that differ are a development
 // override: the app says which side is older and exits. 3 made the listing
-// the core's list (rows, notes, the filter and its choices).
-const Protocol = 3
+// the core's list (rows, notes, the filter and its choices); 4 added the
+// commands and palette topics.
+const Protocol = 4
 
 // Type names a message.
 type Type string
@@ -139,6 +140,13 @@ const (
 	// TopicSessions is what a box's workspace opens: its sessions and
 	// services, as the core orders and names them (Box).
 	TopicSessions Topic = "sessions"
+	// TopicCommands is every registry command as it stands where the app
+	// asks from, for the boxes it names (Context, Targets): what its menus
+	// list, enabled or with why not.
+	TopicCommands Topic = "commands"
+	// TopicPalette is what the palette finds for a query (Context, Palette):
+	// the core's results, in the core's order.
+	TopicPalette Topic = "palette"
 )
 
 // Subscribe starts following a topic. Sub is the app's, unique for the
@@ -146,12 +154,39 @@ const (
 // what the listing is narrowed to, which a renderer holds as the TUI holds
 // its List's (console/DESIGN.md, "The list"): the app subscribes again under
 // a new Sub to change it, and ends the old. Without one the listing opens on
-// the filter this machine's last window left (console.ListView).
+// the filter this machine's last window left (console.ListView). Reveal, a
+// box's key, narrows it instead to what shows that box whatever the filter
+// hid (console.Revealing): a view the palette navigates to, which is never
+// saved over the person's filter.
+//
+// The commands and the palette are about where the app asks from (Context)
+// and, for the commands, the boxes it names (Targets). They are read from the
+// last listing, never the servers, and sent again as it changes; the app
+// subscribes again under a new Sub when what it asks changes — each query of
+// the palette, a menu opened somewhere else.
 type Subscribe struct {
-	Sub    uint32  `json:"sub"`
-	Topic  Topic   `json:"topic"`
-	Box    string  `json:"box,omitempty"`
-	Filter *Filter `json:"filter,omitempty"`
+	Sub     uint32        `json:"sub"`
+	Topic   Topic         `json:"topic"`
+	Box     string        `json:"box,omitempty"`
+	Filter  *Filter       `json:"filter,omitempty"`
+	Reveal  string        `json:"reveal,omitempty"`
+	Context *Context      `json:"context,omitempty"`
+	Targets []string      `json:"targets,omitempty"`
+	Palette *PaletteQuery `json:"palette,omitempty"`
+}
+
+// PaletteQuery is what the palette asks (console.PaletteQuery): the text
+// typed, at most one chip — a command by its ID, or a box by its key — and
+// whether archived boxes are in scope. Current is the key of the box the
+// window is on, and Recent the boxes it has gone to, latest first: navigation
+// is the app's, and what an empty query ranks by.
+type PaletteQuery struct {
+	Text     string   `json:"text,omitempty"`
+	Command  string   `json:"command,omitempty"`
+	Box      string   `json:"box,omitempty"`
+	Archived bool     `json:"archived,omitempty"`
+	Current  string   `json:"current,omitempty"`
+	Recent   []string `json:"recent,omitempty"`
 }
 
 // Unsubscribe stops one.
@@ -174,6 +209,45 @@ type Snapshot struct {
 	Audit        *Audit        `json:"audit,omitempty"`
 	Forwards     *Forwards     `json:"forwards,omitempty"`
 	Sessions     *Sessions     `json:"sessions,omitempty"`
+	Commands     *Commands     `json:"commands,omitempty"`
+	Palette      *Palette      `json:"palette,omitempty"`
+}
+
+// Commands is every registry command as it stands, in the registry's order.
+type Commands struct {
+	Entries []Entry `json:"entries"`
+}
+
+// Palette is what a query found, in the order the palette lists it. Archived
+// is whether archived boxes were searched: asked for, or brought in by a chip
+// that acts only on them, which the app keeps. Commit is the chip the query's
+// text committed as it was typed (console.PaletteCommit): the rows are the
+// committed query's, and the app takes its chip and text in place of its own.
+// Partial and Stale are what the search says about the servers it searched
+// (console.List.Partial, Stale): those it has no rows from yet or could not
+// reach, and those whose rows are behind — every server, whatever the list's
+// filter.
+type Palette struct {
+	Rows     []PaletteRow   `json:"rows"`
+	Archived bool           `json:"archived,omitempty"`
+	Commit   *PaletteCommit `json:"commit,omitempty"`
+	Partial  []string       `json:"partial"`
+	Stale    []Note         `json:"stale"`
+}
+
+// PaletteRow is one result: a box by its key, or a command as it stands; Why
+// is why it cannot be chosen, when it cannot.
+type PaletteRow struct {
+	Box     string `json:"box,omitempty"`
+	Command *Entry `json:"command,omitempty"`
+	Why     string `json:"why,omitempty"`
+}
+
+// PaletteCommit is a command committed as the palette's chip, and the text
+// left after it.
+type PaletteCommit struct {
+	Command string `json:"command"`
+	Text    string `json:"text"`
 }
 
 // Listing is the box listing as the console shows it (console.List): every

@@ -14,10 +14,10 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 3;
+pub const PROTOCOL: i64 = 4;
 
 /// The console spec's shape (Spec.version) this side reads.
-pub const SPEC_VERSION: i64 = 4;
+pub const SPEC_VERSION: i64 = 5;
 
 /// The kinds of frame the bridge carries: each frame is a kind (1 byte), a stream (u32), a length
 /// (u32), big-endian, then the payload.
@@ -253,6 +253,9 @@ pub struct Spec {
     /// Gestures are the bindings that are not commands (Gesture): every key a frontend's list,
     /// tree, leader and panes bind is a command's or one of these.
     pub gestures: Vec<SpecGesture>,
+
+    /// Menus are the desktop's menus, in the order its menu bar draws them.
+    pub menus: Vec<Menu>,
 }
 
 /// SpecColor is one color token: its dark and light values as #rrggbb, and the xterm-256 index the
@@ -342,10 +345,51 @@ pub struct SpecTUIBinding {
     pub menu: Vec<String>,
 }
 
-/// SpecDesktopBinding is DesktopBinding on the wire.
+/// SpecDesktopBinding is DesktopBinding on the wire. Menu is omitted for a gesture.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct SpecDesktopBinding {
     pub keys: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub menu: Option<Menu>,
+}
+
+/// Menu is one of the desktop's menus.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Menu {
+    #[default]
+    #[serde(rename = "Console")]
+    Console,
+
+    #[serde(rename = "Box")]
+    Box,
+
+    /// MenuSession is a workspace's sessions: a pane's own menu too.
+    #[serde(rename = "Session")]
+    Session,
+
+    #[serde(rename = "View")]
+    View,
+
+    #[serde(rename = "Go")]
+    Go,
+
+    #[serde(rename = "Help")]
+    Help,
+}
+
+impl Menu {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Menu::Console => "Console",
+            Menu::Box => "Box",
+            Menu::Session => "Session",
+            Menu::View => "View",
+            Menu::Go => "Go",
+            Menu::Help => "Help",
+        }
+    }
 }
 
 /// SpecGesture is one gesture as a frontend is handed it.
@@ -383,7 +427,14 @@ pub struct Session {
 /// box key, for a topic about one box. Filter is what the listing is narrowed to, which a renderer
 /// holds as the TUI holds its List's (console/DESIGN.md, "The list"): the app subscribes again
 /// under a new Sub to change it, and ends the old. Without one the listing opens on the filter this
-/// machine's last window left (console.ListView).
+/// machine's last window left (console.ListView). Reveal, a box's key, narrows it instead to what
+/// shows that box whatever the filter hid (console.Revealing): a view the palette navigates to,
+/// which is never saved over the person's filter.
+///
+/// The commands and the palette are about where the app asks from (Context) and, for the commands,
+/// the boxes it names (Targets). They are read from the last listing, never the servers, and sent
+/// again as it changes; the app subscribes again under a new Sub when what it asks changes — each
+/// query of the palette, a menu opened somewhere else.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Subscribe {
     pub sub: u32,
@@ -395,6 +446,18 @@ pub struct Subscribe {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<Filter>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub reveal: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<Context>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub targets: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette: Option<PaletteQuery>,
 }
 
 /// Topic is what a subscription follows.
@@ -431,6 +494,16 @@ pub enum Topic {
     /// and names them (Box).
     #[serde(rename = "sessions")]
     Sessions,
+
+    /// TopicCommands is every registry command as it stands where the app asks from, for the boxes
+    /// it names (Context, Targets): what its menus list, enabled or with why not.
+    #[serde(rename = "commands")]
+    Commands,
+
+    /// TopicPalette is what the palette finds for a query (Context, Palette): the core's results,
+    /// in the core's order.
+    #[serde(rename = "palette")]
+    Palette,
 }
 
 impl Topic {
@@ -444,6 +517,8 @@ impl Topic {
             Topic::Audit => "audit",
             Topic::Forwards => "forwards",
             Topic::Sessions => "sessions",
+            Topic::Commands => "commands",
+            Topic::Palette => "palette",
         }
     }
 }
@@ -471,6 +546,64 @@ pub struct Filter {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub archived: bool,
+}
+
+/// Context is where the command is asked from (console.Context): navigation is the app's, and the
+/// core is handed the parts of it its rules read.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Context {
+    /// Workspace is the key of the box whose workspace the window holds.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub workspace: String,
+
+    #[serde(rename = "hasWorkspace", default, skip_serializing_if = "is_default")]
+    pub has_workspace: bool,
+
+    #[serde(rename = "workspaceShown", default, skip_serializing_if = "is_default")]
+    pub workspace_shown: bool,
+
+    #[serde(rename = "paneFocused", default, skip_serializing_if = "is_default")]
+    pub pane_focused: bool,
+
+    #[serde(rename = "listHasKeys", default, skip_serializing_if = "is_default")]
+    pub list_has_keys: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tree: bool,
+
+    #[serde(rename = "treeShown", default, skip_serializing_if = "is_default")]
+    pub tree_shown: bool,
+
+    #[serde(rename = "treeFits", default, skip_serializing_if = "is_default")]
+    pub tree_fits: bool,
+
+    #[serde(rename = "pageShown", default, skip_serializing_if = "is_default")]
+    pub page_shown: bool,
+}
+
+/// PaletteQuery is what the palette asks (console.PaletteQuery): the text typed, at most one chip
+/// — a command by its ID, or a box by its key — and whether archived boxes are in scope.
+/// Current is the key of the box the window is on, and Recent the boxes it has gone to, latest
+/// first: navigation is the app's, and what an empty query ranks by.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PaletteQuery {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub text: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub command: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub r#box: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub archived: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub current: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub recent: Vec<String>,
 }
 
 /// Unsubscribe stops one.
@@ -510,6 +643,12 @@ pub struct Snapshot {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sessions: Option<Sessions>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commands: Option<Commands>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette: Option<Palette>,
 }
 
 /// Listing is the box listing as the console shows it (console.List): every box listed, and the
@@ -1038,6 +1177,75 @@ pub struct Service {
     pub detail: String,
 }
 
+/// Commands is every registry command as it stands, in the registry's order.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Commands {
+    pub entries: Vec<Entry>,
+}
+
+/// Entry is one command as it stands: whether it can act, and why not. Uses is how often this
+/// window has used it, which ranks the palette.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Entry {
+    pub command: String,
+
+    pub label: String,
+
+    pub detail: String,
+
+    pub enabled: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub why: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub uses: i64,
+}
+
+/// Palette is what a query found, in the order the palette lists it. Archived is whether archived
+/// boxes were searched: asked for, or brought in by a chip that acts only on them, which the app
+/// keeps. Commit is the chip the query's text committed as it was typed (console.PaletteCommit):
+/// the rows are the committed query's, and the app takes its chip and text in place of its own.
+/// Partial and Stale are what the search says about the servers it searched (console.List.Partial,
+/// Stale): those it has no rows from yet or could not reach, and those whose rows are behind —
+/// every server, whatever the list's filter.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Palette {
+    pub rows: Vec<PaletteRow>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub archived: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<PaletteCommit>,
+
+    pub partial: Vec<String>,
+
+    pub stale: Vec<Note>,
+}
+
+/// PaletteRow is one result: a box by its key, or a command as it stands; Why is why it cannot be
+/// chosen, when it cannot.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PaletteRow {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub r#box: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<Entry>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub why: String,
+}
+
+/// PaletteCommit is a command committed as the palette's chip, and the text left after it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PaletteCommit {
+    pub command: String,
+
+    pub text: String,
+}
+
 /// Command runs a registry command. ID is the app's, unique for the bridge's life, and is what its
 /// result, forms, questions and progress name. Targets are box keys, explicit: a box command never
 /// falls back to what is on screen.
@@ -1052,39 +1260,6 @@ pub struct Command {
     pub context: Context,
 
     pub args: Args,
-}
-
-/// Context is where the command is asked from (console.Context): navigation is the app's, and the
-/// core is handed the parts of it its rules read.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Context {
-    /// Workspace is the key of the box whose workspace the window holds.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub workspace: String,
-
-    #[serde(rename = "hasWorkspace", default, skip_serializing_if = "is_default")]
-    pub has_workspace: bool,
-
-    #[serde(rename = "workspaceShown", default, skip_serializing_if = "is_default")]
-    pub workspace_shown: bool,
-
-    #[serde(rename = "paneFocused", default, skip_serializing_if = "is_default")]
-    pub pane_focused: bool,
-
-    #[serde(rename = "listHasKeys", default, skip_serializing_if = "is_default")]
-    pub list_has_keys: bool,
-
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub tree: bool,
-
-    #[serde(rename = "treeShown", default, skip_serializing_if = "is_default")]
-    pub tree_shown: bool,
-
-    #[serde(rename = "treeFits", default, skip_serializing_if = "is_default")]
-    pub tree_fits: bool,
-
-    #[serde(rename = "pageShown", default, skip_serializing_if = "is_default")]
-    pub page_shown: bool,
 }
 
 /// Args are what a command takes beyond its targets: the stream a session it makes is attached to
@@ -1167,25 +1342,6 @@ impl Status {
             Status::Enter => "enter",
         }
     }
-}
-
-/// Entry is one command as it stands: whether it can act, and why not. Uses is how often this
-/// window has used it, which ranks the palette.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Entry {
-    pub command: String,
-
-    pub label: String,
-
-    pub detail: String,
-
-    pub enabled: bool,
-
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub why: String,
-
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub uses: i64,
 }
 
 /// Form is a form a command needs filled, described by the core. ID is the CLI's; it is sent again,

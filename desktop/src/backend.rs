@@ -23,15 +23,16 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
 
 use crate::wire::{
-    Answer, Box as Sandbox, ChoiceGroup, Command, Entry, Filter, FilterChoice, Form, Listing, Message, Open, Progress,
-    Question, Remark, Result as CommandResult, Row, Sessions, Spec, State, Status, Stream, StreamState, Submit, Subscribe, Tab,
-    TabKind, Topic, Type, Unsubscribe,
+    Answer, Box as Sandbox, ChoiceGroup, Command, Commands, Entry, Filter, FilterChoice, Form, Listing, Message, Open, Palette,
+    PaletteCommit, PaletteQuery, PaletteRow, Progress, Question, Remark, Result as CommandResult, Row, Sessions, Spec, SpecTarget,
+    State, Status, Stream, StreamState, Submit, Subscribe, Tab, TabKind, Topic, Type, Unsubscribe,
 };
 
 /// What the app sends, by message: the type and its body.
 pub enum Out {
-    /// A topic followed; the listing's narrowed to `filter` (none: what the last window left).
-    Subscribe { sub: u32, topic: Topic, sandbox: String, filter: Option<Filter> },
+    /// A topic followed: the listing's narrowed to its filter (none: what the last window left),
+    /// a box's topic about its box, the commands and the palette asked from its context.
+    Subscribe(Subscribe),
     Unsubscribe(u32),
     Command(Command),
     Open { stream: u32, sandbox: String, exec: String, cols: u16, rows: u16 },
@@ -44,11 +45,7 @@ pub enum Out {
 impl Out {
     fn message(self) -> Message {
         match self {
-            Out::Subscribe { sub, topic, sandbox, filter } => Message {
-                r#type: Type::Subscribe,
-                subscribe: Some(Subscribe { sub, topic, r#box: sandbox, filter }),
-                ..Default::default()
-            },
+            Out::Subscribe(s) => Message { r#type: Type::Subscribe, subscribe: Some(s), ..Default::default() },
             Out::Unsubscribe(sub) => Message { r#type: Type::Unsubscribe, unsubscribe: Some(Unsubscribe { sub }), ..Default::default() },
             Out::Command(c) => Message { r#type: Type::Command, command: Some(c), ..Default::default() },
             Out::Open { stream, sandbox, exec, cols, rows } => Message {
@@ -79,6 +76,10 @@ pub enum Event {
     Listing(u32, Result<Listing, String>),
     /// A sessions subscription's snapshot, or why it could not be read.
     Sessions(u32, Result<Sessions, String>),
+    /// The commands as they stand where a menu was opened, or why they could not be read.
+    Commands(u32, Result<Commands, String>),
+    /// What the palette's query found, or why it could not be read.
+    Palette(u32, Result<Palette, String>),
     Result(CommandResult),
     Stream(Stream),
     Question(Question),
@@ -123,6 +124,14 @@ fn event(m: Message) -> Option<Event> {
                     _ => Err(s.error),
                 })),
                 Topic::Sessions => Some(Event::Sessions(s.sub, match s.sessions {
+                    Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
+                Topic::Commands => Some(Event::Commands(s.sub, match s.commands {
+                    Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
+                Topic::Palette => Some(Event::Palette(s.sub, match s.palette {
                     Some(v) if s.error.is_empty() => Ok(v),
                     _ => Err(s.error),
                 })),
@@ -431,25 +440,94 @@ impl Mock {
             Entry { command: c.id.clone(), label: c.label.clone(), detail: c.detail.clone(), enabled, why: if enabled { String::new() } else { why.into() }, uses: 0 }
         }).collect()
     }
+
+    /// Every registry command for a box (or none), roughly: a lifecycle command by `actions`,
+    /// any other able to act.
+    fn entries(&self, sandbox: Option<&str>) -> Vec<Entry> {
+        let lifecycle = sandbox.map(|b| self.actions(b)).unwrap_or_default();
+        bundled_spec().commands.iter().map(|c| {
+            lifecycle.iter().find(|e| e.command == c.id).cloned().unwrap_or_else(|| Entry {
+                command: c.id.clone(), label: c.label.clone(), detail: c.detail.clone(), enabled: true, why: String::new(), uses: 0,
+            })
+        }).collect()
+    }
+
+    /// What the palette finds, with the core's rules roughly: a box command's alias and a space
+    /// commit it; boxes and commands by subsequence; a chip's rows evaluated for it.
+    fn palette(&self, mut q: PaletteQuery) -> Palette {
+        let spec = bundled_spec();
+        let mut commit = None;
+        if q.command.is_empty() && q.r#box.is_empty()
+            && let Some((first, rest)) = q.text.split_once(' ')
+            && let Some(c) = spec.commands.iter().find(|c| c.target == SpecTarget::Box && c.aliases.iter().any(|a| !a.contains(' ') && a.eq_ignore_ascii_case(first)))
+        {
+            commit = Some(PaletteCommit { command: c.id.clone(), text: rest.into() });
+            q.command = c.id.clone();
+            q.text = rest.into();
+        }
+        let archived = q.archived || q.command == "purge" || q.command == "unarchive";
+        let query = q.text.to_lowercase();
+        let fits = |t: &str| {
+            let t = t.to_lowercase();
+            let mut it = t.chars();
+            query.chars().filter(|c| *c != ' ').all(|q| it.any(|c| c == q))
+        };
+        let mut rows = vec![];
+        if q.r#box.is_empty() {
+            for b in self.boxes.iter().filter(|b| (archived || b.state != State::Archived) && (fits(&b.name) || fits(&b.id))) {
+                let why = if q.command.is_empty() {
+                    String::new()
+                } else {
+                    self.entries(Some(&b.key)).into_iter().find(|e| e.command == q.command && !e.enabled).map(|e| e.why).unwrap_or_default()
+                };
+                rows.push(PaletteRow { r#box: b.key.clone(), command: None, why });
+            }
+        }
+        if q.command.is_empty() {
+            let target = (!q.r#box.is_empty()).then_some(q.r#box.as_str());
+            for (c, e) in spec.commands.iter().zip(self.entries(target)) {
+                if (target.is_some() && c.target != SpecTarget::Box) || !c.aliases.iter().any(|a| fits(a)) {
+                    continue;
+                }
+                let why = if e.enabled { String::new() } else { e.why.clone() };
+                rows.push(PaletteRow { r#box: String::new(), command: Some(e), why });
+            }
+        }
+        if rows.iter().any(|r| r.why.is_empty()) {
+            rows.retain(|r| r.why.is_empty());
+        }
+        Palette { rows, archived, commit, partial: vec![], stale: vec![] }
+    }
 }
 
 impl Backend for Mock {
     fn send(&mut self, m: Out) {
         match m {
-            Out::Subscribe { sub, topic: Topic::Listing, filter, .. } => {
+            Out::Subscribe(Subscribe { sub, topic: Topic::Listing, filter, reveal, .. }) => {
                 self.list_sub = sub;
-                if let Some(f) = filter {
+                // A box revealed shows whatever the filter hid, as the core's `Revealing` does.
+                if let Some(b) = self.sandbox(&reveal) {
+                    self.filter = Filter { tags: vec![], archived: b.state == State::Archived, ..Default::default() };
+                } else if let Some(f) = filter {
                     self.filter = f;
                 }
                 self.relist();
             }
-            Out::Subscribe { sub, topic: Topic::Sessions, sandbox, .. } => {
+            Out::Subscribe(Subscribe { sub, topic: Topic::Sessions, r#box: sandbox, .. }) => {
                 let running = self.sandbox(&sandbox).is_some_and(Sandbox::running);
                 let mut sessions = vec![mock_exec("primary", TabKind::Primary, "")];
                 sessions.extend(self.extra.get(&sandbox).into_iter().flatten().cloned());
                 self.inbox.push(Event::Sessions(sub, Ok(Sessions { running, sessions, services: vec![] })));
             }
-            Out::Subscribe { .. } | Out::Unsubscribe(_) => {}
+            Out::Subscribe(Subscribe { sub, topic: Topic::Commands, targets, .. }) => {
+                let entries = self.entries(targets.first().map(String::as_str));
+                self.inbox.push(Event::Commands(sub, Ok(Commands { entries })));
+            }
+            Out::Subscribe(Subscribe { sub, topic: Topic::Palette, palette, .. }) => {
+                let p = self.palette(palette.unwrap_or_default());
+                self.inbox.push(Event::Palette(sub, Ok(p)));
+            }
+            Out::Subscribe(_) | Out::Unsubscribe(_) => {}
             Out::Command(c) => {
                 let mut r = self.command(c.clone());
                 r.id = c.id;
@@ -568,6 +646,10 @@ mod tests {
         assert_eq!((r.id, r.status, r.r#box.as_str(), r.session.unwrap().title.as_str()), (4, Status::Done, "b1", "bash"));
         let Some(Event::Stream(st)) = read(r#"{"type":"stream","stream":{"stream":5,"state":"failed","why":"gone"}}"#) else { panic!("stream") };
         assert_eq!((st.stream, st.state), (5, StreamState::Failed));
+        let Some(Event::Palette(6, Ok(p))) = read(r#"{"type":"snapshot","snapshot":{"sub":6,"topic":"palette","palette":{"rows":[{"box":"b1"},{"command":{"command":"stop","label":"stop","detail":"power it off","enabled":false,"why":"not running"},"why":"not running"}],"archived":true,"commit":{"command":"stop","text":"b"},"partial":[],"stale":[]}}}"#) else { panic!("palette") };
+        assert_eq!((p.rows[0].r#box.as_str(), p.rows[1].why.as_str(), p.archived, p.commit.map(|c| c.command)), ("b1", "not running", true, Some("stop".into())));
+        let Some(Event::Commands(7, Ok(c))) = read(r#"{"type":"snapshot","snapshot":{"sub":7,"topic":"commands","commands":{"entries":[{"command":"help","label":"help","detail":"show the keys","enabled":true}]}}}"#) else { panic!("commands") };
+        assert_eq!(c.entries[0].command, "help");
         assert!(read(r#"{"type":"fieldErrors","fieldErrors":{"form":1,"errors":[]}}"#).is_none());
     }
 
@@ -583,8 +665,11 @@ mod tests {
         assert_eq!(v["command"]["args"], json!({"stream": 7}));
         assert_eq!(json(Out::Decline(9)), json!({"type": "answer", "answer": {"question": 9, "declined": true}}));
         assert_eq!(json(Out::Dismiss(2)), json!({"type": "submit", "submit": {"form": 2, "answers": {}, "cancel": true}}));
-        let sub = json(Out::Subscribe { sub: 1, topic: Topic::Listing, sandbox: String::new(), filter: Some(Filter { archived: true, tags: vec![], ..Default::default() }) });
+        let sub = json(Out::Subscribe(Subscribe { sub: 1, topic: Topic::Listing, filter: Some(Filter { archived: true, tags: vec![], ..Default::default() }), ..Default::default() }));
         assert_eq!(sub, json!({"type": "subscribe", "subscribe": {"sub": 1, "topic": "listing", "filter": {"tags": [], "archived": true}}}));
+        let q = PaletteQuery { text: "stop ".into(), recent: vec!["b1".into()], ..Default::default() };
+        let sub = json(Out::Subscribe(Subscribe { sub: 2, topic: Topic::Palette, context: Some(Context::default()), palette: Some(q), ..Default::default() }));
+        assert_eq!(sub, json!({"type": "subscribe", "subscribe": {"sub": 2, "topic": "palette", "context": {}, "palette": {"text": "stop ", "recent": ["b1"]}}}));
         assert_eq!(json(Out::Unsubscribe(1)), json!({"type": "unsubscribe", "unsubscribe": {"sub": 1}}));
         let open = json(Out::Open { stream: 4, sandbox: "b1".into(), exec: "primary".into(), cols: 80, rows: 24 });
         assert_eq!(open, json!({"type": "open", "open": {"stream": 4, "box": "b1", "exec": "primary", "cols": 80, "rows": 24}}));

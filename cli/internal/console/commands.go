@@ -65,7 +65,29 @@ type TUIBinding struct {
 // shift to primary (598 §2).
 type DesktopBinding struct {
 	Keys []string
+	// Menu is the menu bar's menu the command is in (598 §2: the menu bar, or
+	// an in-window equivalent). Every command is in one, so every command is
+	// reached in the desktop by pointer as well as by the palette; a gesture
+	// is in none.
+	Menu Menu
 }
+
+// Menu is one of the desktop's menus.
+type Menu string
+
+// The menus, in the order the menu bar draws them (Menus).
+const (
+	MenuConsole Menu = "Console"
+	MenuBox     Menu = "Box"
+	// MenuSession is a workspace's sessions: a pane's own menu too.
+	MenuSession Menu = "Session"
+	MenuView    Menu = "View"
+	MenuGo      Menu = "Go"
+	MenuHelp    Menu = "Help"
+)
+
+// Menus is every menu, in the order the menu bar draws them.
+var Menus = []Menu{MenuConsole, MenuBox, MenuSession, MenuView, MenuGo, MenuHelp}
 
 // Command is one entry of the registry.
 type Command struct {
@@ -624,138 +646,141 @@ func (b TUIBinding) menu(keys ...string) TUIBinding { b.Menu = keys; return b }
 
 func desktop(keys ...string) DesktopBinding { return DesktopBinding{Keys: keys} }
 
+// in puts a command in one of the desktop's menus.
+func (b DesktopBinding) in(menu Menu) DesktopBinding { b.Menu = menu; return b }
+
 // registry is every command, in the order hints, menus and the palette list
 // them: the box's lifecycle first, as its action menu orders it.
 var registry = []Command{
 	{ID: "attach", Label: "attach", Detail: "join the harness terminal", Aliases: []string{"attach", "open"},
 		Target: TargetBox, Lifecycle: true, opensBox: true,
-		Bindings: Bindings{TUI: tui("a").leader("a"), Desktop: desktop("enter")}},
+		Bindings: Bindings{TUI: tui("a").leader("a"), Desktop: desktop("enter").in(MenuBox)}},
 	{ID: "shell", Label: "shell", Detail: "open a shell in the box", Aliases: []string{"shell"},
 		Target: TargetBox, Lifecycle: true, opensBox: true,
-		Bindings: Bindings{TUI: tui("s").leader("s"), Desktop: desktop("primary+t")}},
+		Bindings: Bindings{TUI: tui("s").leader("s"), Desktop: desktop("primary+t").in(MenuSession)}},
 	{ID: "review config", Label: "review config", Detail: "review and save local settings and logins", Aliases: []string{"review config"},
 		Target: TargetBox, Lifecycle: true,
-		Bindings: Bindings{TUI: tui("H").leader("H")}},
+		Bindings: Bindings{TUI: tui("H").leader("H"), Desktop: desktop().in(MenuBox)}},
 	{ID: "rename", Label: "rename", Detail: "type a new name for the box", Aliases: []string{"rename"},
 		Target: TargetBox, Lifecycle: true,
-		Bindings: Bindings{TUI: tui("e").leader("e"), Desktop: desktop("f2")}},
+		Bindings: Bindings{TUI: tui("e").leader("e"), Desktop: desktop("f2").in(MenuBox)}},
 	{ID: "settings", Label: "settings", Detail: "edit its configured name, harness, egress and discobox API access", Aliases: []string{"settings"},
 		Target: TargetBox, Lifecycle: true,
-		Bindings: Bindings{TUI: tui("E").leader("E")}},
+		Bindings: Bindings{TUI: tui("E").leader("E"), Desktop: desktop().in(MenuBox)}},
 	{ID: "upgrade", Label: "upgrade", Detail: "re-pin to the current harness image", Aliases: []string{"upgrade"},
 		Target: TargetBox, Lifecycle: true, verb: VerbUpgrade,
-		Bindings: Bindings{TUI: tui("u").leader("u")}},
+		Bindings: Bindings{TUI: tui("u").leader("u"), Desktop: desktop().in(MenuBox)}},
 	// Repair is R rather than r, which refreshes the list — and the shift is
 	// no loss on an action that rebuilds a container, next to one that
 	// redraws a table.
 	{ID: "repair", Label: "repair", Detail: "rebuild the box on the current image, keeping its work", Aliases: []string{"repair"},
 		Target: TargetBox, Lifecycle: true, verb: VerbRepair,
-		Bindings: Bindings{TUI: tui("R").leader("R")}},
+		Bindings: Bindings{TUI: tui("R").leader("R"), Desktop: desktop().in(MenuBox)}},
 	{ID: "stop", Label: "stop", Detail: "power the box off, keeping its disk", Aliases: []string{"stop"},
 		Target: TargetBox, Lifecycle: true, verb: VerbStop,
-		Bindings: Bindings{TUI: tui("t").leader("t")}},
+		Bindings: Bindings{TUI: tui("t").leader("t"), Desktop: desktop().in(MenuBox)}},
 	{ID: "start", Label: "start", Detail: "power a stopped box back on, or thaw a suspended one", Aliases: []string{"start"},
 		Target: TargetBox, Lifecycle: true, verb: VerbStart,
-		Bindings: Bindings{TUI: tui("T").leader("T")}},
+		Bindings: Bindings{TUI: tui("T").leader("T"), Desktop: desktop().in(MenuBox)}},
 	{ID: "archive", Label: "archive", Detail: "put it away, disk and all, reversibly", Aliases: []string{"archive", "rm"},
 		Target: TargetBox, Lifecycle: true, verb: VerbArchive,
-		Bindings: Bindings{TUI: tui("x", "delete").leader("x")}},
+		Bindings: Bindings{TUI: tui("x", "delete").leader("x"), Desktop: desktop().in(MenuBox)}},
 	{ID: "unarchive", Label: "unarchive", Detail: "bring an archived box back", Aliases: []string{"unarchive"},
 		Target: TargetBox, Lifecycle: true, verb: VerbUnarchive,
-		Bindings: Bindings{TUI: tui("U").leader("U")}},
+		Bindings: Bindings{TUI: tui("U").leader("U"), Desktop: desktop().in(MenuBox)}},
 	{ID: "purge", Label: "purge", Detail: "destroy it and its data, for good", Aliases: []string{"purge"},
 		Target: TargetBox, Lifecycle: true, verb: VerbPurge,
-		Bindings: Bindings{TUI: tui("P").leader("P")}},
+		Bindings: Bindings{TUI: tui("P").leader("P"), Desktop: desktop().in(MenuBox)}},
 
 	{ID: "tools", Label: "tools", Detail: "open a diff viewer, an editor or your IDE on the box", Aliases: []string{"tools"},
 		Target: TargetBox, countedByFlow: true,
-		Bindings: Bindings{TUI: tui("o").leader("o")}},
+		Bindings: Bindings{TUI: tui("o").leader("o"), Desktop: desktop().in(MenuBox)}},
 	{ID: "issue", Label: "issue", Detail: "open the tagged issue", Aliases: []string{"issue"},
 		Target:   TargetBox,
-		Bindings: Bindings{TUI: tui("i").leader("i")}},
+		Bindings: Bindings{TUI: tui("i").leader("i"), Desktop: desktop().in(MenuBox)}},
 	{ID: "pr", Label: "pull request", Detail: "open the tagged pull request", Aliases: []string{"pull request", "pr"},
 		Target:   TargetBox,
-		Bindings: Bindings{TUI: tui("p").leader("p")}},
+		Bindings: Bindings{TUI: tui("p").leader("p"), Desktop: desktop().in(MenuBox)}},
 	{ID: "audit", Label: "audit", Detail: "follow everything the box has done, as it happens", Aliases: []string{"audit"},
 		Target: TargetBox, countedByFlow: true,
-		Bindings: Bindings{TUI: tui().leader("A")}},
+		Bindings: Bindings{TUI: tui().leader("A"), Desktop: desktop().in(MenuBox)}},
 	{ID: "new", Label: "new discobox", Detail: "open the new discobox card", Aliases: []string{"new discobox", "new"},
 		countedByFlow: true,
-		Bindings:      Bindings{TUI: tui("n").leader("n"), Desktop: desktop("primary+n")}},
+		Bindings:      Bindings{TUI: tui("n").leader("n"), Desktop: desktop("primary+n").in(MenuConsole)}},
 	{ID: "credentials", Label: "credentials", Detail: "manage credentials", Aliases: []string{"credentials", "secrets"},
 		countedByFlow: true,
-		Bindings:      Bindings{TUI: tui("f4").leader("f4")}},
+		Bindings:      Bindings{TUI: tui("f4").leader("f4"), Desktop: desktop().in(MenuConsole)}},
 	{ID: "harnesses", Label: "harnesses", Detail: "manage harnesses", Aliases: []string{"harnesses"},
 		countedByFlow: true,
-		Bindings:      Bindings{TUI: tui("f3").leader("f3")}},
+		Bindings:      Bindings{TUI: tui("f3").leader("f3"), Desktop: desktop().in(MenuConsole)}},
 	{ID: "quit", Label: "quit", Detail: "leave this window", Aliases: []string{"quit", "exit"},
-		Bindings: Bindings{TUI: tui("q", "ctrl+c").leader("q"), Desktop: desktop("primary+q")}},
+		Bindings: Bindings{TUI: tui("q", "ctrl+c").leader("q"), Desktop: desktop("primary+q").in(MenuConsole)}},
 	{ID: "help", Label: "help", Detail: "show the console keys", Aliases: []string{"help"},
-		Bindings: Bindings{TUI: tui("f1", "?").leader("f1")}},
+		Bindings: Bindings{TUI: tui("f1", "?").leader("f1"), Desktop: desktop("f1").in(MenuHelp)}},
 	{ID: "refresh", Label: "refresh", Detail: "read the boxes again", Aliases: []string{"refresh"},
-		Bindings: Bindings{TUI: tui("r").leader("r"), Desktop: desktop("primary+r")}},
+		Bindings: Bindings{TUI: tui("r").leader("r"), Desktop: desktop("primary+r").in(MenuConsole)}},
 	{ID: "servers", Label: "servers", Detail: "choose the server, folder or tags", Aliases: []string{"servers", "tags", "filters"},
-		Bindings: Bindings{Desktop: desktop("primary+f")}},
+		Bindings: Bindings{Desktop: desktop("primary+f").in(MenuView)}},
 	{ID: "all", Label: "all discoboxes", Detail: "show every discobox, with this one beside them", Aliases: []string{"all discoboxes", "boxes"},
-		Bindings: Bindings{TUI: tui().menu(".", "l")}},
+		Bindings: Bindings{TUI: tui().menu(".", "l"), Desktop: desktop().in(MenuView)}},
 	{ID: "services", Label: "services", Detail: "view output, start, stop or restart a service", Aliases: []string{"services"},
 		Target: TargetBox, countedByFlow: true,
-		Bindings: Bindings{TUI: tui().leader("S", "0")}},
+		Bindings: Bindings{TUI: tui().leader("S", "0"), Desktop: desktop().in(MenuBox)}},
 	{ID: "requests", Label: "credential requests", Detail: "answer this box's credential requests", Aliases: []string{"credential requests", "requests"},
 		Target:   TargetBox,
-		Bindings: Bindings{TUI: tui("C").leader("g")}},
+		Bindings: Bindings{TUI: tui("C").leader("g"), Desktop: desktop().in(MenuBox)}},
 	{ID: "rejections", Label: "rejected credentials", Detail: "remedy a refused credential", Aliases: []string{"rejected credentials", "rejections"},
 		Target:   TargetBox,
-		Bindings: Bindings{TUI: tui("K").leader("K")}},
+		Bindings: Bindings{TUI: tui("K").leader("K"), Desktop: desktop().in(MenuBox)}},
 	{ID: "files", Label: "files changed", Detail: "review the pull request's changes", Aliases: []string{"files changed", "diff"},
 		Target:   TargetBox,
-		Bindings: Bindings{TUI: tui("f").leader("f")}},
+		Bindings: Bindings{TUI: tui("f").leader("f"), Desktop: desktop().in(MenuBox)}},
 	{ID: "archived", Label: "show archived", Detail: "show or hide archived boxes", Aliases: []string{"show archived"},
-		Bindings: Bindings{TUI: tui("A"), Desktop: desktop("primary+alt+a")}},
+		Bindings: Bindings{TUI: tui("A"), Desktop: desktop("primary+alt+a").in(MenuView)}},
 	{ID: "options", Label: "run options", Detail: "choose defaults for the next discobox", Aliases: []string{"run options", "options"},
-		Bindings: Bindings{TUI: tui("ctrl+o")}},
+		Bindings: Bindings{TUI: tui("ctrl+o"), Desktop: desktop().in(MenuConsole)}},
 	{ID: "repaint", Label: "repaint", Detail: "redraw and reread the console", Aliases: []string{"repaint"},
-		Bindings: Bindings{TUI: tui("ctrl+l")}},
+		Bindings: Bindings{TUI: tui("ctrl+l"), Desktop: desktop().in(MenuView)}},
 
 	// These own a workspace pane rather than a box chosen from the list.
 	{ID: "terminal", Label: "new terminal", Detail: "open another harness terminal", Aliases: []string{"new terminal"},
-		Bindings: Bindings{TUI: tui().leader("c"), Desktop: desktop("primary+alt+t")}},
+		Bindings: Bindings{TUI: tui().leader("c"), Desktop: desktop("primary+alt+t").in(MenuSession)}},
 	{ID: "end", Label: "end terminal", Detail: "end the focused session", Aliases: []string{"end terminal"},
-		Bindings: Bindings{TUI: tui().leader("X"), Desktop: desktop("primary+w")}},
+		Bindings: Bindings{TUI: tui().leader("X"), Desktop: desktop("primary+w").in(MenuSession)}},
 	{ID: "maximize", Label: "maximize", Detail: "maximize or restore the focused column", Aliases: []string{"maximize"},
-		Bindings: Bindings{TUI: tui().leader("z"), Desktop: desktop("primary+enter")}},
+		Bindings: Bindings{TUI: tui().leader("z"), Desktop: desktop("primary+enter").in(MenuSession)}},
 	{ID: "detach", Label: "detach", Detail: "leave the workspace, keeping sessions running", Aliases: []string{"detach"},
-		Bindings: Bindings{TUI: tui().leader("d"), Desktop: desktop("primary+0")}},
+		Bindings: Bindings{TUI: tui().leader("d"), Desktop: desktop("primary+0").in(MenuView)}},
 	{ID: "mouse", Label: "toggle mouse", Detail: "take or return the application's mouse", Aliases: []string{"toggle mouse"},
-		Bindings: Bindings{TUI: tui().leader("m")}},
+		Bindings: Bindings{TUI: tui().leader("m"), Desktop: desktop().in(MenuSession)}},
 	{ID: "actions", Label: "actions", Detail: "open the focused box's action menu", Aliases: []string{"actions"},
-		Bindings: Bindings{TUI: tui(".").leader(".")}},
+		Bindings: Bindings{TUI: tui(".").leader("."), Desktop: desktop("shift+f10").in(MenuBox)}},
 	{ID: "dismiss", Label: "dismiss banner", Detail: "dismiss the current notice", Aliases: []string{"dismiss banner"},
-		Bindings: Bindings{TUI: tui().leader("b")}},
+		Bindings: Bindings{TUI: tui().leader("b"), Desktop: desktop().in(MenuSession)}},
 	{ID: "palette", Label: "command palette", Detail: "find a box or command", Aliases: []string{"command palette", "palette"},
 		countedByFlow: true,
-		Bindings:      Bindings{TUI: tui(":").leader("k"), Desktop: desktop("primary+k", "primary+p")}},
+		Bindings:      Bindings{TUI: tui(":").leader("k"), Desktop: desktop("primary+k", "primary+p").in(MenuView)}},
 
 	// Moving between panes and boxes. Where focus goes is each frontend's
 	// (876 §2); the commands and their keys are the registry's like any other.
 	// Off the leftmost pane is the list beside the workspace.
 	{ID: "next pane", Label: "next pane", Detail: "move to the pane on the right", Aliases: []string{"next pane"},
 		moves:    true,
-		Bindings: Bindings{TUI: tui().leader("l").leader("right").repeats(), Desktop: desktop("ctrl+tab")}},
+		Bindings: Bindings{TUI: tui().leader("l").leader("right").repeats(), Desktop: desktop("ctrl+tab").in(MenuGo)}},
 	{ID: "previous pane", Label: "previous pane", Detail: "move to the pane on the left, and off the leftmost to the list", Aliases: []string{"previous pane"},
 		moves:    true,
-		Bindings: Bindings{TUI: tui().leader("h").leader("left").repeats(), Desktop: desktop("ctrl+shift+tab")}},
+		Bindings: Bindings{TUI: tui().leader("h").leader("left").repeats(), Desktop: desktop("ctrl+shift+tab").in(MenuGo)}},
 	// The walk has leaderless chords as well: Ctrl-Shift-K and J reach no
 	// program, since a classic terminal cannot encode them and sends Ctrl-K
 	// and Ctrl-J instead — which are not these keys.
 	{ID: "next box", Label: "next discobox", Detail: "switch to the discobox below in the list", Aliases: []string{"next discobox"},
 		moves:    true,
-		Bindings: Bindings{TUI: tui().leader("down").leader("j").repeats().chords("ctrl+shift+j"), Desktop: desktop("primary+alt+down")}},
+		Bindings: Bindings{TUI: tui().leader("down").leader("j").repeats().chords("ctrl+shift+j"), Desktop: desktop("primary+alt+down").in(MenuGo)}},
 	{ID: "previous box", Label: "previous discobox", Detail: "switch to the discobox above in the list", Aliases: []string{"previous discobox"},
 		moves:    true,
-		Bindings: Bindings{TUI: tui().leader("up").repeats().chords("ctrl+shift+k"), Desktop: desktop("primary+alt+up")}},
+		Bindings: Bindings{TUI: tui().leader("up").repeats().chords("ctrl+shift+k"), Desktop: desktop("primary+alt+up").in(MenuGo)}},
 	{ID: "sidebar", Label: "toggle list", Detail: "show or hide the discobox list beside the workspace", Aliases: []string{"toggle list", "sidebar"},
-		Bindings: Bindings{Desktop: desktop("primary+b")}},
+		Bindings: Bindings{Desktop: desktop("primary+b").in(MenuView)}},
 }
 
 // Gesture is a binding that is not a command (671 §4): moving a cursor,
@@ -826,6 +851,7 @@ var gestures = []Gesture{
 	{ID: "range", Label: "select a range", Bindings: Bindings{TUI: tui("V"), Desktop: desktop("shift+space")}},
 	{ID: "clear selection", Label: "clear the selection", Bindings: Bindings{TUI: tui("c"), Desktop: desktop("primary+d")}},
 	{ID: "context menu", Label: "the row's menu", Bindings: Bindings{Desktop: desktop("contextmenu")}},
+	{ID: "menu bar", Label: "the menu bar", Bindings: Bindings{Desktop: desktop("f10")}},
 	{ID: "pane", Label: "a pane by its number", Bindings: Bindings{TUI: digits("", 0, 9), Desktop: desktopDigits(1, 9)}},
 	{ID: "service", Label: "a service by its number", Bindings: Bindings{TUI: digits("S", 1, 9)}},
 }

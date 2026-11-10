@@ -1,6 +1,8 @@
 package console
 
 import (
+	"slices"
+
 	"github.com/discobox-ai/discobox/assets/brand"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
@@ -18,8 +20,9 @@ import (
 // changes meaning, and when a field is added that a frontend requires: every
 // field on the wire is required (the generated types have no defaults), so an
 // app reading a newer spec than its CLI's would otherwise stop on a missing
-// field rather than on this version. 4 added Dimensions.
-const SpecVersion = 4
+// field rather than on this version. 4 added Dimensions; 5 the desktop's
+// Menus, and a desktop binding's Menu.
+const SpecVersion = 5
 
 // Glyph is how a state is drawn: its shape, the color token it is drawn in,
 // and the word that stands for it where there is no color. An empty Color is
@@ -92,6 +95,8 @@ type Spec struct {
 	// frontend's list, tree, leader and panes bind is a command's or one of
 	// these.
 	Gestures []SpecGesture `json:"gestures"`
+	// Menus are the desktop's menus, in the order its menu bar draws them.
+	Menus []Menu `json:"menus"`
 }
 
 // SpecColor is one color token: its dark and light values as #rrggbb, and
@@ -140,9 +145,11 @@ type SpecTUIBinding struct {
 	Menu    []string   `json:"menu"`
 }
 
-// SpecDesktopBinding is DesktopBinding on the wire.
+// SpecDesktopBinding is DesktopBinding on the wire. Menu is omitted for a
+// gesture.
 type SpecDesktopBinding struct {
 	Keys []string `json:"keys"`
+	Menu Menu     `json:"menu,omitempty"`
 }
 
 // SpecGesture is one gesture as a frontend is handed it.
@@ -162,6 +169,7 @@ func NewSpec() Spec {
 		Agents:     map[string]Glyph{},
 		Commands:   make([]SpecCommand, 0, len(registry)),
 		Gestures:   make([]SpecGesture, 0, len(gestures)),
+		Menus:      slices.Clone(Menus),
 	}
 	for _, c := range brand.Colors() {
 		spec.Colors[c.Name] = SpecColor{Dark: c.Dark, Light: c.Light, XTerm: c.XTerm}
@@ -200,7 +208,7 @@ func specBindings(b Bindings) SpecBindings {
 	return SpecBindings{
 		TUI: SpecTUIBinding{Keys: nonNil(b.TUI.Keys), Leader: leader, Repeats: b.TUI.Repeats,
 			Chords: nonNil(b.TUI.Chords), Menu: nonNil(b.TUI.Menu)},
-		Desktop: SpecDesktopBinding{Keys: nonNil(b.Desktop.Keys)},
+		Desktop: SpecDesktopBinding{Keys: nonNil(b.Desktop.Keys), Menu: b.Desktop.Menu},
 	}
 }
 

@@ -43,6 +43,11 @@ type Server struct {
 	// are missing from it rather than gone.
 	boxes      map[string]console.Sandbox
 	unanswered map[string]bool
+	// last is the last listing whole — its boxes in its order, and what it
+	// says about the servers — and fresh is closed when a listing replaces
+	// it: what the commands and the palette are read from and sent again on.
+	last  console.Listing
+	fresh chan struct{}
 	// kick is closed to read the listing again now (relist).
 	kick chan struct{}
 	// subMu is held to write a snapshot (read) and to end a subscription
@@ -66,6 +71,7 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		reg:       console.NewRegistry(ds),
 		boxes:     map[string]console.Sandbox{},
 		kick:      make(chan struct{}),
+		fresh:     make(chan struct{}),
 		subs:      map[uint32]context.CancelFunc{},
 		forms:     map[uint64]*mailbox{},
 		questions: map[uint64]chan Answer{},
@@ -284,7 +290,9 @@ func (s *Server) list(ctx context.Context) (console.Listing, error) {
 		unanswered[server] = true
 	}
 	s.mu.Lock()
-	s.boxes, s.unanswered = boxes, unanswered
+	s.boxes, s.unanswered, s.last = boxes, unanswered, listing
+	close(s.fresh)
+	s.fresh = make(chan struct{})
 	s.mu.Unlock()
 	return listing, nil
 }
@@ -314,15 +322,41 @@ func (s *Server) filter(ctx context.Context, asked *Filter) console.Filter {
 	return f
 }
 
-// listed is the session and the boxes of the last listing.
+// listed is the session and the boxes of the last listing, in its order.
 func (s *Server) listed() (console.Session, []console.Sandbox) {
+	session, last := s.lastListing()
+	return session, last.Sandboxes
+}
+
+// lastListing is the session and the last listing, whole: its boxes in its
+// order, and what it says about the servers.
+func (s *Server) lastListing() (console.Session, console.Listing) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	boxes := make([]console.Sandbox, 0, len(s.boxes))
-	for _, b := range s.boxes {
-		boxes = append(boxes, b)
+	l := s.last
+	l.Sandboxes = slices.Clone(l.Sandboxes)
+	return s.session, l
+}
+
+// cached is the boxes of the last listing with these keys, in the order
+// given, leaving out any it does not have: it never lists again.
+func (s *Server) cached(keys []string) []console.Sandbox {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]console.Sandbox, 0, len(keys))
+	for _, key := range keys {
+		if b, ok := s.boxes[key]; ok {
+			out = append(out, b)
+		}
 	}
-	return s.session, boxes
+	return out
+}
+
+// relisted is closed when the next listing is read.
+func (s *Server) relisted() <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fresh
 }
 
 type inboxRead struct {

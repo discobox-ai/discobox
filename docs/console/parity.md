@@ -25,6 +25,11 @@ Moving between panes and boxes is in the registry too (`next pane`,
 held here like any other. Gestures (the list's cursor, a pane by its number)
 are declared in the registry with each console's keys, and are not commands.
 
+Off macOS the desktop's menu bar is drawn in the window from the registry
+(each command's desktop `menu`), so every command is in a menu as well as the
+palette. On macOS the native menu bar is still a hand list of some commands
+(`MENU` in `desktop/src/main.rs`), until #908 builds it from the registry.
+
 ## The desktop app lacks
 
 | Command | Reason | Closed by |
@@ -47,8 +52,6 @@ are declared in the registry with each console's keys, and are not commands.
 | `rejections` | Needs the rejected credentials page. | #814 |
 | `dismiss` | The app has no notices to dismiss until it raises requests as notifications. | #814 |
 | `all` | The command is for a window opened on one box, which the desktop has none of: its list is always beside the workspace, and "all discoboxes" in the sidebar is `detach`. | None: by design |
-| `actions` | A box's action menu opens from its row's context menu; the command and its shortcut come with the command surfaces. | #807 |
-| `help` | The help comes with the command surfaces, generated from the registry. | #807 |
 | `mouse` | Mouse reporting to the program is terminal fidelity. | #806 |
 | `repaint` | Repainting after a size loss is terminal fidelity. | #806 |
 

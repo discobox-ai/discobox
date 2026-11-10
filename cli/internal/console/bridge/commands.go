@@ -37,28 +37,50 @@ func (s *Server) run(ctx context.Context, c Command) Result {
 // sent it, the box whose workspace it holds, and the credential inbox's
 // answers for a box, from what waits on a person as last read (inbox).
 func (s *Server) context(ctx context.Context, c Command) console.Context {
-	s.mu.Lock()
-	session := s.session
-	s.mu.Unlock()
-	x := c.Context
-	cctx := console.Context{
-		Session: session, HasWorkspace: x.HasWorkspace, WorkspaceShown: x.WorkspaceShown, PaneFocused: x.PaneFocused,
-		ListHasKeys: x.ListHasKeys, Tree: x.Tree, TreeShown: x.TreeShown, TreeFits: x.TreeFits, PageShown: x.PageShown,
-	}
 	// A workspace whose box is no longer listed is none: the window's
 	// commands still run, and the box's are refused for want of one.
-	if x.Workspace != "" {
-		if b, err := s.box(ctx, x.Workspace); err == nil {
-			cctx.Workspace = &b
+	var workspace *console.Sandbox
+	if c.Context.Workspace != "" {
+		if b, err := s.box(ctx, c.Context.Workspace); err == nil {
+			workspace = &b
 		}
 	}
 	// What waits on a person is read here, before the registry is held: a
 	// rule asks it while the registry rules, and a server slow to answer
 	// must not hold up every other command.
 	requests, rejections := s.inbox(ctx)
-	cctx.Waiting = func(b console.Sandbox) bool { return len(console.RequestsFor(session, b, requests)) > 0 }
-	cctx.Refused = func(b console.Sandbox) bool { return len(console.RejectionsFor(session, b, rejections)) > 0 }
-	return cctx
+	return s.contextOf(c.Context, workspace, requests, rejections)
+}
+
+// cachedContext is the core's Context for where a topic asks from, from
+// what the bridge last read alone: the workspace's box from the last listing,
+// and what last waited on a person. A topic that waits for the next listing
+// never lists, nor reads the servers at all: a box missing from the listing
+// would list again, which wakes the topic again, without end.
+func (s *Server) cachedContext(x Context) console.Context {
+	var workspace *console.Sandbox
+	if b := s.cached([]string{x.Workspace}); x.Workspace != "" && len(b) == 1 {
+		workspace = &b[0]
+	}
+	s.mu.Lock()
+	read := s.inboxed
+	s.mu.Unlock()
+	return s.contextOf(x, workspace, read.requests, read.rejections)
+}
+
+// contextOf is the core's Context for the app's navigation, the box whose
+// workspace it holds, and what waits on a person.
+func (s *Server) contextOf(x Context, workspace *console.Sandbox, requests []console.CredentialRequest, rejections []console.SecretRejection) console.Context {
+	s.mu.Lock()
+	session := s.session
+	s.mu.Unlock()
+	return console.Context{
+		Session: session, HasWorkspace: x.HasWorkspace, WorkspaceShown: x.WorkspaceShown, PaneFocused: x.PaneFocused,
+		ListHasKeys: x.ListHasKeys, Tree: x.Tree, TreeShown: x.TreeShown, TreeFits: x.TreeFits, PageShown: x.PageShown,
+		Workspace: workspace,
+		Waiting:   func(b console.Sandbox) bool { return len(console.RequestsFor(session, b, requests)) > 0 },
+		Refused:   func(b console.Sandbox) bool { return len(console.RejectionsFor(session, b, rejections)) > 0 },
+	}
 }
 
 // outcome is what the frontend does for a command once the registry has
@@ -330,22 +352,18 @@ func (f *frontend) Refresh() outcome {
 	}
 }
 
-// Palette hands the app the commands as they stand for the context and the
-// targets it asked with, and how often each was used here.
+// Palette opens the app's palette, counted as the palette's use: its flow
+// counts it (the TUI's as it opens), and what the palette finds is the
+// palette topic's.
 func (f *frontend) Palette() outcome {
-	targets := f.paletteTargets()
-	entries := f.s.reg.Entries(f.cctx, targets)
-	out := make([]Entry, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, wireEntry(e, f.s.reg.Usage(e.ID)))
-	}
-	return func() Result { return Result{Status: StatusEnter, Entries: out} }
+	f.s.reg.Use("palette")
+	return f.enter()
 }
 
 // Actions hands the app a box's action menu, as the core rules on it for the
 // targets the app asked with.
 func (f *frontend) Actions() outcome {
-	targets := f.paletteTargets()
+	targets := f.actionTargets()
 	if len(targets) == 0 {
 		return refused("nothing selected")
 	}
@@ -358,10 +376,10 @@ func (f *frontend) Actions() outcome {
 	return func() Result { return r }
 }
 
-// paletteTargets are the boxes the app named for a window's command that
+// actionTargets are the boxes the app named for a window's command that
 // lists commands for them: the registry ignores a window command's targets,
-// and the palette and the action menu are about the ones the app has picked.
-func (f *frontend) paletteTargets() []console.Sandbox {
+// and the action menu is about the ones the app has picked.
+func (f *frontend) actionTargets() []console.Sandbox {
 	out := make([]console.Sandbox, 0, len(f.c.Targets))
 	for _, key := range f.c.Targets {
 		f.s.mu.Lock()

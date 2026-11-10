@@ -13,7 +13,7 @@ use rune::{Key, KeyEvent, Shortcut, Tx};
 use crate::wire::Spec;
 use crate::{Focus, State, overlay, run_command};
 
-const MAC: bool = cfg!(target_os = "macos");
+pub const MAC: bool = cfg!(target_os = "macos");
 
 /// A key's name as the spec spells it: `t`, `enter`, `tab`, `up`, `f2`, `backslash`.
 fn key_name(ev: &KeyEvent) -> Option<String> {
@@ -146,9 +146,15 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if s.filter_menu.is_some() {
         return overlay::filter_key(s, ev, tx);
     }
+    // The palette's field takes its keys first; these are the ones that reach the window while
+    // something else in the palette has the focus.
     if s.palette.is_some() {
-        if ev.key == Key::Escape {
-            s.palette = None;
+        overlay::palette_key(s, ev, tx);
+        return true;
+    }
+    if s.help {
+        if ev.key == Key::Escape || command_for(s, ev).as_deref() == Some("help") {
+            s.help = false;
         }
         return true;
     }
@@ -193,6 +199,12 @@ fn list_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
         // Back lets a range being drawn go first, as the TUI's Esc does; then to the panes.
         "back" if s.range.is_some() => s.range = None,
         "back" if s.live.is_some() => s.focus = Focus::Panes,
+        // Off macOS the menu bar is the window's; F10 opens its first menu, as GNOME's apps do.
+        "menu bar" if !MAC => {
+            if let Some(&first) = s.spec.menus.first() {
+                overlay::open_bar(s, first);
+            }
+        }
         "context menu" => {
             if let Some(r) = s.rows().get(s.cursor) {
                 let id = r.r#box.clone();

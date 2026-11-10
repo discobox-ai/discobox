@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -36,7 +35,6 @@ type paletteRow struct {
 	box      *console.Sandbox
 	command  *console.Entry
 	why      string
-	score    console.Rank
 }
 
 func (m *Model) openPalette() tea.Cmd {
@@ -85,131 +83,21 @@ func (m *Model) rebuildPalette(reset bool) {
 		p.offset = 0
 		p.reason = ""
 	}
-	q := console.ParseQuery(p.input.Value())
-	var rows []paletteRow
-	if p.box == nil {
-		// Every listed server's boxes, whatever the list is filtered to
-		// (console.List.Search).
-		for _, hit := range m.list.Search(q, p.archived) {
-			s, score := hit.Box, hit.Rank
-			why := ""
-			if p.command != "" {
-				for _, c := range m.commandEntries(&s) {
-					if c.ID == p.command && !c.Enabled {
-						why = c.Why
-					}
-				}
-			}
-			ref := m.boxRef(s)
-			rows = append(rows, paletteRow{identity: "box:" + ref.Server + ":" + ref.ID, box: &s, score: score, why: why})
-		}
-	}
-	if p.command == "" {
-		var box *console.Sandbox
-		if p.box != nil {
-			box = m.list.Find(*p.box)
-		}
-		for _, c := range m.commandEntries(box) {
-			if p.box != nil && c.Target != console.TargetBox {
-				continue
-			}
-			score, ok := console.MatchFields(q, append([]string{c.Label}, c.Aliases...), []string{c.Detail})
-			if !ok {
-				continue
-			}
-			why := ""
-			if c.Target != console.TargetBox && !c.Enabled {
-				why = c.Why
-			}
-			if p.box != nil {
-				if box == nil {
-					why = "the box is no longer listed"
-				} else if !c.Enabled {
-					why = c.Why
-				}
-			}
-			rows = append(rows, paletteRow{identity: "command:" + c.ID, command: &c, score: score, why: why})
-		}
-	}
-	eligible := slices.ContainsFunc(rows, func(r paletteRow) bool { return r.why == "" })
-	if eligible {
-		rows = slices.DeleteFunc(rows, func(r paletteRow) bool { return r.why != "" })
-	}
-	idQuery := strings.HasPrefix(p.input.Value(), "sbx_")
-	if !q.Empty() {
-		for _, r := range rows {
-			if r.box != nil && strings.Contains(strings.ToLower(r.box.ID), strings.ToLower(p.input.Value())) {
-				idQuery = true
-			}
-		}
-	}
 	current := console.BoxRef{}
 	if m.hasWorkspace() {
 		current = m.boxRef(m.currentBox())
 	} else if s := m.list.current(); s != nil {
 		current = m.boxRef(*s)
 	}
-	slices.SortStableFunc(rows, func(a, b paletteRow) int {
-		if q.Empty() {
-			priority := func(r paletteRow) int {
-				if r.box != nil {
-					ref := m.boxRef(*r.box)
-					if ref == current {
-						return 0
-					}
-					if m.paletteRecent[ref] > 0 {
-						return 1
-					}
-					return 3
-				}
-				return 2
-			}
-			if n := cmp.Compare(priority(a), priority(b)); n != 0 {
-				return n
-			}
-		} else {
-			priority := func(r paletteRow) int {
-				if idQuery {
-					if r.box != nil {
-						return 0
-					}
-					return 1
-				}
-				if r.command != nil && r.score.Tier == 0 {
-					return 0
-				}
-				return 1
-			}
-			if n := cmp.Compare(priority(a), priority(b)); n != 0 {
-				return n
-			}
-			if n := a.score.Compare(b.score); n != 0 {
-				return n
-			}
-		}
-		usage := func(r paletteRow) int {
-			if r.box != nil {
-				return m.paletteRecent[m.boxRef(*r.box)]
-			}
-			return m.commands.Usage(r.command.ID)
-		}
-		if n := cmp.Compare(usage(b), usage(a)); n != 0 {
-			return n
-		}
-		if q.Empty() {
-			return 0
-		}
-		label := func(r paletteRow) string {
-			if r.box != nil {
-				return displayName(*r.box)
-			}
-			return r.command.Label
-		}
-		if n := strings.Compare(label(a), label(b)); n != 0 {
-			return n
-		}
-		return strings.Compare(a.identity, b.identity)
+	res := m.commands.Palette(&m.list.List, m.commandContext(), console.PaletteQuery{
+		Text: p.input.Value(), Command: p.command, Box: p.box, Archived: p.archived,
+		Current: current, Recent: m.paletteRecent,
 	})
+	p.archived = res.Archived
+	rows := make([]paletteRow, 0, len(res.Rows))
+	for _, r := range res.Rows {
+		rows = append(rows, paletteRow{identity: r.Identity(m.session), box: r.Box, command: r.Command, why: r.Why})
+	}
 	p.rows = rows
 	if !reset && old != "" {
 		p.selected = old
@@ -234,9 +122,6 @@ func (m *Model) paletteChip(c *console.Entry, box *console.Sandbox) {
 	p := m.palette
 	if c != nil {
 		p.command = c.ID
-		if c.ID == "purge" || c.ID == "unarchive" {
-			p.archived = true
-		}
 	}
 	if box != nil {
 		ref := m.boxRef(*box)
@@ -321,22 +206,17 @@ func (m *Model) paletteCompleteAlias() {
 	if p.command != "" || p.box != nil {
 		return
 	}
-	first, rest, ok := strings.Cut(p.input.Value(), " ")
-	if !ok || strings.HasPrefix(first, "sbx_") {
+	id, rest, ok := console.PaletteCommit(p.input.Value())
+	if !ok {
 		return
 	}
 	for _, c := range m.commandEntries(nil) {
-		if c.Target != console.TargetBox {
-			continue
-		}
-		for _, a := range c.Aliases {
-			if !strings.Contains(a, " ") && strings.EqualFold(first, a) {
-				m.paletteChip(&c, nil)
-				p.input.SetValue(rest)
-				p.input.CursorEnd()
-				m.rebuildPalette(true)
-				return
-			}
+		if c.ID == id {
+			m.paletteChip(&c, nil)
+			p.input.SetValue(rest)
+			p.input.CursorEnd()
+			m.rebuildPalette(true)
+			return
 		}
 	}
 }

@@ -31,7 +31,11 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 	f := &follower{s: s, sub: sub, ctx: ctx}
 	switch sub.Topic {
 	case TopicListing:
-		f.filter = s.filter(ctx, sub.Filter)
+		if b := s.cached([]string{sub.Reveal}); sub.Reveal != "" && len(b) == 1 {
+			f.filter = console.Revealing(b[0])
+		} else {
+			f.filter = s.filter(ctx, sub.Filter)
+		}
 		go f.poll(ctx, console.ListPollEvery, true, f.listing)
 	case TopicResources:
 		go f.poll(ctx, console.ListPollEvery, false, f.resources)
@@ -45,6 +49,10 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 		go f.about(ctx, func() { f.audit(ctx) })
 	case TopicForwards:
 		go f.about(ctx, func() { f.forwards(ctx) })
+	case TopicCommands:
+		go f.relisted(ctx, f.commands)
+	case TopicPalette:
+		go f.relisted(ctx, f.palette)
 	default:
 		f.send(Snapshot{Error: fmt.Sprintf("there is no topic %q", sub.Topic)})
 	}
@@ -334,4 +342,110 @@ func (f *follower) forwards(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// relisted reads from the last listing now, and again each time another is
+// read, until ctx ends: a topic that is about what the app asks, not about
+// the servers, which it never reads itself.
+func (f *follower) relisted(ctx context.Context, read func() Snapshot) {
+	for {
+		fresh := f.s.relisted()
+		f.send(read())
+		select {
+		case <-ctx.Done():
+			return
+		case <-fresh:
+		}
+	}
+}
+
+// asked is the core's Context for where the subscription asks from, from
+// what the bridge last read (cachedContext).
+func (f *follower) asked() console.Context {
+	var x Context
+	if f.sub.Context != nil {
+		x = *f.sub.Context
+	}
+	return f.s.cachedContext(x)
+}
+
+// commands is every registry command as it stands for the subscription's
+// context and boxes. A box the last listing does not have is left out, so a
+// box command asked about it reads as one with nothing to act on.
+func (f *follower) commands() Snapshot {
+	cctx := f.asked()
+	targets := f.s.cached(f.sub.Targets)
+	f.s.regMu.Lock()
+	entries := f.s.reg.Entries(cctx, targets)
+	out := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, wireEntry(e, f.s.reg.Usage(e.ID)))
+	}
+	f.s.regMu.Unlock()
+	return Snapshot{Commands: &Commands{Entries: out}}
+}
+
+// palette is what the query finds (console.Registry.Palette) among the last
+// listing's boxes and the registry's commands. Text that commits a chip as it
+// is typed is answered as the committed query, and says so.
+func (f *follower) palette() Snapshot {
+	var asked PaletteQuery
+	if f.sub.Palette != nil {
+		asked = *f.sub.Palette
+	}
+	session, last := f.s.lastListing()
+	l := console.NewList(session, console.ListStaleAfter)
+	l.SetAll(last.Sandboxes)
+	l.SetUnreachable(last.Unreachable)
+	l.SetWaiting(last.Waiting)
+	l.SetListed(last.Listed)
+	ref := func(key string) (console.BoxRef, bool) {
+		b := f.s.cached([]string{key})
+		if len(b) == 0 {
+			return console.BoxRef{}, false
+		}
+		return console.BoxRef{Server: session.ServerName(b[0].Server), ID: b[0].ID}, true
+	}
+	q := console.PaletteQuery{Text: asked.Text, Command: asked.Command, Archived: asked.Archived, Recent: map[console.BoxRef]int{}}
+	var commit *PaletteCommit
+	if q.Command == "" && asked.Box == "" {
+		if id, rest, ok := console.PaletteCommit(q.Text); ok {
+			q.Command, q.Text = id, rest
+			commit = &PaletteCommit{Command: id, Text: rest}
+		}
+	}
+	if asked.Box != "" {
+		// A box chip the listing has lost is still asked about, by a
+		// reference nothing finds, so every command says it is gone.
+		r, ok := ref(asked.Box)
+		if !ok {
+			r = console.BoxRef{Server: keyServer(asked.Box), ID: asked.Box}
+		}
+		q.Box = &r
+	}
+	q.Current, _ = ref(asked.Current)
+	for i, key := range asked.Recent {
+		if r, ok := ref(key); ok {
+			q.Recent[r] = len(asked.Recent) - i
+		}
+	}
+	cctx := f.asked()
+	f.s.regMu.Lock()
+	res := f.s.reg.Palette(&l, cctx, q)
+	out := Palette{Rows: make([]PaletteRow, 0, len(res.Rows)), Archived: res.Archived, Commit: commit, Partial: nonNil(l.Partial()), Stale: []Note{}}
+	for _, n := range l.Stale() {
+		out.Stale = append(out.Stale, Note{Server: n.Server, Title: n.Title, Detail: n.Detail})
+	}
+	for _, r := range res.Rows {
+		row := PaletteRow{Why: r.Why}
+		if r.Box != nil {
+			row.Box = Key(r.Box.Server, r.Box.ID)
+		} else {
+			e := wireEntry(*r.Command, f.s.reg.Usage(r.Command.ID))
+			row.Command = &e
+		}
+		out.Rows = append(out.Rows, row)
+	}
+	f.s.regMu.Unlock()
+	return Snapshot{Palette: &out}
 }

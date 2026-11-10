@@ -9,7 +9,7 @@ use rune::{Color, Cx, El, Icon, PointerPress, Spring, Transition, Tx, col, el, i
 
 use crate::wire::{Box as Sandbox, Row, TabKind};
 use crate::theme::{self, CELL_H};
-use crate::{Focus, Side, State, Workspace, icons, keys, mark, overlay, run_command};
+use crate::{Focus, MenuKind, Side, State, Workspace, icons, keys, mark, overlay, run_command};
 
 pub const SIDEBAR_W: f32 = 290.0;
 const ROW_H: f32 = 26.0;
@@ -17,7 +17,7 @@ const ROW_H: f32 = 26.0;
 const CHIP_H: f32 = 22.0;
 
 /// A state's glyph and colour, as the spec gives them.
-fn glyph(s: &State, agent: bool, state: &str) -> (String, Color) {
+pub fn glyph(s: &State, agent: bool, state: &str) -> (String, Color) {
     let table = if agent { &s.spec.agents } else { &s.spec.states };
     match table.get(state) {
         Some(g) => (g.glyph.clone(), if g.color.is_empty() { theme::text() } else { theme::token(&g.color) }),
@@ -56,11 +56,13 @@ fn icon_button(key: impl Into<String>, glyph: &'static Icon, tip: Option<String>
     }
 }
 
-/// What a control does, and its shortcut where it has one.
-fn tip(s: &State, what: &str, id: &str) -> Option<String> {
+/// A control's tooltip, from the registry: what its command does, and its shortcut where it has
+/// one.
+pub fn tip(s: &State, id: &str) -> Option<String> {
+    let what = s.spec.command(id)?.detail.clone();
     Some(match keys::shortcut_of(s, id) {
         Some(k) => format!("{what}  {k}"),
-        None => what.to_string(),
+        None => what,
     })
 }
 
@@ -258,15 +260,19 @@ fn filter_control(s: &State) -> El {
         .child(icon(&icons::CARET, 12.0).color(theme::grey()))
         .on_layout(|s: &mut State, r: [f32; 4]| s.filter_at = (r[0], r[1] + r[3] + 4.0))
         .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "servers", tx));
-    if let Some(tip) = tip(s, "choose the server, folder or tags", "servers") {
+    if let Some(tip) = tip(s, "servers") {
         c = c.help(tip);
     }
     c
 }
 
 /// A line under the rows that runs a command: the archived offer.
-fn offer(key: &str, label: String, id: &'static str) -> El {
-    row().key(key.to_string()).h(22.0).px(10.0).gap(6.0).center_y().radius(theme::r_row())
+fn offer(s: &State, key: &str, label: String, id: &'static str) -> El {
+    let mut r = row().key(key.to_string()).h(22.0).px(10.0).gap(6.0).center_y().radius(theme::r_row());
+    if let Some(t) = tip(s, id) {
+        r = r.help(t);
+    }
+    r
         .hover(theme::text().alpha(0.06)).cursor(rune::Cursor::Pointer)
         .child(t(label, theme::dim()).font(theme::UI_SMALL))
         .on_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, id, tx))
@@ -312,9 +318,9 @@ fn list_block(s: &State, wide: bool) -> El {
             .child(t(n.detail.clone(), theme::warn()).font(theme::UI_SMALL)));
     }
     if s.listing.filter.archived {
-        c = c.child(offer("archived-offer", "hide archived".into(), "archived"));
+        c = c.child(offer(s, "archived-offer", "hide archived".into(), "archived"));
     } else if s.listing.archived > 0 {
-        c = c.child(offer("archived-offer", format!("{} archived · show them", s.listing.archived), "archived"));
+        c = c.child(offer(s, "archived-offer", format!("{} archived · show them", s.listing.archived), "archived"));
     }
     c
 }
@@ -332,6 +338,9 @@ fn entry(s: &State, glyph: &'static Icon, label: &str, id: &'static str) -> El {
         .child(spacer());
     if let Some(k) = keys::shortcut_of(s, id) {
         r = r.child(keycap(k));
+    }
+    if let Some(t) = tip(s, id) {
+        r = r.help(t);
     }
     r.on_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, id, tx))
 }
@@ -356,7 +365,7 @@ fn sidebar(s: &State) -> El {
         .transition(Transition::offset(-24.0, 0.0).combined(Transition::opacity()))
         .child(brand_line())
         .child(frame("sidebar-frame", focused, Some(chip("sidebar-title", "discoboxes", true, focused, None)),
-            Some(icon_button("sidebar-hide", &icons::HIDE_SIDEBAR, tip(s, "hide the sidebar", "sidebar"))
+            Some(icon_button("sidebar-hide", &icons::HIDE_SIDEBAR, tip(s, "sidebar"))
                 .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx))), body).grow(1.0))
 }
 
@@ -382,19 +391,23 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
         let label = if two || idx.len() > 1 { pane_label(ws, i, sbx) } else { sbx.name.clone() };
         let stream = ws.panes[i].stream;
         let close = (ws.panes[i].exec.kind != TabKind::Primary).then(|| {
-            chip_close(format!("tab-close-{stream}"), tip(s, "end this session", "end")).on_press_tx(move |s: &mut State, tx: &mut Tx| {
+            chip_close(format!("tab-close-{stream}"), tip(s, "end")).on_press_tx(move |s: &mut State, tx: &mut Tx| {
                 s.select_pane(i);
                 run_command(s, "end", tx);
             })
         });
         tabs = tabs.child(chip(format!("tab-{stream}"), &label, i == active, focused, close).cursor(rune::Cursor::Pointer)
             .on_press(move |s: &mut State| s.select_pane(i))
-            .on_double_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, "maximize", tx)));
+            .on_double_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, "maximize", tx))
+            .on_secondary_press(move |s: &mut State, p: PointerPress, _tx: &mut Tx| {
+                s.select_pane(i);
+                s.open_commands_menu(MenuKind::Pane, (p.x, p.y));
+            }));
     }
     let mut buttons = row().gap(4.0);
     if two || ws.maximized {
-        let (glyph, what) = if ws.maximized { (&icons::RESTORE, "restore") } else { (&icons::MAXIMIZE, "maximize") };
-        buttons = buttons.child(icon_button(format!("maximize-{side:?}"), glyph, tip(s, what, "maximize"))
+        let glyph = if ws.maximized { &icons::RESTORE } else { &icons::MAXIMIZE };
+        buttons = buttons.child(icon_button(format!("maximize-{side:?}"), glyph, tip(s, "maximize"))
             .on_press_tx(move |s: &mut State, tx: &mut Tx| {
                 s.select_pane(active);
                 run_command(s, "maximize", tx)
@@ -416,6 +429,10 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
             true
         })
         .on_press(move |s: &mut State| s.select_pane(active))
+        .on_secondary_press(move |s: &mut State, p: PointerPress, _tx: &mut Tx| {
+            s.select_pane(active);
+            s.open_commands_menu(MenuKind::Pane, (p.x, p.y));
+        })
         .cursor(rune::Cursor::Text);
     if let Some(st) = &pane.status {
         screen = screen.child(text(st.clone()).font(theme::UI_SMALL).color(theme::on_gold()).px(8.0).py(2.0).radius(theme::r_key())
@@ -427,7 +444,7 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
 fn header(s: &State, sbx: &Sandbox) -> El {
     let mut r = row().w_full().h(24.0).px(12.0).gap(18.0).center_y();
     if !s.sidebar {
-        r = r.child(icon_button("sidebar-show", &icons::SHOW_SIDEBAR, tip(s, "show the sidebar", "sidebar"))
+        r = r.child(icon_button("sidebar-show", &icons::SHOW_SIDEBAR, tip(s, "sidebar"))
             .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx)));
     }
     r = r.child(t(source_label(sbx), theme::grey()))
@@ -447,7 +464,7 @@ fn header(s: &State, sbx: &Sandbox) -> El {
     let id = sbx.key.clone();
     r.child(spacer())
         .child(t(format!("cpu {}%  mem {:.1} GiB", sbx.cpu, sbx.memory_bytes as f64 / (1u64 << 30) as f64), theme::dim()))
-        .child(icon_button("box-actions", &icons::MORE, Some("box actions".into()))
+        .child(icon_button("box-actions", &icons::MORE, tip(s, "actions"))
             .on_press(move |s: &mut State| s.open_menu(id.clone(), (900.0, 30.0))))
 }
 
@@ -512,7 +529,7 @@ thread_local! {
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     // The system's appearance, or the one `--theme` picks.
     theme::set_dark(cx.system_dark());
-    let mut root = row().w_full().h_full().padding(10.0).gap(10.0).fill(theme::bg());
+    let mut root = row().w_full().padding(10.0).gap(10.0).fill(theme::bg());
     match s.live_ws() {
         Some(ws) => {
             if s.sidebar && !ws.maximized {
@@ -522,6 +539,13 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         }
         None => root = root.child(home(s)),
     }
+    // Off macOS the menu bar is the window's own, above everything else; on macOS it is the
+    // system's.
+    let root = if keys::MAC {
+        root.h_full()
+    } else {
+        col().w_full().h_full().fill(theme::bg()).child(overlay::menu_bar(s).px(10.0).pt(4.0)).child(root.pt(4.0).grow(1.0).min_h(0.0))
+    };
     let mut stack = el().w_full().h_full().child(root);
     if let Some(m) = overlay::menu_view(s) {
         stack = stack.child(m);
@@ -531,6 +555,9 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     }
     if let Some(p) = overlay::palette_view(s) {
         stack = stack.child(p);
+    }
+    if let Some(h) = overlay::help_view(s) {
+        stack = stack.child(h);
     }
     stack
 }

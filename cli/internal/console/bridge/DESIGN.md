@@ -68,7 +68,8 @@ run after the registry is let go, whose `Result` ends the command:
 - **The app's flows are handed back** as `StatusEnter`: focus, pages, menus,
   the workspace to open. A box flow with preconditions the registry leaves to
   the flow (a tag, a request waiting) is refused here first, in the entry's
-  words. The palette and the action menu come with the core's entries.
+  words. The action menu comes with the core's entries; the palette's
+  opening counts its use, and what it finds is the palette topic's.
 
 A running command talks to the app through `narrate` (progress, the box a
 create made, questions) and `fill` (a form until the core accepts its answers;
@@ -102,7 +103,22 @@ the core's, which value it is is the renderer's): it subscribes with one, and
 again under a new ID to change it, ending the old. With none the listing
 opens on the view this machine's windows last left (`Session.Restore`); one
 the app chooses is saved when the core says a window saves it
-(`Session.Saves`), as the TUI's is.
+(`Session.Saves`), as the TUI's is. A listing subscribed with `Reveal`, a
+box's key, is the core's `Revealing` view of it instead — where the palette
+went to a box the filter hid — and is never saved.
+
+The commands and the palette are about what the app asks, not about the
+servers: each is read from what the bridge last read — the last listing
+(`lastListing`, `cached`) and what last waited on a person
+(`cachedContext`) — and sent again whenever another listing is read
+(`relisted`), never by reading the servers itself. `commands` is every registry command as it stands for the app's
+`Context` and the boxes it names, which the app's menus show enabled or with
+why. `palette` is `console.Registry.Palette` for a `PaletteQuery` (the text,
+a command or box chip, the archived scope, the box the window is on and the
+boxes it went to, by key); text that commits a chip as it is typed
+(`console.PaletteCommit`) is answered as the committed query and says so
+(`Commit`), with what the search says about every server it searched
+(`Partial`, `Stale`). The app subscribes again under a new ID for each query.
 
 ## Streams
 

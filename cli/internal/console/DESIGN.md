@@ -85,8 +85,17 @@ flowchart LR
 - **Search ignores the filter** (`Search`, 671 §5): every listed server,
   archived only when asked for, matched by `Query` (fzf-style, smart case)
   within one field at a time (`MatchFields`), ranked by `Rank`; `Partial` and
-  `Stale` are what it says about servers it has no or old rows from. Ranking
-  boxes among commands is the palette's.
+  `Stale` are what it says about servers it has no or old rows from.
+- **The palette's results are the core's** (`palette.go`, 671 §2, §5–6):
+  `Registry.Palette` answers a `PaletteQuery` — the text, at most one chip
+  (a command, or a box by its `BoxRef`), the archived scope, the box the
+  window is on and the boxes it has visited — with the rows in the palette's
+  order: boxes and commands with no chip, the boxes evaluated for a command
+  chip, the box commands evaluated for a box chip; what cannot be chosen
+  only when nothing can, with why. `PaletteCommit` is the exact alias and
+  space that commits a chip as it is typed; `ChipShowsArchived` the chips
+  that bring archived boxes into scope. Which row is picked, what a key or a
+  press does with it, and the recent visits are each frontend's.
 
 ## The command registry
 
@@ -95,7 +104,11 @@ thing the console does, by a stable ID: its label, detail and aliases, its
 target (the window, or one box — a batch for the box's lifecycle commands),
 and its bindings keyed by frontend (ADR 26-11-07-598 §2): `TUI` (bare keys,
 the leader sequences, whether they repeat, leaderless chords, the menu path)
-and `Desktop` (chords written with `primary`). Moving between panes and
+and `Desktop` (chords written with `primary`, and the `Menu` of the menu bar
+the command is in, `Menus` in the bar's order: every command is in one, so
+the desktop's in-window menu bar reaches every command by pointer as well as
+by the palette; macOS's native menu bar is not built from it yet, #908).
+Moving between panes and
 boxes is commands like any other (`next pane`, `previous box`, `sidebar`):
 where focus goes is each frontend's, the key that moves it the registry's.
 

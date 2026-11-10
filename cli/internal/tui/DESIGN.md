@@ -3616,8 +3616,10 @@ commands. The chip and key hints are clickable.
 Search is the core's (`console.List.Search`): the unfiltered listing, across
 all listed servers, matched by `console.MatchFields` term by term within
 individual fields. Its rank evidence (`console.Rank`) orders exact, prefix,
-contiguous, scattered and detail-only hits; the palette ranks those among
-commands. Partial listings
+contiguous, scattered and detail-only hits. Which rows the palette lists,
+evaluated for its chip, and in what order is the core's too
+(`console.Registry.Palette`, the desktop app's palette as well), as is the
+alias a typed space commits (`console.PaletteCommit`). Partial listings
 remain labelled. Archived boxes require the palette's own scope toggle;
 unarchive and purge enable it when selected. Search does not edit the header
 filters. Navigation to a filtered-out result temporarily reveals it, suppresses
@@ -3625,7 +3627,8 @@ view persistence and restores the original filters when the navigation ends:
 the reveal is the core's `console.Revealing` filter, held in place of the
 person's `console.Filter` and never saved.
 
-Usage counts and at most 100 recent box references live on `Model` for this
+Usage counts (on the window's `console.Registry`) and at most 100 recent box
+references (on `Model`, handed to the core with each query) live for this
 window only. Successful workspace navigation records recency; cursor movement
 and completion do not. Dispatch counts command use even if a follow-up is
 cancelled. Neither history is written to console state.

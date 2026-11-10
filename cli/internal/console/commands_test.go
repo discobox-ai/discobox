@@ -112,6 +112,22 @@ func TestEveryBindingIsUnambiguous(t *testing.T) {
 	}
 }
 
+// Every command is in one of the desktop's menus, so the menu bar reaches
+// every command by pointer as the palette does by name (ADR 26-11-07-598 §2);
+// a gesture is not a command, and is in none.
+func TestEveryCommandIsInADesktopMenu(t *testing.T) {
+	for _, c := range Commands() {
+		if !slices.Contains(Menus, c.Bindings.Desktop.Menu) {
+			t.Errorf("%s is in the menu %q, which is none of the menu bar's", c.ID, c.Bindings.Desktop.Menu)
+		}
+	}
+	for _, g := range Gestures() {
+		if g.Bindings.Desktop.Menu != "" {
+			t.Errorf("gesture %s is in the %s menu", g.ID, g.Bindings.Desktop.Menu)
+		}
+	}
+}
+
 // A numbered gesture's every sequence ends in its number.
 func TestNumberedGesturesEndInADigit(t *testing.T) {
 	for _, id := range []string{"pane", "service"} {

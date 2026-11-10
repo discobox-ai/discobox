@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "colors": {
     "brand": {
       "dark": "#9e4aa7",
@@ -203,7 +203,8 @@
         "desktop": {
           "keys": [
             "enter"
-          ]
+          ],
+          "menu": "Box"
         }
       }
     },
@@ -233,7 +234,8 @@
         "desktop": {
           "keys": [
             "primary+t"
-          ]
+          ],
+          "menu": "Session"
         }
       }
     },
@@ -261,7 +263,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -291,7 +294,8 @@
         "desktop": {
           "keys": [
             "f2"
-          ]
+          ],
+          "menu": "Box"
         }
       }
     },
@@ -319,7 +323,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -347,7 +352,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -375,7 +381,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -403,7 +410,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -431,7 +439,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -461,7 +470,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -489,7 +499,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -517,7 +528,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -545,7 +557,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -573,7 +586,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -602,7 +616,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -628,7 +643,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -659,7 +675,8 @@
         "desktop": {
           "keys": [
             "primary+n"
-          ]
+          ],
+          "menu": "Console"
         }
       }
     },
@@ -688,7 +705,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Console"
         }
       }
     },
@@ -716,7 +734,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Console"
         }
       }
     },
@@ -748,7 +767,8 @@
         "desktop": {
           "keys": [
             "primary+q"
-          ]
+          ],
+          "menu": "Console"
         }
       }
     },
@@ -777,7 +797,10 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [
+            "f1"
+          ],
+          "menu": "Help"
         }
       }
     },
@@ -807,7 +830,8 @@
         "desktop": {
           "keys": [
             "primary+r"
-          ]
+          ],
+          "menu": "Console"
         }
       }
     },
@@ -833,7 +857,8 @@
         "desktop": {
           "keys": [
             "primary+f"
-          ]
+          ],
+          "menu": "View"
         }
       }
     },
@@ -859,7 +884,8 @@
           ]
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "View"
         }
       }
     },
@@ -886,7 +912,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -915,7 +942,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -944,7 +972,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -973,7 +1002,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Box"
         }
       }
     },
@@ -999,7 +1029,8 @@
         "desktop": {
           "keys": [
             "primary+alt+a"
-          ]
+          ],
+          "menu": "View"
         }
       }
     },
@@ -1024,7 +1055,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Console"
         }
       }
     },
@@ -1048,7 +1080,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "View"
         }
       }
     },
@@ -1076,7 +1109,8 @@
         "desktop": {
           "keys": [
             "primary+alt+t"
-          ]
+          ],
+          "menu": "Session"
         }
       }
     },
@@ -1104,7 +1138,8 @@
         "desktop": {
           "keys": [
             "primary+w"
-          ]
+          ],
+          "menu": "Session"
         }
       }
     },
@@ -1132,7 +1167,8 @@
         "desktop": {
           "keys": [
             "primary+enter"
-          ]
+          ],
+          "menu": "Session"
         }
       }
     },
@@ -1160,7 +1196,8 @@
         "desktop": {
           "keys": [
             "primary+0"
-          ]
+          ],
+          "menu": "View"
         }
       }
     },
@@ -1186,7 +1223,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Session"
         }
       }
     },
@@ -1214,7 +1252,10 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [
+            "shift+f10"
+          ],
+          "menu": "Box"
         }
       }
     },
@@ -1240,7 +1281,8 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [],
+          "menu": "Session"
         }
       }
     },
@@ -1272,7 +1314,8 @@
           "keys": [
             "primary+k",
             "primary+p"
-          ]
+          ],
+          "menu": "View"
         }
       }
     },
@@ -1303,7 +1346,8 @@
         "desktop": {
           "keys": [
             "ctrl+tab"
-          ]
+          ],
+          "menu": "Go"
         }
       }
     },
@@ -1334,7 +1378,8 @@
         "desktop": {
           "keys": [
             "ctrl+shift+tab"
-          ]
+          ],
+          "menu": "Go"
         }
       }
     },
@@ -1367,7 +1412,8 @@
         "desktop": {
           "keys": [
             "primary+alt+down"
-          ]
+          ],
+          "menu": "Go"
         }
       }
     },
@@ -1397,7 +1443,8 @@
         "desktop": {
           "keys": [
             "primary+alt+up"
-          ]
+          ],
+          "menu": "Go"
         }
       }
     },
@@ -1422,7 +1469,8 @@
         "desktop": {
           "keys": [
             "primary+b"
-          ]
+          ],
+          "menu": "View"
         }
       }
     }
@@ -1740,6 +1788,24 @@
       }
     },
     {
+      "id": "menu bar",
+      "label": "the menu bar",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "f10"
+          ]
+        }
+      }
+    },
+    {
       "id": "pane",
       "label": "a pane by its number",
       "bindings": {
@@ -1849,5 +1915,13 @@
         }
       }
     }
+  ],
+  "menus": [
+    "Console",
+    "Box",
+    "Session",
+    "View",
+    "Go",
+    "Help"
   ]
 }

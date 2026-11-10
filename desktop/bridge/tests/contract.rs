@@ -89,7 +89,7 @@ impl Cli {
     fn subscribe(&self, sub: u32, topic: Topic, sandbox: &str) {
         self.send(Message {
             r#type: Type::Subscribe,
-            subscribe: Some(Subscribe { sub, topic, r#box: sandbox.into(), filter: None }),
+            subscribe: Some(Subscribe { sub, topic, r#box: sandbox.into(), ..Default::default() }),
             ..Default::default()
         });
     }

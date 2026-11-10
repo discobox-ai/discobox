@@ -1,17 +1,18 @@
-//! The palette, a box's actions menu and the list's filter: the desktop's ways in to every
-//! command.
+//! The desktop's ways in to every command: the palette, the menu bar (drawn in the window off
+//! macOS), a box's actions menu, a pane's menu, the help, and the list's filter.
 //!
-//! The palette lists every command the spec names and the app's navigation, with their
-//! shortcuts, and every box. The menu is a box's actions as the console core gives them (the
-//! TUI's own entries, rules and reasons), natively on macOS and drawn in the window elsewhere,
-//! where a disabled entry says why it is. The filter is the core's choices for the list, each
-//! with what it would list, drawn in the window on every platform: a native menu has no room
-//! for the counts.
+//! The palette is ADR 26-11-06-671's: a query and at most one chip, a command or a box, in either
+//! order; what it finds, and in what order, is the core's (the palette topic). The menus list the
+//! registry's commands by their desktop menu, as the core rules on them where they were opened
+//! (the commands topic), where a disabled entry says why it is; a box's actions are the core's
+//! lifecycle entries for it, natively on macOS. The help is every command by its menu, with its
+//! shortcut. The filter is the core's choices for the list, each with what it would list, drawn
+//! in the window on every platform: a native menu has no room for the counts.
 
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Tx, col, el, icon, row, spacer, text, text_input};
 
-use crate::wire::{ChoiceGroup, Entry, SpecTarget};
-use crate::{Focus, Menu, State, icons, keys, run_command, theme, view};
+use crate::wire::{ChoiceGroup, Entry, Menu as DesktopMenu, PaletteRow, SpecTarget};
+use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, icons, keys, lacking, row_id, run_command, run_on, theme, view};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
     if actions.is_empty() {
@@ -24,18 +25,18 @@ pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<En
         }
         tx.popup_menu(menu, at, move |s: &mut State, picked, tx| {
             if let Some(id) = picked {
-                run_on(s, &sandbox, id, tx);
+                act_on(s, &sandbox, id, tx);
             }
         });
     } else {
         let picked = actions.iter().position(|a| a.enabled).unwrap_or(0);
-        s.menu = Some(Menu { sandbox, at, actions, picked });
+        s.menu = Some(Menu { kind: MenuKind::Actions(sandbox), at, entries: actions, picked, sub: 0 });
     }
 }
 
 /// Runs a box command on the box the menu was opened for — with the boxes marked beside it
 /// when it is one of them, as the menu's entries were ruled on for them all.
-fn run_on(s: &mut State, sandbox: &str, id: &str, tx: &mut Tx) {
+fn act_on(s: &mut State, sandbox: &str, id: &str, tx: &mut Tx) {
     if let Some(i) = s.row_of(sandbox) {
         if !s.is_selected(i) {
             s.clear_selection();
@@ -46,20 +47,52 @@ fn run_on(s: &mut State, sandbox: &str, id: &str, tx: &mut Tx) {
     run_command(s, id, tx);
 }
 
+/// Runs a menu's entry: a box's action on its box, any other on what the window has picked.
+fn choose_entry(s: &mut State, i: usize, tx: &mut Tx) {
+    let Some(m) = s.menu.as_ref() else { return };
+    let Some(e) = m.entries.get(i) else { return };
+    if !e.enabled {
+        s.message = Some(e.why.clone());
+        return;
+    }
+    let (kind, id) = (m.kind.clone(), e.command.clone());
+    match kind {
+        MenuKind::Actions(sandbox) => act_on(s, &sandbox, &id, tx),
+        MenuKind::Bar(_) | MenuKind::Pane => run_command(s, &id, tx),
+    }
+}
+
+/// Opens the menu bar's menu `by` along from the one open, wrapping.
+fn step_bar(s: &mut State, by: i64) {
+    let Some(MenuKind::Bar(menu)) = s.menu.as_ref().map(|m| m.kind.clone()) else { return };
+    let menus = &s.spec.menus;
+    let at = menus.iter().position(|m| *m == menu).unwrap_or(0) as i64;
+    let next = menus[(at + by).rem_euclid(menus.len() as i64) as usize];
+    open_bar(s, next);
+}
+
+/// Opens one of the menu bar's menus, under its title.
+pub fn open_bar(s: &mut State, menu: DesktopMenu) {
+    let at = s.bar_at.get(&menu).copied().unwrap_or((10.0, 34.0));
+    s.open_commands_menu(MenuKind::Bar(menu), at);
+}
+
 pub fn menu_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     let Some(m) = s.menu.as_mut() else { return false };
-    let n = m.actions.len();
+    let n = m.entries.len().max(1);
     match ev.key {
         Key::Up => m.picked = (m.picked + n - 1) % n,
         Key::Down => m.picked = (m.picked + 1) % n,
-        Key::Escape => s.menu = None,
-        Key::Enter => {
-            let a = &m.actions[m.picked];
-            if a.enabled {
-                let (sandbox, id) = (m.sandbox.clone(), a.command.clone());
-                s.menu = None;
-                run_on(s, &sandbox, &id, tx);
+        Key::Left => step_bar(s, -1),
+        Key::Right => step_bar(s, 1),
+        Key::Escape => {
+            if let Some(m) = s.menu.take() {
+                s.unsubscribe(m.sub);
             }
+        }
+        Key::Enter => {
+            let i = m.picked;
+            choose_entry(s, i, tx);
         }
         _ => {}
     }
@@ -68,133 +101,376 @@ pub fn menu_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
 
 pub fn menu_view(s: &State) -> Option<El> {
     let m = s.menu.as_ref()?;
-    let mut list = col().key("box-menu").w(320.0).padding(6.0).gap(2.0).radius(theme::r_card())
+    let compact = !matches!(m.kind, MenuKind::Actions(_));
+    let mut list = col().key("menu").w(340.0).padding(6.0).gap(2.0).radius(theme::r_card())
         .fill(theme::raised()).border(theme::stroke_quiet(), theme::line_bright()).shadow(12.0, 36.0, Color::BLACK.alpha(0.5));
-    for (i, a) in m.actions.iter().enumerate() {
+    for (i, a) in m.entries.iter().enumerate() {
         let on = i == m.picked;
         let ink = if a.enabled { theme::text() } else { theme::dim() };
         let sub = if a.enabled { a.detail.clone() } else { a.why.clone() };
-        let (sandbox, id, enabled) = (m.sandbox.clone(), a.command.clone(), a.enabled);
         let mut head = row().w_full().center_y().child(text(a.label.clone()).font(theme::UI).color(ink)).child(spacer());
         if let Some(k) = keys::shortcut_of(s, &a.command) {
             head = head.child(view::keycap(k));
         }
-        list = list.child(col().key(format!("menu-{}", a.command)).w_full().px(10.0).py(5.0).gap(2.0).radius(theme::r_row())
+        // A box's actions say what each does, or why it cannot, under it; the menu bar's and a
+        // pane's menus are longer, one line each, saying it on the pointer.
+        let entry = col().key(format!("menu-{}", a.command)).w_full().px(10.0).py(if compact { 3.0 } else { 5.0 }).gap(2.0).radius(theme::r_row())
             .fill(if on && a.enabled { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY)
-            .child(head)
-            .child(text(sub).font(theme::UI_SMALL).color(if a.enabled { theme::grey() } else { theme::warn().alpha(0.8) }).truncate())
+            .child(head);
+        let entry = if compact {
+            entry.help(sub)
+        } else {
+            entry.child(text(sub).font(theme::UI_SMALL).color(if a.enabled { theme::grey() } else { theme::warn().alpha(0.8) }).truncate())
+        };
+        list = list.child(entry
             .on_hover(move |s: &mut State| if let Some(m) = s.menu.as_mut() { m.picked = i })
-            .on_press_tx(move |s: &mut State, tx: &mut Tx| {
-                if enabled {
-                    s.menu = None;
-                    run_on(s, &sandbox, &id, tx);
+            .on_press_tx(move |s: &mut State, tx: &mut Tx| choose_entry(s, i, tx)));
+    }
+    Some(el().w_full().h_full().absolute(0.0, 0.0)
+        .on_press(|s: &mut State| if let Some(m) = s.menu.take() { s.unsubscribe(m.sub) })
+        .child(list.absolute(m.at.0, m.at.1).on_press(|_: &mut State| {})))
+}
+
+// ---------------------------------------------------------------------------------------------
+// The menu bar, off macOS (on macOS it is the system's)
+
+/// The menu bar: the desktop's menus by name, each opening its commands under it. While one is
+/// open, the pointer over another opens that one instead, as a menu bar does.
+pub fn menu_bar(s: &State) -> El {
+    let open = match s.menu.as_ref().map(|m| &m.kind) {
+        Some(MenuKind::Bar(menu)) => Some(*menu),
+        _ => None,
+    };
+    let mut bar = row().key("menubar").w_full().h(26.0).px(4.0).gap(2.0).center_y();
+    for &name in &s.spec.menus {
+        let on = open == Some(name);
+        bar = bar.child(text(name.as_str()).font(theme::UI).color(if on { theme::text() } else { theme::grey() })
+            .key(format!("menubar-{}", name.as_str())).px(10.0).py(3.0).radius(theme::r_row())
+            .fill(if on { theme::selection() } else { Color::TRANSPARENT })
+            .hover(theme::text().alpha(0.06)).press(theme::text().alpha(0.12)).motion(theme::SNAPPY).cursor(rune::Cursor::Pointer)
+            .on_layout(move |s: &mut State, r: [f32; 4]| { s.bar_at.insert(name, (r[0], r[1] + r[3] + 2.0)); })
+            .on_hover(move |s: &mut State| {
+                if matches!(s.menu.as_ref().map(|m| &m.kind), Some(MenuKind::Bar(n)) if *n != name) {
+                    open_bar(s, name);
+                }
+            })
+            .on_press(move |s: &mut State| {
+                if matches!(s.menu.as_ref().map(|m| &m.kind), Some(MenuKind::Bar(n)) if *n == name) {
+                    if let Some(m) = s.menu.take() {
+                        s.unsubscribe(m.sub);
+                    }
+                } else {
+                    open_bar(s, name);
                 }
             }));
     }
-    Some(el().w_full().h_full().absolute(0.0, 0.0)
-        .on_press(|s: &mut State| s.menu = None)
-        .child(list.absolute(m.at.0, m.at.1)))
+    bar
+}
+
+// ---------------------------------------------------------------------------------------------
+// The help
+
+/// Every command by its menu: what it does, and its shortcut, or that the palette and the menu
+/// reach it; one the app does not answer yet says so.
+pub fn help_view(s: &State) -> Option<El> {
+    if !s.help {
+        return None;
+    }
+    let mut columns = row().w_full().gap(24.0).items_start();
+    let mut column = col().gap(2.0).w(300.0);
+    let mut height = 0;
+    let per_column = s.spec.commands.len().div_ceil(3) + s.spec.menus.len();
+    for &menu in &s.spec.menus {
+        let commands: Vec<_> = s.spec.commands.iter().filter(|c| c.bindings.desktop.menu == Some(menu)).collect();
+        if height > 0 && height + commands.len() > per_column {
+            columns = columns.child(column);
+            column = col().gap(2.0).w(300.0);
+            height = 0;
+        }
+        height += commands.len() + 1;
+        column = column.child(text(menu.as_str()).font(theme::UI_BOLD).color(theme::gold()).pt(if height > commands.len() + 1 { 8.0 } else { 0.0 }));
+        for c in commands {
+            let lacks = lacking(&s.spec, &c.id).is_some();
+            let mut line = row().key(format!("help-{}", c.id)).w_full().h(22.0).gap(8.0).center_y()
+                .child(text(c.label.clone()).font(theme::UI).color(if lacks { theme::dim() } else { theme::text() }).truncate().shrink())
+                .child(spacer());
+            line = match keys::shortcut_of(s, &c.id) {
+                Some(k) => line.child(view::keycap(k)),
+                None => line.child(text(if lacks { "not yet" } else { "menu, palette" }).font(theme::UI_SMALL).color(theme::dim())),
+            };
+            column = column.child(line.help(c.detail.clone()));
+        }
+    }
+    columns = columns.child(column);
+    let mut close = row().gap(6.0).center_y().child(text("Esc closes").font(theme::UI_SMALL).color(theme::dim()));
+    if let Some(k) = keys::shortcut_of(s, "palette") {
+        close = close.child(text("· the palette finds any of them").font(theme::UI_SMALL).color(theme::dim())).child(view::keycap(k));
+    }
+    let panel = col().key("help").padding(18.0).gap(12.0).radius(theme::r_card())
+        .fill(theme::raised()).border(theme::stroke_focus(), theme::mark()).shadow(16.0, 48.0, Color::BLACK.alpha(0.55))
+        .child(row().w_full().center_y().child(text("Commands").font(theme::UI_BOLD).color(theme::text())).child(spacer()).child(close))
+        .child(columns);
+    Some(el().w_full().h_full().absolute(0.0, 0.0).fill(theme::bg().alpha(0.6))
+        .on_press(|s: &mut State| s.help = false)
+        .child(row().w_full().pt(60.0).items_start().child(spacer()).child(panel.on_press(|_: &mut State| {})).child(spacer())))
 }
 
 // ---------------------------------------------------------------------------------------------
 // The palette
 
-struct Item {
-    title: String,
-    group: String,
-    shortcut: Option<String>,
-    command: Option<String>,
-    sandbox: Option<String>,
+/// A key that is one letter, whatever the modifiers made of it.
+fn letter(ev: &KeyEvent) -> Option<char> {
+    match &ev.key {
+        Key::Command(c) => Some(c.to_ascii_lowercase()),
+        Key::Text(t) if t.chars().count() == 1 => t.chars().next().map(|c| c.to_ascii_lowercase()),
+        _ => None,
+    }
 }
 
-fn items(s: &State) -> Vec<Item> {
-    let query = s.palette.as_ref().map(|p| p.query.text.to_lowercase()).unwrap_or_default();
-    let fits = |t: &str| {
-        let t = t.to_lowercase();
-        let mut it = t.chars();
-        query.chars().all(|q| it.any(|c| c == q))
+/// The palette's own keys while it is open (671 §2): the arrows, Ctrl-N and Ctrl-P move, and
+/// Shift-Tab moves back; Tab composes with no chip and moves with one; Enter chooses; Esc drops
+/// the chip, then the query, then the palette; Alt-A takes archived boxes in or out of scope.
+pub fn palette_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
+    let Some(p) = s.palette.as_mut() else { return false };
+    let chip = !p.command.is_empty() || !p.sandbox.is_empty();
+    let ctrl = ev.mods.ctrl && !ev.mods.alt;
+    match ev.key {
+        Key::Down => p.step(1),
+        Key::Up => p.step(-1),
+        Key::PageDown => p.step(PALETTE_ROWS as i64),
+        Key::PageUp => p.step(-(PALETTE_ROWS as i64)),
+        Key::Tab if ev.mods.shift => p.step(-1),
+        Key::Tab if chip => p.step(1),
+        Key::Tab => choose(s, true, tx),
+        Key::Enter => choose(s, false, tx),
+        Key::Escape => {
+            if chip {
+                p.command.clear();
+                p.sandbox.clear();
+            } else if !p.query.text.is_empty() {
+                p.set_text("");
+            } else {
+                s.close_palette();
+                return true;
+            }
+            p.picked.clear();
+            s.ask_palette();
+        }
+        _ if ctrl && letter(ev) == Some('n') => p.step(1),
+        _ if ctrl && letter(ev) == Some('p') => p.step(-1),
+        _ if ev.mods.alt && letter(ev) == Some('a') => toggle_archived(s),
+        _ => return false,
+    }
+    true
+}
+
+fn toggle_archived(s: &mut State) {
+    let Some(p) = s.palette.as_mut() else { return };
+    p.archived = !p.archived;
+    p.picked.clear();
+    s.ask_palette();
+}
+
+/// Chooses the picked row (671 §2–3). With no chip, a box is gone to, or with `complete` (Tab,
+/// its `commands` control) becomes the chip; a box command becomes the chip; a window command
+/// runs, or with `complete` fills in its name. With a chip, the row and the chip are run
+/// together, on that box. A row that cannot be chosen says why and stays.
+pub fn choose(s: &mut State, complete: bool, tx: &mut Tx) {
+    let Some(p) = s.palette.as_mut() else { return };
+    let Some(r) = p.at().map(|i| p.rows[i].clone()) else {
+        p.reason = Some(if p.found { "nothing is picked".into() } else { "still looking".into() });
+        return;
     };
-    let mut out: Vec<Item> = s.boxes.iter().filter(|b| fits(&b.name)).map(|b| Item {
-        title: b.name.clone(), group: "discobox".into(), shortcut: None, command: None, sandbox: Some(b.key.clone()),
-    }).collect();
-    for c in &s.spec.commands {
-        if c.aliases.iter().chain([&c.label]).any(|a| fits(a)) {
-            out.push(Item {
-                title: c.label.clone(), group: if c.target == SpecTarget::Box { "box" } else { "console" }.into(),
-                shortcut: keys::shortcut_of(s, &c.id),
-                command: Some(c.id.clone()), sandbox: None,
-            });
-        }
+    if !r.why.is_empty() {
+        p.reason = Some(r.why);
+        return;
     }
-    out
+    let command = r.command.as_ref().filter(|_| r.r#box.is_empty()).map(|c| c.command.clone());
+    if p.command.is_empty() && p.sandbox.is_empty() {
+        match command {
+            None if complete => {
+                p.sandbox = r.r#box;
+                p.set_text("");
+                p.picked.clear();
+                s.ask_palette();
+            }
+            None => {
+                s.close_palette();
+                s.navigate(&r.r#box);
+            }
+            Some(id) => {
+                let spec = s.spec.command(&id).cloned();
+                let p = s.palette.as_mut().unwrap();
+                match spec {
+                    Some(c) if c.target == SpecTarget::Box => {
+                        p.command = id;
+                        p.set_text("");
+                        p.picked.clear();
+                        s.ask_palette();
+                    }
+                    Some(c) if complete => {
+                        p.set_text(&c.label);
+                        p.picked.clear();
+                        s.ask_palette();
+                    }
+                    _ => run_command(s, &id, tx),
+                }
+            }
+        }
+        return;
+    }
+    let (id, target) = match command {
+        Some(id) => (id, p.sandbox.clone()),
+        None => (p.command.clone(), r.r#box),
+    };
+    run_on(s, &id, vec![target], tx);
 }
 
-fn pick(s: &mut State, i: usize, tx: &mut Tx) {
-    let all = items(s);
-    let Some(it) = all.get(i) else { return };
-    let (cmd, sbx) = (it.command.clone(), it.sandbox.clone());
-    s.palette = None;
-    if let Some(id) = sbx
-        && let Some(b) = s.box_by_id(&id).cloned()
-    {
-        s.open_box(&b.key);
-        if !b.running() {
-            s.focus = Focus::List;
+/// A palette row: a box with its state, name, short ID, state, source and server, and a
+/// `commands` control to make it the chip; a command with what it does and its shortcut; either
+/// dimmed with why when it cannot be chosen.
+fn palette_row(s: &State, i: usize, r: &PaletteRow, on: bool, chip: bool) -> El {
+    let why = (!r.why.is_empty()).then(|| r.why.clone());
+    let ink = if why.is_some() { theme::dim() } else { theme::text() };
+    let mut line = row().key(format!("pal-{}", row_id(r))).w_full().h(30.0).px(12.0).gap(10.0).center_y().radius(theme::r_row())
+        .fill(if on { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY);
+    match (&r.command, s.box_by_id(&r.r#box)) {
+        (Some(c), _) if r.r#box.is_empty() => {
+            line = line.child(icon(&icons::COMMAND, 14.0).color(if on { theme::mark() } else { theme::grey() }))
+                .child(text(c.label.clone()).font(theme::UI).color(ink))
+                .child(text(why.clone().unwrap_or_else(|| c.detail.clone())).font(theme::UI_SMALL).color(if why.is_some() { theme::warn().alpha(0.8) } else { theme::dim() }).truncate().shrink())
+                .child(spacer());
+            if let Some(k) = keys::shortcut_of(s, &c.command) {
+                line = line.child(view::keycap(k));
+            }
         }
-    } else if let Some(c) = cmd {
-        run_command(s, &c, tx);
+        (_, Some(b)) => {
+            let (dot, dot_c) = view::glyph(s, false, b.state.as_str());
+            let short = b.id.strip_prefix("sbx_").unwrap_or(&b.id).chars().take(8).collect::<String>();
+            line = line.child(icon(&icons::BOX, 14.0).color(if on { theme::mark() } else { theme::grey() }))
+                .child(text(dot).font(theme::UI).color(dot_c))
+                .child(text(b.name.clone()).font(theme::UI).color(ink).truncate().shrink())
+                .child(text(short).font(theme::UI_SMALL).color(theme::dim()))
+                .child(text(b.state.as_str().to_string()).font(theme::UI_SMALL).color(theme::grey()))
+                .child(text(if b.source.is_empty() { "no source".into() } else { b.source.clone() }).font(theme::UI_SMALL).color(theme::grey()).truncate().shrink());
+            if !b.server.is_empty() {
+                line = line.child(text(b.server.clone()).font(theme::UI_SMALL).color(theme::dim()));
+            }
+            if let Some(w) = why {
+                line = line.child(text(w).font(theme::UI_SMALL).color(theme::warn().alpha(0.8)).truncate().shrink());
+            }
+            line = line.child(spacer());
+            if !chip {
+                let mut more = row().key(format!("pal-commands-{}", b.key)).px(6.0).h(20.0).center_y().radius(theme::r_key())
+                    .hover(theme::text().alpha(0.08)).cursor(rune::Cursor::Pointer)
+                    .child(text("commands").font(theme::UI_SMALL).color(theme::mark()));
+                more = more.help("the commands for this discobox  Tab".to_string());
+                line = line.child(more.on_press_tx(move |s: &mut State, tx: &mut Tx| {
+                    if let Some(p) = s.palette.as_mut() {
+                        p.pick(i);
+                    }
+                    choose(s, true, tx);
+                }));
+            }
+        }
+        _ => line = line.child(text(r.r#box.clone()).font(theme::UI).color(theme::dim())),
     }
+    line.on_hover(move |s: &mut State| if let Some(p) = s.palette.as_mut() { p.pick(i) })
+        .on_press(move |s: &mut State| if let Some(p) = s.palette.as_mut() { p.pick(i) })
+        .on_double_press_tx(move |s: &mut State, tx: &mut Tx| {
+            if let Some(p) = s.palette.as_mut() {
+                p.pick(i);
+            }
+            choose(s, false, tx);
+        })
+}
+
+/// A key the palette answers, and what it does, as its hint line says it.
+fn hint(key: &str, what: &str) -> El {
+    row().gap(4.0).center_y().child(view::keycap(key.to_string())).child(text(what.to_string()).font(theme::UI_SMALL).color(theme::dim()))
 }
 
 pub fn palette_view(s: &State) -> Option<El> {
     let p = s.palette.as_ref()?;
-    let all = items(s);
-    let field = text_input(&p.query, theme::UI.lh(22.0)).key("palette-query").single_line().w_full().color(theme::text())
-        .placeholder("Find a discobox or a command", theme::dim())
+    let chip_on = !p.command.is_empty() || !p.sandbox.is_empty();
+    let field = text_input(&p.query, theme::UI.lh(22.0)).key("palette-query").single_line().grow(1.0).color(theme::text())
+        .placeholder(if chip_on { "Narrow it down" } else { "Find a discobox or a command" }, theme::dim())
         .on_edit(|s: &mut State| &mut s.palette.as_mut().unwrap().query)
-        .on_input_change(|s: &mut State, _| if let Some(p) = s.palette.as_mut() { p.picked = 0 })
-        .on_input_key(|s: &mut State, ev: &KeyEvent, tx: &mut Tx| {
-            let n = items(s).len().max(1);
-            let Some(p) = s.palette.as_mut() else { return false };
-            match ev.key {
-                Key::Down => p.picked = (p.picked + 1) % n,
-                Key::Up => p.picked = (p.picked + n - 1) % n,
-                Key::Escape => s.palette = None,
-                Key::Enter => {
-                    let i = p.picked;
-                    pick(s, i, tx);
-                }
-                _ => return false,
+        .on_input_change(|s: &mut State, _| {
+            if let Some(p) = s.palette.as_mut() {
+                p.picked.clear();
             }
-            true
-        });
+            s.ask_palette();
+        })
+        .on_input_key(palette_key);
+    let mut input = row().w_full().h(36.0).px(10.0).gap(10.0).center_y().radius(theme::r_row()).fill(theme::sunken())
+        .child(icon(&icons::SEARCH, 16.0).color(theme::grey()));
+    if chip_on {
+        let label = if p.command.is_empty() {
+            s.box_by_id(&p.sandbox).map(|b| b.name.clone()).unwrap_or_else(|| p.sandbox.clone())
+        } else {
+            s.spec.command(&p.command).map(|c| c.label.clone()).unwrap_or_else(|| p.command.clone())
+        };
+        let glyph = if p.command.is_empty() { &icons::BOX } else { &icons::COMMAND };
+        input = input.child(row().key("palette-chip").h(24.0).pl(8.0).pr(4.0).gap(6.0).center_y().radius(theme::r_key())
+            .fill(theme::mark().alpha(0.16)).border(theme::stroke_quiet(), theme::mark()).cursor(rune::Cursor::Pointer)
+            .help("drop the chip, keeping the query  Esc".to_string())
+            .child(icon(glyph, 12.0).color(theme::mark()))
+            .child(text(label).font(theme::UI_BOLD).color(theme::text()))
+            .child(icon(&icons::CHEVRON, 10.0).color(theme::grey()))
+            .child(icon(&icons::CLOSE, 10.0).color(theme::grey()))
+            .on_press(|s: &mut State| {
+                if let Some(p) = s.palette.as_mut() {
+                    p.command.clear();
+                    p.sandbox.clear();
+                    p.picked.clear();
+                }
+                s.ask_palette();
+            }));
+    }
+    input = input.child(field);
+
+    let mut scope = row().w_full().px(4.0).gap(8.0).center_y()
+        .child(text("All servers · all folders").font(theme::UI_SMALL).color(theme::grey()));
+    let archived = row().key("palette-archived").gap(4.0).px(4.0).center_y().radius(theme::r_key())
+        .hover(theme::text().alpha(0.08)).cursor(rune::Cursor::Pointer)
+        .child(el().size(12.0, 12.0).child(if p.archived { icon(&icons::CHECK, 12.0).color(theme::mark()) } else { el() }))
+        .child(text("include archived").font(theme::UI_SMALL).color(theme::grey()))
+        .child(view::keycap(keys::label("alt+a")))
+        .on_press(|s: &mut State| toggle_archived(s));
+    scope = scope.child(archived).child(spacer())
+        .child(text(if p.found { format!("{} results", p.rows.len()) } else { "looking…".into() }).font(theme::UI_SMALL).color(theme::dim()));
+
     let mut list = col().w_full().gap(1.0);
-    for (i, it) in all.iter().enumerate().take(14) {
-        let on = i == p.picked;
-        let glyph = if it.sandbox.is_some() { &icons::BOX } else { &icons::COMMAND };
-        let mut line = row().key(format!("pal-{i}")).w_full().h(30.0).px(12.0).gap(10.0).center_y().radius(theme::r_row())
-            .fill(if on { theme::selection() } else { Color::TRANSPARENT }).motion(theme::SNAPPY)
-            .child(icon(glyph, 14.0).color(if on { theme::mark() } else { theme::grey() }))
-            .child(text(it.title.clone()).font(theme::UI).color(theme::text()))
-            .child(text(it.group.clone()).font(theme::UI_SMALL).color(theme::dim()))
-            .child(spacer());
-        if let Some(k) = &it.shortcut {
-            line = line.child(view::keycap(k.clone()));
-        }
-        list = list.child(line
-            .on_hover(move |s: &mut State| if let Some(p) = s.palette.as_mut() { p.picked = i })
-            .on_press_tx(move |s: &mut State, tx: &mut Tx| pick(s, i, tx)));
+    let at = p.at();
+    for (i, r) in p.rows.iter().enumerate().skip(p.offset).take(PALETTE_ROWS) {
+        list = list.child(palette_row(s, i, r, at == Some(i), chip_on));
     }
-    if all.is_empty() {
-        list = list.child(text("nothing matches").font(theme::UI).color(theme::dim()).padding(12.0));
+    if p.found && p.rows.is_empty() {
+        let what = if p.query.text.is_empty() { "nothing applies".to_string() } else { format!("no applicable matches for \u{201c}{}\u{201d}", p.query.text) };
+        list = list.child(text(what).font(theme::UI).color(theme::dim()).padding(12.0));
     }
-    let panel = col().key("palette").w(620.0).padding(8.0).gap(6.0).radius(theme::r_card())
+    // What the core's search says about the servers it searched: every one, whatever the list's
+    // filter.
+    if !p.partial.is_empty() {
+        list = list.child(text(format!("partial results: {}", p.partial.join(", "))).font(theme::UI_SMALL).color(theme::warn()).px(12.0));
+    }
+    for n in &p.stale {
+        list = list.child(text(format!("{} {}", n.title, n.detail)).font(theme::UI_SMALL).color(theme::warn()).px(12.0).truncate());
+    }
+    if let Some(why) = &p.reason {
+        list = list.child(text(why.clone()).font(theme::UI_SMALL).color(theme::warn()).px(12.0).truncate());
+    }
+    let hints = row().w_full().px(4.0).gap(14.0).center_y()
+        .child(hint(&keys::label("up"), "")).child(hint(&keys::label("down"), "move"))
+        .child(hint(&keys::label("tab"), if chip_on { "next" } else { "compose" }))
+        .child(hint(&keys::label("enter"), "choose"))
+        .child(hint(&keys::label("escape"), if chip_on { "drop the chip" } else { "back" }));
+    let panel = col().key("palette").w(720.0).padding(8.0).gap(6.0).radius(theme::r_card())
         .fill(theme::raised()).border(theme::stroke_focus(), theme::mark()).shadow(16.0, 48.0, Color::BLACK.alpha(0.55))
-        .child(row().w_full().h(36.0).px(10.0).gap(10.0).center_y().radius(theme::r_row()).fill(theme::sunken())
-            .child(icon(&icons::SEARCH, 16.0).color(theme::grey())).child(field))
-        .child(list);
+        .child(input).child(scope).child(list).child(el().h(1.0).w_full().fill(theme::line())).child(hints);
     Some(el().w_full().h_full().absolute(0.0, 0.0).fill(theme::bg().alpha(0.6))
-        .on_press(|s: &mut State| s.palette = None)
+        .on_press(|s: &mut State| s.close_palette())
         .child(row().w_full().pt(90.0).items_start().child(spacer()).child(panel.on_press(|_: &mut State| {})).child(spacer())))
 }
 
@@ -208,7 +484,7 @@ pub fn palette_view(s: &State) -> Option<El> {
 /// The choices are the last listing's, counted against its filter: while another filter is out
 /// and not yet listed, a choice would be made against the one it replaces — dropping a tag
 /// marked a moment before — so none is taken until it lands.
-fn choose(s: &mut State, i: usize, toggle: bool) {
+fn choose_filter(s: &mut State, i: usize, toggle: bool) {
     if s.asked.is_some() {
         s.message = Some("the list is being read with the last filter".into());
         return;
@@ -232,12 +508,12 @@ pub fn filter_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
         // Space marks and stays, for several tags in one trip; Enter marks and closes.
         Key::Text(ref t) if t == " " => {
             let i = m.picked;
-            choose(s, i, true);
+            choose_filter(s, i, true);
         }
         Key::Enter => {
             let i = m.picked;
             s.filter_menu = None;
-            choose(s, i, false);
+            choose_filter(s, i, false);
         }
         _ => {}
     }
@@ -276,7 +552,7 @@ pub fn filter_view(s: &State) -> Option<El> {
                 if !s.listing.choices.get(i).is_some_and(|c| c.several) {
                     s.filter_menu = None;
                 }
-                choose(s, i, true);
+                choose_filter(s, i, true);
             }));
     }
     let archived = s.listing.filter.archived;

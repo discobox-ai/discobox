@@ -105,7 +105,7 @@ fn run_step(rt: &mut Runtime<State>, step: &Step, path: &std::path::Path, i: usi
         .expect("the context menu gesture has a desktop key");
     rt.key(press(&menu));
     settle(rt);
-    let actions = rt.state.menu.as_ref().map(|m| m.actions.clone()).unwrap_or_else(|| panic!("{}: step {i}: no row menu opened", path.display()));
+    let actions = rt.state.menu.as_ref().map(|m| m.entries.clone()).unwrap_or_else(|| panic!("{}: step {i}: no row menu opened", path.display()));
     let at = actions.iter().position(|a| a.command == step.command).unwrap_or_else(|| panic!("{}: step {i}: {} is not on the row's menu", path.display(), step.command));
     for _ in 0..actions.len() {
         if rt.state.menu.as_ref().is_none_or(|m| m.picked == at) {

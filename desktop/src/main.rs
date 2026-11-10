@@ -20,6 +20,8 @@ mod mark;
 mod overlay;
 #[cfg(test)]
 mod parity_tests;
+#[cfg(test)]
+mod surface_tests;
 mod term;
 mod theme;
 mod view;
@@ -30,8 +32,8 @@ use std::sync::Mutex;
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
 use wire::{
-    Args, Box as Sandbox, Command, Context, Entry, Filter, Listing, Result as CommandResult, Row, Sessions, Spec, SpecTarget, Status,
-    StreamState, Tab, TabKind, Topic,
+    Args, Box as Sandbox, Command, Menu as DesktopMenu, Commands, Context, Entry, Filter, Listing, Note, Palette as Found, PaletteQuery, PaletteRow,
+    Result as CommandResult, Row, Sessions, Spec, SpecTarget, Status, StreamState, Subscribe, Tab, TabKind, Topic,
 };
 use rune::{App, AppSpec, KeyEvent, MenuItem, Mods, TextEdit, Tx, Waker};
 use term::Screen;
@@ -123,9 +125,90 @@ enum Pending {
     End(u32),
 }
 
+/// The palette (ADR 26-11-06-671): the query, at most one chip — a command, or a box by its key —
+/// the scope, and what the core found for them, which the keys pick among. Every change asks the
+/// core again (the palette topic); a row is kept picked by what it is, not where it is.
 pub struct Palette {
     pub query: TextEdit,
-    pub picked: usize,
+    pub command: String,
+    pub sandbox: String,
+    pub archived: bool,
+    pub rows: Vec<PaletteRow>,
+    /// What the core says about the servers it searched: those with no rows yet, and those
+    /// whose rows are behind.
+    pub partial: Vec<String>,
+    pub stale: Vec<Note>,
+    /// Whether the core has answered the query asked last.
+    pub found: bool,
+    /// The picked row's identity (`row_id`), and the first row drawn.
+    pub picked: String,
+    pub offset: usize,
+    /// Why the last choice did nothing, or why the query could not be answered.
+    pub reason: Option<String>,
+    sub: u32,
+}
+
+/// How many rows the palette draws at once, and a page of its keys.
+pub const PALETTE_ROWS: usize = 12;
+
+/// A palette row's identity: a box by its key, a command by its ID.
+pub fn row_id(r: &PaletteRow) -> String {
+    match &r.command {
+        Some(c) if r.r#box.is_empty() => format!("command:{}", c.command),
+        _ => format!("box:{}", r.r#box),
+    }
+}
+
+impl Palette {
+    fn new() -> Palette {
+        let mut query = TextEdit::new("");
+        query.focused = true;
+        Palette {
+            query, command: String::new(), sandbox: String::new(), archived: false, rows: vec![], partial: vec![], stale: vec![], found: false,
+            picked: String::new(), offset: 0, reason: None, sub: 0,
+        }
+    }
+
+    /// The picked row's place in the rows.
+    pub fn at(&self) -> Option<usize> { self.rows.iter().position(|r| row_id(r) == self.picked) }
+
+    /// Moves the pick by `by` rows, kept on the rows, and the rows drawn with it.
+    pub fn step(&mut self, by: i64) {
+        if self.rows.is_empty() {
+            return;
+        }
+        let at = self.at().map_or(0, |i| i as i64);
+        let to = (at + by).clamp(0, self.rows.len() as i64 - 1) as usize;
+        self.pick(to);
+    }
+
+    pub fn pick(&mut self, i: usize) {
+        let Some(r) = self.rows.get(i) else { return };
+        self.picked = row_id(r);
+        self.reason = None;
+        if i < self.offset {
+            self.offset = i;
+        } else if i >= self.offset + PALETTE_ROWS {
+            self.offset = i + 1 - PALETTE_ROWS;
+        }
+    }
+
+    /// Replaces the query's text, the caret at its end.
+    pub fn set_text(&mut self, text: &str) {
+        self.query = TextEdit::new(text);
+        self.query.focused = true;
+    }
+}
+
+/// What a menu drawn in the window is.
+#[derive(Clone, PartialEq, Debug)]
+pub enum MenuKind {
+    /// A box's actions, from its row or its header: the core's lifecycle entries for it.
+    Actions(String),
+    /// One of the menu bar's menus (the spec's `menus`, in their order).
+    Bar(DesktopMenu),
+    /// The focused pane's menu: the session commands.
+    Pane,
 }
 
 /// The list's filter, open: the core's choices, and the one the keys are on.
@@ -133,12 +216,15 @@ pub struct FilterMenu {
     pub picked: usize,
 }
 
-/// A box's actions menu, drawn in the window where the platform has no native one.
+/// A menu drawn in the window — a box's actions where the platform has no native one, a menu of
+/// the menu bar, a pane's — and its entries as the core rules on them where it was opened: a box's
+/// actions from the `actions` command, the others from the commands topic (`sub`) as it answers.
 pub struct Menu {
-    pub sandbox: String,
+    pub kind: MenuKind,
     pub at: (f32, f32),
-    pub actions: Vec<Entry>,
+    pub entries: Vec<Entry>,
     pub picked: usize,
+    pub sub: u32,
 }
 
 pub struct State {
@@ -174,6 +260,19 @@ pub struct State {
     pub message: Option<String>,
     pub palette: Option<Palette>,
     pub menu: Option<Menu>,
+    /// Where each menu of the menu bar is drawn, which is where it opens.
+    pub bar_at: HashMap<DesktopMenu, (f32, f32)>,
+    /// The help: every command by its menu, with its shortcut.
+    pub help: bool,
+    /// The boxes this window has gone to, latest first, which rank the palette's empty query
+    /// (ADR 26-11-06-671 §6): at most `RECENT` of them, for as long as the window lasts.
+    pub recent: Vec<String>,
+    /// A box the palette went to that the filter hid, and the filter it stands in for: shown
+    /// through a view that is never saved, and put back when the window leaves the box.
+    pub reveal: Option<(String, Filter)>,
+    /// A box to put the cursor on once a listing shows it: one the palette went to that the
+    /// filter hid, until the view revealing it lands.
+    point: Option<String>,
     pub bridged: bool,
     pending: HashMap<u64, Pending>,
     /// The listing subscription: the filter is changed by subscribing again under a new one.
@@ -192,6 +291,9 @@ pub struct State {
 
 const DEFAULT_SIZE: (u16, u16) = (100, 30);
 
+/// How many boxes gone to the palette ranks by (ADR 26-11-06-671 §6).
+const RECENT: usize = 100;
+
 impl State {
     fn new() -> State {
         let (backend, spec, inbox, bridged) = BOOT.lock().unwrap().take().unwrap_or_else(boot_mock);
@@ -199,10 +301,11 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, recent: vec![], reveal: None, point: None,
+            bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), early: HashMap::new(),
         };
-        s.follow_listing(None);
+        s.follow_listing(None, String::new());
         if !bridged {
             // The mock lists at once; taking it here lets a headless scene open a box.
             for e in s.inbox.drain() {
@@ -214,39 +317,196 @@ impl State {
         s
     }
 
-    fn subscribe(&mut self, topic: Topic, sandbox: String, filter: Option<Filter>) -> u32 {
-        let sub = self.next_sub;
+    /// Follows a topic under a new subscription ID, which is returned.
+    fn subscribe(&mut self, mut sub: Subscribe) -> u32 {
+        sub.sub = self.next_sub;
         self.next_sub += 1;
-        if topic == Topic::Sessions {
-            self.subs.insert(sub, sandbox.clone());
+        if sub.topic == Topic::Sessions {
+            self.subs.insert(sub.sub, sub.r#box.clone());
         }
-        self.backend.send(Out::Subscribe { sub, topic, sandbox, filter });
-        sub
+        let id = sub.sub;
+        self.backend.send(Out::Subscribe(sub));
+        id
     }
 
-    /// Follows the listing narrowed to `filter` (none: what this machine's last window left),
-    /// in place of the subscription there was: what that one still sends is dropped.
-    fn follow_listing(&mut self, filter: Option<Filter>) {
-        if self.list_sub != 0 {
-            self.backend.send(Out::Unsubscribe(self.list_sub));
+    /// Ends a subscription, if there is one.
+    pub fn unsubscribe(&mut self, sub: u32) {
+        if sub != 0 {
+            self.backend.send(Out::Unsubscribe(sub));
         }
-        self.list_sub = self.subscribe(Topic::Listing, String::new(), filter);
+    }
+
+    /// Follows the listing narrowed to `filter` (none: what this machine's last window left), or
+    /// revealing a box, in place of the subscription there was: what that one still sends is
+    /// dropped.
+    fn follow_listing(&mut self, filter: Option<Filter>, reveal: String) {
+        self.unsubscribe(self.list_sub);
+        self.list_sub = self.subscribe(Subscribe { topic: Topic::Listing, filter, reveal, ..Default::default() });
     }
 
     /// Narrows the list to another filter, from the core's choices or the archived toggle. The
-    /// rows under the cursor and the marks are another set now, so both start again.
+    /// rows under the cursor and the marks are another set now, so both start again. A box the
+    /// palette revealed is let go: this filter is the person's own.
     pub fn set_filter(&mut self, filter: Filter) {
+        self.reveal = None;
         self.cursor = 0;
         self.selected.clear();
         self.range = None;
         self.asked = Some(filter.clone());
-        self.follow_listing(Some(filter));
+        self.follow_listing(Some(filter), String::new());
+    }
+
+    /// Shows a box the filter hides, through a view that is never saved over the filter
+    /// (ADR 26-11-06-671 §5); the filter comes back when the window leaves it (`unreveal`).
+    fn reveal(&mut self, key: &str) {
+        let Some(saved) = self.reveal.as_ref().map(|(_, f)| f.clone()).or_else(|| self.filter()) else { return };
+        self.reveal = Some((key.to_string(), saved.clone()));
+        self.asked = Some(saved.clone());
+        self.selected.clear();
+        self.range = None;
+        self.message = Some("showing the palette's box outside your filter; the filter comes back when you leave it".into());
+        self.follow_listing(Some(saved), key.to_string());
+    }
+
+    /// Puts back the filter a revealed box stood in for, unless `key` is that box.
+    fn unreveal(&mut self, key: Option<&str>) {
+        let Some((at, saved)) = self.reveal.clone() else { return };
+        if key == Some(at.as_str()) {
+            return;
+        }
+        self.reveal = None;
+        self.asked = Some(saved.clone());
+        self.follow_listing(Some(saved), String::new());
+    }
+
+    /// Notes a box gone to, for the palette's ranking.
+    fn visited(&mut self, key: &str) {
+        self.recent.retain(|k| k != key);
+        self.recent.insert(0, key.to_string());
+        self.recent.truncate(RECENT);
+    }
+
+    /// Opens the palette, empty, and asks the core what it finds.
+    fn open_palette(&mut self) {
+        self.close_overlays();
+        self.palette = Some(Palette::new());
+        self.ask_palette();
+    }
+
+    /// Asks the core what the palette's query finds, in place of what it asked before.
+    pub fn ask_palette(&mut self) {
+        let Some(p) = self.palette.as_ref() else { return };
+        let current = match &self.live {
+            Some(k) => k.clone(),
+            None => self.listing.rows.get(self.cursor).map(|r| r.r#box.clone()).unwrap_or_default(),
+        };
+        let query = PaletteQuery {
+            text: p.query.text.clone(), command: p.command.clone(), r#box: p.sandbox.clone(), archived: p.archived, current,
+            recent: self.recent.clone(),
+        };
+        let old = p.sub;
+        self.unsubscribe(old);
+        let context = Some(self.context());
+        let sub = self.subscribe(Subscribe { topic: Topic::Palette, context, palette: Some(query), ..Default::default() });
+        let p = self.palette.as_mut().unwrap();
+        p.sub = sub;
+        p.found = false;
+    }
+
+    /// What the core found for the palette's query: the rows, the scope, and the chip the text
+    /// committed as it was typed. The pick stays on its row while it is there.
+    fn take_palette(&mut self, sub: u32, r: Result<Found, String>) {
+        let Some(p) = self.palette.as_mut() else { return };
+        if sub != p.sub {
+            return;
+        }
+        let found = match r {
+            Ok(f) => f,
+            Err(e) => {
+                p.reason = Some(e);
+                return;
+            }
+        };
+        if let Some(c) = found.commit {
+            p.command = c.command;
+            p.set_text(&c.text);
+        }
+        p.archived = found.archived;
+        p.rows = found.rows;
+        p.partial = found.partial;
+        p.stale = found.stale;
+        p.found = true;
+        match p.at() {
+            Some(i) => p.pick(i),
+            None => {
+                p.offset = 0;
+                p.picked = p.rows.first().map(row_id).unwrap_or_default();
+            }
+        }
+    }
+
+    /// Closes the palette, ending what it follows.
+    pub fn close_palette(&mut self) {
+        if let Some(p) = self.palette.take() {
+            self.unsubscribe(p.sub);
+        }
+    }
+
+    /// Closes the palette, the menus and the help, ending what they follow.
+    pub fn close_overlays(&mut self) {
+        self.close_palette();
+        if let Some(m) = self.menu.take() {
+            self.unsubscribe(m.sub);
+        }
+        self.filter_menu = None;
+        self.help = false;
+    }
+
+    /// Opens a menu of the menu bar, or the pane's menu, at a place: its commands from the spec,
+    /// then as the core rules on them where it was opened.
+    pub fn open_commands_menu(&mut self, kind: MenuKind, at: (f32, f32)) {
+        self.close_overlays();
+        let ids: Vec<String> = match &kind {
+            MenuKind::Bar(menu) => self.in_menu(*menu),
+            MenuKind::Pane => self.in_menu(DesktopMenu::Session),
+            MenuKind::Actions(_) => return,
+        };
+        let entries = ids.iter().filter_map(|id| self.spec.command(id)).map(|c| {
+            let why = lacking(&self.spec, &c.id).unwrap_or_default();
+            Entry { command: c.id.clone(), label: c.label.clone(), detail: c.detail.clone(), enabled: why.is_empty(), why, uses: 0 }
+        }).collect();
+        let context = Some(self.context());
+        let targets = self.targets();
+        let sub = self.subscribe(Subscribe { topic: Topic::Commands, context, targets, ..Default::default() });
+        self.menu = Some(Menu { kind, at, entries, picked: 0, sub });
+    }
+
+    /// The commands of one menu, by ID, in the registry's order.
+    pub fn in_menu(&self, menu: DesktopMenu) -> Vec<String> {
+        self.spec.commands.iter().filter(|c| c.bindings.desktop.menu == Some(menu)).map(|c| c.id.clone()).collect()
+    }
+
+    /// The core's commands as they stand where a menu was opened, each time it rules again: an
+    /// entry it lists takes its ruling, either way, and one the app does not answer stays as the
+    /// app says.
+    fn take_commands(&mut self, sub: u32, r: Result<Commands, String>) {
+        let Some(m) = self.menu.as_mut().filter(|m| m.sub == sub) else { return };
+        let Ok(c) = r else { return };
+        for e in m.entries.iter_mut().filter(|e| lacking(&self.spec, &e.command).is_none()) {
+            if let Some(ruled) = c.entries.iter().find(|x| x.command == e.command) {
+                e.enabled = ruled.enabled;
+                e.why = ruled.why.clone();
+            }
+        }
     }
 
     /// The filter the list is on: the one asked for while it is being read, else the last
     /// listing's. None before any listing has landed — there is no filter to change yet, and
     /// one changed from nothing would be saved over the one this machine's windows open on.
     pub fn filter(&self) -> Option<Filter> {
+        if let Some((_, saved)) = &self.reveal {
+            return Some(saved.clone());
+        }
         self.asked.clone().or_else(|| self.loaded.then(|| self.listing.filter.clone()))
     }
 
@@ -419,6 +679,14 @@ impl State {
         self.boxes = l.boxes.clone();
         self.listing = l;
         let last = self.listing.rows.len().saturating_sub(1);
+        let at = match self.point.take() {
+            Some(k) if self.row_of(&k).is_some() => Some(k),
+            Some(k) => {
+                self.point = Some(k);
+                at
+            }
+            None => at,
+        };
         self.cursor = at.and_then(|id| self.row_of(&id)).unwrap_or(self.cursor.min(last));
         self.range = self.range.map(|i| anchor.and_then(|id| self.row_of(&id)).unwrap_or(i.min(last))).filter(|_| !self.listing.rows.is_empty());
         let shown: HashSet<String> = self.listing.rows.iter().map(|r| r.r#box.clone()).collect();
@@ -450,9 +718,29 @@ impl State {
             self.message = Some(format!("{} is {} — start it from its menu", sbx.name, sbx.state.as_str()));
             return;
         }
+        self.unreveal(Some(&sbx.key));
+        self.visited(&sbx.key);
         self.ensure_workspace(&sbx.key);
         self.live = Some(sbx.key);
         self.focus = Focus::Panes;
+    }
+
+    /// Goes to a box the palette chose (ADR 26-11-06-671 §3): its workspace when it has one or is
+    /// running, else its row, without starting it; one the filter hides is shown outside it.
+    pub fn navigate(&mut self, key: &str) {
+        if self.box_by_id(key).is_none() {
+            self.message = Some("the box is no longer listed".into());
+            return;
+        }
+        if self.row_of(key).is_none() {
+            self.reveal(key);
+            self.point = Some(key.to_string());
+        }
+        self.visited(key);
+        self.open_box(key);
+        if self.live.as_deref() != Some(key) {
+            self.focus = Focus::List;
+        }
     }
 
     /// A box's workspace, made and subscribed to its sessions on first use.
@@ -461,16 +749,15 @@ impl State {
             self.workspaces.insert(sandbox.to_string(), Workspace {
                 sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true, error: None,
             });
-            self.subscribe(Topic::Sessions, sandbox.to_string(), None);
+            self.subscribe(Subscribe { topic: Topic::Sessions, r#box: sandbox.to_string(), ..Default::default() });
         }
     }
 
     /// Ask the core for a session in a box — a shell, or another of its harness's terminals —
     /// on a stream allocated for its pane. The pane is made when the result says what it is.
-    fn new_session(&mut self, shell: bool) {
-        let (cmd, targets, sandbox) = if shell {
-            let Some(b) = self.target() else { return };
-            ("shell", vec![b.key.clone()], b.key)
+    fn new_session(&mut self, shell: Option<String>) {
+        let (cmd, targets, sandbox) = if let Some(b) = shell {
+            ("shell", vec![b.clone()], b)
         } else {
             ("terminal", vec![], self.live.clone().unwrap_or_default())
         };
@@ -546,6 +833,7 @@ impl State {
         if b.running() || self.workspaces.contains_key(&b.key) {
             self.open_box(&b.key);
         } else {
+            self.unreveal(Some(&b.key));
             self.focus = Focus::List;
         }
     }
@@ -585,6 +873,7 @@ impl State {
     /// A box's action menu, from its row: the core's entries for it — for every box marked,
     /// when it is one of them, as the TUI's menu is for the selection.
     pub fn open_menu(&mut self, sandbox: String, at: (f32, f32)) {
+        self.close_overlays();
         let context = Context { list_has_keys: true, ..self.context() };
         let targets = match self.row_of(&sandbox) {
             Some(i) if self.is_selected(i) => self.list_targets(),
@@ -662,6 +951,8 @@ impl State {
             Pending::End(stream) if r.status == Status::Done => self.drop_pane(stream),
             Pending::Session(stream, sandbox) if r.status == Status::Done => {
                 let Some(exec) = r.session.clone() else { return };
+                self.unreveal(Some(&r.r#box));
+                self.visited(&r.r#box);
                 self.ensure_workspace(&r.r#box);
                 let pane = Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None };
                 let ws = self.workspaces.get_mut(&r.r#box).unwrap();
@@ -729,39 +1020,70 @@ impl State {
 /// an entry in the parity ledger (`docs/console/parity.md`) saying which issue brings it.
 pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive",
-    "quit", "palette", "terminal", "end", "maximize", "detach",
+    "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
     "refresh", "servers", "archived",
 ];
 
-/// Every command, by its registry ID. The keys, the palette, the menus and a row's actions all
-/// come here, and go to the core, which rules on it and runs it; a flow that is the app's own is
-/// entered when the core says it can run (`enter`). A command the app does not answer yet says
-/// so, and is not sent.
-pub fn run_command(s: &mut State, id: &str, _tx: &mut Tx) {
+/// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
+/// and what its menu entry says.
+pub fn lacking(spec: &Spec, id: &str) -> Option<String> {
+    if ANSWERED.contains(&id) {
+        return None;
+    }
+    Some(match spec.command(id) {
+        Some(c) if matches!(id, "new" | "rename" | "settings" | "purge" | "review config") => {
+            format!("{} needs a dialog, which the desktop app does not have yet", c.label)
+        }
+        Some(c) => format!("{} is not in the desktop app yet", c.label),
+        None => format!("unknown command {id}"),
+    })
+}
+
+/// Every command, by its registry ID, on what the window has picked: the box on screen while its
+/// panes have the keys, else the list's selection. The keys, the menus and a row's actions all
+/// come here, and go to the core, which rules on it and runs it.
+pub fn run_command(s: &mut State, id: &str, tx: &mut Tx) {
+    let targets = match id {
+        // A verb takes every box the list's selection holds, in one batch.
+        "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" | "purge" => s.targets(),
+        _ => s.target().map(|b| vec![b.key]).unwrap_or_default(),
+    };
+    run_on(s, id, targets, tx);
+}
+
+/// A command on boxes named explicitly — the palette's chip, a menu's box — never on what is on
+/// screen instead (ADR 26-11-06-671 §3). The core rules on it and runs it; a flow that is the
+/// app's own is entered when the core says it can run (`enter`). A command the app does not
+/// answer yet says so, and is not sent.
+pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
+    s.close_overlays();
     s.message = None;
-    s.palette = None;
-    s.menu = None;
-    s.filter_menu = None;
-    if !ANSWERED.contains(&id) {
-        s.message = Some(match s.spec.command(id) {
-            Some(c) if matches!(id, "new" | "rename" | "settings" | "purge" | "review config") => {
-                format!("{} needs a dialog, which the desktop app does not have yet", c.label)
-            }
-            Some(c) => format!("{} is not in the desktop app yet", c.label),
-            None => format!("unknown command {id}"),
-        });
+    if let Some(why) = lacking(&s.spec, id) {
+        s.message = Some(why);
         return;
     }
     let context = s.context();
+    let box_command = s.spec.command(id).is_some_and(|c| c.target == SpecTarget::Box);
+    let targets = if box_command { targets } else { vec![] };
     match id {
-        "shell" => s.new_session(true),
-        "terminal" => s.new_session(false),
+        "shell" => {
+            if let Some(b) = targets.first().cloned() {
+                s.new_session(Some(b));
+            }
+        }
+        "terminal" => s.new_session(None),
         "end" => s.end_focused(),
-        // A verb takes every box the list's selection holds, in one batch the core rules on and
-        // sends, asking first where the core's rules ask.
+        "actions" => {
+            // The box's menu, where the keys are: by its row in the list, by its header beside a pane.
+            let Some(key) = targets.first().cloned() else { return };
+            let at = match s.row_of(&key) {
+                Some(i) if s.focus == Focus::List || s.live.is_none() => (260.0, 120.0 + i as f32 * 28.0),
+                _ => (900.0, 30.0),
+            };
+            s.open_menu(key, at);
+        }
         "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" => {
-            let targets = s.targets();
             let name = match targets.as_slice() {
                 [] => return,
                 [one] => s.box_by_id(one).map(|b| b.name.clone()).unwrap_or_else(|| one.clone()),
@@ -782,13 +1104,7 @@ pub fn run_command(s: &mut State, id: &str, _tx: &mut Tx) {
             s.message = Some("refreshing…".into());
             s.command(id, vec![], context, Args::default(), Pending::Enter(id.into()));
         }
-        _ => {
-            let targets = match s.spec.command(id) {
-                Some(c) if c.target == SpecTarget::Box => s.target().map(|b| vec![b.key]).unwrap_or_default(),
-                _ => vec![],
-            };
-            s.command(id, targets, context, Args::default(), Pending::Enter(id.into()));
-        }
+        _ => s.command(id, targets, context, Args::default(), Pending::Enter(id.into())),
     }
 }
 
@@ -798,6 +1114,8 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         // The core has ruled the box can be attached, whatever its state: its primary is
         // what waits for it.
         "attach" => {
+            s.unreveal(Some(&r.r#box));
+            s.visited(&r.r#box);
             if let Some(i) = s.row_of(&r.r#box) {
                 s.cursor = i;
             }
@@ -811,10 +1129,15 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
             }
         }
         "detach" => {
+            s.unreveal(None);
             s.live = None;
             s.focus = Focus::List;
         }
-        "palette" => s.palette = Some(Palette { query: { let mut q = TextEdit::new(""); q.focused = true; q }, picked: 0 }),
+        "palette" => s.open_palette(),
+        "help" => {
+            s.close_overlays();
+            s.help = true;
+        }
         "quit" => tx.quit(),
         "next pane" => s.step_pane(1),
         "previous pane" => s.step_pane(-1),
@@ -828,6 +1151,9 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         }
         // The filter's choices are the listing's; the menu opens on the first one marked.
         "servers" => {
+            // The choices are counted against the filter the list is on: the person's own, back
+            // in place of a revealed box's view.
+            s.unreveal(None);
             let picked = s.listing.choices.iter().position(|c| c.marked).unwrap_or(0);
             s.filter_menu = Some(FilterMenu { picked });
         }
@@ -856,6 +1182,8 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
         match e {
             Event::Listing(sub, l) => s.take_listing(sub, l),
             Event::Sessions(sub, r) => s.take_sessions(sub, r),
+            Event::Commands(sub, r) => s.take_commands(sub, r),
+            Event::Palette(sub, r) => s.take_palette(sub, r),
             Event::Result(r) => s.take_result(r, tx),
             Event::Stream(st) => match st.state {
                 StreamState::Attached => s.resend_size(st.stream),
@@ -963,19 +1291,61 @@ fn main() {
             }),
             ("workspace", |s| {
                 s.open_row(0);
-                s.new_session(true);
+                let b = s.live.clone();
+                s.new_session(b);
                 poll(s, 0.0, &mut Tx::default());
             }),
             ("palette", |s| {
                 s.open_row(0);
                 poll(s, 0.0, &mut Tx::default());
-                s.palette = Some(Palette { query: TextEdit::new(""), picked: 0 });
+                run_command(s, "palette", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // A command first: `stop ` commits stop as the chip, and the boxes it can stop follow.
+            ("palette-command", |s| {
+                run_command(s, "palette", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                if let Some(p) = s.palette.as_mut() {
+                    p.set_text("stop ");
+                }
+                s.ask_palette();
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // A box first: the commands it can take.
+            ("palette-box", |s| {
+                run_command(s, "palette", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                let key = s.rows()[0].r#box.clone();
+                if let Some(p) = s.palette.as_mut() {
+                    p.sandbox = key;
+                }
+                s.ask_palette();
+                poll(s, 0.0, &mut Tx::default());
             }),
             ("menu", |s| {
                 s.open_row(0);
                 poll(s, 0.0, &mut Tx::default());
                 let id = s.rows()[0].r#box.clone();
                 s.open_menu(id, (420.0, 140.0));
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // The menu bar's Box menu, over a workspace: every entry the core rules on, with why.
+            ("menubar", |s| {
+                s.open_row(0);
+                poll(s, 0.0, &mut Tx::default());
+                let at = s.bar_at.get(&DesktopMenu::Box).copied().unwrap_or((60.0, 30.0));
+                s.open_commands_menu(MenuKind::Bar(DesktopMenu::Box), at);
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            ("pane-menu", |s| {
+                s.open_row(0);
+                poll(s, 0.0, &mut Tx::default());
+                s.open_commands_menu(MenuKind::Pane, (700.0, 300.0));
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            ("help", |s| {
+                run_command(s, "help", &mut Tx::default());
                 poll(s, 0.0, &mut Tx::default());
             }),
         ],

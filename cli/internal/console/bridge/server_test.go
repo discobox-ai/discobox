@@ -431,10 +431,13 @@ func TestSubscriptions(t *testing.T) {
 	a.offSchema = false
 }
 
-// The palette and the action menu are the core's entries for what the app
-// picked, with a reason only on what cannot act.
-func TestPaletteAndActionsAreTheCores(t *testing.T) {
-	core := newFakeCore("home", running("b1"))
+// The action menu, the menus' commands and the palette are the core's: its
+// entries for what the app picked, with a reason only on what cannot act, and
+// its results for what the palette asks.
+func TestActionsCommandsAndPaletteAreTheCores(t *testing.T) {
+	stopped := running("b2")
+	stopped.State = console.StateStopped
+	core := newFakeCore("home", running("b1"), stopped)
 	a := dial(t, core)
 	a.hello()
 	id := a.command(Command{Command: "actions", Targets: []string{"b1"}, Context: Context{ListHasKeys: true}})
@@ -449,15 +452,74 @@ func TestPaletteAndActionsAreTheCores(t *testing.T) {
 		}
 	}
 	a.result(a.command(Command{Command: "refresh"}))
-	id = a.command(Command{Command: "palette", Targets: []string{"b1"}})
-	r = a.result(id)
-	if r.Status != StatusEnter || len(r.Entries) != len(console.Commands()) {
+	if r := a.result(a.command(Command{Command: "palette"})); r.Status != StatusEnter {
 		t.Fatalf("palette %+v", r)
 	}
-	for _, e := range r.Entries {
-		if e.Command == "refresh" && e.Uses != 1 {
-			t.Errorf("refresh used %d times", e.Uses)
+
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicCommands, Targets: []string{"b2"}, Context: &Context{ListHasKeys: true}}})
+	snap := a.expect(TypeSnapshot).Snapshot
+	if snap.Commands == nil || len(snap.Commands.Entries) != len(console.Commands()) {
+		t.Fatalf("commands %+v", snap)
+	}
+	for _, e := range snap.Commands.Entries {
+		switch {
+		case (e.Command == "refresh" || e.Command == "palette") && e.Uses != 1:
+			t.Errorf("%s used %d times", e.Command, e.Uses)
+		case e.Command == "stop" && (e.Enabled || e.Why == ""):
+			t.Errorf("stop is offered for a stopped box: %+v", e)
+		case e.Command == "start" && !e.Enabled:
+			t.Errorf("start is not offered for a stopped box: %+v", e)
 		}
+	}
+
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 2, Topic: TopicPalette, Context: &Context{}, Palette: &PaletteQuery{Text: "b2"}}})
+	p := a.expect(TypeSnapshot).Snapshot.Palette
+	if p == nil || len(p.Rows) == 0 || p.Rows[0].Box != "b2" || p.Commit != nil {
+		t.Fatalf("palette for b2: %+v", p)
+	}
+	// A box command's alias and a space commit it as the chip: the rows are
+	// the boxes it can act on.
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 3, Topic: TopicPalette, Context: &Context{}, Palette: &PaletteQuery{Text: "start "}}})
+	p = a.expect(TypeSnapshot).Snapshot.Palette
+	if p == nil || p.Commit == nil || p.Commit.Command != "start" || len(p.Rows) != 1 || p.Rows[0].Box != "b2" {
+		t.Fatalf("palette for start: %+v", p)
+	}
+	// A box chip offers the commands it can take.
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 4, Topic: TopicPalette, Context: &Context{}, Palette: &PaletteQuery{Box: "b1", Text: "stop"}}})
+	p = a.expect(TypeSnapshot).Snapshot.Palette
+	if p == nil || len(p.Rows) == 0 || p.Rows[0].Command == nil || p.Rows[0].Command.Command != "stop" || p.Rows[0].Why != "" {
+		t.Fatalf("palette on b1 for stop: %+v", p)
+	}
+}
+
+// The commands and the palette are read from the last listing, and never
+// list: a workspace no listing has would list again, which would wake them
+// again, without end. They answer what the bridge last read, with the server
+// notes of every server searched.
+func TestCommandsAndPaletteNeverList(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	a := dial(t, core)
+	a.hello()
+	a.result(a.command(Command{Command: "actions", Targets: []string{"b1"}, Context: Context{ListHasKeys: true}}))
+	core.mu.Lock()
+	before := core.lists
+	core.mu.Unlock()
+	gone := &Context{Workspace: "gone", HasWorkspace: true, WorkspaceShown: true, PaneFocused: true}
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicCommands, Context: gone}})
+	if s := a.expect(TypeSnapshot).Snapshot; s.Commands == nil {
+		t.Fatalf("commands %+v", s)
+	}
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 2, Topic: TopicPalette, Context: gone, Palette: &PaletteQuery{Text: "b1"}}})
+	p := a.expect(TypeSnapshot).Snapshot.Palette
+	if p == nil || len(p.Rows) == 0 || p.Rows[0].Box != "b1" || p.Partial == nil || p.Stale == nil {
+		t.Fatalf("palette %+v", p)
+	}
+	a.quiet(200 * time.Millisecond)
+	core.mu.Lock()
+	after := core.lists
+	core.mu.Unlock()
+	if after != before {
+		t.Fatalf("the topics listed %d times", after-before)
 	}
 }
 
@@ -749,6 +811,20 @@ func TestTheListingIsTheCoresList(t *testing.T) {
 	core.mu.Unlock()
 	if !reflect.DeepEqual(saved.Tags, []string{"wip"}) {
 		t.Fatalf("the filter was not saved for the next window: %+v", saved)
+	}
+
+	// A box revealed for the palette shows whatever the filter hid, and is
+	// never saved over it.
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 3, Topic: TopicListing, Filter: &f, Reveal: "k"}})
+	l = a.expect(TypeSnapshot).Snapshot.Listing
+	if len(l.Rows) != 2 || l.Label != "all discoboxes" || l.Filter.Archived {
+		t.Fatalf("revealing k: rows %+v, label %q", l.Rows, l.Label)
+	}
+	core.mu.Lock()
+	saved = core.view
+	core.mu.Unlock()
+	if !reflect.DeepEqual(saved.Tags, []string{"wip"}) {
+		t.Fatalf("a reveal was saved over the filter: %+v", saved)
 	}
 
 	// The next window opens on it; whether the archived are listed is not kept.
