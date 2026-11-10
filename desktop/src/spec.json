@@ -1966,6 +1966,28 @@
       }
     },
     {
+      "id": "paste image",
+      "label": "paste an image for the agent",
+      "bindings": {
+        "tui": {
+          "keys": [],
+          "leader": [],
+          "repeats": false,
+          "chords": [
+            "ctrl+v",
+            "alt+v"
+          ],
+          "menu": []
+        },
+        "desktop": {
+          "keys": [
+            "ctrl+v",
+            "alt+v"
+          ]
+        }
+      }
+    },
+    {
       "id": "find",
       "label": "find in the scrollback",
       "bindings": {

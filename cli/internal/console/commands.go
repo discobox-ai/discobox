@@ -50,10 +50,14 @@ type TUIBinding struct {
 	// the command is the leader once and then its key again and again: the
 	// leader, then Ctrl-→ Ctrl-→ under a Ctrl leader.
 	Repeats bool
-	// Chords are pressed with no leader at all, from a pane as well: chords a
-	// classic terminal cannot encode, so no program in a pane is sent them
-	// (598 §3). One the window cannot act on where it is pressed goes on to
-	// the program, as it would have unbound.
+	// Chords are pressed with no leader at all, from a pane as well: a
+	// command's are chords a classic terminal cannot encode, so no program in
+	// a pane is sent them (598 §3). One the window cannot act on where it is
+	// pressed goes on to the program, as it would have unbound. A gesture's
+	// may be keys a program does take (paste image's Ctrl-V and Alt-V): its
+	// console takes one only where the gesture applies, and otherwise the key
+	// goes to the program as typed, so they are never bound for a pane the
+	// way a command's are, and no command may claim them.
 	Chords []string
 	// Menu is reached after the leader through a menu: the menu's key, then
 	// the entry's.
@@ -860,6 +864,13 @@ var gestures = []Gesture{
 	// itself: the TUI's are the terminal it runs in.
 	{ID: "copy", Label: "copy the selection", Bindings: Bindings{Desktop: desktop("primary+c")}},
 	{ID: "paste", Label: "paste", Bindings: Bindings{Desktop: desktop("primary+v")}},
+	// The keys the agents bind to pasting an image (Ctrl-V where a terminal's
+	// own paste is another key, Alt-V on Windows), taken from a pane with no
+	// leader in both consoles, on a harness terminal (Tab.TakesImageKeys)
+	// when the clipboard holds one: the image is carried into the box and
+	// its path pasted; with none there the key goes to the program.
+	{ID: "paste image", Label: "paste an image for the agent",
+		Bindings: Bindings{TUI: TUIBinding{Chords: []string{"ctrl+v", "alt+v"}}, Desktop: desktop("ctrl+v", "alt+v")}},
 	{ID: "find", Label: "find in the scrollback", Bindings: Bindings{Desktop: desktop("primary+f")}},
 	{ID: "scroll back", Label: "a screen back through the scrollback", Bindings: Bindings{Desktop: desktop("shift+pageup")}},
 	{ID: "scroll on", Label: "a screen on through the scrollback", Bindings: Bindings{Desktop: desktop("shift+pagedown")}},

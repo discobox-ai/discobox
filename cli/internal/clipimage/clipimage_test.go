@@ -148,3 +148,35 @@ func TestReadFileRefusesAnImagePastTheLimit(t *testing.T) {
 		t.Fatal("an image past MaxSize was read")
 	}
 }
+
+// Files dropped on a window are images only when every one is: a drop with a
+// directory, a document or a disguised secret among them is no image drop, and
+// nothing is read for it.
+func TestFilesAreAnImageDropOnlyWhenEveryOneIsAnImage(t *testing.T) {
+	dir := t.TempDir()
+	shot := filepath.Join(dir, "my shot.png")
+	photo := filepath.Join(dir, "b.jpg")
+	notes := filepath.Join(dir, "notes.txt")
+	fake := filepath.Join(dir, "key.png")
+	for path, data := range map[string][]byte{shot: pngBytes, photo: jpgBytes, notes: []byte("hi"), fake: []byte("-----BEGIN")} {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	images, err := Files([]string{shot, photo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != 2 || images[0].Name != "my shot.png" || string(images[1].Data) != string(jpgBytes) {
+		t.Fatalf("Files = %+v", images)
+	}
+
+	many := slices.Repeat([]string{shot}, maxPaths+1)
+	for _, drop := range [][]string{nil, {shot, notes}, {dir}, {shot, fake}, {filepath.Join(dir, "gone.png")}, many} {
+		images, err := Files(drop)
+		if err != nil || images != nil {
+			t.Errorf("Files(%q) = %v, %v; want nothing", drop, images, err)
+		}
+	}
+}

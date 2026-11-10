@@ -206,21 +206,6 @@ func TestAnImageThatCannotBeCarriedInIsReported(t *testing.T) {
 	})
 }
 
-func TestImageNameIsSafeToPaste(t *testing.T) {
-	t.Parallel()
-	at := time.Date(2026, 10, 16, 15, 30, 12, 0, time.UTC)
-	for name, want := range map[string]string{
-		"clipboard.png":   "20261016-153012.000-0-clipboard.png",
-		"my shot (1).PNG": "20261016-153012.000-0-my-shot--1-.PNG",
-		"$(rm -rf ~).png": "20261016-153012.000-0-rm--rf---.png",
-		"..":              "20261016-153012.000-0-image.png",
-	} {
-		if got := imageName(name, at, 0); got != want {
-			t.Errorf("imageName(%q) = %q, want %q", name, got, want)
-		}
-	}
-}
-
 // A dictation tool writes what it heard to the clipboard, presses Ctrl-V, and
 // puts the clipboard back half a second later. The text the watch saw land
 // just before the key is what is pasted.

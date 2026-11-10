@@ -124,6 +124,27 @@ func TestSessionTab(t *testing.T) {
 	}
 }
 
+// An image goes to any of a box's sessions but a service's; the image keys
+// only to its harness terminals, never a shell or a tool.
+func TestTabTakesImages(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		tab          Tab
+		images, keys bool
+	}{
+		{"primary", SessionTab(Exec{ID: ExecPrimary, Primary: true}, ""), true, true},
+		{"harness terminal", SessionTab(Exec{ID: "t", Harness: "claude"}, ""), true, true},
+		{"shell", SessionTab(Exec{ID: "s", Command: []string{"zsh"}}, ""), true, false},
+		{"tool", SessionTab(Exec{ID: "d", Tool: "diff"}, ""), true, false},
+		{"service", ServiceTab(Service{ID: "web", Status: "running", ExecID: "w"}, 0), false, false},
+		{"failed create", SessionTab(Exec{}, InteractTerminal), false, false},
+	} {
+		if tc.tab.TakesImages() != tc.images || tc.tab.TakesImageKeys() != tc.keys {
+			t.Errorf("%s: images %v, keys %v; want %v, %v", tc.name, tc.tab.TakesImages(), tc.tab.TakesImageKeys(), tc.images, tc.keys)
+		}
+	}
+}
+
 func TestTabEnd(t *testing.T) {
 	broke := errors.New("stream lost")
 	for _, tc := range []struct {

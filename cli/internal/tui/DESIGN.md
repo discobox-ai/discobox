@@ -2654,8 +2654,9 @@ probe would cost a PowerShell start on WSL per press), an empty bracketed paste
 (what a terminal sends when its paste found no text), and a paste whose every
 word is a path to an image file here (a dragged file; Windows paths go through
 `wslpath`). The image is written into the discobox through its files API, under
-`/tmp/discobox-paste` as the discobox's user (ADR 26-10-22-499), and the
-path it landed at is pasted instead — the shape a dragged file has, which every
+`/tmp/discobox-paste` as the discobox's user (ADR 26-10-22-499), named by the
+core (`console.PastedImageName`, which the desktop's uploads are named by too),
+and the path it landed at is pasted instead — the shape a dragged file has, which every
 agent takes as an image. With no image, the key or paste goes through as it
 came.
 

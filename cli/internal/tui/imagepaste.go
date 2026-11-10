@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/clipimage"
 	"github.com/discobox-ai/discobox/cli/internal/clipwatch"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // An agent in a discobox asked to take a screenshot has nowhere to take it
@@ -46,11 +48,6 @@ import (
 // are the window's own commands, quit and detach among them. A leader chord
 // that turns out to bind nothing is typed at once, ahead of what is held.
 
-// imagePutTimeout bounds carrying a paste's images into the discobox. It is
-// long, because a screenshot over a slow link is megabytes, but not forever:
-// the pane's keys are held while it runs.
-const imagePutTimeout = 2 * time.Minute
-
 // imageReadMsg is what a paste turned out to mean: the images it named or the
 // clipboard held, none, or why it could not be read. original is the key or
 // paste it was, delivered as it came when it meant no image.
@@ -74,24 +71,22 @@ type imagePutMsg struct {
 	err   error
 }
 
-// imageKey reports whether a key is one the agents bind to pasting an image.
+// imageKey reports whether a key is one the agents bind to pasting an image:
+// the registry's paste image gesture.
 func imageKey(msg tea.KeyPressMsg) bool {
-	name := msg.String()
-	return name == "ctrl+v" || name == "alt+v"
+	g, _ := console.LookupGesture("paste image")
+	return slices.Contains(g.Bindings.TUI.Chords, msg.String())
 }
 
-// boxSession reports whether a pane is typing at a session in a discobox: the
-// one kind of pane an image can be carried to.
+// boxSession reports whether a pane is typing at a session in a discobox that
+// an image can be carried to (console.Tab.TakesImages).
 func boxSession(p *pane) bool {
-	return p.ExecID != "" && p.Service == "" && p.issue == nil && p.sandbox.ID != ""
+	return p.TakesImages() && p.issue == nil && p.sandbox.ID != ""
 }
 
 // harnessTerminal reports whether a pane is one of the discobox's harness
-// terminals, the panes the image keys are taken on.
-func (m *Model) harnessTerminal(p *pane) bool {
-	column, _ := m.paneColumn(p)
-	return column == &m.Terminals && boxSession(p) && p.Tool == ""
-}
+// terminals, the panes the image keys are taken on (console.Tab.TakesImageKeys).
+func harnessTerminal(p *pane) bool { return boxSession(p) && p.TakesImageKeys() }
 
 // imageInput takes a key or a paste that may mean an image, and holds the
 // pane's input while one is on its way. It reports whether it took msg.
@@ -114,7 +109,7 @@ func (m *Model) imageInput(p *pane, msg tea.Msg) (tea.Cmd, bool) {
 		// A leader on an image key (ctrl+v, alt+v) is the leader, and the
 		// image paste on that key is given up for it: the leader twice
 		// sends the key itself to the program, as any leader twice does.
-		if !imageKey(msg) || p.term.PrefixPending() || keyName(msg) == m.leader() || !m.harnessTerminal(p) {
+		if !imageKey(msg) || p.term.PrefixPending() || keyName(msg) == m.leader() || !harnessTerminal(p) {
 			return nil, false
 		}
 		return m.readKey(p, msg), true
@@ -229,13 +224,13 @@ func (m *Model) imagesRead(msg imageReadMsg) tea.Cmd {
 		return cmd
 	}
 	ds, sandboxID, id := m.ds.ForServer(p.sandbox.Server), p.sandbox.ID, p.id
-	ctx, cancel := context.WithTimeout(m.ctx, imagePutTimeout)
+	ctx, cancel := context.WithTimeout(m.ctx, console.PutImageTimeout)
 	images, now := msg.images, m.now()
 	put := func() tea.Msg {
 		defer cancel()
 		paths := make([]string, 0, len(images))
 		for i, image := range images {
-			path, err := ds.PutImage(ctx, sandboxID, imageName(image.Name, now, i), image.Data)
+			path, err := ds.PutImage(ctx, sandboxID, console.PastedImageName(image.Name, now, i), image.Data)
 			if err != nil {
 				return imagePutMsg{pane: id, err: err}
 			}
@@ -288,24 +283,6 @@ func (m *Model) releaseImageInput(p *pane, first tea.Msg) tea.Cmd {
 		cmds = append(cmds, m.paneInput(p, msg))
 	}
 	return tea.Batch(cmds...)
-}
-
-// imageName is the name an image is written under in the discobox: when it was
-// pasted, which keeps two pastes of clipboard.png apart, and its own name cut
-// to an alphabet that needs no quoting wherever the path is pasted.
-func imageName(name string, now time.Time, i int) string {
-	safe := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
-			return r
-		}
-		return '-'
-	}, name)
-	safe = strings.Trim(safe, ".-")
-	if safe == "" {
-		safe = "image.png"
-	}
-	return fmt.Sprintf("%s-%d-%s", now.Format("20060102-150405.000"), i, safe)
 }
 
 func imageCount(n int) string {

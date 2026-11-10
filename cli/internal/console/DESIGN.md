@@ -122,6 +122,15 @@ where focus goes is each frontend's, the key that moves it the registry's.
   A numbered gesture's sequences end in the digit it goes to. The desktop's
   pane keys (copy, paste, find, a screen back or on) are gestures with no TUI
   binding: the TUI's terminal is the one it runs in, which keeps its own.
+  `paste image` (Ctrl-V, Alt-V) is a pane gesture both consoles take, with no
+  leader, on a harness terminal (`Tab.TakesImageKeys`).
+- **An image pasted or dropped on a box's session is the core's to place**:
+  which tabs take one (`Tab.TakesImages`) and which take the image keys
+  (`TakesImageKeys`), the name it is written under (`PastedImageName`) and how
+  long that may take (`PutImageTimeout`), whichever console carries it in
+  through `DataSource.PutImage` — the TUI from its paste, the bridge from the
+  desktop's `upload`. The name the clipboard or the app gave is never a path
+  in the box.
 
 ```mermaid
 flowchart LR

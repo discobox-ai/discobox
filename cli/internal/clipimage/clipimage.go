@@ -86,13 +86,29 @@ func Paths(ctx context.Context, text string) ([]Image, error) {
 	if !LooksLikePaths(text) {
 		return nil, nil
 	}
-	var images []Image
+	var paths []string
 	for _, word := range splitPaste(text) {
 		path, ok := localPath(ctx, word)
 		if !ok {
 			return nil, nil
 		}
-		if !regularFile(path) {
+		paths = append(paths, path)
+	}
+	return Files(paths)
+}
+
+// Files reads the images files dropped on a window name, when that is all
+// they are: every one a path on this machine to an image file, and no more
+// than a paste of paths is taken as. Anything else — a directory, a document,
+// a path to nothing, a drag of a whole folder's worth — is not an image drop,
+// and comes back as nil with no error, for the paths to go through as text.
+func Files(paths []string) ([]Image, error) {
+	if len(paths) == 0 || len(paths) > maxPaths {
+		return nil, nil
+	}
+	images := make([]Image, 0, len(paths))
+	for _, path := range paths {
+		if !IsImageName(path) || !regularFile(path) {
 			return nil, nil
 		}
 		image, err := ReadFile(path)

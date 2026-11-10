@@ -303,6 +303,22 @@ func (t *Tab) Session() Exec {
 	return Exec{ID: t.ExecID, CreatedAt: t.Created, Primary: t.Primary, Harness: t.Harness, Service: t.Service, ServiceName: t.ServiceName, ServiceOrder: t.ServiceOrder, Tool: t.Tool}
 }
 
+// TakesImages reports whether an image pasted or dropped on the tab is carried
+// into its box (DataSource.PutImage) and the path it landed at pasted in its
+// place: any session in the box but a service's, which runs on pipes and takes
+// nothing typed. A box has no clipboard of this machine's and cannot open its
+// files, so this is how an agent in it is shown a screenshot.
+func (t *Tab) TakesImages() bool { return t.ExecID != "" && t.Service == "" }
+
+// TakesImageKeys reports whether the keys the agents bind to pasting an image
+// (the paste image gesture) are taken on the tab, to carry the clipboard's
+// image in: a harness terminal — the primary, or another terminal on its
+// harness — never a shell, where Ctrl-V is quoted-insert and visual-block in
+// vi, nor a tool.
+func (t *Tab) TakesImageKeys() bool {
+	return t.TakesImages() && t.Tool == "" && t.Side() == SideTerminals
+}
+
 // Side is the column the tab is drawn in: its session's (Exec.Side), and a
 // terminal asked for is a terminal even when its create failed and there is
 // no session record to say so.
