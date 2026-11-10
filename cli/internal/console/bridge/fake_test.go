@@ -52,6 +52,9 @@ type fakeCore struct {
 	view console.ListView
 	// lists is how many times the listing was read.
 	lists int
+	// addressed is the listed servers' names by how a box link may name
+	// them (AddressedServer).
+	addressed map[string]string
 	// forward is what Forward hands out, and forwardErr why it cannot.
 	forward    *fakeForward
 	forwardErr error
@@ -106,6 +109,13 @@ func (f *fakeCore) called() []string {
 }
 
 func (f *fakeCore) PrimaryServer() string { return f.name }
+
+func (f *fakeCore) AddressedServer(_ context.Context, server string) (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	name, ok := f.addressed[server]
+	return name, ok, nil
+}
 
 func (f *fakeCore) ForServer(server string) console.DataSource {
 	f.mu.Lock()

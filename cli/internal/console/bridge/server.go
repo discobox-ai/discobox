@@ -79,6 +79,10 @@ type Server struct {
 	tabs      map[string]map[string]console.Tab
 	services  map[string]map[string]console.Service
 	following map[string]int
+	// forwards is the bindings of the forward each box's header holds, by
+	// box key, the latest last: what a link in its panes is pointed through
+	// (follow).
+	forwards map[string][]*func() []console.Binding
 
 	// shown is the filter of the app's list, as it last subscribed with one
 	// of its own: the folder and server the run options follow.
@@ -105,6 +109,7 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		tabs:      map[string]map[string]console.Tab{},
 		services:  map[string]map[string]console.Service{},
 		following: map[string]int{},
+		forwards:  map[string][]*func() []console.Binding{},
 		options:   openOptions(console.Session{}, console.Filter{}),
 	}
 	s.streams = newStreams(s.w, s.send)
@@ -216,6 +221,13 @@ func (s *Server) handle(ctx context.Context, m Message) {
 		go func() {
 			r := s.run(ctx, c)
 			r.ID = c.ID
+			s.send(Message{Type: TypeResult, Result: &r})
+		}()
+	case m.Type == TypeFollow && m.Follow != nil:
+		f := *m.Follow
+		go func() {
+			r := s.follow(ctx, f)
+			r.ID = f.ID
 			s.send(Message{Type: TypeResult, Result: &r})
 		}()
 	case m.Type == TypeDraft && m.Draft != nil:

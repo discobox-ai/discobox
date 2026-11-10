@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, Close, Command, Context, Draft, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, ServiceVerb, State, Status,
+    Answer, Args, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
 };
 use discobox_bridge::{Client, Incoming};
@@ -586,6 +586,30 @@ fn a_primarys_report_reaches_the_header() {
     cli.client.input(4, b"\x1b]7501;state=blocked:kind=question:msg=d2hpY2g/\x07").unwrap();
     let h = header(&mut cli);
     assert_eq!((h.agent.as_str(), h.agent_msg.as_str()), ("blocked", "which?"));
+}
+
+// A link pressed in a pane is answered by its ID with where it goes: a URL its box printed at
+// the port its header's forward bound, a box's address with the box to enter, and one naming no
+// box with why.
+#[test]
+fn a_followed_link_is_answered_with_where_it_goes() {
+    let mut cli = Cli::start("default");
+    cli.subscribe(1, Topic::Listing, "");
+    cli.expect(Type::Snapshot);
+    cli.subscribe(2, Topic::Header, "b1");
+    cli.expect(Type::Snapshot);
+    let mut follow = |id: u64, uri: &str| {
+        let f = Follow { id, uri: uri.into(), r#box: "b1".into() };
+        cli.send(Message { r#type: Type::Follow, follow: Some(f), ..Default::default() });
+        cli.result(id)
+    };
+    let r = follow(70, "http://localhost:8080/app");
+    assert_eq!((r.status, r.url.as_str()), (Status::Done, "http://localhost:18080/app"));
+    let r = follow(71, "discobox:///slo");
+    assert_eq!((r.status, r.r#box.as_str()), (Status::Enter, "slow"));
+    let r = follow(72, "discobox:///nobody");
+    assert_eq!(r.status, Status::Failed);
+    assert!(r.why.contains("no discobox"), "{}", r.why);
 }
 
 // A CLI that exits while a command is in flight closes the client: no result comes, the app is

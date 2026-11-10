@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "colors": {
     "brand": {
       "dark": "#9e4aa7",
@@ -2027,5 +2027,10 @@
     "View",
     "Go",
     "Help"
+  ],
+  "linkSchemes": [
+    "discobox",
+    "discobox+http",
+    "discobox+https"
   ]
 }

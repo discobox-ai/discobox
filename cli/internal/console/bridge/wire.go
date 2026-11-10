@@ -26,8 +26,10 @@ import (
 // summary, the run options' forms with what they add up to, and a question's
 // subject; 9, what a box's header says its agent is doing (Header.Agent); 10,
 // a box's tools: the tools command's tools and addresses, a tool run or its
-// session made, a tool's file edited, and the tool a tab runs (Tab.Tool).
-const Protocol = 10
+// session made, a tool's file edited, and the tool a tab runs (Tab.Tool); 11,
+// a link pressed in a pane followed through the core (Follow), and the spec's
+// link schemes.
+const Protocol = 11
 
 // Type names a message.
 type Type string
@@ -74,6 +76,9 @@ const (
 	// TypeStream is a stream's state: attached, failed, reconnecting,
 	// reconnected (CLI). Its output and its end are frames on the stream.
 	TypeStream Type = "stream"
+	// TypeFollow is a link pressed in a pane, for the core to say where it
+	// goes (app); a result answers it.
+	TypeFollow Type = "follow"
 	// TypeDraft is the prompt in the app's composer, to be kept for the next
 	// window (app).
 	TypeDraft Type = "draft"
@@ -103,6 +108,7 @@ type Message struct {
 	Close       *Close       `json:"close,omitempty"`
 	Stream      *Stream      `json:"stream,omitempty"`
 	Draft       *Draft       `json:"draft,omitempty"`
+	Follow      *Follow      `json:"follow,omitempty"`
 }
 
 // Hello is the app's first message.
@@ -131,6 +137,20 @@ type Session struct {
 	// Draft is the prompt the last window on this machine left in its
 	// composer, which this one opens holding.
 	Draft string `json:"draft,omitempty"`
+}
+
+// Follow is a link pressed in a pane: a program's (OSC 8) or text the app
+// found on the screen. The core says where it goes, in a Result of the same
+// ID: StatusDone with the URL to open — a URL printed in a box pointed at the
+// port forwarded here for the box's header (the header topic), anything else
+// as written — StatusEnter with the box a discobox link names, or
+// StatusFailed with why it goes nowhere.
+type Follow struct {
+	ID  uint64 `json:"id"`
+	URI string `json:"uri"`
+	// Box is the key of the box the pane is one of, whose server a discobox
+	// link that names none is on; empty for a pane that is no box's.
+	Box string `json:"box,omitempty"`
 }
 
 // Draft is the prompt in the composer as it stands. The last window to say
@@ -734,7 +754,7 @@ const (
 	StatusEnter Status = "enter"
 )
 
-// Result ends a command (or an upload, by its ID).
+// Result ends a command (or an upload or a follow, by its ID).
 type Result struct {
 	ID     uint64 `json:"id"`
 	Status Status `json:"status"`
@@ -753,6 +773,8 @@ type Result struct {
 	Services []Service `json:"services,omitempty"`
 	// Path is where an upload landed in the box.
 	Path string `json:"path,omitempty"`
+	// URL is where a followed link goes, for the app to open.
+	URL string `json:"url,omitempty"`
 	// Harnesses are the harnesses of the server the harnesses command read,
 	// in the order they were registered: what its page lists, read again
 	// after each action, which leaves the one it acted on as Harness. A

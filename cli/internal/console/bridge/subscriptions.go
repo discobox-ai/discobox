@@ -367,6 +367,8 @@ func (f *follower) header(ctx context.Context) {
 	} else {
 		defer func() { _ = fw.Close() }()
 		bindings, events = fw.Bindings, fw.Events()
+		// The pane's links are pointed through it while it is held (follow).
+		defer f.s.holdForward(f.sub.Box, fw.Bindings)()
 	}
 	for {
 		fresh := f.s.relisted()

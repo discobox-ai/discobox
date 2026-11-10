@@ -70,8 +70,9 @@ func TestContractCore(t *testing.T) {
 		running("doomed"),
 	)
 	core.echo = true
-	// A box's header topic forwards its ports while it is followed.
-	core.forward = newFakeForward()
+	// A box's header topic forwards its ports while it is followed, and a
+	// link its panes print is pointed through it.
+	core.forward = newFakeForward(console.Binding{Port: 8080, Local: 18080})
 	core.settings = console.BoxSettings{Name: "b1"}
 	core.execs = []console.Exec{{ID: "sh", Command: []string{"/bin/bash"}, Live: true, Tty: true, CreatedAt: time.Unix(2, 0)}}
 	core.requests = []console.CredentialRequest{{ID: "r1", SandboxID: "b1", Name: "github"}}

@@ -21,8 +21,8 @@ import (
 // field on the wire is required (the generated types have no defaults), so an
 // app reading a newer spec than its CLI's would otherwise stop on a missing
 // field rather than on this version. 4 added Dimensions; 5 the desktop's
-// Menus, and a desktop binding's Menu.
-const SpecVersion = 5
+// Menus, and a desktop binding's Menu; 6 LinkSchemes.
+const SpecVersion = 6
 
 // Glyph is how a state is drawn: its shape, the color token it is drawn in,
 // and the word that stands for it where there is no color. An empty Color is
@@ -97,6 +97,10 @@ type Spec struct {
 	Gestures []SpecGesture `json:"gestures"`
 	// Menus are the desktop's menus, in the order its menu bar draws them.
 	Menus []Menu `json:"menus"`
+	// LinkSchemes are the schemes of the links in a pane the console answers
+	// itself (BoxLinkSchemes): a press on one, plain or with the link
+	// modifier, is the console's and never the program's or the OS's.
+	LinkSchemes []string `json:"linkSchemes"`
 }
 
 // SpecColor is one color token: its dark and light values as #rrggbb, and
@@ -162,14 +166,15 @@ type SpecGesture struct {
 // NewSpec is the console's spec.
 func NewSpec() Spec {
 	spec := Spec{
-		Version:    SpecVersion,
-		Colors:     map[string]SpecColor{},
-		Dimensions: map[string]float64{},
-		States:     map[string]Glyph{},
-		Agents:     map[string]Glyph{},
-		Commands:   make([]SpecCommand, 0, len(registry)),
-		Gestures:   make([]SpecGesture, 0, len(gestures)),
-		Menus:      slices.Clone(Menus),
+		Version:     SpecVersion,
+		Colors:      map[string]SpecColor{},
+		Dimensions:  map[string]float64{},
+		States:      map[string]Glyph{},
+		Agents:      map[string]Glyph{},
+		Commands:    make([]SpecCommand, 0, len(registry)),
+		Gestures:    make([]SpecGesture, 0, len(gestures)),
+		Menus:       slices.Clone(Menus),
+		LinkSchemes: slices.Clone(BoxLinkSchemes),
 	}
 	for _, c := range brand.Colors() {
 		spec.Colors[c.Name] = SpecColor{Dark: c.Dark, Light: c.Light, XTerm: c.XTerm}

@@ -3,8 +3,8 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 10,
-  "x-specVersion": 5,
+  "x-protocol": 11,
+  "x-specVersion": 6,
   "x-frameKinds": {
     "json": {
       "kind": 255,
@@ -102,6 +102,9 @@
         },
         "draft": {
           "$ref": "#/$defs/Draft"
+        },
+        "follow": {
+          "$ref": "#/$defs/Follow"
         }
       },
       "required": [
@@ -181,6 +184,10 @@
         {
           "description": "TypeStream is a stream's state: attached, failed, reconnecting, reconnected (CLI). Its output and its end are frames on the stream.",
           "const": "stream"
+        },
+        {
+          "description": "TypeFollow is a link pressed in a pane, for the core to say where it goes (app); a result answers it.",
+          "const": "follow"
         },
         {
           "description": "TypeDraft is the prompt in the app's composer, to be kept for the next window (app).",
@@ -275,6 +282,13 @@
           "items": {
             "$ref": "#/$defs/Menu"
           }
+        },
+        "linkSchemes": {
+          "description": "LinkSchemes are the schemes of the links in a pane the console answers itself (BoxLinkSchemes): a press on one, plain or with the link modifier, is the console's and never the program's or the OS's.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -285,7 +299,8 @@
         "agents",
         "commands",
         "gestures",
-        "menus"
+        "menus",
+        "linkSchemes"
       ]
     },
     "SpecColor": {
@@ -1863,7 +1878,7 @@
       ]
     },
     "Result": {
-      "description": "Result ends a command (or an upload, by its ID).",
+      "description": "Result ends a command (or an upload or a follow, by its ID).",
       "type": "object",
       "properties": {
         "id": {
@@ -1903,6 +1918,10 @@
         },
         "path": {
           "description": "Path is where an upload landed in the box.",
+          "type": "string"
+        },
+        "url": {
+          "description": "URL is where a followed link goes, for the app to open.",
           "type": "string"
         },
         "harnesses": {
@@ -2793,6 +2812,27 @@
       },
       "required": [
         "prompt"
+      ]
+    },
+    "Follow": {
+      "description": "Follow is a link pressed in a pane: a program's (OSC 8) or text the app found on the screen. The core says where it goes, in a Result of the same ID: StatusDone with the URL to open — a URL printed in a box pointed at the port forwarded here for the box's header (the header topic), anything else as written — StatusEnter with the box a discobox link names, or StatusFailed with why it goes nowhere.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "box": {
+          "description": "Box is the key of the box the pane is one of, whose server a discobox link that names none is on; empty for a pane that is no box's.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "uri"
       ]
     },
     "ResizePayload": {

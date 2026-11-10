@@ -4,7 +4,11 @@
   it goes through that server.** Two servers can list the same ID: resolve a
   key with `Server.box`/`source` and call `ForServer(box.Server)`, never the
   root source with an ID and never a lookup by ID alone. This mistake was made
-  in the console's own data source, and twice in the prototype bridge.
+  in the console's own data source, and twice in the prototype bridge. A key
+  names its server even when the box is not in the last listing (`keyServer`):
+  a box whose server did not answer is missing from it, and `follow` first
+  read a link in such a box's pane on the primary, entering a box of another
+  server.
 - **The bridge runs the core's rules; it never writes its own.** A command
   goes through `console.Dispatch`; a question, a form, a title or a refusal is
   the core's (`Confirmation`, `UpgradeOffer`, `RenameForm`, `Sandbox.Title`,
@@ -110,7 +114,10 @@
   them, before any harness was listed: an empty line until a create was run,
   which the desktop's mock, answering with the harness from the start, hid.
   A topic reads what it says as it is subscribed, and a mock answers what the
-  bridge would at the same moment.
+  bridge would at the same moment. That includes what another subscription
+  holds: `follow` points a URL through a forward only while the box's header
+  topic is followed, and the mock's first `follow` rewrote regardless, so a
+  desktop that stopped following the header would still have passed.
 - **A command sends nothing else while its form is up.** The app takes a
   submitted form down once its command asks, fills another form or reports a
   step (`desktop/src/sheet.rs`, `went_on`): that is how a create's card gives

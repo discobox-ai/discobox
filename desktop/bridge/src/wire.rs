@@ -14,10 +14,10 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 10;
+pub const PROTOCOL: i64 = 11;
 
 /// The console spec's shape (Spec.version) this side reads.
-pub const SPEC_VERSION: i64 = 5;
+pub const SPEC_VERSION: i64 = 6;
 
 /// The kinds of frame the bridge carries: each frame is a kind (1 byte), a stream (u32), a length
 /// (u32), big-endian, then the payload.
@@ -108,6 +108,9 @@ pub struct Message {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft: Option<Draft>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow: Option<Follow>,
 }
 
 /// Type names a message.
@@ -188,6 +191,11 @@ pub enum Type {
     #[serde(rename = "stream")]
     Stream,
 
+    /// TypeFollow is a link pressed in a pane, for the core to say where it goes (app); a result
+    /// answers it.
+    #[serde(rename = "follow")]
+    Follow,
+
     /// TypeDraft is the prompt in the app's composer, to be kept for the next window (app).
     #[serde(rename = "draft")]
     Draft,
@@ -216,6 +224,7 @@ impl Type {
             Type::Open => "open",
             Type::Close => "close",
             Type::Stream => "stream",
+            Type::Follow => "follow",
             Type::Draft => "draft",
         }
     }
@@ -264,6 +273,12 @@ pub struct Spec {
 
     /// Menus are the desktop's menus, in the order its menu bar draws them.
     pub menus: Vec<Menu>,
+
+    /// LinkSchemes are the schemes of the links in a pane the console answers itself
+    /// (BoxLinkSchemes): a press on one, plain or with the link modifier, is the console's and
+    /// never the program's or the OS's.
+    #[serde(rename = "linkSchemes")]
+    pub link_schemes: Vec<String>,
 }
 
 /// SpecColor is one color token: its dark and light values as #rrggbb, and the xterm-256 index the
@@ -1552,7 +1567,7 @@ impl HarnessChange {
     }
 }
 
-/// Result ends a command (or an upload, by its ID).
+/// Result ends a command (or an upload or a follow, by its ID).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Result {
     pub id: u64,
@@ -1586,6 +1601,10 @@ pub struct Result {
     /// Path is where an upload landed in the box.
     #[serde(default, skip_serializing_if = "is_default")]
     pub path: String,
+
+    /// URL is where a followed link goes, for the app to open.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub url: String,
 
     /// Harnesses are the harnesses of the server the harnesses command read, in the order they were
     /// registered: what its page lists, read again after each action, which leaves the one it acted
@@ -2200,6 +2219,23 @@ impl TabEnd {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Draft {
     pub prompt: String,
+}
+
+/// Follow is a link pressed in a pane: a program's (OSC 8) or text the app found on the screen. The
+/// core says where it goes, in a Result of the same ID: StatusDone with the URL to open — a URL
+/// printed in a box pointed at the port forwarded here for the box's header (the header topic),
+/// anything else as written — StatusEnter with the box a discobox link names, or StatusFailed
+/// with why it goes nowhere.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Follow {
+    pub id: u64,
+
+    pub uri: String,
+
+    /// Box is the key of the box the pane is one of, whose server a discobox link that names none
+    /// is on; empty for a pane that is no box's.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub r#box: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

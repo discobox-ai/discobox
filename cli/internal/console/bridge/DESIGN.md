@@ -9,7 +9,7 @@ the app goes. The app's side is the `discobox-bridge` crate
 
 ```mermaid
 flowchart LR
-    App["desktop app"] -->|"hello · subscribe · command · submit · answer · upload · open/close · frames"| S["Server"]
+    App["desktop app"] -->|"hello · subscribe · command · submit · answer · upload · follow · open/close · frames"| S["Server"]
     S -->|"welcome · snapshot · result · form · fieldErrors · question · progress · stream · frames"| App
     S -->|"console.Dispatch(frontend)"| Core["console registry and rules"]
     S --> DS["DataSource (ForServer)"]
@@ -44,7 +44,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 10; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 11; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -130,6 +130,19 @@ returned. Each question and form has its own ID, so one command waits on
 its answer while others run. What is submitted to a form is kept in order
 (`mailbox`): the pipe's reader never waits on a command, and drops nothing.
 
+## Links
+
+`links.go`. A link pressed in a pane — a program's OSC 8, or text the app's
+emulator found — is a `follow`, naming the key of the box the pane is one of,
+answered by a `result` of its ID with where it goes, by the core's rules
+(`console.ForwardedURL`, `ParseBoxLink`, `BoxLinkServer`, `AddressedBox`):
+`done` with the URL to open, `enter` with the box an address names, or
+`failed` with why. A URL is pointed through the forward the box's header
+topic holds (`holdForward`, for as long as the subscription lasts; the last
+one held of several), so with no header followed it goes as written. An
+address is read against the last listing, never by listing again. The app
+finds the link and opens what it is told; it decides nothing about where.
+
 ## Subscriptions
 
 `subscriptions.go`. Each subscription follows one topic on its own until
@@ -150,7 +163,8 @@ reports; and a workspace's header (`console.Header`)
 with its ports at the local ports of a forward that lasts as long as the
 subscription — the workspace's, which the app ends when it parks one — read
 again whenever the forward binds or loses a port and whenever another listing
-is read (`relisted`), never by reading the servers itself. A topic about one box
+is read (`relisted`), never by reading the servers itself; the forward is also
+what a `follow` from the box's panes is pointed through (Links). A topic about one box
 resolves the box once, as it starts, and follows it on its server; a box no
 server lists ends it, and a server that could not be reached is tried again
 every beat. Which box a
