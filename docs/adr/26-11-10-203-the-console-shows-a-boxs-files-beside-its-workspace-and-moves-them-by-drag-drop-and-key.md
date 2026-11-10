@@ -1,7 +1,8 @@
 # 26-11-10-203 — The console shows a box's files beside its workspace, and moves them by drag, drop and key
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-10
+- Accepted by the owner by merging #923, 2026-11-10
 - **Issue**: [#920](https://github.com/discobox-ai/discobox/issues/920)
 - **Relates to**: [26-10-22-499](26-10-22-499-a-discobox-has-a-files-api-that-acts-as-its-user.md) (the files API the panel reads and writes through),
   [26-11-04-684](26-11-04-684-a-lead-runs-child-commands-and-copies-files-through-the-files-api.md) (`discobox cp` over that API, whose copy the panel reuses),
