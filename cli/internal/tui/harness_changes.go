@@ -110,8 +110,9 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 	saveable := c.CandidateID != "" && ((c.State == "pending" && len(c.Files)+len(c.Credentials) > 0) || c.State == "saved-handoff-pending")
 	// A review reached from the explainer, which came up unasked over typing,
 	// commits on no letter: a hold says only that the keyboard paused, not
-	// that the card was read. Save and Discard are chosen with the arrows
-	// there, Enter lands on Refresh, and Refresh keeps it that way.
+	// that the card was read. Save and Discard are chosen with the arrow
+	// keys there (not j and k: arrowsOnly), Enter lands on Refresh, and
+	// Refresh keeps it that way.
 	commitPress := func(key string) string {
 		if msg.unasked {
 			return ""
@@ -143,6 +144,7 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 	m.dialog.sections = sections
 	if msg.unasked {
 		m.dialog.holdUntilQuiet(m.now())
+		m.dialog.arrowsOnly = true
 		m.dialog.cursor = slices.IndexFunc(items, func(it action) bool { return it.key == "r" })
 	}
 	return nil

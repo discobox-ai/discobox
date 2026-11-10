@@ -336,8 +336,11 @@
   pause, not a reading, so a card reached from an unasked one — and every card
   it reopens, a refresh included — never commits on Enter or a single letter:
   the explainer's review puts its cursor on Refresh and gives Save and Discard
-  no letter, and Refresh carries that on. Twice the guard stopped one card
-  short: first at the review, then at the review's own refresh. A held key is not
+  no letter, its cursor moves on the arrow keys only (`dialog.arrowsOnly`: a
+  `k` in "looks ok" walked it onto Save), and Refresh carries all of that on.
+  A letter that moves the cursor is a letter that commits with the next Enter.
+  Three times the guard stopped one step short: at the review, at its
+  refresh, and at j/k. A held key is not
   thrown away: it goes on to what the card covers (`passHeldKey`), or the
   first words typed after a sign-in vanish.
 - **A flag the box reports never takes down a refusal the control plane

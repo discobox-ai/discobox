@@ -266,6 +266,14 @@ func TestTheExplainerOpensTheReview(t *testing.T) {
 	if len(ds.harnessChangesWrites) != 0 || m.dialog == nil || m.dialog.items[m.dialog.cursor].key != "r" {
 		t.Fatalf("writes = %v dialog = %s, want refreshes to keep the review unasked", ds.harnessChangesWrites, describe(m.dialog))
 	}
+	// Nor does a word walk the cursor there: "looks ok" and Enter.
+	pastKeyQuiet(m)
+	for _, key := range []string{"l", "o", "o", "k", "s", "space", "o", "k", "enter"} {
+		send(t, m, keyPress(key))
+	}
+	if len(ds.harnessChangesWrites) != 0 {
+		t.Fatalf("writes = %v, want j and k not to move the cursor onto a commit", ds.harnessChangesWrites)
+	}
 	pastKeyQuiet(m)
 	send(t, m, keyPress("up"), keyPress("up"), keyPress("enter"))
 	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one cand_1" {
