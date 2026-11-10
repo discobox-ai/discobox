@@ -2926,7 +2926,8 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
 - The question is asked before `gitutil.InitOverWorkTree`, because indexing the
   directory is the cost it exists to avoid. It carries a running size —
   `sandboxcreate.MeasureDirectory` walks the directory in the background and the
-  frontend polls it, saying "calculating…" until the walk is done. The walk is a
+  frontend polls it, saying the count as it climbs in the console core's words
+  (`console.DirectoryTotal.Said`), in a window or in the terminal. The walk is a
   filesystem estimate: sizes on disk, symlinks counted as links, unreadable
   subtrees skipped, and no `.gitignore` applied. It never reads low, which is
   what the question needs.

@@ -13,6 +13,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 )
 
@@ -333,7 +334,7 @@ func TestPickerWithoutALivePromptSchedulesNothing(t *testing.T) {
 // The question about a directory in no repository leads with what it would
 // cost, and says so as a running count until the walk behind it is done.
 func TestDirectoryCopyPromptSaysWhatItWouldCopy(t *testing.T) {
-	counting := strings.Split(directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{Bytes: 5 << 20, Files: 3}), "\n")
+	counting := strings.Split(directoryCopyPrompt("/home/ada", console.DirectoryTotal{Bytes: 5 << 20, Files: 3}), "\n")
 	if len(counting) != 2 {
 		t.Fatalf("prompt = %q, want the size on a line of its own", counting)
 	}
@@ -343,13 +344,13 @@ func TestDirectoryCopyPromptSaysWhatItWouldCopy(t *testing.T) {
 	if counting[1] != "5.0 MiB in 3 files, still counting…" {
 		t.Fatalf("size line = %q, want a count that is still climbing", counting[1])
 	}
-	done := directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{Bytes: 1 << 20, Files: 1, Done: true})
+	done := directoryCopyPrompt("/home/ada", console.DirectoryTotal{Bytes: 1 << 20, Files: 1, Done: true})
 	if got := strings.Split(done, "\n")[1]; got != "1.0 MiB in 1 file" {
 		t.Fatalf("size line = %q, want the final count stated as one", got)
 	}
 	// Before the walk has reached anything, a zero would be a number that is
 	// about to be wrong.
-	started := directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{})
+	started := directoryCopyPrompt("/home/ada", console.DirectoryTotal{})
 	if got := strings.Split(started, "\n")[1]; got != "calculating…" {
 		t.Fatalf("size line = %q, want the walk to say it has nothing yet", got)
 	}
