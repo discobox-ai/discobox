@@ -2,7 +2,9 @@
 
 - **Status**: Accepted (narrows [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md)
   §1's procfs discovery and its scan interval on Linux, and [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md)
-  §1's standing poll as the only way a sandbox's status reaches the pool)
+  §1's standing poll as the only way a sandbox's status reaches the pool;
+  §2's ports-only version and §4 narrowed by [26-11-09-062](26-11-09-062-a-harness-change-wakes-the-pool-like-a-port.md),
+  under which a harness change wakes the pool too)
 - **Date**: 2026-11-03
 - **Relates to**: [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md),
   which removed configure and with it the fast poll its sign-in callbacks rode

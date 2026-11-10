@@ -1,9 +1,11 @@
 # 26-11-09-062 — A harness change wakes the pool like a port
 
-- **Status**: Proposed (would narrow [26-11-03-815](26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md)
+- **Status**: Accepted (narrows [26-11-03-815](26-11-03-815-a-pool-waits-on-a-sandboxs-ports-and-reports-a-change-at-once.md)
   §2, whose version moves only with the port snapshot, and §4, "Only ports
   wake the pool")
 - **Date**: 2026-11-09
+
+Accepted by the owner by merging #903, 2026-11-10.
 - **Relates to**: [26-11-02-152](26-11-02-152-a-harness-is-set-up-in-the-box-it-runs-in-and-configure-is-removed.md),
   whose console explainer and band offer to save a box's harness change, and
   [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md),
