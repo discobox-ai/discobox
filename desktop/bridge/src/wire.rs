@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL: i64 = 2;
 
 /// The console spec's shape (Spec.version) this side reads.
-pub const SPEC_VERSION: i64 = 3;
+pub const SPEC_VERSION: i64 = 4;
 
 /// The kinds of frame the bridge carries: each frame is a kind (1 byte), a stream (u32), a length
 /// (u32), big-endian, then the payload.
@@ -239,6 +239,9 @@ pub struct Spec {
 
     /// Colors is every color token by name, in both palettes.
     pub colors: HashMap<String, SpecColor>,
+
+    /// Dimensions is every space, radius and stroke token by name, in points.
+    pub dimensions: HashMap<String, f64>,
 
     /// States and Agents are the glyphs, by state.
     pub states: HashMap<String, Glyph>,

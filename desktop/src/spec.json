@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "colors": {
     "brand": {
       "dark": "#9e4aa7",
@@ -94,6 +94,22 @@
       "light": "#a35f00",
       "xterm": 214
     }
+  },
+  "dimensions": {
+    "radius-card": 10,
+    "radius-frame": 12,
+    "radius-key": 4,
+    "radius-row": 6,
+    "space-1": 4,
+    "space-2": 8,
+    "space-3": 12,
+    "space-4": 16,
+    "space-5": 24,
+    "space-6": 32,
+    "space-7": 48,
+    "space-8": 64,
+    "stroke-focus": 1.5,
+    "stroke-quiet": 1
   },
   "states": {
     "archived": {

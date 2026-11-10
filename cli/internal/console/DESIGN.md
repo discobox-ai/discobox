@@ -153,9 +153,11 @@ flowchart LR
 
 `spec.go` (876 §4). `NewSpec` is what every frontend draws the same way, as
 data: the registry's commands and gestures with each frontend's bindings, the state and
-agent glyphs (`StateGlyph`, `AgentGlyph`) by colour token, and every colour
-token in both palettes, read from the design language's tokens
-(`assets/brand`, 363 §4). `discobox desktop` hands it to the app on `hello`,
+agent glyphs (`StateGlyph`, `AgentGlyph`) by colour token, every colour
+token in both palettes, and every space, radius and stroke token in points
+(`Dimensions`), read from the design language's tokens (`assets/brand`,
+363 §4). The type scale is not in it: its steps are rem on a page, and each
+frontend sets its interface at its own size. `discobox desktop` hands it to the app on `hello`,
 and `task generate` writes it to `desktop/src/spec.json`; the TUI draws the
 same glyphs by each token's xterm index. Nothing in it is read out of a
 renderer. Lists on the wire are never null. Its types are on the bridge's

@@ -7,15 +7,19 @@ import (
 
 // The console's spec (ADR 26-11-07-876 §4): what every frontend draws the
 // same way, as data — the commands with each frontend's bindings, the state
-// and agent glyphs with their color tokens, and the color tokens in both
-// palettes (26-11-07-363 §3–4), read from the design language's tokens. The
+// and agent glyphs with their color tokens, the color tokens in both
+// palettes and the space, radius and stroke tokens (26-11-07-363 §3–4), read
+// from the design language's tokens. The
 // desktop app is handed it when it connects; the TUI reads the same glyphs
 // and draws each token by its xterm index. Nothing in it is read back out of
 // a renderer.
 
 // SpecVersion is the spec's shape. It changes when a field is removed or
-// changes meaning, never for a field added.
-const SpecVersion = 3
+// changes meaning, and when a field is added that a frontend requires: every
+// field on the wire is required (the generated types have no defaults), so an
+// app reading a newer spec than its CLI's would otherwise stop on a missing
+// field rather than on this version. 4 added Dimensions.
+const SpecVersion = 4
 
 // Glyph is how a state is drawn: its shape, the color token it is drawn in,
 // and the word that stands for it where there is no color. An empty Color is
@@ -78,6 +82,8 @@ type Spec struct {
 	Version int `json:"version"`
 	// Colors is every color token by name, in both palettes.
 	Colors map[string]SpecColor `json:"colors"`
+	// Dimensions is every space, radius and stroke token by name, in points.
+	Dimensions map[string]float64 `json:"dimensions"`
 	// States and Agents are the glyphs, by state.
 	States   map[string]Glyph `json:"states"`
 	Agents   map[string]Glyph `json:"agents"`
@@ -149,15 +155,19 @@ type SpecGesture struct {
 // NewSpec is the console's spec.
 func NewSpec() Spec {
 	spec := Spec{
-		Version:  SpecVersion,
-		Colors:   map[string]SpecColor{},
-		States:   map[string]Glyph{},
-		Agents:   map[string]Glyph{},
-		Commands: make([]SpecCommand, 0, len(registry)),
-		Gestures: make([]SpecGesture, 0, len(gestures)),
+		Version:    SpecVersion,
+		Colors:     map[string]SpecColor{},
+		Dimensions: map[string]float64{},
+		States:     map[string]Glyph{},
+		Agents:     map[string]Glyph{},
+		Commands:   make([]SpecCommand, 0, len(registry)),
+		Gestures:   make([]SpecGesture, 0, len(gestures)),
 	}
 	for _, c := range brand.Colors() {
 		spec.Colors[c.Name] = SpecColor{Dark: c.Dark, Light: c.Light, XTerm: c.XTerm}
+	}
+	for _, d := range brand.Dimensions() {
+		spec.Dimensions[d.Name] = d.Points
 	}
 	for _, s := range States {
 		spec.States[string(s)] = StateGlyph(s)

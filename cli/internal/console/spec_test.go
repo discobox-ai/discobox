@@ -38,6 +38,11 @@ func TestSpecCoversTheConsole(t *testing.T) {
 			t.Errorf("color %s = %+v, want the token's %+v", c.Name, got, c)
 		}
 	}
+	for _, d := range brand.Dimensions() {
+		if got, ok := spec.Dimensions[d.Name]; !ok || got != d.Points {
+			t.Errorf("dimension %s = %v, want the token's %v", d.Name, got, d.Points)
+		}
+	}
 	if len(spec.Commands) != len(registry) {
 		t.Fatalf("%d commands in the spec, %d in the registry", len(spec.Commands), len(registry))
 	}

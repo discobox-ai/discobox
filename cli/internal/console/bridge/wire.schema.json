@@ -4,7 +4,7 @@
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
   "x-protocol": 2,
-  "x-specVersion": 3,
+  "x-specVersion": 4,
   "x-frameKinds": {
     "json": {
       "kind": 255,
@@ -228,6 +228,14 @@
             "$ref": "#/$defs/SpecColor"
           }
         },
+        "dimensions": {
+          "description": "Dimensions is every space, radius and stroke token by name, in points.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
         "states": {
           "description": "States and Agents are the glyphs, by state.",
           "type": "object",
@@ -258,6 +266,7 @@
       "required": [
         "version",
         "colors",
+        "dimensions",
         "states",
         "agents",
         "commands",

@@ -20,6 +20,12 @@
   `desktop/` is the drift the generated types exist to prevent. A new named
   string type on the wire declares its values as constants: they are its
   enum.
+- **A field added to the spec bumps `SpecVersion`.** Every wire field is
+  required in the generated Rust, so an app built for the new spec, run
+  against a CLI from before it (`--binary`, `DISCOBOX_DESKTOP_BINARY`, a dev
+  build beside an older CLI), passed the version check and stopped on a bare
+  missing field instead of the check's "run the app built with this CLI".
+  Adding `Dimensions` nearly shipped that way.
 - **A closed set on the wire is a named type, never a plain string.** A field
   whose values the bridge or the core decides (a box's state, a tab's kind, a
   request's kind, a command's target) is a named string type with its
