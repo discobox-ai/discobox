@@ -71,6 +71,12 @@ type fakeCore struct {
 	harnesses      []console.Harness
 	harnessSecrets []console.HarnessSecret
 	changes        console.HarnessChanges
+	// secrets is what Secrets lists, secretBindings what Bindings lists, and
+	// history every secret's binding history. A store, an edit, a binding or
+	// an unbind changes them as the server would.
+	secrets        []console.Secret
+	secretBindings []console.SecretBinding
+	history        []console.BindingDecision
 	// workspace is what Workspace reads of every source; run answers Run,
 	// and made is the box a Run with none makes; drafts is every prompt
 	// SaveDraft was sent.
@@ -341,6 +347,79 @@ func (f *fakeCore) ranWith() *console.RunRequest {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.ran
+}
+
+func (f *fakeCore) Secrets(_ context.Context, server string) ([]console.Secret, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, "secrets@"+server)
+	return slices.Clone(f.secrets), nil
+}
+
+func (f *fakeCore) Bindings(_ context.Context, _ string, filter console.BindingFilter) ([]console.SecretBinding, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []console.SecretBinding
+	for _, b := range f.secretBindings {
+		if filter.SecretID == "" || b.SecretID == filter.SecretID {
+			out = append(out, b)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeCore) BindingHistory(_ context.Context, _, id string) ([]console.BindingDecision, error) {
+	f.call("history %s", id)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.history), nil
+}
+
+func (f *fakeCore) CreateSecret(_ context.Context, _ string, s console.NewSecret) (console.Secret, error) {
+	f.call("store %s %s", s.Name, s.Type)
+	made := console.Secret{ID: "sec_" + s.Name, Name: s.Name, Type: s.Type, Updated: time.Now()}
+	f.mu.Lock()
+	f.secrets = append(f.secrets, made)
+	f.mu.Unlock()
+	return made, nil
+}
+
+func (f *fakeCore) UpdateSecret(_ context.Context, _, id string, u console.SecretUpdate) error {
+	f.call("update secret %s", id)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.secrets {
+		if f.secrets[i].ID == id && u.Name != nil {
+			f.secrets[i].Name = *u.Name
+		}
+	}
+	return nil
+}
+
+func (f *fakeCore) DeleteSecret(_ context.Context, _, id string) error {
+	f.call("delete secret %s", id)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.secrets = slices.DeleteFunc(f.secrets, func(s console.Secret) bool { return s.ID == id })
+	f.secretBindings = slices.DeleteFunc(f.secretBindings, func(b console.SecretBinding) bool { return b.SecretID == id })
+	return nil
+}
+
+func (f *fakeCore) CreateBinding(_ context.Context, _ string, b console.NewBinding) (console.SecretBinding, error) {
+	f.call("bind %s %s %s %s", b.SecretID, b.TargetKind, b.TargetID, b.EnvVar)
+	made := console.SecretBinding{ID: "bind_" + b.EnvVar, SecretID: b.SecretID, TargetKind: b.TargetKind, TargetID: b.TargetID, Use: b.Use, Delegate: b.Delegate, EnvVar: b.EnvVar}
+	f.mu.Lock()
+	f.secretBindings = append(f.secretBindings, made)
+	f.mu.Unlock()
+	return made, nil
+}
+
+func (f *fakeCore) DeleteBinding(_ context.Context, _, id string) (int, error) {
+	f.call("unbind %s", id)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.secretBindings = slices.DeleteFunc(f.secretBindings, func(b console.SecretBinding) bool { return b.ID == id })
+	return 0, nil
 }
 
 func (f *fakeCore) UpdateBox(_ context.Context, id string, u console.BoxSettingsUpdate) error {

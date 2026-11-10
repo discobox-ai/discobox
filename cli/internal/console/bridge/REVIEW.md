@@ -24,7 +24,8 @@
   its subject again, refuses what the menu would and words the refusal:
   `RunServiceVerb` for a service, `OfferedHarness`, `RunHarnessVerb` and
   `EditHarness` for a harness, `RunHarnessChange` for a box's harness changes,
-  `OfferedTool`, `OpenTool`, `RunHostTool` and `EditTool` for a box's tools.
+  `OfferedTool`, `OpenTool`, `RunHostTool` and `EditTool` for a box's tools,
+  `OfferedSecret` and `OfferedBinding` for a secret and its bindings.
   The bridge's first harnesses page re-read the harness, looked the action up
   and refused it itself, and its harness-changes review sent whatever
   candidate the app named — the fourth such rule written in the bridge.
@@ -41,6 +42,22 @@
   written into the desktop app, and differed from the TUI's on a repeated
   report and on a prompt; it is `Sandbox.AgentHeard`, and the bridge sends
   its answer in the box's header (`Header.Agent`).
+- **A string the core exports for a renderer to say reaches the app over the
+  wire, never as a Rust literal.** The secrets page's first version typed the
+  core's `NoSecrets`, `BindThisSecret` and history head into `secrets.rs`, and
+  dropped what the TUI says above the edit and bind forms; they are
+  `SecretWords` and `Form.About` now. A copy in the app is one the Go tests
+  never see change.
+- **A result that cannot carry what it is about fails.** `Secrets` is
+  omitted when empty, so a re-read that failed after an action, sent as done
+  with no secrets, read as a project with none and emptied the page. Fail it,
+  saying what the action did, and the app keeps its rows.
+- **The debug log of the wire never writes what a masked field holds**, in
+  either direction: the app's client keeps which fields of each form are
+  masked and redacts them, in the form and in what is answered to it
+  (`desktop/bridge/src/lib.rs`, `Masked`). A secret's form is the first with
+  one, and every change to it goes out as a draft and comes back as a form,
+  so its first version logged a typed token on every keystroke, both ways.
 - **A wire change is regenerated, never mirrored.** Change `wire.go` (or the
   console's `Spec`), run `go tool task generate`, and build the app against
   the new `desktop/bridge/src/wire.rs`. A type the app reads written by hand in

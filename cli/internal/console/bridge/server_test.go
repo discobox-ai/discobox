@@ -16,6 +16,7 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
 	"github.com/discobox-ai/discobox/pkg/execstream/frame"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // A frame is kind, stream and length big-endian, then the payload; a frame
@@ -1429,5 +1430,149 @@ func TestAnEditIsHandedOverAsACopy(t *testing.T) {
 		if got, _ := os.ReadFile(file); string(got) != "after" {
 			t.Fatalf("%s: saved %q, want what the copy held", c.name, got)
 		}
+	}
+}
+
+// The secrets page is the core's: the secrets of the server the app names,
+// each row, card and live binding as the core says them; a refused one says
+// so; every action is done as the core says and answered with the secrets
+// read again; a delete and an unbind are asked first, and no does nothing; a
+// binding and a new secret are the core's forms; history reads each decision
+// with the delegation it was handed on under.
+func TestSecretsAreTheCores(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	core.secrets = []console.Secret{
+		{ID: "sec_gh", Name: "gh", Type: "token", Updated: time.Now().Add(-2 * time.Hour)},
+		{ID: "sec_api", Name: "api", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"api.example.com"}}}},
+	}
+	core.secretBindings = []console.SecretBinding{
+		{ID: "bind_1", SecretID: "sec_gh", SecretName: "gh", TargetKind: console.BindingSandbox, TargetID: "b1", Use: true, EnvVar: "GH_TOKEN"},
+		{ID: "bind_old", SecretID: "sec_gh", TargetKind: console.BindingProject, Use: true, EnvVar: "OLD", Expires: time.Now().Add(-time.Hour)},
+	}
+	core.rejections = []console.SecretRejection{{SecretID: "sec_api", SecretName: "api", Host: "api.example.com", Reason: "unrefreshable"}}
+	a := dial(t, core)
+	a.hello()
+
+	r := a.result(a.command(Command{Command: "credentials", Context: Context{Tree: true}}))
+	if r.Status != StatusEnter || len(r.Secrets) != 2 {
+		t.Fatalf("secrets %+v", r)
+	}
+	gh, api := r.Secrets[0], r.Secrets[1]
+	if gh.Where != "sent nowhere" || !gh.Nowhere || gh.StandingText != "1 binding" || gh.Standing != console.SecretBound || gh.Age != "2h ago" ||
+		gh.Answer != "1 binding stands on it" || len(gh.Bindings) != 1 || len(gh.Card) == 0 {
+		t.Fatalf("gh %+v", gh)
+	}
+	if b := gh.Bindings[0]; b.ID != "bind_1" || b.Label != "GH_TOKEN" || !strings.HasPrefix(b.Detail, "discobox b1 · ") || len(b.Card) != 1 {
+		t.Fatalf("gh's binding %+v", b)
+	}
+	if api.Standing != console.SecretRefused || api.Refused != "refused at api.example.com · nothing to renew" || api.Nowhere {
+		t.Fatalf("api %+v", api)
+	}
+	if w := r.SecretWords; w == nil || w.Empty != console.NoSecrets || w.Bind != console.BindThisSecret || w.HistoryTitle != console.BindingHistoryTitle {
+		t.Fatalf("words %+v, want the core's", r.SecretWords)
+	}
+	// Reading the page again answers done, with the secrets as they are now.
+	core.mu.Lock()
+	core.secrets = append(core.secrets, console.Secret{ID: "sec_new", Name: "new", Type: "token"})
+	core.mu.Unlock()
+	if r := a.result(a.command(Command{Command: "credentials", Context: Context{Tree: true}, Args: Args{SecretAction: console.SecretActionRead}})); r.Status != StatusDone || len(r.Secrets) != 3 {
+		t.Fatalf("read again %+v", r)
+	}
+	core.mu.Lock()
+	core.secrets = core.secrets[:2]
+	core.mu.Unlock()
+
+	act := func(secret string, action console.SecretAction, binding string) uint64 {
+		return a.command(Command{Command: "credentials", Context: Context{Tree: true}, Args: Args{Secret: secret, SecretAction: action, Binding: binding}})
+	}
+	if r := a.result(act("gone", console.SecretActionEdit, "")); r.Status != StatusFailed || r.Why != "no secret gone is listed" {
+		t.Fatalf("an edit of a secret gone: %+v", r)
+	}
+	if r := a.result(act("sec_gh", console.SecretActionUnbind, "bind_old")); r.Status != StatusFailed || r.Why != "that binding is no longer there" {
+		t.Fatalf("an unbind of a lapsed binding: %+v", r)
+	}
+
+	// An unbind and a delete ask first, defaulting to no; no does nothing.
+	for _, answer := range []string{console.AnswerNo, console.AnswerYes} {
+		id := act("sec_gh", console.SecretActionUnbind, "bind_1")
+		q := a.expect(TypeQuestion).Question
+		if q.Command != id || !q.DefaultNo || !strings.Contains(q.Body, "gh to discobox b1 as GH_TOKEN") {
+			t.Fatalf("unbind question %+v", q)
+		}
+		a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Key: answer}})
+		r := a.result(id)
+		unbound := slices.Contains(core.called(), "unbind bind_1")
+		if answer == console.AnswerNo && (r.Status != StatusCanceled || unbound) ||
+			answer == console.AnswerYes && (r.Status != StatusDone || !unbound || r.Note != "unbound" || r.Secret != "sec_gh" || r.Secrets[0].StandingText != "—") {
+			t.Fatalf("%s: %+v, unbound %v", answer, r, unbound)
+		}
+	}
+
+	// A binding is the core's form, over the server's boxes.
+	id := act("sec_gh", console.SecretActionBind, "")
+	f := a.expect(TypeForm).Form
+	if f.Command != id || f.Title != "Bind gh" || f.About != console.BindingFormNote {
+		t.Fatalf("bind form %+v", f)
+	}
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: f.ID, Answers: map[string]string{"target": console.BindingSandbox, "sandbox": "b1", "envVar": "GH_TOKEN"}}})
+	if r := a.result(id); r.Status != StatusDone || r.Note != "bound gh as GH_TOKEN" || r.Secrets[0].StandingText != "1 binding" {
+		t.Fatalf("bind: %+v", r)
+	}
+
+	// An edit that changes nothing writes nothing; a rename is one call.
+	id = act("sec_gh", console.SecretActionEdit, "")
+	f = a.expect(TypeForm).Form
+	if f.About != console.EditSecretNote {
+		t.Fatalf("edit form about %q", f.About)
+	}
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: f.ID, Answers: map[string]string{}}})
+	if r := a.result(id); r.Status != StatusDone || r.Note != "gh is unchanged" || slices.Contains(core.called(), "update secret sec_gh") {
+		t.Fatalf("an untouched edit: %+v", r)
+	}
+	id = act("sec_gh", console.SecretActionEdit, "")
+	f = a.expect(TypeForm).Form
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: f.ID, Answers: map[string]string{"name": "github"}}})
+	if r := a.result(id); r.Status != StatusDone || r.Note != "renamed gh to github" || r.Secrets[0].Name != "github" {
+		t.Fatalf("a rename: %+v", r)
+	}
+
+	// History reads each decision, with the delegation it was handed on under.
+	core.mu.Lock()
+	core.history = []console.BindingDecision{{ID: "ev1", Event: "created", Actor: "ann", At: time.Unix(0, 0).UTC(), BindingID: "bind_x", ParentID: "bind_GH_TOKEN"}}
+	core.mu.Unlock()
+	r = a.result(act("sec_gh", console.SecretActionHistory, ""))
+	if r.Status != StatusDone || len(r.History) != 1 || r.History[0].Label != "1970-01-01T00:00:00Z · created · ann" || len(r.History[0].Card) != 1 || len(r.History[0].Delegation) != 1 {
+		t.Fatalf("history %+v", r)
+	}
+
+	// A delete asks, saying what goes with it, and the page is read again.
+	id = act("sec_gh", console.SecretActionDelete, "")
+	q := a.expect(TypeQuestion).Question
+	if !q.DefaultNo || !strings.Contains(q.Body, "live bindings (1)") {
+		t.Fatalf("delete question %+v", q)
+	}
+	a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Key: console.AnswerYes}})
+	if r := a.result(id); r.Status != StatusDone || r.Note != "deleted github" || len(r.Secrets) != 1 {
+		t.Fatalf("delete: %+v", r)
+	}
+
+	// A refused secret's edit says why it was refused first.
+	id = act("sec_api", console.SecretActionEdit, "")
+	f = a.expect(TypeForm).Form
+	if !strings.HasPrefix(f.About, "refused at api.example.com · nothing to renew\n") {
+		t.Fatalf("a refused secret's edit about %q", f.About)
+	}
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: f.ID, Answers: map[string]string{}, Cancel: true}})
+	a.result(id)
+
+	// A new secret is the core's form; dismissing it stores nothing.
+	id = a.command(Command{Command: "credentials", Context: Context{Tree: true}, Args: Args{SecretAction: console.SecretActionNew}})
+	f = a.expect(TypeForm).Form
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: f.ID, Answers: map[string]string{}, Cancel: true}})
+	if r := a.result(id); r.Status != StatusCanceled {
+		t.Fatalf("a new secret dismissed: %+v", r)
+	}
+	if !slices.Contains(core.called(), "secrets@") {
+		t.Fatalf("calls %q, want the primary's secrets", core.called())
 	}
 }

@@ -224,7 +224,10 @@ func TestAValueLifetimeCanBeChosenAndChanged(t *testing.T) {
 	}
 
 	secret := console.Secret{ID: "sec_gc", Name: "gcloud", Type: "token", RefreshCommand: []string{"gcloud", "auth", "print-access-token"}, ValueTTL: time.Hour}
-	drain(t, m, m.editSecretForm("", secret), 0)
+	ds.mu.Lock()
+	ds.projectSecrets = append(ds.projectSecrets, secret)
+	ds.mu.Unlock()
+	drain(t, m, m.editSecretForm("", secret, nil), 0)
 	if m.dialog.form.chosen("lasts") != "3600" {
 		t.Fatalf("edit card opens on %q, want the hour it has", m.dialog.form.chosen("lasts"))
 	}
@@ -255,7 +258,10 @@ func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
 
 	secret := console.Secret{ID: "sec_bx", Name: "boxd", Type: "exchange", Routes: []secretroute.Route{{Hosts: []string{"boxd.sh"}}},
 		Exchange: &console.SecretExchange{URL: "https://app.boxd.sh/api/v1/auth/token", Fields: []string{"api_key", "org"}}}
-	drain(t, m, m.editSecretForm("", secret), 0)
+	ds.mu.Lock()
+	ds.projectSecrets = append(ds.projectSecrets, secret)
+	ds.mu.Unlock()
+	drain(t, m, m.editSecretForm("", secret, nil), 0)
 	f := m.dialog.form
 	if f.chosen("kind") != "exchange" {
 		t.Fatalf("kind = %q, want exchange", f.chosen("kind"))

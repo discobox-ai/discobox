@@ -59,6 +59,18 @@
   harness's credential is refused for every box running that harness, and a
   request or refusal is on one server; the bridge's first copy matched by
   sandbox ID alone and refused `rejections` where the TUI opened it.
+- **What the secrets page says and does is `secrets.go`'s.** A row's
+  standing, what reading a secret, a binding or a decision says, what a
+  delete or an unbind asks, and what an edit says it changed were the TUI's
+  alone; the bridge calls the same functions. An action reads its secret (and
+  binding) again inside itself, never as a step a caller must remember: the
+  first version had the bridge read first and the TUI not at all, while the
+  docs said both did.
+- **Narrowing anything to "this server" is the core's** — requests,
+  refusals, boxes, harnesses (`RequestsFor`, `RejectionsFor`,
+  `RefusedSecrets`, `BindableBoxes`). The secrets page's first version
+  filtered refusals by server in the bridge and not in the TUI, so the two
+  could disagree on which rows said "refused".
 - **A run option's rule is `RunOptions`', never a renderer's.** Which rows a
   create offers, what each leads with, the sources, the request and the
   command were the TUI's panel alone, and the desktop would have needed a

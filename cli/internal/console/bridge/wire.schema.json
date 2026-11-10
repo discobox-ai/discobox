@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 12,
+  "x-protocol": 13,
   "x-specVersion": 6,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
@@ -1776,7 +1776,7 @@
       ]
     },
     "Args": {
-      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), for services one of the box's services and the verb to run on it — without them, services lists them for its menu — and for new the prompt in the composer, which the box is given to do.\n\nThe harnesses command reads the harnesses of Server (the list's server; empty for the primary) for its page, or, with a Harness and an Action, does that to it: Path is the file a files action edits. The review config command reads a box's harness changes for its review, or, with a Change and the Candidate the review showed, saves or discards that candidate.",
+      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), for services one of the box's services and the verb to run on it — without them, services lists them for its menu — and for new the prompt in the composer, which the box is given to do.\n\nThe harnesses command reads the harnesses of Server (the list's server; empty for the primary) for its page, or, with a Harness and an Action, does that to it: Path is the file a files action edits. The review config command reads a box's harness changes for its review, or, with a Change and the Candidate the review showed, saves or discards that candidate.\n\nThe credentials command reads the secrets of Server for its page, or does a SecretAction: new stores one, read reads them again for a page already open, and every other names the Secret it is done to — unbind the Binding it takes back.",
       "type": "object",
       "properties": {
         "prompt": {
@@ -1830,6 +1830,16 @@
         },
         "source": {
           "description": "Source is a folder dropped on the composer: the options command with one sets the Source row to it, checked as a source typed by hand is, in place of asking the run options' form.",
+          "type": "string"
+        },
+        "secret": {
+          "description": "Secret, SecretAction and Binding are the credentials command's.",
+          "type": "string"
+        },
+        "secretAction": {
+          "$ref": "#/$defs/SecretAction"
+        },
+        "binding": {
           "type": "string"
         }
       }
@@ -1886,6 +1896,40 @@
         {
           "description": "HarnessChangeDiscard drops it, leaving the box's own files as they are.",
           "const": "discard"
+        }
+      ]
+    },
+    "SecretAction": {
+      "description": "SecretAction is one thing the secrets page does.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "SecretActionNew stores a credential the project does not have yet (NewSecretForm).",
+          "const": "new"
+        },
+        {
+          "description": "SecretActionEdit changes what a secret says about itself (EditSecretForm).",
+          "const": "edit"
+        },
+        {
+          "description": "SecretActionDelete removes a secret and every binding of it, asking first (DeleteSecretQuestion).",
+          "const": "delete"
+        },
+        {
+          "description": "SecretActionBind binds a secret by hand (BindingForm).",
+          "const": "bind"
+        },
+        {
+          "description": "SecretActionUnbind takes one of a secret's bindings back, asking first (UnbindQuestion).",
+          "const": "unbind"
+        },
+        {
+          "description": "SecretActionHistory reads a secret's binding history.",
+          "const": "history"
+        },
+        {
+          "description": "SecretActionRead reads the secrets again, for a page already open.",
+          "const": "read"
         }
       ]
     },
@@ -1972,6 +2016,26 @@
           "items": {
             "$ref": "#/$defs/Address"
           }
+        },
+        "secrets": {
+          "description": "Secrets are the secrets of the server the credentials command read, in the order it lists them: what its page lists, read again after each action, which leaves the one it acted on as Secret. History is a secret's binding history, newest first, for its history action.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "secret": {
+          "type": "string"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Decision"
+          }
+        },
+        "secretWords": {
+          "$ref": "#/$defs/SecretWords",
+          "description": "SecretWords are what the secrets page says beside its secrets, sent with them and with a history."
         }
       },
       "required": [
@@ -2202,7 +2266,7 @@
       ]
     },
     "CardTone": {
-      "description": "CardTone is how a renderer draws a stretch of a card's value.",
+      "description": "CardTone is how a renderer draws a stretch of a card's value, or a detail's field or line (DetailSection).",
       "type": "string",
       "oneOf": [
         {
@@ -2220,6 +2284,10 @@
         {
           "description": "CardCommand is a command line.",
           "const": "command"
+        },
+        {
+          "description": "CardAlert is what is wrong: a credential sent nowhere, or one that cannot renew itself.",
+          "const": "alert"
         }
       ]
     },
@@ -2386,6 +2454,225 @@
         "label"
       ]
     },
+    "Secret": {
+      "description": "Secret is one of a server's secrets as the secrets page lists it: what its row says (console.SecretWhere, console.SecretStandingOf), what reading it says (console.DescribeSecret, console.BindingsAnswer), and its live bindings. Refused is why an upstream refuses it, when one does (console.RejectionSummary). Its value is never on the wire.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "where": {
+          "type": "string"
+        },
+        "nowhere": {
+          "type": "boolean"
+        },
+        "standingText": {
+          "type": "string"
+        },
+        "standing": {
+          "$ref": "#/$defs/SecretStanding"
+        },
+        "age": {
+          "type": "string"
+        },
+        "refused": {
+          "type": "string"
+        },
+        "card": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DetailSection"
+          }
+        },
+        "answer": {
+          "type": "string"
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SecretBinding"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "where",
+        "standingText",
+        "standing",
+        "card",
+        "answer",
+        "bindings"
+      ]
+    },
+    "SecretStanding": {
+      "description": "SecretStanding is what a secret's row says stands on it.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "SecretUnbound has nothing bound to it.",
+          "const": "unbound"
+        },
+        {
+          "description": "SecretBound has live bindings.",
+          "const": "bound"
+        },
+        {
+          "description": "SecretRefused is refused by an upstream (ADR 0132).",
+          "const": "refused"
+        }
+      ]
+    },
+    "DetailSection": {
+      "description": "DetailSection is a stretch of a card read rather than answered (console.DetailSection): a heading, its label and value rows, and the sentences under them.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DetailField"
+          }
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DetailLine"
+          }
+        }
+      },
+      "required": [
+        "fields",
+        "lines"
+      ]
+    },
+    "DetailField": {
+      "description": "DetailField is a label and its value, in the value's tone.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "tone": {
+          "$ref": "#/$defs/CardTone"
+        }
+      },
+      "required": [
+        "label",
+        "value",
+        "tone"
+      ]
+    },
+    "DetailLine": {
+      "description": "DetailLine is a sentence under a section's fields, in its tone.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "tone": {
+          "$ref": "#/$defs/CardTone"
+        }
+      },
+      "required": [
+        "text",
+        "tone"
+      ]
+    },
+    "SecretBinding": {
+      "description": "SecretBinding is one live binding of a secret: its row's label and detail (console.BindingLabel, BindingDetail), and the binding read in full (console.DescribeBinding).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "card": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DetailSection"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "detail",
+        "card"
+      ]
+    },
+    "Decision": {
+      "description": "Decision is one decision of a secret's binding history: its row (console.BindingDecision.Label), the decision read in full (console.DescribeDecision), and the delegation it was handed on under read as a binding is, when that binding still stands.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "card": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DetailSection"
+          }
+        },
+        "delegation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DetailSection"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "card",
+        "delegation"
+      ]
+    },
+    "SecretWords": {
+      "description": "SecretWords are what the secrets page says beside its secrets, in the core's words (console.NoSecrets, BindThisSecret, BindingHistoryTitle…): a page with none, the row that binds a secret read, and a history's head.",
+      "type": "object",
+      "properties": {
+        "empty": {
+          "type": "string"
+        },
+        "bind": {
+          "type": "string"
+        },
+        "bindDetail": {
+          "type": "string"
+        },
+        "historyTitle": {
+          "type": "string"
+        },
+        "historyNote": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "empty",
+        "bind",
+        "bindDetail",
+        "historyTitle",
+        "historyNote"
+      ]
+    },
     "Form": {
       "description": "Form is a form a command needs filled, described by the core. ID is the CLI's; it is sent again, same ID, with Applies recomputed, after a draft is submitted.\n\nFields can grow as they are answered — a repeated run option gains a field once its last is filled — so a form sent again after a draft may hold more fields than before, matched to what the app holds by Key. Note is what the answers so far add up to (the command a create would run), said under the fields; Action is what the button that submits it says, empty for the app's own word.",
       "type": "object",
@@ -2411,6 +2698,10 @@
           "type": "string"
         },
         "action": {
+          "type": "string"
+        },
+        "about": {
+          "description": "About is what the form is about, said above its fields, a paragraph to a line: why a secret's edit was opened, what a binding is.",
           "type": "string"
         }
       },

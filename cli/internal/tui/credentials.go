@@ -309,9 +309,9 @@ func (a approval) usePlanned() bindingplan.As {
 // way on the request and on the binding.
 func partsPurpose(req console.CredentialRequest) string {
 	if req.AsksBoth() {
-		return "use it, and " + delegationPurpose
+		return "use it, and " + console.DelegationPurpose
 	}
-	return delegationPurpose
+	return console.DelegationPurpose
 }
 
 // replacedFields is what an approved part would do to the asking discobox's
@@ -442,20 +442,6 @@ func routeDiff(was, now []secretroute.Route, kept bool) []line {
 		rows = append(rows, line{text: "  " + count, tone: toneDim})
 	}
 	return append(append(rows, removed...), added...)
-}
-
-// delegationPurpose is what a binding to delegate is for, said the same way on
-// the request and on the binding.
-const delegationPurpose = "delegation — may give it to the discoboxes it leads, never uses it"
-
-// rawDeliveryText is what a raw binding hands over (ADR 26-10-27-840),
-// said so a person approving it reads that the value itself leaves the pool.
-func rawDeliveryText(delivery string) string {
-	where := "in its variable"
-	if delivery == "file" {
-		where = "in a file in memory, its path in the variable"
-	}
-	return "the value itself, " + where + " — refused off its routes, but the discobox can send it anywhere"
 }
 
 func (a approval) grantedRoutes(delegate bool) []secretroute.Route {

@@ -44,6 +44,8 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //     out holding its default and reads back what the app saved there; ide,
 //     which runs on this machine; and broken, whose command is empty. b1
 //     answers on ssh and git; b3, stopped, on neither.
+//   - The project has one secret, sec_gh (gh), bound to b1 as GH_TOKEN
+//     (bind_1), with one decision in its history. Unbinding asks first.
 //
 // A create (new) is made on claude, the project's default, and makes the box
 // made: it reports the last draft the app sent as a step, and is taken.
@@ -93,6 +95,10 @@ func TestContractCore(t *testing.T) {
 		{ID: "broken", Label: "broken", Problem: "its command is empty"},
 	}
 	core.addresses = console.Addresses{SSH: "ssh b1", Git: "ssh://b1/work"}
+	core.secrets = []console.Secret{{ID: "sec_gh", Name: "gh", Type: "token"}}
+	core.secretBindings = []console.SecretBinding{{ID: "bind_1", SecretID: "sec_gh", SecretName: "gh",
+		TargetKind: console.BindingSandbox, TargetID: "b1", Use: true, EnvVar: "GH_TOKEN"}}
+	core.history = []console.BindingDecision{{ID: "ev1", Event: "created", Actor: "ann", At: time.Unix(0, 0).UTC(), BindingID: "bind_1"}}
 	core.run = func(ctx context.Context, _ console.RunRequest, n *console.Narration) (console.Sandbox, error) {
 		core.mu.Lock()
 		draft := ""

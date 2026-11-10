@@ -746,7 +746,7 @@ func (s *Server) editAt(ctx context.Context, command uint64, path, title string)
 //
 // action is what the button that submits it says, empty for the app's own
 // word.
-func fill[T any](ctx context.Context, s *Server, command uint64, title, action string, form console.Form[T]) (answer T, ok bool, err error) {
+func fill[T any](ctx context.Context, s *Server, command uint64, title, action, about string, form console.Form[T]) (answer T, ok bool, err error) {
 	id := s.id()
 	box := newMailbox()
 	s.mu.Lock()
@@ -760,7 +760,7 @@ func fill[T any](ctx context.Context, s *Server, command uint64, title, action s
 	answers := form.Opening()
 	for {
 		s.send(Message{Type: TypeForm, Form: &Form{
-			ID: id, Command: command, Title: title, Action: action,
+			ID: id, Command: command, Title: title, Action: action, About: about,
 			Fields: fields(form.FieldsFor(answers), answers), Note: form.NoteFor(answers),
 		}})
 		for {

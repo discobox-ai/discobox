@@ -177,7 +177,7 @@ func TestADelegateBindingSaysWhatItIs(t *testing.T) {
 
 	send(t, m, keyPress("esc"))
 	drain(t, m, m.dialog.alt("binding_1"), 0)
-	if !strings.Contains(dialogText(m), "can no longer be given on") || strings.Contains(dialogText(m), "stops resolving") {
+	if !strings.Contains(dialogText(m), "given on under it goes too") || strings.Contains(dialogText(m), "stops resolving") {
 		t.Fatalf("unbind = %q, want it to say what taking back a delegation stops", dialogText(m))
 	}
 }
@@ -400,7 +400,7 @@ func TestDeletingAsksFirstAndSaysWhatGoesWithIt(t *testing.T) {
 	if !m.dialog.defaultNo {
 		t.Fatal("the costly answer is the default")
 	}
-	if !strings.Contains(dialogText(m), "live bindings  2") {
+	if !strings.Contains(dialogText(m), "live bindings (2)") {
 		t.Fatalf("question = %q, want it to say what goes with the secret", dialogText(m))
 	}
 	if len(ds.deleted) != 0 {
@@ -1346,20 +1346,6 @@ func TestRequestsArrivingOnTheSecretsScreenAreDrawn(t *testing.T) {
 	}
 }
 
-// A binding with seconds left says so, rather than rounding to zero minutes
-// and reading as one that never expires.
-func TestABindingAboutToLapseDoesNotReadAsNever(t *testing.T) {
-	t.Parallel()
-	now := time.Now()
-	b := console.SecretBinding{Expires: now.Add(20 * time.Second)}
-	if got := bindingExpiry(b, now); got != "expires in 20s" {
-		t.Fatalf("expiry = %q, want the seconds left", got)
-	}
-	if got := bindingLifeLeft(b, now); got != "in 20s" {
-		t.Fatalf("life left = %q, want the seconds left", got)
-	}
-}
-
 // The row's count is taken when it is drawn, so a binding that lapses between
 // reads stops being counted without waiting for the next one.
 func TestTheRowStopsCountingABindingWhenItLapses(t *testing.T) {
@@ -1408,5 +1394,19 @@ func TestLateBindingHistoryDoesNotReplaceNewerDialog(t *testing.T) {
 	m.bindingHistoryLoaded(bindingHistoryMsg{wait: old, server: m.configServer(), entries: []console.BindingDecision{{ID: "e"}}})
 	if m.dialog != newer {
 		t.Fatal("late history replaced the newer card")
+	}
+}
+
+// The edit card opened from a refusal says why it was opened, from the refusal
+// it was handed: the band's credential can be another server's than the one
+// the screen shows, whose refusals the screen does not keep.
+func TestAnEditOpenedFromARefusalSaysWhy(t *testing.T) {
+	t.Parallel()
+	m, _ := secretsFixture(t)
+	secret := console.Secret{ID: "sec_elsewhere", Name: "work-gh", Type: "token"}
+	refusal := console.SecretRejection{Server: "work", SecretID: secret.ID, Host: "api.github.com", Reason: "unrefreshable"}
+	drain(t, m, m.editSecretForm("work", secret, &refusal), 0)
+	if !strings.Contains(dialogText(m), "refused at api.github.com · nothing to renew") {
+		t.Fatalf("the card does not say why it was opened:\n%s", dialogText(m))
 	}
 }

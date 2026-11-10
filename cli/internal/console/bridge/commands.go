@@ -260,7 +260,7 @@ func (f *frontend) Repaint() outcome {
 // Rename asks the core's rename form and renames the box.
 func (f *frontend) Rename(box console.Sandbox) outcome {
 	return func() Result {
-		r, ok, err := fill(f.ctx, f.s, f.c.ID, "Rename", "", console.RenameForm(box, box.Title()))
+		r, ok, err := fill(f.ctx, f.s, f.c.ID, "Rename", "", "", console.RenameForm(box, box.Title()))
 		switch {
 		case err != nil:
 			return failed(err.Error())
@@ -292,7 +292,7 @@ func (f *frontend) Settings(box console.Sandbox) outcome {
 		// The harnesses only fill the harness row; a listing that fails
 		// leaves it on the box's own.
 		harnesses, _ := src.Harnesses(f.ctx, box.Server)
-		update, ok, err := fill(f.ctx, f.s, f.c.ID, "Settings · "+box.Title(), "", console.SettingsForm(box, was, harnesses))
+		update, ok, err := fill(f.ctx, f.s, f.c.ID, "Settings · "+box.Title(), "", "", console.SettingsForm(box, was, harnesses))
 		switch {
 		case err != nil:
 			return failed(err.Error())
@@ -462,7 +462,7 @@ func (f *frontend) Harnesses() outcome {
 			note, err = console.EditHarness(f.ctx, f.s.ds, a.Server, h.ID, a.Path, n)
 			finished()
 		case console.HarnessActionVariant:
-			variant, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Create variant of "+h.DisplayName(), "", console.HarnessVariantForm(h))
+			variant, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Create variant of "+h.DisplayName(), "", "", console.HarnessVariantForm(h))
 			switch {
 			case fillErr != nil:
 				return failed(fillErr.Error())
@@ -646,6 +646,193 @@ func (f *frontend) tools(box console.Sandbox) Result {
 	return r
 }
 
+// Credentials is the secrets page: the secrets of the server the app names
+// (the list's; the primary for none), read as the page opens — counted as the
+// command's use, which its flow is — or, with a SecretAction in the args, that
+// action done as the TUI's screen does it, every one the call the `discobox
+// secret` commands make: a new secret, an edit or a binding through the
+// core's form, a delete or an unbind asked first, a secret's binding history.
+// The secret, and a binding, are read again for what is asked first
+// (console.OfferedSecret, OfferedBinding), and the core's action reads them
+// again as it acts. Read reads the page's secrets again, which is no use of
+// the command. Every action but history is answered with the secrets read
+// again, since each changes what the rows say.
+func (f *frontend) Credentials() outcome {
+	a := f.c.Args
+	if a.SecretAction == "" {
+		f.s.reg.Use("credentials")
+		return func() Result { return f.secrets(a.Server, StatusEnter, "", "") }
+	}
+	return func() Result {
+		ds := f.s.ds
+		switch a.SecretAction {
+		case console.SecretActionRead:
+			return f.secrets(a.Server, StatusDone, "", "")
+		case console.SecretActionNew:
+			secret, ok, err := fill(f.ctx, f.s, f.c.ID, "New secret", "", "", console.NewSecretForm(console.NewSecretAsk{}))
+			if r, over := f.filled(ok, err); over {
+				return r
+			}
+			note, err := console.StoreSecret(f.ctx, ds, a.Server, secret)
+			if err != nil {
+				return failed("cannot store " + secret.Name + ": " + err.Error())
+			}
+			return f.secrets(a.Server, StatusDone, "", note)
+		}
+		secret, err := console.OfferedSecret(f.ctx, ds, a.Server, a.Secret)
+		if err != nil {
+			return failed(err.Error())
+		}
+		var note string
+		switch a.SecretAction {
+		case console.SecretActionEdit:
+			page, readErr := f.secretsPage(a.Server)
+			if readErr != nil {
+				return failed(readErr.Error())
+			}
+			update, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Edit "+secret.Name, "", page.editAbout(secret), console.EditSecretForm(secret))
+			if r, over := f.filled(ok, fillErr); over {
+				return r
+			}
+			note, err = console.SaveSecret(f.ctx, ds, a.Server, secret.ID, update)
+		case console.SecretActionDelete:
+			page, readErr := f.secretsPage(a.Server)
+			if readErr != nil {
+				return failed(readErr.Error())
+			}
+			live := len(console.LiveBindings(page.bindings, secret.ID, page.now))
+			if r, over := f.yes(console.DeleteSecretQuestion(secret.Name, live)); over {
+				return r
+			}
+			note, err = console.DeleteSecret(f.ctx, ds, a.Server, secret.ID)
+		case console.SecretActionBind:
+			page, readErr := f.secretsPage(a.Server)
+			if readErr != nil {
+				return failed(readErr.Error())
+			}
+			binding, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Bind "+secret.Name, "", console.BindingFormNote, console.BindingForm(secret, page.harnesses, page.boxes))
+			if r, over := f.filled(ok, fillErr); over {
+				return r
+			}
+			note, err = console.Bind(f.ctx, ds, a.Server, binding)
+		case console.SecretActionUnbind:
+			page, readErr := f.secretsPage(a.Server)
+			if readErr != nil {
+				return failed(readErr.Error())
+			}
+			b, bindErr := console.OfferedBinding(f.ctx, ds, a.Server, secret.ID, a.Binding, page.now)
+			if bindErr != nil {
+				return failed(bindErr.Error())
+			}
+			if r, over := f.yes(console.UnbindQuestion(secret.Name, b, page.target(b))); over {
+				return r
+			}
+			note, err = console.Unbind(f.ctx, ds, a.Server, secret.ID, b.ID)
+		case console.SecretActionHistory:
+			return f.history(a.Server, secret)
+		default:
+			return failed(fmt.Sprintf("there is no secret action %q", a.SecretAction))
+		}
+		if err != nil {
+			return failed(err.Error())
+		}
+		return f.secrets(a.Server, StatusDone, secret.ID, note)
+	}
+}
+
+// filled is what a form left unanswered ends the command with, and whether
+// it did: one dismissed is canceled, one that could not be filled failed.
+func (f *frontend) filled(ok bool, err error) (Result, bool) {
+	switch {
+	case err != nil:
+		return failed(err.Error()), true
+	case !ok:
+		return Result{Status: StatusCanceled}, true
+	}
+	return Result{}, false
+}
+
+// yes asks a yes or no and is what anything but yes ends the command with,
+// and whether it did: no, or dismissed, is canceled.
+func (f *frontend) yes(q console.Question) (Result, bool) {
+	key, err := f.s.ask(f.ctx, f.c.ID, q)
+	if r, over := f.asked(err); over {
+		return r, true
+	}
+	if key != console.AnswerYes {
+		return Result{Status: StatusCanceled}, true
+	}
+	return Result{}, false
+}
+
+// secretsPage reads what the secrets page says about a server's secrets
+// beside them: the project's bindings, which of that server's secrets an
+// upstream refuses (from what last waited on a person), and the harnesses
+// and listed boxes on that server a binding's target is named from.
+func (f *frontend) secretsPage(server string) (secretsPage, error) {
+	bindings, err := f.s.ds.Bindings(f.ctx, server, console.BindingFilter{})
+	if err != nil {
+		return secretsPage{}, fmt.Errorf("cannot read the bindings: %w", err)
+	}
+	// The harnesses only name a binding's target; one that cannot be read
+	// is named by its ID.
+	harnesses, _ := f.s.ds.Harnesses(f.ctx, server)
+	_, rejections := f.s.inbox(f.ctx)
+	session, boxes := f.s.listed()
+	return secretsPage{
+		bindings: bindings, harnesses: harnesses, now: time.Now(),
+		refused: console.RefusedSecrets(session, server, rejections),
+		boxes:   console.BindableBoxes(session, server, boxes),
+	}, nil
+}
+
+// secrets is a result carrying a server's secrets as read now, about one of
+// them, with the page's words. One that cannot be read fails, whatever came
+// before: the app keeps the rows it has rather than take none for a project
+// with no secrets, and an action that has run says what it did in the why.
+func (f *frontend) secrets(server string, status Status, about, note string) Result {
+	cannot := func(err error) Result {
+		if note == "" {
+			return failed(err.Error())
+		}
+		return failed(note + " — " + err.Error())
+	}
+	listed, err := f.s.ds.Secrets(f.ctx, server)
+	if err != nil {
+		return cannot(fmt.Errorf("cannot read the secrets: %w", err))
+	}
+	page, err := f.secretsPage(server)
+	if err != nil {
+		return cannot(err)
+	}
+	out := Result{Status: status, Secret: about, Note: note, Secrets: make([]Secret, 0, len(listed)), SecretWords: secretWords()}
+	for _, s := range listed {
+		out.Secrets = append(out.Secrets, page.wireSecret(s))
+	}
+	return out
+}
+
+// history is a secret's binding history, each decision read in full, or what
+// a secret with none says.
+func (f *frontend) history(server string, secret console.Secret) Result {
+	entries, err := f.s.ds.BindingHistory(f.ctx, server, secret.ID)
+	if err != nil {
+		return failed("cannot read binding history: " + err.Error())
+	}
+	if len(entries) == 0 {
+		return Result{Status: StatusDone, Secret: secret.ID, Note: console.NoBindingHistory}
+	}
+	page, err := f.secretsPage(server)
+	if err != nil {
+		return failed(err.Error())
+	}
+	out := Result{Status: StatusDone, Secret: secret.ID, History: make([]Decision, 0, len(entries)), SecretWords: secretWords()}
+	for _, e := range entries {
+		out.History = append(out.History, page.wireDecision(e))
+	}
+	return out
+}
+
 // actionTargets are the boxes the app named for a window's command that
 // lists commands for them: the registry ignores a window command's targets,
 // and the action menu is about the ones the app has picked.
@@ -672,7 +859,6 @@ func (f *frontend) Audit(box console.Sandbox) outcome               { return f.e
 func (f *frontend) CredentialRequests(box console.Sandbox) outcome  { return f.enterIfAble(box) }
 func (f *frontend) RejectedCredentials(box console.Sandbox) outcome { return f.enterIfAble(box) }
 
-func (f *frontend) Credentials() outcome    { return f.enter() }
 func (f *frontend) Quit() outcome           { return f.enter() }
 func (f *frontend) Help() outcome           { return f.enter() }
 func (f *frontend) Filters() outcome        { return f.enter() }

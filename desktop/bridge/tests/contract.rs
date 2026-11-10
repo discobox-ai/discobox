@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, ServiceVerb, State, Status,
+    Answer, Args, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
 };
 use discobox_bridge::{Client, Incoming};
@@ -578,6 +578,39 @@ fn tools_reach_the_app() {
     cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: e.id, ..Default::default() }), ..Default::default() });
     let r = cli.result(id);
     assert_eq!((r.status, r.note.as_str()), (Status::Done, "config.json saved — the next discobox to open fresh gets it"));
+}
+
+// The secrets page reaches the app as the core's: each secret with its row, its card and its
+// live bindings each read in full; an unbind asked first, the page read again after; and a
+// secret's history with each decision read in full.
+#[test]
+fn secrets_reach_the_app() {
+    let mut cli = Cli::start("default");
+    let page = Context { tree: true, ..Default::default() };
+    let id = cli.command("credentials", &[], page.clone(), Args::default());
+    let r = cli.result(id);
+    assert_eq!((r.status, r.secrets.len()), (Status::Enter, 1));
+    let gh = &r.secrets[0];
+    assert_eq!((gh.name.as_str(), gh.r#where.as_str(), gh.standing, gh.standing_text.as_str()), ("gh", "sent nowhere", SecretStanding::Bound, "1 binding"));
+    assert!(gh.card.iter().flat_map(|s| &s.fields).any(|f| f.label == "kind" && f.value == "token"), "{:?}", gh.card);
+    let b = &gh.bindings[0];
+    assert_eq!((b.id.as_str(), b.label.as_str()), ("bind_1", "GH_TOKEN"));
+    assert!(b.detail.starts_with("discobox b1 · "), "{}", b.detail);
+
+    let history = Args { secret: "sec_gh".into(), secret_action: Some(SecretAction::History), ..Default::default() };
+    let id = cli.command("credentials", &[], page.clone(), history);
+    let r = cli.result(id);
+    assert_eq!((r.status, r.history.len(), r.history[0].label.as_str()), (Status::Done, 1, "1970-01-01T00:00:00Z · created · ann"));
+    assert_eq!(r.history[0].card[0].label, "the decision");
+
+    let unbind = Args { secret: "sec_gh".into(), secret_action: Some(SecretAction::Unbind), binding: "bind_1".into(), ..Default::default() };
+    let id = cli.command("credentials", &[], page, unbind);
+    let q = cli.expect(Type::Question).question.unwrap();
+    assert!(q.default_no && q.body.contains("as GH_TOKEN"), "{q:?}");
+    cli.send(Message { r#type: Type::Answer, answer: Some(Answer { question: q.id, key: "yes".into(), ..Default::default() }), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str(), r.secret.as_str()), (Status::Done, "unbound", "sec_gh"));
+    assert_eq!((r.secrets[0].standing, r.secrets[0].bindings.len()), (SecretStanding::Unbound, 0));
 }
 
 // A box's primary is read for what its program says of itself: the header says the poll's

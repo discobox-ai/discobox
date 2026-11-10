@@ -218,7 +218,8 @@ func (h Harness) File(path string) (HarnessFile, bool) {
 	return HarnessFile{}, false
 }
 
-// CardTone is how a renderer draws a stretch of a card's value.
+// CardTone is how a renderer draws a stretch of a card's value, or a
+// detail's field or line (DetailSection).
 type CardTone string
 
 // The tones.
@@ -231,6 +232,9 @@ const (
 	CardStandout CardTone = "standout"
 	// CardCommand is a command line.
 	CardCommand CardTone = "command"
+	// CardAlert is what is wrong: a credential sent nowhere, or one that
+	// cannot renew itself.
+	CardAlert CardTone = "alert"
 )
 
 // CardSpan is a stretch of a card row's value, in its tone.

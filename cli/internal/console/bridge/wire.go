@@ -31,8 +31,10 @@ import (
 // link schemes; 12, images dropped on a pane as files (Upload.Files), every
 // path an upload landed at (Result.Paths), which tabs take images and the
 // image keys (Tab.Images, Tab.ImageKeys), and a folder dropped on the
-// composer (the options command's Args.Source).
-const Protocol = 12
+// composer (the options command's Args.Source); 13, the secrets page (the
+// credentials command's secrets, their bindings and cards, a secret's binding
+// history, its actions and its words) and what a form is about (Form.About).
+const Protocol = 13
 
 // Type names a message.
 type Type string
@@ -721,6 +723,11 @@ type Context struct {
 // that to it: Path is the file a files action edits. The review config
 // command reads a box's harness changes for its review, or, with a Change and
 // the Candidate the review showed, saves or discards that candidate.
+//
+// The credentials command reads the secrets of Server for its page, or does
+// a SecretAction: new stores one, read reads them again for a page already
+// open, and every other names the Secret it is done to — unbind the Binding
+// it takes back.
 type Args struct {
 	Prompt    string                `json:"prompt,omitempty"`
 	Stream    uint32                `json:"stream,omitempty"`
@@ -744,6 +751,10 @@ type Args struct {
 	// one sets the Source row to it, checked as a source typed by hand is,
 	// in place of asking the run options' form.
 	Source string `json:"source,omitempty"`
+	// Secret, SecretAction and Binding are the credentials command's.
+	Secret       string               `json:"secret,omitempty"`
+	SecretAction console.SecretAction `json:"secretAction,omitempty"`
+	Binding      string               `json:"binding,omitempty"`
 }
 
 // Status is how a command ended.
@@ -803,6 +814,16 @@ type Result struct {
 	// addresses to copy beside them (console.AddressOffers).
 	Tools     []Tool    `json:"tools,omitempty"`
 	Addresses []Address `json:"addresses,omitempty"`
+	// Secrets are the secrets of the server the credentials command read,
+	// in the order it lists them: what its page lists, read again after each
+	// action, which leaves the one it acted on as Secret. History is a
+	// secret's binding history, newest first, for its history action.
+	Secrets []Secret   `json:"secrets,omitempty"`
+	Secret  string     `json:"secret,omitempty"`
+	History []Decision `json:"history,omitempty"`
+	// SecretWords are what the secrets page says beside its secrets, sent
+	// with them and with a history.
+	SecretWords *SecretWords `json:"secretWords,omitempty"`
 }
 
 // Tool is one of a box's tools as the tools menu lists it: what it is called
@@ -833,6 +854,79 @@ type Address struct {
 	Label string `json:"label"`
 	Value string `json:"value,omitempty"`
 	Why   string `json:"why,omitempty"`
+}
+
+// SecretWords are what the secrets page says beside its secrets, in the
+// core's words (console.NoSecrets, BindThisSecret, BindingHistoryTitle…):
+// a page with none, the row that binds a secret read, and a history's head.
+type SecretWords struct {
+	Empty        string `json:"empty"`
+	Bind         string `json:"bind"`
+	BindDetail   string `json:"bindDetail"`
+	HistoryTitle string `json:"historyTitle"`
+	HistoryNote  string `json:"historyNote"`
+}
+
+// Secret is one of a server's secrets as the secrets page lists it: what its
+// row says (console.SecretWhere, console.SecretStandingOf), what reading it
+// says (console.DescribeSecret, console.BindingsAnswer), and its live
+// bindings. Refused is why an upstream refuses it, when one does
+// (console.RejectionSummary). Its value is never on the wire.
+type Secret struct {
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Where        string                 `json:"where"`
+	Nowhere      bool                   `json:"nowhere,omitempty"`
+	StandingText string                 `json:"standingText"`
+	Standing     console.SecretStanding `json:"standing"`
+	Age          string                 `json:"age,omitempty"`
+	Refused      string                 `json:"refused,omitempty"`
+	Card         []DetailSection        `json:"card"`
+	Answer       string                 `json:"answer"`
+	Bindings     []SecretBinding        `json:"bindings"`
+}
+
+// SecretBinding is one live binding of a secret: its row's label and detail
+// (console.BindingLabel, BindingDetail), and the binding read in full
+// (console.DescribeBinding).
+type SecretBinding struct {
+	ID     string          `json:"id"`
+	Label  string          `json:"label"`
+	Detail string          `json:"detail"`
+	Card   []DetailSection `json:"card"`
+}
+
+// Decision is one decision of a secret's binding history: its row
+// (console.BindingDecision.Label), the decision read in full
+// (console.DescribeDecision), and the delegation it was handed on under read
+// as a binding is, when that binding still stands.
+type Decision struct {
+	ID         string          `json:"id"`
+	Label      string          `json:"label"`
+	Card       []DetailSection `json:"card"`
+	Delegation []DetailSection `json:"delegation"`
+}
+
+// DetailSection is a stretch of a card read rather than answered
+// (console.DetailSection): a heading, its label and value rows, and the
+// sentences under them.
+type DetailSection struct {
+	Label  string        `json:"label,omitempty"`
+	Fields []DetailField `json:"fields"`
+	Lines  []DetailLine  `json:"lines"`
+}
+
+// DetailField is a label and its value, in the value's tone.
+type DetailField struct {
+	Label string           `json:"label"`
+	Value string           `json:"value"`
+	Tone  console.CardTone `json:"tone"`
+}
+
+// DetailLine is a sentence under a section's fields, in its tone.
+type DetailLine struct {
+	Text string           `json:"text"`
+	Tone console.CardTone `json:"tone"`
 }
 
 // Harness is one of a server's harnesses as the harnesses page lists it: what
@@ -946,6 +1040,9 @@ type Form struct {
 	Fields  []Field `json:"fields"`
 	Note    string  `json:"note,omitempty"`
 	Action  string  `json:"action,omitempty"`
+	// About is what the form is about, said above its fields, a paragraph
+	// to a line: why a secret's edit was opened, what a binding is.
+	About string `json:"about,omitempty"`
 }
 
 // Field is one field of a form (console.Field). Value is what it holds as

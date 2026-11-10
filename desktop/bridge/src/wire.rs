@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 12;
+pub const PROTOCOL: i64 = 13;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 6;
@@ -1439,6 +1439,10 @@ pub struct Command {
 /// for its page, or, with a Harness and an Action, does that to it: Path is the file a files action
 /// edits. The review config command reads a box's harness changes for its review, or, with a Change
 /// and the Candidate the review showed, saves or discards that candidate.
+///
+/// The credentials command reads the secrets of Server for its page, or does a SecretAction: new
+/// stores one, read reads them again for a page already open, and every other names the Secret it
+/// is done to — unbind the Binding it takes back.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Args {
     #[serde(default, skip_serializing_if = "is_default")]
@@ -1493,6 +1497,16 @@ pub struct Args {
     /// to it, checked as a source typed by hand is, in place of asking the run options' form.
     #[serde(default, skip_serializing_if = "is_default")]
     pub source: String,
+
+    /// Secret, SecretAction and Binding are the credentials command's.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub secret: String,
+
+    #[serde(rename = "secretAction", default, skip_serializing_if = "Option::is_none")]
+    pub secret_action: Option<SecretAction>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub binding: String,
 }
 
 /// ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a
@@ -1585,6 +1599,55 @@ impl HarnessChange {
     }
 }
 
+/// SecretAction is one thing the secrets page does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SecretAction {
+    /// SecretActionNew stores a credential the project does not have yet (NewSecretForm).
+    #[default]
+    #[serde(rename = "new")]
+    New,
+
+    /// SecretActionEdit changes what a secret says about itself (EditSecretForm).
+    #[serde(rename = "edit")]
+    Edit,
+
+    /// SecretActionDelete removes a secret and every binding of it, asking first
+    /// (DeleteSecretQuestion).
+    #[serde(rename = "delete")]
+    Delete,
+
+    /// SecretActionBind binds a secret by hand (BindingForm).
+    #[serde(rename = "bind")]
+    Bind,
+
+    /// SecretActionUnbind takes one of a secret's bindings back, asking first (UnbindQuestion).
+    #[serde(rename = "unbind")]
+    Unbind,
+
+    /// SecretActionHistory reads a secret's binding history.
+    #[serde(rename = "history")]
+    History,
+
+    /// SecretActionRead reads the secrets again, for a page already open.
+    #[serde(rename = "read")]
+    Read,
+}
+
+impl SecretAction {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SecretAction::New => "new",
+            SecretAction::Edit => "edit",
+            SecretAction::Delete => "delete",
+            SecretAction::Bind => "bind",
+            SecretAction::Unbind => "unbind",
+            SecretAction::History => "history",
+            SecretAction::Read => "read",
+        }
+    }
+}
+
 /// Result ends a command (or an upload or a follow, by its ID).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Result {
@@ -1648,6 +1711,23 @@ pub struct Result {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub addresses: Vec<Address>,
+
+    /// Secrets are the secrets of the server the credentials command read, in the order it lists
+    /// them: what its page lists, read again after each action, which leaves the one it acted on as
+    /// Secret. History is a secret's binding history, newest first, for its history action.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub secrets: Vec<Secret>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub secret: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub history: Vec<Decision>,
+
+    /// SecretWords are what the secrets page says beside its secrets, sent with them and with a
+    /// history.
+    #[serde(rename = "secretWords", default, skip_serializing_if = "Option::is_none")]
+    pub secret_words: Option<SecretWords>,
 }
 
 /// Status is how a command ended.
@@ -1797,7 +1877,8 @@ pub struct CardSpan {
     pub tone: CardTone,
 }
 
-/// CardTone is how a renderer draws a stretch of a card's value.
+/// CardTone is how a renderer draws a stretch of a card's value, or a detail's field or line
+/// (DetailSection).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CardTone {
     /// CardPlain is the value itself.
@@ -1816,6 +1897,10 @@ pub enum CardTone {
     /// CardCommand is a command line.
     #[serde(rename = "command")]
     Command,
+
+    /// CardAlert is what is wrong: a credential sent nowhere, or one that cannot renew itself.
+    #[serde(rename = "alert")]
+    Alert,
 }
 
 impl CardTone {
@@ -1826,6 +1911,7 @@ impl CardTone {
             CardTone::Quiet => "quiet",
             CardTone::Standout => "standout",
             CardTone::Command => "command",
+            CardTone::Alert => "alert",
         }
     }
 }
@@ -1925,6 +2011,143 @@ pub struct Address {
     pub why: String,
 }
 
+/// Secret is one of a server's secrets as the secrets page lists it: what its row says
+/// (console.SecretWhere, console.SecretStandingOf), what reading it says (console.DescribeSecret,
+/// console.BindingsAnswer), and its live bindings. Refused is why an upstream refuses it, when one
+/// does (console.RejectionSummary). Its value is never on the wire.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Secret {
+    pub id: String,
+
+    pub name: String,
+
+    pub r#where: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub nowhere: bool,
+
+    #[serde(rename = "standingText")]
+    pub standing_text: String,
+
+    pub standing: SecretStanding,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub age: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub refused: String,
+
+    pub card: Vec<DetailSection>,
+
+    pub answer: String,
+
+    pub bindings: Vec<SecretBinding>,
+}
+
+/// SecretStanding is what a secret's row says stands on it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SecretStanding {
+    /// SecretUnbound has nothing bound to it.
+    #[default]
+    #[serde(rename = "unbound")]
+    Unbound,
+
+    /// SecretBound has live bindings.
+    #[serde(rename = "bound")]
+    Bound,
+
+    /// SecretRefused is refused by an upstream (ADR 0132).
+    #[serde(rename = "refused")]
+    Refused,
+}
+
+impl SecretStanding {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SecretStanding::Unbound => "unbound",
+            SecretStanding::Bound => "bound",
+            SecretStanding::Refused => "refused",
+        }
+    }
+}
+
+/// DetailSection is a stretch of a card read rather than answered (console.DetailSection): a
+/// heading, its label and value rows, and the sentences under them.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DetailSection {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub label: String,
+
+    pub fields: Vec<DetailField>,
+
+    pub lines: Vec<DetailLine>,
+}
+
+/// DetailField is a label and its value, in the value's tone.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DetailField {
+    pub label: String,
+
+    pub value: String,
+
+    pub tone: CardTone,
+}
+
+/// DetailLine is a sentence under a section's fields, in its tone.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DetailLine {
+    pub text: String,
+
+    pub tone: CardTone,
+}
+
+/// SecretBinding is one live binding of a secret: its row's label and detail (console.BindingLabel,
+/// BindingDetail), and the binding read in full (console.DescribeBinding).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SecretBinding {
+    pub id: String,
+
+    pub label: String,
+
+    pub detail: String,
+
+    pub card: Vec<DetailSection>,
+}
+
+/// Decision is one decision of a secret's binding history: its row (console.BindingDecision.Label),
+/// the decision read in full (console.DescribeDecision), and the delegation it was handed on under
+/// read as a binding is, when that binding still stands.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Decision {
+    pub id: String,
+
+    pub label: String,
+
+    pub card: Vec<DetailSection>,
+
+    pub delegation: Vec<DetailSection>,
+}
+
+/// SecretWords are what the secrets page says beside its secrets, in the core's words
+/// (console.NoSecrets, BindThisSecret, BindingHistoryTitle…): a page with none, the row that
+/// binds a secret read, and a history's head.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SecretWords {
+    pub empty: String,
+
+    pub bind: String,
+
+    #[serde(rename = "bindDetail")]
+    pub bind_detail: String,
+
+    #[serde(rename = "historyTitle")]
+    pub history_title: String,
+
+    #[serde(rename = "historyNote")]
+    pub history_note: String,
+}
+
 /// Form is a form a command needs filled, described by the core. ID is the CLI's; it is sent again,
 /// same ID, with Applies recomputed, after a draft is submitted.
 ///
@@ -1948,6 +2171,11 @@ pub struct Form {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub action: String,
+
+    /// About is what the form is about, said above its fields, a paragraph to a line: why a
+    /// secret's edit was opened, what a binding is.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub about: String,
 }
 
 /// Field is one field of a form (console.Field). Value is what it holds as the core reads it: as it

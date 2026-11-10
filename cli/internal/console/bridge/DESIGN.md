@@ -89,8 +89,19 @@ run after the registry is let go, whose `Result` ends the command:
   session on the command's stream as its tab (`console.OpenTool`: a running
   tool's live session, else one made; `console.ToolTab`). With a
   file too, that file is edited through `edit` and `saved`
-  (`console.EditTool`). Each of the four counts its use only as its flow
-  opens. A box flow with preconditions the registry leaves to
+  (`console.EditTool`).
+  `credentials` comes with the secrets of the server the app names, each
+  with its row, its card and its live bindings read in full (`secretsPage`:
+  the project's bindings, the refused ones from the inbox, the harnesses and
+  that server's listed boxes a target is named from); with a `SecretAction`
+  it stores one, or reads the named secret again and edits or binds it
+  through the core's forms (each saying what the core says above it,
+  `Form.About`), deletes it or takes a binding back after the core's
+  question, or answers with its binding history read in full — and answers
+  with the secrets read again, and the page's words (`SecretWords`). `read`
+  reads them again for a page already open; a read that fails fails the
+  command, an action already done saying so in its why, so the app keeps the
+  rows it has. Each of the five counts its use only as its flow opens. A box flow with preconditions the registry leaves to
   the flow (a tag, a request waiting) is refused here first, in the entry's
   words. The action menu comes with the core's entries; the palette's
   opening counts its use, and what it finds is the palette topic's.

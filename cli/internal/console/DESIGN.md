@@ -461,6 +461,40 @@ desktop's menu both draw; which tools a box has is the data source's (ADR
 - **A box's addresses** (`AddressOffers`): its ssh command and git URL to
   copy, each with why there is none. Copying is the renderer's.
 
+## Secrets
+
+`secrets.go` (876 §1). The secrets page's rules, which the TUI's screen and
+the desktop's page both draw. Every action is the call the `discobox secret`
+commands make: a window that could do what the CLI could not would be a
+second policy.
+
+- **A row is the core's**: where the secret may go (`SecretWhere`, "sent
+  nowhere" for none), and what stands on it (`SecretStandingOf`): its live
+  bindings (`LiveBindings`, counted when drawn, since a binding lapses
+  between reads), or "refused" when an upstream refuses it
+  (`RefusedSecrets`, the page's server's rejections alone;
+  `RejectionSummary`), whatever is bound to it. A binding may name the boxes
+  listed on the secret's own server (`BindableBoxes`).
+- **What reading says is a card** (`DetailSection`: a heading, label and
+  value rows in a `CardTone`, and sentences): `DescribeSecret` (never the
+  value), `DescribeBinding`, `DescribeDecision`. A binding is named for its
+  target the way a person says it (`BindingTarget`: "harness NAME", never
+  `harnessConfig`), by its variable (`BindingLabel`) and its row's detail
+  (`BindingDetail`).
+- **Destructions ask first, quick answer no**: `DeleteSecretQuestion`,
+  `UnbindQuestion`, each saying what goes.
+- **An action reads what it acts on again, itself** (as `RunHarnessVerb`
+  does): `SaveSecret`, `DeleteSecret`, `Bind` and `Unbind` take IDs and read
+  the secret (`OfferedSecret`), and the binding (`OfferedBinding`: a lapsed
+  one is gone), before they act, and say what they did — an edit naming each
+  part changed, and writing nothing when nothing did. Both consoles, and the
+  bridge, act through them; the forms are `forms_secret.go`'s, and what a
+  form says above it (`EditSecretNote`, `BindingFormNote`) and what the page
+  says beside its secrets (`NoSecrets`, `BindThisSecret`,
+  `BindingHistoryTitle`…) are here for every renderer to say.
+- Which key or menu entry takes each action (`SecretAction`) is the
+  renderer's.
+
 ## Narration and questions
 
 `narration.go` (876 §1, 289 §2). A command that reports as it goes, or asks

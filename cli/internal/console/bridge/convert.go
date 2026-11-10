@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
@@ -271,6 +272,98 @@ func wireEntry(e console.Entry, uses int) Entry {
 		out.Why = e.Why
 	}
 	return out
+}
+
+// wireDetail is a card the core describes, as the wire carries it.
+func wireDetail(in []console.DetailSection) []DetailSection {
+	out := make([]DetailSection, 0, len(in))
+	for _, sec := range in {
+		d := DetailSection{Label: sec.Label, Fields: make([]DetailField, 0, len(sec.Fields)), Lines: make([]DetailLine, 0, len(sec.Lines))}
+		for _, f := range sec.Fields {
+			d.Fields = append(d.Fields, DetailField{Label: f.Label, Value: f.Value, Tone: f.Tone})
+		}
+		for _, l := range sec.Lines {
+			d.Lines = append(d.Lines, DetailLine{Text: l.Text, Tone: l.Tone})
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// secretsPage is what the secrets page knows about a server's secrets
+// beside the secrets themselves: every live binding of the project, which
+// of them an upstream refuses (console.RefusedSecrets), and the harnesses and
+// boxes a binding's target is named from (console.BindableBoxes).
+type secretsPage struct {
+	bindings  []console.SecretBinding
+	refused   map[string]console.SecretRejection
+	harnesses []console.Harness
+	boxes     []console.Sandbox
+	now       time.Time
+}
+
+// editAbout is what a secret's edit form says above it
+// (console.EditSecretAbout), a line each.
+func (p secretsPage) editAbout(s console.Secret) string {
+	var refused *console.SecretRejection
+	if rejection, ok := p.refused[s.ID]; ok {
+		refused = &rejection
+	}
+	var lines []string
+	for _, l := range console.EditSecretAbout(refused) {
+		lines = append(lines, l.Text)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// target is what a binding is on, as it is said to a person.
+func (p secretsPage) target(b console.SecretBinding) string {
+	return console.BindingTarget(b, p.harnesses, p.boxes)
+}
+
+// wireSecret is a secret as the page lists and reads it.
+func (p secretsPage) wireSecret(s console.Secret) Secret {
+	live := console.LiveBindings(p.bindings, s.ID, p.now)
+	where, nowhere := console.SecretWhere(s)
+	rejection, refused := p.refused[s.ID]
+	text, standing := console.SecretStandingOf(len(live), refused)
+	out := Secret{
+		ID: s.ID, Name: s.Name, Where: where, Nowhere: nowhere, StandingText: text, Standing: standing,
+		Age: console.Ago(s.Updated, p.now), Card: wireDetail(console.DescribeSecret(s, p.now)),
+		Answer: console.BindingsAnswer(len(live)), Bindings: make([]SecretBinding, 0, len(live)),
+	}
+	if refused {
+		out.Refused = console.RejectionSummary(rejection)
+	}
+	for _, b := range live {
+		target := p.target(b)
+		out.Bindings = append(out.Bindings, SecretBinding{
+			ID: b.ID, Label: console.BindingLabel(b), Detail: console.BindingDetail(b, target, p.now),
+			Card: wireDetail(console.DescribeBinding(s.Name, b, target, p.now)),
+		})
+	}
+	return out
+}
+
+// wireDecision is a decision of a binding history, with the delegation it
+// was handed on under when that still stands among the project's bindings.
+func (p secretsPage) wireDecision(e console.BindingDecision) Decision {
+	out := Decision{ID: e.ID, Label: e.Label(), Card: wireDetail(console.DescribeDecision(e)), Delegation: []DetailSection{}}
+	for _, b := range p.bindings {
+		if e.ParentID != "" && b.ID == e.ParentID {
+			out.Delegation = wireDetail(console.DescribeBinding(b.SecretName, b, p.target(b), p.now))
+		}
+	}
+	return out
+}
+
+// secretWords are what the secrets page says beside its secrets, in the
+// core's words.
+func secretWords() *SecretWords {
+	return &SecretWords{
+		Empty: console.NoSecrets, Bind: console.BindThisSecret, BindDetail: console.BindThisSecretDetail,
+		HistoryTitle: console.BindingHistoryTitle, HistoryNote: console.BindingHistoryNote,
+	}
 }
 
 // nonNil is a copy that is never nil, so the wire carries [] rather than null.

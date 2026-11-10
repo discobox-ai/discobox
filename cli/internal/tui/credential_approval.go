@@ -145,7 +145,7 @@ func (m *Model) approvalPart(a approval, delegate bool) tea.Cmd {
 			if next.useAs == bindingplan.Add {
 				effect = "Add these routes for " + lifetime.Label(next.ttl) + ". Existing grants keep their routes and lifetimes."
 			}
-			d.sections = append(d.sections, section{label: "What accepting changes", fields: []field{{label: "Variable", value: console.VariableOf(a.req)}}, lines: []line{{text: effect}, {text: rawDeliveryText(next.raw), tone: toneAlert}}})
+			d.sections = append(d.sections, section{label: "What accepting changes", fields: []field{{label: "Variable", value: console.VariableOf(a.req)}}, lines: []line{{text: effect}, {text: console.RawDeliveryText(next.raw), tone: toneAlert}}})
 			if next.raw == "" {
 				d.sections[len(d.sections)-1].lines[1] = line{text: "Placeholder delivery: the box never receives the credential value."}
 			}

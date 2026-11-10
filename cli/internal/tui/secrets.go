@@ -6,9 +6,6 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
-	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
-	"github.com/discobox-ai/discobox/pkg/secretroute"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -85,15 +82,10 @@ func (l *secretList) setAll(all []console.Secret) {
 	l.clamp()
 }
 
-// setRefused takes the credentials an upstream has refused, so the rows can say
-// which of them does not work.
-func (l *secretList) setRefused(rejections []console.SecretRejection) {
-	refused := make(map[string]console.SecretRejection, len(rejections))
-	for _, rejection := range rejections {
-		if _, seen := refused[rejection.SecretID]; !seen {
-			refused[rejection.SecretID] = rejection
-		}
-	}
+// setRefused takes which of the screen's secrets an upstream refuses
+// (console.RefusedSecrets, for the server the screen shows), so the rows can
+// say which of them does not work.
+func (l *secretList) setRefused(refused map[string]console.SecretRejection) {
 	l.refused = refused
 }
 
@@ -114,32 +106,15 @@ func (l *secretList) binding(id string) (console.SecretBinding, bool) {
 	return console.SecretBinding{}, false
 }
 
-// bindingsFor is the live bindings of one secret. One that has lapsed is gone
-// at the server's next sweep, and until then it carries nothing, so it is not
-// listed: a list of what may use a credential is what may use it now.
+// bindingsFor is the live bindings of one secret (console.LiveBindings): a
+// list of what may use a credential is what may use it now.
 func (l *secretList) bindingsFor(secretID string) []console.SecretBinding {
-	now := l.now()
-	var live []console.SecretBinding
-	for _, b := range l.bindings {
-		if b.SecretID == secretID && bindingLive(b, now) {
-			live = append(live, b)
-		}
-	}
-	return live
+	return console.LiveBindings(l.bindings, secretID, l.now())
 }
 
-// liveBindings counts the bindings still standing on a secret. It is counted
-// when drawn rather than when the listing lands: a binding lapses between
-// reads, and a count taken at the read would go on saying a credential is in
-// use after nothing may use it.
+// liveBindings counts the bindings still standing on a secret, when drawn.
 func (l *secretList) liveBindings(secretID string) int {
 	return len(l.bindingsFor(secretID))
-}
-
-// bindingLive is whether a binding still carries anything: it never expires,
-// or has not yet.
-func bindingLive(b console.SecretBinding, now time.Time) bool {
-	return b.Expires.IsZero() || b.Expires.After(now)
 }
 
 func (l *secretList) current() *console.Secret {
@@ -196,7 +171,7 @@ func (l *secretList) view(st *styles, z *zones, focused bool) string {
 
 	body := make([]string, 0, l.height)
 	if len(l.all) == 0 {
-		body = append(body, st.dimText.Render(pad("  no secrets in this project yet — n stores one", l.width)))
+		body = append(body, st.dimText.Render(pad("  "+console.NoSecrets+" — n stores one", l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
@@ -230,24 +205,22 @@ func (l *secretList) row(st *styles, s console.Secret, i int, focused bool) stri
 	}
 
 	// Its routes, which are the whole of what limits where this credential
-	// may travel. One with none says so rather than showing a blank: blank
-	// reads as "not loaded", and this is a fact about the secret.
-	where := console.RoutesText(s.Routes)
+	// may travel, and what stands on it, in the core's words
+	// (console.SecretWhere, console.SecretStandingOf).
+	where, nowhere := console.SecretWhere(s)
 	whereStyle := st.name
-	if len(s.Routes) == 0 {
-		where, whereStyle = "sent nowhere", st.dimText
+	if nowhere {
+		whereStyle = st.dimText
 	}
 	addCol(whereStyle.Render(pad(where, 22)), 23)
-	bindings := "—"
+	_, refused := l.refused[s.ID]
+	bindings, standing := console.SecretStandingOf(l.liveBindings(s.ID), refused)
 	bindingStyle := st.dimText
-	if n := l.liveBindings(s.ID); n > 0 {
-		bindings, bindingStyle = plural(n, "binding", "bindings"), st.statusOK
-	}
-	if _, refused := l.refused[s.ID]; refused {
-		// What stands on a credential matters less than whether it works. A
-		// row saying "2 bindings" about a credential the upstream refuses is
-		// answering a question nobody is asking.
-		bindings, bindingStyle = "refused", st.statusER
+	switch standing {
+	case console.SecretBound:
+		bindingStyle = st.statusOK
+	case console.SecretRefused:
+		bindingStyle = st.statusER
 	}
 	addCol("  "+bindingStyle.Render(pad(bindings, 10)), 13)
 	addCol(st.dimText.Render(pad(secretAge(s, l.now()), 8)), 9)
@@ -271,32 +244,6 @@ func (l *secretList) row(st *styles, s console.Secret, i int, focused bool) stri
 // secretAge is the age column, the same shape the other screens use.
 func secretAge(s console.Secret, now time.Time) string {
 	return console.Ago(s.Updated, now)
-}
-
-// bindingLimit is a secret's ceiling on binding lifetimes, said in the words it was
-// chosen in — a limit set as "1 month" reads back as one, not as 720h — since
-// the same limit is read on the credential dialog through the same package.
-// Zero is not absence: it is the answer "no limit", so it is spelled "forever"
-// rather than borrowing shortDuration's "never", which would read as the
-// opposite of what it means.
-func bindingLimit(d time.Duration) string {
-	return lifetime.Label(d)
-}
-
-// shortDuration renders the time left on a binding the way a column has room
-// for: "1h", "30m", "never" for one that does not expire. It is for countdowns,
-// not for a lifetime somebody chose — those are bindingLimit's.
-func shortDuration(d time.Duration) string {
-	switch {
-	case d <= 0:
-		return "never"
-	case d >= time.Hour:
-		return itoa(int(d/time.Hour)) + "h"
-	case d >= time.Minute:
-		return itoa(int(d/time.Minute)) + "m"
-	default:
-		return itoa(int(d/time.Second)) + "s"
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +316,7 @@ func (m *Model) secretsLoaded(msg secretsLoadedListMsg) tea.Cmd {
 	}
 	m.secrets.setAll(msg.secrets)
 	m.secrets.setBindings(msg.bindings)
+	m.secrets.setRefused(console.RefusedSecrets(m.session, m.configServer(), m.rejections))
 	m.layout()
 	return nil
 }
@@ -427,7 +375,11 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 		return m.showBindings()
 	case "e":
 		if secret := m.secrets.current(); secret != nil {
-			return m.editSecretForm(m.configServer(), *secret)
+			var refused *console.SecretRejection
+			if rejection, ok := m.secrets.refused[secret.ID]; ok {
+				refused = &rejection
+			}
+			return m.editSecretForm(m.configServer(), *secret, refused)
 		}
 		return nil
 	case "d":
@@ -508,35 +460,21 @@ func (m *Model) askForBinding() tea.Cmd {
 	if secret == nil {
 		return nil
 	}
-	// A binding names a discobox on the secret's own server: one on another
-	// server is not one this secret can ever reach.
-	var boxes []console.Sandbox
-	for _, box := range m.list.All() {
-		if m.session.ServerName(box.Server) == m.configServer() {
-			boxes = append(boxes, box)
-		}
-	}
-	secretName := secret.Name
-	d := formDialog("Bind "+secret.Name, console.BindingForm(*secret, m.harnesses.all, boxes), func(binding console.NewBinding) tea.Cmd {
-		return m.makeBinding(secretName, binding)
-	})
+	boxes := console.BindableBoxes(m.session, m.configServer(), m.list.All())
+	d := formDialog("Bind "+secret.Name, console.BindingForm(*secret, m.harnesses.all, boxes), m.makeBinding)
 	d.sections = []section{{lines: []line{
-		{text: "a binding hands this credential over before anything asks for it", tone: toneDim},
+		{text: console.BindingFormNote, tone: toneDim},
 	}}}
 	d.keys = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter binds", "enter"), pressing("esc leaves the secret alone", "esc")}
 	m.dialog = d
 	return nil
 }
 
-func (m *Model) makeBinding(secretName string, binding console.NewBinding) tea.Cmd {
+func (m *Model) makeBinding(binding console.NewBinding) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "binding…")
 	server := m.configServer()
 	return func() tea.Msg {
-		_, err := m.ds.CreateBinding(m.ctx, server, binding)
-		did := "bound " + secretName
-		if binding.Use {
-			did += " as " + binding.EnvVar
-		}
+		did, err := console.Bind(m.ctx, m.ds, server, binding)
 		return secretActionMsg{did: did, err: err}
 	}
 }
@@ -574,15 +512,15 @@ func (m *Model) showBindings() tea.Cmd {
 	items = append(items, action{
 		key:     bindingCreateItem,
 		press:   bindingCreateKey,
-		label:   "Bind this secret…",
-		detail:  "hand it over before anything asks",
+		label:   console.BindThisSecret,
+		detail:  console.BindThisSecretDetail,
 		enabled: true,
 	})
 	for _, b := range bindings {
 		items = append(items, action{
 			key:     b.ID,
-			label:   bindingLabel(b),
-			detail:  m.bindingDetail(b, m.secrets.now()),
+			label:   console.BindingLabel(b),
+			detail:  console.BindingDetail(b, m.bindingTarget(b), m.secrets.now()),
 			enabled: true,
 		})
 	}
@@ -590,10 +528,7 @@ func (m *Model) showBindings() tea.Cmd {
 	// that is most of what there is to know about it — where it renews, what
 	// the grant may do, and when the access token goes stale — and none of it
 	// is the credential.
-	answer := "nothing is bound to it"
-	if len(bindings) > 0 {
-		answer = plural(len(bindings), "binding stands on it", "bindings stand on it")
-	}
+	answer := console.BindingsAnswer(len(bindings))
 	// Enter reads, x takes back. The other way round put unbinding a credential
 	// one keystroke from looking at one, on the key that means "open this"
 	// everywhere else in the window.
@@ -608,7 +543,7 @@ func (m *Model) showBindings() tea.Cmd {
 		return m.reviewBinding(secret.Name, binding, m.showBindings)
 	})
 	d.titleRight = secretAge(*secret, m.secrets.now())
-	d.sections = describeSecret(*secret, m.secrets.now())
+	d.sections = detailSections(console.DescribeSecret(*secret, m.secrets.now()))
 	d.answerLabel = answer
 	d.keys = []hint{pressing("enter reads", "enter"), keyed(unbindKey, unbindKey, "unbinds"), pressing("esc leaves them alone", "esc")}
 	d.altKey = unbindKey
@@ -623,104 +558,34 @@ func (m *Model) showBindings() tea.Cmd {
 	return nil
 }
 
-// describeSecret is what a credential is, in the words that can be shown. The
-// value is never among them; for an OAuth credential the renewal material is
-// not either, and what is left — where it renews, whose OAuth grant it is, what it
-// may do, when it goes stale — is the part somebody managing it needs.
-func describeSecret(secret console.Secret, now time.Time) []section {
-	limit := "none — bindings of it may last forever"
-	if secret.MaxTTL > 0 {
-		limit = "at most " + bindingLimit(secret.MaxTTL)
-	}
-	credential := section{label: "the credential", fields: []field{
-		{label: "kind", value: secret.Type},
-		{label: "binding limit", value: limit},
-	}}
-	// Where it may be sent, whoever holds it (ADR 26-10-27-880 §4). None is
-	// nowhere, and says so: a credential no request may carry.
-	if len(secret.Routes) == 0 {
-		credential.fields = append(credential.fields, field{label: "may be sent to", value: "nowhere — it has no routes", tone: toneAlert})
-	}
-	for i, route := range secret.Routes {
-		label := "route"
-		if i > 0 {
-			label = "or route"
+// detailSections is a card the core describes (console.DetailSection) as
+// this window's sections, each tone as the window draws it.
+func detailSections(in []console.DetailSection) []section {
+	out := make([]section, 0, len(in))
+	for _, sec := range in {
+		s := section{label: sec.Label}
+		for _, f := range sec.Fields {
+			s.fields = append(s.fields, field{label: f.Label, value: f.Value, tone: detailTone(f.Tone)})
 		}
-		open := route
-		open.Blocked = false
-		where := secretroute.Format(open)
-		value, tone := where+" · allowed", toneDim
-		if route.Blocked {
-			value, tone = where+" · blocked", toneAccent
+		for _, l := range sec.Lines {
+			s.lines = append(s.lines, line{text: l.Text, tone: detailTone(l.Tone)})
 		}
-		credential.fields = append(credential.fields, field{label: label, value: value, tone: tone})
+		out = append(out, s)
 	}
-	// How the value is renewed, for a token that has a lifetime
-	// (ADR 26-09-25-122).
-	if len(secret.RefreshCommand) > 0 {
-		credential.fields = append(credential.fields, field{label: "renewed by", value: refreshcmd.Join(secret.RefreshCommand), tone: toneAccent})
-	}
-	if secret.ValueTTL > 0 {
-		credential.fields = append(credential.fields, field{label: "a value lasts", value: lifetime.Label(secret.ValueTTL)})
-	}
-	// What stands in for it inside a discobox. A chosen shape is said as one,
-	// since it is the one that outlives a new value.
-	if secret.Format != "" {
-		f := field{label: "sentinels look like", value: secret.Format + " · read from the value", tone: toneDim}
-		if secret.FormatSet {
-			f = field{label: "sentinels look like", value: secret.Format + " · set", tone: toneAccent}
-		}
-		credential.fields = append(credential.fields, f)
-	}
-	if !secret.StaleAt.IsZero() {
-		stale := "stale " + console.Ago(secret.StaleAt, now) + "; renewed when next needed"
-		if secret.StaleAt.After(now) {
-			stale = "stale at " + secret.StaleAt.Local().Format("15:04")
-		}
-		credential.fields = append(credential.fields, field{label: "value", value: stale, tone: toneDim})
-	}
-	if secret.Exchange != nil {
-		exchange := section{label: "exchanged"}
-		exchange.fields = append(exchange.fields, field{label: "at", value: secret.Exchange.URL})
-		exchange.fields = append(exchange.fields, field{label: "holds", value: strings.Join(secret.Exchange.Fields, " ")})
-		if !secret.Exchange.TokenExpiresAt.IsZero() {
-			exchange.fields = append(exchange.fields, field{label: "token stale", value: accessTokenExpiry(secret.Exchange.TokenExpiresAt, now)})
-		}
-		return []section{credential, exchange}
-	}
-	if secret.OAuth == nil {
-		return []section{credential}
-	}
-
-	oauth := section{label: "oauth"}
-	add := func(label, value string) {
-		if value != "" {
-			oauth.fields = append(oauth.fields, field{label: label, value: value})
-		}
-	}
-	add("renews at", secret.OAuth.TokenURL)
-	add("client", secret.OAuth.ClientID)
-	add("may do", strings.Join(secret.OAuth.Scopes, " "))
-	add("plan", secret.OAuth.SubscriptionType)
-	if !secret.OAuth.AccessTokenExpiresAt.IsZero() {
-		oauth.fields = append(oauth.fields, field{label: "token stale", value: accessTokenExpiry(secret.OAuth.AccessTokenExpiresAt, now)})
-	}
-	if !secret.OAuth.Refreshable {
-		// The one thing worth saying loudly about an oauth credential: it
-		// cannot renew, so it will expire and stay expired.
-		oauth.lines = append(oauth.lines, line{text: "⚠ cannot renew itself: no refresh token or nowhere to spend it", tone: toneAlert})
-	}
-	return []section{credential, oauth}
+	return out
 }
 
-// accessTokenExpiry says when the access token goes stale, and whether it
-// already has — the control plane refreshes it on the way past, so a stale one
-// is ordinary rather than broken.
-func accessTokenExpiry(at, now time.Time) string {
-	if at.Before(now) {
-		return "expired " + console.Ago(at, now) + ", renewed on next use"
+// detailTone is a core tone as this window draws it.
+func detailTone(t console.CardTone) tone {
+	switch t {
+	case console.CardQuiet:
+		return toneDim
+	case console.CardStandout, console.CardCommand:
+		return toneAccent
+	case console.CardAlert:
+		return toneAlert
 	}
-	return "in " + shortDuration(at.Sub(now).Round(time.Minute))
+	return tonePlain
 }
 
 // bindingCreateItem is the row that starts a binding from inside the bindings
@@ -730,93 +595,18 @@ const bindingCreateItem = "binding:new"
 // unbindKey takes the highlighted binding back from the review list.
 const unbindKey = "x"
 
-// bindingTarget is what a binding is on, as it is said to a person: the
-// project, a harness by name, or a discobox by name. The wire word for a
-// harness is harnessConfig, because that is the resource; a person calls it
-// the harness, and a window that says both teaches two names for one thing.
+// bindingTarget is what a binding is on, as it is said to a person
+// (console.BindingTarget), from the harnesses and boxes this window holds.
 func (m *Model) bindingTarget(b console.SecretBinding) string {
-	switch b.TargetKind {
-	case console.BindingProject:
-		return "every discobox in the project"
-	case console.BindingHarnessConfig:
-		for _, h := range m.harnesses.all {
-			if h.ID == b.TargetID {
-				return "harness " + h.Name
-			}
-		}
-		return "harness " + b.TargetID
-	case console.BindingSandbox:
-		for _, box := range m.list.All() {
-			if box.ID == b.TargetID {
-				return "discobox " + box.Name
-			}
-		}
-		return "discobox " + b.TargetID
-	}
-	return b.TargetKind + " " + b.TargetID
-}
-
-// bindingLabel is what a binding's row is named by: the variable it is in,
-// which is what two bindings of one secret differ by most often, or that it
-// is only given on.
-func bindingLabel(b console.SecretBinding) string {
-	switch {
-	case b.Use && b.Delegate:
-		return b.EnvVar + ", and given on"
-	case b.Use && b.RawDelivery != "":
-		return b.EnvVar + ", the value itself"
-	case b.Use:
-		return b.EnvVar
-	default:
-		return "given on"
-	}
-}
-
-// bindingDetail is the rest of the row: what it is on, where it may be sent,
-// and how long it has left.
-func (m *Model) bindingDetail(b console.SecretBinding, now time.Time) string {
-	parts := []string{m.bindingTarget(b)}
-	if len(b.Routes) > 0 {
-		parts = append(parts, "to "+console.RoutesText(b.Routes))
-	}
-	if b.ParentID != "" {
-		parts = append(parts, "handed on")
-	}
-	return strings.Join(append(parts, bindingExpiry(b, now)), " · ")
+	return console.BindingTarget(b, m.harnesses.all, m.list.All())
 }
 
 // reviewBinding is the binding read in full: what it is on, where it may go,
 // who made it, and how long it lasts. back is the list it was opened from.
 func (m *Model) reviewBinding(secretName string, b console.SecretBinding, back func() tea.Cmd) tea.Cmd {
-	where, tone := "where the secret's routes send it", toneDim
-	if len(b.Routes) > 0 {
-		where, tone = console.RouteRows(b.Routes)+"\n(within the secret's routes)", toneAccent
-	}
-	covers := section{label: "the binding", fields: []field{
-		{label: "secret", value: secretName, tone: toneAccent},
-		{label: "bound to", value: m.bindingTarget(b)},
-	}}
-	if b.Use {
-		covers.fields = append(covers.fields, field{label: "as variable", value: b.EnvVar, tone: toneAccent})
-	}
-	if b.RawDelivery != "" {
-		covers.fields = append(covers.fields, field{label: "hands over", value: rawDeliveryText(b.RawDelivery), tone: toneAccent})
-	}
-	if b.Delegate {
-		covers.fields = append(covers.fields, field{label: "purpose", value: delegationPurpose, tone: toneAccent})
-	}
-	covers.fields = append(covers.fields, field{label: "may go to", value: where, tone: tone})
-	if b.ParentID != "" {
-		covers.fields = append(covers.fields, field{label: "handed on under", value: b.ParentID, tone: toneDim})
-	}
-	if b.CreatedBy != "" {
-		covers.fields = append(covers.fields, field{label: "bound by", value: b.CreatedBy})
-	}
-	covers.fields = append(covers.fields, field{label: "expires", value: bindingLifeLeft(b, m.secrets.now())})
-
 	d := actionsDialog("Binding", "", nil, func(string) tea.Cmd { return back() })
 	d.titleRight = b.ID
-	d.sections = []section{covers}
+	d.sections = detailSections(console.DescribeBinding(secretName, b, m.bindingTarget(b), m.secrets.now()))
 	d.wrapDetails = true
 	d.keys = []hint{pressing("esc goes back", "esc")}
 	// Back to the bindings you were reading, not to the list behind them. The
@@ -831,29 +621,13 @@ func (m *Model) reviewBinding(secretName string, b console.SecretBinding, back f
 // working. back is the list the question was asked from, which No returns to,
 // and after where a finished unbind goes on to (secretActionMsg.after).
 func (m *Model) confirmUnbind(secretName string, b console.SecretBinding, back, after func() tea.Cmd) tea.Cmd {
-	d := confirmDialog("Unbind", "", func(string) tea.Cmd { return m.unbind(b.ID, after) })
+	d := questionDialog(console.UnbindQuestion(secretName, b, m.bindingTarget(b)), func(answer string) tea.Cmd {
+		if answer != console.AnswerYes {
+			return back()
+		}
+		return m.unbind(b, after)
+	})
 	d.titleRight = b.ID
-	stops := line{text: "the credential stops resolving at once, wherever it is being used", tone: toneAlert}
-	if !b.Use {
-		stops = line{text: "it can no longer be given on, and what was given on under it goes too", tone: toneAlert}
-	}
-	fields := []field{
-		{label: "secret", value: secretName, tone: toneAccent},
-		{label: "bound to", value: m.bindingTarget(b)},
-	}
-	if b.Use {
-		fields = append(fields, field{label: "as variable", value: b.EnvVar})
-	}
-	d.sections = []section{{
-		label:  "what goes",
-		fields: fields,
-		lines: []line{
-			stops,
-			{text: "the request that produced it stays approved, because it is history", tone: toneDim},
-		},
-	}}
-	d.answerLabel = "take this binding back?"
-	d.defaultNo = true
 	// No goes back to the bindings, the way leaving a binding you were
 	// reading does: a question answered "not that one" should leave you where
 	// the question was asked, not on the screen behind it.
@@ -862,52 +636,11 @@ func (m *Model) confirmUnbind(secretName string, b console.SecretBinding, back, 
 	return nil
 }
 
-// bindingLifeLeft is how long a binding has, for a field already labeled with
-// what it is: "expires  expires in 47m" is the row's phrasing put under the
-// row's own heading.
-func bindingLifeLeft(b console.SecretBinding, now time.Time) string {
-	switch {
-	case b.Expires.IsZero():
-		return "never"
-	case b.Expires.Before(now):
-		return "expired"
-	default:
-		return "in " + shortDuration(bindingLeft(b, now))
-	}
-}
-
-// bindingLeft is the time a live binding has left, to the minute while there
-// are minutes of it. Rounded to the minute under one, half a minute rounds to
-// zero, which shortDuration says as "never": a binding about to lapse read as
-// one that never would.
-func bindingLeft(b console.SecretBinding, now time.Time) time.Duration {
-	left := b.Expires.Sub(now)
-	if left < time.Minute {
-		return max(left.Round(time.Second), time.Second)
-	}
-	return left.Round(time.Minute)
-}
-
-func bindingExpiry(b console.SecretBinding, now time.Time) string {
-	switch {
-	case b.Expires.IsZero():
-		return "never expires"
-	case b.Expires.Before(now):
-		return "expired"
-	default:
-		return "expires in " + shortDuration(bindingLeft(b, now))
-	}
-}
-
-func (m *Model) unbind(bindingID string, after func() tea.Cmd) tea.Cmd {
+func (m *Model) unbind(b console.SecretBinding, after func() tea.Cmd) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "unbinding…")
 	server := m.configServer()
 	return func() tea.Msg {
-		handedOn, err := m.ds.DeleteBinding(m.ctx, server, bindingID)
-		did := "unbound"
-		if handedOn > 0 {
-			did += ", and " + plural(handedOn, "binding", "bindings") + " handed on under it"
-		}
+		did, err := console.Unbind(m.ctx, m.ds, server, b.SecretID, b.ID)
 		return secretActionMsg{did: did, err: err, after: after}
 	}
 }
@@ -924,8 +657,8 @@ func (m *Model) storeSecret(secret console.NewSecret) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "storing "+secret.Name+"…")
 	server := m.configServer()
 	return func() tea.Msg {
-		_, err := m.ds.CreateSecret(m.ctx, server, secret)
-		return secretActionMsg{did: "stored " + secret.Name, err: err}
+		did, err := console.StoreSecret(m.ctx, m.ds, server, secret)
+		return secretActionMsg{did: did, err: err}
 	}
 }
 
@@ -946,82 +679,34 @@ func (m *Model) storeSecret(secret console.NewSecret) tea.Cmd {
 // workspace, where there is no cursor to read and the header may name a
 // different server from the one the credential lives on (rejections.go,
 // ADR 0131 §2).
-func (m *Model) editSecretForm(server string, secret console.Secret) tea.Cmd {
+//
+// refused is why an upstream refuses it, when one does: the band hands in the
+// refusal it was opened from, which may be another server's than the one
+// this screen shows, so it is never looked up here.
+func (m *Model) editSecretForm(server string, secret console.Secret, refused *console.SecretRejection) tea.Cmd {
 	was, id := secret, secret.ID
 	d := formDialog("Edit "+secret.Name, console.EditSecretForm(secret), func(update console.SecretUpdate) tea.Cmd {
 		return m.saveSecret(server, id, was, update)
 	})
-	lines := []line{
-		{text: "the kind is the one thing it cannot be told: a token and an oauth credential renew differently, so that is a new credential rather than an edit", tone: toneDim},
-	}
-	if rejection, refused := m.secrets.refused[id]; refused {
-		// Why the card was opened, for the card opened from the band: the
-		// upstream's refusal is the reason a value is being replaced at all.
-		lines = append([]line{{text: rejectionSummary(rejection), tone: toneAccent}}, lines...)
-	}
-	d.sections = []section{{lines: lines}}
+	d.sections = detailSections([]console.DetailSection{{Lines: console.EditSecretAbout(refused)}})
 	d.keys = []hint{says("↑↓ moves"), pressing("enter saves", "enter"), pressing("esc leaves it alone", "esc")}
 	m.dialog = d
 	return nil
 }
 
 // saveSecret writes the edit back and says what it did, naming each part that
-// changed. Nothing changed is not an error and not a write: it closes and says
-// so, rather than reporting a save that saved nothing.
+// changed (console.SaveSecret). Nothing changed is not an error and not a
+// write: it closes and says so, rather than reporting a save that saved
+// nothing.
 func (m *Model) saveSecret(server, id string, was console.Secret, update console.SecretUpdate) tea.Cmd {
-	var did []string
-	if update.Name != nil {
-		did = append(did, "renamed "+was.Name+" to "+*update.Name)
-	}
-	if update.MaxTTLSeconds != nil {
-		limit := bindingLimit(time.Duration(*update.MaxTTLSeconds) * time.Second)
-		did = append(did, "bindings of "+was.Name+" now last at most "+limit)
-	}
-	if update.Routes != nil {
-		switch len(*update.Routes) {
-		case 0:
-			did = append(did, was.Name+" is sent nowhere")
-		default:
-			did = append(did, was.Name+" is sent to "+console.RoutesText(*update.Routes))
-		}
-	}
-	if update.Value != nil {
-		did = append(did, "replaced "+was.Name+"'s value")
-	}
-	if update.Format != nil {
-		switch *update.Format {
-		case "":
-			did = append(did, was.Name+"'s sentinels are read from its value again")
-		default:
-			did = append(did, was.Name+"'s sentinels now look like "+*update.Format)
-		}
-	}
-	if update.ValueTTLSeconds != nil {
-		switch *update.ValueTTLSeconds {
-		case 0:
-			did = append(did, was.Name+"'s value never goes stale")
-		default:
-			did = append(did, "a value of "+was.Name+" now lasts "+lifetime.Label(time.Duration(*update.ValueTTLSeconds)*time.Second))
-		}
-	}
-	if update.RefreshCommand != nil {
-		switch len(*update.RefreshCommand) {
-		case 0:
-			did = append(did, "removed "+was.Name+"'s refresh command")
-		default:
-			did = append(did, was.Name+" now renews with "+refreshcmd.Join(*update.RefreshCommand))
-		}
-	}
-	if len(did) == 0 {
+	if len(console.SecretChanges(was, update)) == 0 {
 		m.dialog = nil
-		return m.report(false, "%s is unchanged", was.Name)
+		return m.report(false, "%s", console.Unchanged(was.Name))
 	}
 	m.dialog = statusDialog("Secrets", "saving "+was.Name+"…")
 	return func() tea.Msg {
-		if err := m.ds.UpdateSecret(m.ctx, server, id, update); err != nil {
-			return secretActionMsg{err: err}
-		}
-		return secretActionMsg{did: strings.Join(did, ", ")}
+		did, err := console.SaveSecret(m.ctx, m.ds, server, id, update)
+		return secretActionMsg{did: did, err: err}
 	}
 }
 
@@ -1030,28 +715,19 @@ func (m *Model) confirmDeleteSecret() tea.Cmd {
 	if secret == nil {
 		return nil
 	}
-	id, name := secret.ID, secret.Name
-	goes := section{label: "what goes", fields: []field{
-		{label: "secret", value: name, tone: toneAccent},
-		{label: "live bindings", value: itoa(m.secrets.liveBindings(id)) + ", all taken back"},
-	}}
-	goes.lines = []line{{
-		text: "a discobox holding a sentinel for it keeps a placeholder that now resolves to nothing",
-		tone: toneAlert,
-	}}
-	server := m.configServer()
-	d := confirmDialog("Delete secret", "", func(string) tea.Cmd {
-		m.dialog = statusDialog("Secrets", "deleting "+name+"…")
+	was, server := *secret, m.configServer()
+	// What goes with it, and that Enter is not the answer, are the core's.
+	m.dialog = questionDialog(console.DeleteSecretQuestion(was.Name, m.secrets.liveBindings(was.ID)), func(answer string) tea.Cmd {
+		if answer != console.AnswerYes {
+			m.dialog = nil
+			return nil
+		}
+		m.dialog = statusDialog("Secrets", "deleting "+was.Name+"…")
 		return func() tea.Msg {
-			err := m.ds.DeleteSecret(m.ctx, server, id)
-			return secretActionMsg{did: "deleted " + name, err: err}
+			did, err := console.DeleteSecret(m.ctx, m.ds, server, was.ID)
+			return secretActionMsg{did: did, err: err}
 		}
 	})
-	d.sections = []section{goes}
-	d.answerLabel = "delete " + name + "?"
-	// The costly answer is yes.
-	d.defaultNo = true
-	m.dialog = d
 	return nil
 }
 
@@ -1189,13 +865,13 @@ func (m *Model) bindingHistoryLoaded(msg bindingHistoryMsg) tea.Cmd {
 }
 func (m *Model) showBindingHistory(msg bindingHistoryMsg) tea.Cmd {
 	if len(msg.entries) == 0 {
-		return m.report(false, "no binding history")
+		return m.report(false, "%s", console.NoBindingHistory)
 	}
 	var items []action
 	for _, entry := range msg.entries {
-		items = append(items, action{key: entry.ID, enabled: true, label: entry.At.Format(time.RFC3339) + " · " + entry.Event + " · " + entry.Actor})
+		items = append(items, action{key: entry.ID, enabled: true, label: entry.Label()})
 	}
-	d := actionsDialog("Binding history and answered requests", "Latest 100 changes", items, func(id string) tea.Cmd {
+	d := actionsDialog(console.BindingHistoryTitle, console.BindingHistoryNote, items, func(id string) tea.Cmd {
 		for _, entry := range msg.entries {
 			if entry.ID == id {
 				return m.showBindingDecision(entry, func() tea.Cmd { return m.showBindingHistory(msg) })
@@ -1209,30 +885,8 @@ func (m *Model) showBindingHistory(msg bindingHistoryMsg) tea.Cmd {
 }
 
 func (m *Model) showBindingDecision(e console.BindingDecision, back func() tea.Cmd) tea.Cmd {
-	label := "Bound by"
-	if e.RequestID != "" {
-		label = "Approved by"
-	}
-	expiry := "forever"
-	if !e.Expires.IsZero() {
-		expiry = e.Expires.Format(time.RFC3339)
-	}
-	grantor, grantedAt := e.GrantedBy, e.GrantedAt
-	if grantor == "" {
-		grantor, grantedAt = e.Actor, e.At
-	}
-	fields := []field{{label: "event", value: e.Event}, {label: "event actor", value: e.Actor}, {label: "event at", value: e.At.Format(time.RFC3339)}, {label: label, value: grantor}, {label: "granted at", value: grantedAt.Format(time.RFC3339)}, {label: "target ID", value: e.TargetID}, {label: "variable", value: e.EnvVar}, {label: "binding ID", value: e.BindingID}, {label: "delegation ID", value: e.ParentID}, {label: "expires", value: expiry}}
-	if e.RequestID != "" {
-		fields = append(fields, field{label: "answered request", value: e.RequestID})
-	}
-	if len(e.RouteLists) == 0 {
-		fields = append(fields, field{label: "effective limits", value: "not recorded for this historical change"})
-	}
-	for _, list := range e.RouteLists {
-		fields = append(fields, field{label: "within", value: console.RouteRows(list), tone: toneAccent})
-	}
 	d := actionsDialog("Credential decision", "", nil, func(string) tea.Cmd { return back() })
-	d.sections = []section{{label: "the decision", fields: fields}}
+	d.sections = detailSections(console.DescribeDecision(e))
 	d.wrapDetails = true
 	d.onCancel = back
 	d.keys = []hint{pressing("esc goes back", "esc")}

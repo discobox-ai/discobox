@@ -3,7 +3,6 @@ package tui
 import (
 	"slices"
 	"sort"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
@@ -76,7 +75,7 @@ func (m *Model) setSecretRejections(rejections []console.SecretRejection) {
 	// The secrets screen says which credential does not work from the same
 	// read: one poll answers the band and the rows, the way the credential
 	// inbox already does.
-	m.secrets.setRefused(rejections)
+	m.secrets.setRefused(console.RefusedSecrets(m.session, m.configServer(), rejections))
 	m.pruneDismissed()
 	// The band takes a row from the panes rather than adding one to the frame,
 	// so a credential dying — or being replaced — resizes them.
@@ -229,7 +228,7 @@ func (m *Model) rejectionRemedy(msg rejectionRemedyMsg) tea.Cmd {
 	case msg.err != nil:
 		return m.report(true, "%s: %v", msg.rejection.Name(), msg.err)
 	case msg.secret != nil:
-		return m.editSecretForm(m.session.ServerName(msg.rejection.Server), *msg.secret)
+		return m.editSecretForm(m.session.ServerName(msg.rejection.Server), *msg.secret, &msg.rejection)
 	}
 	return nil
 }
@@ -244,18 +243,3 @@ const (
 	// than swallowed, since the band is still on screen saying otherwise.
 	errNoSecret = rejectionError("the credential is gone")
 )
-
-// rejectionSummary is one line about a refused credential for the secrets
-// screen's rows, where the reason is worth more room than a band has.
-func rejectionSummary(rejection console.SecretRejection) string {
-	parts := []string{"refused at " + rejection.Host}
-	switch rejection.Reason {
-	case "unrefreshable":
-		parts = append(parts, "nothing to renew")
-	case "refresh-failed":
-		parts = append(parts, "renewal refused")
-	case "rejected-after-refresh":
-		parts = append(parts, "refused again after renewing")
-	}
-	return strings.Join(parts, " · ")
-}

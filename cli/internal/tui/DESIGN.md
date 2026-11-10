@@ -248,7 +248,10 @@ window no longer one command's own.
 `F4`, beside the harnesses screen and built the same way: a list on a function
 key, one letter per action, and every action the same API call the `discobox
 secret` commands make. A window that could approve something the CLI could not
-would be a second policy. See `secrets.go`.
+would be a second policy. See `secrets.go`. What a row, a card and a question
+say, and each action, are the console core's (`cli/internal/console`,
+"Secrets"), which the desktop's page draws too; the tables, their focus and the
+keys are this screen's.
 
 **Two tables, read downwards.** The secrets on top, and what is waiting on a
 person underneath. They belong on one screen because they are one question: which of these credentials
