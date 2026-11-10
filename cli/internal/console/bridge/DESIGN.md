@@ -200,11 +200,13 @@ its answer while others run. What is submitted to a form is kept in order
 `links.go`. A link pressed in a pane — a program's OSC 8, or text the app's
 emulator found — is a `follow`, naming the key of the box the pane is one of,
 answered by a `result` of its ID with where it goes, by the core's rules
-(`console.ForwardedURL`, `ParseBoxLink`, `BoxLinkServer`, `AddressedBox`):
+(`console.OpenedURL`, `ParseBoxLink`, `BoxLinkServer`, `AddressedBox`):
 `done` with the URL to open, `enter` with the box an address names, or
 `failed` with why. A URL is pointed through the forward the box's header
 topic holds (`holdForward`, for as long as the subscription lasts; the last
-one held of several), so with no header followed it goes as written. An
+one held of several), so with no header followed it goes as written. Only an
+absolute HTTP(S) URL with a host may be opened after that rewrite; any other
+link fails, quoting what the program wrote and saying it is not a web address. An
 address is read against the last listing, never by listing again. The app
 finds the link and opens what it is told; it decides nothing about where.
 

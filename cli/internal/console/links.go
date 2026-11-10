@@ -61,6 +61,20 @@ func ForwardedURL(raw string, forwarded func() map[PortKey]int) string {
 	return parsed.String()
 }
 
+// OpenedURL is the web address a pane's link may open on this machine,
+// after pointing it through the box's forward. Unlike an OSC 8 passed to an
+// outer terminal, opening it here hands it to this machine's URL handler:
+// files and other applications' schemes must never reach that handler.
+// Box links are answered inside the console, before calling this.
+func OpenedURL(raw string, forwarded func() map[PortKey]int) (string, error) {
+	target := ForwardedURL(raw, forwarded)
+	parsed, err := url.Parse(target)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.Opaque != "" {
+		return "", fmt.Errorf("not opened: %q is not a web address", raw)
+	}
+	return target, nil
+}
+
 // sandboxPort is the port a URL names inside the sandbox, and whether the URL
 // is one the forward could be standing in for at all.
 //

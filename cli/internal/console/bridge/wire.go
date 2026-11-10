@@ -164,9 +164,11 @@ type Session struct {
 // Follow is a link pressed in a pane: a program's (OSC 8) or text the app
 // found on the screen. The core says where it goes, in a Result of the same
 // ID: StatusDone with the URL to open — a URL printed in a box pointed at the
-// port forwarded here for the box's header (the header topic), anything else
-// as written — StatusEnter with the box a discobox link names, or
-// StatusFailed with why it goes nowhere.
+// port forwarded here for the box's header (the header topic), other web
+// addresses as written — StatusEnter with the box a discobox link names, or
+// StatusFailed with why it goes nowhere. Only an absolute HTTP(S) URL with a
+// host may be opened after the forward rewrite; any other non-box link is
+// refused, quoting what the program wrote.
 type Follow struct {
 	ID  uint64 `json:"id"`
 	URI string `json:"uri"`

@@ -16,7 +16,7 @@ func (a *app) follow(id uint64, uri, box string) Result {
 }
 
 // A URL printed in a box goes to the port forwarded here for its header, for
-// as long as the header holds the forward; any other is opened as written.
+// as long as the header holds the forward; any other web address is opened as written.
 func TestAFollowedURLGoesThroughTheHeadersForward(t *testing.T) {
 	core := newFakeCore("home", running("b1"), running("b2"))
 	core.forward = newFakeForward(console.Binding{Port: 8080, Local: 8081})
@@ -36,6 +36,7 @@ func TestAFollowedURLGoesThroughTheHeadersForward(t *testing.T) {
 		{"http://localhost:8080/x", "b2", "http://localhost:8080/x"},
 		{"http://localhost:8080/x", "", "http://localhost:8080/x"},
 		{"https://example.com/a", "b1", "https://example.com/a"},
+		{"HTTP://example.com/a", "b1", "HTTP://example.com/a"},
 	} {
 		if r := a.follow(101, tc.uri, tc.box); r.Status != StatusDone || r.URL != tc.want {
 			t.Errorf("follow %q in %q: %+v, want %q", tc.uri, tc.box, r, tc.want)
@@ -94,6 +95,23 @@ func TestAFollowedBoxLinkEntersItsBox(t *testing.T) {
 	} {
 		if r := a.follow(201, tc.uri, ""); r.Status != StatusFailed || !strings.Contains(r.Why, tc.why) {
 			t.Errorf("follow %q: %+v, want it refused with %q", tc.uri, r, tc.why)
+		}
+	}
+}
+
+// The desktop is the outer terminal: only web addresses may reach this
+// machine's URL handler, even when an OSC 8 label looks like a web address.
+func TestAFollowedNonWebLinkIsRefused(t *testing.T) {
+	a := dial(t, newFakeCore("home"))
+	a.hello()
+	for _, uri := range []string{
+		"file:///etc/passwd", "smb://host/share", "vscode://file/etc/passwd",
+		"mailto:person@example.com", "javascript:alert(1)", "data:text/html,hello",
+		"//example.com/path", "/tmp/file", "", "https:", "https:example.com",
+		"https:///path", "http://%zz", "file:///tmp/\x1b[31m",
+	} {
+		if r := a.follow(300, uri, ""); r.Status != StatusFailed || r.URL != "" || !strings.Contains(r.Why, "is not a web address") {
+			t.Errorf("follow %q: %+v, want refusal with no URL", uri, r)
 		}
 	}
 }

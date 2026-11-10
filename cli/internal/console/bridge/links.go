@@ -9,11 +9,15 @@ import (
 // follow says where a link pressed in a pane goes, by the core's rules: a
 // discobox link to the box it names (console.ParseBoxLink, BoxLinkServer,
 // AddressedBox), read from the last listing, and any other link through the
-// forward the pane's box's header holds (console.ForwardedURL). Finding the
+// forward the pane's box's header holds (console.OpenedURL). Finding the
 // link on the screen, and opening what this answers, are the app's.
 func (s *Server) follow(ctx context.Context, f Follow) Result {
 	if !console.IsBoxLink(f.URI) {
-		return Result{Status: StatusDone, URL: console.ForwardedURL(f.URI, func() map[console.PortKey]int { return s.forwarded(f.Box) })}
+		target, err := console.OpenedURL(f.URI, func() map[console.PortKey]int { return s.forwarded(f.Box) })
+		if err != nil {
+			return failed(err.Error())
+		}
+		return Result{Status: StatusDone, URL: target}
 	}
 	address, err := console.ParseBoxLink(f.URI)
 	if err != nil {

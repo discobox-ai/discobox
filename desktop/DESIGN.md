@@ -122,7 +122,12 @@ behaviours, each held by a test listed in the ledger's "Terminal behaviours".
 Selection, copy and paste (bracketed when asked), OSC 52 copies (reads get
 nothing; only the box on screen copies), OSC 8 and text links followed where
 the core says (the bridge's `follow`: a box's localhost URL at its forwarded
-port, a box address to that box), mouse reporting as the program asked (taken
+port, a box address to that box). A pane link is followed only if it is a web
+address or a box address: after the forward rewrite, `console.OpenedURL`
+permits only absolute HTTP(S) URLs with a host to reach this machine's URL
+handler; box addresses are answered inside the console. Other targets are
+refused with the original link quoted on the status line. Mouse reporting is
+as the program asked (taken
 back by `mouse` or Shift), the wheel to whoever can scroll, find through the
 scrollback, wide characters, the input method's composition, and `repaint`.
 

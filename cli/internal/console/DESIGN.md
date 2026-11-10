@@ -294,7 +294,11 @@ flowchart LR
   it reaches is answered here for both. `ForwardedURL` points a URL printed
   in a box — a loopback or wildcard host, on a port the forward bound — at
   `localhost:<local>`, and returns anything else as it came; it asks for the
-  forward's bindings only once a URL could be the box's. A box's address
+  forward's bindings only once a URL could be the box's. `OpenedURL` applies that
+  rewrite and permits only an absolute HTTP(S) URL with a host to reach this
+  machine's URL handler; other links are refused with their original text
+  quoted. An OSC 8 passed through to an outer terminal follows that terminal's
+  policy instead. A box's address
   (`BoxLinkSchemes`, `IsBoxLink`; the spec's `LinkSchemes`) is a link the
   console answers itself (ADR 26-11-03-113): `ParseBoxLink`, on the reader's
   server (`LinkReaderServer`: the pane's box's, else the primary), or the
