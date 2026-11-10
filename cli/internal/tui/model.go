@@ -1424,6 +1424,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case toolFileDoneMsg:
 		return m.toolFileEdited(msg)
 
+	case toolEditMsg:
+		return m.toolEditing(msg)
+
 	case addressesMsg:
 		return m.addressesResolved(msg)
 

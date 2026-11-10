@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -75,6 +76,15 @@ type fakeCore struct {
 	made      console.Sandbox
 	ran       *console.RunRequest
 	drafts    []string
+	// tools is what every box declares, and addresses what each answers
+	// on; hostErr fails a tool run on this machine. A tool file's edit
+	// writes it out under the file's extension, holding its default, has it
+	// edited where it is, and reads it back: under toolDir when the test
+	// set one, to read what is there afterwards.
+	tools     []console.Tool
+	addresses console.Addresses
+	hostErr   error
+	toolDir   string
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -223,6 +233,58 @@ func (f *fakeCore) EditHarnessFile(ctx context.Context, _ string, id, path strin
 	after, err := os.ReadFile(file.Name())
 	changed := string(after) != "before"
 	f.call("edit %s %s changed=%v", id, path, changed)
+	return changed, err
+}
+
+func (f *fakeCore) Tools(context.Context, string) ([]console.Tool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.tools, nil
+}
+
+func (f *fakeCore) Addresses(context.Context, string) (console.Addresses, error) {
+	return f.addresses, nil
+}
+
+func (f *fakeCore) RunHostTool(_ context.Context, box, tool string) error {
+	f.call("host %s %s", box, tool)
+	return f.hostErr
+}
+
+func (f *fakeCore) NewTool(_ context.Context, box, tool string, cols, rows int) (console.Exec, console.Terminal, error) {
+	f.call("tool %s %s %dx%d", box, tool, cols, rows)
+	ex := console.Exec{ID: "tool-" + tool, Tool: tool, Command: []string{tool}, Live: true, Tty: true}
+	return ex, f.term(ex.ID), nil
+}
+
+func (f *fakeCore) ToolFilePath(file console.ToolFile) string {
+	return "/config/discobox/tools/" + file.Tool + "/" + file.Name
+}
+
+func (f *fakeCore) EditToolFile(ctx context.Context, tf console.ToolFile, n *console.Narration) (bool, error) {
+	dir := f.toolDir
+	if dir == "" {
+		var err error
+		if dir, err = os.MkdirTemp("", "fake-tools-"); err != nil {
+			return false, err
+		}
+		defer os.RemoveAll(dir)
+	}
+	// The copy itself, edited in place, as the CLI's is: made from the
+	// default the first time.
+	path := filepath.Join(dir, tf.Name)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(path, []byte(tf.Default), 0o600); err != nil {
+			return false, err
+		}
+	}
+	if err := n.Edit(ctx, path, "Editing "+tf.Name); err != nil {
+		f.call("edit tool %s %s: %v", tf.Tool, tf.Name, err)
+		return false, err
+	}
+	after, err := os.ReadFile(path)
+	changed := string(after) != tf.Default
+	f.call("edit tool %s %s changed=%v", tf.Tool, tf.Name, changed)
 	return changed, err
 }
 

@@ -13,6 +13,13 @@
   bridge.** Which sessions open, their column, order, title and number, and
   what an ending does are answered there; a renderer or the bridge that
   re-derives one from `Exec` fields is the copy ADR 26-11-07-876 rejected.
+- **A tool runs through the core** (`OpenTool`, `RunHostTool`, `EditTool`):
+  each reads the box's tools again and refuses what the picker would, and
+  `OpenTool` attaches a running tool's live session (`RunningTools`) rather
+  than make a second. The TUI's first move onto the core kept calling
+  `NewTool` on the catalog it had read, refusing nothing, while its docs said
+  every console went through the core; and the desktop, opening a tool from
+  the list with no workspace up, started a second session of one running.
 - **What a workspace header says is `NewHeader`, never a renderer's.** Which
   ports link and where, the desktop's link, the work links and which tags are
   said: the TUI's header once held these rules alone, and the desktop app

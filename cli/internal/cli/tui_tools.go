@@ -5,9 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -100,34 +98,25 @@ func ensureToolFile(tool string, file tools.File) (string, string, error) {
 	return path, file.Default, nil
 }
 
-// EditToolFile opens the local copy in the user's editor and reports whether
-// what came back differs.
+// EditToolFile has the local copy edited in the person's editor, through the
+// frontend (n.Edit), and reports whether what came back differs.
 //
-// The real file is edited in place rather than a temp copy of it, which is what
-// the harness files get: there the file lives on the server and the temp file is
-// the only way to hand it to an editor, while this one is already a path on this
-// disk. Editing it directly means an editor that reopens where you left off, a
-// $VISUAL of "code --wait" that opens the actual file in your actual project
-// window, and a crash that loses nothing.
-func (d *apiDataSource) EditToolFile(ctx context.Context, file console.ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error) {
+// The real file is edited in place rather than a temp copy of it, which is
+// what the harness files get: there the file lives on the server and the temp
+// file is the only way to hand it to an editor, while this one is already a
+// path on this disk. Editing it directly means an editor that reopens where
+// you left off, a $VISUAL of "code --wait" that opens the actual file in your
+// actual project window, and a crash that loses nothing. The desktop bridge
+// hands its app a copy instead (console.EditExtension), written back once
+// the person says they are done.
+func (d *apiDataSource) EditToolFile(ctx context.Context, file console.ToolFile, n *console.Narration) (bool, error) {
 	path, before, err := ensureToolFile(file.Tool, tools.File{Name: file.Name, Home: file.Home, Default: file.Default})
 	if err != nil {
 		return false, err
 	}
-
-	argv := append(editorCommand(), path)
-	//nolint:gosec // Launching the user's own $VISUAL/$EDITOR is the point.
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Stdin = stdin
-	if stdin == nil {
-		cmd.Stdin = os.Stdin
+	if err := n.Edit(ctx, path, "Editing "+file.Name+" — "+file.Tool); err != nil {
+		return false, err
 	}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		return false, fmt.Errorf("editor %s: %w", argv[0], err)
-	}
-
 	after, err := os.ReadFile(path)
 	if err != nil {
 		return false, err

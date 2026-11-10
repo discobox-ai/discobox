@@ -24,8 +24,10 @@ import (
 // actions and card), a box's harness changes reviewed, saved and discarded,
 // and edits answered with saved; 8, creating a box: the composer's draft and
 // summary, the run options' forms with what they add up to, and a question's
-// subject; 9, what a box's header says its agent is doing (Header.Agent).
-const Protocol = 9
+// subject; 9, what a box's header says its agent is doing (Header.Agent); 10,
+// a box's tools: the tools command's tools and addresses, a tool run or its
+// session made, a tool's file edited, and the tool a tab runs (Tab.Tool).
+const Protocol = 10
 
 // Type names a message.
 type Type string
@@ -610,6 +612,9 @@ type Tab struct {
 	Service string `json:"service,omitempty"`
 	Run     string `json:"run,omitempty"`
 	Status  string `json:"status,omitempty"`
+	// Tool is the tool a tool's tab runs, by its ID: what the tools menu
+	// finds a running tool's tab by.
+	Tool string `json:"tool,omitempty"`
 }
 
 // TabKind is what a session is, which says the column its tab is in.
@@ -702,6 +707,11 @@ type Args struct {
 	Path      string                `json:"path,omitempty"`
 	Change    console.HarnessChange `json:"change,omitempty"`
 	Candidate string                `json:"candidate,omitempty"`
+	// Tool names one of the box's tools for the tools command: with no File
+	// it is run — handed the box, for one that runs on this machine, or its
+	// session made on Stream — and with File, that file of it is edited.
+	Tool string `json:"tool,omitempty"`
+	File string `json:"file,omitempty"`
 }
 
 // Status is how a command ended.
@@ -754,6 +764,41 @@ type Result struct {
 	Card []CardRow `json:"card,omitempty"`
 	// Changes is a box's harness changes, read as its review opens.
 	Changes *HarnessChanges `json:"changes,omitempty"`
+	// Tools are a box's tools as the tools menu lists them
+	// (console.PickerTools), read as it opens, and Addresses its two
+	// addresses to copy beside them (console.AddressOffers).
+	Tools     []Tool    `json:"tools,omitempty"`
+	Addresses []Address `json:"addresses,omitempty"`
+}
+
+// Tool is one of a box's tools as the tools menu lists it: what it is called
+// and what it is (running, when the box has its session live), whether it
+// runs on this machine, why it cannot run when it cannot (console.Tool.Why),
+// and the files it carries to edit.
+type Tool struct {
+	ID      string     `json:"id"`
+	Label   string     `json:"label"`
+	Detail  string     `json:"detail,omitempty"`
+	Host    bool       `json:"host,omitempty"`
+	Enabled bool       `json:"enabled"`
+	Why     string     `json:"why,omitempty"`
+	Files   []ToolFile `json:"files"`
+}
+
+// ToolFile is one file a tool carries, by its name, and what its row says of
+// it (console.ToolFileDetail): where it lands in a box, and where its copy is
+// on this machine.
+type ToolFile struct {
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
+}
+
+// Address is one of a box's addresses to copy (console.AddressOffer): its
+// label, and the address, or why there is none.
+type Address struct {
+	Label string `json:"label"`
+	Value string `json:"value,omitempty"`
+	Why   string `json:"why,omitempty"`
 }
 
 // Harness is one of a server's harnesses as the harnesses page lists it: what

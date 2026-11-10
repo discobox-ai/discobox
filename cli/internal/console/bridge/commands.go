@@ -155,7 +155,7 @@ func (f *frontend) Shell(box console.Sandbox) outcome {
 		if err := f.deliver(box); err != nil {
 			return failed(err.Error())
 		}
-		return f.session(box, console.InteractShell, console.DataSource.NewShell)
+		return f.session(box, sessionTab(console.InteractShell), console.DataSource.NewShell)
 	}
 }
 
@@ -166,7 +166,14 @@ func (f *frontend) NewTerminal() outcome {
 	if box == nil {
 		return refused("requires a workspace")
 	}
-	return func() Result { return f.session(*box, console.InteractTerminal, console.DataSource.NewTerminal) }
+	return func() Result {
+		return f.session(*box, sessionTab(console.InteractTerminal), console.DataSource.NewTerminal)
+	}
+}
+
+// sessionTab is the tab a shell or terminal made as asked is (console.SessionTab).
+func sessionTab(asked console.Interaction) func(console.Exec) console.Tab {
+	return func(ex console.Exec) console.Tab { return console.SessionTab(ex, asked) }
 }
 
 // deliver delivers what the box is owed before it is opened (ADR
@@ -182,7 +189,9 @@ func (f *frontend) deliver(box console.Sandbox) error {
 	return err
 }
 
-func (f *frontend) session(box console.Sandbox, asked console.Interaction, start func(console.DataSource, context.Context, string, int, int) (console.Exec, console.Terminal, error)) Result {
+// session makes a session in the box with start, attached to the command's
+// stream as the tab tab says it is.
+func (f *frontend) session(box console.Sandbox, tab func(console.Exec) console.Tab, start func(console.DataSource, context.Context, string, int, int) (console.Exec, console.Terminal, error)) Result {
 	stream := f.c.Args.Stream
 	if stream == 0 {
 		return failed("no stream to attach the session to")
@@ -194,17 +203,17 @@ func (f *frontend) session(box console.Sandbox, asked console.Interaction, start
 	ex, term, err := start(f.s.ds.ForServer(box.Server), f.ctx, box.ID, cols, rows)
 	if err != nil {
 		// Nothing was made: the tab is what was asked for.
-		f.s.streams.fail(stream, err, console.SessionTab(console.Exec{}, asked))
+		f.s.streams.fail(stream, err, tab(console.Exec{}))
 		return failed(err.Error())
 	}
-	made := console.SessionTab(ex, asked)
-	tab := wireTab(made, ex)
+	made := tab(ex)
+	wired := wireTab(made, ex)
 	if !f.s.streams.attach(stream, term, made, nil) {
 		// Closed while it was made: the session goes on in the box, and the
 		// app, which closed it, is told what it was.
-		return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &tab, Note: "the pane closed before the session was made"}
+		return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &wired, Note: "the pane closed before the session was made"}
 	}
-	return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &tab}
+	return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &wired}
 }
 
 // EndSession ends the session named by the command, in the box whose
@@ -541,6 +550,102 @@ func (f *frontend) ReviewConfig(box console.Sandbox) outcome {
 	}
 }
 
+// Tools is a box's tools: read as the tools menu opens — counted as the
+// command's use, which its flow is — with the box's addresses beside them;
+// or, with a tool in the args, that tool run as the core offers it
+// (console.OfferedTool): one that runs on this machine handed the box
+// (console.RunHostTool), any other's session made on the command's stream,
+// as its tab (console.ToolTab) — its live session when it is running one
+// (console.OpenTool). With a file too, that file of the tool is
+// edited through edit and saved (console.EditTool).
+func (f *frontend) Tools(box console.Sandbox) outcome {
+	a := f.c.Args
+	key := Key(box.Server, box.ID)
+	src := f.s.ds.ForServer(box.Server)
+	switch {
+	case a.Tool == "":
+		f.s.reg.Use("tools")
+		return func() Result { return f.tools(box) }
+	case a.File != "":
+		return func() Result {
+			n, finished := f.s.narrate(f.ctx, f.c.ID)
+			note, err := console.EditTool(f.ctx, src, box, a.Tool, a.File, n)
+			finished()
+			if r, over := f.asked(err); over {
+				return r
+			}
+			return Result{Status: StatusDone, Box: key, Note: note}
+		}
+	}
+	return func() Result {
+		t, err := console.OfferedTool(f.ctx, src, box, a.Tool)
+		if err != nil {
+			f.release(a.Stream, err)
+			return failed(err.Error())
+		}
+		if t.Host {
+			// Nothing in the box is made for it: a stream the app opened
+			// for a session is let go.
+			f.release(a.Stream, nil)
+			note, err := console.RunHostTool(f.ctx, src, box, t.ID)
+			if err != nil {
+				return failed(err.Error())
+			}
+			return Result{Status: StatusDone, Box: key, Note: note}
+		}
+		tab := func(ex console.Exec) console.Tab { return console.ToolTab(ex, t.ID, t.Label) }
+		return f.session(box, tab, func(_ console.DataSource, ctx context.Context, _ string, cols, rows int) (console.Exec, console.Terminal, error) {
+			_, ex, term, err := console.OpenTool(ctx, src, box, t.ID, cols, rows)
+			return ex, term, err
+		})
+	}
+}
+
+// release lets go of a stream the app allocated for a session that is not
+// made: one refused fails with why, as a shell's does, and one no session
+// was wanted on is forgotten.
+func (f *frontend) release(stream uint32, why error) {
+	switch {
+	case stream == 0:
+	case why != nil:
+		f.s.streams.fail(stream, why, console.Tab{})
+	default:
+		f.s.streams.retire(stream)
+	}
+}
+
+// tools is the tools menu's result: the box's tools, each as it stands for
+// the box and running when its session is live there, and its addresses.
+// One whose tools cannot be read fails the menu it would open; addresses
+// that cannot be read are said on their rows.
+func (f *frontend) tools(box console.Sandbox) Result {
+	src := f.s.ds.ForServer(box.Server)
+	catalog, err := src.Tools(f.ctx, box.ID)
+	if err != nil {
+		return failed("tools: " + err.Error())
+	}
+	var running map[string]console.Exec
+	if execs, err := src.Execs(f.ctx, box.ID); err == nil {
+		running = console.RunningTools(execs)
+	}
+	r := Result{Status: StatusEnter, Box: Key(box.Server, box.ID), Tools: []Tool{}, Addresses: []Address{}}
+	for _, t := range console.PickerTools(catalog) {
+		_, live := running[t.ID]
+		r.Tools = append(r.Tools, wireTool(t, box, live, src.ToolFilePath))
+	}
+	if len(r.Tools) == 0 {
+		r.Note = "no tools are declared for " + box.Title()
+	}
+	var addr console.Addresses
+	if box.Attachable() {
+		addr, err = src.Addresses(f.ctx, box.ID)
+	}
+	for _, o := range console.AddressOffers(box, addr, err, true) {
+		r.Addresses = append(r.Addresses, Address{Label: o.Label, Value: o.Value, Why: o.Why})
+	}
+	return r
+}
+
 // actionTargets are the boxes the app named for a window's command that
 // lists commands for them: the registry ignores a window command's targets,
 // and the action menu is about the ones the app has picked.
@@ -560,7 +665,6 @@ func (f *frontend) actionTargets() []console.Sandbox {
 // The flows that are the app's: the core has ruled the command can run, and
 // the app enters it.
 
-func (f *frontend) Tools(box console.Sandbox) outcome               { return f.enterBox(box) }
 func (f *frontend) Issue(box console.Sandbox) outcome               { return f.enterIfAble(box) }
 func (f *frontend) PullRequest(box console.Sandbox) outcome         { return f.enterIfAble(box) }
 func (f *frontend) FilesChanged(box console.Sandbox) outcome        { return f.enterIfAble(box) }

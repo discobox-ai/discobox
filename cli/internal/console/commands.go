@@ -694,7 +694,7 @@ var registry = []Command{
 
 	{ID: "tools", Label: "tools", Detail: "open a diff viewer, an editor or your IDE on the box", Aliases: []string{"tools"},
 		Target: TargetBox, countedByFlow: true,
-		Bindings: Bindings{TUI: tui("o").leader("o"), Desktop: desktop().in(MenuBox)}},
+		Bindings: Bindings{TUI: tui("o").leader("o"), Desktop: desktop("primary+alt+o").in(MenuBox)}},
 	{ID: "issue", Label: "issue", Detail: "open the tagged issue", Aliases: []string{"issue"},
 		Target:   TargetBox,
 		Bindings: Bindings{TUI: tui("i").leader("i"), Desktop: desktop().in(MenuBox)}},

@@ -1238,7 +1238,11 @@ flowchart LR
   how a setting like `--reuse-window` is made.
 - **The console** (`apiDataSource.Tools`/`NewTool`/`RunHostTool`)
   re-resolves the catalog by id on every run and discards host-tool output,
-  reporting only the error.
+  reporting only the error. A tool file is edited in place through the
+  console's narration (`EditToolFile`, `console.Narration.Edit`), so an
+  editor opens the real file; the desktop bridge hands the app a copy under a
+  text format's extension (`console.EditExtension`) and writes back only what
+  its Done saved.
 
 ## Help
 

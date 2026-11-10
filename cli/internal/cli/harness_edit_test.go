@@ -283,25 +283,3 @@ func TestEditorSaveUsesOriginalRevisionAndReportsConflict(t *testing.T) {
 		t.Fatalf("stale editor save: changed=%v err=%v", changed, err)
 	}
 }
-
-// An edited file keeps a text format's extension and takes .txt for any
-// other: the desktop opens it with the system's handler for its type, and the
-// path is the harness bundle's to choose.
-func TestEditExtensionIsATextFormats(t *testing.T) {
-	for path, want := range map[string]string{
-		".claude.json":          ".json",
-		"config/Settings.TOML":  ".toml",
-		"setup.cmd":             ".txt",
-		"launch.desktop":        ".txt",
-		"settings.json&calc":    ".txt",
-		"page.html":             ".txt",
-		"notes.md":              ".txt",
-		"layout.xml":            ".txt",
-		"noext":                 ".txt",
-		".config/opencode.yaml": ".yaml",
-	} {
-		if got := editExtension(path); got != want {
-			t.Errorf("editExtension(%q) = %q, want %q", path, got, want)
-		}
-	}
-}

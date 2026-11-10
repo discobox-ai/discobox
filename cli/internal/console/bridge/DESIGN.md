@@ -44,7 +44,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 9; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 10; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -77,7 +77,17 @@ run after the registry is let go, whose `Result` ends the command:
   answers with the harnesses read again. `review config` comes with the box's
   harness changes and the core's offers; with a change and the candidate it
   showed it saves or discards that candidate (`console.RunHarnessChange`).
-  Each of the three counts its use only as its flow opens. A box flow with preconditions the registry leaves to
+  `tools` comes with the box's tools as the picker lists them
+  (`console.PickerTools`), each with why it cannot run, running when the box
+  has its session live, and its files, and the box's addresses
+  (`console.AddressOffers`); with a tool in its args it runs it as the core
+  offers it (`console.OfferedTool`): one on this machine handed the box
+  (`console.RunHostTool`, and a stream the app opened let go), any other's
+  session on the command's stream as its tab (`console.OpenTool`: a running
+  tool's live session, else one made; `console.ToolTab`). With a
+  file too, that file is edited through `edit` and `saved`
+  (`console.EditTool`). Each of the four counts its use only as its flow
+  opens. A box flow with preconditions the registry leaves to
   the flow (a tag, a request waiting) is refused here first, in the entry's
   words. The action menu comes with the core's entries; the palette's
   opening counts its use, and what it finds is the palette topic's.
@@ -106,7 +116,10 @@ last one.
 
 A running command talks to the app through `narrate` (progress, the box a
 create made, questions, a file to edit as `edit`, answered by the app's
-`saved`: finished with, given up, or why it could not be opened) and `fill` (a form until the core accepts its answers;
+`saved`: finished with, given up, or why it could not be opened; the app is
+handed a copy, under a text format's extension (`console.EditExtension`),
+and only what was saved there by its Done is written back, so its Cancel
+keeps the file as it was) and `fill` (a form until the core accepts its answers;
 each field's `value` is what the core reads it holding, the app sends only
 the answers the person changed, merged onto the form's opening; a refusal is
 `fieldErrors`, a draft re-sends the form with `applies` and the values

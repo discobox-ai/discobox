@@ -2488,11 +2488,12 @@ type DataSource interface {
 	// had — no home directory to resolve it against.
 	ToolFilePath(file ToolFile) string
 
-	// EditToolFile opens that copy in the user's editor, creating it from the
-	// file's Default when there is none yet, and reports whether what came back
-	// differs. The window is suspended for it, the way editing a harness file
-	// suspends it.
-	EditToolFile(ctx context.Context, file ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
+	// EditToolFile has that copy edited in the person's editor, creating it
+	// from the file's Default when there is none yet: the frontend opens it
+	// (n.Edit), as it does a harness file, and this reports whether what came
+	// back differs. An edit the frontend gave up (context.Canceled) or could
+	// not open is an error.
+	EditToolFile(ctx context.Context, file ToolFile, n *Narration) (bool, error)
 
 	// AddressedServer is which of the servers the window lists a discobox
 	// address's server half names (endpoint.SandboxAddress.Server), by the

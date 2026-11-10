@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"context"
-	"io"
-
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -78,28 +75,9 @@ type resolvedTools struct {
 func toolRowKey(id string) string { return "tool:" + id }
 
 // toolByID is the tool with an id in the catalog of the discobox the window is
-// on.
-//
-// A catalog can hold a declaration the merge refused beside the tool it tried
-// to replace, under the same id (ADR 0125 §5). The one that runs is the tool.
+// on (console.ToolIn).
 func (m *Model) toolByID(id string) (console.Tool, bool) {
-	var refused *console.Tool
-	catalog := m.toolCatalogs[m.boxRef(m.currentBox())].tools
-	for i, t := range catalog {
-		if t.ID != id {
-			continue
-		}
-		if t.Problem == "" {
-			return t, true
-		}
-		if refused == nil {
-			refused = &catalog[i]
-		}
-	}
-	if refused != nil {
-		return *refused, true
-	}
-	return console.Tool{}, false
+	return console.ToolIn(m.toolCatalogs[m.boxRef(m.currentBox())].tools, id)
 }
 
 // toolKeys decides which tools get the keys they ask for on a card whose other
@@ -125,27 +103,6 @@ func toolKeys(catalog []console.Tool, taken ...string) map[string]string {
 		}
 	}
 	return keys
-}
-
-// pickerTools is a catalog as the picker lists it: every tool, and every
-// declaration that cannot run with the reason, except one the merge refused
-// beside a tool that does run under its id — that row would be a second entry
-// for the same tool, and choosing either would mean the one that runs.
-func pickerTools(catalog []console.Tool) []console.Tool {
-	runs := map[string]bool{}
-	for _, t := range catalog {
-		if t.Problem == "" {
-			runs[t.ID] = true
-		}
-	}
-	out := make([]console.Tool, 0, len(catalog))
-	for _, t := range catalog {
-		if t.Problem != "" && runs[t.ID] {
-			continue
-		}
-		out = append(out, t)
-	}
-	return out
 }
 
 // runToolWhenKnown runs a tool by id from outside the picker, which has no card
@@ -270,11 +227,11 @@ type addressesMsg struct {
 // the model by value, so it emits what was chosen and the live model acts.
 type copyAddressMsg struct{ text string }
 
-// toolFileDoneMsg is what came back from the editor.
+// toolFileDoneMsg is what came of editing a tool's file: what the status line
+// says of it, or why it failed.
 type toolFileDoneMsg struct {
-	file    console.ToolFile
-	changed bool
-	err     error
+	note string
+	err  error
 }
 
 // toolTermMsg carries one connected tool session back to the model: a tool the
@@ -314,25 +271,15 @@ func (m *Model) openTools(box console.Sandbox) tea.Cmd {
 func (m *Model) toolsDialog(box console.Sandbox) *dialog {
 	ref := m.boxRef(box)
 	resolved, known := m.toolCatalogs[m.boxRef(box)]
-	catalog := pickerTools(resolved.tools)
+	catalog := console.PickerTools(resolved.tools)
 	keys := toolKeys(catalog, toolFileKey, addressSSHKey, addressGitKey, "q", "j", "k")
 	items := make([]action, 0, len(catalog)+3)
 	for _, t := range catalog {
-		detail := t.Detail
-		if m.Tool(t.ID) != nil {
-			// Every tool pane is a running one: a tool that exits takes its
-			// window with it (see paneClosed).
-			detail = t.Detail + " · running"
-		}
-		row := action{
-			key: toolRowKey(t.ID), press: keys[t.ID], label: t.Label, detail: detail,
-			enabled: box.Attachable(),
-			why:     console.AttachWhy([]console.Sandbox{box}),
-		}
-		if t.Problem != "" {
-			row.enabled, row.why = false, t.Problem
-		}
-		items = append(items, row)
+		why := t.Why(box)
+		items = append(items, action{
+			key: toolRowKey(t.ID), press: keys[t.ID], label: t.Label, detail: t.PickerDetail(m.Tool(t.ID) != nil),
+			enabled: why == "", why: why,
+		})
 	}
 	switch {
 	case !known:
@@ -343,11 +290,15 @@ func (m *Model) toolsDialog(box console.Sandbox) *dialog {
 	// An address is only worth printing for a discobox the config has a stanza
 	// for, which is the same boxes the tools apply to: an archived one is out
 	// of the listing the stanzas are rendered from.
-	addr, unreachable := m.addresses[m.boxRef(box)], console.AttachWhy([]console.Sandbox{box})
-	ssh := addr.action(addressSSHKey, "ssh", addr.SSH, unreachable)
-	git := addr.action(addressGitKey, "git url", addr.Git, unreachable)
-	ssh.note, git.note = m.copiedNote(addr.SSH), m.copiedNote(addr.Git)
-	items = append(items, ssh, git)
+	addr := m.addresses[m.boxRef(box)]
+	offers := console.AddressOffers(box, addr.Addresses, addr.err, addr.known)
+	for i, key := range []string{addressSSHKey, addressGitKey} {
+		o := offers[i]
+		items = append(items, action{
+			key: key, press: key, label: o.Label, detail: o.Value, why: o.Why,
+			enabled: o.Value != "", stays: true, note: m.copiedNote(o.Value),
+		})
+	}
 
 	d := actionsDialog(toolsTitle, "Run a tool against "+displayName(box)+", or take an address to it.", items,
 		func(key string) tea.Cmd {
@@ -392,39 +343,19 @@ func (m *Model) toolsDialog(box console.Sandbox) *dialog {
 }
 
 // resolvedAddresses is one discobox's entry in the picker's address cache: what
-// was found, or why nothing was.
+// was found, or why nothing was, and whether the lookup has answered.
 //
-// An entry that is present and empty is a lookup still running, which is what
-// keeps reopening the picker from starting a second one — so it is the presence
-// of the entry, not its contents, that means "already asked".
+// An entry that is present and not known is a lookup still running, which is
+// what keeps reopening the picker from starting a second one — so it is the
+// presence of the entry, not its contents, that means "already asked".
+//
+// The address itself is its row's detail (console.AddressOffers), not a
+// caption offering to produce it: what makes `ssh sbx_…` worth a row is
+// reading it and seeing that there is nothing else to it.
 type resolvedAddresses struct {
 	console.Addresses
-	err string
-}
-
-// action is one address as a row of the picker.
-//
-// The address itself is the row's detail, not a caption offering to produce it:
-// what makes `ssh sbx_…` worth a row is reading it and seeing that there is
-// nothing else to it, and a row that said "copy the ssh address" would be a
-// button for a fact it declined to show.
-func (r resolvedAddresses) action(key, label, value, unreachable string) action {
-	row := action{key: key, press: key, label: label, stays: true}
-	switch {
-	case unreachable != "":
-		row.why = unreachable
-	case value != "":
-		row.detail, row.enabled = value, true
-	case r.err != "":
-		row.why = r.err
-	case r.Addresses == (console.Addresses{}):
-		row.why = "looking it up…"
-	default:
-		// Resolved, and this half of it came back empty: a discobox whose
-		// source never landed.
-		row.why = "nothing to reach it by"
-	}
-	return row
+	err   error
+	known bool
 }
 
 // resolveAddresses starts one discobox's lookup, or reports that there is
@@ -441,7 +372,7 @@ func (m *Model) resolveAddresses(box console.Sandbox) tea.Cmd {
 	if m.addresses == nil {
 		m.addresses = map[console.BoxRef]resolvedAddresses{}
 	}
-	if known, asked := m.addresses[m.boxRef(box)]; asked && known.err == "" {
+	if known, asked := m.addresses[m.boxRef(box)]; asked && known.err == nil {
 		return nil
 	}
 	m.addresses[m.boxRef(box)] = resolvedAddresses{}
@@ -460,10 +391,7 @@ func (m *Model) resolveAddresses(box console.Sandbox) tea.Cmd {
 // with — a card's callback is fixed when the card is — so a row whose text was
 // replaced in place would still copy the nothing it was built around.
 func (m *Model) addressesResolved(msg addressesMsg) tea.Cmd {
-	entry := resolvedAddresses{Addresses: msg.addr}
-	if msg.err != nil {
-		entry.err = msg.err.Error()
-	}
+	entry := resolvedAddresses{Addresses: msg.addr, err: msg.err, known: true}
 	if m.addresses == nil {
 		m.addresses = map[console.BoxRef]resolvedAddresses{}
 	}
@@ -532,8 +460,8 @@ func (m *Model) openToolFiles(id string) tea.Cmd {
 	if !ok {
 		return status("no such tool: %s", id)
 	}
-	if len(t.Files) == 0 {
-		return status("%s carries no config", t.Label)
+	if why := t.FilesWhy(); why != "" {
+		return status("%s", why)
 	}
 	if len(t.Files) == 1 {
 		file := t.Files[0]
@@ -549,7 +477,7 @@ func (m *Model) openToolFiles(id string) tea.Cmd {
 			key:     n,
 			press:   n,
 			label:   file.Name,
-			detail:  m.toolFileDetail(file),
+			detail:  console.ToolFileDetail(file, m.ds.ToolFilePath(file)),
 			enabled: true,
 		})
 	}
@@ -567,53 +495,67 @@ func (m *Model) openToolFiles(id string) tea.Cmd {
 	return nil
 }
 
-// toolFileDetail is what a file's row says about it: where it lands inside a
-// discobox, and where the copy being edited actually is — the second because a
-// file you can only reach through this window is one you cannot put in your
-// dotfiles.
-func (m *Model) toolFileDetail(file console.ToolFile) string {
-	detail := "→ ~/" + file.Home
-	if path := m.ds.ToolFilePath(file); path != "" {
-		detail += "  ·  " + path
+// editToolFile has a tool's file edited and saved: the core reads the tool
+// again (console.EditTool), and the data source asks for the copy to be
+// edited on a feed of the edit's own, which hands the terminal to $EDITOR on
+// it (editInTerminal).
+//
+// Not the busy line's narration (narrate): opening that ends whatever was
+// reporting on it, and an edit is made over a workspace whose box may still
+// be coming up, whose provisioning watch reports there.
+func (m *Model) editToolFile(file console.ToolFile) tea.Cmd {
+	feed := console.NewNarration()
+	m.busy = "editing " + file.Name + "…"
+	box := m.currentBox()
+	ctx, ds := m.ctx, m.ds.ForServer(box.Server)
+	edit := func() tea.Msg {
+		defer feed.Close()
+		note, err := console.EditTool(ctx, ds, box, file.Tool, file.Name, feed)
+		return toolFileDoneMsg{note: note, err: err}
 	}
-	return detail
+	// The edit waits on the person in their editor: a listener, not a step.
+	return tea.Batch(listen(edit), nextToolEdit(feed))
 }
 
-// editToolFile hands the terminal to $EDITOR on the local copy, creating it
-// from the tool's default when there is none yet.
-func (m *Model) editToolFile(file console.ToolFile) tea.Cmd {
-	m.busy = "editing " + file.Name + "…"
-	var changed bool
-	run := &harnessExec{
-		title: "Editing " + file.Name,
-		ctx:   m.ctx,
-		run: func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
-			var err error
-			changed, err = m.ds.EditToolFile(ctx, file, stdin, stdout, stderr)
-			return err
-		},
-	}
-	return m.exec(run, func(err error) tea.Msg {
-		return toolFileDoneMsg{file: file, changed: changed, err: err}
+// toolEditMsg is one event from a tool file's edit.
+type toolEditMsg struct {
+	feed  *console.Narration
+	event console.Event
+}
+
+// nextToolEdit waits for the edit's next event, until it closes its feed.
+func nextToolEdit(feed *console.Narration) tea.Cmd {
+	return listen(func() tea.Msg {
+		event, ok := <-feed.Events()
+		if !ok {
+			return nil
+		}
+		return toolEditMsg{feed: feed, event: event}
 	})
 }
 
-// toolFileEdited reports what the editor did.
-//
-// A change is worth a sentence rather than a word, because what it did *not* do
-// is the surprising half: the discoboxes already carrying this file keep the
-// copy they have, and this is what the next one will get.
+// toolEditing takes one event of a tool file's edit: the file to open in
+// $EDITOR; it asks nothing else, and anything else is declined.
+func (m *Model) toolEditing(msg toolEditMsg) tea.Cmd {
+	next := nextToolEdit(msg.feed)
+	switch e := msg.event; {
+	case e.Editing != nil:
+		return tea.Batch(m.editInTerminal(e.Editing), next)
+	case e.Asking != nil:
+		e.Asking.Decline(console.ErrNoFrontend)
+	case e.Handover != nil:
+		e.Handover.Done(console.ErrNoFrontend)
+	}
+	return next
+}
+
+// toolFileEdited reports what the edit did, as the core says it.
 func (m *Model) toolFileEdited(msg toolFileDoneMsg) tea.Cmd {
 	m.busy = ""
-	switch {
-	case msg.err != nil:
-		return m.report(true, "edit %s: %v", msg.file.Name, msg.err)
-	case !msg.changed:
-		return m.report(false, "%s unchanged", msg.file.Name)
-	default:
-		return m.report(false, "%s saved — the next discobox to open %s gets it",
-			msg.file.Name, msg.file.Tool)
+	if msg.err != nil {
+		return m.report(true, "%v", msg.err)
 	}
+	return m.report(false, "%s", msg.note)
 }
 
 // runTool is what choosing a row does.
@@ -645,7 +587,7 @@ func (m *Model) runTool(id string) tea.Cmd {
 	return m.newTool(t, true)
 }
 
-// newTool creates a tool session and attaches to it. The pane is sized before
+// newTool opens a tool session (console.OpenTool) and attaches to it. The pane is sized before
 // it is opened — for the window when it arrives showing, which is the only way
 // this is asked for — for the same reason every other pane is: the size is
 // what the far end is told.
@@ -657,17 +599,19 @@ func (m *Model) newTool(t console.Tool, show bool) tea.Cmd {
 	m.busy = t.Label + "…"
 	gen := m.wsGen
 	cols, rows := m.paneCells(max(m.width, 4))
-	ctx, ds, box, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID, t.ID
+	ctx, ds, box, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box, t.ID
 	return func() tea.Msg {
-		exec, term, err := ds.NewTool(ctx, box, id, cols, rows)
+		// The core reads the tool again, refuses what the picker would, and
+		// attaches its live session when the box is running one.
+		_, exec, term, err := console.OpenTool(ctx, ds, box, id, cols, rows)
 		return toolTermMsg{gen: gen, id: id, exec: exec, term: term, err: err, show: show}
 	}
 }
 
-// hostToolRanMsg is what came of handing a sandbox to a host tool.
+// hostToolRanMsg is what came of handing a sandbox to a host tool: what the
+// status line says of it, or why it failed.
 type hostToolRanMsg struct {
-	name string
-	tool console.Tool
+	note string
 	err  error
 }
 
@@ -680,23 +624,21 @@ type hostToolRanMsg struct {
 // something that owns the screen.
 func (m *Model) runHostTool(box console.Sandbox, t console.Tool) tea.Cmd {
 	m.busy = t.ID + "…"
-	ctx, ds, id, name := m.ctx, m.ds.ForServer(box.Server), box.ID, box.Name
+	ctx, ds := m.ctx, m.ds.ForServer(box.Server)
 	return func() tea.Msg {
-		return hostToolRanMsg{name: name, tool: t, err: ds.RunHostTool(ctx, id, t.ID)}
+		// The core reads the tool again and refuses what the picker would.
+		note, err := console.RunHostTool(ctx, ds, box, t.ID)
+		return hostToolRanMsg{note: note, err: err}
 	}
 }
 
-// hostToolRan reports it. A failure carries the tool's id, which is the name
-// of the `discobox tools` command that ran it — how someone runs it again by
-// hand to read the whole error the status line had to cut. Only the sentence
-// about a window that did open reads as prose, and only that one takes the
-// label.
+// hostToolRan reports it, as the core says it (console.RunHostTool).
 func (m *Model) hostToolRan(msg hostToolRanMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
-		return m.report(true, "%s: %v", msg.tool.ID, msg.err)
+		return m.report(true, "%v", msg.err)
 	}
-	return m.report(false, "opened %s in %s", msg.name, msg.tool.Label)
+	return m.report(false, "%s", msg.note)
 }
 
 // openToolExec attaches to a tool session the poll found already running: this

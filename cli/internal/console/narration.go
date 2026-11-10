@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // A running command's channel back to the console (ADR 26-11-07-876 §1,
@@ -112,12 +114,17 @@ func (h *Handover) Done(err error) {
 }
 
 // Editing is a file on this machine the command needs edited: one of a
-// harness's files, written out for the person's editor. The frontend opens
-// Path in the editor it opens files in — the TUI hands the terminal to
-// $EDITOR, the desktop app opens it in the person's own — and says Done
-// exactly once, when the person is finished with it: nil once it is saved or
-// left, context.Canceled for an edit the person gave up, or why it could not
-// be opened. The command reads the file back itself.
+// harness's files written out, or a tool's copy itself, for the person's
+// editor. Its path keeps whatever name it has, a tool declaration's among
+// them: a frontend that opens a file by its type, or whose person can give
+// an edit up after their editor saved, hands its editor a copy under
+// EditExtension and writes back what was saved once done (the desktop
+// bridge's Server.edit), never the path as it is. The frontend opens Path in the editor it opens files in —
+// the TUI hands the terminal to $EDITOR, the desktop app opens it in the
+// person's own — and says Done exactly once, when the person is finished
+// with it: nil once it is saved or left, context.Canceled for an edit the
+// person gave up, or why it could not be opened. The command reads the file
+// back itself.
 type Editing struct {
 	Path string
 	// Title is what the edit is, as the frontend names it while it waits.
@@ -315,4 +322,28 @@ func TargetsTitle(targets []Sandbox) string {
 		return targets[0].Name
 	}
 	return strconv.Itoa(len(targets)) + " boxes selected"
+}
+
+// editExtensions are the extensions a file handed to a frontend's editor
+// keeps: text formats a desktop hands to a text editor. A harness file's path
+// is its bundle's to choose and a tool file's name its declaration's (a
+// discobox's image or source can declare one), and on Linux the desktop app
+// opens a file with the handler for its type: an extension outside these (a
+// script's, a launcher's, one carrying shell metacharacters) would let a box
+// choose a program to run on this machine, and one a desktop shows rather
+// than edits (.xml, .md, .html: a browser or a viewer) would leave nothing to
+// save, so either is edited as .txt.
+var editExtensions = map[string]bool{
+	".json": true, ".jsonc": true, ".json5": true, ".toml": true, ".yaml": true, ".yml": true,
+	".txt": true, ".ini": true, ".conf": true, ".cfg": true, ".env": true,
+}
+
+// EditExtension is the extension a file at path is edited under by an editor
+// that opens files by their type: its own when it is one of editExtensions,
+// else .txt.
+func EditExtension(path string) string {
+	if ext := strings.ToLower(filepath.Ext(path)); editExtensions[ext] {
+		return ext
+	}
+	return ".txt"
 }

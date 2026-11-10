@@ -19,7 +19,8 @@
 - **Any action a core menu offers is taken through the core**, which reads
   its subject again, refuses what the menu would and words the refusal:
   `RunServiceVerb` for a service, `OfferedHarness`, `RunHarnessVerb` and
-  `EditHarness` for a harness, `RunHarnessChange` for a box's harness changes.
+  `EditHarness` for a harness, `RunHarnessChange` for a box's harness changes,
+  `OfferedTool`, `OpenTool`, `RunHostTool` and `EditTool` for a box's tools.
   The bridge's first harnesses page re-read the harness, looked the action up
   and refused it itself, and its harness-changes review sent whatever
   candidate the app named — the fourth such rule written in the bridge.
@@ -82,6 +83,12 @@
   needs covered is a box in `TestContractCore` whose command does it, never
   a control channel beside the bridge: the app's client sends only what the
   app could.
+- **The app edits a copy, never the file** (`Server.edit`): what was saved
+  there is written back on `saved`, nothing on a given-up one. A tool's file
+  is its copy on this machine, edited in place, and the first desktop version
+  handed the app that path: the sheet said Cancel keeps it as it was while
+  the editor had already saved over it. The copy is under a text format's
+  extension too, since the app opens a file by its type.
 - **The suite covers every message kind** (289 §4): an edit is the harness
   `hc_claude`'s file, answered with `saved`, finished and given up. A field
   added to a message is round-tripped by a case, not only serialized on both

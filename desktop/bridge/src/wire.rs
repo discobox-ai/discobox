@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 9;
+pub const PROTOCOL: i64 = 10;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 5;
@@ -1255,6 +1255,11 @@ pub struct Tab {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub status: String,
+
+    /// Tool is the tool a tool's tab runs, by its ID: what the tools menu finds a running tool's
+    /// tab by.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tool: String,
 }
 
 /// TabKind is what a session is, which says the column its tab is in.
@@ -1446,6 +1451,15 @@ pub struct Args {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub candidate: String,
+
+    /// Tool names one of the box's tools for the tools command: with no File it is run — handed
+    /// the box, for one that runs on this machine, or its session made on Stream — and with File,
+    /// that file of it is edited.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tool: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub file: String,
 }
 
 /// ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a
@@ -1589,6 +1603,14 @@ pub struct Result {
     /// Changes is a box's harness changes, read as its review opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changes: Option<HarnessChanges>,
+
+    /// Tools are a box's tools as the tools menu lists them (console.PickerTools), read as it
+    /// opens, and Addresses its two addresses to copy beside them (console.AddressOffers).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tools: Vec<Tool>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub addresses: Vec<Address>,
 }
 
 /// Status is how a command ended.
@@ -1816,6 +1838,51 @@ pub struct ChangeOffer {
     pub label: String,
 
     pub enabled: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub why: String,
+}
+
+/// Tool is one of a box's tools as the tools menu lists it: what it is called and what it is
+/// (running, when the box has its session live), whether it runs on this machine, why it cannot run
+/// when it cannot (console.Tool.Why), and the files it carries to edit.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Tool {
+    pub id: String,
+
+    pub label: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub detail: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub host: bool,
+
+    pub enabled: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub why: String,
+
+    pub files: Vec<ToolFile>,
+}
+
+/// ToolFile is one file a tool carries, by its name, and what its row says of it
+/// (console.ToolFileDetail): where it lands in a box, and where its copy is on this machine.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ToolFile {
+    pub name: String,
+
+    pub detail: String,
+}
+
+/// Address is one of a box's addresses to copy (console.AddressOffer): its label, and the address,
+/// or why there is none.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Address {
+    pub label: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub value: String,
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub why: String,

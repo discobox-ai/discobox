@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 9,
+  "x-protocol": 10,
   "x-specVersion": 5,
   "x-frameKinds": {
     "json": {
@@ -1538,6 +1538,10 @@
         },
         "status": {
           "type": "string"
+        },
+        "tool": {
+          "description": "Tool is the tool a tool's tab runs, by its ID: what the tools menu finds a running tool's tab by.",
+          "type": "string"
         }
       },
       "required": [
@@ -1793,6 +1797,13 @@
         },
         "candidate": {
           "type": "string"
+        },
+        "tool": {
+          "description": "Tool names one of the box's tools for the tools command: with no File it is run — handed the box, for one that runs on this machine, or its session made on Stream — and with File, that file of it is edited.",
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
         }
       }
     },
@@ -1914,6 +1925,19 @@
         "changes": {
           "$ref": "#/$defs/HarnessChanges",
           "description": "Changes is a box's harness changes, read as its review opens."
+        },
+        "tools": {
+          "description": "Tools are a box's tools as the tools menu lists them (console.PickerTools), read as it opens, and Addresses its two addresses to copy beside them (console.AddressOffers).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Tool"
+          }
+        },
+        "addresses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Address"
+          }
         }
       },
       "required": [
@@ -2256,6 +2280,76 @@
         "change",
         "label",
         "enabled"
+      ]
+    },
+    "Tool": {
+      "description": "Tool is one of a box's tools as the tools menu lists it: what it is called and what it is (running, when the box has its session live), whether it runs on this machine, why it cannot run when it cannot (console.Tool.Why), and the files it carries to edit.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "host": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "why": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolFile"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "enabled",
+        "files"
+      ]
+    },
+    "ToolFile": {
+      "description": "ToolFile is one file a tool carries, by its name, and what its row says of it (console.ToolFileDetail): where it lands in a box, and where its copy is on this machine.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "detail"
+      ]
+    },
+    "Address": {
+      "description": "Address is one of a box's addresses to copy (console.AddressOffer): its label, and the address, or why there is none.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
       ]
     },
     "Form": {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -1213,5 +1214,174 @@ func TestHarnessChangesReview(t *testing.T) {
 	}
 	if r := a.result(a.command(Command{Command: "review config", Targets: []string{"b1"}, Args: Args{Change: console.HarnessChangeSave}})); r.Status != StatusFailed {
 		t.Fatalf("a save with no candidate: %+v", r)
+	}
+}
+
+// A box's tools are the core's: listed as the picker lists them, each with
+// why it cannot run, running when its session is live, its files and the
+// box's addresses; a tool run as the core offers it — one on this machine
+// handed the box, any other's session made on the command's stream as its
+// tab — and a tool's file edited through edit and saved.
+func TestToolsAreTheCores(t *testing.T) {
+	core := newFakeCore("home", running("b1"), console.Sandbox{ID: "b2", Name: "b2", State: console.StateStopped})
+	core.tools = []console.Tool{
+		{ID: "diff", Label: "Diff", Detail: "a diff viewer"},
+		{ID: "fresh", Label: "Fresh", Detail: "an editor", Files: []console.ToolFile{{Tool: "fresh", Name: "config.json", Home: ".config/fresh/config.json", Default: "{}"}}},
+		{ID: "fresh", Label: "Fresh", Problem: "refused: shadows the CLI's"},
+		{ID: "ide", Label: "IDE", Host: true},
+		{ID: "broken", Label: "Broken", Problem: "its command is empty"},
+	}
+	core.addresses = console.Addresses{SSH: "ssh b1.discobox", Git: "ssh://b1.discobox/work"}
+	core.execs = []console.Exec{{ID: "tool-diff", Tool: "diff", Command: []string{"lazygit"}, Live: true, Tty: true}}
+	a := dial(t, core)
+	a.hello()
+	ctx := Context{Workspace: "b1", HasWorkspace: true, WorkspaceShown: true, PaneFocused: true, Tree: true}
+	tools := func(args Args) uint64 {
+		return a.command(Command{Command: "tools", Targets: []string{"b1"}, Context: ctx, Args: args})
+	}
+
+	r := a.result(tools(Args{}))
+	var got []string
+	for _, tl := range r.Tools {
+		got = append(got, fmt.Sprintf("%s:%s:%v:%v:%s:%d", tl.ID, tl.Detail, tl.Host, tl.Enabled, tl.Why, len(tl.Files)))
+	}
+	want := []string{"diff:a diff viewer · running:false:true::0", "fresh:an editor:false:true::1", "ide::true:true::0", "broken::false:false:its command is empty:0"}
+	if r.Status != StatusEnter || r.Box != "b1" || !reflect.DeepEqual(got, want) {
+		t.Fatalf("tools %+v: %q, want %q", r, got, want)
+	}
+	if f := r.Tools[1].Files[0]; f.Name != "config.json" || f.Detail != "→ ~/.config/fresh/config.json  ·  /config/discobox/tools/fresh/config.json" {
+		t.Fatalf("a tool's file %+v", f)
+	}
+	if !reflect.DeepEqual(r.Addresses, []Address{{Label: "ssh", Value: "ssh b1.discobox"}, {Label: "git url", Value: "ssh://b1.discobox/work"}}) {
+		t.Fatalf("addresses %+v", r.Addresses)
+	}
+
+	// One that runs on this machine is handed the box; the stream the app
+	// opened for a session is let go.
+	if r := a.result(tools(Args{Tool: "ide", Stream: 5})); r.Status != StatusDone || r.Note != "opened b1 in IDE" || r.Session != nil {
+		t.Fatalf("a host tool: %+v", r)
+	}
+	if !slices.Contains(core.called(), "host b1 ide") {
+		t.Fatalf("calls %q", core.called())
+	}
+	core.hostErr = errors.New("no IDE found")
+	if r := a.result(tools(Args{Tool: "ide"})); r.Status != StatusFailed || r.Why != "ide: no IDE found" {
+		t.Fatalf("a host tool failing: %+v", r)
+	}
+
+	// One the box is running is its live session, opened, never a second.
+	r = a.result(tools(Args{Tool: "diff", Stream: 9, Cols: 100, Rows: 30}))
+	if r.Status != StatusDone || r.Session == nil || r.Session.Exec != "tool-diff" || r.Session.Tool != "diff" {
+		t.Fatalf("a running tool: %+v", r)
+	}
+	if slices.ContainsFunc(core.called(), func(c string) bool { return strings.HasPrefix(c, "tool b1 diff") }) || !slices.Contains(core.called(), "open b1 tool-diff 100x30") {
+		t.Fatalf("calls %q, want the running session opened", core.called())
+	}
+
+	// Any other's session is made on the stream, as its tab.
+	r = a.result(tools(Args{Tool: "fresh", Stream: 6, Cols: 120, Rows: 40}))
+	if r.Status != StatusDone || r.Session == nil || r.Session.Kind != TabTool || r.Session.Tool != "fresh" || r.Session.Title != "Fresh" || r.Session.Exec != "tool-fresh" {
+		t.Fatalf("a tool's session: %+v", r)
+	}
+	if !slices.Contains(core.called(), "tool b1 fresh 120x40") {
+		t.Fatalf("calls %q", core.called())
+	}
+	// A declaration that cannot run, or none, is refused before anything is
+	// made, and its stream fails.
+	for _, args := range []Args{{Tool: "broken", Stream: 7}, {Tool: "gone", Stream: 8}} {
+		id := tools(args)
+		if st := a.expect(TypeStream).Stream; st.Stream != args.Stream || st.State != StreamFailed {
+			t.Fatalf("%s's stream: %+v", args.Tool, st)
+		}
+		if r := a.result(id); r.Status != StatusFailed || !strings.Contains(r.Why, args.Tool) && !strings.Contains(r.Why, "Broken") {
+			t.Fatalf("%s: %+v", args.Tool, r)
+		}
+	}
+	if slices.ContainsFunc(core.called(), func(c string) bool { return strings.HasPrefix(c, "tool b1 broken") }) {
+		t.Fatal("a tool that cannot run was made")
+	}
+
+	// A file is handed to the app to edit; what is saved there is read back.
+	id := tools(Args{Tool: "fresh", File: "config.json"})
+	e := a.expect(TypeEdit).Edit
+	if e.Command != id || e.Title != "Editing config.json" || !strings.HasSuffix(e.Path, ".json") {
+		t.Fatalf("edit %+v", e)
+	}
+	if err := os.WriteFile(e.Path, []byte(`{"theme":"mine"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.send(Message{Type: TypeSaved, Saved: &Saved{Edit: e.ID}})
+	if r := a.result(id); r.Status != StatusDone || r.Note != "config.json saved — the next discobox to open fresh gets it" {
+		t.Fatalf("edit: %+v", r)
+	}
+	id = tools(Args{Tool: "fresh", File: "config.json"})
+	e = a.expect(TypeEdit).Edit
+	a.send(Message{Type: TypeSaved, Saved: &Saved{Edit: e.ID, Canceled: true}})
+	if r := a.result(id); r.Status != StatusCanceled {
+		t.Fatalf("an edit given up: %+v", r)
+	}
+	for _, args := range []Args{{Tool: "fresh", File: "nope"}, {Tool: "diff", File: "x"}} {
+		if r := a.result(tools(args)); r.Status != StatusFailed {
+			t.Fatalf("%+v: %+v", args, r)
+		}
+	}
+
+	// A box that is not up has its tools listed, none runnable, and no
+	// addresses to copy.
+	r = a.result(a.command(Command{Command: "tools", Targets: []string{"b2"}, Context: Context{Tree: true, ListHasKeys: true}}))
+	if r.Status != StatusEnter || r.Tools[0].Enabled || r.Tools[0].Why == "" || r.Addresses[0].Value != "" || r.Addresses[0].Why == "" {
+		t.Fatalf("a stopped box's tools: %+v", r)
+	}
+}
+
+// The app is handed a copy of a file to edit, never the file: what was saved
+// there is written back once it is done with, and nothing once it is given
+// up, so the app's Cancel keeps the file as it was even for a tool's file,
+// which is edited in place. The copy is under a text format's extension,
+// since the app opens a file with the handler for its type: a name a box's
+// declaration chose (run.desktop) is a .txt copy.
+func TestAnEditIsHandedOverAsACopy(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	core.toolDir = t.TempDir()
+	core.tools = []console.Tool{{ID: "launcher", Label: "launcher", Files: []console.ToolFile{
+		{Tool: "launcher", Name: "run.desktop", Default: "before"},
+		{Tool: "launcher", Name: "config.json", Default: "before"},
+	}}}
+	a := dial(t, core)
+	a.hello()
+	for _, c := range []struct{ name, ext string }{{"run.desktop", ".txt"}, {"config.json", ".json"}} {
+		file := filepath.Join(core.toolDir, c.name)
+		edit := func(answer Saved, write string) Result {
+			id := a.command(Command{Command: "tools", Targets: []string{"b1"}, Args: Args{Tool: "launcher", File: c.name}})
+			e := a.expect(TypeEdit).Edit
+			if e.Path == file || !strings.HasSuffix(e.Path, c.ext) {
+				t.Fatalf("%s: handed %q, want a %s copy", c.name, e.Path, c.ext)
+			}
+			if got, _ := os.ReadFile(e.Path); string(got) != "before" {
+				t.Fatalf("%s: the copy holds %q", c.name, got)
+			}
+			if err := os.WriteFile(e.Path, []byte(write), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			answer.Edit = e.ID
+			a.send(Message{Type: TypeSaved, Saved: &answer})
+			r := a.result(id)
+			if _, err := os.Stat(e.Path); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("%s: the copy %s was left behind: %v", c.name, e.Path, err)
+			}
+			return r
+		}
+		if r := edit(Saved{Canceled: true}, "never saved"); r.Status != StatusCanceled {
+			t.Fatalf("%s given up: %+v", c.name, r)
+		}
+		if got, _ := os.ReadFile(file); string(got) != "before" {
+			t.Fatalf("%s: an edit given up left %q in the file", c.name, got)
+		}
+		if r := edit(Saved{}, "after"); r.Status != StatusDone || !strings.HasPrefix(r.Note, c.name+" saved") {
+			t.Fatalf("%s saved: %+v", c.name, r)
+		}
+		if got, _ := os.ReadFile(file); string(got) != "after" {
+			t.Fatalf("%s: saved %q, want what the copy held", c.name, got)
+		}
 	}
 }

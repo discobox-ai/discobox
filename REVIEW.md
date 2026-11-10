@@ -46,7 +46,11 @@ Global review expectations:
 - A file the desktop app opens for the person goes to a text editor, never to a
   shell or to the system's file association by its extension alone
   (`sheet::open_in_editor`): a harness file's path is its bundle's choice, and
-  the CLI writes it out under a text format's extension (`editExtension`).
+  a tool file's name its declaration's (a discobox's image or source can
+  declare one), so the desktop is only ever handed a copy under a text
+  format's extension (`console.EditExtension`, the bridge's `Server.edit`),
+  `.txt` for any other. The TUI runs `$EDITOR` itself and edits a tool's file
+  in place, whatever its name.
   The first version opened it with `cmd /C start`, so a bundle could name a
   script, or put `&` in the extension, and run it on a Windows machine.
 - In the desktop app, whatever draws in front of the workspace takes the keys

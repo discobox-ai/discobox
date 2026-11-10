@@ -71,6 +71,20 @@ func (e Exec) IsService() bool { return e.Service != "" }
 // terminal nor a shell, and put away after the shells when it is not shown.
 func (e Exec) IsTool() bool { return e.Tool != "" }
 
+// RunningTools are the tools a box's sessions are running, by ID: each with a
+// live session carrying it (Exec.IsTool). A tool's tab is a view of exactly
+// that session, and goes when it ends (Tab.End), so a console holding a
+// tool's tab and a listing with its live session agree.
+func RunningTools(execs []Exec) map[string]Exec {
+	out := map[string]Exec{}
+	for _, e := range execs {
+		if e.IsTool() && e.Live {
+			out[e.Tool] = e
+		}
+	}
+	return out
+}
+
 // Side is the column a session is drawn in. The primary, the box's other
 // harness terminals and its services go on the left — a service is the box
 // running your own work, which belongs beside the harness working on it —

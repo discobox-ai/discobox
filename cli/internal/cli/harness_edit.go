@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -168,9 +167,9 @@ func withHarnessFile(set []apimodel.HarnessConfigFile, file apimodel.HarnessConf
 // editInEditor writes content to a temp file, has edit open it in an editor,
 // and returns what the file holds once it returns and whether that differs.
 // The temp file keeps the target's extension, when it is a text format's, so
-// editors pick the right syntax mode (editExtension).
+// editors pick the right syntax mode (console.EditExtension).
 func editInEditor(ctx context.Context, path, content string, edit func(ctx context.Context, file string) error) (string, bool, error) {
-	tmp, err := os.CreateTemp("", "discobox-edit-*"+editExtension(path))
+	tmp, err := os.CreateTemp("", "discobox-edit-*"+console.EditExtension(path))
 	if err != nil {
 		return "", false, err
 	}
@@ -193,27 +192,6 @@ func editInEditor(ctx context.Context, path, content string, edit func(ctx conte
 	}
 	edited := string(editedBytes)
 	return edited, !bytes.Equal(editedBytes, []byte(content)), nil
-}
-
-// editExtensions are the extensions an edited file keeps: text formats a
-// desktop hands to a text editor. The path is the harness bundle's to choose,
-// and on Linux the desktop app opens the file with the handler for its type:
-// an extension outside these (a script's, a launcher's, one carrying shell
-// metacharacters) would let a bundle choose a program to run on this machine,
-// and one a desktop shows rather than edits (.xml, .md, .html: a browser or a
-// viewer) would leave nothing to save, so either is written as .txt.
-var editExtensions = map[string]bool{
-	".json": true, ".jsonc": true, ".json5": true, ".toml": true, ".yaml": true, ".yml": true,
-	".txt": true, ".ini": true, ".conf": true, ".cfg": true, ".env": true,
-}
-
-// editExtension is the extension a file at path is edited under: its own
-// when it is one of editExtensions, else .txt.
-func editExtension(path string) string {
-	if ext := strings.ToLower(filepath.Ext(path)); editExtensions[ext] {
-		return ext
-	}
-	return ".txt"
 }
 
 // runEditor is an edit run in the user's editor ($VISUAL, $EDITOR) on this

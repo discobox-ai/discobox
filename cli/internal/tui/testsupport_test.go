@@ -243,6 +243,9 @@ type fakeSource struct {
 	// $EDITOR would have written; nil leaves the file as it was.
 	toolFiles    map[string]string
 	editToolFile func(file console.ToolFile) string
+	// toolEditPath, when set, is handed to the editor on the edit's
+	// narration before editToolFile answers.
+	toolEditPath string
 	// pullDiffs are the files changed of a pull request, by its head, which
 	// its session draws; pullReviews the sessions PullReview was asked for,
 	// as "sandbox: base...head", and pullReviewErr fails it.
@@ -1270,7 +1273,16 @@ func (f *fakeSource) ToolFilePath(file console.ToolFile) string {
 	return "/config/discobox/tools/" + toolFileKeyOf(file)
 }
 
-func (f *fakeSource) EditToolFile(_ context.Context, file console.ToolFile, _ io.Reader, _, _ io.Writer) (bool, error) {
+func (f *fakeSource) EditToolFile(ctx context.Context, file console.ToolFile, n *console.Narration) (bool, error) {
+	f.mu.Lock()
+	path := f.toolEditPath
+	f.mu.Unlock()
+	if path != "" {
+		// Handed to the editor on the narration, as the CLI's is.
+		if err := n.Edit(ctx, path, "Editing "+file.Name+" — "+file.Tool); err != nil {
+			return false, err
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.editedTools = append(f.editedTools, toolFileKeyOf(file))

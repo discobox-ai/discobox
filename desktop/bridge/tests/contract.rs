@@ -518,6 +518,51 @@ fn harnesses_edits_and_harness_changes_reach_the_app() {
     assert_eq!((r.status, r.note.as_str()), (Status::Done, "harness changes: saved"));
 }
 
+// A box's tools reach the app as the core's: the tools command's tools, each with its files, and
+// the box's addresses; a tool on this machine handed the box; a tool's session made on a stream
+// as its tab, naming its tool; and a tool's file to edit as an edit the app answers with saved.
+#[test]
+fn tools_reach_the_app() {
+    let mut cli = Cli::start("default");
+    let id = cli.command("tools", &["b1"], pane("b1"), Args::default());
+    let r = cli.result(id);
+    assert_eq!((r.status, r.r#box.as_str()), (Status::Enter, "b1"));
+    let tools: Vec<_> = r.tools.iter().map(|t| (t.id.as_str(), t.detail.as_str(), t.host, t.enabled, t.why.as_str())).collect();
+    assert_eq!(tools, [
+        ("diff", "a diff viewer", false, true, ""), ("fresh", "", false, true, ""), ("ide", "", true, true, ""),
+        ("broken", "", false, false, "its command is empty"),
+    ]);
+    assert_eq!(r.tools[1].files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["config.json"]);
+    assert!(r.tools[1].files[0].detail.starts_with("→ ~/.config/fresh/config.json"), "{}", r.tools[1].files[0].detail);
+    assert_eq!(r.addresses.iter().map(|a| (a.label.as_str(), a.value.as_str())).collect::<Vec<_>>(), [("ssh", "ssh b1"), ("git url", "ssh://b1/work")]);
+
+    // A box that is not up has no tool to run, and nothing to reach it by.
+    let id = cli.command("tools", &["b3"], Context { list_has_keys: true, tree: true, ..Default::default() }, Args::default());
+    let r = cli.result(id);
+    assert!(r.tools.iter().all(|t| !t.enabled && !t.why.is_empty()), "{:?}", r.tools);
+    assert!(r.addresses.iter().all(|a| a.value.is_empty() && !a.why.is_empty()), "{:?}", r.addresses);
+
+    let id = cli.command("tools", &["b1"], pane("b1"), Args { tool: "ide".into(), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str()), (Status::Done, "opened b1 in IDE"));
+
+    let run = Args { tool: "diff".into(), stream: 6, cols: 100, rows: 30, ..Default::default() };
+    let id = cli.command("tools", &["b1"], pane("b1"), run);
+    let r = cli.result(id);
+    let tab = r.session.expect("the tool's tab");
+    assert_eq!((r.status, tab.kind, tab.tool.as_str(), tab.title.as_str()), (Status::Done, TabKind::Tool, "diff", "diff"));
+
+    let edit = Args { tool: "fresh".into(), file: "config.json".into(), ..Default::default() };
+    let id = cli.command("tools", &["b1"], pane("b1"), edit);
+    let e = cli.expect(Type::Edit).edit.unwrap();
+    assert_eq!((e.command, e.title.as_str()), (id, "Editing config.json"));
+    assert_eq!(std::fs::read_to_string(&e.path).unwrap(), "{}");
+    std::fs::write(&e.path, "{\"theme\":\"mine\"}").unwrap();
+    cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: e.id, ..Default::default() }), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str()), (Status::Done, "config.json saved — the next discobox to open fresh gets it"));
+}
+
 // A box's primary is read for what its program says of itself: the header says the poll's
 // before it reports, and what a report the program wrote (here, echoed) says after.
 #[test]

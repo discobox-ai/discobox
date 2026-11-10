@@ -109,7 +109,19 @@ func wireTab(t console.Tab, e console.Exec) Tab {
 	case t.Side() == console.SideTerminals:
 		kind = TabTerminal
 	}
-	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command), Service: t.Service, Run: t.ServiceRun, Status: t.Status}
+	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command), Service: t.Service, Run: t.ServiceRun, Status: t.Status, Tool: t.Tool}
+}
+
+// wireTool is a tool as the tools menu lists it for a box: why it cannot run
+// against it, and running when the box has its session live. path is where
+// a file's copy is on this machine (DataSource.ToolFilePath).
+func wireTool(t console.Tool, box console.Sandbox, running bool, path func(console.ToolFile) string) Tool {
+	why := t.Why(box)
+	out := Tool{ID: t.ID, Label: t.Label, Detail: t.PickerDetail(running), Host: t.Host, Enabled: why == "", Why: why, Files: make([]ToolFile, 0, len(t.Files))}
+	for _, f := range t.Files {
+		out.Files = append(out.Files, ToolFile{Name: f.Name, Detail: console.ToolFileDetail(f, path(f))})
+	}
+	return out
 }
 
 // wireEnd is what an ending does, as the wire says it.

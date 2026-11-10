@@ -408,6 +408,33 @@ and the desktop's page both draw:
   heading (`HarnessChangedFile.Label`, the shadowed sentence included). The
   TUI's band and explainer are the TUI's.
 
+## Tools
+
+`tools.go` (876 §1). The tools picker's rules, which the TUI's card and the
+desktop's menu both draw; which tools a box has is the data source's (ADR
+0125), and a tool's session is a tab like any other (`ToolTab`, `Exec.IsTool`):
+
+- **What the picker lists is the core's** (`PickerTools`): every tool, and a
+  declaration that cannot run with its reason, except one the merge refused
+  beside a tool that runs under its id. `ToolIn` finds the one that runs.
+  `Tool.Why` is why it cannot run against a box (its problem, else
+  `AttachWhy`), `PickerDetail` what its row says, running or not: a tool runs
+  while the box has a live session carrying it (`RunningTools`, in
+  `workspace.go`).
+- **A tool is run through the core**, never on a catalog a console read
+  before: `OfferedTool` reads the box's tools again and refuses what the
+  picker would; `RunHostTool` hands the box to one that runs on this machine,
+  and words what came of it; `OpenTool` is a session of one that runs in the
+  box — its live session when it is running, attached, else one made
+  (`NewTool`) — so choosing a running tool never starts a second. Which tab
+  takes the focus is the renderer's.
+- **A tool's file is edited through the narration** (`EditTool`, refusing a
+  file the tool does not carry; `DataSource.EditToolFile`), as a harness file
+  is; `ToolFileDetail` and `ToolEdited` are what its row and the status line
+  say. The copy is this machine's, so the box need not be up.
+- **A box's addresses** (`AddressOffers`): its ssh command and git URL to
+  copy, each with why there is none. Copying is the renderer's.
+
 ## Narration and questions
 
 `narration.go` (876 §1, 289 §2). A command that reports as it goes, or asks
@@ -435,8 +462,10 @@ flowchart LR
   `DefaultNo` for a destruction nobody can undo). Its asker words it and
   reads its answer; the frontend draws it. Git's credential question is the
   CLI's (`cli.gitCredentialQuestion`), in the words `discobox run` uses.
-- **A file to edit is an event too** (`Edit`, `Editing`): a file on this
-  machine the frontend opens in its editor — the TUI hands the terminal to
+- **A file to edit is an event too** (`Edit`, `Editing`): a harness's or a
+  tool's file on this machine that the frontend opens in its editor (the
+  desktop bridge hands the app a copy under a text format's extension,
+  `EditExtension`, written back once its Done says so) — the TUI hands the terminal to
   `$EDITOR`, the desktop bridge sends `edit` and waits for `saved` — and says
   `Done` once the person is finished with it, `context.Canceled` for one given
   up. The command reads the file back itself.

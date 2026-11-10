@@ -39,6 +39,11 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //     .claude.json: editing it writes the file out holding "before" and
 //     reads back what the app saved there. b1's harness changes are a
 //     pending candidate, c1, changing settings.json.
+//   - Every box declares four tools: diff, a diff viewer whose session runs
+//     in the box; fresh, carrying config.json, whose edit writes the file
+//     out holding its default and reads back what the app saved there; ide,
+//     which runs on this machine; and broken, whose command is empty. b1
+//     answers on ssh and git; b3, stopped, on neither.
 //
 // A create (new) is made on claude, the project's default, and makes the box
 // made: it reports the last draft the app sent as a step, and is taken.
@@ -80,6 +85,13 @@ func TestContractCore(t *testing.T) {
 		Files: []console.HarnessFile{{Path: ".claude.json", Content: "{}", Source: console.HarnessFileSaved}}}}
 	core.changes = console.HarnessChanges{CandidateID: "c1", State: "pending", Revision: 1,
 		Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "update", Diff: "-a\n+b\n"}}}
+	core.tools = []console.Tool{
+		{ID: "diff", Label: "diff", Detail: "a diff viewer"},
+		{ID: "fresh", Label: "fresh", Files: []console.ToolFile{{Tool: "fresh", Name: "config.json", Home: ".config/fresh/config.json", Default: "{}"}}},
+		{ID: "ide", Label: "IDE", Host: true},
+		{ID: "broken", Label: "broken", Problem: "its command is empty"},
+	}
+	core.addresses = console.Addresses{SSH: "ssh b1", Git: "ssh://b1/work"}
 	core.run = func(ctx context.Context, _ console.RunRequest, n *console.Narration) (console.Sandbox, error) {
 		core.mu.Lock()
 		draft := ""

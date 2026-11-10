@@ -1,11 +1,13 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -637,7 +639,44 @@ func (s *Server) ask(ctx context.Context, command uint64, q console.Question) (s
 // edit has the app open a file in the person's editor for a running command
 // and waits for its saved: nil once they are finished with it,
 // context.Canceled for one they gave up, or why it could not be opened.
+//
+// The app is handed a copy, never the file itself, and what was saved there
+// is written back only once the person is finished with it: the app's Cancel
+// keeps the file as it was, which an editor saving the file itself could not
+// (a tool's file is its copy on this machine, edited in place). The copy is
+// under a text format's extension (console.EditExtension), since the app
+// opens a file with the handler for its type and a tool file's name is its
+// declaration's: one a box named config.sh would choose the program.
 func (s *Server) edit(ctx context.Context, command uint64, e *console.Editing) error {
+	ext := console.EditExtension(e.Path)
+	content, err := os.ReadFile(e.Path)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp("", "discobox-edit-*"+ext)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := s.editAt(ctx, command, tmp.Name(), e.Title); err != nil {
+		return err
+	}
+	edited, err := os.ReadFile(tmp.Name())
+	if err != nil || bytes.Equal(edited, content) {
+		return err
+	}
+	return os.WriteFile(e.Path, edited, 0o600)
+}
+
+// editAt has the app open the file at path, and waits for its saved.
+func (s *Server) editAt(ctx context.Context, command uint64, path, title string) error {
 	id := s.id()
 	ch := make(chan Saved, 1)
 	s.mu.Lock()
@@ -648,7 +687,7 @@ func (s *Server) edit(ctx context.Context, command uint64, e *console.Editing) e
 		delete(s.edits, id)
 		s.mu.Unlock()
 	}()
-	s.send(Message{Type: TypeEdit, Edit: &Edit{ID: id, Command: command, Path: e.Path, Title: e.Title}})
+	s.send(Message{Type: TypeEdit, Edit: &Edit{ID: id, Command: command, Path: path, Title: title}})
 	select {
 	case saved := <-ch:
 		switch {

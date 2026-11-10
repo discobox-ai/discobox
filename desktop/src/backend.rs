@@ -366,6 +366,7 @@ impl MockService {
         Tab {
             exec: format!("service:{}", self.id), kind: TabKind::Service, title: format!("{}{mark}", self.id), live: self.live(), argv: vec![],
             service: self.id.clone(), run: format!("{}|{}", self.runs, self.status), status: if self.live() { String::new() } else { self.status.clone() },
+            tool: String::new(),
         }
     }
 

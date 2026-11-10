@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -893,6 +894,41 @@ func TestAGitSummaryClickRetriesAFailedToolLookup(t *testing.T) {
 		ds.mu.Unlock()
 		if lookups < 2 {
 			t.Fatalf("lookups = %d, want the second click to ask again", lookups)
+		}
+	})
+}
+
+// A tool file's edit hands the terminal to the editor on a feed of its own:
+// the busy line's narration — a box still coming up reports there — goes on.
+func TestAToolFileEditLeavesTheBusyLinesNarration(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		ds.toolEditPath = filepath.Join(t.TempDir(), "config.jsonc")
+		ds.editToolFile = func(console.ToolFile) string { return `{"theme":"mine"}` }
+		d, m, _ := openWorkspace(t, ds, "enter")
+		var titles []string
+		m.exec = func(c tea.ExecCommand, done tea.ExecCallback) tea.Cmd {
+			return func() tea.Msg {
+				titles = append(titles, c.(*harnessExec).title)
+				return done(nil)
+			}
+		}
+		gen := m.busyGen
+
+		d.key("ctrl+a")
+		d.key(toolsKey)
+		waitPicker(d, m)
+		d.key("down") // onto fresh
+		d.key(toolFileKey)
+		d.wait("the file list", func() bool { return m.dialog != nil && strings.Contains(m.dialog.title, "Config") })
+		d.key("1")
+		d.wait("the report", func() bool { return strings.Contains(m.status, "next discobox") })
+
+		if len(titles) != 1 || !strings.HasPrefix(titles[0], "Editing config.jsonc") {
+			t.Fatalf("the terminal went to %q, want the edit by its title", titles)
+		}
+		if m.busyGen != gen {
+			t.Fatalf("the edit ended the busy line's narration (generation %d, was %d)", m.busyGen, gen)
 		}
 	})
 }

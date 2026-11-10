@@ -557,7 +557,9 @@
           "menu": []
         },
         "desktop": {
-          "keys": [],
+          "keys": [
+            "primary+alt+o"
+          ],
           "menu": "Box"
         }
       }
