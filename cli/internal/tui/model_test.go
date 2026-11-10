@@ -1027,7 +1027,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 
 	// On the window's own directory, the run names no source at all: that is
 	// already what `discobox run` would use, and passing it would only repeat it.
-	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "" {
+	if req := m.opts.Request("", m.opts.Opts[console.OptSource].Selected()); req.Source != "" {
 		t.Fatalf("source = %q, want the CLI's own default", req.Source)
 	}
 
@@ -1035,11 +1035,11 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	if m.list.Filter.Folder.Key != testKey("/src/obot") {
 		t.Fatalf("folder = %q", m.list.Filter.Folder.Label)
 	}
-	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "/src/obot" {
+	if req := m.opts.Request("", m.opts.Opts[console.OptSource].Selected()); req.Source != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", req.Source)
 	}
-	if !strings.Contains(m.opts.command(""), "discobox run /src/obot") {
-		t.Fatalf("command should carry the folder: %q", m.opts.command(""))
+	if !strings.Contains(m.opts.Command(""), "discobox run /src/obot") {
+		t.Fatalf("command should carry the folder: %q", m.opts.Command(""))
 	}
 
 	// And it is what Enter actually asks for.
@@ -1068,7 +1068,7 @@ func TestTheSourceChipOnlyShowsWhenItDiffers(t *testing.T) {
 
 	// An override is the one case worth a chip: the window is listing one
 	// folder and about to create in another.
-	m.opts.chooseSource("/src/elsewhere@main")
+	m.opts.ChooseSource("/src/elsewhere@main")
 	if chips := m.opts.chips(m.st); !strings.Contains(chips, "/src/elsewhere@main") {
 		t.Errorf("an override should be on the strip: %q", chips)
 	}

@@ -324,9 +324,48 @@ flowchart LR
   of it.
 - **What the form is for stays with its flow**: the title, the explanation
   around it, the waits and the call that sends the answer are the frontend's
-  and the `DataSource`'s. The create card's source and item fields are forms
-  (`SourceForm`, `ItemForm`); the run options the card is otherwise made of
-  are the composer's.
+  and the `DataSource`'s. The TUI's create card types its sources and items
+  into forms of their own (`SourceForm`, `ItemForm`).
+- **A form can grow** (`Grow`): its fields for the answers so far, so a
+  repeated row gains a field once its last is filled; a renderer keeps what was
+  typed by key. `Note` is what the answers add up to (a create's command).
+
+## Creating a box
+
+`runoptions.go`, `create.go` (876 §1). `RunOptions` is every flag `discobox
+run` takes, as rows: what each offers and leads with (the project's default
+harness and pool first, so unchanged emits no flag), the sources the Source row
+offers (the last create's, the window's directory, the project's, no source),
+the summary under the composer (`Summary`), the request (`Request`,
+`CardRequest`) and the command it previews (`CommandFor`). A window holds one —
+the TUI's `optionSet`, the desktop bridge's — and a renderer adds only the
+cursor and the drawing.
+
+- **Unchanged emits nothing**: a row's default leads (index zero) or is
+  named (`Unchanged`, the Source row's: wherever the list's folder is), so the
+  request and the preview carry only what somebody chose.
+- **The Source row's order moves only with a create**: the last create's
+  source leads (`CutFrom`, kept across windows by `SaveLastSource`), then the
+  window's directory, the project's sources, no source. The folder moving
+  (`SetFolder`) points the row at it but never reorders it, or stepping
+  through it would only ever reach two entries.
+- **The Pool row is shown only with a pool to choose** (`Shown`), and keeps
+  a chosen pool across listings by ID, and one named that the listing lacks.
+- **The card is the run options' too**: `CardRows` are the settings it offers,
+  `CardChoice` how a choice reads on it (`auto (claude)`).
+- **What a create asks before it is sent is the core's**:
+  `DefaultHarnessQuestion` (a project with no default; never the shell) and
+  `AskAboutWorkspace` (a repository's uncommitted work, excluding first and
+  left as excluded; a directory in no repository, copying first and left as
+  nothing created), each answered through the question it returns.
+- **A form renderer gets them as forms**: `CreateForm` (the source — a choice
+  or one typed — and `CardRows`) and `OptionsForm` (the source as the card
+  asks it, and every other row shown). Keys are
+  the rows' values, the note the command; a source typed or added is checked
+  (`Resolve`, `DataSource.ResolveSource`) on submit, never on a draft.
+  `TakeOptions` takes the
+  options' answer whole, its source included (`NameSource`, `ChooseSource`), and
+  `TakeCard` the card's (`CutFrom`): no flow finishes an answer by hand.
 
 ## Harnesses
 
@@ -402,6 +441,8 @@ flowchart LR
   (`context.Canceled`) or unaskable (`ErrNoFrontend`). A nil `*Narration` is a
   command nobody watches: it reports nowhere and declines every question, and
   `Decline` is that for a frontend that cannot ask yet.
+- **A question has a subject** (`Subject`), said on its own line above its
+  body: the directory a create would carry.
 - **What a command asks before it runs is the core's too**: `Confirmation`
   says which lifecycle verbs ask first (purging, which nothing undoes; nothing
   else, archiving included) and in what words, and `Dispatch` asks it on the

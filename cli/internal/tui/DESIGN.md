@@ -17,7 +17,7 @@ flowchart LR
     DS --> M["Model"]
     M --> P["prompt (composer)"]
     M --> L["sandboxList (renders console.List)"]
-    M --> O["optionSet (Ctrl-O)"]
+    M --> O["optionSet (Ctrl-O): renders console.RunOptions"]
     M --> A["harnessList (F3)"]
     M --> D["dialog (menu, confirm, input, form, help, wait)"]
     P -->|Enter| Card["create card (source, harness, server, skills, sources)"]
@@ -190,6 +190,13 @@ flowchart LR
   workspace, so the tree is drawn beside it. A page opened over the audit
   closes it (`openPage`), or the audit would be drawn in front of the page's
   own panes and take their keys.
+- **The run options and the create card's rules are the core's**
+  (`console.RunOptions`, `console/create.go`): the rows, what each offers and
+  leads with, the sources, the card's rows and words, the request and the
+  command preview, and the questions a create asks before it is sent (which
+  harness a project with no default runs, what of the working tree it carries).
+  `optionSet` is the cursor over them and the panel's drawing; the card, the
+  chips' styling and the copy question's live size are this window's.
 - **A new discobox is a card**, the composer framed as a dialog (`newOpen`,
   `viewNewCard`), and modal like one: the tree is greyed (`treeBlocked`)
   while it or any dialog is up, since it takes no clicks then. It is not in
@@ -1292,7 +1299,7 @@ menu is drawn from the same choices.
 
 **The server on screen is the server the prompt creates on.** The header filter
 and the run options' Server row are one control in both directions: `applyFilter` (and `cycleServer` on the
-harnesses and secrets screens) → `optionSet.setServer`, and
+harnesses and secrets screens) → `RunOptions.SetServer`, and
 `Model.followServer` back the other way when the row is cycled in the panel. So
 narrowing the list to a machine is also the way to send the next prompt there.
 `all servers` is no answer to which server, so a create from there goes to the
@@ -1390,8 +1397,8 @@ filter from the other side (above). Every harness, secret and binding call takes
 the server by name (ADR 0131 §3) — the configured server, or the request's
 own.
 
-Beside it the run options carry a **Pool** row (`optPool`, `pools.go`), drawn
-only when there is more than one choice (`optionSet.shown`): the
+Beside it the run options carry a **Pool** row (`console.OptPool`, `pools.go`), drawn
+only when there is more than one choice (`RunOptions.Shown`): the
 configured server's pools (`DataSource.Pools`), read at startup, on a change of
 server and on each Ctrl-O. The project's default pool leads, so an untouched
 row sends no `--pool`; anything else is `RunRequest.Pool`, the pool's name in
@@ -2412,7 +2419,7 @@ not: a target that only exists once the pointer has stopped is one the first
 click misses.
 
 **The panel shows the command it describes, spelled `discobox run SOURCE -p '...'`**
-(`optionSet.command`). What is on screen has to be reproducible from a shell —
+(`RunOptions.Command`). What is on screen has to be reproducible from a shell —
 a panel offering something the command cannot is the thing to avoid — and
 `run` is the only command that makes a discobox
 ([ADR 26-09-25-027](../../../docs/adr/26-09-25-027-only-new-makes-a-discobox.md)).
@@ -2908,7 +2915,7 @@ letter as text and the list has spent them on its own actions, and it is inert
 inside a pane, where every key is the sandbox's.
 
 The listing is read at startup, not when the screen is opened, because the run
-options' harness choices are built from it (`optionSet.setHarnesses`): one
+options' harness choices are built from it (`RunOptions.SetHarnesses`): one
 registered while the window is up is selectable without reopening it, and the default leads
 the list so an unchanged option emits no `--harness` at all. Every harness is
 offered: a harness names no platform and no image kind, which are its pool's
@@ -2941,7 +2948,7 @@ never heard of it (`machineText`). The row under the list says what Discobox has
 here and how much of it is in use, which is what somebody about to start another
 discobox wants to know. The one place the word appears is the run options'
 Pool row, and only for a project with more than one pool to choose between
-(`optionSet.shown`): somebody who has made a second pool has heard of them.
+(`RunOptions.Shown`): somebody who has made a second pool has heard of them.
 
 It is a row rather than a third fact on the title band. The band was carrying
 the scope, the count and the machine at once and reading as none of them; the
@@ -3088,11 +3095,11 @@ compares `Sandbox.OriginHostID` against `Session.HostID` and writes the
 qualifier itself. An unknown local identity marks nothing at all — a window
 that cannot say what is local cannot say what is remote either.
 
-Moving the folder also moves *where Enter creates*: `optionSet.setFolder` points
+Moving the folder also moves *where Enter creates*: `RunOptions.SetFolder` (the core's) points
 the run source at it. The two are not one control, though: a window opens its
 Source row on the last create's source (`Session.LastSource`) whatever folder the
 header opens on, and each create leaves the row on its answer without moving the
-header (ADR 26-10-20-596), so the next create opens there. `request()` leaves
+header (ADR 26-10-20-596), so the next create opens there. `RunOptions.Request` leaves
 `Source` empty when it is the session's own directory, since that is already
 what `discobox run` resolves to, and the chip strip shows the source only when
 it differs from what the header says — a strip repeating the header is one you
@@ -3166,8 +3173,8 @@ the card.
 
 - **The source answered is this one discobox's, not a filter.** `request` takes
   it without the header moving, so the list shows what it showed once the
-  create is done. It is the last answer (`lastCut`): it leads the Source row,
-  the row is set to it (`optionSet.cutFrom`), and `DataSource.SaveLastSource`
+  create is done. It is the last answer (the core's `RunOptions` keeps it): it leads the Source row,
+  the row is set to it (`RunOptions.CutFrom`), and `DataSource.SaveLastSource`
   keeps it for the next window, which opens its row on `Session.LastSource`
   (ADR 26-10-20-596). The card opens on the row's
   choice, so the next create is one Enter from the same place until the header
@@ -3182,7 +3189,7 @@ the card.
   harness listing that lands while the card is up redraws its row. Only the
   wording differs: an unchosen harness reads `auto (<default>)` on the card.
 - **An additional source is checked like a typed primary** (`askForItem`,
-  `option.checked` → `DataSource.ResolveSource`). A skills directory is not:
+  `RunOption.Checked` → `DataSource.ResolveSource`). A skills directory is not:
   nothing on the data seam reads one before the create does.
 - A window whose session has not landed yet has no directory or sources to
   offer, so it is left to `discobox run`'s own resolution, the way a prompt
@@ -3190,7 +3197,7 @@ the card.
   (`WithRun`) is a whole command already and skips the card — unless it left
   its source unsaid (`askSource`), when the card is put up once both the
   session and the harness listing have landed (`startPendingRun`), with the
-  rows prefilled from the command's flags (`optionSet.prefill`) and what the
+  rows prefilled from the command's flags (`RunOptions.Prefill`) and what the
   card has no row for (`--bind`, `--delegate`, the prompt's own tokens) carried
   from the request (`createCard.base`). Its cursor opens on the directory the
   command ran in, which is what no SOURCE meant before it asked. Leaving that
@@ -3212,7 +3219,7 @@ Because the header follows the row, the row's order cannot follow the header.
 Leading with the current folder would reorder the choices every time the list
 moved, and left-right would then only ever reach the first two of them. The order
 is fixed (the session's directory, the listing's sources, `no source`) and which
-entry counts as unchanged is carried by `option.unchanged` instead — so the panel
+entry counts as unchanged is carried by `RunOption.Unchanged` instead — so the panel
 can stay silent about a source the header already names without the ordering
 being what says it.
 

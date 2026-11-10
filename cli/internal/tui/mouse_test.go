@@ -447,12 +447,12 @@ func TestPressingTheOptionArrowsChangesTheValue(t *testing.T) {
 	slowClock(m)
 	send(t, m, keyPress("ctrl+o"))
 
-	before := m.opts.opts[optHarness].display()
+	before := m.opts.Opts[console.OptHarness].Display()
 	// The arrow on the cursor row, which the panel opens on.
 	x, y := at(t, m, "‹")
 	tap(t, m, x, y)
 
-	if got := m.opts.opts[optHarness].display(); got == before {
+	if got := m.opts.Opts[console.OptHarness].Display(); got == before {
 		t.Fatalf("the harness is still %q; the arrow should have changed it", got)
 	}
 }
@@ -815,15 +815,15 @@ func TestOneArrowPressChangesAnyOptionRow(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
 	send(t, m, keyPress("ctrl+o"))
-	if m.opts.cursor == optDetach {
+	if m.opts.cursor == console.OptDetach {
 		t.Fatalf("the panel opens on the row this test means to reach past")
 	}
 
-	before := m.opts.opts[optDetach].display()
-	_, y := at(t, m, m.opts.opts[optDetach].label)
+	before := m.opts.Opts[console.OptDetach].Display()
+	_, y := at(t, m, m.opts.Opts[console.OptDetach].Label)
 	x := 0
 	for _, z := range m.zones.marks {
-		if z.what.kind == hitOptionCycle && z.what.idx == optDetach && z.what.delta > 0 {
+		if z.what.kind == hitOptionCycle && z.what.idx == console.OptDetach && z.what.delta > 0 {
 			x = z.x
 		}
 	}
@@ -832,10 +832,10 @@ func TestOneArrowPressChangesAnyOptionRow(t *testing.T) {
 	}
 	tap(t, m, x, y)
 
-	if got := m.opts.opts[optDetach].display(); got == before {
+	if got := m.opts.Opts[console.OptDetach].Display(); got == before {
 		t.Fatalf("the value is still %q; one press on its arrow should have changed it", got)
 	}
-	if m.opts.cursor != optDetach {
+	if m.opts.cursor != console.OptDetach {
 		t.Fatalf("the cursor is on %d, want the row that was pressed", m.opts.cursor)
 	}
 }
@@ -848,10 +848,10 @@ func TestTheOptionValuesDoNotShiftUnderThePointer(t *testing.T) {
 	slowClock(m)
 	send(t, m, keyPress("ctrl+o"))
 
-	x, y := at(t, m, m.opts.opts[optDetach].display())
+	x, y := at(t, m, m.opts.Opts[console.OptDetach].Display())
 	send(t, m, tea.MouseMotionMsg{X: x, Y: y})
 
-	if got, _ := at(t, m, m.opts.opts[optDetach].display()); got != x {
+	if got, _ := at(t, m, m.opts.Opts[console.OptDetach].Display()); got != x {
 		t.Fatalf("the value moved from column %d to %d when the pointer arrived", x, got)
 	}
 }

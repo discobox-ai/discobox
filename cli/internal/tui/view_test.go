@@ -48,10 +48,10 @@ func TestASavedViewIsWhereTheWindowOpens(t *testing.T) {
 	if m.list.Filter.Server != "beta" || m.list.Filter.Folder.Key != testKey("/src/obot") || !slices.Equal(m.list.Filter.Tags, []string{"wip"}) {
 		t.Fatalf("view = %+v, want the one saved", m.currentView())
 	}
-	if m.opts.folder != "/src/obot" {
-		t.Fatalf("the run options cut from %q, want the saved folder's source", m.opts.folder)
+	if m.opts.Folder != "/src/obot" {
+		t.Fatalf("the run options cut from %q, want the saved folder's source", m.opts.Folder)
 	}
-	if got := m.opts.command("fix it"); !strings.Contains(got, "--server beta") {
+	if got := m.opts.Command("fix it"); !strings.Contains(got, "--server beta") {
 		t.Fatalf("command = %q, want it on the saved server", got)
 	}
 }
@@ -150,7 +150,7 @@ func TestTheOwnFolderIsRestoredFromTheSession(t *testing.T) {
 	if m.list.Filter.Folder != own {
 		t.Fatalf("folder = %+v, want the session's own %+v", m.list.Filter.Folder, own)
 	}
-	if m.opts.folder != own.Source {
-		t.Fatalf("the run options cut from %q, want %q", m.opts.folder, own.Source)
+	if m.opts.Folder != own.Source {
+		t.Fatalf("the run options cut from %q, want %q", m.opts.Folder, own.Source)
 	}
 }

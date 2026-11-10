@@ -161,7 +161,7 @@ func draw(d *dialog) string { return d.view(newStyles(false), &zones{}, 100, 24)
 func TestDialogSubjectEllipsizesAndItsBodyWraps(t *testing.T) {
 	t.Parallel()
 	dir := "/Users/somebody/projects/" + strings.Repeat("nested/", 20) + "leaf-directory"
-	d := actionsDialog("Copy this directory?", copyDirectoryBody, []action{
+	d := actionsDialog("Copy this directory?", console.CopyDirectoryBody, []action{
 		{key: "false", label: "Do not copy the directory", enabled: true},
 		{key: "true", label: "Copy the directory in", enabled: true},
 	}, nil)

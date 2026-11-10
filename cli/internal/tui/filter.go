@@ -352,10 +352,10 @@ func (m *Model) applyFilter(server string, f console.Folder, tags []string) tea.
 	// to the primary, which is where `discobox run` puts it with no --server
 	// at all (ADR 0116 §5).
 	if folderMoved {
-		m.opts.setFolder(f.Source)
+		m.opts.SetFolder(f.Source)
 	}
 	if serverMoved {
-		m.opts.setServer(server)
+		m.opts.SetServer(server)
 	}
 	m.list.resetCursor()
 	m.layout()

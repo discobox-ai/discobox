@@ -515,20 +515,6 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
-// shellQuote quotes an argument the way the command preview needs it: only when
-// the argument would otherwise be split or interpreted.
-func shellQuote(s string) string {
-	if s == "" {
-		return "''"
-	}
-	if strings.IndexFunc(s, func(r rune) bool {
-		return strings.ContainsRune(" \t\n\"'\\$`*?![]{}()<>|&;#~", r)
-	}) < 0 {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // wrap word wraps while honoring existing newlines, so text already laid out
 // in columns — the help, a record's fields — keeps its alignment. Nothing is
 // lost to the width: see wrapLine.

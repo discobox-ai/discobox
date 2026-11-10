@@ -17,30 +17,30 @@ import (
 // primary leads it so an untouched panel creates where it always did
 // (ADR 0116 §5).
 func TestRunOptionsOfferAServerOnlyWhenThereIsAChoice(t *testing.T) {
-	if single := newOptions(console.Session{Directory: "/work"}); single.server() != nil {
+	if single := newOptions(console.Session{Directory: "/work"}); single.Server() != nil {
 		t.Fatal("the run options offer a server with only the primary to create on")
 	}
 
 	opts := newOptions(console.Session{Directory: "/work", Servers: []string{"alpha", "beta"}})
-	row := opts.server()
+	row := opts.Server()
 	if row == nil {
 		t.Fatal("the run options offer no server with two to choose from")
 	}
-	if got := row.display(); got != "alpha (primary)" {
+	if got := row.Display(); got != "alpha (primary)" {
 		t.Fatalf("Server row = %q, want the primary, saying so", got)
 	}
-	if req := opts.request("fix it", opts.opts[optSource].selected()); req.Server != "" {
+	if req := opts.Request("fix it", opts.Opts[console.OptSource].Selected()); req.Server != "" {
 		t.Fatalf("untouched request Server = %q, want the primary", req.Server)
 	}
-	if strings.Contains(opts.command("fix it"), "--server") {
-		t.Fatalf("command = %q, want no --server for the primary", opts.command("fix it"))
+	if strings.Contains(opts.Command("fix it"), "--server") {
+		t.Fatalf("command = %q, want no --server for the primary", opts.Command("fix it"))
 	}
 
-	row.cycle(1)
-	if req := opts.request("fix it", opts.opts[optSource].selected()); req.Server != "beta" {
+	row.Cycle(1)
+	if req := opts.Request("fix it", opts.Opts[console.OptSource].Selected()); req.Server != "beta" {
 		t.Fatalf("request Server = %q, want beta", req.Server)
 	}
-	if got := opts.command("fix it"); !strings.Contains(got, "--server beta") {
+	if got := opts.Command("fix it"); !strings.Contains(got, "--server beta") {
 		t.Fatalf("command = %q, want --server beta", got)
 	}
 }
@@ -355,12 +355,12 @@ func TestRunOptionsPreviewDropsTheProjectOnAnotherServer(t *testing.T) {
 		DefaultProject: "default",
 		Servers:        []string{"alpha", "beta"},
 	})
-	if got := opts.command("fix it"); !strings.Contains(got, "--project proj_only_on_the_primary") {
+	if got := opts.Command("fix it"); !strings.Contains(got, "--project proj_only_on_the_primary") {
 		t.Fatalf("command = %q, want the project named for a run on the primary", got)
 	}
 
-	opts.server().cycle(1)
-	got := opts.command("fix it")
+	opts.Server().Cycle(1)
+	got := opts.Command("fix it")
 	if !strings.Contains(got, "--server beta") {
 		t.Fatalf("command = %q, want --server beta", got)
 	}
@@ -475,7 +475,7 @@ func TestTheHeaderServerIsWhereThePromptRuns(t *testing.T) {
 	if m.list.Filter.Server != "beta" {
 		t.Fatalf("the list is showing %q, want beta", m.list.Filter.Server)
 	}
-	if got := m.opts.command("fix it"); !strings.Contains(got, "--server beta") {
+	if got := m.opts.Command("fix it"); !strings.Contains(got, "--server beta") {
 		t.Fatalf("command = %q, want --server beta", got)
 	}
 
@@ -503,7 +503,7 @@ func TestEveryServerStillCreatesOnThePrimary(t *testing.T) {
 	if m.list.Filter.Server != "" {
 		t.Fatalf("the list is showing %q, want every server", m.list.Filter.Server)
 	}
-	if got := m.opts.command("fix it"); strings.Contains(got, "--server") {
+	if got := m.opts.Command("fix it"); strings.Contains(got, "--server") {
 		t.Fatalf("command = %q, want no --server, which is the primary", got)
 	}
 }
@@ -517,7 +517,7 @@ func TestTheRunOptionsServerRowMovesTheList(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	m.optionsOpen = true
-	m.opts.moveTo(optServer)
+	m.opts.moveTo(console.OptServer)
 	send(t, m, keyPress("right"))
 	if m.list.Filter.Server != "beta" {
 		t.Fatalf("the list is showing %q, want the server the row moved to", m.list.Filter.Server)

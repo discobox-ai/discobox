@@ -106,13 +106,13 @@ func (m *Model) primaryServer() string {
 // and the row are one control in both directions, the way the header's folder
 // and the panel's source are (followSource).
 func (m *Model) followServer() tea.Cmd {
-	row := m.opts.server()
+	row := m.opts.Server()
 	if row == nil {
 		return nil
 	}
 	// The row has no "every server" choice — a create goes to one server — so
 	// following it always lands the list on one, wherever it was before.
-	name := row.selected()
+	name := row.Selected()
 	var reload tea.Cmd
 	if name != m.list.Filter.Server {
 		was := m.configServer()

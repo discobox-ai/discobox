@@ -60,7 +60,7 @@ type createServerMsg struct{}
 
 // createItemMsg asks for the field a repeated row's next value is typed into.
 type createItemMsg struct {
-	opt  *option
+	opt  *console.RunOption
 	card *createCard
 }
 
@@ -69,13 +69,13 @@ type createItemMsg struct {
 // the header or the row is moved (optionSet.cutFrom).
 func (o *optionSet) newCreateCard(prompt string, base *console.RunRequest) *createCard {
 	c := &createCard{opts: o, prompt: prompt, base: base, row: -1}
-	source := o.opts[optSource]
-	c.cursor = source.idx
+	source := o.Opts[console.OptSource]
+	c.cursor = source.Index
 	if base != nil {
 		// `discobox run` with no SOURCE was the directory it ran in before it
 		// asked, and that stays the first answer whatever the last window was
 		// left cutting from.
-		if i := slices.Index(source.values, o.session.Directory); i >= 0 {
+		if i := slices.Index(source.Values, o.Session.Directory); i >= 0 {
 			c.cursor = i
 		}
 	}
@@ -83,40 +83,26 @@ func (o *optionSet) newCreateCard(prompt string, base *console.RunRequest) *crea
 }
 
 // rows are the settings under the list, as indexes into the options: the
-// harness first, since it is the one most often changed, then the pool and the
-// server where there is one to choose, then what is brought in beside the
-// source.
-func (c *createCard) rows() []int {
-	rows := []int{optHarness}
-	// The pool where there is more than one to choose, by the panel's own
-	// rule: a row with nothing to step to is a row that only says what the
-	// strip already does.
-	if c.opts.shown(optPool) {
-		rows = append(rows, optPool)
-	}
-	if c.opts.server() != nil {
-		rows = append(rows, optServer)
-	}
-	return append(rows, optProjectSkills, optUserSkills, optSkills, optInclude)
-}
+// core's (RunOptions.CardRows).
+func (c *createCard) rows() []int { return c.opts.CardRows() }
 
 // current is the setting the keyboard is on, or nil while it is in the list.
-func (c *createCard) current() *option {
+func (c *createCard) current() *console.RunOption {
 	rows := c.rows()
 	if c.row < 0 || c.row >= len(rows) {
 		return nil
 	}
-	return c.opts.opts[rows[c.row]]
+	return c.opts.Opts[rows[c.row]]
 }
 
 // sources is how many rows of the list are sources; the row after them is the
 // way to name one the listing has never seen.
-func (c *createCard) sources() int { return len(c.opts.opts[optSource].values) }
+func (c *createCard) sources() int { return len(c.opts.Opts[console.OptSource].Values) }
 
 // source is the source under the cursor, and whether the cursor is on one
 // rather than on the row that asks for it.
 func (c *createCard) source() (string, bool) {
-	values := c.opts.opts[optSource].values
+	values := c.opts.Opts[console.OptSource].Values
 	if c.cursor < 0 || c.cursor >= len(values) {
 		return "", false
 	}
@@ -170,8 +156,8 @@ func (c *createCard) cycle(delta int) tea.Cmd {
 	if opt == nil {
 		return nil
 	}
-	opt.cycle(delta)
-	if opt == c.opts.server() {
+	opt.Cycle(delta)
+	if opt == c.opts.Server() {
 		return func() tea.Msg { return createServerMsg{} }
 	}
 	return nil
@@ -234,11 +220,11 @@ func (c *createCard) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case "right", "l", " ":
 		return c.cycle(1), false
 	case "backspace", "-":
-		if opt.kind == optMulti && len(opt.items) > 0 {
-			opt.items = opt.items[:len(opt.items)-1]
+		if opt.Kind == console.OptionList && len(opt.Items) > 0 {
+			opt.Items = opt.Items[:len(opt.Items)-1]
 		}
 	case "enter":
-		if opt.kind == optMulti {
+		if opt.Kind == console.OptionList {
 			return func() tea.Msg { return createItemMsg{opt: opt, card: c} }, false
 		}
 		return c.create(), true
@@ -261,9 +247,9 @@ func (c *createCard) hints() []hint {
 			pressing(options, "tab"),
 			pressing("Esc cancels", "esc"),
 		}
-	case opt.kind == optMulti:
+	case opt.Kind == console.OptionList:
 		line := []hint{pressing("Enter adds one", "enter")}
-		if len(opt.items) > 0 {
+		if len(opt.Items) > 0 {
 			line = append(line, pressing("⌫ removes the last", "backspace"))
 		}
 		return append(line, pressing("Tab next", "tab"), pressing("Esc cancels", "esc"))
@@ -276,30 +262,16 @@ func (c *createCard) hints() []hint {
 	}
 }
 
-// display is how a setting reads on the card, which is the option's own words
-// except for a harness nobody chose: "auto", and what that is where the
-// project says. The panel names the default outright; the card is read at the
-// moment of creating, where what matters is that nobody has to pick.
-func (c *createCard) display(opt *option) string {
-	if opt != c.opts.opts[optHarness] || opt.idx != 0 || len(opt.choices) == 0 {
-		return opt.display()
-	}
-	if opt.choices[0] == unsetHarness {
-		return "auto"
-	}
-	return "auto (" + opt.choices[0] + ")"
-}
-
 // hint is the line under the settings: what the row the keyboard is on sets,
 // or, in the list, what the source under the cursor is.
 func (c *createCard) hint() string {
 	if opt := c.current(); opt != nil {
-		return opt.hint
+		return c.opts.hint(opt)
 	}
 	if _, ok := c.source(); !ok {
-		return "SOURCE · a path, URL or owner/repo, with @REF and //PATH, the listing has never seen"
+		return console.CardEnterHint
 	}
-	return "SOURCE · where the discobox is cut from"
+	return console.SourceHint
 }
 
 // request is the create the card would make from the source under its cursor.
@@ -308,22 +280,15 @@ func (c *createCard) hint() string {
 func (c *createCard) request() console.RunRequest {
 	source, ok := c.source()
 	if !ok {
-		source = c.opts.sourceDir()
+		source = c.opts.SourceDir()
 	}
 	return c.requestFrom(source)
 }
 
-// requestFrom is the create the card makes from one source: the run options
-// as they stand, and from `discobox run`'s own request what the card has no
-// row for.
+// requestFrom is the create the card makes from one source
+// (RunOptions.CardRequest).
 func (c *createCard) requestFrom(source string) console.RunRequest {
-	req := c.opts.request(c.prompt, source)
-	if c.base != nil {
-		req.Prompt = append([]string(nil), c.base.Prompt...)
-		req.Bind, req.Delegate, req.DiscoboxAPI = c.base.Bind, c.base.Delegate, c.base.DiscoboxAPI
-		req.SkipDeclaredSources = c.base.SkipDeclaredSources
-	}
-	return req
+	return c.opts.CardRequest(c.prompt, source, c.base)
 }
 
 // view draws the list, the settings under it, and the command they add up to,
@@ -335,9 +300,9 @@ func (c *createCard) requestFrom(source string) console.RunRequest {
 // chosen — and the command preview waits with them: what a create would run is
 // a question about the settings, and asked before they are on screen.
 func (c *createCard) view(st *styles, z *zones, top, inner, height int) string {
-	source := c.opts.opts[optSource]
+	source := c.opts.Opts[console.OptSource]
 	rows := c.rows()
-	command := wrap(c.opts.commandFor(c.request()), inner)
+	command := wrap(c.opts.CommandFor(c.request()), inner)
 	summary := c.opts.mutedChips(st)
 
 	// Everything but the list: its rule, the blank and the rule over the
@@ -358,14 +323,14 @@ func (c *createCard) view(st *styles, z *zones, top, inner, height int) string {
 
 	type listRow struct{ key, label, detail string }
 	list := make([]listRow, 0, c.sources()+1)
-	for i, choice := range source.choices {
+	for i, choice := range source.Choices {
 		key := " "
 		if i < 9 {
 			key = itoa(i + 1)
 		}
-		list = append(list, listRow{key: key, label: choice, detail: c.opts.sourceDetail(source.values[i])})
+		list = append(list, listRow{key: key, label: choice, detail: c.opts.SourceDetail(source.Values[i])})
 	}
-	list = append(list, listRow{key: "e", label: enterSourceChoice})
+	list = append(list, listRow{key: "e", label: console.EnterSourceChoice})
 
 	// One line goes to saying how much of the list is out of the window.
 	if len(list) > room {
@@ -445,9 +410,9 @@ func (c *createCard) view(st *styles, z *zones, top, inner, height int) string {
 	b.WriteString(sectionRule(st, "Options · Tab", inner))
 	b.WriteString("\n")
 	for i, idx := range rows {
-		opt := c.opts.opts[idx]
-		b.WriteString(opt.viewRow(st, z, optionRow{
-			value: c.display(opt), y: line(), inner: inner, cursor: i == c.row,
+		opt := c.opts.Opts[idx]
+		b.WriteString(viewRow(opt, st, z, optionRow{
+			value: c.opts.CardValue(opt), y: line(), inner: inner, cursor: i == c.row,
 			row:   hit{kind: hitCreateRow, idx: idx},
 			cycle: hit{kind: hitCreateCycle, idx: idx},
 		}))

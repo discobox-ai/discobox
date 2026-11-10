@@ -379,25 +379,25 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 
-	harness := m.opts.opts[optHarness]
+	harness := m.opts.Opts[console.OptHarness]
 	want := []string{"claude", "codex", "custom", "scratch", "shell"}
-	if strings.Join(harness.choices, ",") != strings.Join(want, ",") {
-		t.Fatalf("choices = %v, want %v", harness.choices, want)
+	if strings.Join(harness.Choices, ",") != strings.Join(want, ",") {
+		t.Fatalf("choices = %v, want %v", harness.Choices, want)
 	}
-	if !strings.Contains(harness.hint, "which is claude") {
-		t.Fatalf("hint = %q, want the project default named", harness.hint)
+	if !strings.Contains(harness.Hint, "which is claude") {
+		t.Fatalf("hint = %q, want the project default named", harness.Hint)
 	}
 
 	// A chosen harness survives a refresh of the listing.
-	harness.idx = 3
+	harness.Index = 3
 	send(t, m, tickMsg{})
-	if got := harness.choices[m.opts.opts[optHarness].idx]; got != "scratch" {
+	if got := harness.Choices[m.opts.Opts[console.OptHarness].Index]; got != "scratch" {
 		t.Fatalf("chosen harness = %q, want the one that was chosen", got)
 	}
 
 	// Nothing chosen means the default, which is what an empty --harness does.
-	m.opts.opts[optHarness].idx = 0
-	if m.opts.request("", m.opts.opts[optSource].selected()).Harness != "" {
+	m.opts.Opts[console.OptHarness].Index = 0
+	if m.opts.Request("", m.opts.Opts[console.OptSource].Selected()).Harness != "" {
 		t.Fatal("the leading choice is the project default and should emit no flag")
 	}
 }
@@ -413,7 +413,7 @@ func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 	if !m.optionsOpen {
 		t.Fatal("Ctrl-O should open the run options")
 	}
-	before := m.opts.opts[optHarness].display()
+	before := m.opts.Opts[console.OptHarness].Display()
 
 	send(t, m, keyPress("enter"))
 
@@ -423,7 +423,7 @@ func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 	if !m.optionsOpen {
 		t.Fatal("Enter on the harness row should stay in the run options")
 	}
-	if after := m.opts.opts[optHarness].display(); after == before {
+	if after := m.opts.Opts[console.OptHarness].Display(); after == before {
 		t.Fatalf("harness = %q both before and after Enter, want the choice advanced", after)
 	}
 }
@@ -502,10 +502,10 @@ func TestRunningAnyHarnessDoesNotAsk(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	harness := m.opts.opts[optHarness]
-	for i, choice := range harness.choices {
+	harness := m.opts.Opts[console.OptHarness]
+	for i, choice := range harness.Choices {
 		if choice == "custom" {
-			harness.idx = i
+			harness.Index = i
 		}
 	}
 	send(t, m, typeString("do the thing")...)
@@ -677,13 +677,13 @@ func TestTheTwoScreensReachEachOther(t *testing.T) {
 func TestHarnessChoicesOfferEveryHarness(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
-	m.opts.setHarnesses([]console.Harness{
+	m.opts.SetHarnesses([]console.Harness{
 		{Slug: "shell"},
 		{Slug: "codex", Default: true},
 		{Slug: "claude"},
 	})
 	want := []string{"codex", "shell", "claude"}
-	if got := m.opts.opts[optHarness].choices; strings.Join(got, ",") != strings.Join(want, ",") {
+	if got := m.opts.Opts[console.OptHarness].Choices; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("choices = %v, want %v", got, want)
 	}
 }

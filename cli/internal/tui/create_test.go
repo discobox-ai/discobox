@@ -30,8 +30,8 @@ func TestTheCreateCardReachesTheHarnessByTab(t *testing.T) {
 	m := newTestModel(t, ds)
 	card := openCreateCard(t, m)
 
-	harness := m.opts.opts[optHarness]
-	if got := card.display(harness); !strings.HasPrefix(got, "auto") {
+	harness := m.opts.Opts[console.OptHarness]
+	if got := card.opts.CardValue(harness); !strings.HasPrefix(got, "auto") {
 		t.Fatalf("harness reads %q, want auto with nothing chosen", got)
 	}
 	for range card.sources() + 3 {
@@ -45,8 +45,8 @@ func TestTheCreateCardReachesTheHarnessByTab(t *testing.T) {
 		t.Fatal("Tab should land on the harness")
 	}
 	send(t, m, keyPress("right"))
-	chosen := harness.selected()
-	if !harness.changed() {
+	chosen := harness.Selected()
+	if !harness.Changed() {
 		t.Fatal("→ on the harness should choose one")
 	}
 	send(t, m, keyPress("enter"))
@@ -87,7 +87,7 @@ func TestTheCreateCardTabGoesRound(t *testing.T) {
 func TestTheCreateCardOffersTheServerWhenThereIsMoreThanOne(t *testing.T) {
 	t.Parallel()
 	one := newTestModel(t, newFakeSource(testSandboxes()...))
-	if slices.Contains(openCreateCard(t, one).rows(), optServer) {
+	if slices.Contains(openCreateCard(t, one).rows(), console.OptServer) {
 		t.Fatal("one server is nothing to choose between")
 	}
 
@@ -95,7 +95,7 @@ func TestTheCreateCardOffersTheServerWhenThereIsMoreThanOne(t *testing.T) {
 	ds.session.Servers = []string{"alpha", "beta"}
 	m := newTestModel(t, ds)
 	card := openCreateCard(t, m)
-	for card.current() != m.opts.server() {
+	for card.current() != m.opts.Server() {
 		send(t, m, keyPress("tab"))
 	}
 	send(t, m, keyPress("right"))
@@ -118,15 +118,15 @@ func TestTheCreateCardTakesSkillsAndAdditionalSources(t *testing.T) {
 	card := openCreateCard(t, m)
 	onto := func(idx int) {
 		t.Helper()
-		for card.current() != m.opts.opts[idx] {
+		for card.current() != m.opts.Opts[idx] {
 			send(t, m, keyPress("tab"))
 		}
 	}
 
-	onto(optUserSkills)
+	onto(console.OptUserSkills)
 	send(t, m, keyPress(" "))
 
-	onto(optSkills)
+	onto(console.OptSkills)
 	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgInput {
 		t.Fatal("Enter on Skills should ask for a directory")
@@ -137,7 +137,7 @@ func TestTheCreateCardTakesSkillsAndAdditionalSources(t *testing.T) {
 		t.Fatal("the field should go back to the card it was opened from")
 	}
 
-	onto(optInclude)
+	onto(console.OptInclude)
 	ds.setSourceErr(errors.New("/src/typo does not exist"))
 	send(t, m, keyPress("enter"))
 	send(t, m, typeString("/src/typo")...)
@@ -168,7 +168,7 @@ func TestTheCreateCardTakesSkillsAndAdditionalSources(t *testing.T) {
 	if run.UserSkills == nil || !*run.UserSkills || !slices.Equal(run.SkillDirs, []string{"./team-skills"}) || !slices.Equal(run.Include, []string{"/src/typo"}) {
 		t.Fatalf("run = %+v, want your skills, ./team-skills and /src/typo", run)
 	}
-	cmd := m.opts.command("fix it")
+	cmd := m.opts.Command("fix it")
 	for _, want := range []string{"--user-skills", "--skills ./team-skills", "-i /src/typo"} {
 		if !strings.Contains(cmd, want) {
 			t.Fatalf("command = %q, want %q", cmd, want)
@@ -222,9 +222,9 @@ func TestTheCreateCardAnswersThePointer(t *testing.T) {
 		t.Fatal("a press on the folded options should unfold them")
 	}
 	frame(m)
-	forward := at(hitCreateCycle, optHarness, 1)
+	forward := at(hitCreateCycle, console.OptHarness, 1)
 	send(t, m, tea.MouseClickMsg{X: forward.x, Y: forward.y, Button: tea.MouseLeft})
-	if !m.opts.opts[optHarness].changed() {
+	if !m.opts.Opts[console.OptHarness].Changed() {
 		t.Fatal("a press on the harness's › should choose one")
 	}
 }
@@ -244,7 +244,7 @@ func TestTheCreateCardFoldsItsOptionsUntilTab(t *testing.T) {
 		t.Fatalf("the folded line should say how to show them:\n%s", text)
 	}
 	send(t, m, keyPress("tab"))
-	if !card.expanded || card.current() != m.opts.opts[optHarness] {
+	if !card.expanded || card.current() != m.opts.Opts[console.OptHarness] {
 		t.Fatal("Tab should unfold the options onto the harness")
 	}
 	if text := plainFrame(m); !strings.Contains(text, "Additional sources") {
@@ -263,15 +263,15 @@ func TestTheCreateCardFoldsItsOptionsUntilTab(t *testing.T) {
 func TestUserSkillsLeftAloneAreTheConfigurations(t *testing.T) {
 	t.Parallel()
 	opts := newOptions(console.Session{Directory: "/src/disco2"})
-	if got := opts.request("fix", "").UserSkills; got != nil {
+	if got := opts.Request("fix", "").UserSkills; got != nil {
 		t.Fatalf("UserSkills = %v, want nil for the configuration to decide", *got)
 	}
-	opts.prefill(console.RunRequest{UserSkills: new(false)})
-	got := opts.request("fix", "").UserSkills
+	opts.Prefill(console.RunRequest{UserSkills: new(false)})
+	got := opts.Request("fix", "").UserSkills
 	if got == nil || *got {
 		t.Fatalf("UserSkills = %v, want false as the command gave it", got)
 	}
-	if cmd := opts.command("fix"); !strings.Contains(cmd, "--user-skills=false") {
+	if cmd := opts.Command("fix"); !strings.Contains(cmd, "--user-skills=false") {
 		t.Fatalf("command = %q, want --user-skills=false", cmd)
 	}
 }

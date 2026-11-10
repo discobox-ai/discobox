@@ -35,7 +35,7 @@ func TestCreateHarnessVariantFromMenuRefreshesAndSelectsIt(t *testing.T) {
 	if m.dialog != nil || m.harnesses.current().ID != "variant-created" {
 		t.Fatal("created variant was not selected")
 	}
-	if !slices.Contains(m.opts.opts[optHarness].choices, "work-account") {
+	if !slices.Contains(m.opts.Opts[console.OptHarness].Choices, "work-account") {
 		t.Fatal("run selector not refreshed")
 	}
 }

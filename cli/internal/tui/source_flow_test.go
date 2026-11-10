@@ -19,14 +19,14 @@ func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 	if !m.optionsOpen {
 		t.Fatal("ctrl+o should open the run options")
 	}
-	for m.opts.cursor != optSource {
+	for m.opts.cursor != console.OptSource {
 		send(t, m, keyPress("down"))
 	}
 	// Right moves to the next source, and the list follows it to the folder
 	// that source's discoboxes are filed under — the header and the row are one
 	// control, so neither is left saying something the other contradicts.
 	send(t, m, keyPress("right"))
-	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "/src/obot" {
 		t.Fatalf("source = %q, want the next one the project holds", got)
 	}
 	if m.list.Filter.Folder.Key != testKey("/src/obot") {
@@ -35,11 +35,11 @@ func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 	// Right again reaches the third entry rather than bouncing back: the row's
 	// order does not move under the cursor when the folder follows it.
 	send(t, m, keyPress("right"))
-	if got := m.opts.opts[optSource].selected(); got != "https://github.com/acme/foo" {
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "https://github.com/acme/foo" {
 		t.Fatalf("source = %q, want the third entry", got)
 	}
 	send(t, m, keyPress("right"))
-	if got := m.opts.opts[optSource].selected(); got != sourceNone {
+	if got := m.opts.Opts[console.OptSource].Selected(); got != console.SourceNone {
 		t.Fatalf("source = %q, want no source at the end of the row", got)
 	}
 	send(t, m, keyPress("right"))
@@ -49,7 +49,7 @@ func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 		t.Fatal("enter on the Source row should open the whole list")
 	}
 	body := strings.Join(dialogLabels(m.dialog), "\n")
-	for _, want := range []string{"/src/obot", "acme/foo", console.NoSourceChoice, enterSourceChoice} {
+	for _, want := range []string{"/src/obot", "acme/foo", console.NoSourceChoice, console.EnterSourceChoice} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the dropdown is missing %q:\n%s", want, body)
 		}
@@ -71,7 +71,7 @@ func cardSources(t *testing.T, d *dialog) []string {
 	if d == nil || d.kind != dlgCreate {
 		t.Fatal("want the create card up")
 	}
-	return append(append([]string(nil), d.create.opts.opts[optSource].choices...), enterSourceChoice)
+	return append(append([]string(nil), d.create.opts.Opts[console.OptSource].Choices...), console.EnterSourceChoice)
 }
 
 func cardSource(t *testing.T, d *dialog) string {
@@ -86,7 +86,7 @@ func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, keyPress("ctrl+o"))
-	for m.opts.cursor != optSource {
+	for m.opts.cursor != console.OptSource {
 		send(t, m, keyPress("down"))
 	}
 	send(t, m, keyPress("enter"), keyPress("e"))
@@ -98,7 +98,7 @@ func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
 	}
 	send(t, m, keyPress("enter"))
 
-	if got := m.opts.request("", m.opts.opts[optSource].selected()).Source; got != "/src/typed@wip" {
+	if got := m.opts.Request("", m.opts.Opts[console.OptSource].Selected()).Source; got != "/src/typed@wip" {
 		t.Fatalf("source = %q, want what was typed", got)
 	}
 	// The ref is not a folder, so the list follows the directory half of it.
@@ -118,15 +118,15 @@ func TestTheHeaderStillMovesTheSource(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	m.opts.chooseSource("https://github.com/acme/foo")
+	m.opts.ChooseSource("https://github.com/acme/foo")
 	filterTo(t, m, "/src/obot")
 	if m.list.Filter.Folder.Key != testKey("/src/obot") {
 		t.Fatalf("folder = %q, want the header to have moved", m.list.Filter.Folder.Label)
 	}
-	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the header moved to", got)
 	}
-	if m.opts.opts[optSource].changed() {
+	if m.opts.Opts[console.OptSource].Changed() {
 		t.Fatal("the header already names it, so the panel has nothing to add")
 	}
 }
@@ -151,7 +151,7 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 		t.Fatalf("runs = %v, want the create held until the question is answered", ds.runs)
 	}
 	body := strings.Join(cardSources(t, m.dialog), "\n")
-	for _, want := range []string{"/src/disco2", "/src/obot", console.NoSourceChoice, enterSourceChoice} {
+	for _, want := range []string{"/src/disco2", "/src/obot", console.NoSourceChoice, console.EnterSourceChoice} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the question is missing %q:\n%s", want, body)
 		}
@@ -174,14 +174,14 @@ func TestCreatingWithEveryFolderShownAsksWhereToCutFrom(t *testing.T) {
 	if m.list.Filter.Folder.Key != console.EveryFolder.Key {
 		t.Fatalf("folder = %q, want the header left on every folder", m.list.Filter.Folder.Label)
 	}
-	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "/src/obot" {
 		t.Fatalf("source row = %q, want the answer", got)
 	}
 	if !slices.Equal(ds.lastSources, []string{"/src/obot"}) {
 		t.Fatalf("saved = %v, want the answer kept for the next window", ds.lastSources)
 	}
-	if m.opts.folder != "" {
-		t.Fatalf("panel folder = %q, want it left on every folder", m.opts.folder)
+	if m.opts.Folder != "" {
+		t.Fatalf("panel folder = %q, want it left on every folder", m.opts.Folder)
 	}
 	// It asks again, opening on the last answer, so the same place is one Enter.
 	if !m.askHowToCreate() {
@@ -251,7 +251,7 @@ func TestTheCreateQuestionTakesNoSourceForAnAnswer(t *testing.T) {
 	if len(ds.runs) != 1 || !ds.runs[0].NoSource {
 		t.Fatalf("runs = %v, want one discobox created with nothing checked out", ds.runs)
 	}
-	if m.list.Filter.Folder.Key != console.EveryFolder.Key || m.opts.folder != "" {
+	if m.list.Filter.Folder.Key != console.EveryFolder.Key || m.opts.Folder != "" {
 		t.Fatalf("folder = %q, want the header left on every folder", m.list.Filter.Folder.Label)
 	}
 }
@@ -266,7 +266,7 @@ func TestATypedSourceThatIsNotThereGoesBackIntoTheField(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("ctrl+o"))
-	for m.opts.cursor != optSource {
+	for m.opts.cursor != console.OptSource {
 		send(t, m, keyPress("down"))
 	}
 	send(t, m, keyPress("enter"), keyPress("e"))
@@ -282,7 +282,7 @@ func TestATypedSourceThatIsNotThereGoesBackIntoTheField(t *testing.T) {
 	if got := m.dialog.input.Value(); got != "/src/typo" {
 		t.Fatalf("field = %q, want what was typed, to correct rather than retype", got)
 	}
-	if got := m.opts.opts[optSource].selected(); got != "/src/disco2" {
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "/src/disco2" {
 		t.Fatalf("source = %q, want the refused path not taken", got)
 	}
 
@@ -290,7 +290,7 @@ func TestATypedSourceThatIsNotThereGoesBackIntoTheField(t *testing.T) {
 	// the answer it was refused for.
 	ds.setSourceErr(nil)
 	send(t, m, keyPress("enter"))
-	if got := m.opts.opts[optSource].selected(); got != "/src/typo" {
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "/src/typo" {
 		t.Fatalf("source = %q, want the corrected path", got)
 	}
 }
@@ -320,10 +320,10 @@ func TestAPathTypedIntoTheCreateQuestionRunsWhenItChecksOut(t *testing.T) {
 	if got := promptText(ds.runs[0]); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the one that was waiting", got)
 	}
-	if m.list.Filter.Folder.Key != console.EveryFolder.Key || m.opts.folder != "" {
+	if m.list.Filter.Folder.Key != console.EveryFolder.Key || m.opts.Folder != "" {
 		t.Fatalf("folder = %q, want the header left on every folder", m.list.Filter.Folder.Label)
 	}
-	if got := m.opts.opts[optSource].selected(); got != "/src/elsewhere" {
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "/src/elsewhere" {
 		t.Fatalf("source row = %q, want the answer", got)
 	}
 	// A path typed by hand is not in the listing, but the next asking still

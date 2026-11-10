@@ -1,788 +1,67 @@
 package tui
 
 import (
-	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
-	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
-// runOptions is every flag `discobox run` takes, laid out as one editable list.
+// optionSet is the run options panel: the core's rows (console.RunOptions:
+// every flag `discobox run` takes, what each offers and the request they add up
+// to) and this window's cursor over them.
 //
 // The panel is a picker, not a form: left and right change a value in place,
 // so the common case — swap the harness, turn dirty-carry off, cut from the
 // repository next door — never opens a text field. Only the repeated flags
 // (env, secrets) and a source the listing has never seen do.
-type optKind int
-
-const (
-	optChoice optKind = iota
-	optToggle
-	optMulti // repeated flag: -e, -s
-)
-
-type option struct {
-	label   string
-	kind    optKind
-	choices []string
-	// values are what the choices stand for, when what a choice is called is
-	// not what the command takes. Nil leaves every choice its own value, which
-	// is every row but the source, the pool and the server.
-	values []string
-	// unchanged is the value this row counts as the CLI's own default, for a
-	// row whose choices are not in a fixed order with the default leading.
-	// Empty leaves the default at index zero, which is every row but the
-	// source — whose default is wherever the header has moved to.
-	unchanged string
-	idx       int
-	value     string
-	items     []string
-	hint      string
-	// example is what the field a repeated flag's value is typed into shows
-	// while it is empty.
-	example string
-	// checked marks a repeated flag whose values name sources, which are
-	// checked the way a source typed by hand is before the row takes them.
-	// See Model.askForItem.
-	checked bool
-}
-
-// changed reports whether the option differs from the CLI's own default, which
-// is what decides if it shows up in the chip strip and in the command preview.
-func (o *option) changed() bool {
-	switch o.kind {
-	case optChoice:
-		if o.unchanged != "" {
-			return o.selected() != o.unchanged
-		}
-		return o.idx != 0
-	case optToggle:
-		return o.value == "on"
-	case optMulti:
-		return len(o.items) > 0
-	}
-	return false
-}
-
-// selected is the value the current choice stands for: the choice itself
-// unless the row carries values of its own.
-func (o *option) selected() string {
-	if o.idx < 0 || o.idx >= len(o.choices) {
-		return ""
-	}
-	if o.values != nil {
-		return o.values[o.idx]
-	}
-	return o.choices[o.idx]
-}
-
-func (o *option) display() string {
-	switch o.kind {
-	case optChoice:
-		if len(o.choices) == 0 {
-			return ""
-		}
-		return o.choices[o.idx]
-	case optToggle:
-		if o.value == "on" {
-			return "yes"
-		}
-		return "no"
-	case optMulti:
-		if len(o.items) == 0 {
-			return "(none)"
-		}
-		return strings.Join(o.items, "  ")
-	}
-	return ""
-}
-
-func (o *option) cycle(delta int) {
-	switch o.kind {
-	case optChoice:
-		if len(o.choices) == 0 {
-			return
-		}
-		o.idx = (o.idx + delta + len(o.choices)) % len(o.choices)
-	case optToggle:
-		if o.value == "on" {
-			o.value = "off"
-		} else {
-			o.value = "on"
-		}
-	}
-}
-
-// optionSet is the panel: the options plus its own cursor. The project and the
-// directory come from the session rather than the panel, and are carried here
-// only so the command preview can show the flags it would need.
 type optionSet struct {
-	gitPolicyLoading bool
-	gitPolicyError   bool
-	opts             []*option
-	cursor           int
-	session          console.Session
-
-	// folder is the source of the folder the window is currently working in,
-	// chosen in the header: the directory or URL a create from it cuts from. It
-	// is where Enter creates from, so switching folders switches what a new
-	// sandbox is cut from as well as which ones are listed — the header is one
-	// control, not two that happen to look alike. Empty is the session's own
-	// directory, which is also what "all folders" falls back to: there is no
-	// single folder to create in then.
-	folder string
-
-	// known are the sources the project's discoboxes were cut from, newest
-	// first, as the listing reports them. They are what the Source row offers
-	// besides the folder itself: the places this project is worked in are
-	// exactly the ones already holding something.
-	known []console.Source
-	// source is what the Source row is set to: a directory, a repository URL,
-	// sourceNone, or empty for the folder the header is on. It is kept here
-	// rather than read back off the row's cursor, because the row is rebuilt
-	// whenever the folder or the listing moves under it.
-	source string
-	// named is the last source typed by hand, as the check of it reported it.
-	// The listing does not hold it, so where a discobox cut from it is filed
-	// is kept here for the list to follow it there.
-	named console.Source
-	// pools are the server's pools as last listed, which the Pool row is
-	// built from; see setPools.
-	pools []console.Pool
-	// lastCut is the source the last create card was answered with
-	// (askHowToCreate), in this window or — through Session.LastSource — the
-	// last one on this machine. It leads the Source row, and answering a card
-	// sets the row to it, so creating again from the same place is one Enter.
-	// Empty until a card has ever been answered.
-	lastCut string
+	*console.RunOptions
+	cursor int
 }
-
-// sourceNone is what the Source row carries for a discobox with nothing
-// checked out in it. It is a sentinel rather than the empty string because
-// empty already means "the folder the header is on", and the two are different
-// answers; the NUL keeps it from ever colliding with a path or a URL.
-const sourceNone = "\x00no-source"
-
-// enterSourceChoice is the dropdown's last row: the one entry that is not a
-// source but a way to name one the listing has never seen. It is only in the
-// dropdown, never in the left-right cycle, because cycling onto it would mean
-// stopping on a value that is not one.
-const enterSourceChoice = "enter a directory, URL, or owner/repo, with @REF and //PATH…"
-
-// Index into optionSet.opts. The command builder reads by name, so the order
-// here is only the order they are shown in.
-//
-// These are `discobox run`'s flags and nothing else: --harness, --pool,
-// --include-dirty, --detach, -e and -s, SOURCE, the source the sandbox is cut from, and what is
-// brought in beside it — --user-skills, --skills and -i. A launcher that offers
-// options the command does not have is a launcher you cannot reproduce from a
-// shell.
-//
-// The project is not among them. It is set once for the session, the way
-// DISCOBOX_PROJECT sets it for a shell, so it belongs in the header rather than
-// in a panel you would have to open to find out where a sandbox went.
-const (
-	optHarness = iota
-	optDirty
-	optDetach
-	optEnv
-	optSecret
-	optSource
-	optProjectSkills
-	optUserSkills
-	optSkills
-	optInclude
-	// optPool is where the discobox is created, beside the server it is on.
-	optPool
-	// optServer is last because it is the one row that is not always in the
-	// list: it exists only when there is a server to choose (ADR 0116 §5), and
-	// the rows before it keep their places either way. See optionSet.server.
-	// The Pool row is always in the list and drawn only when there is a pool
-	// to choose (optionSet.shown).
-	optServer
-)
-
-// unsetHarness is what the harness row says when nothing has been chosen on it.
-// It is spelled out rather than left blank, because a list with an empty row in
-// it reads as a bug.
-//
-// There is no "none" among the choices. Running without a coding harness is the
-// `shell` harness (ADR 0043), which is one of the project's like any other, so
-// an entry meaning the same thing would be a second way to say it.
-const unsetHarness = "(default)"
 
 func newOptions(session console.Session) *optionSet {
-	// The choices are the project's harnesses, which are loaded on their own
-	// and arrive here through setHarnesses. Until they do the row is empty
-	// rather than offering "none (shell)" as if it were the default: a panel
-	// that names the wrong harness for a moment is worse than one that names
-	// none.
-	set := &optionSet{session: session, opts: []*option{
-		optHarness: {
-			label: "Harness", kind: optChoice,
-			hint: harnessesHint,
-		},
-		optDirty: {
-			label: "Uncommitted changes", kind: optChoice,
-			choices: []string{"auto", "include", "exclude"},
-			hint:    "--include-dirty · auto asks when the working tree is dirty",
-		},
-		optDetach: {
-			label: "Detach", kind: optToggle, value: "off",
-			hint: "-d · create the discobox and print it, without attaching",
-		},
-		optEnv: {
-			label: "Env", kind: optMulti,
-			hint:    "-e · KEY=VALUE, or KEY to pass through from this shell",
-			example: "KEY=VALUE",
-		},
-		optSecret: {
-			label: "Secrets", kind: optMulti,
-			hint:    "-s · KEY from this shell, KEY=@FILE, or KEY=VALUE; @HOST sends it to HOST alone",
-			example: "KEY",
-		},
-		optSource: {
-			label: "Source", kind: optChoice,
-			hint: sourceHint,
-		},
-		optProjectSkills: {
-			// On is what every create does unless told otherwise: the
-			// project's skills repositories, copied in ahead of any --skills
-			// (ADR 26-10-14-894 §2).
-			label: "Project skills", kind: optChoice,
-			choices: []string{"on", "off"},
-			hint:    "--no-project-skills · the project's skills repositories, added ahead of any --skills",
-		},
-		optUserSkills: {
-			// Left alone it is client.yaml's run.userSkills, which is what
-			// `discobox run` gives a create that names neither way.
-			label: "User skills", kind: optChoice,
-			choices: []string{userSkillsConfigured, "on", "off"},
-			hint:    "--user-skills · install your own ~/.claude/skills and ~/.agents/skills in the discobox",
-		},
-		optSkills: {
-			label: "Skills", kind: optMulti,
-			hint:    "--skills · a directory of skills, each a subdirectory holding a SKILL.md, or a Git URL[@REF][//PATH]",
-			example: "./team-skills",
-		},
-		optInclude: {
-			label: "Additional sources", kind: optMulti,
-			hint:    "-i · another directory, URL, or owner/repo, with @REF, brought into the same discobox",
-			example: "../other-repo", checked: true,
-		},
-		optPool: {
-			// Like the harness row, the choices are the server's and arrive
-			// through setPools; until they do, the row is the default alone.
-			label: "Pool", kind: optChoice,
-			choices: []string{unsetPool}, values: []string{""},
-			hint: poolHint,
-		},
-	}}
-	if len(session.Servers) > 1 {
-		// The primary leads, so the common case is index zero and emits no
-		// flag, and it says it is the primary: the name alone does not say
-		// which of them a run goes to when nothing is chosen.
-		choices := append([]string{session.Servers[0] + " (primary)"}, session.Servers[1:]...)
-		set.opts = append(set.opts, &option{
-			label: "Server", kind: optChoice,
-			choices: choices,
-			values:  append([]string(nil), session.Servers...),
-			hint:    serverHint,
-		})
-	}
-	set.rebuildSources()
-	return set
+	return &optionSet{RunOptions: console.NewRunOptions(session)}
 }
 
-// serverHint is what the Server row says.
-const serverHint = "--server · the server the discobox is created on"
-
-// server is the Server row, or nil when there is only the primary to create on.
-func (o *optionSet) server() *option {
-	if len(o.opts) > optServer {
-		return o.opts[optServer]
-	}
-	return nil
-}
-
-// setServer points a create at the server the header has moved to, for the same
-// reason setFolder points the source at its folder: the header is where the
-// window says which server it is working on, and a run option left behind it
-// would create somewhere the window does not say.
-//
-// A name the row does not carry — and the empty name the header's "all servers"
-// holds — leaves it on the primary, which is where a create with no --server at
-// all goes (ADR 0116 §5): every server at once is not an answer to which one a
-// new discobox belongs on.
-func (o *optionSet) setServer(name string) {
-	row := o.server()
-	if row == nil {
-		return
-	}
-	row.idx = 0
-	for i, value := range row.values {
-		if value == name {
-			row.idx = i
-			return
-		}
+// setPools takes the server's pools, and steps the cursor off the Pool row
+// when there is no longer a pool to choose on it.
+func (o *optionSet) setPools(pools []console.Pool) {
+	o.SetPools(pools)
+	if o.cursor == console.OptPool && !o.Shown(console.OptPool) {
+		o.move(-1)
 	}
 }
 
-// prefill sets the rows to what a request already says, for the card
-// `discobox run` asks its source on: a flag given on the command line is an
-// answer, and the card opens holding it rather than asking it again. A harness
-// the listing does not offer is added to the row rather than dropped, so the
-// create meets the server's answer about it rather than a different harness.
-func (o *optionSet) prefill(req console.RunRequest) {
-	if req.Harness != "" {
-		harness := o.opts[optHarness]
-		i := slices.Index(harness.choices, req.Harness)
-		if i < 0 {
-			harness.choices = append(harness.choices, req.Harness)
-			i = len(harness.choices) - 1
-		}
-		harness.idx = i
+// clearPools puts the Pool row back on the default, for a change of server.
+func (o *optionSet) clearPools() {
+	o.ClearPools()
+	if o.cursor == console.OptPool && !o.Shown(console.OptPool) {
+		o.move(-1)
 	}
-	if req.Pool != "" {
-		o.choosePool(req.Pool)
-	}
-	switch req.IncludeDirty {
-	case "true":
-		o.opts[optDirty].idx = 1
-	case "false":
-		o.opts[optDirty].idx = 2
-	}
-	if req.NoProjectSkills {
-		o.opts[optProjectSkills].idx = 1
-	}
-	if req.UserSkills != nil {
-		o.opts[optUserSkills].idx = 2
-		if *req.UserSkills {
-			o.opts[optUserSkills].idx = 1
-		}
-	}
-	o.opts[optEnv].items = append([]string(nil), req.Env...)
-	o.opts[optSecret].items = append([]string(nil), req.Secret...)
-	o.opts[optSkills].items = append([]string(nil), req.SkillDirs...)
-	o.opts[optInclude].items = append([]string(nil), req.Include...)
 }
-
-// sourceHint is what the Source row says: what it sets, and the one thing about
-// it that left and right cannot do.
-const sourceHint = "SOURCE · where the discobox is cut from · Enter opens the whole list, and a path of your own"
 
 // optionsKey opens the run options panel and closes it. It is a window key
 // rather than each screen's own — see updateKey — so the panel is one press
 // away from wherever the window is, and one press from being put away again.
 var optionsKey = bareKey("options")
 
-// harnessesHint is what the harness row says while nothing has been chosen on
-// it.
-var harnessesHint = "--harness · " + HarnessesKeyName + " enables, disables and picks the default harness"
-
-// setHarnesses rebuilds the harness choices from the harnesses the window knows
-// about. The project default leads, so the common case is index zero and emits
-// no flag at all — the same shape every other option here has.
-//
-// The listing is the one source of what harnesses there are: enabling one on
-// the harnesses screen puts it here without the window being reopened, and
-// disabling the one that was chosen falls back to the default rather than
-// leaving a name the run would be refused for. Every harness runs on every
-// pool: a harness names no platform and no image kind, which are its pool's
-// (ADR 26-11-01-122).
-func (o *optionSet) setHarnesses(harnesses []console.Harness) {
-	harness := o.opts[optHarness]
-	chosen := ""
-	if harness.idx > 0 && harness.idx < len(harness.choices) {
-		chosen = harness.choices[harness.idx]
+// hint is what a row says under the rows: the core's words, and for the
+// harness row this window's way to the harnesses screen, for the Source row
+// the one thing about it that left and right cannot do.
+func (o *optionSet) hint(opt *console.RunOption) string {
+	if opt == o.Opts[console.OptSource] {
+		return opt.Hint + " · Enter opens the whole list, and a path of your own"
 	}
-
-	var def string
-	for _, harness := range harnesses {
-		if harness.Default {
-			def = harness.FlagName()
-		}
+	if opt != o.Opts[console.OptHarness] {
+		return opt.Hint
 	}
-	choices := make([]string, 0, len(harnesses)+1)
-	if def != "" {
-		choices = append(choices, def)
-	} else {
-		// Nothing to lead with. Promoting whichever harness happens to be
-		// registered first would put a name at index zero that the window then
-		// treats as the default and emits no flag for — which is how the strip
-		// came to announce a harness nobody had chosen and the project had not
-		// named.
-		choices = append(choices, unsetHarness)
+	if !o.HarnessesListed() {
+		return opt.Hint + " · " + HarnessesKeyName + " enables, disables and picks the default harness"
 	}
-	for _, harness := range harnesses {
-		if name := harness.FlagName(); name != "" && name != def {
-			choices = append(choices, name)
-		}
-	}
-
-	harness.choices = choices
-	harness.idx = 0
-	for i, choice := range choices {
-		if choice == chosen {
-			harness.idx = i
-		}
-	}
-	harness.hint = "--harness · no project default, so pick one · " + HarnessesKeyName + " manages them"
-	if def != "" {
-		harness.hint = "--harness · unset is the project default, which is " + def + " · " + HarnessesKeyName + " manages them"
-	}
-}
-
-// unsetPool is what the Pool row leads with when the project names no default
-// pool: a create with no --pool goes wherever the server places it.
-const unsetPool = "(default)"
-
-// poolHint is what the Pool row says before the listing has said which pool
-// the default is.
-const poolHint = "--pool · the pool the discobox is created on, which decides the platform it runs on"
-
-// setPools rebuilds the Pool row from the server's pools. The project default
-// leads, so the common case is index zero and emits no flag, as on the harness
-// row; the rest follow in the order the listing gives them.
-//
-// The row is drawn only when there is a pool to choose (shown): a project with
-// one pool, which is most of them, never hears the word, as the machine line
-// does not use it (Resources). The create card hides it the same way.
-//
-// What was chosen survives the rebuild, matched by ID — through the pool the
-// last listing said it was, so a rename does not lose it — or by name: a
-// refresh is not a reason to move a create elsewhere. A pool the listing does
-// not hold — one `discobox run --pool` named — stays on the row rather than
-// being dropped, so the create meets the server's answer about it rather than
-// another pool.
-func (o *optionSet) setPools(pools []console.Pool) {
-	row := o.opts[optPool]
-	chosen := row.selected()
-	for _, pool := range o.pools {
-		if chosen != "" && chosen == poolSelector(pool, o.pools) {
-			chosen = pool.ID
-		}
-	}
-	o.pools = pools
-
-	choices, values := []string{unsetPool}, []string{""}
-	hint := poolHint
-	for _, pool := range pools {
-		if pool.Default {
-			choices[0] = poolLabel(pool)
-			hint = "--pool · unset is the project default, which is " + poolLabel(pool) + platformNote(pool)
-		}
-	}
-	for _, pool := range pools {
-		if !pool.Default {
-			choices = append(choices, poolLabel(pool))
-			values = append(values, poolSelector(pool, pools))
-		}
-	}
-
-	row.idx = 0
-	if chosen != "" {
-		i := -1
-		for _, pool := range pools {
-			if chosen == pool.ID || (i < 0 && chosen == poolSelector(pool, pools)) {
-				// The default named outright is the default.
-				i = 0
-				if !pool.Default {
-					i = slices.Index(values, poolSelector(pool, pools))
-				}
-			}
-		}
-		if i < 0 {
-			choices, values = append(choices, chosen), append(values, chosen)
-			i = len(values) - 1
-		}
-		row.idx = i
-	}
-	row.choices, row.values, row.hint = choices, values, hint
-	if o.cursor == optPool && !o.shown(optPool) {
-		o.move(-1)
-	}
-}
-
-// choosePool sets the Pool row to a pool named by ID or name, before or after
-// the listing has arrived: matched against the listing when there is one, and
-// kept as named when there is none yet, for setPools to match when it lands.
-func (o *optionSet) choosePool(value string) {
-	row := o.opts[optPool]
-	row.choices, row.values = append(row.choices, value), append(row.values, value)
-	row.idx = len(row.values) - 1
-	if o.pools != nil {
-		o.setPools(o.pools)
-	}
-}
-
-// clearPools puts the Pool row back on the default with nothing listed, for a
-// change of server: one server's pool is not another's.
-func (o *optionSet) clearPools() {
-	row := o.opts[optPool]
-	row.idx = 0
-	o.setPools(nil)
-}
-
-// poolLabel is how a pool reads on the row: its name, or its ID when it has
-// none.
-func poolLabel(pool console.Pool) string {
-	if pool.Name != "" {
-		return pool.Name
-	}
-	return pool.ID
-}
-
-// platformNote is the platform a pool hosts, as the end of a hint.
-func platformNote(pool console.Pool) string {
-	if pool.Platform == "" {
-		return ""
-	}
-	return " (" + pool.Platform + ")"
-}
-
-// poolSelector is what --pool takes for a pool: its name, which is what the
-// command preview is read for, unless another pool shares it, where only the
-// ID says which.
-func poolSelector(pool console.Pool, pools []console.Pool) string {
-	if pool.Name == "" {
-		return pool.ID
-	}
-	for _, other := range pools {
-		if other.ID != pool.ID && other.Name == pool.Name {
-			return pool.ID
-		}
-	}
-	return pool.Name
-}
-
-// setFolder points the run source at the folder the header has moved to. The
-// header is where the folder is chosen, so a source chosen earlier gives way to
-// it: leaving a stale override behind would mean the window says one thing and
-// creates in another.
-//
-// "All folders" names no place to cut from, so there the row goes to the last
-// create's source when there is one, rather than falling back silently to the
-// directory the window happens to be running in.
-func (o *optionSet) setFolder(folder string) {
-	o.folder = folder
-	o.source = o.sourceDir()
-	if folder == "" && o.lastCut != "" {
-		o.source = o.lastCut
-	}
-	o.rebuildSources()
-}
-
-// setSources takes the sources the project's discoboxes were cut from, off the
-// same listing the header filter's folders are built from. What was chosen survives a
-// refresh, including a path typed by hand that no discobox has been cut from
-// yet.
-func (o *optionSet) setSources(known []console.Source) {
-	o.known = known
-	o.rebuildSources()
-}
-
-// rebuildSources lays the Source row out: the source the last create was cut
-// from, the directory this window is running in, then every other source the
-// project has been cut from, then "no source".
-//
-// The order does not follow what is chosen; only a create moves it, by moving
-// what leads it. Leading with the folder the header is on would reorder the row
-// every time the list followed a source to its folder, and left-right would
-// then only ever reach the first two entries. Which one counts as unchanged is carried by the row instead, so the
-// panel can say "this is not where the header is" without the order saying it.
-func (o *optionSet) rebuildSources() {
-	opt := o.opts[optSource]
-	var choices, values []string
-	add := func(value string) {
-		// "No source" is appended once at the end, where it belongs; it is
-		// also what o.source holds when it is chosen, so it has to be kept
-		// out of the sources themselves.
-		if strings.TrimSpace(value) == "" || value == sourceNone {
-			return
-		}
-		// One source is one choice, however each discobox spelled it.
-		for _, seen := range values {
-			if sameSource(seen, value) {
-				return
-			}
-		}
-		choices = append(choices, o.sourceChoiceLabel(value))
-		values = append(values, value)
-	}
-	// The last create's answer leads, and is added whether or not the listing
-	// holds it: it can be a path typed by hand that nothing has been cut from
-	// since, or one whose discoboxes have all gone, and it is still where the
-	// next create opens.
-	add(o.lastCut)
-	add(o.session.Directory)
-	for _, source := range o.known {
-		add(source.Value)
-	}
-	// The folder the header is on and a source named by hand are things the
-	// listing cannot be relied on to hold either: a folder whose discoboxes
-	// were all cut from somewhere else is still a folder you can cut from, and
-	// a path typed into the field has to survive the next refresh of the
-	// listing.
-	add(o.sourceDir())
-	add(o.source)
-	choices = append(choices, console.NoSourceChoice)
-	values = append(values, sourceNone)
-
-	opt.choices, opt.values, opt.unchanged = choices, values, o.sourceDir()
-	opt.idx = 0
-	for i, value := range values {
-		if sameSource(value, o.source) {
-			opt.idx = i
-			return
-		}
-	}
-}
-
-// sourceChoiceLabel is how one source reads on the row. The directory this
-// window is running in wears its branch, the way the header spells it; nothing
-// else has a branch that means anything here.
-func (o *optionSet) sourceChoiceLabel(value string) string {
-	if sameSource(value, o.session.Directory) {
-		return o.session.SourceLabel()
-	}
-	return sourceref.Display(value, o.session.Home)
-}
-
-// cutFrom records the source a create was cut from and sets the row to it, so
-// the next create opens there whatever the header is on. The header is not
-// moved: the answer is where a discobox comes from, not a filter.
-func (o *optionSet) cutFrom(source string) {
-	o.lastCut = source
-	o.chooseSource(source)
-}
-
-// openOnLastCut sets the row to where the last window's last create was cut
-// from (Session.LastSource).
-func (o *optionSet) openOnLastCut(source string) {
-	if source == "" {
-		o.lastCut = source
-		o.rebuildSources()
-		return
-	}
-	o.cutFrom(source)
-}
-
-// cycleSource moves the Source row and records what it landed on, since the row
-// is rebuilt from that rather than from where its cursor happens to sit.
-func (o *optionSet) cycleSource(delta int) {
-	opt := o.opts[optSource]
-	opt.cycle(delta)
-	o.chooseSource(opt.selected())
-}
-
-// chooseSource sets the row to a source, from the cycle, from the dropdown, or
-// from the input field. Nothing entered is the folder the header is on, which
-// is what the field was offering as its placeholder.
-func (o *optionSet) chooseSource(value string) {
-	if strings.TrimSpace(value) == "" {
-		value = o.sourceDir()
-	}
-	o.source = value
-	o.rebuildSources()
-}
-
-// sourceFolder is where a discobox cut from the chosen source is filed (ADR
-// 0111), and so which folder the list follows the source to. The window's own
-// source files under the window's own folder, and so does "no source", since
-// this machine's discoboxes with no source are in every one of its folders. A
-// directory or a URL files under its own, as the listing — or the check of a
-// source typed by hand — reported it, and is in its GitHub repository's folder
-// when it resolved to one. A source nothing has reported on is not followed
-// anywhere.
-func (o *optionSet) sourceFolder() (console.Folder, bool) {
-	value := o.opts[optSource].selected()
-	if value == sourceNone || sameSource(value, o.session.Directory) {
-		return o.session.Folder(), true
-	}
-	of := func(source console.Source) (console.Folder, bool) {
-		if !sameSource(source.Value, value) || source.OriginKey == "" {
-			return console.Folder{}, false
-		}
-		// A directory's folder is the directory, whatever ref was named with
-		// it: the ref is the source row's to say, not the folder's.
-		dir := value
-		if !source.Remote && source.Directory != "" {
-			dir = source.Directory
-		}
-		if source.RepositoryKey != "" {
-			return console.Folder{Key: source.RepositoryKey, Label: console.RepositoryLabel(source.RepositoryKey), Source: dir, Local: true}, true
-		}
-		return console.Folder{Key: source.OriginKey, Label: sourceref.Display(dir, o.session.Home), Source: dir, Local: true}, true
-	}
-	if f, ok := of(o.named); ok {
-		return f, true
-	}
-	for _, source := range o.known {
-		if f, ok := of(source); ok {
-			return f, true
-		}
-	}
-	return console.Folder{}, false
-}
-
-// nameSource sets the row to a source typed by hand and checked, keeping what
-// the check said about where a discobox cut from it is filed.
-func (o *optionSet) nameSource(source console.Source) {
-	o.named = source
-	o.chooseSource(source.Value)
-}
-
-// remoteSource reports whether a value is a repository URL rather than a
-// directory. The listing — or the check of a source typed by hand — says so
-// per source rather than this package resolving the string, because whether
-// a shorthand is a directory here is the creation path's to decide and not
-// the window's.
-func (o *optionSet) remoteSource(value string) bool {
-	if sameSource(o.named.Value, value) {
-		return o.named.Remote
-	}
-	for _, source := range o.known {
-		if sameSource(source.Value, value) {
-			return source.Remote
-		}
-	}
-	return false
-}
-
-// followSource moves the panel's folder to where the chosen source files its
-// discoboxes, and returns it for the list and the header to follow — or
-// reports that nothing says where that is, and the header stays where it is.
-// This is the source moving the header rather than the header moving the
-// source, so the source itself is left exactly as it was chosen.
-func (o *optionSet) followSource() (console.Folder, bool) {
-	f, ok := o.sourceFolder()
-	if !ok {
-		return console.Folder{}, false
-	}
-	o.folder = f.Source
-	o.rebuildSources()
-	return f, true
-}
-
-// typedSource is what the input field opens holding: a source named by hand
-// rather than one the listing offered, so re-opening the field to fix a typo
-// does not start from nothing. A choice made off the list leaves it empty and
-// the field shows the folder as its placeholder.
-func (o *optionSet) typedSource() string {
-	if o.source == sourceNone || o.source == o.sourceDir() {
-		return ""
-	}
-	for _, source := range o.known {
-		if sameSource(source.Value, o.source) {
-			return ""
-		}
-	}
-	return o.source
+	return opt.Hint + " · " + HarnessesKeyName + " manages them"
 }
 
 // sourceChosenMsg carries the dropdown's answer back to the live model, for the
@@ -808,9 +87,9 @@ type sourceChosenMsg struct {
 // different set depending on which of the two asked would be two controls
 // wearing one name.
 func (o *optionSet) sourceDialog() *dialog {
-	opt := o.opts[optSource]
-	items := make([]action, 0, len(opt.choices)+1)
-	for i, choice := range opt.choices {
+	opt := o.Opts[console.OptSource]
+	items := make([]action, 0, len(opt.Choices)+1)
+	for i, choice := range opt.Choices {
 		n := itoa(i + 1)
 		items = append(items, action{
 			// The key is the row's index, so the first nine choices can be
@@ -818,90 +97,37 @@ func (o *optionSet) sourceDialog() *dialog {
 			key:     n,
 			press:   n,
 			label:   choice,
-			detail:  o.sourceDetail(opt.values[i]),
+			detail:  o.SourceDetail(opt.Values[i]),
 			enabled: true,
 		})
 	}
-	items = append(items, action{key: "e", press: "e", label: enterSourceChoice, enabled: true})
+	items = append(items, action{key: "e", press: "e", label: console.EnterSourceChoice, enabled: true})
 	menu := actionsDialog("Cut the discobox from", "", items, func(key string) tea.Cmd {
 		if key == "e" {
 			return func() tea.Msg { return sourceChosenMsg{enter: true} }
 		}
-		for i, value := range opt.values {
+		for i, value := range opt.Values {
 			if itoa(i+1) == key {
 				return func() tea.Msg { return sourceChosenMsg{source: value} }
 			}
 		}
 		return nil
 	})
-	menu.cursor = opt.idx
+	menu.cursor = opt.Index
 	menu.keys = []hint{pressing("Enter cuts the next discobox from that", "enter"), pressing("Esc cancels", "esc")}
 	return menu
 }
 
-// sourceDetail is what each choice is worth knowing beyond its own name.
-func (o *optionSet) sourceDetail(value string) string {
-	switch {
-	case value == sourceNone:
-		return "nothing checked out — an empty discobox"
-	case value == o.sourceDir():
-		if o.folder == "" {
-			// Every folder at once is not a folder the window is showing, so
-			// the directory it happens to be running in is described as what
-			// it is — the same words the filter's card uses for it.
-			return "where this window is running"
-		}
-		return "the folder this window is showing"
-	case o.remoteSource(value):
-		return "cloned by the discobox itself"
-	default:
-		return ""
-	}
-}
-
-// sourceKey tells one thing to cut from from another however it is spelled
-// (console.SourceKey). The Source row's own no-source answer is its own key.
-func sourceKey(value string) string {
-	if value == sourceNone {
-		return value
-	}
-	return console.SourceKey(value)
-}
-
-// sameSource reports whether two values name one source.
-func sameSource(a, b string) bool {
-	return a == b || sourceKey(a) == sourceKey(b)
-}
-
-// sourceDir is what Enter creates from: the folder the header is on, or the
-// window's own source when the header is on every folder at once.
-func (o *optionSet) sourceDir() string {
-	if o.folder == "" {
-		return o.session.Directory
-	}
-	return o.folder
-}
-
-// sourceLabel is that directory as the header spells it, with the branch on it
-// only where the branch means something — the directory this window is actually
-// running in.
-func (o *optionSet) sourceLabel() string {
-	if sameSource(o.sourceDir(), o.session.Directory) {
-		return o.session.SourceLabel()
-	}
-	return sourceref.Display(o.sourceDir(), o.session.Home)
-}
-
-func (o *optionSet) current() *option { return o.opts[o.cursor] }
+func (o *optionSet) current() *console.RunOption { return o.Opts[o.cursor] }
 
 func (o *optionSet) move(delta int) {
-	o.cursor = (o.cursor + delta + len(o.opts)) % len(o.opts)
+	o.cursor = (o.cursor + delta + len(o.Opts)) % len(o.Opts)
 	step := sign(delta)
 	if step == 0 {
 		step = -1
 	}
-	for !o.shown(o.cursor) {
-		o.cursor = (o.cursor + step + len(o.opts)) % len(o.opts)
+	for !o.Shown(o.cursor) {
+		o.cursor = (o.cursor + step + len(o.Opts)) % len(o.Opts)
 	}
 }
 
@@ -909,9 +135,9 @@ func (o *optionSet) move(delta int) {
 // clamps rather than wrapping: a pointer names a row that is there. A row that
 // is not drawn is stepped past in the direction the cursor was going.
 func (o *optionSet) moveTo(i int) {
-	i = min(max(i, 0), len(o.opts)-1)
-	if !o.shown(i) {
-		if i > o.cursor && i+1 < len(o.opts) {
+	i = min(max(i, 0), len(o.Opts)-1)
+	if !o.Shown(i) {
+		if i > o.cursor && i+1 < len(o.Opts) {
 			i++
 		} else {
 			i--
@@ -920,63 +146,8 @@ func (o *optionSet) moveTo(i int) {
 	o.cursor = i
 }
 
-// shown reports whether a row is drawn. Every row is but the pool's, which is
-// there only when there is a pool to choose (see setPools).
-func (o *optionSet) shown(i int) bool {
-	return i != optPool || len(o.opts[optPool].choices) > 1
-}
-
-// request is what Enter actually asks for: the options as `discobox run`'s
-// arguments, with the prompt from the composer. The source is passed rather
-// than read off the row, because the answer to a create's own question is cut
-// from without moving the row (askHowToCreate); everything else passes what
-// the row has selected.
-func (o *optionSet) request(prompt, source string) console.RunRequest {
-	req := console.RunRequest{
-		Detach: o.opts[optDetach].changed(),
-		Env:    append([]string(nil), o.opts[optEnv].items...),
-		Secret: append([]string(nil), o.opts[optSecret].items...),
-	}
-	// One argument, because the composer holds one piece of text and splitting
-	// it would be inventing tokens the user did not type.
-	if text := strings.TrimSpace(prompt); text != "" {
-		req.Prompt = []string{text}
-	}
-	// The window's own directory is left empty: the create cuts from where the
-	// window runs, and the preview writes it as ".".
-	switch {
-	case source == sourceNone:
-		req.NoSource = true
-	case source != o.session.Directory:
-		req.Source = source
-	}
-	if h := o.opts[optHarness]; h.changed() {
-		req.Harness = h.choices[h.idx]
-	}
-	if pool := o.opts[optPool]; pool.changed() {
-		req.Pool = pool.selected()
-	}
-	switch o.opts[optDirty].idx {
-	case 1:
-		req.IncludeDirty = "true"
-	case 2:
-		req.IncludeDirty = "false"
-	}
-	req.NoProjectSkills = o.opts[optProjectSkills].changed()
-	req.UserSkills = o.userSkills()
-	req.SkillDirs = append([]string(nil), o.opts[optSkills].items...)
-	req.Include = append([]string(nil), o.opts[optInclude].items...)
-	if server := o.server(); server != nil && server.changed() {
-		req.Server = server.selected()
-	}
-	return req
-}
-
-// chips is the mode line under the composer — Claude Code's "⏵⏵ bypass
-// permissions on" slot. It carries every option, not only the changed ones,
-// because the line exists to answer "what will Enter do" without opening
-// anything. Env and secrets are counts, and a count of none is not worth a
-// word.
+// chips is the mode line under the composer: the core's summary
+// (RunOptions.Summary), lit while the composer has focus.
 func (o *optionSet) chips(st *styles) string {
 	return o.renderChips(st, true)
 }
@@ -987,191 +158,30 @@ func (o *optionSet) mutedChips(st *styles) string {
 	return o.renderChips(st, false)
 }
 
+// renderChips draws the summary. The resolved project default stays muted; an
+// explicit answer is gold while the composer has focus, and so is the marker
+// once the harness is one.
 func (o *optionSet) renderChips(st *styles, focused bool) string {
-	parts := []string{}
-	add := func(text string) {
-		style := st.chipOn
-		if !focused {
-			style = st.chip
-		}
-		parts = append(parts, style.Render(text))
-	}
-
-	// The harness is always visible because it is the most consequential part
-	// of what Enter will run. The resolved project default stays muted; an
-	// explicit override uses gold like the other changed options.
-	harness := o.opts[optHarness]
-	if harness.display() != "" {
-		style := st.chip
-		if focused && harness.changed() {
-			style = st.chipOn
-		}
-		parts = append(parts, style.Render(harness.display()))
-	}
-
-	if pool := o.opts[optPool]; pool.changed() {
-		add("pool " + pool.display())
-	}
-
-	// Only the answers that were given. Auto is what the option already does,
-	// and a strip that names every default is a strip you stop reading for the
-	// one thing on it that was chosen.
-	switch o.opts[optDirty].idx {
-	case 1:
-		add("+dirty")
-	case 2:
-		add("clean")
-	}
-
-	// Attaching is what happens unless you say otherwise, and a line that
-	// says what was always going to happen is a line you stop reading.
-	if o.opts[optDetach].changed() {
-		add("detached")
-	}
-
-	if n := len(o.opts[optEnv].items); n > 0 {
-		add(plural(n, "env", "env"))
-	}
-	if n := len(o.opts[optSecret].items); n > 0 {
-		add(plural(n, "secret", "secrets"))
-	}
-
-	// The source is only worth a chip when it is not where the window says it
-	// is. The header already names the folder the window is working in, and a
-	// strip that repeats it teaches you to stop reading the strip — which is
-	// exactly what the row's leading choice is.
-	if source := o.opts[optSource]; source.changed() {
-		add(source.display())
-	}
-
-	// What is brought in beside the source, as counts for the same reason env
-	// and secrets are: the strip says there is something, the panel says what.
-	if o.opts[optProjectSkills].changed() {
-		add("no project skills")
-	}
-	skills := len(o.opts[optSkills].items)
-	user := o.userSkills()
-	switch {
-	case user != nil && *user && skills > 0:
-		add("your skills +" + itoa(skills))
-	case user != nil && *user:
-		add("your skills")
-	case user != nil:
-		add("not your skills")
-	}
-	if skills > 0 && (user == nil || !*user) {
-		add(plural(skills, "skill dir", "skill dirs"))
-	}
-	if n := len(o.opts[optInclude].items); n > 0 {
-		add("+" + plural(n, "source", "sources"))
-	}
-
-	// The primary is where a run goes unless somebody said otherwise, which is
-	// the only case worth a word.
-	if server := o.server(); server != nil && server.changed() {
-		add("on " + server.selected())
-	}
-
+	summary := o.Summary()
 	// Nothing chosen, nothing to say. The marker introduces the answers given,
 	// so on its own it introduces nothing and is one more thing on screen that
 	// never changes.
-	if len(parts) == 0 {
+	if len(summary) == 0 {
 		return ""
 	}
+	parts := make([]string, 0, len(summary))
+	for _, chip := range summary {
+		style := st.chip
+		if focused && chip.Chosen {
+			style = st.chipOn
+		}
+		parts = append(parts, style.Render(chip.Text))
+	}
 	marker, separator := st.chip, st.chip
-	if focused && harness.changed() {
+	if focused && o.Opts[console.OptHarness].Changed() {
 		marker = st.chipOn
 	}
 	return marker.Render("⏵⏵ ") + strings.Join(parts, separator.Render(" · "))
-}
-
-// command renders the run invocation the current options describe. It is the
-// panel's own documentation: what is on screen is reproducible from a shell,
-// and if it is not, the panel is offering something the command cannot.
-//
-// It spells the run as `discobox run`, the only command that makes one, with
-// the prompt as -p: the composer holds one piece of text and sends it as one
-// argument, which is exactly what -p is. Trailing words would be inventing a
-// tokenization the user did not type.
-func (o *optionSet) command(prompt string) string {
-	return o.commandFor(o.request(prompt, o.opts[optSource].selected()))
-}
-
-// commandFor is that invocation for a request already made: the create card
-// previews one whose source is the row under its cursor rather than the one
-// the Source row is set to.
-func (o *optionSet) commandFor(req console.RunRequest) string {
-	if o.gitPolicyLoading {
-		return "Reading Git credential preference…"
-	}
-	if o.gitPolicyError {
-		return "Cannot read Git credential preference; fix client.yaml before creating"
-	}
-	args := []string{"discobox"}
-	if req.Server != "" {
-		args = append(args, "--server", req.Server)
-	}
-	// --project names a project on the primary, and a run on another server
-	// goes to that server's default (ADR 0116 §4): naming this one would offer
-	// a line that fails where it was told to run.
-	if p := o.session.Project; p != "" && p != o.session.DefaultProject && req.Server == "" {
-		args = append(args, "--project", p)
-	}
-	// run's own arguments, after the command name; the ones above are global
-	// and go in front of it. SOURCE leads, as `run SOURCE` reads, and is "."
-	// for the window's own directory. --no-source takes its place.
-	run := []string{"run"}
-	if p := o.session.GitCredentials; p != "" {
-		run = append(run, "--git-credentials="+p)
-	}
-	switch {
-	case req.NoSource:
-		run = append(run, "--no-source")
-	case req.Source != "":
-		run = append(run, shellQuote(req.Source))
-	default:
-		run = append(run, ".")
-	}
-	for _, word := range req.Prompt {
-		run = append(run, "-p", shellQuote(word))
-	}
-	if req.Harness != "" {
-		run = append(run, "--harness", req.Harness)
-	}
-	if req.Pool != "" {
-		run = append(run, "--pool", shellQuote(req.Pool))
-	}
-	// Uncommitted work is carried only when asked for, so only that answer
-	// has a flag to write; the window's question has none.
-	if req.IncludeDirty == "true" {
-		run = append(run, "--include-dirty")
-	}
-	if req.Detach {
-		run = append(run, "-d")
-	}
-	for _, e := range req.Env {
-		run = append(run, "-e", shellQuote(e))
-	}
-	for _, s := range req.Secret {
-		run = append(run, "-s", shellQuote(s))
-	}
-	for _, i := range req.Include {
-		run = append(run, "-i", shellQuote(i))
-	}
-	if req.NoProjectSkills {
-		run = append(run, "--no-project-skills")
-	}
-	if req.UserSkills != nil {
-		if *req.UserSkills {
-			run = append(run, "--user-skills")
-		} else {
-			run = append(run, "--user-skills=false")
-		}
-	}
-	for _, dir := range req.SkillDirs {
-		run = append(run, "--skills", shellQuote(dir))
-	}
-	return strings.Join(append(args, run...), " ")
 }
 
 func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string {
@@ -1203,12 +213,12 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 	rowsTop := strings.Count(b.String(), "\n") + dialogPadTop
 
 	y := rowsTop
-	for i, opt := range o.opts {
-		if !o.shown(i) {
+	for i, opt := range o.Opts {
+		if !o.Shown(i) {
 			continue
 		}
-		b.WriteString(opt.viewRow(st, z, optionRow{
-			value: opt.display(), y: y, inner: inner, cursor: i == o.cursor,
+		b.WriteString(viewRow(opt, st, z, optionRow{
+			value: opt.Display(), y: y, inner: inner, cursor: i == o.cursor,
 			row:   hit{kind: hitOptionRow, idx: i},
 			cycle: hit{kind: hitOptionCycle, idx: i},
 		}))
@@ -1217,11 +227,11 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 	}
 
 	b.WriteString("\n")
-	b.WriteString(st.dimText.Render(truncate(o.current().hint, inner)))
+	b.WriteString(st.dimText.Render(truncate(o.hint(o.current()), inner)))
 	b.WriteString("\n\n")
 	b.WriteString(st.dimText.Render("would run"))
 	b.WriteString("\n")
-	for _, l := range wrap(o.command(prompt), inner) {
+	for _, l := range wrap(o.Command(prompt), inner) {
 		b.WriteString(st.command.Render(l))
 		b.WriteString("\n")
 	}
@@ -1249,7 +259,7 @@ type optionRow struct {
 }
 
 // viewRow draws one option row and marks it.
-func (o *option) viewRow(st *styles, z *zones, at optionRow) string {
+func viewRow(o *console.RunOption, st *styles, z *zones, at optionRow) string {
 	// The row, and then the arrows over the top of it: they are drawn on
 	// the cursor row alone, and each is a press that changes the value the
 	// way the arrow key does.
@@ -1258,20 +268,20 @@ func (o *option) viewRow(st *styles, z *zones, at optionRow) string {
 	hovered := z.hovering(0, at.y, at.inner, 1)
 
 	bar := " "
-	label := st.dimText.Render(pad(o.label, optionLabelW))
+	label := st.dimText.Render(pad(o.Label, optionLabelW))
 	switch {
 	case at.cursor:
 		bar = st.key.Render("❯")
-		label = st.cursorName.Render(pad(o.label, optionLabelW))
+		label = st.cursorName.Render(pad(o.Label, optionLabelW))
 	case hovered:
 		// Under the pointer: the label says so, and the chevron stays the
 		// cursor's, exactly as it does on a menu's rows.
-		label = st.hover.Render(pad(o.label, optionLabelW))
+		label = st.hover.Render(pad(o.Label, optionLabelW))
 	}
 	value := at.value
 	valueStyle := st.dimText
 	switch {
-	case o.changed():
+	case o.Changed():
 		valueStyle = st.chipOn
 	case at.cursor:
 		valueStyle = st.name
@@ -1284,7 +294,7 @@ func (o *option) viewRow(st *styles, z *zones, at optionRow) string {
 	// the row under the pointer, which is what says a press will — without
 	// that, changing a value with the mouse is click the row, watch
 	// nothing happen, then click the arrow that has appeared.
-	if o.kind != optChoice && o.kind != optToggle {
+	if o.Kind != console.OptionChoice && o.Kind != console.OptionToggle {
 		value = valueStyle.Render(truncate(value, max(at.inner-optionLabelW-3, 6)))
 		return padANSI(bar+" "+label+" "+value, at.inner)
 	}
@@ -1303,20 +313,4 @@ func (o *option) viewRow(st *styles, z *zones, at optionRow) string {
 	z.mark(back, valueX, at.y, 2, 1)
 	z.mark(forward, valueX+lipgloss.Width(value)-2, at.y, 2, 1)
 	return padANSI(bar+" "+label+" "+value, at.inner)
-}
-
-// userSkillsConfigured is the User skills row left to the client's
-// configuration, which the request carries as no answer at all.
-const userSkillsConfigured = "as configured"
-
-// userSkills is the User skills row as RunRequest.UserSkills: nil while it is
-// left to the configuration.
-func (o *optionSet) userSkills() *bool {
-	switch o.opts[optUserSkills].idx {
-	case 1:
-		return new(true)
-	case 2:
-		return new(false)
-	}
-	return nil
 }

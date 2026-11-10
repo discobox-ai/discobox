@@ -29,7 +29,10 @@ type Progress struct {
 // dismissed is answered no, since that is what leaving it means.
 type Question struct {
 	Title string
-	Body  string
+	// Subject is what the question is about, said on a line of its own above
+	// the body: the directory a create would carry.
+	Subject string
+	Body    string
 	// Choices are the answers to pick from, by Key.
 	Choices []Choice
 	// DefaultNo is a yes or no whose quick answer is no: a destruction

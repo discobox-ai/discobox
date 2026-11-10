@@ -1005,13 +1005,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.gen != m.gitPolicyGen {
 			return nil
 		}
-		m.opts.gitPolicyLoading = false
-		m.opts.gitPolicyError = msg.err != nil
+		m.opts.GitPolicyLoading = false
+		m.opts.GitPolicyError = msg.err != nil
 		if msg.err != nil {
 			return m.report(true, "cannot read Git credential preference: %v", msg.err)
 		}
 		m.session.GitCredentials = msg.policy
-		m.opts.session.GitCredentials = msg.policy
+		m.opts.Session.GitCredentials = msg.policy
 		return nil
 	case sessionLoadedMsg:
 		if msg.err != nil {
@@ -1033,15 +1033,15 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// view.go.
 		m.restoreView(msg.session.View)
 		m.opts = newOptions(msg.session)
-		m.opts.setFolder(m.list.Filter.Folder.Source)
-		m.opts.openOnLastCut(msg.session.LastSource)
-		m.opts.setServer(m.list.Filter.Server)
+		m.opts.SetFolder(m.list.Filter.Folder.Source)
+		m.opts.OpenOnLastCut(msg.session.LastSource)
+		m.opts.SetServer(m.list.Filter.Server)
 		// The listing can land first, and what it says the project was cut
 		// from is what the Source row and the create card offer.
-		m.opts.setSources(m.list.Sources())
+		m.opts.SetSources(m.list.Sources())
 		// The two loads race, and either order has to end with the panel
 		// offering the harnesses that are actually there.
-		m.opts.setHarnesses(m.harnesses.all)
+		m.opts.SetHarnesses(m.harnesses.all)
 		m.opts.setPools(m.pools)
 		m.openOnList()
 		return tea.Batch(cmd, m.startPendingRun())
@@ -1100,7 +1100,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// What the project has been cut from is read off the same listing the
 		// filter's folders are, for the same reason: the sources worth offering
 		// are exactly the ones something is already sitting in.
-		m.opts.setSources(m.list.Sources())
+		m.opts.SetSources(m.list.Sources())
 		m.openOnList()
 		m.layout()
 		// Last, once the screen the listing leaves up is settled: the
@@ -1349,7 +1349,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case sourceChosenMsg:
 		if msg.enter {
-			m.askForSource(m.opts.typedSource(), "", msg.card)
+			m.askForSource(m.opts.TypedSource(), "", msg.card)
 			return nil
 		}
 		if msg.typed {
@@ -1358,7 +1358,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.card != nil {
 			return m.cutFrom(msg.card, msg.source)
 		}
-		m.opts.chooseSource(msg.source)
+		m.opts.ChooseSource(msg.source)
 		return m.followSource()
 
 	case sourceResolvedMsg:
@@ -1370,10 +1370,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		if msg.card != nil {
-			m.opts.named = msg.source
+			m.opts.Named = msg.source
 			return m.cutFrom(msg.card, msg.source.Value)
 		}
-		m.opts.nameSource(msg.source)
+		m.opts.NameSource(msg.source)
 		return m.followSource()
 
 	case createServerMsg:
@@ -1388,7 +1388,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.askForItem(msg.opt, msg.typed, msg.err.Error(), msg.card)
 			return nil
 		}
-		msg.opt.items = append(msg.opt.items, msg.source.Value)
+		msg.opt.Items = append(msg.opt.Items, msg.source.Value)
 		return nil
 
 	case workspaceExecsMsg:
@@ -2088,7 +2088,7 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 
 	case "shift+tab":
-		m.opts.opts[optHarness].cycle(1)
+		m.opts.Opts[console.OptHarness].Cycle(1)
 		return nil
 
 	case "alt+e", "f2":
@@ -2368,12 +2368,12 @@ const (
 // header and the Source row are one control in both directions: the header
 // moves the source (applyFilter), and the source moves the header here.
 func (m *Model) followSource() tea.Cmd {
-	if f, ok := m.opts.followSource(); ok && f.Key != m.list.Filter.Folder.Key {
+	if f, ok := m.opts.FollowSource(); ok && f.Key != m.list.Filter.Folder.Key {
 		m.list.Filter.Folder = f
 		m.list.resetCursor()
 		m.layout()
 	}
-	return status("cutting from %s", m.opts.opts[optSource].display())
+	return status("cutting from %s", m.opts.Opts[console.OptSource].Display())
 }
 
 // updateOptions handles the run options panel.
@@ -2388,43 +2388,43 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 	case "down", "j":
 		m.opts.move(1)
 	case "left", "h":
-		if m.opts.cursor == optSource {
-			m.opts.cycleSource(-1)
+		if m.opts.cursor == console.OptSource {
+			m.opts.CycleSource(-1)
 			return m.followSource()
 		}
-		opt.cycle(-1)
-		if m.opts.cursor == optServer {
+		opt.Cycle(-1)
+		if m.opts.cursor == console.OptServer {
 			return m.followServer()
 		}
 	case "right", "l", " ":
-		if m.opts.cursor == optSource {
-			m.opts.cycleSource(1)
+		if m.opts.cursor == console.OptSource {
+			m.opts.CycleSource(1)
 			return m.followSource()
 		}
-		opt.cycle(1)
-		if m.opts.cursor == optServer {
+		opt.Cycle(1)
+		if m.opts.cursor == console.OptServer {
 			return m.followServer()
 		}
 	case "enter":
-		if m.opts.cursor == optSource {
+		if m.opts.cursor == console.OptSource {
 			// The whole list: left and right are for the two or three you
 			// switch between, and everything else — including a path the
 			// listing has never seen — is behind Enter.
 			m.dialog = m.opts.sourceDialog()
 			return nil
 		}
-		switch opt.kind {
-		case optMulti:
+		switch opt.Kind {
+		case console.OptionList:
 			m.askForItem(opt, "", "", nil)
 		default:
-			opt.cycle(1)
-			if m.opts.cursor == optServer {
+			opt.Cycle(1)
+			if m.opts.cursor == console.OptServer {
 				return m.followServer()
 			}
 		}
 	case "backspace", "-":
-		if opt.kind == optMulti && len(opt.items) > 0 {
-			opt.items = opt.items[:len(opt.items)-1]
+		if opt.Kind == console.OptionList && len(opt.Items) > 0 {
+			opt.Items = opt.Items[:len(opt.Items)-1]
 		}
 	case "ctrl+r":
 		m.optionsOpen = false
@@ -2721,14 +2721,14 @@ func (m *Model) run() tea.Cmd {
 	// somebody who types one here means to leave too — not to cut a discobox
 	// and hand it a slash command. It closes the window the way leader-q does,
 	// with the composer emptied so the next window does not open on it.
-	if v := strings.TrimSpace(m.prompt.Value()); v == "/exit" || v == "/quit" {
+	if console.LeavesWindow(m.prompt.Value()) {
 		m.prompt.Reset()
 		return m.closeWindow()
 	}
 	if m.askHowToCreate() {
 		return m.refreshGitCredentialPreview()
 	}
-	return m.runRequest(m.opts.request(m.prompt.Value(), m.opts.opts[optSource].selected()))
+	return m.runRequest(m.opts.Request(m.prompt.Value(), m.opts.Opts[console.OptSource].Selected()))
 }
 
 // askHowToCreate stops a create and puts the create card up: where this
@@ -2763,11 +2763,11 @@ func (m *Model) askHowToCreate() bool {
 // is not there is corrected in place rather than retyped from memory. A field
 // opened off the create card goes back to it when it is left unanswered.
 func (m *Model) askForSource(value, problem string, card *createCard) {
-	body := sourceHint
+	body := m.opts.hint(m.opts.Opts[console.OptSource])
 	if problem != "" {
 		body = problem
 	}
-	d := inputDialog("Source", console.SourceForm(body, m.opts.sourceLabel(), value),
+	d := inputDialog("Source", console.SourceForm(body, m.opts.SourceLabel(), value),
 		func(source string) tea.Cmd {
 			return func() tea.Msg {
 				return sourceChosenMsg{source: source, typed: true, card: card}
@@ -2793,9 +2793,9 @@ func (m *Model) resolveSource(msg sourceChosenMsg) tea.Cmd {
 		// Nothing typed is the folder the field offered as its placeholder,
 		// which is where the window was cutting from already.
 		if msg.card != nil {
-			return m.cutFrom(msg.card, m.opts.sourceDir())
+			return m.cutFrom(msg.card, m.opts.SourceDir())
 		}
-		m.opts.chooseSource("")
+		m.opts.ChooseSource("")
 		return m.followSource()
 	}
 	return func() tea.Msg {
@@ -2823,17 +2823,17 @@ type sourceResolvedMsg struct {
 // A row whose values name sources has each one checked before it takes it
 // (option.checked), for the reason a source typed by hand is: a directory that
 // is not there fails the create seconds later, with the field gone.
-func (m *Model) askForItem(opt *option, value, problem string, card *createCard) {
-	body := opt.hint
+func (m *Model) askForItem(opt *console.RunOption, value, problem string, card *createCard) {
+	body := opt.Hint
 	if problem != "" {
 		body = problem
 	}
-	d := inputDialog("Add "+opt.label, console.ItemForm(body, opt.example, value), func(v string) tea.Cmd {
+	d := inputDialog("Add "+opt.Label, console.ItemForm(body, opt.Example, value), func(v string) tea.Cmd {
 		switch {
 		case v == "":
 			return nil
-		case !opt.checked:
-			opt.items = append(opt.items, v)
+		case !opt.Checked:
+			opt.Items = append(opt.Items, v)
 			return nil
 		}
 		return func() tea.Msg {
@@ -2850,7 +2850,7 @@ func (m *Model) askForItem(opt *option, value, problem string, card *createCard)
 
 // itemResolvedMsg is what the check of a repeated row's source came back with.
 type itemResolvedMsg struct {
-	opt    *option
+	opt    *console.RunOption
 	typed  string
 	source console.Source
 	card   *createCard
@@ -2863,7 +2863,7 @@ type itemResolvedMsg struct {
 // and the answer is kept for the next window too, so the same place is one
 // Enter away from now on.
 func (m *Model) cutFrom(card *createCard, source string) tea.Cmd {
-	m.opts.cutFrom(source)
+	m.opts.CutFrom(source)
 	if card.base != nil {
 		// The card stood in for the window's wait screen (startPendingRun),
 		// and the run it answered goes back to it rather than to the list.
@@ -2905,7 +2905,7 @@ func (m *Model) startPendingRun() tea.Cmd {
 			return nil
 		}
 		m.pendingRun, m.askSource = nil, false
-		m.opts.prefill(req)
+		m.opts.Prefill(req)
 		m.dialog = m.createDialog(m.opts.newCreateCard("", &req))
 		// The window is this run, so leaving it any way at all before the
 		// card is answered — Ctrl-C included — is leaving with nothing made.
@@ -2929,7 +2929,7 @@ func (m *Model) startRun(req console.RunRequest) tea.Cmd {
 	// A discobox with no source has no working tree to carry anything out of,
 	// so there is nothing either question could be about; and both answered
 	// leaves nothing to ask.
-	if req.NoSource || (req.IncludeDirty != "" && req.CopyDirectory != "") {
+	if !console.WorkspaceChecked(req) {
 		return m.create(req)
 	}
 	// There is only something to ask about when the working tree has something
@@ -2955,72 +2955,41 @@ func (m *Model) startRun(req console.RunRequest) tea.Cmd {
 // chosen like any other, but a project whose default is a login shell has no
 // coding harness by default, which is the state this is trying to leave.
 func (m *Model) askForADefaultHarness(req console.RunRequest) (tea.Cmd, bool) {
-	if req.Harness != "" || m.projectDefaultHarness() != nil {
+	q, ask, err := console.DefaultHarnessQuestion(req, m.harnesses.all, m.harnesses.loaded)
+	if err != nil {
+		return m.runFailed(err), true
+	}
+	if !ask {
 		return nil, false
 	}
-	if !m.harnesses.loaded {
-		// The listing has not landed yet, so there is nothing to ask about with
-		// any confidence. The server refuses a create it cannot resolve, which
-		// is the answer this would only be guessing at.
-		return nil, false
-	}
-	candidates := m.defaultCandidates()
-	if len(candidates) == 0 {
-		return m.runFailed(errors.New("this project has no harness to run; register one with `discobox admin harness create`")), true
-	}
-
-	items := make([]action, 0, len(candidates))
-	for i, harness := range candidates {
-		detail := "make it the project default"
-		n := itoa(i + 1)
-		items = append(items, action{
-			key: n, press: n, label: harness.DisplayName(), detail: detail, enabled: true,
-		})
-	}
-	chosen := candidates
-	menu := actionsDialog("Which harness should this project run?",
-		"Nothing is set as the project default, so a discobox has no harness to start.",
-		items, func(key string) tea.Cmd {
-			for i, harness := range chosen {
-				if itoa(i+1) == key {
-					return func() tea.Msg { return harnessDefaultMsg{harness: harness, resume: &req} }
-				}
-			}
+	harnesses := m.harnesses.all
+	menu := actionsDialog(q.Title, q.Body, questionActions(q), func(key string) tea.Cmd {
+		harness, ok := console.ChosenHarness(harnesses, key)
+		if !ok {
 			return nil
-		})
+		}
+		return func() tea.Msg { return harnessDefaultMsg{harness: harness, resume: &req} }
+	})
 	menu.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc cancels", "esc")}
 	m.leavesTheRun(menu)
 	m.dialog = menu
 	return nil, true
 }
 
+// questionActions are a pick of one's choices as a menu's rows, each pressed
+// by its own key.
+func questionActions(q console.Question) []action {
+	items := make([]action, 0, len(q.Choices))
+	for _, c := range q.Choices {
+		items = append(items, action{key: c.Key, press: c.Key, label: c.Label, detail: c.Hint, enabled: true})
+	}
+	return items
+}
+
 // chooseDefaultHarness acts on that choice: the harness becomes the default,
 // and the run that asked the question runs when it is answered.
 func (m *Model) chooseDefaultHarness(msg harnessDefaultMsg) tea.Cmd {
 	return m.runHarnessVerb(console.HarnessSetDefault, msg.harness, msg.resume)
-}
-
-// projectDefaultHarness is the harness the project runs when nothing says
-// otherwise, or nil when it has named none.
-func (m *Model) projectDefaultHarness() *console.Harness {
-	for _, harness := range m.harnesses.all {
-		if harness.Default {
-			return &harness
-		}
-	}
-	return nil
-}
-
-// defaultCandidates are the harnesses worth offering as a project default: all
-// of them except `shell`, in the order the listing reports.
-func (m *Model) defaultCandidates() []console.Harness {
-	var out []console.Harness
-	for _, harness := range m.harnesses.all {
-		if !harness.Shell {
-			out = append(out, harness)
-		}
-	}
-	return out
 }
 
 // leavesTheRun makes turning down a question a run stopped to ask end the
@@ -3041,48 +3010,15 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 	if msg.err != nil {
 		return m.runFailed(fmt.Errorf("cannot read the working tree: %w", msg.err))
 	}
-	if !msg.workspace.Carries {
+	q, ask := console.AskAboutWorkspace(msg.req, msg.workspace)
+	if !ask {
 		return m.create(msg.req)
 	}
-	if !msg.workspace.Repository {
-		if msg.req.CopyDirectory != "" {
-			return m.create(msg.req)
-		}
-		return m.askToCopyDirectory(msg.req, msg.workspace.Directory)
+	if !q.Repository {
+		return m.askToCopyDirectory(msg.req, q)
 	}
-	if msg.req.IncludeDirty != "" {
-		return m.create(msg.req)
-	}
-	// Excluding leads, the way it does in `discobox run`: the default answer is
-	// the one that changes nothing about what the sandbox sees. The repository
-	// named is the one the run is cut from, which is not the window's own
-	// directory when the source option names another.
-	m.dialog = m.includeDirtyDialog("Uncommitted changes", msg.workspace.Directory, dirtyWorkspaceBody(msg.workspace), true, msg.req)
+	m.dialog = m.workspaceDialog(q, msg.req)
 	return nil
-}
-
-// dirtyWorkspaceBody says what the question is about under the directory it
-// names: how many paths differ from the checked-out commit, and enough of them
-// to recognize the change by. A listing that reported no paths still asks the
-// question — what it is about is the working tree, not the count.
-func dirtyWorkspaceBody(workspace console.SourceWorkspace) string {
-	changes := "It has uncommitted changes"
-	if n := len(workspace.Changes); n > 0 {
-		changes = fmt.Sprintf("It has %s (%s)",
-			plural(n, "uncommitted change", "uncommitted changes"), summarizePaths(workspace.Changes))
-	}
-	return changes + ". Carry them into the discobox as a snapshot on top of the checked-out commit?"
-}
-
-// summarizePaths is a few of the paths and then how many more there are: enough
-// to recognize the change by, without turning the question into a file listing.
-func summarizePaths(paths []string) string {
-	const shown = 3
-	summary := strings.Join(paths[:min(shown, len(paths))], ", ")
-	if len(paths) > shown {
-		summary = fmt.Sprintf("%s and %d more", summary, len(paths)-shown)
-	}
-	return summary
 }
 
 // askToCopyDirectory is the same question for a source directory that is in no
@@ -3094,52 +3030,34 @@ func summarizePaths(paths []string) string {
 // The size is counted while the question is up rather than before it: a home
 // directory takes long enough to walk that waiting for the number would be the
 // thing the question exists to avoid.
-func (m *Model) askToCopyDirectory(req console.RunRequest, dir string) tea.Cmd {
-	total, stop := m.ds.MeasureDirectory(m.ctx, dir)
-	m.copySize, m.copyStop, m.copyDir = total, stop, dir
-	m.dialog = m.includeDirtyDialog("Copy this directory?", dir, copyDirectoryBody, false, req)
+func (m *Model) askToCopyDirectory(req console.RunRequest, q console.WorkspaceQuestion) tea.Cmd {
+	total, stop := m.ds.MeasureDirectory(m.ctx, q.Subject)
+	m.copySize, m.copyStop, m.copyDir = total, stop, q.Subject
+	m.dialog = m.workspaceDialog(q, req)
 	m.dialog.emphasis = directoryCopySize(total())
 	m.copyDialog = m.dialog
 	return m.pollDirectorySize()
 }
 
-// includeDirtyDialog is the two-answer question about what local content
-// reaches the discobox. It uses the same two descriptive rows as the standalone
-// run prompt. Both answers are answers — the discobox is created either way —
-// so an explicit no still creates. Canceling the copy question stops the run;
-// the dirty-work question keeps its default of excluding local changes.
-//
-// The two questions differ in what they decide and which answer leads. About
-// a repository's uncommitted work, excluding leads, so Enter means the
-// discobox sees the committed history; the answer is IncludeDirty. About a
-// directory in no repository there is no commit to start from instead, so
-// copying leads — the size on the dialog is the reason to ask — and the answer
-// is CopyDirectory. The directory is the dialog's subject, on a row of its own
-// above the body.
-func (m *Model) includeDirtyDialog(title, dir, body string, repository bool, req console.RunRequest) *dialog {
-	answer := func(yes string) tea.Cmd {
-		req := req
-		if repository {
-			req.IncludeDirty = yes
-		} else {
-			req.CopyDirectory = yes
-		}
+// workspaceDialog is the core's question about what local content reaches the
+// discobox (console.WorkspaceQuestion), as a menu with its two descriptive rows,
+// y and n pressing the yes and the no. Both answers are answers — the discobox
+// is created either way — and leaving it answers what the core says leaving it
+// answers: the repository's keeps excluding, the copy stops the run. The
+// directory is the dialog's subject, on a row of its own above the body.
+func (m *Model) workspaceDialog(q console.WorkspaceQuestion, req console.RunRequest) *dialog {
+	answer := func(key string) tea.Cmd {
+		req := q.Answer(req, key)
 		return func() tea.Msg { return createMsg{req: req} }
 	}
-	items := []action{
-		{key: "true", press: "y", label: "Copy the directory in", detail: "Everything in it arrives as uncommitted changes", enabled: true},
-		{key: "false", press: "n", label: "Do not copy the directory", detail: "Create the discobox with nothing checked out in it", enabled: true},
+	items := questionActions(q.Question)
+	for i := range items {
+		items[i].press = map[string]string{"true": "y", "false": "n"}[items[i].key]
 	}
-	if repository {
-		items = []action{
-			{key: "false", press: "n", label: "Start from the last commit", detail: "Leave the uncommitted changes here", enabled: true},
-			{key: "true", press: "y", label: "Include uncommitted changes", detail: "Start the discobox from a snapshot of the working tree", enabled: true},
-		}
-	}
-	d := actionsDialog(title, body, items, answer)
-	d.subject = dir
-	if repository {
-		d.onCancel = func() tea.Cmd { return answer("false") }
+	d := actionsDialog(q.Title, q.Body, items, answer)
+	d.subject = q.Subject
+	if key, ok := q.Dismissed(); ok {
+		d.onCancel = func() tea.Cmd { return answer(key) }
 	} else {
 		m.leavesTheRun(d)
 	}
@@ -3179,13 +3097,6 @@ func (m *Model) endDirectorySize() {
 // directorySizeInterval is how often the copy question re-reads its walk: often
 // enough that the number is visibly climbing, and no more than that.
 const directorySizeInterval = 200 * time.Millisecond
-
-// copyDirectoryBody is the copy question, under the directory it names. What it
-// would cost is not in here: it is the dialog's emphasis, on a line of its own
-// under this one, because it is the whole of what the answer turns on and it is
-// still arriving.
-const copyDirectoryBody = "It is not a Git repository, so copying it into the discobox means copying all of it. " +
-	"Answering no creates the discobox anyway, with nothing checked out in it."
 
 // directoryCopySize is that line, with as much of the count as the walk behind
 // the question has reached. Nothing counted yet says so rather than reporting a
@@ -4947,7 +4858,7 @@ type gitCredentialPolicyMsg struct {
 func (m *Model) refreshGitCredentialPreview() tea.Cmd {
 	m.gitPolicyGen++
 	gen := m.gitPolicyGen
-	m.opts.gitPolicyLoading = true
+	m.opts.GitPolicyLoading = true
 	return func() tea.Msg {
 		policy, err := m.ds.GitCredentialPolicy(m.ctx)
 		return gitCredentialPolicyMsg{gen: gen, policy: policy, err: err}

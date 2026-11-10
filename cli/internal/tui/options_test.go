@@ -19,8 +19,8 @@ func TestTheChipStripAlwaysNamesTheResolvedHarness(t *testing.T) {
 	}
 
 	// Choosing one is exactly when it earns its place on the strip.
-	m.opts.opts[optHarness].idx = 1
-	chosen := m.opts.opts[optHarness].display()
+	m.opts.Opts[console.OptHarness].Index = 1
+	chosen := m.opts.Opts[console.OptHarness].Display()
 	if chips := m.opts.chips(st); !strings.Contains(chips, chosen) {
 		t.Fatalf("chips = %q, want the harness that was chosen (%q)", chips, chosen)
 	}
@@ -29,14 +29,14 @@ func TestTheChipStripAlwaysNamesTheResolvedHarness(t *testing.T) {
 func TestShiftTabCyclesTheHarnessWithoutOpeningOptions(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
-	before := m.opts.opts[optHarness].display()
+	before := m.opts.Opts[console.OptHarness].Display()
 
 	send(t, m, keyPress("shift+tab"))
 
 	if m.optionsOpen {
 		t.Fatal("shift+tab should not open the run options")
 	}
-	if after := m.opts.opts[optHarness].display(); after == before {
+	if after := m.opts.Opts[console.OptHarness].Display(); after == before {
 		t.Fatalf("harness = %q, want a choice after %q", after, before)
 	}
 }
@@ -45,16 +45,16 @@ func TestHarnessChipAndMarkerAreMutedForDefaultAndGoldForOverride(t *testing.T) 
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	st := newStyles(true)
-	harness := m.opts.opts[optHarness]
+	harness := m.opts.Opts[console.OptHarness]
 
-	if chips := m.opts.chips(st); !strings.Contains(chips, st.chip.Render(harness.display())) ||
+	if chips := m.opts.chips(st); !strings.Contains(chips, st.chip.Render(harness.Display())) ||
 		!strings.Contains(chips, st.chip.Render("⏵⏵ ")) {
-		t.Fatalf("default chips = %q, want a muted marker and %q", chips, harness.display())
+		t.Fatalf("default chips = %q, want a muted marker and %q", chips, harness.Display())
 	}
-	harness.cycle(1)
-	if chips := m.opts.chips(st); !strings.Contains(chips, st.chipOn.Render(harness.display())) ||
+	harness.Cycle(1)
+	if chips := m.opts.chips(st); !strings.Contains(chips, st.chipOn.Render(harness.Display())) ||
 		!strings.Contains(chips, st.chipOn.Render("⏵⏵ ")) {
-		t.Fatalf("override chips = %q, want a gold marker and %q", chips, harness.display())
+		t.Fatalf("override chips = %q, want a gold marker and %q", chips, harness.Display())
 	}
 }
 
@@ -62,7 +62,7 @@ func TestHarnessChipStripIsEntirelyMutedWithoutPromptFocus(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	st := newStyles(true)
-	m.opts.opts[optDetach].value = "on"
+	m.opts.Opts[console.OptDetach].Value = "on"
 
 	chips := m.opts.mutedChips(st)
 	for _, want := range []string{"⏵⏵ ", "claude", " · ", "detached"} {
@@ -80,9 +80,9 @@ func TestHarnessChipStripIsEntirelyMutedWithoutPromptFocus(t *testing.T) {
 func TestTheHarnessChoicesOfferNoNone(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
-	for _, choice := range m.opts.opts[optHarness].choices {
+	for _, choice := range m.opts.Opts[console.OptHarness].Choices {
 		if strings.Contains(strings.ToLower(choice), "none") {
-			t.Fatalf("choices = %v, want no none-shaped entry", m.opts.opts[optHarness].choices)
+			t.Fatalf("choices = %v, want no none-shaped entry", m.opts.Opts[console.OptHarness].Choices)
 		}
 	}
 }
@@ -98,14 +98,14 @@ func TestWithNoProjectDefaultNoHarnessIsClaimed(t *testing.T) {
 	}
 	m := newTestModel(t, ds)
 
-	harness := m.opts.opts[optHarness]
-	if harness.choices[0] != unsetHarness {
-		t.Fatalf("leading choice = %q, want %q", harness.choices[0], unsetHarness)
+	harness := m.opts.Opts[console.OptHarness]
+	if harness.Choices[0] != console.UnsetHarness {
+		t.Fatalf("leading choice = %q, want %q", harness.Choices[0], console.UnsetHarness)
 	}
-	if m.opts.request("", m.opts.opts[optSource].selected()).Harness != "" {
+	if m.opts.Request("", m.opts.Opts[console.OptSource].Selected()).Harness != "" {
 		t.Fatal("an unset harness must emit no --harness")
 	}
-	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, unsetHarness) {
+	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, console.UnsetHarness) {
 		t.Fatalf("chips = %q, want the unresolved harness state", chips)
 	}
 }
@@ -121,7 +121,7 @@ func TestTheChipStripStartsWithTheHarness(t *testing.T) {
 		t.Fatalf("chips = %q, want the default harness", chips)
 	}
 
-	m.opts.opts[optDetach].value = "on"
+	m.opts.Opts[console.OptDetach].Value = "on"
 	if chips := m.opts.chips(st); !strings.Contains(chips, "⏵⏵") || !strings.Contains(chips, "detached") {
 		t.Fatalf("chips = %q, want the marker back once there is something to say", chips)
 	}
@@ -135,19 +135,19 @@ func TestTheSourceRowOffersTheProjectsSources(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	source := m.opts.opts[optSource]
-	if source.choices[0] != m.opts.sourceLabel() {
-		t.Fatalf("leading choice = %q, want the folder the header is on (%q)", source.choices[0], m.opts.sourceLabel())
+	source := m.opts.Opts[console.OptSource]
+	if source.Choices[0] != m.opts.SourceLabel() {
+		t.Fatalf("leading choice = %q, want the folder the header is on (%q)", source.Choices[0], m.opts.SourceLabel())
 	}
-	if source.changed() {
+	if source.Changed() {
 		t.Fatal("the leading choice is what run would do anyway, so nothing is changed")
 	}
 	for _, want := range []string{"/src/obot", "https://github.com/acme/foo"} {
 		if !hasSourceValue(source, want) {
-			t.Fatalf("values = %v, want %q from the listing", source.values, want)
+			t.Fatalf("values = %v, want %q from the listing", source.Values, want)
 		}
 	}
-	if last := source.values[len(source.values)-1]; last != sourceNone {
+	if last := source.Values[len(source.Values)-1]; last != console.SourceNone {
 		t.Fatalf("last value = %q, want no source", last)
 	}
 }
@@ -157,16 +157,16 @@ func TestTheSourceRowOffersTheProjectsSources(t *testing.T) {
 func TestNoSourceAsksForTheFlagAndNoDirectory(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	m.opts.chooseSource(sourceNone)
+	m.opts.ChooseSource(console.SourceNone)
 
-	req := m.opts.request("do a thing", m.opts.opts[optSource].selected())
+	req := m.opts.Request("do a thing", m.opts.Opts[console.OptSource].Selected())
 	if !req.NoSource {
 		t.Fatal("request should ask for --no-source")
 	}
 	if req.Source != "" {
 		t.Fatalf("source = %q, want nothing to cut from", req.Source)
 	}
-	if cmd := m.opts.command("do a thing"); !strings.Contains(cmd, "discobox run --no-source") || strings.Contains(cmd, "run .") {
+	if cmd := m.opts.Command("do a thing"); !strings.Contains(cmd, "discobox run --no-source") || strings.Contains(cmd, "run .") {
 		t.Fatalf("command = %q, want --no-source in SOURCE's place", cmd)
 	}
 	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, console.NoSourceChoice) {
@@ -181,13 +181,13 @@ func TestATypedSourceSurvivesARefresh(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	m.opts.chooseSource("/src/elsewhere@main")
-	m.opts.setSources(m.list.Sources())
+	m.opts.ChooseSource("/src/elsewhere@main")
+	m.opts.SetSources(m.list.Sources())
 
-	if got := m.opts.request("", m.opts.opts[optSource].selected()).Source; got != "/src/elsewhere@main" {
+	if got := m.opts.Request("", m.opts.Opts[console.OptSource].Selected()).Source; got != "/src/elsewhere@main" {
 		t.Fatalf("source = %q, want the one that was typed", got)
 	}
-	if got := m.opts.typedSource(); got != "/src/elsewhere@main" {
+	if got := m.opts.TypedSource(); got != "/src/elsewhere@main" {
 		t.Fatalf("the input field should reopen holding %q, got %q", "/src/elsewhere@main", got)
 	}
 }
@@ -200,27 +200,27 @@ func TestChoosingASourceMovesTheList(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	m.opts.chooseSource("/src/obot")
+	m.opts.ChooseSource("/src/obot")
 	m.followSource()
 	if m.list.Filter.Folder.Key != testKey("/src/obot") {
 		t.Fatalf("folder = %q, want the list to follow the source", m.list.Filter.Folder.Label)
 	}
 	// Followed there, the source is the folder again and emits no -C: the
 	// header already says where the next discobox is cut from.
-	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "/src/obot" {
+	if req := m.opts.Request("", m.opts.Opts[console.OptSource].Selected()); req.Source != "/src/obot" {
 		t.Fatalf("source = %q, want the folder the list moved to", req.Source)
 	}
 
-	m.opts.chooseSource("https://github.com/acme/foo")
+	m.opts.ChooseSource("https://github.com/acme/foo")
 	m.followSource()
 	if m.list.Filter.Folder.Key != testKey("https://github.com/acme/foo") {
 		t.Fatalf("folder = %q, want the repository URL's own", m.list.Filter.Folder.Label)
 	}
-	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Source != "https://github.com/acme/foo" {
+	if req := m.opts.Request("", m.opts.Opts[console.OptSource].Selected()); req.Source != "https://github.com/acme/foo" {
 		t.Fatalf("source = %q, want the remote repository", req.Source)
 	}
 
-	m.opts.chooseSource(sourceNone)
+	m.opts.ChooseSource(console.SourceNone)
 	m.followSource()
 	if m.list.Filter.Folder.Key != m.session.OriginKey {
 		t.Fatalf("folder = %q, want the window's own: a sourceless discobox is filed under this machine", m.list.Filter.Folder.Label)
@@ -239,29 +239,29 @@ func TestTheSourceRowOffersARepositoryOnce(t *testing.T) {
 		cutFrom(console.Sandbox{ID: "sbx_c", Name: "c", State: console.StateRunning}, "git@github.com:Acme/Foo.git"),
 		cutFrom(console.Sandbox{ID: "sbx_d", Name: "d", State: console.StateRunning}, "https://github.com/acme/foo@dev"),
 	))
-	source := m.opts.opts[optSource]
+	source := m.opts.Opts[console.OptSource]
 	var repos []string
-	for _, choice := range source.choices {
+	for _, choice := range source.Choices {
 		if strings.Contains(strings.ToLower(choice), "acme/foo") {
 			repos = append(repos, choice)
 		}
 	}
 	if want := []string{"acme/foo", "git@github.com:Acme/Foo", "acme/foo@dev"}; !slices.Equal(repos, want) {
-		t.Fatalf("choices = %v, want https once, ssh once, and the other ref once: %v", source.choices, want)
+		t.Fatalf("choices = %v, want https once, ssh once, and the other ref once: %v", source.Choices, want)
 	}
 
-	m.opts.chooseSource("https://GitHub.com/acme/foo")
-	if got := m.opts.opts[optSource].selected(); got != "https://github.com/acme/foo.git" {
+	m.opts.ChooseSource("https://GitHub.com/acme/foo")
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "https://github.com/acme/foo.git" {
 		t.Fatalf("choosing another https spelling selected %q, want the choice already offered", got)
 	}
-	m.opts.chooseSource("git@github.com:acme/foo.git")
-	if got := m.opts.opts[optSource].selected(); got != "git@github.com:Acme/Foo.git" {
+	m.opts.ChooseSource("git@github.com:acme/foo.git")
+	if got := m.opts.Opts[console.OptSource].Selected(); got != "git@github.com:Acme/Foo.git" {
 		t.Fatalf("choosing an ssh spelling selected %q, want the ssh choice", got)
 	}
 }
 
-func hasSourceValue(o *option, want string) bool {
-	for _, value := range o.values {
+func hasSourceValue(o *console.RunOption, want string) bool {
+	for _, value := range o.Values {
 		if value == want {
 			return true
 		}
@@ -288,13 +288,13 @@ func TestASourcelessFolderElsewhereCutsFromTheWindowsOwn(t *testing.T) {
 	if !chosen {
 		t.Fatal("another machine's sourceless folder should be offered")
 	}
-	if got := m.opts.sourceDir(); got != m.session.Directory {
+	if got := m.opts.SourceDir(); got != m.session.Directory {
 		t.Fatalf("source = %q, want the window's own (%q)", got, m.session.Directory)
 	}
-	if strings.ContainsRune(m.opts.sourceLabel(), 0) {
-		t.Fatalf("the panel carries the no-source sentinel: %q", m.opts.sourceLabel())
+	if strings.ContainsRune(m.opts.SourceLabel(), 0) {
+		t.Fatalf("the panel carries the no-source sentinel: %q", m.opts.SourceLabel())
 	}
-	if req := m.opts.request("x", m.opts.opts[optSource].selected()); req.NoSource || req.Source == sourceNone {
+	if req := m.opts.Request("x", m.opts.Opts[console.OptSource].Selected()); req.NoSource || req.Source == console.SourceNone {
 		t.Fatalf("request = %+v, want a create from the window's own source", req)
 	}
 }
@@ -317,24 +317,24 @@ func TestThePoolRowSendsTheChosenPool(t *testing.T) {
 	m := newTestModel(t, ds)
 	st := newStyles(false)
 
-	row := m.opts.opts[optPool]
-	if !slices.Equal(row.choices, []string{"local", "arm", "gpu"}) {
-		t.Fatalf("choices = %q, want the default leading", row.choices)
+	row := m.opts.Opts[console.OptPool]
+	if !slices.Equal(row.Choices, []string{"local", "arm", "gpu"}) {
+		t.Fatalf("choices = %q, want the default leading", row.Choices)
 	}
-	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Pool != "" {
+	if req := m.opts.Request("", m.opts.Opts[console.OptSource].Selected()); req.Pool != "" {
 		t.Fatalf("Pool = %q, want none for the default", req.Pool)
 	}
-	if strings.Contains(m.opts.command(""), "--pool") || strings.Contains(m.opts.chips(st), "pool") {
+	if strings.Contains(m.opts.Command(""), "--pool") || strings.Contains(m.opts.chips(st), "pool") {
 		t.Fatal("the default pool is not worth a flag or a chip")
 	}
 
 	send(t, m, keyPress("ctrl+o"))
-	m.opts.moveTo(optPool)
+	m.opts.moveTo(console.OptPool)
 	send(t, m, keyPress("right"))
-	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Pool != "arm" {
+	if req := m.opts.Request("", m.opts.Opts[console.OptSource].Selected()); req.Pool != "arm" {
 		t.Fatalf("Pool = %q, want arm", req.Pool)
 	}
-	if command := m.opts.command(""); !strings.Contains(command, "--pool arm") {
+	if command := m.opts.Command(""); !strings.Contains(command, "--pool arm") {
 		t.Fatalf("command = %q, want --pool arm", command)
 	}
 	if chips := m.opts.chips(st); !strings.Contains(chips, "pool arm") {
@@ -343,7 +343,7 @@ func TestThePoolRowSendsTheChosenPool(t *testing.T) {
 
 	// A refresh keeps the choice where it is, however the listing reorders.
 	m.opts.setPools([]console.Pool{testPools()[2], testPools()[1], testPools()[0]})
-	if got := m.opts.opts[optPool].selected(); got != "arm" {
+	if got := m.opts.Opts[console.OptPool].Selected(); got != "arm" {
 		t.Fatalf("after a refresh the row is on %q, want arm", got)
 	}
 }
@@ -354,7 +354,7 @@ func TestASharedPoolNameIsSentAsItsID(t *testing.T) {
 	t.Parallel()
 	o := newOptions(console.Session{Directory: "/src"})
 	o.setPools([]console.Pool{{ID: "p1", Name: "same", Default: true}, {ID: "p2", Name: "same"}})
-	if got := o.opts[optPool].values; !slices.Equal(got, []string{"", "p2"}) {
+	if got := o.Opts[console.OptPool].Values; !slices.Equal(got, []string{"", "p2"}) {
 		t.Fatalf("values = %q, want the second pool by ID", got)
 	}
 }
@@ -365,19 +365,19 @@ func TestASharedPoolNameIsSentAsItsID(t *testing.T) {
 func TestARequestedPoolSurvivesTheListing(t *testing.T) {
 	t.Parallel()
 	o := newOptions(console.Session{Directory: "/src"})
-	o.prefill(console.RunRequest{Pool: "pool-gpu"})
+	o.Prefill(console.RunRequest{Pool: "pool-gpu"})
 	o.setPools(testPools())
-	if got := o.opts[optPool].display(); got != "gpu" {
+	if got := o.Opts[console.OptPool].Display(); got != "gpu" {
 		t.Fatalf("row shows %q, want the pool named by ID", got)
 	}
-	if req := o.request("", "/src"); req.Pool != "gpu" {
+	if req := o.Request("", "/src"); req.Pool != "gpu" {
 		t.Fatalf("Pool = %q, want gpu", req.Pool)
 	}
 
 	o = newOptions(console.Session{Directory: "/src"})
-	o.prefill(console.RunRequest{Pool: "elsewhere"})
+	o.Prefill(console.RunRequest{Pool: "elsewhere"})
 	o.setPools(testPools())
-	if req := o.request("", "/src"); req.Pool != "elsewhere" {
+	if req := o.Request("", "/src"); req.Pool != "elsewhere" {
 		t.Fatalf("Pool = %q, want the unlisted pool kept", req.Pool)
 	}
 }
@@ -390,13 +390,13 @@ func TestAChangeOfServerForgetsThePool(t *testing.T) {
 	ds.session.Servers = []string{"alpha", "beta"}
 	ds.pools = testPools()
 	m := newTestModel(t, ds)
-	m.opts.opts[optPool].idx = 1
+	m.opts.Opts[console.OptPool].Index = 1
 
 	send(t, m, keyPress("ctrl+o"))
-	m.opts.moveTo(optServer)
+	m.opts.moveTo(console.OptServer)
 	send(t, m, keyPress("right"))
-	if m.opts.opts[optPool].changed() {
-		t.Fatalf("row is on %q after a change of server, want the default", m.opts.opts[optPool].display())
+	if m.opts.Opts[console.OptPool].Changed() {
+		t.Fatalf("row is on %q after a change of server, want the default", m.opts.Opts[console.OptPool].Display())
 	}
 }
 
@@ -413,17 +413,17 @@ func TestThePoolRowIsHiddenWithNothingToChoose(t *testing.T) {
 	if view := m.opts.view(m.st, &m.zones, 120, ""); strings.Contains(view, "Pool") {
 		t.Fatalf("one pool is nothing to choose, but the panel shows the row:\n%s", view)
 	}
-	m.opts.moveTo(optInclude)
+	m.opts.moveTo(console.OptInclude)
 	send(t, m, keyPress("down"))
-	if m.opts.cursor != optServer {
+	if m.opts.cursor != console.OptServer {
 		t.Fatalf("cursor = %d, want down from the last source row to step past the pool to the server", m.opts.cursor)
 	}
 	send(t, m, keyPress("up"))
-	if m.opts.cursor != optInclude {
+	if m.opts.cursor != console.OptInclude {
 		t.Fatalf("cursor = %d, want up from the server to step past the pool", m.opts.cursor)
 	}
-	m.opts.moveTo(optPool)
-	if m.opts.cursor == optPool {
+	m.opts.moveTo(console.OptPool)
+	if m.opts.cursor == console.OptPool {
 		t.Fatal("a press cannot land on a row that is not drawn")
 	}
 }
@@ -435,16 +435,16 @@ func TestARequestedPoolAfterTheListingIsTheListedPool(t *testing.T) {
 	t.Parallel()
 	o := newOptions(console.Session{Directory: "/src"})
 	o.setPools(testPools())
-	o.prefill(console.RunRequest{Pool: "pool-gpu"})
-	if row := o.opts[optPool]; len(row.choices) != 3 || row.display() != "gpu" {
-		t.Fatalf("row = %q on %q, want the listed gpu and no copy of it", row.choices, row.display())
+	o.Prefill(console.RunRequest{Pool: "pool-gpu"})
+	if row := o.Opts[console.OptPool]; len(row.Choices) != 3 || row.Display() != "gpu" {
+		t.Fatalf("row = %q on %q, want the listed gpu and no copy of it", row.Choices, row.Display())
 	}
 
 	o = newOptions(console.Session{Directory: "/src"})
 	o.setPools(testPools())
-	o.prefill(console.RunRequest{Pool: "local"})
-	if req := o.request("", "/src"); req.Pool != "" || len(o.opts[optPool].choices) != 3 {
-		t.Fatalf("Pool = %q with choices %q, want the default and no flag", req.Pool, o.opts[optPool].choices)
+	o.Prefill(console.RunRequest{Pool: "local"})
+	if req := o.Request("", "/src"); req.Pool != "" || len(o.Opts[console.OptPool].Choices) != 3 {
+		t.Fatalf("Pool = %q with choices %q, want the default and no flag", req.Pool, o.Opts[console.OptPool].Choices)
 	}
 }
 
@@ -453,11 +453,11 @@ func TestARenamedPoolStaysChosen(t *testing.T) {
 	t.Parallel()
 	o := newOptions(console.Session{Directory: "/src"})
 	o.setPools(testPools())
-	o.opts[optPool].idx = 1 // arm
+	o.Opts[console.OptPool].Index = 1 // arm
 	renamed := testPools()
 	renamed[0].Name = "graviton"
 	o.setPools(renamed)
-	if req := o.request("", "/src"); req.Pool != "graviton" || len(o.opts[optPool].choices) != 3 {
-		t.Fatalf("Pool = %q with choices %q, want the renamed pool", req.Pool, o.opts[optPool].choices)
+	if req := o.Request("", "/src"); req.Pool != "graviton" || len(o.Opts[console.OptPool].Choices) != 3 {
+		t.Fatalf("Pool = %q with choices %q, want the renamed pool", req.Pool, o.Opts[console.OptPool].Choices)
 	}
 }

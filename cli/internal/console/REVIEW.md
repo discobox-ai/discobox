@@ -52,3 +52,18 @@
   harness's credential is refused for every box running that harness, and a
   request or refusal is on one server; the bridge's first copy matched by
   sandbox ID alone and refused `rejections` where the TUI opened it.
+- **A run option's rule is `RunOptions`', never a renderer's.** Which rows a
+  create offers, what each leads with, the sources, the request and the
+  command were the TUI's panel alone, and the desktop would have needed a
+  second copy. A renderer moves a cursor over the rows and draws them; the
+  bridge holds the window's `RunOptions` and fills `CreateForm`/`OptionsForm`.
+- **A form's answer names a choice by its value, never its place.** The
+  run options' answer was first read back into positions and applied to rows
+  the bridge holds, which another command can rebuild while the sheet is up
+  (another server's harnesses): a place then names another harness.
+  `RunAnswer.Chosen` is values, found again as the rows are taken.
+- **A create's question order is still written twice** (the TUI's `Model`
+  and the bridge's `NewBox`) until #917 moves it into one core flow both answer
+  through `Narration`. Until then a change to it changes both, and its rules
+  (`DefaultHarnessQuestion`, `AskAboutWorkspace`, `WorkspaceChecked`) are
+  called by both, never restated.

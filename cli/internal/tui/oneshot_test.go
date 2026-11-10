@@ -433,19 +433,19 @@ func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
 		if len(ds.runRequests()) != 0 {
 			t.Fatalf("runs = %+v, want nothing created before the card is answered", ds.runRequests())
 		}
-		opts := m.opts.opts
-		if got := opts[optHarness].selected(); got != "codex" {
+		opts := m.opts.Opts
+		if got := opts[console.OptHarness].Selected(); got != "codex" {
 			t.Fatalf("harness = %q, want the one the command named", got)
 		}
-		if !opts[optUserSkills].changed() || !slices.Equal(opts[optSkills].items, req.SkillDirs) || !slices.Equal(opts[optInclude].items, req.Include) {
+		if !opts[console.OptUserSkills].Changed() || !slices.Equal(opts[console.OptSkills].Items, req.SkillDirs) || !slices.Equal(opts[console.OptInclude].Items, req.Include) {
 			t.Fatal("the card should open holding the command's skills and sources")
 		}
 
 		// The sources come off the listing, which may land after the card.
 		d.wait("the listing's sources", func() bool {
-			return slices.Contains(m.opts.opts[optSource].values, "/src/obot")
+			return slices.Contains(m.opts.Opts[console.OptSource].Values, "/src/obot")
 		})
-		d.key(itoa(slices.Index(m.opts.opts[optSource].values, "/src/obot") + 1))
+		d.key(itoa(slices.Index(m.opts.Opts[console.OptSource].Values, "/src/obot") + 1))
 		d.wait("the create", func() bool { return len(ds.runRequests()) == 1 })
 		run := ds.runRequests()[0]
 		if run.Source != "/src/obot" {

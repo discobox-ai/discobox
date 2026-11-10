@@ -2766,7 +2766,7 @@ changes on that same commit. Whether that happens is `sandboxcreate.IncludeDirty
   request's `includeDirty` left out is off too.
 - **The console still asks.** Its create card's row is `auto` (the default),
   `include` or `exclude`; `auto` is the window's own dialog
-  (`Model.workspaceChecked`), asked only when the workspace is actually dirty,
+  (the console core's `console.AskAboutWorkspace`, asked by the TUI and the desktop alike), asked only when the workspace is actually dirty,
   with "start from the last commit" leading. It asks about the primary source,
   the one it can see a working tree for, and the answer stands for every source
   that create cuts from.

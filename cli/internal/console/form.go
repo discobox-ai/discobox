@@ -91,17 +91,41 @@ func refuse(why string) *Refusal { return &Refusal{Why: why} }
 // Form is a question with the answer T: its fields, and the submit that turns
 // answers into T or refuses them.
 type Form[T any] struct {
+	// Fields are the fields as the form opens.
 	Fields []Field
+	// Grow is the fields for the answers so far, for a form whose repeated
+	// rows grow a field as their last is filled (the run options' env and
+	// secrets). Nil is a form whose fields are Fields whatever is answered.
+	Grow func(Answers) []Field
+	// Note is what the answers so far add up to, said under the fields (the
+	// command a create would run). Nil says nothing.
+	Note func(Answers) string
 	// Submit reads the answers once every required field holds one. Nil
 	// answers the zero T.
 	Submit func(Answers) (T, *Refusal)
+}
+
+// FieldsFor is the form's fields for the answers so far (Grow).
+func (f Form[T]) FieldsFor(a Answers) []Field {
+	if f.Grow == nil {
+		return f.Fields
+	}
+	return f.Grow(a)
+}
+
+// NoteFor is what the answers so far add up to (Note), or nothing.
+func (f Form[T]) NoteFor(a Answers) string {
+	if f.Note == nil {
+		return ""
+	}
+	return f.Note(a)
 }
 
 // Answer checks the answers and makes them T: a required field that applies
 // and is empty is refused first, then whatever Submit refuses.
 func (f Form[T]) Answer(a Answers) (T, *Refusal) {
 	var zero T
-	for _, field := range f.Fields {
+	for _, field := range f.FieldsFor(a) {
 		if field.Required == "" || field.Picker() || !field.Applies(a) {
 			continue
 		}

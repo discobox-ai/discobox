@@ -314,7 +314,7 @@ func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 			}
 		}
 	}
-	m.opts.setHarnesses(msg.harnesses)
+	m.opts.SetHarnesses(msg.harnesses)
 	m.layout()
 	// `discobox run` handed its request to this window, and this is the first
 	// moment the window can ask what it asks before a create. See pendingRun.

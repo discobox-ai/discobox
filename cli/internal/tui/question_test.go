@@ -241,7 +241,7 @@ func TestPurgeAsksTheCoresQuestion(t *testing.T) {
 
 func TestCommandPreviewPreservesExplicitAsk(t *testing.T) {
 	options := newOptions(console.Session{GitCredentials: "ask"})
-	if command := options.commandFor(console.RunRequest{Source: "."}); !strings.Contains(command, "--git-credentials=ask") {
+	if command := options.CommandFor(console.RunRequest{Source: "."}); !strings.Contains(command, "--git-credentials=ask") {
 		t.Fatalf("preview drops ask override: %s", command)
 	}
 }
@@ -251,17 +251,17 @@ func TestPreviewReloadsSavedConsentWithoutResettingDraftOrOptions(t *testing.T) 
 	ds.session.GitCredentials = "lend"
 	m := newTestModel(t, ds)
 	m.prompt.SetValue("keep this prompt")
-	m.opts.cursor = optSource
+	m.opts.cursor = console.OptSource
 	ds.session.GitCredentials = "local"
 	cmd := m.refreshGitCredentialPreview()
-	if strings.Contains(m.opts.command(""), "--git-credentials=lend") {
+	if strings.Contains(m.opts.Command(""), "--git-credentials=lend") {
 		t.Fatal("stale lending command remains copyable while loading")
 	}
 	send(t, m, cmd())
-	if command := m.opts.command(""); !strings.Contains(command, "--git-credentials=local") {
+	if command := m.opts.Command(""); !strings.Contains(command, "--git-credentials=local") {
 		t.Fatalf("stale preview: %s", command)
 	}
-	if m.prompt.Value() != "keep this prompt" || m.opts.cursor != optSource {
+	if m.prompt.Value() != "keep this prompt" || m.opts.cursor != console.OptSource {
 		t.Fatal("refresh reset window state")
 	}
 }

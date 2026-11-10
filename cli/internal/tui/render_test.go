@@ -336,7 +336,7 @@ func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
 	// Harness -> codex, uncommitted changes -> include, detach on.
 	send(t, m, keyPress("right"), keyPress("down"), keyPress("right"), keyPress("down"), keyPress("right"))
 
-	command := m.opts.command(m.prompt.Value())
+	command := m.opts.Command(m.prompt.Value())
 	for _, want := range []string{"discobox run . -p 'fix the reaper'", "--harness codex", "--include-dirty", "-d"} {
 		if !strings.Contains(command, want) {
 			t.Errorf("command %q missing %q", command, want)
@@ -346,7 +346,7 @@ func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
 		t.Error("the panel should show the command it describes")
 	}
 	// And what the panel describes is what Enter asks for.
-	req := m.opts.request(m.prompt.Value(), m.opts.opts[optSource].selected())
+	req := m.opts.Request(m.prompt.Value(), m.opts.Opts[console.OptSource].Selected())
 	if req.Harness != "codex" || req.IncludeDirty != "true" || !req.Detach {
 		t.Errorf("request = %+v", req)
 	}
@@ -844,7 +844,7 @@ func TestTheStripOnlyNamesWhatWasChosen(t *testing.T) {
 
 	// Both of the answers do show, because both change what Enter does.
 	for idx, want := range map[int]string{1: "+dirty", 2: "clean"} {
-		m.opts.opts[optDirty].idx = idx
+		m.opts.Opts[console.OptDirty].Index = idx
 		if chips := m.opts.chips(m.st); !strings.Contains(chips, want) {
 			t.Errorf("the strip should name %q: %q", want, chips)
 		}
