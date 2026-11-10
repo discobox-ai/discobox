@@ -34,12 +34,15 @@ func (d *apiDataSource) ListFiles(ctx context.Context, sandboxID, dir string) (s
 	}
 	entries := make([]tui.FileEntry, 0, len(list.Entries))
 	for _, e := range list.Entries {
+		// Name and Target are only ever drawn, so they are made safe to
+		// draw here, as every box-written string the console shows is;
+		// Path is the identifier sent back, and stays the box's own.
 		entries = append(entries, tui.FileEntry{
-			Name:   e.Name,
+			Name:   terminalSafe(e.Name),
 			Path:   e.Path,
 			Dir:    e.Type == apiclientgen.SandboxFileTypeDirectory,
 			Link:   e.Type == apiclientgen.SandboxFileTypeSymlink,
-			Target: e.LinkTarget.Or(""),
+			Target: terminalSafe(e.LinkTarget.Or("")),
 			Size:   e.Size,
 		})
 	}
@@ -77,6 +80,19 @@ func (d *apiDataSource) UploadFiles(ctx context.Context, sandboxID string, local
 	for _, p := range local {
 		operands = append(operands, cpOperand{path: p})
 	}
+	// cp's copy replaces a file and merges into a directory; a drop is one
+	// gesture with no confirmation, so it never lands on something already
+	// there (ADR 26-11-10-203), as a move or copy inside the box never does.
+	for _, p := range local {
+		name := filepath.Base(p)
+		_, err := copyStat(ctx, d.client, d.projectID, cpOperand{remote: true, reference: sandboxID, path: path.Join(dir, name)}, false)
+		if err == nil {
+			return fmt.Errorf("%q is already in %q", terminalSafe(name), terminalSafe(dir))
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
 	// The trailing slash makes the destination a directory that must exist,
 	// so one file is copied under its own name rather than onto dir.
 	dest := path.Clean(dir)
@@ -88,8 +104,14 @@ func (d *apiDataSource) UploadFiles(ctx context.Context, sandboxID string, local
 }
 
 // DownloadFile copies one path out of the discobox into this machine's
-// downloads directory, under a name nothing there has yet: the operands
-// `discobox cp -r BOX:PATH LOCAL` would be, through the same copy.
+// downloads directory, under a name nothing there has yet: the copy
+// `discobox cp -r BOX:PATH LOCAL` makes, into a name claimed first.
+//
+// Everything the discobox decides — the name, and for a directory every name
+// inside it — lands below that directory and nowhere else: the name is
+// claimed through an os.Root opened on it, and the copy writes through one
+// pinned to what was claimed (copyarchive), so neither a name nor a link can
+// reach past it.
 func (d *apiDataSource) DownloadFile(ctx context.Context, sandboxID, remote string) (string, error) {
 	name := path.Base(remote)
 	// The name is the discobox's; it becomes a file name here only if it is
@@ -97,44 +119,71 @@ func (d *apiDataSource) DownloadFile(ctx context.Context, sandboxID, remote stri
 	if err := copyarchive.Name(name); err != nil || strings.Contains(name, "/") {
 		return "", fmt.Errorf("%s cannot be a file name on this machine", terminalSafe(name))
 	}
+	source := cpOperand{remote: true, reference: sandboxID, path: remote}
+	stat, err := copyStat(ctx, d.client, d.projectID, source, true)
+	if err != nil {
+		return "", err
+	}
+	isDir := stat.Type == apiclientgen.SandboxFileTypeDirectory
+	if !isDir && stat.Type != apiclientgen.SandboxFileTypeFile {
+		return "", fmt.Errorf("special files cannot be downloaded: %s", terminalSafe(remote))
+	}
 	dir, err := downloadsDir()
 	if err != nil {
 		return "", err
 	}
-	local, err := freeLocalName(dir, name)
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return "", err
 	}
-	operands := []cpOperand{{remote: true, reference: sandboxID, path: remote}, {path: local}}
-	if err := d.app.copyOperands(ctx, d.client, d.projectID, operands, copyOptions{recursive: true, quiet: true}); err != nil {
-		return "", err
+	defer root.Close()
+	claimed, err := claimLocalName(root, name, isDir, fs.FileMode(stat.Mode)&0o777)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", dir, err)
 	}
-	return local, nil
+	dest := cpOperand{path: filepath.Join(dir, claimed)}
+	if isDir {
+		err = d.app.copyDirectory(ctx, d.projectID, source, dest, false)
+	} else {
+		err = d.app.copyFile(ctx, d.client, d.projectID, source, dest, stat, false)
+	}
+	if err != nil {
+		// What was claimed is this download's alone, whole or partial.
+		_ = root.RemoveAll(claimed)
+		return "", fmt.Errorf("copy %s: %w", terminalSafe(remote), err)
+	}
+	return dest.path, nil
 }
 
 // downloadsDir is where a download lands: the XDG download directory when
-// one is named, else ~/Downloads when there is one, else the home directory.
+// one is named, else ~/Downloads, made when there is none yet. Never the home
+// directory itself, where a box's file named .bashrc or .profile would be one
+// the shell runs.
 func downloadsDir() (string, error) {
-	if dir := os.Getenv("XDG_DOWNLOAD_DIR"); filepath.IsAbs(dir) {
-		return dir, nil
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("no home directory to download into: %w", err)
+		return "", fmt.Errorf("no home directory to download beneath: %w", err)
 	}
-	if info, err := os.Stat(filepath.Join(home, "Downloads")); err == nil && info.IsDir() {
-		return filepath.Join(home, "Downloads"), nil
+	if dir := os.Getenv("XDG_DOWNLOAD_DIR"); filepath.IsAbs(dir) && filepath.Clean(dir) != filepath.Clean(home) {
+		return dir, nil
 	}
-	return home, nil
+	dir := filepath.Join(home, "Downloads")
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return "", err
+	}
+	return dir, nil
 }
 
-// freeLocalName is name in dir, or "name (2).ext" and on when that is
-// taken, the way a browser names a second download of the same file.
-func freeLocalName(dir, name string) (string, error) {
+// claimLocalName creates name in root, or "name (2).ext" and on when that is
+// taken, the way a browser names a second download of the same file: an
+// empty file or directory made only if nothing is there, so the copy that
+// fills it never lands on something that already was.
+func claimLocalName(root *os.Root, name string, dir bool, mode fs.FileMode) (string, error) {
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)
-	if stem == "" {
-		// A dotfile is all extension; it is numbered after, not before, it.
+	if stem == "" || dir {
+		// A dotfile is all extension, and a directory has none; either is
+		// numbered after its whole name.
 		stem, ext = name, ""
 	}
 	for n := 1; n < 1000; n++ {
@@ -142,14 +191,23 @@ func freeLocalName(dir, name string) (string, error) {
 		if n > 1 {
 			candidate = fmt.Sprintf("%s (%d)%s", stem, n, ext)
 		}
-		local := filepath.Join(dir, candidate)
-		if _, err := os.Lstat(local); errors.Is(err, fs.ErrNotExist) {
-			return local, nil
-		} else if err != nil {
+		var err error
+		if dir {
+			err = root.Mkdir(candidate, 0o777)
+		} else {
+			var f *os.File
+			if f, err = root.OpenFile(candidate, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode); err == nil {
+				err = f.Close()
+			}
+		}
+		switch {
+		case err == nil:
+			return candidate, nil
+		case !errors.Is(err, fs.ErrExist):
 			return "", err
 		}
 	}
-	return "", fmt.Errorf("no free name for %s in %s", name, dir)
+	return "", fmt.Errorf("no free name for %s", terminalSafe(name))
 }
 
 // RunCommand runs one command in the discobox to its end and reads what it

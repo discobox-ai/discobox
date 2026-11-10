@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -38,7 +38,11 @@ import (
 //     So a paste that is nothing but paths to files and directories here, made
 //     while the panel has the keys, is that drop, and those paths are copied
 //     into the directory under the panel's cursor (UploadFiles), the way
-//     `discobox cp -r` copies them. With the keys anywhere else a paste is
+//     `discobox cp -r` copies them — once Enter says so. A paste is whatever
+//     is on the clipboard, and anything running in a box can put text there
+//     (an OSC 52 copy, which the window forwards), so the panel lists what a
+//     drop would copy and waits (filesDrop); any other key copies nothing.
+//     With the keys anywhere else a paste is
 //     what it always was: a pane's, where an image path is still carried in
 //     (imagepaste.go). Where the pointer last was is not asked: it is stale
 //     the moment the pointer leaves the window, and a path pasted for an
@@ -266,6 +270,8 @@ const (
 	filesFocus
 	filesBack
 	filesReload
+	filesDropCopy
+	filesDropCancel
 )
 
 // filesShown reports whether the panel is drawn: asked for, beside a
@@ -328,13 +334,14 @@ func (m *Model) toggleFiles() tea.Cmd {
 		m.filesOpen = false
 		return status("%s", m.filesTooNarrow())
 	}
-	m.focusFiles()
+	read := m.focusFiles()
 	m.syncWidth()
 	m.layout()
 	if opening {
-		return m.reloadFiles()
+		// The reload asks git too, which is the read already in flight.
+		return tea.Batch(read, m.reloadFiles())
 	}
-	return m.readGit()
+	return read
 }
 
 // filesTooNarrow is why the panel cannot be drawn, or "" when the window has
@@ -372,12 +379,22 @@ func (m *Model) filesFromMenu() tea.Cmd {
 	return m.toggleFiles()
 }
 
-// focusFiles gives the panel the keys, from the panes or the list.
-func (m *Model) focusFiles() {
+// focusFiles gives the panel the keys, from the panes or the list, and asks
+// git again when the panel did not have them (ADR 26-11-10-203 §5): what it
+// says may have moved while the keys were elsewhere.
+func (m *Model) focusFiles() tea.Cmd {
+	taking := !m.filesFront
 	m.filesFront = true
 	m.listFront, m.treeExpanded = false, false
 	m.focus = focusPane
 	m.prompt.Blur()
+	if !taking {
+		return nil
+	}
+	// A drop is confirmed while the keys stay where it was pasted; one left
+	// waiting when they moved away is not what the person is looking at now.
+	m.filesDrop = nil
+	return m.readGit()
 }
 
 // filesRooted is the primary's working directory arriving with the exec
@@ -475,6 +492,14 @@ func (m *Model) setOpen(e FileEntry, open bool) tea.Cmd {
 // filesKeyPress answers a key while the panel has the keys. The leader is not
 // one of them (updateKey): it reaches the window as it does from the list.
 func (m *Model) filesKeyPress(msg tea.KeyPressMsg) tea.Cmd {
+	if m.filesDrop != nil {
+		// Enter copies the drop the panel is showing; every other key leaves
+		// it uncopied, so nothing but the one deliberate key sends a file.
+		if keyName(msg) == "enter" {
+			return m.filesAct(filesDropCopy)
+		}
+		return m.filesAct(filesDropCancel)
+	}
 	t := &m.fileTree
 	cur, ok := t.current()
 	switch keyName(msg) {
@@ -544,6 +569,9 @@ func (m *Model) filesKeyPress(msg tea.KeyPressMsg) tea.Cmd {
 
 // filesHints is the key line while the panel has the keys.
 func (m *Model) filesHints() []hint {
+	if m.filesDrop != nil {
+		return []hint{pressing("enter copy these in", "enter"), pressing("esc copy nothing", "esc")}
+	}
 	return []hint{
 		pressing("↑↓ move", "down"),
 		pressing("enter open or paste", "enter"),
@@ -579,11 +607,23 @@ func (m *Model) filesAct(a filesAction) tea.Cmd {
 	case filesClose:
 		m.filesOpen, m.filesFront = false, false
 	case filesFocus:
-		m.focusFiles()
+		return m.focusFiles()
 	case filesBack:
 		m.filesFront = false
 	case filesReload:
 		return m.reloadFiles()
+	case filesDropCopy:
+		drop := m.filesDrop
+		m.filesDrop = nil
+		if drop == nil {
+			return nil
+		}
+		return m.uploadDrop(*drop)
+	case filesDropCancel:
+		if m.filesDrop != nil {
+			m.filesDrop = nil
+			return status("nothing copied")
+		}
 	}
 	return nil
 }
@@ -640,17 +680,18 @@ func (m *Model) filesMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 		if ok && where.what.kind == hitFiles {
 			return m.filesAct(filesAction(where.what.idx)), true
 		}
-		m.focusFiles()
+		read := m.focusFiles()
 		if !ok || where.what.kind != hitFileRow || where.what.idx < 0 {
-			return nil, true
+			return read, true
 		}
 		rows := m.fileTree.rows()
 		i := where.what.idx
 		if i >= len(rows) || rows[i].note != "" {
-			return nil, true
+			return read, true
 		}
 		m.fileTree.cursor = i
 		m.filesDrag = &fileDrag{from: rows[i].entry, x: mouse.X, y: mouse.Y, atX: mouse.X, atY: mouse.Y, clicks: m.countClick(mouse.X, mouse.Y)}
+		return read, true
 	}
 	return nil, true
 }
@@ -738,7 +779,7 @@ func (m *Model) transferFile(from FileEntry, dir string, duplicate bool) tea.Cmd
 	if duplicate {
 		verb, done = "copying", "copied"
 	}
-	to := path.Join(dir, from.Name)
+	to := path.Join(dir, path.Base(from.Path))
 	parent := m.ctx
 	work := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(parent, filesTimeout)
@@ -775,7 +816,7 @@ func (m *Model) downloadFile(e FileEntry) tea.Cmd {
 	if ds == nil {
 		return status("server %q is no longer available", box.Server)
 	}
-	name, remote, parent := fileName(e.Name), e.Path, m.ctx
+	name, remote, parent := e.Name, e.Path, m.ctx
 	work := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(parent, filesUploadTimeout)
 		defer cancel()
@@ -791,7 +832,7 @@ func (m *Model) filesDownloaded(msg filesDownloadedMsg) tea.Cmd {
 	if msg.err != nil {
 		return m.report(true, "download %q: %v", msg.name, msg.err)
 	}
-	return status("downloaded %q to %s", msg.name, msg.local)
+	return status("downloaded %q to %q", msg.name, msg.local)
 }
 
 // filesDropMsg is a paste the panel looked at: the local paths it names when
@@ -817,20 +858,36 @@ func (m *Model) filesPaste(msg tea.PasteMsg) tea.Cmd {
 	}
 }
 
-// filesDropped copies a drop into the box. A paste that was not one is
-// nobody's: the panel has the keys, and it takes no text.
+// filesDropped holds a drop for Enter, drawn in the panel as the list of what
+// it would copy and where (viewFiles). A paste that was not one is nobody's:
+// the panel has the keys, and it takes no text. A drop that comes back once
+// the keys have left the panel, or the box, is dropped with nothing copied.
 func (m *Model) filesDropped(msg filesDropMsg) tea.Cmd {
 	if len(msg.paths) == 0 {
 		return status("only files from this machine can be dropped on the files panel")
 	}
+	if !m.filesHasKeys() || m.boxRef(msg.box) != m.boxRef(m.paneBox) {
+		return nil
+	}
+	m.filesDrop = &msg
+	return status("enter copies %s into %q · any other key copies nothing", m.dropWhat(msg), msg.dir)
+}
+
+// dropWhat names what a drop copies: the one file's name, or a count.
+func (m *Model) dropWhat(msg filesDropMsg) string {
+	if len(msg.paths) == 1 {
+		return fmt.Sprintf("%q", path.Base(strings.ReplaceAll(msg.paths[0], "\\", "/")))
+	}
+	return plural(len(msg.paths), "item", "items")
+}
+
+// uploadDrop copies a confirmed drop into the box.
+func (m *Model) uploadDrop(msg filesDropMsg) tea.Cmd {
 	ds := m.ds.ForServer(msg.box.Server)
 	if ds == nil {
 		return status("server %q is no longer available", msg.box.Server)
 	}
-	what := plural(len(msg.paths), "item", "items")
-	if len(msg.paths) == 1 {
-		what = fmt.Sprintf("%q", path.Base(strings.ReplaceAll(msg.paths[0], "\\", "/")))
-	}
+	what := m.dropWhat(msg)
 	box, dir, paths, parent := msg.box, msg.dir, msg.paths, m.ctx
 	work := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(parent, filesUploadTimeout)
@@ -862,7 +919,7 @@ func (m *Model) filesChanged(msg filesChangedMsg) tea.Cmd {
 		t.open[msg.into] = true
 	}
 	if m.boxRef(msg.box) == m.boxRef(m.paneBox) {
-		cmds = append(cmds, m.readGit())
+		cmds = append(cmds, m.rereadGit())
 	}
 	seen := map[string]bool{}
 	for _, dir := range msg.dirs {
@@ -877,6 +934,15 @@ func (m *Model) filesChanged(msg filesChangedMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// drawnPath is a path as the panel draws it: as %q draws it when it holds
+// anything %q escapes (REVIEW.md), and bare otherwise.
+func drawnPath(p string) string {
+	if q := strconv.Quote(p); q[1:len(q)-1] != p {
+		return q
+	}
+	return p
+}
+
 // filesListHeight is the rows the panel's list has, from the same arithmetic
 // viewFiles draws with: the window less the rows above and below the box, its
 // two edges, the root's row and the keys' row.
@@ -886,22 +952,11 @@ func (m *Model) filesListHeight() int {
 
 // gitName is a file's name in the color of what git says about it.
 func (m *Model) gitName(e FileEntry) string {
-	name := fileName(e.Name)
+	name := e.Name
 	if _, letter := m.gitMark(e); letter != 0 {
 		return m.gitStyle(letter).Render(name)
 	}
 	return name
-}
-
-// fileName is a name the discobox wrote, made safe to draw: a control
-// character in it would be an escape sequence in the window's frame.
-func fileName(s string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
-			return '?'
-		}
-		return r
-	}, s)
 }
 
 // truncateStart shortens text to w cells from its start, keeping its end: a
@@ -942,7 +997,8 @@ func (m *Model) viewFiles() string {
 	t := &m.fileTree
 	root := "waiting for the box…"
 	if t.root != "" {
-		root = fileName(t.root)
+		// The root is the box's own path, kept as the identifier it lists by.
+		root = drawnPath(t.root)
 	}
 	out = append(out, side+padANSI(" "+m.st.dimText.Render(truncateStart(root, inner-2)), inner)+side)
 
@@ -956,6 +1012,26 @@ func (m *Model) viewFiles() string {
 			target = where.what.idx
 		}
 	}
+	drop := m.filesDrop
+	if drop != nil && m.boxRef(drop.box) != m.boxRef(m.paneBox) {
+		drop = nil
+	}
+	if drop != nil {
+		// What a drop would copy, every path in full as far as the width
+		// allows, so a paste nobody meant as one is seen before Enter.
+		out = append(out, side+padANSI(" "+m.st.name.Render("copy into ")+m.st.dimText.Render(truncateStart(drawnPath(drop.dir), inner-12)), inner)+side)
+		shown := min(len(drop.paths), listH-2)
+		if shown < len(drop.paths) {
+			shown = max(listH-3, 0)
+		}
+		for _, p := range drop.paths[:shown] {
+			out = append(out, side+padANSI("  "+truncateStart(drawnPath(p), inner-3), inner)+side)
+		}
+		if more := len(drop.paths) - shown; more > 0 {
+			out = append(out, side+padANSI("  "+m.st.dimText.Render(fmt.Sprintf("and %d more", more)), inner)+side)
+		}
+		rows = nil
+	}
 	for i := t.top; i < len(rows) && i < t.top+listH; i++ {
 		r := rows[i]
 		y := len(out)
@@ -963,15 +1039,15 @@ func (m *Model) viewFiles() string {
 		var line string
 		switch {
 		case r.note != "":
-			line = " " + indent + m.st.dimText.Render(fileName(r.note))
+			line = " " + indent + m.st.dimText.Render(r.note)
 		case r.entry.Dir:
 			glyph := "▸ "
 			if t.open[r.entry.Path] {
 				glyph = "▾ "
 			}
-			line = " " + indent + m.st.dimText.Render(glyph) + m.st.name.Render(fileName(r.entry.Name)+"/")
+			line = " " + indent + m.st.dimText.Render(glyph) + m.st.name.Render(r.entry.Name+"/")
 		case r.entry.Link:
-			line = " " + indent + "  " + m.gitName(r.entry) + m.st.dimText.Render(" → "+fileName(r.entry.Target))
+			line = " " + indent + "  " + m.gitName(r.entry) + m.st.dimText.Render(" → "+r.entry.Target)
 		default:
 			line = " " + indent + "  " + m.gitName(r.entry)
 		}
@@ -999,7 +1075,10 @@ func (m *Model) viewFiles() string {
 		act  filesAction
 	}
 	offers := []offer{{m.leader() + " " + filesPanelKey + " focus", filesFocus}}
-	if focused {
+	switch {
+	case drop != nil:
+		offers = []offer{{"enter copy", filesDropCopy}, {"esc cancel", filesDropCancel}}
+	case focused:
 		offers = []offer{{"esc back", filesBack}, {"r reload", filesReload}}
 	}
 	hintLine, x := " ", 1

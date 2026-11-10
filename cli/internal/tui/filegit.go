@@ -34,9 +34,12 @@ type fileGit struct {
 	files map[string]byte
 	dirs  map[string]byte
 	// seen is the listing's git state the last read was asked at
-	// (gitSignature), and reading whether one is in flight.
+	// (gitSignature), and reading whether one is in flight. again is a change
+	// the panel made while one was: that read may have started before it, so
+	// another follows it.
 	seen    string
 	reading bool
+	again   bool
 }
 
 // filesGitMsg is one read of git's status for the panel.
@@ -103,12 +106,29 @@ func (m *Model) filesGitRead(msg filesGitMsg) tea.Cmd {
 		return nil
 	}
 	t.git.reading = false
+	var again tea.Cmd
+	if t.git.again && t == &m.fileTree {
+		t.git.again = false
+		again = m.readGit()
+	}
 	if msg.err != nil || msg.root != t.root {
-		return nil
+		return again
 	}
 	t.git.top = msg.top
 	t.git.files, t.git.dirs = parsePorcelain(msg.top, msg.out)
-	return nil
+	return again
+}
+
+// rereadGit asks git again after a change the panel made: at once, or after
+// the read in flight, which may have been answered before the change landed
+// and would leave the poll nothing to notice (an untracked file moved moves
+// neither the dirty flag nor the diffstat).
+func (m *Model) rereadGit() tea.Cmd {
+	if m.fileTree.git.reading {
+		m.fileTree.git.again = true
+		return nil
+	}
+	return m.readGit()
 }
 
 // filesGitTick is the workspace's poll looking at the listing: the box's git
@@ -170,13 +190,13 @@ func gitLetter(x, y byte) byte {
 		return 'U'
 	case x == '?' && y == '?':
 		return '?'
-	case x == '!':
-		return 0
-	case y != ' ':
+	case gitRank(y) > 0:
 		return y
-	case x != ' ':
+	case gitRank(x) > 0:
 		return x
 	}
+	// Anything else — ignored, unmodified, or a byte that is no letter of
+	// git's — draws nothing: the git that answered is the box's.
 	return 0
 }
 
@@ -192,10 +212,8 @@ func gitRank(letter byte) int {
 		return 3
 	case 'A', '?':
 		return 2
-	case 0:
-		return 0
 	}
-	return 1
+	return 0
 }
 
 // gitStyle is the color a change is drawn in: additions and deletions as the

@@ -319,7 +319,10 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   leads to reading a file on this machine checks what is actually opened — an
   image by name and bytes (`clipimage.ReadFile`), on a local drive — and never
   trusts the text that named it. A `file://` link's fragment, a `.png` symlink
-  and a Windows share path all led somewhere else.
+  and a Windows share path all led somewhere else. Paths a paste names are
+  sent off this machine only once the person has seen them and said so (the
+  files panel's drop waits for Enter, `tui/files.go`); an upload on the paste
+  alone sent whatever a box had planted.
 
 - A remote's URL path is decoded text. Render it through `terminalSafe` in
   credential consent, and reject controls before forming Git credential input:
@@ -328,6 +331,17 @@ enforces the ones a tree walk can see. These are the ones it cannot:
 - Retiring a command must preserve tests for shared live UI behavior. Rewrite
   fixtures using the remaining Git states instead of deleting the whole test:
   removing Apply's state initially removed the workspace-header refresh check.
+
+## Writing what a box names on this machine
+
+- **A name a box chose is written below a directory opened with
+  `os.OpenRoot`, and claimed there before it is filled** (`DownloadFile`,
+  `claimLocalName`, `copyarchive`). A check by path then a write by path lets
+  a name or link reach past the directory, and a name checked free can be
+  taken before the write replaces it.
+- **Never into the home directory itself.** A box's file named `.bashrc` or
+  `.profile` landing there is one the shell runs; a download goes to the
+  downloads directory, made when it is missing.
 
 ## A discobox owed its delivery
 

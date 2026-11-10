@@ -134,14 +134,15 @@ type Model struct {
 	treeHoverX, treeHoverY int
 	// filesOpen is the files panel asked for, filesFront the panel holding
 	// the keys, and filesZones its own hit map; filesHoverX and filesHoverY
-	// are where the pointer rests over it, -1 elsewhere, and filesDrag a
-	// press held on one of its rows. What it shows is each workspace's own
-	// (workspace.fileTree). See files.go.
+	// are where the pointer rests over it, -1 elsewhere, filesDrag a press
+	// held on one of its rows, and filesDrop a drop waiting for Enter. What it
+	// shows is each workspace's own (workspace.fileTree). See files.go.
 	filesOpen                bool
 	filesFront               bool
 	filesZones               zones
 	filesHoverX, filesHoverY int
 	filesDrag                *fileDrag
+	filesDrop                *filesDropMsg
 
 	list *sandboxList
 	// resources is what Discobox has on this machine and what it is using,
