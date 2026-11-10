@@ -104,7 +104,7 @@ func TestParityScenarios(t *testing.T) {
 // bare key.
 func listKeys(t *testing.T, command, gesture string) []string {
 	t.Helper()
-	b := console.TUIBinding{}
+	var b console.TUIBinding
 	if gesture != "" {
 		g, ok := console.LookupGesture(gesture)
 		if !ok {

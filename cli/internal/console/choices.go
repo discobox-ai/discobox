@@ -131,7 +131,8 @@ func (l *List) ServerChoices(every bool) []FilterChoice {
 	for _, name := range names {
 		mark := l.Filter
 		mark.Server = name
-		label, detail := name, ""
+		label := name
+		var detail string
 		switch {
 		case name == "":
 			label = AllServers
