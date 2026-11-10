@@ -872,13 +872,10 @@ activity in its title, as Claude Code does, so the bare title
 would say less than the program meant to. Plain `discobox attach` has no
 such fallback: it relays the program's bytes untouched (ADR §6), so it has
 no title of its own to lead with a glyph, and a terminal without the
-protocol there shows the program's title as the program wrote it. The workspace's box speaks from its primary
-pane's stream (`termpane.WithOSC`) while the last report it heard is newer
-than the poll, which lags nothing; a poll observed since then wins, since it
-carries the shim's lifetime rules — a record dropped because its process left
-the foreground — that the pane cannot keep. A repaint on attach carries no
-report, so until the pane hears one the poll stands in, and an OSC 133 `A`
-prompt or the session ending drops what the stream said. The
+protocol there shows the program's title as the program wrote it. The workspace's box speaks from what its primary
+pane's stream says (`termpane.WithOSC`, taken by `programstatus.Set.Observe`)
+or from the poll, as the core's rule chooses (`console.Sandbox.AgentHeard`),
+which the desktop's header keeps to as well. The
 record is re-encoded from the parsed fields, never relayed as bytes. The
 window clears it once the program has ended (`clearProgramStatus`, from
 `Run`), since Bubble Tea resets only what it set itself, and `termguard`

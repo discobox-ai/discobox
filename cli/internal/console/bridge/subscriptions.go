@@ -376,7 +376,7 @@ func (f *follower) header(ctx context.Context) {
 		if bindings != nil {
 			forwarded = console.Forwarded(bindings())
 		}
-		h := wireHeader(console.NewHeader(box, forwarded))
+		h := wireHeader(console.NewHeader(box, forwarded, nil, false))
 		h.Unforwarded = unforwarded
 		f.send(Snapshot{Header: &h})
 		select {

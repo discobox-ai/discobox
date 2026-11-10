@@ -1,9 +1,12 @@
 package console
 
 import (
+	"encoding/base64"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // The base column prefers the reported position and marks dirt or commits ahead.
@@ -180,5 +183,49 @@ func TestRequestsAndRejectionsFor(t *testing.T) {
 	}
 	if !slices.Equal(got, []string{"early", "late"}) {
 		t.Errorf("requests for a: %v", got)
+	}
+}
+
+func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+
+// A window says the stream's report while it is newer than the poll, and the
+// poll's otherwise: before the stream reports, once its session ends, after
+// a poll taken since, and after a prompt the poll is newer than.
+func TestAgentHeardIsTheNewerOfTheStreamAndThePoll(t *testing.T) {
+	t.Parallel()
+	polled := time.Unix(1000, 0)
+	box := Sandbox{Agent: programstatus.Status{State: programstatus.Working, Msg: "polled"}, AgentObservedAt: polled}
+	say := func(heard *programstatus.Set, ended bool) string {
+		st, ok := box.AgentHeard(heard, ended)
+		if !ok {
+			return "nothing"
+		}
+		return string(st.State) + " " + st.Msg
+	}
+	if got := say(nil, false); got != "working polled" {
+		t.Fatalf("no stream: %q", got)
+	}
+	var heard programstatus.Set
+	if got := say(&heard, false); got != "working polled" {
+		t.Fatalf("a stream that said nothing: %q", got)
+	}
+	heard.Observe([]byte("7501;state=blocked:msg="+b64("which?")), polled.Add(time.Second), 0)
+	if got := say(&heard, false); got != "blocked which?" {
+		t.Fatalf("a newer report: %q", got)
+	}
+	if got := say(&heard, true); got != "working polled" {
+		t.Fatalf("an ended session: %q", got)
+	}
+	heard.Observe([]byte("133;A"), polled.Add(2*time.Second), 0)
+	if got := say(&heard, false); got != "nothing" {
+		t.Fatalf("a prompt after a report newer than the poll: %q", got)
+	}
+	box.AgentObservedAt = polled.Add(3 * time.Second)
+	if got := say(&heard, false); got != "working polled" {
+		t.Fatalf("a poll taken since: %q", got)
+	}
+	box.Agent = programstatus.Status{}
+	if got := say(&heard, false); got != "nothing" {
+		t.Fatalf("a poll with no report: %q", got)
 	}
 }

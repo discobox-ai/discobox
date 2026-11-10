@@ -116,10 +116,8 @@ func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
 	// A shell prompt beginning ends what the job before it reported as live.
 	// The emulator has no use for OSC 133 of its own, so declining it changes
 	// nothing else.
-	emu.RegisterOscHandler(133, func(data []byte) bool {
-		if bytes.HasPrefix(data, []byte("133;A")) {
-			s.dropLive(func(int) bool { return true })
-		}
+	emu.RegisterOscHandler(programstatus.PromptCode, func(data []byte) bool {
+		s.status.Observe(data, time.Now().UTC(), s.foregroundGroup())
 		return false
 	})
 	// RIS removes every record. The handler declines, so the emulator still
@@ -136,17 +134,9 @@ func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
 // answers (pumpScreenResponses): a program probes once, when it starts, and
 // one whose probe went unanswered never reports (ADR 26-10-16-424 §1).
 func (s *screenBuffer) programStatus(data []byte) {
-	report, ok := programstatus.Parse(data)
-	if !ok {
-		return
+	if s.status.Observe(data, time.Now().UTC(), s.foregroundGroup()) == programstatus.SeenQuery && s.answer != nil {
+		s.answer([]byte(programstatus.ReplySequence))
 	}
-	if report.Query {
-		if s.answer != nil {
-			s.answer([]byte(programstatus.ReplySequence))
-		}
-		return
-	}
-	s.status.Apply(report, time.Now().UTC(), s.foregroundGroup())
 }
 
 func (s *screenBuffer) foregroundGroup() int {

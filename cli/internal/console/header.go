@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 )
 
@@ -49,6 +50,10 @@ type Header struct {
 	// rows label them: not an issue or pull request Work links, and not a
 	// status tag, which the git word says on terms of its own.
 	Tags []string
+	// Agent is what the box's agent is doing (Sandbox.AgentHeard): what the
+	// program in its primary reports while that is newer than the poll; the
+	// zero State when there is nothing to say.
+	Agent programstatus.Status
 }
 
 // Link is something in a header a press opens. A Link without a URL is text.
@@ -82,8 +87,10 @@ type PortGroup struct {
 }
 
 // NewHeader is the header of a box, with its ports at the local ports
-// forwarded names (nil before the workspace's forward has bound any).
-func NewHeader(box Sandbox, forwarded map[PortKey]int) Header {
+// forwarded names (nil before the workspace's forward has bound any), and its
+// agent from what its primary's stream has said (heard; nil with none
+// attached) and whether that session has ended.
+func NewHeader(box Sandbox, forwarded map[PortKey]int, heard *programstatus.Set, ended bool) Header {
 	h := Header{ID: box.ID, Work: box.WorkLinks(), Tags: box.HeaderTags(), Base: box.Base(), Tone: box.GitTone(), Diff: box.Changed()}
 	h.Blocked = box.Standing() == StandingBlocked
 	if changes := box.Changes(); changes != "-" && !h.Blocked {
@@ -92,6 +99,9 @@ func NewHeader(box Sandbox, forwarded map[PortKey]int) Header {
 	}
 	h.Desktop = desktopLink(box, forwarded)
 	h.Ports = portGroups(box, forwarded)
+	if agent, ok := box.AgentHeard(heard, ended); ok {
+		h.Agent = agent
+	}
 	return h
 }
 

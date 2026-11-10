@@ -89,30 +89,30 @@ func TestTheWorkspacesBoxSpeaksFromItsStream(t *testing.T) {
 	if !ok || rec.State != programstatus.Working {
 		t.Fatalf("before the stream reported: %+v, %v; want the polled working", rec, ok)
 	}
-	p.observeProgramStatus([]byte("7501;state=blocked:kind=question:app=claude-code"))
+	p.observeProgram([]byte("7501;state=blocked:kind=question:app=claude-code"))
 	rec, ok = m.focusedProgramStatus()
 	if !ok || rec.State != programstatus.Blocked || rec.Kind != programstatus.Question || rec.Title != "working-box" {
 		t.Fatalf("after the stream reported: %+v, %v; want blocked on a question", rec, ok)
 	}
-	p.observeProgramStatus([]byte("7501;state=clear"))
+	p.observeProgram([]byte("7501;state=clear"))
 	if rec, ok := m.focusedProgramStatus(); ok {
 		t.Fatalf("after the stream cleared: %+v; the older poll must not come back", rec)
 	}
 
 	// A prompt ends what the job before it said it was doing.
-	p.observeProgramStatus([]byte("7501;state=working"))
-	p.observePrompt([]byte("133;A"))
+	p.observeProgram([]byte("7501;state=working"))
+	p.observeProgram([]byte("133;A"))
 	if rec, ok := m.focusedProgramStatus(); ok {
 		t.Fatalf("after a prompt: %+v, want nothing", rec)
 	}
 
 	// A poll observed since the stream last spoke carries what the shim
 	// dropped that the pane could not see: it wins.
-	p.observeProgramStatus([]byte("7501;state=working"))
+	p.observeProgram([]byte("7501;state=working"))
 	for i := range m.list.All() {
 		if m.list.All()[i].ID == box.ID {
 			m.list.All()[i].Agent = programstatus.Status{State: programstatus.Idle}
-			m.list.All()[i].AgentObservedAt = p.reportedAt.Add(time.Second)
+			m.list.All()[i].AgentObservedAt = p.reported.ReportedAt().Add(time.Second)
 		}
 	}
 	if rec, ok := m.focusedProgramStatus(); !ok || rec.State != programstatus.Idle {

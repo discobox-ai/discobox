@@ -67,53 +67,34 @@ func isProbeSettled(msg tea.Msg) bool {
 	return ok
 }
 
-// observeProgramStatus is the primary pane's watch on what its program
-// reports, read off the stream as it is drawn, so the window speaks for the
-// box without waiting for the next poll.
-func (p *pane) observeProgramStatus(data []byte) {
-	report, ok := programstatus.Parse(data)
-	if !ok || report.Query {
-		return
-	}
-	p.reportedAt = time.Now().UTC()
-	p.reported.Apply(report, p.reportedAt, 0)
-}
-
-// observePrompt drops what the program said it was doing when a shell prompt
-// begins (OSC 133 A), as the shim does: the job that said it is over.
-func (p *pane) observePrompt(data []byte) {
-	if strings.HasPrefix(string(data), "133;A") {
-		p.reported.Drop(func(state programstatus.State, _ int) bool { return programstatus.Live(state) })
-	}
+// observeProgram is the primary pane's watch on what its program reports
+// (OSC 7501), and on a shell prompt beginning (OSC 133 A), read off the
+// stream as it is drawn, so the window speaks for the box without waiting
+// for the next poll. The protocol's rules are programstatus.Set.Observe's.
+func (p *pane) observeProgram(data []byte) {
+	p.reported.Observe(data, time.Now().UTC(), 0)
 }
 
 // focusedProgramStatus is the status of the discobox the window is focused
 // on, as one record to send: the workspace's box while one is open, the
 // list's cursor row while the list has focus, and nothing otherwise.
 //
-// The workspace's box speaks from its primary pane's stream while the last
-// report the pane heard is newer than the poll the listing carries — the
-// stream is the shim's own words as they are said, and lags nothing — and
-// from the poll otherwise. A repaint on attach carries no report, so a pane
-// that has heard none yet defers to the poll; so does one whose session has
-// ended. And the shim keeps lifetime rules the pane cannot, ending what a
-// process said once its process group has left the foreground: a poll taken
-// since the pane last heard anything carries that, so it wins. The two
-// clocks compared are the sandbox's and this machine's.
+// The workspace's box speaks from its primary pane's stream or from the
+// poll, whichever the core's rule says (console.Sandbox.AgentHeard), the
+// rule the desktop's header is drawn by as well.
 func (m *Model) focusedProgramStatus() (programstatus.Record, bool) {
 	var box console.Sandbox
 	switch p := m.Primary(); {
 	case p != nil:
 		box = m.currentBox()
-		if !p.Exited && !p.reportedAt.IsZero() && p.reportedAt.After(box.AgentObservedAt) {
-			status, ok := p.reported.Effective()
-			if !ok {
-				return programstatus.Record{}, false
-			}
-			rec := status.Record()
-			rec.Title = recordTitle(box)
-			return rec, true
+		heard, ended := m.primaryHeard()
+		status, ok := box.AgentHeard(heard, ended)
+		if !ok {
+			return programstatus.Record{}, false
 		}
+		rec := status.Record()
+		rec.Title = recordTitle(box)
+		return rec, true
 	case m.focus == focusList && m.list.current() != nil:
 		box = *m.list.current()
 	default:
@@ -209,4 +190,15 @@ func (m *Model) clearProgramStatus(out io.Writer) {
 	}
 	_, _ = io.WriteString(out, programstatus.ClearSequence)
 	m.statusSent = programstatus.ClearSequence
+}
+
+// primaryHeard is what the workspace's primary pane has heard its program
+// say since it attached, and whether its session has ended: nil with no
+// primary, which leaves the poll to speak (console.Sandbox.AgentHeard).
+func (m *Model) primaryHeard() (*programstatus.Set, bool) {
+	p := m.Primary()
+	if p == nil {
+		return nil, false
+	}
+	return &p.reported, p.Exited
 }

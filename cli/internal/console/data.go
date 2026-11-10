@@ -1008,6 +1008,24 @@ func shortHostID(hostID string) string {
 	return hostID[:len(hostID)-id.RandomLength+6]
 }
 
+// AgentHeard is what a window says the agent in the discobox's primary
+// terminal is doing, given what that terminal's stream has said of its
+// program since the window attached it (heard; nil with none attached) and
+// whether that session has ended: the stream's own words while the last
+// report it carried is newer than the poll Agent was read from — the stream
+// lags nothing — and the poll's otherwise. An attach replays no report, so a
+// stream that has said nothing yet defers to the poll, and so does an ended
+// one. And the shim keeps lifetime rules a stream cannot, ending what a
+// process said once its process group has left the foreground, so a poll
+// taken since the stream last reported wins. The clocks compared are the
+// sandbox's and this machine's. False is nothing to say.
+func (s Sandbox) AgentHeard(heard *programstatus.Set, ended bool) (programstatus.Status, bool) {
+	if heard != nil && !ended && !heard.ReportedAt().IsZero() && heard.ReportedAt().After(s.AgentObservedAt) {
+		return heard.Effective()
+	}
+	return s.Agent, s.Agent.State != ""
+}
+
 // Up reports whether the sandbox is running anything, and so whether its usage
 // figures would mean anything.
 func (s Sandbox) Up() bool {

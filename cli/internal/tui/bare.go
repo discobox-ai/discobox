@@ -81,7 +81,8 @@ func (m *Model) bareStatus() string {
 	left = ansi.Truncate(left, max(x-1, 0), "")
 
 	var fields paneHeaderFields
-	header := console.NewHeader(m.currentBox(), m.forwardedPorts())
+	heard, ended := m.primaryHeard()
+	header := console.NewHeader(m.currentBox(), m.forwardedPorts(), heard, ended)
 	for _, f := range []paneHeaderField{desktopField(m.st, header.Desktop), portsField(m.st, header.Ports)} {
 		if f.empty() {
 			continue

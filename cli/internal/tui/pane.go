@@ -3,7 +3,6 @@ package tui
 import (
 	"strconv"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -113,10 +112,9 @@ type pane struct {
 	sandbox console.Sandbox
 
 	// reported is what the primary's program has reported of itself over
-	// OSC 7501 since the pane attached, and reportedAt when it last did; see
-	// focusedProgramStatus. Only the primary watches.
-	reported   programstatus.Set
-	reportedAt time.Time
+	// OSC 7501 since the pane attached; see focusedProgramStatus. Only the
+	// primary watches.
+	reported programstatus.Set
 
 	// seenOutput is the reading of a service's output it was last on screen
 	// at, which is what sets its tab's Unread.
@@ -1873,7 +1871,8 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	box := m.currentBox()
 	// What the header says is the core's (console.Header); the order of the
 	// fields, their colors and what is given up first are this window's.
-	header := console.NewHeader(box, m.forwardedPorts())
+	heard, ended := m.primaryHeard()
+	header := console.NewHeader(box, m.forwardedPorts(), heard, ended)
 	git := gitStyle(m.st, header.Tone)
 
 	fields := paneHeaderFields{textField(m.st.dimText.Render(header.ID))}

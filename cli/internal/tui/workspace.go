@@ -610,8 +610,8 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 		// The primary is the box's agent, whose status the window speaks
 		// for while this box is the one it is on (programstatus.go).
 		opts = append(opts,
-			termpane.WithOSC(programstatus.Code, p.observeProgramStatus),
-			termpane.WithOSC(133, p.observePrompt),
+			termpane.WithOSC(programstatus.Code, p.observeProgram),
+			termpane.WithOSC(programstatus.PromptCode, p.observeProgram),
 		)
 	}
 	p.term = termpane.New(opts...)

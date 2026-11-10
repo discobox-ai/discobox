@@ -1,6 +1,7 @@
 package programstatus
 
 import (
+	"bytes"
 	"strings"
 	"time"
 )
@@ -68,6 +69,57 @@ func (s *Set) Drop(drop func(state State, group int) bool) {
 func Live(state State) bool {
 	return state == Working || state == Blocked || state == Idle
 }
+
+// PromptCode is OSC 133, a shell's prompt marks: its `A` is a prompt
+// beginning, which ends what the job before it reported as live.
+const PromptCode = 133
+
+// Seen is what one OSC sequence was to a Set (Set.Observe).
+type Seen int
+
+const (
+	// SeenNothing is a sequence that is no report: another OSC, a 133 that
+	// is not a prompt beginning, or a 7501 body the spec says to ignore.
+	SeenNothing Seen = iota
+	// SeenQuery is a feature query, which a terminal that knows the protocol
+	// answers with ReplySequence.
+	SeenQuery
+	// SeenReport is a report taken: a record stored or cleared.
+	SeenReport
+	// SeenPrompt is a prompt beginning, which dropped the live records.
+	SeenPrompt
+)
+
+// Observe takes the data of one OSC sequence a terminal's program wrote, as
+// an emulator hands an OSC handler (`7501;…`, `133;A…`), at at from group,
+// by the protocol's rules: a report is applied; a query changes nothing and
+// is said to be one, for a caller that answers it; and a prompt beginning
+// drops every live record, since the job that said them is over. Every
+// reader of a program's output — the shim, the TUI's pane, the desktop's
+// bridge — takes it through here, so none of them can differ on what a
+// prompt does.
+func (s *Set) Observe(data []byte, at time.Time, group int) Seen {
+	switch {
+	case bytes.HasPrefix(data, []byte("7501;")):
+		report, ok := Parse(data)
+		switch {
+		case !ok:
+			return SeenNothing
+		case report.Query:
+			return SeenQuery
+		}
+		s.Apply(report, at, group)
+		return SeenReport
+	case bytes.HasPrefix(data, []byte("133;A")):
+		s.Drop(func(state State, _ int) bool { return Live(state) })
+		return SeenPrompt
+	}
+	return SeenNothing
+}
+
+// ReportedAt is when the set last took a report, a clear included; zero
+// before it has taken one. A prompt's drop is not a report.
+func (s *Set) ReportedAt() time.Time { return s.reportedAt }
 
 // Reset removes every record, as RIS does.
 func (s *Set) Reset() { s.records = nil }

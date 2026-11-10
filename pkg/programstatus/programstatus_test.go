@@ -223,3 +223,32 @@ func TestQueryIsNotAReport(t *testing.T) {
 		t.Fatal("a query changed the set")
 	}
 }
+
+// Observe applies a report, says a query is one without storing it, drops
+// only what is live on a prompt, and ignores what is no report.
+func TestObserveTakesReportsQueriesAndPrompts(t *testing.T) {
+	var s Set
+	at := time.Unix(100, 0)
+	if got := s.Observe([]byte("7501;?"), at, 0); got != SeenQuery || s.Len() != 0 || !s.ReportedAt().IsZero() {
+		t.Fatalf("query: %v, %d records, at %v", got, s.Len(), s.ReportedAt())
+	}
+	if got := s.Observe([]byte("7501;id=build:state=working"), at, 0); got != SeenReport || !s.ReportedAt().Equal(at) {
+		t.Fatalf("report: %v at %v", got, s.ReportedAt())
+	}
+	s.Observe([]byte("7501;id=tests:state=done"), at, 0)
+	later := at.Add(time.Second)
+	if got := s.Observe([]byte("133;A;cl=m"), later, 0); got != SeenPrompt {
+		t.Fatalf("prompt: %v", got)
+	}
+	if st, ok := s.Effective(); !ok || st.State != Done || s.Len() != 1 {
+		t.Fatalf("after the prompt: %+v %v, %d records", st, ok, s.Len())
+	}
+	if !s.ReportedAt().Equal(at) {
+		t.Fatalf("a prompt moved ReportedAt to %v", s.ReportedAt())
+	}
+	for _, data := range []string{"133;B", "0;title", "7501;state=bogus"} {
+		if got := s.Observe([]byte(data), later, 0); got != SeenNothing {
+			t.Errorf("%q: %v", data, got)
+		}
+	}
+}
