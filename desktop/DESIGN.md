@@ -96,6 +96,12 @@ tab chips in each frame's edge.
   stay attached and screens keep emulating, but it polls nothing and its ports
   are not forwarded until it is back on screen. One whose primary never
   arrived is let go instead; `detach` lets the one on screen go.
+- **It pushes while it is attached**, parked or on screen, as the TUI's does:
+  the app holds the workspace's push topic from when it is made until it is
+  let go, and the bridge runs the core's loop (`console.AutoPush`) under it.
+  What a look says is on the status line once, until something else is said
+  there, naming a box not on screen; it never covers a running command's
+  warning (`State::say`).
 - **What an ending does is the core's** (`Tab.End`, on the stream's `ended`):
   the primary takes the workspace with it, a broken stream or a tool takes its
   tab and says why, and a program that finished is held with its last screen
@@ -326,7 +332,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/parity_tests.rs` | `cli/internal/console/testdata/parity` with the desktop's keys |
 | `src/command_tests.rs` | Commands reach no further than what they name; every registry command answered or in the ledger; no shortcut outside the spec |
 | `src/surface_tests.rs` | Every command in a menu and found by the palette; the palette's orders, Esc and reveal; menus that say why not |
-| `src/workspace_tests.rs` | Parking, endings, chips dragged, the split, the header's links |
+| `src/workspace_tests.rs` | Parking, the automatic push, endings, chips dragged, the split, the header's links |
 | `src/service_tests.rs` | Services as tabs, numbered apart, stopped not ended; the services menu |
 | `src/sheet_tests.rs` | Rename, settings and purge through sheets: drafts, a refusal, Enter on a destruction |
 | `src/create_tests.rs` | The composer, the create card and run options on the mock |

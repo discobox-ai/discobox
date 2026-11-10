@@ -234,8 +234,6 @@ notification on Linux; clicking it opens the request.
 
 - The desktop app has no `all` command: its list is always beside the
   workspace, and `detach` returns to every box.
-- Commits you make on this machine are not pushed into an open box
-  automatically, as `discobox console` does; run `discobox push`.
 - primary+1 to 9 (a tab by its number) and primary+Alt+1 to 9 (a service's
   tab) do not work on Linux yet, because Shift turns the digit into another
   character. Click the tab, or use Ctrl+Tab.

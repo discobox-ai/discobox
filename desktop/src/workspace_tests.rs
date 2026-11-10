@@ -279,3 +279,76 @@ fn a_late_session_does_not_take_the_screen() {
     assert_eq!(rt.state.live.as_ref(), Some(&second));
     assert!(!rt.state.workspaces.contains_key(&third), "a workspace was made for a box nobody opened");
 }
+
+/// The window on the mock, and what it was sent.
+fn recorded() -> (Runtime<State>, std::sync::Arc<std::sync::Mutex<crate::backend::MockRecord>>) {
+    let inbox = crate::backend::Inbox::default();
+    let mock = crate::backend::Mock::new(inbox.clone());
+    let record = mock.record();
+    let state = State::with((Box::new(mock), crate::backend::bundled_spec(), inbox, false, String::new()));
+    let mut rt = Runtime::with_text(state, view::view, (1440.0, 900.0), Env { system_dark: true, scale: 1.0 }, theme::text_system());
+    rt.poll = Some(poll);
+    rt.on_key = Some(on_key);
+    settle(&mut rt);
+    (rt, record)
+}
+
+fn pushed(said: u64, text: &str, warning: bool, elsewhere: &str) -> crate::wire::Push {
+    crate::wire::Push { said, text: text.into(), warning, elsewhere: elsewhere.into() }
+}
+
+// A workspace pushes for as long as it is attached, parked included, as the TUI's does: its push
+// is followed from when it is made until it is let go, and what the core says of it is on the
+// status line until something else is said there, a parked box named.
+#[test]
+fn a_workspace_pushes_while_it_is_attached_and_says_what_moved() {
+    let (mut rt, record) = recorded();
+    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+    settle(&mut rt);
+    let first = rt.state.live.clone().unwrap();
+    let sub = rt.state.workspaces[&first].push_sub;
+    assert_eq!(record.lock().unwrap().pushing.get(&sub), Some(&first), "its push is followed as it is made");
+    assert_eq!(rt.state.message, None, "the first snapshot says nothing");
+
+    rt.state.inbox.push(Event::Push(sub, pushed(1, "pushed c1 to origin/main in the discobox", false, "one: pushed c1 to origin/main in the discobox")));
+    settle(&mut rt);
+    assert_eq!(rt.state.message.as_deref(), Some("pushed c1 to origin/main in the discobox"));
+
+    // Said once: the same snapshot again is not said again.
+    rt.state.message = None;
+    rt.state.inbox.push(Event::Push(sub, pushed(1, "pushed c1 to origin/main in the discobox", false, "")));
+    settle(&mut rt);
+    assert_eq!(rt.state.message, None);
+
+    // A refusal is said, and what is said after it replaces it, as the TUI's status line does:
+    // it is ambient, never a command's warning that stands.
+    rt.state.inbox.push(Event::Push(sub, pushed(2, "the lease moved", true, "one: the lease moved")));
+    settle(&mut rt);
+    assert_eq!(rt.state.message.as_deref(), Some("the lease moved"));
+    rt.state.inbox.push(Event::Push(sub, pushed(3, "pushed c3 to origin/main in the discobox", false, "")));
+    settle(&mut rt);
+    assert_eq!(rt.state.message.as_deref(), Some("pushed c3 to origin/main in the discobox"));
+
+    // A running command's warning stands over it.
+    rt.state.take_progress(crate::wire::Progress { command: 1, text: "uncommitted changes left out".into(), warning: true, ..Default::default() });
+    rt.state.inbox.push(Event::Push(sub, pushed(4, "the lease moved", true, "one: the lease moved")));
+    settle(&mut rt);
+    assert_eq!(rt.state.message.as_deref(), Some("uncommitted changes left out"));
+
+    // Parked, it still pushes, and what it says names it.
+    run_command(&mut rt.state, "next box", &mut Tx::default());
+    settle(&mut rt);
+    assert!(rt.state.workspaces[&first].parked());
+    assert_eq!(record.lock().unwrap().pushing.get(&sub), Some(&first), "a parked workspace still pushes");
+    rt.state.inbox.push(Event::Push(sub, pushed(5, "pushed c4 to origin/main in the discobox", false, "one: pushed c4 to origin/main in the discobox")));
+    settle(&mut rt);
+    assert_eq!(rt.state.message.as_deref(), Some("one: pushed c4 to origin/main in the discobox"));
+
+    // Let go, it pushes no more.
+    run_command(&mut rt.state, "previous box", &mut Tx::default());
+    settle(&mut rt);
+    run_command(&mut rt.state, "detach", &mut Tx::default());
+    settle(&mut rt);
+    assert!(!rt.state.workspaces.contains_key(&first));
+    assert!(record.lock().unwrap().pushing.values().all(|b| *b != first), "a workspace let go still pushes");
+}

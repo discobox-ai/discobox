@@ -24,7 +24,7 @@ use rune::Waker;
 
 use crate::wire::{
     Answer, AuditBelow, Box as Sandbox, ChoiceGroup, Chip, Close, Command, Commands, Choice, Composer, Draft, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice, Follow,
-    Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
+    Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Push, Question,
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
     HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address, Upload, Secret, SecretAction, SecretBinding, SecretStanding,
@@ -106,6 +106,8 @@ pub enum Event {
     /// What waits on a person: the requests, the refused credentials, each box's notice, the
     /// requests just arrived, and what renewals the window allowed said.
     Requests(u32, Result<Requests, String>),
+    /// What a workspace's automatic push said: what moved, or what was refused.
+    Push(u32, Push),
     /// A notification of a request pressed: the request to answer.
     Answer(Arrival),
     Result(CommandResult),
@@ -191,6 +193,9 @@ fn event(m: Message) -> Option<Event> {
                     Some(v) if s.error.is_empty() => Ok(v),
                     _ => Err(s.error),
                 })),
+                // The push says nothing of a look that failed as a whole; a snapshot without one
+                // is nothing to say.
+                Topic::Push => s.push.map(|p| Event::Push(s.sub, p)),
                 _ => None,
             }
         }
@@ -393,6 +398,8 @@ pub struct MockRecord {
     pub created: Vec<String>,
     /// Every upload, as sent.
     pub uploads: Vec<Upload>,
+    /// The push subscriptions the app holds, by subscription: the box each pushes.
+    pub pushing: HashMap<u32, String>,
 }
 
 /// Where the mock's window runs, which a create is cut from unless told otherwise.
@@ -2174,6 +2181,7 @@ impl Backend for Mock {
                 self.inbox.push(Event::Result(r));
             }
             Out::Unsubscribe(sub) => {
+                self.record.lock().unwrap().pushing.remove(&sub);
                 self.following.remove(&sub);
                 self.headers.remove(&sub);
                 self.issue_subs.remove(&sub);
@@ -2193,6 +2201,12 @@ impl Backend for Mock {
                     None => mock_audit(),
                 };
                 self.inbox.push(Event::Audit(sub, Ok(timeline)));
+            }
+            // As the bridge does: a first snapshot that says nothing, then one whenever a look
+            // says something, which the mock's boxes never have to.
+            Out::Subscribe(Subscribe { sub, topic: Topic::Push, r#box, .. }) => {
+                self.record.lock().unwrap().pushing.insert(sub, r#box);
+                self.inbox.push(Event::Push(sub, Push::default()));
             }
             Out::Subscribe(_) => {}
             Out::Command(c) if c.command == "harnesses" => {

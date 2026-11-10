@@ -142,6 +142,11 @@ pub struct Workspace {
     /// provisioning topic), until it says nothing more; its subscription, while it follows.
     pub step: String,
     provisioning_sub: u32,
+    /// Its automatic push (the push topic), from when it is made until it is let go: a parked
+    /// workspace is still attached, and still pushes.
+    push_sub: u32,
+    /// The last thing its push said that was taken (`Push.said`).
+    pushed: u64,
     /// The terminals column's share of the width the two columns have.
     pub split: f32,
 }
@@ -1115,9 +1120,10 @@ impl State {
                 // A box not up yet says what it is being made to do while its workspace opens.
                 let up = self.box_by_id(sandbox).is_some_and(|b| b.running() && b.provisioning.is_empty());
                 let provisioning_sub = if up { 0 } else { self.subscribe(Subscribe { topic: Topic::Provisioning, r#box: sandbox.to_string(), ..Default::default() }) };
+                let push_sub = self.subscribe(Subscribe { topic: Topic::Push, r#box: sandbox.to_string(), ..Default::default() });
                 self.workspaces.insert(sandbox.to_string(), Workspace {
                     sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, given: None, opening: true,
-                    error: None, sessions_sub: 0, header_sub: 0, header: None, split: 0.5, step: String::new(), provisioning_sub,
+                    error: None, sessions_sub: 0, header_sub: 0, header: None, split: 0.5, step: String::new(), provisioning_sub, push_sub, pushed: 0,
                 });
             }
             self.live = Some(sandbox.to_string());
@@ -1168,8 +1174,8 @@ impl State {
     fn release_workspace(&mut self, sandbox: &str) {
         self.unfollow_workspace(sandbox);
         let Some(ws) = self.workspaces.remove(sandbox) else { return };
-        if ws.provisioning_sub != 0 {
-            self.backend.send(Out::Unsubscribe(ws.provisioning_sub));
+        for sub in [ws.provisioning_sub, ws.push_sub].into_iter().filter(|&s| s != 0) {
+            self.backend.send(Out::Unsubscribe(sub));
         }
         // An issue's tab has no stream to let go.
         for p in ws.panes.iter().filter(|p| !p.exited && p.issue.is_none()) {
@@ -1926,6 +1932,22 @@ impl State {
         }
     }
 
+    /// What a workspace's automatic push said, on the status line as the TUI says it: until
+    /// something else is said there. It is ambient, not a command's, so it never stands over
+    /// what follows, nor covers a running command's warning; a box not on screen is named
+    /// (`Push.elsewhere`). The first snapshot says nothing (`said` 0), and each thing is taken
+    /// once.
+    fn take_push(&mut self, sub: u32, p: wire::Push) {
+        let live = self.live.clone();
+        let Some(ws) = self.workspaces.values_mut().find(|w| w.push_sub == sub && sub != 0) else { return };
+        if p.said <= ws.pushed || p.text.is_empty() {
+            return;
+        }
+        ws.pushed = p.said;
+        let text = if live.as_deref() == Some(ws.sandbox.as_str()) { p.text } else { p.elsewhere };
+        self.say(text, false);
+    }
+
     /// A stream attached: when it is a workspace's primary, the box is up, and what it was being
     /// made to do is over. The watch behind the provisioning topic says what an attach waits on
     /// and runs until it is stopped — once the box is provisioned it says "connecting to the
@@ -2455,11 +2477,19 @@ impl State {
             }
             return;
         }
-        if p.warning {
-            self.message = Some(p.text);
+        if !p.text.is_empty() {
+            self.say(p.text, p.warning);
+        }
+    }
+
+    /// Puts words on the status line: a warning a running command gave stands past the steps
+    /// that follow it, until the next command, and nothing else said covers it meanwhile.
+    fn say(&mut self, text: String, stands: bool) {
+        if stands {
+            self.message = Some(text);
             self.warned = true;
-        } else if !p.text.is_empty() && !self.warned {
-            self.message = Some(p.text);
+        } else if !self.warned {
+            self.message = Some(text);
         }
     }
 }
@@ -2503,6 +2533,7 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
             Event::Audit(sub, r) => audit::take(s, sub, r),
             Event::Issue(sub, r) => issue::take(s, sub, r),
             Event::Requests(sub, r) => s.take_requests(sub, r),
+            Event::Push(sub, p) => s.take_push(sub, p),
             Event::Answer(a) => answer_arrival(s, a),
             Event::Progress(p) => s.take_progress(p),
             e @ (Event::Data(..) | Event::Exited(..) | Event::Stream(..)) => s.take_stream_event(e),
