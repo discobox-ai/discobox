@@ -71,7 +71,6 @@ fn return_in_the_composer_creates_through_the_card() {
     let live = rt.state.live.clone().expect("the new box's workspace");
     let made = rt.state.box_by_id(&live).expect("the new box listed");
     assert_eq!(made.name, "fix the reaper");
-    assert_eq!(rt.state.live_ws().unwrap().step, "pulling the image");
     assert_eq!(record.lock().unwrap().created, ["fix the reaper"]);
 }
 
@@ -256,4 +255,28 @@ fn the_keys_moving_reveal_their_field() {
         }
     }
     panic!("Tab never reached {last}");
+}
+
+// A workspace says what its box is being made to do until its primary attaches: the watch
+// behind it runs until it is stopped, and the attach connecting is what ends it.
+#[test]
+fn provisioning_ends_when_the_primary_attaches() {
+    use crate::backend::Event;
+    use crate::wire::{Stream, StreamState, TabKind};
+    let (mut rt, _) = runtime("");
+    compose(&mut rt, "fix the reaper");
+    press(&mut rt, Key::Enter, bare());
+    press(&mut rt, Key::Enter, bare());
+    let live = rt.state.live.clone().expect("the new box's workspace");
+    let primary = {
+        // Still opening: what the watch says, on its subscription.
+        let ws = rt.state.workspaces.get_mut(&live).unwrap();
+        ws.step = "connecting to the terminal".into();
+        ws.provisioning_sub = 99;
+        ws.panes.iter().find(|p| p.exec.kind == TabKind::Primary).expect("its primary").stream
+    };
+    rt.state.inbox.push(Event::Stream(Stream { stream: primary, state: StreamState::Attached, ..Default::default() }));
+    settle(&mut rt);
+    let ws = rt.state.live_ws().unwrap();
+    assert_eq!((ws.step.as_str(), ws.provisioning_sub), ("", 0), "provisioning outlived the primary's attach");
 }

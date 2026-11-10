@@ -151,7 +151,9 @@ const (
 	// person, and the credentials refused.
 	TopicRequests Topic = "requests"
 	// TopicProvisioning is what a box that is not usable yet is being made
-	// to do (Box).
+	// to do (Box). It says what an attach waits on, and runs until it is
+	// unsubscribed — once the box is provisioned it says "connecting to the
+	// terminal" — so the app ends it when the box's primary attaches.
 	TopicProvisioning Topic = "provisioning"
 	// TopicAudit is a box's audit timeline, followed (Box).
 	TopicAudit Topic = "audit"

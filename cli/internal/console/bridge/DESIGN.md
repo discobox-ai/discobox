@@ -129,7 +129,11 @@ is what waits for the box) every `console.WorkspacePollEvery`, in tab
 order with its services' tabs (`console.ListedServiceTabs`) ahead of the primary,
 each on its run: a service's tab is the one a snapshot closes, when it no
 longer lists it on that run; provisioning
-and the audit timeline as they report; and a workspace's header (`console.Header`)
+as it reports, until the app unsubscribes — the watch behind it says what an
+attach waits on and never ends on its own (once provisioned it says
+"connecting to the terminal"), so the app ends it when the box's primary
+attaches, as the TUI's ends with its attach; the audit timeline as it
+reports; and a workspace's header (`console.Header`)
 with its ports at the local ports of a forward that lasts as long as the
 subscription — the workspace's, which the app ends when it parks one — read
 again whenever the forward binds or loses a port and whenever another listing

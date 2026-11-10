@@ -106,3 +106,9 @@
   way to the questions after it, long before the create's result. A command
   that reports while its form waits on the person would close the form under
   them; report after `fill` returns.
+- **A topic that runs until it is unsubscribed says who ends it, and when.**
+  The provisioning topic's watch never ends on its own: it says what an
+  attach waits on, and after provisioning keeps saying "connecting to the
+  terminal". The desktop first never ended it, and a new box's workspace said
+  that for minutes after its terminal was up. The app ends it when the box's
+  primary attaches; a topic like it states its end in `wire.go` and here.

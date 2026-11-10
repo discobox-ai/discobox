@@ -490,7 +490,9 @@ pub enum Topic {
     #[serde(rename = "requests")]
     Requests,
 
-    /// TopicProvisioning is what a box that is not usable yet is being made to do (Box).
+    /// TopicProvisioning is what a box that is not usable yet is being made to do (Box). It says
+    /// what an attach waits on, and runs until it is unsubscribed — once the box is provisioned
+    /// it says "connecting to the terminal" — so the app ends it when the box's primary attaches.
     #[serde(rename = "provisioning")]
     Provisioning,
 

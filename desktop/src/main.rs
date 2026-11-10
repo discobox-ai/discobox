@@ -1362,6 +1362,20 @@ impl State {
         }
     }
 
+    /// A stream attached: when it is a workspace's primary, the box is up, and what it was being
+    /// made to do is over. The watch behind the provisioning topic says what an attach waits on
+    /// and runs until it is stopped — once the box is provisioned it says "connecting to the
+    /// terminal" — so the attach connecting is what ends it, as the TUI's ends with its attach.
+    fn provisioned(&mut self, stream: u32) {
+        let Some(ws) = self.workspaces.values_mut()
+            .find(|w| w.panes.iter().any(|p| p.stream == stream && p.exec.kind == TabKind::Primary)) else { return };
+        ws.step.clear();
+        let sub = std::mem::take(&mut ws.provisioning_sub);
+        if sub != 0 {
+            self.backend.send(Out::Unsubscribe(sub));
+        }
+    }
+
     /// The composer's prompt changed: it is told to the CLI once it has been still a moment.
     pub fn composer_changed(&mut self) { self.edited = Some(self.now); }
 
@@ -1403,7 +1417,10 @@ impl State {
     /// core's (`Tab.End`), and is applied to a workspace parked or on screen alike.
     fn take_stream(&mut self, st: Stream) {
         match st.state {
-            StreamState::Attached => self.resend_size(st.stream),
+            StreamState::Attached => {
+                self.resend_size(st.stream);
+                self.provisioned(st.stream);
+            }
             StreamState::Reconnecting | StreamState::Reconnected => {
                 if let Some(p) = self.pane_mut(st.stream) {
                     p.status = (st.state == StreamState::Reconnecting).then(|| "reconnecting…".into());
