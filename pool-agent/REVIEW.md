@@ -536,7 +536,8 @@ answer is seen): after that its disk is the sandbox's work.
 
 ## The status loop is the only thing that pushes status
 
-- **A port waiter only wakes the loop** (`statuswait.go`, ADR 26-11-03-815).
+- **A status waiter only wakes the loop** (`statuswait.go`, `waitForChanges`;
+  ADRs 26-11-03-815 and 26-11-09-062).
   It never polls the status or pushes a report itself: the control plane
   keeps the last status written, not the newest, so a second pusher would let
   an older report land after a newer one.

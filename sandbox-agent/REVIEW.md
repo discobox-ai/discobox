@@ -629,17 +629,21 @@ user waits on every single start.
   sandbox's status every 15 seconds and holds a wait on its ports open
   around the clock (ADR 26-11-03-815), so anything a read counts as activity
   keeps every sandbox up forever.
-- **The port wait holds only on the current version.** `GET .../status/wait`
-  answers at once unless the caller named the version the snapshot has now;
-  the hold is the agent's (`waitHold`), never a parameter. A snapshot change
-  must move the version, and a tick that changed nothing must not, or the
-  pool re-pushes the same ports twice a second.
+- **The status wait holds only on the current version.** `GET .../status/wait`
+  answers at once unless the caller named the version it has now — one
+  opaque token joining the port snapshot's signal and the harness capture's
+  (`statuswait.Wait`, ADR 26-11-09-062); the hold is the agent's
+  (`statuswait.Hold`), never a parameter. A change to either must move the
+  version, and a tick or rescan that changed nothing must not, or the pool
+  re-pushes the same status twice a second.
 - **Moving the version is not free.** Each move the pool sees is a status
   computation here (git status for every source) and a control-plane write;
   a test run's short-lived listeners already move it on most ticks, which the
   pool's per-sandbox wake spacing is what bounds. A change that makes the
-  version move more often — a new field in the snapshot, a finer probe state —
-  is weighed against that, not only against the scan.
+  version move more often — a new field in the snapshot, a finer probe state,
+  a capture signal moved on anything but a new candidate or state
+  (`terminal/capture.go` `publish`) — is weighed against that, not only
+  against the scan.
 - **Output is not activity; a changed screen is.** `screenBuffer.sumText`
   hashes cell content only. Adding styles, the cursor, the scrollback (filled
   on every `CSI 2J`), or raw byte counts to it makes a self-drawn blinking

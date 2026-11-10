@@ -37,6 +37,9 @@ type harnessChangesLoadedMsg struct {
 	box     Sandbox
 	changes HarnessChanges
 	err     error
+	// unasked is a review the explainer opened: it came up over a terminal
+	// the person may still be typing into, so its card holds its keys too.
+	unasked bool
 }
 
 type harnessChangesDoneMsg struct {
@@ -46,11 +49,15 @@ type harnessChangesDoneMsg struct {
 	err         error
 }
 
-func (m *Model) reviewHarnessChanges(box Sandbox) tea.Cmd {
+// reviewHarnessChanges reads a box's harness changes into the review card.
+// unasked is a review reached from the explainer, which came up unasked: the
+// card then holds its keys until the keyboard is quiet, as the explainer did,
+// so typing that answered the explainer cannot go on to save.
+func (m *Model) reviewHarnessChanges(box Sandbox, unasked bool) tea.Cmd {
 	m.busy = "reading harness changes…"
 	return func() tea.Msg {
 		changes, err := m.ds.ForServer(box.Server).HarnessChanges(m.ctx, box.ID)
-		return harnessChangesLoadedMsg{box: box, changes: changes, err: err}
+		return harnessChangesLoadedMsg{box: box, changes: changes, err: err, unasked: unasked}
 	}
 }
 
@@ -107,7 +114,7 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 	}
 	m.dialog = actionsDialog("Harness changes — "+msg.box.Name, body.String(), items, func(key string) tea.Cmd {
 		if key == "r" {
-			return m.reviewHarnessChanges(msg.box)
+			return m.reviewHarnessChanges(msg.box, false)
 		}
 		// The closure keeps the exact ID that was displayed, even if another
 		// candidate arrives while the person reads this card.
@@ -123,6 +130,9 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 		}
 	})
 	m.dialog.sections = sections
+	if msg.unasked {
+		m.dialog.holdUntilQuiet(m.now())
+	}
 	return nil
 }
 
@@ -241,7 +251,7 @@ func (m *Model) explainHarnessChangesIfOwed() tea.Cmd {
 	}
 	m.dialog = actionsDialog(harnessChangesExplainTitle, harnessChangesExplainBody(harnessChangesName(box)), items, func(key string) tea.Cmd {
 		if key == "r" {
-			return m.reviewHarnessChanges(box)
+			return m.reviewHarnessChanges(box, true)
 		}
 		return nil
 	}).holdUntilQuiet(m.now())

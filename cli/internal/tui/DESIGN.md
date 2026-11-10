@@ -679,7 +679,9 @@ which is the moment it is for; only another dialog or the run options hold it.
 Its answers are single letters, so the card takes no key until the keyboard has
 been quiet for `keyQuiet` (`dialog.holdUntilQuiet`), each key pressed before
 then starting the quiet over: what was being typed as it came up was meant for
-the terminal.
+the terminal, and goes on to it (`passHeldKey`; the composer takes only edits
+of its text, and the leader stays held). The review card it opens holds its keys the same way
+(`harnessChangesLoadedMsg.unasked`), since its `s` saves.
 
 **The request's chip throbs** (`armBannerPulse`): the field under `click to
 answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,
