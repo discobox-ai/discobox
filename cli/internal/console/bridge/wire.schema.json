@@ -3,8 +3,8 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 18,
-  "x-specVersion": 6,
+  "x-protocol": 19,
+  "x-specVersion": 7,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
     "json": {
@@ -290,6 +290,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "promptQuiet": {
+          "description": "PromptQuiet is PromptQuiet in seconds: how long the composer goes untyped in before the explainer may come up over it (ExplainerScreen.Free).",
+          "type": "number",
+          "format": "double"
         }
       },
       "required": [
@@ -301,7 +306,8 @@
         "commands",
         "gestures",
         "menus",
-        "linkSchemes"
+        "linkSchemes",
+        "promptQuiet"
       ]
     },
     "SpecColor": {
@@ -1214,7 +1220,7 @@
       ]
     },
     "Requests": {
-      "description": "Requests is what waits on a person: every request and refused credential on every listed server, each listed box's notice as the window's dismissals leave it (console.Dismissals.NoticeFor), the requests that arrived since the subscription's last snapshot — none in its first: what was waiting as the window opened is the list's marks and the notices' to say — and what renewals a permission made since then said (console.RenewByPermit).",
+      "description": "Requests is what waits on a person: every request and refused credential on every listed server, each listed box's notice as the window's dismissals leave it (console.Dismissals.NoticeFor), the requests that arrived since the subscription's last snapshot — none in its first: what was waiting as the window opened is the list's marks and the notices' to say — and what renewals a permission made since then said (console.RenewByPermit).\n\nExplain is the key of the box the harness changes explainer is owed about (console.HarnessChangesToExplain), while the project has yet to explain saving a box's harness changes and this window has not shown it; omitted otherwise. The app asks for it, once nothing else has its screen, with the review config command and Args.Explain.",
       "type": "object",
       "properties": {
         "requests": {
@@ -1246,6 +1252,9 @@
           "items": {
             "$ref": "#/$defs/Said"
           }
+        },
+        "explain": {
+          "type": "string"
         }
       },
       "required": [
@@ -2548,7 +2557,7 @@
       ]
     },
     "Args": {
-      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), for services one of the box's services and the verb to run on it — without them, services lists them for its menu — and for new the prompt in the composer, which the box is given to do.\n\nThe harnesses command reads the harnesses of Server (the list's server; empty for the primary) for its page, or, with a Harness and an Action, does that to it: Path is the file a files action edits. The review config command reads a box's harness changes for its review, or, with a Change and the Candidate the review showed, saves or discards that candidate.\n\nThe credentials command reads the secrets of Server for its page, or does a SecretAction: new stores one, read reads them again for a page already open, and every other names the Secret it is done to — unbind the Binding it takes back.",
+      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), for services one of the box's services and the verb to run on it — without them, services lists them for its menu — and for new the prompt in the composer, which the box is given to do.\n\nThe harnesses command reads the harnesses of Server (the list's server; empty for the primary) for its page, or, with a Harness and an Action, does that to it: Path is the file a files action edits. The review config command reads a box's harness changes for its review, or, with a Change and the Candidate the review showed, saves or discards that candidate; with Explain, it first asks the explainer (console.HarnessChangesExplainer), and reads them for the review only when the answer is to review them.\n\nThe credentials command reads the secrets of Server for its page, or does a SecretAction: new stores one, read reads them again for a page already open, and every other names the Secret it is done to — unbind the Binding it takes back.",
       "type": "object",
       "properties": {
         "prompt": {
@@ -2592,6 +2601,9 @@
         },
         "candidate": {
           "type": "string"
+        },
+        "explain": {
+          "type": "boolean"
         },
         "tool": {
           "description": "Tool names one of the box's tools for the tools command: with no File it is run — handed the box, for one that runs on this machine, or its session made on Stream — and with File, that file of it is edited.",

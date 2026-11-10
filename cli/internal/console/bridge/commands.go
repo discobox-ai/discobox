@@ -521,11 +521,14 @@ func (f *frontend) harnesses(server string, status Status, about, note string) R
 // opens — counted as the command's use, which its flow is — or, with a change
 // and the candidate the review showed in the args, that candidate saved or
 // discarded by the core (console.RunHarnessChange), never a newer one the box
-// captured meanwhile.
+// captured meanwhile. With Explain it is the explainer first (explain).
 func (f *frontend) ReviewConfig(box console.Sandbox) outcome {
 	a := f.c.Args
 	key := Key(box.Server, box.ID)
 	src := f.s.ds.ForServer(box.Server)
+	if a.Explain {
+		return f.explain(box)
+	}
 	if a.Change != "" {
 		return func() Result {
 			state, err := console.RunHarnessChange(f.ctx, src, box.ID, a.Change, a.Candidate)
@@ -542,13 +545,55 @@ func (f *frontend) ReviewConfig(box console.Sandbox) outcome {
 		}
 	}
 	f.s.reg.Use("review config")
+	return func() Result { return f.review(box) }
+}
+
+// review is a box's harness changes read for the app's review as it opens.
+func (f *frontend) review(box console.Sandbox) Result {
+	changes, err := f.s.ds.ForServer(box.Server).HarnessChanges(f.ctx, box.ID)
+	if err != nil {
+		return failed("harness changes: " + err.Error())
+	}
+	c := wireChanges(changes)
+	return Result{Status: StatusEnter, Box: Key(box.Server, box.ID), Changes: &c}
+}
+
+// explain is the harness changes explainer about box, asked as the core asks
+// it (console.HarnessChangesExplainer) the once the window owes it — a second
+// asking, or one after it was asked, is canceled unasked — and recorded on
+// the project once it is answered, whichever way (console.ExplainedHarnessChanges),
+// as the TUI records it. It is asked at once: the app asked for it on a
+// screen it found free (console.ExplainerScreen), and nothing goes to a server
+// between. Reviewing opens the box's review, counted as the command's use;
+// anything else leaves it.
+func (f *frontend) explain(box console.Sandbox) outcome {
 	return func() Result {
-		changes, err := src.HarnessChanges(f.ctx, box.ID)
-		if err != nil {
-			return failed("harness changes: " + err.Error())
+		if !f.s.takeExplainer() {
+			return Result{Status: StatusCanceled}
 		}
-		c := wireChanges(changes)
-		return Result{Status: StatusEnter, Box: key, Changes: &c}
+		// The requests topic stops naming the box at once.
+		f.s.reread()
+		answer, err := f.s.ask(f.ctx, f.c.ID, console.HarnessChangesExplainer(box))
+		// Answered either way, leaving it included; only the bridge going
+		// leaves it unanswered, and then it is explained again next time.
+		if f.ctx.Err() == nil {
+			if said := console.ExplainedHarnessChanges(f.ctx, f.s.ds); said != "" {
+				f.s.mu.Lock()
+				f.s.said = append(f.s.said, Said{Text: said, Warning: true})
+				f.s.mu.Unlock()
+				f.s.reread()
+			}
+		}
+		if r, over := f.asked(err); over {
+			return r
+		}
+		if answer != console.ExplainReview {
+			return Result{Status: StatusCanceled}
+		}
+		f.s.regMu.Lock()
+		f.s.reg.Use("review config")
+		f.s.regMu.Unlock()
+		return f.review(box)
 	}
 }
 

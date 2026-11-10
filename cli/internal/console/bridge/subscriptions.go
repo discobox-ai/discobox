@@ -251,7 +251,7 @@ func (f *follower) requests(ctx context.Context) (Snapshot, error) {
 	in := console.Inbox{Session: session, Requests: requests, Rejections: rejections}
 	out := Requests{
 		Requests: make([]Request, 0, len(requests)), Rejections: make([]Rejection, 0, len(rejections)),
-		Notices: f.s.notices(in, boxes), Arrived: []Arrival{}, Said: f.s.takeSaid(),
+		Notices: f.s.notices(in, boxes), Arrived: []Arrival{}, Said: f.s.takeSaid(), Explain: f.s.explaining(boxes),
 	}
 	first := f.seen == nil
 	if first {

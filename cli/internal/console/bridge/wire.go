@@ -50,8 +50,10 @@ import (
 // (Subscribe.Audit), the records it lets through with what it lights in each
 // and its runs (AuditRecord.SourceLit, SummaryLit; AuditRun.SourceLit,
 // SummaryLit), its tally (Audit.Tally), and what the timeline says of the
-// records below a row held (Audit.Below).
-const Protocol = 18
+// records below a row held (Audit.Below); 19, the harness changes explainer:
+// the box it is owed about (Requests.Explain), asked by the review config
+// command (Args.Explain).
+const Protocol = 19
 
 // Type names a message.
 type Type string
@@ -709,12 +711,19 @@ type Resources struct {
 // the subscription's last snapshot — none in its first: what was waiting as
 // the window opened is the list's marks and the notices' to say — and what
 // renewals a permission made since then said (console.RenewByPermit).
+//
+// Explain is the key of the box the harness changes explainer is owed about
+// (console.HarnessChangesToExplain), while the project has yet to explain
+// saving a box's harness changes and this window has not shown it; omitted
+// otherwise. The app asks for it, once nothing else has its screen, with the
+// review config command and Args.Explain.
 type Requests struct {
 	Requests   []Request   `json:"requests"`
 	Rejections []Rejection `json:"rejections"`
 	Notices    []Notice    `json:"notices"`
 	Arrived    []Arrival   `json:"arrived"`
 	Said       []Said      `json:"said"`
+	Explain    string      `json:"explain,omitempty"`
 }
 
 // Request is one item waiting on a person. Box is the key of the box that
@@ -1065,7 +1074,9 @@ type Context struct {
 // empty for the primary) for its page, or, with a Harness and an Action, does
 // that to it: Path is the file a files action edits. The review config
 // command reads a box's harness changes for its review, or, with a Change and
-// the Candidate the review showed, saves or discards that candidate.
+// the Candidate the review showed, saves or discards that candidate; with
+// Explain, it first asks the explainer (console.HarnessChangesExplainer), and
+// reads them for the review only when the answer is to review them.
 //
 // The credentials command reads the secrets of Server for its page, or does
 // a SecretAction: new stores one, read reads them again for a page already
@@ -1085,6 +1096,7 @@ type Args struct {
 	Path      string                `json:"path,omitempty"`
 	Change    console.HarnessChange `json:"change,omitempty"`
 	Candidate string                `json:"candidate,omitempty"`
+	Explain   bool                  `json:"explain,omitempty"`
 	// Tool names one of the box's tools for the tools command: with no File
 	// it is run — handed the box, for one that runs on this machine, or its
 	// session made on Stream — and with File, that file of it is edited.

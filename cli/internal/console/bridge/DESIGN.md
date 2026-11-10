@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 18; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 19; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -136,6 +136,17 @@ walks `console.RequestApproval` card by card, then the review; a refresh's
 session permit is held for the window (`console.Renewals`), and the requests
 topic's read renews what it covers, saying what the core says came of it in
 its next snapshot (`Said`).
+The harness changes explainer is asked here too: the requests topic names
+the box it is owed about (`Requests.Explain`, `console.HarnessChangesToExplain`
+against the boxes listed, with no workspace, since the topic follows none)
+while the session says the project owes it, and the app, once nothing else
+has its screen (`console.ExplainerScreen`), runs `review config` on that box
+with `Args.Explain`. That asks the core's question
+(`console.HarnessChangesExplainer`) at once, the once this window owes it
+(`takeExplainer`; any other asking is canceled unasked), records it on the
+project once it is answered, whichever way (`console.ExplainedHarnessChanges`;
+one that fails is said in the topic's `Said`), and on Review changes answers
+with the review as `review config` does.
 `rejections` is the core's remedy for the box's shown refusal: the sign-in
 message, acknowledged, or the secret's edit form. `dismiss` takes down the
 notice of the app's workspace box (`console.Dismissals`, held here as the

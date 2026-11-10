@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -277,4 +278,134 @@ func cardSays(card []DetailSection, text string) bool {
 		}
 	}
 	return false
+}
+
+// collect reads messages until one of each kind wanted has come, in whatever
+// order they come: a command's question or result and its follower's snapshot
+// race (REVIEW.md).
+func (a *app) collect(want map[string]func(Message) bool) map[string]Message {
+	a.t.Helper()
+	got := map[string]Message{}
+	for len(got) < len(want) {
+		m := a.message()
+		for name, is := range want {
+			if _, ok := got[name]; !ok && is(m) {
+				got[name] = m
+				break
+			}
+		}
+	}
+	return got
+}
+
+func isQuestion(m Message) bool { return m.Type == TypeQuestion }
+
+func isResult(id uint64) func(Message) bool {
+	return func(m Message) bool { return m.Type == TypeResult && m.Result.ID == id }
+}
+
+func isRequests(sub uint32, want func(*Requests) bool) func(Message) bool {
+	return func(m Message) bool {
+		return m.Type == TypeSnapshot && m.Snapshot.Sub == sub && m.Snapshot.Requests != nil && want(m.Snapshot.Requests)
+	}
+}
+
+// A project that owes the harness changes explainer has the requests topic
+// name the first listed box with a change to save. The review config command
+// with Explain asks the core's explainer once, the topic no longer naming the
+// box, and records it on the project once it is answered; Review changes
+// opens the review, and asking again is canceled unasked.
+func TestTheExplainerIsAskedOnceAndMarksTheProject(t *testing.T) {
+	plain, pending := running("b1"), running("b2")
+	pending.HarnessName, pending.HarnessConfigPending = "Claude Code", true
+	core := newFakeCore("home", plain, pending)
+	core.explain = true
+	core.changes = console.HarnessChanges{CandidateID: "cand_1", State: "pending", Credentials: []string{"claude login"}}
+	a := dial(t, core)
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicListing}})
+	a.expect(TypeSnapshot)
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 2, Topic: TopicRequests}})
+	if r := a.expect(TypeSnapshot).Snapshot.Requests; r.Explain != "b2" {
+		t.Fatalf("explain %q, want the box with a change to save", r.Explain)
+	}
+
+	id := a.command(Command{Command: "review config", Targets: []string{"b2"}, Args: Args{Explain: true}})
+	got := a.collect(map[string]func(Message) bool{
+		"question": isQuestion,
+		"requests": isRequests(2, func(r *Requests) bool { return r.Explain == "" }),
+	})
+	q := got["question"].Question
+	want := console.HarnessChangesExplainer(pending)
+	if q.Title != want.Title || q.Body != want.Body || q.Subject != "b2" || len(q.Choices) != 2 || q.Choices[0].Key != console.ExplainReview {
+		t.Fatalf("question %+v", q)
+	}
+	if slices.Contains(core.called(), "explained") {
+		t.Fatalf("the project was marked before the explainer was answered: %q", core.called())
+	}
+	a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Key: console.ExplainReview}})
+	if r := a.result(id); r.Status != StatusEnter || r.Box != "b2" || r.Changes == nil || r.Changes.Candidate != "cand_1" {
+		t.Fatalf("review %+v", r)
+	}
+	if !slices.Contains(core.called(), "explained") {
+		t.Fatalf("the project was not marked once the explainer was answered: %q", core.called())
+	}
+
+	// Asked once: a second asking, from this window, is canceled unasked.
+	if r := a.result(a.command(Command{Command: "review config", Targets: []string{"b2"}, Args: Args{Explain: true}})); r.Status != StatusCanceled {
+		t.Fatalf("asked again: %+v", r)
+	}
+}
+
+// Leaving it is answering it, and a record that does not land is said in the
+// requests topic, in the core's words.
+func TestTheExplainerLeftSaysAMarkThatFailed(t *testing.T) {
+	pending := running("b1")
+	pending.HarnessConfigPending = true
+	core := newFakeCore("home", pending)
+	core.explain, core.explainErr = true, errors.New("server down")
+	a := dial(t, core)
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicListing}})
+	a.expect(TypeSnapshot)
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 2, Topic: TopicRequests}})
+	a.expect(TypeSnapshot)
+
+	id := a.command(Command{Command: "review config", Targets: []string{"b1"}, Args: Args{Explain: true}})
+	q := a.collect(map[string]func(Message) bool{
+		"question": isQuestion,
+		"requests": isRequests(2, func(r *Requests) bool { return r.Explain == "" }),
+	})["question"].Question
+	a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Declined: true}})
+	got := a.collect(map[string]func(Message) bool{
+		"result":   isResult(id),
+		"requests": isRequests(2, func(r *Requests) bool { return len(r.Said) > 0 }),
+	})
+	if r := got["result"].Result; r.Status != StatusCanceled {
+		t.Fatalf("left: %+v", r)
+	}
+	said := got["requests"].Snapshot.Requests.Said
+	if len(said) != 1 || !said[0].Warning || !strings.Contains(said[0].Text, "server down") {
+		t.Fatalf("said %+v, want the failed record said", said)
+	}
+	if slices.Contains(core.called(), "changes b1") {
+		t.Fatalf("leaving it read the changes: %q", core.called())
+	}
+}
+
+// A project that has explained it already is never named, nor asked.
+func TestNoExplainerOnAProjectThatHasExplained(t *testing.T) {
+	pending := running("b1")
+	pending.HarnessConfigPending = true
+	a := dial(t, newFakeCore("home", pending))
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicListing}})
+	a.expect(TypeSnapshot)
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 2, Topic: TopicRequests}})
+	if r := a.expect(TypeSnapshot).Snapshot.Requests; r.Explain != "" {
+		t.Fatalf("explain %q on a project that has explained it", r.Explain)
+	}
+	if r := a.result(a.command(Command{Command: "review config", Targets: []string{"b1"}, Args: Args{Explain: true}})); r.Status != StatusCanceled {
+		t.Fatalf("asked: %+v", r)
+	}
 }

@@ -14,10 +14,10 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 18;
+pub const PROTOCOL: i64 = 19;
 
 /// The console spec's shape (Spec.version) this side reads.
-pub const SPEC_VERSION: i64 = 6;
+pub const SPEC_VERSION: i64 = 7;
 
 /// The largest frame payload either side accepts: a larger one ends the bridge, since the two sides
 /// no longer agree where a frame starts.
@@ -283,6 +283,11 @@ pub struct Spec {
     /// never the program's or the OS's.
     #[serde(rename = "linkSchemes")]
     pub link_schemes: Vec<String>,
+
+    /// PromptQuiet is PromptQuiet in seconds: how long the composer goes untyped in before the
+    /// explainer may come up over it (ExplainerScreen.Free).
+    #[serde(rename = "promptQuiet")]
+    pub prompt_quiet: f64,
 }
 
 /// SpecColor is one color token: its dark and light values as #rrggbb, and the xterm-256 index the
@@ -1046,6 +1051,11 @@ pub struct Resources {
 /// requests that arrived since the subscription's last snapshot — none in its first: what was
 /// waiting as the window opened is the list's marks and the notices' to say — and what renewals a
 /// permission made since then said (console.RenewByPermit).
+///
+/// Explain is the key of the box the harness changes explainer is owed about
+/// (console.HarnessChangesToExplain), while the project has yet to explain saving a box's harness
+/// changes and this window has not shown it; omitted otherwise. The app asks for it, once nothing
+/// else has its screen, with the review config command and Args.Explain.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Requests {
     pub requests: Vec<Request>,
@@ -1057,6 +1067,9 @@ pub struct Requests {
     pub arrived: Vec<Arrival>,
 
     pub said: Vec<Said>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub explain: String,
 }
 
 /// Request is one item waiting on a person. Box is the key of the box that asked, as the listing
@@ -2051,7 +2064,9 @@ pub struct Command {
 /// The harnesses command reads the harnesses of Server (the list's server; empty for the primary)
 /// for its page, or, with a Harness and an Action, does that to it: Path is the file a files action
 /// edits. The review config command reads a box's harness changes for its review, or, with a Change
-/// and the Candidate the review showed, saves or discards that candidate.
+/// and the Candidate the review showed, saves or discards that candidate; with Explain, it first
+/// asks the explainer (console.HarnessChangesExplainer), and reads them for the review only when
+/// the answer is to review them.
 ///
 /// The credentials command reads the secrets of Server for its page, or does a SecretAction: new
 /// stores one, read reads them again for a page already open, and every other names the Secret it
@@ -2096,6 +2111,9 @@ pub struct Args {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub candidate: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub explain: bool,
 
     /// Tool names one of the box's tools for the tools command: with no File it is run — handed
     /// the box, for one that runs on this machine, or its session made on Stream — and with File,

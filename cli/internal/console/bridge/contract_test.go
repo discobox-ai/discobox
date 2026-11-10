@@ -36,6 +36,8 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //   - slow is running: stopping it waits on a purge.
 //   - doomed is running: stopping it ends this process, with status 3, as a
 //     CLI that exits mid-command.
+//   - In the "explain" scenario, the project owes the harness changes
+//     explainer, and b1 has a change to save.
 //   - The project has one harness, hc_claude, the default, carrying
 //     .claude.json: editing it writes the file out holding "before" and
 //     reads back what the app saved there. b1's harness changes are a
@@ -139,6 +141,11 @@ func TestContractCore(t *testing.T) {
 	case "early":
 		core.gate = make(chan struct{})
 	case "default":
+	case "explain":
+		// The project has yet to explain saving harness changes, and b1 has
+		// one to save.
+		core.explain = true
+		core.listing.Sandboxes[0].HarnessConfigPending = true
 	case "copy":
 		core.workspace = console.SourceWorkspace{Directory: "/work/notes", Carries: true}
 		core.counts = []console.DirectoryTotal{{}, {Bytes: 5 << 20, Files: 3}, {Bytes: 7 << 20, Files: 4, Done: true}}

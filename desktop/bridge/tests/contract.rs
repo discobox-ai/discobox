@@ -704,6 +704,36 @@ fn requests_reach_the_app() {
     assert_eq!((r.status, r.note.as_str()), (Status::Done, "denied github"));
 }
 
+// A project that owes the harness changes explainer has the requests topic name the box it is
+// about; the review config command with `explain` asks it once, and Review changes opens the
+// box's review.
+#[test]
+fn the_explainer_reaches_the_app() {
+    let mut cli = Cli::start("explain");
+    cli.subscribe(1, Topic::Listing, "");
+    cli.expect(Type::Snapshot);
+    cli.subscribe(2, Topic::Requests, "");
+    let w = cli.expect(Type::Snapshot).snapshot.unwrap().requests.expect("requests");
+    assert_eq!(w.explain, "b1");
+
+    let explain = Args { explain: true, ..Default::default() };
+    let id = cli.command("review config", &["b1"], Context::default(), explain.clone());
+    let q = cli.expect(Type::Question).question.unwrap();
+    assert_eq!((q.title.as_str(), q.subject.as_str()), ("Saving harness changes", "b1"));
+    assert_eq!(q.choices.iter().map(|c| c.key.as_str()).collect::<Vec<_>>(), ["review", "later"]);
+    let w = cli.take("the requests no longer naming it", |i| match i {
+        Incoming::Message(Message { snapshot: Some(s), .. }) if s.sub == 2 => s.requests.clone(),
+        _ => None,
+    });
+    assert!(w.explain.is_empty(), "{w:?}");
+    cli.answer(q.id, "review", false);
+    let r = cli.result(id);
+    assert_eq!((r.status, r.r#box.as_str(), r.changes.map(|c| c.candidate)), (Status::Enter, "b1", Some("c1".to_string())));
+
+    let id = cli.command("review config", &["b1"], Context::default(), explain);
+    assert_eq!(cli.result(id).status, Status::Canceled, "asked twice");
+}
+
 // A request that arrives after the first snapshot is one to notify; the secrets page lists the
 // requests waiting on its server with how long each has waited, and answers one by its ID; a
 // refresh allowed for the session renews the next one without asking, and says so.

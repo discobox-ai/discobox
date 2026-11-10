@@ -52,6 +52,36 @@ func (s *Server) notices(in console.Inbox, boxes []console.Sandbox) []Notice {
 	return out
 }
 
+// explaining is the key of the box the explainer is owed about, by the core's
+// rule against the boxes listed (console.HarnessChangesToExplain), while the
+// project owes it and this window has not shown it; empty otherwise. The
+// topic follows no workspace, so it is the first listed box with a change to
+// save: the question names the box it is about (console.Question.Subject).
+func (s *Server) explaining(boxes []console.Sandbox) string {
+	s.mu.Lock()
+	owed := s.session.ExplainHarnessChanges
+	s.mu.Unlock()
+	if !owed {
+		return ""
+	}
+	box, ok := console.HarnessChangesToExplain(nil, boxes)
+	if !ok {
+		return ""
+	}
+	return Key(box.Server, box.ID)
+}
+
+// takeExplainer claims the explainer for one command to show: true the once
+// the window owes it, false after, so two commands racing to show it show it
+// once.
+func (s *Server) takeExplainer() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	owed := s.session.ExplainHarnessChanges
+	s.session.ExplainHarnessChanges = false
+	return owed
+}
+
 // takeSaid is what the renewals a permission made said since the last
 // requests snapshot, which carries it once.
 func (s *Server) takeSaid() []Said {

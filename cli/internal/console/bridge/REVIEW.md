@@ -1,10 +1,12 @@
 # console/bridge review notes
 
-- **A test waiting for a command result and its follower's snapshot collects
-  both in either order**, matching the command and subscription IDs. The
-  fake app's `result` and `expect` skip other messages: waiting for the result
-  first discarded the snapshot in both the issue-refresh and notice-dismissal
-  tests, which then timed out waiting for another one.
+- **A test waiting for a command's result or question and its follower's
+  snapshot collects both in either order** (`app.collect`), matching the
+  command and subscription IDs. The fake app's `result` and `expect` skip
+  other messages: waiting for the result first discarded the snapshot in both
+  the issue-refresh and notice-dismissal tests, which then timed out waiting
+  for another one, and the explainer's first tests waited for its question
+  past the requests snapshot sent beside it — the third time.
 - **A reading snapshot does not mean the data source has been called yet.**
   Wait for the populated audit snapshot before counting reads: the feed says
   it is reading before it calls `FollowAudit`, so counting then raced the call.
