@@ -55,6 +55,15 @@
   it. The same sentinel is what lets a caller that can wait (the attach wait,
   ADR 0039 tier 1) wait instead of failing, so do not flatten it into a plain
   error anywhere on the acquire or reconcile path.
+- A pool's host that a driver cannot find (no VM yet, the pool container
+  removed for a replacement) or a booting VM that has not bound the agent's
+  socket is `sandbox.ErrPoolNotReachable` on the pool-agent acquire path,
+  never `sandbox.ErrNotFound`: the pool row stands and the reconciler brings
+  the host back. `ErrNotFound` there reads as the sandbox having no runtime, so
+  a start is told to repair it and a delete, archive or policy push skips the
+  pool (#893). `Engine.AcquirePoolAgentClient` maps it for every
+  dockerworker driver; a runtime that does not go through the engine
+  (discovm's missing machine) maps its own.
 - The pool host console must never carry `LabelPoolAgent` (drift detection
   reconciles and deletes what does) or the pool agent's
   `discobox.sandbox.managed` label. It is not a pool runtime and not a sandbox.
