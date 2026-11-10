@@ -3,6 +3,26 @@
 Open the console with `discobox console` (`c` is an alias). `discobox
 configure` opens its harnesses screen. `discobox run` and `discobox attach BOX` open a workspace directly.
 
+## The palette
+
+The palette is the way in to everything the console does. Type any part of a
+box's name, ID, repository or tags, or of a command's name, and Enter goes to
+the box or runs the command. Tab turns the highlighted box or command into a
+chip, so you can pick the other half: a command first and then the box it
+acts on, or a box first and then a command. Esc drops the chip, then clears
+the text, then closes the palette. It searches every server and source,
+whatever the list's filter narrows to, but leaves archived boxes out until
+you include them with Alt-A in the palette.
+
+Open it with **Ctrl-:** from the list, the prompt or a terminal pane, when
+your terminal speaks the Kitty keyboard protocol; it opens nothing over a
+dialog, the run options or the create card. The leader then k (Ctrl-A, then
+k, by default) opens it from the list or a pane in any terminal, and `:`
+opens it from the box list. A harness or shell pane's bottom line leads with
+the palette: it offers Ctrl-: once the terminal has said it tells such keys
+apart, and the leader until then. The keys below are shortcuts to what the
+palette finds.
+
 ## Create and find a task
 
 The window opens on the first box, or on the prompt when there are none.
@@ -21,6 +41,7 @@ server and source for a new task. Filters and unfinished prompts are remembered.
 
 | List key | Action |
 | --- | --- |
+| : | Open the palette |
 | Enter / s | Attach / open a shell |
 | Space | Select a box for batch actions |
 | V | Extend a range with arrows; Space selects it; Esc cancels |
@@ -57,6 +78,7 @@ Alt plus a letter is also supported. Ctrl-C cannot be the leader.
 
 | Leader then key | Action |
 | --- | --- |
+| k | Open the palette |
 | q | Quit the window, keeping sessions running |
 | d | Detach where a return to the list is available; a direct attach closes |
 | a | Return to the primary terminal |
@@ -72,8 +94,10 @@ Alt plus a letter is also supported. Ctrl-C cannot be the leader.
 
 The visible pane border shows its keys. Where the list remains beside the
 workspace, leader h from the leftmost pane returns focus to the list; leader
-Up/Down (or k/j) switches boxes. There is no detach-to-list action beside
-that sidebar: switch boxes or quit the window instead.
+Up/Down (or j for down) switches boxes, and so do Ctrl-Shift-K/J with no
+leader in a terminal that speaks the Kitty keyboard protocol. There is no
+detach-to-list action beside that sidebar: switch boxes or quit the window
+instead.
 
 Other keys go to the focused terminal, including Ctrl-C. This interrupts
 the program in the pane, not the console. The primary and service tabs cannot
