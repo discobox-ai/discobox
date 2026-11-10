@@ -4377,6 +4377,7 @@ discobox desktop [flags]
 | --debug | bool | false | print HTTP requests and the git commands run on this machine Value when passed without an argument: true. |
 | --help, -h | bool | false | help for desktop Value when passed without an argument: true. |
 | --output, -o | string | table | output &#96;FORMAT&#96;: table or json |
+| --print-manifest | bool | false | print the desktop app this build would download, and exit; a build that pins none says so and exits non-zero Value when passed without an argument: true. |
 | --server | string |  | connect to &#96;SERVER&#96;, an endpoint or a registered server's name; defaults to the primary "discobox admin remote primary" set, and to the local server when none is |
 | --token | string |  | bearer &#96;TOKEN&#96; for API requests |
 
