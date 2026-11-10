@@ -11,6 +11,10 @@
 //! is answered no, and only a pick of one is declined (the core's rule). A sheet goes when its
 //! command's result lands.
 //!
+//! An edit is a file a command needs edited (the core's `edit`): it is opened in a text editor
+//! (`open_in_editor`), and its sheet waits for them to say they
+//! are finished with it — Done answers `saved`, and Esc gives it up, which saves nothing.
+//!
 //! Sheets queue: a question can arrive for one command while another's form is up, and the first
 //! to arrive is drawn until it is answered.
 
@@ -19,7 +23,7 @@ use std::collections::HashMap;
 use rune::{Color, El, Key, KeyEvent, TextEdit, Tx, col, el, row, spacer, text, text_input};
 
 use crate::backend::Out;
-use crate::wire::{Answer, Field, FieldError, FieldErrors, Form, Question, Submit};
+use crate::wire::{Answer, Edit, Field, FieldError, FieldErrors, Form, Question, Saved, Submit};
 use crate::{State, keys, theme, view};
 
 /// A form a command waits on: the core's fields, and the app's answers to them.
@@ -49,9 +53,16 @@ pub struct QuestionSheet {
     pub picked: usize,
 }
 
+/// A file a command needs edited, open in the person's editor; or why it could not be opened.
+pub struct EditSheet {
+    pub edit: Edit,
+    pub opened: Result<(), String>,
+}
+
 pub enum Sheet {
     Form(FormSheet),
     Question(QuestionSheet),
+    Edit(EditSheet),
 }
 
 impl Sheet {
@@ -60,6 +71,7 @@ impl Sheet {
         match self {
             Sheet::Form(f) => f.command,
             Sheet::Question(q) => q.question.command,
+            Sheet::Edit(e) => e.edit.command,
         }
     }
 }
@@ -92,6 +104,13 @@ impl Sheets {
     pub fn question(&self) -> Option<&QuestionSheet> {
         match self.queue.first() {
             Some(Sheet::Question(q)) => Some(q),
+            _ => None,
+        }
+    }
+
+    pub fn edit_sheet(&self) -> Option<&EditSheet> {
+        match self.queue.first() {
+            Some(Sheet::Edit(e)) => Some(e),
             _ => None,
         }
     }
@@ -230,6 +249,73 @@ pub fn take_question(s: &mut State, question: Question) {
     s.sheets.queue.push(Sheet::Question(QuestionSheet { question, picked }));
 }
 
+/// A file to edit, from the core: opened in the person's editor at once, and waited on.
+pub fn take_edit(s: &mut State, edit: Edit) {
+    s.close_overlays();
+    s.message = None;
+    let opened = open_in_editor(&edit.path);
+    s.sheets.queue.push(Sheet::Edit(EditSheet { edit, opened }));
+}
+
+/// Opens the edit on top in the editor again: one closed before it was saved, or that did not
+/// come up.
+fn reopen(s: &mut State) {
+    if let Some(Sheet::Edit(e)) = s.sheets.queue.first_mut() {
+        e.opened = open_in_editor(&e.edit.path);
+    }
+}
+
+/// The person is finished with the edit on top: the command reads back what was saved.
+fn finish_edit(s: &mut State) {
+    let Some(Sheet::Edit(e)) = s.sheets.queue.first() else { return };
+    let edit = e.edit.id;
+    s.sheets.queue.remove(0);
+    s.backend.send(Out::Saved(Saved { edit, ..Default::default() }));
+}
+
+/// Opens a file in a text editor: the system's default text editor on macOS (`open -t`), Notepad
+/// on Windows, and on Linux the handler for its type (`xdg-open`), which the CLI makes a text
+/// format's (its temp file takes `.txt` for any extension that is not one). The path is never
+/// handed to a shell or to the system's file association by extension alone: a harness bundle
+/// names the file, and must not get to choose a program to run here. Nothing it runs writes to
+/// the app's stdin or stdout, which are the bridge's.
+#[cfg(not(test))]
+pub fn open_in_editor(path: &str) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+    let mut c = if cfg!(target_os = "macos") {
+        let mut c = Command::new("open");
+        c.args(["-t", path]);
+        c
+    } else if cfg!(windows) {
+        let mut c = Command::new("notepad.exe");
+        c.arg(path);
+        c
+    } else {
+        let mut c = Command::new("xdg-open");
+        c.arg(path);
+        c
+    };
+    let mut child = c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
+        .map_err(|e| format!("could not open it in your editor: {e}"))?;
+    // Reaped once the opener exits, which is soon: it hands the file on and goes.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+/// In a test nothing is opened: what would have been is kept, for the test to read.
+#[cfg(test)]
+pub fn open_in_editor(path: &str) -> Result<(), String> {
+    OPENED.with_borrow_mut(|o| o.push(path.to_string()));
+    Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    pub static OPENED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 fn submit(s: &mut State, draft: bool) {
     let Some(f) = s.sheets.form_mut() else { return };
     if f.sent && !draft {
@@ -271,6 +357,7 @@ pub fn dismissal(sheet: &Sheet) -> Out {
         Sheet::Form(f) => Out::Submit(Submit { form: f.id, cancel: true, ..Default::default() }),
         Sheet::Question(q) if q.question.choices.is_empty() => Out::Answer(Answer { question: q.question.id, key: "no".into(), ..Default::default() }),
         Sheet::Question(q) => Out::Answer(Answer { question: q.question.id, declined: true, ..Default::default() }),
+        Sheet::Edit(e) => Out::Saved(Saved { edit: e.edit.id, canceled: true, ..Default::default() }),
     }
 }
 
@@ -341,6 +428,12 @@ pub fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
             Key::Right if on_picker => cycle(s, at, 1),
             Key::Text(ref t) if on_picker && t == " " => cycle(s, at, 1),
             _ => {}
+        }
+        return true;
+    }
+    if s.sheets.edit_sheet().is_some() {
+        if ev.key == Key::Enter {
+            finish_edit(s);
         }
         return true;
     }
@@ -533,10 +626,28 @@ fn question_view(q: &QuestionSheet) -> El {
     panel("sheet", 520.0, body.child(list).child(hints))
 }
 
+fn edit_view(e: &EditSheet) -> El {
+    let what = match &e.opened {
+        Ok(()) => "It is open in your editor. Save it there, then press Done: what you saved is read back. Cancel keeps it as it was.".to_string(),
+        Err(why) => format!("{why}. Open it yourself, save it, then press Done; or Cancel to keep it as it was."),
+    };
+    let body = col().w_full().gap(12.0)
+        .child(text(e.edit.title.clone()).font(theme::UI_BOLD).color(theme::text()))
+        .child(text(what).font(theme::UI).color(if e.opened.is_ok() { theme::grey() } else { theme::warn() }).wrap().w_full())
+        .child(text(e.edit.path.clone()).font(theme::UI_SMALL).color(theme::dim()).wrap().w_full());
+    let buttons = row().w_full().gap(8.0).center_y()
+        .child(hint("enter", "done")).child(hint("escape", "cancel")).child(spacer())
+        .child(button("sheet-reopen", "Open again", false, false, true).on_press(reopen))
+        .child(button("sheet-cancel", "Cancel", false, false, true).on_press(dismiss))
+        .child(button("sheet-done", "Done", true, false, true).default_button().on_press(finish_edit));
+    panel("sheet", 560.0, body.child(buttons))
+}
+
 /// The sheet on top, if any.
 pub fn view(s: &State) -> Option<El> {
     match s.sheets.queue.first()? {
         Sheet::Form(f) => Some(form_view(f)),
         Sheet::Question(q) => Some(question_view(q)),
+        Sheet::Edit(e) => Some(edit_view(e)),
     }
 }

@@ -26,7 +26,8 @@ use crate::wire::{
     Answer, Box as Sandbox, ChoiceGroup, Close, Command, Commands, Choice, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice,
     Form, GitTone, Header, Link, Listing, Message, Open, Palette, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
-    Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe,
+    Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
+    HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -43,6 +44,8 @@ pub enum Out {
     Submit(Submit),
     /// A question answered, or declined.
     Answer(Answer),
+    /// An edit finished with, or given up.
+    Saved(Saved),
 }
 
 impl Out {
@@ -59,6 +62,7 @@ impl Out {
             Out::Close(stream) => Message { r#type: Type::Close, close: Some(Close { stream }), ..Default::default() },
             Out::Answer(a) => Message { r#type: Type::Answer, answer: Some(a), ..Default::default() },
             Out::Submit(f) => Message { r#type: Type::Submit, submit: Some(f), ..Default::default() },
+            Out::Saved(v) => Message { r#type: Type::Saved, saved: Some(v), ..Default::default() },
         }
     }
 }
@@ -85,6 +89,8 @@ pub enum Event {
     /// Why what was submitted to a form was refused; the form stays up.
     FieldErrors(FieldErrors),
     Progress(Progress),
+    /// A file a command needs edited in the person's editor.
+    Edit(Edit),
     Data(u32, Vec<u8>),
     Exited(u32, String),
 }
@@ -148,6 +154,7 @@ fn event(m: Message) -> Option<Event> {
         Type::Form => m.form.map(Event::Form),
         Type::FieldErrors => m.field_errors.map(Event::FieldErrors),
         Type::Progress => m.progress.map(Event::Progress),
+        Type::Edit => m.edit.map(Event::Edit),
         _ => None,
     }
 }
@@ -209,6 +216,71 @@ pub struct Mock {
     /// a service verb sends them its sessions again.
     services: HashMap<String, Vec<MockService>>,
     following: HashMap<u32, String>,
+    /// The project's harnesses, and each one's files' contents by its ID and path.
+    harnesses: Vec<Harness>,
+    files: HashMap<(String, String), String>,
+    /// Each box's harness changes, by its key: the first box has some to save.
+    changes: HashMap<String, HarnessChanges>,
+}
+
+/// A mock harness, its actions as the core offers them (`console.Harness.Actions`).
+fn mock_harness(id: &str, name: &str, default: bool, built_in: bool, variant: bool, files: &[(&str, &str, &[&str])]) -> Harness {
+    let files: Vec<HarnessFile> = files.iter().map(|(path, content, notes)| HarnessFile {
+        path: path.to_string(), size: content.len() as i64, notes: notes.iter().map(|n| n.to_string()).collect(),
+    }).collect();
+    let mut h = Harness {
+        id: id.into(), name: name.into(), default, built_in, bundle: format!("ghcr.io/discobox-ai/harness-{id}:1"), age: "3d ago".into(),
+        secrets: if built_in { 1 } else { 0 }, files, actions: vec![],
+    };
+    h.actions = mock_offers(&h, variant);
+    h
+}
+
+fn mock_offers(h: &Harness, variant: bool) -> Vec<HarnessOffer> {
+    let offer = |action, label: &str, detail: &str, enabled: bool, why: &str| HarnessOffer {
+        action, label: label.into(), detail: detail.into(), enabled, why: if enabled { String::new() } else { why.into() },
+    };
+    vec![
+        offer(HarnessAction::Variant, "create variant", "follow this bundle with an independent account", !variant, "a variant cannot be a parent; select its standalone parent instead"),
+        offer(HarnessAction::Default, "default", "run it when a discobox says no harness", !h.default, "already the default"),
+        offer(HarnessAction::Config, "config", "everything the harness is set to", true, ""),
+        offer(HarnessAction::Files, "files", "edit one of its files in your editor", !h.files.is_empty(), "it carries no files"),
+        offer(HarnessAction::Reset, "reset", "forget saved settings and saved logins, back to the bundle's defaults", true, ""),
+    ]
+}
+
+/// The mock's harnesses, the first the default, with files saved from a box and one of yours.
+fn mock_harnesses() -> (Vec<Harness>, HashMap<(String, String), String>) {
+    let claude_json = "{\n  \"theme\": \"dark\",\n  \"hasCompletedOnboarding\": true\n}\n";
+    let settings = "{\n  \"permissions\": { \"allow\": [\"Bash(go test:*)\"] }\n}\n";
+    let harnesses = vec![
+        mock_harness("hc_claude", "Claude", true, true, false, &[
+            (".claude.json", claude_json, &["saved from a discobox", "over the image's"]),
+            (".claude/settings.json", settings, &["yours"]),
+        ]),
+        mock_harness("hc_codex", "Codex", false, true, false, &[]),
+        mock_harness("hc_opencode", "OpenCode", false, false, false, &[]),
+    ];
+    let files = HashMap::from([
+        (("hc_claude".to_string(), ".claude.json".to_string()), claude_json.to_string()),
+        (("hc_claude".to_string(), ".claude/settings.json".to_string()), settings.to_string()),
+    ]);
+    (harnesses, files)
+}
+
+/// What a box captured of its harness's settings and login, as the core reviews it.
+fn mock_changes() -> HarnessChanges {
+    let offer = |change, label: &str| ChangeOffer { change, label: label.into(), enabled: true, why: String::new() };
+    HarnessChanges {
+        candidate: "hcc_7f3a".into(), summary: "State: pending · revision 2".into(), nothing: String::new(),
+        saving: "Save updates shared harness defaults and credentials. Discard leaves local files unchanged.".into(),
+        files: vec![ChangedFile {
+            path: ".claude/settings.json".into(), label: "update .claude/settings.json — shadowed by your override, which boxes keep getting".into(),
+            diff: "@@ -1,3 +1,4 @@\n {\n-  \"permissions\": { \"allow\": [\"Bash(go test:*)\"] }\n+  \"permissions\": { \"allow\": [\"Bash(go test:*)\", \"Bash(git status)\"] },\n+  \"model\": \"opus\"\n }\n".into(),
+        }],
+        credentials: vec!["Claude login (claude.ai)".into()], diagnostics: vec![],
+        offers: vec![offer(HarnessChange::Save, "Save reviewed changes"), offer(HarnessChange::Discard, "Discard candidate")],
+    }
 }
 
 /// A mock box's declared service: what it is doing, what its runs have written, and how many
@@ -274,6 +346,12 @@ enum Ask {
     Rename(String),
     Settings(String),
     Purge(Vec<String>),
+    /// A harness's reset, by its ID, and whether it carries a person's own files.
+    Reset(String, bool),
+    /// A variant of a harness, by its ID.
+    Variant(String),
+    /// A harness's file, by its ID and path, written out to a file of this machine to edit.
+    Edit(String, String, std::path::PathBuf),
 }
 
 fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
@@ -337,9 +415,11 @@ impl Mock {
         let parents = HashMap::from([("sbx_r5t1y7u3i9o0pzx2".to_string(), "sbx_p8c3n0vd6rgs2hkq".to_string())]);
         let filter = Filter { tags: vec![], ..Default::default() };
         let services = HashMap::from([(boxes[0].key.clone(), services)]);
+        let (harnesses, files) = mock_harnesses();
+        let changes = HashMap::from([(boxes[0].key.clone(), mock_changes())]);
         Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
-            services, following: HashMap::new(),
+            services, following: HashMap::new(), harnesses, files, changes,
         }
     }
 
@@ -385,6 +465,146 @@ impl Mock {
             self.inbox.push(Event::Sessions(sub, Ok(snapshot.clone())));
         }
         CommandResult { status: Status::Done, r#box: sandbox, note, ..Default::default() }
+    }
+
+    /// A harnesses result carrying the harnesses as they stand, about one of them.
+    fn harnessed(&self, status: Status, about: &str, note: String) -> CommandResult {
+        CommandResult { status, harnesses: self.harnesses.clone(), harness: about.into(), note, ..Default::default() }
+    }
+
+    /// Recomputes what each harness offers, after the default moved or a variant was made.
+    fn reoffer(&mut self) {
+        for h in self.harnesses.iter_mut() {
+            let variant = h.name.contains("(variant of");
+            h.actions = mock_offers(h, variant);
+        }
+    }
+
+    /// The harnesses command: the page's harnesses, or an action done to one of them, as the core
+    /// does it. None for one that waits on the app: a reset's question, a variant's form, an edit.
+    fn harness(&mut self, c: &Command) -> Option<CommandResult> {
+        let fail = |why: String| Some(CommandResult { status: Status::Failed, why, ..Default::default() });
+        let Some(action) = c.args.action.filter(|_| !c.args.harness.is_empty()) else {
+            return Some(self.harnessed(Status::Enter, "", String::new()));
+        };
+        let Some(h) = self.harnesses.iter().find(|h| h.id == c.args.harness).cloned() else {
+            return fail(format!("no harness {} is listed", c.args.harness));
+        };
+        let offer = h.actions.iter().find(|a| a.action == action).cloned().unwrap_or_default();
+        if !offer.enabled {
+            return fail(format!("cannot {} {}: {}", offer.label, h.name, offer.why));
+        }
+        let id = self.next_ask;
+        match action {
+            HarnessAction::Config => {
+                let plain = |t: &str| CardSpan { text: t.into(), tone: CardTone::Plain };
+                let quiet = |t: &str| CardSpan { text: t.into(), tone: CardTone::Quiet };
+                let mut card = vec![];
+                if h.default {
+                    card.push(CardRow { label: "Role".into(), spans: vec![CardSpan { text: "★ default".into(), tone: CardTone::Standout }], ..Default::default() });
+                }
+                card.push(CardRow { label: "ID".into(), spans: vec![plain(&h.id)], ..Default::default() });
+                card.push(CardRow { label: "Bundle".into(), spans: vec![plain(&h.bundle)], ..Default::default() });
+                card.push(CardRow { label: "Run".into(), spans: vec![CardSpan { text: h.name.to_lowercase(), tone: CardTone::Command }], ..Default::default() });
+                for (i, f) in h.files.iter().enumerate() {
+                    let content = self.files.get(&(h.id.clone(), f.path.clone())).cloned().unwrap_or_default();
+                    card.push(CardRow {
+                        label: if i == 0 { "Files".into() } else { String::new() },
+                        spans: vec![plain(&f.path), quiet(&format!("  ({})", f.notes.join(" · ")))],
+                        lines: content.lines().map(String::from).collect(), more: 0,
+                    });
+                }
+                Some(CommandResult { status: Status::Done, harness: h.id.clone(), card, ..Default::default() })
+            }
+            HarnessAction::Default => {
+                for x in self.harnesses.iter_mut() {
+                    x.default = x.id == h.id;
+                }
+                self.reoffer();
+                Some(self.harnessed(Status::Done, &h.id, format!("{} is now the default", h.name)))
+            }
+            HarnessAction::Reset => {
+                // The core's question: a yes or no, or, for a harness carrying a person's own
+                // files, a pick of one keeping them first, its keys the verbs.
+                let mut body = format!("Reset {} to its bundle's defaults? The settings and logins saved to it from discoboxes are deleted.", h.name);
+                let overrides = h.files.iter().any(|f| f.notes.iter().any(|n| n == "yours"));
+                let choices = if overrides {
+                    body += "\n\nIt has files you added or overrode yourself.";
+                    let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into() };
+                    vec![
+                        choice("reset", "Reset, keep your files", "the files you added or overrode stay"),
+                        choice("reset with your files", "Reset your files too", "nothing but the bundle's files is left"),
+                    ]
+                } else {
+                    vec![]
+                };
+                self.next_ask += 1;
+                self.asks.insert(id, (c.clone(), Ask::Reset(h.id.clone(), overrides)));
+                self.inbox.push(Event::Question(Question { id, command: c.id, title: "Reset".into(), body, choices, default_no: false }));
+                None
+            }
+            HarnessAction::Variant => {
+                let field = |key: &str, label: &str, placeholder: String| Field {
+                    key: key.into(), label: label.into(), placeholder, required: true, applies: true, ..Default::default()
+                };
+                let fields = vec![field("name", "Name", format!("{} (work)", h.name)), field("slug", "Slug", format!("{}-work", h.name.to_lowercase()))];
+                self.next_ask += 1;
+                self.asks.insert(id, (c.clone(), Ask::Variant(h.id.clone())));
+                self.inbox.push(Event::Form(Form { id, command: c.id, title: format!("Create variant of {}", h.name), fields }));
+                None
+            }
+            HarnessAction::Files => {
+                let Some(content) = self.files.get(&(h.id.clone(), c.args.path.clone())).cloned() else {
+                    return fail(format!("{} carries no file {:?}", h.name, c.args.path));
+                };
+                let ext = std::path::Path::new(&c.args.path).extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+                let file = std::env::temp_dir().join(format!("discobox-mock-edit-{}-{id}{ext}", std::process::id()));
+                if let Err(e) = std::fs::write(&file, &content) {
+                    return fail(format!("edit {}: {e}", c.args.path));
+                }
+                self.next_ask += 1;
+                self.asks.insert(id, (c.clone(), Ask::Edit(h.id.clone(), c.args.path.clone(), file.clone())));
+                let title = format!("Editing {} — {}", c.args.path, h.name);
+                self.inbox.push(Event::Edit(Edit { id, command: c.id, path: file.to_string_lossy().into_owned(), title }));
+                None
+            }
+        }
+    }
+
+    /// An edit finished with, or given up: what was saved is read back, as the core does.
+    fn saved(&mut self, v: Saved) {
+        let Some((c, Ask::Edit(harness, path, file))) = self.asks.remove(&v.edit) else { return };
+        let result = if v.canceled {
+            CommandResult { status: Status::Canceled, ..Default::default() }
+        } else {
+            let after = std::fs::read_to_string(&file).unwrap_or_default();
+            let key = (harness.clone(), path.clone());
+            let changed = self.files.get(&key) != Some(&after);
+            if changed {
+                self.files.insert(key, after);
+            }
+            self.harnessed(Status::Done, &harness, if changed { format!("updated {path}") } else { format!("{path} unchanged") })
+        };
+        let _ = std::fs::remove_file(&file);
+        self.inbox.push(Event::Result(CommandResult { id: c.id, ..result }));
+    }
+
+    /// The review config command: a box's harness changes, or the candidate saved or discarded.
+    fn review(&mut self, c: &Command, sandbox: String) -> CommandResult {
+        let Some(change) = c.args.change else {
+            let changes = self.changes.get(&sandbox).cloned().unwrap_or_else(|| HarnessChanges {
+                summary: "State: none · revision 0".into(), nothing: "No saveable settings or credentials.".into(), saving: mock_changes().saving,
+                offers: mock_changes().offers.into_iter().map(|o| ChangeOffer { enabled: false, why: "no saveable candidate".into(), ..o }).collect(),
+                ..Default::default()
+            });
+            return CommandResult { status: Status::Enter, r#box: sandbox, changes: Some(changes), ..Default::default() };
+        };
+        if self.changes.get(&sandbox).is_none_or(|x| x.candidate != c.args.candidate) {
+            return CommandResult { status: Status::Failed, why: "harness changes: that candidate is no longer pending".into(), ..Default::default() };
+        }
+        self.changes.remove(&sandbox);
+        let state = if change == HarnessChange::Save { "saved" } else { "discarded" };
+        CommandResult { status: Status::Done, r#box: sandbox, note: format!("harness changes: {state}"), ..Default::default() }
     }
 
     /// The rows the core would draw for a filter, roughly: archived boxes only when asked for,
@@ -578,6 +798,8 @@ impl Mock {
             "actions" => CommandResult { status: Status::Enter, r#box: target.clone(), entries: self.actions(&target), ..Default::default() },
             "services" if !running => fail("the box has no container; repair rebuilds it"),
             "services" => self.services(&c, target),
+            "review config" if !running => fail("cannot review config: takes one running box"),
+            "review config" => self.review(&c, target),
             _ => enter(""),
         }
     }
@@ -689,6 +911,35 @@ impl Mock {
                 self.relist();
                 done(format!("purge: {}", keys.len()))
             }
+            Ask::Reset(harness, overrides) => {
+                let name = self.harnesses.iter().find(|h| h.id == harness).map(|h| h.name.clone()).unwrap_or_default();
+                let note = match get("key").as_str() {
+                    "yes" if !overrides => format!("reset {name} to its bundle's defaults, keeping your files"),
+                    "reset" if overrides => format!("reset {name} to its bundle's defaults, keeping your files"),
+                    "reset with your files" if overrides => format!("reset {name} to its bundle's files alone"),
+                    _ => {
+                        self.asks.remove(&id);
+                        self.inbox.push(Event::Result(canceled));
+                        return;
+                    }
+                };
+                CommandResult { id: command, ..self.harnessed(Status::Done, &harness, note) }
+            }
+            Ask::Variant(_) if draft => return,
+            Ask::Variant(_) if get("name").is_empty() || get("slug").is_empty() => {
+                let field = if get("name").is_empty() { "name" } else { "slug" };
+                let errors = vec![FieldError { field: field.into(), why: format!("give the variant a {field}") }];
+                self.inbox.push(Event::FieldErrors(FieldErrors { form: id, errors }));
+                return;
+            }
+            Ask::Variant(parent) => {
+                let (name, slug) = (get("name"), get("slug"));
+                let mut h = mock_harness(&format!("hc_{slug}"), &format!("{name} (variant of {parent})"), false, false, true, &[]);
+                h.age = "now".into();
+                self.harnesses.push(h.clone());
+                CommandResult { id: command, ..self.harnessed(Status::Done, &h.id, format!("created variant {name:?}")) }
+            }
+            Ask::Edit(..) => return,
         };
         self.asks.remove(&id);
         self.inbox.push(Event::Result(result));
@@ -805,6 +1056,12 @@ impl Backend for Mock {
                 self.following.remove(&sub);
             }
             Out::Subscribe(_) => {}
+            Out::Command(c) if c.command == "harnesses" => {
+                if let Some(r) = self.harness(&c) {
+                    self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
+                }
+            }
+            Out::Saved(v) => self.saved(v),
             Out::Command(c) if self.ask(&c) => {}
             // A stream let go is a session left running in the box: the mock's is a local shell,
             // which nothing would show again, so it goes.

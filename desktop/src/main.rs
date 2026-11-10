@@ -12,6 +12,9 @@
 mod backend;
 #[cfg(test)]
 mod command_tests;
+mod harnesses;
+#[cfg(test)]
+mod harness_tests;
 mod icons;
 #[cfg(test)]
 mod identity_tests;
@@ -195,6 +198,12 @@ enum Pending {
     Verb(String, String),
     /// Ending the session on a stream.
     End(u32),
+    /// The harnesses page, asked of a server (the list's when it was asked; the primary for "").
+    Page(String),
+    /// One of the harnesses page's actions, on the harness by its name.
+    Harness(String),
+    /// Saving or discarding a box's harness changes.
+    Change,
 }
 
 /// The palette (ADR 26-11-06-671): the query, at most one chip — a command, or a box by its key —
@@ -287,6 +296,10 @@ pub enum MenuKind {
     /// One of a box's services: its output, then the core's verbs for it, each entry by
     /// `OUTPUT` or the verb.
     Service(String, Service),
+    /// A harness's actions, by its ID: each entry an action as the core offers it.
+    Harness(String),
+    /// A harness's files, by its ID, to pick the one to edit: each entry a file by its path.
+    HarnessFiles(String),
 }
 
 /// The service menu's entry that shows the service's output: its tab.
@@ -345,8 +358,14 @@ pub struct State {
     pub bar_at: HashMap<DesktopMenu, (f32, f32)>,
     /// The help: every command by its menu, with its shortcut.
     pub help: bool,
-    /// The forms and questions commands wait on, drawn as sheets one at a time.
+    /// The forms, questions and edits commands wait on, drawn as sheets one at a time.
     pub sheets: sheet::Sheets,
+    /// The harnesses page, beside the list in place of the workspace while it is up.
+    pub harnesses: Option<harnesses::HarnessPage>,
+    /// A harness's config card, over the window.
+    pub card: Option<harnesses::Card>,
+    /// A box's harness changes under review, over the window.
+    pub review: Option<harnesses::Review>,
     /// The boxes this window has gone to, latest first, which rank the palette's empty query
     /// (ADR 26-11-06-671 §6): at most `RECENT` of them, for as long as the window lasts.
     pub recent: Vec<String>,
@@ -403,7 +422,7 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), recent: vec![], reveal: None, point: None,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, recent: vec![], reveal: None, point: None,
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
@@ -578,7 +597,7 @@ impl State {
         let ids: Vec<String> = match &kind {
             MenuKind::Bar(menu) => self.in_menu(*menu),
             MenuKind::Pane => self.in_menu(DesktopMenu::Session),
-            MenuKind::Actions(_) | MenuKind::Services(..) | MenuKind::Service(..) => return,
+            MenuKind::Actions(_) | MenuKind::Services(..) | MenuKind::Service(..) | MenuKind::Harness(_) | MenuKind::HarnessFiles(_) => return,
         };
         let entries = ids.iter().filter_map(|id| self.spec.command(id)).map(|c| {
             let why = lacking(&self.spec, &c.id).unwrap_or_default();
@@ -722,13 +741,14 @@ impl State {
         Context {
             workspace: self.live.clone().unwrap_or_default(),
             has_workspace: shown,
-            workspace_shown: shown,
-            pane_focused: shown && self.focus == Focus::Panes,
+            // A page beside the list covers the workspace: it is held, not on screen.
+            workspace_shown: shown && self.harnesses.is_none(),
+            pane_focused: shown && self.focus == Focus::Panes && self.harnesses.is_none(),
             list_has_keys: self.focus == Focus::List,
             tree: true,
             tree_shown: self.sidebar,
             tree_fits: true,
-            page_shown: false,
+            page_shown: self.harnesses.is_some(),
         }
     }
 
@@ -753,7 +773,7 @@ impl State {
     /// the list's cursor.
     fn target(&self) -> Option<Sandbox> {
         match (&self.live, self.focus) {
-            (Some(id), Focus::Panes) => self.box_by_id(id).cloned(),
+            (Some(id), Focus::Panes) if self.harnesses.is_none() => self.box_by_id(id).cloned(),
             _ => self.row_box(self.cursor).cloned(),
         }
     }
@@ -762,7 +782,7 @@ impl State {
     /// keys, else what the list's selection says.
     fn targets(&self) -> Vec<String> {
         match (&self.live, self.focus) {
-            (Some(id), Focus::Panes) => vec![id.clone()],
+            (Some(id), Focus::Panes) if self.harnesses.is_none() => vec![id.clone()],
             _ => self.list_targets(),
         }
     }
@@ -853,6 +873,8 @@ impl State {
     /// screen, so it is also where the box counts as gone to (the palette's ranking) and where a
     /// view the palette revealed for another box is put back.
     fn show_workspace(&mut self, sandbox: &str) {
+        // A box taking the screen takes it from the page beside the list.
+        self.harnesses = None;
         self.unreveal(Some(sandbox));
         self.visited(sandbox);
         if self.live.as_deref() != Some(sandbox) {
@@ -1337,7 +1359,7 @@ impl State {
         match why {
             // A form or question dismissed: nothing came of it, and nothing to say. A session's
             // cancel still lets its stream go below.
-            Pending::Enter(_) | Pending::Verb(..) if r.status == Status::Canceled => self.message = None,
+            Pending::Enter(_) | Pending::Verb(..) | Pending::Harness(_) | Pending::Change if r.status == Status::Canceled => self.message = None,
             Pending::Enter(id) if r.status == Status::Enter => enter(self, &id, &r, tx),
             // What came of it (`renamed to …`, `settings saved`), or nothing to say.
             Pending::Enter(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
@@ -1369,6 +1391,14 @@ impl State {
             Pending::Session(stream, sandbox, _) => {
                 self.early.remove(&stream);
                 self.retake_sessions(&sandbox);
+            }
+            Pending::Page(server) if r.status == Status::Enter => harnesses::open_page(self, server, &r),
+            Pending::Harness(name) if r.status == Status::Done => harnesses::take(self, &name, &r),
+            // The candidate is answered: the review goes, and the listing says what the box has
+            // left to save.
+            Pending::Change if r.status == Status::Done => {
+                self.review = None;
+                self.message = (!r.note.is_empty()).then(|| r.note.clone());
             }
             Pending::Actions(at) if r.status == Status::Enter => overlay::show_menu(self, r.r#box.clone(), at, r.entries.clone(), tx),
             Pending::Verb(verb, name) => {
@@ -1432,7 +1462,7 @@ pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive", "purge", "rename", "settings",
     "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
-    "refresh", "servers", "archived", "services",
+    "refresh", "servers", "archived", "services", "harnesses", "review config",
 ];
 
 /// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
@@ -1442,7 +1472,7 @@ pub fn lacking(spec: &Spec, id: &str) -> Option<String> {
         return None;
     }
     Some(match spec.command(id) {
-        Some(c) if matches!(id, "new" | "review config") => {
+        Some(c) if id == "new" => {
             format!("{} needs a dialog, which the desktop app does not have yet", c.label)
         }
         Some(c) => format!("{} is not in the desktop app yet", c.label),
@@ -1512,6 +1542,8 @@ pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
             }.map(|doing| format!("{doing} {name}…"));
             s.command(id, targets, context, Args::default(), Pending::Verb(id.into(), name));
         }
+        // The page reads the harnesses of the server the list is narrowed to.
+        "harnesses" => harnesses::open(s),
         "refresh" => {
             s.message = Some("refreshing…".into());
             s.command(id, vec![], context, Args::default(), Pending::Enter(id.into()));
@@ -1548,6 +1580,7 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
             s.focus = Focus::List;
         }
         "palette" => s.open_palette(),
+        "review config" => harnesses::open_review(s, r),
         // The box's services, on its workspace: a box that declares none says so instead.
         "services" => {
             s.show_workspace(&r.r#box);
@@ -1612,6 +1645,7 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
             Event::Question(q) => sheet::take_question(s, q),
             Event::Form(f) => sheet::take_form(s, f),
             Event::FieldErrors(e) => sheet::take_errors(s, e),
+            Event::Edit(e) => sheet::take_edit(s, e),
             Event::Progress(p) => {
                 if !p.text.is_empty() {
                     s.message = Some(p.text);
@@ -1785,6 +1819,26 @@ fn main() {
             ("purge", |s| {
                 let old = s.boxes.iter().find(|b| b.state == wire::State::Archived).map(|b| b.key.clone()).unwrap_or_default();
                 run_on(s, "purge", vec![old], &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // The harnesses page beside the list, a harness's actions, its config card, and a
+            // box's harness changes under review.
+            ("harnesses", |s| {
+                run_command(s, "harnesses", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                if let Some(p) = s.harnesses.as_mut() {
+                    p.cursor = 1;
+                }
+                harnesses::open_menu(s, (900.0, 160.0));
+            }),
+            ("harness-card", |s| {
+                run_command(s, "harnesses", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                harnesses::act(s, wire::HarnessAction::Config, String::new(), (0.0, 0.0));
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            ("harness-review", |s| {
+                run_command(s, "review config", &mut Tx::default());
                 poll(s, 0.0, &mut Tx::default());
             }),
         ],

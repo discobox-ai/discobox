@@ -11,8 +11,8 @@
 
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Tx, col, el, icon, row, spacer, text, text_input};
 
-use crate::wire::{ChoiceGroup, Entry, Menu as DesktopMenu, PaletteRow, SpecTarget};
-use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, icons, keys, lacking, row_id, run_command, run_on, theme, view};
+use crate::wire::{ChoiceGroup, Entry, HarnessAction, Menu as DesktopMenu, PaletteRow, SpecTarget};
+use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, harnesses, icons, keys, lacking, row_id, run_command, run_on, theme, view};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
     if actions.is_empty() {
@@ -55,7 +55,7 @@ fn choose_entry(s: &mut State, i: usize, tx: &mut Tx) {
         s.message = Some(e.why.clone());
         return;
     }
-    let (kind, id) = (m.kind.clone(), e.command.clone());
+    let (kind, id, at) = (m.kind.clone(), e.command.clone(), m.at);
     match kind {
         MenuKind::Actions(sandbox) => act_on(s, &sandbox, &id, tx),
         MenuKind::Bar(_) | MenuKind::Pane => run_command(s, &id, tx),
@@ -71,6 +71,13 @@ fn choose_entry(s: &mut State, i: usize, tx: &mut Tx) {
                 None => s.show_service(&sandbox, &service.id),
             }
         }
+        MenuKind::Harness(_) => {
+            let current = s.harnesses.as_ref().and_then(|p| p.current());
+            if let Some(a) = current.and_then(|h| h.actions.iter().find(|a| a.action.as_str() == id)).map(|a| a.action) {
+                harnesses::act(s, a, String::new(), at);
+            }
+        }
+        MenuKind::HarnessFiles(_) => harnesses::act(s, HarnessAction::Files, id, (0.0, 0.0)),
     }
 }
 
@@ -121,8 +128,10 @@ pub fn menu_view(s: &State) -> Option<El> {
         let ink = if a.enabled { theme::text() } else { theme::dim() };
         let sub = if a.enabled { a.detail.clone() } else { a.why.clone() };
         let mut head = row().w_full().center_y().child(text(a.label.clone()).font(theme::UI).color(ink)).child(spacer());
-        // A service's entries are services and verbs, not commands: they have no shortcut.
-        if let Some(k) = keys::shortcut_of(s, &a.command).filter(|_| !matches!(m.kind, MenuKind::Services(..) | MenuKind::Service(..))) {
+        // A service's entries are services and verbs, and a harness's are actions and files, not
+        // commands: they have no shortcut.
+        let commands = !matches!(m.kind, MenuKind::Services(..) | MenuKind::Service(..) | MenuKind::Harness(_) | MenuKind::HarnessFiles(_));
+        if let Some(k) = keys::shortcut_of(s, &a.command).filter(|_| commands) {
             head = head.child(view::keycap(k));
         }
         // A box's actions and its services say what each does, or why it cannot, under it; the

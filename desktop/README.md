@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 6. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 7. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -87,7 +87,8 @@ the epic, and does not yet follow the ADRs everywhere:
 - **The sheets** are the core's forms and questions (`sheet.rs`), drawn as a
   modal panel over the window, which takes no key or press until it is
   answered (on macOS the native menu's commands wait for it too): rename,
-  settings and purge's confirmation so far.
+  settings, purge's confirmation, a harness's reset and variant, and a file
+  open in the person's editor.
   - A form is the core's fields, each opening on its value as the core reads
     it: typed, a picker of its choices, or dimmed with why it takes no answer
     (and stepped over); a masked value is never drawn. The app holds what is
@@ -103,6 +104,26 @@ the epic, and does not yet follow the ADRs everywhere:
     leaving one is, and declines a pick of one.
   - Sheets queue in the order they arrive; each goes when its command's result
     lands, answered or not.
+- **The harnesses page** (`harnesses.rs`) is the core's: the harnesses of
+  the server the list is narrowed to, drawn beside the list in place of the
+  workspace, each with its default, kind, secrets, files, age and bundle. Its
+  keys are its own while it is up: the arrows move, Enter reads a harness's
+  config card, Shift+F10 (or the context-menu key, or a secondary press) opens
+  its actions as the core offers them, Esc leaves. Each action is the
+  harnesses command naming the harness: the default, a reset the core asks
+  about first, a variant through the core's form, a file picked from the
+  harness's files and edited. A box taking the screen closes the page.
+  - **A file is edited in the person's editor**: the core sends `edit`, the
+    app opens the file in a text editor (`open -t` on macOS, Notepad on
+    Windows, `xdg-open` on Linux, which the CLI's text-format extension keeps
+    to a text handler; never a shell) and puts up a sheet that waits: Done answers `saved` and the
+    core reads back what was saved; Esc gives it up, saving nothing.
+  - **A box's harness changes** (`review config`, from its menu, the palette
+    or the Box menu) are a panel: where the candidate stands, what saving
+    does, each file's diff, the credentials and the diagnostics, and the
+    core's offers, each saying why when it cannot act. It opens on reading
+    it again, never on saving. Saving or discarding names the candidate the
+    panel showed.
 - **The command surfaces** (ADR 26-11-07-598 §2) reach every registry command:
   - the palette (`primary+k`) is ADR 26-11-06-671's: a query and at most one
     chip, in either order. A box command's alias and a space make it the
@@ -170,7 +191,8 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/backend.rs` | The bridge client on stdin/stdout, its messages as the window's events, and a mock that answers the same messages with local shells, for running without a CLI |
 | `src/view.rs` | The list, the sidebar, the workspace (its header, columns, split and tab chips), frames |
 | `src/overlay.rs` | The palette, the menu bar and its menus, a box's actions menu, a pane's menu, the help, and the list's filter menu |
-| `src/sheet.rs` | The core's forms and questions as sheets: the queue, the answers held while they are typed, drafts, refusals, and their keys |
+| `src/sheet.rs` | The core's forms, questions and edits as sheets: the queue, the answers held while they are typed, drafts, refusals, a file opened in the person's editor, and their keys |
+| `src/harnesses.rs` | The harnesses page, a harness's actions, file picker and config card, and a box's harness changes reviewed |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
 | `src/term.rs` | A pane's terminal (`alacritty_terminal`) and its screen as rows |
 | `src/theme.rs` | The spec's tokens (colours in both palettes, and the appearance that picks one; space, radii and strokes), the bundled faces and type, and springs |
@@ -180,6 +202,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/service_tests.rs` | Services as tabs in the core's order, numbered apart, closed and reopened by the listing, stopped not ended; the services menu and its verbs |
 | `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
+| `src/harness_tests.rs` | The page's harnesses and keys, actions as the core offers them, the card, a reset asked first, a file edited and given up, a variant's form, harness changes reviewed and saved |
 | `src/sheet_tests.rs` | Rename, settings and purge through their sheets on the mock: what applies, a refusal, Enter on a destruction, a pick of one, a sheet taking every key |
 | `src/surface_tests.rs` | Every command in a menu and found by the palette; the palette's two orders, Esc and reveal; the menu bar's keys; menus that say why not |
 | `src/identity_tests.rs` | No TUI character art in the chrome, every colour and length a token, no colour of the chrome's own, the bundled face measured |

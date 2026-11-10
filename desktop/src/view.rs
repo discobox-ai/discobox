@@ -9,7 +9,7 @@ use rune::{Color, Cx, Drag, El, Icon, PointerPress, Spring, Transition, Tx, col,
 
 use crate::wire::{Box as Sandbox, GitTone, Link, Row, TabKind};
 use crate::theme::{self, CELL_H};
-use crate::{Focus, MenuKind, Pane, Side, State, Workspace, icons, keys, mark, overlay, run_command, sheet};
+use crate::{Focus, MenuKind, Pane, Side, State, Workspace, harnesses, icons, keys, mark, overlay, run_command, sheet};
 
 pub const SIDEBAR_W: f32 = 290.0;
 const ROW_H: f32 = 26.0;
@@ -650,6 +650,13 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     theme::set_dark(cx.system_dark());
     let mut root = row().w_full().padding(10.0).gap(10.0).fill(theme::bg());
     match s.live_ws() {
+        // A page opens beside the list, in place of whatever was on screen.
+        _ if s.harnesses.is_some() => {
+            if s.sidebar {
+                root = root.child(sidebar(s));
+            }
+            root = root.child(harnesses::page_view(s));
+        }
         Some(ws) => {
             if s.sidebar && !ws.maximized {
                 root = root.child(sidebar(s));
@@ -677,6 +684,12 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     }
     if let Some(h) = overlay::help_view(s) {
         stack = stack.child(h);
+    }
+    if let Some(c) = harnesses::card_view(s) {
+        stack = stack.child(c);
+    }
+    if let Some(r) = harnesses::review_view(s) {
+        stack = stack.child(r);
     }
     if let Some(sh) = sheet::view(s) {
         stack = stack.child(sh);

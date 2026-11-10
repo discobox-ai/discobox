@@ -34,7 +34,6 @@ palette. On macOS the native menu bar is still a hand list of some commands
 
 | Command | Reason | Closed by |
 | --- | --- | --- |
-| `review config` | Reviewing a box's harness changes needs that review page. | #812 |
 | `new` | Creating a box needs the create flow, which the app does not have yet; it says so. | #810 |
 | `options` | The run options are part of the create flow. | #810 |
 | `tools` | Needs the tools picker and tool panes. | #815 |
@@ -43,7 +42,6 @@ palette. On macOS the native menu bar is still a hand list of some commands
 | `pr` | Needs the pull request tab. | #817 |
 | `files` | Needs the pull request's files-changed review. | #817 |
 | `credentials` | Needs the secrets page. | #813 |
-| `harnesses` | Needs the harnesses page. | #812 |
 | `requests` | Needs the credential requests page. | #814 |
 | `rejections` | Needs the rejected credentials page. | #814 |
 | `dismiss` | The app has no notices to dismiss until it raises requests as notifications. | #814 |

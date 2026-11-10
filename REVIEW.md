@@ -43,6 +43,19 @@ Global review expectations:
   grab this rule prevents. A shell's result once switched to its box wherever
   the person had gone, and parked or released the box they had moved to; the
   TUI learned the same rule as `heldPane` (`cli/internal/tui/REVIEW.md`).
+- A file the desktop app opens for the person goes to a text editor, never to a
+  shell or to the system's file association by its extension alone
+  (`sheet::open_in_editor`): a harness file's path is its bundle's choice, and
+  the CLI writes it out under a text format's extension (`editExtension`).
+  The first version opened it with `cmd /C start`, so a bundle could name a
+  script, or put `&` in the extension, and run it on a Windows machine.
+- In the desktop app, whatever draws in front of the workspace takes the keys
+  and the commands' context: the harnesses page sets the list's focus, keeps
+  `pane_focused` and `workspace_shown` false, and keys it does not answer
+  never reach `encode`. Its first version left the focus on the panes, so a
+  letter typed on the page went to the terminal it covered, and a box command
+  acted on that hidden box; the TUI learned it as "what draws in front takes
+  the keys" (`cli/internal/tui/REVIEW.md`).
 - The desktop app's mock (`desktop/src/backend.rs`) sends a stream's bytes as
   the bridge sends them, never reshaped. A service runs on pipes, so its output
   and transcript end lines with a bare line feed; the mock first turned them
