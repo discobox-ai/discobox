@@ -28,6 +28,8 @@ mod surface_tests;
 mod term;
 mod theme;
 mod view;
+#[cfg(test)]
+mod workspace_tests;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -35,10 +37,11 @@ use std::sync::Mutex;
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
 use wire::{
-    Args, Box as Sandbox, Command, Menu as DesktopMenu, Commands, Context, Entry, Filter, Listing, Note, Palette as Found, PaletteQuery, PaletteRow,
-    Result as CommandResult, Row, Sessions, Spec, SpecTarget, Status, StreamState, Subscribe, Tab, TabKind, Topic,
+    Args, Box as Sandbox, Command, Menu as DesktopMenu, Commands, Context, Entry, Filter, Header, Listing, Note, Palette as Found,
+    PaletteQuery, PaletteRow, Result as CommandResult, Row, Sessions, Spec, SpecTarget, Status, Stream, StreamState, Subscribe, Tab, TabEnd,
+    TabKind, Topic,
 };
-use rune::{App, AppSpec, KeyEvent, MenuItem, Mods, TextEdit, Tx, Waker};
+use rune::{App, AppSpec, Drag, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
 use term::Screen;
 
 /// Which of the two columns a pane lives in: harness terminals left, shells right.
@@ -52,8 +55,10 @@ pub struct Pane {
     pub stream: u32,
     pub exec: Tab,
     pub screen: Screen,
+    /// Its program ended and the tab is held with its last screen (the core's `Tab.End`), or its
+    /// stream is gone: nothing more is sent to it.
     pub exited: bool,
-    /// Reconnecting, or why it ended.
+    /// What the tab says over its program: reconnecting, or what its ending left it saying.
     pub status: Option<String>,
 }
 
@@ -61,10 +66,14 @@ impl Pane {
     pub fn side(&self) -> Side { if matches!(self.exec.kind, TabKind::Shell | TabKind::Tool) { Side::Shells } else { Side::Terminals } }
 }
 
-/// One box's live sessions. Switching away parks it: its streams stay attached and its
-/// screens keep emulating, so switching back shows where it is now.
+/// One box's sessions as the window holds them. Switching away parks it (the core's
+/// `Workspace.Park`): its streams stay attached and its screens keep emulating, so switching
+/// back shows where it is now, but it polls nothing and its ports are no longer forwarded —
+/// both go with the screen, and come back with it.
 pub struct Workspace {
     pub sandbox: String,
+    /// Its tabs, each column in the order its chips are drawn: the order sessions arrived in,
+    /// until a chip is dragged elsewhere in its column.
     pub panes: Vec<Pane>,
     /// The visible pane of each column, as an index into `panes`.
     pub active: [Option<usize>; 2],
@@ -74,6 +83,13 @@ pub struct Workspace {
     /// Why its sessions could not be read; the subscription keeps trying, and the next snapshot
     /// read clears it.
     pub error: Option<String>,
+    /// Its sessions and header subscriptions while it is on screen; none while it is parked.
+    sessions_sub: u32,
+    header_sub: u32,
+    /// What the header says of the box, as the core said it last.
+    pub header: Option<Header>,
+    /// The terminals column's share of the width the two columns have.
+    pub split: f32,
 }
 
 impl Workspace {
@@ -86,6 +102,25 @@ impl Workspace {
         let mut v = self.column(Side::Terminals);
         v.extend(self.column(Side::Shells));
         v
+    }
+
+    /// Whether it is worth keeping when switched away from (the core's `Workspace.Parkable`):
+    /// one whose primary has not arrived has nothing to keep, and is let go instead.
+    pub fn parkable(&self) -> bool { self.panes.iter().any(|p| p.exec.kind == TabKind::Primary) }
+
+    /// Whether it is set aside, attached, while another box is on screen.
+    pub fn parked(&self) -> bool { self.sessions_sub == 0 }
+
+    /// Moves a tab to where another one in its column is, the tabs between stepping over: a chip
+    /// dragged along its strip. The panes shown and the one with the keys stay the same panes.
+    pub fn move_pane(&mut self, from: usize, to: usize) {
+        if from == to || from >= self.panes.len() || to >= self.panes.len() || self.panes[from].side() != self.panes[to].side() {
+            return;
+        }
+        let shown = self.active.map(|a| a.map(|i| self.panes[i].stream));
+        let p = self.panes.remove(from);
+        self.panes.insert(to, p);
+        self.active = shown.map(|s| s.and_then(|s| self.panes.iter().position(|p| p.stream == s)));
     }
 
     fn show(&mut self, i: usize) {
@@ -118,8 +153,9 @@ pub enum Focus {
 enum Pending {
     /// A command whose flow, if the core lets it run, is the app's own.
     Enter(String),
-    /// A session a shell or terminal makes, on its stream, in a box.
-    Session(u32, String),
+    /// A session a shell or terminal makes, on its stream, in a box; and the box that was on
+    /// screen when it was asked for.
+    Session(u32, String, Option<String>),
     /// A box's action menu, where it was asked for.
     Actions((f32, f32)),
     /// A verb, for the box it is about.
@@ -289,6 +325,17 @@ pub struct State {
     /// is sent only when it changes, so one held back while a session was made is taken again.
     subs: HashMap<u32, String>,
     seen: HashMap<u32, Result<Sessions, String>>,
+    /// Each box's header subscription, by its ID.
+    headers: HashMap<u32, String>,
+    /// Where each tab chip was laid out, by its stream, in window points: what a chip dragged
+    /// along its strip is over.
+    pub chips: HashMap<u32, [f32; 4]>,
+    /// The chip being dragged, by its stream, and where it was in its workspace's tabs when the
+    /// drag began: a cancelled drag puts it back there.
+    pub dragging: Option<u32>,
+    drag_home: Option<usize>,
+    /// How wide the two columns are together, which a drag of the split divides.
+    pub columns_w: f32,
     /// What arrived on a stream before its pane was made: a shell's first output can come
     /// before its result.
     early: HashMap<u32, Vec<Event>>,
@@ -299,6 +346,12 @@ const DEFAULT_SIZE: (u16, u16) = (100, 30);
 /// How many boxes gone to the palette ranks by (ADR 26-11-06-671 §6).
 const RECENT: usize = 100;
 
+/// How far a chip is dragged, in points, before it is moving rather than being pressed.
+const DRAG_SLOP: f32 = 4.0;
+
+/// The least share of the width either column keeps when the split is dragged.
+pub const MIN_SPLIT: f32 = 0.2;
+
 impl State {
     fn new() -> State {
         let (backend, spec, inbox, bridged) = BOOT.lock().unwrap().take().unwrap_or_else(boot_mock);
@@ -308,7 +361,8 @@ impl State {
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
             sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), recent: vec![], reveal: None, point: None,
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
-            next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), early: HashMap::new(),
+            next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
+            dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
         };
         s.follow_listing(None, String::new());
         if !bridged {
@@ -326,8 +380,14 @@ impl State {
     fn subscribe(&mut self, mut sub: Subscribe) -> u32 {
         sub.sub = self.next_sub;
         self.next_sub += 1;
-        if sub.topic == Topic::Sessions {
-            self.subs.insert(sub.sub, sub.r#box.clone());
+        match sub.topic {
+            Topic::Sessions => {
+                self.subs.insert(sub.sub, sub.r#box.clone());
+            }
+            Topic::Header => {
+                self.headers.insert(sub.sub, sub.r#box.clone());
+            }
+            _ => {}
         }
         let id = sub.sub;
         self.backend.send(Out::Subscribe(sub));
@@ -723,11 +783,7 @@ impl State {
             self.message = Some(format!("{} is {} — start it from its menu", sbx.name, sbx.state.as_str()));
             return;
         }
-        self.unreveal(Some(&sbx.key));
-        self.visited(&sbx.key);
-        self.ensure_workspace(&sbx.key);
-        self.live = Some(sbx.key);
-        self.focus = Focus::Panes;
+        self.show_workspace(&sbx.key);
     }
 
     /// Goes to a box the palette chose (ADR 26-11-06-671 §3): its workspace when it has one or is
@@ -748,13 +804,76 @@ impl State {
         }
     }
 
-    /// A box's workspace, made and subscribed to its sessions on first use.
-    fn ensure_workspace(&mut self, sandbox: &str) {
-        if !self.workspaces.contains_key(sandbox) {
-            self.workspaces.insert(sandbox.to_string(), Workspace {
-                sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true, error: None,
-            });
-            self.subscribe(Subscribe { topic: Topic::Sessions, r#box: sandbox.to_string(), ..Default::default() });
+    /// Puts a box's workspace on screen, made on first use and unparked after: the one there
+    /// was is parked, or let go if it has nothing to keep. This is every way a box takes the
+    /// screen, so it is also where the box counts as gone to (the palette's ranking) and where a
+    /// view the palette revealed for another box is put back.
+    fn show_workspace(&mut self, sandbox: &str) {
+        self.unreveal(Some(sandbox));
+        self.visited(sandbox);
+        if self.live.as_deref() != Some(sandbox) {
+            self.leave_workspace();
+            if !self.workspaces.contains_key(sandbox) {
+                self.workspaces.insert(sandbox.to_string(), Workspace {
+                    sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true,
+                    error: None, sessions_sub: 0, header_sub: 0, header: None, split: 0.5,
+                });
+            }
+            self.live = Some(sandbox.to_string());
+        }
+        self.follow_workspace(sandbox);
+        self.focus = Focus::Panes;
+    }
+
+    /// Follows what only a workspace on screen follows: its sessions, polled, and its header,
+    /// whose subscription is its port forward.
+    fn follow_workspace(&mut self, sandbox: &str) {
+        if self.workspaces.get(sandbox).is_none_or(|w| w.sessions_sub != 0) {
+            return;
+        }
+        let sessions = self.subscribe(Subscribe { topic: Topic::Sessions, r#box: sandbox.to_string(), ..Default::default() });
+        let header = self.subscribe(Subscribe { topic: Topic::Header, r#box: sandbox.to_string(), ..Default::default() });
+        let ws = self.workspaces.get_mut(sandbox).unwrap();
+        (ws.sessions_sub, ws.header_sub) = (sessions, header);
+    }
+
+    /// Stops following a workspace's sessions and header: what either still sends is dropped.
+    fn unfollow_workspace(&mut self, sandbox: &str) {
+        let Some(ws) = self.workspaces.get_mut(sandbox) else { return };
+        let subs = [std::mem::take(&mut ws.sessions_sub), std::mem::take(&mut ws.header_sub)];
+        for sub in subs.into_iter().filter(|&s| s != 0) {
+            self.subs.remove(&sub);
+            self.seen.remove(&sub);
+            self.headers.remove(&sub);
+            self.backend.send(Out::Unsubscribe(sub));
+        }
+    }
+
+    /// Takes the workspace on screen off it: parked, attached, when it has its primary; let go
+    /// when it has nothing to keep.
+    fn leave_workspace(&mut self) {
+        let Some(key) = self.live.take() else { return };
+        if self.workspaces.get(&key).is_some_and(Workspace::parkable) {
+            self.unfollow_workspace(&key);
+        } else {
+            self.release_workspace(&key);
+        }
+    }
+
+    /// Lets go of a workspace: every tab's stream and both its subscriptions. Every session goes
+    /// on in the box.
+    fn release_workspace(&mut self, sandbox: &str) {
+        self.unfollow_workspace(sandbox);
+        let Some(ws) = self.workspaces.remove(sandbox) else { return };
+        for p in ws.panes.iter().filter(|p| !p.exited) {
+            self.backend.send(Out::Close(p.stream));
+        }
+        for p in &ws.panes {
+            self.chips.remove(&p.stream);
+        }
+        if self.live.as_deref() == Some(sandbox) {
+            self.live = None;
+            self.focus = Focus::List;
         }
     }
 
@@ -770,7 +889,7 @@ impl State {
         self.next_stream += 1;
         let (cols, rows) = DEFAULT_SIZE;
         let context = self.context();
-        self.command(cmd, targets, context, Args { stream, cols: cols.into(), rows: rows.into(), exec: String::new() }, Pending::Session(stream, sandbox));
+        self.command(cmd, targets, context, Args { stream, cols: cols.into(), rows: rows.into(), exec: String::new() }, Pending::Session(stream, sandbox, self.live.clone()));
     }
 
     fn end_focused(&mut self) {
@@ -778,6 +897,12 @@ impl State {
         let ws = &self.workspaces[&id];
         let Some(i) = ws.focused() else { return };
         let pane = &ws.panes[i];
+        // A tab held after its program finished has no session left to end: it is dismissed.
+        if pane.exited {
+            let stream = pane.stream;
+            self.drop_pane(stream);
+            return;
+        }
         let args = Args { stream: pane.stream, exec: pane.exec.exec.clone(), ..Default::default() };
         let context = self.context();
         let stream = args.stream;
@@ -786,6 +911,10 @@ impl State {
 
     /// Takes a pane away once its session is ended.
     fn drop_pane(&mut self, stream: u32) {
+        self.chips.remove(&stream);
+        if self.dragging == Some(stream) {
+            self.dragging = None;
+        }
         for ws in self.workspaces.values_mut() {
             if let Some(i) = ws.panes.iter().position(|p| p.stream == stream) {
                 ws.panes.remove(i);
@@ -794,6 +923,66 @@ impl State {
                 }
                 ws.fix_active();
             }
+        }
+    }
+
+    /// A tab chip dragged along its strip: once it has moved a few points it follows the
+    /// pointer, taking the place of each chip in its column whose middle the pointer passes.
+    /// Letting go leaves it there, and a cancelled drag (Escape, the window losing focus) puts it
+    /// back; a press that never moved is a press.
+    pub fn drag_chip(&mut self, stream: u32, d: &mut Drag) {
+        match d.phase {
+            // Where the pointer is, in window points, is where it went down plus how far it
+            // has travelled: the chip itself moves under it.
+            Phase::Down => {
+                d.data = self.chips.get(&stream).map_or(0.0, |r| r[0]) + d.x;
+                self.drag_home = self.live_ws().and_then(|w| w.panes.iter().position(|p| p.stream == stream));
+            }
+            Phase::Move => {
+                if self.dragging.is_none() && d.dx.abs() < DRAG_SLOP {
+                    return;
+                }
+                self.dragging = Some(stream);
+                let x = d.data + d.dx;
+                let chips = &self.chips;
+                let Some(ws) = self.live.as_ref().and_then(|k| self.workspaces.get_mut(k)) else { return };
+                let Some(from) = ws.panes.iter().position(|p| p.stream == stream) else { return };
+                let side = ws.panes[from].side();
+                let over = ws.panes.iter().position(|p| {
+                    p.side() == side && p.stream != stream && chips.get(&p.stream).is_some_and(|r| x >= r[0] && x < r[0] + r[2])
+                });
+                if let Some(to) = over {
+                    let r = chips[&ws.panes[to].stream];
+                    // Past the middle, the way it is going: a wider chip is not swapped back at once.
+                    let mid = r[0] + r[2] / 2.0;
+                    if (to > from && x >= mid) || (to < from && x < mid) {
+                        ws.move_pane(from, to);
+                    }
+                }
+            }
+            Phase::Up => {
+                let home = self.drag_home.take();
+                if self.dragging.take().is_some()
+                    && d.cancelled()
+                    && let Some(home) = home
+                    && let Some(ws) = self.live_ws_mut()
+                    && let Some(at) = ws.panes.iter().position(|p| p.stream == stream)
+                {
+                    ws.move_pane(at, home);
+                }
+            }
+        }
+    }
+
+    /// The divider between the columns dragged: the terminals' share of the width follows the
+    /// pointer, keeping each column at least `MIN_SPLIT` of it.
+    pub fn drag_split(&mut self, d: &mut Drag) {
+        let w = self.columns_w.max(1.0);
+        let Some(ws) = self.live_ws_mut() else { return };
+        match d.phase {
+            Phase::Down => d.data = ws.split,
+            Phase::Move | Phase::Up if d.cancelled() => ws.split = d.data,
+            Phase::Move | Phase::Up => ws.split = (d.data + d.dx / w).clamp(MIN_SPLIT, 1.0 - MIN_SPLIT),
         }
     }
 
@@ -907,7 +1096,7 @@ impl State {
         self.seen.insert(sub, r.clone());
         // A session still being made in this box is in no pane yet, and may already be listed:
         // while one is, only the primary opens, and the rest once it is made (retake_sessions).
-        let making = self.pending.values().any(|p| matches!(p, Pending::Session(_, b) if *b == sbx));
+        let making = self.pending.values().any(|p| matches!(p, Pending::Session(_, b, _) if *b == sbx));
         let Some(ws) = self.workspaces.get_mut(&sbx) else { return };
         ws.opening = false;
         let sessions = match r {
@@ -947,6 +1136,55 @@ impl State {
         }
     }
 
+    /// A header snapshot, for the workspace that follows it.
+    fn take_header(&mut self, sub: u32, r: Result<Header, String>) {
+        let Some(sbx) = self.headers.get(&sub) else { return };
+        if let (Some(ws), Ok(h)) = (self.workspaces.get_mut(sbx), r) {
+            ws.header = Some(h);
+        }
+    }
+
+    /// A stream's state: attached, reconnecting and back, or ended — what an ending does is the
+    /// core's (`Tab.End`), and is applied to a workspace parked or on screen alike.
+    fn take_stream(&mut self, st: Stream) {
+        match st.state {
+            StreamState::Attached => self.resend_size(st.stream),
+            StreamState::Reconnecting | StreamState::Reconnected => {
+                if let Some(p) = self.pane_mut(st.stream) {
+                    p.status = (st.state == StreamState::Reconnecting).then(|| "reconnecting…".into());
+                }
+            }
+            StreamState::Ended | StreamState::Failed => self.end_stream(st),
+        }
+    }
+
+    fn end_stream(&mut self, st: Stream) {
+        let Some(key) = self.workspaces.iter().find(|(_, w)| w.panes.iter().any(|p| p.stream == st.stream)).map(|(k, _)| k.clone()) else { return };
+        let name = self.box_by_id(&key).map(|b| b.name.clone()).unwrap_or_else(|| key.clone());
+        match st.end.unwrap_or(TabEnd::Tab) {
+            TabEnd::Workspace => {
+                if let Some(p) = self.pane_mut(st.stream) {
+                    p.exited = true;
+                }
+                self.release_workspace(&key);
+                self.message = Some(if st.why.is_empty() { format!("{name}: the session ended") } else { format!("{name}: {}", st.why) });
+            }
+            TabEnd::Tab => {
+                let title = self.pane_mut(st.stream).map(|p| p.exec.title.clone()).unwrap_or_default();
+                self.drop_pane(st.stream);
+                if !st.why.is_empty() {
+                    self.message = Some(format!("{name}: {title}: {}", st.why));
+                }
+            }
+            TabEnd::Held => {
+                if let Some(p) = self.pane_mut(st.stream) {
+                    p.exited = true;
+                    p.status = Some(if st.status.is_empty() { st.why } else { st.status });
+                }
+            }
+        }
+    }
+
     fn take_result(&mut self, r: CommandResult, tx: &mut Tx) {
         // Whatever the command still asked is moot once it has finished.
         self.sheets.finished(r.id);
@@ -960,24 +1198,31 @@ impl State {
             // What came of it (`renamed to …`, `settings saved`), or nothing to say.
             Pending::Enter(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
             Pending::End(stream) if r.status == Status::Done => self.drop_pane(stream),
-            Pending::Session(stream, sandbox) if r.status == Status::Done => {
+            Pending::Session(stream, sandbox, shown) if r.status == Status::Done => {
                 let Some(exec) = r.session.clone() else { return };
-                self.unreveal(Some(&r.r#box));
-                self.visited(&r.r#box);
-                self.ensure_workspace(&r.r#box);
+                // A session lands in its own box's workspace, wherever that is. It takes the screen
+                // only if nobody moved since asking for it: a box switched to meanwhile stays on
+                // screen, and the session waits in its own box's parked workspace — or, with none
+                // there, in the box itself, its stream let go, for its workspace to open.
+                if self.live == shown || self.live.as_deref() == Some(&r.r#box) {
+                    self.show_workspace(&r.r#box);
+                } else if !self.workspaces.contains_key(&r.r#box) {
+                    self.early.remove(&stream);
+                    self.backend.send(Out::Close(stream));
+                    self.retake_sessions(&sandbox);
+                    return;
+                }
                 let pane = Pane { stream, exec, screen: Screen::new(DEFAULT_SIZE.0 as usize, DEFAULT_SIZE.1 as usize), exited: false, status: None };
                 let ws = self.workspaces.get_mut(&r.r#box).unwrap();
                 ws.panes.push(pane);
                 ws.show(ws.panes.len() - 1);
-                self.live = Some(r.r#box.clone());
-                self.focus = Focus::Panes;
                 for e in self.early.remove(&stream).unwrap_or_default() {
                     self.take_stream_event(e);
                 }
                 self.resend_size(stream);
                 self.retake_sessions(&sandbox);
             }
-            Pending::Session(stream, sandbox) => {
+            Pending::Session(stream, sandbox, _) => {
                 self.early.remove(&stream);
                 self.retake_sessions(&sandbox);
             }
@@ -999,18 +1244,24 @@ impl State {
         }
     }
 
-    /// Output or an end on a stream: to its pane, or kept until the pane is made.
+    /// Output, a state or an end on a stream: to its pane, or kept, in order, until the pane is
+    /// made. A shell's stream is attached before its result says what it is, so its first output
+    /// — or its ending, for one that ends at once — can arrive first.
     fn take_stream_event(&mut self, e: Event) {
         let stream = match &e {
             Event::Data(stream, _) | Event::Exited(stream, _) => *stream,
+            Event::Stream(st) => st.stream,
             _ => return,
         };
-        let Some(p) = self.pane_mut(stream) else {
-            if self.pending.values().any(|p| matches!(p, Pending::Session(s, _) if *s == stream)) {
-                self.early.entry(stream).or_default().push(e);
-            }
+        if self.pane_mut(stream).is_none() && self.pending.values().any(|p| matches!(p, Pending::Session(s, _, _) if *s == stream)) {
+            self.early.entry(stream).or_default().push(e);
             return;
-        };
+        }
+        if let Event::Stream(st) = e {
+            self.take_stream(st);
+            return;
+        }
+        let Some(p) = self.pane_mut(stream) else { return };
         match e {
             Event::Data(_, bytes) => {
                 let reply = p.screen.feed(&bytes);
@@ -1018,9 +1269,13 @@ impl State {
                     self.backend.input(stream, &reply);
                 }
             }
+            // The stream's last frame. What its ending does arrived before it (`end_stream`);
+            // this only settles a pane still showing it.
             Event::Exited(_, msg) => {
-                p.exited = true;
-                p.status = (!msg.is_empty()).then_some(msg);
+                if !p.exited {
+                    p.exited = true;
+                    p.status = (!msg.is_empty()).then_some(msg);
+                }
             }
             _ => {}
         }
@@ -1127,22 +1382,24 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         // The core has ruled the box can be attached, whatever its state: its primary is
         // what waits for it.
         "attach" => {
-            s.unreveal(Some(&r.r#box));
-            s.visited(&r.r#box);
             if let Some(i) = s.row_of(&r.r#box) {
                 s.cursor = i;
             }
-            s.ensure_workspace(&r.r#box);
-            s.live = Some(r.r#box.clone());
-            s.focus = Focus::Panes;
+            s.show_workspace(&r.r#box);
         }
         "maximize" => {
             if let Some(ws) = s.live_ws_mut() {
                 ws.maximized = !ws.maximized;
             }
         }
+        // Detaching closes the workspace, as the TUI's does: every session goes on in the box,
+        // and attaching again opens them anew. Switching to another box is what parks one.
         "detach" => {
             s.unreveal(None);
+            if let Some(key) = s.live.clone() {
+                s.release_workspace(&key);
+                s.message = Some("detached — the discobox is still running".into());
+            }
             s.live = None;
             s.focus = Focus::List;
         }
@@ -1197,21 +1454,8 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
             Event::Sessions(sub, r) => s.take_sessions(sub, r),
             Event::Commands(sub, r) => s.take_commands(sub, r),
             Event::Palette(sub, r) => s.take_palette(sub, r),
+            Event::Header(sub, r) => s.take_header(sub, r),
             Event::Result(r) => s.take_result(r, tx),
-            Event::Stream(st) => match st.state {
-                StreamState::Attached => s.resend_size(st.stream),
-                StreamState::Failed => {
-                    if let Some(p) = s.pane_mut(st.stream) {
-                        p.exited = true;
-                        p.status = Some(st.why);
-                    }
-                }
-                state => {
-                    if let Some(p) = s.pane_mut(st.stream) {
-                        p.status = (state == StreamState::Reconnecting).then(|| "reconnecting…".into());
-                    }
-                }
-            },
             Event::Question(q) => sheet::take_question(s, q),
             Event::Form(f) => sheet::take_form(s, f),
             Event::FieldErrors(e) => sheet::take_errors(s, e),
@@ -1220,7 +1464,7 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
                     s.message = Some(p.text);
                 }
             }
-            e @ (Event::Data(..) | Event::Exited(..)) => s.take_stream_event(e),
+            e @ (Event::Data(..) | Event::Exited(..) | Event::Stream(..)) => s.take_stream_event(e),
         }
     }
     true

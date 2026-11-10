@@ -219,7 +219,7 @@ fn unreadable(payload: &[u8], e: serde_json::Error) -> Option<Message> {
             let stream = u32::try_from(body["stream"].as_u64()?).ok()?;
             Message {
                 r#type: Type::Stream,
-                stream: Some(Stream { stream, state: StreamState::Failed, why }),
+                stream: Some(Stream { stream, state: StreamState::Failed, why, ..Default::default() }),
                 ..Default::default()
             }
         }

@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 4,
+  "x-protocol": 5,
   "x-specVersion": 5,
   "x-frameKinds": {
     "json": {
@@ -585,8 +585,8 @@
           "const": "audit"
         },
         {
-          "description": "TopicForwards is a box's ports forwarded to this machine, for as long as the subscription lasts (Box).",
-          "const": "forwards"
+          "description": "TopicHeader is what a box's workspace header says of it, as the core says it (console.Header), with its ports forwarded to this machine for as long as the subscription lasts: the workspace's forward, which goes with the screen showing it (Box).",
+          "const": "header"
         },
         {
           "description": "TopicSessions is what a box's workspace opens: its sessions and services, as the core orders and names them (Box).",
@@ -738,8 +738,8 @@
         "audit": {
           "$ref": "#/$defs/Audit"
         },
-        "forwards": {
-          "$ref": "#/$defs/Forwards"
+        "header": {
+          "$ref": "#/$defs/Header"
         },
         "sessions": {
           "$ref": "#/$defs/Sessions"
@@ -1337,40 +1337,130 @@
         "summary"
       ]
     },
-    "Forwards": {
-      "description": "Forwards is every port forwarded now, in the box's port order.",
+    "Header": {
+      "description": "Header is what a box's workspace header says (console.Header): each field the core's answer, their order and colors the app's.",
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string"
+        },
+        "work": {
+          "description": "Work is the issue and the pull request the box's tags number, each a link to it.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Link"
+          }
+        },
+        "blocked": {
+          "description": "Blocked is what a box waiting on a person says in place of the git word, empty for one that is not.",
+          "type": "string"
+        },
+        "base": {
+          "description": "Base is the work's git position; Changes its state as a word (dirty, ready, clean), empty when there is nothing to say. Tone is how both read, and Ready a ready pull request over ready work, which reads as done.",
+          "type": "string"
+        },
+        "changes": {
+          "type": "string"
+        },
+        "tone": {
+          "$ref": "#/$defs/GitTone"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "diff": {
+          "description": "Diff is whether the box has reported a change, and Added and Deleted the lines it changed.",
+          "type": "boolean"
+        },
+        "added": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "deleted": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "desktop": {
+          "$ref": "#/$defs/Link",
+          "description": "Desktop is the box's graphical desktop, once its forward has bound it."
+        },
+        "ports": {
+          "description": "Ports is what the box serves, by protocol, web first; a forwarded web port links to its local end.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PortGroup"
+          }
+        },
+        "tags": {
+          "description": "Tags is the box's tags the header says nothing of otherwise, labeled.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unforwarded": {
+          "description": "Unforwarded is why the box's ports could not be forwarded, when they could not: they are listed, unlinked.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "work",
+        "tone",
+        "ports",
+        "tags"
+      ]
+    },
+    "Link": {
+      "description": "Link is something in the header a press opens in the browser; one without a URL is text.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ]
+    },
+    "GitTone": {
+      "description": "GitTone is how a header reads the work's git position and word.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "ToneQuiet is clean work, or work nothing is known about.",
+          "const": "quiet"
+        },
+        {
+          "description": "ToneDirty is uncommitted work.",
+          "const": "dirty"
+        },
+        {
+          "description": "ToneAhead is committed work beyond what the box was cut from.",
+          "const": "ahead"
+        }
+      ]
+    },
+    "PortGroup": {
+      "description": "PortGroup is one protocol's ports, in port order.",
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "string"
+        },
         "ports": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Forward"
+            "$ref": "#/$defs/Link"
           }
         }
       },
       "required": [
+        "protocol",
         "ports"
-      ]
-    },
-    "Forward": {
-      "description": "Forward is one box port at a local one.",
-      "type": "object",
-      "properties": {
-        "port": {
-          "type": "integer",
-          "format": "int64"
-        },
-        "udp": {
-          "type": "boolean"
-        },
-        "local": {
-          "type": "integer",
-          "format": "int64"
-        }
-      },
-      "required": [
-        "port",
-        "local"
       ]
     },
     "Sessions": {
@@ -2066,7 +2156,7 @@
       ]
     },
     "Stream": {
-      "description": "Stream says a stream's state changed. A failed stream is forgotten.",
+      "description": "Stream says a stream's state changed. A failed stream is forgotten. End is what an ending, or a failure to attach, does to the workspace; Status is what a held tab says over its last screen.",
       "type": "object",
       "properties": {
         "stream": {
@@ -2077,6 +2167,12 @@
           "$ref": "#/$defs/StreamState"
         },
         "why": {
+          "type": "string"
+        },
+        "end": {
+          "$ref": "#/$defs/TabEnd"
+        },
+        "status": {
           "type": "string"
         }
       },
@@ -2100,6 +2196,28 @@
         },
         {
           "const": "reconnected"
+        },
+        {
+          "description": "StreamEnded is the session's program ending, and End what that does to the workspace (console.Tab.End). The stream's Exit frame follows.",
+          "const": "ended"
+        }
+      ]
+    },
+    "TabEnd": {
+      "description": "TabEnd is what a session's ending does to its workspace (console.TabEnd).",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "EndWorkspace: the primary ended, and the workspace with it.",
+          "const": "workspace"
+        },
+        {
+          "description": "EndTab: the tab goes; Why says why when its stream broke.",
+          "const": "tab"
+        },
+        {
+          "description": "EndHeld: the program finished, and the tab stays with its last screen to be read until it is dismissed; Status is what it says over it.",
+          "const": "held"
         }
       ]
     },

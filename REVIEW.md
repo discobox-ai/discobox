@@ -35,6 +35,14 @@ Global review expectations:
   `instant_changes` lands layout, opacity and transforms at once but leaves
   colours on the spring they inherit, so without `Spring::NONE` every cell
   background a program repaints fades in.
+- In the desktop app, a session whose result lands late goes to its own box's
+  workspace, parked or not, and takes the screen only if the box on screen is
+  the one it was asked from (`Pending::Session` carries it) or its own. With
+  no workspace for its box, its stream is let go and the session opens with
+  that workspace later: never make a workspace for it, which is the screen
+  grab this rule prevents. A shell's result once switched to its box wherever
+  the person had gone, and parked or released the box they had moved to; the
+  TUI learned the same rule as `heldPane` (`cli/internal/tui/REVIEW.md`).
 - Renaming an identifier a doc cites (a function, a type, a field): grep for
   the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
   comments, not only the Go callers the compiler finds. Renaming

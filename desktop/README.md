@@ -23,10 +23,10 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 2. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 5. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
-  the listing and a workspace's sessions are subscriptions; terminals are
+  the listing, a workspace's sessions and its header are subscriptions; terminals are
   execstream frames on streams the app allocates. Its client and wire types
   are the `discobox-bridge` crate (`bridge/`), with nothing of the window in
   it; the types (`bridge/src/wire.rs`) are generated from the schema that is
@@ -42,6 +42,28 @@ the epic, and does not yet follow the ADRs everywhere:
   marks, Shift-click marks a run. A box's lifecycle verbs, from its row's
   menu or the palette, act on every box marked, in one batch the core rules on;
   the marks go once it has acted.
+- **The workspace** is the core's sessions in two columns (`Workspace` in
+  `main.rs`), drawn as framed columns with their tab chips in the frame's edge:
+  - the divider between the columns drags where they split (each keeps a
+    fifth of the width), and a double press puts them back half and half;
+  - a chip drags along its strip to reorder its column, closes its session
+    (or dismisses a held tab) from its close control, and maximizes its
+    column on a double press;
+  - switching to another box parks the workspace, as the core's `Park` does:
+    its streams stay attached and its screens keep emulating, but it polls
+    nothing and its ports are no longer forwarded, until it is back on
+    screen. One whose primary never arrived is let go instead, and `detach`
+    lets the workspace on screen go, as the TUI's does;
+  - what a session's ending does is the core's (`Tab.End`, on the stream's
+    `ended` message): the primary takes the workspace with it, a broken
+    stream or a tool takes its tab and says why, and a program that finished
+    is held with its last screen, a faint dot on its chip and what it says
+    over its screen; a gold dot and a gold note while its stream reconnects;
+  - the header is the core's (`console.Header`, over the header topic, whose
+    subscription is the workspace's port forward): the box's id, the issue and
+    pull request it is tagged with, its git position and word in their tone,
+    its diff, its desktop and the ports it serves — a forwarded web port is a
+    link that opens the browser — and the rest of its tags.
 - **The spec** is the console core's (`cli/internal/console/spec.go`): the
   registry's commands by their IDs (`attach`, `shell`) with each frontend's
   bindings, the glyphs, and the design language's colour tokens in both
@@ -110,7 +132,7 @@ the epic, and does not yet follow the ADRs everywhere:
   Not yet: a user's own choice of theme over the system's (§3; Rune's
   `--theme` picks one only for a headless run); `LANGUAGE.md`'s calm spring for
   a theme change (Rune gives an appearance change no spring of its own, so it
-  springs on each element's); and dragging a tab chip to reorder it (#805).
+  springs on each element's).
 
   `identity_tests` fails, in the chrome's sources, on a box-drawing character, a
   block element or a bracket typed around a label; on a colour or length the
@@ -136,7 +158,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `bridge/src/lib.rs` | The bridge client: frames over any pipe, the opening `hello` and its version checks, a reader handing on what arrives, and its way out for a message the types cannot read |
 | `bridge/tests/contract.rs` | The bridge's contract suite: this client against the CLI's real bridge serving a fake core (`TestContractCore` in `cli/internal/console/bridge`), one process per test |
 | `src/backend.rs` | The bridge client on stdin/stdout, its messages as the window's events, and a mock that answers the same messages with local shells, for running without a CLI |
-| `src/view.rs` | The list, the sidebar, the workspace, frames and tabs |
+| `src/view.rs` | The list, the sidebar, the workspace (its header, columns, split and tab chips), frames |
 | `src/overlay.rs` | The palette, the menu bar and its menus, a box's actions menu, a pane's menu, the help, and the list's filter menu |
 | `src/sheet.rs` | The core's forms and questions as sheets: the queue, the answers held while they are typed, drafts, refusals, and their keys |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
@@ -145,6 +167,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/icons.rs`, `src/mark.rs` | The window's vector icons, and the mark from `assets/brand/logo-purple.svg` |
 | `fonts/` | JetBrains Mono 2.304 at the weights the chrome sets and the italic, and its licence |
 | `src/parity_tests.rs` | Runs `cli/internal/console/testdata/parity` with the desktop's keys |
+| `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
 | `src/sheet_tests.rs` | Rename, settings and purge through their sheets on the mock: what applies, a refusal, Enter on a destruction, a pick of one, a sheet taking every key |
 | `src/surface_tests.rs` | Every command in a menu and found by the palette; the palette's two orders, Esc and reveal; the menu bar's keys; menus that say why not |

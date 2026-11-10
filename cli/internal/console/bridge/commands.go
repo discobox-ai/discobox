@@ -192,11 +192,13 @@ func (f *frontend) session(box console.Sandbox, asked console.Interaction, start
 	cols, rows := size(f.c.Args.Cols, f.c.Args.Rows)
 	ex, term, err := start(f.s.ds.ForServer(box.Server), f.ctx, box.ID, cols, rows)
 	if err != nil {
-		f.s.streams.fail(stream, err)
+		// Nothing was made: the tab is what was asked for.
+		f.s.streams.fail(stream, err, console.SessionTab(console.Exec{}, asked))
 		return failed(err.Error())
 	}
-	tab := wireTab(console.SessionTab(ex, asked), ex)
-	if !f.s.streams.attach(stream, term) {
+	made := console.SessionTab(ex, asked)
+	tab := wireTab(made, ex)
+	if !f.s.streams.attach(stream, term, made) {
 		// Closed while it was made: the session goes on in the box, and the
 		// app, which closed it, is told what it was.
 		return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &tab, Note: "the pane closed before the session was made"}

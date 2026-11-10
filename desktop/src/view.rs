@@ -5,11 +5,11 @@
 //! top edge, icon buttons with tooltips, keycaps, rounded selections, the mark as vector art,
 //! and spring motion. Nothing here types out the TUI's brackets, box drawing or blocks.
 
-use rune::{Color, Cx, El, Icon, PointerPress, Spring, Transition, Tx, col, el, icon, row, spacer, text, text_input};
+use rune::{Color, Cx, Drag, El, Icon, PointerPress, Spring, Transition, Tx, col, el, icon, row, spacer, text, text_input};
 
-use crate::wire::{Box as Sandbox, Row, TabKind};
+use crate::wire::{Box as Sandbox, GitTone, Link, Row, TabKind};
 use crate::theme::{self, CELL_H};
-use crate::{Focus, MenuKind, Side, State, Workspace, icons, keys, mark, overlay, run_command, sheet};
+use crate::{Focus, MenuKind, Pane, Side, State, Workspace, icons, keys, mark, overlay, run_command, sheet};
 
 pub const SIDEBAR_W: f32 = 290.0;
 const ROW_H: f32 = 26.0;
@@ -85,8 +85,8 @@ fn frame(key: impl Into<String>, focused: bool, title: Option<El>, buttons: Opti
 }
 
 /// A tab chip in a frame's edge: the one shown in the frame's colour and bold, the others quiet,
-/// each lit on hover. `close` ends the session it names.
-fn chip(key: impl Into<String>, label: &str, active: bool, focused: bool, close: Option<El>) -> El {
+/// each lit on hover. `state` says how its stream stands; `close` ends the session it names.
+fn chip(key: impl Into<String>, label: &str, active: bool, focused: bool, state: Option<El>, close: Option<El>) -> El {
     let edge = match (active, focused) {
         (true, true) => theme::mark(),
         (true, false) => theme::line_bright(),
@@ -97,6 +97,9 @@ fn chip(key: impl Into<String>, label: &str, active: bool, focused: bool, close:
         .radius(theme::r_key()).fill(theme::raised()).border(if active && focused { theme::stroke_focus() } else { theme::stroke_quiet() }, edge)
         .hover(theme::text().alpha(0.06)).press(theme::text().alpha(0.12)).motion(theme::SNAPPY)
         .child(text(label.to_string()).font(if active { theme::UI_BOLD } else { theme::UI }).color(ink).truncate());
+    if let Some(st) = state {
+        c = c.child(st);
+    }
     if let Some(x) = close {
         c = c.child(x);
     }
@@ -364,7 +367,7 @@ fn sidebar(s: &State) -> El {
     col().key("sidebar").w(SIDEBAR_W).h_full().gap(4.0)
         .transition(Transition::offset(-24.0, 0.0).combined(Transition::opacity()))
         .child(brand_line())
-        .child(frame("sidebar-frame", focused, Some(chip("sidebar-title", "discoboxes", true, focused, None)),
+        .child(frame("sidebar-frame", focused, Some(chip("sidebar-title", "discoboxes", true, focused, None, None)),
             Some(icon_button("sidebar-hide", &icons::HIDE_SIDEBAR, tip(s, "sidebar"))
                 .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx))), body).grow(1.0))
 }
@@ -379,7 +382,20 @@ fn pane_label(ws: &Workspace, i: usize, sbx: &Sandbox) -> String {
         TabKind::Primary => sbx.name.clone(),
         _ => p.screen.title.clone().filter(|t| !t.is_empty() && t.len() < 24).unwrap_or_else(|| p.exec.title.clone()),
     };
-    format!("{n} {name}{}", if p.exited { " · done" } else { "" })
+    format!("{n} {name}")
+}
+
+/// What a tab's chip says of its stream beside its label: a gold dot while it reconnects, a
+/// faint one once its program has finished and its last screen is held.
+fn chip_state(p: &Pane) -> Option<El> {
+    let c = if p.exited {
+        theme::dim()
+    } else if p.status.is_some() {
+        theme::gold()
+    } else {
+        return None;
+    };
+    Some(el().size(6.0, 6.0).radius(3.0).fill(c))
 }
 
 fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El {
@@ -389,20 +405,40 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
     let mut tabs = row().gap(4.0);
     for &i in &idx {
         let label = if two || idx.len() > 1 { pane_label(ws, i, sbx) } else { sbx.name.clone() };
-        let stream = ws.panes[i].stream;
-        let close = (ws.panes[i].exec.kind != TabKind::Primary).then(|| {
+        let p = &ws.panes[i];
+        let stream = p.stream;
+        // A held tab's close dismisses its last screen (end_focused); any other's ends its session.
+        let close = (p.exec.kind != TabKind::Primary).then(|| {
             chip_close(format!("tab-close-{stream}"), tip(s, "end")).on_press_tx(move |s: &mut State, tx: &mut Tx| {
-                s.select_pane(i);
-                run_command(s, "end", tx);
+                if let Some(i) = s.live_ws().and_then(|w| w.panes.iter().position(|p| p.stream == stream)) {
+                    s.select_pane(i);
+                    run_command(s, "end", tx);
+                }
             })
         });
-        tabs = tabs.child(chip(format!("tab-{stream}"), &label, i == active, focused, close).cursor(rune::Cursor::Pointer)
-            .on_press(move |s: &mut State| s.select_pane(i))
+        let mut c = chip(format!("tab-{stream}"), &label, i == active, focused, chip_state(p), close)
+            .cursor(if s.dragging == Some(stream) { rune::Cursor::Grabbing } else { rune::Cursor::Pointer })
+            .on_layout(move |s: &mut State, r: [f32; 4]| {
+                s.chips.insert(stream, r);
+            })
+            .on_drag(move |s: &mut State, d: &mut Drag, _tx: &mut Tx| s.drag_chip(stream, d))
+            .on_press(move |s: &mut State| {
+                if let Some(i) = s.live_ws().and_then(|w| w.panes.iter().position(|p| p.stream == stream)) {
+                    s.select_pane(i);
+                }
+            })
             .on_double_press_tx(move |s: &mut State, tx: &mut Tx| run_command(s, "maximize", tx))
             .on_secondary_press(move |s: &mut State, p: PointerPress, _tx: &mut Tx| {
-                s.select_pane(i);
+                if let Some(i) = s.live_ws().and_then(|w| w.panes.iter().position(|p| p.stream == stream)) {
+                    s.select_pane(i);
+                }
                 s.open_commands_menu(MenuKind::Pane, (p.x, p.y));
-            }));
+            });
+        if s.dragging == Some(stream) {
+            // Lifted while it is dragged.
+            c = c.fill(theme::line_bright());
+        }
+        tabs = tabs.child(c);
     }
     let mut buttons = row().gap(4.0);
     if two || ws.maximized {
@@ -434,35 +470,107 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
             s.open_commands_menu(MenuKind::Pane, (p.x, p.y));
         })
         .cursor(rune::Cursor::Text);
+    // What the tab says over its program: reconnecting in gold, what a held tab's ending left it
+    // saying quietly.
     if let Some(st) = &pane.status {
-        screen = screen.child(text(st.clone()).font(theme::UI_SMALL).color(theme::on_gold()).px(8.0).py(2.0).radius(theme::r_key())
-            .fill(if pane.exited { theme::err() } else { theme::gold() }).pin(None, None, Some(6.0), Some(6.0)));
+        let (fill, ink) = if pane.exited { (theme::line_bright(), theme::grey()) } else { (theme::gold(), theme::on_gold()) };
+        screen = screen.child(el().key(format!("status-{id}")).px(8.0).py(2.0).radius(theme::r_key()).fill(fill).pin(None, None, Some(6.0), Some(6.0))
+            .child(text(st.clone()).font(theme::UI_SMALL).color(ink)));
     }
-    frame(format!("col-{side:?}"), focused, Some(tabs), Some(buttons), screen).grow(1.0).min_w(0.0)
+    frame(format!("col-{side:?}"), focused, Some(tabs), Some(buttons), screen).min_w(0.0)
 }
 
-fn header(s: &State, sbx: &Sandbox) -> El {
-    let mut r = row().w_full().h(24.0).px(12.0).gap(18.0).center_y();
+/// The divider between the two columns: dragged, it moves where they split; a double press puts
+/// them back half and half.
+fn divider() -> El {
+    el().key("split").w(10.0).h_full().radius(theme::r_key()).cursor(rune::Cursor::ResizeColumn)
+        .hover(theme::text().alpha(0.06)).press(theme::mark().alpha(0.16))
+        .on_drag(|s: &mut State, d: &mut Drag, _tx: &mut Tx| s.drag_split(d))
+        .on_double_press(|s: &mut State| {
+            if let Some(ws) = s.live_ws_mut() {
+                ws.split = 0.5;
+            }
+        })
+}
+
+/// A link in the header: opened in the browser on a press; one without a URL is text.
+fn link(key: String, l: &Link) -> El {
+    if l.url.is_empty() {
+        return t(l.label.clone(), theme::grey());
+    }
+    let url = l.url.clone();
+    text(l.label.clone()).key(key).font(theme::UI).color(theme::mark()).px(2.0).radius(theme::r_key())
+        .hover(theme::mark().alpha(0.12)).press(theme::mark().alpha(0.2)).cursor(rune::Cursor::Pointer).help(url.clone())
+        .on_press_tx(move |s: &mut State, tx: &mut Tx| {
+            if let Err(e) = tx.open_url(&url) {
+                s.message = Some(format!("could not open {url}: {e}"));
+            }
+        })
+}
+
+/// What the workspace's header says of its box: where it came from, then the core's header —
+/// its id, the issue and pull request it is for, where its work sits in git, what it changed,
+/// what it serves (a forwarded web port is a link) and the rest of its tags — and what it uses.
+fn header(s: &State, ws: &Workspace, sbx: &Sandbox) -> El {
+    let mut r = row().w_full().h(24.0).px(12.0).gap(14.0).center_y();
     if !s.sidebar {
         r = r.child(icon_button("sidebar-show", &icons::SHOW_SIDEBAR, tip(s, "sidebar"))
             .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "sidebar", tx)));
     }
-    r = r.child(t(source_label(sbx), theme::grey()))
-        .child(t(sbx.id.clone(), theme::dim()));
-    if !sbx.branch.is_empty() {
-        r = r.child(t(format!("{}@{}", sbx.branch, sbx.commit), theme::grey()));
-    }
-    if sbx.dirty {
-        r = r.child(t("dirty", theme::warn()));
-    }
-    if (sbx.added, sbx.deleted) != (0, 0) {
-        r = r.child(diffstat(sbx));
-    }
-    for tag in &sbx.tags {
-        r = r.child(tag_chip(tag));
+    // The git position and word in their tone: uncommitted work warns, committed work ahead
+    // reads as the name does, anything else is quiet.
+    let tone = |g: GitTone| match g {
+        GitTone::Dirty => theme::warn(),
+        GitTone::Ahead => theme::text(),
+        GitTone::Quiet => theme::dim(),
+    };
+    // What does not fit is cut at the right, where the readouts start: the ports and tags,
+    // which have no bound on their width, come last.
+    let mut mid = row().h(24.0).gap(14.0).center_y().grow(1.0).min_w(0.0).clip_rounded(0.0).child(t(source_label(sbx), theme::grey()));
+    match &ws.header {
+        None => mid = mid.child(t(sbx.id.clone(), theme::dim())),
+        Some(h) => {
+            mid = mid.child(t(h.id.clone(), theme::dim()));
+            for (i, w) in h.work.iter().enumerate() {
+                mid = mid.child(link(format!("work-{i}"), w));
+            }
+            if !h.blocked.is_empty() {
+                mid = mid.child(t(h.blocked.clone(), theme::err()));
+            }
+            if !h.base.is_empty() {
+                mid = mid.child(t(h.base.clone(), tone(h.tone)));
+            }
+            if !h.changes.is_empty() {
+                mid = mid.child(t(h.changes.clone(), if h.ready { theme::done() } else { tone(h.tone) }));
+            }
+            if h.diff {
+                mid = mid.child(row().gap(6.0)
+                    .child(text(format!("+{}", h.added)).font(theme::UI_SMALL).color(theme::done()))
+                    .child(text(format!("−{}", h.deleted)).font(theme::UI_SMALL).color(theme::salmon())));
+            }
+            if let Some(d) = &h.desktop {
+                mid = mid.child(link("desktop".into(), d));
+            }
+            if !h.ports.is_empty() {
+                let mut ports = row().gap(4.0).center_y();
+                if !h.unforwarded.is_empty() {
+                    ports = ports.help(format!("not forwarded: {}", h.unforwarded));
+                }
+                for (g, group) in h.ports.iter().enumerate() {
+                    ports = ports.child(t(format!("{}:", group.protocol), theme::dim()));
+                    for (i, p) in group.ports.iter().enumerate() {
+                        ports = ports.child(link(format!("port-{g}-{i}"), p));
+                    }
+                }
+                mid = mid.child(ports);
+            }
+            for tag in &h.tags {
+                mid = mid.child(tag_chip(tag));
+            }
+        }
     }
     let id = sbx.key.clone();
-    r.child(spacer())
+    r.child(mid)
         .child(t(format!("cpu {}%  mem {:.1} GiB", sbx.cpu, sbx.memory_bytes as f64 / (1u64 << 30) as f64), theme::dim()))
         .child(icon_button("box-actions", &icons::MORE, tip(s, "actions"))
             .on_press(move |s: &mut State| s.open_menu(id.clone(), (900.0, 30.0))))
@@ -471,27 +579,29 @@ fn header(s: &State, sbx: &Sandbox) -> El {
 fn workspace(s: &State, ws: &Workspace) -> El {
     let Some(sbx) = s.box_by_id(&ws.sandbox) else { return el() };
     let two = !ws.column(Side::Shells).is_empty() && !ws.column(Side::Terminals).is_empty();
-    let mut cols = row().w_full().grow(1.0).gap(10.0).min_h(0.0);
+    let mut cols = row().key("columns").w_full().grow(1.0).min_h(0.0)
+        .on_layout(|s: &mut State, r: [f32; 4]| s.columns_w = r[2]);
     if let Some(e) = &ws.error {
         let enter = keys::shortcut_of(s, "attach").unwrap_or_else(|| "Enter".into());
-        cols = cols.child(frame("failed", true, Some(chip("failed-title", &sbx.name, true, true, None)), None,
+        cols = cols.child(frame("failed", true, Some(chip("failed-title", &sbx.name, true, true, None, None)), None,
             col().w_full().h_full().center().gap(8.0)
                 .child(t("could not open its sessions", theme::warn()))
                 .child(text(e.clone()).font(theme::UI_SMALL).color(theme::grey()).max_w(640.0).wrap())
                 .child(row().gap(6.0).center_y().child(keycap(enter)).child(t("tries again", theme::dim())))));
     } else if ws.opening {
-        cols = cols.child(frame("opening", true, Some(chip("opening-title", &sbx.name, true, true, None)), None,
+        cols = cols.child(frame("opening", true, Some(chip("opening-title", &sbx.name, true, true, None, None)), None,
             col().w_full().h_full().center().child(t("attaching…", theme::dim()))));
     } else if ws.maximized {
-        cols = cols.child(column(s, ws, sbx, ws.focus, two));
+        cols = cols.child(column(s, ws, sbx, ws.focus, two).grow(1.0));
+    } else if two {
+        cols = cols.child(column(s, ws, sbx, Side::Terminals, two).grow(ws.split))
+            .child(divider())
+            .child(column(s, ws, sbx, Side::Shells, two).grow(1.0 - ws.split));
     } else {
-        cols = cols.child(column(s, ws, sbx, Side::Terminals, two));
-        if two {
-            cols = cols.child(column(s, ws, sbx, Side::Shells, two));
-        }
+        cols = cols.child(column(s, ws, sbx, Side::Terminals, two).grow(1.0));
     }
     col().key("workspace").grow(1.0).h_full().min_w(0.0).gap(4.0).motion(theme::SNAPPY)
-        .child(header(s, sbx))
+        .child(header(s, ws, sbx))
         .child(cols)
         .child(row().w_full().h(24.0).px(12.0).center_y().min_w(0.0)
             .child(status_line(s)))

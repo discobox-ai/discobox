@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 4;
+pub const PROTOCOL: i64 = 5;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 5;
@@ -485,10 +485,11 @@ pub enum Topic {
     #[serde(rename = "audit")]
     Audit,
 
-    /// TopicForwards is a box's ports forwarded to this machine, for as long as the subscription
-    /// lasts (Box).
-    #[serde(rename = "forwards")]
-    Forwards,
+    /// TopicHeader is what a box's workspace header says of it, as the core says it
+    /// (console.Header), with its ports forwarded to this machine for as long as the subscription
+    /// lasts: the workspace's forward, which goes with the screen showing it (Box).
+    #[serde(rename = "header")]
+    Header,
 
     /// TopicSessions is what a box's workspace opens: its sessions and services, as the core orders
     /// and names them (Box).
@@ -515,7 +516,7 @@ impl Topic {
             Topic::Requests => "requests",
             Topic::Provisioning => "provisioning",
             Topic::Audit => "audit",
-            Topic::Forwards => "forwards",
+            Topic::Header => "header",
             Topic::Sessions => "sessions",
             Topic::Commands => "commands",
             Topic::Palette => "palette",
@@ -639,7 +640,7 @@ pub struct Snapshot {
     pub audit: Option<Audit>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forwards: Option<Forwards>,
+    pub header: Option<Header>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sessions: Option<Sessions>,
@@ -1079,21 +1080,104 @@ pub struct AuditRecord {
     pub group_summary: String,
 }
 
-/// Forwards is every port forwarded now, in the box's port order.
+/// Header is what a box's workspace header says (console.Header): each field the core's answer,
+/// their order and colors the app's.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Forwards {
-    pub ports: Vec<Forward>,
-}
+pub struct Header {
+    pub id: String,
 
-/// Forward is one box port at a local one.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Forward {
-    pub port: i64,
+    /// Work is the issue and the pull request the box's tags number, each a link to it.
+    pub work: Vec<Link>,
+
+    /// Blocked is what a box waiting on a person says in place of the git word, empty for one that
+    /// is not.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub blocked: String,
+
+    /// Base is the work's git position; Changes its state as a word (dirty, ready, clean), empty
+    /// when there is nothing to say. Tone is how both read, and Ready a ready pull request over
+    /// ready work, which reads as done.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub base: String,
 
     #[serde(default, skip_serializing_if = "is_default")]
-    pub udp: bool,
+    pub changes: String,
 
-    pub local: i64,
+    pub tone: GitTone,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub ready: bool,
+
+    /// Diff is whether the box has reported a change, and Added and Deleted the lines it changed.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub diff: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub added: i64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub deleted: i64,
+
+    /// Desktop is the box's graphical desktop, once its forward has bound it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop: Option<Link>,
+
+    /// Ports is what the box serves, by protocol, web first; a forwarded web port links to its
+    /// local end.
+    pub ports: Vec<PortGroup>,
+
+    /// Tags is the box's tags the header says nothing of otherwise, labeled.
+    pub tags: Vec<String>,
+
+    /// Unforwarded is why the box's ports could not be forwarded, when they could not: they are
+    /// listed, unlinked.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub unforwarded: String,
+}
+
+/// Link is something in the header a press opens in the browser; one without a URL is text.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Link {
+    pub label: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub url: String,
+}
+
+/// GitTone is how a header reads the work's git position and word.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GitTone {
+    /// ToneQuiet is clean work, or work nothing is known about.
+    #[default]
+    #[serde(rename = "quiet")]
+    Quiet,
+
+    /// ToneDirty is uncommitted work.
+    #[serde(rename = "dirty")]
+    Dirty,
+
+    /// ToneAhead is committed work beyond what the box was cut from.
+    #[serde(rename = "ahead")]
+    Ahead,
+}
+
+impl GitTone {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GitTone::Quiet => "quiet",
+            GitTone::Dirty => "dirty",
+            GitTone::Ahead => "ahead",
+        }
+    }
+}
+
+/// PortGroup is one protocol's ports, in port order.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PortGroup {
+    pub protocol: String,
+
+    pub ports: Vec<Link>,
 }
 
 /// Sessions is what a box's workspace opens, by the core's rules: its sessions in tab order, the
@@ -1549,7 +1633,8 @@ pub struct Close {
     pub stream: u32,
 }
 
-/// Stream says a stream's state changed. A failed stream is forgotten.
+/// Stream says a stream's state changed. A failed stream is forgotten. End is what an ending, or a
+/// failure to attach, does to the workspace; Status is what a held tab says over its last screen.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Stream {
     pub stream: u32,
@@ -1558,6 +1643,12 @@ pub struct Stream {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub why: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<TabEnd>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub status: String,
 }
 
 /// StreamState is where a stream stands.
@@ -1575,6 +1666,11 @@ pub enum StreamState {
 
     #[serde(rename = "reconnected")]
     Reconnected,
+
+    /// StreamEnded is the session's program ending, and End what that does to the workspace
+    /// (console.Tab.End). The stream's Exit frame follows.
+    #[serde(rename = "ended")]
+    Ended,
 }
 
 impl StreamState {
@@ -1585,6 +1681,36 @@ impl StreamState {
             StreamState::Failed => "failed",
             StreamState::Reconnecting => "reconnecting",
             StreamState::Reconnected => "reconnected",
+            StreamState::Ended => "ended",
+        }
+    }
+}
+
+/// TabEnd is what a session's ending does to its workspace (console.TabEnd).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TabEnd {
+    /// EndWorkspace: the primary ended, and the workspace with it.
+    #[default]
+    #[serde(rename = "workspace")]
+    Workspace,
+
+    /// EndTab: the tab goes; Why says why when its stream broke.
+    #[serde(rename = "tab")]
+    Tab,
+
+    /// EndHeld: the program finished, and the tab stays with its last screen to be read until it is
+    /// dismissed; Status is what it says over it.
+    #[serde(rename = "held")]
+    Held,
+}
+
+impl TabEnd {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TabEnd::Workspace => "workspace",
+            TabEnd::Tab => "tab",
+            TabEnd::Held => "held",
         }
     }
 }

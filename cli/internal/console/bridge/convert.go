@@ -109,6 +109,52 @@ func wireTab(t console.Tab, e console.Exec) Tab {
 	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command)}
 }
 
+// wireEnd is what an ending does, as the wire says it.
+func wireEnd(e console.TabEnd) TabEnd {
+	switch e {
+	case console.EndsWorkspace:
+		return EndWorkspace
+	case console.EndsHeld:
+		return EndHeld
+	default:
+		return EndTab
+	}
+}
+
+// wireHeader is the core's header as the app draws it.
+func wireHeader(h console.Header) Header {
+	out := Header{
+		ID: h.ID, Work: make([]Link, 0, len(h.Work)), Base: h.Base, Changes: h.Changes,
+		Tone: ToneQuiet, Ready: h.Ready, Desktop: nil, Ports: make([]PortGroup, 0, len(h.Ports)), Tags: nonNil(h.Tags),
+	}
+	if h.Blocked {
+		out.Blocked = console.StatusBlocked
+	}
+	switch h.Tone {
+	case console.ToneDirty:
+		out.Tone = ToneDirty
+	case console.ToneAhead:
+		out.Tone = ToneAhead
+	}
+	for _, l := range h.Work {
+		out.Work = append(out.Work, Link{Label: l.Label, URL: l.URL})
+	}
+	if h.Diff != nil {
+		out.Diff, out.Added, out.Deleted = true, h.Diff.Added, h.Diff.Deleted
+	}
+	if h.Desktop != nil {
+		out.Desktop = &Link{Label: h.Desktop.Label, URL: h.Desktop.URL}
+	}
+	for _, g := range h.Ports {
+		group := PortGroup{Protocol: g.Protocol, Ports: make([]Link, 0, len(g.Ports))}
+		for _, p := range g.Ports {
+			group.Ports = append(group.Ports, Link{Label: p.Label, URL: p.URL})
+		}
+		out.Ports = append(out.Ports, group)
+	}
+	return out
+}
+
 func wireService(s console.Service) Service {
 	return Service{ID: s.ID, Name: s.DisplayName(), Status: s.Status, Exec: s.ExecID, Detail: s.Detail()}
 }

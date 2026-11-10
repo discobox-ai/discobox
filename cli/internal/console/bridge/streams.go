@@ -32,6 +32,9 @@ type stream struct {
 	mu sync.Mutex
 	// term is nil until the stream is attached.
 	term console.Terminal
+	// tab is the session the stream shows, as the core made it a tab: what
+	// its ending does is the tab's (console.Tab.End).
+	tab console.Tab
 	// early is what the app sent before then, in order.
 	early      []Frame
 	earlyBytes int
@@ -103,11 +106,11 @@ func apply(term console.Terminal, f Frame) {
 	}
 }
 
-// attach gives a stream its terminal: what was kept for it is applied in
-// order, then its output and its connection's state go to the app until it
-// ends or is closed. A stream that ended or was closed while it opened takes
-// no terminal, and false says the terminal was closed.
-func (s *streams) attach(id uint32, term console.Terminal) bool {
+// attach gives a stream its terminal, showing tab: what was kept for it is
+// applied in order, then its output and its connection's state go to the app
+// until it ends or is closed. A stream that ended or was closed while it
+// opened takes no terminal, and false says the terminal was closed.
+func (s *streams) attach(id uint32, term console.Terminal, tab console.Tab) bool {
 	st := s.get(id)
 	if st == nil {
 		_ = term.Close()
@@ -120,7 +123,7 @@ func (s *streams) attach(id uint32, term console.Terminal) bool {
 		_ = term.Close()
 		return false
 	}
-	st.term = term
+	st.term, st.tab = term, tab
 	for _, f := range st.early {
 		apply(term, f)
 	}
@@ -132,8 +135,9 @@ func (s *streams) attach(id uint32, term console.Terminal) bool {
 	return true
 }
 
-// pump sends the terminal's output on its stream, and its end as one Exit
-// frame carrying why, if it failed.
+// pump sends the terminal's output on its stream, and its end: what the
+// ending does to the workspace (console.Tab.End), then one Exit frame
+// carrying why, if it failed.
 func (s *streams) pump(id uint32, st *stream) {
 	buf := make([]byte, 32*1024)
 	for {
@@ -149,9 +153,12 @@ func (s *streams) pump(id uint32, st *stream) {
 			default:
 			}
 			msg := ""
+			var why error
 			if !errors.Is(err, io.EOF) {
-				msg = err.Error()
+				msg, why = err.Error(), err
 			}
+			end := wireEnd(st.tab.End(why))
+			s.send(Message{Type: TypeStream, Stream: &Stream{Stream: id, State: StreamEnded, Why: msg, End: end, Status: st.tab.Status}})
 			_ = s.w.Write(frame.Exit, id, []byte(msg))
 			s.end(id)
 			return
@@ -195,11 +202,12 @@ func (s *streams) repaint(id uint32) bool {
 	return true
 }
 
-// fail says a stream could not be attached, and forgets it with what was
-// kept for it.
-func (s *streams) fail(id uint32, why error) {
+// fail says a stream opened on tab could not be attached, and forgets it with
+// what was kept for it; what that does to the workspace is the tab's
+// (console.Tab.End): a primary that cannot be reached ends it.
+func (s *streams) fail(id uint32, why error, tab console.Tab) {
 	s.retire(id)
-	s.send(Message{Type: TypeStream, Stream: &Stream{Stream: id, State: StreamFailed, Why: why.Error()}})
+	s.send(Message{Type: TypeStream, Stream: &Stream{Stream: id, State: StreamFailed, Why: why.Error(), End: wireEnd(tab.End(why))}})
 }
 
 // close is the app closing a stream: an attached one's terminal is closed,

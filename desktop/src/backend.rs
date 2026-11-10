@@ -23,9 +23,10 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
 
 use crate::wire::{
-    Answer, Box as Sandbox, ChoiceGroup, Command, Commands, Choice, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice, Form, Listing, Message, Open, Palette,
-    PaletteCommit, PaletteQuery, PaletteRow, Progress, Question, Remark, Result as CommandResult, Row, Sessions, Spec, SpecTarget,
-    State, Status, Stream, StreamState, Submit, Subscribe, Tab, TabKind, Topic, Type, Unsubscribe,
+    Answer, Box as Sandbox, ChoiceGroup, Close, Command, Commands, Choice, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice,
+    Form, GitTone, Header, Link, Listing, Message, Open, Palette, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
+    Remark, Result as CommandResult, Row, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState, Submit, Subscribe, Tab, TabEnd,
+    TabKind, Topic, Type, Unsubscribe,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -36,6 +37,8 @@ pub enum Out {
     Unsubscribe(u32),
     Command(Command),
     Open { stream: u32, sandbox: String, exec: String, cols: u16, rows: u16 },
+    /// A stream let go: the app shows it no more, and the session goes on in the box.
+    Close(u32),
     /// A form filled, drafted or dismissed.
     Submit(Submit),
     /// A question answered, or declined.
@@ -53,6 +56,7 @@ impl Out {
                 open: Some(Open { stream, r#box: sandbox, exec, cols: cols.into(), rows: rows.into() }),
                 ..Default::default()
             },
+            Out::Close(stream) => Message { r#type: Type::Close, close: Some(Close { stream }), ..Default::default() },
             Out::Answer(a) => Message { r#type: Type::Answer, answer: Some(a), ..Default::default() },
             Out::Submit(f) => Message { r#type: Type::Submit, submit: Some(f), ..Default::default() },
         }
@@ -72,6 +76,8 @@ pub enum Event {
     Commands(u32, Result<Commands, String>),
     /// What the palette's query found, or why it could not be read.
     Palette(u32, Result<Palette, String>),
+    /// A header subscription's snapshot, or why it could not be read.
+    Header(u32, Result<Header, String>),
     Result(CommandResult),
     Stream(Stream),
     Question(Question),
@@ -119,6 +125,10 @@ fn event(m: Message) -> Option<Event> {
                 })),
                 Topic::Sessions => Some(Event::Sessions(s.sub, match s.sessions {
                     Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
+                Topic::Header => Some(Event::Header(s.sub, match s.header {
+                    Some(h) if s.error.is_empty() => Ok(h),
                     _ => Err(s.error),
                 })),
                 Topic::Commands => Some(Event::Commands(s.sub, match s.commands {
@@ -347,6 +357,26 @@ impl Mock {
     }
 
     fn relist(&self) { self.inbox.push(Event::Listing(self.list_sub, Ok(self.listing()))); }
+
+    /// A box's header as the core would say it, roughly: its git, its diff, its tags, and for
+    /// the first box a dev server forwarded to this machine beside a database that is not a page.
+    fn header(&self, key: &str) -> Header {
+        let b = self.sandbox(key).cloned().unwrap_or_default();
+        let base = if b.branch.is_empty() { String::new() } else { format!("{}@{}{}", b.branch, b.commit, if b.dirty { "*" } else { "" }) };
+        let ports = if self.boxes.first().is_some_and(|f| f.key == key) {
+            vec![
+                PortGroup { protocol: "http".into(), ports: vec![Link { label: "5173".into(), url: "http://localhost:5173".into() }] },
+                PortGroup { protocol: "tcp".into(), ports: vec![Link { label: "5432".into(), url: String::new() }] },
+            ]
+        } else {
+            vec![]
+        };
+        Header {
+            id: b.id.clone(), work: vec![], blocked: if b.agent == "blocked" { "blocked".into() } else { String::new() }, changes: if b.agent == "blocked" || base.is_empty() { String::new() } else if b.dirty { "dirty".into() } else { "clean".into() },
+            base, tone: if b.dirty { GitTone::Dirty } else { GitTone::Quiet }, diff: b.added + b.deleted > 0, added: b.added, deleted: b.deleted,
+            ports, tags: b.tags.iter().map(|t| format!("#{t}")).collect(), ..Default::default()
+        }
+    }
 
     fn sandbox(&self, key: &str) -> Option<&Sandbox> { self.boxes.iter().find(|b| b.key == key) }
 
@@ -647,8 +677,19 @@ impl Backend for Mock {
                 let p = self.palette(palette.unwrap_or_default());
                 self.inbox.push(Event::Palette(sub, Ok(p)));
             }
+            Out::Subscribe(Subscribe { sub, topic: Topic::Header, r#box, .. }) => {
+                let h = self.header(&r#box);
+                self.inbox.push(Event::Header(sub, Ok(h)));
+            }
             Out::Subscribe(_) | Out::Unsubscribe(_) => {}
             Out::Command(c) if self.ask(&c) => {}
+            // A stream let go is a session left running in the box: the mock's is a local shell,
+            // which nothing would show again, so it goes.
+            Out::Close(stream) => {
+                if let Some(mut p) = self.ptys.remove(&stream) {
+                    let _ = p.child.kill();
+                }
+            }
             Out::Command(c) => {
                 let mut r = self.command(c.clone());
                 r.id = c.id;
@@ -657,8 +698,8 @@ impl Backend for Mock {
             Out::Open { stream, sandbox, exec, cols, rows } => {
                 let kind = if exec == "primary" { TabKind::Primary } else { TabKind::Shell };
                 let state = match self.spawn(&sandbox, &mock_exec(&exec, kind, ""), stream, cols, rows) {
-                    Ok(()) => Stream { stream, state: StreamState::Attached, why: String::new() },
-                    Err(why) => Stream { stream, state: StreamState::Failed, why },
+                    Ok(()) => Stream { stream, state: StreamState::Attached, ..Default::default() },
+                    Err(why) => Stream { stream, state: StreamState::Failed, why, end: Some(if kind == TabKind::Primary { TabEnd::Workspace } else { TabEnd::Tab }), ..Default::default() },
                 };
                 self.inbox.push(Event::Stream(state));
             }
@@ -724,11 +765,20 @@ impl Pty {
             );
             inbox.push(Event::Data(stream, banner.into_bytes()));
         }
+        let primary = exec.kind == TabKind::Primary;
         std::thread::spawn(move || {
             let mut buf = [0u8; 16 * 1024];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => {
+                        // What the ending does, as the core's Tab.End says it: the primary takes the
+                        // workspace with it, anything else that finished is held.
+                        let ended = if primary {
+                            Stream { stream, state: StreamState::Ended, end: Some(TabEnd::Workspace), ..Default::default() }
+                        } else {
+                            Stream { stream, state: StreamState::Ended, end: Some(TabEnd::Held), status: "finished".into(), ..Default::default() }
+                        };
+                        inbox.push(Event::Stream(ended));
                         inbox.push(Event::Exited(stream, String::new()));
                         break;
                     }

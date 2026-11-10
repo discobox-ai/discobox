@@ -88,8 +88,12 @@ read changed: the listing, the machine's resources and the requests every
 `console.ListPollEvery`, as the TUI reads them (the listing at once after a
 command changes a box: `relist`); a box's sessions (`console.Sessions`, the
 primary first, and only the primary for a box not running, since attaching it
-is what waits for the box) every `console.WorkspacePollEvery`; provisioning,
-the audit timeline and port forwards as they report. A topic about one box
+is what waits for the box) every `console.WorkspacePollEvery`; provisioning
+and the audit timeline as they report; and a workspace's header (`console.Header`)
+with its ports at the local ports of a forward that lasts as long as the
+subscription — the workspace's, which the app ends when it parks one — read
+again whenever the forward binds or loses a port and whenever another listing
+is read (`relisted`), never by reading the servers itself. A topic about one box
 resolves the box once, as it starts, and follows it on its server; a box no
 server lists ends it, and a server that could not be reached is tried again
 every beat. Which box a
@@ -129,7 +133,13 @@ shell or terminal command). Input, resize and repaint frames sent before it is
 attached are kept, in order, and applied when it is; a stream that fails is
 forgotten with them, and frames on a stream that ended are dropped. Output is
 `Stdout` frames, the end one `Exit` frame carrying why; `stream` messages say
-attached, failed, reconnecting, reconnected. `close` detaches a stream and ends
+attached, failed, reconnecting, reconnected, and ended: an ended or failed
+stream carries what that does to the workspace (`console.Tab.End`: the
+workspace, the tab, or the tab held with its last screen and what it says), by
+the tab the core made the session: one made here (shell, terminal) is attached
+with the tab it was made as, and one the app opens is looked up in what its
+box's sessions topic listed (`Server.tab`, the primary by its ID; kept while
+anything follows the box's sessions). It is sent before the Exit frame. `close` detaches a stream and ends
 nothing in the box; the `end` command ends the session in the box first, and
 closes its stream only once it has. What is kept early is bounded per stream
 (`earlyLimit`), and a CloseInput frame is dropped (289 §1).

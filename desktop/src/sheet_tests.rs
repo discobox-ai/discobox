@@ -223,7 +223,7 @@ fn a_dismissed_yes_or_no_is_no() {
 #[test]
 fn a_canceled_session_lets_its_stream_go() {
     let mut rt = runtime();
-    rt.state.pending.insert(77, Pending::Session(9, "b".into()));
+    rt.state.pending.insert(77, Pending::Session(9, "b".into(), None));
     rt.state.early.insert(9, vec![Event::Data(9, b"x".to_vec())]);
     rt.state.inbox.push(Event::Result(CommandResult { id: 77, status: Status::Canceled, ..Default::default() }));
     settle(&mut rt);

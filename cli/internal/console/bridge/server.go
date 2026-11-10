@@ -61,6 +61,12 @@ type Server struct {
 	// requests topic or a command, and when.
 	inboxed   inboxRead
 	questions map[uint64]chan Answer
+	// tabs is each box's sessions as the core made them tabs, by box key and
+	// exec ID, as listed: what a stream opened on one of them
+	// ends as (console.Tab.End). following counts each box's sessions
+	// subscriptions; a box's tabs go when the last of them ends.
+	tabs      map[string]map[string]console.Tab
+	following map[string]int
 }
 
 // NewServer is a bridge serving ds, writing to the app on out.
@@ -75,6 +81,8 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		subs:      map[uint32]context.CancelFunc{},
 		forms:     map[uint64]*mailbox{},
 		questions: map[uint64]chan Answer{},
+		tabs:      map[string]map[string]console.Tab{},
+		following: map[string]int{},
 	}
 	s.streams = newStreams(s.w, s.send)
 	return s
@@ -219,18 +227,69 @@ func (s *Server) handle(ctx context.Context, m Message) {
 
 // open attaches a stream to one of a box's sessions.
 func (s *Server) open(ctx context.Context, o Open) {
+	tab := s.tab(o.Box, o.Exec)
 	box, src, err := s.source(ctx, o.Box)
 	if err != nil {
-		s.streams.fail(o.Stream, err)
+		s.streams.fail(o.Stream, err, tab)
 		return
 	}
 	cols, rows := size(o.Cols, o.Rows)
 	term, err := src.OpenExec(ctx, box.ID, o.Exec, cols, rows)
 	if err != nil {
-		s.streams.fail(o.Stream, err)
+		s.streams.fail(o.Stream, err, tab)
 		return
 	}
-	s.streams.attach(o.Stream, term)
+	s.streams.attach(o.Stream, term, tab)
+}
+
+// tab is the tab a box's session is, as the core made it when its sessions
+// were listed; the primary by its ID. One never listed is a session as its ID
+// alone says (console.SessionTab), which ends as a shell does. A session made
+// here (frontend.session) is attached with the tab it was made as, and needs
+// no lookup.
+func (s *Server) tab(box, exec string) console.Tab {
+	s.mu.Lock()
+	t, ok := s.tabs[box][exec]
+	s.mu.Unlock()
+	if ok {
+		return t
+	}
+	return console.SessionTab(console.Exec{ID: exec, Primary: exec == console.ExecPrimary}, "")
+}
+
+// noteTabs keeps a box's sessions as tabs, as listed. It only adds: a
+// listing read while a session was being made does not hold it yet, and an
+// open of it must not miss it. What it keeps for a box goes when the box's
+// sessions stop being followed (followTabs); a stream already open keeps its
+// own.
+func (s *Server) noteTabs(box string, tabs []console.Tab) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tabs[box] == nil {
+		s.tabs[box] = map[string]console.Tab{}
+	}
+	for _, t := range tabs {
+		s.tabs[box][t.ExecID] = t
+	}
+}
+
+// followTabs counts a subscription following a box's sessions, and the
+// function it returns ends it: what noteTabs kept for the box goes once
+// nothing follows its sessions, since the app opens a box's sessions from
+// what that topic told it, and a box followed again is listed again before
+// the app can open anything from it.
+func (s *Server) followTabs(box string) func() {
+	s.mu.Lock()
+	s.following[box]++
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.following[box]--; s.following[box] <= 0 {
+			delete(s.following, box)
+			delete(s.tabs, box)
+		}
+	}
 }
 
 // size is a pane's size, or a terminal's default for one the app has not
@@ -357,6 +416,14 @@ func (s *Server) relisted() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.fresh
+}
+
+// listedBox is a box by its key, as the last listing has it.
+func (s *Server) listedBox(key string) (console.Sandbox, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.boxes[key]
+	return b, ok
 }
 
 type inboxRead struct {

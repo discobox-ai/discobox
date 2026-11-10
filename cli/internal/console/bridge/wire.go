@@ -17,8 +17,9 @@ import (
 // pins the exact app it runs (983 §2), so two that differ are a development
 // override: the app says which side is older and exits. 3 made the listing
 // the core's list (rows, notes, the filter and its choices); 4 added the
-// commands and palette topics.
-const Protocol = 4
+// commands and palette topics; 5, a workspace's header (the header topic, in
+// place of the bare forwards) and what a session's ending does (StreamEnded).
+const Protocol = 5
 
 // Type names a message.
 type Type string
@@ -134,9 +135,11 @@ const (
 	TopicProvisioning Topic = "provisioning"
 	// TopicAudit is a box's audit timeline, followed (Box).
 	TopicAudit Topic = "audit"
-	// TopicForwards is a box's ports forwarded to this machine, for as long
-	// as the subscription lasts (Box).
-	TopicForwards Topic = "forwards"
+	// TopicHeader is what a box's workspace header says of it, as the core
+	// says it (console.Header), with its ports forwarded to this machine for
+	// as long as the subscription lasts: the workspace's forward, which goes
+	// with the screen showing it (Box).
+	TopicHeader Topic = "header"
 	// TopicSessions is what a box's workspace opens: its sessions and
 	// services, as the core orders and names them (Box).
 	TopicSessions Topic = "sessions"
@@ -207,7 +210,7 @@ type Snapshot struct {
 	Requests     *Requests     `json:"requests,omitempty"`
 	Provisioning *Provisioning `json:"provisioning,omitempty"`
 	Audit        *Audit        `json:"audit,omitempty"`
-	Forwards     *Forwards     `json:"forwards,omitempty"`
+	Header       *Header       `json:"header,omitempty"`
 	Sessions     *Sessions     `json:"sessions,omitempty"`
 	Commands     *Commands     `json:"commands,omitempty"`
 	Palette      *Palette      `json:"palette,omitempty"`
@@ -467,16 +470,65 @@ type AuditRecord struct {
 	GroupSummary string    `json:"groupSummary,omitempty"`
 }
 
-// Forwards is every port forwarded now, in the box's port order.
-type Forwards struct {
-	Ports []Forward `json:"ports"`
+// Header is what a box's workspace header says (console.Header): each
+// field the core's answer, their order and colors the app's.
+type Header struct {
+	ID string `json:"id"`
+	// Work is the issue and the pull request the box's tags number, each a
+	// link to it.
+	Work []Link `json:"work"`
+	// Blocked is what a box waiting on a person says in place of the git
+	// word, empty for one that is not.
+	Blocked string `json:"blocked,omitempty"`
+	// Base is the work's git position; Changes its state as a word (dirty,
+	// ready, clean), empty when there is nothing to say. Tone is how both
+	// read, and Ready a ready pull request over ready work, which reads as
+	// done.
+	Base    string  `json:"base,omitempty"`
+	Changes string  `json:"changes,omitempty"`
+	Tone    GitTone `json:"tone"`
+	Ready   bool    `json:"ready,omitempty"`
+	// Diff is whether the box has reported a change, and Added and Deleted
+	// the lines it changed.
+	Diff    bool `json:"diff,omitempty"`
+	Added   int  `json:"added,omitempty"`
+	Deleted int  `json:"deleted,omitempty"`
+	// Desktop is the box's graphical desktop, once its forward has bound it.
+	Desktop *Link `json:"desktop,omitempty"`
+	// Ports is what the box serves, by protocol, web first; a forwarded web
+	// port links to its local end.
+	Ports []PortGroup `json:"ports"`
+	// Tags is the box's tags the header says nothing of otherwise, labeled.
+	Tags []string `json:"tags"`
+	// Unforwarded is why the box's ports could not be forwarded, when they
+	// could not: they are listed, unlinked.
+	Unforwarded string `json:"unforwarded,omitempty"`
 }
 
-// Forward is one box port at a local one.
-type Forward struct {
-	Port  int  `json:"port"`
-	UDP   bool `json:"udp,omitempty"`
-	Local int  `json:"local"`
+// Link is something in the header a press opens in the browser; one without
+// a URL is text.
+type Link struct {
+	Label string `json:"label"`
+	URL   string `json:"url,omitempty"`
+}
+
+// GitTone is how a header reads the work's git position and word.
+type GitTone string
+
+// The tones.
+const (
+	// ToneQuiet is clean work, or work nothing is known about.
+	ToneQuiet GitTone = "quiet"
+	// ToneDirty is uncommitted work.
+	ToneDirty GitTone = "dirty"
+	// ToneAhead is committed work beyond what the box was cut from.
+	ToneAhead GitTone = "ahead"
+)
+
+// PortGroup is one protocol's ports, in port order.
+type PortGroup struct {
+	Protocol string `json:"protocol"`
+	Ports    []Link `json:"ports"`
 }
 
 // Sessions is what a box's workspace opens, by the core's rules: its
@@ -751,11 +803,32 @@ const (
 	StreamFailed       StreamState = "failed"
 	StreamReconnecting StreamState = "reconnecting"
 	StreamReconnected  StreamState = "reconnected"
+	// StreamEnded is the session's program ending, and End what that does
+	// to the workspace (console.Tab.End). The stream's Exit frame follows.
+	StreamEnded StreamState = "ended"
 )
 
-// Stream says a stream's state changed. A failed stream is forgotten.
+// TabEnd is what a session's ending does to its workspace (console.TabEnd).
+type TabEnd string
+
+// The endings.
+const (
+	// EndWorkspace: the primary ended, and the workspace with it.
+	EndWorkspace TabEnd = "workspace"
+	// EndTab: the tab goes; Why says why when its stream broke.
+	EndTab TabEnd = "tab"
+	// EndHeld: the program finished, and the tab stays with its last screen
+	// to be read until it is dismissed; Status is what it says over it.
+	EndHeld TabEnd = "held"
+)
+
+// Stream says a stream's state changed. A failed stream is forgotten. End
+// is what an ending, or a failure to attach, does to the workspace; Status is
+// what a held tab says over its last screen.
 type Stream struct {
 	Stream uint32      `json:"stream"`
 	State  StreamState `json:"state"`
 	Why    string      `json:"why,omitempty"`
+	End    TabEnd      `json:"end,omitempty"`
+	Status string      `json:"status,omitempty"`
 }

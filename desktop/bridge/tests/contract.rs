@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
     Answer, Args, Close, Command, Context, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, State, Status,
-    StreamState, Submit, Subscribe, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
+    StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
 };
 use discobox_bridge::{Client, Incoming};
 
@@ -394,7 +394,7 @@ fn streams_fail_and_close() {
     let missing = Open { stream: 1, r#box: "b1".into(), exec: "missing".into(), cols: 80, rows: 24 };
     cli.send(Message { r#type: Type::Open, open: Some(missing), ..Default::default() });
     let s = cli.expect(Type::Stream).stream.unwrap();
-    assert_eq!((s.stream, s.state), (1, StreamState::Failed));
+    assert_eq!((s.stream, s.state, s.end), (1, StreamState::Failed, Some(TabEnd::Tab)));
     assert!(s.why.contains("no such session"), "{}", s.why);
 
     let open = Open { stream: 2, r#box: "b1".into(), exec: "sh".into(), cols: 80, rows: 24 };
@@ -418,6 +418,13 @@ fn streams_fail_and_close() {
     cli.client.input(3, b"exit\r").unwrap();
     let (lines, _) = cli.output(3);
     assert_eq!(lines, ["input exit"]);
+    // What its ending does is the core's, said before the stream's last frame: a shell that
+    // finished is held with its last screen.
+    let ended = cli.take("the shell's ending", |i| match i {
+        Incoming::Message(Message { stream: Some(s), .. }) if s.stream == 3 && s.state == StreamState::Ended => Some(s.clone()),
+        _ => None,
+    });
+    assert_eq!((ended.end, ended.status.as_str()), (Some(TabEnd::Held), "finished"));
     cli.settle(Duration::from_millis(300));
     let after = cli.backlog.iter().filter(|i| matches!(i, Incoming::Output(2, _) | Incoming::Exited(2, _))).count();
     assert_eq!(after, 0, "stream 2 went on after it was closed: {:?}", cli.backlog);

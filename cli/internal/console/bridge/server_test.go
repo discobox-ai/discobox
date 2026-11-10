@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -883,5 +884,108 @@ func TestAnEmptyListingIsAnswered(t *testing.T) {
 	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicListing}})
 	if l := a.expect(TypeSnapshot).Snapshot.Listing; l == nil || len(l.Rows) != 0 || len(l.Boxes) != 0 {
 		t.Fatalf("listing %+v", l)
+	}
+}
+
+// What a session's ending does is the core's (console.Tab.End), said before
+// the stream's Exit frame: the primary ends the workspace, a shell that
+// finished is held with its last screen, a tool goes, and a session that
+// could not be opened goes with its tab, or with the workspace for the
+// primary.
+func TestStreamEndingsAreTheCores(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	core.execs = []console.Exec{{ID: "diff", Tool: "diff", Command: []string{"lazygit"}, Live: true, Tty: true}}
+	a := dial(t, core)
+	a.hello()
+	// The tool is known as one from the box's sessions.
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicSessions, Box: "b1"}})
+	a.expect(TypeSnapshot)
+	ctx := Context{Workspace: "b1", HasWorkspace: true, WorkspaceShown: true, PaneFocused: true, Tree: true}
+	a.send(Message{Type: TypeOpen, Open: &Open{Stream: 1, Box: "b1", Exec: console.ExecPrimary}})
+	a.send(Message{Type: TypeOpen, Open: &Open{Stream: 2, Box: "b1", Exec: "diff"}})
+	if r := a.result(a.command(Command{Command: "shell", Targets: []string{"b1"}, Context: ctx, Args: Args{Stream: 3}})); r.Status != StatusDone {
+		t.Fatalf("shell %+v", r)
+	}
+	eventually(t, "every session opened", func() bool {
+		return core.opening(console.ExecPrimary) != nil && core.opening("diff") != nil && core.opening("sh1") != nil
+	})
+	ended := func(stream uint32) Stream {
+		t.Helper()
+		for {
+			m := a.expect(TypeStream)
+			if m.Stream.Stream == stream && m.Stream.State == StreamEnded {
+				return *m.Stream
+			}
+		}
+	}
+	close(core.opening("sh1").out)
+	if s := ended(3); s.End != EndHeld || s.Status != "finished" || s.Why != "" {
+		t.Fatalf("a shell that finished: %+v", s)
+	}
+	close(core.opening("diff").out)
+	if s := ended(2); s.End != EndTab {
+		t.Fatalf("a tool that finished: %+v", s)
+	}
+	close(core.opening(console.ExecPrimary).out)
+	if s := ended(1); s.End != EndWorkspace {
+		t.Fatalf("the primary that finished: %+v", s)
+	}
+
+	a.send(Message{Type: TypeOpen, Open: &Open{Stream: 4, Box: "b1", Exec: "missing"}})
+	if s := a.expect(TypeStream).Stream; s.State != StreamFailed || s.End != EndTab {
+		t.Fatalf("a session that could not be opened: %+v", s)
+	}
+	core.primaryGone = true
+	a.send(Message{Type: TypeOpen, Open: &Open{Stream: 5, Box: "b1", Exec: console.ExecPrimary}})
+	if s := a.expect(TypeStream).Stream; s.State != StreamFailed || s.End != EndWorkspace {
+		t.Fatalf("a primary that could not be opened: %+v", s)
+	}
+}
+
+// The header topic is the core's header of the box as the listing has it,
+// with its ports at the local ports of a forward that lasts as long as the
+// subscription; a forward that cannot be opened leaves the ports unlinked
+// and says why.
+func TestHeaderIsTheCores(t *testing.T) {
+	box := running("b1")
+	box.Repository = "https://github.com/acme/foo"
+	box.Tags = []string{"issue=7", "wip", "blocked"}
+	box.Branch, box.Commit, box.Dirty = "main", "abc", true
+	box.Diff = console.DiffStat{Known: true, Added: 3, Deleted: 1, Files: 1}
+	box.Ports = []console.Port{{Number: 5432, Protocol: "tcp"}, {Number: 3000, Protocol: "http"}}
+	core := newFakeCore("home", box)
+	core.forward = newFakeForward()
+	a := dial(t, core)
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicHeader, Box: "b1"}})
+	h := a.expect(TypeSnapshot).Snapshot.Header
+	if h == nil || h.ID != "b1" || h.Base != "main@abc*" || h.Tone != ToneDirty || h.Changes != "" || h.Blocked != console.StatusBlocked || !h.Diff || h.Added != 3 {
+		t.Fatalf("header %+v", h)
+	}
+	if len(h.Work) != 1 || h.Work[0].Label != "issue #7" || h.Work[0].URL != "https://github.com/acme/foo/issues/7" {
+		t.Fatalf("work %+v", h.Work)
+	}
+	if !reflect.DeepEqual(h.Tags, []string{"#wip"}) {
+		t.Fatalf("tags %q", h.Tags)
+	}
+	want := []PortGroup{{Protocol: "http", Ports: []Link{{Label: "3000"}}}, {Protocol: "tcp", Ports: []Link{{Label: "5432"}}}}
+	if !reflect.DeepEqual(h.Ports, want) {
+		t.Fatalf("ports %+v, want %+v", h.Ports, want)
+	}
+	core.forward.bind(console.Binding{Port: 3000, Local: 3001}, console.Binding{Port: 5432, Local: 5432})
+	h = a.expect(TypeSnapshot).Snapshot.Header
+	want = []PortGroup{{Protocol: "http", Ports: []Link{{Label: "3001->3000", URL: "http://localhost:3001"}}}, {Protocol: "tcp", Ports: []Link{{Label: "5432"}}}}
+	if !reflect.DeepEqual(h.Ports, want) {
+		t.Fatalf("forwarded ports %+v, want %+v", h.Ports, want)
+	}
+	// The forward goes with the subscription.
+	a.send(Message{Type: TypeUnsubscribe, Unsubscribe: &Unsubscribe{Sub: 1}})
+	eventually(t, "the forward was closed", core.forward.isClosed)
+
+	core.forwardErr = errors.New("no route to the box")
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 2, Topic: TopicHeader, Box: "b1"}})
+	h = a.expect(TypeSnapshot).Snapshot.Header
+	if h.Unforwarded != "no route to the box" || len(h.Ports) != 2 || h.Ports[0].Ports[0].URL != "" {
+		t.Fatalf("an unforwarded header %+v", h)
 	}
 }

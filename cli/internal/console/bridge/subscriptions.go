@@ -42,13 +42,17 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 	case TopicRequests:
 		go f.poll(ctx, console.ListPollEvery, false, f.requests)
 	case TopicSessions:
-		go f.about(ctx, func() { f.poll(ctx, console.WorkspacePollEvery, true, f.sessions) })
+		done := s.followTabs(sub.Box)
+		go func() {
+			defer done()
+			f.about(ctx, func() { f.poll(ctx, console.WorkspacePollEvery, true, f.sessions) })
+		}()
 	case TopicProvisioning:
 		go f.about(ctx, func() { f.provisioning(ctx) })
 	case TopicAudit:
 		go f.about(ctx, func() { f.audit(ctx) })
-	case TopicForwards:
-		go f.about(ctx, func() { f.forwards(ctx) })
+	case TopicHeader:
+		go f.about(ctx, func() { f.header(ctx) })
 	case TopicCommands:
 		go f.relisted(ctx, f.commands)
 	case TopicPalette:
@@ -260,9 +264,13 @@ func (f *follower) sessions(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	out := Sessions{Running: true, Sessions: []Tab{wireTab(console.SessionTab(primary, ""), primary)}, Services: make([]Service, 0, len(services))}
+	tabs := []console.Tab{console.SessionTab(primary, "")}
 	for _, e := range console.Sessions(execs) {
-		out.Sessions = append(out.Sessions, wireTab(console.SessionTab(e, ""), e))
+		tab := console.SessionTab(e, "")
+		tabs = append(tabs, tab)
+		out.Sessions = append(out.Sessions, wireTab(tab, e))
 	}
+	f.s.noteTabs(f.sub.Box, tabs)
 	for _, svc := range services {
 		out.Services = append(out.Services, wireService(svc))
 	}
@@ -316,29 +324,46 @@ func (f *follower) audit(ctx context.Context) {
 	}
 }
 
-// forwards forwards a box's ports to this machine for as long as the
-// subscription lasts, and says what is bound whenever that changes.
-func (f *follower) forwards(ctx context.Context) {
+// header follows a box's workspace header: the core's (console.NewHeader)
+// for the box as the last listing has it, with its ports at the local ports
+// of a forward that lasts as long as the subscription — the workspace's,
+// which goes with the screen showing it (console.Workspace.Park). It is read
+// again whenever the forward binds or loses a port, and whenever the listing
+// is read (relisted), since the listing carries the git state and the ports
+// served. A forward
+// that could not be opened leaves the ports listed and unlinked, and says
+// why.
+func (f *follower) header(ctx context.Context) {
 	box, src := f.box, f.src
-	fw, err := src.Forward(ctx, box.ID)
-	if err != nil {
-		f.failed(err)
-		return
+	var bindings func() []console.Binding
+	var events <-chan struct{}
+	unforwarded := ""
+	if fw, err := src.Forward(ctx, box.ID); err != nil {
+		unforwarded = err.Error()
+	} else {
+		defer func() { _ = fw.Close() }()
+		bindings, events = fw.Bindings, fw.Events()
 	}
-	defer func() { _ = fw.Close() }()
 	for {
-		bindings := fw.Bindings()
-		out := Forwards{Ports: make([]Forward, 0, len(bindings))}
-		for _, b := range bindings {
-			out.Ports = append(out.Ports, Forward{Port: b.Port, UDP: b.UDP, Local: b.Local})
+		fresh := f.s.relisted()
+		if b, ok := f.s.listedBox(f.sub.Box); ok {
+			box = b
 		}
-		f.send(Snapshot{Forwards: &out})
+		var forwarded map[console.PortKey]int
+		if bindings != nil {
+			forwarded = console.Forwarded(bindings())
+		}
+		h := wireHeader(console.NewHeader(box, forwarded))
+		h.Unforwarded = unforwarded
+		f.send(Snapshot{Header: &h})
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-fw.Events():
+		case <-fresh:
+		case _, ok := <-events:
 			if !ok {
-				return
+				// The forward has closed: what it bound is gone.
+				events, bindings = nil, nil
 			}
 		}
 	}

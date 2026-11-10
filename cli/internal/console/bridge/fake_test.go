@@ -50,6 +50,11 @@ type fakeCore struct {
 	view console.ListView
 	// lists is how many times the listing was read.
 	lists int
+	// forward is what Forward hands out, and forwardErr why it cannot.
+	forward    *fakeForward
+	forwardErr error
+	// primaryGone fails an open of the primary.
+	primaryGone bool
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -170,7 +175,7 @@ func (f *fakeCore) OpenExec(ctx context.Context, box, exec string, cols, rows in
 			return nil, ctx.Err()
 		}
 	}
-	if exec == "missing" {
+	if exec == "missing" || (exec == console.ExecPrimary && f.primaryGone) {
 		return nil, errors.New("no such session")
 	}
 	return f.term(exec), nil
@@ -194,6 +199,57 @@ func (f *fakeCore) EndExec(_ context.Context, box, exec string) error {
 		return errors.New("the session would not end")
 	}
 	return nil
+}
+
+func (f *fakeCore) Forward(_ context.Context, box string) (console.Forward, error) {
+	f.call("forward %s", box)
+	if f.forwardErr != nil {
+		return nil, f.forwardErr
+	}
+	return f.forward, nil
+}
+
+// fakeForward is a box's ports forwarded: bind moves what it has bound and
+// wakes the follower.
+type fakeForward struct {
+	mu       sync.Mutex
+	bindings []console.Binding
+	events   chan struct{}
+	closed   chan struct{}
+	once     sync.Once
+}
+
+func newFakeForward(bindings ...console.Binding) *fakeForward {
+	return &fakeForward{bindings: bindings, events: make(chan struct{}, 1), closed: make(chan struct{})}
+}
+
+func (w *fakeForward) bind(bindings ...console.Binding) {
+	w.mu.Lock()
+	w.bindings = bindings
+	w.mu.Unlock()
+	w.events <- struct{}{}
+}
+
+func (w *fakeForward) Bindings() []console.Binding {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]console.Binding(nil), w.bindings...)
+}
+
+func (w *fakeForward) Events() <-chan struct{} { return w.events }
+
+func (w *fakeForward) Close() error {
+	w.once.Do(func() { close(w.closed) })
+	return nil
+}
+
+func (w *fakeForward) isClosed() bool {
+	select {
+	case <-w.closed:
+		return true
+	default:
+		return false
+	}
 }
 
 func (f *fakeCore) PutImage(_ context.Context, box, name string, data []byte) (string, error) {
