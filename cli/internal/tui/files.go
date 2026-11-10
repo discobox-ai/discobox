@@ -391,9 +391,6 @@ func (m *Model) focusFiles() tea.Cmd {
 	if !taking {
 		return nil
 	}
-	// A drop is confirmed while the keys stay where it was pasted; one left
-	// waiting when they moved away is not what the person is looking at now.
-	m.filesDrop = nil
 	return m.readGit()
 }
 
@@ -873,6 +870,15 @@ func (m *Model) filesDropped(msg filesDropMsg) tea.Cmd {
 	return status("enter copies %s into %q · any other key copies nothing", m.dropWhat(msg), msg.dir)
 }
 
+// syncFilesDrop lets go of a drop waiting for Enter once the panel no longer
+// has the keys, or shows another box: closed, left for a pane or the tree, or
+// the workspace switched. Update calls it after every message.
+func (m *Model) syncFilesDrop() {
+	if d := m.filesDrop; d != nil && (!m.filesHasKeys() || m.boxRef(d.box) != m.boxRef(m.paneBox)) {
+		m.filesDrop = nil
+	}
+}
+
 // dropWhat names what a drop copies: the one file's name, or a count.
 func (m *Model) dropWhat(msg filesDropMsg) string {
 	if len(msg.paths) == 1 {
@@ -1012,10 +1018,7 @@ func (m *Model) viewFiles() string {
 			target = where.what.idx
 		}
 	}
-	drop := m.filesDrop
-	if drop != nil && m.boxRef(drop.box) != m.boxRef(m.paneBox) {
-		drop = nil
-	}
+	drop := m.filesDrop // only ever set while the panel has the keys (syncFilesDrop)
 	if drop != nil {
 		// What a drop would copy, every path in full as far as the width
 		// allows, so a paste nobody meant as one is seen before Enter.

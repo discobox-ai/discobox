@@ -208,6 +208,22 @@ func TestFilesDroppedFromThisMachineAreCopiedIn(t *testing.T) {
 		}
 		d.dispatch(tea.PasteMsg{Content: "'" + local + "'"})
 		d.wait("the drop to wait for enter", func() bool { return m.filesDrop != nil })
+		// The keys leaving the panel let the drop go too: coming back finds
+		// the tree, not a list one Enter would still send.
+		d.key("ctrl+a")
+		d.key("h")
+		d.settle()
+		if m.filesDrop != nil {
+			t.Fatal("a drop should not outlive the panel's keys")
+		}
+		d.key("ctrl+a")
+		d.key(filesPanelKey)
+		d.settle()
+		if view := ansi.Strip(m.viewFiles()); strings.Contains(view, "copy into") || len(ds.uploadsSoFar()) != 0 {
+			t.Fatalf("back in the panel, the drop should be gone; uploads %+v, panel:\n%s", ds.uploadsSoFar(), view)
+		}
+		d.dispatch(tea.PasteMsg{Content: "'" + local + "'"})
+		d.wait("the drop to wait for enter", func() bool { return m.filesDrop != nil })
 		d.key("enter")
 		d.wait("the upload", func() bool { return len(ds.uploadsSoFar()) == 1 })
 		if got := ds.uploadsSoFar()[0]; !slices.Equal(got.local, []string{local}) || got.dir != "/src/cmd" {

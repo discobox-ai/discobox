@@ -99,7 +99,11 @@
   person pastes it later without looking. A paste that would copy files off
   this machine — the files panel's drop — shows what it would send and waits
   for Enter (`filesDrop`); acting on the paste itself let a planted list of
-  paths (`~/.ssh/id_ed25519`) be uploaded into the box.
+  paths (`~/.ssh/id_ed25519`) be uploaded into the box. A confirmation lives
+  only while the keys stay where it was asked: ended after every message
+  once they leave (`syncFilesDrop`, from `Update`), not on each way out — the
+  first cut cleared it on the panel's own keys alone, and a click elsewhere,
+  a leader key or a switch of box left its "enter copy" live.
 
 - **Input held behind slow work never holds the leader.** An image paste holds
   a pane's keys while it reads the clipboard and copies into the discobox,
