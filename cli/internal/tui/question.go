@@ -19,8 +19,11 @@ import (
 // Means: the create's questions about the working tree) is its two rows with
 // what each means beside it, y and n pressing them. Any other pick has each
 // choice's hint under the menu while it is chosen, and its first nine
-// choices are pressed by their place, 1 to 9.
-func questionDialog(q console.Question, answer func(key string) tea.Cmd) *dialog {
+// choices are pressed by their place, 1 to 9 — or, for a screen with keys of
+// its own for a question's answers (the issue tab's close and merge), by the
+// key presses gives each choice. A choice the question offers with why it
+// cannot be chosen is shown with why, and never taken.
+func questionDialog(q console.Question, presses map[string]string, answer func(key string) tea.Cmd) *dialog {
 	title, body := ansi.Strip(q.Title), ansi.Strip(q.Body)
 	if len(q.Choices) == 0 {
 		d := confirmDialog(title, body, func(string) tea.Cmd { return answer(console.AnswerYes) })
@@ -37,6 +40,9 @@ func questionDialog(q console.Question, answer func(key string) tea.Cmd) *dialog
 		items[i] = action{key: choice.Key, label: choice.Label, enabled: choice.Why == "", why: choice.Why}
 		if i < 9 {
 			items[i].press = strconv.Itoa(i + 1)
+		}
+		if press, ok := presses[choice.Key]; ok {
+			items[i].press = press
 		}
 		hints[i] = choice.Hint
 		yesNo = yesNo && choice.Means != ""
@@ -57,23 +63,6 @@ func questionDialog(q console.Question, answer func(key string) tea.Cmd) *dialog
 	return d
 }
 
-// questionActions are a pick of one's choices as a card's rows, each pressed
-// by its key in presses, else by its own key; one the question offers with
-// why it cannot be chosen is shown with why, and never taken. A screen with
-// keys of its own for a question's answers (the issue tab's close and merge)
-// lays them out with it.
-func questionActions(q console.Question, presses map[string]string) []action {
-	items := make([]action, 0, len(q.Choices))
-	for _, c := range q.Choices {
-		press := presses[c.Key]
-		if press == "" {
-			press = c.Key
-		}
-		items = append(items, action{key: c.Key, press: press, label: c.Label, detail: c.Hint, enabled: c.Why == "", why: c.Why})
-	}
-	return items
-}
-
 // ask puts a running command's question to the person. One from an
 // operation the window has moved on from is declined unasked: nobody is
 // waiting on its answer here any more. A create's own questions — the ones
@@ -89,7 +78,7 @@ func (m *Model) ask(feed narration, asking *console.Asking) tea.Cmd {
 		return nil
 	}
 	previous := m.dialog
-	m.dialog = questionDialog(asking.Question, func(key string) tea.Cmd { asking.Answer(key); return nil })
+	m.dialog = questionDialog(asking.Question, nil, func(key string) tea.Cmd { asking.Answer(key); return nil })
 	if len(asking.Choices) > 0 {
 		// Left unchosen, a pick of one is no answer: the command is told it
 		// was dismissed. Every way the card closes comes here.

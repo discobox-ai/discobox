@@ -418,6 +418,16 @@ func TestThePullRequestIsClosedAndReopened(t *testing.T) {
 		if m.dialog == nil || !strings.Contains(plainFrame(m), "Close #9 without merging it?") {
 			t.Fatalf("x did not ask before closing it:\n%s", plainFrame(m))
 		}
+		// Left, a yes or no is answered no, as every question is
+		// (questionDialog): nothing is sent.
+		d.key("esc")
+		ds.mu.Lock()
+		left := len(ds.states)
+		ds.mu.Unlock()
+		if m.dialog != nil || left != 0 {
+			t.Fatalf("leaving the close question: dialog %v, %d changes sent", m.dialog != nil, left)
+		}
+		d.key("x")
 		d.key("y")
 		// The tab goes to its foot to show what was done, so the keys line is
 		// what says how it stands.

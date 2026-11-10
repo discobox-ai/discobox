@@ -450,7 +450,7 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 			return func() tea.Msg { return harnessVerbMsg{verb: verb, harness: harness} }
 		}
 		if len(q.Choices) == 0 {
-			m.dialog = questionDialog(q, reset)
+			m.dialog = questionDialog(q, nil, reset)
 			return nil
 		}
 		items := make([]action, 0, len(q.Choices))

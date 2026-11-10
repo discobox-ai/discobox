@@ -621,7 +621,7 @@ func (m *Model) reviewBinding(secretName string, b console.SecretBinding, back f
 // working. back is the list the question was asked from, which No returns to,
 // and after where a finished unbind goes on to (secretActionMsg.after).
 func (m *Model) confirmUnbind(secretName string, b console.SecretBinding, back, after func() tea.Cmd) tea.Cmd {
-	d := questionDialog(console.UnbindQuestion(secretName, b, m.bindingTarget(b)), func(answer string) tea.Cmd {
+	d := questionDialog(console.UnbindQuestion(secretName, b, m.bindingTarget(b)), nil, func(answer string) tea.Cmd {
 		if answer != console.AnswerYes {
 			return back()
 		}
@@ -717,7 +717,7 @@ func (m *Model) confirmDeleteSecret() tea.Cmd {
 	}
 	was, server := *secret, m.configServer()
 	// What goes with it, and that Enter is not the answer, are the core's.
-	m.dialog = questionDialog(console.DeleteSecretQuestion(was.Name, m.secrets.liveBindings(was.ID)), func(answer string) tea.Cmd {
+	m.dialog = questionDialog(console.DeleteSecretQuestion(was.Name, m.secrets.liveBindings(was.ID)), nil, func(answer string) tea.Cmd {
 		if answer != console.AnswerYes {
 			m.dialog = nil
 			return nil

@@ -225,7 +225,7 @@ func (m *Model) Settings(box console.Sandbox) tea.Cmd { return m.askSettings(box
 // Confirm asks the question the core puts before a verb (purging's, which
 // nothing can undo), and sends the verb only on yes.
 func (m *Model) Confirm(q console.Question, verb console.Verb, targets []console.Sandbox) tea.Cmd {
-	m.dialog = questionDialog(q, func(key string) tea.Cmd {
+	m.dialog = questionDialog(q, nil, func(key string) tea.Cmd {
 		if key != console.AnswerYes {
 			return nil
 		}

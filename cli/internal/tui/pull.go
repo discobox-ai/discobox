@@ -195,7 +195,7 @@ func (m *Model) askMerge(p *pane) tea.Cmd {
 		return status("%v", err)
 	}
 	issue := *v.issue
-	d := actionsDialog(q.Title, q.Body, questionActions(q, mergePresses), func(key string) tea.Cmd {
+	d := questionDialog(q, mergePresses, func(key string) tea.Cmd {
 		if _, ok := issue.MergeMethod(key); !ok {
 			return nil
 		}

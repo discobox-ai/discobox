@@ -507,12 +507,9 @@ func (m *Model) askIssueState(p *pane) tea.Cmd {
 		}
 		return m.setIssueState(p, issue, key)
 	}
-	var d *dialog
-	if len(q.Choices) == 0 {
-		d = confirmDialog(q.Title, q.Body, func(string) tea.Cmd { return act(console.AnswerYes) })
-	} else {
-		d = actionsDialog(q.Title, q.Body, questionActions(q, closePresses), act)
-	}
+	// The core's question as every question is drawn (questionDialog): a
+	// yes or no left is answered no, which changes nothing.
+	d := questionDialog(q, closePresses, act)
 	d.over = p
 	m.dialog = d
 	return nil
