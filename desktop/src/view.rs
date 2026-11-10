@@ -7,7 +7,7 @@
 
 use rune::{Color, Cx, Drag, El, Icon, PointerPress, Spring, Transition, Tx, col, el, icon, row, spacer, text, text_input};
 
-use crate::wire::{Box as Sandbox, GitTone, Link, Row, TabKind};
+use crate::wire::{Box as Sandbox, GitTone, Link, NoticeKind, Row, TabKind};
 use crate::theme::{self, CELL_H};
 use crate::paste::{self, DropOver};
 use crate::{Focus, MenuKind, Pane, Side, State, Workspace, audit, harnesses, icons, issue, keys, mark, overlay, run_command, run_on, secrets, sheet};
@@ -708,10 +708,44 @@ fn workspace(s: &State, ws: &Workspace) -> El {
         .child(t(ws.step.clone(), theme::grey()).font(theme::UI_SMALL).truncate().shrink()));
     col().key("workspace").grow(1.0).h_full().min_w(0.0).gap(4.0).motion(theme::SNAPPY)
         .child(header(s, ws, sbx))
+        .children(notice(s))
         .children(step)
         .child(cols)
         .child(row().w_full().h(24.0).px(12.0).center_y().min_w(0.0)
             .child(status_line(s)))
+}
+
+/// The box's notice, under its header, when the core says it has one (the requests topic's
+/// `notices`): a refused credential, a request a person is waiting on, or a harness change to
+/// save — one at a time, in the core's precedence, as the TUI's band. It says what it is about
+/// and what pressing it does; pressing it runs its command on the box, and its close is
+/// `dismiss`, until what it is about changes. The one a person is waiting on now is lit.
+fn notice(s: &State) -> Option<El> {
+    let n = s.notice()?.clone();
+    let accent = match n.kind {
+        NoticeKind::HarnessChanges => theme::mark(),
+        _ => theme::err(),
+    };
+    let mut what = row().grow(1.0).shrink().min_w(0.0).gap(8.0).center_y()
+        .child(t(n.subject.clone(), theme::text()).font(theme::UI_BOLD).truncate());
+    if !n.detail.is_empty() {
+        what = what.child(t("·", theme::dim())).child(t(n.detail.clone(), theme::text()).truncate().shrink());
+    }
+    if !n.behind.is_empty() {
+        what = what.child(t("·", theme::dim())).child(t(n.behind.clone(), theme::grey()).truncate().shrink());
+    }
+    let (command, sandbox) = (n.command.clone(), n.r#box.clone());
+    let call = row().key("notice-call").h(20.0).px(10.0).center_y().radius(theme::r_key())
+        .fill(if n.urgent { accent.alpha(0.32) } else { accent.alpha(0.16) }).border(theme::stroke_quiet(), accent)
+        .hover(accent.alpha(0.4)).cursor(rune::Cursor::Pointer).motion(theme::SNAPPY)
+        .child(t(n.call.clone(), theme::text()).font(theme::UI_SMALL))
+        .help(tip(s, &n.command).unwrap_or_default())
+        .on_press_tx(move |s: &mut State, tx: &mut Tx| run_on(s, &command, vec![sandbox.clone()], tx));
+    let close = icon_button("notice-dismiss", &icons::CLOSE, tip(s, "dismiss"))
+        .on_press_tx(|s: &mut State, tx: &mut Tx| run_command(s, "dismiss", tx));
+    Some(row().key("notice").w_full().h(28.0).px(12.0).gap(10.0).center_y().radius(theme::r_row())
+        .fill(accent.alpha(0.10)).border(theme::stroke_quiet(), accent).motion(theme::SNAPPY)
+        .child(what).child(call).child(close))
 }
 
 // ---------------------------------------------------------------------------------------------

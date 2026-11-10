@@ -28,7 +28,7 @@ use crate::wire::{
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
     HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address, Upload, Secret, SecretAction, SecretBinding, SecretStanding,
-    Decision, DetailSection, DetailField, SecretWords,
+    Decision, DetailSection, DetailField, DetailLine, SecretWords, Requests, Arrival, Request, RequestKind, Notice, NoticeKind, FormAction, CardAction,
     Audit, AuditPart, AuditRecord, AuditRecording, AuditRun, AuditText,
     Issue, IssueAct, IssueItem, IssueItemKind, IssueMark, IssueRef, IssueState, IssueTone, Label, PullRequest, Merge, Reviewer, Checks, Check,
     Thread, ThreadComment,
@@ -103,6 +103,11 @@ pub enum Event {
     Audit(u32, Result<Audit, String>),
     /// A box's issue or pull request as its tab draws it, or why it could not be read.
     Issue(u32, Result<Issue, String>),
+    /// What waits on a person: the requests, the refused credentials, each box's notice, the
+    /// requests just arrived, and what renewals the window allowed said.
+    Requests(u32, Result<Requests, String>),
+    /// A notification of a request pressed: the request to answer.
+    Answer(Arrival),
     Result(CommandResult),
     Stream(Stream),
     Question(Question),
@@ -179,6 +184,10 @@ fn event(m: Message) -> Option<Event> {
                     _ => Err(s.error),
                 })),
                 Topic::Issue => Some(Event::Issue(s.sub, match s.issue {
+                    Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
+                Topic::Requests => Some(Event::Requests(s.sub, match s.requests {
                     Some(v) if s.error.is_empty() => Ok(v),
                     _ => Err(s.error),
                 })),
@@ -274,6 +283,13 @@ pub struct Mock {
     changes: HashMap<String, HarnessChanges>,
     /// The project's secrets, as the core lists them.
     secrets: Vec<Secret>,
+    /// The requests waiting on a person, the requests subscription that says them with each
+    /// box's notice, and the boxes whose notice was dismissed.
+    requests: Vec<Request>,
+    requests_sub: u32,
+    dismissed: Vec<String>,
+    /// The action each form was submitted with, by its ID, for the one that answers it.
+    actions_taken: HashMap<u64, CardAction>,
     /// The run options a create is made with, and the composer topic that says them.
     run: MockRun,
     composer_sub: u32,
@@ -461,6 +477,8 @@ enum Ask {
     /// A secret's new one, edit, binding, delete or unbind, by the secret's ID (and the
     /// binding's, for an unbind).
     Secret(SecretAction, String, String),
+    /// A request's card, by the request's ID; from the secrets page, answered with the page.
+    Request(String, bool),
 }
 
 /// A field of a card the core describes, in its tone.
@@ -523,11 +541,37 @@ fn mock_secrets() -> Vec<Secret> {
 }
 
 /// What the secrets page says beside its secrets, as the core's words.
-fn mock_words() -> SecretWords {
+fn mock_words(waiting: usize) -> SecretWords {
     SecretWords {
         empty: "no secrets in this project yet".into(), bind: "Bind this secret…".into(), bind_detail: "hand it over before anything asks".into(),
         history_title: "Binding history and answered requests".into(), history_note: "Latest 100 changes".into(),
+        requests: "Requests".into(), waiting: format!("{waiting} waiting"), nothing_waiting: "nothing is waiting".into(),
     }
+}
+
+/// The request the mock's second box's agent made: github, to use in GH_TOKEN.
+fn mock_request(sandbox: &str) -> Request {
+    Request {
+        id: "req_gh".into(), r#box: sandbox.into(), kind: RequestKind::Credential, name: "github".into(), env_var: "GH_TOKEN".into(),
+        justification: "push the fix branch".into(), subject: "github".into(), r#where: "api.github.com".into(),
+        requester: "agent · p8c3n0vd".into(), age: "2m ago".into(), ..Default::default()
+    }
+}
+
+/// A request's card, as the core says its use part as it is answered (`console.RequestApproval`).
+fn mock_request_card(r: &Request) -> Vec<DetailSection> {
+    vec![
+        DetailSection { label: String::new(), fields: vec![
+            mock_field("Box", &r.r#box, CardTone::Standout), mock_field("Reason (box's words)", &r.justification, CardTone::Plain),
+            mock_field("Variable", &r.env_var, CardTone::Plain),
+        ], lines: vec![] },
+        DetailSection { label: String::new(), fields: vec![], lines: vec![DetailLine { text: "This box may use the credential.".into(), tone: CardTone::Plain, ..Default::default() }] },
+        DetailSection { label: "Grant restriction · Requested routes".into(), fields: vec![], lines: vec![
+            DetailLine { text: format!("HTTP {}", r.r#where), tone: CardTone::Standout, ..Default::default() },
+            DetailLine { text: "  METHOD  PATH".into(), tone: CardTone::Quiet, ..Default::default() },
+            DetailLine { text: "  *       *".into(), tone: CardTone::Standout, ..Default::default() },
+        ] },
+    ]
 }
 
 /// A secret's binding history, as the core reads each decision.
@@ -757,9 +801,11 @@ impl Mock {
         let services = HashMap::from([(boxes[0].key.clone(), services)]);
         let (harnesses, files) = mock_harnesses();
         let changes = HashMap::from([(boxes[0].key.clone(), mock_changes())]);
+        let requests = vec![mock_request(&boxes[1].key)];
         Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
-            services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, secrets: mock_secrets(), run: MockRun::default(), composer_sub: 0, record: Arc::default(),
+            services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, secrets: mock_secrets(),
+            requests, requests_sub: 0, dismissed: vec![], actions_taken: HashMap::new(), run: MockRun::default(), composer_sub: 0, record: Arc::default(),
             issues: HashMap::new(), issue_subs: HashMap::new(),
         }
     }
@@ -1103,9 +1149,59 @@ impl Mock {
         }
     }
 
-    /// A credentials result carrying the secrets as they stand, about one of them.
+    /// A credentials result carrying the secrets as they stand, about one of them, and the
+    /// requests waiting.
     fn secreted(&self, status: Status, about: &str, note: String) -> CommandResult {
-        CommandResult { status, secrets: self.secrets.clone(), secret: about.into(), note, secret_words: Some(mock_words()), ..Default::default() }
+        CommandResult {
+            status, secrets: self.secrets.clone(), secret: about.into(), note, secret_words: Some(mock_words(self.requests.len())),
+            requests: self.requests.clone(), ..Default::default()
+        }
+    }
+
+    /// What waits on a person, as the requests topic says it: each request, and the notice of
+    /// each box with one its window did not dismiss.
+    fn waiting(&self) -> Requests {
+        let notices = self.requests.iter().filter(|r| !r.r#box.is_empty() && !self.dismissed.contains(&r.r#box)).map(|r| Notice {
+            r#box: r.r#box.clone(), kind: NoticeKind::Request, subject: "credential request".into(), detail: format!("{} for {}", r.name, r.r#where),
+            call: "click to answer".into(), command: "requests".into(), urgent: true, ..Default::default()
+        }).collect();
+        Requests { requests: self.requests.clone(), notices, ..Default::default() }
+    }
+
+    fn send_waiting(&self) {
+        if self.requests_sub != 0 {
+            self.inbox.push(Event::Requests(self.requests_sub, Ok(self.waiting())));
+        }
+    }
+
+    /// A request's card put to the app, for the command that answers it: the core's part card,
+    /// accepted or denied. One no longer waiting fails.
+    fn ask_request(&mut self, c: &Command, request: &str, page: bool) -> Option<CommandResult> {
+        let Some(r) = self.requests.iter().find(|r| r.id == request).cloned() else {
+            return Some(CommandResult { status: Status::Failed, why: "the request is no longer waiting".into(), ..Default::default() });
+        };
+        let id = self.next_ask;
+        self.next_ask += 1;
+        self.asks.insert(id, (c.clone(), Ask::Request(r.id.clone(), page)));
+        let actions = vec![
+            FormAction { key: CardAction::Accept, label: "Accept".into(), declines: false },
+            FormAction { key: CardAction::Deny, label: "Deny".into(), declines: true },
+        ];
+        self.inbox.push(Event::Form(Form {
+            id, command: c.id, title: "Allow credential use?".into(), aside: "1 of 1".into(), card: mock_request_card(&r), actions,
+            leave: "leave it waiting".into(), ..Default::default()
+        }));
+        None
+    }
+
+    /// A request's card answered: approved or denied, as the core says it, and the request no
+    /// longer waiting.
+    fn request_answered(&mut self, request: &str, action: CardAction, page: bool) -> CommandResult {
+        let name = self.requests.iter().find(|r| r.id == request).map(|r| r.name.clone()).unwrap_or_default();
+        self.requests.retain(|r| r.id != request);
+        self.send_waiting();
+        let note = if action == CardAction::Accept { format!("approved {name} for 1 day") } else { format!("denied {name}") };
+        if page { self.secreted(Status::Done, "", note) } else { CommandResult { status: Status::Done, note, ..Default::default() } }
     }
 
     /// The credentials command: the page's secrets, or an action done as the core does it. None
@@ -1117,6 +1213,10 @@ impl Mock {
         };
         if action == SecretAction::Read {
             return Some(self.secreted(Status::Done, "", String::new()));
+        }
+        if action == SecretAction::Answer {
+            let request = c.args.request.clone();
+            return self.ask_request(c, &request, true);
         }
         let id = self.next_ask;
         let field = |key: &str, label: &str, value: &str| Field { key: key.into(), label: label.into(), value: value.into(), applies: true, ..Default::default() };
@@ -1135,7 +1235,7 @@ impl Mock {
         };
         let ask = Ask::Secret(action, secret.id.clone(), c.args.binding.clone());
         let event = match action {
-            SecretAction::History if secret.id == "sec_gh" => return Some(CommandResult { status: Status::Done, secret: secret.id, history: mock_history(), secret_words: Some(mock_words()), ..Default::default() }),
+            SecretAction::History if secret.id == "sec_gh" => return Some(CommandResult { status: Status::Done, secret: secret.id, history: mock_history(), secret_words: Some(mock_words(self.requests.len())), ..Default::default() }),
             SecretAction::History => return Some(CommandResult { status: Status::Done, secret: secret.id, note: "no binding history".into(), ..Default::default() }),
             SecretAction::Edit => {
                 let fields = vec![Field { required: true, ..field("name", "name", &secret.name) }, Field { masked: true, placeholder: "unchanged — type to replace it".into(), ..field("value", "value", "") }];
@@ -1160,7 +1260,7 @@ impl Mock {
                 let body = format!("Take back the binding of {} to {target} as {}? The credential stops resolving at once, wherever it is being used. The request that produced it stays approved, because it is history.", secret.name, b.label);
                 Event::Question(Question { id, command: c.id, title: "Unbind".into(), body, default_no: true, ..Default::default() })
             }
-            SecretAction::New | SecretAction::Read => unreachable!(),
+            SecretAction::New | SecretAction::Read | SecretAction::Answer => unreachable!(),
         };
         self.next_ask += 1;
         self.asks.insert(id, (c.clone(), ask));
@@ -1212,7 +1312,7 @@ impl Mock {
                 }
                 "unbound".into()
             }
-            SecretAction::History | SecretAction::Read => String::new(),
+            SecretAction::History | SecretAction::Read | SecretAction::Answer => String::new(),
         };
         self.secreted(Status::Done, secret, note)
     }
@@ -1834,6 +1934,17 @@ impl Mock {
                 return;
             }
             Ask::Secret(action, secret, binding) => CommandResult { id: command, ..self.secret_answered(action, &secret, &binding, &get) },
+            Ask::Request(..) if draft => return,
+            Ask::Request(request, page) => {
+                // A card answered with none of its actions is refused on the card, as the core
+                // refuses it.
+                let Some(action) = self.actions_taken.remove(&id) else {
+                    let errors = vec![FieldError { field: String::new(), why: "answer with one of the form's actions".into() }];
+                    self.inbox.push(Event::FieldErrors(FieldErrors { form: id, errors }));
+                    return;
+                };
+                CommandResult { id: command, ..self.request_answered(&request, action, page) }
+            }
         };
         self.asks.remove(&id);
         self.inbox.push(Event::Result(result));
@@ -1951,6 +2062,10 @@ impl Backend for Mock {
                 self.composer_sub = sub;
                 self.send_chips();
             }
+            Out::Subscribe(Subscribe { sub, topic: Topic::Requests, .. }) => {
+                self.requests_sub = sub;
+                self.send_waiting();
+            }
             Out::Subscribe(Subscribe { sub, topic: Topic::Provisioning, r#box, .. }) => {
                 let step = self.sandbox(&r#box).map(|b| b.provisioning.clone()).unwrap_or_default();
                 self.inbox.push(Event::Provisioning(sub, Ok(Provisioning { step })));
@@ -2007,6 +2122,34 @@ impl Backend for Mock {
                     self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
                 }
             }
+            // A box's oldest request answered through its card; a refused credential's remedy,
+            // which the mock has none of.
+            Out::Command(c) if c.command == "requests" => {
+                let request = self.requests.iter().find(|r| c.targets.first() == Some(&r.r#box)).map(|r| r.id.clone());
+                let r = match request {
+                    Some(request) => self.ask_request(&c, &request, false),
+                    None => Some(CommandResult { status: Status::Failed, why: "nothing waiting on this discobox".into(), ..Default::default() }),
+                };
+                if let Some(r) = r {
+                    self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
+                }
+            }
+            Out::Command(c) if c.command == "rejections" => {
+                self.inbox.push(Event::Result(CommandResult { id: c.id, status: Status::Failed, why: "nothing refused on this discobox".into(), ..Default::default() }));
+            }
+            // The notice of the box whose workspace is on screen taken down, until what it is
+            // about changes.
+            Out::Command(c) if c.command == "dismiss" => {
+                let shown = self.waiting().notices.iter().any(|n| n.r#box == c.context.workspace);
+                let r = if shown {
+                    self.dismissed.push(c.context.workspace.clone());
+                    self.send_waiting();
+                    CommandResult { id: c.id, status: Status::Done, ..Default::default() }
+                } else {
+                    CommandResult { id: c.id, status: Status::Failed, why: "no banner to dismiss".into(), ..Default::default() }
+                };
+                self.inbox.push(Event::Result(r));
+            }
             Out::Saved(v) => self.saved(v),
             Out::Command(c) if self.ask(&c) => {}
             // A stream let go is a session left running in the box: the mock's is a local shell,
@@ -2042,6 +2185,9 @@ impl Backend for Mock {
                 self.inbox.push(Event::Stream(state));
             }
             Out::Submit(f) => {
+                if let Some(action) = f.action {
+                    self.actions_taken.insert(f.form, action);
+                }
                 let answers = (!f.cancel).then_some(&f.answers);
                 self.answered(f.form, answers, f.draft);
             }
@@ -2185,12 +2331,15 @@ mod tests {
         assert_eq!((p.rows[0].r#box.as_str(), p.rows[1].why.as_str(), p.archived, p.commit.map(|c| c.command)), ("b1", "not running", true, Some("stop".into())));
         let Some(Event::Commands(7, Ok(c))) = read(r#"{"type":"snapshot","snapshot":{"sub":7,"topic":"commands","commands":{"entries":[{"command":"help","label":"help","detail":"show the keys","enabled":true}]}}}"#) else { panic!("commands") };
         assert_eq!(c.entries[0].command, "help");
-        let Some(Event::Form(f)) = read(r#"{"type":"form","form":{"id":8,"command":4,"title":"Rename","fields":[{"key":"name","label":"name","choices":[],"value":"one","applies":true}]}}"#) else { panic!("form") };
+        let Some(Event::Form(f)) = read(r#"{"type":"form","form":{"id":8,"command":4,"title":"Rename","fields":[{"key":"name","label":"name","choices":[],"value":"one","applies":true}],"card":[],"actions":[{"key":"deny","label":"Deny","declines":true}]}}"#) else { panic!("form") };
         assert_eq!((f.id, f.command, f.fields[0].key.as_str(), f.fields[0].applies), (8, 4, "name", true));
+        assert_eq!((f.actions[0].key, f.actions[0].declines), (CardAction::Deny, true));
         let Some(Event::FieldErrors(e)) = read(r#"{"type":"fieldErrors","fieldErrors":{"form":8,"errors":[{"field":"name","why":"a discobox needs a configured name"}]}}"#) else { panic!("fieldErrors") };
         assert_eq!((e.form, e.errors[0].field.as_str()), (8, "name"));
         let Some(Event::Question(q)) = read(r#"{"type":"question","question":{"id":9,"command":4,"title":"Purge","body":"Purge one?","choices":[],"defaultNo":true}}"#) else { panic!("question") };
         assert!(q.default_no && q.choices.is_empty());
+        let Some(Event::Requests(10, Ok(w))) = read(r#"{"type":"snapshot","snapshot":{"sub":10,"topic":"requests","requests":{"requests":[{"id":"r1","box":"b1","kind":"credential","created":"2026-11-09T12:00:00Z","subject":"github","requester":"agent · b1"}],"rejections":[],"notices":[{"box":"b1","kind":"request","subject":"credential request","call":"click to answer","command":"requests","urgent":true}],"arrived":[{"request":"r1","box":"b1","title":"Credential request","body":"one · github"}],"said":[{"text":"renewed npm"}]}}}"#) else { panic!("requests") };
+        assert_eq!((w.notices[0].kind, w.notices[0].urgent, w.arrived[0].request.as_str(), w.said[0].text.as_str()), (NoticeKind::Request, true, "r1", "renewed npm"));
     }
 
     // What the app sends is what the CLI reads.

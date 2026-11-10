@@ -293,3 +293,13 @@ Global review expectations:
   it, and a shutdown test can otherwise stop the developer's real server.
 - Empty local IPC shorthand must not recursively resolve an address override
   that is itself shorthand. Parse that default once and reject a missing path.
+- Text a box wrote that the desktop app hands a platform surface is escaped
+  for that surface's own syntax, not only a terminal's. A Linux
+  notification's body is markup (`<a href>`, `<b>`), and its first version
+  sent a request's name and a box's title raw: a box could put a link in a
+  notification signed "discobox" (`desktop/src/notify.rs`).
+- A desktop sheet that hands something out is never answered by a stray
+  Enter. A request's card opens with the keys on no action, Enter on a field
+  moves nowhere, and only an action the keys were moved to (or pressed) is
+  taken; its first version opened on Accept, and a doubled Enter ran a part's
+  card straight through the review (`desktop/src/sheet.rs`).

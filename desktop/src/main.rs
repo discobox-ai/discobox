@@ -27,6 +27,7 @@ mod issue;
 #[cfg(test)]
 mod issue_tests;
 mod keys;
+mod notify;
 mod mark;
 mod overlay;
 #[cfg(test)]
@@ -34,6 +35,8 @@ mod parity_tests;
 mod paste;
 #[cfg(test)]
 mod paste_tests;
+#[cfg(test)]
+mod request_tests;
 #[cfg(test)]
 mod secret_tests;
 mod secrets;
@@ -61,7 +64,7 @@ use discobox_bridge::wire;
 use wire::{
     Address, Args, Box as Sandbox, Chip, Command, Composer, Menu as DesktopMenu, Commands, Context, Entry, Filter, Follow, Header, Listing, Note,
     Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, SecretAction, Service, ServiceVerb, Sessions, Spec, SpecTarget,
-    Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Tool, Topic,
+    Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Tool, Topic, Arrival, Notice, Requests,
 };
 use rune::{App, AppSpec, Drag, Ime, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
 use term::Screen;
@@ -293,6 +296,10 @@ enum Pending {
     Change,
     /// The secrets page, asked of a server (the list's when it was asked; the primary for "").
     Secrets(String),
+    /// A request answered through the core's cards — a box's oldest, a refusal's remedy, or one
+    /// a notification named — and the server whose secrets page it reads again when that page
+    /// is up (None: whatever server the page is on).
+    Answer(Option<String>),
     /// One of the secrets page's actions, the page read again among them.
     Secret(SecretAction),
     /// A create from the composer, and the prompt it was sent with: the composer lets go of it
@@ -494,6 +501,9 @@ pub struct State {
     /// A box's audit view, beside the list in place of the workspace while it is up, with what
     /// was read of a record over the window.
     pub audit: Option<audit::AuditView>,
+    /// What waits on a person, as the requests topic last said it: each box's notice among it.
+    pub waiting: Requests,
+    requests_sub: u32,
     /// The boxes this window has gone to, latest first, which rank the palette's empty query
     /// (ADR 26-11-06-671 §6): at most `RECENT` of them, for as long as the window lasts.
     pub recent: Vec<String>,
@@ -576,7 +586,7 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, audit: None, recent: vec![], reveal: None, point: None, find: None,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, audit: None, waiting: Requests::default(), requests_sub: 0, recent: vec![], reveal: None, point: None, find: None,
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
@@ -589,6 +599,7 @@ impl State {
             s.message = Some("the prompt you left is back".into());
         }
         s.composer_sub = s.subscribe(Subscribe { topic: Topic::Composer, ..Default::default() });
+        s.requests_sub = s.subscribe(Subscribe { topic: Topic::Requests, ..Default::default() });
         s.follow_listing(None, String::new());
         if !bridged {
             // The mock answers at once; taking it here lets a headless scene open a box, and draw
@@ -597,6 +608,7 @@ impl State {
                 match e {
                     Event::Listing(sub, l) => s.take_listing(sub, l),
                     Event::Composer(sub, c) => s.take_composer(sub, c),
+                    Event::Requests(sub, r) => s.take_requests(sub, r),
                     _ => {}
                 }
             }
@@ -1836,6 +1848,28 @@ impl State {
         }
     }
 
+    /// What waits on a person: kept for the notices and the list, each request just arrived
+    /// raised as a notification, and what a renewal the window allowed said on the status line.
+    fn take_requests(&mut self, sub: u32, r: Result<Requests, String>) {
+        if sub != self.requests_sub {
+            return;
+        }
+        let Ok(mut w) = r else { return };
+        for a in std::mem::take(&mut w.arrived) {
+            notify::raise(&self.inbox, &a);
+        }
+        if let Some(said) = std::mem::take(&mut w.said).pop() {
+            self.message = Some(said.text);
+        }
+        self.waiting = w;
+    }
+
+    /// The notice of the box on screen, as the core says it.
+    pub fn notice(&self) -> Option<&Notice> {
+        let live = self.live.as_ref()?;
+        self.waiting.notices.iter().find(|n| &n.r#box == live)
+    }
+
     /// What a create would be made with, said under the composer.
     fn take_composer(&mut self, sub: u32, r: Result<Composer, String>) {
         if sub == self.composer_sub && let Ok(c) = r {
@@ -2030,6 +2064,26 @@ impl State {
             Pending::Harness(name) if r.status == Status::Done => harnesses::take(self, &name, &r),
             Pending::Secrets(server) if r.status == Status::Enter => secrets::open_page(self, server, &r),
             Pending::Secret(action) if r.status == Status::Done => secrets::take(self, action, &r),
+            // A request that could not be answered from the page (gone, answered elsewhere, the
+            // server's instruction for what to do next): said, and the page read again, so it no
+            // longer offers one that is gone. The read keeps what was said (`secrets::take`).
+            Pending::Secret(SecretAction::Answer) if failed => {
+                self.message = Some(r.why.clone());
+                secrets::reread(self);
+                return;
+            }
+            Pending::Answer(_) if r.status == Status::Canceled => self.message = None,
+            Pending::Answer(server) if r.status == Status::Done => {
+                // From a notification, the result is the server's secrets page read again.
+                match (&server, self.secrets.as_ref()) {
+                    (Some(server), Some(p)) if !r.secrets.is_empty() && p.server == *server => secrets::take(self, SecretAction::Answer, &r),
+                    (_, Some(_)) => {
+                        secrets::reread(self);
+                        self.message = (!r.note.is_empty()).then(|| r.note.clone());
+                    }
+                    _ => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
+                }
+            }
             // The candidate is answered: the review goes, and the listing says what the box has
             // left to save.
             Pending::Change if r.status == Status::Done => {
@@ -2133,6 +2187,7 @@ pub const ANSWERED: &[&str] = &[
     "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options", "tools", "credentials",
     "audit",
     "issue", "pr", "files",
+    "requests", "rejections", "dismiss",
 ];
 
 /// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
@@ -2217,6 +2272,9 @@ pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
         "harnesses" => harnesses::open(s),
         // The page reads the secrets of the server the list is narrowed to.
         "credentials" => secrets::open(s),
+        // A box's oldest request answered, or its refused credential's remedy, through the
+        // core's cards and questions as sheets.
+        "requests" | "rejections" => s.command(id, targets, context, Args::default(), Pending::Answer(None)),
         "refresh" => {
             // The secrets page, when it is up, is read again with the boxes.
             secrets::reread(s);
@@ -2240,6 +2298,16 @@ pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
         }
         _ => s.command(id, targets, context, Args::default(), Pending::Enter(id.into())),
     }
+}
+
+/// A notification of a request pressed: the request answered through the core's cards, on its
+/// server (the credentials command's answer action), whatever is on screen.
+fn answer_arrival(s: &mut State, a: Arrival) {
+    s.close_overlays();
+    s.message = None;
+    let context = s.context();
+    let args = Args { server: a.server.clone(), secret_action: Some(SecretAction::Answer), request: a.request, ..Default::default() };
+    s.command("credentials", vec![], context, args, Pending::Answer(Some(a.server)));
 }
 
 /// A command's flow that is the app's own, once the core has ruled it can run.
@@ -2391,6 +2459,8 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
             Event::Provisioning(sub, r) => s.take_provisioning(sub, r),
             Event::Audit(sub, r) => audit::take(s, sub, r),
             Event::Issue(sub, r) => issue::take(s, sub, r),
+            Event::Requests(sub, r) => s.take_requests(sub, r),
+            Event::Answer(a) => answer_arrival(s, a),
             Event::Progress(p) => s.take_progress(p),
             e @ (Event::Data(..) | Event::Exited(..) | Event::Stream(..)) => s.take_stream_event(e),
         }
@@ -2701,6 +2771,21 @@ fn main() {
                         t.composer.focused = true;
                     }
                 }
+            }),
+            // A box a request waits on, its notice under its header, and the request's card.
+            ("request", |s| {
+                poll(s, 0.0, &mut Tx::default());
+                let asking = s.waiting.notices.first().map(|n| n.r#box.clone()).unwrap_or_default();
+                run_on(s, "attach", vec![asking.clone()], &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                run_on(s, "requests", vec![asking], &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            ("notice", |s| {
+                poll(s, 0.0, &mut Tx::default());
+                let asking = s.waiting.notices.first().map(|n| n.r#box.clone()).unwrap_or_default();
+                run_on(s, "attach", vec![asking], &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
             }),
         ],
         fonts: theme::FONTS,

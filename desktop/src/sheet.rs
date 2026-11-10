@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use rune::{Color, El, Key, KeyEvent, ScrollSpec, TextEdit, Tx, col, el, row, spacer, text, text_input};
 
 use crate::backend::Out;
-use crate::wire::{Answer, Edit, Field, FieldError, FieldErrors, Form, Question, Saved, Submit};
+use crate::wire::{Answer, CardAction, DetailSection, Edit, Field, FieldError, FieldErrors, Form, FormAction, Question, Saved, Submit};
 use crate::{State, keys, theme, view};
 
 /// A form a command waits on: the core's fields, and the app's answers to them.
@@ -43,6 +43,18 @@ pub struct FormSheet {
     pub action: String,
     /// What the form is about, as the core says it, above its fields.
     pub about: String,
+    /// What the form says beside its fields, read again by the core with every draft (a
+    /// request's card), and what is said beside its title (which card of how many).
+    pub card: Vec<DetailSection>,
+    pub aside: String,
+    /// The form's ways to submit, by key, in place of its one submit: a request's card is
+    /// accepted or denied. The keys reach them after the fields, and only by Tab or the arrows:
+    /// a card opens with the keys on none of them, Enter on a field moves nowhere, and Enter takes
+    /// an action only while the keys are on it — an answer that hands out a credential is never
+    /// a stray or doubled Enter.
+    pub actions: Vec<FormAction>,
+    /// What leaving the form does, as the core says it (a request's card leaves it waiting).
+    pub leave: String,
     /// What each typed field holds; a picker's is unused.
     pub edits: Vec<TextEdit>,
     /// Each picker's chosen option, by key; a typed field's is unused.
@@ -183,6 +195,9 @@ impl Sheets {
 /// How many answered questions are remembered: a resend crosses only the answer just sent.
 const ANSWERED_KEPT: usize = 16;
 
+/// Where the keys are on a card that opens on no field: on nothing, until Tab moves them.
+const NOWHERE: usize = usize::MAX;
+
 /// The key of a field's row in the sheet, which scrolling reveals.
 fn row_key(field: &str) -> String { format!("sheet-row-{field}") }
 
@@ -201,13 +216,22 @@ impl FormSheet {
         let chosen = form.fields.iter().map(|f| f.value.clone()).collect();
         let touched = vec![false; form.fields.len()];
         let mut sheet = FormSheet {
-            id: form.id, command: form.command, title: form.title, fields: form.fields, note: form.note, action: form.action, about: form.about, edits, chosen, touched,
+            id: form.id, command: form.command, title: form.title, fields: form.fields, note: form.note, action: form.action, about: form.about,
+            card: form.card, aside: form.aside, actions: form.actions, leave: form.leave, edits, chosen, touched,
             at: 0, errors: vec![], sent: false, reveal: None,
         };
         if let Some(i) = sheet.fields.iter().position(answerable) {
             sheet.focus(i);
+        } else {
+            // On no field and no action: the first Tab is what reaches one.
+            sheet.at = NOWHERE;
         }
         sheet
+    }
+
+    /// The action the keys are on, when they are past the fields.
+    pub fn action_at(&self) -> Option<&FormAction> {
+        self.at().checked_sub(self.fields.len()).filter(|_| self.at() != NOWHERE).and_then(|i| self.actions.get(i))
     }
 
     /// The field the keys are on: the typed field with the caret, else the picker last moved to.
@@ -231,9 +255,10 @@ impl FormSheet {
         }
     }
 
-    /// Moves the keys `by` answerable fields along, wrapping; true when they land on a picker.
+    /// Moves the keys `by` answerable fields along, then along the actions, wrapping; true when
+    /// they land on a picker or an action, which no caret is in.
     fn step(&mut self, by: i64) -> bool {
-        let open: Vec<usize> = (0..self.fields.len()).filter(|&i| answerable(&self.fields[i])).collect();
+        let open: Vec<usize> = (0..self.fields.len()).filter(|&i| answerable(&self.fields[i])).chain(self.fields.len()..self.fields.len() + self.actions.len()).collect();
         if open.is_empty() {
             return false;
         }
@@ -263,6 +288,12 @@ pub fn take_form(s: &mut State, form: Form) {
     s.close_overlays();
     if !s.sheets.queue.iter().any(|sh| matches!(sh, Sheet::Form(f) if f.id == form.id)) {
         s.sheets.went_on(form.command);
+        // The command waits on the person now: a step it said before ("reading the project's
+        // secrets…") is over, and would read as work still going on under the form. A warning
+        // it gave stays said (`State::warned`).
+        if !s.warned {
+            s.message = None;
+        }
     }
     let at = s.sheets.queue.iter_mut().find_map(|sh| match sh {
         Sheet::Form(f) if f.id == form.id => Some(f),
@@ -292,15 +323,18 @@ impl FormSheet {
             }
         }
         (self.fields, self.title, self.note, self.action, self.about) = (fresh.fields, fresh.title, fresh.note, fresh.action, fresh.about);
+        (self.card, self.aside, self.actions, self.leave) = (fresh.card, fresh.aside, fresh.actions, fresh.leave);
         (self.edits, self.chosen, self.touched) = (edits, chosen, touched);
+        let on_action = self.at >= self.fields.len() && self.at != NOWHERE && !self.actions.is_empty();
         match at.and_then(|k| self.fields.iter().position(|f| f.key == k)) {
             Some(i) => self.at = i,
+            None if on_action => self.at = self.fields.len() + (self.at - self.fields.len()).min(self.actions.len() - 1),
             None => self.at = 0,
         }
         // A refusal of a field that no longer applies is moot, and the keys leave it.
         let open: Vec<String> = self.fields.iter().filter(|f| answerable(f)).map(|f| f.key.clone()).collect();
         self.errors.retain(|e| e.field.is_empty() || open.contains(&e.field));
-        if !self.fields.get(self.at()).is_some_and(answerable) {
+        if self.at() != NOWHERE && self.action_at().is_none() && !self.fields.get(self.at()).is_some_and(answerable) {
             self.step(1);
         }
     }
@@ -340,6 +374,9 @@ pub fn take_question(s: &mut State, question: Question) {
     }
     s.close_overlays();
     s.sheets.went_on(question.command);
+    if !s.warned {
+        s.message = None;
+    }
     let picked = if question.choices.is_empty() {
         usize::from(question.default_no)
     } else {
@@ -426,6 +463,31 @@ fn submit(s: &mut State, draft: bool) {
     }
     let m = Submit { form: f.id, answers: f.answers(), draft, ..Default::default() };
     s.backend.send(Out::Submit(m));
+}
+
+/// Submits the form on top with one of its actions (empty for its one submit).
+fn submit_as(s: &mut State, draft: bool, action: CardAction) {
+    let Some(f) = s.sheets.form_mut() else { return };
+    if f.sent && !draft {
+        return;
+    }
+    if !draft {
+        f.sent = true;
+    }
+    let m = Submit { form: f.id, answers: f.answers(), draft, action: Some(action), ..Default::default() };
+    s.backend.send(Out::Submit(m));
+}
+
+/// Enter on a form: the action the keys are on; on a form with actions and the keys anywhere
+/// else, nothing; else its one submit.
+fn enter_form(s: &mut State) {
+    let Some(f) = s.sheets.form_mut() else { return };
+    if let Some(a) = f.action_at() {
+        let key = a.key;
+        submit_as(s, false, key);
+    } else if f.actions.is_empty() {
+        submit(s, false);
+    }
 }
 
 /// Field `i`'s answer changed: it is sent from now on, its refusal goes, and the answers go as a
@@ -527,7 +589,7 @@ pub fn key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
             tx.blur();
         }
         match ev.key {
-            Key::Enter => submit(s, false),
+            Key::Enter => enter_form(s),
             Key::Left if on_picker => cycle(s, at, -1),
             Key::Right if on_picker => cycle(s, at, 1),
             Key::Text(ref t) if on_picker && t == " " => cycle(s, at, 1),
@@ -625,8 +687,10 @@ fn field_view(f: &FormSheet, i: usize, x: &Field, on: bool) -> El {
     let label = text(x.label.clone()).font(if on { theme::UI_BOLD } else { theme::UI })
         .color(if !open { theme::dim() } else if on { theme::text() } else { theme::grey() }).w(LABEL_W).shrink();
     let value = if !open {
-        // A masked field's value is never drawn, whether or not it takes an answer.
-        let why = if !x.why.is_empty() || x.masked { x.why.clone() } else { x.value.clone() };
+        // A masked field's value is never drawn, whether or not it takes an answer; a locked
+        // picker's is the label of what it holds, never its key (a secret's ID).
+        let held = if picker(x) { x.choices.iter().find(|c| c.key == x.value).map_or(x.value.clone(), |c| c.label.clone()) } else { x.value.clone() };
+        let why = if !x.why.is_empty() || x.masked { x.why.clone() } else { held };
         text(why).font(theme::UI).color(theme::dim()).wrap().grow(1.0).shrink()
     } else if picker(x) {
         // A control of its own, which the keys go to while it is the field they are on: first in
@@ -675,13 +739,19 @@ fn field_view(f: &FormSheet, i: usize, x: &Field, on: bool) -> El {
 
 fn form_view(f: &FormSheet) -> El {
     let at = f.at();
-    let mut body = col().w_full().gap(10.0).child(text(f.title.clone()).font(theme::UI_BOLD).color(theme::text()));
+    let mut head = row().w_full().gap(8.0).center_y().child(text(f.title.clone()).font(theme::UI_BOLD).color(theme::text()));
+    if !f.aside.is_empty() {
+        head = head.child(spacer()).child(text(f.aside.clone()).font(theme::UI_SMALL).color(theme::dim()));
+    }
+    let mut body = col().w_full().gap(10.0).child(head);
     for line in f.about.lines() {
         body = body.child(text(line.to_string()).font(theme::UI).color(theme::grey()).wrap().w_full());
     }
     // The fields scroll inside the sheet past a height, so its note and buttons stay on screen
-    // however many rows a form has (the run options have a dozen, and grow).
-    let mut rows = col().key("sheet-fields").w_full().gap(10.0).max_h(FIELDS_MAX_H).scroll(ScrollSpec { stick_bottom: false });
+    // however many rows a form has (the run options have a dozen, and grow). A card the core
+    // says beside them scrolls with them: a request's routes can run long.
+    let max_h = if f.card.is_empty() { FIELDS_MAX_H } else { CARD_MAX_H };
+    let mut rows = col().key("sheet-fields").w_full().gap(10.0).max_h(max_h).scroll(ScrollSpec { stick_bottom: false });
     let mut section = "";
     for (i, x) in f.fields.iter().enumerate() {
         if !x.section.is_empty() && x.section != section {
@@ -691,6 +761,9 @@ fn form_view(f: &FormSheet) -> El {
         }
         section = &x.section;
         rows = rows.child(field_view(f, i, x, i == at));
+    }
+    if !f.card.is_empty() {
+        rows = rows.child(el().h(1.0).w_full().fill(theme::line())).child(crate::secrets::detail(&f.card).key("sheet-card"));
     }
     body = body.child(rows);
     // Why the field the keys are on is asked: a picker's chosen option says its own, when it has one.
@@ -710,18 +783,38 @@ fn form_view(f: &FormSheet) -> El {
             .child(text("would run").font(theme::UI_SMALL).color(theme::dim()))
             .child(text(f.note.clone()).font(theme::UI_SMALL).color(theme::grey()).wrap().w_full()));
     }
+    let leave = if f.leave.is_empty() { "cancel" } else { f.leave.as_str() };
     let mut buttons = row().w_full().gap(8.0).center_y()
-        .child(hint("tab", "next")).child(hint("escape", "cancel")).child(spacer());
+        .child(hint("tab", "next")).child(hint("escape", leave)).child(spacer());
     if f.sent {
-        let waiting = if f.action.is_empty() { "saving…" } else { "sent…" };
+        let waiting = if f.action.is_empty() && f.actions.is_empty() { "saving…" } else { "sent…" };
         buttons = buttons.child(text(waiting).font(theme::UI_SMALL).color(theme::dim()));
     }
-    let action = if f.action.is_empty() { "Save" } else { f.action.as_str() };
-    buttons = buttons
-        .child(button("sheet-cancel", "Cancel", false, false, true).on_press(dismiss))
-        .child(button("sheet-submit", action, true, false, !f.sent).default_button().on_press(|s: &mut State| submit(s, false)));
-    panel("sheet", 600.0, body.child(buttons))
+    if f.actions.is_empty() {
+        let action = if f.action.is_empty() { "Save" } else { f.action.as_str() };
+        buttons = buttons
+            .child(button("sheet-cancel", "Cancel", false, false, true).on_press(dismiss))
+            .child(button("sheet-submit", action, true, false, !f.sent).default_button().on_press(|s: &mut State| submit(s, false)));
+    } else {
+        // Each of the form's ways to submit; the one the keys are on is lit, and none is the
+        // default: Enter takes only the one the keys are on.
+        let on = f.action_at().map(|a| a.key);
+        for a in &f.actions {
+            let key = a.key;
+            let lit = on == Some(a.key);
+            // Focusable, as a picker is, so the keys reach the sheet (`key`) while one has them:
+            // the one the keys are on first in the tab order. One that declines is drawn as one.
+            buttons = buttons.child(button(format!("sheet-action-{}", a.key.as_str()), &a.label, lit, a.declines, !f.sent)
+                .focusable(true).tab_index(if lit { 1 } else { 0 }).no_focus_ring()
+                .on_press(move |s: &mut State| submit_as(s, false, key)));
+        }
+    }
+    let width = if f.card.is_empty() { 600.0 } else { 820.0 };
+    panel("sheet", width, body.child(buttons))
 }
+
+/// How tall a form with a card grows before its fields and card scroll inside its sheet.
+const CARD_MAX_H: f32 = 540.0;
 
 fn question_view(q: &QuestionSheet) -> El {
     let x = &q.question;

@@ -10,11 +10,16 @@
 //! again. The page is drawn beside the list, in place of the workspace, and has its own keys
 //! while it is up, as a screen does; reading a secret, a binding or the history is a panel over
 //! the window.
+//!
+//! Under the secrets, the requests waiting on the page's server (`console.RequestsOn`, the TUI's
+//! requests table): what each asks for, where, who asks and how long ago, in the core's words.
+//! Tab moves the keys between the two tables; Enter on a request answers it, through the core's
+//! cards (the credentials command's answer action), and the page is read again after.
 
 use rune::{Color, El, Key, KeyEvent, PointerPress, ScrollSpec, Tx, col, el, row, spacer, text};
 
 use crate::harnesses::{hint, panel, t};
-use crate::wire::{Args, CardTone, Decision, DetailSection, Entry, Result as CommandResult, Secret, SecretAction, SecretStanding, SecretWords};
+use crate::wire::{Args, CardTone, Decision, DetailSection, Entry, Request, Result as CommandResult, Secret, SecretAction, SecretStanding, SecretWords};
 use crate::{Menu, MenuKind, Pending, State, theme};
 
 /// The secrets page: the secrets of the server it was opened for, and the one the keys are on.
@@ -24,6 +29,11 @@ pub struct SecretPage {
     pub cursor: usize,
     /// What the page says beside its secrets, in the core's words.
     pub words: SecretWords,
+    /// The requests waiting on the page's server, oldest first, and the one the keys are on
+    /// while they are on the requests table.
+    pub requests: Vec<Request>,
+    pub request: usize,
+    pub on_requests: bool,
 }
 
 impl SecretPage {
@@ -38,6 +48,17 @@ impl SecretPage {
         self.rows = rows;
         self.cursor = self.rows.iter().position(|s| s.id == on).unwrap_or(self.cursor.min(self.rows.len().saturating_sub(1)));
     }
+
+    /// Takes the requests read again with the secrets, the keys on the one they were on when it
+    /// still waits; with none left, the keys go back to the secrets.
+    fn take_requests(&mut self, requests: Vec<Request>) {
+        let on = self.requests.get(self.request).map(|r| r.id.clone());
+        self.requests = requests;
+        self.request = on.and_then(|id| self.requests.iter().position(|r| r.id == id)).unwrap_or(self.request.min(self.requests.len().saturating_sub(1)));
+        self.on_requests &= !self.requests.is_empty();
+    }
+
+    pub fn current_request(&self) -> Option<&Request> { self.requests.get(self.request).filter(|_| self.on_requests) }
 }
 
 /// What is read over the window about a secret, each by its ID so a reading follows the secrets
@@ -65,7 +86,10 @@ pub fn open_page(s: &mut State, server: String, r: &CommandResult) {
     s.close_overlays();
     s.close_pages();
     s.focus = crate::Focus::List;
-    s.secrets = Some(SecretPage { server, rows: r.secrets.clone(), cursor: 0, words: r.secret_words.clone().unwrap_or_default() });
+    s.secrets = Some(SecretPage {
+        server, rows: r.secrets.clone(), cursor: 0, words: r.secret_words.clone().unwrap_or_default(),
+        requests: r.requests.clone(), request: 0, on_requests: false,
+    });
 }
 
 pub fn close_page(s: &mut State) {
@@ -130,11 +154,16 @@ pub fn take(s: &mut State, action: SecretAction, r: &CommandResult) {
     }
     if let Some(p) = s.secrets.as_mut() {
         p.take(r.secrets.clone(), &r.secret);
+        p.take_requests(r.requests.clone());
         if let Some(w) = r.secret_words.clone() {
             p.words = w;
         }
     }
-    s.message = (!r.note.is_empty()).then(|| r.note.clone());
+    // A read again says nothing of its own, and leaves what was said before it standing: an
+    // answer that failed is read again after its why is said.
+    if action != SecretAction::Read || !r.note.is_empty() {
+        s.message = (!r.note.is_empty()).then(|| r.note.clone());
+    }
     let Some(p) = s.secrets.as_ref() else { return };
     s.secret_panel = match s.secret_panel.take() {
         Some(Panel::Binding { secret, binding }) => match p.secret(&secret) {
@@ -145,6 +174,17 @@ pub fn take(s: &mut State, action: SecretAction, r: &CommandResult) {
         Some(Panel::Secret { secret, picked }) => p.secret(&secret).map(|x| Panel::Secret { picked: picked.min(x.bindings.len()), secret }),
         other => other,
     };
+}
+
+/// Answers a request waiting on the page's server, through the core's cards: the credentials
+/// command's answer action naming it. Its result is the page read again.
+pub fn answer(s: &mut State, request: String) {
+    let Some(server) = s.secrets.as_ref().map(|p| p.server.clone()) else { return };
+    s.close_overlays();
+    s.message = None;
+    let context = s.context();
+    let args = Args { server, secret_action: Some(SecretAction::Answer), request, ..Default::default() };
+    s.command("credentials", vec![], context, args, Pending::Secret(SecretAction::Answer));
 }
 
 /// The page's actions, as a menu: storing a new secret, then what can be done to the one under
@@ -215,12 +255,31 @@ fn row_at(s: &State) -> (f32, f32) {
 pub fn page_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
     let plain = !(ev.mods.ctrl || ev.mods.alt || ev.mods.cmd);
     let Some(p) = s.secrets.as_mut().filter(|_| plain) else { return false };
+    if p.on_requests {
+        let last = p.requests.len().saturating_sub(1);
+        match ev.key {
+            Key::Up => p.request = p.request.saturating_sub(1),
+            Key::Down => p.request = (p.request + 1).min(last),
+            Key::Home => p.request = 0,
+            Key::End => p.request = last,
+            Key::Tab => p.on_requests = false,
+            Key::Escape => close_page(s),
+            Key::Enter if !ev.mods.shift => {
+                if let Some(id) = p.current_request().map(|r| r.id.clone()) {
+                    answer(s, id);
+                }
+            }
+            _ => return false,
+        }
+        return true;
+    }
     let last = p.rows.len().saturating_sub(1);
     match ev.key {
         Key::Up => p.cursor = p.cursor.saturating_sub(1),
         Key::Down => p.cursor = (p.cursor + 1).min(last),
         Key::Home => p.cursor = 0,
         Key::End => p.cursor = last,
+        Key::Tab if !p.requests.is_empty() => p.on_requests = true,
         Key::Escape => close_page(s),
         Key::Enter if !ev.mods.shift => open_secret(s),
         Key::ContextMenu => {
@@ -322,12 +381,13 @@ fn unbind_row(s: &mut State, secret: &str, picked: usize) {
 const ROW_H: f32 = 28.0;
 
 /// A tone of the core's, as this window draws it.
-fn ink(tone: CardTone) -> Color {
+pub(crate) fn ink(tone: CardTone) -> Color {
     match tone {
         CardTone::Quiet => theme::dim(),
         CardTone::Standout => theme::gold(),
         CardTone::Command => theme::mark(),
         CardTone::Alert => theme::err(),
+        CardTone::Good => theme::done(),
         CardTone::Plain => theme::text(),
     }
 }
@@ -343,7 +403,7 @@ fn standing(x: &Secret) -> El {
 }
 
 fn secret_row_view(p: &SecretPage, i: usize, x: &Secret) -> El {
-    let on = i == p.cursor;
+    let on = i == p.cursor && !p.on_requests;
     let id = x.id.clone();
     let r = row().key(format!("secret-{}", x.id)).w_full().h(ROW_H).px(10.0).gap(12.0).center_y().radius(theme::r_row())
         .fill(if on { theme::selection() } else { Color::TRANSPARENT }).hover(theme::text().alpha(0.06)).motion(theme::SNAPPY)
@@ -355,6 +415,7 @@ fn secret_row_view(p: &SecretPage, i: usize, x: &Secret) -> El {
     let pick = move |s: &mut State| {
         if let Some(p) = s.secrets.as_mut() {
             p.cursor = i;
+            p.on_requests = false;
         }
     };
     r.on_press(pick)
@@ -388,21 +449,64 @@ pub fn page_view(s: &State) -> El {
     for (i, x) in p.rows.iter().enumerate() {
         rows = rows.child(secret_row_view(p, i, x));
     }
-    let hints = row().w_full().h(24.0).px(10.0).gap(14.0).center_y()
-        .child(hint("enter", "open"))
-        .child(hint("shift+f10", "actions"))
+    let requests = requests_view(p);
+    let mut hints = row().w_full().h(24.0).px(10.0).gap(14.0).center_y();
+    hints = if p.on_requests {
+        hints.child(hint("enter", "answer")).child(hint("tab", "secrets"))
+    } else {
+        let h = hints.child(hint("enter", "open")).child(hint("shift+f10", "actions"));
+        if p.requests.is_empty() { h } else { h.child(hint("tab", "requests")) }
+    };
+    let hints = hints
         .child(hint("escape", "back"))
         .child(spacer())
         .child(t(s.message.clone().unwrap_or_default(), theme::grey()).font(theme::UI_SMALL).truncate().shrink());
-    body = body.child(rows.grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false })).child(hints);
+    body = body.child(rows.grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false })).child(requests).child(hints);
     col().key("secrets-page").grow(1.0).h_full().min_w(0.0).padding(10.0).radius(theme::r_frame())
         .border(theme::stroke_focus(), theme::mark()).child(body)
 }
 
-const LABEL_W: f32 = 150.0;
+/// The requests table under the secrets: its band, counted in the core's words, then a row per
+/// request — what it asks, where, who asks and how long ago — or what it says with none.
+fn requests_view(p: &SecretPage) -> El {
+    let mut c = col().key("requests").w_full().gap(2.0).pt(8.0)
+        .child(row().w_full().h(26.0).px(10.0).center_y().radius(theme::r_row())
+            .border(theme::stroke_quiet(), if p.on_requests { theme::err() } else { theme::line() })
+            .child(text(p.words.requests.clone()).font(theme::UI_BOLD).color(if p.on_requests { theme::text() } else { theme::grey() }))
+            .child(spacer())
+            .child(text(if p.requests.is_empty() { String::new() } else { p.words.waiting.clone() }).font(theme::UI_BOLD).color(theme::err())));
+    if p.requests.is_empty() {
+        return c.child(t(p.words.nothing_waiting.clone(), theme::dim()).padding(10.0));
+    }
+    let mut rows = col().w_full().gap(2.0);
+    for (i, r) in p.requests.iter().enumerate() {
+        let on = p.on_requests && i == p.request;
+        let id = r.id.clone();
+        rows = rows.child(row().key(format!("request-{}", r.id)).w_full().h(ROW_H).px(10.0).gap(12.0).center_y().radius(theme::r_row())
+            .fill(if on { theme::selection() } else { Color::TRANSPARENT }).hover(theme::text().alpha(0.06)).motion(theme::SNAPPY)
+            .cursor(rune::Cursor::Pointer)
+            .child(t(r.subject.clone(), if on { theme::text() } else { theme::grey() }).font(if on { theme::UI_BOLD } else { theme::UI }).truncate().shrink().grow(1.0))
+            .child(t(r.r#where.clone(), theme::text()).w(240.0).truncate())
+            .child(t(r.env_var.clone(), theme::dim()).w(150.0).truncate())
+            .child(t(r.requester.clone(), theme::dim()).w(170.0).truncate())
+            .child(t(r.age.clone(), theme::dim()).w(80.0))
+            .on_press(move |s: &mut State| {
+                if let Some(p) = s.secrets.as_mut() {
+                    (p.on_requests, p.request) = (true, i);
+                }
+            })
+            .on_double_press_tx(move |s: &mut State, _tx: &mut Tx| answer(s, id.clone())));
+    }
+    c = c.child(rows.max_h(ROW_H * 6.0 + 12.0).scroll(ScrollSpec { stick_bottom: false }));
+    c
+}
 
-/// A card the core describes: each section's heading, its fields lined up, then its sentences.
-fn detail(sections: &[DetailSection]) -> El {
+const LABEL_W: f32 = 190.0;
+
+/// A card the core describes: each section's heading, its fields lined up, then its sentences,
+/// a bullet's wrapped rows hung under its text. Every console draws the core's cards with it:
+/// a secret's, a binding's, a request's on its sheet.
+pub(crate) fn detail(sections: &[DetailSection]) -> El {
     let mut out = col().w_full().gap(10.0);
     for sec in sections {
         let mut c = col().w_full().gap(3.0);
@@ -415,7 +519,11 @@ fn detail(sections: &[DetailSection]) -> El {
                 .child(t(f.value.clone(), ink(f.tone)).wrap().grow(1.0).shrink()));
         }
         for l in &sec.lines {
-            c = c.child(t(l.text.clone(), ink(l.tone)).wrap().w_full());
+            c = c.child(if l.bullet {
+                row().w_full().gap(6.0).items_start().child(t("•", ink(l.tone))).child(t(l.text.clone(), ink(l.tone)).wrap().grow(1.0).shrink())
+            } else {
+                t(l.text.clone(), ink(l.tone)).wrap().w_full()
+            });
         }
         out = out.child(c);
     }

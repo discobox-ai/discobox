@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 16. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 17. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -127,7 +127,7 @@ the epic, and does not yet follow the ADRs everywhere:
   answered (on macOS the native menu's commands wait for it too): rename,
   settings, purge's confirmation, a harness's reset and variant, a file
   open in the person's editor, and a secret stored, edited, bound, deleted
-  or unbound.
+  or unbound, and a request's cards.
   - A form is what the core says it is about, then its fields, each opening on its value as the core reads
     it: typed, a picker of its choices, or dimmed with why it takes no answer
     (and stepped over); a masked value is never drawn. The app holds what is
@@ -239,6 +239,25 @@ the epic, and does not yet follow the ADRs everywhere:
     the tab showed, on a tab given the window as a tool's is: shown again,
     and waited for while starting, rather than started twice; ended when its
     tab is closed, and said to be when it lands after you left its box.
+- **Requests and approvals** are the core's (the requests topic, and the
+  `requests`, `rejections` and `dismiss` commands):
+  - a box a request waits on, a refused credential affects, or a harness change
+    is captured in says so in a notice under its workspace's header, one at a
+    time in the core's precedence: pressing it runs its command on the box, and
+    its close is `dismiss`, until what it is about changes;
+  - a request is answered through the core's cards as sheets, each card beside
+    its fields and said again as they change, with Accept and Deny (and a
+    credential part's Request JSON) in place of one submit, a decline drawn as
+    one: a card opens with the keys on none of them, Tab and the arrows reach
+    them after the fields, and Enter takes only the one the keys are on —
+    never a field's Enter. Esc leaves the request waiting;
+  - the secrets page lists the requests waiting on its server under its
+    secrets; Tab moves the keys there, and Enter answers one;
+  - a request that arrives while the window is open (`notify.rs`) is raised as
+    a notification through the desktop's notification service on the session
+    bus (Linux), its body escaped for the service's markup, since it is the
+    box's own words; pressing it answers that request. What was waiting as the
+    window opened raises none. macOS and Windows raise none yet.
 - **Creating a box** is the core's (`console.RunOptions`, held by the bridge):
   - the composer, under the list, is what the new box is given to do: Return
     creates and Shift+Return is a new line; under it, what a create would be
@@ -333,7 +352,8 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/audit.rs` | A box's audit view: the timeline followed, runs opened and folded, a record and its recordings read over it |
 | `src/harnesses.rs` | The harnesses page, a harness's actions, file picker and config card, and a box's harness changes reviewed |
 | `src/paste.rs` | Images pasted or dropped on a pane carried into its box, the pane's input held meanwhile; a folder dropped on the composer as the next source |
-| `src/secrets.rs` | The secrets page, its actions, and a secret, a binding, the history and a decision read as panels |
+| `src/secrets.rs` | The secrets page, its actions, its requests table, and a secret, a binding, the history and a decision read as panels; the core's cards as this window draws them |
+| `src/notify.rs` | A request that arrived raised as a native notification, and a press on one taken back to the window |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
 | `src/term.rs` | A pane's terminal (`alacritty_terminal`): its screen as rows, selection, the program's copies and links, mouse reporting, the wheel, paste, find, wide characters and the input method's composition |
 | `src/theme.rs` | The spec's tokens (colours in both palettes, and the appearance that picks one; space, radii and strokes), the bundled faces and type, and springs |
@@ -347,6 +367,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
 | `src/issue_tests.rs` | An issue and a pull request as tabs on the mock: drawn from the core's issue, a box with no tag refused, a merge of the allowed ways, a comment posted, a close asked, the files changed given the window and giving it back, following only on screen, the header's link |
 | `src/tool_tests.rs` | The tools menu as the core lists it, a tool given the window, put away, and giving it back when it goes unless the layout was changed since, one running shown not started again, a host tool, a file edited and given up, an address copied |
+| `src/request_tests.rs` | A box's notice and its dismissal, a request's card answered and left, the page's requests table, an arrival raised and pressed |
 | `src/secret_tests.rs` | The page's secrets and keys, a secret and a binding read, an unbind asked first, a binding, an edit, a delete and a new secret through their sheets, the history, refresh |
 | `src/audit_tests.rs` | The timeline followed, a row held while records arrive, a run opened and folded, a record and a recording read and put away, what could not be read, a box taking the screen |
 | `src/harness_tests.rs` | The page's harnesses and keys, actions as the core offers them, the card, a reset asked first, a file edited and given up, a variant's form, harness changes reviewed and saved |

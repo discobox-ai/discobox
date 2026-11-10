@@ -12,7 +12,7 @@
 
 use rune::{Color, El, Key, KeyEvent, PointerPress, ScrollSpec, Tx, col, el, row, spacer, text};
 
-use crate::wire::{Args, CardRow, CardTone, Entry, Harness, HarnessAction, HarnessChange, HarnessChanges, Result as CommandResult};
+use crate::wire::{Args, CardRow, Entry, Harness, HarnessAction, HarnessChange, HarnessChanges, Result as CommandResult};
 use crate::{Menu, MenuKind, Pending, State, theme, view};
 
 /// The harnesses page: the harnesses of the server it was opened for, and the one the keys are on.
@@ -354,14 +354,7 @@ pub fn card_view(s: &State) -> Option<El> {
     for r in &c.rows {
         let mut value = row().grow(1.0).shrink().flex_wrap();
         for span in &r.spans {
-            let ink = match span.tone {
-                CardTone::Quiet => theme::dim(),
-                CardTone::Standout => theme::gold(),
-                CardTone::Command => theme::mark(),
-                CardTone::Alert => theme::err(),
-                CardTone::Plain => theme::text(),
-            };
-            value = value.child(t(span.text.clone(), ink));
+            value = value.child(t(span.text.clone(), crate::secrets::ink(span.tone)));
         }
         rows = rows.child(row().w_full().gap(8.0).items_start().child(t(r.label.clone(), theme::grey()).w(LABEL_W)).child(value));
         let mut lines = col().w_full().pl(LABEL_W + 20.0);

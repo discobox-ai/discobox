@@ -34,9 +34,6 @@ palette. On macOS the native menu bar is still a hand list of some commands
 
 | Command | Reason | Closed by |
 | --- | --- | --- |
-| `requests` | Needs the credential requests page. | #814 |
-| `rejections` | Needs the rejected credentials page. | #814 |
-| `dismiss` | The app has no notices to dismiss until it raises requests as notifications. | #814 |
 | `all` | The command is for a window opened on one box, which the desktop has none of: its list is always beside the workspace, and "all discoboxes" in the sidebar is `detach`. | None: by design |
 
 ## The TUI lacks

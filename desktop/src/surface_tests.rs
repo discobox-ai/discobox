@@ -188,13 +188,14 @@ fn the_menu_bar_is_reached_from_the_keyboard() {
 #[test]
 fn a_menus_entries_say_why_not() {
     let mut rt = runtime();
-    rt.state.open_commands_menu(MenuKind::Bar(DesktopMenu::Box), (0.0, 0.0));
+    // `all` is the one registry command the app does not answer (the parity ledger says why).
+    rt.state.open_commands_menu(MenuKind::Bar(DesktopMenu::View), (0.0, 0.0));
     settle(&mut rt);
     let m = rt.state.menu.as_ref().unwrap();
-    let requests = m.entries.iter().find(|e| e.command == "requests").unwrap();
-    assert!(!requests.enabled && requests.why.contains("not in the desktop app yet"), "{requests:?}");
-    let attach = m.entries.iter().find(|e| e.command == "attach").unwrap();
-    assert!(attach.enabled, "{attach:?}");
+    let all = m.entries.iter().find(|e| e.command == "all").unwrap();
+    assert!(!all.enabled && all.why.contains("not in the desktop app yet"), "{all:?}");
+    let sidebar = m.entries.iter().find(|e| e.command == "sidebar").unwrap();
+    assert!(sidebar.enabled, "{sidebar:?}");
 }
 
 // A pane's menu is the session commands.
@@ -251,18 +252,18 @@ fn attaching_elsewhere_puts_the_filter_back() {
 #[test]
 fn a_menu_takes_each_ruling() {
     let mut rt = runtime();
-    rt.state.open_commands_menu(MenuKind::Bar(DesktopMenu::Box), (0.0, 0.0));
+    rt.state.open_commands_menu(MenuKind::Bar(DesktopMenu::View), (0.0, 0.0));
     settle(&mut rt);
     let sub = rt.state.menu.as_ref().unwrap().sub;
     let ruled = |enabled: bool| crate::wire::Commands {
-        entries: ["start", "requests"].iter().map(|id| crate::wire::Entry {
+        entries: ["archived", "all"].iter().map(|id| crate::wire::Entry {
             command: id.to_string(), label: id.to_string(), enabled, why: if enabled { String::new() } else { "not now".into() }, ..Default::default()
         }).collect(),
     };
     let entry = |rt: &Runtime<State>, id: &str| rt.state.menu.as_ref().unwrap().entries.iter().find(|e| e.command == id).cloned().unwrap();
     rt.state.take_commands(sub, Ok(ruled(false)));
-    assert!(!entry(&rt, "start").enabled);
+    assert!(!entry(&rt, "archived").enabled);
     rt.state.take_commands(sub, Ok(ruled(true)));
-    assert!(entry(&rt, "start").enabled, "start stayed greyed");
-    assert!(!entry(&rt, "requests").enabled && entry(&rt, "requests").why.contains("not in the desktop app yet"), "requests took a ruling the app cannot act on");
+    assert!(entry(&rt, "archived").enabled, "archived stayed greyed");
+    assert!(!entry(&rt, "all").enabled && entry(&rt, "all").why.contains("not in the desktop app yet"), "all took a ruling the app cannot act on");
 }
