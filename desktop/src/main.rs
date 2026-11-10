@@ -20,6 +20,9 @@ mod mark;
 mod overlay;
 #[cfg(test)]
 mod parity_tests;
+mod sheet;
+#[cfg(test)]
+mod sheet_tests;
 #[cfg(test)]
 mod surface_tests;
 mod term;
@@ -264,6 +267,8 @@ pub struct State {
     pub bar_at: HashMap<DesktopMenu, (f32, f32)>,
     /// The help: every command by its menu, with its shortcut.
     pub help: bool,
+    /// The forms and questions commands wait on, drawn as sheets one at a time.
+    pub sheets: sheet::Sheets,
     /// The boxes this window has gone to, latest first, which rank the palette's empty query
     /// (ADR 26-11-06-671 §6): at most `RECENT` of them, for as long as the window lasts.
     pub recent: Vec<String>,
@@ -301,7 +306,7 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, recent: vec![], reveal: None, point: None,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), recent: vec![], reveal: None, point: None,
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), early: HashMap::new(),
         };
@@ -943,11 +948,17 @@ impl State {
     }
 
     fn take_result(&mut self, r: CommandResult, tx: &mut Tx) {
+        // Whatever the command still asked is moot once it has finished.
+        self.sheets.finished(r.id);
         let Some(why) = self.pending.remove(&r.id) else { return };
         let failed = r.status == Status::Failed;
         match why {
+            // A form or question dismissed: nothing came of it, and nothing to say. A session's
+            // cancel still lets its stream go below.
+            Pending::Enter(_) | Pending::Verb(..) if r.status == Status::Canceled => self.message = None,
             Pending::Enter(id) if r.status == Status::Enter => enter(self, &id, &r, tx),
-            Pending::Enter(id) if id == "refresh" && r.status == Status::Done => self.message = None,
+            // What came of it (`renamed to …`, `settings saved`), or nothing to say.
+            Pending::Enter(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
             Pending::End(stream) if r.status == Status::Done => self.drop_pane(stream),
             Pending::Session(stream, sandbox) if r.status == Status::Done => {
                 let Some(exec) = r.session.clone() else { return };
@@ -1019,7 +1030,7 @@ impl State {
 /// The registry's commands this app answers. Every other one says it is not here yet, and has
 /// an entry in the parity ledger (`docs/console/parity.md`) saying which issue brings it.
 pub const ANSWERED: &[&str] = &[
-    "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive",
+    "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive", "purge", "rename", "settings",
     "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
     "refresh", "servers", "archived",
@@ -1032,7 +1043,7 @@ pub fn lacking(spec: &Spec, id: &str) -> Option<String> {
         return None;
     }
     Some(match spec.command(id) {
-        Some(c) if matches!(id, "new" | "rename" | "settings" | "purge" | "review config") => {
+        Some(c) if matches!(id, "new" | "review config") => {
             format!("{} needs a dialog, which the desktop app does not have yet", c.label)
         }
         Some(c) => format!("{} is not in the desktop app yet", c.label),
@@ -1083,21 +1094,23 @@ pub fn run_on(s: &mut State, id: &str, targets: Vec<String>, _tx: &mut Tx) {
             };
             s.open_menu(key, at);
         }
-        "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" => {
+        "stop" | "start" | "upgrade" | "repair" | "archive" | "unarchive" | "purge" => {
             let name = match targets.as_slice() {
                 [] => return,
                 [one] => s.box_by_id(one).map(|b| b.name.clone()).unwrap_or_else(|| one.clone()),
                 many => format!("{} boxes", many.len()),
             };
-            let doing = match id {
-                "stop" => "stopping",
-                "start" => "starting",
-                "upgrade" => "upgrading",
-                "repair" => "repairing",
-                "archive" => "archiving",
-                _ => "unarchiving",
-            };
-            s.message = Some(format!("{doing} {name}…"));
+            // A purge is asked first (the core's confirmation, as a sheet): it says nothing until
+            // it is answered.
+            s.message = match id {
+                "stop" => Some("stopping"),
+                "start" => Some("starting"),
+                "upgrade" => Some("upgrading"),
+                "repair" => Some("repairing"),
+                "archive" => Some("archiving"),
+                "unarchive" => Some("unarchiving"),
+                _ => None,
+            }.map(|doing| format!("{doing} {name}…"));
             s.command(id, targets, context, Args::default(), Pending::Verb(id.into(), name));
         }
         "refresh" => {
@@ -1199,15 +1212,9 @@ fn poll(s: &mut State, _t: f64, tx: &mut Tx) -> bool {
                     }
                 }
             },
-            // The app draws no questions or forms yet (#808): each is left unanswered, and says so.
-            Event::Question(q) => {
-                s.backend.send(Out::Decline(q.id));
-                s.message = Some(format!("{}: the desktop app cannot answer this yet", q.title));
-            }
-            Event::Form(f) => {
-                s.backend.send(Out::Dismiss(f.id));
-                s.message = Some(format!("{} needs a dialog, which the desktop app does not have yet", f.title));
-            }
+            Event::Question(q) => sheet::take_question(s, q),
+            Event::Form(f) => sheet::take_form(s, f),
+            Event::FieldErrors(e) => sheet::take_errors(s, e),
             Event::Progress(p) => {
                 if !p.text.is_empty() {
                     s.message = Some(p.text);
@@ -1233,7 +1240,9 @@ fn boot_mock() -> Boot {
 
 macro_rules! menu_commands {
     ($(($menu:literal, $id:literal)),* $(,)?) => {
-        &[$(($menu, $id, (|s: &mut State, tx: &mut Tx| run_command(s, $id, tx)) as fn(&mut State, &mut Tx))),*]
+        // A native menu's key equivalent reaches AppKit's menu ahead of the window's keys, so a
+        // sheet a command waits on is kept from here as the window's keys are.
+        &[$(($menu, $id, (|s: &mut State, tx: &mut Tx| if !s.sheets.is_open() { run_command(s, $id, tx) }) as fn(&mut State, &mut Tx))),*]
     };
 }
 
@@ -1241,7 +1250,8 @@ macro_rules! menu_commands {
 /// palette is the menu).
 const MENU: &[(&str, &str, fn(&mut State, &mut Tx))] = menu_commands![
     ("Box", "new"), ("Shell", "shell"), ("Shell", "terminal"), ("Shell", "end"),
-    ("Box", "attach"), ("Box", "stop"), ("Box", "start"), ("Box", "upgrade"), ("Box", "repair"), ("Box", "archive"), ("Box", "unarchive"),
+    ("Box", "attach"), ("Box", "rename"), ("Box", "settings"),
+    ("Box", "stop"), ("Box", "start"), ("Box", "upgrade"), ("Box", "repair"), ("Box", "archive"), ("Box", "unarchive"), ("Box", "purge"),
     ("View", "detach"), ("View", "sidebar"), ("View", "palette"), ("View", "maximize"),
     ("View", "servers"), ("View", "archived"), ("View", "refresh"),
     ("View", "next pane"), ("View", "previous pane"), ("View", "next box"), ("View", "previous box"),
@@ -1346,6 +1356,25 @@ fn main() {
             }),
             ("help", |s| {
                 run_command(s, "help", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // The core's forms and questions, as sheets.
+            ("rename", |s| {
+                run_command(s, "rename", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // A field that does not apply, sections, pickers, and a refusal under its field.
+            ("settings", |s| {
+                run_command(s, "settings", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                if let Some(f) = s.sheets.form() {
+                    let id = f.id;
+                    sheet::take_errors(s, wire::FieldErrors { form: id, errors: vec![wire::FieldError { field: "name".into(), why: "a discobox needs a configured name".into() }] });
+                }
+            }),
+            ("purge", |s| {
+                let old = s.boxes.iter().find(|b| b.state == wire::State::Archived).map(|b| b.key.clone()).unwrap_or_default();
+                run_on(s, "purge", vec![old], &mut Tx::default());
                 poll(s, 0.0, &mut Tx::default());
             }),
         ],

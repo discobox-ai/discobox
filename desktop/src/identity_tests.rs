@@ -8,6 +8,7 @@ const CHROME: &[(&str, &str)] = &[
     ("main.rs", include_str!("main.rs")),
     ("view.rs", include_str!("view.rs")),
     ("overlay.rs", include_str!("overlay.rs")),
+    ("sheet.rs", include_str!("sheet.rs")),
     ("icons.rs", include_str!("icons.rs")),
     ("mark.rs", include_str!("mark.rs")),
     ("theme.rs", include_str!("theme.rs")),

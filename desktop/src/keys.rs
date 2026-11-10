@@ -11,7 +11,7 @@
 use rune::{Key, KeyEvent, Shortcut, Tx};
 
 use crate::wire::Spec;
-use crate::{Focus, State, overlay, run_command};
+use crate::{Focus, State, overlay, run_command, sheet};
 
 pub const MAC: bool = cfg!(target_os = "macos");
 
@@ -139,6 +139,10 @@ pub fn menu_shortcut(binding: &str) -> Option<Shortcut> {
 pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if matches!(ev.key, Key::Modifier { .. }) {
         return false;
+    }
+    // A sheet a command waits on takes every key until it is answered.
+    if s.sheets.is_open() {
+        return sheet::key(s, ev, tx);
     }
     if s.menu.is_some() {
         return overlay::menu_key(s, ev, tx);

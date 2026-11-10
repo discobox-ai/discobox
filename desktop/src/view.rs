@@ -9,7 +9,7 @@ use rune::{Color, Cx, El, Icon, PointerPress, Spring, Transition, Tx, col, el, i
 
 use crate::wire::{Box as Sandbox, Row, TabKind};
 use crate::theme::{self, CELL_H};
-use crate::{Focus, MenuKind, Side, State, Workspace, icons, keys, mark, overlay, run_command};
+use crate::{Focus, MenuKind, Side, State, Workspace, icons, keys, mark, overlay, run_command, sheet};
 
 pub const SIDEBAR_W: f32 = 290.0;
 const ROW_H: f32 = 26.0;
@@ -558,6 +558,9 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     }
     if let Some(h) = overlay::help_view(s) {
         stack = stack.child(h);
+    }
+    if let Some(sh) = sheet::view(s) {
+        stack = stack.child(sh);
     }
     stack
 }

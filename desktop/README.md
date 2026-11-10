@@ -27,8 +27,7 @@ the epic, and does not yet follow the ADRs everywhere:
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing and a workspace's sessions are subscriptions; terminals are
-  execstream frames on streams the app allocates. The app draws no question or
-  form yet (#808): it declines each and says so. Its client and wire types
+  execstream frames on streams the app allocates. Its client and wire types
   are the `discobox-bridge` crate (`bridge/`), with nothing of the window in
   it; the types (`bridge/src/wire.rs`) are generated from the schema that is
   generated from the bridge's Go types, and none is written by hand.
@@ -53,6 +52,25 @@ the epic, and does not yet follow the ADRs everywhere:
   moves it is the registry's, and `no_shortcut_is_written_outside_the_spec`
   fails on one matched by hand. A registry command the app does not answer
   (`ANSWERED` in `main.rs`) says so, and has an entry in the parity ledger.
+- **The sheets** are the core's forms and questions (`sheet.rs`), drawn as a
+  modal panel over the window, which takes no key or press until it is
+  answered (on macOS the native menu's commands wait for it too): rename,
+  settings and purge's confirmation so far.
+  - A form is the core's fields, each opening on its value as the core reads
+    it: typed, a picker of its choices, or dimmed with why it takes no answer
+    (and stepped over); a masked value is never drawn. The app holds what is
+    typed and chosen, sends a draft as an answer changes (the form comes back
+    with what applies recomputed), and submits only the fields the person
+    changed, so an untouched field is never an edit; the core's refusal is
+    said under the field it names, with what was typed kept. Tab and the
+    arrows move between fields, Left, Right and Space turn a picker, Enter
+    submits, Esc cancels.
+  - A question is a yes or no, or a pick of one by key. A destruction
+    (`defaultNo`, purge's) opens on No and draws its yes in the error colour,
+    so Enter never purges. Esc answers a yes or no no, as the core says
+    leaving one is, and declines a pick of one.
+  - Sheets queue in the order they arrive; each goes when its command's result
+    lands, answered or not.
 - **The command surfaces** (ADR 26-11-07-598 §2) reach every registry command:
   - the palette (`primary+k`) is ADR 26-11-06-671's: a query and at most one
     chip, in either order. A box command's alias and a space make it the
@@ -120,6 +138,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/backend.rs` | The bridge client on stdin/stdout, its messages as the window's events, and a mock that answers the same messages with local shells, for running without a CLI |
 | `src/view.rs` | The list, the sidebar, the workspace, frames and tabs |
 | `src/overlay.rs` | The palette, the menu bar and its menus, a box's actions menu, a pane's menu, the help, and the list's filter menu |
+| `src/sheet.rs` | The core's forms and questions as sheets: the queue, the answers held while they are typed, drafts, refusals, and their keys |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
 | `src/term.rs` | A pane's terminal (`alacritty_terminal`) and its screen as rows |
 | `src/theme.rs` | The spec's tokens (colours in both palettes, and the appearance that picks one; space, radii and strokes), the bundled faces and type, and springs |
@@ -127,6 +146,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `fonts/` | JetBrains Mono 2.304 at the weights the chrome sets and the italic, and its licence |
 | `src/parity_tests.rs` | Runs `cli/internal/console/testdata/parity` with the desktop's keys |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
+| `src/sheet_tests.rs` | Rename, settings and purge through their sheets on the mock: what applies, a refusal, Enter on a destruction, a pick of one, a sheet taking every key |
 | `src/surface_tests.rs` | Every command in a menu and found by the palette; the palette's two orders, Esc and reveal; the menu bar's keys; menus that say why not |
 | `src/identity_tests.rs` | No TUI character art in the chrome, every colour and length a token, no colour of the chrome's own, the bundled face measured |
 

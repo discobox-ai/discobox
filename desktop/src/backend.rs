@@ -23,7 +23,7 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
 
 use crate::wire::{
-    Answer, Box as Sandbox, ChoiceGroup, Command, Commands, Entry, Filter, FilterChoice, Form, Listing, Message, Open, Palette,
+    Answer, Box as Sandbox, ChoiceGroup, Command, Commands, Choice, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice, Form, Listing, Message, Open, Palette,
     PaletteCommit, PaletteQuery, PaletteRow, Progress, Question, Remark, Result as CommandResult, Row, Sessions, Spec, SpecTarget,
     State, Status, Stream, StreamState, Submit, Subscribe, Tab, TabKind, Topic, Type, Unsubscribe,
 };
@@ -36,14 +36,14 @@ pub enum Out {
     Unsubscribe(u32),
     Command(Command),
     Open { stream: u32, sandbox: String, exec: String, cols: u16, rows: u16 },
-    /// A question left unanswered: the app draws none yet (#808).
-    Decline(u64),
-    /// A form dismissed: the app draws none yet (#808).
-    Dismiss(u64),
+    /// A form filled, drafted or dismissed.
+    Submit(Submit),
+    /// A question answered, or declined.
+    Answer(Answer),
 }
 
 impl Out {
-    fn message(self) -> Message {
+    pub fn message(self) -> Message {
         match self {
             Out::Subscribe(s) => Message { r#type: Type::Subscribe, subscribe: Some(s), ..Default::default() },
             Out::Unsubscribe(sub) => Message { r#type: Type::Unsubscribe, unsubscribe: Some(Unsubscribe { sub }), ..Default::default() },
@@ -53,16 +53,8 @@ impl Out {
                 open: Some(Open { stream, r#box: sandbox, exec, cols: cols.into(), rows: rows.into() }),
                 ..Default::default()
             },
-            Out::Decline(question) => Message {
-                r#type: Type::Answer,
-                answer: Some(Answer { question, declined: true, ..Default::default() }),
-                ..Default::default()
-            },
-            Out::Dismiss(form) => Message {
-                r#type: Type::Submit,
-                submit: Some(Submit { form, cancel: true, ..Default::default() }),
-                ..Default::default()
-            },
+            Out::Answer(a) => Message { r#type: Type::Answer, answer: Some(a), ..Default::default() },
+            Out::Submit(f) => Message { r#type: Type::Submit, submit: Some(f), ..Default::default() },
         }
     }
 }
@@ -84,6 +76,8 @@ pub enum Event {
     Stream(Stream),
     Question(Question),
     Form(Form),
+    /// Why what was submitted to a form was refused; the form stays up.
+    FieldErrors(FieldErrors),
     Progress(Progress),
     Data(u32, Vec<u8>),
     Exited(u32, String),
@@ -142,6 +136,7 @@ fn event(m: Message) -> Option<Event> {
         Type::Stream => m.stream.map(Event::Stream),
         Type::Question => m.question.map(Event::Question),
         Type::Form => m.form.map(Event::Form),
+        Type::FieldErrors => m.field_errors.map(Event::FieldErrors),
         Type::Progress => m.progress.map(Event::Progress),
         _ => None,
     }
@@ -196,6 +191,18 @@ pub struct Mock {
     extra: HashMap<String, Vec<Tab>>,
     ptys: HashMap<u32, Pty>,
     made: u64,
+    /// The forms and questions put to the app, by their ID: what each is for, and the command
+    /// that waits on it.
+    asks: HashMap<u64, (Command, Ask)>,
+    next_ask: u64,
+}
+
+/// What a mock form or question is for.
+#[derive(Clone)]
+enum Ask {
+    Rename(String),
+    Settings(String),
+    Purge(Vec<String>),
 }
 
 fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
@@ -247,7 +254,7 @@ impl Mock {
         ];
         let parents = HashMap::from([("sbx_r5t1y7u3i9o0pzx2".to_string(), "sbx_p8c3n0vd6rgs2hkq".to_string())]);
         let filter = Filter { tags: vec![], ..Default::default() };
-        Mock { inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0 }
+        Mock { inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1 }
     }
 
     /// The rows the core would draw for a filter, roughly: archived boxes only when asked for,
@@ -413,6 +420,7 @@ impl Mock {
                 }
                 CommandResult { status: Status::Done, why: failures.join("; "), ..Default::default() }
             }
+            "purge" => fail("cannot purge: archive it first — purge only takes archived boxes"),
             "refresh" => {
                 self.relist();
                 CommandResult { status: Status::Done, ..Default::default() }
@@ -420,6 +428,118 @@ impl Mock {
             "actions" => CommandResult { status: Status::Enter, r#box: target.clone(), entries: self.actions(&target), ..Default::default() },
             _ => enter(""),
         }
+    }
+
+    /// Puts a command's form or question to the app, as the core does for rename, settings and
+    /// purge; the command waits on the answer (`answered`). False for any other command.
+    fn ask(&mut self, c: &Command) -> bool {
+        let id = self.next_ask;
+        let Some((ask, event)) = self.put(id, c) else { return false };
+        self.next_ask += 1;
+        self.asks.insert(id, (c.clone(), ask));
+        self.inbox.push(event);
+        true
+    }
+
+    /// A command's form or question under an ID, and what it is for.
+    fn put(&self, id: u64, c: &Command) -> Option<(Ask, Event)> {
+        let target = c.targets.first().cloned().unwrap_or_default();
+        let field = |key: &str, label: &str, value: &str| Field { key: key.into(), label: label.into(), value: value.into(), applies: true, ..Default::default() };
+        let choice = |key: &str, label: &str, hint: &str| Choice { key: key.into(), label: label.into(), hint: hint.into() };
+        let (ask, event) = match c.command.as_str() {
+            "rename" => {
+                let b = self.sandbox(&target)?;
+                let name = Field { hint: "What should this discobox be called?".into(), placeholder: "name".into(), ..field("name", "name", &b.name) };
+                (Ask::Rename(target), Event::Form(Form { id, command: c.id, title: "Rename".into(), fields: vec![name] }))
+            }
+            "settings" => {
+                let b = self.sandbox(&target)?;
+                let stopped = b.state == State::Stopped;
+                let harness = Field {
+                    choices: vec![choice(&b.harness, &b.harness, "what the box has now"), choice("codex", "codex", "Codex")],
+                    applies: stopped, why: "stop the box to change its harness".into(),
+                    hint: "the new harness provisions on the next start".into(), ..field("harness", "harness", &b.harness)
+                };
+                let restrict = Field {
+                    section: "Egress".into(),
+                    choices: vec![choice("no", "no", "this level restricts nothing"), choice("yes", "deny by default", "reach only the allow entries")],
+                    ..field("deny", "restrict", "no")
+                };
+                let allow = Field { section: "Egress".into(), placeholder: "hosts, *.wildcards, IPs or CIDRs, comma-separated".into(), ..field("allow", "allow", "") };
+                let api = Field {
+                    section: "Access".into(),
+                    choices: vec![choice("no", "no", "the box cannot call the discobox API"), choice("yes", "yes", "the box may call the discobox API")],
+                    ..field("api", "discobox API", "no")
+                };
+                let name = Field { required: true, hint: "the handle it was created with".into(), ..field("name", "name", &b.name) };
+                let title = format!("Settings · {}", b.name);
+                (Ask::Settings(target), Event::Form(Form { id, command: c.id, title, fields: vec![name, harness, restrict, allow, api] }))
+            }
+            // The core refuses a purge none of its boxes can take before it asks anything.
+            "purge" if !c.targets.iter().any(|t| self.sandbox(t).is_some_and(|b| b.state == State::Archived)) => return None,
+            "purge" => {
+                let name = match c.targets.as_slice() {
+                    [one] => self.sandbox(one).map(|b| b.name.clone()).unwrap_or_default(),
+                    many => format!("{} boxes selected", many.len()),
+                };
+                let body = format!("Purge {name}? The disk and everything on it goes, and unarchive cannot bring it back.");
+                (Ask::Purge(c.targets.clone()), Event::Question(Question { id, command: c.id, title: "Purge".into(), body, choices: vec![], default_no: true }))
+            }
+            _ => return None,
+        };
+        Some((ask, event))
+    }
+
+    /// What a form's submit or a question's answer does: the command it ends, as the core would
+    /// carry it out, or the form again — after a draft, or refused.
+    fn answered(&mut self, id: u64, answers: Option<&HashMap<String, String>>, draft: bool) {
+        let Some((c, ask)) = self.asks.get(&id).cloned() else { return };
+        let command = c.id;
+        let done = |note: String| CommandResult { id: command, status: Status::Done, note, ..Default::default() };
+        let canceled = CommandResult { id: command, status: Status::Canceled, ..Default::default() };
+        let Some(answers) = answers else {
+            self.asks.remove(&id);
+            self.inbox.push(Event::Result(canceled));
+            return;
+        };
+        // What the app sent over what each field opened holding, as the bridge merges them.
+        let opening: HashMap<String, String> = match self.put(id, &c) {
+            Some((_, Event::Form(f))) => f.fields.into_iter().map(|x| (x.key, x.value)).collect(),
+            _ => HashMap::new(),
+        };
+        let get = |k: &str| answers.get(k).or(opening.get(k)).map(|v| v.trim().to_string()).unwrap_or_default();
+        let result = match ask {
+            Ask::Rename(_) | Ask::Settings(_) if draft => {
+                // The form again under its ID, as the core sends it after a draft.
+                if let Some((_, form)) = self.put(id, &c) {
+                    self.inbox.push(form);
+                }
+                return;
+            }
+            Ask::Settings(_) if get("name").is_empty() => {
+                let errors = vec![FieldError { field: "name".into(), why: "a discobox needs a configured name".into() }];
+                self.inbox.push(Event::FieldErrors(FieldErrors { form: id, errors }));
+                return;
+            }
+            Ask::Rename(key) | Ask::Settings(key) => {
+                let name = get("name");
+                let renamed = self.boxes.iter_mut().find(|b| b.key == key).filter(|b| !name.is_empty() && b.name != name).map(|b| b.name = name.clone()).is_some();
+                self.relist();
+                match (c.command.as_str(), renamed) {
+                    ("rename", true) => done(format!("renamed to {name}")),
+                    ("rename", false) => done("name unchanged".into()),
+                    _ => done("settings saved".into()),
+                }
+            }
+            Ask::Purge(_) if get("key") != "yes" => canceled,
+            Ask::Purge(keys) => {
+                self.boxes.retain(|b| !keys.contains(&b.key) || b.state != State::Archived);
+                self.relist();
+                done(format!("purge: {}", keys.len()))
+            }
+        };
+        self.asks.remove(&id);
+        self.inbox.push(Event::Result(result));
     }
 
     /// The registry's lifecycle commands, with the core's rules roughly.
@@ -528,6 +648,7 @@ impl Backend for Mock {
                 self.inbox.push(Event::Palette(sub, Ok(p)));
             }
             Out::Subscribe(_) | Out::Unsubscribe(_) => {}
+            Out::Command(c) if self.ask(&c) => {}
             Out::Command(c) => {
                 let mut r = self.command(c.clone());
                 r.id = c.id;
@@ -541,7 +662,14 @@ impl Backend for Mock {
                 };
                 self.inbox.push(Event::Stream(state));
             }
-            Out::Decline(_) | Out::Dismiss(_) => {}
+            Out::Submit(f) => {
+                let answers = (!f.cancel).then_some(&f.answers);
+                self.answered(f.form, answers, f.draft);
+            }
+            Out::Answer(a) => {
+                let answers = HashMap::from([("key".to_string(), a.key)]);
+                self.answered(a.question, (!a.declined).then_some(&answers), false);
+            }
         }
     }
 
@@ -650,7 +778,12 @@ mod tests {
         assert_eq!((p.rows[0].r#box.as_str(), p.rows[1].why.as_str(), p.archived, p.commit.map(|c| c.command)), ("b1", "not running", true, Some("stop".into())));
         let Some(Event::Commands(7, Ok(c))) = read(r#"{"type":"snapshot","snapshot":{"sub":7,"topic":"commands","commands":{"entries":[{"command":"help","label":"help","detail":"show the keys","enabled":true}]}}}"#) else { panic!("commands") };
         assert_eq!(c.entries[0].command, "help");
-        assert!(read(r#"{"type":"fieldErrors","fieldErrors":{"form":1,"errors":[]}}"#).is_none());
+        let Some(Event::Form(f)) = read(r#"{"type":"form","form":{"id":8,"command":4,"title":"Rename","fields":[{"key":"name","label":"name","choices":[],"value":"one","applies":true}]}}"#) else { panic!("form") };
+        assert_eq!((f.id, f.command, f.fields[0].key.as_str(), f.fields[0].applies), (8, 4, "name", true));
+        let Some(Event::FieldErrors(e)) = read(r#"{"type":"fieldErrors","fieldErrors":{"form":8,"errors":[{"field":"name","why":"a discobox needs a configured name"}]}}"#) else { panic!("fieldErrors") };
+        assert_eq!((e.form, e.errors[0].field.as_str()), (8, "name"));
+        let Some(Event::Question(q)) = read(r#"{"type":"question","question":{"id":9,"command":4,"title":"Purge","body":"Purge one?","choices":[],"defaultNo":true}}"#) else { panic!("question") };
+        assert!(q.default_no && q.choices.is_empty());
     }
 
     // What the app sends is what the CLI reads.
@@ -663,8 +796,11 @@ mod tests {
         assert_eq!(v["command"]["command"], "shell");
         assert_eq!(v["command"]["context"]["paneFocused"], true);
         assert_eq!(v["command"]["args"], json!({"stream": 7}));
-        assert_eq!(json(Out::Decline(9)), json!({"type": "answer", "answer": {"question": 9, "declined": true}}));
-        assert_eq!(json(Out::Dismiss(2)), json!({"type": "submit", "submit": {"form": 2, "answers": {}, "cancel": true}}));
+        assert_eq!(json(Out::Answer(Answer { question: 9, declined: true, ..Default::default() })), json!({"type": "answer", "answer": {"question": 9, "declined": true}}));
+        assert_eq!(json(Out::Answer(Answer { question: 9, key: "yes".into(), ..Default::default() })), json!({"type": "answer", "answer": {"question": 9, "key": "yes"}}));
+        assert_eq!(json(Out::Submit(Submit { form: 2, cancel: true, ..Default::default() })), json!({"type": "submit", "submit": {"form": 2, "answers": {}, "cancel": true}}));
+        let answers = std::collections::HashMap::from([("name".to_string(), "two".to_string())]);
+        assert_eq!(json(Out::Submit(Submit { form: 2, answers, draft: true, ..Default::default() })), json!({"type": "submit", "submit": {"form": 2, "answers": {"name": "two"}, "draft": true}}));
         let sub = json(Out::Subscribe(Subscribe { sub: 1, topic: Topic::Listing, filter: Some(Filter { archived: true, tags: vec![], ..Default::default() }), ..Default::default() }));
         assert_eq!(sub, json!({"type": "subscribe", "subscribe": {"sub": 1, "topic": "listing", "filter": {"tags": [], "archived": true}}}));
         let q = PaletteQuery { text: "stop ".into(), recent: vec!["b1".into()], ..Default::default() };

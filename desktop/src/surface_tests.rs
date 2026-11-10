@@ -191,8 +191,8 @@ fn a_menus_entries_say_why_not() {
     rt.state.open_commands_menu(MenuKind::Bar(DesktopMenu::Box), (0.0, 0.0));
     settle(&mut rt);
     let m = rt.state.menu.as_ref().unwrap();
-    let rename = m.entries.iter().find(|e| e.command == "rename").unwrap();
-    assert!(!rename.enabled && rename.why.contains("dialog"), "{rename:?}");
+    let review = m.entries.iter().find(|e| e.command == "review config").unwrap();
+    assert!(!review.enabled && review.why.contains("dialog"), "{review:?}");
     let attach = m.entries.iter().find(|e| e.command == "attach").unwrap();
     assert!(attach.enabled, "{attach:?}");
 }
@@ -255,7 +255,7 @@ fn a_menu_takes_each_ruling() {
     settle(&mut rt);
     let sub = rt.state.menu.as_ref().unwrap().sub;
     let ruled = |enabled: bool| crate::wire::Commands {
-        entries: ["start", "rename"].iter().map(|id| crate::wire::Entry {
+        entries: ["start", "review config"].iter().map(|id| crate::wire::Entry {
             command: id.to_string(), label: id.to_string(), enabled, why: if enabled { String::new() } else { "not now".into() }, ..Default::default()
         }).collect(),
     };
@@ -264,5 +264,5 @@ fn a_menu_takes_each_ruling() {
     assert!(!entry(&rt, "start").enabled);
     rt.state.take_commands(sub, Ok(ruled(true)));
     assert!(entry(&rt, "start").enabled, "start stayed greyed");
-    assert!(!entry(&rt, "rename").enabled && entry(&rt, "rename").why.contains("dialog"), "rename took a ruling the app cannot act on");
+    assert!(!entry(&rt, "review config").enabled && entry(&rt, "review config").why.contains("dialog"), "review config took a ruling the app cannot act on");
 }

@@ -27,7 +27,10 @@ fn a_bare_shortcut_in_a_pane_is_the_programs() {
     let mut rt = runtime();
     rt.key(KeyEvent { key: Key::Function(2), mods: Mods::default() });
     settle(&mut rt);
-    assert!(rt.state.message.as_deref().is_some_and(|m| m.contains("needs a dialog")), "F2 in the list renames: {:?}", rt.state.message);
+    assert!(rt.state.sheets.form().is_some_and(|f| f.title == "Rename"), "F2 in the list renames");
+    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    settle(&mut rt);
+    assert!(!rt.state.sheets.is_open(), "Esc left the rename up");
 
     rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
     settle(&mut rt);
@@ -93,6 +96,7 @@ fn no_shortcut_is_written_outside_the_spec() {
         ("main.rs", include_str!("main.rs")),
         ("view.rs", include_str!("view.rs")),
         ("overlay.rs", include_str!("overlay.rs")),
+        ("sheet.rs", include_str!("sheet.rs")),
     ];
     for (file, src) in files {
         for (i, line) in src.lines().enumerate() {
