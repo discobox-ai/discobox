@@ -394,20 +394,34 @@ func (m *Model) harnessMenu() tea.Cmd {
 	return nil
 }
 
-// harnessActions is what can be done to one harness, filtered against what it
-// can actually take. An action that does not apply stays on the menu with the
-// reason, the way the discobox menu keeps upgrade.
+// harnessKeys is the letter each of the core's harness actions is pressed
+// with here: the actions and whether each applies are the core's
+// (console.Harness.Actions), their keys this screen's.
+var harnessKeys = map[console.HarnessAction]string{
+	console.HarnessActionVariant: "c",
+	console.HarnessActionDefault: "s",
+	console.HarnessActionConfig:  "v",
+	console.HarnessActionFiles:   "f",
+	console.HarnessActionReset:   "r",
+}
+
+// resetKeys is the letter each of the core's reset choices is pressed with.
+var resetKeys = map[console.HarnessVerb]string{
+	console.HarnessReset:          "r",
+	console.HarnessResetOverrides: "a",
+}
+
+// harnessActions is what can be done to one harness, as the core offers it,
+// each on its letter. An action that does not apply stays on the menu with
+// the reason, the way the discobox menu keeps upgrade.
 func harnessActions(h console.Harness) []action {
-	return []action{
-		{key: "c", press: "c", label: "create variant", detail: "follow this bundle with an independent account", enabled: h.Parent == "",
-			why: "a variant cannot be a parent; select its standalone parent instead"},
-		{key: "s", press: "s", label: "default", detail: "run it when a discobox says no harness", enabled: !h.Default,
-			why: "already the default"},
-		{key: "v", press: "v", label: "config", detail: "everything the harness is set to", enabled: true},
-		{key: "f", press: "f", label: "files", detail: "edit one of its files in $EDITOR", enabled: len(h.Files) > 0,
-			why: "it carries no files"},
-		{key: "r", press: "r", label: "reset", detail: "forget saved settings and saved logins, back to the bundle's defaults", enabled: true},
+	offers := h.Actions()
+	out := make([]action, 0, len(offers))
+	for _, o := range offers {
+		key := harnessKeys[o.Action]
+		out = append(out, action{key: key, press: key, label: o.Label, detail: o.Detail, enabled: o.Enabled, why: o.Why})
 	}
+	return out
 }
 
 // harnessAct runs an action against the harness under the cursor.
@@ -437,29 +451,32 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 	case "c":
 		return m.newHarnessVariantForm(harness)
 	case "r":
-		// Reset deletes what saves from discoboxes put on the harness —
-		// settings files and the logins they created. Nothing brings those
-		// back but signing in and saving again, so it asks.
-		question := fmt.Sprintf("Reset %s to its bundle's defaults? The settings and logins saved to it from discoboxes are deleted. New discoboxes on it start signed out until a login made in one is saved again; secrets you bound to it by hand are kept.",
-			harness.DisplayName())
-		if !harness.HasOverrides() {
-			m.dialog = confirmDialog("Reset", question, func(string) tea.Cmd {
-				return func() tea.Msg { return harnessVerbMsg{verb: console.HarnessReset, harness: harness} }
-			})
-			return nil
-		}
-		// A person's own files are not what a box saved, so a reset keeps
-		// them unless asked, and keeping them comes first (ADR 26-11-04-711 §1).
-		items := []action{
-			{key: "r", press: "r", label: "Reset, keep your files", detail: "the files you added or overrode stay", enabled: true},
-			{key: "a", press: "a", label: "Reset your files too", detail: "nothing but the bundle's files is left", enabled: true},
-		}
-		m.dialog = actionsDialog("Reset", question+"\n\nIt has files you added or overrode yourself.", items, func(key string) tea.Cmd {
-			verb := console.HarnessReset
-			if key == "a" {
-				verb = console.HarnessResetOverrides
+		// What a reset asks, and which verb each answer is, are the core's;
+		// a choice's letter is this screen's.
+		q := harness.ResetQuestion()
+		reset := func(answer string) tea.Cmd {
+			verb, ok := harness.ResetVerb(answer)
+			if !ok {
+				return nil
 			}
 			return func() tea.Msg { return harnessVerbMsg{verb: verb, harness: harness} }
+		}
+		if len(q.Choices) == 0 {
+			m.dialog = questionDialog(q, reset)
+			return nil
+		}
+		items := make([]action, 0, len(q.Choices))
+		for _, c := range q.Choices {
+			key := resetKeys[console.HarnessVerb(c.Key)]
+			items = append(items, action{key: key, press: key, label: c.Label, detail: c.Hint, enabled: true})
+		}
+		m.dialog = actionsDialog(q.Title, q.Body, items, func(key string) tea.Cmd {
+			for verb, k := range resetKeys {
+				if k == key {
+					return reset(string(verb))
+				}
+			}
+			return nil
 		})
 		return nil
 	case "s":
@@ -530,37 +547,46 @@ func (m *Model) runHarnessVerb(verb console.HarnessVerb, harness console.Harness
 	m.busy = string(verb) + " " + name + "…"
 	server := m.configServer()
 	return func() tea.Msg {
-		if err := m.ds.DoHarness(m.ctx, server, verb, harness.ID); err != nil {
-			return harnessDoneMsg{err: fmt.Errorf("%s %s: %w", verb, name, err), resume: resume}
-		}
-		return harnessDoneMsg{text: verb.Done(name), resume: resume}
+		// The core reads the harness again and refuses what its menu would.
+		note, err := console.RunHarnessVerb(m.ctx, m.ds, server, harness.ID, verb)
+		return harnessDoneMsg{text: note, err: err, resume: resume}
 	}
 }
 
-// editHarnessFile hands the terminal to $EDITOR on one of the harness's files,
-// and saves back what it wrote.
+// editHarnessFile has one of the harness's files edited and saved back. The
+// data source writes it out and asks for it to be edited on its narration,
+// which hands the terminal to $EDITOR on it (editInTerminal).
 func (m *Model) editHarnessFile(harness console.Harness, path string) tea.Cmd {
+	feed, next := m.narrate()
 	m.busy = "editing " + path + "…"
-	server := m.configServer()
-	var changed bool
+	server, ctx, ds := m.configServer(), m.ctx, m.ds
+	edit := func() tea.Msg {
+		defer feed.Close()
+		note, err := console.EditHarness(ctx, ds, server, harness.ID, path, feed.Narration)
+		return harnessDoneMsg{text: note, err: err}
+	}
+	// The edit waits on the person in their editor: a listener, not a step.
+	return tea.Batch(listen(edit), next)
+}
+
+// editInTerminal hands the terminal to $EDITOR on a file a running command
+// asked to have edited, and tells it when the editor exits.
+func (m *Model) editInTerminal(editing *console.Editing) tea.Cmd {
 	exec := &harnessExec{
-		title: "Editing " + path,
+		title: editing.Title,
 		ctx:   m.ctx,
 		run: func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
-			var err error
-			changed, err = m.ds.EditHarnessFile(ctx, server, harness.ID, path, stdin, stdout, stderr)
-			return err
+			command, err := editorCommand(ctx, editing.Path)
+			if err != nil {
+				return err
+			}
+			command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
+			return command.Run()
 		},
 	}
 	return m.exec(exec, func(err error) tea.Msg {
-		switch {
-		case err != nil:
-			return harnessDoneMsg{err: fmt.Errorf("edit %s: %w", path, err)}
-		case !changed:
-			return harnessDoneMsg{text: path + " unchanged"}
-		default:
-			return harnessDoneMsg{text: "updated " + path}
-		}
+		editing.Done(err)
+		return nil
 	})
 }
 
@@ -617,28 +643,10 @@ func (m *Model) harnessFilesDialog(harness console.Harness) *dialog {
 	return menu
 }
 
+// harnessFileDetail is a file as the picker and the card describe it: its
+// size, then what the core says of it.
 func harnessFileDetail(file console.HarnessFile) string {
-	notes := []string{humanBytes(int64(len(file.Content)))}
-	switch file.Source {
-	case console.HarnessFileSaved:
-		notes = append(notes, "saved from a discobox")
-	case console.HarnessFileOverride:
-		notes = append(notes, "yours")
-	default:
-		notes = append(notes, "from the image")
-	}
-	if len(file.Shadows) > 0 {
-		switch file.Shadows[0] {
-		case console.HarnessFileSaved:
-			notes = append(notes, "over the saved one")
-		default:
-			notes = append(notes, "over the image's")
-		}
-	}
-	if file.CreateOnly {
-		notes = append(notes, "create-only")
-	}
-	return strings.Join(notes, " · ")
+	return strings.Join(append([]string{humanBytes(int64(len(file.Content)))}, file.Notes()...), " · ")
 }
 
 // showHarnessCard opens the config card. The bindings behind it are a request
@@ -656,18 +664,13 @@ func (m *Model) showHarnessCard(harness console.Harness) tea.Cmd {
 	}
 }
 
-// harnessCardFileLines is how much of a file the card shows before saying how
-// much is left. A card is something to glance at; a file long enough to page
-// through is one to open in the editor, which f does.
-const harnessCardFileLines = 40
-
 // harnessCardLabel is the width of the card's label column, which every value
 // on it is lined up against.
 const harnessCardLabel = 13
 
-// harnessCard is everything the harness is set to, as one readable block: what
-// it is, what it runs, which secret answers each variable it needs, and the
-// files it carries.
+// harnessCard is everything the harness is set to, as one readable block: the
+// core's card (console.HarnessCard), each row's label lined up, its value in
+// its tones, and a file's contents one step in under its path.
 //
 // Nothing here pads inside a style: the card goes into the modal layer, which
 // wraps lines too long for it, and a padded label that got wrapped would leave
@@ -680,101 +683,29 @@ func harnessCard(st *styles, h console.Harness, secrets []console.HarnessSecret)
 	// with several files reads as a list of files rather than as one block.
 	indent := strings.Repeat(" ", harnessCardLabel+2)
 	var b strings.Builder
-
-	var role []string
-	if h.Default {
-		role = append(role, st.chipOn.Render("★ default"))
-	}
-	if h.BuiltIn {
-		role = append(role, st.dimText.Render("built-in"))
-	}
-	if len(role) > 0 {
-		fmt.Fprintln(&b, label("Role"), strings.Join(role, "  "))
-	}
-	if h.Slug != "" && h.Slug != h.DisplayName() {
-		fmt.Fprintln(&b, label("Run as"), h.Slug)
-	}
-	fmt.Fprintln(&b, label("ID"), h.ID)
-	if h.Bundle != "" {
-		fmt.Fprintln(&b, label("Bundle"), h.Bundle)
-	}
-	if h.Digest != "" {
-		fmt.Fprintln(&b, label("Digest"), h.Digest)
-	}
-	if len(h.Run) > 0 {
-		fmt.Fprintln(&b, label("Run"), st.command.Render(strings.Join(h.Run, " ")))
-	}
-	if len(h.Relaunch) > 0 {
-		fmt.Fprintln(&b, label("Relaunch"), st.command.Render(strings.Join(h.Relaunch, " ")))
-	}
-
-	name := "Secrets"
-	for _, secret := range secrets {
-		fmt.Fprintln(&b, label(name), harnessSecretLine(st, secret))
-		name = ""
-	}
-	name = "Files"
-	for _, file := range h.Files {
-		fmt.Fprintln(&b, label(name), file.Path+st.dimText.Render("  ("+harnessFileDetail(file)+")"))
-		name = ""
-		for _, line := range harnessFileLines(file) {
+	for _, row := range console.HarnessCard(h, secrets) {
+		var value strings.Builder
+		for _, span := range row.Spans {
+			switch span.Tone {
+			case console.CardQuiet:
+				value.WriteString(st.dimText.Render(span.Text))
+			case console.CardStandout:
+				value.WriteString(st.chipOn.Render(span.Text))
+			case console.CardCommand:
+				value.WriteString(st.command.Render(span.Text))
+			default:
+				value.WriteString(span.Text)
+			}
+		}
+		fmt.Fprintln(&b, label(row.Label), value.String())
+		for _, line := range row.Lines {
 			fmt.Fprintln(&b, indent+st.dimText.Render(line))
 		}
-	}
-	if !h.Updated.IsZero() {
-		fmt.Fprintln(&b, label("Updated"), h.Updated.Format(time.RFC3339))
+		if row.More > 0 {
+			fmt.Fprintln(&b, indent+st.dimText.Render(fmt.Sprintf("… %d more lines — %s opens it in your editor", row.More, harnessKeys[console.HarnessActionFiles])))
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
-}
-
-// harnessSecretLine is one environment variable and whatever answers it.
-func harnessSecretLine(st *styles, secret console.HarnessSecret) string {
-	var notes []string
-	if secret.Required {
-		notes = append(notes, "required")
-	}
-	if secret.OneOf != "" {
-		notes = append(notes, "one of "+secret.OneOf)
-	}
-	if !secret.Declared {
-		notes = append(notes, "bound by hand")
-	}
-	line := secret.Name
-	if len(notes) > 0 {
-		line += st.dimText.Render(" (" + strings.Join(notes, ", ") + ")")
-	}
-	if secret.SecretID == "" {
-		return line + st.dimText.Render(" → nothing bound")
-	}
-	var about []string
-	if secret.SecretType != "" {
-		about = append(about, secret.SecretType)
-	}
-	if secret.SecretName != "" && secret.SecretName != secret.SecretID {
-		about = append(about, secret.SecretName)
-	}
-	if secret.Anonymous {
-		about = append(about, "anonymous")
-	}
-	line += " → " + secret.SecretID
-	if len(about) > 0 {
-		line += st.dimText.Render(" (" + strings.Join(about, ", ") + ")")
-	}
-	return line
-}
-
-// harnessFileLines is the file's contents as the card shows them: the first
-// screenful, and how much was left.
-func harnessFileLines(file console.HarnessFile) []string {
-	if strings.TrimSpace(file.Content) == "" {
-		return nil
-	}
-	lines := strings.Split(strings.TrimRight(file.Content, "\n"), "\n")
-	if len(lines) <= harnessCardFileLines {
-		return lines
-	}
-	out := append([]string(nil), lines[:harnessCardFileLines]...)
-	return append(out, fmt.Sprintf("… %d more lines — f opens it in your editor", len(lines)-harnessCardFileLines))
 }
 
 // ---------------------------------------------------------------------------

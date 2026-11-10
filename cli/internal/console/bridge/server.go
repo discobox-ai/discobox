@@ -61,6 +61,9 @@ type Server struct {
 	// requests topic or a command, and when.
 	inboxed   inboxRead
 	questions map[uint64]chan Answer
+	// edits is each edit the app was asked to open, by its ID, waiting for its
+	// saved.
+	edits map[uint64]chan Saved
 	// tabs is each box's sessions as the core made them tabs, by box key and
 	// exec ID, as listed: what a stream opened on one of them
 	// ends as (console.Tab.End). following counts each box's sessions
@@ -84,6 +87,7 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		subs:      map[uint32]context.CancelFunc{},
 		forms:     map[uint64]*mailbox{},
 		questions: map[uint64]chan Answer{},
+		edits:     map[uint64]chan Saved{},
 		tabs:      map[string]map[string]console.Tab{},
 		services:  map[string]map[string]console.Service{},
 		following: map[string]int{},
@@ -207,6 +211,14 @@ func (s *Server) handle(ctx context.Context, m Message) {
 		if ch != nil {
 			ch <- *m.Answer
 		}
+	case m.Type == TypeSaved && m.Saved != nil:
+		s.mu.Lock()
+		ch := s.edits[m.Saved.Edit]
+		delete(s.edits, m.Saved.Edit)
+		s.mu.Unlock()
+		if ch != nil {
+			ch <- *m.Saved
+		}
 	case m.Type == TypeUpload && m.Upload != nil:
 		u := *m.Upload
 		go func() {
@@ -225,8 +237,6 @@ func (s *Server) handle(ctx context.Context, m Message) {
 	case m.Type == TypeClose && m.Close != nil:
 		s.streams.close(m.Close.Stream)
 	}
-	// Saved answers an edit, and nothing the core runs asks for one yet: the
-	// harness and tool files are edited by the waves that bring their pages.
 }
 
 // open attaches a stream to one of a box's sessions: a service's tab to what
@@ -583,6 +593,35 @@ func (s *Server) ask(ctx context.Context, command uint64, q console.Question) (s
 	}
 }
 
+// edit has the app open a file in the person's editor for a running command
+// and waits for its saved: nil once they are finished with it,
+// context.Canceled for one they gave up, or why it could not be opened.
+func (s *Server) edit(ctx context.Context, command uint64, e *console.Editing) error {
+	id := s.id()
+	ch := make(chan Saved, 1)
+	s.mu.Lock()
+	s.edits[id] = ch
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.edits, id)
+		s.mu.Unlock()
+	}()
+	s.send(Message{Type: TypeEdit, Edit: &Edit{ID: id, Command: command, Path: e.Path, Title: e.Title}})
+	select {
+	case saved := <-ch:
+		switch {
+		case saved.Canceled:
+			return context.Canceled
+		case saved.Error != "":
+			return errors.New(saved.Error)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // fill puts a form to the app for a running command until its answers are
 // accepted, or it is dismissed (ok false). A refusal goes back as field
 // errors, and the form stays up holding what was typed; a draft is answered
@@ -688,8 +727,9 @@ func choices(in []console.Choice) []Choice {
 
 // narrate is a narration for a running command, forwarded to the app until
 // the command's starter calls done: steps, warnings and the box a create made
-// as progress, questions as questions. A handover — a program for the
-// terminal — is declined: the app has no terminal to give it.
+// as progress, questions as questions, a file to edit as an edit. A handover
+// — a program for the terminal — is declined: the app has no terminal to give
+// it.
 func (s *Server) narrate(ctx context.Context, command uint64) (n *console.Narration, done func()) {
 	n = console.NewNarration()
 	finished := make(chan struct{})
@@ -711,6 +751,8 @@ func (s *Server) narrate(ctx context.Context, command uint64) (n *console.Narrat
 				}
 			case ev.Handover != nil:
 				ev.Handover.Done(console.ErrNoFrontend)
+			case ev.Editing != nil:
+				ev.Editing.Done(s.edit(ctx, command, ev.Editing))
 			}
 		}
 	}()

@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 6,
+  "x-protocol": 7,
   "x-specVersion": 5,
   "x-frameKinds": {
     "json": {
@@ -1694,7 +1694,7 @@
       ]
     },
     "Args": {
-      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), and for services one of the box's services and the verb to run on it — without them, services lists them for its menu.",
+      "description": "Args are what a command takes beyond its targets: the stream a session it makes is attached to and the size of its pane (shell, terminal), the session it acts on (end, repaint), and for services one of the box's services and the verb to run on it — without them, services lists them for its menu.\n\nThe harnesses command reads the harnesses of Server (the list's server; empty for the primary) for its page, or, with a Harness and an Action, does that to it: Path is the file a files action edits. The review config command reads a box's harness changes for its review, or, with a Change and the Candidate the review showed, saves or discards that candidate.",
       "type": "object",
       "properties": {
         "stream": {
@@ -1717,6 +1717,24 @@
         },
         "verb": {
           "$ref": "#/$defs/ServiceVerb"
+        },
+        "server": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "action": {
+          "$ref": "#/$defs/HarnessAction"
+        },
+        "path": {
+          "type": "string"
+        },
+        "change": {
+          "$ref": "#/$defs/HarnessChange"
+        },
+        "candidate": {
+          "type": "string"
         }
       }
     },
@@ -1732,6 +1750,46 @@
         },
         {
           "const": "restart"
+        }
+      ]
+    },
+    "HarnessAction": {
+      "description": "HarnessAction is one thing the harnesses page does to a harness.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "HarnessActionVariant creates a variant following the harness's bundle with an account of its own (HarnessVariantForm).",
+          "const": "variant"
+        },
+        {
+          "description": "HarnessActionDefault makes it the project's default.",
+          "const": "default"
+        },
+        {
+          "description": "HarnessActionConfig shows its config card (HarnessCard).",
+          "const": "config"
+        },
+        {
+          "description": "HarnessActionFiles edits one of its files in the person's editor (DataSource.EditHarnessFile).",
+          "const": "files"
+        },
+        {
+          "description": "HarnessActionReset resets it to its bundle's defaults, asking first (Harness.ResetQuestion).",
+          "const": "reset"
+        }
+      ]
+    },
+    "HarnessChange": {
+      "description": "HarnessChange is what a review of a box's harness changes does with the candidate it shows.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "HarnessChangeSave saves the candidate as the harness's shared settings and logins.",
+          "const": "save"
+        },
+        {
+          "description": "HarnessChangeDiscard drops it, leaving the box's own files as they are.",
+          "const": "discard"
         }
       ]
     },
@@ -1777,6 +1835,27 @@
         "path": {
           "description": "Path is where an upload landed in the box.",
           "type": "string"
+        },
+        "harnesses": {
+          "description": "Harnesses are the harnesses of the server the harnesses command read, in the order they were registered: what its page lists, read again after each action, which leaves the one it acted on as Harness. A variant created is Harness.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Harness"
+          }
+        },
+        "harness": {
+          "type": "string"
+        },
+        "card": {
+          "description": "Card is a harness's config card (console.HarnessCard), for its config action.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardRow"
+          }
+        },
+        "changes": {
+          "$ref": "#/$defs/HarnessChanges",
+          "description": "Changes is a box's harness changes, read as its review opens."
         }
       },
       "required": [
@@ -1860,6 +1939,264 @@
         "verb",
         "label",
         "detail",
+        "enabled"
+      ]
+    },
+    "Harness": {
+      "description": "Harness is one of a server's harnesses as the harnesses page lists it: what its row says, its files for the files action's picker, and its actions as the core offers them (console.Harness.Actions).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean"
+        },
+        "builtIn": {
+          "type": "boolean"
+        },
+        "bundle": {
+          "type": "string"
+        },
+        "age": {
+          "description": "Age is how long ago it last changed, as the list says an age.",
+          "type": "string"
+        },
+        "secrets": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HarnessFile"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HarnessOffer"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "files",
+        "actions"
+      ]
+    },
+    "HarnessFile": {
+      "description": "HarnessFile is one of a harness's files: its path, its size in bytes, and what the core says of it (console.HarnessFile.Notes).",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "notes"
+      ]
+    },
+    "HarnessOffer": {
+      "description": "HarnessOffer is one action as a harness's menu offers it, and why it cannot act when it cannot.",
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/HarnessAction"
+        },
+        "label": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "label",
+        "detail",
+        "enabled"
+      ]
+    },
+    "CardRow": {
+      "description": "CardRow is a row of a card (console.CardRow): its label, empty where it carries on the row above's; its value in spans; and a file's first lines under it, with More how many more it has.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "spans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CardSpan"
+          }
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "more": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "required": [
+        "spans",
+        "lines"
+      ]
+    },
+    "CardSpan": {
+      "description": "CardSpan is a stretch of a card row's value, in its tone.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "tone": {
+          "$ref": "#/$defs/CardTone"
+        }
+      },
+      "required": [
+        "text",
+        "tone"
+      ]
+    },
+    "CardTone": {
+      "description": "CardTone is how a renderer draws a stretch of a card's value.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "CardPlain is the value itself.",
+          "const": "plain"
+        },
+        {
+          "description": "CardQuiet is said about the value, beside it.",
+          "const": "quiet"
+        },
+        {
+          "description": "CardStandout is the one word on the card that stands out: the default.",
+          "const": "standout"
+        },
+        {
+          "description": "CardCommand is a command line.",
+          "const": "command"
+        }
+      ]
+    },
+    "HarnessChanges": {
+      "description": "HarnessChanges is a box's harness changes as its review shows them (console.HarnessChanges): the candidate, where it stands, what it changes, what saving does, and what the review offers to do with it. Nothing is what the review says of a candidate carrying nothing to save, empty for one that carries something.",
+      "type": "object",
+      "properties": {
+        "candidate": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "nothing": {
+          "type": "string"
+        },
+        "saving": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChangedFile"
+          }
+        },
+        "credentials": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "offers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChangeOffer"
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "saving",
+        "files",
+        "credentials",
+        "diagnostics",
+        "offers"
+      ]
+    },
+    "ChangedFile": {
+      "description": "ChangedFile is one file a candidate adds, updates or removes, as its diff, headed as the core heads it (console.HarnessChangedFile.Label).",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "diff": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "label",
+        "diff"
+      ]
+    },
+    "ChangeOffer": {
+      "description": "ChangeOffer is what the review offers to do with the candidate, and why it cannot when it cannot.",
+      "type": "object",
+      "properties": {
+        "change": {
+          "$ref": "#/$defs/HarnessChange"
+        },
+        "label": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "change",
+        "label",
         "enabled"
       ]
     },
@@ -2131,12 +2468,15 @@
       ]
     },
     "Saved": {
-      "description": "Saved is the app's word that the editor is done with an edit: Error when it could not be opened or saved.",
+      "description": "Saved is the app's word that the person is finished with an edit, exactly once: Canceled when they gave it up, which saves nothing, and Error when it could not be opened.",
       "type": "object",
       "properties": {
         "edit": {
           "type": "integer",
           "format": "uint64"
+        },
+        "canceled": {
+          "type": "boolean"
         },
         "error": {
           "type": "string"

@@ -339,7 +339,7 @@ func (m *Model) pressBanner() tea.Cmd {
 	case bannerRejected:
 		return m.openRejectedRemedy(m.currentBox())
 	case bannerHarnessChanges:
-		return m.reviewHarnessChanges(m.currentBox())
+		return m.openHarnessChanges(m.currentBox())
 	case bannerCredential:
 		return m.openCredentialDialog(m.currentBox())
 	}

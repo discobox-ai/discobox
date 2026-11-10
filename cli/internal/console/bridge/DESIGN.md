@@ -41,7 +41,7 @@ flowchart LR
   (`fakeCore`), across a pipe each way. The CLI's end is `TestContractCore`,
   run from this package's test binary as its own process, and skipped under
   `go test`: its boxes say what the core does, so each case — every message
-  kind but `edit`, frames before a stream attaches, a question while another
+  kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
 - **Versions**: `hello` carries `Protocol`; `welcome` answers with this side's,
@@ -69,13 +69,22 @@ run after the registry is let go, whose `Result` ends the command:
   the workspace to open. `services` comes with the box's services as read
   for its menu, each with its verbs as the core offers them
   (`console.Service.Actions`); with a service and a verb in its args it runs
-  that verb instead, refused as the core's actions refuse it. A box flow with preconditions the registry leaves to
+  that verb instead, refused as the core's actions refuse it. `harnesses`
+  comes with the harnesses of the server the app names (`Args.Server`), each
+  with its actions as the core offers them; with a harness and an action it
+  does that to it instead — the card, the default, a reset asked first, a
+  variant through its form, a file edited through `edit` and `saved` — and
+  answers with the harnesses read again. `review config` comes with the box's
+  harness changes and the core's offers; with a change and the candidate it
+  showed it saves or discards that candidate (`console.RunHarnessChange`).
+  Each of the three counts its use only as its flow opens. A box flow with preconditions the registry leaves to
   the flow (a tag, a request waiting) is refused here first, in the entry's
   words. The action menu comes with the core's entries; the palette's
   opening counts its use, and what it finds is the palette topic's.
 
 A running command talks to the app through `narrate` (progress, the box a
-create made, questions) and `fill` (a form until the core accepts its answers;
+create made, questions, a file to edit as `edit`, answered by the app's
+`saved`: finished with, given up, or why it could not be opened) and `fill` (a form until the core accepts its answers;
 each field's `value` is what the core reads it holding, the app sends only
 the answers the person changed, merged onto the form's opening; a refusal is
 `fieldErrors`, a draft re-sends the form with `applies` and the values
@@ -153,5 +162,4 @@ nothing in the box; the `end` command ends the session in the box first, and
 closes its stream only once it has. What is kept early is bounded per stream
 (`earlyLimit`), and a CloseInput frame is dropped (289 §1).
 
-`edit`/`saved` are on the wire for the waves that edit harness and tool files;
-nothing the core runs over the bridge asks for one yet.
+

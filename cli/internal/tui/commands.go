@@ -216,7 +216,7 @@ func (m *Model) Shell(box console.Sandbox) tea.Cmd {
 	return m.openFromList(console.InteractShell, box)
 }
 
-func (m *Model) ReviewConfig(box console.Sandbox) tea.Cmd { return m.reviewHarnessChanges(box) }
+func (m *Model) ReviewConfig(box console.Sandbox) tea.Cmd { return m.openHarnessChanges(box) }
 
 func (m *Model) Rename(box console.Sandbox) tea.Cmd { return m.askRename(box) }
 

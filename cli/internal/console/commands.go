@@ -659,7 +659,7 @@ var registry = []Command{
 		Target: TargetBox, Lifecycle: true, opensBox: true,
 		Bindings: Bindings{TUI: tui("s").leader("s"), Desktop: desktop("primary+t").in(MenuSession)}},
 	{ID: "review config", Label: "review config", Detail: "review and save local settings and logins", Aliases: []string{"review config"},
-		Target: TargetBox, Lifecycle: true,
+		Target: TargetBox, Lifecycle: true, countedByFlow: true,
 		Bindings: Bindings{TUI: tui("H").leader("H"), Desktop: desktop().in(MenuBox)}},
 	{ID: "rename", Label: "rename", Detail: "type a new name for the box", Aliases: []string{"rename"},
 		Target: TargetBox, Lifecycle: true,

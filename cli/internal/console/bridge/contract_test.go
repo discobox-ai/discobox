@@ -35,6 +35,10 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //   - slow is running: stopping it waits on a purge.
 //   - doomed is running: stopping it ends this process, with status 3, as a
 //     CLI that exits mid-command.
+//   - The project has one harness, hc_claude, the default, carrying
+//     .claude.json: editing it writes the file out holding "before" and
+//     reads back what the app saved there. b1's harness changes are a
+//     pending candidate, c1, changing settings.json.
 //
 // Archiving and unarchiving a box changes its state in the listing. Every
 // terminal echoes what it is sent (fakeTerm).
@@ -65,6 +69,10 @@ func TestContractCore(t *testing.T) {
 		{ID: "broken", Status: "stopped", Problem: "it is not executable"},
 	}
 	core.serviceLogs = map[string]string{"migrate": "migrated 3 tables\n"}
+	core.harnesses = []console.Harness{{ID: "hc_claude", Name: "Claude", Slug: "claude", Default: true,
+		Files: []console.HarnessFile{{Path: ".claude.json", Content: "{}", Source: console.HarnessFileSaved}}}}
+	core.changes = console.HarnessChanges{CandidateID: "c1", State: "pending", Revision: 1,
+		Files: []console.HarnessChangedFile{{Path: "settings.json", Action: "update", Diff: "-a\n+b\n"}}}
 	switch scenario {
 	case "early":
 		core.gate = make(chan struct{})

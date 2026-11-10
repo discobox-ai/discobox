@@ -124,10 +124,13 @@ type fakeSource struct {
 	total    console.DirectoryTotal
 	stopped  int
 
-	harnesses   []console.Harness
-	pools       []console.Pool
-	harnessErr  error
-	secrets     []console.HarnessSecret
+	harnesses  []console.Harness
+	pools      []console.Pool
+	harnessErr error
+	secrets    []console.HarnessSecret
+	// editFile is where EditHarnessFile writes the file it has edited; empty
+	// edits nothing.
+	editFile    string
 	editChanged bool
 
 	// The credential inbox: what is waiting, what can answer it, and what the
@@ -1453,12 +1456,26 @@ func (f *fakeSource) DoHarness(_ context.Context, server string, verb console.Ha
 	return nil
 }
 
-func (f *fakeSource) EditHarnessFile(_ context.Context, server, id, path string, _ io.Reader, _, _ io.Writer) (bool, error) {
+// EditHarnessFile has the file edited when the test set editFile, as the
+// CLI's does — written out to editFile, edited on the narration and read back
+// — and otherwise only notes it was asked.
+func (f *fakeSource) EditHarnessFile(ctx context.Context, server, id, path string, n *console.Narration) (bool, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "EditHarnessFile@"+server)
 	f.editedFiles = append(f.editedFiles, id+" "+path)
-	return f.editChanged, nil
+	changed, file := f.editChanged, f.editFile
+	f.mu.Unlock()
+	if file == "" {
+		return changed, nil
+	}
+	if err := os.WriteFile(file, []byte("before"), 0o600); err != nil {
+		return false, err
+	}
+	if err := n.Edit(ctx, file, "Editing "+path); err != nil {
+		return false, err
+	}
+	after, err := os.ReadFile(file)
+	return string(after) != "before", err
 }
 
 // fakeTerminal is a sandbox terminal on the end of a pipe: what a test sends

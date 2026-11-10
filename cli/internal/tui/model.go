@@ -1887,7 +1887,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			case "rejections":
 				return m.openRejectedRemedy(m.currentBox())
 			case "review config":
-				return m.reviewHarnessChanges(m.currentBox())
+				return m.openHarnessChanges(m.currentBox())
 			case "dismiss":
 				return m.dismissBanner()
 			}

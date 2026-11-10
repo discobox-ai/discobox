@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 6;
+pub const PROTOCOL: i64 = 7;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 5;
@@ -1350,6 +1350,11 @@ pub struct Command {
 /// and the size of its pane (shell, terminal), the session it acts on (end, repaint), and for
 /// services one of the box's services and the verb to run on it — without them, services lists
 /// them for its menu.
+///
+/// The harnesses command reads the harnesses of Server (the list's server; empty for the primary)
+/// for its page, or, with a Harness and an Action, does that to it: Path is the file a files action
+/// edits. The review config command reads a box's harness changes for its review, or, with a Change
+/// and the Candidate the review showed, saves or discards that candidate.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Args {
     #[serde(default, skip_serializing_if = "is_default")]
@@ -1369,6 +1374,24 @@ pub struct Args {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verb: Option<ServiceVerb>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub server: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub harness: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<HarnessAction>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub path: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<HarnessChange>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub candidate: String,
 }
 
 /// ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a
@@ -1394,6 +1417,69 @@ impl ServiceVerb {
             ServiceVerb::Start => "start",
             ServiceVerb::Stop => "stop",
             ServiceVerb::Restart => "restart",
+        }
+    }
+}
+
+/// HarnessAction is one thing the harnesses page does to a harness.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HarnessAction {
+    /// HarnessActionVariant creates a variant following the harness's bundle with an account of its
+    /// own (HarnessVariantForm).
+    #[default]
+    #[serde(rename = "variant")]
+    Variant,
+
+    /// HarnessActionDefault makes it the project's default.
+    #[serde(rename = "default")]
+    Default,
+
+    /// HarnessActionConfig shows its config card (HarnessCard).
+    #[serde(rename = "config")]
+    Config,
+
+    /// HarnessActionFiles edits one of its files in the person's editor
+    /// (DataSource.EditHarnessFile).
+    #[serde(rename = "files")]
+    Files,
+
+    /// HarnessActionReset resets it to its bundle's defaults, asking first (Harness.ResetQuestion).
+    #[serde(rename = "reset")]
+    Reset,
+}
+
+impl HarnessAction {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HarnessAction::Variant => "variant",
+            HarnessAction::Default => "default",
+            HarnessAction::Config => "config",
+            HarnessAction::Files => "files",
+            HarnessAction::Reset => "reset",
+        }
+    }
+}
+
+/// HarnessChange is what a review of a box's harness changes does with the candidate it shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HarnessChange {
+    /// HarnessChangeSave saves the candidate as the harness's shared settings and logins.
+    #[default]
+    #[serde(rename = "save")]
+    Save,
+
+    /// HarnessChangeDiscard drops it, leaving the box's own files as they are.
+    #[serde(rename = "discard")]
+    Discard,
+}
+
+impl HarnessChange {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HarnessChange::Save => "save",
+            HarnessChange::Discard => "discard",
         }
     }
 }
@@ -1432,6 +1518,23 @@ pub struct Result {
     /// Path is where an upload landed in the box.
     #[serde(default, skip_serializing_if = "is_default")]
     pub path: String,
+
+    /// Harnesses are the harnesses of the server the harnesses command read, in the order they were
+    /// registered: what its page lists, read again after each action, which leaves the one it acted
+    /// on as Harness. A variant created is Harness.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub harnesses: Vec<Harness>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub harness: String,
+
+    /// Card is a harness's config card (console.HarnessCard), for its config action.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub card: Vec<CardRow>,
+
+    /// Changes is a box's harness changes, read as its review opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<HarnessChanges>,
 }
 
 /// Status is how a command ended.
@@ -1493,6 +1596,168 @@ pub struct ServiceAction {
     pub label: String,
 
     pub detail: String,
+
+    pub enabled: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub why: String,
+}
+
+/// Harness is one of a server's harnesses as the harnesses page lists it: what its row says, its
+/// files for the files action's picker, and its actions as the core offers them
+/// (console.Harness.Actions).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Harness {
+    pub id: String,
+
+    pub name: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub default: bool,
+
+    #[serde(rename = "builtIn", default, skip_serializing_if = "is_default")]
+    pub built_in: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub bundle: String,
+
+    /// Age is how long ago it last changed, as the list says an age.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub age: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub secrets: i64,
+
+    pub files: Vec<HarnessFile>,
+
+    pub actions: Vec<HarnessOffer>,
+}
+
+/// HarnessFile is one of a harness's files: its path, its size in bytes, and what the core says of
+/// it (console.HarnessFile.Notes).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HarnessFile {
+    pub path: String,
+
+    pub size: i64,
+
+    pub notes: Vec<String>,
+}
+
+/// HarnessOffer is one action as a harness's menu offers it, and why it cannot act when it cannot.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HarnessOffer {
+    pub action: HarnessAction,
+
+    pub label: String,
+
+    pub detail: String,
+
+    pub enabled: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub why: String,
+}
+
+/// CardRow is a row of a card (console.CardRow): its label, empty where it carries on the row
+/// above's; its value in spans; and a file's first lines under it, with More how many more it has.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CardRow {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub label: String,
+
+    pub spans: Vec<CardSpan>,
+
+    pub lines: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub more: i64,
+}
+
+/// CardSpan is a stretch of a card row's value, in its tone.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CardSpan {
+    pub text: String,
+
+    pub tone: CardTone,
+}
+
+/// CardTone is how a renderer draws a stretch of a card's value.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CardTone {
+    /// CardPlain is the value itself.
+    #[default]
+    #[serde(rename = "plain")]
+    Plain,
+
+    /// CardQuiet is said about the value, beside it.
+    #[serde(rename = "quiet")]
+    Quiet,
+
+    /// CardStandout is the one word on the card that stands out: the default.
+    #[serde(rename = "standout")]
+    Standout,
+
+    /// CardCommand is a command line.
+    #[serde(rename = "command")]
+    Command,
+}
+
+impl CardTone {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CardTone::Plain => "plain",
+            CardTone::Quiet => "quiet",
+            CardTone::Standout => "standout",
+            CardTone::Command => "command",
+        }
+    }
+}
+
+/// HarnessChanges is a box's harness changes as its review shows them (console.HarnessChanges): the
+/// candidate, where it stands, what it changes, what saving does, and what the review offers to do
+/// with it. Nothing is what the review says of a candidate carrying nothing to save, empty for one
+/// that carries something.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HarnessChanges {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub candidate: String,
+
+    pub summary: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub nothing: String,
+
+    pub saving: String,
+
+    pub files: Vec<ChangedFile>,
+
+    pub credentials: Vec<String>,
+
+    pub diagnostics: Vec<String>,
+
+    pub offers: Vec<ChangeOffer>,
+}
+
+/// ChangedFile is one file a candidate adds, updates or removes, as its diff, headed as the core
+/// heads it (console.HarnessChangedFile.Label).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ChangedFile {
+    pub path: String,
+
+    pub label: String,
+
+    pub diff: String,
+}
+
+/// ChangeOffer is what the review offers to do with the candidate, and why it cannot when it
+/// cannot.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ChangeOffer {
+    pub change: HarnessChange,
+
+    pub label: String,
 
     pub enabled: bool,
 
@@ -1660,11 +1925,14 @@ pub struct Edit {
     pub title: String,
 }
 
-/// Saved is the app's word that the editor is done with an edit: Error when it could not be opened
-/// or saved.
+/// Saved is the app's word that the person is finished with an edit, exactly once: Canceled when
+/// they gave it up, which saves nothing, and Error when it could not be opened.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Saved {
     pub edit: u64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub canceled: bool,
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub error: String,

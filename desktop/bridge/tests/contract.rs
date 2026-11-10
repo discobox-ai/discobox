@@ -5,7 +5,7 @@
 //! The CLI's end is that package's `TestContractCore`, built once by `go test -c` and run as a
 //! process per test; what its boxes do is described there. Each message either way is the
 //! generated types', so what one side writes and the other cannot read fails here. It covers
-//! every message kind the bridge carries but `edit`, which nothing the core runs sends yet.
+//! every message kind the bridge carries.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, Close, Command, Context, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, ServiceVerb, State, Status,
+    Answer, Args, Close, Command, Context, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
 };
 use discobox_bridge::{Client, Incoming};
@@ -283,7 +283,7 @@ fn commands_and_uploads_end_in_results() {
     assert_eq!(r.status, Status::Failed);
     assert!(r.why.contains("nobody"), "{}", r.why);
 
-    cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: 1, error: String::new() }), ..Default::default() });
+    cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: 1, ..Default::default() }), ..Default::default() });
     // [1, 2, 3], as Go writes bytes in JSON.
     let upload = Upload { id: 99, r#box: "b1".into(), name: "shot.png".into(), data: "AQID".into() };
     cli.send(Message { r#type: Type::Upload, upload: Some(upload), ..Default::default() });
@@ -472,6 +472,50 @@ fn services_reach_the_app() {
     let id = cli.command("services", &["b1"], pane("b1"), start);
     let r = cli.result(id);
     assert_eq!((r.status, r.why.as_str()), (Status::Failed, "cannot start broken: it is not executable"));
+}
+
+// The harnesses page and a box's harness changes reach the app as the core's: the harnesses
+// with their actions, a file to edit as an edit the app answers with saved, and a review whose
+// save names the candidate it showed.
+#[test]
+fn harnesses_edits_and_harness_changes_reach_the_app() {
+    let mut cli = Cli::start("default");
+    let id = cli.command("harnesses", &[], Context { tree: true, ..Default::default() }, Args::default());
+    let r = cli.result(id);
+    assert_eq!((r.status, r.harnesses.len()), (Status::Enter, 1));
+    let claude = &r.harnesses[0];
+    assert_eq!((claude.id.as_str(), claude.default, claude.files[0].path.as_str()), ("hc_claude", true, ".claude.json"));
+    let default = claude.actions.iter().find(|a| a.action == HarnessAction::Default).expect("the default action");
+    assert_eq!((default.enabled, default.why.as_str()), (false, "already the default"));
+
+    let files = Args { harness: "hc_claude".into(), action: Some(HarnessAction::Files), path: ".claude.json".into(), ..Default::default() };
+    let id = cli.command("harnesses", &[], Context { tree: true, ..Default::default() }, files);
+    let edit = cli.expect(Type::Edit).edit.unwrap();
+    assert_eq!((edit.command, edit.title.as_str()), (id, "Editing .claude.json"));
+    assert_eq!(std::fs::read_to_string(&edit.path).unwrap(), "before");
+    std::fs::write(&edit.path, "after").unwrap();
+    cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: edit.id, ..Default::default() }), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str(), r.harness.as_str()), (Status::Done, "updated .claude.json", "hc_claude"));
+
+    // One given up is canceled, and what was written to the file is not read back.
+    let files = Args { harness: "hc_claude".into(), action: Some(HarnessAction::Files), path: ".claude.json".into(), ..Default::default() };
+    let id = cli.command("harnesses", &[], Context { tree: true, ..Default::default() }, files);
+    let edit = cli.expect(Type::Edit).edit.unwrap();
+    std::fs::write(&edit.path, "never saved").unwrap();
+    cli.send(Message { r#type: Type::Saved, saved: Some(Saved { edit: edit.id, canceled: true, ..Default::default() }), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str(), r.harnesses.len()), (Status::Canceled, "", 0));
+
+    let id = cli.command("review config", &["b1"], Context::default(), Args::default());
+    let r = cli.result(id);
+    let changes = r.changes.expect("the box's harness changes");
+    assert_eq!((r.status, changes.candidate.as_str(), changes.files[0].path.as_str()), (Status::Enter, "c1", "settings.json"));
+    assert!(changes.offers.iter().all(|o| o.enabled), "{:?}", changes.offers);
+    let save = Args { change: Some(HarnessChange::Save), candidate: changes.candidate.clone(), ..Default::default() };
+    let id = cli.command("review config", &["b1"], Context::default(), save);
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str()), (Status::Done, "harness changes: saved"));
 }
 
 // A CLI that exits while a command is in flight closes the client: no result comes, the app is

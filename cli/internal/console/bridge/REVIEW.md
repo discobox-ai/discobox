@@ -16,6 +16,13 @@
   the service and verb up and wrote its own refusals beside the TUI's bare
   `DoService` — the third rule after `Session.Saves` and `RequestsFor` copied
   into the bridge by hand.
+- **Any action a core menu offers is taken through the core**, which reads
+  its subject again, refuses what the menu would and words the refusal:
+  `RunServiceVerb` for a service, `OfferedHarness`, `RunHarnessVerb` and
+  `EditHarness` for a harness, `RunHarnessChange` for a box's harness changes.
+  The bridge's first harnesses page re-read the harness, looked the action up
+  and refused it itself, and its harness-changes review sent whatever
+  candidate the app named — the fourth such rule written in the bridge.
 - **Nothing on the wire is null.** A list field is made with `nonNil` or
   `make(..., 0, n)`; the prototype's app stopped at its handshake on a nil
   slice encoded as `null`. The schema has no null, and the tests hold every
@@ -71,9 +78,10 @@
   needs covered is a box in `TestContractCore` whose command does it, never
   a control channel beside the bridge: the app's client sends only what the
   app could.
-- **The suite covers every message kind but `edit`** (289 §4), which
-  nothing the core runs sends yet. The change that first makes the core send
-  one adds its case, with `saved` answering it, to the contract suite.
+- **The suite covers every message kind** (289 §4): an edit is the harness
+  `hc_claude`'s file, answered with `saved`, finished and given up. A field
+  added to a message is round-tripped by a case, not only serialized on both
+  sides.
 - **A topic that waits for the next listing never lists, nor reads the
   servers.** The commands and the palette are sent again whenever a listing
   is read (`relisted`), so they rule from what was last read

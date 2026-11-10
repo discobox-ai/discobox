@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 
@@ -200,10 +199,11 @@ func (d *apiDataSource) DoHarness(ctx context.Context, server string, verb conso
 	}
 }
 
-// EditHarnessFile opens one of the harness's files in the user's editor and
-// saves what it wrote back. The config is re-read first, so the editor opens on
-// what the file is now rather than on what the listing said it was.
-func (d *apiDataSource) EditHarnessFile(ctx context.Context, server, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error) {
+// EditHarnessFile has one of the harness's files edited by the frontend
+// narrating it (n.Edit) and saves what it wrote back. The config is re-read
+// first, so the editor opens on what the file is now rather than on what the
+// listing said it was.
+func (d *apiDataSource) EditHarnessFile(ctx context.Context, server, harnessID, path string, n *console.Narration) (bool, error) {
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return false, err
@@ -216,5 +216,8 @@ func (d *apiDataSource) EditHarnessFile(ctx context.Context, server, harnessID, 
 	if err != nil {
 		return false, err
 	}
-	return d.app.editHarnessFile(ctx, d.client, d.projectID, cfg, path, stdin, stdout, stderr)
+	title := "Editing " + path + " — " + harnessDisplayName(*cfg)
+	return d.app.editHarnessFile(ctx, d.client, d.projectID, cfg, path, func(ctx context.Context, file string) error {
+		return n.Edit(ctx, file, title)
+	})
 }

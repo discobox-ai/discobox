@@ -1,8 +1,13 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
+
+	tea "charm.land/bubbletea/v2"
 
 	"charm.land/lipgloss/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
@@ -299,35 +304,62 @@ func TestHarnessFileDetailNamesItsSource(t *testing.T) {
 }
 
 // f picks a file and hands it to the editor, which reports back whether the
-// file changed.
+// file changed. The edit waits on the person, so the window is driven.
 func TestHarnessesEditFile(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource()
-	ds.editChanged = true
-	m := newTestModel(t, ds)
-	send(t, m, keyPress("f3"), keyPress("f"))
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource()
+		ds.editChanged = true
+		m := newTestModel(t, ds)
+		d := newDriver(t, m)
+		d.start()
+		d.key("f3")
+		d.key("f")
 
-	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatal("f should open the file picker")
-	}
-	if len(m.dialog.items) != 2 || m.dialog.items[0].label != ".claude.json" {
-		t.Fatalf("files = %+v, want the saved ones first", m.dialog.items)
-	}
+		if m.dialog == nil || m.dialog.kind != dlgActions {
+			t.Fatal("f should open the file picker")
+		}
+		if len(m.dialog.items) != 2 || m.dialog.items[0].label != ".claude.json" {
+			t.Fatalf("files = %+v, want the saved ones first", m.dialog.items)
+		}
 
-	send(t, m, keyPress("enter"))
-	if len(ds.editedFiles) != 1 || ds.editedFiles[0] != "hc_claude .claude.json" {
-		t.Fatalf("edited = %v, want the chosen file", ds.editedFiles)
-	}
-	if !strings.Contains(plainFrame(m), "updated .claude.json") {
-		t.Fatalf("the status line should report the edit:\n%s", plainFrame(m))
-	}
+		d.key("enter")
+		d.wait("the edit reported", func() bool { return strings.Contains(plainFrame(m), "updated .claude.json") })
+		if len(ds.editedFiles) != 1 || ds.editedFiles[0] != "hc_claude .claude.json" {
+			t.Fatalf("edited = %v, want the chosen file", ds.editedFiles)
+		}
 
-	// An editor that saved nothing says so rather than claiming an update.
-	ds.editChanged = false
-	send(t, m, keyPress("f"), keyPress("enter"))
-	if !strings.Contains(plainFrame(m), ".claude.json unchanged") {
-		t.Fatalf("an unchanged file should say so:\n%s", plainFrame(m))
-	}
+		// An editor that saved nothing says so rather than claiming an update.
+		ds.editChanged = false
+		d.key("f")
+		d.key("enter")
+		d.wait("an unchanged file said", func() bool { return strings.Contains(plainFrame(m), ".claude.json unchanged") })
+	})
+}
+
+// The file the data source writes out for an edit is handed to the editor
+// with the terminal, and what the editor saved there is what is read back.
+func TestHarnessesEditFileHandsTheTerminalToTheEditor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource()
+		ds.editFile = filepath.Join(t.TempDir(), "settings.json")
+		m := newTestModel(t, ds)
+		var titles []string
+		m.exec = func(c tea.ExecCommand, done tea.ExecCallback) tea.Cmd {
+			return func() tea.Msg {
+				titles = append(titles, c.(*harnessExec).title)
+				return done(os.WriteFile(ds.editFile, []byte("after"), 0o600))
+			}
+		}
+		d := newDriver(t, m)
+		d.start()
+		d.key("f3")
+		d.key("f")
+		d.key("enter")
+		d.wait("the editor's save read back", func() bool { return strings.Contains(plainFrame(m), "updated .claude.json") })
+		if len(titles) != 1 || titles[0] != "Editing .claude.json" {
+			t.Fatalf("the terminal went to %q, want the edit by its title", titles)
+		}
+	})
 }
 
 // A harness with no files has nothing to edit, and says so.

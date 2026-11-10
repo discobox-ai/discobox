@@ -60,6 +60,13 @@ type fakeCore struct {
 	// output, by service ID.
 	services    []console.Service
 	serviceLogs map[string]string
+	// harnesses is what Harnesses lists, harnessSecrets what answers each
+	// one's variables, and changes what a box's harness changes are. An
+	// edit writes the file out holding "before", has it edited, and reads it
+	// back.
+	harnesses      []console.Harness
+	harnessSecrets []console.HarnessSecret
+	changes        console.HarnessChanges
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -135,7 +142,73 @@ func (f *fakeCore) BoxSettings(context.Context, string) (console.BoxSettings, er
 	return f.settings, nil
 }
 
-func (f *fakeCore) Harnesses(context.Context, string) ([]console.Harness, error) { return nil, nil }
+func (f *fakeCore) Harnesses(_ context.Context, server string) ([]console.Harness, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, "harnesses@"+server)
+	return slices.Clone(f.harnesses), nil
+}
+
+func (f *fakeCore) HarnessSecrets(_ context.Context, _, id string) ([]console.HarnessSecret, error) {
+	f.call("secrets %s", id)
+	return f.harnessSecrets, nil
+}
+
+func (f *fakeCore) DoHarness(_ context.Context, _ string, verb console.HarnessVerb, id string) error {
+	f.call("harness %s %s", verb, id)
+	if verb == console.HarnessSetDefault {
+		f.mu.Lock()
+		for i := range f.harnesses {
+			f.harnesses[i].Default = f.harnesses[i].ID == id
+		}
+		f.mu.Unlock()
+	}
+	return nil
+}
+
+func (f *fakeCore) CreateHarnessVariant(_ context.Context, _ string, v console.NewHarnessVariant) (console.Harness, error) {
+	f.call("variant %s %s %s", v.ParentID, v.Name, v.Slug)
+	h := console.Harness{ID: "hc_" + v.Slug, Name: v.Name, Slug: v.Slug, Parent: v.ParentID}
+	f.mu.Lock()
+	f.harnesses = append(f.harnesses, h)
+	f.mu.Unlock()
+	return h, nil
+}
+
+func (f *fakeCore) EditHarnessFile(ctx context.Context, _ string, id, path string, n *console.Narration) (bool, error) {
+	file, err := os.CreateTemp("", "fake-edit-*")
+	if err != nil {
+		return false, err
+	}
+	defer os.Remove(file.Name())
+	if _, err := file.WriteString("before"); err != nil {
+		return false, err
+	}
+	file.Close()
+	if err := n.Edit(ctx, file.Name(), "Editing "+path); err != nil {
+		f.call("edit %s %s: %v", id, path, err)
+		return false, err
+	}
+	after, err := os.ReadFile(file.Name())
+	changed := string(after) != "before"
+	f.call("edit %s %s changed=%v", id, path, changed)
+	return changed, err
+}
+
+func (f *fakeCore) HarnessChanges(_ context.Context, id string) (console.HarnessChanges, error) {
+	f.call("changes %s", id)
+	return f.changes, nil
+}
+
+func (f *fakeCore) SaveHarnessChanges(_ context.Context, id, candidate string) (string, error) {
+	f.call("save changes %s %s", id, candidate)
+	return "saved", nil
+}
+
+func (f *fakeCore) DiscardHarnessChanges(_ context.Context, id, candidate string) (string, error) {
+	f.call("discard changes %s %s", id, candidate)
+	return "discarded", nil
+}
 
 func (f *fakeCore) UpdateBox(_ context.Context, id string, u console.BoxSettingsUpdate) error {
 	f.call("update %s", id)

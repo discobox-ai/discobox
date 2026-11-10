@@ -40,24 +40,25 @@ flowchart LR
     WS -->|leader ↑↓| Tree["workspace tree → park / unpark a workspace"]
     WS -->|leader .| Menu["box actions menu → the list's verbs, tools, audit"]
     WS -->|leader i, issue #N · leader p, PR #N| Iss["issue tab → Issue / CommentOnIssue / SetIssueState / MergePullRequest"]
-    A -->|s r| AVerb["DataSource.DoHarness"]
-    A -->|v enter| ACard["config card → HarnessSecrets"]
-    A -->|f| AExec["tea.Exec → EditHarnessFile"]
-    WS -->|leader H, the green band| HC["harness changes review → HarnessChanges / SaveHarnessChanges / DiscardHarnessChanges"]
+    A -->|s r| AVerb["console.RunHarnessVerb → DoHarness"]
+    A -->|v enter| ACard["config card: console.HarnessCard ← HarnessSecrets"]
+    A -->|f| AExec["console.EditHarness → EditHarnessFile → Narration.Edit → tea.Exec $EDITOR"]
+    WS -->|leader H, the green band| HC["harness changes review → HarnessChanges; console.RunHarnessChange"]
 ```
 
 The harnesses screen has no setup to run: every harness can run, and is signed
 in and set up inside a discobox the way it is on anybody's own machine
 (ADR 26-11-02-152). What a box changes reaches the harness config when somebody
-saves it (see **The harness-changes band**); the screen keeps the project
-default (`s`), the config card (`v`, Enter), file edits (`f`), and reset (`r`,
-`HarnessReset`), which asks first and forgets the settings and logins saved to
-the harness, back to its bundle's defaults. A person's own files (overrides)
-are kept: on a harness that has any, the question offers "Reset, keep your
-files" first and "Reset your files too" (`HarnessResetOverrides`) second
-(ADR 26-11-04-711 §1). A change the review shows at a path a person overrode
-is marked shadowed: saving keeps it beneath the override, and boxes go on
-being given the person's file (§2).
+saves it (see **The harness-changes band**). What the screen offers for a
+harness, what a reset asks, what the config card says and what the review
+offers are the console core's (`console.Harness.Actions`, `ResetQuestion`,
+`HarnessCard`, `HarnessChanges.Offers`; [console](../console/DESIGN.md)); the
+screen binds them to its letters — the project default (`s`), the config card
+(`v`, Enter), file edits (`f`), reset (`r`; on a harness with a person's own
+files, `r` keeps them and `a` resets them too) — and draws them. A file is
+edited the way the core narrates it: the data source writes it out and asks
+for it on the narration (`Narration.Edit`), and the window hands the terminal
+to `$EDITOR` on it (`editInTerminal`).
 
 ## The workspace tree
 

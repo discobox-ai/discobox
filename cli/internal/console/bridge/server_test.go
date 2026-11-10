@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -1080,5 +1081,137 @@ func TestServicesAreTheCores(t *testing.T) {
 	core.mu.Unlock()
 	if r := a.result(a.command(Command{Command: "services", Targets: []string{"b1"}, Context: ctx})); r.Status != StatusEnter || len(r.Services) != 0 || r.Note != console.NoServices {
 		t.Fatalf("a box with no services: %+v", r)
+	}
+}
+
+// The harnesses page is the core's: its harnesses, of the server the app
+// names, each with its actions as the core offers them; each action done as
+// the core says, answered with the harnesses read again; a reset asked
+// first; a file edited through edit and saved; a variant through its form.
+func TestHarnessesAreTheCores(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	core.harnesses = []console.Harness{
+		{ID: "hc_claude", Name: "Claude", Slug: "claude", Default: true, BuiltIn: true, Updated: time.Now().Add(-2 * time.Hour),
+			Files: []console.HarnessFile{{Path: ".claude.json", Content: "{}", Source: console.HarnessFileSaved}}},
+		{ID: "hc_codex", Name: "Codex", Slug: "codex", Secrets: []console.HarnessSecret{{Name: "OPENAI_API_KEY"}}},
+	}
+	core.harnessSecrets = []console.HarnessSecret{{Name: "ANTHROPIC_API_KEY", Declared: true, SecretID: "sec_1"}}
+	a := dial(t, core)
+	a.hello()
+
+	r := a.result(a.command(Command{Command: "harnesses", Context: Context{Tree: true}, Args: Args{Server: "work"}}))
+	if r.Status != StatusEnter || len(r.Harnesses) != 2 {
+		t.Fatalf("harnesses %+v", r)
+	}
+	if !slices.Contains(core.called(), "harnesses@work") {
+		t.Fatalf("calls %q, want the harnesses of the server the app named", core.called())
+	}
+	claude, codex := r.Harnesses[0], r.Harnesses[1]
+	if claude.Name != "Claude" || !claude.Default || !claude.BuiltIn || claude.Age != "2h ago" || len(claude.Files) != 1 || claude.Files[0].Size != 2 ||
+		!slices.Equal(claude.Files[0].Notes, []string{"saved from a discobox"}) || codex.Secrets != 1 {
+		t.Fatalf("rows %+v / %+v", claude, codex)
+	}
+	enabled := map[console.HarnessAction]bool{}
+	for _, o := range claude.Actions {
+		enabled[o.Action] = o.Enabled
+	}
+	if len(claude.Actions) != 5 || enabled[console.HarnessActionDefault] || !enabled[console.HarnessActionFiles] {
+		t.Fatalf("actions %+v, want the core's, default refused on the default", claude.Actions)
+	}
+
+	act := func(h string, action console.HarnessAction, path string) uint64 {
+		return a.command(Command{Command: "harnesses", Context: Context{Tree: true}, Args: Args{Harness: h, Action: action, Path: path}})
+	}
+	// A refused action says why in the core's words, and does nothing.
+	if r := a.result(act("hc_claude", console.HarnessActionDefault, "")); r.Status != StatusFailed || !strings.Contains(r.Why, "already the default") {
+		t.Fatalf("default on the default: %+v", r)
+	}
+	if r := a.result(act("hc_codex", console.HarnessActionDefault, "")); r.Status != StatusDone || r.Note != "Codex is now the default" || r.Harness != "hc_codex" || !r.Harnesses[1].Default {
+		t.Fatalf("default: %+v", r)
+	}
+	if r := a.result(act("hc_claude", console.HarnessActionConfig, "")); r.Status != StatusDone || len(r.Card) == 0 || r.Card[0].Label != "Run as" && r.Card[0].Label != "Role" {
+		t.Fatalf("config: %+v", r)
+	}
+
+	// A reset asks first; no resets nothing.
+	for _, answer := range []string{console.AnswerNo, console.AnswerYes} {
+		id := act("hc_codex", console.HarnessActionReset, "")
+		q := a.expect(TypeQuestion).Question
+		if q.Command != id || !strings.Contains(q.Body, "Reset Codex") || len(q.Choices) != 0 {
+			t.Fatalf("reset question %+v", q)
+		}
+		a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Key: answer}})
+		r := a.result(id)
+		reset := slices.Contains(core.called(), "harness reset hc_codex")
+		if answer == console.AnswerNo && (r.Status != StatusCanceled || reset) || answer == console.AnswerYes && (r.Status != StatusDone || !reset) {
+			t.Fatalf("%s: %+v, reset %v", answer, r, reset)
+		}
+	}
+
+	// A file is handed to the app to edit; what is saved there is read back.
+	id := act("hc_claude", console.HarnessActionFiles, ".claude.json")
+	e := a.expect(TypeEdit).Edit
+	if e.Command != id || e.Title != "Editing .claude.json" || e.Path == "" {
+		t.Fatalf("edit %+v", e)
+	}
+	if err := os.WriteFile(e.Path, []byte("after"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.send(Message{Type: TypeSaved, Saved: &Saved{Edit: e.ID}})
+	if r := a.result(id); r.Status != StatusDone || r.Note != "updated .claude.json" || len(r.Harnesses) != 2 {
+		t.Fatalf("edit: %+v", r)
+	}
+	// One given up saves nothing, and is canceled.
+	id = act("hc_claude", console.HarnessActionFiles, ".claude.json")
+	e = a.expect(TypeEdit).Edit
+	a.send(Message{Type: TypeSaved, Saved: &Saved{Edit: e.ID, Canceled: true}})
+	if r := a.result(id); r.Status != StatusCanceled {
+		t.Fatalf("an edit given up: %+v", r)
+	}
+	// A file the harness does not carry is refused before anything opens.
+	if r := a.result(act("hc_claude", console.HarnessActionFiles, "nope")); r.Status != StatusFailed {
+		t.Fatalf("a file not carried: %+v", r)
+	}
+
+	// A variant is the core's form.
+	id = act("hc_claude", console.HarnessActionVariant, "")
+	f := a.expect(TypeForm).Form
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: f.ID, Answers: map[string]string{"name": "Work", "slug": "work"}}})
+	if r := a.result(id); r.Status != StatusDone || r.Harness != "hc_work" || len(r.Harnesses) != 3 {
+		t.Fatalf("variant: %+v", r)
+	}
+	if !slices.Contains(core.called(), "variant hc_claude Work work") {
+		t.Fatalf("calls %q", core.called())
+	}
+}
+
+// A box's harness changes are read for its review, with what the core
+// offers to do with them; a save or discard names the candidate reviewed.
+func TestHarnessChangesReview(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	core.changes = console.HarnessChanges{
+		CandidateID: "cand_1", State: "pending", Revision: 3,
+		Files:       []console.HarnessChangedFile{{Path: "settings.json", Action: "update", Diff: "-a\n+b\n"}},
+		Credentials: []string{"claude login"},
+	}
+	a := dial(t, core)
+	a.hello()
+	r := a.result(a.command(Command{Command: "review config", Targets: []string{"b1"}}))
+	c := r.Changes
+	if r.Status != StatusEnter || r.Box != "b1" || c == nil || c.Candidate != "cand_1" || c.Summary != "State: pending · revision 3" ||
+		len(c.Files) != 1 || c.Files[0].Diff != "-a\n+b\n" || len(c.Offers) != 2 || !c.Offers[0].Enabled || !c.Offers[1].Enabled {
+		t.Fatalf("review %+v / %+v", r, c)
+	}
+	for _, change := range []console.HarnessChange{console.HarnessChangeSave, console.HarnessChangeDiscard} {
+		r := a.result(a.command(Command{Command: "review config", Targets: []string{"b1"}, Args: Args{Change: change, Candidate: "cand_1"}}))
+		if r.Status != StatusDone || !strings.HasPrefix(r.Note, "harness changes: ") {
+			t.Fatalf("%s: %+v", change, r)
+		}
+	}
+	if !slices.Contains(core.called(), "save changes b1 cand_1") || !slices.Contains(core.called(), "discard changes b1 cand_1") {
+		t.Fatalf("calls %q", core.called())
+	}
+	if r := a.result(a.command(Command{Command: "review config", Targets: []string{"b1"}, Args: Args{Change: console.HarnessChangeSave}})); r.Status != StatusFailed {
+		t.Fatalf("a save with no candidate: %+v", r)
 	}
 }

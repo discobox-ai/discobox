@@ -147,7 +147,7 @@ func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
 	}
 
 	a := &App{}
-	changed, err := a.editHarnessFile(context.Background(), client, "project-1", editTestConfig(), ".claude.json", nil, os.Stdout, os.Stderr)
+	changed, err := a.editHarnessFile(context.Background(), client, "project-1", editTestConfig(), ".claude.json", runEditor(nil, os.Stdout, os.Stderr))
 	if err != nil {
 		t.Fatalf("editHarnessFile: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestEditHarnessFileSavesABundleFileAsAnOverride(t *testing.T) {
 	})
 	cfg.FileOverrides = apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{{Path: "mine.txt", Content: "mine"}})
 
-	if _, err := (&App{}).editHarnessFile(context.Background(), client, "project-1", cfg, "bundle.json", nil, os.Stdout, os.Stderr); err != nil {
+	if _, err := (&App{}).editHarnessFile(context.Background(), client, "project-1", cfg, "bundle.json", runEditor(nil, os.Stdout, os.Stderr)); err != nil {
 		t.Fatalf("editHarnessFile: %v", err)
 	}
 	for _, key := range []string{"files", "configuredFiles"} {
@@ -232,7 +232,7 @@ func TestEditHarnessFileNoChangeSkipsUpdate(t *testing.T) {
 	}
 
 	a := &App{}
-	changed, err := a.editHarnessFile(context.Background(), client, "project-1", editTestConfig(), "settings.json", nil, os.Stdout, os.Stderr)
+	changed, err := a.editHarnessFile(context.Background(), client, "project-1", editTestConfig(), "settings.json", runEditor(nil, os.Stdout, os.Stderr))
 	if err != nil {
 		t.Fatalf("editHarnessFile: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestEditHarnessFileNoChangeSkipsUpdate(t *testing.T) {
 
 func TestEditHarnessFileUnknownPathListsFiles(t *testing.T) {
 	a := &App{}
-	_, err := a.editHarnessFile(context.Background(), nil, "project-1", editTestConfig(), "nope", nil, os.Stdout, os.Stderr)
+	_, err := a.editHarnessFile(context.Background(), nil, "project-1", editTestConfig(), "nope", runEditor(nil, os.Stdout, os.Stderr))
 	if err == nil {
 		t.Fatal("expected an error for an unknown path")
 	}
@@ -278,8 +278,30 @@ func TestEditorSaveUsesOriginalRevisionAndReportsConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := (&App{}).editHarnessFile(t.Context(), client, "project-1", cfg, ".claude.json", nil, os.Stdout, os.Stderr)
+	changed, err := (&App{}).editHarnessFile(t.Context(), client, "project-1", cfg, ".claude.json", runEditor(nil, os.Stdout, os.Stderr))
 	if changed || err == nil || !strings.Contains(err.Error(), "409") {
 		t.Fatalf("stale editor save: changed=%v err=%v", changed, err)
+	}
+}
+
+// An edited file keeps a text format's extension and takes .txt for any
+// other: the desktop opens it with the system's handler for its type, and the
+// path is the harness bundle's to choose.
+func TestEditExtensionIsATextFormats(t *testing.T) {
+	for path, want := range map[string]string{
+		".claude.json":          ".json",
+		"config/Settings.TOML":  ".toml",
+		"setup.cmd":             ".txt",
+		"launch.desktop":        ".txt",
+		"settings.json&calc":    ".txt",
+		"page.html":             ".txt",
+		"notes.md":              ".txt",
+		"layout.xml":            ".txt",
+		"noext":                 ".txt",
+		".config/opencode.yaml": ".yaml",
+	} {
+		if got := editExtension(path); got != want {
+			t.Errorf("editExtension(%q) = %q, want %q", path, got, want)
+		}
 	}
 }

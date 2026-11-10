@@ -20,8 +20,10 @@ import (
 // commands and palette topics; 5, a workspace's header (the header topic, in
 // place of the bare forwards) and what a session's ending does (StreamEnded);
 // 6, a box's services as tabs among its sessions, and the services command's
-// menu and verbs.
-const Protocol = 6
+// menu and verbs; 7, the harnesses page (the harnesses command's harnesses,
+// actions and card), a box's harness changes reviewed, saved and discarded,
+// and edits answered with saved.
+const Protocol = 7
 
 // Type names a message.
 type Type string
@@ -637,13 +639,25 @@ type Context struct {
 // session it acts on (end, repaint), and for services one of the box's
 // services and the verb to run on it — without them, services lists them for
 // its menu.
+//
+// The harnesses command reads the harnesses of Server (the list's server;
+// empty for the primary) for its page, or, with a Harness and an Action, does
+// that to it: Path is the file a files action edits. The review config
+// command reads a box's harness changes for its review, or, with a Change and
+// the Candidate the review showed, saves or discards that candidate.
 type Args struct {
-	Stream  uint32              `json:"stream,omitempty"`
-	Cols    int                 `json:"cols,omitempty"`
-	Rows    int                 `json:"rows,omitempty"`
-	Exec    string              `json:"exec,omitempty"`
-	Service string              `json:"service,omitempty"`
-	Verb    console.ServiceVerb `json:"verb,omitempty"`
+	Stream    uint32                `json:"stream,omitempty"`
+	Cols      int                   `json:"cols,omitempty"`
+	Rows      int                   `json:"rows,omitempty"`
+	Exec      string                `json:"exec,omitempty"`
+	Service   string                `json:"service,omitempty"`
+	Verb      console.ServiceVerb   `json:"verb,omitempty"`
+	Server    string                `json:"server,omitempty"`
+	Harness   string                `json:"harness,omitempty"`
+	Action    console.HarnessAction `json:"action,omitempty"`
+	Path      string                `json:"path,omitempty"`
+	Change    console.HarnessChange `json:"change,omitempty"`
+	Candidate string                `json:"candidate,omitempty"`
 }
 
 // Status is how a command ended.
@@ -683,6 +697,100 @@ type Result struct {
 	Services []Service `json:"services,omitempty"`
 	// Path is where an upload landed in the box.
 	Path string `json:"path,omitempty"`
+	// Harnesses are the harnesses of the server the harnesses command read,
+	// in the order they were registered: what its page lists, read again
+	// after each action, which leaves the one it acted on as Harness. A
+	// variant created is Harness.
+	Harnesses []Harness `json:"harnesses,omitempty"`
+	Harness   string    `json:"harness,omitempty"`
+	// Card is a harness's config card (console.HarnessCard), for its config
+	// action.
+	Card []CardRow `json:"card,omitempty"`
+	// Changes is a box's harness changes, read as its review opens.
+	Changes *HarnessChanges `json:"changes,omitempty"`
+}
+
+// Harness is one of a server's harnesses as the harnesses page lists it: what
+// its row says, its files for the files action's picker, and its actions as
+// the core offers them (console.Harness.Actions).
+type Harness struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Default bool   `json:"default,omitempty"`
+	BuiltIn bool   `json:"builtIn,omitempty"`
+	Bundle  string `json:"bundle,omitempty"`
+	// Age is how long ago it last changed, as the list says an age.
+	Age     string         `json:"age,omitempty"`
+	Secrets int            `json:"secrets,omitempty"`
+	Files   []HarnessFile  `json:"files"`
+	Actions []HarnessOffer `json:"actions"`
+}
+
+// HarnessFile is one of a harness's files: its path, its size in bytes, and
+// what the core says of it (console.HarnessFile.Notes).
+type HarnessFile struct {
+	Path  string   `json:"path"`
+	Size  int      `json:"size"`
+	Notes []string `json:"notes"`
+}
+
+// HarnessOffer is one action as a harness's menu offers it, and why it
+// cannot act when it cannot.
+type HarnessOffer struct {
+	Action  console.HarnessAction `json:"action"`
+	Label   string                `json:"label"`
+	Detail  string                `json:"detail"`
+	Enabled bool                  `json:"enabled"`
+	Why     string                `json:"why,omitempty"`
+}
+
+// CardRow is a row of a card (console.CardRow): its label, empty where it
+// carries on the row above's; its value in spans; and a file's first lines
+// under it, with More how many more it has.
+type CardRow struct {
+	Label string     `json:"label,omitempty"`
+	Spans []CardSpan `json:"spans"`
+	Lines []string   `json:"lines"`
+	More  int        `json:"more,omitempty"`
+}
+
+// CardSpan is a stretch of a card row's value, in its tone.
+type CardSpan struct {
+	Text string           `json:"text"`
+	Tone console.CardTone `json:"tone"`
+}
+
+// HarnessChanges is a box's harness changes as its review shows them
+// (console.HarnessChanges): the candidate, where it stands, what it changes,
+// what saving does, and what the review offers to do with it. Nothing is
+// what the review says of a candidate carrying nothing to save, empty for one
+// that carries something.
+type HarnessChanges struct {
+	Candidate   string        `json:"candidate,omitempty"`
+	Summary     string        `json:"summary"`
+	Nothing     string        `json:"nothing,omitempty"`
+	Saving      string        `json:"saving"`
+	Files       []ChangedFile `json:"files"`
+	Credentials []string      `json:"credentials"`
+	Diagnostics []string      `json:"diagnostics"`
+	Offers      []ChangeOffer `json:"offers"`
+}
+
+// ChangedFile is one file a candidate adds, updates or removes, as its diff,
+// headed as the core heads it (console.HarnessChangedFile.Label).
+type ChangedFile struct {
+	Path  string `json:"path"`
+	Label string `json:"label"`
+	Diff  string `json:"diff"`
+}
+
+// ChangeOffer is what the review offers to do with the candidate, and why it
+// cannot when it cannot.
+type ChangeOffer struct {
+	Change  console.HarnessChange `json:"change"`
+	Label   string                `json:"label"`
+	Enabled bool                  `json:"enabled"`
+	Why     string                `json:"why,omitempty"`
 }
 
 // Entry is one command as it stands: whether it can act, and why not. Uses is
@@ -795,11 +903,13 @@ type Edit struct {
 	Title   string `json:"title"`
 }
 
-// Saved is the app's word that the editor is done with an edit: Error when it
-// could not be opened or saved.
+// Saved is the app's word that the person is finished with an edit, exactly
+// once: Canceled when they gave it up, which saves nothing, and Error when it
+// could not be opened.
 type Saved struct {
-	Edit  uint64 `json:"edit"`
-	Error string `json:"error,omitempty"`
+	Edit     uint64 `json:"edit"`
+	Canceled bool   `json:"canceled,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 // Upload is an image pasted or dropped on a box. It is answered with a

@@ -1,6 +1,8 @@
 package bridge
 
 import (
+	"time"
+
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
@@ -161,6 +163,57 @@ func wireService(s console.Service) Service {
 	out := Service{ID: s.ID, Name: s.DisplayName(), Status: s.Status, Detail: s.Detail(), Actions: []ServiceAction{}}
 	for _, a := range s.Actions() {
 		out.Actions = append(out.Actions, ServiceAction{Verb: a.Verb, Label: a.Label, Detail: a.Detail, Enabled: a.Enabled, Why: a.Why})
+	}
+	return out
+}
+
+// wireHarness is a harness as the harnesses page lists it, its actions as the
+// core offers them; now is when it was read, which its age is told from.
+func wireHarness(h console.Harness, now time.Time) Harness {
+	out := Harness{
+		ID: h.ID, Name: h.DisplayName(), Default: h.Default, BuiltIn: h.BuiltIn, Bundle: h.Bundle, Secrets: len(h.Secrets),
+		Files: []HarnessFile{}, Actions: []HarnessOffer{},
+	}
+	if !h.Updated.IsZero() {
+		out.Age = console.Ago(h.Updated, now)
+	}
+	for _, f := range h.Files {
+		out.Files = append(out.Files, HarnessFile{Path: f.Path, Size: len(f.Content), Notes: nonNil(f.Notes())})
+	}
+	for _, o := range h.Actions() {
+		out.Actions = append(out.Actions, HarnessOffer{Action: o.Action, Label: o.Label, Detail: o.Detail, Enabled: o.Enabled, Why: o.Why})
+	}
+	return out
+}
+
+// wireCard is a card's rows.
+func wireCard(rows []console.CardRow) []CardRow {
+	out := make([]CardRow, 0, len(rows))
+	for _, r := range rows {
+		row := CardRow{Label: r.Label, Spans: []CardSpan{}, Lines: nonNil(r.Lines), More: r.More}
+		for _, s := range r.Spans {
+			row.Spans = append(row.Spans, CardSpan{Text: s.Text, Tone: s.Tone})
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// wireChanges is a box's harness changes as the review shows them, with what
+// it offers to do with them.
+func wireChanges(c console.HarnessChanges) HarnessChanges {
+	out := HarnessChanges{
+		Candidate: c.CandidateID, Summary: c.Summary(), Saving: console.HarnessChangesSaving,
+		Files: []ChangedFile{}, Credentials: nonNil(c.Credentials), Diagnostics: nonNil(c.Diagnostics), Offers: []ChangeOffer{},
+	}
+	if c.Empty() {
+		out.Nothing = console.HarnessChangesNothing
+	}
+	for _, f := range c.Files {
+		out.Files = append(out.Files, ChangedFile{Path: f.Path, Label: f.Label(), Diff: f.Diff})
+	}
+	for _, o := range c.Offers() {
+		out.Offers = append(out.Offers, ChangeOffer{Change: o.Change, Label: o.Label, Enabled: o.Enabled, Why: o.Why})
 	}
 	return out
 }

@@ -79,6 +79,12 @@ func (m *Model) narrated(msg narrationMsg) tea.Cmd {
 			return next
 		}
 		return tea.Batch(tea.ExecProcess(handover.Command, func(err error) tea.Msg { handover.Done(err); return nil }), next)
+	case event.Editing != nil:
+		if msg.source.gen != m.busyGen {
+			event.Editing.Done(context.Canceled)
+			return next
+		}
+		return tea.Batch(m.editInTerminal(event.Editing), next)
 	case event.Accepted != nil:
 		// Whoever owns the busy line now, the create was taken: what follows
 		// from that is not a status line.

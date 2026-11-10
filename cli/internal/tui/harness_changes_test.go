@@ -19,12 +19,28 @@ func TestHarnessChangesReviewSavesDisplayedCandidate(t *testing.T) {
 	if !strings.Contains(card, `+{"theme":"light"}`) || !strings.Contains(card, `-{"theme":"dark"}`) || !strings.Contains(card, "update .claude/settings.json") || !strings.Contains(card, "ANTHROPIC_API_KEY") {
 		t.Fatalf("review did not show the settings diff and credential identities:\n%s", card)
 	}
+	send(t, m, keyPress("s"))
+	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one reviewed" {
+		t.Fatalf("writes=%v", ds.harnessChangesWrites)
+	}
+}
+
+// A candidate the box replaced while its review was up is not saved: the
+// core reads the changes again and refuses, rather than save what nobody saw.
+func TestHarnessChangesReviewRefusesACandidateReplacedSince(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.harnessChanges = console.HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []console.HarnessChangedFile{{Path: "a.json", Action: "update"}}}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("H"))
 	ds.mu.Lock()
 	ds.harnessChanges.CandidateID = "new-login"
 	ds.mu.Unlock()
 	send(t, m, keyPress("s"))
-	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one reviewed" {
-		t.Fatalf("writes=%v", ds.harnessChangesWrites)
+	if len(ds.harnessChangesWrites) != 0 {
+		t.Fatalf("writes=%v, want none for a candidate replaced since", ds.harnessChangesWrites)
+	}
+	if !strings.Contains(dialogText(m), "review them again") {
+		t.Fatalf("the refusal should say to review again:\n%s", dialogText(m))
 	}
 }
 

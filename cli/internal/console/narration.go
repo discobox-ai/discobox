@@ -60,6 +60,8 @@ type Event struct {
 	Asking *Asking
 	// Handover is a program the command needs the terminal for.
 	Handover *Handover
+	// Editing is a file the command needs edited in the person's editor.
+	Editing *Editing
 }
 
 // Asking is a question in flight. The frontend answers it exactly once: with
@@ -102,6 +104,28 @@ type Handover struct {
 func (h *Handover) Done(err error) {
 	select {
 	case h.done <- err:
+	default:
+	}
+}
+
+// Editing is a file on this machine the command needs edited: one of a
+// harness's files, written out for the person's editor. The frontend opens
+// Path in the editor it opens files in — the TUI hands the terminal to
+// $EDITOR, the desktop app opens it in the person's own — and says Done
+// exactly once, when the person is finished with it: nil once it is saved or
+// left, context.Canceled for an edit the person gave up, or why it could not
+// be opened. The command reads the file back itself.
+type Editing struct {
+	Path string
+	// Title is what the edit is, as the frontend names it while it waits.
+	Title string
+	done  chan error
+}
+
+// Done says the person is finished with the file, or why it was never edited.
+func (e *Editing) Done(err error) {
+	select {
+	case e.done <- err:
 	default:
 	}
 }
@@ -210,7 +234,27 @@ func (n *Narration) Handover(ctx context.Context, command *exec.Cmd) error {
 	}
 }
 
-// Decline answers every question and handover still to come on a feed whose
+// Edit has the frontend open path in the person's editor and waits until they
+// are finished with it.
+func (n *Narration) Edit(ctx context.Context, path, title string) error {
+	if n == nil {
+		return ErrNoFrontend
+	}
+	editing := &Editing{Path: path, Title: title, done: make(chan error, 1)}
+	select {
+	case n.events <- Event{Editing: editing}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case err := <-editing.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Decline answers every question, handover and edit still to come on a feed whose
 // frontend can ask none, and drops its progress, until the command closes it:
 // a desktop verb before the app can draw a question.
 func (n *Narration) Decline(why error) {
@@ -220,6 +264,8 @@ func (n *Narration) Decline(why error) {
 			event.Asking.Decline(why)
 		case event.Handover != nil:
 			event.Handover.Done(why)
+		case event.Editing != nil:
+			event.Editing.Done(why)
 		}
 	}
 }

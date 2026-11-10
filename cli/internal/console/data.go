@@ -2332,10 +2332,11 @@ type DataSource interface {
 	// DoHarness runs a lifecycle verb against one harness.
 	DoHarness(ctx context.Context, server string, verb HarnessVerb, harnessID string) error
 
-	// EditHarnessFile opens one of the harness's files in the user's editor and
-	// saves what it wrote back, reporting whether anything changed. The window
-	// is suspended for it, for the same reason.
-	EditHarnessFile(ctx context.Context, server, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
+	// EditHarnessFile writes one of the harness's files out to this machine,
+	// has the frontend open it in the person's editor (n.Edit), and saves what
+	// they wrote back, reporting whether anything changed. An edit the
+	// frontend gave up (context.Canceled) or could not open saves nothing.
+	EditHarnessFile(ctx context.Context, server, harnessID, path string, n *Narration) (bool, error)
 
 	// Execs is a snapshot of a sandbox's exec sessions. The workspace polls it
 	// while it is open; it is a snapshot rather than a stream because the

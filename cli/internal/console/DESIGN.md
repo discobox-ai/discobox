@@ -328,6 +328,44 @@ flowchart LR
   (`SourceForm`, `ItemForm`); the run options the card is otherwise made of
   are the composer's.
 
+## Harnesses
+
+`harnesses.go` (876 §1). The harnesses page's rules, which the TUI's screen
+and the desktop's page both draw:
+
+- **A harness's actions are the core's** (`Harness.Actions`): create a
+  variant, make it the default, its config card, edit one of its files, reset
+  it — each as it stands, one that does not apply kept with why. Which key
+  takes each is the renderer's.
+- **An action is taken through the core**, never on a listing a console read
+  before: `OfferedHarness` reads the server's harnesses again and refuses what
+  the menu would, in the offer's words (`HarnessOffer.Refusal`);
+  `RunHarnessVerb` (the default, a reset answered) and `EditHarness` (a file,
+  refusing one the harness does not carry) are built on it. Both consoles,
+  and the bridge, call them, as `RunServiceVerb` for a service.
+- **A reset asks first** (`ResetQuestion`, read by `ResetVerb`): a yes or no,
+  or, for a harness carrying a person's own files, a pick of one keeping them
+  first (ADR 26-11-04-711 §1), its choices the verbs by name.
+- **The config card is rows** (`HarnessCard`): a label, a value in tones
+  (plain, quiet, standout, command), and a file's first
+  `HarnessCardFileLines` lines with how many are left; a file's notes beside
+  its size are `HarnessFile.Notes`. Spelling a size, and naming the key that
+  opens a file, are the renderer's.
+- **A file is edited through the narration**: `EditHarness` calls
+  `DataSource.EditHarnessFile`, which writes the file out under a text
+  format's extension, has the frontend open it in its editor
+  (`Narration.Edit`, below) and reads it back.
+- **A box's harness changes** (ADR 26-11-02-152): `HarnessChanges.Offers` is
+  what a review offers — saving a candidate that carries something, or one
+  whose save is still being handed over; discarding a pending one — and
+  `RunHarnessChange` saves or discards the candidate the review showed, by its
+  ID: it reads the box's changes again and refuses a candidate the box has
+  moved on from, or an offer that does not apply, in its words. What the
+  review says is the core's too: `Summary`, `HarnessChangesSaving`,
+  `HarnessChangesNothing` for a candidate carrying nothing, and each file's
+  heading (`HarnessChangedFile.Label`, the shadowed sentence included). The
+  TUI's band and explainer are the TUI's.
+
 ## Narration and questions
 
 `narration.go` (876 §1, 289 §2). A command that reports as it goes, or asks
@@ -343,7 +381,8 @@ flowchart LR
     C -->|Accept| A["Accepted: the box a create made"]
     C -->|"Ask / Confirm"| Q["Asking: Question → Answer / Decline"]
     C -->|Handover| H["Handover: a program for the terminal → Done"]
-    P & A & Q & H --> E["Events → the frontend"]
+    C -->|Edit| ED["Editing: a file for the editor → Done"]
+    P & A & Q & H & ED --> E["Events → the frontend"]
 ```
 
 - **A step never blocks the work.** `Report` and `Warn` drop what a frontend
@@ -354,6 +393,11 @@ flowchart LR
   `DefaultNo` for a destruction nobody can undo). Its asker words it and
   reads its answer; the frontend draws it. Git's credential question is the
   CLI's (`cli.gitCredentialQuestion`), in the words `discobox run` uses.
+- **A file to edit is an event too** (`Edit`, `Editing`): a file on this
+  machine the frontend opens in its editor — the TUI hands the terminal to
+  `$EDITOR`, the desktop bridge sends `edit` and waits for `saved` — and says
+  `Done` once the person is finished with it, `context.Canceled` for one given
+  up. The command reads the file back itself.
 - **Every question is answered exactly once**: a key, or `Decline` — dismissed
   (`context.Canceled`) or unaskable (`ErrNoFrontend`). A nil `*Narration` is a
   command nobody watches: it reports nowhere and declines every question, and

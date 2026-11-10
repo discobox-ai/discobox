@@ -11,6 +11,12 @@ import (
 
 var harnessChangesKey = bareKey("review config")
 
+// harnessChangeKeys is the letter each of the review's offers is pressed with.
+var harnessChangeKeys = map[console.HarnessChange]string{
+	console.HarnessChangeSave:    "s",
+	console.HarnessChangeDiscard: "d",
+}
+
 type harnessChangesLoadedMsg struct {
 	box     console.Sandbox
 	changes console.HarnessChanges
@@ -24,6 +30,14 @@ type harnessChangesDoneMsg struct {
 	err         error
 }
 
+// openHarnessChanges enters the review of a box's harness changes, from the
+// registry or a gesture (the band, the explainer): the flow counts its use.
+func (m *Model) openHarnessChanges(box console.Sandbox) tea.Cmd {
+	m.commands.Use("review config")
+	return m.reviewHarnessChanges(box)
+}
+
+// reviewHarnessChanges reads the box's harness changes again and shows them.
 func (m *Model) reviewHarnessChanges(box console.Sandbox) tea.Cmd {
 	m.busy = "reading harness changes…"
 	return func() tea.Msg {
@@ -40,17 +54,14 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 	}
 	c := msg.changes
 	var body strings.Builder
-	fmt.Fprintf(&body, "State: %s · revision %d\n", c.State, c.Revision)
-	if len(c.Files)+len(c.Credentials) == 0 {
-		body.WriteString("\nNo saveable settings or credentials.\n")
+	fmt.Fprintln(&body, c.Summary())
+	if c.Empty() {
+		fmt.Fprintf(&body, "\n%s\n", console.HarnessChangesNothing)
 	}
-	body.WriteString("\nSave updates shared harness defaults and credentials. Discard leaves local files unchanged.")
+	fmt.Fprintf(&body, "\n%s", console.HarnessChangesSaving)
 	var sections []section
 	for _, f := range c.Files {
-		sec := section{label: f.Action + " " + f.Path}
-		if f.Shadowed {
-			sec.label += " — shadowed by your override, which boxes keep getting"
-		}
+		sec := section{label: f.Label()}
 		for _, text := range strings.Split(f.Diff, "\n") {
 			if text == "" {
 				continue
@@ -77,26 +88,26 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 		}
 		sections = append(sections, sec)
 	}
-	saveable := c.CandidateID != "" && ((c.State == "pending" && len(c.Files)+len(c.Credentials) > 0) || c.State == "saved-handoff-pending")
-	items := []action{
-		{key: "s", press: "s", label: "Save reviewed changes", enabled: saveable, why: "no saveable candidate"},
-		{key: "d", press: "d", label: "Discard candidate", enabled: c.CandidateID != "" && c.State == "pending", why: "no pending candidate"},
-		{key: "r", press: "r", label: "Refresh preview", enabled: true},
+	// What the review offers, and when, is the core's; the letters are this
+	// window's.
+	var items []action
+	for _, o := range c.Offers() {
+		key := harnessChangeKeys[o.Change]
+		items = append(items, action{key: key, press: key, label: o.Label, enabled: o.Enabled, why: o.Why})
 	}
+	items = append(items, action{key: "r", press: "r", label: "Refresh preview", enabled: true})
 	m.dialog = actionsDialog("Harness changes — "+msg.box.Name, body.String(), items, func(key string) tea.Cmd {
 		if key == "r" {
 			return m.reviewHarnessChanges(msg.box)
 		}
 		// The closure keeps the exact ID that was displayed, even if another
 		// candidate arrives while the person reads this card.
+		change := console.HarnessChangeDiscard
+		if key == harnessChangeKeys[console.HarnessChangeSave] {
+			change = console.HarnessChangeSave
+		}
 		return func() tea.Msg {
-			var state string
-			var err error
-			if key == "s" {
-				state, err = m.ds.ForServer(msg.box.Server).SaveHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
-			} else {
-				state, err = m.ds.ForServer(msg.box.Server).DiscardHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
-			}
+			state, err := console.RunHarnessChange(m.ctx, m.ds.ForServer(msg.box.Server), msg.box.ID, change, c.CandidateID)
 			return harnessChangesDoneMsg{state: state, err: err, box: msg.box, candidateID: c.CandidateID}
 		}
 	})
@@ -215,7 +226,7 @@ func (m *Model) explainHarnessChangesIfOwed() tea.Cmd {
 	}
 	m.dialog = actionsDialog(harnessChangesExplainTitle, harnessChangesExplainBody(harnessChangesName(box)), items, func(key string) tea.Cmd {
 		if key == "r" {
-			return m.reviewHarnessChanges(box)
+			return m.openHarnessChanges(box)
 		}
 		return nil
 	})

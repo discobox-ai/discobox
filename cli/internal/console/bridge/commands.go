@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
@@ -312,12 +313,10 @@ func (f *frontend) Confirm(q console.Question, verb console.Verb, targets []cons
 
 func (f *frontend) confirm(q console.Question, verb console.Verb, targets []console.Sandbox) Result {
 	key, err := f.s.ask(f.ctx, f.c.ID, q)
-	switch {
-	case errors.Is(err, context.Canceled) && f.ctx.Err() == nil:
-		return Result{Status: StatusCanceled}
-	case err != nil:
-		return failed(err.Error())
-	case key != console.AnswerYes:
+	if r, over := f.asked(err); over {
+		return r
+	}
+	if key != console.AnswerYes {
 		return Result{Status: StatusCanceled}
 	}
 	return f.do(verb, targets)
@@ -411,6 +410,132 @@ func (f *frontend) Services(box console.Sandbox) outcome {
 	}
 }
 
+// Harnesses is the harnesses page: the harnesses of the server the app names
+// (the list's; the primary for none), read as the page opens — counted as
+// the command's use, which its flow is — or, with a harness and an action in
+// the args, that action done to it as the core offers it: the core reads the
+// harness again and refuses in the offer's words (console.OfferedHarness,
+// RunHarnessVerb, EditHarness). Every action but config is answered with the
+// harnesses read again, since each changes what the rows say.
+func (f *frontend) Harnesses() outcome {
+	a := f.c.Args
+	if a.Harness == "" {
+		f.s.reg.Use("harnesses")
+		return func() Result { return f.harnesses(a.Server, StatusEnter, "", "") }
+	}
+	return func() Result {
+		h, err := console.OfferedHarness(f.ctx, f.s.ds, a.Server, a.Harness, a.Action)
+		if err != nil {
+			return failed(err.Error())
+		}
+		var note string
+		switch a.Action {
+		case console.HarnessActionConfig:
+			secrets, err := f.s.ds.HarnessSecrets(f.ctx, a.Server, h.ID)
+			if err != nil {
+				return failed("cannot read " + h.DisplayName() + ": " + err.Error())
+			}
+			return Result{Status: StatusDone, Harness: h.ID, Card: wireCard(console.HarnessCard(h, secrets))}
+		case console.HarnessActionDefault:
+			note, err = console.RunHarnessVerb(f.ctx, f.s.ds, a.Server, h.ID, console.HarnessSetDefault)
+		case console.HarnessActionReset:
+			key, askErr := f.s.ask(f.ctx, f.c.ID, h.ResetQuestion())
+			if r, over := f.asked(askErr); over {
+				return r
+			}
+			verb, ok := h.ResetVerb(key)
+			if !ok {
+				return Result{Status: StatusCanceled}
+			}
+			note, err = console.RunHarnessVerb(f.ctx, f.s.ds, a.Server, h.ID, verb)
+		case console.HarnessActionFiles:
+			n, finished := f.s.narrate(f.ctx, f.c.ID)
+			note, err = console.EditHarness(f.ctx, f.s.ds, a.Server, h.ID, a.Path, n)
+			finished()
+		case console.HarnessActionVariant:
+			variant, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Create variant of "+h.DisplayName(), console.HarnessVariantForm(h))
+			switch {
+			case fillErr != nil:
+				return failed(fillErr.Error())
+			case !ok:
+				return Result{Status: StatusCanceled}
+			}
+			created, err := f.s.ds.CreateHarnessVariant(f.ctx, a.Server, variant)
+			if err != nil {
+				return failed("variant not created: " + err.Error())
+			}
+			return f.harnesses(a.Server, StatusDone, created.ID, fmt.Sprintf("created variant %q", created.Name))
+		}
+		if r, over := f.asked(err); over {
+			return r
+		}
+		return f.harnesses(a.Server, StatusDone, h.ID, note)
+	}
+}
+
+// asked is what a question's dismissal or failure ends the command with, and
+// whether it did: one the app declined, or an edit it gave up, is canceled,
+// unless the bridge itself is going.
+func (f *frontend) asked(err error) (Result, bool) {
+	switch {
+	case err == nil:
+		return Result{}, false
+	case errors.Is(err, context.Canceled) && f.ctx.Err() == nil:
+		return Result{Status: StatusCanceled}, true
+	}
+	return failed(err.Error()), true
+}
+
+// harnesses is a result carrying a server's harnesses as read now, about one
+// of them. One that cannot be read fails the page it would open, and leaves
+// an action that has run saying what it did.
+func (f *frontend) harnesses(server string, status Status, about, note string) Result {
+	listed, err := f.s.ds.Harnesses(f.ctx, server)
+	if err != nil {
+		why := "cannot list the harnesses: " + err.Error()
+		if status == StatusEnter {
+			return failed(why)
+		}
+		return Result{Status: status, Harness: about, Note: note + " — " + why}
+	}
+	now := time.Now()
+	out := Result{Status: status, Harness: about, Note: note, Harnesses: make([]Harness, 0, len(listed))}
+	for _, h := range listed {
+		out.Harnesses = append(out.Harnesses, wireHarness(h, now))
+	}
+	return out
+}
+
+// ReviewConfig is a box's harness changes: read for the app's review as it
+// opens — counted as the command's use, which its flow is — or, with a change
+// and the candidate the review showed in the args, that candidate saved or
+// discarded by the core (console.RunHarnessChange), never a newer one the box
+// captured meanwhile.
+func (f *frontend) ReviewConfig(box console.Sandbox) outcome {
+	a := f.c.Args
+	key := Key(box.Server, box.ID)
+	src := f.s.ds.ForServer(box.Server)
+	if a.Change != "" {
+		return func() Result {
+			state, err := console.RunHarnessChange(f.ctx, src, box.ID, a.Change, a.Candidate)
+			if err != nil {
+				return failed("harness changes: " + err.Error())
+			}
+			f.s.relist()
+			return Result{Status: StatusDone, Box: key, Note: "harness changes: " + state}
+		}
+	}
+	f.s.reg.Use("review config")
+	return func() Result {
+		changes, err := src.HarnessChanges(f.ctx, box.ID)
+		if err != nil {
+			return failed("harness changes: " + err.Error())
+		}
+		c := wireChanges(changes)
+		return Result{Status: StatusEnter, Box: key, Changes: &c}
+	}
+}
+
 // actionTargets are the boxes the app named for a window's command that
 // lists commands for them: the registry ignores a window command's targets,
 // and the action menu is about the ones the app has picked.
@@ -430,7 +555,6 @@ func (f *frontend) actionTargets() []console.Sandbox {
 // The flows that are the app's: the core has ruled the command can run, and
 // the app enters it.
 
-func (f *frontend) ReviewConfig(box console.Sandbox) outcome        { return f.enterBox(box) }
 func (f *frontend) Tools(box console.Sandbox) outcome               { return f.enterBox(box) }
 func (f *frontend) Issue(box console.Sandbox) outcome               { return f.enterIfAble(box) }
 func (f *frontend) PullRequest(box console.Sandbox) outcome         { return f.enterIfAble(box) }
@@ -441,7 +565,6 @@ func (f *frontend) RejectedCredentials(box console.Sandbox) outcome { return f.e
 
 func (f *frontend) NewBox() outcome         { return f.enter() }
 func (f *frontend) Credentials() outcome    { return f.enter() }
-func (f *frontend) Harnesses() outcome      { return f.enter() }
 func (f *frontend) Quit() outcome           { return f.enter() }
 func (f *frontend) Help() outcome           { return f.enter() }
 func (f *frontend) Filters() outcome        { return f.enter() }
