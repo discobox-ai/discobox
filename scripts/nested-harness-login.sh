@@ -15,9 +15,12 @@
 # replaces the files it names, leaving every other saved file alone.
 
 # The API is called directly: only a local socket is supported, since a nested
-# development server is always one.
+# development server is always one. Without DISCOBOX_SERVER it is the local
+# server's endpoint, which the dev shell pins in DISCOBOX_SERVER_ADDRESS (see
+# pkg/endpoint).
 nested_login_socket() {
-	SERVER=${DISCOBOX_SERVER:-$(discobox admin --help 2>&1 | sed -n 's/.*--server string.*(default "\([^"]*\)").*/\1/p')}
+	SERVER=${DISCOBOX_SERVER:-${DISCOBOX_SERVER_ADDRESS:-}}
+	[ -n "$SERVER" ] || die "set DISCOBOX_SERVER, or enter the dev shell so DISCOBOX_SERVER_ADDRESS names the local server"
 	case "$SERVER" in
 	unix://*) SOCKET=${SERVER#unix://} ;;
 	*) die "only a unix:// server is supported, got '$SERVER'" ;;
@@ -64,21 +67,24 @@ apply_nested_login() {
 		name=$(printf '%s-%s' "$HARNESS" "$env" | tr '[:upper:]_' '[:lower:]-')
 		# Where the bundle says the harness sends this credential; a variable
 		# it declares no routes for goes anywhere, as a save would route it.
+		# Its bindings never lapse, as a save's don't: the server's default
+		# limit is an hour, and a harness binding that lapses leaves every new
+		# box with a credentials file whose binding has no sentinel.
 		routes=$(printf '%s' "$config" | jq -c --arg env "$env" \
 			'[.secrets[]? | select(.name == $env) | .routes // empty][0] // [{hosts: ["*"]}]')
 		existing=$(api_ok GET "/secrets" | jq -r --arg name "$name" '.secrets[]? | select(.name == $name) | .id' | head -n1)
 		if [ -n "$existing" ]; then
-			api_ok PUT "/secrets/$existing" "$(printf '%s' "$secret" | jq -c --argjson routes "$routes" '{value, routes: $routes}')" >/dev/null
+			api_ok PUT "/secrets/$existing" "$(printf '%s' "$secret" | jq -c --argjson routes "$routes" '{value, routes: $routes, maxBindingTTLSeconds: 0}')" >/dev/null
 			secret_id=$existing
 		else
 			secret_id=$(api_ok POST "/secrets" "$(printf '%s' "$secret" | jq -c --arg name "$name" --argjson routes "$routes" \
-				'{name: $name, type: "token", value, routes: $routes}')" | jq -er .id) || exit 1
+				'{name: $name, type: "token", value, routes: $routes, maxBindingTTLSeconds: 0}')" | jq -er .id) || exit 1
 		fi
 		bound=$(api_ok GET "/secret-bindings?targetKind=harnessConfig&target=$harness_id" |
 			jq -r --arg id "$secret_id" --arg env "$env" '[.secretBindings[]? | select(.secretId == $id and .envVar == $env and .use)] | length')
 		if [ "$bound" = 0 ]; then
 			api_ok POST "/secret-bindings" "$(jq -nc --arg id "$secret_id" --arg target "$harness_id" --arg env "$env" \
-				'{secret: $id, targetKind: "harnessConfig", target: $target, envVar: $env, use: true}')" >/dev/null
+				'{secret: $id, targetKind: "harnessConfig", target: $target, envVar: $env, use: true, ttlSeconds: 0}')" >/dev/null
 		fi
 		i=$((i + 1))
 	done

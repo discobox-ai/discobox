@@ -134,11 +134,24 @@ echo "$HARNESS now signs in with this sandbox's $SECRET_LABEL."
 [ "$TEST" = 1 ] || exit 0
 
 # A box on the harness receives the login as every box will; claude -p in it
-# goes out through the nested proxy.
+# goes out through the nested proxy. It runs as the image's discobox account:
+# a box given no user runs as the image's own, root, and claude refuses
+# --dangerously-skip-permissions as root.
+#
+# The box is purged, not archived, so its name is free for the next run, and by
+# name, so one whose create failed partway (a --wait timeout) goes too.
+TEST_BOX=nested-claude-auth-test
+purge_test_box() {
+	discobox admin box ls -o json 2>/dev/null |
+		jq -r --arg name "$TEST_BOX" '.sandboxes[]? | select(.config.name == $name) | .id' |
+		while read -r id; do discobox admin box purge "$id" >/dev/null 2>&1 || true; done
+}
 echo "Verifying the $SECRET_LABEL from a nested discobox…"
-BOX=$(discobox admin box create --name nested-claude-auth-test --harness "$HARNESS" --wait --wait-timeout 10m -o json | jq -er .id) ||
+purge_test_box
+trap purge_test_box EXIT
+BOX=$(discobox admin box create --name "$TEST_BOX" --harness "$HARNESS" --user-name discobox --user-uid 1000 \
+	--wait --wait-timeout 10m -o json | jq -er .id) ||
 	die "could not create a discobox on $HARNESS"
-trap 'discobox admin box rm "$BOX" >/dev/null 2>&1 || true' EXIT
 reply=$(discobox admin exec create "$BOX" -- timeout 180 claude -p 'Reply with exactly: discobox-ok' </dev/null 2>&1) ||
 	die "the credential did not work: $reply"
 echo "Claude replied: $reply"
