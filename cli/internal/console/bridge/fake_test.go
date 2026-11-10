@@ -45,6 +45,9 @@ type fakeCore struct {
 	stopped bool
 	// echo has every terminal echo what it is sent as its output (fakeTerm).
 	echo bool
+	// view is the list's filter as the last window left it: what Session
+	// hands back and SaveView records.
+	view console.ListView
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -78,7 +81,16 @@ func (f *fakeCore) ForServer(server string) console.DataSource {
 }
 
 func (f *fakeCore) Session(context.Context) (console.Session, error) {
-	return console.Session{Project: "proj", Directory: "/src", Branch: "main"}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return console.Session{Project: "proj", Directory: "/src", Branch: "main", View: f.view}, nil
+}
+
+func (f *fakeCore) SaveView(_ context.Context, view console.ListView) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.view = view
+	return nil
 }
 
 func (f *fakeCore) List(context.Context) (console.Listing, error) {

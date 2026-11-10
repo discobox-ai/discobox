@@ -93,9 +93,14 @@ every beat. Which box a
 request or a refused credential is about is the core's rule
 (`RequestsFor`, `RejectionsFor`), against the boxes listed.
 
-The listing is still the boxes as the server lists them, and the app orders,
-groups and nests them itself; the listing topic carries the core's list
-(`console.List`'s rows) with the desktop's list and sidebar (#804).
+The listing is the core's list (`console.List`, `wireListing`): every box
+listed, and the rows the filter shows as drawn — section, nesting, remark,
+origin — with the server notes, the filter, how it reads, its choices and
+what the archived would add. The filter is the app's (876 §2): it subscribes
+with one, and again under a new ID to change it. With none the listing opens
+on the view this machine's windows last left (`Session.Restore`); one the app
+chooses is saved as the TUI saves it (`SaveView`), unless the window was
+opened nowhere.
 
 ## Streams
 

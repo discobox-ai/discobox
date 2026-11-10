@@ -32,9 +32,17 @@ the epic, and does not yet follow the ADRs everywhere:
   are the `discobox-bridge` crate (`bridge/`), with nothing of the window in
   it; the types (`bridge/src/wire.rs`) are generated from the schema that is
   generated from the bridge's Go types, and none is written by hand.
-- **The list** is the boxes as the server lists them, which the app orders,
-  groups and nests itself (`view::list_order`), until the listing carries the
-  core's list (#804).
+- **The list** is the core's (`console.List`, over the listing topic): its
+  rows in order, folder sections, each box under the one that made it (drawn
+  as strokes), the remark a picked row says in place of its name, the server
+  notes, and the filter with its choices. The app holds the filter and
+  subscribes again to change it: the filter control at the list's head (and
+  `servers`, `primary+f`) opens the core's choices with their counts, and `archived`
+  shows or hides the archived. Selection is the app's: Space marks a row,
+  Shift-Space draws a range the cursor extends, `primary+d` lets them go; ⌘-click (Ctrl-click elsewhere)
+  marks, Shift-click marks a run. A box's lifecycle verbs, from its row's
+  menu or the palette, act on every box marked, in one batch the core rules on;
+  the marks go once it has acted.
 - **The spec** is the console core's (`cli/internal/console/spec.go`): the
   registry's commands by their IDs (`attach`, `shell`) with each frontend's
   bindings, the glyphs, and the design language's colour tokens in both
@@ -90,7 +98,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `bridge/tests/contract.rs` | The bridge's contract suite: this client against the CLI's real bridge serving a fake core (`TestContractCore` in `cli/internal/console/bridge`), one process per test |
 | `src/backend.rs` | The bridge client on stdin/stdout, its messages as the window's events, and a mock that answers the same messages with local shells, for running without a CLI |
 | `src/view.rs` | The list, the sidebar, the workspace, frames and tabs |
-| `src/overlay.rs` | The palette and a box's actions menu |
+| `src/overlay.rs` | The palette, a box's actions menu and the list's filter menu |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
 | `src/term.rs` | A pane's terminal (`alacritty_terminal`) and its screen as rows |
 | `src/theme.rs` | The spec's tokens (colours in both palettes, and the appearance that picks one; space, radii and strokes), the bundled faces and type, and springs |

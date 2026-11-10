@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -693,5 +694,79 @@ func TestTopicAboutABoxOnAServerNotAnswering(t *testing.T) {
 	home.setListing(console.Sandbox{ID: "w1", Name: "w1", Server: "work", State: console.StateRunning, HasRuntime: true})
 	if s := a.expect(TypeSnapshot).Snapshot; s.Sessions == nil || s.Sessions.Sessions[0].Kind != "primary" {
 		t.Fatalf("after the server answered: %+v", s)
+	}
+}
+
+// The listing is the core's list: its rows as drawn, a box under the one that
+// made it, what the archived would add, and the filter's choices. A filter
+// the app subscribes with narrows it, and is saved for the next window, which
+// opens on it when it subscribes with none.
+func TestTheListingIsTheCoresList(t *testing.T) {
+	parent := running("p")
+	parent.Tags = []string{"wip"}
+	kid := running("k")
+	kid.CreatedBy = "p"
+	old := console.Sandbox{ID: "old", Name: "old", State: console.StateArchived, Tags: []string{"wip"}}
+	core := newFakeCore("home", kid, parent, old)
+	a := dial(t, core)
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicListing}})
+	l := a.expect(TypeSnapshot).Snapshot.Listing
+	var rows []string
+	for _, r := range l.Rows {
+		rows = append(rows, fmt.Sprintf("%s:%d:%v", r.Box, r.Depth, r.Last))
+	}
+	if want := []string{"p:0:false", "k:1:true"}; !reflect.DeepEqual(rows, want) {
+		t.Fatalf("rows %q, want %q (the box under the one that made it)", rows, want)
+	}
+	if len(l.Boxes) != 3 || l.Archived != 1 || l.Label != "all discoboxes" || l.Filter.Archived {
+		t.Fatalf("listing %+v", l)
+	}
+	var wip *FilterChoice
+	for i, c := range l.Choices {
+		if c.Group == console.GroupTag && c.Label == "#wip" {
+			wip = &l.Choices[i]
+		}
+	}
+	if wip == nil || wip.Marked || !reflect.DeepEqual(wip.Mark.Tags, []string{"wip"}) || wip.Detail != "1 box" {
+		t.Fatalf("the #wip choice %+v in %+v", wip, l.Choices)
+	}
+
+	// Its mark, with the archived shown: the subscription narrowed to it.
+	f := wip.Mark
+	f.Archived = true
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 2, Topic: TopicListing, Filter: &f}})
+	l = a.expect(TypeSnapshot).Snapshot.Listing
+	rows = rows[:0]
+	for _, r := range l.Rows {
+		rows = append(rows, r.Box)
+	}
+	if want := []string{"p", "old"}; !reflect.DeepEqual(rows, want) || l.Label != "#wip" || !l.Filter.Archived {
+		t.Fatalf("narrowed to #wip with the archived: rows %q, label %q, filter %+v", rows, l.Label, l.Filter)
+	}
+	core.mu.Lock()
+	saved := core.view
+	core.mu.Unlock()
+	if !reflect.DeepEqual(saved.Tags, []string{"wip"}) {
+		t.Fatalf("the filter was not saved for the next window: %+v", saved)
+	}
+
+	// The next window opens on it; whether the archived are listed is not kept.
+	b := dial(t, core)
+	b.hello()
+	b.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicListing}})
+	if l := b.expect(TypeSnapshot).Snapshot.Listing; l.Label != "#wip" || l.Filter.Archived || len(l.Rows) != 1 {
+		t.Fatalf("the next window opened on %q (archived %v, %d rows), want #wip", l.Label, l.Filter.Archived, len(l.Rows))
+	}
+}
+
+// A listing subscribed with no filter on a server with no boxes still sends
+// its snapshot: an empty list is an answer, not a wait.
+func TestAnEmptyListingIsAnswered(t *testing.T) {
+	a := dial(t, newFakeCore("home"))
+	a.hello()
+	a.send(Message{Type: TypeSubscribe, Subscribe: &Subscribe{Sub: 1, Topic: TopicListing}})
+	if l := a.expect(TypeSnapshot).Snapshot.Listing; l == nil || len(l.Rows) != 0 || len(l.Boxes) != 0 {
+		t.Fatalf("listing %+v", l)
 	}
 }

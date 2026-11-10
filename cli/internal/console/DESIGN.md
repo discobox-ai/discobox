@@ -65,7 +65,11 @@ flowchart LR
   whether it is its creator's last, and where a branch carries on above it;
   the renderer draws the branch (`├ └ │` in the TUI).
 - **The filter is a value** (`Filter`): server, folder, tags (one value per
-  key, `AddTag`) and the archived. `Revealing` is the view that shows one
+  key, `AddTag`) and the archived. Its choices are the core's
+  (`FilterChoices`, `choices.go`): each counted against the rest of the
+  filter, with the filter marking it makes and, for a marked tag, letting it
+  go; `FilterLabel` is how the filter reads. The TUI's card and the desktop's
+  filter menu are drawn from them. `Revealing` is the view that shows one
   box whatever the person's filter hid (671 §5); a renderer holds it in
   place of theirs and puts theirs back, never saving it. `Filter.View` is
   the filter as saved (`Session.View`) and `Session.Restore` the filter a
@@ -166,7 +170,11 @@ wire, so the app's are generated from them with the bridge's
 
 - **The parity scenarios are here** (`testdata/parity`, 598 §5), written in
   registry IDs; `TestParityScenariosNameRegistryCommands` holds each step to
-  a command both consoles bind from a pane. The TUI and the desktop app run
+  what both consoles reach: in a workspace (`attach`), a command bound from a
+  pane; in the list, a gesture or a command bound there — the desktop reaching
+  a box's lifecycle through its row's menu. A step expects only what it names
+  (the workspace's shells, focus and maximize; the list's targets, marks and
+  archived). The TUI and the desktop app run
   them, each pressing its own binding.
 
 ## Workspaces

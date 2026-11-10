@@ -288,3 +288,60 @@ func TestASavedViewRestoresItsFilter(t *testing.T) {
 		t.Errorf("own folder = %+v", f.Folder)
 	}
 }
+
+// The filter's choices are counted against the rest of the filter, say the
+// filter marking each makes, and let a marked tag go: every frontend's card
+// is drawn from them.
+func TestFilterChoices(t *testing.T) {
+	a := here("a", "a")
+	a.Tags = []string{"wip"}
+	b := elsewhere("b", "b")
+	b.Server = "beta"
+	l := listOf(a, b, here("c", "c"))
+	l.SetUnreachable([]string{"beta"})
+	l.Filter.Folder = EveryFolder
+
+	byLabel := map[string]FilterChoice{}
+	var labels []string
+	for _, c := range l.FilterChoices() {
+		byLabel[c.Label] = c
+		labels = append(labels, string(c.Group)+":"+c.Label)
+	}
+	own := l.Session.Folder()
+	if want := []string{"server:" + AllServers, "server:alpha", "server:beta", "folder:" + own.Label, "folder:/src/other", "folder:" + AllFolders, "tag:" + AllTags, "tag:#wip"}; !slices.Equal(labels, want) {
+		t.Fatalf("choices %q, want %q", labels, want)
+	}
+	if c := byLabel[AllServers]; !c.Marked || c.Detail != "3 boxes · created on alpha" {
+		t.Errorf("every server: %+v", c)
+	}
+	if c := byLabel["alpha"]; c.Detail != "2 boxes · the primary" || c.Mark.Server != "alpha" {
+		t.Errorf("the primary: %+v", c)
+	}
+	if c := byLabel["beta"]; c.Detail != "not answering" {
+		t.Errorf("a server not answering: %+v", c)
+	}
+	if c := byLabel[own.Label]; c.Mark.Folder.Key != own.Key || c.Detail != "2 boxes · where this window is running" {
+		t.Errorf("the window's folder: %+v", c)
+	}
+	wip := byLabel["#wip"]
+	if wip.Marked || !wip.Several || !slices.Equal(wip.Mark.Tags, []string{"wip"}) || wip.Detail != "1 box" {
+		t.Fatalf("#wip unmarked: %+v", wip)
+	}
+
+	l.Filter = wip.Mark
+	if got := l.FilterLabel(); got != "#wip" {
+		t.Errorf("label %q, want #wip", got)
+	}
+	for _, c := range l.FilterChoices() {
+		if c.Label == "#wip" && (!c.Marked || len(c.Unmark.Tags) != 0) {
+			t.Errorf("#wip marked: %+v, want it marked and letting go to no tags", c)
+		}
+		if c.Label == "alpha" && c.Detail != "1 box · the primary" {
+			t.Errorf("alpha counted against #wip: %q", c.Detail)
+		}
+	}
+	l.Filter.Server = "alpha"
+	if got := l.FilterLabel(); got != "server alpha · #wip" {
+		t.Errorf("label %q", got)
+	}
+}
