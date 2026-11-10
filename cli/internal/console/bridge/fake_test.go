@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -648,6 +649,66 @@ func (f *fakeCore) SecretRejections(context.Context) ([]console.SecretRejection,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.rejections, nil
+}
+
+// answered takes a request out of the inbox, as the server does once it is
+// answered.
+func (f *fakeCore) answered(id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.requests = slices.DeleteFunc(slices.Clone(f.requests), func(r console.CredentialRequest) bool { return r.ID == id })
+}
+
+func (f *fakeCore) HeldGrants(context.Context, string, string, string) ([]console.HeldGrant, error) {
+	return nil, nil
+}
+
+func (f *fakeCore) ApproveCredentialRequest(_ context.Context, _ string, a console.Approval) error {
+	f.call("approve %s %s %ds use=%s delegate=%s", a.RequestID, a.SecretID, a.TTLSeconds, a.Use, a.Delegate)
+	f.answered(a.RequestID)
+	return nil
+}
+
+func (f *fakeCore) DenyCredentialRequest(_ context.Context, _, id string) error {
+	f.call("deny %s", id)
+	f.answered(id)
+	return nil
+}
+
+func (f *fakeCore) ApproveTrustRequest(_ context.Context, _ string, a console.TrustApproval) error {
+	f.call("trust %s %s:%s %ds", a.RequestID, a.Pin.Kind, a.Pin.SHA256, a.TTLSeconds)
+	f.answered(a.RequestID)
+	return nil
+}
+
+func (f *fakeCore) DenyTrustRequest(_ context.Context, _, id string) error {
+	f.call("deny trust %s", id)
+	f.answered(id)
+	return nil
+}
+
+func (f *fakeCore) DecideAdoptionRequest(_ context.Context, _, id string, approve bool) error {
+	f.call("adoption %s %v", id, approve)
+	f.answered(id)
+	return nil
+}
+
+func (f *fakeCore) DecideAPIAccessRequest(_ context.Context, _, id string, approve bool) error {
+	f.call("api access %s %v", id, approve)
+	f.answered(id)
+	return nil
+}
+
+func (f *fakeCore) RefreshSecret(_ context.Context, _ string, r console.Renewal) error {
+	f.call("renew %s %s %q session=%v", r.RequestID, r.SecretID, strings.Join(r.Command, " "), r.Session)
+	f.answered(r.RequestID)
+	return nil
+}
+
+func (f *fakeCore) DismissRefresh(_ context.Context, _, id string) error {
+	f.call("dismiss refresh %s", id)
+	f.answered(id)
+	return nil
 }
 
 func (f *fakeCore) Resources(context.Context) (console.Resources, error) {

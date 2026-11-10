@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 16; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 17; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -123,6 +123,23 @@ run after the registry is let go, whose `Result` ends the command:
   the flow (a tag, a request waiting) is refused here first, in the entry's
   words. The action menu comes with the core's entries; the palette's
   opening counts its use, and what it finds is the palette topic's.
+
+Requests are answered here (`requests.go`), through the core's cards put as
+forms: `requests` answers a box's oldest request (`console.RequestsFor`), and
+the credentials command's `answer` action one the app names by ID and server
+(its secrets page's table, a notification pressed). Each card is a form whose
+`Card` the core says again with every draft, and whose `Actions`
+(`console.CardActions`) replace its one submit: `put` takes the action
+pressed, checks the answers only for the one that accepts, and refuses a
+submit with none of them. A credential request
+walks `console.RequestApproval` card by card, then the review; a refresh's
+session permit is held for the window (`console.Renewals`), and the requests
+topic's read renews what it covers, saying what the core says came of it in
+its next snapshot (`Said`).
+`rejections` is the core's remedy for the box's shown refusal: the sign-in
+message, acknowledged, or the secret's edit form. `dismiss` takes down the
+notice of the app's workspace box (`console.Dismissals`, held here as the
+window's) and has the requests read again (`reread`).
 
 Creating a box is the core's rules run here (`create.go`): the bridge holds
 the window's run options (`console.RunOptions`), read against the last
@@ -227,7 +244,12 @@ resolves the box once, as it starts, and follows it on its server; a box no
 server lists ends it, and a server that could not be reached is tried again
 every beat. Which box a
 request or a refused credential is about is the core's rule
-(`RequestsFor`, `RejectionsFor`), against the boxes listed.
+(`RequestsFor`, `RejectionsFor`), against the boxes listed. The requests
+topic also carries each listed box's notice as the window's dismissals leave
+it, the requests that arrived since its last snapshot (none in its first: what
+waited as the window opened is the marks' and notices' to say), which the app
+raises as notifications, and what renewals said; it is read again at once after
+an answer or a dismissal (`rekicked`).
 
 The listing is the core's list (`console.List`, `wireListing`): every box
 listed, and the rows the filter shows as drawn — section, nesting, remark,

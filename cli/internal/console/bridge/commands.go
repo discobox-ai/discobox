@@ -109,17 +109,6 @@ func (f *frontend) enterBox(box console.Sandbox) outcome {
 	return func() Result { return Result{Status: StatusEnter, Box: Key(box.Server, box.ID)} }
 }
 
-// enterIfAble hands the app a flow about one box whose other preconditions
-// — a tag to open, a request waiting — the registry leaves to the flow: the
-// app's flow does not rule on them, so they are refused here, in the words
-// the registry's entry gives.
-func (f *frontend) enterIfAble(box console.Sandbox) outcome {
-	if e, ok := f.s.reg.Entry(f.cctx, f.c.Command, []console.Sandbox{box}); ok && !e.Enabled {
-		return refused(e.Why)
-	}
-	return f.enterBox(box)
-}
-
 func (f *frontend) Unavailable(why string) outcome { return refused(why) }
 
 func (f *frontend) Cannot(c console.Command, why string) outcome {
@@ -268,7 +257,7 @@ func (f *frontend) Repaint() outcome {
 // Rename asks the core's rename form and renames the box.
 func (f *frontend) Rename(box console.Sandbox) outcome {
 	return func() Result {
-		r, ok, err := fill(f.ctx, f.s, f.c.ID, "Rename", "", "", console.RenameForm(box, box.Title()))
+		r, ok, err := fill(f.ctx, f.s, f.c.ID, sheet{title: "Rename"}, console.RenameForm(box, box.Title()))
 		switch {
 		case err != nil:
 			return failed(err.Error())
@@ -300,7 +289,7 @@ func (f *frontend) Settings(box console.Sandbox) outcome {
 		// The harnesses only fill the harness row; a listing that fails
 		// leaves it on the box's own.
 		harnesses, _ := src.Harnesses(f.ctx, box.Server)
-		update, ok, err := fill(f.ctx, f.s, f.c.ID, "Settings · "+box.Title(), "", "", console.SettingsForm(box, was, harnesses))
+		update, ok, err := fill(f.ctx, f.s, f.c.ID, sheet{title: "Settings · " + box.Title()}, console.SettingsForm(box, was, harnesses))
 		switch {
 		case err != nil:
 			return failed(err.Error())
@@ -470,7 +459,7 @@ func (f *frontend) Harnesses() outcome {
 			note, err = console.EditHarness(f.ctx, f.s.ds, a.Server, h.ID, a.Path, n)
 			finished()
 		case console.HarnessActionVariant:
-			variant, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Create variant of "+h.DisplayName(), "", "", console.HarnessVariantForm(h))
+			variant, ok, fillErr := fill(f.ctx, f.s, f.c.ID, sheet{title: "Create variant of " + h.DisplayName()}, console.HarnessVariantForm(h))
 			switch {
 			case fillErr != nil:
 				return failed(fillErr.Error())
@@ -543,6 +532,11 @@ func (f *frontend) ReviewConfig(box console.Sandbox) outcome {
 			if err != nil {
 				return failed("harness changes: " + err.Error())
 			}
+			// The candidate is answered, but the listing goes on naming it
+			// until the box next reports: its notice is taken down as a
+			// dismissal of it, as the TUI's band is, so a newer one the box
+			// captures still raises it.
+			f.s.cover(box, console.NoticeHarnessChanges, a.Candidate)
 			f.s.relist()
 			return Result{Status: StatusDone, Box: key, Note: "harness changes: " + state}
 		}
@@ -712,8 +706,14 @@ func (f *frontend) Credentials() outcome {
 		switch a.SecretAction {
 		case console.SecretActionRead:
 			return f.secrets(a.Server, StatusDone, "", "")
+		case console.SecretActionAnswer:
+			r := f.answerOn(a.Server, a.Request)
+			if r.Status != StatusDone {
+				return r
+			}
+			return f.secrets(a.Server, StatusDone, "", r.Note)
 		case console.SecretActionNew:
-			secret, ok, err := fill(f.ctx, f.s, f.c.ID, "New secret", "", "", console.NewSecretForm(console.NewSecretAsk{}))
+			secret, ok, err := fill(f.ctx, f.s, f.c.ID, sheet{title: "New secret"}, console.NewSecretForm(console.NewSecretAsk{}))
 			if r, over := f.filled(ok, err); over {
 				return r
 			}
@@ -734,7 +734,7 @@ func (f *frontend) Credentials() outcome {
 			if readErr != nil {
 				return failed(readErr.Error())
 			}
-			update, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Edit "+secret.Name, "", page.editAbout(secret), console.EditSecretForm(secret))
+			update, ok, fillErr := fill(f.ctx, f.s, f.c.ID, sheet{title: "Edit " + secret.Name, about: page.editAbout(secret)}, console.EditSecretForm(secret))
 			if r, over := f.filled(ok, fillErr); over {
 				return r
 			}
@@ -754,7 +754,7 @@ func (f *frontend) Credentials() outcome {
 			if readErr != nil {
 				return failed(readErr.Error())
 			}
-			binding, ok, fillErr := fill(f.ctx, f.s, f.c.ID, "Bind "+secret.Name, "", console.BindingFormNote, console.BindingForm(secret, page.harnesses, page.boxes))
+			binding, ok, fillErr := fill(f.ctx, f.s, f.c.ID, sheet{title: "Bind " + secret.Name, about: console.BindingFormNote}, console.BindingForm(secret, page.harnesses, page.boxes))
 			if r, over := f.filled(ok, fillErr); over {
 				return r
 			}
@@ -853,6 +853,10 @@ func (f *frontend) secrets(server string, status Status, about, note string) Res
 	for _, s := range listed {
 		out.Secrets = append(out.Secrets, page.wireSecret(s))
 	}
+	if out.Requests, err = f.pageRequests(server, page.now); err != nil {
+		return cannot(err)
+	}
+	out.SecretWords.Waiting = console.RequestsWaiting(len(out.Requests))
 	return out
 }
 
@@ -896,9 +900,6 @@ func (f *frontend) actionTargets() []console.Sandbox {
 // The flows that are the app's: the core has ruled the command can run, and
 // the app enters it.
 
-func (f *frontend) CredentialRequests(box console.Sandbox) outcome  { return f.enterIfAble(box) }
-func (f *frontend) RejectedCredentials(box console.Sandbox) outcome { return f.enterIfAble(box) }
-
 func (f *frontend) Quit() outcome           { return f.enter() }
 func (f *frontend) Help() outcome           { return f.enter() }
 func (f *frontend) Filters() outcome        { return f.enter() }
@@ -907,7 +908,6 @@ func (f *frontend) ToggleArchived() outcome { return f.enter() }
 func (f *frontend) Maximize() outcome       { return f.enter() }
 func (f *frontend) Detach() outcome         { return f.enter() }
 func (f *frontend) ToggleMouse() outcome    { return f.enter() }
-func (f *frontend) DismissBanner() outcome  { return f.enter() }
 func (f *frontend) NextPane() outcome       { return f.enter() }
 func (f *frontend) PreviousPane() outcome   { return f.enter() }
 func (f *frontend) NextBox() outcome        { return f.enter() }

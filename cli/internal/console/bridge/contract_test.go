@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 	"sync"
@@ -104,7 +105,7 @@ func TestContractCore(t *testing.T) {
 		{ID: "broken", Label: "broken", Problem: "its command is empty"},
 	}
 	core.addresses = console.Addresses{SSH: "ssh b1", Git: "ssh://b1/work"}
-	core.secrets = []console.Secret{{ID: "sec_gh", Name: "gh", Type: "token"}}
+	core.secrets = []console.Secret{{ID: "sec_gh", Name: "gh", Type: "token"}, {ID: "sec_npm", Name: "npm", Type: "token", RefreshCommand: []string{"npm", "token"}}}
 	core.secretBindings = []console.SecretBinding{{ID: "bind_1", SecretID: "sec_gh", SecretName: "gh",
 		TargetKind: console.BindingSandbox, TargetID: "b1", Use: true, EnvVar: "GH_TOKEN"}}
 	core.history = []console.BindingDecision{{ID: "ev1", Event: "created", Actor: "ann", At: time.Unix(0, 0).UTC(), BindingID: "bind_1"}}
@@ -161,6 +162,16 @@ func TestContractCore(t *testing.T) {
 				return "", err
 			}
 			return "chose " + key, nil
+		case verb == console.VerbStop && id == "b1":
+			// b1's agent asks for a new value of npm, again on every stop:
+			// what arrives, and what a session's permit renews.
+			core.mu.Lock()
+			n := len(core.requests)
+			core.requests = append(slices.Clone(core.requests), console.CredentialRequest{
+				ID: fmt.Sprintf("f%d", n), SandboxID: "b1", Name: "npm", Created: time.Unix(int64(10+n), 0),
+				Refresh: &console.RefreshAsk{SecretID: "sec_npm", Cause: "stale"},
+			})
+			core.mu.Unlock()
 		case verb == console.VerbStop && id == "slow":
 			select {
 			case <-purged:

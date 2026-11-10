@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 16;
+pub const PROTOCOL: i64 = 17;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 6;
@@ -1024,20 +1024,33 @@ pub struct Resources {
     pub disk_cache_bytes: i64,
 }
 
-/// Requests is what waits on a person.
+/// Requests is what waits on a person: every request and refused credential on every listed server,
+/// each listed box's notice as the window's dismissals leave it (console.Dismissals.NoticeFor), the
+/// requests that arrived since the subscription's last snapshot — none in its first: what was
+/// waiting as the window opened is the list's marks and the notices' to say — and what renewals a
+/// permission made since then said (console.RenewByPermit).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Requests {
     pub requests: Vec<Request>,
 
     pub rejections: Vec<Rejection>,
+
+    pub notices: Vec<Notice>,
+
+    pub arrived: Vec<Arrival>,
+
+    pub said: Vec<Said>,
 }
 
 /// Request is one item waiting on a person. Box is the key of the box that asked, as the listing
-/// names it.
+/// names it; empty for a request no listed box made. Subject, Where and Requester are what its row
+/// says (console.RequestSubject, CredentialRequest.Where, console.Requester), and Age how long it
+/// has waited, on a secrets page's rows alone.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Request {
     pub id: String,
 
+    #[serde(default, skip_serializing_if = "is_default")]
     pub r#box: String,
 
     #[serde(default, skip_serializing_if = "is_default")]
@@ -1058,6 +1071,16 @@ pub struct Request {
     pub justification: String,
 
     pub created: String,
+
+    pub subject: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub r#where: String,
+
+    pub requester: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub age: String,
 }
 
 /// RequestKind is what a request waits on a person for.
@@ -1068,7 +1091,7 @@ pub enum RequestKind {
     #[serde(rename = "credential")]
     Credential,
 
-    /// RequestRefresh is a credential to sign in again for.
+    /// RequestRefresh is a new value for a token the project holds.
     #[serde(rename = "refresh")]
     Refresh,
 
@@ -1076,7 +1099,7 @@ pub enum RequestKind {
     #[serde(rename = "trust")]
     Trust,
 
-    /// RequestAdoption is a box asking to be adopted.
+    /// RequestAdoption is a box asking to lead another.
     #[serde(rename = "adoption")]
     Adoption,
 
@@ -1123,6 +1146,96 @@ pub struct Rejection {
 
     #[serde(rename = "lastSeen")]
     pub last_seen: String,
+}
+
+/// Notice is what a box's workspace says above its panes (console.Notice): what it is about, beside
+/// it, what waits behind it, what pressing it does in words and as the command it runs on the box,
+/// and whether it is a person being waited on now, the one notice drawn as moving. A box with
+/// nothing to say has none.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Notice {
+    pub r#box: String,
+
+    pub kind: NoticeKind,
+
+    pub subject: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub detail: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub behind: String,
+
+    pub call: String,
+
+    pub command: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub urgent: bool,
+}
+
+/// NoticeKind is which notice a workspace shows. Their order (NoticeKinds) is the precedence.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NoticeKind {
+    /// NoNotice is a workspace with nothing to say.
+    #[default]
+    #[serde(rename = "none")]
+    None,
+
+    /// NoticeRejected is a refused credential the box is affected by (RejectionsFor), answered by
+    /// its remedy (the rejections command).
+    #[serde(rename = "rejected")]
+    Rejected,
+
+    /// NoticeRequest is a request the box's agent is waiting on (RequestsFor), answered by the
+    /// requests command.
+    #[serde(rename = "request")]
+    Request,
+
+    /// NoticeHarnessChanges is a harness change the box captured, reviewed by the review config
+    /// command.
+    #[serde(rename = "harnessChanges")]
+    HarnessChanges,
+}
+
+impl NoticeKind {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NoticeKind::None => "none",
+            NoticeKind::Rejected => "rejected",
+            NoticeKind::Request => "request",
+            NoticeKind::HarnessChanges => "harnessChanges",
+        }
+    }
+}
+
+/// Arrival is a request that has just arrived, for the app to raise as a notification
+/// (console.RequestArrival): pressing it answers the request, through the credentials command's
+/// answer action on its server.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Arrival {
+    pub request: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub server: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub r#box: String,
+
+    pub title: String,
+
+    pub body: String,
+}
+
+/// Said is what something the window did on its own says: a renewal a permission made, or why it
+/// could not (Warning).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Said {
+    pub text: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub warning: bool,
 }
 
 /// Provisioning is what a box is being made to do now; empty once nothing is reported.
@@ -1949,7 +2062,8 @@ pub struct Args {
     #[serde(default, skip_serializing_if = "is_default")]
     pub source: String,
 
-    /// Secret, SecretAction and Binding are the credentials command's.
+    /// Secret, SecretAction and Binding are the credentials command's, and Request the request its
+    /// answer action answers, on Server.
     #[serde(default, skip_serializing_if = "is_default")]
     pub secret: String,
 
@@ -1986,6 +2100,9 @@ pub struct Args {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub pushed: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub request: String,
 }
 
 /// ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a
@@ -2110,6 +2227,11 @@ pub enum SecretAction {
     /// SecretActionRead reads the secrets again, for a page already open.
     #[serde(rename = "read")]
     Read,
+
+    /// SecretActionAnswer answers one of the requests waiting on the page's server: from its
+    /// requests table, or a notification of one arriving.
+    #[serde(rename = "answer")]
+    Answer,
 }
 
 impl SecretAction {
@@ -2123,6 +2245,7 @@ impl SecretAction {
             SecretAction::Unbind => "unbind",
             SecretAction::History => "history",
             SecretAction::Read => "read",
+            SecretAction::Answer => "answer",
         }
     }
 }
@@ -2271,6 +2394,11 @@ pub struct Result {
     /// called and its page, before the issue topic reads it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work: Option<Link>,
+
+    /// Requests are the requests waiting on the secrets page's server, oldest first
+    /// (console.RequestsOn), sent with its secrets.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub requests: Vec<Request>,
 }
 
 /// Status is how a command ended.
@@ -2444,6 +2572,10 @@ pub enum CardTone {
     /// CardAlert is what is wrong: a credential sent nowhere, or one that cannot renew itself.
     #[serde(rename = "alert")]
     Alert,
+
+    /// CardGood is what an answer adds: a route a binding gains.
+    #[serde(rename = "good")]
+    Good,
 }
 
 impl CardTone {
@@ -2455,6 +2587,7 @@ impl CardTone {
             CardTone::Standout => "standout",
             CardTone::Command => "command",
             CardTone::Alert => "alert",
+            CardTone::Good => "good",
         }
     }
 }
@@ -2637,12 +2770,16 @@ pub struct DetailField {
     pub tone: CardTone,
 }
 
-/// DetailLine is a sentence under a section's fields, in its tone.
+/// DetailLine is a sentence under a section's fields, in its tone. A bullet hangs its wrapped rows
+/// under its text.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DetailLine {
     pub text: String,
 
     pub tone: CardTone,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub bullet: bool,
 }
 
 /// SecretBinding is one live binding of a secret: its row's label and detail (console.BindingLabel,
@@ -2689,6 +2826,15 @@ pub struct SecretWords {
 
     #[serde(rename = "historyNote")]
     pub history_note: String,
+
+    /// Requests, Waiting and NothingWaiting head the page's requests table: its title, its count,
+    /// and what it says with none.
+    pub requests: String,
+
+    pub waiting: String,
+
+    #[serde(rename = "nothingWaiting")]
+    pub nothing_waiting: String,
 }
 
 /// AuditText is what the audit command read: a record in full, as `discobox admin audit get` prints
@@ -2746,6 +2892,24 @@ pub struct Form {
     /// secret's edit was opened, what a binding is.
     #[serde(default, skip_serializing_if = "is_default")]
     pub about: String,
+
+    /// Card is what the form says beside its fields, read again for every draft: what a request's
+    /// card says as it is answered.
+    pub card: Vec<DetailSection>,
+
+    /// Aside is said beside the title: which card of how many.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub aside: String,
+
+    /// Actions are the form's ways to submit, each by its key, in place of the app's own one
+    /// (Action): accept and deny, a request's JSON (console.CardActions). The submit names the one
+    /// pressed; only an accepting one is checked, and a submit with none is refused.
+    pub actions: Vec<FormAction>,
+
+    /// Leave is what leaving the form does, said beside the key that does it, when it is not the
+    /// app's own word (a request's card leaves it waiting).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub leave: String,
 }
 
 /// Field is one field of a form (console.Field). Value is what it holds as the core reads it: as it
@@ -2804,6 +2968,56 @@ pub struct Choice {
     pub why: String,
 }
 
+/// FormAction is one of a form's ways to submit (console.CardOffer): its key, its label, and
+/// whether it declines, which is drawn as a refusal and never the default.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FormAction {
+    pub key: CardAction,
+
+    pub label: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub declines: bool,
+}
+
+/// CardAction is one way a request's card is answered, by its key.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CardAction {
+    /// ActionAccept accepts the card: the one action its form checks.
+    #[default]
+    #[serde(rename = "accept")]
+    Accept,
+
+    /// ActionDeny answers the request no.
+    #[serde(rename = "deny")]
+    Deny,
+
+    /// ActionRaw shows the request as the server sent it, and the card again as it was left.
+    #[serde(rename = "raw")]
+    Raw,
+
+    /// ActionRefresh gives a token its new value.
+    #[serde(rename = "refresh")]
+    Refresh,
+
+    /// ActionDismiss closes a refresh request without a value.
+    #[serde(rename = "dismiss")]
+    Dismiss,
+}
+
+impl CardAction {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CardAction::Accept => "accept",
+            CardAction::Deny => "deny",
+            CardAction::Raw => "raw",
+            CardAction::Refresh => "refresh",
+            CardAction::Dismiss => "dismiss",
+        }
+    }
+}
+
 /// Submit fills a form. Answers are the fields the person changed, by key; every other field
 /// answers what it opened holding, so an untouched field is never an edit. Cancel dismisses it.
 /// Draft asks only for the form again with Applies recomputed for these answers, and submits
@@ -2819,6 +3033,10 @@ pub struct Submit {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub draft: bool,
+
+    /// Action is which of the form's Actions submitted it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<CardAction>,
 }
 
 /// FieldErrors is why submitted answers were refused; the form stays up holding them. An error with

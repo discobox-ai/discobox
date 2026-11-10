@@ -690,8 +690,16 @@ func TestAppFlowsAreRuledByTheCore(t *testing.T) {
 	if r := a.expect(TypeSnapshot).Snapshot.Requests; len(r.Requests) != 1 {
 		t.Fatalf("requests %+v", r)
 	}
-	if r := a.result(a.command(Command{Command: "requests", Targets: []string{"b1"}})); r.Status != StatusEnter || r.Box != "b1" {
-		t.Errorf("requests with one waiting: %+v", r)
+	// With one waiting, the command answers it through the core's cards:
+	// leaving the first leaves the request waiting.
+	id := a.command(Command{Command: "requests", Targets: []string{"b1"}})
+	form := a.expect(TypeForm).Form
+	if form.Title != console.PartTitle(false) || len(form.Actions) == 0 || len(form.Card) == 0 {
+		t.Fatalf("requests with one waiting: %+v", form)
+	}
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: form.ID, Answers: map[string]string{}, Cancel: true}})
+	if r := a.result(id); r.Status != StatusCanceled {
+		t.Errorf("a card left: %+v", r)
 	}
 }
 
@@ -761,8 +769,16 @@ func TestRejectionsAreTheCoresRule(t *testing.T) {
 	if len(r.Rejections) != 1 || !reflect.DeepEqual(r.Rejections[0].Boxes, []string{"b1", "b2"}) {
 		t.Fatalf("rejections %+v", r.Rejections)
 	}
-	if got := a.result(a.command(Command{Command: "rejections", Targets: []string{"b2"}})); got.Status != StatusEnter {
-		t.Fatalf("rejections on a box of the harness: %+v", got)
+	// A harness's refused login is replaced by signing in again: said, and
+	// acknowledged.
+	id := a.command(Command{Command: "rejections", Targets: []string{"b2"}})
+	q := a.expect(TypeQuestion).Question
+	if !strings.Contains(q.Body, "Sign in again") {
+		t.Fatalf("rejections on a box of the harness: %+v", q)
+	}
+	a.send(Message{Type: TypeAnswer, Answer: &Answer{Question: q.ID, Key: "ok"}})
+	if got := a.result(id); got.Status != StatusDone {
+		t.Fatalf("rejections acknowledged: %+v", got)
 	}
 	if got := a.result(a.command(Command{Command: "rejections", Targets: []string{"b3"}})); got.Status != StatusFailed {
 		t.Fatalf("rejections on another harness's box: %+v", got)

@@ -1,7 +1,6 @@
 package bridge
 
 import (
-	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
@@ -245,20 +244,10 @@ func wireChanges(c console.HarnessChanges) HarnessChanges {
 // wireRequest is one item waiting on a person, by what it asks; box is the
 // key of the box that asked.
 func wireRequest(r console.CredentialRequest, box string) Request {
-	kind := RequestCredential
-	switch {
-	case r.Refresh != nil:
-		kind = RequestRefresh
-	case r.Trust != nil:
-		kind = RequestTrust
-	case r.Adoption != nil:
-		kind = RequestAdoption
-	case r.APIAccess:
-		kind = RequestAPIAccess
-	}
 	return Request{
-		ID: r.ID, Box: box, Server: r.Server, Kind: kind, Name: r.Name, EnvVar: r.EnvVar,
+		ID: r.ID, Box: box, Server: r.Server, Kind: r.Kind(), Name: r.Name, EnvVar: r.EnvVar,
 		Host: r.Host, Justification: r.Justification, Created: r.Created,
+		Subject: console.RequestSubject(r), Where: r.Where(), Requester: console.Requester(r),
 	}
 }
 
@@ -286,14 +275,22 @@ func wireDetail(in []console.DetailSection) []DetailSection {
 	for _, sec := range in {
 		d := DetailSection{Label: sec.Label, Fields: make([]DetailField, 0, len(sec.Fields)), Lines: make([]DetailLine, 0, len(sec.Lines))}
 		for _, f := range sec.Fields {
-			d.Fields = append(d.Fields, DetailField{Label: f.Label, Value: f.Value, Tone: f.Tone})
+			d.Fields = append(d.Fields, DetailField{Label: f.Label, Value: f.Value, Tone: toned(f.Tone)})
 		}
 		for _, l := range sec.Lines {
-			d.Lines = append(d.Lines, DetailLine{Text: l.Text, Tone: l.Tone})
+			d.Lines = append(d.Lines, DetailLine{Text: l.Text, Tone: toned(l.Tone), Bullet: l.Bullet})
 		}
 		out = append(out, d)
 	}
 	return out
+}
+
+// toned is a tone as the wire carries it: none is the value itself.
+func toned(t console.CardTone) console.CardTone {
+	if t == "" {
+		return console.CardPlain
+	}
+	return t
 }
 
 // secretsPage is what the secrets page knows about a server's secrets
@@ -315,11 +312,7 @@ func (p secretsPage) editAbout(s console.Secret) string {
 	if rejection, ok := p.refused[s.ID]; ok {
 		refused = &rejection
 	}
-	var lines []string
-	for _, l := range console.EditSecretAbout(refused) {
-		lines = append(lines, l.Text)
-	}
-	return strings.Join(lines, "\n")
+	return aboutText(console.EditSecretAbout(refused))
 }
 
 // target is what a binding is on, as it is said to a person.
@@ -369,6 +362,7 @@ func secretWords() *SecretWords {
 	return &SecretWords{
 		Empty: console.NoSecrets, Bind: console.BindThisSecret, BindDetail: console.BindThisSecretDetail,
 		HistoryTitle: console.BindingHistoryTitle, HistoryNote: console.BindingHistoryNote,
+		Requests: console.RequestsTitle, Waiting: console.RequestsWaiting(0), NothingWaiting: console.NothingWaiting,
 	}
 }
 

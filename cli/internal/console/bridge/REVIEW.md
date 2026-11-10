@@ -175,3 +175,12 @@
   terminal". The desktop first never ended it, and a new box's workspace said
   that for minutes after its terminal was up. The app ends it when the box's
   primary attaches; a topic like it states its end in `wire.go` and here.
+- **Only work that changed something reads a topic again at once.** A
+  renewal a permission found nothing to do for (`console.ErrNotPermitted`)
+  waits for the requests topic's next beat: its first version re-read the
+  requests after every renewal, which found the same request due again, and
+  looped against the servers without a pause.
+- **A form with actions takes a submit only with one of them** (`put`,
+  `sheet.offers`). A submit with no action, or one the card does not offer,
+  is refused on the card: its first version read it as an approval on a
+  credential's card and as a denial on a trust's.

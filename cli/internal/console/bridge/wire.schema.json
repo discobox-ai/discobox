@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 16,
+  "x-protocol": 17,
   "x-specVersion": 6,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
@@ -1202,7 +1202,7 @@
       ]
     },
     "Requests": {
-      "description": "Requests is what waits on a person.",
+      "description": "Requests is what waits on a person: every request and refused credential on every listed server, each listed box's notice as the window's dismissals leave it (console.Dismissals.NoticeFor), the requests that arrived since the subscription's last snapshot — none in its first: what was waiting as the window opened is the list's marks and the notices' to say — and what renewals a permission made since then said (console.RenewByPermit).",
       "type": "object",
       "properties": {
         "requests": {
@@ -1216,15 +1216,36 @@
           "items": {
             "$ref": "#/$defs/Rejection"
           }
+        },
+        "notices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Notice"
+          }
+        },
+        "arrived": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Arrival"
+          }
+        },
+        "said": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Said"
+          }
         }
       },
       "required": [
         "requests",
-        "rejections"
+        "rejections",
+        "notices",
+        "arrived",
+        "said"
       ]
     },
     "Request": {
-      "description": "Request is one item waiting on a person. Box is the key of the box that asked, as the listing names it.",
+      "description": "Request is one item waiting on a person. Box is the key of the box that asked, as the listing names it; empty for a request no listed box made. Subject, Where and Requester are what its row says (console.RequestSubject, CredentialRequest.Where, console.Requester), and Age how long it has waited, on a secrets page's rows alone.",
       "type": "object",
       "properties": {
         "id": {
@@ -1254,13 +1275,26 @@
         "created": {
           "type": "string",
           "format": "date-time"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "where": {
+          "type": "string"
+        },
+        "requester": {
+          "type": "string"
+        },
+        "age": {
+          "type": "string"
         }
       },
       "required": [
         "id",
-        "box",
         "kind",
-        "created"
+        "created",
+        "subject",
+        "requester"
       ]
     },
     "RequestKind": {
@@ -1272,7 +1306,7 @@
           "const": "credential"
         },
         {
-          "description": "RequestRefresh is a credential to sign in again for.",
+          "description": "RequestRefresh is a new value for a token the project holds.",
           "const": "refresh"
         },
         {
@@ -1280,7 +1314,7 @@
           "const": "trust"
         },
         {
-          "description": "RequestAdoption is a box asking to be adopted.",
+          "description": "RequestAdoption is a box asking to lead another.",
           "const": "adoption"
         },
         {
@@ -1329,6 +1363,106 @@
         "host",
         "reason",
         "lastSeen"
+      ]
+    },
+    "Notice": {
+      "description": "Notice is what a box's workspace says above its panes (console.Notice): what it is about, beside it, what waits behind it, what pressing it does in words and as the command it runs on the box, and whether it is a person being waited on now, the one notice drawn as moving. A box with nothing to say has none.",
+      "type": "object",
+      "properties": {
+        "box": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/NoticeKind"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "behind": {
+          "type": "string"
+        },
+        "call": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "urgent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "box",
+        "kind",
+        "subject",
+        "call",
+        "command"
+      ]
+    },
+    "NoticeKind": {
+      "description": "NoticeKind is which notice a workspace shows. Their order (NoticeKinds) is the precedence.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "NoNotice is a workspace with nothing to say.",
+          "const": "none"
+        },
+        {
+          "description": "NoticeRejected is a refused credential the box is affected by (RejectionsFor), answered by its remedy (the rejections command).",
+          "const": "rejected"
+        },
+        {
+          "description": "NoticeRequest is a request the box's agent is waiting on (RequestsFor), answered by the requests command.",
+          "const": "request"
+        },
+        {
+          "description": "NoticeHarnessChanges is a harness change the box captured, reviewed by the review config command.",
+          "const": "harnessChanges"
+        }
+      ]
+    },
+    "Arrival": {
+      "description": "Arrival is a request that has just arrived, for the app to raise as a notification (console.RequestArrival): pressing it answers the request, through the credentials command's answer action on its server.",
+      "type": "object",
+      "properties": {
+        "request": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        },
+        "box": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request",
+        "title",
+        "body"
+      ]
+    },
+    "Said": {
+      "description": "Said is what something the window did on its own says: a renewal a permission made, or why it could not (Warning).",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text"
       ]
     },
     "Provisioning": {
@@ -2408,7 +2542,7 @@
           "type": "string"
         },
         "secret": {
-          "description": "Secret, SecretAction and Binding are the credentials command's.",
+          "description": "Secret, SecretAction and Binding are the credentials command's, and Request the request its answer action answers, on Server.",
           "type": "string"
         },
         "secretAction": {
@@ -2438,6 +2572,9 @@
           "type": "string"
         },
         "pushed": {
+          "type": "string"
+        },
+        "request": {
           "type": "string"
         }
       }
@@ -2528,6 +2665,10 @@
         {
           "description": "SecretActionRead reads the secrets again, for a page already open.",
           "const": "read"
+        },
+        {
+          "description": "SecretActionAnswer answers one of the requests waiting on the page's server: from its requests table, or a notification of one arriving.",
+          "const": "answer"
         }
       ]
     },
@@ -2675,6 +2816,13 @@
         "work": {
           "$ref": "#/$defs/Link",
           "description": "Work is the issue or pull request the issue and pr commands open a tab on: what its tab is called and its page, before the issue topic reads it."
+        },
+        "requests": {
+          "description": "Requests are the requests waiting on the secrets page's server, oldest first (console.RequestsOn), sent with its secrets.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Request"
+          }
         }
       },
       "required": [
@@ -2927,6 +3075,10 @@
         {
           "description": "CardAlert is what is wrong: a credential sent nowhere, or one that cannot renew itself.",
           "const": "alert"
+        },
+        {
+          "description": "CardGood is what an answer adds: a route a binding gains.",
+          "const": "good"
         }
       ]
     },
@@ -3212,7 +3364,7 @@
       ]
     },
     "DetailLine": {
-      "description": "DetailLine is a sentence under a section's fields, in its tone.",
+      "description": "DetailLine is a sentence under a section's fields, in its tone. A bullet hangs its wrapped rows under its text.",
       "type": "object",
       "properties": {
         "text": {
@@ -3220,6 +3372,9 @@
         },
         "tone": {
           "$ref": "#/$defs/CardTone"
+        },
+        "bullet": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -3302,6 +3457,16 @@
         },
         "historyNote": {
           "type": "string"
+        },
+        "requests": {
+          "description": "Requests, Waiting and NothingWaiting head the page's requests table: its title, its count, and what it says with none.",
+          "type": "string"
+        },
+        "waiting": {
+          "type": "string"
+        },
+        "nothingWaiting": {
+          "type": "string"
         }
       },
       "required": [
@@ -3309,7 +3474,10 @@
         "bind",
         "bindDetail",
         "historyTitle",
-        "historyNote"
+        "historyNote",
+        "requests",
+        "waiting",
+        "nothingWaiting"
       ]
     },
     "AuditText": {
@@ -3388,13 +3556,37 @@
         "about": {
           "description": "About is what the form is about, said above its fields, a paragraph to a line: why a secret's edit was opened, what a binding is.",
           "type": "string"
+        },
+        "card": {
+          "description": "Card is what the form says beside its fields, read again for every draft: what a request's card says as it is answered.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DetailSection"
+          }
+        },
+        "aside": {
+          "description": "Aside is said beside the title: which card of how many.",
+          "type": "string"
+        },
+        "actions": {
+          "description": "Actions are the form's ways to submit, each by its key, in place of the app's own one (Action): accept and deny, a request's JSON (console.CardActions). The submit names the one pressed; only an accepting one is checked, and a submit with none is refused.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FormAction"
+          }
+        },
+        "leave": {
+          "description": "Leave is what leaving the form does, said beside the key that does it, when it is not the app's own word (a request's card leaves it waiting).",
+          "type": "string"
         }
       },
       "required": [
         "id",
         "command",
         "title",
-        "fields"
+        "fields",
+        "card",
+        "actions"
       ]
     },
     "Field": {
@@ -3475,6 +3667,51 @@
         "label"
       ]
     },
+    "FormAction": {
+      "description": "FormAction is one of a form's ways to submit (console.CardOffer): its key, its label, and whether it declines, which is drawn as a refusal and never the default.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/CardAction"
+        },
+        "label": {
+          "type": "string"
+        },
+        "declines": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "label"
+      ]
+    },
+    "CardAction": {
+      "description": "CardAction is one way a request's card is answered, by its key.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "ActionAccept accepts the card: the one action its form checks.",
+          "const": "accept"
+        },
+        {
+          "description": "ActionDeny answers the request no.",
+          "const": "deny"
+        },
+        {
+          "description": "ActionRaw shows the request as the server sent it, and the card again as it was left.",
+          "const": "raw"
+        },
+        {
+          "description": "ActionRefresh gives a token its new value.",
+          "const": "refresh"
+        },
+        {
+          "description": "ActionDismiss closes a refresh request without a value.",
+          "const": "dismiss"
+        }
+      ]
+    },
     "Submit": {
       "description": "Submit fills a form. Answers are the fields the person changed, by key; every other field answers what it opened holding, so an untouched field is never an edit. Cancel dismisses it. Draft asks only for the form again with Applies recomputed for these answers, and submits nothing.",
       "type": "object",
@@ -3494,6 +3731,10 @@
         },
         "draft": {
           "type": "boolean"
+        },
+        "action": {
+          "$ref": "#/$defs/CardAction",
+          "description": "Action is which of the form's Actions submitted it."
         }
       },
       "required": [

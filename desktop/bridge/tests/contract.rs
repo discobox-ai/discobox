@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, AuditPart, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
+    Answer, Args, AuditPart, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, CardAction, Message, NoticeKind, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome, IssueAct, IssueItemKind, IssueQuery, IssueTone,
 };
 use discobox_bridge::{Client, Incoming};
@@ -104,7 +104,7 @@ impl Cli {
 
     fn submit(&self, form: u64, answers: &[(&str, &str)], draft: bool, cancel: bool) {
         let answers: HashMap<String, String> = answers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        self.send(Message { r#type: Type::Submit, submit: Some(Submit { form, answers, cancel, draft }), ..Default::default() });
+        self.send(Message { r#type: Type::Submit, submit: Some(Submit { form, answers, cancel, draft, ..Default::default() }), ..Default::default() });
     }
 
     /// The first thing the CLI sent that `want` takes, in order; what it passes over is kept.
@@ -589,7 +589,7 @@ fn secrets_reach_the_app() {
     let page = Context { tree: true, ..Default::default() };
     let id = cli.command("credentials", &[], page.clone(), Args::default());
     let r = cli.result(id);
-    assert_eq!((r.status, r.secrets.len()), (Status::Enter, 1));
+    assert_eq!((r.status, r.secrets.len()), (Status::Enter, 2));
     let gh = &r.secrets[0];
     assert_eq!((gh.name.as_str(), gh.r#where.as_str(), gh.standing, gh.standing_text.as_str()), ("gh", "sent nowhere", SecretStanding::Bound, "1 binding"));
     assert!(gh.card.iter().flat_map(|s| &s.fields).any(|f| f.label == "kind" && f.value == "token"), "{:?}", gh.card);
@@ -653,6 +653,81 @@ fn the_audit_timeline_and_its_records_reach_the_app() {
     let id = cli.command("audit", &["b1"], pane("b1"), Args { record: "gone".into(), ..Default::default() });
     let r = cli.result(id);
     assert_eq!((r.status, r.why.as_str()), (Status::Failed, "gone: no such record"));
+}
+
+// What waits on a person reaches the app with each box's notice, which a dismissal takes down;
+// a box's request is answered through the core's card, a form with its card and actions, the
+// action pressed riding on the submit.
+#[test]
+fn requests_reach_the_app() {
+    let mut cli = Cli::start("default");
+    cli.subscribe(1, Topic::Listing, "");
+    cli.expect(Type::Snapshot);
+    cli.subscribe(2, Topic::Requests, "");
+    let w = cli.expect(Type::Snapshot).snapshot.unwrap().requests.expect("requests");
+    assert_eq!((w.requests[0].subject.as_str(), w.requests[0].requester.as_str()), ("github", "agent · b1"));
+    let n = &w.notices[0];
+    assert_eq!((n.r#box.as_str(), n.kind, n.subject.as_str(), n.command.as_str(), n.urgent), ("b1", NoticeKind::Request, "credential request", "requests", true));
+    assert!(w.arrived.is_empty() && w.said.is_empty(), "{w:?}");
+
+    let id = cli.command("dismiss", &[], pane("b1"), Args::default());
+    assert_eq!(cli.result(id).status, Status::Done);
+    let w = cli.take("the requests again", |i| match i {
+        Incoming::Message(Message { snapshot: Some(s), .. }) if s.sub == 2 => s.requests.clone(),
+        _ => None,
+    });
+    assert!(w.notices.is_empty(), "a dismissed notice: {:?}", w.notices);
+
+    let id = cli.command("requests", &["b1"], pane("b1"), Args::default());
+    let f = cli.expect(Type::Form).form.unwrap();
+    assert_eq!((f.title.as_str(), f.aside.as_str()), ("Allow credential use?", "1 of 1"));
+    assert_eq!(f.actions.iter().map(|a| a.key.as_str()).collect::<Vec<_>>(), ["accept", "deny"]);
+    assert!(f.card.iter().flat_map(|s| &s.lines).any(|l| l.text == "This box may use the credential."), "{:?}", f.card);
+    cli.send(Message { r#type: Type::Submit, submit: Some(Submit { form: f.id, action: Some(CardAction::Deny), ..Default::default() }), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str()), (Status::Done, "denied github"));
+}
+
+// A request that arrives after the first snapshot is one to notify; the secrets page lists the
+// requests waiting on its server with how long each has waited, and answers one by its ID; a
+// refresh allowed for the session renews the next one without asking, and says so.
+#[test]
+fn arrivals_and_renewals_reach_the_app() {
+    let mut cli = Cli::start("default");
+    cli.subscribe(1, Topic::Listing, "");
+    cli.expect(Type::Snapshot);
+    cli.subscribe(2, Topic::Requests, "");
+    let w = cli.expect(Type::Snapshot).snapshot.unwrap().requests.expect("requests");
+    assert!(w.arrived.is_empty(), "{w:?}");
+    let requests = |cli: &mut Cli, what: &str, want: &dyn Fn(&discobox_bridge::wire::Requests) -> bool| cli.take(what, |i| match i {
+        Incoming::Message(Message { snapshot: Some(s), .. }) if s.sub == 2 => s.requests.clone().filter(|r| want(r)),
+        _ => None,
+    });
+
+    let id = cli.command("stop", &["b1"], Context::default(), Args::default());
+    cli.result(id);
+    let w = requests(&mut cli, "the refresh arriving", &|r| !r.arrived.is_empty());
+    assert_eq!((w.arrived[0].request.as_str(), w.arrived[0].r#box.as_str(), w.arrived[0].title.as_str()), ("f1", "b1", "Refresh request"));
+
+    let id = cli.command("credentials", &[], Context::default(), Args::default());
+    let page = cli.result(id);
+    let f1 = page.requests.iter().find(|r| r.id == "f1").expect("the page's requests");
+    assert!(!f1.age.is_empty() && page.secret_words.as_ref().is_some_and(|w| w.waiting == "2 waiting" && w.requests == "Requests"), "{page:?}");
+
+    let answer = Args { secret_action: Some(SecretAction::Answer), request: "f1".into(), ..Default::default() };
+    let id = cli.command("credentials", &[], Context::default(), answer);
+    let f = cli.expect(Type::Form).form.unwrap();
+    assert_eq!(f.actions.iter().map(|a| (a.key, a.declines)).collect::<Vec<_>>(), [(CardAction::Refresh, false), (CardAction::Dismiss, true)]);
+    let answers = HashMap::from([("permission".to_string(), "session".to_string())]);
+    cli.send(Message { r#type: Type::Submit, submit: Some(Submit { form: f.id, answers, action: Some(CardAction::Refresh), ..Default::default() }), ..Default::default() });
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str()), (Status::Done, "renewed npm"));
+    assert!(r.requests.iter().all(|x| x.id != "f1"), "the answered request is still on the page");
+
+    let id = cli.command("stop", &["b1"], Context::default(), Args::default());
+    cli.result(id);
+    let w = requests(&mut cli, "the renewal said", &|r| !r.said.is_empty());
+    assert_eq!((w.said[0].text.as_str(), w.said[0].warning), ("renewed npm", false));
 }
 
 // A box's primary is read for what its program says of itself: the header says the poll's

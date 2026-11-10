@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -98,6 +99,17 @@ type Server struct {
 	// shown is the filter of the app's list, as it last subscribed with one
 	// of its own: the folder and server the run options follow.
 	shown console.Filter
+
+	// The window's inbox (requests.go), under mu: the notices it was told
+	// to take down; the refresh commands a person let run again without
+	// asking while it is open, and the requests a renewal is out for
+	// (console.Renewals); what
+	// those renewals said, until a requests snapshot carries it; and
+	// rekick, closed to read the requests again now (reread).
+	dismissed console.Dismissals
+	renewals  console.Renewals
+	said      []Said
+	rekick    chan struct{}
 	// optsMu guards options, the window's run options.
 	optsMu  sync.Mutex
 	options runOptions
@@ -113,6 +125,7 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		heard:     map[string]*heard{},
 		kick:      make(chan struct{}),
 		issues:    map[string]chan struct{}{},
+		rekick:    make(chan struct{}),
 		fresh:     make(chan struct{}),
 		subs:      map[uint32]context.CancelFunc{},
 		forms:     map[uint64]*mailbox{},
@@ -843,14 +856,50 @@ func (s *Server) editAt(ctx context.Context, command uint64, path, title string)
 	}
 }
 
-// fill puts a form to the app for a running command until its answers are
-// accepted, or it is dismissed (ok false). A refusal goes back as field
-// errors, and the form stays up holding what was typed; a draft is answered
-// with the form again, its fields' Applies recomputed for the draft.
+// sheet is how a form is put to the app: its title, what its one submit
+// says (empty for the app's own word) or its actions, what it is about, and
+// the card beside it, read again for every draft. checks is which actions the
+// form checks; the others carry the answers as they stand (a decline, a
+// detour). Nil checks every submit.
 //
-// action is what the button that submits it says, empty for the app's own
-// word.
-func fill[T any](ctx context.Context, s *Server, command uint64, title, action, about string, form console.Form[T]) (answer T, ok bool, err error) {
+// A form with actions takes a submit only with one of them: any other — none,
+// or a key it does not offer — is refused on the form, never read as the
+// accept or the decline it is not.
+type sheet struct {
+	title, action, about, aside string
+	// leave is what leaving the form does, said beside the key that does it.
+	leave   string
+	card    func(console.Answers) []console.DetailSection
+	actions []FormAction
+	checks  func(action console.CardAction) bool
+}
+
+// offers reports whether a submitted action is one the sheet takes: any, on a
+// form with no actions.
+func (sh sheet) offers(action console.CardAction) bool {
+	if len(sh.actions) == 0 {
+		return action == ""
+	}
+	return slices.ContainsFunc(sh.actions, func(a FormAction) bool { return a.Key == action })
+}
+
+// formed is what a form was submitted with: the action pressed (empty on a
+// form with none), the answers as they stood, and, for one the form checks,
+// the answer they make.
+type formed[T any] struct {
+	action  console.CardAction
+	answers console.Answers
+	value   T
+}
+
+// put puts a form to the app for a running command, holding start, until
+// it is submitted with an action the form does not check or with answers it
+// accepts, or it is dismissed (ok false). A refusal goes back as field
+// errors, and the form stays up holding what was typed; a draft is answered
+// with the form again, its fields' Applies and its card recomputed for the
+// draft. The app sends the fields the person changed, each merged onto what
+// it held as it was sent (start).
+func put[T any](ctx context.Context, s *Server, command uint64, sh sheet, form console.Form[T], start console.Answers) (got formed[T], ok bool, err error) {
 	id := s.id()
 	box := newMailbox()
 	s.mu.Lock()
@@ -861,35 +910,55 @@ func fill[T any](ctx context.Context, s *Server, command uint64, title, action, 
 		delete(s.forms, id)
 		s.mu.Unlock()
 	}()
-	answers := form.Opening()
+	answers := maps.Clone(start)
 	for {
+		card := []DetailSection{}
+		if sh.card != nil {
+			card = wireDetail(sh.card(answers))
+		}
 		s.send(Message{Type: TypeForm, Form: &Form{
-			ID: id, Command: command, Title: title, Action: action, About: about,
-			Fields: fields(form.FieldsFor(answers), answers), Note: form.NoteFor(answers),
+			ID: id, Command: command, Title: sh.title, Action: sh.action, About: sh.about, Aside: sh.aside, Leave: sh.leave,
+			Fields: fields(form.FieldsFor(answers), answers), Note: form.NoteFor(answers), Card: card, Actions: nonNil(sh.actions),
 		}})
 		for {
 			sub, err := box.take(ctx)
 			if err != nil {
-				return answer, false, err
+				return got, false, err
 			}
 			if sub.Cancel {
-				return answer, false, nil
+				return got, false, nil
 			}
-			answers = form.Opening()
+			answers = maps.Clone(start)
 			for k, v := range sub.Answers {
 				answers[k] = v
 			}
 			if sub.Draft {
 				break
 			}
-			got, refusal := form.Answer(answers)
+			if !sh.offers(sub.Action) {
+				s.send(Message{Type: TypeFieldErrors, FieldErrors: &FieldErrors{Form: id, Errors: []FieldError{{Why: "answer with one of the form's actions"}}}})
+				continue
+			}
+			got = formed[T]{action: sub.Action, answers: answers}
+			if sh.checks != nil && !sh.checks(sub.Action) {
+				return got, true, nil
+			}
+			value, refusal := form.Answer(answers)
 			if refusal != nil {
 				s.send(Message{Type: TypeFieldErrors, FieldErrors: &FieldErrors{Form: id, Errors: []FieldError{{Field: refusal.Field, Why: refusal.Why}}}})
 				continue
 			}
+			got.value = value
 			return got, true, nil
 		}
 	}
+}
+
+// fill puts a form with one submit to the app until its answers are
+// accepted, or it is dismissed (ok false).
+func fill[T any](ctx context.Context, s *Server, command uint64, sh sheet, form console.Form[T]) (answer T, ok bool, err error) {
+	got, ok, err := put(ctx, s, command, sh, form, form.Opening())
+	return got.value, ok, err
 }
 
 // mailbox is what the app submitted to one form, in the order it was sent:

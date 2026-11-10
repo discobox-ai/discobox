@@ -37,16 +37,16 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 		} else {
 			f.filter = s.filter(ctx, sub.Filter)
 		}
-		go f.poll(ctx, console.ListPollEvery, true, f.listing)
+		go f.poll(ctx, console.ListPollEvery, s.kicked, f.listing)
 	case TopicResources:
-		go f.poll(ctx, console.ListPollEvery, false, f.resources)
+		go f.poll(ctx, console.ListPollEvery, nil, f.resources)
 	case TopicRequests:
-		go f.poll(ctx, console.ListPollEvery, false, f.requests)
+		go f.poll(ctx, console.ListPollEvery, s.rekicked, f.requests)
 	case TopicSessions:
 		done := s.followTabs(sub.Box)
 		go func() {
 			defer done()
-			f.about(ctx, func() { f.poll(ctx, console.WorkspacePollEvery, true, f.sessions) })
+			f.about(ctx, func() { f.poll(ctx, console.WorkspacePollEvery, s.kicked, f.sessions) })
 		}()
 	case TopicProvisioning:
 		go f.about(ctx, func() { f.provisioning(ctx) })
@@ -123,6 +123,11 @@ type follower struct {
 	src console.DataSource
 	// filter is what a listing subscription narrows the list to.
 	filter console.Filter
+	// seen is every request the requests topic has sent, nil before its
+	// first snapshot: what arrived since is what is new. It only grows: a
+	// server that missed one poll contributes none to it, and its requests,
+	// listed again, have not arrived.
+	seen map[string]bool
 }
 
 // send sends a snapshot unless it is the one sent last, or the subscription
@@ -155,13 +160,17 @@ func mustMessage(snapshot []byte) []byte {
 
 func (f *follower) failed(err error) { f.send(Snapshot{Error: err.Error()}) }
 
-// poll reads every so often until ctx ends, and at once when the listing is
-// kicked, for a topic that follows the boxes.
-func (f *follower) poll(ctx context.Context, every time.Duration, kicked bool, read func(context.Context) (Snapshot, error)) {
+// poll reads every so often until ctx ends, and at once when kicked closes
+// what it returns: the listing kicked, for a topic that follows the boxes
+// (Server.kicked), the requests read again (Server.rekicked). Nil is never.
+func (f *follower) poll(ctx context.Context, every time.Duration, kicked func() <-chan struct{}, read func(context.Context) (Snapshot, error)) {
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
-		kick := f.s.kicked()
+		var kick <-chan struct{}
+		if kicked != nil {
+			kick = kicked()
+		}
 		if snap, err := read(ctx); err != nil {
 			if ctx.Err() != nil {
 				return
@@ -169,9 +178,6 @@ func (f *follower) poll(ctx context.Context, every time.Duration, kicked bool, r
 			f.failed(err)
 		} else {
 			f.send(snap)
-		}
-		if !kicked {
-			kick = nil
 		}
 		select {
 		case <-ctx.Done():
@@ -220,18 +226,41 @@ func (f *follower) requests(ctx context.Context) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	console.SortRejections(rejections)
 	f.s.noteInbox(requests, rejections)
+	f.s.renewByPermit(requests)
 	// Which box each is about is the core's rule, against the boxes listed.
 	session, boxes := f.s.listed()
-	out := Requests{Requests: make([]Request, 0, len(requests)), Rejections: make([]Rejection, 0, len(rejections))}
+	in := console.Inbox{Session: session, Requests: requests, Rejections: rejections}
+	out := Requests{
+		Requests: make([]Request, 0, len(requests)), Rejections: make([]Rejection, 0, len(rejections)),
+		Notices: f.s.notices(in, boxes), Arrived: []Arrival{}, Said: f.s.takeSaid(),
+	}
+	first := f.seen == nil
+	if first {
+		f.seen = map[string]bool{}
+	}
 	for _, r := range requests {
-		key := Key(r.Server, r.SandboxID)
+		var asker console.Sandbox
 		for _, b := range boxes {
 			if len(console.RequestsFor(session, b, []console.CredentialRequest{r})) > 0 {
-				key = Key(b.Server, b.ID)
+				asker = b
 			}
 		}
+		// A box the listing does not hold is still named, on its server.
+		key := ""
+		if r.SandboxID != "" {
+			key = Key(r.Server, r.SandboxID)
+		}
+		if asker.ID != "" {
+			key = Key(asker.Server, asker.ID)
+		}
 		out.Requests = append(out.Requests, wireRequest(r, key))
+		if !first && !f.seen[r.ID] {
+			title, body := console.RequestArrival(r, asker)
+			out.Arrived = append(out.Arrived, Arrival{Request: r.ID, Server: r.Server, Box: key, Title: title, Body: body})
+		}
+		f.seen[r.ID] = true
 	}
 	for _, r := range rejections {
 		var keys []string

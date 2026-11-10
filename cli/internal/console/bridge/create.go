@@ -120,7 +120,7 @@ func (f *frontend) RunOptions() outcome {
 	}
 	return func() Result {
 		o, _, _, _ := f.s.readOptions(f.ctx)
-		answer, ok, err := fill(f.ctx, f.s, f.c.ID, "Run options", "", "", o.OptionsForm(f.c.Args.Prompt, f.s.resolve(f.ctx)))
+		answer, ok, err := fill(f.ctx, f.s, f.c.ID, sheet{title: "Run options"}, o.OptionsForm(f.c.Args.Prompt, f.s.resolve(f.ctx)))
 		switch {
 		case err != nil:
 			return failed(err.Error())
@@ -172,7 +172,7 @@ func (f *frontend) NewBox() outcome {
 			return Result{Status: StatusEnter}
 		}
 		o, server, harnesses, listed := s.readOptions(ctx)
-		answer, ok, err := fill(ctx, s, id, "New discobox", "Create", "", o.CreateForm(prompt, s.resolve(ctx)))
+		answer, ok, err := fill(ctx, s, id, sheet{title: "New discobox", action: "Create"}, o.CreateForm(prompt, s.resolve(ctx)))
 		switch {
 		case err != nil:
 			return failed(err.Error())

@@ -39,8 +39,15 @@ import (
 // record read in full and its recordings; 16, a box's issue and pull request:
 // the issue topic, the issue and pr commands' comment, close or reopen, and
 // merge, a pull request's files changed as a session (TabFiles), and a
-// question's answer offered with why it cannot be chosen (Choice.Why).
-const Protocol = 16
+// question's answer offered with why it cannot be chosen (Choice.Why);
+// 17, requests and approvals: a request's row words, the requests a secrets
+// page answers (Result.Requests, the credentials command's answer action), a
+// box's notice and its dismissal (Requests.Notices), requests just arrived
+// (Requests.Arrived), automatic renewals (Requests.Said), a form's card and
+// its actions (Form.Card, Form.Aside, Form.Actions, Form.Leave, Submit.Action,
+// FormAction.Declines), and a
+// detail line's bullet.
+const Protocol = 17
 
 // Type names a message.
 type Type string
@@ -677,42 +684,74 @@ type Resources struct {
 	DiskCacheBytes int64   `json:"diskCacheBytes"`
 }
 
-// Requests is what waits on a person.
+// Requests is what waits on a person: every request and refused credential
+// on every listed server, each listed box's notice as the window's dismissals
+// leave it (console.Dismissals.NoticeFor), the requests that arrived since
+// the subscription's last snapshot — none in its first: what was waiting as
+// the window opened is the list's marks and the notices' to say — and what
+// renewals a permission made since then said (console.RenewByPermit).
 type Requests struct {
 	Requests   []Request   `json:"requests"`
 	Rejections []Rejection `json:"rejections"`
+	Notices    []Notice    `json:"notices"`
+	Arrived    []Arrival   `json:"arrived"`
+	Said       []Said      `json:"said"`
 }
 
 // Request is one item waiting on a person. Box is the key of the box that
-// asked, as the listing names it.
+// asked, as the listing names it; empty for a request no listed box made.
+// Subject, Where and Requester are what its row says (console.RequestSubject,
+// CredentialRequest.Where, console.Requester), and Age how long it has
+// waited, on a secrets page's rows alone.
 type Request struct {
-	ID            string      `json:"id"`
-	Box           string      `json:"box"`
-	Server        string      `json:"server,omitempty"`
-	Kind          RequestKind `json:"kind"`
-	Name          string      `json:"name,omitempty"`
-	EnvVar        string      `json:"envVar,omitempty"`
-	Host          string      `json:"host,omitempty"`
-	Justification string      `json:"justification,omitempty"`
-	Created       time.Time   `json:"created"`
+	ID            string              `json:"id"`
+	Box           string              `json:"box,omitempty"`
+	Server        string              `json:"server,omitempty"`
+	Kind          console.RequestKind `json:"kind"`
+	Name          string              `json:"name,omitempty"`
+	EnvVar        string              `json:"envVar,omitempty"`
+	Host          string              `json:"host,omitempty"`
+	Justification string              `json:"justification,omitempty"`
+	Created       time.Time           `json:"created"`
+	Subject       string              `json:"subject"`
+	Where         string              `json:"where,omitempty"`
+	Requester     string              `json:"requester"`
+	Age           string              `json:"age,omitempty"`
 }
 
-// RequestKind is what a request waits on a person for.
-type RequestKind string
+// Notice is what a box's workspace says above its panes (console.Notice):
+// what it is about, beside it, what waits behind it, what pressing it does
+// in words and as the command it runs on the box, and whether it is a person
+// being waited on now, the one notice drawn as moving. A box with nothing to
+// say has none.
+type Notice struct {
+	Box     string             `json:"box"`
+	Kind    console.NoticeKind `json:"kind"`
+	Subject string             `json:"subject"`
+	Detail  string             `json:"detail,omitempty"`
+	Behind  string             `json:"behind,omitempty"`
+	Call    string             `json:"call"`
+	Command string             `json:"command"`
+	Urgent  bool               `json:"urgent,omitempty"`
+}
 
-// The request kinds.
-const (
-	// RequestCredential is a credential the box asked for.
-	RequestCredential RequestKind = "credential"
-	// RequestRefresh is a credential to sign in again for.
-	RequestRefresh RequestKind = "refresh"
-	// RequestTrust is a host whose certificate the box asked to trust.
-	RequestTrust RequestKind = "trust"
-	// RequestAdoption is a box asking to be adopted.
-	RequestAdoption RequestKind = "adoption"
-	// RequestAPIAccess is a box asking for access to the Discobox API.
-	RequestAPIAccess RequestKind = "apiAccess"
-)
+// Arrival is a request that has just arrived, for the app to raise as a
+// notification (console.RequestArrival): pressing it answers the request,
+// through the credentials command's answer action on its server.
+type Arrival struct {
+	Request string `json:"request"`
+	Server  string `json:"server,omitempty"`
+	Box     string `json:"box,omitempty"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+}
+
+// Said is what something the window did on its own says: a renewal a
+// permission made, or why it could not (Warning).
+type Said struct {
+	Text    string `json:"text"`
+	Warning bool   `json:"warning,omitempty"`
+}
 
 // Rejection is a credential refused where a person is needed. Boxes are the
 // listed boxes it affects (console.RejectionsFor): a harness's credential is
@@ -1013,7 +1052,8 @@ type Args struct {
 	// one sets the Source row to it, checked as a source typed by hand is,
 	// in place of asking the run options' form.
 	Source string `json:"source,omitempty"`
-	// Secret, SecretAction and Binding are the credentials command's.
+	// Secret, SecretAction and Binding are the credentials command's, and
+	// Request the request its answer action answers, on Server.
 	Secret       string               `json:"secret,omitempty"`
 	SecretAction console.SecretAction `json:"secretAction,omitempty"`
 	Binding      string               `json:"binding,omitempty"`
@@ -1033,6 +1073,7 @@ type Args struct {
 	Head    string   `json:"head,omitempty"`
 	Base    string   `json:"base,omitempty"`
 	Pushed  string   `json:"pushed,omitempty"`
+	Request string   `json:"request,omitempty"`
 }
 
 // IssueAct is what the issue and pr commands do.
@@ -1122,6 +1163,9 @@ type Result struct {
 	// Work is the issue or pull request the issue and pr commands open a tab
 	// on: what its tab is called and its page, before the issue topic reads it.
 	Work *Link `json:"work,omitempty"`
+	// Requests are the requests waiting on the secrets page's server, oldest
+	// first (console.RequestsOn), sent with its secrets.
+	Requests []Request `json:"requests,omitempty"`
 }
 
 // Tool is one of a box's tools as the tools menu lists it: what it is called
@@ -1163,6 +1207,11 @@ type SecretWords struct {
 	BindDetail   string `json:"bindDetail"`
 	HistoryTitle string `json:"historyTitle"`
 	HistoryNote  string `json:"historyNote"`
+	// Requests, Waiting and NothingWaiting head the page's requests table:
+	// its title, its count, and what it says with none.
+	Requests       string `json:"requests"`
+	Waiting        string `json:"waiting"`
+	NothingWaiting string `json:"nothingWaiting"`
 }
 
 // Secret is one of a server's secrets as the secrets page lists it: what its
@@ -1221,10 +1270,12 @@ type DetailField struct {
 	Tone  console.CardTone `json:"tone"`
 }
 
-// DetailLine is a sentence under a section's fields, in its tone.
+// DetailLine is a sentence under a section's fields, in its tone. A bullet
+// hangs its wrapped rows under its text.
 type DetailLine struct {
-	Text string           `json:"text"`
-	Tone console.CardTone `json:"tone"`
+	Text   string           `json:"text"`
+	Tone   console.CardTone `json:"tone"`
+	Bullet bool             `json:"bullet,omitempty"`
 }
 
 // Harness is one of a server's harnesses as the harnesses page lists it: what
@@ -1341,6 +1392,29 @@ type Form struct {
 	// About is what the form is about, said above its fields, a paragraph
 	// to a line: why a secret's edit was opened, what a binding is.
 	About string `json:"about,omitempty"`
+	// Card is what the form says beside its fields, read again for every
+	// draft: what a request's card says as it is answered.
+	Card []DetailSection `json:"card"`
+	// Aside is said beside the title: which card of how many.
+	Aside string `json:"aside,omitempty"`
+	// Actions are the form's ways to submit, each by its key, in place of
+	// the app's own one (Action): accept and deny, a request's JSON
+	// (console.CardActions). The submit names the one pressed; only an
+	// accepting one is checked, and a submit with none is refused.
+	Actions []FormAction `json:"actions"`
+	// Leave is what leaving the form does, said beside the key that does it,
+	// when it is not the app's own word (a request's card leaves it
+	// waiting).
+	Leave string `json:"leave,omitempty"`
+}
+
+// FormAction is one of a form's ways to submit (console.CardOffer): its key,
+// its label, and whether it declines, which is drawn as a refusal and never
+// the default.
+type FormAction struct {
+	Key      console.CardAction `json:"key"`
+	Label    string             `json:"label"`
+	Declines bool               `json:"declines,omitempty"`
 }
 
 // Field is one field of a form (console.Field). Value is what it holds as
@@ -1383,6 +1457,8 @@ type Submit struct {
 	Answers map[string]string `json:"answers"`
 	Cancel  bool              `json:"cancel,omitempty"`
 	Draft   bool              `json:"draft,omitempty"`
+	// Action is which of the form's Actions submitted it.
+	Action console.CardAction `json:"action,omitempty"`
 }
 
 // FieldErrors is why submitted answers were refused; the form stays up
