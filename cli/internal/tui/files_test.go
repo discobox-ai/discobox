@@ -193,8 +193,22 @@ func TestFilesDroppedFromThisMachineAreCopiedIn(t *testing.T) {
 	}
 	synctest.Test(t, func(t *testing.T) {
 		d, m, ds, term := openFiles(t)
-		// The cursor on cmd/ is where a drop with the keys lands.
+		// The cursor on cmd/ is where a drop with the keys lands. Anything in
+		// a box can put paths on the clipboard, so a drop lists what it would
+		// copy and copies nothing until Enter; any other key drops it.
 		d.dispatch(tea.PasteMsg{Content: "'" + local + "'"})
+		d.wait("the drop to wait for enter", func() bool { return m.filesDrop != nil })
+		if view := ansi.Strip(m.viewFiles()); !strings.Contains(view, "my notes.txt") || !strings.Contains(view, "enter copy") {
+			t.Fatalf("a waiting drop should show what it copies and how to confirm; panel:\n%s", view)
+		}
+		d.key("j")
+		d.settle()
+		if m.filesDrop != nil || len(ds.uploadsSoFar()) != 0 {
+			t.Fatalf("a key other than enter should copy nothing; uploads %+v", ds.uploadsSoFar())
+		}
+		d.dispatch(tea.PasteMsg{Content: "'" + local + "'"})
+		d.wait("the drop to wait for enter", func() bool { return m.filesDrop != nil })
+		d.key("enter")
 		d.wait("the upload", func() bool { return len(ds.uploadsSoFar()) == 1 })
 		if got := ds.uploadsSoFar()[0]; !slices.Equal(got.local, []string{local}) || got.dir != "/src/cmd" {
 			t.Fatalf("upload = %+v, want %q into /src/cmd", got, local)
@@ -326,7 +340,9 @@ func rowEnd(t *testing.T, m *Model, text string) string {
 
 func TestParsePorcelainMarksFilesAndTheDirectoriesAboveThem(t *testing.T) {
 	t.Parallel()
-	out := " M a/b/c.go\x00A  a/new.go\x00R  a/moved.go\x00a/old.go\x00?? d/e.txt\x00UU a/b/x.go\x00!! ignored\x00"
+	// The git that answers is the box's: a byte that is no letter of git's
+	// (an ESC, a C1 control) draws nothing.
+	out := " M a/b/c.go\x00A  a/new.go\x00R  a/moved.go\x00a/old.go\x00?? d/e.txt\x00UU a/b/x.go\x00!! ignored\x00\x1b\x1b esc.go\x00 \x9b csi.go\x00"
 	files, dirs := parsePorcelain("/repo", out)
 	want := map[string]byte{"/repo/a/b/c.go": 'M', "/repo/a/new.go": 'A', "/repo/a/moved.go": 'R', "/repo/d/e.txt": '?', "/repo/a/b/x.go": 'U'}
 	if len(files) != len(want) {
@@ -435,5 +451,65 @@ func TestDKeyDownloadsTheRow(t *testing.T) {
 			t.Fatalf("downloaded %q, want /src/README.md", got)
 		}
 		d.wait("where it landed", func() bool { return strings.Contains(m.status, "/home/me/Downloads/README.md") })
+	})
+}
+
+// Taking the keys by a click asks git again, as `leader F` does: what it says
+// may have moved while the keys were elsewhere.
+func TestClickingTheFilesPanelAsksGitAgain(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := gitFilesSource()
+		d, m, _ := openWorkspaceAt(t, ds, "enter", filesConsole)
+		d.wait("the files root", func() bool { return m.fileTree.root == "/src" })
+		d.leader(filesPanelKey)
+		d.wait("git's status", func() bool { return len(m.fileTree.git.files) == 2 && !m.fileTree.git.reading })
+		d.key("esc")
+		if m.filesFront {
+			t.Fatal("esc should hand the keys back")
+		}
+		asked := len(ds.ranSoFar())
+		pressFilesRow(t, d, m, "README.md")
+		d.dispatch(tea.MouseReleaseMsg{X: m.filesLeft() + 4, Y: filesRowAt(m, "README.md"), Button: tea.MouseLeft})
+		d.wait("git asked again", func() bool { return len(ds.ranSoFar()) > asked && !m.fileTree.git.reading })
+
+		// A click while the panel already has the keys asks nothing more.
+		asked = len(ds.ranSoFar())
+		pressFilesRow(t, d, m, "README.md")
+		d.dispatch(tea.MouseReleaseMsg{X: m.filesLeft() + 4, Y: filesRowAt(m, "README.md"), Button: tea.MouseLeft})
+		d.settle()
+		if got := len(ds.ranSoFar()); got != asked {
+			t.Fatalf("a click with the keys asked git again: %d commands, want %d", got, asked)
+		}
+	})
+}
+
+// A change the panel makes while a read is in flight is read after it: that
+// read may have been answered before the change landed, and an untracked file
+// moved moves nothing the poll would notice.
+func TestAChangeDuringAGitReadIsReadAfterIt(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := gitFilesSource()
+		d, m, _ := openWorkspaceAt(t, ds, "enter", filesConsole)
+		d.wait("the files root", func() bool { return m.fileTree.root == "/src" })
+		d.leader(filesPanelKey)
+		d.wait("git's status", func() bool { return len(m.fileTree.git.files) == 2 && !m.fileTree.git.reading })
+
+		// A read in flight, answered with what git said before the change.
+		m.fileTree.git.reading = true
+		if cmd := m.rereadGit(); cmd != nil {
+			t.Fatal("a read is in flight: the change waits for it")
+		}
+		ds.commands[gitStatus] = CommandResult{Stdout: " M README.md\x00?? new.go\x00"}
+		asked := len(ds.ranSoFar())
+		d.dispatch(filesGitMsg{box: m.paneBox, root: "/src", top: "/src", out: " M README.md\x00?? cmd/new.go\x00"})
+		d.wait("the read after it", func() bool { return m.fileTree.git.files["/src/new.go"] == '?' })
+		if len(ds.ranSoFar()) <= asked {
+			t.Fatal("git should have been asked again")
+		}
+		if m.fileTree.git.again {
+			t.Fatal("the read after it is the only one owed")
+		}
 	})
 }

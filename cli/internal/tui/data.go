@@ -1121,14 +1121,17 @@ type CommandResult struct {
 // FileEntry is one path in a discobox's directory listing, as the files
 // panel draws it.
 type FileEntry struct {
-	// Name is the last element of Path.
+	// Name is the last element of Path, made safe to draw by the data source:
+	// it is only ever drawn. Path is what is sent back, so nothing is ever
+	// joined from Name.
 	Name string
 	// Path is absolute and cleaned, as the sandbox reported it.
 	Path string
 	// Dir is a directory, which the panel can open. A symbolic link is never
 	// one, whatever it points to: the listing does not follow it.
 	Dir bool
-	// Link is a symbolic link, and Target what it says it points to.
+	// Link is a symbolic link, and Target what it says it points to, made
+	// safe to draw as Name is.
 	Link   bool
 	Target string
 	Size   int64

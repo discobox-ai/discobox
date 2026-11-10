@@ -1,9 +1,11 @@
-// Package clipimage finds the images a paste means on the machine the console
-// runs on: the image on the system clipboard, or the image files a pasted path
-// names. A discobox has no clipboard of its own and cannot see this machine's
-// files, so an agent in one that is told to "paste the image" has nothing to
-// paste unless something on this side reads it first. That reading is what is
-// here; carrying the bytes into the discobox is the console's.
+// Package clipimage finds what a paste means on the machine the console runs
+// on: the image on the system clipboard, the image files a pasted path names,
+// and, for the files panel's drop, the local files and directories a paste
+// names (LocalPaths). A discobox has no clipboard of its own and cannot see
+// this machine's files, so an agent in one that is told to "paste the image"
+// has nothing to paste unless something on this side reads it first, and a
+// file dragged onto a terminal arrives only as its path. That reading is what
+// is here; carrying the files into the discobox is the console's.
 package clipimage
 
 import (

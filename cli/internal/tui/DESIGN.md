@@ -245,7 +245,7 @@ flowchart LR
     Drag -->|released in place| Click["open/close folder; double click pastes path"]
     Drag -->|on a folder row| Move["TransferFile: move, Ctrl/Alt copy"]
     Drag -->|on a pane| Paste["path pasted into the pane"]
-    P["paste with the panel's keys"] --> Local["clipimage.LocalPaths"] -->|all local files| Up["UploadFiles → cp's copy (archive import)"]
+    P["paste with the panel's keys"] --> Local["clipimage.LocalPaths"] -->|all local files| Wait["filesDrop: listed, waits for Enter"] -->|enter| Up["UploadFiles → cp's copy (archive import)"]
 ```
 
 - **A terminal has no drag and drop.** A drag inside the window is a press
@@ -256,6 +256,14 @@ flowchart LR
   terminals report none while an outside drag crosses the window, so it is
   stale, and a path pasted for an agent would be taken for a drop. With the
   keys in a pane a paste is the pane's, image paths included (`imagepaste.go`).
+- **A drop copies nothing until Enter** (`filesDrop`). A paste is whatever is
+  on the clipboard, and a box's program can put text there (OSC 52, which the
+  window forwards); the panel lists what the drop would copy and where, and
+  any other key, or the keys leaving the panel, copies nothing.
+- **A download lands in the downloads directory, never home** (`d`,
+  `DownloadFile`): `$XDG_DOWNLOAD_DIR` unless it is home, else `~/Downloads`,
+  made if missing. The name is claimed inside it through an `os.Root` before
+  the copy fills it, numbered beside anything already there.
 - **Uploads are `discobox cp -r`'s copy** (`copyOperands`): a directory goes
   over as one copy archive (`files/archive`), a file through `files/content`.
   A move or copy inside the box never replaces what is at the destination.

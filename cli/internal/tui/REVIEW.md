@@ -94,6 +94,13 @@
   Testing `kind == dlgStatus` instead let a create's progress overwrite the
   settings card and close it under its read.
 
+- **A paste is not the person's say-so to send local files.** Anything a
+  box runs can set the clipboard (OSC 52 is forwarded, `copyText`), and the
+  person pastes it later without looking. A paste that would copy files off
+  this machine — the files panel's drop — shows what it would send and waits
+  for Enter (`filesDrop`); acting on the paste itself let a planted list of
+  paths (`~/.ssh/id_ed25519`) be uploaded into the box.
+
 - **Input held behind slow work never holds the leader.** An image paste holds
   a pane's keys while it reads the clipboard and copies into the discobox,
   which can take minutes over a slow link; the leader and the key after it are

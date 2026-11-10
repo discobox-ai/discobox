@@ -75,6 +75,17 @@ func (f *fakeFilesAPI) serve(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(w, `{"error":"not found"}`)
 			return
 		}
+	case r.Method == http.MethodGet && op == "content":
+		file, ok := f.files[query.Get("path")]
+		if !ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":"not found"}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = io.WriteString(w, file.content)
+		return
 	case r.Method == http.MethodPut && op == "content":
 		path = query.Get("path")
 		if _, exists := f.files[path]; exists && query.Get("ifExists") == "fail" {
@@ -105,6 +116,7 @@ func (f *fakeFilesAPI) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(fakeFileStat{
 		Path: path, Name: path[strings.LastIndex(path, "/")+1:], Type: "file",
+		Size: int64(len(f.files[path].content)),
 		Mode: 0o644, ModifiedAt: time.Now().UTC(), Version: "v1",
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

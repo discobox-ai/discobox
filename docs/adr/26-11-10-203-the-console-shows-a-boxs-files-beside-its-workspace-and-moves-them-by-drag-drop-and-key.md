@@ -3,6 +3,9 @@
 - **Status**: Accepted
 - **Date**: 2026-11-10
 - Accepted by the owner by merging #923, 2026-11-10
+- Amended before anything shipped against it, 2026-11-10: a drop waits for
+  Enter (§3) and a download never lands in the home directory, its name
+  claimed through an `os.Root` (§4), from the security review of #920
 - **Issue**: [#920](https://github.com/discobox-ai/discobox/issues/920)
 - **Relates to**: [26-10-22-499](26-10-22-499-a-discobox-has-a-files-api-that-acts-as-its-user.md) (the files API the panel reads and writes through),
   [26-11-04-684](26-11-04-684-a-lead-runs-child-commands-and-copies-files-through-the-files-api.md) (`discobox cp` over that API, whose copy the panel reuses),
@@ -69,21 +72,33 @@ move a file to wherever the next click lands.
 ### 3. A drop from the desktop is a paste, and only while the panel has the keys
 
 While the panel has the keys, a paste whose every entry is an existing local
-path (`clipimage.LocalPaths`, at most 200) is a drop: the files and
-directories are copied into the folder under the panel's cursor through
-`discobox cp -r`'s own copy, so a directory goes over as one copy archive.
-Any other paste with the panel's keys copies nothing and says so on the
+path (`clipimage.LocalPaths`, at most 200) is a drop. The panel lists every
+path it would copy and the folder under its cursor they would go into, and
+copies nothing until Enter; any other key, or the keys leaving the panel,
+drops it uncopied. On Enter the files and directories are copied into that
+folder through `discobox cp -r`'s own copy, so a directory goes over as one
+copy archive, and never over a name already in the folder. A paste is
+whatever is on the clipboard, and a program in the box can put text there
+(an OSC 52 copy, which the console forwards), so a drop acted on as pasted
+would let the box name local files — `~/.ssh/id_ed25519` — to be sent into
+it. Any other paste with the panel's keys copies nothing and says so on the
 status line. While a pane has the keys,
 a paste stays the pane's, ADR 26-10-16-535's image paths included.
 
 ### 4. A file leaves by a key
 
 `d` on a row copies that file or directory out of the box into this
-machine's downloads directory — `$XDG_DOWNLOAD_DIR` when it names one,
-otherwise `~/Downloads` when it exists, otherwise the home directory — under
-its own name, or `name (2).ext` and on when that is taken, never over
-something already there. The name must be one `copyarchive.Name` accepts. The
-copy is `discobox cp -r BOX:PATH LOCAL`'s.
+machine's downloads directory — `$XDG_DOWNLOAD_DIR` when it names one other
+than the home directory, otherwise `~/Downloads`, made when it does not exist.
+Never the home directory itself: a box's file named `.bashrc` or `.profile`
+landing there is one the shell runs. It lands under its own name, or
+`name (2).ext` and on when that is taken, never over something already
+there. The name must be one `copyarchive.Name` accepts, and it is claimed —
+an empty file or directory created only if nothing is there — through an
+`os.Root` opened on the downloads directory before anything is copied, so no
+name the box chose reaches outside it and none checked free is taken before
+the copy. The copy into what was claimed is `discobox cp -r BOX:PATH
+LOCAL`'s, which writes through an `os.Root` of its own (`copyarchive`).
 
 ### 5. Git's status is asked of the box, and asked again only when it may have moved
 
@@ -126,10 +141,20 @@ files go.
   but a move between two visible folders is one gesture with a drag and
   four keys without. The keys (`y` copies a path, `p` pastes it into the
   pane) stay for what they are good at.
-- **Overwriting on a move, copy, drop or download.** Every one of these is
-  a single gesture with no confirmation, so a slip would silently replace a
-  file. Refusing (inside the box) and numbering (on this machine) make the
+- **Overwriting on a move, copy, drop or download.** A slip would silently
+  replace a file, and a confirmed drop is still one Enter on a list read
+  quickly. Refusing (inside the box) and numbering (on this machine) make the
   gesture safe to get wrong.
+- **A drop copied as it is pasted, refusing only dotfiles and what is under
+  them.** No question to answer, but a credential needs no dot in its path
+  (`~/Documents/keys.pem`, a project's `.env` aside), and a filter on names
+  is a list of what to leak next. Showing the paths and waiting for Enter
+  makes the person, not the clipboard, the one who sends them.
+- **Falling back to the home directory, refusing dot-names there.** Keeps a
+  download where the person looks when there is no `~/Downloads`, but home
+  holds more that a shell or tool reads than dotfiles at its top (a
+  `Makefile`, `bin/` on `PATH`), and making `~/Downloads` is what a browser
+  does.
 - **Asking where to save a download.** A prompt for a destination is more
   general, but the panel has no text field, and the downloads directory is
   where a person looks first for something just fetched. `discobox cp` remains for
@@ -162,6 +187,7 @@ files go.
 - A captured command's transcript can no longer be read back after the
   fact. Nothing does today; its lifecycle events remain.
 - A paste with the panel's keys is never typed anywhere: the panel has no
-  field that takes text.
+  field that takes text. A drop costs one more key, Enter.
+- A first download on a machine with no `~/Downloads` makes one.
 - The git overlay depends on `git` in the box; a box without it, or a root
   in no repository, draws the tree without marks.
