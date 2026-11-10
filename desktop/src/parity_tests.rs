@@ -107,9 +107,14 @@ fn run_step(rt: &mut Runtime<State>, step: &Step, path: &std::path::Path, i: usi
     settle(rt);
     let actions = rt.state.menu.as_ref().map(|m| m.actions.clone()).unwrap_or_else(|| panic!("{}: step {i}: no row menu opened", path.display()));
     let at = actions.iter().position(|a| a.command == step.command).unwrap_or_else(|| panic!("{}: step {i}: {} is not on the row's menu", path.display(), step.command));
-    while rt.state.menu.as_ref().is_some_and(|m| m.picked != at) {
+    for _ in 0..actions.len() {
+        if rt.state.menu.as_ref().is_none_or(|m| m.picked == at) {
+            break;
+        }
         rt.key(KeyEvent { key: Key::Down, mods: Mods::default() });
+        rt.frame(1.0 / 60.0);
     }
+    assert_eq!(rt.state.menu.as_ref().map(|m| m.picked), Some(at), "{}: step {i}: the menu's keys did not reach {}", path.display(), step.command);
     rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
     settle(rt);
     format!("{menu} and the menu")

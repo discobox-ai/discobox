@@ -118,7 +118,7 @@ fn chip_close(key: impl Into<String>, tip: Option<String>) -> El {
 /// A nesting level's width: the branch to a row's creator.
 const BRANCH_W: f32 = 12.0;
 
-/// The branches a nested row hangs from, drawn as strokes where the TUI types `├ └ │`: for each
+/// The branches a nested row hangs from, drawn as strokes where the TUI types its tree: for each
 /// level above its creator's, a rule where a branch carries on past it there; then its own
 /// elbow, running on below when it is not its creator's last.
 fn branches(r: &Row) -> El {
