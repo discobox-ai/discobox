@@ -341,6 +341,16 @@ themes, to `build/desktop/<scene>-<dark|light>.png`.
   get <slug> -o json | jq .fileOverrides` shows what was saved. Reset with
   "your files too" puts the harness back. No default can be unset, so the
   default the run set stays.
+- The secrets page (the palette, Ctrl+Shift+K, `secrets`, Enter; or the
+  Console menu → credentials) runs against the dev server's secrets: seed
+  throwaway ones with `secret create --name verify-… --route … --token …`
+  and `secret bind`, and remove them after. Enter reads a secret, Shift+F10
+  opens its actions, Delete in a secret's panel unbinds; stderr's
+  `"secretAction"` shows each action sent, and writes what a masked field
+  holds as `•••`; still type only throwaway values into a form. `secret bound --project-wide` and
+  `secret list` show what reached the server. A window menu's highlight
+  follows the pointer, and xdotool leaves it over the menu's last row: park it
+  first (`mousemove 5 995`), or a Down from there lands somewhere else.
 
 # Verifying a skill change (`.agents/skills`, discobox-ai/skills)
 
