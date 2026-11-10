@@ -148,3 +148,29 @@ func TestReadFileRefusesAnImagePastTheLimit(t *testing.T) {
 		t.Fatal("an image past MaxSize was read")
 	}
 }
+
+func TestLocalPathsTakesADropOfFilesAndDirectories(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "my notes.txt")
+	sub := filepath.Join(dir, "src")
+	if err := os.WriteFile(file, []byte("hi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	got := LocalPaths(context.Background(), "'"+file+"' "+fileURI(sub)+" ")
+	if !slices.Equal(got, []string{file, sub}) {
+		t.Fatalf("LocalPaths = %q, want %q", got, []string{file, sub})
+	}
+	for _, text := range []string{
+		"",
+		"hello world",
+		file + " " + filepath.Join(dir, "missing"),
+		"notes.txt", // relative: nothing says relative to what
+	} {
+		if got := LocalPaths(context.Background(), text); got != nil {
+			t.Errorf("LocalPaths(%q) = %q, want nil", text, got)
+		}
+	}
+}

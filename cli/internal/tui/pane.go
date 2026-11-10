@@ -1606,7 +1606,7 @@ func (m *Model) viewPaneWindow() string {
 
 	// The list in the tree beside the workspace takes focus from every pane
 	// here: none of them is the one keys go to, so none wears the bright edge.
-	live := !m.listFront
+	live := !m.listFront && !m.filesHasKeys()
 	var body string
 	switch {
 	case m.terminals.len() == 0 && m.wsOpening:

@@ -87,6 +87,17 @@ type fakeSource struct {
 	// putImageErr what the next one fails with.
 	putImages   []putImage
 	putImageErr error
+
+	// files is the discobox's directories as the files panel lists them, by
+	// absolute path; transfers and uploads are what was asked of them.
+	files     map[string][]FileEntry
+	transfers []fileTransfer
+	uploads   []fileUpload
+	// commands answer RunCommand by the command's words joined with spaces;
+	// ran is every command run, and downloads every path downloaded.
+	commands  map[string]CommandResult
+	ran       []string
+	downloads []string
 	// unreachable are the servers the listing reports it did not hear back
 	// from, the way a window listing more than one server does.
 	unreachable []string
@@ -2232,4 +2243,81 @@ func (f *fakeSource) DecideAPIAccessRequest(_ context.Context, server, requestID
 	}
 	f.dropRequestLocked(requestID)
 	return nil
+}
+
+type fileTransfer struct {
+	sandboxID, from, to string
+	duplicate           bool
+}
+
+type fileUpload struct {
+	sandboxID string
+	local     []string
+	dir       string
+}
+
+func (f *fakeSource) ListFiles(_ context.Context, _ string, dir string) (string, []FileEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	entries, ok := f.files[dir]
+	if !ok {
+		return "", nil, fmt.Errorf("%s: no such directory", dir)
+	}
+	return dir, append([]FileEntry(nil), entries...), nil
+}
+
+func (f *fakeSource) TransferFile(_ context.Context, sandboxID, from, to string, duplicate bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.transfers = append(f.transfers, fileTransfer{sandboxID: sandboxID, from: from, to: to, duplicate: duplicate})
+	return nil
+}
+
+func (f *fakeSource) UploadFiles(_ context.Context, sandboxID string, local []string, dir string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploads = append(f.uploads, fileUpload{sandboxID: sandboxID, local: append([]string(nil), local...), dir: dir})
+	return nil
+}
+
+func (f *fakeSource) transfersSoFar() []fileTransfer {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]fileTransfer(nil), f.transfers...)
+}
+
+func (f *fakeSource) uploadsSoFar() []fileUpload {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]fileUpload(nil), f.uploads...)
+}
+
+func (f *fakeSource) RunCommand(_ context.Context, _ string, _ string, command []string) (CommandResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := strings.Join(command, " ")
+	f.ran = append(f.ran, key)
+	if r, ok := f.commands[key]; ok {
+		return r, nil
+	}
+	return CommandResult{ExitCode: 127, Stderr: "not faked: " + key}, nil
+}
+
+func (f *fakeSource) ranSoFar() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.ran...)
+}
+
+func (f *fakeSource) DownloadFile(_ context.Context, _ string, path string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.downloads = append(f.downloads, path)
+	return "/home/me/Downloads/" + path[strings.LastIndex(path, "/")+1:], nil
+}
+
+func (f *fakeSource) downloadsSoFar() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.downloads...)
 }

@@ -139,6 +139,9 @@ type workspace struct {
 	// shells, whether or not it is showing: put away, it is a tab there like
 	// any other, still attached and still running. See tools.go.
 	toolShown *pane
+	// fileTree is what the files panel shows of this box: its root, what
+	// has been read and what is open. See files.go.
+	fileTree fileTree
 }
 
 // attached is every pane the workspace holds, either column.
@@ -423,6 +426,11 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	newShells := 0
 	if msg.err == nil {
 		for _, exec := range msg.execs {
+			// The primary's working directory is the box's source, which is
+			// where the files panel is rooted.
+			if exec.Primary {
+				cmds = append(cmds, m.filesRooted(exec.Workdir))
+			}
 			// Services come from their own listing, not this one: a service
 			// that is not running has no exec here at all, and it is exactly
 			// the one whose absence has to be visible. See workspaceServices.
@@ -1051,6 +1059,9 @@ func (m *Model) endLiveScreen() {
 	m.connecting = nil
 	m.toolOpening = nil
 	m.closeAudit()
+	// The files panel stays up for the next box, but the keys and a drag held
+	// on it were this one's.
+	m.filesFront, m.filesDrag = false, nil
 	// The busy line is the screen's — an attach, a delivery, a provisioning
 	// watch — unless a create has it: that is the window's, and goes on
 	// reporting into whatever workspace is shown next (watchCreate).

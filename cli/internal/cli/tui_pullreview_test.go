@@ -14,11 +14,12 @@ import (
 
 // execServer answers the exec API for sbx_1: every exec created runs at once,
 // and answer says what its command printed and exited with. created records
-// each one's command.
-func execServer(t *testing.T, answer func(command []string) (stdout string, code int64)) (*apiDataSource, func() [][]string) {
+// each one's command, and deleted the execs removed after.
+func execServer(t *testing.T, answer func(command []string) (stdout string, code int64)) (*apiDataSource, func() [][]string, func() []string) {
 	t.Helper()
 	var mu sync.Mutex
 	var created [][]string
+	var deleted []string
 	write := func(w http.ResponseWriter, v any) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(v); err != nil {
@@ -62,6 +63,11 @@ func execServer(t *testing.T, answer func(command []string) (stdout string, code
 			write(w, record("running"))
 		case r.Method == http.MethodGet && tail == "":
 			write(w, record("exited"))
+		case r.Method == http.MethodDelete && tail == "":
+			mu.Lock()
+			deleted = append(deleted, "exec_"+id)
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodGet && tail == "logs":
 			stdout, _ := answer(command)
 			write(w, map[string]any{"entries": []map[string]any{{"timestamp": "2026-10-23T09:00:01Z", "stream": "stdout", "data": []byte(stdout)}}})
@@ -77,10 +83,14 @@ func execServer(t *testing.T, answer func(command []string) (stdout string, code
 		t.Fatalf("api client: %v", err)
 	}
 	return &apiDataSource{app: app, client: client, projectID: "project-1"}, func() [][]string {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([][]string(nil), created...)
-	}
+			mu.Lock()
+			defer mu.Unlock()
+			return append([][]string(nil), created...)
+		}, func() []string {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]string(nil), deleted...)
+		}
 }
 
 // onBranch answers the branch check with branch, and the head check with
@@ -100,7 +110,7 @@ func onBranch(branch string, hasHead bool) func([]string) (string, int64) {
 // A head the discobox does not have is said, and discobox-review is not
 // started over it: it would exit at once, and the tab could not say why.
 func TestPullReviewSaysAHeadThatIsNotThere(t *testing.T) {
-	ds, created := execServer(t, onBranch("fix-reaper", false))
+	ds, created, deleted := execServer(t, onBranch("fix-reaper", false))
 	pull := tui.PullRequest{Head: "fix-reaper", HeadRef: "fix-reaper", Base: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: "0123456789ab" + strings.Repeat("c", 28)}
 	_, _, err := ds.PullReview(t.Context(), "sbx_1", pull, 80, 24)
 	if err == nil || !strings.Contains(err.Error(), "0123456789ab is not in this discobox") {
@@ -110,12 +120,16 @@ func TestPullReviewSaysAHeadThatIsNotThere(t *testing.T) {
 	if len(got) != 2 || strings.Join(got[1], " ") != "git cat-file -e "+pull.HeadSHA+"^{commit}" {
 		t.Errorf("execs created: %q, want the branch and the head looked for, and nothing started", got)
 	}
+	// What was only asked is not left behind in the discobox.
+	if got := deleted(); len(got) != 2 {
+		t.Errorf("execs deleted: %q, want both lookups removed", got)
+	}
 }
 
 // A fork's head is labeled owner:branch on the page; the discobox working on
 // it has the branch alone checked out, and that is the pull request's.
 func TestPullReviewTakesAForksBranch(t *testing.T) {
-	ds, created := execServer(t, onBranch("fix-reaper", false))
+	ds, created, _ := execServer(t, onBranch("fix-reaper", false))
 	pull := tui.PullRequest{Head: "someone:fix-reaper", HeadRef: "fix-reaper", Base: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("c", 40)}
 	_, _, err := ds.PullReview(t.Context(), "sbx_1", pull, 80, 24)
 	if err == nil || !strings.Contains(err.Error(), "is not in this discobox") || len(created()) != 2 {
@@ -131,7 +145,7 @@ func TestPullReviewSaysTheDiscoboxIsOnAnotherBranch(t *testing.T) {
 		"other-work": "has other-work checked out, not the pull request's fix-reaper",
 		"":           "has no branch checked out",
 	} {
-		ds, created := execServer(t, onBranch(branch, true))
+		ds, created, _ := execServer(t, onBranch(branch, true))
 		_, _, err := ds.PullReview(t.Context(), "sbx_1", pull, 80, 24)
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("on %q: err = %v, want %q", branch, err, want)

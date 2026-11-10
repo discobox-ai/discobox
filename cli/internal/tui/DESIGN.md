@@ -195,7 +195,7 @@ flowchart LR
   costing every terminal a row.
 - **The box's actions are a menu** (`boxMenu`, `leader .`): the list's verbs
   for the box on screen — attach dropped, since it is on screen — with the
-  services, tools and the audit after the shell. It is not offered over a screen
+  services, tools, the audit and the file tree after the shell. It is not offered over a screen
   that
   has the leader's keys for itself (a tool). A pane's key line
   opens with this key, so
@@ -224,6 +224,59 @@ window, that line included, and the credential band brings the chrome back. The 
 discoboxes** (`showAllBoxes`), which turns the window into the console in
 place: the tree beside the same workspace, its cursor on the box, and the
 window no longer one command's own.
+
+## The files panel
+
+`files.go` (ADR 26-11-10-203). `leader F` puts the box's files down the right of the workspace,
+rooted at the primary's working directory (`Exec.Workdir`, the primary source
+directory), read a directory at a time through the files API
+(`ListFiles`). It is laid out as the tree is: its cells come off `width`
+(`syncWidth`), it draws against zones of its own (`filesZones`), and the mouse
+over it is answered in the window's cells before the tree shifts them
+(`filesMouse`). What it shows of a box is that box's (`workspace.fileTree`),
+so a parked box keeps it; whether it is up, and has the keys
+(`filesFront`, `filesHasKeys`), is the window's.
+
+```mermaid
+flowchart LR
+    K["leader F"] --> Open["toggleFiles: open, focus, put away"]
+    Menu["box menu: file tree / close file tree"] --> Open
+    Row["press on a row"] --> Drag["filesDrag (window's until release)"]
+    Drag -->|released in place| Click["open/close folder; double click pastes path"]
+    Drag -->|on a folder row| Move["TransferFile: move, Ctrl/Alt copy"]
+    Drag -->|on a pane| Paste["path pasted into the pane"]
+    P["paste with the panel's keys"] --> Local["clipimage.LocalPaths"] -->|all local files| Up["UploadFiles → cp's copy (archive import)"]
+```
+
+- **A terminal has no drag and drop.** A drag inside the window is a press
+  held on a row (`fileDrag`); a file dragged in from outside reaches the window
+  as a paste of its local path, which is all a terminal sends.
+- **A drop is a paste only while the panel has the keys**, and lands in the
+  folder under its cursor. The pointer's last position is not asked: most
+  terminals report none while an outside drag crosses the window, so it is
+  stale, and a path pasted for an agent would be taken for a drop. With the
+  keys in a pane a paste is the pane's, image paths included (`imagepaste.go`).
+- **Uploads are `discobox cp -r`'s copy** (`copyOperands`): a directory goes
+  over as one copy archive (`files/archive`), a file through `files/content`.
+  A move or copy inside the box never replaces what is at the destination.
+- **The leader from the panel is the workspace's.** F and h are the panel's;
+  any other leader key hands the keys back and is delivered to the focused
+  pane as its chord.
+- **A press while a drag is held ends the drag unfinished**: its release was
+  let go outside the window, and finishing it would move a file to wherever
+  the next click lands.
+- **Git's status is drawn over the tree** (`filegit.go`): a changed file's
+  letter (git's own, from `git status --porcelain`) at its row's end and its
+  name in that change's color, and a dot on every directory with a change
+  beneath it. Nothing but the box knows this per file, so it is asked there
+  (`DataSource.RunCommand`): on opening, focus, `r` and every change the panel
+  makes, and otherwise only when the listing's git state for the box
+  (`gitSignature`: position, dirty, diffstat) has moved since the last read —
+  never on every poll. A failed read keeps what was drawn.
+- **A file leaves by a key** (`d`, `DataSource.DownloadFile`): a terminal
+  cannot start a drag onto the desktop. It lands in this machine's downloads
+  directory under its own name, numbered beside one already there, never over
+  it.
 
 ## The secrets screen
 
@@ -3446,6 +3499,8 @@ the newest one where the busy line goes.
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
+| `filegit.go` | what git says over the files panel: the read, the porcelain, when to ask again, the marks |
+| `files.go` | the files panel: the box's files right of the workspace, a drag within it or onto a pane, and a drop from this machine |
 | `tree.go` | the workspace tree: the list beside the workspace, parking and switching, the pages right of it, the new discobox card, the box menu |
 | `bare.go` | a bare attach: the primary terminal alone with one status line under it |
 | `boxlinks.go` | a `discobox://` link in a pane: marking and lighting it, and a press on it focusing the box it names |

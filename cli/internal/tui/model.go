@@ -132,6 +132,16 @@ type Model struct {
 	// treeHoverX and treeHoverY are where the pointer rests over the tree,
 	// -1 when it is elsewhere.
 	treeHoverX, treeHoverY int
+	// filesOpen is the files panel asked for, filesFront the panel holding
+	// the keys, and filesZones its own hit map; filesHoverX and filesHoverY
+	// are where the pointer rests over it, -1 elsewhere, and filesDrag a
+	// press held on one of its rows. What it shows is each workspace's own
+	// (workspace.fileTree). See files.go.
+	filesOpen                bool
+	filesFront               bool
+	filesZones               zones
+	filesHoverX, filesHoverY int
+	filesDrag                *fileDrag
 
 	list *sandboxList
 	// resources is what Discobox has on this machine and what it is using,
@@ -567,6 +577,8 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		hoverX:         -1,
 		treeHoverX:     -1,
 		treeHoverY:     -1,
+		filesHoverX:    -1,
+		filesHoverY:    -1,
 		hoverY:         -1,
 	}
 	m.chromeSel = selection.New(m.chromeGrid)
@@ -926,6 +938,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusTerminal = statusTitled
 		}
 		return m, nil
+	}
+	// The files panel reads the mouse in the window's own cells before the
+	// tree shifts them, since it is right of everything the tree shifts.
+	if mouse, ok := msg.(tea.MouseMsg); ok && m.palette == nil {
+		if cmd, taken := m.filesMouse(mouse); taken {
+			if m.syncWidth() {
+				m.layout()
+			}
+			return m, cmd
+		}
 	}
 	if mouse, ok := msg.(tea.MouseMsg); ok && m.palette == nil && m.treeShown() {
 		shifted, cmd, taken := m.treeMouse(mouse)
@@ -1433,7 +1455,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.gen != m.wsGen {
 			return nil
 		}
-		return tea.Batch(m.listExecs(msg.gen), m.listServices(msg.gen), m.workspaceTick(msg.gen))
+		return tea.Batch(m.listExecs(msg.gen), m.listServices(msg.gen), m.workspaceTick(msg.gen), m.filesGitTick())
 
 	case autoPushTickMsg:
 		return m.autoPush(msg.box, msg.gen)
@@ -1477,6 +1499,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return m.openAudit(m.currentBox())
 		case allBoxesKey:
 			return m.showAllBoxes()
+		case filesPanelKey:
+			return m.filesFromMenu()
 		}
 		return m.openTools(m.currentBox())
 
@@ -1548,6 +1572,21 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case tea.PasteMsg:
 		m.touched()
 		return m.updatePaste(msg)
+
+	case filesListedMsg:
+		return m.filesListed(msg)
+
+	case filesChangedMsg:
+		return m.filesChanged(msg)
+
+	case filesDropMsg:
+		return m.filesDropped(msg)
+
+	case filesGitMsg:
+		return m.filesGitRead(msg)
+
+	case filesDownloadedMsg:
+		return m.filesDownloaded(msg)
 
 	case tea.MouseMsg:
 		// The layout the press was aimed at is the one the last frame left
@@ -1629,6 +1668,10 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 	// on screen to take a paste.
 	case m.audit != nil && m.inPanes():
 		return m.pasteQuery(msg)
+	// The files panel with the keys takes a paste as files dropped on it.
+	// See files.go.
+	case m.filesHasKeys():
+		return m.filesPaste(msg)
 	// Before the two screens, not after: a pane opened from one of them is
 	// drawn over it and owns every key, paste included. See updateKey.
 	case m.inPanes():
@@ -1909,11 +1952,35 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 				return m.dismissBanner()
 			}
 		}
+		// The files panel has no termpane to own the leader either. F puts it
+		// away and h goes back to the panes; every other leader key is the
+		// workspace's, and the focused pane takes it as its own chord, as
+		// though it had been typed there.
+		if m.filesHasKeys() {
+			switch key {
+			case filesPanelKey:
+				return m.toggleFiles()
+			case paneLeftKey, "left":
+				m.filesFront = false
+				return nil
+			}
+			m.filesFront = false
+			if p := m.focusedPane(); p != nil && !p.exited && p.issue == nil {
+				p.term.SetPrefixArmed(true)
+				return m.updatePane(msg)
+			}
+			return nil
+		}
 		// A mistyped leader costs nothing: the key it preceded is handled as
 		// though the leader had never been pressed, the way it is in a pane.
-	} else if m.focus != focusPrompt && (!m.inPanes() || m.audit != nil) && keyName(msg) == m.leader() {
+	} else if m.focus != focusPrompt && (!m.inPanes() || m.audit != nil || m.filesHasKeys()) && keyName(msg) == m.leader() {
 		m.leaderArmed = true
 		return nil
+	}
+	// The files panel beside the workspace takes every other key while it has
+	// them; none of them is the pane's. See files.go.
+	if m.filesHasKeys() {
+		return m.filesKeyPress(msg)
 	}
 	if keyName(msg) == ":" && (m.focus == focusList || m.listHasKeys()) && !m.modalUp() && !m.newOpen {
 		return m.openPalette()
@@ -3873,16 +3940,16 @@ func (m *Model) view() tea.View {
 	// it puts the window back. It carries its own border, so it needs none of
 	// the frame below.
 	if m.dialog != nil {
-		return tea.NewView(m.withTree(m.place(func() string { return m.dialog.view(m.st, &m.zones, m.width, m.height) })))
+		return tea.NewView(m.withSides(m.place(func() string { return m.dialog.view(m.st, &m.zones, m.width, m.height) })))
 	}
 	if m.optionsOpen {
-		return tea.NewView(m.withTree(m.place(func() string { return m.opts.view(m.st, &m.zones, m.width, m.prompt.Value()) })))
+		return tea.NewView(m.withSides(m.place(func() string { return m.opts.view(m.st, &m.zones, m.width, m.prompt.Value()) })))
 	}
 
 	// The new discobox card stands in place of the window the way a dialog
 	// does; a dialog it opens (the create card) stands in place of it.
 	if m.newOpen {
-		return tea.NewView(m.withTree(m.place(m.viewNewCard)))
+		return tea.NewView(m.withSides(m.place(m.viewNewCard)))
 	}
 	// The header names the session; what is under it is a different kind of
 	// thing, and butted together they read as one block.
@@ -3899,12 +3966,13 @@ func (m *Model) view() tea.View {
 		// the sandbox is called, the keys — sits outside it, the way a caption
 		// sits outside the thing it captions.
 		content = m.viewPaneWindow()
-		if m.treeShown() {
-			// The tree goes on after the chrome is painted, so the window's
-			// own selection keeps the coordinates it measured in.
-			view := tea.NewView(lipgloss.JoinHorizontal(lipgloss.Top, m.viewTree(), m.paintChrome(content)))
-			if cursor := m.paneCursor(); cursor != nil && !m.listFront {
-				cursor.X += treeWidth
+		if m.treeShown() || m.filesShown() {
+			// The tree and the files panel go on after the chrome is
+			// painted, so the window's own selection keeps the coordinates it
+			// measured in.
+			view := tea.NewView(m.withSides(m.paintChrome(content)))
+			if cursor := m.paneCursor(); cursor != nil && !m.listFront && !m.filesHasKeys() {
+				cursor.X += m.treeCost()
 				view.Cursor = cursor
 			}
 			return view
@@ -3942,7 +4010,7 @@ func (m *Model) view() tea.View {
 		content = m.box(rows)
 	}
 	if m.treeShown() {
-		return tea.NewView(lipgloss.JoinHorizontal(lipgloss.Top, m.viewTree(), m.paintChrome(content)))
+		return tea.NewView(m.withSides(m.paintChrome(content)))
 	}
 	view := tea.NewView(m.paintChrome(content))
 	// The cursor belongs to whatever is drawing one. A pane places it where the
@@ -3954,9 +4022,20 @@ func (m *Model) view() tea.View {
 	return view
 }
 
-// withTree puts the workspace tree beside a frame drawn for the window right
-// of it, when the tree is up. See tree.go.
-func (m *Model) withTree(frame string) string {
+// withSides puts the workspace tree left of a frame drawn for the window
+// between them, and the files panel right of it, when they are up. See
+// tree.go and files.go.
+func (m *Model) withSides(frame string) string {
+	if m.filesShown() {
+		// The frame is padded to its width first: a frame that comes up
+		// short of it would pull the panel in off the right edge, where its
+		// hit zones are not.
+		lines := strings.Split(frame, "\n")
+		for i, line := range lines {
+			lines[i] = padANSI(line, m.width)
+		}
+		frame = lipgloss.JoinHorizontal(lipgloss.Top, strings.Join(lines, "\n"), m.viewFiles())
+	}
 	if !m.treeShown() {
 		return frame
 	}
@@ -4543,6 +4622,9 @@ func (m *Model) hints() []hint {
 	if m.audit != nil && m.inPanes() {
 		return m.auditHints()
 	}
+	if m.filesHasKeys() {
+		return m.filesHints()
+	}
 	switch m.focus {
 	case focusPane:
 		return m.paneHints()
@@ -4983,6 +5065,26 @@ func (m *Model) helpText() string {
 		"",
 		"  Beside the list there is nothing to detach to: a box is left by",
 		"  switching to another, and the window by quitting.",
+		"",
+		"───────────────────────────────────────────────────────────────",
+		"The files panel",
+		"",
+		"  The box's files, as a tree down the right of the workspace,",
+		"  rooted at its source.",
+		"",
+		"    " + leader + " " + filesPanelKey + "       open the panel with the keys; again, put it away",
+		"    ↑ ↓ ← →        move, open and close folders; Enter opens a",
+		"                   folder, or pastes a file's path into the pane",
+		"    p / y          paste the path into the pane / copy it",
+		"    d              download it into this machine's Downloads",
+		"    r              read the folders again and what git says",
+		"    Esc            back to the panes",
+		"  Drag a row onto a folder to move it there, with Ctrl or Alt held",
+		"  to copy it; onto a pane to paste its path. Files dragged in from",
+		"  this machine's file manager while the panel has the keys are",
+		"  copied into the folder under its cursor.",
+		"  A changed file ends with git's letter (M, A, D, R, ?, U) and a",
+		"  folder with a change beneath it with a dot.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"The workspace screen",

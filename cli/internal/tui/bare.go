@@ -18,7 +18,7 @@ import (
 
 // bare reports whether the window is drawn without chrome.
 func (m *Model) bare() bool {
-	if m.attach == nil || m.screenPane() != nil || m.audit != nil || m.wsOpening {
+	if m.attach == nil || m.screenPane() != nil || m.audit != nil || m.wsOpening || m.filesOpen {
 		return false
 	}
 	if m.shells.len() != 0 || m.bannerShowing() != bannerNone {

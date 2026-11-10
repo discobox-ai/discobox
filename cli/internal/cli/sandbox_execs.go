@@ -870,6 +870,12 @@ type sandboxExecUser struct {
 // it, such as looking up a branch or commit, where
 // an attach would hand them bytes they can only buffer themselves. An exit code
 // of -1 means the exec ended without recording one.
+//
+// The exec is deleted once its output is read, or once the run fails: a
+// sandbox keeps every exec it has run, record and log, until one is deleted,
+// and these are the CLI's own short asks — nobody lists or attaches to them —
+// so one left behind per call is one more the sandbox keeps forever (ADR
+// 26-11-10-203 §6).
 func (a *App) sandboxCommandOutput(ctx context.Context, projectID, sandboxID, workdir string, command []string) (stdout, stderr string, exitCode int, err error) {
 	body := &apimodel.CreateSandboxExecRequest{}
 	body.SetCommand(append([]string{}, command...))
@@ -878,6 +884,12 @@ func (a *App) sandboxCommandOutput(ctx context.Context, projectID, sandboxID, wo
 	if err != nil {
 		return "", "", -1, err
 	}
+	defer func() {
+		// On a context of its own: ctx may be what ended the run.
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_ = a.deleteSandboxExec(cleanup, projectID, sandboxID, exec.ID)
+	}()
 	if _, err := a.startSandboxExec(ctx, projectID, sandboxID, exec.ID); err != nil {
 		return "", "", -1, err
 	}

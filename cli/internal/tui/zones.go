@@ -125,6 +125,13 @@ const (
 	// can open, drawn with no OSC 8, so a press on it, plain or with Ctrl
 	// held, focuses the box it names. See boxlinks.go.
 	hitBoxLink
+
+	// hitFiles is one of the files panel's own controls — its [x] and the
+	// keys on its last row; idx is the filesAction. hitFileRow is one of its
+	// rows, idx counting from the top of the tree, or -1 for the list itself.
+	// See files.go.
+	hitFiles
+	hitFileRow
 )
 
 // hit is what one rectangle of cells means.

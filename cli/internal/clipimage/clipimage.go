@@ -107,6 +107,35 @@ func Paths(ctx context.Context, text string) ([]Image, error) {
 	return images, nil
 }
 
+// maxDropped is the most paths one paste is taken as a drop of files. A drag
+// carries what was selected, and a paste of more words than this is text.
+const maxDropped = 200
+
+// LocalPaths reads pasted text as files dropped from this machine's file
+// manager: every word, quoted the way a terminal quotes a dragged file, a path
+// to a file or a directory that exists here. Anything else is not a drop, and
+// comes back as nil, for the paste to go through as text. Unlike Paths it
+// opens nothing; what the paths are for is the caller's.
+func LocalPaths(ctx context.Context, text string) []string {
+	words := splitPaste(text)
+	if len(words) == 0 || len(words) > maxDropped {
+		return nil
+	}
+	paths := make([]string, 0, len(words))
+	for _, word := range words {
+		path, ok := localPath(ctx, word)
+		if !ok {
+			return nil
+		}
+		info, err := os.Stat(path)
+		if err != nil || (!info.Mode().IsRegular() && !info.IsDir()) {
+			return nil
+		}
+		paths = append(paths, filepath.Clean(path))
+	}
+	return paths
+}
+
 // regularFile reports whether path is a file there is to read: a path to
 // nothing is not an image paste, and not an error either.
 func regularFile(path string) bool {

@@ -1096,6 +1096,11 @@ type Exec struct {
 
 	Tty bool
 
+	// Workdir is the directory the session started in, as the sandbox
+	// resolved it. The primary's is the box's primary source directory, which
+	// is where the files panel is rooted (files.go).
+	Workdir string
+
 	// Live is whether the exec can be attached to: it exists and has not
 	// exited, failed or been lost.
 	Live bool
@@ -1103,6 +1108,30 @@ type Exec struct {
 	// CreatedAt orders the tabs, oldest first, so they hold their places as
 	// the listing changes around them.
 	CreatedAt time.Time
+}
+
+// CommandResult is what a command run in a sandbox left behind once it
+// exited (DataSource.RunCommand). ExitCode is -1 when the session ended
+// without one.
+type CommandResult struct {
+	Stdout, Stderr string
+	ExitCode       int
+}
+
+// FileEntry is one path in a discobox's directory listing, as the files
+// panel draws it.
+type FileEntry struct {
+	// Name is the last element of Path.
+	Name string
+	// Path is absolute and cleaned, as the sandbox reported it.
+	Path string
+	// Dir is a directory, which the panel can open. A symbolic link is never
+	// one, whatever it points to: the listing does not follow it.
+	Dir bool
+	// Link is a symbolic link, and Target what it says it points to.
+	Link   bool
+	Target string
+	Size   int64
 }
 
 // ToolFile is one file a tool carries into a discobox: a copy kept on this
@@ -2405,6 +2434,38 @@ type DataSource interface {
 	// this machine's clipboard or files (imagepaste.go): the path is what is
 	// pasted in its place.
 	PutImage(ctx context.Context, sandboxID, name string, data []byte) (string, error)
+
+	// ListFiles lists one directory in the sandbox through the files API, as
+	// the box's default user sees it, and answers with the directory's
+	// absolute, cleaned path beside what it holds. It is what the files
+	// panel draws (files.go).
+	ListFiles(ctx context.Context, sandboxID, dir string) (string, []FileEntry, error)
+
+	// TransferFile moves, or with duplicate set copies, one path to another within
+	// the sandbox. It refuses a destination that already exists rather than
+	// replacing it: a drag that lands on the wrong row must not cost a file.
+	TransferFile(ctx context.Context, sandboxID, from, to string, duplicate bool) error
+
+	// DownloadFile copies one file or directory out of the sandbox onto this
+	// machine — the copy `discobox cp -r BOX:PATH LOCAL` makes — into the
+	// user's downloads directory under its own name, or a numbered one beside
+	// it when that is taken, and answers with where it landed. Nothing on this
+	// machine is replaced.
+	DownloadFile(ctx context.Context, sandboxID, path string) (string, error)
+
+	// RunCommand runs a command in the sandbox to its end, with no terminal,
+	// in workdir (empty is the sandbox's default, the primary source
+	// directory), and answers with what it wrote and how it exited. It is for
+	// short commands whose output the window reads — what git says about the
+	// files the panel shows (files.go) — never for anything a person watches,
+	// which is a terminal. The session is removed once its output is read.
+	RunCommand(ctx context.Context, sandboxID, workdir string, command []string) (CommandResult, error)
+
+	// UploadFiles copies files and directories on this machine into dir in the
+	// sandbox, each under its own name — the same copy `discobox cp -r` makes,
+	// a directory going over as one copy archive. It is a file dropped onto
+	// the files panel from this machine's file manager.
+	UploadFiles(ctx context.Context, sandboxID string, local []string, dir string) error
 
 	// ToolFilePath is where a tool file's copy lives on this machine, whether
 	// or not it exists yet. The picker shows it, so the file is findable and
