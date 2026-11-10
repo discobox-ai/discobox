@@ -64,6 +64,10 @@
   command were the TUI's panel alone, and the desktop would have needed a
   second copy. A renderer moves a cursor over the rows and draws them; the
   bridge holds the window's `RunOptions` and fills `CreateForm`/`OptionsForm`.
+- **Where a link in a pane goes is `links.go`'s, never a renderer's.** The
+  forward rewrite and which box an address names were the TUI's alone; the
+  desktop asks the bridge (`follow`) rather than keeping a copy in Rust.
+  Finding the link in the screen's text is the renderer's emulator.
 - **A form's answer names a choice by its value, never its place.** The
   run options' answer was first read back into positions and applied to rows
   the bridge holds, which another command can rebuild while the sheet is up

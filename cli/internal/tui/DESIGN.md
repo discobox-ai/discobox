@@ -1158,32 +1158,21 @@ print `discobox:///<id>`, and a click jumps to the box.
   same cell within `clickRun` is the rest of a double click and is swallowed
   too (`boxLinkEcho`), since the first press already switched the screen
   under it.
-- **Which server.** `discobox:///<id>` is on the server of the pane's box
-  (`paneServer`), where the program that printed it runs; a pane that is no
-  box's reads it on the primary. A link naming a server asks
-  `DataSource.AddressedServer`, which matches it against the listed servers by
-  endpoint and by peer ID, since a box's own address names its server by
-  peer ID while the window usually knows it by a socket or a URL. The peer
-  ID is the registered one, or the one an address names, or asked of the
-  server once and kept. Only listed servers are asked, all at once, so one
-  that is slow costs the press its bound and nothing more; one that did not
-  answer is named in the reply, since the link may be its, and the window
-  says that rather than that the server is unknown. An answer that lands
-  after the person moved to another box is dropped (`boxLinkServerMsg.from`).
-- **What a press does** (`focusAddressed`): the box with that ID, or the one
-  box whose ID it prefixes, on that server, from the last listing, is
-  `landOn`'d: a live or parked box is switched to, and any other is pointed
-  at on the list with its reason ("enter starts it"). A click on text a
-  program printed must not start a box. A window that is one command's own
-  (`oneShot`, a `discobox attach`) never switches box or shows the list, so
-  there it says which box the link is and `discobox attach <id>` to open it.
-  Otherwise the status line says why:
-  no such box on the server, the prefix names several, the server is not
-  answering, or the server is not one the window lists, with `discobox
-  attach <uri>` as the way to reach it. A click never dials or registers a
-  server: the text was written by whatever runs in the box. For the same
-  reason every value from the link is quoted into those messages (`say`):
-  the status line is outside the pane's emulator.
+- **Which box is the core's** (`console.ParseBoxLink`, `LinkReaderServer`,
+  `BoxLinkServer`, `AddressedBox`: [console's design](../console/DESIGN.md),
+  "Where a pane's link goes is the core's"), as it is for the desktop, which
+  asks it over the bridge. What is the window's: the pane's server for a
+  link that names none (`paneServer`: its box's, kept for an unlisted box by
+  `boxByRef`, or the primary); asking a server-naming link off the update
+  loop, and dropping an answer that lands after the person moved to another
+  box (`boxLinkServerMsg.from`); and what it does with the box
+  (`focusAddressed`): `landOn`, which switches to a live or parked box and
+  points at any other on the list with its reason ("enter starts it"), since
+  a click on text a program printed must not start a box. A window that is
+  one command's own (`oneShot`, a `discobox attach`) never switches box or
+  shows the list, so there it says which box the link is and `discobox
+  attach <id>` to open it. Every refusal is the core's, quoted, put on the
+  status line by `say`.
 
 ## Many servers
 
@@ -2149,7 +2138,8 @@ them, light the one under the pointer, and mark the git summary, from the same
 widths and the same centered origin the row is drawn at.
 
 **The panes' own links are pointed at the local end too** (`forwardedURL`,
-`termpane.WithLinkRewrite`). A server prints the address it bound —
+`termpane.WithLinkRewrite`, by the core's rule, `console.ForwardedURL`, which
+the desktop's panes follow too). A server prints the address it bound —
 `listening on http://0.0.0.0:8080` — inside the sandbox, where that is true; on
 this side of the forward the port is whatever was free and the bind address is
 not one a browser can open. So every pane is built with a rewriter: a URL naming

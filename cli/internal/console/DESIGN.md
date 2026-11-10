@@ -276,6 +276,23 @@ flowchart LR
     with a database socket. The desktop (`sandboxservices.DesktopID`) is its
     own link, labeled with its declaration's name, never a number among the
     ports.
+- **Where a pane's link goes is the core's** (`links.go`). Finding a link on
+  a screen is each renderer's terminal emulation (termpane, `term.rs`); what
+  it reaches is answered here for both. `ForwardedURL` points a URL printed
+  in a box — a loopback or wildcard host, on a port the forward bound — at
+  `localhost:<local>`, and returns anything else as it came; it asks for the
+  forward's bindings only once a URL could be the box's. A box's address
+  (`BoxLinkSchemes`, `IsBoxLink`; the spec's `LinkSchemes`) is a link the
+  console answers itself (ADR 26-11-03-113): `ParseBoxLink`, on the reader's
+  server (`LinkReaderServer`: the pane's box's, else the primary), or the
+  listed server that says it is the one named (`BoxLinkServer`, by
+  `DataSource.AddressedServer`, which matches the listed servers by endpoint
+  and by peer ID, all at once within `AddressedServerTimeout`, and names one
+  that did not answer, since the link may be its; never dialing or
+  registering another), to the box with that ID or the one it
+  alone prefixes (`AddressedBox`). Every refusal quotes the link, which the
+  program in the pane wrote. What a renderer does with the box — the TUI's
+  one-command window says how to open it instead — is its own.
 - **The loops are the core's; only their clock is the renderer's.** The poll
   reads the exec and service listings every `WorkspacePollEvery` while the
   workspace is on screen, and each answer means what `Reconcile` and

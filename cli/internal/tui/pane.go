@@ -440,7 +440,7 @@ func (m *Model) paneOptions(readOnly bool) []termpane.Option {
 		termpane.WithLinkRewrite(m.forwardedURL),
 		// A discobox's address names a box only the window can open; see
 		// boxlinks.go.
-		termpane.WithClaimedLinks(boxLinkSchemes...),
+		termpane.WithClaimedLinks(console.BoxLinkSchemes...),
 		termpane.WithKeys(paneKeymap),
 	}
 	if readOnly {
