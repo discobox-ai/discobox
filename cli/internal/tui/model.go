@@ -1768,9 +1768,10 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	// A card that came up unasked over typing takes no answer until the typing
-	// stops: the letter that would answer it was meant for what it covered.
+	// stops: the letter that would answer it was meant for what it covered,
+	// and goes on there.
 	if m.dialog != nil && m.dialog.holdKeys(m.now()) {
-		return nil
+		return m.passHeldKey(msg)
 	}
 
 	// Ctrl-C quits the window, but never from inside a pane: there it belongs
@@ -1903,7 +1904,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			case rejectedKey:
 				return m.openRejectedRemedy(m.currentBox())
 			case harnessChangesKey:
-				return m.reviewHarnessChanges(m.currentBox())
+				return m.reviewHarnessChanges(m.currentBox(), false)
 			case bannerDismissKey:
 				return m.dismissBanner()
 			}
@@ -2007,6 +2008,36 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	default:
 		return m.updatePrompt(msg)
 	}
+}
+
+// passHeldKey gives a key a held card swallowed (dialog.holdKeys) to what the
+// card came up over, when that is being typed into: the focused terminal, or
+// the composer for an edit of its text. A card that only threw the key away
+// would cost somebody the first words of their prompt, typed straight after
+// signing in. The leader stays held, so a chord cannot open another card over
+// this one; Enter reaches the terminal, where a sign-in needs it, but never
+// sends a prompt nobody can see.
+func (m *Model) passHeldKey(msg tea.KeyPressMsg) tea.Cmd {
+	if keyName(msg) == m.leader() {
+		return nil
+	}
+	if m.focus == focusPane && m.inPanes() && m.audit == nil {
+		if p := m.focusedPane(); p != nil && p.issue == nil && !p.exited {
+			return m.paneInput(p, msg)
+		}
+		return nil
+	}
+	if m.focus != focusPrompt || m.inPanes() || m.harnessesOpen || m.secretsOpen || m.optionsOpen || m.submitting {
+		return nil
+	}
+	switch keyName(msg) {
+	case "backspace", "delete":
+		return m.updatePrompt(msg)
+	}
+	if inserting(msg) {
+		return m.updatePrompt(msg)
+	}
+	return nil
 }
 
 // typingIntoPrompt is whether a key reaches the composer as an edit of its
@@ -2603,7 +2634,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 	m.recordConsoleUse(chosen.label)
 
 	if key == harnessChangesKey {
-		return m.reviewHarnessChanges(targets[0])
+		return m.reviewHarnessChanges(targets[0], false)
 	}
 	if key == renameKey {
 		return m.askRename(targets[0])

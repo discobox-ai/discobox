@@ -223,7 +223,9 @@ func TestTheFirstHarnessChangeIsExplainedOnce(t *testing.T) {
 	}
 }
 
-// Review changes goes from the explainer straight to the box's review.
+// Review changes goes from the explainer straight to the box's review, which
+// holds its keys as the explainer did: typing that answered the explainer
+// ("r" of "run tests") must not go on to save ("s").
 func TestTheExplainerOpensTheReview(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(pendingSandboxes()...)
@@ -236,6 +238,15 @@ func TestTheExplainerOpensTheReview(t *testing.T) {
 
 	if m.dialog == nil || !strings.Contains(m.dialog.title, "Harness changes") {
 		t.Fatalf("dialog = %s, want the review", describe(m.dialog))
+	}
+	send(t, m, keyPress("s"))
+	if len(ds.harnessChangesWrites) != 0 || m.dialog == nil {
+		t.Fatalf("writes = %v, want a key typed into the review's hold swallowed", ds.harnessChangesWrites)
+	}
+	pastKeyQuiet(m)
+	send(t, m, keyPress("s"))
+	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one cand_1" {
+		t.Fatalf("writes = %v, want the save once the keyboard was quiet", ds.harnessChangesWrites)
 	}
 }
 
@@ -321,6 +332,50 @@ func TestTheExplainerTakesNoKeyUntilTypingStops(t *testing.T) {
 	send(t, m, keyPress("n"))
 	if m.dialog != nil {
 		t.Fatalf("dialog = %s, want Not now answered once the keyboard was quiet", describe(m.dialog))
+	}
+}
+
+// What the held card swallowed is not lost: it goes on to the terminal the
+// card came up over, the leader excepted, so the first words typed after a
+// sign-in still reach the harness.
+func TestTheExplainerPassesHeldKeysToTheTerminal(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(pendingSandboxes()...)
+		d, m := openAttached(t, ds, ds.sandboxes[0])
+		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		term := ds.execTerm(ExecPrimary)
+		m.explainHarnessChanges = true
+		d.run(m.explainHarnessChangesIfOwed())
+		if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+			t.Fatalf("dialog = %s, want the explainer over the terminal", describe(m.dialog))
+		}
+		for _, key := range []string{"n", "o", m.leader(), "enter"} {
+			d.key(key)
+		}
+		d.wait("the held keys typed at the terminal", func() bool { return term.inputSoFar() == "no\r" })
+		if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+			t.Fatalf("dialog = %s, want the explainer still up", describe(m.dialog))
+		}
+	})
+}
+
+// In the composer a held key that edits the prompt goes into it; Enter, which
+// would send a prompt the card hides, does not.
+func TestTheExplainerPassesHeldEditsToThePrompt(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(pendingSandboxes()...)
+	m := newTestModel(t, ds)
+	at := m.now()
+	m.now = func() time.Time { return at }
+	m.explainHarnessChanges = true
+	send(t, m, tickMsg{})
+	if m.focus != focusPrompt || m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+		t.Fatalf("focus = %v dialog = %s, want the explainer over the composer", m.focus, describe(m.dialog))
+	}
+	send(t, m, keyPress("h"), keyPress("i"), keyPress("enter"))
+	if got := m.prompt.Value(); got != "hi" || m.submitting {
+		t.Fatalf("prompt = %q submitting = %v, want the edits and not the Enter", got, m.submitting)
 	}
 }
 

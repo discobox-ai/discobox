@@ -329,7 +329,12 @@
   before it came up.** A card that opens unasked over a focused terminal or the
   composer holds its keys until the keyboard is quiet
   (`dialog.holdUntilQuiet`); one that does not lets the letter somebody was
-  typing into their sign-in answer it.
+  typing into their sign-in answer it. The hold reaches every card an unasked
+  card opens: the explainer's review card once took `s` with no hold, so
+  "run tests" typed over the explainer opened the review on `r` and saved the
+  box's harness setup as the project's default on `s`. A held key is not
+  thrown away: it goes on to what the card covers (`passHeldKey`), or the
+  first words typed after a sign-in vanish.
 - **A flag the box reports never takes down a refusal the control plane
   recorded.** `HarnessConfigPending` is the box's word; a refused login
   standing aside for it once let a box turn the red refusal into the green
