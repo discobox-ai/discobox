@@ -216,6 +216,45 @@ func TestSettingsForm(t *testing.T) {
 	}
 }
 
+// A field's value is what the core reads it holding — as one line, a picker
+// on the key it opens on, and after a draft what the draft made it — and a
+// submit carrying only what changed saves nothing else: a stored name the
+// field folds is no rename.
+func TestFormValuesAreTheCores(t *testing.T) {
+	core := newFakeCore("home", running("b1"))
+	core.settings = console.BoxSettings{Name: "first\tname"}
+	a := dial(t, core)
+	a.hello()
+	id := a.command(Command{Command: "settings", Targets: []string{"b1"}})
+	form := a.expect(TypeForm).Form
+	value := func(f *Form, key string) string {
+		for _, x := range f.Fields {
+			if x.Key == key {
+				return x.Value
+			}
+		}
+		t.Fatalf("no field %s", key)
+		return ""
+	}
+	if got := value(form, "name"); got != "first name" {
+		t.Fatalf("name opens on %q, not as its field holds it", got)
+	}
+	if got := value(form, "api"); got != "no" {
+		t.Fatalf("api opens on %q", got)
+	}
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: form.ID, Answers: map[string]string{"api": "yes"}, Draft: true}})
+	if again := a.expect(TypeForm).Form; value(again, "api") != "yes" || value(again, "name") != "first name" {
+		t.Fatalf("after a draft: api %q, name %q", value(again, "api"), value(again, "name"))
+	}
+	a.send(Message{Type: TypeSubmit, Submit: &Submit{Form: form.ID, Answers: map[string]string{"api": "yes"}}})
+	if r := a.result(id); r.Status != StatusDone {
+		t.Fatalf("result %+v", r)
+	}
+	if core.update == nil || core.update.Name != nil || core.update.DiscoboxAPI == nil || !*core.update.DiscoboxAPI {
+		t.Fatalf("update %+v: only the API access changed", core.update)
+	}
+}
+
 // A question asked by one command waits on its own answer while another
 // command runs and finishes.
 func TestQuestionWhileAnotherCommandRuns(t *testing.T) {

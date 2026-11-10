@@ -571,7 +571,7 @@ func fields(in []console.Field, answers console.Answers) []Field {
 	for _, f := range in {
 		out = append(out, Field{
 			Key: f.Key, Label: f.Label, Section: f.Section, Hint: f.Hint, Choices: choices(f.Choices),
-			Value: f.Value, Placeholder: f.Placeholder, Suffix: f.Suffix, Masked: f.Masked, Locked: f.Locked,
+			Value: answers[f.Key], Placeholder: f.Placeholder, Suffix: f.Suffix, Masked: f.Masked, Locked: f.Locked,
 			Applies: f.Applies(answers), Why: f.Why, Required: f.Required != "",
 		})
 	}

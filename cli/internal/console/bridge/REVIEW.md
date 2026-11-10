@@ -75,3 +75,8 @@
   `inbox`. Their first version built its context the way a command does: a
   workspace box missing from the listing listed again, which woke them
   again, and the bridge listed every server without end.
+- **A yes or no dismissed is answered "no", never declined.** The core says
+  leaving a yes or no is no (`console.Question`); only a pick of one is
+  declined when dismissed. The desktop's first sheet declined both on Esc,
+  ending the same question differently from the TUI. The wire's `Answer`
+  says so, so the next renderer of a question reads it there.

@@ -73,7 +73,9 @@ run after the registry is let go, whose `Result` ends the command:
 
 A running command talks to the app through `narrate` (progress, the box a
 create made, questions) and `fill` (a form until the core accepts its answers;
-a refusal is `fieldErrors`, a draft re-sends the form with `applies`
+each field's `value` is what the core reads it holding, the app sends only
+the answers the person changed, merged onto the form's opening; a refusal is
+`fieldErrors`, a draft re-sends the form with `applies` and the values
 recomputed). Each question and form has its own ID, so one command waits on
 its answer while others run. What is submitted to a form is kept in order
 (`mailbox`): the pipe's reader never waits on a command, and drops nothing.

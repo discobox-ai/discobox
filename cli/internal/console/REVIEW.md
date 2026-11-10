@@ -25,6 +25,10 @@
   regressed three times (a dropped control character, a folded line break, a
   field compared with its stored value): test a changed rule with CRLF and
   U+FFFD, not only a dropped control character.
+  A renderer is a fourth path: the desktop's sheet first sent every field back
+  as its own text widget held it. A renderer submits only the fields the person
+  changed, and the bridge sends each field's `Value` as the core reads it
+  (`Opening`), never the raw stored value.
 - **A renderer reads answers through the core.** A form's meaning — what an
   option key stands for, which answers count — is a `Read…` function or the
   form's `Submit` here, never `f.chosen("…") == "…"` in a renderer.

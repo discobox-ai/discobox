@@ -1357,8 +1357,10 @@ pub struct Form {
     pub fields: Vec<Field>,
 }
 
-/// Field is one field of a form (console.Field). Applies is whether it takes an answer given the
-/// answers so far; one that does not is drawn with Why in place of its value.
+/// Field is one field of a form (console.Field). Value is what it holds as the core reads it: as it
+/// opens (console.Field.Opens — a typed value as one line, a picker's chosen key), or after a
+/// draft what the answers so far make it. Applies is whether it takes an answer given the answers
+/// so far; one that does not is drawn with Why in place of its value.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Field {
     pub key: String,
@@ -1407,8 +1409,10 @@ pub struct Choice {
     pub hint: String,
 }
 
-/// Submit fills a form. Cancel dismisses it. Draft asks only for the form again with Applies
-/// recomputed for these answers, and submits nothing.
+/// Submit fills a form. Answers are the fields the person changed, by key; every other field
+/// answers what it opened holding, so an untouched field is never an edit. Cancel dismisses it.
+/// Draft asks only for the form again with Applies recomputed for these answers, and submits
+/// nothing.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Submit {
     pub form: u64,
@@ -1458,8 +1462,9 @@ pub struct Question {
     pub default_no: bool,
 }
 
-/// Answer answers a question, exactly once: Key, or Declined when it was dismissed or cannot be
-/// asked.
+/// Answer answers a question, exactly once: Key, or Declined when it cannot be asked. A yes or no
+/// dismissed is answered "no", never declined (console's Question): only a pick of one is declined
+/// when it is dismissed.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Answer {
     pub question: u64,
