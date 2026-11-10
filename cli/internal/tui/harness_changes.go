@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -107,14 +108,24 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 		sections = append(sections, sec)
 	}
 	saveable := c.CandidateID != "" && ((c.State == "pending" && len(c.Files)+len(c.Credentials) > 0) || c.State == "saved-handoff-pending")
+	// A review reached from the explainer, which came up unasked over typing,
+	// commits on no letter: a hold says only that the keyboard paused, not
+	// that the card was read. Save and Discard are chosen with the arrows
+	// there, Enter lands on Refresh, and Refresh keeps it that way.
+	commitPress := func(key string) string {
+		if msg.unasked {
+			return ""
+		}
+		return key
+	}
 	items := []action{
-		{key: "s", press: "s", label: "Save reviewed changes", enabled: saveable, why: "no saveable candidate"},
-		{key: "d", press: "d", label: "Discard candidate", enabled: c.CandidateID != "" && c.State == "pending", why: "no pending candidate"},
+		{key: "s", press: commitPress("s"), label: "Save reviewed changes", enabled: saveable, why: "no saveable candidate"},
+		{key: "d", press: commitPress("d"), label: "Discard candidate", enabled: c.CandidateID != "" && c.State == "pending", why: "no pending candidate"},
 		{key: "r", press: "r", label: "Refresh preview", enabled: true},
 	}
 	m.dialog = actionsDialog("Harness changes — "+msg.box.Name, body.String(), items, func(key string) tea.Cmd {
 		if key == "r" {
-			return m.reviewHarnessChanges(msg.box, false)
+			return m.reviewHarnessChanges(msg.box, msg.unasked)
 		}
 		// The closure keeps the exact ID that was displayed, even if another
 		// candidate arrives while the person reads this card.
@@ -131,13 +142,8 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 	})
 	m.dialog.sections = sections
 	if msg.unasked {
-		// Reached from a card that came up unasked, over typing: a hold says
-		// only that the keyboard paused, not that the card was read, so Save
-		// answers to no letter and is not where Enter lands. It is chosen
-		// with the arrows, deliberately.
 		m.dialog.holdUntilQuiet(m.now())
-		m.dialog.items[0].press = ""
-		m.dialog.cursor = len(m.dialog.items) - 1
+		m.dialog.cursor = slices.IndexFunc(items, func(it action) bool { return it.key == "r" })
 	}
 	return nil
 }
