@@ -159,6 +159,10 @@ func (m *Model) consoleCommands(box *Sandbox) []consoleCommand {
 	paneCommand("mouse", "toggle mouse", "take or return the application's mouse", paneMouseKey, toggleMouseMsg{})
 	paneCommand("actions", "actions", "open the focused box's action menu", boxMenuKey, boxMenuMsg{})
 	paneCommand("dismiss", "dismiss banner", "dismiss the current notice", bannerDismissKey, dismissBannerMsg{})
+	add("filetree", "file tree", "browse, move and drop files beside the workspace", "", []string{"browse", "explorer"}, false, func(m *Model, _ Sandbox) tea.Cmd { return m.toggleFiles() })
+	if !m.workspaceShown() {
+		out[len(out)-1].contextWhy = "the files panel opens beside a workspace"
+	}
 	add("palette", "command palette", "find a box or command", ":", []string{"palette"}, false, func(m *Model, _ Sandbox) tea.Cmd { return m.openPalette() })
 	out[len(out)-1].prefixKeys = []string{paletteKey}
 
@@ -171,6 +175,8 @@ func (m *Model) consoleCommands(box *Sandbox) []consoleCommand {
 		switch c.id {
 		case "audit":
 			c.prefixKeys = []string{auditKey}
+		case "filetree":
+			c.prefixKeys = []string{filesPanelKey}
 		case "options", "repaint":
 			c.prefixKeys = nil
 		case "archived":

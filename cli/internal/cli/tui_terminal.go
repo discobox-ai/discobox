@@ -70,6 +70,7 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 		FilesChanged: metadata[execFilesChangedMetadataKey] != "",
 		ServiceName:  serviceName(metadata[sandboxServiceNameMetadata], metadata[sandboxServiceIDMetadata]),
 		Tty:          exec.Tty,
+		Workdir:      exec.Workdir,
 		Live:         live,
 		CreatedAt:    exec.CreatedAt,
 	}

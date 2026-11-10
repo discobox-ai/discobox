@@ -284,7 +284,7 @@ func (m *Model) focusTree() {
 		m.maximized = false
 		m.layout()
 	}
-	m.listFront = true
+	m.listFront, m.filesFront = true, false
 	m.prompt.Blur()
 	m.focus = focusList
 	m.list.visited = true
@@ -412,12 +412,13 @@ func (m *Model) treeCost() int {
 }
 
 // syncWidth makes m.width the width the rest of the window draws in: the
-// terminal's, less the tree when there is one. It reports whether it changed.
+// terminal's, less the tree and the files panel when they are up. It reports
+// whether it changed.
 func (m *Model) syncWidth() bool {
 	if m.screenWidth <= 0 {
 		return false
 	}
-	w := m.screenWidth - m.treeCost()
+	w := m.screenWidth - m.treeCost() - m.filesCost()
 	if w == m.width {
 		return false
 	}
@@ -584,7 +585,12 @@ func (m *Model) unparkWorkspace(ws *workspace) tea.Cmd {
 	m.syncWidth()
 	m.layout()
 	gen := m.wsGen
-	return tea.Batch(m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), m.startForward(gen))
+	// What the files panel shows of it is as old as the park.
+	var files tea.Cmd
+	if m.filesOpen {
+		files = m.reloadFiles()
+	}
+	return tea.Batch(m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), m.startForward(gen), files)
 }
 
 // parkedPane finds a pane by id among the parked workspaces.
@@ -1003,6 +1009,7 @@ func (m *Model) boxMenu(box Sandbox) tea.Cmd {
 		{key: paneServicesKey, press: paneServicesKey, label: "services", detail: "view output, start, stop or restart a service", enabled: true},
 		{key: toolsKey, press: toolsKey, label: "tools", detail: "open a diff viewer, an editor or your IDE on the box", enabled: true},
 		{key: auditKey, press: auditKey, label: "audit", detail: "follow everything the box has done, as it happens", enabled: true},
+		m.filesMenuItem(),
 	}
 	var items []action
 	for _, a := range m.actions(targets) {
@@ -1026,7 +1033,7 @@ func (m *Model) boxMenu(box Sandbox) tea.Cmd {
 	}
 	choose := chooseAction(targets)
 	m.dialog = actionsDialog(actionTitle(targets), "", items, func(key string) tea.Cmd {
-		if key == toolsKey || key == auditKey || key == allBoxesKey || key == paneServicesKey {
+		if key == toolsKey || key == auditKey || key == allBoxesKey || key == paneServicesKey || key == filesPanelKey {
 			return func() tea.Msg { return boxMenuChoiceMsg{key: key} }
 		}
 		return choose(key)
