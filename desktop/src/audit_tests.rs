@@ -1,6 +1,6 @@
 //! A box's audit view: the core's timeline followed, a row held while newer records arrive, a run
 //! opened and folded, a record read in full and its recordings over it, what could not be read,
-//! and the view giving the screen back.
+//! the timeline searched as it is typed, and the view giving the screen back.
 
 use rune::{Env, Key, KeyEvent, Mods, Runtime, Tx};
 
@@ -52,7 +52,7 @@ fn arrives(rt: &mut Runtime<State>, id: &str) {
     let mut a = mock_audit();
     a.records.push(AuditRecord { id: id.into(), clock: "14:05:00".into(), source: "http".into(), summary: format!("GET 200 {id}"), ..Default::default() });
     let n = a.records.len() as i64 - 1;
-    a.runs.push(AuditRun { first: n, last: n, summary: String::new() });
+    a.runs.push(AuditRun { first: n, last: n, summary: String::new(), ..Default::default() });
     let sub = rt.state.audit.as_ref().unwrap().sub;
     rt.state.inbox.push(Event::Audit(sub, Ok(a)));
     settle(rt);
@@ -295,4 +295,120 @@ fn the_secrets_page_and_the_view_take_the_screen_from_each_other() {
     settle(&mut rt);
     assert!(rt.state.secrets.is_none() && rt.state.audit.is_some(), "the audit view left the secrets page up");
     assert!(rt.find("audit-page").is_some(), "the audit view is up but another page is drawn");
+}
+
+/// Types into the view's search, as a person would, once it has the keys.
+fn search(rt: &mut Runtime<State>, text: &str) {
+    for c in text.chars() {
+        key(rt, Key::Text(c.to_string()));
+    }
+}
+
+fn query(rt: &Runtime<State>) -> (String, bool) {
+    let v = rt.state.audit.as_ref().expect("the audit view");
+    (v.query.text.clone(), v.query.focused)
+}
+
+// `/` searches the timeline as it is typed: each query asked of the core under a new subscription,
+// made before the last one ends; what it lets through is drawn, lit, with how many of how many;
+// the arrows still move while it is typed; Enter keeps it and gives the keys back; Esc clears it
+// before it leaves the view.
+#[test]
+fn the_timeline_is_searched_as_it_is_typed() {
+    let mut rt = view();
+    key(&mut rt, Key::Text("/".into()));
+    assert!(rt.find("audit-search").is_some() && query(&rt).1, "/ opens the search with the keys");
+    let before = rt.state.audit.as_ref().unwrap().sub;
+    search(&mut rt, "pulls");
+    let v = rt.state.audit.as_ref().unwrap();
+    assert!(v.following && !v.requeried, "a search typed while following left its reveal for a later record");
+    assert!(v.sub > before, "each query is asked again");
+    assert_eq!(rows(&rt), [("http-4".to_string(), false)]);
+    assert_eq!(v.timeline.tally, "1 of 6");
+    assert!(!v.timeline.records[0].summary_lit.is_empty(), "the match is not lit");
+    // What the last subscription still sends is for nobody.
+    rt.state.inbox.push(Event::Audit(before, Ok(mock_audit())));
+    settle(&mut rt);
+    assert_eq!(rows(&rt).len(), 1, "an old query's timeline landed");
+    // q is the query's while it is typed, not a key of the view.
+    key(&mut rt, Key::Backspace);
+    key(&mut rt, Key::Backspace);
+    key(&mut rt, Key::Backspace);
+    key(&mut rt, Key::Backspace);
+    key(&mut rt, Key::Backspace);
+    search(&mut rt, "http");
+    assert_eq!(query(&rt).0, "http");
+    let ids: Vec<_> = rows(&rt).into_iter().map(|(id, _)| id).collect();
+    assert_eq!(ids, ["http-1", "http-4"], "the run folds over what the search let through");
+    key(&mut rt, Key::Up);
+    assert!(cursor(&rt) == "http-1" && query(&rt).1, "↑ moves while the search keeps the keys");
+    key(&mut rt, Key::Enter);
+    assert_eq!(query(&rt), ("http".to_string(), false), "Enter keeps the search and gives the keys back");
+    assert!(rt.state.audit.as_ref().unwrap().reading.is_empty(), "Enter in the search read a record");
+    key(&mut rt, Key::Escape);
+    assert!(rt.state.audit.is_some() && query(&rt).0.is_empty(), "Esc clears the search before it leaves");
+    assert_eq!(rows(&rt).len(), 4);
+    assert!(rt.state.audit.as_ref().unwrap().timeline.tally.is_empty());
+    key(&mut rt, Key::Text("/".into()));
+    search(&mut rt, "zz");
+    let v = rt.state.audit.as_ref().unwrap();
+    assert!(v.rows.is_empty() && v.timeline.note == "no records match" && rt.find("audit-note").is_some());
+    key(&mut rt, Key::Escape);
+    assert_eq!(query(&rt), (String::new(), false), "Esc in the search clears it");
+    key(&mut rt, Key::Escape);
+    assert!(rt.state.audit.is_none());
+}
+
+// Under a search a held row stays held while it is let through, and the cursor goes to the newest,
+// following, once it is not; a run opened before the search is open again once it is put away.
+#[test]
+fn a_search_keeps_the_held_row_and_the_opened_runs() {
+    let mut rt = view();
+    key(&mut rt, Key::Up);
+    key(&mut rt, Key::Up);
+    key(&mut rt, Key::Enter);
+    assert_eq!(rows(&rt).len(), 7, "the run opened");
+    key(&mut rt, Key::Up);
+    assert_eq!(cursor(&rt), "creds-1");
+    key(&mut rt, Key::Text("/".into()));
+    search(&mut rt, "issues");
+    let ids: Vec<_> = rows(&rt).into_iter().map(|(id, _)| id).collect();
+    assert_eq!(ids, ["http-1", "http-1", "http-2", "http-3"], "the opened run stays open under the search");
+    let v = rt.state.audit.as_ref().unwrap();
+    assert!(v.following && cursor(&rt) == "http-3", "a row the search hid gives the cursor to the newest");
+    key(&mut rt, Key::Up);
+    assert!(rt.elements().iter().any(|e| e.key.as_deref() == Some("audit-below") && e.text.as_deref() == Some("1 newer match below")), "the core's words for a match below");
+    key(&mut rt, Key::Enter);
+    assert_eq!(cursor(&rt), "http-2");
+    search(&mut rt, "");
+    key(&mut rt, Key::Escape);
+    assert_eq!(rows(&rt).len(), 7, "the run opened before the search is open after it");
+    assert_eq!(cursor(&rt), "http-2", "the held row stays held as the search is put away");
+    assert!(!rt.state.audit.as_ref().unwrap().requeried, "the new search's timeline did not bring the held row back into view");
+}
+
+// The find gesture over the view searches its timeline, as `/` does.
+#[test]
+fn the_find_gesture_searches_the_timeline() {
+    let mut rt = view();
+    let primary = if cfg!(target_os = "macos") { Mods { cmd: true, ..Mods::default() } } else { Mods { ctrl: true, shift: true, cmd: true, ..Mods::default() } };
+    rt.key(KeyEvent { key: Key::Command('f'), mods: primary });
+    settle(&mut rt);
+    assert!(query(&rt).1 && rt.find("audit-search").is_some());
+}
+
+// A failure the view says stands until a timeline is read again — a search after it reads the
+// trails afresh — and that puts it away: the view follows again, with nothing under its records.
+#[test]
+fn a_search_after_a_failure_puts_the_failure_away() {
+    let mut rt = view();
+    let sub = rt.state.audit.as_ref().unwrap().sub;
+    rt.state.inbox.push(Event::Audit(sub, Err("the audit trails could not be read: no route".into())));
+    settle(&mut rt);
+    assert!(rt.find("audit-gap-0").is_some() && rt.find("audit-following").is_none());
+    key(&mut rt, Key::Text("/".into()));
+    search(&mut rt, "http");
+    let v = rt.state.audit.as_ref().unwrap();
+    assert_eq!(v.error, None, "the failure outlived a timeline read since");
+    assert!(rt.find("audit-gap-0").is_none() && rt.find("audit-following").is_some());
 }

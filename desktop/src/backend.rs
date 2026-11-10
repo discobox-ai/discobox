@@ -23,7 +23,7 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
 
 use crate::wire::{
-    Answer, Box as Sandbox, ChoiceGroup, Chip, Close, Command, Commands, Choice, Composer, Draft, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice, Follow,
+    Answer, AuditBelow, Box as Sandbox, ChoiceGroup, Chip, Close, Command, Commands, Choice, Composer, Draft, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice, Follow,
     Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
@@ -299,6 +299,9 @@ pub struct Mock {
     /// and the issue subscriptions following each: an act sends them the issue again.
     issues: HashMap<(String, bool), Issue>,
     issue_subs: HashMap<u32, (String, bool)>,
+    /// The audit subscriptions following a box's timeline, by box key: the bridge reads one box's
+    /// trails once for all of them, so one made while another follows is answered at once.
+    audit_subs: HashMap<u32, String>,
 }
 
 /// A mock harness, its actions as the core offers them (`console.Harness.Actions`).
@@ -628,12 +631,58 @@ pub fn mock_audit() -> Audit {
         record("http-4", "14:03:02", "http", "POST 201 https://api.github.com/repos/discobox-ai/discobox/pulls", ""),
     ];
     let runs = vec![
-        AuditRun { first: 0, last: 0, summary: String::new() },
-        AuditRun { first: 1, last: 3, summary: "GET 200 https://api.github.com/repos/discobox-ai/discobox/issues (count 3)".into() },
-        AuditRun { first: 4, last: 4, summary: String::new() },
-        AuditRun { first: 5, last: 5, summary: String::new() },
+        AuditRun { first: 0, last: 0, summary: String::new(), ..Default::default() },
+        AuditRun { first: 1, last: 3, summary: "GET 200 https://api.github.com/repos/discobox-ai/discobox/issues (count 3)".into(), ..Default::default() },
+        AuditRun { first: 4, last: 4, summary: String::new(), ..Default::default() },
+        AuditRun { first: 5, last: 5, summary: String::new(), ..Default::default() },
     ];
-    Audit { records, runs, missing: vec![], note: String::new() }
+    Audit { records, runs, missing: vec![], below: below(false), ..Default::default() }
+}
+
+/// What the core says below a held row (`console.AuditBelowWords`), as the mock sends it.
+fn below(searching: bool) -> AuditBelow {
+    let (one, many) = if searching { ("newer match below", "newer matches below") } else { ("newer record below", "newer records below") };
+    AuditBelow { one: one.into(), many: many.into() }
+}
+
+/// The mock's timeline under a search, in the shape the core sends one: the records whose line or
+/// ID holds the query, lit where their line does, the runs folded over them, and the tally. The
+/// match is a plain stand-in for the core's (`console.AuditSearch`), which the mock does not
+/// reproduce: it is enough to tell what the view does with what it is sent.
+pub fn mock_audit_search(query: &str) -> Audit {
+    let all = mock_audit();
+    let q = query.to_lowercase();
+    let at = |text: &str| text.to_lowercase().find(&q).map(|b| {
+        let start = text[..b].chars().count() as i64;
+        (start..start + q.chars().count() as i64).collect::<Vec<_>>()
+    });
+    let mut a = Audit { missing: vec![], ..Default::default() };
+    for r in &all.records {
+        let (source, summary) = (at(&r.source), at(&r.summary));
+        if source.is_some() || summary.is_some() || r.id.to_lowercase().contains(&q) {
+            a.records.push(AuditRecord { source_lit: source.unwrap_or_default(), summary_lit: summary.unwrap_or_default(), ..r.clone() });
+        }
+    }
+    let mut i = 0;
+    while i < a.records.len() {
+        let mut j = i;
+        while !a.records[i].group.is_empty() && j + 1 < a.records.len() && a.records[j + 1].group == a.records[i].group {
+            j += 1;
+        }
+        let mut run = AuditRun { first: i as i64, last: j as i64, ..Default::default() };
+        if j > i {
+            run.summary = format!("{} (count {})", a.records[j].group_summary, j - i + 1);
+            run.summary_lit = at(&run.summary).unwrap_or_default();
+        }
+        a.runs.push(run);
+        i = j + 1;
+    }
+    if a.records.is_empty() {
+        a.note = "no records match".into();
+    }
+    a.tally = format!("{} of {}", a.records.len(), all.records.len());
+    a.below = below(true);
+    a
 }
 
 /// The audit command, as the core answers it for the mock's timeline: the view, a record in full
@@ -806,7 +855,7 @@ impl Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
             services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, secrets: mock_secrets(),
             requests, requests_sub: 0, dismissed: vec![], actions_taken: HashMap::new(), run: MockRun::default(), composer_sub: 0, record: Arc::default(),
-            issues: HashMap::new(), issue_subs: HashMap::new(),
+            issues: HashMap::new(), issue_subs: HashMap::new(), audit_subs: HashMap::new(),
         }
     }
 
@@ -2089,13 +2138,22 @@ impl Backend for Mock {
                 self.following.remove(&sub);
                 self.headers.remove(&sub);
                 self.issue_subs.remove(&sub);
+                self.audit_subs.remove(&sub);
             }
             // As the bridge does: what the timeline says before any read, then what the read
-            // brought.
-            Out::Subscribe(Subscribe { sub, topic: Topic::Audit, .. }) => {
-                let reading = Audit { note: "reading the audit trails…".into(), ..Default::default() };
-                self.inbox.push(Event::Audit(sub, Ok(reading)));
-                self.inbox.push(Event::Audit(sub, Ok(mock_audit())));
+            // brought, under the search; one made while another follows the box is answered from
+            // what was read, at once.
+            Out::Subscribe(Subscribe { sub, topic: Topic::Audit, r#box, audit, .. }) => {
+                if !self.audit_subs.values().any(|b| *b == r#box) {
+                    let reading = Audit { note: "reading the audit trails…".into(), ..Default::default() };
+                    self.inbox.push(Event::Audit(sub, Ok(reading)));
+                }
+                self.audit_subs.insert(sub, r#box);
+                let timeline = match audit {
+                    Some(q) => mock_audit_search(&q.text),
+                    None => mock_audit(),
+                };
+                self.inbox.push(Event::Audit(sub, Ok(timeline)));
             }
             Out::Subscribe(_) => {}
             Out::Command(c) if c.command == "harnesses" => {

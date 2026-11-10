@@ -192,6 +192,11 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
     if s.audit.as_ref().is_some_and(|v| !v.reading.is_empty()) {
         return audit::reading_key(s, ev);
     }
+    // The find gesture over the view searches its timeline, as `/` does.
+    if s.audit.is_some() && matches!(gesture_for(s, ev), Some(("find", _))) {
+        audit::search(s);
+        return true;
+    }
     if s.audit.is_some() && audit::page_key(s, ev) {
         return true;
     }

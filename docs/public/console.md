@@ -192,7 +192,9 @@ In a terminal:
 
 `harnesses` and `credentials` open their pages beside the list, and `audit`
 opens a box's audit timeline there. On a page, the arrows move, Enter opens
-the row, Shift+F10 opens its actions and Esc leaves. Questions and forms open
+the row, Shift+F10 opens its actions and Esc leaves. In the audit timeline,
+`/` searches as you type, as the terminal console's does: Enter keeps the
+search and Esc clears it. Questions and forms open
 as a sheet over the window; Tab moves between fields, Enter submits, and Esc
 cancels. A destructive question starts on No.
 
@@ -210,7 +212,6 @@ notification on Linux; clicking it opens the request.
   workspace, and `detach` returns to every box.
 - Commits you make on this machine are not pushed into an open box
   automatically, as `discobox console` does; run `discobox push`.
-- The audit timeline cannot be searched yet; use `discobox console`.
 - primary+1 to 9 (a tab by its number) and primary+Alt+1 to 9 (a service's
   tab) do not work on Linux yet, because Shift turns the digit into another
   character. Click the tab, or use Ctrl+Tab.

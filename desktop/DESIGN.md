@@ -191,7 +191,12 @@ its actions as the core offers them.
 - **Audit** (`src/audit.rs`): a box's timeline, oldest at the top; the cursor
   follows the newest until moved off, then holds its row and counts what is
   newer. A run of one kind is one row that opens and folds; a record is read
-  in full over the window with its recordings.
+  in full over the window with its recordings. `/` (or the find gesture)
+  searches it as it is typed: the core says what the search lets through, the
+  runs folded over it, what it lights (bold in the accent) and how many of how
+  many, the app subscribing again for each query before it ends the last.
+  Enter keeps the search, Esc clears it before it leaves; a held row and
+  opened runs stay as they were while the search lets them through.
 
 ## Tools, issues, requests
 
@@ -287,7 +292,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/sheet.rs` | Forms, questions and edits as sheets: the queue, held answers, drafts, refusals, the editor wait |
 | `src/issue.rs` | A box's issue and pull request as tabs |
 | `src/tools.rs` | The tools menu, a tool's tab given the window, a host tool, a tool's files, an address copied |
-| `src/audit.rs` | A box's audit view |
+| `src/audit.rs` | A box's audit view, and its search |
 | `src/harnesses.rs` | The harnesses page and a box's harness changes reviewed |
 | `src/secrets.rs` | The secrets page, its requests table, and the core's cards as this window draws them |
 | `src/paste.rs` | Images pasted or dropped carried into the box; a folder dropped on the composer |
@@ -314,7 +319,7 @@ yet supported (983 §4). The release builds Linux amd64 and arm64
 | `src/tool_tests.rs` | The tools menu, a tool given the window and giving it back, a host tool, files, an address copied |
 | `src/request_tests.rs` | A notice and its dismissal, a card answered and left, the requests table, a notification pressed |
 | `src/secret_tests.rs` | The secrets page and its sheets, the history, refresh |
-| `src/audit_tests.rs` | The timeline followed and held, runs, a record and a recording read |
+| `src/audit_tests.rs` | The timeline followed and held, runs, a record and a recording read, the timeline searched |
 | `src/harness_tests.rs` | The harnesses page, its card and actions, a file edited, harness changes reviewed |
 | `src/identity_tests.rs` | No TUI character art, every colour and length a token, the bundled face measured |
 

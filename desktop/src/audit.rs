@@ -12,12 +12,18 @@
 //! down to it, or End, follows again. A folded run opens to its records (Enter or Right) and
 //! folds again (Left); Enter on a record reads it in full, over the window, and a recording it
 //! offers is read over that, Esc going back a step at a time.
+//!
+//! `/` (or the find gesture) searches the timeline as it is typed, as the TUI's does: which
+//! records the search lets through, the runs folded over them, what it lights on each, and how
+//! many it let through of how many are the core's (the audit topic's query: `console.AuditSearch`,
+//! `AuditLit`, `AuditTally`), the app subscribing again for each query. While it is typed the
+//! arrows still move; Enter keeps it and gives the keys back; Esc clears it before it leaves.
 
 use std::collections::HashSet;
 
-use rune::{Color, El, Key, KeyEvent, ScrollSpec, Tx, col, el, icon, row, spacer, text};
+use rune::{Color, El, Key, KeyEvent, ScrollSpec, Span, TextEdit, Tx, col, el, icon, rich, row, spacer, text, text_input};
 
-use crate::wire::{Args, Audit, AuditText, Result as CommandResult, Status, Subscribe, Topic};
+use crate::wire::{Args, Audit, AuditQuery, AuditText, Result as CommandResult, Status, Subscribe, Topic};
 use crate::{Focus, Pending, State, icons, theme, view};
 
 /// How many rows PageUp and PageDown move.
@@ -57,6 +63,12 @@ pub struct AuditView {
     /// What a record's read said on the status line, taken back once it lands or is dropped only
     /// while the line still says it.
     said: Option<String>,
+    /// The search, as typed: focused while it is being typed. The timeline is what the core sent
+    /// for it once `sub` answers.
+    pub query: TextEdit,
+    /// Whether `sub` has yet to answer a new search: its first timeline lays out every row
+    /// afresh, and the row held is scrolled back into view.
+    pub requeried: bool,
 }
 
 /// A record or one of its recordings, read; the recording the keys are on; and what the panel
@@ -90,10 +102,14 @@ impl AuditView {
     /// record the next one arrives to join keeps the cursor.
     fn identity(&self, r: Row) -> Option<(String, bool)> { self.timeline.records.get(r.record).map(|rec| (rec.id.clone(), r.member)) }
 
+    /// Whether the timeline in hand is narrowed by a search: the core says how many it let
+    /// through only under one.
+    fn searched(&self) -> bool { !self.timeline.tally.is_empty() }
+
     /// Lays the rows out again after a change to what they are drawn from — a timeline arriving,
-    /// a run opening or folding — keeping the cursor on the row it was on, or on the newest
-    /// while following. The row is named before the change: the history letting go of its oldest
-    /// records moves every index.
+    /// under a search or not, a run opening or folding — keeping the cursor on the row it was on,
+    /// or on the newest while following. The row is named before the change: the history letting
+    /// go of its oldest records moves every index.
     fn relayout(&mut self, change: impl FnOnce(&mut AuditView)) {
         let keep = self.rows.get(self.cursor).and_then(|&r| self.identity(r));
         change(self);
@@ -108,8 +124,11 @@ impl AuditView {
                 self.rows.extend((first..=last).map(|k| Row { run: i, record: k, member: true }));
             }
         }
-        // A run whose head the history let go of is not coming back.
-        self.expanded = live;
+        // A run whose head the history let go of is not coming back. Under a search a run can
+        // start at a different record, so what was opened is kept for when it is put away.
+        if !self.searched() {
+            self.expanded = live;
+        }
         let newest = self.rows.len().saturating_sub(1);
         if self.following || keep.is_none() {
             self.cursor = newest;
@@ -118,7 +137,8 @@ impl AuditView {
         }
         match self.rows.iter().rposition(|&r| self.identity(r) == keep) {
             Some(i) => self.cursor = i,
-            // The row is gone: the cursor goes to the newest, and follows.
+            // The row is gone — the search hid it, or the history let it go — so the cursor goes
+            // to the newest, the best match in a timeline, and follows.
             None => {
                 self.cursor = newest;
                 self.following = true;
@@ -163,12 +183,19 @@ impl AuditView {
         self.reveal = true;
     }
 
-    /// How many records are newer than the row under the cursor: a folded run holds its own
-    /// newer records, so they are not below it.
-    fn below(&self) -> usize {
-        let Some(&r) = self.rows.get(self.cursor) else { return 0 };
-        let through = if self.folded(r) { self.timeline.runs[r.run].last as usize } else { r.record };
-        self.timeline.records.len().saturating_sub(through + 1)
+    /// What the view says of the records newer than the row under the cursor: how many, in the
+    /// core's words (the timeline's `below`) — matches, under a search. A folded run holds its
+    /// own newer records, so they are not below it.
+    fn below(&self) -> String {
+        let n = match self.rows.get(self.cursor) {
+            Some(&r) => {
+                let through = if self.folded(r) { self.timeline.runs[r.run].last as usize } else { r.record };
+                self.timeline.records.len().saturating_sub(through + 1)
+            }
+            None => 0,
+        };
+        let words = &self.timeline.below;
+        format!("{n} {}", if n == 1 { &words.one } else { &words.many })
     }
 }
 
@@ -182,8 +209,41 @@ pub fn open(s: &mut State, sandbox: &str) {
     let sub = s.subscribe(Subscribe { topic: Topic::Audit, r#box: sandbox.to_string(), ..Default::default() });
     s.audit = Some(AuditView {
         sandbox: sandbox.to_string(), sub, timeline: Audit::default(), error: None, expanded: HashSet::new(), rows: vec![],
-        cursor: 0, following: true, reveal: false, reading: vec![], asked: None, said: None,
+        cursor: 0, following: true, reveal: false, reading: vec![], asked: None, said: None, query: TextEdit::new(""),
+        requeried: false,
     });
+}
+
+/// `/` on the view: the search takes the keys, on what it holds.
+pub fn search(s: &mut State) {
+    if let Some(v) = s.audit.as_mut() {
+        v.query.focused = true;
+    }
+}
+
+/// The search changed: the core is asked for the timeline under it, in place of what it sent for
+/// the last. The new subscription is made before the old one ends, so the bridge narrows the
+/// trails it is reading rather than reading them again; what the old one still sends is dropped.
+pub fn searched(s: &mut State) {
+    let Some(v) = s.audit.as_ref() else { return };
+    let (sandbox, text, old) = (v.sandbox.clone(), v.query.text.clone(), v.sub);
+    let audit = (!text.trim().is_empty()).then_some(AuditQuery { text });
+    let sub = s.subscribe(Subscribe { topic: Topic::Audit, r#box: sandbox, audit, ..Default::default() });
+    s.unsubscribe(old);
+    if let Some(v) = s.audit.as_mut() {
+        v.sub = sub;
+        v.requeried = true;
+    }
+}
+
+/// Puts the search away: the whole timeline again, and the keys back to the rows.
+fn clear(s: &mut State) {
+    let Some(v) = s.audit.as_mut() else { return };
+    let had = !v.query.text.is_empty();
+    v.query = TextEdit::new("");
+    if had {
+        searched(s);
+    }
 }
 
 /// Takes the view down and stops following, leaving the workspace it covered as it was.
@@ -198,13 +258,18 @@ pub fn close(s: &mut State) {
 }
 
 /// A timeline the core sent, whole; or why the trails could not be read, after which the last
-/// one stands. One from a subscription the view no longer follows is dropped.
+/// one stands. A timeline read since — a search after a failure reads the trails afresh — puts
+/// the failure away. One from a subscription the view no longer follows is dropped.
 pub fn take(s: &mut State, sub: u32, r: Result<Audit, String>) {
     let Some(v) = s.audit.as_mut().filter(|v| v.sub == sub) else { return };
     match r {
         Ok(timeline) => {
+            v.error = None;
             v.relayout(|v| v.timeline = timeline);
-            v.reveal |= v.following;
+            // A new search moves every row: the one held is brought back into view, once — the
+            // flag is spent on its first timeline whether or not the view follows.
+            let requeried = std::mem::take(&mut v.requeried);
+            v.reveal |= v.following || requeried;
         }
         Err(why) => v.error = Some(why),
     }
@@ -302,7 +367,28 @@ pub fn page_key(s: &mut State, ev: &KeyEvent) -> bool {
         Key::Right => v.toggle(true),
         Key::Left => v.toggle(false),
         Key::Enter if !ev.mods.shift => enter(s),
+        Key::Text(ref t) if t == "/" => search(s),
+        // A search is put away before the view is: Esc undoes the last thing done, and the
+        // search is that.
+        Key::Escape if !v.query.text.is_empty() => clear(s),
         Key::Escape => close(s),
+        _ => return false,
+    }
+    true
+}
+
+/// The search field's keys while it is typed: every character is the query's, the arrows still
+/// move through what it lets through, Enter keeps it and gives the keys back to the rows, and Esc
+/// clears it.
+fn query_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
+    let Some(v) = s.audit.as_mut() else { return false };
+    match ev.key {
+        Key::Up => v.step(-1),
+        Key::Down => v.step(1),
+        Key::PageUp => v.step(-(PAGE as isize)),
+        Key::PageDown => v.step(PAGE as isize),
+        Key::Enter => v.query.focused = false,
+        Key::Escape => clear(s),
         _ => return false,
     }
     true
@@ -359,14 +445,36 @@ fn hint(key: &str, what: &str) -> El {
     row().gap(4.0).center_y().child(view::keycap(crate::keys::label(key))).child(text(what.to_string()).font(theme::UI_SMALL).color(theme::dim()))
 }
 
+/// What a search lit in a line (`console.AuditLit`, by rune), as the spans that draw it: each run
+/// of lit runes at once, bold in the accent — what the search has its eye on.
+fn lit(line: &str, runes: &[i64]) -> Vec<Span> {
+    let at: Vec<usize> = line.char_indices().map(|(b, _)| b).chain(std::iter::once(line.len())).collect();
+    let mut spans = vec![];
+    let mut i = 0;
+    while i < runes.len() {
+        let start = runes[i].max(0) as usize;
+        let mut end = start + 1;
+        i += 1;
+        while i < runes.len() && runes[i] as usize == end {
+            end += 1;
+            i += 1;
+        }
+        if end < at.len() {
+            spans.push(Span::new(at[start], at[end]).bold().color(theme::mark()));
+        }
+    }
+    spans
+}
+
 fn audit_row(v: &AuditView, i: usize, r: Row) -> El {
     let on = i == v.cursor;
     let shown = v.shown(r);
     let rec = &v.timeline.records[shown];
-    let summary = if v.folded(r) || (!r.member && v.is_run(r)) {
-        v.timeline.runs[r.run].summary.clone()
-    } else {
-        rec.summary.clone()
+    // A run's head says the run's line, and is lit where that line matches.
+    let run = (!r.member && v.is_run(r)).then(|| &v.timeline.runs[r.run]);
+    let (summary, source_lit, summary_lit) = match run {
+        Some(run) => (run.summary.clone(), &run.source_lit, &run.summary_lit),
+        None => (rec.summary.clone(), &rec.source_lit, &rec.summary_lit),
     };
     let fold: El = match (r.member, v.is_run(r), v.opened(r)) {
         (false, true, false) => icon(&icons::CHEVRON, 10.0).color(theme::grey()),
@@ -383,9 +491,10 @@ fn audit_row(v: &AuditView, i: usize, r: Row) -> El {
         .fill(if on { theme::selection() } else { Color::TRANSPARENT }).hover(theme::text().alpha(0.06)).motion(theme::SNAPPY)
         .cursor(rune::Cursor::Pointer)
         .child(t(rec.clock.clone(), theme::dim()).w(TIME_W))
-        .child(t(rec.source.clone(), theme::grey()).w(SOURCE_W))
+        .child(rich(rec.source.clone(), lit(&rec.source, source_lit)).font(theme::UI).color(theme::grey()).truncate().w(SOURCE_W))
         .child(row().w(FOLD_W).pl(if r.member { FOLD_W } else { 0.0 }).center_y().child(fold))
-        .child(t(summary, if on { theme::text() } else { theme::grey() }).font(if on { theme::UI_BOLD } else { theme::UI }).truncate().shrink().grow(1.0))
+        .child(rich(summary.clone(), lit(&summary, summary_lit)).font(if on { theme::UI_BOLD } else { theme::UI })
+            .color(if on { theme::text() } else { theme::grey() }).truncate().shrink().grow(1.0))
         .on_press(pick)
         .on_double_press(move |s: &mut State| {
             pick(s);
@@ -403,8 +512,7 @@ pub fn page_view(s: &State) -> El {
     } else if v.following || v.rows.is_empty() {
         row().key("audit-following").child(t("following", theme::on_gold()).font(theme::UI_BOLD))
     } else {
-        let n = v.below();
-        t(format!("{n} newer record{} below", if n == 1 { "" } else { "s" }), theme::on_gold()).font(theme::UI_BOLD)
+        t(v.below(), theme::on_gold()).font(theme::UI_BOLD).key("audit-below")
     };
     let mut body = col().key("audit").w_full().h_full().gap(2.0).min_h(0.0)
         .child(row().w_full().h(26.0).px(10.0).center_y().fill(theme::gold()).radius(theme::r_row())
@@ -426,6 +534,20 @@ pub fn page_view(s: &State) -> El {
         rows = rows.child(audit_row(v, i, r));
     }
     body = body.child(rows.grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }));
+    // The search line is under the records it narrows, where the TUI's is, with how many it let
+    // through of how many — the core's words.
+    if v.query.focused || !v.query.text.is_empty() {
+        let field = text_input(&v.query, theme::UI.lh(20.0)).key("audit-query").single_line().grow(1.0).color(theme::text())
+            .placeholder("search the timeline", theme::dim())
+            .on_edit(|s: &mut State| &mut s.audit.as_mut().unwrap().query)
+            .on_input_change(|s: &mut State, _| searched(s))
+            .on_input_key(query_key);
+        body = body.child(row().key("audit-search").w_full().h(30.0).px(10.0).gap(8.0).center_y().radius(theme::r_row()).fill(theme::sunken())
+            .border(theme::stroke_quiet(), if v.query.focused { theme::mark() } else { theme::line_bright() })
+            .child(icon(&icons::SEARCH, 14.0).color(theme::grey()))
+            .child(field)
+            .child(t(v.timeline.tally.clone(), theme::dim()).font(theme::UI_SMALL)));
+    }
     // What is missing is said under the records, and outranks them: a quiet timeline and a trail
     // that stopped answering look the same without it.
     for (i, gap) in v.timeline.missing.iter().chain(v.error.iter()).enumerate() {
@@ -443,7 +565,12 @@ pub fn page_view(s: &State) -> El {
     if !v.following {
         hints = hints.child(hint("end", "follow"));
     }
-    hints = hints.child(hint("escape", "back"))
+    hints = if v.query.text.is_empty() {
+        hints.child(hint("/", "search")).child(hint("escape", "back"))
+    } else {
+        hints.child(hint("/", "edit search")).child(hint("escape", "clear search"))
+    };
+    hints = hints
         .child(spacer())
         .child(t(s.message.clone().unwrap_or_default(), theme::grey()).font(theme::UI_SMALL).truncate().shrink());
     body = body.child(hints);
