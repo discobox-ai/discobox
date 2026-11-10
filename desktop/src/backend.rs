@@ -209,12 +209,13 @@ impl Bridge {
 impl Backend for Bridge {
     // A write fails once the CLI is gone, and then the reader ends the app; or for a message past
     // the bridge's bound, which is refused whole and the bridge goes on. What waits on a result
-    // for it (a command, an upload holding its pane's input) gets one, failed with why.
+    // for it (a command, an upload holding its pane's input, a link followed) gets one, failed
+    // with why.
     fn send(&mut self, m: Out) {
         let m = m.message();
         if let Err(e) = self.client.send(&m) {
             eprintln!("desktop: a message could not be written: {e}");
-            let id = m.command.as_ref().map(|c| c.id).or(m.upload.as_ref().map(|u| u.id));
+            let id = m.command.as_ref().map(|c| c.id).or(m.upload.as_ref().map(|u| u.id)).or(m.follow.as_ref().map(|f| f.id));
             if let Some(id) = id {
                 self.inbox.push(Event::Result(CommandResult { id, status: Status::Failed, why: format!("could not send it to the CLI: {e}"), ..Default::default() }));
             }

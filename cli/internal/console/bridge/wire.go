@@ -28,11 +28,10 @@ import (
 // a box's tools: the tools command's tools and addresses, a tool run or its
 // session made, a tool's file edited, and the tool a tab runs (Tab.Tool); 11,
 // a link pressed in a pane followed through the core (Follow), and the spec's
-// link schemes; 12,
-// images dropped on a pane as files (Upload.Files), every path an upload
-// landed at (Result.Paths), which tabs take images and the image keys
-// (Tab.Images, Tab.ImageKeys), and a folder dropped on the composer (the
-// options command's Args.Source).
+// link schemes; 12, images dropped on a pane as files (Upload.Files), every
+// path an upload landed at (Result.Paths), which tabs take images and the
+// image keys (Tab.Images, Tab.ImageKeys), and a folder dropped on the
+// composer (the options command's Args.Source).
 const Protocol = 12
 
 // Type names a message.
