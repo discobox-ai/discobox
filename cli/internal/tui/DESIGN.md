@@ -27,7 +27,7 @@ flowchart LR
     L -->|E| Settings["settings form → BoxSettings / UpdateBox"]
     L -->|Enter a s| WS["workspace (renders console.Workspace) → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
     WS -->|poll| Svc["services → Services / ServiceLogs"]
-    WS -->|leader S0| SvcMenu["services menu → DoService"]
+    WS -->|leader S0| SvcMenu["services menu → console.RunServiceVerb"]
     WS -->|open| Fwd["port forward → DataSource.Forward"]
     WS -->|beat| Push["automatic push → PushSources"]
     L -->|C| Cred["credential dialog → Secrets / CreateSecret / ApproveCredentialRequest / DenyCredentialRequest"]
@@ -1615,7 +1615,9 @@ exited, or an unrunnable declaration. A service **stopped on purpose** does
 not — you know, and a pane to dismiss every time would be the window nagging.
 A pane with no live process draws a card instead: what it is, what state it is
 in, why, and then whatever its last run printed, since after a crash the output
-is the reason. The card is a `textTerminal` rather than a new kind of pane,
+is the reason. What a service's pane is opened on, card or stream, is the
+core's (`console.OpenService`), which the desktop app's panes open on too. The
+card is a text terminal rather than a new kind of pane,
 because a pane already knows how to draw, scroll, select and copy a stream, and
 teaching the tab strip, the focus, the mouse and the layout about a second kind
 would buy none of that.
@@ -1625,7 +1627,7 @@ has no screen to repaint from (`shimruntime.Runtime.EnableScreen` installs the r
 for TTY execs only), so attaching to a running service starts at "now" and the
 pane sits empty until it next says something — which for a server that has
 finished booting is a long time. The transcript is played in ahead of the live
-stream (`historyTerminal`), tailed at a line boundary so the cut never lands
+stream (in `console.OpenService`), tailed at a line boundary so the cut never lands
 inside an escape sequence. It is read *before* the attach, so the seam can only
 lose a moment of output rather than repeat one: a repeated chunk reads as the
 service having done something twice, which is worse than a gap.

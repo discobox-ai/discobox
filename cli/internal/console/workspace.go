@@ -261,6 +261,24 @@ func ServiceTab(s Service, order int) Tab {
 // any one run of it.
 func ServiceTabID(service string) string { return "service:" + service }
 
+// ServiceOfTab is the service a tab's ExecID keys (ServiceTabID), and whether
+// it keys one at all.
+func ServiceOfTab(execID string) (string, bool) { return strings.CutPrefix(execID, "service:") }
+
+// ListedServiceTabs is the tabs a service listing opens, in declaration
+// order: one for every service worth a tab (Service.PaneWorthy), each on the
+// run it reports. A tab held for a service missing here, or held on another
+// run, has nothing left to draw (Workspace.ReconcileServices).
+func ListedServiceTabs(services []Service) []Tab {
+	var out []Tab
+	for i, s := range services {
+		if s.PaneWorthy() {
+			out = append(out, ServiceTab(s, i))
+		}
+	}
+	return out
+}
+
 // ToolTab is a tool's session as its tab, called by the tool's label.
 func ToolTab(e Exec, tool, label string) Tab {
 	return Tab{ExecID: e.ID, Created: e.CreatedAt, Action: Interaction(label), Title: label, Tool: tool}
@@ -657,30 +675,31 @@ type ServiceOpen struct {
 // deleted has nothing left to draw. opening reports a service tab (by
 // ServiceTabID) the renderer is already opening.
 func (w *Workspace[P]) ReconcileServices(services []Service, opening func(tabID string) bool) (open []ServiceOpen, closing []P) {
+	wanted := make(map[string]Tab, len(services))
+	for _, t := range ListedServiceTabs(services) {
+		wanted[t.Service] = t
+	}
 	declared := make(map[string]bool, len(services))
 	for i, s := range services {
 		declared[s.ID] = true
 		id := ServiceTabID(s.ID)
-		existing := w.ByExec(id)
-		held := existing != *new(P)
-		if !s.PaneWorthy() {
+		held := w.ByExec(id)
+		want, ok := wanted[s.ID]
+		switch {
+		case !ok:
 			// Stopped on purpose: its absence is the right thing to say, and
 			// a tab to dismiss would not be.
-			if held {
-				closing = append(closing, existing)
+			if held != *new(P) {
+				closing = append(closing, held)
 			}
-			continue
+		case opening(id):
+		case held == *new(P):
+			open = append(open, ServiceOpen{Service: s, Order: i})
+		case held.TabState().ServiceRun != want.ServiceRun:
+			// Its run moved on: the tab is opened again on the new one.
+			closing = append(closing, held)
+			open = append(open, ServiceOpen{Service: s, Order: i})
 		}
-		if opening(id) {
-			continue
-		}
-		if held {
-			if existing.TabState().ServiceRun == s.RunKey() {
-				continue
-			}
-			closing = append(closing, existing)
-		}
-		open = append(open, ServiceOpen{Service: s, Order: i})
 	}
 	for _, p := range w.Attached() {
 		if service := p.TabState().Service; service != "" && !declared[service] {

@@ -1,12 +1,6 @@
 package tui
 
 import (
-	"bytes"
-	"fmt"
-	"io"
-	"strings"
-	"sync"
-
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
 )
@@ -70,7 +64,7 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 		return m.report(true, "services: %v", msg.err)
 	}
 	if len(msg.services) == 0 {
-		return m.report(false, "this discobox declares no services — add one under .discobox/services")
+		return m.report(false, "%s", console.NoServices)
 	}
 	items := make([]action, 0, len(msg.services))
 	for i, service := range msg.services {
@@ -98,243 +92,64 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 	return nil
 }
 
-// showServiceMenu is the second half: what to do with the service just chosen.
-//
-// All three verbs are always offered. The sandbox settles what each one means
-// for the state the service is actually in — starting a running service
-// changes nothing, stopping a stopped one likewise — and a menu that greys out
-// the verb you came for, on a status read a moment ago, is a menu arguing with
-// a service that has since moved on.
+// showServiceMenu is the second half: what to do with the service just chosen
+// — its output, then the core's verbs for it (console.Service.Actions).
 func (m *Model) showServiceMenu(service console.Service) tea.Cmd {
 	items := []action{
 		{key: "v", press: "v", label: "view output", detail: "show the service log", enabled: m.Terminals.ByExec(console.ServiceTabID(service.ID)) != nil, why: "no output pane is available"},
-		{key: "s", press: "s", label: "start", detail: "run it, or leave it running", enabled: service.Runnable(), why: service.Problem},
-		{key: "t", press: "t", label: "stop", detail: "end its run and keep what it printed", enabled: service.Runnable(), why: service.Problem},
-		{key: "R", press: "R", label: "restart", detail: "stop it if it is running, then start it", enabled: service.Runnable(), why: service.Problem},
+	}
+	for _, a := range service.Actions() {
+		k := serviceVerbKeys[a.Verb]
+		items = append(items, action{key: k, press: k, label: a.Label, detail: a.Detail, enabled: a.Enabled, why: a.Why})
 	}
 	m.dialog = actionsDialog(service.DisplayName(), service.Detail(), items, func(key string) tea.Cmd {
 		if key == "v" {
 			return func() tea.Msg { return serviceOutputMsg{id: service.ID} }
 		}
-		verb := console.ServiceRestart
-		switch key {
-		case "s":
-			verb = console.ServiceStart
-		case "t":
-			verb = console.ServiceStop
+		for verb, k := range serviceVerbKeys {
+			if k == key {
+				return func() tea.Msg { return serviceVerbMsg{verb: verb, service: service} }
+			}
 		}
-		return func() tea.Msg { return serviceVerbMsg{verb: verb, service: service} }
+		return nil
 	})
 	return nil
 }
 
-// runServiceVerb acts on one service and reports the outcome on the status
-// line. What the service does next arrives through the exec listing the
-// workspace is already polling, so there is nothing to refresh here: a service
-// that starts becomes a tab on its own, and one that stops takes its tab with
-// it.
+// serviceVerbKeys is the key each of a service's verbs takes in its menu.
+var serviceVerbKeys = map[console.ServiceVerb]string{
+	console.ServiceStart:   "s",
+	console.ServiceStop:    "t",
+	console.ServiceRestart: "R",
+}
+
+// runServiceVerb acts on one service, as the core runs it
+// (console.RunServiceVerb), and reports the outcome on the status line. What
+// the service does next arrives through the listings the workspace is
+// already polling, so there is nothing to refresh here: a service that
+// starts becomes a tab on its own, and one that stops takes its tab with it.
 func (m *Model) runServiceVerb(verb console.ServiceVerb, service console.Service) tea.Cmd {
 	if m.Box.ID == "" {
 		return nil
 	}
 	m.busy = string(verb) + "…"
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
-	name := service.DisplayName()
 	return func() tea.Msg {
-		err := ds.DoService(ctx, verb, id, service.ID)
-		return serviceDoneMsg{verb: verb, name: name, err: err}
+		note, err := console.RunServiceVerb(ctx, ds, id, service.ID, verb)
+		return serviceDoneMsg{note: note, err: err}
 	}
 }
 
-// serviceDoneMsg is one finished verb.
+// serviceDoneMsg is one finished verb: what to say of it, or why it failed.
 type serviceDoneMsg struct {
-	verb console.ServiceVerb
-	name string
+	note string
 	err  error
 }
 
 func (m *Model) serviceDone(msg serviceDoneMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
-		return m.report(true, "cannot %s %s: %v", msg.verb, msg.name, msg.err)
+		return m.report(true, "%v", msg.err)
 	}
-	return m.report(false, "%s", msg.verb.Done(msg.name))
-}
-
-// serviceCard is what a pane draws for a service with no stream of its own: what it
-// is, what state it is in, why, and then whatever its last run printed.
-//
-// It is written as terminal output rather than laid out with the window's
-// styles because that is what it is — the pane is a terminal, and this is the
-// one place the window writes into one. CRLF throughout: the pane sets LNM for
-// a service, but this text is not the service's and should not depend on it.
-func serviceCard(s console.Service, logs []byte) []byte {
-	var b strings.Builder
-	b.WriteString(s.DisplayName())
-	b.WriteString("\r\n")
-	b.WriteString(strings.Repeat("─", len([]rune(s.DisplayName()))))
-	b.WriteString("\r\n\r\n")
-	switch {
-	case !s.Runnable():
-		b.WriteString("cannot run\r\n\r\n")
-		b.WriteString(wrapCard(s.Problem))
-		b.WriteString("\r\n\r\n")
-		b.WriteString(".discobox/services/")
-		b.WriteString(s.FileName)
-		b.WriteString("\r\n")
-	case s.Status == "failed":
-		b.WriteString("failed\r\n\r\n")
-		if detail := strings.TrimSpace(s.Error); detail != "" {
-			b.WriteString(wrapCard(detail))
-			b.WriteString("\r\n\r\n")
-		} else if s.ExitCode != nil {
-			fmt.Fprintf(&b, "exit code %d\r\n\r\n", *s.ExitCode)
-		}
-	case s.Status == "exited":
-		b.WriteString("exited\r\n\r\n")
-		if s.ExitCode != nil {
-			fmt.Fprintf(&b, "exit code %d\r\n\r\n", *s.ExitCode)
-		}
-	default:
-		b.WriteString(s.Status)
-		b.WriteString("\r\n\r\n")
-	}
-	if description := strings.TrimSpace(s.Description); description != "" {
-		b.WriteString(wrapCard(description))
-		b.WriteString("\r\n\r\n")
-	}
-	if len(logs) > 0 {
-		b.WriteString("── last output ──\r\n\r\n")
-		// The transcript is the program's own bytes, line feeds and all. The
-		// pane's LNM draws them as newlines, the same way the running service's
-		// output is drawn.
-		b.Write(logs)
-		if !strings.HasSuffix(string(logs), "\n") {
-			b.WriteString("\r\n")
-		}
-	}
-	return []byte(b.String())
-}
-
-// cardWidth is what the card wraps its prose at. It is a fixed, narrow measure
-// rather than the pane's width: the card is read, not filled, and a reason
-// running the width of a maximized window is harder to read than one that does
-// not.
-const cardWidth = 64
-
-func wrapCard(text string) string {
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return ""
-	}
-	var lines []string
-	line := words[0]
-	for _, word := range words[1:] {
-		if len([]rune(line))+1+len([]rune(word)) > cardWidth {
-			lines = append(lines, line)
-			line = word
-			continue
-		}
-		line += " " + word
-	}
-	return strings.Join(append(lines, line), "\r\n")
-}
-
-// textTerminal is a Terminal over a fixed block of text: the card a service
-// with no running process is drawn from.
-//
-// It is a stream rather than a special kind of pane because a pane already
-// knows how to draw a stream, scroll it, and let it be selected and copied.
-// Inventing a second kind of pane to show text would mean teaching the tab
-// strip, the focus, the mouse and the layout about it; handing the existing one
-// some bytes teaches them nothing.
-type textTerminal struct {
-	text   []byte
-	events chan console.TerminalEvent
-	done   chan struct{}
-	once   sync.Once
-}
-
-func newTextTerminal(text []byte) *textTerminal {
-	return &textTerminal{text: text, events: make(chan console.TerminalEvent), done: make(chan struct{})}
-}
-
-// Read delivers the text once and then blocks until close.
-//
-// It blocks rather than reporting EOF because EOF is an ending, and the pane
-// treats one as a session that finished: it would mark the pane exited and
-// offer to dismiss it. Nothing ended here — the service is simply not running,
-// which is the state the pane is reporting — so the stream stays open and the
-// pane stays a pane until the workspace replaces it.
-func (t *textTerminal) Read(p []byte) (int, error) {
-	if len(t.text) > 0 {
-		n := copy(p, t.text)
-		t.text = t.text[n:]
-		return n, nil
-	}
-	<-t.done
-	return 0, io.EOF
-}
-
-// Write drops what it is given. A read-only pane sends nothing, so the only
-// writer here is the emulator answering a query about itself, and the answer
-// has nowhere to go.
-func (t *textTerminal) Write(p []byte) (int, error) { return len(p), nil }
-
-func (t *textTerminal) Resize(int, int) error { return nil }
-
-// Repaint has nothing to repaint from: the text is all there ever was, and the
-// pane showing it is read-only.
-func (t *textTerminal) Repaint() error { return nil }
-
-func (t *textTerminal) Events() <-chan console.TerminalEvent { return t.events }
-
-func (t *textTerminal) Close() error {
-	t.once.Do(func() { close(t.done) })
-	return nil
-}
-
-// historyTerminal plays a block of history and then hands over to a live
-// stream. It is what a service's pane is opened on: a plain exec has no screen
-// to repaint from, so attaching to a running service starts at "now" and the
-// pane sits empty until the service says something next — which for a server
-// that has finished booting can be a long time.
-//
-// Writes, resizes, events and close all belong to the live stream. Only Read is
-// interposed.
-type historyTerminal struct {
-	history []byte
-	console.Terminal
-}
-
-func (t *historyTerminal) Read(p []byte) (int, error) {
-	if len(t.history) > 0 {
-		n := copy(p, t.history)
-		t.history = t.history[n:]
-		return n, nil
-	}
-	return t.Terminal.Read(p)
-}
-
-// historyLimit bounds how much of a transcript is played into a pane on open.
-//
-// A dev server left running for a day has a transcript far longer than anything
-// worth reading, and every byte of it is parsed by the emulator before the pane
-// draws. The cap is generous enough to hold what you would scroll back through
-// and small enough that opening a workspace does not stall on it.
-const historyLimit = 256 << 10
-
-// tailHistory is the last of a transcript, cut at a line boundary so the first
-// line drawn is a whole one — and, more to the point, so the cut never lands
-// inside an escape sequence and leaves the emulator interpreting the remainder
-// as text.
-func tailHistory(logs []byte) []byte {
-	if len(logs) <= historyLimit {
-		return logs
-	}
-	tail := logs[len(logs)-historyLimit:]
-	if at := bytes.IndexByte(tail, '\n'); at >= 0 && at+1 < len(tail) {
-		return tail[at+1:]
-	}
-	return tail
+	return m.report(false, "%s", msg.note)
 }

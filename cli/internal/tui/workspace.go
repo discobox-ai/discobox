@@ -421,38 +421,8 @@ func (m *Model) openService(gen int, service console.Service, order int) tea.Cmd
 	cols, rows := m.paneCells(term)
 	ctx, ds, id := m.ctx, m.ds.ForServer(m.Box.Server), m.Box.ID
 	return func() tea.Msg {
-		// The transcript is read for both kinds of pane, and read first.
-		//
-		// A plain exec has no screen to repaint from, so attaching to a running
-		// service starts at "now": without this the pane sits empty until the
-		// service next says something, which for a server that has finished
-		// booting is a long time. It is read before the attach rather than
-		// after, so the seam between the two can only lose a moment of output
-		// rather than repeat one — a repeated chunk reads as the service having
-		// done something twice, which is worse than a gap.
-		logs, err := ds.ServiceLogs(ctx, id, service.ID)
-		if err != nil {
-			// Not fatal to the pane: a live one still has its stream, and a
-			// card without the transcript still says what happened, which is
-			// more than an absent tab does.
-			logs = nil
-		}
-		history := tailHistory(logs)
-		if service.Live() && service.ExecID != "" {
-			stream, err := ds.OpenExec(ctx, id, service.ExecID, cols, rows)
-			if err != nil {
-				return serviceTermMsg{gen: gen, service: service, order: order, err: err}
-			}
-			return serviceTermMsg{
-				gen: gen, service: service, order: order,
-				term: &historyTerminal{history: history, Terminal: stream},
-			}
-		}
-		// A service that is not running has no stream, so the pane is handed
-		// the one thing there is to say about it. Its output is part of that:
-		// after a crash the output is the reason, and a reason you have to go
-		// and ask for is one you find out about later than you needed to.
-		return serviceTermMsg{gen: gen, service: service, order: order, term: newTextTerminal(serviceCard(service, history))}
+		term, err := console.OpenService(ctx, ds, id, service, cols, rows)
+		return serviceTermMsg{gen: gen, service: service, order: order, term: term, err: err}
 	}
 }
 

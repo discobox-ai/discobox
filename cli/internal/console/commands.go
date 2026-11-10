@@ -725,7 +725,7 @@ var registry = []Command{
 		Bindings: Bindings{TUI: tui().menu(".", "l"), Desktop: desktop().in(MenuView)}},
 	{ID: "services", Label: "services", Detail: "view output, start, stop or restart a service", Aliases: []string{"services"},
 		Target: TargetBox, countedByFlow: true,
-		Bindings: Bindings{TUI: tui().leader("S", "0"), Desktop: desktop().in(MenuBox)}},
+		Bindings: Bindings{TUI: tui().leader("S", "0"), Desktop: desktop("primary+alt+s").in(MenuBox)}},
 	{ID: "requests", Label: "credential requests", Detail: "answer this box's credential requests", Aliases: []string{"credential requests", "requests"},
 		Target:   TargetBox,
 		Bindings: Bindings{TUI: tui("C").leader("g"), Desktop: desktop().in(MenuBox)}},
@@ -792,7 +792,8 @@ var registry = []Command{
 //
 // A numbered gesture's sequences end in a digit, which is the number it goes
 // to as that frontend numbers what it goes to: the TUI's panes from 0, the
-// primary, and its services from 1; the desktop's tabs from 1.
+// primary, and its services from 1; the desktop's tabs from 1, and its
+// services from 1.
 type Gesture struct {
 	ID       string
 	Label    string
@@ -825,11 +826,12 @@ func digits(lead string, from, to int) TUIBinding {
 	return b
 }
 
-// desktopDigits are the desktop's chords from one digit to another.
-func desktopDigits(from, to int) DesktopBinding {
+// desktopDigits are the desktop's chords from one digit to another, each the
+// digit after lead.
+func desktopDigits(lead string, from, to int) DesktopBinding {
 	var b DesktopBinding
 	for n := from; n <= to; n++ {
-		b.Keys = append(b.Keys, fmt.Sprintf("primary+%d", n))
+		b.Keys = append(b.Keys, fmt.Sprintf("%s+%d", lead, n))
 	}
 	return b
 }
@@ -852,6 +854,6 @@ var gestures = []Gesture{
 	{ID: "clear selection", Label: "clear the selection", Bindings: Bindings{TUI: tui("c"), Desktop: desktop("primary+d")}},
 	{ID: "context menu", Label: "the row's menu", Bindings: Bindings{Desktop: desktop("contextmenu")}},
 	{ID: "menu bar", Label: "the menu bar", Bindings: Bindings{Desktop: desktop("f10")}},
-	{ID: "pane", Label: "a pane by its number", Bindings: Bindings{TUI: digits("", 0, 9), Desktop: desktopDigits(1, 9)}},
-	{ID: "service", Label: "a service by its number", Bindings: Bindings{TUI: digits("S", 1, 9)}},
+	{ID: "pane", Label: "a pane by its number", Bindings: Bindings{TUI: digits("", 0, 9), Desktop: desktopDigits("primary", 1, 9)}},
+	{ID: "service", Label: "a service by its number", Bindings: Bindings{TUI: digits("S", 1, 9), Desktop: desktopDigits("primary+alt", 1, 9)}},
 }

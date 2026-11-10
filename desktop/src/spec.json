@@ -912,7 +912,9 @@
           "menu": []
         },
         "desktop": {
-          "keys": [],
+          "keys": [
+            "primary+alt+s"
+          ],
           "menu": "Box"
         }
       }
@@ -1911,7 +1913,17 @@
           "menu": []
         },
         "desktop": {
-          "keys": []
+          "keys": [
+            "primary+alt+1",
+            "primary+alt+2",
+            "primary+alt+3",
+            "primary+alt+4",
+            "primary+alt+5",
+            "primary+alt+6",
+            "primary+alt+7",
+            "primary+alt+8",
+            "primary+alt+9"
+          ]
         }
       }
     }

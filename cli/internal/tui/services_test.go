@@ -160,24 +160,6 @@ func TestARunningServicePaneOpensOnItsHistory(t *testing.T) {
 	})
 }
 
-// A transcript longer than a pane could usefully hold is cut, at a line
-// boundary so the cut never lands inside an escape sequence.
-func TestHistoryIsTailedAtALineBoundary(t *testing.T) {
-	t.Parallel()
-	line := strings.Repeat("x", 99) + "\n"
-	logs := []byte(strings.Repeat(line, (historyLimit/len(line))+50))
-	got := tailHistory(logs)
-	if len(got) > historyLimit {
-		t.Fatalf("history is %d bytes, want at most %d", len(got), historyLimit)
-	}
-	if !strings.HasPrefix(string(got), "x") {
-		t.Fatalf("history starts mid-line: %q", string(got[:20]))
-	}
-	if short := []byte("short\n"); len(tailHistory(short)) != len(short) {
-		t.Fatal("a transcript under the limit must be played whole")
-	}
-}
-
 // A service never takes the keys. Nobody asked for it — it appeared because
 // the discobox is running it — and it is read-only, so focus there is focus
 // nowhere.

@@ -185,10 +185,14 @@ wire, so the app's are generated from them with the bridge's
   registry IDs; `TestParityScenariosNameRegistryCommands` holds each step to
   what both consoles reach: in a workspace (`attach`), a command bound from a
   pane; in the list, a gesture or a command bound there — the desktop reaching
-  a box's lifecycle through its row's menu. A step expects only what it names
-  (the workspace's terminals, shells, focus and maximize, and the row of the
-  box on screen; the list's targets, marks and archived). The TUI and the desktop app run
-  them, each pressing its own binding.
+  a box's lifecycle through its row's menu; or, in a workspace, a service step
+  (`service` and `verb`): the services command's menu, the service, then one of
+  its verbs (`Service.Actions`) or its `output`, on the services the scenario
+  declares for its first box (`services`, each with its status and logs). A
+  step expects only what it names (the workspace's terminals, shells, service
+  tabs, focus and maximize, text the focused pane shows, and the row of the
+  box on screen; the list's targets, marks and archived). The TUI and the
+  desktop app run them, each pressing its own binding.
 
 ## Workspaces
 
@@ -229,6 +233,20 @@ flowchart LR
   prefers what the program titles itself. `Column.Number` is the number a tab
   wears — services counted apart, so one starting never renumbers a shell —
   and spelling it as a key is each frontend's binding.
+- **A service's tab is the core's, and so is what it draws** (`services.go`).
+  `ListedServiceTabs` (`workspace.go`) is the tabs a service listing opens —
+  every service worth one (`Service.PaneWorthy`), on the run it reports
+  (`RunKey`) — and `ReconcileServices` what that changes in a workspace held,
+  built on it; the bridge sends the same tabs to the desktop app. `OpenService` is
+  what a service's tab is opened on: its process, played in after the last of
+  its transcript, or, for one not running, the card saying why with its last
+  output under it; both renderers' panes open on it (the desktop's through the
+  bridge). `Service.Actions` is the verbs its menu offers, each as it stands
+  (only a declaration that cannot run refuses them, saying why), and
+  `RunServiceVerb` runs one as offered, reading the service again first —
+  every console's way to act on a service, from its menu or a key. The menu's
+  other row, its output, is a renderer's tab to show. `NoServices` is what a
+  box with none says.
 - **An ending is decided once** (`Tab.End`): the primary ends the workspace,
   a tool or a broken stream ends the tab, a finished program holds its last
   screen. The renderer applies it to a workspace on screen and a parked one
