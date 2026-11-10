@@ -101,9 +101,11 @@
   for Enter (`filesDrop`); acting on the paste itself let a planted list of
   paths (`~/.ssh/id_ed25519`) be uploaded into the box. A confirmation lives
   only while the keys stay where it was asked: ended after every message
-  once they leave (`syncFilesDrop`, from `Update`), not on each way out — the
+  once they leave (`syncFilesDrop`, deferred in `Update` so no early return
+  skips it), not on each way out — the
   first cut cleared it on the panel's own keys alone, and a click elsewhere,
-  a leader key or a switch of box left its "enter copy" live.
+  a leader key or a switch of box left its "enter copy" live, and then a
+  call placed after `update` missed the tree's early return for a click.
 
 - **Input held behind slow work never holds the leader.** An image paste holds
   a pane's keys while it reads the clipboard and copies into the discobox,

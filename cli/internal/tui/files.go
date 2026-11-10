@@ -612,7 +612,9 @@ func (m *Model) filesAct(a filesAction) tea.Cmd {
 	case filesDropCopy:
 		drop := m.filesDrop
 		m.filesDrop = nil
-		if drop == nil {
+		// The offer is the panel's only while it has the keys; a press that
+		// reached it otherwise is not the person confirming what they saw.
+		if drop == nil || !m.filesHasKeys() {
 			return nil
 		}
 		return m.uploadDrop(*drop)
@@ -872,7 +874,8 @@ func (m *Model) filesDropped(msg filesDropMsg) tea.Cmd {
 
 // syncFilesDrop lets go of a drop waiting for Enter once the panel no longer
 // has the keys, or shows another box: closed, left for a pane or the tree, or
-// the workspace switched. Update calls it after every message.
+// the workspace switched. Update defers it, so every message, on every path
+// out, is followed by it.
 func (m *Model) syncFilesDrop() {
 	if d := m.filesDrop; d != nil && (!m.filesHasKeys() || m.boxRef(d.box) != m.boxRef(m.paneBox)) {
 		m.filesDrop = nil
