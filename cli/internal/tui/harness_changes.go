@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/console"
@@ -154,106 +153,64 @@ func (m *Model) viewHarnessChangesBanner(width int) string {
 	return bannerRow(st, offerPalette, width, subject, call, m.leader()+" "+harnessChangesKey)
 }
 
-// The explainer: the first time a project's console sees a discobox with a
-// harness change to save, it says what saving one does before anybody is asked
-// to. The review card says what changed; this says what Save means — that the
-// change stops being this box's and becomes every box's on the harness, a
-// login included — which is the one thing about it a person cannot see from
-// the diff.
-//
-// Once is per project, and the project is what remembers
-// (Project.harnessChangesExplained): a file on this machine would explain again
-// on a second machine and never to the second person on the project. The window reads the flag when it opens
-// (WithHarnessChangesUnexplained) and sets it the moment it shows the
-// explainer, whichever way it is answered: explaining twice because somebody
-// pressed Not now would be the explainer outstaying its one job.
-//
-// It waits for a screen with nothing in front of it — no dialog,
-// no run options, no terminal with the keys and no prompt being written —
-// and is checked again on every listing, so a box that captured a change while
-// something else was up is explained once that is gone. The terminal matters most: the change is
-// made by signing in there, so the explainer would otherwise come up while
-// the person is still typing, and its actions are single letters.
+// The explainer (console.HarnessChangesExplainer): the core says what it
+// says, which box it is about, when the project owes it
+// (Session.ExplainHarnessChanges) and whether the screen is free for it
+// (console.ExplainerScreen); the TUI reports its screen and puts it up. It is
+// checked again on every listing, so a box that captured a change while
+// something else was up is explained once that is gone.
 
-// WithHarnessChangesUnexplained opens the window owing the explainer: the
-// project has not yet explained saving a discobox's harness changes.
-func WithHarnessChangesUnexplained() Option {
-	return func(m *Model) { m.explainHarnessChanges = true }
-}
-
-const harnessChangesExplainTitle = "Saving harness changes"
-
-// harnessChangesExplainBody is the explainer's text for a harness by name.
-func harnessChangesExplainBody(name string) string {
-	return name + " in this discobox changed its settings or signed in.\n\n" +
-		"Saving makes those settings, and that login, the shared default for every discobox on " + name + " in this project: " +
-		"new discoboxes start with them, and a saved login is the one all of them use.\n\n" +
-		"Settings can include hooks and commands, which then run in every discobox on " + name + ": read what changed before you save it.\n\n" +
-		"Nothing is shared until you save. Discarding the change, or leaving it, keeps it in this discobox only.\n\n" +
-		"Whenever a box has a change to save, a green band says so and " + harnessChangesKey + " behind the leader reviews it."
-}
+// explainPresses are the explainer's answers by the letters that press them.
+var explainPresses = map[string]string{console.ExplainReview: "r", console.ExplainLater: "n"}
 
 // explainHarnessChangesIfOwed opens the explainer when the project owes it, a
-// listed box has a change to save, and nothing else has the screen.
+// listed box has a change to save, and nothing else has the screen. The
+// project is marked once it is answered, whichever way, Esc included.
 func (m *Model) explainHarnessChangesIfOwed() tea.Cmd {
-	if !m.explainHarnessChanges || m.dialog != nil || m.optionsOpen || m.inPanes() || m.writingPrompt() {
+	if !m.explainHarnessChanges || !m.explainerScreen().Free() {
 		return nil
 	}
-	box, ok := m.harnessChangesToExplain()
+	var workspace *console.Sandbox
+	if m.hasWorkspace() {
+		box := m.currentBox()
+		workspace = &box
+	}
+	box, ok := console.HarnessChangesToExplain(workspace, m.list.All())
 	if !ok {
 		return nil
 	}
 	m.explainHarnessChanges = false
-	items := []action{
-		{key: "r", press: "r", label: "Review changes", detail: "see what changed, then save or discard it", enabled: true},
-		{key: "n", press: "n", label: "Not now", detail: "the band and " + harnessChangesKey + " stay to review it later", enabled: true},
-	}
-	m.dialog = actionsDialog(harnessChangesExplainTitle, harnessChangesExplainBody(console.HarnessOf(box)), items, func(key string) tea.Cmd {
-		if key == "r" {
-			return m.openHarnessChanges(box)
+	d := questionDialog(console.HarnessChangesExplainer(box), explainPresses, func(key string) tea.Cmd {
+		if key == console.ExplainReview {
+			return tea.Batch(m.openHarnessChanges(box), m.markHarnessChangesExplained())
 		}
-		return nil
+		return m.markHarnessChangesExplained()
 	})
-	return m.markHarnessChangesExplained()
+	d.onCancel = m.markHarnessChangesExplained
+	m.dialog = d
+	return nil
 }
 
-// promptQuiet is how long the composer has to have gone untyped in before the
-// explainer comes up while it has the keys.
-const promptQuiet = 5 * time.Second
-
-// writingPrompt is whether the person is writing in the composer: it has the
-// keys, and holds a draft or was typed into just now. A letter typed at the
-// explainer as it came up would answer it.
-func (m *Model) writingPrompt() bool {
-	if m.focus != focusPrompt {
-		return false
+// explainerScreen is what has the TUI's screen, as the core reads it for the
+// explainer: a dialog or the run options in front, a terminal with the keys,
+// and the composer — the list's default focus — being written in.
+func (m *Model) explainerScreen() console.ExplainerScreen {
+	return console.ExplainerScreen{
+		Covered:    m.dialog != nil || m.optionsOpen,
+		Terminal:   m.inPanes(),
+		Composing:  m.focus == focusPrompt,
+		Draft:      m.prompt.Value() != "",
+		SinceTyped: m.now().Sub(m.promptTypedAt),
 	}
-	return m.prompt.Value() != "" || m.now().Sub(m.promptTypedAt) < promptQuiet
 }
 
-// harnessChangesToExplain is the box the explainer is about: the one on
-// screen when it has a change, else the first listed box that does.
-func (m *Model) harnessChangesToExplain() (console.Sandbox, bool) {
-	if m.hasWorkspace() {
-		if box := m.currentBox(); box.HarnessConfigPending {
-			return box, true
-		}
-	}
-	for _, box := range m.list.All() {
-		if box.HarnessConfigPending {
-			return box, true
-		}
-	}
-	return console.Sandbox{}, false
-}
-
-// markHarnessChangesExplained tells the server the explainer has been shown,
-// behind the dialog: the explainer has been read whether
-// or not the write lands, and losing it costs one repeated explanation.
+// markHarnessChangesExplained records on the project that the explainer was
+// answered, behind the window, saying so when the record did not land
+// (console.ExplainedHarnessChanges).
 func (m *Model) markHarnessChangesExplained() tea.Cmd {
 	return func() tea.Msg {
-		if err := m.ds.MarkHarnessChangesExplained(m.ctx); err != nil {
-			return statusMsg{text: "could not save that harness changes were explained: " + err.Error(), err: true}
+		if said := console.ExplainedHarnessChanges(m.ctx, m.ds); said != "" {
+			return statusMsg{text: said, err: true}
 		}
 		return nil
 	}

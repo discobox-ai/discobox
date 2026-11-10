@@ -401,7 +401,8 @@
   search.
 - **Nothing unprompted that answers to single letters comes up over typing**:
   not over a focused terminal, nor over the composer while it holds a draft or
-  was typed into in the last few seconds (`writingPrompt`). The explainer was
+  was typed into in the last few seconds (`console.ExplainerScreen.Free`,
+  reported by `explainerScreen`). The explainer was
   first guarded against the terminal only, and the composer is the list's
   default focus.
 - **A flag the box reports never takes down a refusal the control plane
@@ -411,12 +412,17 @@
 - **The harness-changes band's occurrence is its candidate.** Keyed on the box
   alone, a dismissal would hide every later change; keyed on nothing, it would
   come back on every listing.
-- **The explainer is recorded whichever way it is answered**, and only shown
-  with nothing else in front (`explainHarnessChangesIfOwed`). A path that opens
-  it over another dialog or a focused terminal — where the person
-  is likely still typing their sign-in, and a typed letter answers it — or
-  that records it without showing it, loses the one explanation the project
-  gets.
+- **The explainer is recorded once it is answered, whichever way**, Esc
+  included, and only shown with nothing else in front
+  (`explainHarnessChangesIfOwed`). What it says, which box it is about,
+  whether the project owes it, whether the screen is free and the words of a
+  record that failed are the core's (`console.HarnessChangesExplainer`,
+  `HarnessChangesToExplain`, `Session.ExplainHarnessChanges`,
+  `ExplainerScreen`, `ExplainedHarnessChanges`); the TUI reports its screen.
+  A path that opens it over another dialog or a focused terminal — where the
+  person is likely still typing their sign-in, and a typed letter answers it
+  — or that records it without showing it, loses the one explanation the
+  project gets.
 
 - Scope addition-preview promises to the addition action. The add-or-replace
   dialog offers both outcomes; an unqualified footer saying the rest stays

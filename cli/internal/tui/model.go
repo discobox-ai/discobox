@@ -465,10 +465,11 @@ type Model struct {
 	// out.
 	statusGen int
 
-	// explainHarnessChanges is whether the project has yet to explain saving a
-	// discobox's harness changes: the explainer is owed the first time a
-	// listed box has one. It goes false once the explainer is shown, and is
-	// never set again by this window; see harness_changes.go.
+	// explainHarnessChanges is whether the window owes the explainer: the
+	// project had yet to explain saving a discobox's harness changes when the
+	// session was read (console.Session.ExplainHarnessChanges), and this
+	// window has not shown it since. It goes false once the explainer is
+	// shown, and is never set again by this window; see harness_changes.go.
 	explainHarnessChanges bool
 
 	// copySize is the measurement behind the "copy this directory?" question:
@@ -1029,6 +1030,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.session = msg.session
 		m.list.Session = msg.session
 		m.sessionRead = true
+		m.explainHarnessChanges = msg.session.ExplainHarnessChanges
 		cmd := m.restoreDraft(msg.session.Draft)
 		// The window opens on the filters the last window was left on, and on
 		// every server, folder and tag when nothing has been narrowed: seeing

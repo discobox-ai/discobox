@@ -689,17 +689,17 @@ boxes keep getting" (`HarnessChangedFile.Shadowed`, from the server's preview):
 a save keeps that change beneath the person's file (ADR 26-11-04-711 §2).
 
 **The first harness change a project's console sees is explained once**
-(`explainHarnessChangesIfOwed`): a dialog saying that saving makes the change —
-settings and login — the shared default for every discobox on that harness in
-the project, that settings can carry hooks and commands that then run in every
-one, and that nothing is shared until somebody saves. It offers the
-review or Not now, and either way records it on the project
-(`Project.harnessChangesExplained`, `MarkHarnessChangesExplained`): per project,
-not per machine. The window reads the flag
-when it opens (`WithHarnessChangesUnexplained`), and checks after every listing,
-so it waits for a screen with no dialog, run options or terminal with
-the keys in front: the change is made by signing in in that terminal, and the
-explainer's actions are single letters a person still typing there would
+(`explainHarnessChangesIfOwed`): the core's question
+(`console.HarnessChangesExplainer`, about the box `HarnessChangesToExplain`
+picks, the one on screen first), offering the review or Not now, `r` and `n`,
+and once answered either way, Esc included, recorded on the project
+(`console.ExplainedHarnessChanges`): per project, not per machine. The window
+owes it when the session says so (`Session.ExplainHarnessChanges`, read from
+the project), and checks after every listing, so it waits for a screen the
+core reads as free (`console.ExplainerScreen`, which `explainerScreen`
+reports): no dialog, run options or terminal with the keys in front, and no
+prompt being written. The change is made by signing in in that terminal, and
+the explainer's answers are single letters a person still typing there would
 answer it with.
 
 **The request's chip throbs** (`armBannerPulse`): the field under `click to

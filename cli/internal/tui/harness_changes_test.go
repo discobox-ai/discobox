@@ -207,16 +207,20 @@ func TestPressingTheHarnessChangesBandOpensTheReview(t *testing.T) {
 	}
 }
 
-// The first listing with a box that has a change to save explains saving,
-// once, and records on the project that it has.
+// explainTitle is the explainer's title, as the core says it.
+var explainTitle = console.HarnessChangesExplainer(console.Sandbox{}).Title
+
+// The first listing with a box that has a change to save, on a project the
+// session says has yet to explain it, explains saving, once, and records on
+// the project that it has.
 func TestTheFirstHarnessChangeIsExplainedOnce(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(pendingSandboxes()...)
+	ds.session.ExplainHarnessChanges = true
 	m := newTestModel(t, ds)
-	m.explainHarnessChanges = true
 	send(t, m, tickMsg{})
 
-	if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+	if m.dialog == nil || m.dialog.title != explainTitle {
 		t.Fatalf("dialog = %s, want the explainer", describe(m.dialog))
 	}
 	for _, want := range []string{"Claude Code", "shared default for every discobox", "saved login", "Nothing is shared until you save"} {
@@ -224,11 +228,14 @@ func TestTheFirstHarnessChangeIsExplainedOnce(t *testing.T) {
 			t.Fatalf("body = %q, want %q", m.dialog.body, want)
 		}
 	}
-	if ds.explained != 1 {
-		t.Fatalf("explained = %d, want it recorded once", ds.explained)
+	if ds.explained != 0 {
+		t.Fatalf("explained = %d before it was answered", ds.explained)
 	}
 
 	send(t, m, keyPress("n"))
+	if ds.explained != 1 {
+		t.Fatalf("explained = %d, want Not now recorded once", ds.explained)
+	}
 	if m.dialog != nil {
 		t.Fatalf("dialog = %s, want Not now to close it", describe(m.dialog))
 	}
@@ -250,6 +257,22 @@ func TestTheExplainerOpensTheReview(t *testing.T) {
 
 	if m.dialog == nil || !strings.Contains(m.dialog.title, "Harness changes") {
 		t.Fatalf("dialog = %s, want the review", describe(m.dialog))
+	}
+	if ds.explained != 1 {
+		t.Fatalf("explained = %d, want the review recorded as an answer", ds.explained)
+	}
+}
+
+// Leaving the explainer is answering it: the project is marked all the same.
+func TestTheExplainerLeftIsRecorded(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(pendingSandboxes()...)
+	m := newTestModel(t, ds)
+	m.explainHarnessChanges = true
+	send(t, m, tickMsg{})
+	send(t, m, keyPress("esc"))
+	if m.dialog != nil || ds.explained != 1 {
+		t.Fatalf("dialog = %s explained = %d, want Esc to close it and record it", describe(m.dialog), ds.explained)
 	}
 }
 
@@ -288,7 +311,7 @@ func TestTheExplainerWaitsForAFreeScreen(t *testing.T) {
 
 	m.dialog = nil
 	send(t, m, tickMsg{})
-	if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+	if m.dialog == nil || m.dialog.title != explainTitle {
 		t.Fatalf("dialog = %s, want the explainer once the screen is free", describe(m.dialog))
 	}
 }
@@ -324,9 +347,9 @@ func TestTheExplainerWaitsWhileAPromptIsBeingWritten(t *testing.T) {
 		t.Fatalf("dialog = %s, want nothing while a prompt is being written", describe(m.dialog))
 	}
 	send(t, m, keyPress("backspace"))
-	m.promptTypedAt = m.now().Add(-promptQuiet)
+	m.promptTypedAt = m.now().Add(-console.PromptQuiet)
 	send(t, m, tickMsg{})
-	if m.dialog == nil || m.dialog.title != harnessChangesExplainTitle {
+	if m.dialog == nil || m.dialog.title != explainTitle {
 		t.Fatalf("dialog = %s, want the explainer once the composer is empty and quiet", describe(m.dialog))
 	}
 }
@@ -346,7 +369,7 @@ func TestAnEmptyCurrentHarnessDiffSuppressesBandAndExplainer(t *testing.T) {
 		if got := m.bannerShowing(); got != want {
 			t.Fatalf("pending=%v banner=%v want=%v", pending, got, want)
 		}
-		if _, got := m.harnessChangesToExplain(); got != pending {
+		if _, got := console.HarnessChangesToExplain(&m.Box, m.list.All()); got != pending {
 			t.Fatalf("pending=%v explainer=%v", pending, got)
 		}
 		if len(m.dismissed) != 0 {

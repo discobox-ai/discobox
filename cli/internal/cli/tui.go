@@ -127,14 +127,6 @@ func (a *App) runConsole(cmd *cobra.Command, leaderFlag string, options ...tui.O
 	ds.serverChosen = cmd.Flags().Changed("server")
 	options = append([]tui.Option{tui.WithLeader(leaderKey)}, options...)
 
-	// Read the once-per-project harness explainer state before the first listing.
-	project, err := a.getProject(cmd.Context(), client, projectID)
-	if err != nil {
-		return err
-	}
-	if !project.HarnessChangesExplained {
-		options = append(options, tui.WithHarnessChangesUnexplained())
-	}
 	// The window's own loop does not wait for the commands it has in flight
 	// when it quits, and one of them may be a push that cannot be interrupted
 	// (App.waitForPushes). Leaving without it would end a transfer between
@@ -460,6 +452,14 @@ func (d *apiDataSource) Session(ctx context.Context) (console.Session, error) {
 			session.Servers = append(session.Servers, s.name)
 		}
 		d.mu.Unlock()
+	}
+	// Whether the project has yet to explain saving a discobox's harness
+	// changes: the project remembers, so a window on another machine, or
+	// another person's, is not explained to again. Read last, and a read that
+	// fails owes nothing: the rest of the session stands, and the next window
+	// explains it.
+	if project, err := d.app.getProject(ctx, d.client, d.projectID); err == nil {
+		session.ExplainHarnessChanges = !project.HarnessChangesExplained
 	}
 	return session, nil
 }
