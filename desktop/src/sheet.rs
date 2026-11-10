@@ -323,8 +323,9 @@ pub fn take_errors(s: &mut State, refused: FieldErrors) {
 }
 
 /// A question from the core, on the yes when it has one — or on the no, for a destruction that
-/// has to be chosen; a pick of one on its first answer that can be chosen. One sent again is the question asked, with its directory counted further
-/// (`count`): it is updated where it is, the pick kept; one already answered is moot.
+/// has to be chosen; a pick of one on its first answer that can be chosen. One sent again is the
+/// question asked, with its directory counted further (`count`): it is updated where it is, the
+/// pick kept; one already answered is moot.
 pub fn take_question(s: &mut State, question: Question) {
     if s.sheets.answered.contains(&question.id) {
         return;
