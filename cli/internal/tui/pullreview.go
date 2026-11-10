@@ -56,12 +56,8 @@ type reviewWindow struct {
 	typed, exited bool
 }
 
-// reviewStartTimeout is how long a session is given to start: one in a
-// discobox that is waking can take a while, and one that never comes must
-// not leave the tab waiting with no way to say so.
-const reviewStartTimeout = 2 * time.Minute
-
-// reviewStartTimedOutMsg is that time up, for the window that asked.
+// reviewStartTimedOutMsg is the core's time for a start up
+// (console.ReviewStartTimeout), for the window that asked.
 type reviewStartTimedOutMsg struct{}
 
 // reviewMsg is a message the window's session sent, back to the window that
@@ -114,14 +110,14 @@ func (m *Model) openReview(p *pane) tea.Cmd {
 			exec, stream, err := ds.PullReview(ctx, box, start, cols, rows)
 			if err == nil && ctx.Err() != nil {
 				_ = stream.Close()
-				end, cancel := context.WithTimeout(context.WithoutCancel(ctx), issueTimeout)
+				end, cancel := context.WithTimeout(context.WithoutCancel(ctx), console.IssueTimeout)
 				defer cancel()
 				_ = ds.EndExec(end, box, exec.ID)
 				return nil
 			}
 			return reviewStartedMsg{exec: exec, stream: stream, err: err}
 		},
-		tick(reviewStartTimeout, func(time.Time) tea.Msg { return reviewStartTimedOutMsg{} }),
+		tick(console.ReviewStartTimeout, func(time.Time) tea.Msg { return reviewStartTimedOutMsg{} }),
 	))
 }
 
@@ -161,7 +157,7 @@ func (w *reviewWindow) endExec(execID string) {
 	// the way out this end is meant to outlast.
 	go func() {
 		defer w.ends.Done()
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(w.ctx), issueTimeout)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(w.ctx), console.IssueTimeout)
 		defer cancel()
 		_ = ds.EndExec(ctx, box, execID)
 	}()
@@ -216,7 +212,7 @@ func (m *Model) updateReview(msg reviewMsg) tea.Cmd {
 		}
 		v.files = false
 		v.closeReview()
-		return m.report(true, "discobox-review did not start in the discobox within %s", reviewStartTimeout)
+		return m.report(true, "%v", console.ErrReviewNotStarted)
 	case termpane.ClosedMsg:
 		w.end()
 		switch {

@@ -315,8 +315,8 @@ func (r *Registry) entry(ctx Context, c Command, targets []Sandbox) Entry {
 		e.Unavailable = "open discobox console for this page"
 	}
 	if one && (c.ID == "issue" || c.ID == "pr" || c.ID == "files") {
-		if _, ok := targets[0].WorkNumber(c.ID != "issue"); !ok {
-			e.Enabled, e.Why = false, "no matching repository tag"
+		if _, err := targets[0].Work(c.ID != "issue"); err != nil {
+			e.Enabled, e.Why = false, err.Error()
 		}
 	}
 	if ctx.OneShot != nil && slices.ContainsFunc(targets, func(s Sandbox) bool { return !sameBox(ctx.Session, s, *ctx.OneShot) }) {
@@ -700,10 +700,10 @@ var registry = []Command{
 		Target: TargetBox, countedByFlow: true,
 		Bindings: Bindings{TUI: tui("o").leader("o"), Desktop: desktop("primary+alt+o").in(MenuBox)}},
 	{ID: "issue", Label: "issue", Detail: "open the tagged issue", Aliases: []string{"issue"},
-		Target:   TargetBox,
+		Target: TargetBox, countedByFlow: true,
 		Bindings: Bindings{TUI: tui("i").leader("i"), Desktop: desktop().in(MenuBox)}},
 	{ID: "pr", Label: "pull request", Detail: "open the tagged pull request", Aliases: []string{"pull request", "pr"},
-		Target:   TargetBox,
+		Target: TargetBox, countedByFlow: true,
 		Bindings: Bindings{TUI: tui("p").leader("p"), Desktop: desktop().in(MenuBox)}},
 	{ID: "audit", Label: "audit", Detail: "follow everything the box has done, as it happens", Aliases: []string{"audit"},
 		Target: TargetBox, countedByFlow: true,
@@ -737,7 +737,7 @@ var registry = []Command{
 		Target:   TargetBox,
 		Bindings: Bindings{TUI: tui("K").leader("K"), Desktop: desktop().in(MenuBox)}},
 	{ID: "files", Label: "files changed", Detail: "review the pull request's changes", Aliases: []string{"files changed", "diff"},
-		Target:   TargetBox,
+		Target: TargetBox, countedByFlow: true,
 		Bindings: Bindings{TUI: tui("f").leader("f"), Desktop: desktop().in(MenuBox)}},
 	{ID: "archived", Label: "show archived", Detail: "show or hide archived boxes", Aliases: []string{"show archived"},
 		Bindings: Bindings{TUI: tui("A"), Desktop: desktop("primary+alt+a").in(MenuView)}},

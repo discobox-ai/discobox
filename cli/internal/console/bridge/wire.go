@@ -36,8 +36,11 @@ import (
 // history, its actions and its words) and what a form is about (Form.About);
 // 14, a question's count, sent again as it climbs (Question.Count); 15, the
 // audit view: the timeline's runs, times and note, and the audit command's
-// record read in full and its recordings.
-const Protocol = 15
+// record read in full and its recordings; 16, a box's issue and pull request:
+// the issue topic, the issue and pr commands' comment, close or reopen, and
+// merge, a pull request's files changed as a session (TabFiles), and a
+// question's answer offered with why it cannot be chosen (Choice.Why).
+const Protocol = 16
 
 // Type names a message.
 type Type string
@@ -206,6 +209,12 @@ const (
 	// as the line under it says it (console.RunOptions.Summary): sent again
 	// whenever the run options change.
 	TopicComposer Topic = "composer"
+	// TopicIssue is the GitHub issue or pull request a box is tagged with,
+	// as its tab draws it (Box, Issue): read as it is subscribed, again every
+	// console.IssueRefreshEvery, soon after while GitHub has yet to say
+	// whether a pull request can merge, and at once after a command here
+	// comments on it, closes, reopens or merges it.
+	TopicIssue Topic = "issue"
 )
 
 // Subscribe starts following a topic. Sub is the app's, unique for the
@@ -232,6 +241,24 @@ type Subscribe struct {
 	Context *Context      `json:"context,omitempty"`
 	Targets []string      `json:"targets,omitempty"`
 	Palette *PaletteQuery `json:"palette,omitempty"`
+	Issue   *IssueQuery   `json:"issue,omitempty"`
+}
+
+// IssueQuery is which of a box's work the issue topic follows: its issue, or
+// its pull request (Pull), by the number its tag gives (console.Sandbox.WorkNumber).
+// Full is a read someone asked to see now, which the data source answers
+// from GitHub rather than from what it read before; the app subscribes again
+// under a new Sub to read again.
+//
+// Shown is the head of the pull request the app had shown the person before
+// this subscription — a tab parked and back on screen — so a push made
+// meanwhile is still said (console.ShownHead); empty for a tab that has
+// shown none, or for a read the person asked for (Full), which shows them
+// the head it brings.
+type IssueQuery struct {
+	Pull  bool   `json:"pull,omitempty"`
+	Full  bool   `json:"full,omitempty"`
+	Shown string `json:"shown,omitempty"`
 }
 
 // PaletteQuery is what the palette asks (console.PaletteQuery): the text
@@ -271,6 +298,190 @@ type Snapshot struct {
 	Commands     *Commands     `json:"commands,omitempty"`
 	Palette      *Palette      `json:"palette,omitempty"`
 	Composer     *Composer     `json:"composer,omitempty"`
+	Issue        *Issue        `json:"issue,omitempty"`
+}
+
+// Issue is a GitHub issue or pull request as its tab draws it
+// (console.Issue), with every rule's answer the core's: its badge, whether it
+// can merge and why not, each event's words, the checks summed up, what each
+// reviewer said. Every body is markdown made safe to render
+// (console.MarkdownSource). Every string in it was written by whoever can
+// comment on the issue. A time is said as how long ago it was when it was read
+// (console.Ago), as the TUI's tab says it.
+type Issue struct {
+	// Label is what its tab is called (console.WorkLabel), and URL its page.
+	Label string `json:"label"`
+	URL   string `json:"url"`
+	// Repository is owner/name.
+	Repository  string       `json:"repository"`
+	Number      int          `json:"number"`
+	Pull        bool         `json:"pull,omitempty"`
+	Title       string       `json:"title"`
+	State       IssueState   `json:"state"`
+	Badge       string       `json:"badge"`
+	Mark        IssueMark    `json:"mark"`
+	Author      string       `json:"author"`
+	Opened      string       `json:"opened"`
+	Comments    int          `json:"comments"`
+	Body        string       `json:"body"`
+	Reactions   string       `json:"reactions,omitempty"`
+	Labels      []Label      `json:"labels"`
+	Assignees   []string     `json:"assignees"`
+	Type        string       `json:"type,omitempty"`
+	Milestone   string       `json:"milestone,omitempty"`
+	Locked      bool         `json:"locked,omitempty"`
+	SubIssues   []IssueRef   `json:"subIssues"`
+	SubTotal    int          `json:"subTotal,omitempty"`
+	SubDone     int          `json:"subDone,omitempty"`
+	PullRequest *PullRequest `json:"pullRequest,omitempty"`
+	// Timeline is what happened after it was opened, oldest first, as the
+	// page draws it: a merge's close left out (console.Issue.TimelineShows).
+	Timeline []IssueItem `json:"timeline"`
+	// Truncated is a timeline longer than was read: the rest is on its page.
+	Truncated bool `json:"truncated,omitempty"`
+	// Pushed is the head this subscription first showed, once a read since
+	// brought another: what was read here is not what would be merged, and
+	// Notice says so (console.PushedNotice) until the app reads again.
+	Pushed string `json:"pushed,omitempty"`
+	Notice string `json:"notice,omitempty"`
+}
+
+// IssueState is whether an issue is open or closed (a merged pull request is
+// closed).
+type IssueState string
+
+// The states.
+const (
+	IssueOpen   IssueState = "open"
+	IssueClosed IssueState = "closed"
+)
+
+// IssueMark is a state's mark (console.IssueMark): filled while there is
+// something to do about it, in its tone.
+type IssueMark struct {
+	Filled bool              `json:"filled,omitempty"`
+	Tone   console.IssueTone `json:"tone"`
+}
+
+// Label is one of an issue's labels, with the color its page draws it in:
+// six hex digits, without the #.
+type Label struct {
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+// IssueRef is another issue or pull request, as a sub-issue list names it:
+// its number, with its repository when that is not this one's.
+type IssueRef struct {
+	Number string    `json:"number"`
+	Title  string    `json:"title"`
+	Mark   IssueMark `json:"mark"`
+}
+
+// PullRequest is what a pull request's page shows beyond the issue it is.
+type PullRequest struct {
+	Draft     bool   `json:"draft,omitempty"`
+	Merged    bool   `json:"merged,omitempty"`
+	MergedBy  string `json:"mergedBy,omitempty"`
+	MergedAgo string `json:"mergedAgo,omitempty"`
+	// Head and Base are the branches, and HeadSHA and BaseSHA the commits that
+	// were read: what a merge from here merges, and what the files changed
+	// are measured between.
+	Head         string `json:"head"`
+	Base         string `json:"base"`
+	HeadSHA      string `json:"headSha"`
+	BaseSHA      string `json:"baseSha"`
+	Commits      int    `json:"commits"`
+	Additions    int    `json:"additions"`
+	Deletions    int    `json:"deletions"`
+	ChangedFiles int    `json:"changedFiles"`
+	// Merge is whether it can merge now (console.Issue.Merge), only while it
+	// is open: Said is the sentence, Ready nothing in its way, Unknown GitHub
+	// yet to say.
+	Merge     *Merge     `json:"merge,omitempty"`
+	Reviewers []Reviewer `json:"reviewers"`
+	Checks    Checks     `json:"checks"`
+}
+
+// Merge is the merge box of an open pull request; a closed or merged one
+// has none (console.MergeStanding.Shown).
+type Merge struct {
+	Ready   bool      `json:"ready,omitempty"`
+	Unknown bool      `json:"unknown,omitempty"`
+	Said    string    `json:"said,omitempty"`
+	Mark    IssueMark `json:"mark"`
+}
+
+// Reviewer is one of the page's reviewers and what they said.
+type Reviewer struct {
+	Name string    `json:"name"`
+	Said string    `json:"said"`
+	Mark IssueMark `json:"mark"`
+}
+
+// Checks are the head commit's checks summed up (console.CheckSummary), and
+// each that has not passed.
+type Checks struct {
+	Failing  int     `json:"failing,omitempty"`
+	Pending  int     `json:"pending,omitempty"`
+	Passed   int     `json:"passed,omitempty"`
+	Partial  bool    `json:"partial,omitempty"`
+	Unpassed []Check `json:"unpassed"`
+}
+
+// Check is one check that has not passed, and its page, where it has one.
+type Check struct {
+	Name string    `json:"name"`
+	URL  string    `json:"url,omitempty"`
+	Mark IssueMark `json:"mark"`
+}
+
+// IssueItemKind is what a timeline item is, which says how it is drawn.
+type IssueItemKind string
+
+// The item kinds.
+const (
+	// ItemComment is a comment, drawn as its markdown.
+	ItemComment IssueItemKind = "comment"
+	// ItemReview is a review: what it said, its summary, and its threads.
+	ItemReview IssueItemKind = "review"
+	// ItemCommit is a commit pushed: its short name and its subject.
+	ItemCommit IssueItemKind = "commit"
+	// ItemEvent is anything else that happened, said in Text.
+	ItemEvent IssueItemKind = "event"
+)
+
+// IssueItem is one thing in the timeline: who, when, and what. Text is an
+// event's words (console.Issue.EventText), a review's verdict
+// (console.ReviewSaid, in Tone), or a commit's subject under its short name
+// (Commit). Body is a comment's or a review's markdown.
+type IssueItem struct {
+	Kind      IssueItemKind     `json:"kind"`
+	Actor     string            `json:"actor"`
+	Ago       string            `json:"ago"`
+	Text      string            `json:"text,omitempty"`
+	Tone      console.IssueTone `json:"tone,omitempty"`
+	Commit    string            `json:"commit,omitempty"`
+	Body      string            `json:"body,omitempty"`
+	Reactions string            `json:"reactions,omitempty"`
+	Threads   []Thread          `json:"threads"`
+}
+
+// Thread is one conversation a review started on the diff: where
+// (console.ThreadWhere), the lines it is under (console.ThreadHunk), and
+// its comments.
+type Thread struct {
+	Where    string          `json:"where"`
+	Hunk     []string        `json:"hunk"`
+	Comments []ThreadComment `json:"comments"`
+}
+
+// ThreadComment is one comment of a review thread.
+type ThreadComment struct {
+	Author    string `json:"author"`
+	Ago       string `json:"ago"`
+	Body      string `json:"body"`
+	Reactions string `json:"reactions,omitempty"`
 }
 
 // Composer is the summary of what a create would be made with: the harness,
@@ -582,7 +793,7 @@ type AuditRecording struct {
 type Header struct {
 	ID string `json:"id"`
 	// Work is the issue and the pull request the box's tags number, each a
-	// link to it.
+	// link to it, whose press opens its tab (Link.Command).
 	Work []Link `json:"work"`
 	// Blocked is what a box waiting on a person says in place of the git
 	// word, empty for one that is not.
@@ -624,6 +835,11 @@ type Header struct {
 type Link struct {
 	Label string `json:"label"`
 	URL   string `json:"url,omitempty"`
+	// Command is the registry command a press on it runs in place of
+	// opening the browser — issue or pr, for the work a box's tags number,
+	// whose tab the console opens — leaving the browser to a press with the
+	// platform's link modifier.
+	Command string `json:"command,omitempty"`
 }
 
 // GitTone is how a header reads the work's git position and word.
@@ -685,6 +901,8 @@ type Tab struct {
 	// taken on (console.Tab.TakesImageKeys).
 	Images    bool `json:"images,omitempty"`
 	ImageKeys bool `json:"imageKeys,omitempty"`
+	// Files is the number of the pull request a files changed tab is of.
+	Files int `json:"files,omitempty"`
 }
 
 // TabKind is what a session is, which says the column its tab is in.
@@ -702,6 +920,10 @@ const (
 	TabTool TabKind = "tool"
 	// TabService is a declared service's session.
 	TabService TabKind = "service"
+	// TabFiles is a pull request's files changed, discobox-review over its
+	// base and head: the app's own, ended when its tab is closed, which the
+	// sessions topic never lists.
+	TabFiles TabKind = "files"
 )
 
 // Service is one declared service, as the services menu lists it: its name,
@@ -800,7 +1022,32 @@ type Args struct {
 	// it instead.
 	Record string            `json:"record,omitempty"`
 	Part   console.AuditPart `json:"part,omitempty"`
+	// Act is what the issue and pr commands do to the box's issue or pull
+	// request; without one they hand the app its tab. Comment is the comment
+	// a comment posts, as written. Head is the commit the app showed, which a
+	// merge merges — a branch that moved since is refused — and the files
+	// command reviews, from Base; Pushed is the head it showed before a read
+	// brought this one, when one did, which the merge question says.
+	Act     IssueAct `json:"act,omitempty"`
+	Comment string   `json:"comment,omitempty"`
+	Head    string   `json:"head,omitempty"`
+	Base    string   `json:"base,omitempty"`
+	Pushed  string   `json:"pushed,omitempty"`
 }
+
+// IssueAct is what the issue and pr commands do.
+type IssueAct string
+
+// The acts.
+const (
+	// ActComment posts Args.Comment.
+	ActComment IssueAct = "comment"
+	// ActState closes or reopens it, as the core asks (console.Issue.StateQuestion).
+	ActState IssueAct = "state"
+	// ActMerge merges the pull request at Args.Head, as the core asks
+	// (console.Issue.MergeQuestion).
+	ActMerge IssueAct = "merge"
+)
 
 // Status is how a command ended.
 type Status string
@@ -872,6 +1119,9 @@ type Result struct {
 	// Audit is what the audit command read of a record: the record in full,
 	// or one of its recordings.
 	Audit *AuditText `json:"audit,omitempty"`
+	// Work is the issue or pull request the issue and pr commands open a tab
+	// on: what its tab is called and its page, before the issue topic reads it.
+	Work *Link `json:"work,omitempty"`
 }
 
 // Tool is one of a box's tools as the tools menu lists it: what it is called
@@ -1119,6 +1369,9 @@ type Choice struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
 	Hint  string `json:"hint,omitempty"`
+	// Why is why an answer a question offers cannot be chosen: shown, never
+	// taken.
+	Why string `json:"why,omitempty"`
 }
 
 // Submit fills a form. Answers are the fields the person changed, by key;

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"charm.land/glamour/v2"
+
+	"github.com/discobox-ai/discobox/cli/internal/console"
 )
 
 // A block of code is highlighted in the window's syntax colors with no field
@@ -49,7 +51,7 @@ func TestMarkdownDoesNotDecodeACharacterATerminalActsOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	evil := "&#x1b;[31mred&#27;[0m &#x1b;]52;c;aGVsbG8=&#7; abc&#x202e;def a&#x200b;b &rlm;x &#x9b;31m &#x85; &NewLine; &#x1b[32mgreen &#27[0m &shy"
-	out, err := r.Render(markdownSource(evil + "\n\nfine: &amp; &lt;b&gt; a&nbsp;b &#128512; &copy; &nosuchname;"))
+	out, err := r.Render(console.MarkdownSource(evil + "\n\nfine: &amp; &lt;b&gt; a&nbsp;b &#128512; &copy; &nosuchname;"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +60,7 @@ func TestMarkdownDoesNotDecodeACharacterATerminalActsOn(t *testing.T) {
 	}
 	// A link is the renderer's own escape sequence, and what a reference
 	// spelled in its address is not in it.
-	linked, err := r.Render(markdownSource("[l](http://a.example/&#x1b;&#7;x)"))
+	linked, err := r.Render(console.MarkdownSource("[l](http://a.example/&#x1b;&#7;x)"))
 	if err != nil {
 		t.Fatal(err)
 	}

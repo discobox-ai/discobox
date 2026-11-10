@@ -45,6 +45,10 @@ type stream struct {
 	// watch reads a box's primary for what its program says (program.go);
 	// nil on every other stream.
 	watch *programWatch
+	// ended is called once, when the stream is let go however that happens:
+	// a files changed session, which is its tab's own, ended in its box
+	// (Server.endFiles). Nil on every other stream.
+	ended func()
 }
 
 func newStreams(w *Writer, send func(Message)) *streams {
@@ -83,6 +87,11 @@ func (s *streams) frame(f Frame) {
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	if f.Kind == frame.Input {
+		// The person at it, typing or pressing: a files changed tab they
+		// quit is done with (console.Tab.End).
+		st.tab.Typed = true
+	}
 	if st.term == nil {
 		size := 9 + len(f.Payload)
 		if st.closed || st.earlyBytes+size > earlyLimit {
@@ -112,9 +121,10 @@ func apply(term console.Terminal, f Frame) {
 // attach gives a stream its terminal, showing tab: what was kept for it is
 // applied in order, then its output and its connection's state go to the app
 // until it ends or is closed, its output read by watch when it is a box's
-// primary. A stream that ended or was closed while it opened takes no
-// terminal, and false says the terminal was closed.
-func (s *streams) attach(id uint32, term console.Terminal, tab console.Tab, watch *programWatch) bool {
+// primary, and ended called once it is let go. A stream that ended or was
+// closed while it opened takes no terminal, and false says the terminal was
+// closed.
+func (s *streams) attach(id uint32, term console.Terminal, tab console.Tab, watch *programWatch, ended func()) bool {
 	st := s.get(id)
 	if st == nil {
 		_ = term.Close()
@@ -127,7 +137,10 @@ func (s *streams) attach(id uint32, term console.Terminal, tab console.Tab, watc
 		_ = term.Close()
 		return false
 	}
-	st.term, st.tab, st.watch = term, tab, watch
+	// What was typed before it attached was typed at it.
+	typed := st.tab.Typed
+	st.term, st.tab, st.watch, st.ended = term, tab, watch, ended
+	st.tab.Typed = st.tab.Typed || typed
 	for _, f := range st.early {
 		apply(term, f)
 	}
@@ -165,8 +178,11 @@ func (s *streams) pump(id uint32, st *stream) {
 			if !errors.Is(err, io.EOF) {
 				msg, why = err.Error(), err
 			}
+			st.mu.Lock()
 			end := wireEnd(st.tab.End(why))
-			s.send(Message{Type: TypeStream, Stream: &Stream{Stream: id, State: StreamEnded, Why: msg, End: end, Status: st.tab.Status}})
+			status := st.tab.Status
+			st.mu.Unlock()
+			s.send(Message{Type: TypeStream, Stream: &Stream{Stream: id, State: StreamEnded, Why: msg, End: end, Status: status}})
 			_ = s.w.Write(frame.Exit, id, []byte(msg))
 			s.end(id)
 			return
@@ -246,7 +262,8 @@ func (s *streams) end(id uint32) {
 		return
 	}
 	st.mu.Lock()
-	term := st.term
+	term, ended := st.term, st.ended
+	st.ended = nil
 	select {
 	case <-st.done:
 	default:
@@ -258,6 +275,9 @@ func (s *streams) end(id uint32) {
 	}
 	if st.watch != nil {
 		st.watch.end()
+	}
+	if ended != nil {
+		ended()
 	}
 }
 

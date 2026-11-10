@@ -49,6 +49,9 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //   - Every box's audit timeline is two http exchanges of one group, which
 //     fold into one run, then a credential lent. http-1's response body was
 //     recorded, and reads `{"login":"b1"}`.
+//   - b1 is on acme/foo, tagged with issue 4 and pull request 9 (testPull):
+//     ready to merge by squashing only, its review threaded, and its files
+//     changed a session of their own.
 //
 // A create (new) is made on claude, the project's default, and makes the box
 // made: it reports the last draft the app sent as a step, and is taken. In the
@@ -71,7 +74,7 @@ func TestContractCore(t *testing.T) {
 	os.Stdout = os.Stderr
 
 	core := newFakeCore("home",
-		running("b1"),
+		workBox("b1"),
 		console.Sandbox{ID: "b2", Name: "b2", State: console.StateArchived},
 		console.Sandbox{ID: "b3", Name: "b3", State: console.StateStopped},
 		running("slow"),
@@ -117,6 +120,8 @@ func TestContractCore(t *testing.T) {
 		"http-1": {Text: "GET https://api.github.com/user\n", Recordings: []console.AuditPart{console.AuditResponseBody}},
 	}
 	core.bodies = map[string]string{"http-1/response": `{"login":"b1"}`}
+	core.setIssue(testRepo, 4, console.Issue{Repository: "acme/foo", Number: 4, Title: "Reaper", State: "open"})
+	core.setIssue(testRepo, 9, testPull())
 	core.run = func(ctx context.Context, _ console.RunRequest, n *console.Narration) (console.Sandbox, error) {
 		core.mu.Lock()
 		draft := ""

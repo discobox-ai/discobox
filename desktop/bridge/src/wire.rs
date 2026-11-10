@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 15;
+pub const PROTOCOL: i64 = 16;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 6;
@@ -490,6 +490,9 @@ pub struct Subscribe {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub palette: Option<PaletteQuery>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<IssueQuery>,
 }
 
 /// Topic is what a subscription follows.
@@ -544,6 +547,13 @@ pub enum Topic {
     /// says it (console.RunOptions.Summary): sent again whenever the run options change.
     #[serde(rename = "composer")]
     Composer,
+
+    /// TopicIssue is the GitHub issue or pull request a box is tagged with, as its tab draws it
+    /// (Box, Issue): read as it is subscribed, again every console.IssueRefreshEvery, soon after
+    /// while GitHub has yet to say whether a pull request can merge, and at once after a command
+    /// here comments on it, closes, reopens or merges it.
+    #[serde(rename = "issue")]
+    Issue,
 }
 
 impl Topic {
@@ -560,6 +570,7 @@ impl Topic {
             Topic::Commands => "commands",
             Topic::Palette => "palette",
             Topic::Composer => "composer",
+            Topic::Issue => "issue",
         }
     }
 }
@@ -647,6 +658,27 @@ pub struct PaletteQuery {
     pub recent: Vec<String>,
 }
 
+/// IssueQuery is which of a box's work the issue topic follows: its issue, or its pull request
+/// (Pull), by the number its tag gives (console.Sandbox.WorkNumber). Full is a read someone asked
+/// to see now, which the data source answers from GitHub rather than from what it read before; the
+/// app subscribes again under a new Sub to read again.
+///
+/// Shown is the head of the pull request the app had shown the person before this subscription —
+/// a tab parked and back on screen — so a push made meanwhile is still said (console.ShownHead);
+/// empty for a tab that has shown none, or for a read the person asked for (Full), which shows them
+/// the head it brings.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct IssueQuery {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub pull: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub full: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub shown: String,
+}
+
 /// Unsubscribe stops one.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Unsubscribe {
@@ -693,6 +725,9 @@ pub struct Snapshot {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub composer: Option<Composer>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<Issue>,
 }
 
 /// Listing is the box listing as the console shows it (console.List): every box listed, and the
@@ -1153,7 +1188,8 @@ pub struct AuditRun {
 pub struct Header {
     pub id: String,
 
-    /// Work is the issue and the pull request the box's tags number, each a link to it.
+    /// Work is the issue and the pull request the box's tags number, each a link to it, whose press
+    /// opens its tab (Link.Command).
     pub work: Vec<Link>,
 
     /// Blocked is what a box waiting on a person says in place of the git word, empty for one that
@@ -1219,6 +1255,12 @@ pub struct Link {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub url: String,
+
+    /// Command is the registry command a press on it runs in place of opening the browser — issue
+    /// or pr, for the work a box's tags number, whose tab the console opens — leaving the browser
+    /// to a press with the platform's link modifier.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub command: String,
 }
 
 /// GitTone is how a header reads the work's git position and word.
@@ -1312,6 +1354,10 @@ pub struct Tab {
 
     #[serde(rename = "imageKeys", default, skip_serializing_if = "is_default")]
     pub image_keys: bool,
+
+    /// Files is the number of the pull request a files changed tab is of.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub files: i64,
 }
 
 /// TabKind is what a session is, which says the column its tab is in.
@@ -1337,6 +1383,11 @@ pub enum TabKind {
     /// TabService is a declared service's session.
     #[serde(rename = "service")]
     Service,
+
+    /// TabFiles is a pull request's files changed, discobox-review over its base and head: the
+    /// app's own, ended when its tab is closed, which the sessions topic never lists.
+    #[serde(rename = "files")]
+    Files,
 }
 
 impl TabKind {
@@ -1348,6 +1399,7 @@ impl TabKind {
             TabKind::Shell => "shell",
             TabKind::Tool => "tool",
             TabKind::Service => "service",
+            TabKind::Files => "files",
         }
     }
 }
@@ -1436,6 +1488,381 @@ pub struct Chip {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub chosen: bool,
+}
+
+/// Issue is a GitHub issue or pull request as its tab draws it (console.Issue), with every rule's
+/// answer the core's: its badge, whether it can merge and why not, each event's words, the checks
+/// summed up, what each reviewer said. Every body is markdown made safe to render
+/// (console.MarkdownSource). Every string in it was written by whoever can comment on the issue. A
+/// time is said as how long ago it was when it was read (console.Ago), as the TUI's tab says it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Issue {
+    /// Label is what its tab is called (console.WorkLabel), and URL its page.
+    pub label: String,
+
+    pub url: String,
+
+    /// Repository is owner/name.
+    pub repository: String,
+
+    pub number: i64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub pull: bool,
+
+    pub title: String,
+
+    pub state: IssueState,
+
+    pub badge: String,
+
+    pub mark: IssueMark,
+
+    pub author: String,
+
+    pub opened: String,
+
+    pub comments: i64,
+
+    pub body: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub reactions: String,
+
+    pub labels: Vec<Label>,
+
+    pub assignees: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub r#type: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub milestone: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub locked: bool,
+
+    #[serde(rename = "subIssues")]
+    pub sub_issues: Vec<IssueRef>,
+
+    #[serde(rename = "subTotal", default, skip_serializing_if = "is_default")]
+    pub sub_total: i64,
+
+    #[serde(rename = "subDone", default, skip_serializing_if = "is_default")]
+    pub sub_done: i64,
+
+    #[serde(rename = "pullRequest", default, skip_serializing_if = "Option::is_none")]
+    pub pull_request: Option<PullRequest>,
+
+    /// Timeline is what happened after it was opened, oldest first, as the page draws it: a merge's
+    /// close left out (console.Issue.TimelineShows).
+    pub timeline: Vec<IssueItem>,
+
+    /// Truncated is a timeline longer than was read: the rest is on its page.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub truncated: bool,
+
+    /// Pushed is the head this subscription first showed, once a read since brought another: what
+    /// was read here is not what would be merged, and Notice says so (console.PushedNotice) until
+    /// the app reads again.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub pushed: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub notice: String,
+}
+
+/// IssueState is whether an issue is open or closed (a merged pull request is closed).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum IssueState {
+    #[default]
+    #[serde(rename = "open")]
+    Open,
+
+    #[serde(rename = "closed")]
+    Closed,
+}
+
+impl IssueState {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IssueState::Open => "open",
+            IssueState::Closed => "closed",
+        }
+    }
+}
+
+/// IssueMark is a state's mark (console.IssueMark): filled while there is something to do about it,
+/// in its tone.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct IssueMark {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub filled: bool,
+
+    pub tone: IssueTone,
+}
+
+/// IssueTone is what a word or a mark on the issue tab is, for a renderer to draw in its own
+/// palette.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum IssueTone {
+    /// IssueToneOpen is open: an open issue, an approval, a check that passed.
+    #[default]
+    #[serde(rename = "open")]
+    Open,
+
+    /// IssueToneShut is closed, a draft, or something said and done with.
+    #[serde(rename = "shut")]
+    Shut,
+
+    /// IssueToneMerged is merged.
+    #[serde(rename = "merged")]
+    Merged,
+
+    /// IssueToneGood is a good outcome said as a sentence: ready to merge, checks passed.
+    #[serde(rename = "good")]
+    Good,
+
+    /// IssueToneWarn is something to look at: out of date, pending, partial.
+    #[serde(rename = "warn")]
+    Warn,
+
+    /// IssueToneBad is in the way: conflicts, failing, changes requested.
+    #[serde(rename = "bad")]
+    Bad,
+
+    /// IssueToneBusy is under way: a check still running.
+    #[serde(rename = "busy")]
+    Busy,
+
+    /// IssueToneQuiet is said about the rest, beside it.
+    #[serde(rename = "quiet")]
+    Quiet,
+}
+
+impl IssueTone {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IssueTone::Open => "open",
+            IssueTone::Shut => "shut",
+            IssueTone::Merged => "merged",
+            IssueTone::Good => "good",
+            IssueTone::Warn => "warn",
+            IssueTone::Bad => "bad",
+            IssueTone::Busy => "busy",
+            IssueTone::Quiet => "quiet",
+        }
+    }
+}
+
+/// Label is one of an issue's labels, with the color its page draws it in: six hex digits, without
+/// the #.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Label {
+    pub name: String,
+
+    pub color: String,
+}
+
+/// IssueRef is another issue or pull request, as a sub-issue list names it: its number, with its
+/// repository when that is not this one's.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct IssueRef {
+    pub number: String,
+
+    pub title: String,
+
+    pub mark: IssueMark,
+}
+
+/// PullRequest is what a pull request's page shows beyond the issue it is.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PullRequest {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub draft: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub merged: bool,
+
+    #[serde(rename = "mergedBy", default, skip_serializing_if = "is_default")]
+    pub merged_by: String,
+
+    #[serde(rename = "mergedAgo", default, skip_serializing_if = "is_default")]
+    pub merged_ago: String,
+
+    /// Head and Base are the branches, and HeadSHA and BaseSHA the commits that were read: what a
+    /// merge from here merges, and what the files changed are measured between.
+    pub head: String,
+
+    pub base: String,
+
+    #[serde(rename = "headSha")]
+    pub head_sha: String,
+
+    #[serde(rename = "baseSha")]
+    pub base_sha: String,
+
+    pub commits: i64,
+
+    pub additions: i64,
+
+    pub deletions: i64,
+
+    #[serde(rename = "changedFiles")]
+    pub changed_files: i64,
+
+    /// Merge is whether it can merge now (console.Issue.Merge), only while it is open: Said is the
+    /// sentence, Ready nothing in its way, Unknown GitHub yet to say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge: Option<Merge>,
+
+    pub reviewers: Vec<Reviewer>,
+
+    pub checks: Checks,
+}
+
+/// Merge is the merge box of an open pull request; a closed or merged one has none
+/// (console.MergeStanding.Shown).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Merge {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub ready: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub unknown: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub said: String,
+
+    pub mark: IssueMark,
+}
+
+/// Reviewer is one of the page's reviewers and what they said.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Reviewer {
+    pub name: String,
+
+    pub said: String,
+
+    pub mark: IssueMark,
+}
+
+/// Checks are the head commit's checks summed up (console.CheckSummary), and each that has not
+/// passed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Checks {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub failing: i64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub pending: i64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub passed: i64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub partial: bool,
+
+    pub unpassed: Vec<Check>,
+}
+
+/// Check is one check that has not passed, and its page, where it has one.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Check {
+    pub name: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub url: String,
+
+    pub mark: IssueMark,
+}
+
+/// IssueItem is one thing in the timeline: who, when, and what. Text is an event's words
+/// (console.Issue.EventText), a review's verdict (console.ReviewSaid, in Tone), or a commit's
+/// subject under its short name (Commit). Body is a comment's or a review's markdown.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct IssueItem {
+    pub kind: IssueItemKind,
+
+    pub actor: String,
+
+    pub ago: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub text: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tone: Option<IssueTone>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub commit: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub body: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub reactions: String,
+
+    pub threads: Vec<Thread>,
+}
+
+/// IssueItemKind is what a timeline item is, which says how it is drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum IssueItemKind {
+    /// ItemComment is a comment, drawn as its markdown.
+    #[default]
+    #[serde(rename = "comment")]
+    Comment,
+
+    /// ItemReview is a review: what it said, its summary, and its threads.
+    #[serde(rename = "review")]
+    Review,
+
+    /// ItemCommit is a commit pushed: its short name and its subject.
+    #[serde(rename = "commit")]
+    Commit,
+
+    /// ItemEvent is anything else that happened, said in Text.
+    #[serde(rename = "event")]
+    Event,
+}
+
+impl IssueItemKind {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IssueItemKind::Comment => "comment",
+            IssueItemKind::Review => "review",
+            IssueItemKind::Commit => "commit",
+            IssueItemKind::Event => "event",
+        }
+    }
+}
+
+/// Thread is one conversation a review started on the diff: where (console.ThreadWhere), the lines
+/// it is under (console.ThreadHunk), and its comments.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Thread {
+    pub r#where: String,
+
+    pub hunk: Vec<String>,
+
+    pub comments: Vec<ThreadComment>,
+}
+
+/// ThreadComment is one comment of a review thread.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ThreadComment {
+    pub author: String,
+
+    pub ago: String,
+
+    pub body: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub reactions: String,
 }
 
 /// Command runs a registry command. ID is the app's, unique for the bridge's life, and is what its
@@ -1539,6 +1966,26 @@ pub struct Args {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub part: Option<AuditPart>,
+
+    /// Act is what the issue and pr commands do to the box's issue or pull request; without one
+    /// they hand the app its tab. Comment is the comment a comment posts, as written. Head is the
+    /// commit the app showed, which a merge merges — a branch that moved since is refused — and
+    /// the files command reviews, from Base; Pushed is the head it showed before a read brought
+    /// this one, when one did, which the merge question says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub act: Option<IssueAct>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub comment: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub head: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub base: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub pushed: String,
 }
 
 /// ServiceVerb is a lifecycle action against one of a discobox's declared services. Like a
@@ -1705,6 +2152,35 @@ impl AuditPart {
     }
 }
 
+/// IssueAct is what the issue and pr commands do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum IssueAct {
+    /// ActComment posts Args.Comment.
+    #[default]
+    #[serde(rename = "comment")]
+    Comment,
+
+    /// ActState closes or reopens it, as the core asks (console.Issue.StateQuestion).
+    #[serde(rename = "state")]
+    State,
+
+    /// ActMerge merges the pull request at Args.Head, as the core asks
+    /// (console.Issue.MergeQuestion).
+    #[serde(rename = "merge")]
+    Merge,
+}
+
+impl IssueAct {
+    /// The value as the wire spells it.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IssueAct::Comment => "comment",
+            IssueAct::State => "state",
+            IssueAct::Merge => "merge",
+        }
+    }
+}
+
 /// Result ends a command (or an upload or a follow, by its ID).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Result {
@@ -1790,6 +2266,11 @@ pub struct Result {
     /// recordings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audit: Option<AuditText>,
+
+    /// Work is the issue or pull request the issue and pr commands open a tab on: what its tab is
+    /// called and its page, before the issue topic reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<Link>,
 }
 
 /// Status is how a command ended.
@@ -2317,6 +2798,10 @@ pub struct Choice {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub hint: String,
+
+    /// Why is why an answer a question offers cannot be chosen: shown, never taken.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub why: String,
 }
 
 /// Submit fills a form. Answers are the fields the person changed, by key; every other field

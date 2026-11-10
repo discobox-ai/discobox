@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 15,
+  "x-protocol": 16,
   "x-specVersion": 6,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
@@ -580,6 +580,9 @@
         },
         "palette": {
           "$ref": "#/$defs/PaletteQuery"
+        },
+        "issue": {
+          "$ref": "#/$defs/IssueQuery"
         }
       },
       "required": [
@@ -630,6 +633,10 @@
         {
           "description": "TopicComposer is what a create from the composer would be made with, as the line under it says it (console.RunOptions.Summary): sent again whenever the run options change.",
           "const": "composer"
+        },
+        {
+          "description": "TopicIssue is the GitHub issue or pull request a box is tagged with, as its tab draws it (Box, Issue): read as it is subscribed, again every console.IssueRefreshEvery, soon after while GitHub has yet to say whether a pull request can merge, and at once after a command here comments on it, closes, reopens or merges it.",
+          "const": "issue"
         }
       ]
     },
@@ -727,6 +734,21 @@
         }
       }
     },
+    "IssueQuery": {
+      "description": "IssueQuery is which of a box's work the issue topic follows: its issue, or its pull request (Pull), by the number its tag gives (console.Sandbox.WorkNumber). Full is a read someone asked to see now, which the data source answers from GitHub rather than from what it read before; the app subscribes again under a new Sub to read again.\n\nShown is the head of the pull request the app had shown the person before this subscription — a tab parked and back on screen — so a push made meanwhile is still said (console.ShownHead); empty for a tab that has shown none, or for a read the person asked for (Full), which shows them the head it brings.",
+      "type": "object",
+      "properties": {
+        "pull": {
+          "type": "boolean"
+        },
+        "full": {
+          "type": "boolean"
+        },
+        "shown": {
+          "type": "string"
+        }
+      }
+    },
     "Unsubscribe": {
       "description": "Unsubscribe stops one.",
       "type": "object",
@@ -783,6 +805,9 @@
         },
         "composer": {
           "$ref": "#/$defs/Composer"
+        },
+        "issue": {
+          "$ref": "#/$defs/Issue"
         }
       },
       "required": [
@@ -1414,7 +1439,7 @@
           "type": "string"
         },
         "work": {
-          "description": "Work is the issue and the pull request the box's tags number, each a link to it.",
+          "description": "Work is the issue and the pull request the box's tags number, each a link to it, whose press opens its tab (Link.Command).",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Link"
@@ -1495,6 +1520,10 @@
           "type": "string"
         },
         "url": {
+          "type": "string"
+        },
+        "command": {
+          "description": "Command is the registry command a press on it runs in place of opening the browser — issue or pr, for the work a box's tags number, whose tab the console opens — leaving the browser to a press with the platform's link modifier.",
           "type": "string"
         }
       },
@@ -1600,6 +1629,11 @@
         },
         "imageKeys": {
           "type": "boolean"
+        },
+        "files": {
+          "description": "Files is the number of the pull request a files changed tab is of.",
+          "type": "integer",
+          "format": "int64"
         }
       },
       "required": [
@@ -1633,6 +1667,10 @@
         {
           "description": "TabService is a declared service's session.",
           "const": "service"
+        },
+        {
+          "description": "TabFiles is a pull request's files changed, discobox-review over its base and head: the app's own, ended when its tab is closed, which the sessions topic never lists.",
+          "const": "files"
         }
       ]
     },
@@ -1778,6 +1816,508 @@
         "text"
       ]
     },
+    "Issue": {
+      "description": "Issue is a GitHub issue or pull request as its tab draws it (console.Issue), with every rule's answer the core's: its badge, whether it can merge and why not, each event's words, the checks summed up, what each reviewer said. Every body is markdown made safe to render (console.MarkdownSource). Every string in it was written by whoever can comment on the issue. A time is said as how long ago it was when it was read (console.Ago), as the TUI's tab says it.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "description": "Label is what its tab is called (console.WorkLabel), and URL its page.",
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "repository": {
+          "description": "Repository is owner/name.",
+          "type": "string"
+        },
+        "number": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "pull": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/IssueState"
+        },
+        "badge": {
+          "type": "string"
+        },
+        "mark": {
+          "$ref": "#/$defs/IssueMark"
+        },
+        "author": {
+          "type": "string"
+        },
+        "opened": {
+          "type": "string"
+        },
+        "comments": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "body": {
+          "type": "string"
+        },
+        "reactions": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Label"
+          }
+        },
+        "assignees": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "type": "string"
+        },
+        "milestone": {
+          "type": "string"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "subIssues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IssueRef"
+          }
+        },
+        "subTotal": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "subDone": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "pullRequest": {
+          "$ref": "#/$defs/PullRequest"
+        },
+        "timeline": {
+          "description": "Timeline is what happened after it was opened, oldest first, as the page draws it: a merge's close left out (console.Issue.TimelineShows).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IssueItem"
+          }
+        },
+        "truncated": {
+          "description": "Truncated is a timeline longer than was read: the rest is on its page.",
+          "type": "boolean"
+        },
+        "pushed": {
+          "description": "Pushed is the head this subscription first showed, once a read since brought another: what was read here is not what would be merged, and Notice says so (console.PushedNotice) until the app reads again.",
+          "type": "string"
+        },
+        "notice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "url",
+        "repository",
+        "number",
+        "title",
+        "state",
+        "badge",
+        "mark",
+        "author",
+        "opened",
+        "comments",
+        "body",
+        "labels",
+        "assignees",
+        "subIssues",
+        "timeline"
+      ]
+    },
+    "IssueState": {
+      "description": "IssueState is whether an issue is open or closed (a merged pull request is closed).",
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "open"
+        },
+        {
+          "const": "closed"
+        }
+      ]
+    },
+    "IssueMark": {
+      "description": "IssueMark is a state's mark (console.IssueMark): filled while there is something to do about it, in its tone.",
+      "type": "object",
+      "properties": {
+        "filled": {
+          "type": "boolean"
+        },
+        "tone": {
+          "$ref": "#/$defs/IssueTone"
+        }
+      },
+      "required": [
+        "tone"
+      ]
+    },
+    "IssueTone": {
+      "description": "IssueTone is what a word or a mark on the issue tab is, for a renderer to draw in its own palette.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "IssueToneOpen is open: an open issue, an approval, a check that passed.",
+          "const": "open"
+        },
+        {
+          "description": "IssueToneShut is closed, a draft, or something said and done with.",
+          "const": "shut"
+        },
+        {
+          "description": "IssueToneMerged is merged.",
+          "const": "merged"
+        },
+        {
+          "description": "IssueToneGood is a good outcome said as a sentence: ready to merge, checks passed.",
+          "const": "good"
+        },
+        {
+          "description": "IssueToneWarn is something to look at: out of date, pending, partial.",
+          "const": "warn"
+        },
+        {
+          "description": "IssueToneBad is in the way: conflicts, failing, changes requested.",
+          "const": "bad"
+        },
+        {
+          "description": "IssueToneBusy is under way: a check still running.",
+          "const": "busy"
+        },
+        {
+          "description": "IssueToneQuiet is said about the rest, beside it.",
+          "const": "quiet"
+        }
+      ]
+    },
+    "Label": {
+      "description": "Label is one of an issue's labels, with the color its page draws it in: six hex digits, without the #.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "color"
+      ]
+    },
+    "IssueRef": {
+      "description": "IssueRef is another issue or pull request, as a sub-issue list names it: its number, with its repository when that is not this one's.",
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "mark": {
+          "$ref": "#/$defs/IssueMark"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "mark"
+      ]
+    },
+    "PullRequest": {
+      "description": "PullRequest is what a pull request's page shows beyond the issue it is.",
+      "type": "object",
+      "properties": {
+        "draft": {
+          "type": "boolean"
+        },
+        "merged": {
+          "type": "boolean"
+        },
+        "mergedBy": {
+          "type": "string"
+        },
+        "mergedAgo": {
+          "type": "string"
+        },
+        "head": {
+          "description": "Head and Base are the branches, and HeadSHA and BaseSHA the commits that were read: what a merge from here merges, and what the files changed are measured between.",
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "baseSha": {
+          "type": "string"
+        },
+        "commits": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "additions": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "deletions": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "changedFiles": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "merge": {
+          "$ref": "#/$defs/Merge",
+          "description": "Merge is whether it can merge now (console.Issue.Merge), only while it is open: Said is the sentence, Ready nothing in its way, Unknown GitHub yet to say."
+        },
+        "reviewers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reviewer"
+          }
+        },
+        "checks": {
+          "$ref": "#/$defs/Checks"
+        }
+      },
+      "required": [
+        "head",
+        "base",
+        "headSha",
+        "baseSha",
+        "commits",
+        "additions",
+        "deletions",
+        "changedFiles",
+        "reviewers",
+        "checks"
+      ]
+    },
+    "Merge": {
+      "description": "Merge is the merge box of an open pull request; a closed or merged one has none (console.MergeStanding.Shown).",
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        },
+        "unknown": {
+          "type": "boolean"
+        },
+        "said": {
+          "type": "string"
+        },
+        "mark": {
+          "$ref": "#/$defs/IssueMark"
+        }
+      },
+      "required": [
+        "mark"
+      ]
+    },
+    "Reviewer": {
+      "description": "Reviewer is one of the page's reviewers and what they said.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "said": {
+          "type": "string"
+        },
+        "mark": {
+          "$ref": "#/$defs/IssueMark"
+        }
+      },
+      "required": [
+        "name",
+        "said",
+        "mark"
+      ]
+    },
+    "Checks": {
+      "description": "Checks are the head commit's checks summed up (console.CheckSummary), and each that has not passed.",
+      "type": "object",
+      "properties": {
+        "failing": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "pending": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "passed": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "partial": {
+          "type": "boolean"
+        },
+        "unpassed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Check"
+          }
+        }
+      },
+      "required": [
+        "unpassed"
+      ]
+    },
+    "Check": {
+      "description": "Check is one check that has not passed, and its page, where it has one.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "mark": {
+          "$ref": "#/$defs/IssueMark"
+        }
+      },
+      "required": [
+        "name",
+        "mark"
+      ]
+    },
+    "IssueItem": {
+      "description": "IssueItem is one thing in the timeline: who, when, and what. Text is an event's words (console.Issue.EventText), a review's verdict (console.ReviewSaid, in Tone), or a commit's subject under its short name (Commit). Body is a comment's or a review's markdown.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/IssueItemKind"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "ago": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "tone": {
+          "$ref": "#/$defs/IssueTone"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "reactions": {
+          "type": "string"
+        },
+        "threads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Thread"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "actor",
+        "ago",
+        "threads"
+      ]
+    },
+    "IssueItemKind": {
+      "description": "IssueItemKind is what a timeline item is, which says how it is drawn.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "ItemComment is a comment, drawn as its markdown.",
+          "const": "comment"
+        },
+        {
+          "description": "ItemReview is a review: what it said, its summary, and its threads.",
+          "const": "review"
+        },
+        {
+          "description": "ItemCommit is a commit pushed: its short name and its subject.",
+          "const": "commit"
+        },
+        {
+          "description": "ItemEvent is anything else that happened, said in Text.",
+          "const": "event"
+        }
+      ]
+    },
+    "Thread": {
+      "description": "Thread is one conversation a review started on the diff: where (console.ThreadWhere), the lines it is under (console.ThreadHunk), and its comments.",
+      "type": "object",
+      "properties": {
+        "where": {
+          "type": "string"
+        },
+        "hunk": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ThreadComment"
+          }
+        }
+      },
+      "required": [
+        "where",
+        "hunk",
+        "comments"
+      ]
+    },
+    "ThreadComment": {
+      "description": "ThreadComment is one comment of a review thread.",
+      "type": "object",
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "ago": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "reactions": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "author",
+        "ago",
+        "body"
+      ]
+    },
     "Command": {
       "description": "Command runs a registry command. ID is the app's, unique for the bridge's life, and is what its result, forms, questions and progress name. Targets are box keys, explicit: a box command never falls back to what is on screen.",
       "type": "object",
@@ -1883,6 +2423,22 @@
         },
         "part": {
           "$ref": "#/$defs/AuditPart"
+        },
+        "act": {
+          "$ref": "#/$defs/IssueAct",
+          "description": "Act is what the issue and pr commands do to the box's issue or pull request; without one they hand the app its tab. Comment is the comment a comment posts, as written. Head is the commit the app showed, which a merge merges — a branch that moved since is refused — and the files command reviews, from Base; Pushed is the head it showed before a read brought this one, when one did, which the merge question says."
+        },
+        "comment": {
+          "type": "string"
+        },
+        "head": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        },
+        "pushed": {
+          "type": "string"
         }
       }
     },
@@ -1987,6 +2543,24 @@
         },
         {
           "const": "stream"
+        }
+      ]
+    },
+    "IssueAct": {
+      "description": "IssueAct is what the issue and pr commands do.",
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "ActComment posts Args.Comment.",
+          "const": "comment"
+        },
+        {
+          "description": "ActState closes or reopens it, as the core asks (console.Issue.StateQuestion).",
+          "const": "state"
+        },
+        {
+          "description": "ActMerge merges the pull request at Args.Head, as the core asks (console.Issue.MergeQuestion).",
+          "const": "merge"
         }
       ]
     },
@@ -2097,6 +2671,10 @@
         "audit": {
           "$ref": "#/$defs/AuditText",
           "description": "Audit is what the audit command read of a record: the record in full, or one of its recordings."
+        },
+        "work": {
+          "$ref": "#/$defs/Link",
+          "description": "Work is the issue or pull request the issue and pr commands open a tab on: what its tab is called and its page, before the issue topic reads it."
         }
       },
       "required": [
@@ -2885,6 +3463,10 @@
           "type": "string"
         },
         "hint": {
+          "type": "string"
+        },
+        "why": {
+          "description": "Why is why an answer a question offers cannot be chosen: shown, never taken.",
           "type": "string"
         }
       },

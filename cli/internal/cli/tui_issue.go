@@ -188,8 +188,9 @@ func tuiRef(in github.Ref) console.IssueRef {
 //
 // It is markdown, and this is not all that stands between it and the screen:
 // the renderer decodes character references, so `&#x1b;` is printable here
-// and an escape once drawn. The tab neutralizes those where it renders
-// (tui's markdownSource).
+// and an escape once drawn. Whoever renders it neutralizes those first
+// (console.MarkdownSource): the TUI's tab where it renders, the desktop
+// bridge before it sends.
 func pageBlock(body string) string {
 	return escapeNonPrinting(dropBreakHints(strings.ReplaceAll(body, "\r\n", "\n")), func(r rune) bool {
 		return isLayoutRune(r) || isJoiner(r)

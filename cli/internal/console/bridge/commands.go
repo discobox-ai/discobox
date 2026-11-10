@@ -208,7 +208,15 @@ func (f *frontend) session(box console.Sandbox, tab func(console.Exec) console.T
 	}
 	made := tab(ex)
 	wired := wireTab(made, ex)
-	if !f.s.streams.attach(stream, term, made, nil) {
+	var ended func()
+	if made.Files != 0 {
+		ended = f.s.endFiles(f.s.ds.ForServer(box.Server), box.ID, ex.ID)
+	}
+	if !f.s.streams.attach(stream, term, made, nil, ended) {
+		if ended != nil {
+			// Nothing else would ever end it.
+			ended()
+		}
 		// Closed while it was made: the session goes on in the box, and the
 		// app, which closed it, is told what it was.
 		return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &wired, Note: "the pane closed before the session was made"}
@@ -888,9 +896,6 @@ func (f *frontend) actionTargets() []console.Sandbox {
 // The flows that are the app's: the core has ruled the command can run, and
 // the app enters it.
 
-func (f *frontend) Issue(box console.Sandbox) outcome               { return f.enterIfAble(box) }
-func (f *frontend) PullRequest(box console.Sandbox) outcome         { return f.enterIfAble(box) }
-func (f *frontend) FilesChanged(box console.Sandbox) outcome        { return f.enterIfAble(box) }
 func (f *frontend) CredentialRequests(box console.Sandbox) outcome  { return f.enterIfAble(box) }
 func (f *frontend) RejectedCredentials(box console.Sandbox) outcome { return f.enterIfAble(box) }
 
@@ -908,3 +913,169 @@ func (f *frontend) PreviousPane() outcome   { return f.enter() }
 func (f *frontend) NextBox() outcome        { return f.enter() }
 func (f *frontend) PreviousBox() outcome    { return f.enter() }
 func (f *frontend) ToggleSidebar() outcome  { return f.enter() }
+
+// Issue is the box's issue: its tab handed to the app, named (Result.Work) —
+// the issue topic reads it — or, with an act in the args, that act done to
+// it (work).
+func (f *frontend) Issue(box console.Sandbox) outcome { return f.work(box, false) }
+
+// PullRequest is the same for the box's pull request.
+func (f *frontend) PullRequest(box console.Sandbox) outcome { return f.work(box, true) }
+
+// workNumber is the number a box's issue or pull request tag gives it on its
+// GitHub repository, or why it has none (console.Sandbox.Work), as the
+// registry's entry refuses it.
+func (f *frontend) workNumber(box console.Sandbox, pull bool) (int, string) {
+	if e, ok := f.s.reg.Entry(f.cctx, f.c.Command, []console.Sandbox{box}); ok && !e.Enabled {
+		return 0, e.Why
+	}
+	number, err := box.Work(pull)
+	if err != nil {
+		return 0, err.Error()
+	}
+	return number, ""
+}
+
+// work is the issue or pull request command: its tab, counted as the
+// command's use, which its flow is; or an act on it, as the person at this
+// machine, done by the core (console.PostComment, ChangeIssueState,
+// MergeIssue) once the core's question is answered — asked of the issue read
+// again here, since the bridge holds no read of its own, and a merge of the
+// head the app showed — after which every subscription following it reads it
+// again.
+func (f *frontend) work(box console.Sandbox, pull bool) outcome {
+	number, why := f.workNumber(box, pull)
+	if why != "" {
+		return refused(why)
+	}
+	a := f.c.Args
+	key := Key(box.Server, box.ID)
+	if a.Act == "" {
+		f.s.reg.Use(f.c.Command)
+		r := Result{Status: StatusEnter, Box: key, Work: &Link{Label: console.WorkLabel(number, pull), URL: console.WorkAddress(box.Repository, number, pull)}}
+		return func() Result { return r }
+	}
+	src := f.s.ds.ForServer(box.Server)
+	repository := box.Repository
+	return func() Result {
+		note, err := f.act(src, repository, number, a)
+		if r, over := f.asked(err); over {
+			return r
+		}
+		f.s.reissue(repository, number)
+		return Result{Status: StatusDone, Box: key, Note: note}
+	}
+}
+
+// act does one act to an issue: a comment as written, or a close, a reopen
+// or a merge once its question is answered.
+func (f *frontend) act(src console.DataSource, repository string, number int, a Args) (string, error) {
+	if a.Act == ActComment {
+		ctx, cancel := context.WithTimeout(f.ctx, console.IssueTimeout)
+		defer cancel()
+		return console.PostComment(ctx, src, repository, number, a.Comment)
+	}
+	read, cancel := context.WithTimeout(f.ctx, console.IssueTimeout)
+	issue, err := src.Issue(read, repository, number, true)
+	cancel()
+	if err != nil {
+		return "", fmt.Errorf("could not read #%d: %w", number, err)
+	}
+	var q console.Question
+	head := a.Head
+	switch a.Act {
+	case ActState:
+		q, err = issue.StateQuestion()
+	case ActMerge:
+		if head == "" && issue.Pull != nil {
+			head = issue.Pull.HeadSHA
+		}
+		q, err = issue.MergeQuestion(head, a.Pushed)
+	default:
+		return "", fmt.Errorf("there is nothing to %q", a.Act)
+	}
+	if err != nil {
+		return "", err
+	}
+	answer, err := f.s.ask(f.ctx, f.c.ID, q)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(f.ctx, console.IssueTimeout)
+	defer cancel()
+	if a.Act == ActState {
+		return console.ChangeIssueState(ctx, src, repository, issue, answer)
+	}
+	return console.MergeIssue(ctx, src, repository, issue, answer, head)
+}
+
+// FilesChanged is the box's pull request's files changed: discobox-review in
+// the box over the pull request's base and head (DataSource.PullReview),
+// counted as the command's use, its session on the command's stream as its
+// tab (console.FilesTab). Head and Base are the commits the app showed, so a
+// push it has not read never moves what it reviews; without them it is the
+// head the pull request is read at now. The session is the tab's own: it is
+// ended in the box when its stream is let go (Server.endFiles).
+func (f *frontend) FilesChanged(box console.Sandbox) outcome {
+	number, why := f.workNumber(box, true)
+	if why != "" {
+		f.release(f.c.Args.Stream, errors.New(why))
+		return refused(why)
+	}
+	f.s.reg.Use("files")
+	a := f.c.Args
+	src := f.s.ds.ForServer(box.Server)
+	return func() Result {
+		ctx, cancel := context.WithTimeout(f.ctx, console.IssueTimeout)
+		issue, err := src.Issue(ctx, box.Repository, number, false)
+		cancel()
+		switch {
+		case err != nil:
+			err = fmt.Errorf("could not read #%d: %w", number, err)
+		case issue.Pull == nil:
+			err = fmt.Errorf("#%d is not a pull request", number)
+		}
+		if err != nil {
+			f.release(a.Stream, err)
+			return failed(err.Error())
+		}
+		pull := *issue.Pull
+		if a.Head != "" {
+			pull.HeadSHA, pull.BaseSHA = a.Head, a.Base
+		}
+		// Counted from before its start, not from its attach: nothing will
+		// ever list it to end it, so a bridge going while it starts waits for
+		// it, and one that lands once the command is over is ended here.
+		if !f.s.beginFiles() {
+			f.release(a.Stream, errors.New("the window is closing"))
+			return failed("the window is closing")
+		}
+		defer f.s.files.Done()
+		tab := func(ex console.Exec) console.Tab { return console.FilesTab(ex, number) }
+		return f.session(box, tab, func(_ console.DataSource, ctx context.Context, id string, cols, rows int) (console.Exec, console.Terminal, error) {
+			// The session's terminal lives on the context it was started
+			// on, so the bound cancels only a start still under way: one
+			// that has started runs until its stream is let go.
+			start, cancel := context.WithCancel(ctx)
+			timer := time.AfterFunc(console.ReviewStartTimeout, cancel)
+			ex, term, err := src.PullReview(start, id, pull, cols, rows)
+			late := !timer.Stop()
+			switch {
+			case err != nil && late && ctx.Err() == nil:
+				cancel()
+				return ex, term, console.ErrReviewNotStarted
+			case err != nil:
+				cancel()
+			case ctx.Err() != nil || late:
+				_ = term.Close()
+				cancel()
+				f.s.endFiles(src, id, ex.ID)()
+				if ctx.Err() != nil {
+					return console.Exec{}, nil, ctx.Err()
+				}
+				return console.Exec{}, nil, console.ErrReviewNotStarted
+			}
+			return ex, term, err
+		})
+	}
+}

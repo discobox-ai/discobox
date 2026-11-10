@@ -105,13 +105,15 @@ func wireTab(t console.Tab, e console.Exec) Tab {
 		kind = TabPrimary
 	case t.Tool != "":
 		kind = TabTool
+	case t.Files != 0:
+		kind = TabFiles
 	case t.Service != "":
 		kind = TabService
 	case t.Side() == console.SideTerminals:
 		kind = TabTerminal
 	}
 	return Tab{Exec: e.ID, Kind: kind, Title: t.Title, Live: e.Live, Argv: nonNil(e.Command), Service: t.Service, Run: t.ServiceRun, Status: t.Status, Tool: t.Tool,
-		Images: t.TakesImages(), ImageKeys: t.TakesImageKeys()}
+		Images: t.TakesImages(), ImageKeys: t.TakesImageKeys(), Files: t.Files}
 }
 
 // wireTool is a tool as the tools menu lists it for a box: why it cannot run
@@ -154,7 +156,11 @@ func wireHeader(h console.Header) Header {
 		out.Tone = ToneAhead
 	}
 	for _, l := range h.Work {
-		out.Work = append(out.Work, Link{Label: l.Label, URL: l.URL})
+		command := "issue"
+		if l.Pull {
+			command = "pr"
+		}
+		out.Work = append(out.Work, Link{Label: l.Label, URL: l.URL, Command: command})
 	}
 	if h.Diff != nil {
 		out.Diff, out.Added, out.Deleted = true, h.Diff.Added, h.Diff.Deleted
@@ -368,3 +374,76 @@ func secretWords() *SecretWords {
 
 // nonNil is a copy that is never nil, so the wire carries [] rather than null.
 func nonNil[T any](s []T) []T { return append([]T{}, s...) }
+
+// wireIssue is a GitHub issue or pull request as its tab draws it: every
+// rule's answer the core's, and every body made safe to render
+// (console.MarkdownSource). repository is the web address it is numbered in
+// (console.Sandbox.Repository).
+func wireIssue(i console.Issue, repository string, now time.Time) Issue {
+	badge, mark := i.Badge()
+	out := Issue{
+		Label: console.WorkLabel(i.Number, i.PullRequest), URL: console.WorkAddress(repository, i.Number, i.PullRequest),
+		Repository: i.Repository, Number: i.Number, Pull: i.PullRequest, Title: i.Title, State: IssueState(i.State),
+		Badge: badge, Mark: wireMark(mark), Author: i.Author, Opened: console.Ago(i.CreatedAt, now), Comments: i.Comments,
+		Body: console.MarkdownSource(i.Body), Reactions: console.ReactionText(i.Reactions),
+		Labels: make([]Label, 0, len(i.Labels)), Assignees: nonNil(i.Assignees), Type: i.Type, Milestone: i.Milestone, Locked: i.Locked,
+		SubIssues: make([]IssueRef, 0, len(i.SubIssues)), SubTotal: max(i.SubIssuesTotal, len(i.SubIssues)), SubDone: i.SubIssuesDone,
+		Timeline: make([]IssueItem, 0, len(i.Timeline)), Truncated: i.Truncated,
+	}
+	for _, l := range i.Labels {
+		out.Labels = append(out.Labels, Label{Name: l.Name, Color: l.Color})
+	}
+	for _, ref := range i.SubIssues {
+		out.SubIssues = append(out.SubIssues, IssueRef{Number: console.RefNumber(ref, i.Repository), Title: ref.Title, Mark: wireMark(console.RefMark(ref))})
+	}
+	if p := i.Pull; p != nil {
+		m := i.Merge()
+		sum := p.CheckSummary()
+		pr := &PullRequest{
+			Draft: p.Draft, Merged: p.Merged, MergedBy: p.MergedBy, MergedAgo: console.Ago(p.MergedAt, now),
+			Head: p.Head, Base: p.Base, HeadSHA: p.HeadSHA, BaseSHA: p.BaseSHA,
+			Commits: p.Commits, Additions: p.Additions, Deletions: p.Deletions, ChangedFiles: p.ChangedFiles,
+			Reviewers: make([]Reviewer, 0, len(p.Reviewers)),
+			Checks:    Checks{Failing: sum.Failing, Pending: sum.Pending, Passed: sum.Passed, Partial: sum.Partial, Unpassed: make([]Check, 0, len(sum.Unpassed))},
+		}
+		if m.Shown {
+			pr.Merge = &Merge{Ready: m.Ready, Unknown: m.Unknown, Said: m.Said(p.Base), Mark: wireMark(m.Mark)}
+		}
+		for _, r := range p.Reviewers {
+			said, mark := console.ReviewerSaid(r.State)
+			pr.Reviewers = append(pr.Reviewers, Reviewer{Name: r.Name, Said: said, Mark: wireMark(mark)})
+		}
+		for _, c := range sum.Unpassed {
+			pr.Checks.Unpassed = append(pr.Checks.Unpassed, Check{Name: c.Name, URL: c.URL, Mark: wireMark(console.CheckMark(c.State))})
+		}
+		out.PullRequest = pr
+	}
+	for n, e := range i.Timeline {
+		if !i.TimelineShows(n) {
+			continue
+		}
+		item := IssueItem{Kind: ItemEvent, Actor: e.Actor, Ago: console.Ago(e.At, now), Threads: []Thread{}}
+		switch e.Kind {
+		case "commented":
+			item.Kind, item.Body, item.Reactions = ItemComment, console.MarkdownSource(e.Body), console.ReactionText(e.Reactions)
+		case "reviewed":
+			item.Kind, item.Body = ItemReview, console.MarkdownSource(e.Body)
+			item.Text, item.Tone = console.ReviewSaid(e.Review)
+			for _, t := range e.Threads {
+				th := Thread{Where: console.ThreadWhere(t), Hunk: nonNil(console.ThreadHunk(t)), Comments: make([]ThreadComment, 0, len(t.Comments))}
+				for _, c := range t.Comments {
+					th.Comments = append(th.Comments, ThreadComment{Author: c.Author, Ago: console.Ago(c.At, now), Body: console.MarkdownSource(c.Body), Reactions: console.ReactionText(c.Reactions)})
+				}
+				item.Threads = append(item.Threads, th)
+			}
+		case "committed":
+			item.Kind, item.Commit, item.Text = ItemCommit, e.Subject, e.Message
+		default:
+			item.Text = i.EventText(e)
+		}
+		out.Timeline = append(out.Timeline, item)
+	}
+	return out
+}
+
+func wireMark(m console.IssueMark) IssueMark { return IssueMark{Filled: m.Filled, Tone: m.Tone} }

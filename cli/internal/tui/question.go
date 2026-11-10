@@ -32,7 +32,9 @@ func questionDialog(q console.Question, answer func(key string) tea.Cmd) *dialog
 	hints := make([]string, len(q.Choices))
 	yesNo := true
 	for i, choice := range q.Choices {
-		items[i] = action{key: choice.Key, label: choice.Label, enabled: true}
+		// One the question offers with why it cannot be chosen is shown so,
+		// and never taken.
+		items[i] = action{key: choice.Key, label: choice.Label, enabled: choice.Why == "", why: choice.Why}
 		if i < 9 {
 			items[i].press = strconv.Itoa(i + 1)
 		}
@@ -53,6 +55,23 @@ func questionDialog(q console.Question, answer func(key string) tea.Cmd) *dialog
 	d.choiceDescriptions = hints
 	d.wrapDetails = true
 	return d
+}
+
+// questionActions are a pick of one's choices as a card's rows, each pressed
+// by its key in presses, else by its own key; one the question offers with
+// why it cannot be chosen is shown with why, and never taken. A screen with
+// keys of its own for a question's answers (the issue tab's close and merge)
+// lays them out with it.
+func questionActions(q console.Question, presses map[string]string) []action {
+	items := make([]action, 0, len(q.Choices))
+	for _, c := range q.Choices {
+		press := presses[c.Key]
+		if press == "" {
+			press = c.Key
+		}
+		items = append(items, action{key: c.Key, press: press, label: c.Label, detail: c.Hint, enabled: c.Why == "", why: c.Why})
+	}
+	return items
 }
 
 // ask puts a running command's question to the person. One from an

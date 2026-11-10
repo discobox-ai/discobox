@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 15; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 16; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -105,8 +105,21 @@ run after the registry is let go, whose `Result` ends the command:
   `audit` enters the app's view of a box's timeline; with a record in its
   args it reads it in full, with the recordings it offers
   (`console.AuditRecordDetail.AuditRecordings`), and with a part too, that
-  recording, each under the core's title. Each of the six counts its use only
-  as its flow opens. A box flow with preconditions the registry leaves to
+  recording, each under the core's title. `issue` and `pr` come with the
+  work's tab named (`Result.Work`); with an act in their args they do it to
+  the box's issue or pull request as the core asks it and does it
+  (`console.PostComment`; `ChangeIssueState` and `MergeIssue` once the
+  question asked of the issue, read again here, is answered, merging the head
+  the app showed), and every issue topic following it reads it again at once
+  (`reissue`). `files` makes the pull request's files changed
+  (`DataSource.PullReview`, over the head and base the app showed) on the
+  command's stream as its tab (`console.FilesTab`); the session is the tab's
+  own: counted from before its start (`beginFiles`), its start bounded
+  (`console.ReviewStartTimeout`), and ended in its box however its stream is
+  let go or a start lands once the command is over (`endFiles`), which the
+  bridge waits for on its way out, since nothing lists it to end it later.
+  Each of these counts its use only as its flow opens. A box flow with
+  preconditions the registry leaves to
   the flow (a tag, a request waiting) is refused here first, in the entry's
   words. The action menu comes with the core's entries; the palette's
   opening counts its use, and what it finds is the palette topic's.
@@ -197,7 +210,14 @@ attaches, as the TUI's ends with its attach; the audit timeline as it
 reports, its most recent records each with its time as the core says it
 (`console.AuditTime`, sent again as the day turns so a record says its day), the rows they fold into (`console.AuditRuns`,
 `AuditRunSummary`) and what it says with none (`AuditReading`,
-`AuditNothing`); and a workspace's header (`console.Header`)
+`AuditNothing`); a box's issue or pull request (the issue topic, `wireIssue`:
+every answer the core's, every body made safe by `console.MarkdownSource`, every
+time said as `console.Ago` when read) as it is subscribed, every
+`console.IssueRefreshEvery`, soon again while GitHub has yet to say whether it
+can merge, and at once when a command here changed it, saying a head newer than
+the one the person was shown (`console.ShownHead`, from the head the app had
+shown before, `IssueQuery.Shown`, unless the app asked to read it now); and a
+workspace's header (`console.Header`)
 with its ports at the local ports of a forward that lasts as long as the
 subscription — the workspace's, which the app ends when it parks one — read
 again whenever the forward binds or loses a port and whenever another listing
@@ -251,7 +271,8 @@ box's sessions topic listed (`Server.tab`, the primary by its ID; kept while
 anything follows the box's sessions); a service's tab is opened on what the
 core opens for its service as that listing last said it
 (`console.OpenService`): its process after its history, or its card. It is
-sent before the Exit frame. `close` detaches a stream and ends
+sent before the Exit frame. Input on a stream marks its tab typed at
+(`console.Tab.Typed`): a files changed tab ends by whether the person had. `close` detaches a stream and ends
 nothing in the box; the `end` command ends the session in the box first, and
 closes its stream only once it has. What is kept early is bounded per stream
 (`earlyLimit`), and a CloseInput frame is dropped (289 §1).

@@ -109,6 +109,11 @@ type fakeCore struct {
 	auditErr error
 	details  map[string]console.AuditRecordDetail
 	bodies   map[string]string
+	// issues is what Issue reads, by repository#number; review, when set,
+	// runs as a files changed session starts, ignoring its context, as a
+	// server that made the session before the command was let go.
+	issues map[string]console.Issue
+	review func()
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -956,4 +961,59 @@ func (a *app) conforms(schema func() (*jsonschema.Schema, error), payload []byte
 	if err := sch.Validate(v); err != nil {
 		t.Errorf("%s is not on the wire's schema: %v", payload, err)
 	}
+}
+
+// setIssue is what Issue reads for one issue of a repository.
+func (f *fakeCore) setIssue(repository string, number int, issue console.Issue) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.issues == nil {
+		f.issues = map[string]console.Issue{}
+	}
+	f.issues[fmt.Sprintf("%s#%d", repository, number)] = issue
+}
+
+func (f *fakeCore) Issue(_ context.Context, repository string, number int, full bool) (console.Issue, error) {
+	f.call("issue %s#%d full=%v", repository, number, full)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	issue, ok := f.issues[fmt.Sprintf("%s#%d", repository, number)]
+	if !ok {
+		return console.Issue{}, errors.New("not found")
+	}
+	return issue, nil
+}
+
+func (f *fakeCore) CommentOnIssue(_ context.Context, repository string, number int, body string) error {
+	f.call("comment %s#%d %q", repository, number, body)
+	return nil
+}
+
+func (f *fakeCore) SetIssueState(_ context.Context, repository string, number int, state, reason string) error {
+	f.call("state %s#%d %s %s", repository, number, state, reason)
+	return nil
+}
+
+func (f *fakeCore) MergePullRequest(_ context.Context, repository string, number int, method, sha string) error {
+	f.call("merge %s#%d %s@%s", repository, number, method, sha)
+	return nil
+}
+
+func (f *fakeCore) PullReview(ctx context.Context, box string, pull console.PullRequest, cols, rows int) (console.Exec, console.Terminal, error) {
+	f.call("review %s %s..%s %dx%d", box, pull.BaseSHA, pull.HeadSHA, cols, rows)
+	if f.review != nil {
+		f.review()
+	}
+	ex := console.Exec{ID: "review1", Command: []string{"discobox-review"}, Live: true, Tty: true, FilesChanged: true}
+	t := f.term(ex.ID)
+	// The session's stream lives on the context it was started on, as the
+	// CLI's does: one canceled ends it.
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = t.Close()
+		case <-t.closed:
+		}
+	}()
+	return ex, t, nil
 }

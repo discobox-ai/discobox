@@ -267,7 +267,8 @@ func (m *Model) FilesChanged(box console.Sandbox) tea.Cmd {
 	if !ok {
 		return m.toggleIssue(box, true)
 	}
-	openCmd := m.openIssue(box, number, true)
+	m.commands.Use("files")
+	openCmd := m.openIssueTab(box, number, true)
 	p := m.issueTab(box.Repository, number)
 	if p != nil {
 		if p.issue.issue != nil && p.issue.issue.Pull != nil {

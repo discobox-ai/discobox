@@ -60,6 +60,8 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 		go f.relisted(ctx, f.palette)
 	case TopicComposer:
 		go f.composer(ctx)
+	case TopicIssue:
+		go f.about(ctx, func() { f.issue(ctx) })
 	default:
 		f.send(Snapshot{Error: fmt.Sprintf("there is no topic %q", sub.Topic)})
 	}
@@ -574,4 +576,62 @@ func (f *follower) palette() Snapshot {
 	}
 	f.s.regMu.Unlock()
 	return Snapshot{Palette: &out}
+}
+
+// issue follows a box's issue or pull request, by the number its tag gives:
+// read as it is subscribed (in full when the app asked to see it now), then
+// every console.IssueRefreshEvery, soon again while GitHub has yet to say
+// whether a pull request can merge (console.PullSettleAfter, at most
+// console.PullSettleTries times), and in full at once when a command here
+// changed it (reissue). A head newer than the one the person was shown is
+// said (console.ShownHead, Issue.Pushed): the head the app had shown before
+// this subscription (IssueQuery.Shown), else the first read's, moved only by
+// a read the app asked for (IssueQuery.Full).
+func (f *follower) issue(ctx context.Context) {
+	box, src := f.box, f.src
+	var q IssueQuery
+	if f.sub.Issue != nil {
+		q = *f.sub.Issue
+	}
+	number, err := box.Work(q.Pull)
+	if err != nil {
+		f.failed(err)
+		return
+	}
+	full, asked, settles := q.Full, q.Full, 0
+	shown := console.NewShownHead(q.Shown)
+	for {
+		changed := f.s.reissued(box.Repository, number)
+		read, cancel := context.WithTimeout(ctx, console.IssueTimeout)
+		issue, err := src.Issue(read, box.Repository, number, full)
+		cancel()
+		every := console.IssueRefreshEvery
+		switch {
+		case err != nil && ctx.Err() != nil:
+			return
+		case err != nil:
+			f.failed(err)
+		default:
+			out := wireIssue(issue, box.Repository, time.Now())
+			// Only the subscription's first read is one the app asked for; a
+			// command here changing it shows the person nothing new.
+			if pushed := shown.Read(issue, asked); pushed != "" {
+				out.Pushed, out.Notice = pushed, console.PushedNotice(pushed, issue.Pull.HeadSHA)
+			}
+			asked = false
+			f.send(Snapshot{Issue: &out})
+			if issue.Settling() && settles < console.PullSettleTries {
+				settles++
+				every = console.PullSettleAfter
+			}
+		}
+		full = false
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(every):
+		case <-changed:
+			full = true
+		}
+	}
 }

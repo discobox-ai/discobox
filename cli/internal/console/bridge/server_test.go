@@ -1011,7 +1011,7 @@ func TestHeaderIsTheCores(t *testing.T) {
 	if h == nil || h.ID != "b1" || h.Base != "main@abc*" || h.Tone != ToneDirty || h.Changes != "" || h.Blocked != console.StatusBlocked || !h.Diff || h.Added != 3 {
 		t.Fatalf("header %+v", h)
 	}
-	if len(h.Work) != 1 || h.Work[0].Label != "issue #7" || h.Work[0].URL != "https://github.com/acme/foo/issues/7" {
+	if len(h.Work) != 1 || h.Work[0].Label != "issue #7" || h.Work[0].URL != "https://github.com/acme/foo/issues/7" || h.Work[0].Command != "issue" {
 		t.Fatalf("work %+v", h.Work)
 	}
 	if !reflect.DeepEqual(h.Tags, []string{"#wip"}) {

@@ -2028,7 +2028,8 @@ type SourcePush struct {
 // escaped, so two that differ are never drawn as one.
 //
 // A body is markdown, and the character references in it are still to be
-// decoded: whoever renders one passes it through markdownSource first.
+// decoded: whoever renders one passes it through MarkdownSource first: the TUI does
+// where it renders, and the desktop bridge before it sends one.
 type Issue struct {
 	// Repository is owner/name.
 	Repository string

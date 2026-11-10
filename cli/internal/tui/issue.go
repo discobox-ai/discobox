@@ -63,11 +63,6 @@ const (
 	// comment — a comment is paragraphs — so posting is a chord nobody types
 	// by accident: what it does is public.
 	issuePostKey = "ctrl+s"
-	// issueRefreshEvery is how often an open issue is read again, so a comment
-	// posted from the page shows up here without asking.
-	issueRefreshEvery = time.Minute
-	// issueTimeout bounds one read or one post.
-	issueTimeout = 30 * time.Second
 	// issueComposerRows is how tall the comment field is.
 	issueComposerRows = 6
 	// issueLabelWidth is the label column of the facts under the title.
@@ -114,6 +109,9 @@ type issuePane struct {
 	// see, not one that moved under them.
 	pushed string
 	asked  bool
+	// head is the head the person was shown (console.ShownHead), from which
+	// a read on the tab's own clock that brings a newer one says pushed.
+	head console.ShownHead
 	// mergeRow is the line of the conversation the ready band is on, or -1,
 	// and mergeAt the row of the tab it was last drawn on (as fileTop is).
 	mergeRow int
@@ -151,28 +149,13 @@ type issuePage struct {
 func (v *issuePane) shown() *issuePage { return &v.conversation }
 
 // label is what the tab is called, and what the header calls it.
-func (v *issuePane) label() string {
-	if v.pull {
-		return "PR #" + itoa(v.number)
-	}
-	return "issue #" + itoa(v.number)
-}
+func (v *issuePane) label() string { return console.WorkLabel(v.number, v.pull) }
 
 // noun is what it is, in a sentence.
-func (v *issuePane) noun() string {
-	if v.pull {
-		return "pull request"
-	}
-	return "issue"
-}
+func (v *issuePane) noun() string { return console.WorkNoun(v.pull) }
 
 // address is its page on GitHub.
-func (v *issuePane) address() string {
-	if v.pull {
-		return v.repository + "/pull/" + itoa(v.number)
-	}
-	return v.repository + "/issues/" + itoa(v.number)
-}
+func (v *issuePane) address() string { return console.WorkAddress(v.repository, v.number, v.pull) }
 
 // openIssueMsg is the leader plus issueKey inside a pane, or plus pullKey for
 // the pull request.
@@ -193,18 +176,20 @@ type issueLoadedMsg struct {
 // issueTickMsg is time to read the issue again.
 type issueTickMsg struct{ id int }
 
-// issuePostedMsg is a comment posted, or why it was not.
+// issuePostedMsg is a comment posted, as the core words it, or why it was
+// not.
 type issuePostedMsg struct {
-	id  int
-	err error
+	id   int
+	note string
+	err  error
 }
 
-// issueStateMsg is a close or a reopen done, or why it was not.
+// issueStateMsg is a close or a reopen done, as the core words it, or why it
+// was not.
 type issueStateMsg struct {
-	id     int
-	state  string
-	reason string
-	err    error
+	id   int
+	note string
+	err  error
 }
 
 // issueEditedMsg is the comment back from $EDITOR.
@@ -235,14 +220,23 @@ func (m *Model) issueOf(id int) (*pane, *issuePane) {
 }
 
 // openIssue opens a tab on one issue or pull request of the discobox on screen
-// and focuses it. The same one already open is only focused: reading it again
-// would throw away the place it was read to.
+// and focuses it, counted as the command's use: every way to it — the
+// leader, the header's link, the palette — comes here. The same one already
+// open is only focused: reading it again would throw away the place it was
+// read to.
 func (m *Model) openIssue(box console.Sandbox, number int, pull bool) tea.Cmd {
+	if box.Repository == "" {
+		_, err := box.Work(pull)
+		return status("%v", err)
+	}
+	m.commands.Use(map[bool]string{false: "issue", true: "pr"}[pull])
+	return m.openIssueTab(box, number, pull)
+}
+
+// openIssueTab opens the tab, or focuses the one open on the same issue.
+func (m *Model) openIssueTab(box console.Sandbox, number int, pull bool) tea.Cmd {
 	v := &issuePane{repository: box.Repository, number: number, pull: pull, composer: m.newIssueComposer()}
 	v.url = v.address()
-	if box.Repository == "" {
-		return status("%s is not on GitHub — this discobox has no GitHub repository", v.label())
-	}
 	if p := m.issueTab(box.Repository, number); p != nil {
 		m.focusPane(p)
 		return nil
@@ -266,14 +260,11 @@ func (m *Model) openIssue(box console.Sandbox, number int, pull bool) tea.Cmd {
 // toggleIssue is the leader's i, or its p for the pull request: the tab on the
 // discobox's issue, opened or focused.
 func (m *Model) toggleIssue(box console.Sandbox, pull bool) tea.Cmd {
-	number, ok := box.WorkNumber(pull)
-	switch {
-	case ok:
-		return m.openIssue(box, number, pull)
-	case pull:
-		return status("no pull request to show — tag this discobox pr=N, on a GitHub repository")
+	number, err := box.Work(pull)
+	if err != nil {
+		return status("%v", err)
 	}
-	return status("no issue to show — tag this discobox issue=N, on a GitHub repository")
+	return m.openIssue(box, number, pull)
 }
 
 // newIssueComposer is the comment field: the prompt's look without its
@@ -302,7 +293,7 @@ func (m *Model) loadIssue(p *pane, full bool) tea.Cmd {
 	v.reads++
 	ctx, ds, id, read, repository, number := m.ctx, m.ds.ForServer(p.sandbox.Server), p.id, v.reads, v.repository, v.number
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(ctx, issueTimeout)
+		ctx, cancel := context.WithTimeout(ctx, console.IssueTimeout)
 		defer cancel()
 		issue, err := ds.Issue(ctx, repository, number, full)
 		return issueLoadedMsg{id: id, read: read, issue: issue, err: err}
@@ -310,7 +301,7 @@ func (m *Model) loadIssue(p *pane, full bool) tea.Cmd {
 }
 
 func issueTick(id int) tea.Cmd {
-	return tick(issueRefreshEvery, func(time.Time) tea.Msg { return issueTickMsg{id: id} })
+	return tick(console.IssueRefreshEvery, func(time.Time) tea.Msg { return issueTickMsg{id: id} })
 }
 
 // issueLoaded takes a read. A failure leaves what was read before on screen
@@ -329,11 +320,12 @@ func (m *Model) issueLoaded(msg issueLoadedMsg) tea.Cmd {
 		v.err = msg.err.Error()
 		return nil
 	}
-	if asked {
-		v.pushed = ""
-	}
 	issue := msg.issue
-	was := v.issue
+	// A push: what was read here is no longer what would be merged. The
+	// files changed on screen stay the old head's, under the notice, until
+	// the person asks for the new one: one moved under them mid-read would
+	// lose their place for a reason they did not see.
+	v.pushed = v.head.Read(issue, asked)
 	v.issue, v.err = &issue, ""
 	v.conversation.lines = nil
 	v.pull = issue.PullRequest
@@ -343,16 +335,7 @@ func (m *Model) issueLoaded(msg issueLoadedMsg) tea.Cmd {
 		v.closeReview()
 		return nil
 	}
-	if was != nil && was.Pull != nil && was.Pull.HeadSHA != issue.Pull.HeadSHA {
-		// A push: what was read here is no longer what would be merged. The
-		// files changed on screen stay the old head's, under the notice, until
-		// the person asks for the new one: one moved under them mid-read
-		// would lose their place for a reason they did not see.
-		if v.pushed == "" && !asked {
-			v.pushed = was.Pull.HeadSHA
-		}
-	}
-	if pullReady(issue) {
+	if issue.Ready() {
 		// On the tab itself, so it is seen from whichever pane has the keys.
 		p.Title += " ●"
 	}
@@ -382,18 +365,17 @@ func (m *Model) postComment(p *pane) tea.Cmd {
 	if v.posting {
 		return nil
 	}
-	// Posted as written: an indented first line is a code block in markdown,
-	// and trimming it would change what the comment says.
-	body := v.composer.Value()
-	if strings.TrimSpace(body) == "" {
-		return status("nothing to post — the comment is empty")
+	body, err := console.CommentBody(v.composer.Value())
+	if err != nil {
+		return status("%v", err)
 	}
 	v.posting = true
 	ctx, ds, id, repository, number := m.ctx, m.ds.ForServer(p.sandbox.Server), p.id, v.repository, v.number
 	post := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(ctx, issueTimeout)
+		ctx, cancel := context.WithTimeout(ctx, console.IssueTimeout)
 		defer cancel()
-		return issuePostedMsg{id: id, err: ds.CommentOnIssue(ctx, repository, number, body)}
+		note, err := console.PostComment(ctx, ds, repository, number, body)
+		return issuePostedMsg{id: id, note: note, err: err}
 	}
 	return tea.Batch(post, status("posting the comment on #%d…", number))
 }
@@ -407,13 +389,13 @@ func (m *Model) issuePosted(msg issuePostedMsg) tea.Cmd {
 	}
 	v.posting = false
 	if msg.err != nil {
-		return m.report(true, "the comment was not posted: %v", msg.err)
+		return m.report(true, "%v", msg.err)
 	}
 	v.composer.Reset()
 	v.composer.Blur()
 	v.composing = false
 	v.toEnd, v.files = true, false
-	return tea.Batch(m.loadIssue(p, true), status("commented on #%d", v.number))
+	return tea.Batch(m.loadIssue(p, true), status("%s", msg.note))
 }
 
 // issueEdited takes the comment back from the editor. An editor left empty
@@ -503,11 +485,9 @@ func (m *Model) issueKeyPress(p *pane, msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// askIssueState is x on an issue tab: an open issue is closed — as done, or
-// as not planned, the page's two ways — and a closed one reopened. A pull
-// request closes one way, unmerged, and a merged one is past both. It is
-// asked rather than done on the key: it is public, and everyone watching the
-// issue hears about it.
+// askIssueState is x on an issue tab: the core's question for closing or
+// reopening it (console.Issue.StateQuestion), asked rather than done on the
+// key — it is public, and everyone watching the issue hears about it.
 func (m *Model) askIssueState(p *pane) tea.Cmd {
 	v := p.issue
 	switch {
@@ -515,48 +495,43 @@ func (m *Model) askIssueState(p *pane) tea.Cmd {
 		return status("the %s has not been read yet", v.noun())
 	case v.changing:
 		return nil
-	case v.issue.Pull != nil && v.issue.Pull.Merged:
-		return status("%s is merged — there is nothing to close or reopen", v.label())
-	case v.issue.State == "closed":
-		reason := "reopened"
-		if v.pull {
-			reason = ""
+	}
+	q, err := v.issue.StateQuestion()
+	if err != nil {
+		return status("%v", err)
+	}
+	issue := *v.issue
+	act := func(key string) tea.Cmd {
+		if _, _, ok := issue.StateAnswer(key); !ok {
+			return nil
 		}
-		d := confirmDialog("Reopen #"+itoa(v.number)+"?", v.issue.Title, func(string) tea.Cmd {
-			return m.setIssueState(p, "open", reason)
-		})
-		d.over = p
-		m.dialog = d
-		return nil
-	case v.pull:
-		d := confirmDialog("Close #"+itoa(v.number)+" without merging it?", v.issue.Title, func(string) tea.Cmd {
-			return m.setIssueState(p, "closed", "")
-		})
-		d.over = p
-		m.dialog = d
-		return nil
+		return m.setIssueState(p, issue, key)
 	}
-	items := []action{
-		{key: "completed", press: "c", label: "close as completed", detail: "done, fixed, or answered", enabled: true},
-		{key: "not_planned", press: "n", label: "close as not planned", detail: "won't fix, can't reproduce, duplicate, or stale", enabled: true},
+	var d *dialog
+	if len(q.Choices) == 0 {
+		d = confirmDialog(q.Title, q.Body, func(string) tea.Cmd { return act(console.AnswerYes) })
+	} else {
+		d = actionsDialog(q.Title, q.Body, questionActions(q, closePresses), act)
 	}
-	d := actionsDialog("Close #"+itoa(v.number), v.issue.Title, items, func(reason string) tea.Cmd {
-		return m.setIssueState(p, "closed", reason)
-	})
 	d.over = p
 	m.dialog = d
 	return nil
 }
 
-// setIssueState sends a close or a reopen.
-func (m *Model) setIssueState(p *pane, state, reason string) tea.Cmd {
+// closePresses are the keys a close's answers are pressed with.
+var closePresses = map[string]string{console.CloseCompleted: "c", console.CloseNotPlanned: "n"}
+
+// setIssueState sends a close or a reopen, as the answer to the question
+// asked of issue says (console.ChangeIssueState).
+func (m *Model) setIssueState(p *pane, issue console.Issue, answer string) tea.Cmd {
 	v := p.issue
 	v.changing = true
-	ctx, ds, id, repository, number := m.ctx, m.ds.ForServer(p.sandbox.Server), p.id, v.repository, v.number
+	ctx, ds, id, repository := m.ctx, m.ds.ForServer(p.sandbox.Server), p.id, v.repository
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(ctx, issueTimeout)
+		ctx, cancel := context.WithTimeout(ctx, console.IssueTimeout)
 		defer cancel()
-		return issueStateMsg{id: id, state: state, reason: reason, err: ds.SetIssueState(ctx, repository, number, state, reason)}
+		note, err := console.ChangeIssueState(ctx, ds, repository, issue, answer)
+		return issueStateMsg{id: id, note: note, err: err}
 	}
 }
 
@@ -569,24 +544,10 @@ func (m *Model) issueStateSet(msg issueStateMsg) tea.Cmd {
 	}
 	v.changing = false
 	if msg.err != nil {
-		return m.report(true, "#%d was not %s: %v", v.number, stateVerb(msg.state), msg.err)
+		return m.report(true, "%v", msg.err)
 	}
 	v.toEnd, v.files = true, false
-	said := "reopened #" + itoa(v.number)
-	if msg.state == "closed" {
-		said = "closed #" + itoa(v.number)
-		if msg.reason != "" {
-			said += " as " + strings.ReplaceAll(msg.reason, "_", " ")
-		}
-	}
-	return tea.Batch(m.loadIssue(p, true), status("%s", said))
-}
-
-func stateVerb(state string) string {
-	if state == "closed" {
-		return "closed"
-	}
-	return "reopened"
+	return tea.Batch(m.loadIssue(p, true), status("%s", msg.note))
 }
 
 // composeKey is a key while the comment is being written. Every key is the
@@ -742,7 +703,7 @@ func (m *Model) issueView(v *issuePane, width, height, x, y int) []string {
 		head = append(head, wrapLines(m.st.statusER.Render(say+v.err), width)...)
 	}
 	if v.pushed != "" && v.issue != nil && v.issue.Pull != nil {
-		head = append(head, wrapLines(m.st.statusWA.Render(pushedNotice(v.pushed, v.issue.Pull.HeadSHA)+" — r reads it again"), width)...)
+		head = append(head, wrapLines(m.st.statusWA.Render(console.PushedNotice(v.pushed, v.issue.Pull.HeadSHA)+" — r reads it again"), width)...)
 	}
 
 	room := max(height-len(foot)-len(head), 0)
@@ -873,7 +834,7 @@ func (m *Model) issueLines(v *issuePane, issue console.Issue, width int, now tim
 	if issue.PullRequest {
 		opened = "opened this pull request"
 	}
-	byline := issueState(st, issue) + "  " + st.emphasis.Render(issue.Author) + " " +
+	byline := issueBadge(st, issue) + "  " + st.emphasis.Render(issue.Author) + " " +
 		st.dimText.Render(opened+" "+console.Ago(issue.CreatedAt, now)+" · "+plural(issue.Comments, "comment", "comments"))
 	if issue.Pull != nil {
 		byline = pullByline(st, issue, now)
@@ -882,7 +843,7 @@ func (m *Model) issueLines(v *issuePane, issue console.Issue, width int, now tim
 	out = append(out, "")
 	v.mergeRow = -1
 	if banner := mergeBanner(st, issue, width); banner != "" {
-		if pullReady(issue) && mergeBandKeyFits(width) {
+		if issue.Ready() && mergeBandKeyFits(width) {
 			v.mergeRow = len(out)
 		}
 		out = append(out, banner, "")
@@ -946,7 +907,7 @@ func (m *Model) issueLines(v *issuePane, issue console.Issue, width int, now tim
 	if pull := issue.Pull; pull != nil {
 		room := max(width-issueLabelWidth, 1)
 		fact("Changes", pullChanges(st, *pull))
-		factRows("Checks", checkRows(st, pull.Checks, pull.ChecksPartial, room))
+		factRows("Checks", checkRows(st, *pull, room))
 	}
 
 	out = append(out, m.commentLines(v, issue.Author, "opened", issue.CreatedAt, issue.Body, issue.Reactions, width, now)...)
@@ -969,28 +930,24 @@ func (m *Model) issueLines(v *issuePane, issue console.Issue, width int, now tim
 		}
 	}
 	for i, event := range issue.Timeline {
-		switch {
-		case event.Kind == "commented":
+		if !issue.TimelineShows(i) {
+			continue
+		}
+		switch event.Kind {
+		case "commented":
 			flush()
 			out = append(out, m.commentLines(v, event.Actor, "commented", event.At, event.Body, event.Reactions, width, now)...)
 			continue
-		case event.Kind == "reviewed":
+		case "reviewed":
 			flush()
 			out = append(out, m.reviewLines(v, event, width, now)...)
 			continue
-		case event.Kind == "committed":
+		case "committed":
 			// A pushed commit: its short name, dim, and what it says.
 			run = append(run, eventRow{at: event.At, who: event.Actor, what: st.dimText.Render(event.Subject) + " " + event.Message})
 			continue
-		case event.Kind == "closed" && issue.Pull != nil && i > 0 && issue.Timeline[i-1].Kind == "merged":
-			// Merging closes it, and the page says the one thing.
-			continue
 		}
-		said := eventText(st, event, issue.Repository)
-		if issue.Pull != nil {
-			said = pullEventText(st, event, issue)
-		}
-		run = append(run, eventRow{at: event.At, who: event.Actor, what: said})
+		run = append(run, eventRow{at: event.At, who: event.Actor, what: issue.EventText(event)})
 	}
 	flush()
 	if issue.Truncated {
@@ -1066,7 +1023,7 @@ func (m *Model) commentLines(v *issuePane, author, verb string, at time.Time, bo
 	}
 	out = append(out, m.markdown(v, body, width)...)
 	if len(reactions) > 0 {
-		out = append(out, "", reactionText(st, reactions))
+		out = append(out, "", st.dimText.Render(console.ReactionText(reactions)))
 	}
 	return out
 }
@@ -1088,7 +1045,7 @@ func (m *Model) markdown(v *issuePane, body string, width int) []string {
 		}
 		v.md[width] = renderer
 	}
-	rendered, err := v.md[width].Render(markdownSource(strings.ReplaceAll(body, "\r\n", "\n")))
+	rendered, err := v.md[width].Render(console.MarkdownSource(body))
 	if err != nil {
 		return wrapLines(body, width)
 	}
@@ -1099,21 +1056,41 @@ func (m *Model) markdown(v *issuePane, body string, width int) []string {
 	return lines
 }
 
-// issueState is the badge the page draws beside the title: open, closed as
-// done, or closed as something else.
-func issueState(st *styles, issue console.Issue) string {
-	switch {
-	case issue.Pull != nil:
-		return pullState(st, issue)
-	case issue.State == "open":
-		return st.stateRun.Render("● Open")
-	case issue.StateReason == "not_planned":
-		return st.stateOff.Render("○ Closed as not planned")
-	case issue.StateReason == "duplicate":
-		return st.stateOff.Render("○ Closed as duplicate")
-	default:
-		return st.stateOff.Render("○ Closed")
+// issueBadge is the badge the page draws beside the title, as the core says
+// it (console.Issue.Badge).
+func issueBadge(st *styles, issue console.Issue) string {
+	word, mark := issue.Badge()
+	return markStyle(st, mark.Tone).Render(markGlyph(mark) + " " + word)
+}
+
+// markGlyph is a mark as the window draws it: the list's dot, filled while
+// there is something to do about it.
+func markGlyph(m console.IssueMark) string {
+	if m.Filled {
+		return "●"
 	}
+	return "○"
+}
+
+// markStyle is the style a mark of the issue tab is drawn in, by its tone.
+func markStyle(st *styles, tone console.IssueTone) lipgloss.Style {
+	switch tone {
+	case console.IssueToneOpen:
+		return st.stateRun
+	case console.IssueToneMerged:
+		return st.info
+	case console.IssueToneGood:
+		return st.statusOK
+	case console.IssueToneWarn:
+		return st.statusWA
+	case console.IssueToneBad:
+		return st.stateErr
+	case console.IssueToneBusy:
+		return st.stateBusy
+	case console.IssueToneQuiet:
+		return st.dimText
+	}
+	return st.stateOff
 }
 
 // labelChip is a label: a dot in the color its page draws it in, and its
@@ -1133,120 +1110,9 @@ func labelChip(st *styles, label console.IssueLabel) string {
 	return dot.Render("●") + " " + label.Name
 }
 
-// reactionOrder is the page's order for the reactions, which are drawn by
-// GitHub's names for them: an emoji is two cells in one terminal and one in
-// the next, and nothing else in the window draws one.
-var reactionOrder = []string{"+1", "-1", "laugh", "hooray", "confused", "heart", "rocket", "eyes"}
-
-func reactionText(st *styles, reactions console.IssueReactions) string {
-	var parts []string
-	for _, name := range reactionOrder {
-		if n := reactions[name]; n > 0 {
-			parts = append(parts, name+" "+itoa(n))
-		}
-	}
-	return st.dimText.Render(strings.Join(parts, " · "))
-}
-
 // refText is another issue or pull request as a line names it: its state,
 // its number — with its repository when that is not this one — and its title.
 func refText(st *styles, ref console.IssueRef, repository string) string {
-	glyph := st.stateRun.Render("●")
-	switch {
-	case ref.Merged:
-		glyph = st.info.Render("●")
-	case ref.State == "closed":
-		glyph = st.stateOff.Render("○")
-	}
-	number := "#" + itoa(ref.Number)
-	if ref.Repository != "" && ref.Repository != repository {
-		number = ref.Repository + number
-	}
-	return glyph + " " + st.dimText.Render(number) + " " + ref.Title
-}
-
-// eventText is what the page says an event did, after the name of who did
-// it. A kind it has no words for is named as GitHub names it.
-func eventText(st *styles, e console.IssueEvent, repository string) string {
-	label := ""
-	if e.Label != nil {
-		label = e.Label.Name
-	}
-	switch e.Kind {
-	case "labeled":
-		return "added the " + label + " label"
-	case "unlabeled":
-		return "removed the " + label + " label"
-	case "assigned":
-		if e.Subject == e.Actor {
-			return "self-assigned this"
-		}
-		return "assigned " + e.Subject
-	case "unassigned":
-		if e.Subject == e.Actor {
-			return "removed their assignment"
-		}
-		return "unassigned " + e.Subject
-	case "milestoned":
-		return "added this to the " + e.Subject + " milestone"
-	case "demilestoned":
-		return "removed this from the " + e.Subject + " milestone"
-	case "renamed":
-		return "changed the title from “" + e.From + "” to “" + e.To + "”"
-	case "closed":
-		how := "closed this as completed"
-		switch e.StateReason {
-		case "not_planned":
-			how = "closed this as not planned"
-		case "duplicate":
-			how = "closed this as a duplicate"
-		}
-		if e.Subject != "" {
-			how += " in " + e.Subject
-		}
-		return how
-	case "reopened":
-		return "reopened this"
-	case "locked":
-		if e.Subject != "" {
-			return "locked this as " + strings.ReplaceAll(e.Subject, "_", " ") + " and limited the conversation"
-		}
-		return "locked and limited the conversation"
-	case "unlocked":
-		return "unlocked this conversation"
-	case "referenced":
-		return "referenced this in commit " + e.Subject
-	case "cross-referenced":
-		if e.Source == nil {
-			return "mentioned this"
-		}
-		return "mentioned this in " + ansi.Strip(refText(st, *e.Source, repository))
-	case "pinned":
-		return "pinned this issue"
-	case "unpinned":
-		return "unpinned this issue"
-	case "transferred":
-		return "transferred this issue"
-	case "marked_as_duplicate":
-		return "marked this as a duplicate"
-	case "unmarked_as_duplicate":
-		return "marked this as not a duplicate"
-	case "connected":
-		return "linked a pull request that will close this issue"
-	case "disconnected":
-		return "removed a link to a pull request"
-	case "sub_issue_added":
-		return "added a sub-issue"
-	case "sub_issue_removed":
-		return "removed a sub-issue"
-	case "parent_issue_added":
-		return "added a parent issue"
-	case "parent_issue_removed":
-		return "removed a parent issue"
-	case "issue_type_added", "issue_type_changed":
-		return "set the issue type"
-	case "issue_type_removed":
-		return "removed the issue type"
-	}
-	return strings.ReplaceAll(e.Kind, "_", " ")
+	mark := console.RefMark(ref)
+	return markStyle(st, mark.Tone).Render(markGlyph(mark)) + " " + st.dimText.Render(console.RefNumber(ref, repository)) + " " + ref.Title
 }

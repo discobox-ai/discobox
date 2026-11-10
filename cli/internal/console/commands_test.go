@@ -213,7 +213,7 @@ func TestTheContextRulesCommandsOut(t *testing.T) {
 		{"a page in an attach window", Context{OneShot: &mine, TreeFits: true}, "options", nil, "open discobox console for this page"},
 		{"another box from an attach window", Context{OneShot: &mine}, "stop", []Sandbox{other}, "this window belongs to one box; open another with discobox attach"},
 		{"its own box from an attach window", Context{OneShot: &mine}, "stop", []Sandbox{mine}, ""},
-		{"an issue with no tag", Context{}, "issue", []Sandbox{mine}, "no matching repository tag"},
+		{"an issue with no tag", Context{}, "issue", []Sandbox{mine}, "no issue to show — tag this discobox issue=N, on a GitHub repository"},
 		{"requests with none waiting", Context{}, "requests", []Sandbox{mine}, "nothing waiting on this discobox"},
 		{"requests waiting", Context{Waiting: func(Sandbox) bool { return true }}, "requests", []Sandbox{mine}, ""},
 		{"a box command on an archived box", Context{}, "tools", []Sandbox{{ID: "a", State: StateArchived}}, "the box is archived — unarchive it first"},

@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
     Answer, Args, AuditPart, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, Message, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
-    StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome,
+    StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome, IssueAct, IssueItemKind, IssueQuery, IssueTone,
 };
 use discobox_bridge::{Client, Incoming};
 
@@ -799,4 +799,52 @@ fn a_cli_exiting_mid_command_closes_the_client() {
         assert!(Instant::now() < deadline, "writes to a CLI that exited went on succeeding");
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+// A box's issue and pull request reach the app: the issue topic as the core reads it, the pr
+// command's tab, a merge asked of the ways the repository allows — one offered with why it
+// cannot be chosen — and the files changed as a session of their own.
+#[test]
+fn issues_reach_the_app() {
+    let mut cli = Cli::start("default");
+    cli.send(Message {
+        r#type: Type::Subscribe,
+        subscribe: Some(Subscribe { sub: 40, topic: Topic::Issue, r#box: "b1".into(), issue: Some(IssueQuery { pull: true, full: true, ..Default::default() }), ..Default::default() }),
+        ..Default::default()
+    });
+    let i = loop {
+        let m = cli.expect(Type::Snapshot);
+        let s = m.snapshot.unwrap();
+        if s.sub == 40 {
+            break s.issue.expect("the pull request");
+        }
+    };
+    assert_eq!((i.label.as_str(), i.badge.as_str(), i.mark.tone), ("PR #9", "Open", IssueTone::Open));
+    let p = i.pull_request.expect("what the pull request adds");
+    let m = p.merge.as_ref().expect("an open pull request's merge box");
+    assert!(m.ready && m.said == "Ready to merge into main", "{m:?}");
+    assert_eq!((p.checks.failing, p.checks.passed, p.checks.unpassed[0].url.as_str()), (1, 1, "https://ci.example/lint"));
+    let kinds: Vec<_> = i.timeline.iter().map(|t| t.kind).collect();
+    assert_eq!(kinds, [IssueItemKind::Comment, IssueItemKind::Review, IssueItemKind::Commit, IssueItemKind::Event, IssueItemKind::Event]);
+    assert_eq!(i.timeline[1].threads[0].r#where, "a.go:3");
+
+    let id = cli.command("pr", &["b1"], pane("b1"), Args::default());
+    let r = cli.result(id);
+    let work = r.work.expect("the tab's work");
+    assert_eq!((r.status, work.label.as_str()), (Status::Enter, "PR #9"));
+
+    let id = cli.command("pr", &["b1"], pane("b1"), Args { act: Some(IssueAct::Merge), head: "abc1234567890".into(), ..Default::default() });
+    let q = cli.expect(Type::Question).question.unwrap();
+    assert_eq!(q.title, "Merge #9 into main");
+    let why: Vec<_> = q.choices.iter().map(|c| (c.key.as_str(), c.why.as_str())).collect();
+    assert_eq!(why, [("squash", ""), ("merge", "not allowed in this repository"), ("rebase", "not allowed in this repository")]);
+    cli.answer(q.id, "squash", false);
+    let r = cli.result(id);
+    assert_eq!((r.status, r.note.as_str()), (Status::Done, "merged #9 (squash)"));
+
+    let run = Args { stream: 7, cols: 100, rows: 30, head: "abc1234567890".into(), base: "base000000000".into(), ..Default::default() };
+    let id = cli.command("files", &["b1"], pane("b1"), run);
+    let r = cli.result(id);
+    let tab = r.session.expect("the files changed tab");
+    assert_eq!((r.status, tab.kind, tab.files, tab.title.as_str()), (Status::Done, TabKind::Files, 9, "files changed #9"));
 }

@@ -519,6 +519,48 @@ is the data source's (`FollowAudit`, the reader `discobox admin audit ls
   (`AuditReading`, `AuditNothing`, `AuditUnreadable`). The cursor, following,
   searching and which key reads what are each renderer's.
 
+## Issues and pull requests
+
+`issue.go` (876 §1). The issue tab's rules: the GitHub issue or pull request
+a box's `issue=` or `pr=` tag numbers, or why it has none (`Sandbox.Work`, which
+the registry's entry refuses with too), read and acted on as the
+person at this machine through the data source (`Issue`, `CommentOnIssue`,
+`SetIssueState`, `MergePullRequest`, `PullReview`). The TUI's tab and the
+desktop's draw them; the layout, colors and glyphs are each renderer's, a
+tone (`IssueTone`) and a mark (`IssueMark`) naming what a word is.
+
+- **What the tab says is the core's**: its name and page (`WorkLabel`,
+  `WorkAddress`), the badge (`Issue.Badge`), whether it can merge and why not
+  in GitHub's terms (`Issue.Ready`, `Issue.Merge`), whether GitHub has yet to
+  say and it is read again soon (`Issue.Settling`, `PullSettleAfter`,
+  `PullSettleTries`), each event's words (`Issue.EventText`, a merge's close
+  left out by `TimelineShows`), the checks summed up
+  (`PullRequest.CheckSummary`, `CheckMark`), what each reviewer and review
+  said (`ReviewerSaid`, `ReviewSaid`), a thread's place and hunk, the
+  reactions, and a push since the head the person was shown: `ShownHead`
+  moves with the first read and the ones they asked for, never with a read on
+  the tab's own clock, and says the head they saw (`PushedNotice`).
+- **A body is made safe to render** (`MarkdownSource`): a character reference
+  to what would be obeyed rather than shown is left as typed, for any
+  renderer's markdown.
+- **An act is asked as the core asks it**: a comment is posted as written
+  (`CommentBody`); closing or reopening is `Issue.StateQuestion`, answered
+  through `StateAnswer` — an issue closes as completed or not planned, a pull
+  request one way, a merged one neither; merging is `Issue.MergeQuestion`, of
+  the ways the repository allows, one it refuses offered with why
+  (`Choice.Why`) and never taken (`MergeMethod`), refused outright only where
+  GitHub could not merge it either, and naming the head the person was shown,
+  which is what is merged. The act itself is the core's too, once its
+  question is answered however a console asked it: `PostComment`,
+  `ChangeIssueState`, `MergeIssue`, each refusing what its question would
+  and wording what came of it.
+- **A pull request's files changed are a session of their own**
+  (`DataSource.PullReview`, `Exec.FilesChanged`), never listed as a tab: the
+  TUI draws one inside its issue tab, the desktop as its own tab
+  (`FilesTab`). Its start is given `ReviewStartTimeout`. Quitting it after
+  typing at it is being done with it; one that ends untouched is held to be
+  read (`Tab.End`, `Tab.Typed`).
+
 ## Narration and questions
 
 `narration.go` (876 §1, 289 §2). A command that reports as it goes, or asks

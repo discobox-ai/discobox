@@ -945,6 +945,13 @@ pane, not a second viewer, and everything below holds for it. What it adds:
   pointer is read against where its grid was drawn; its gestures are held as
   a terminal pane's are (`mouseCapture`), and a press in it clears every
   other selection.
+- **What the tab says of what it read is the core's** (`console/issue.go`),
+  which the desktop app's tab draws too: the badge (`Issue.Badge`), whether
+  it can merge and why not (`Issue.Merge`), each event's words
+  (`Issue.EventText`), the checks summed up (`PullRequest.CheckSummary`), what
+  a reviewer said, the close and merge questions (`Issue.StateQuestion`,
+  `MergeQuestion`) and what came of them. This package lays them out, in its
+  styles by each word's tone (`markStyle`).
 - **Whether it can merge is the first thing under the title** (`mergeBanner`),
   in GitHub's own terms (`mergeable_state`): a band across the tab when it is ready —
   open, not a draft, and clean, which is no conflicts, checks passed and every
@@ -1012,7 +1019,7 @@ pane, not a second viewer, and everything below holds for it. What it adds:
   break are dropped, and the joiners in an emoji sequence kept. A name, a path,
   a branch and a diff keep every invisible character shown, so two that differ
   are never drawn as one. A body is markdown, whose renderer decodes character
-  references: `markdownSource` leaves undecoded any that names a character
+  references: `console.MarkdownSource` leaves undecoded any that names a character
   which would not be let through as itself. The links glamour
   draws in a comment are controls like the header's, marked from the lines as
   drawn (`lineLinks`) and lit under the pointer from the same walk
@@ -1022,7 +1029,7 @@ pane, not a second viewer, and everything below holds for it. What it adds:
   the rendered lines (`webLinksOnly`), leaving its text, so the terminal's own
   Ctrl-click cannot follow it either.
 - **Kept fresh, not live.** Read in full on open, on `r` and after a change,
-  and every minute (`issueRefreshEvery`) as cheaply as the data source can say
+  and every minute (`console.IssueRefreshEvery`) as cheaply as the data source can say
   nothing changed (`DataSource.Issue`'s `full`); its messages are addressed to the pane by id,
   so a read for a tab that has closed is dropped, and carry the read's number,
   so only the latest one asked for is taken. The `x` question stands over the

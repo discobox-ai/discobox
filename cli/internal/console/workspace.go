@@ -5,6 +5,7 @@ import (
 	"maps"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -222,6 +223,16 @@ type Tab struct {
 	// than moved between.
 	Tool string
 
+	// Files is a pull request's files changed, by its number
+	// (DataSource.PullReview): discobox-review over its base and head. It is
+	// a window of its own, never one the exec listing opens (Exec.FilesChanged),
+	// so the tab that made it is the one that ends it. Typed is whether the
+	// person has typed at it: quitting it then is how they say they are done
+	// with it, and one that ends before they have ended on its own — an
+	// error, a discobox-review too old — and is held to be read.
+	Files int
+	Typed bool
+
 	// Exited is set when the tab's program finished and the tab was kept, so
 	// its last screen can be read.
 	Exited bool
@@ -298,6 +309,12 @@ func ToolTab(e Exec, tool, label string) Tab {
 	return Tab{ExecID: e.ID, Created: e.CreatedAt, Action: Interaction(label), Title: label, Tool: tool}
 }
 
+// FilesTab is a pull request's files changed as its tab.
+func FilesTab(e Exec, number int) Tab {
+	title := "files changed #" + strconv.Itoa(number)
+	return Tab{ExecID: e.ID, Created: e.CreatedAt, Action: Interaction("files changed"), Title: title, Files: number}
+}
+
 // Session is the tab as the session it orders by.
 func (t *Tab) Session() Exec {
 	return Exec{ID: t.ExecID, CreatedAt: t.Created, Primary: t.Primary, Harness: t.Harness, Service: t.Service, ServiceName: t.ServiceName, ServiceOrder: t.ServiceOrder, Tool: t.Tool}
@@ -366,6 +383,11 @@ func (t *Tab) End(err error) TabEnd {
 		return EndsWorkspace
 	case t.Tool != "" || err != nil:
 		return EndsTab
+	case t.Files != 0 && t.Typed:
+		return EndsTab
+	case t.Files != 0:
+		t.Exited, t.Status = true, "discobox-review ended"
+		return EndsHeld
 	}
 	t.Exited, t.Status = true, "finished"
 	return EndsHeld

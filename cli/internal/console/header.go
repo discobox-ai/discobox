@@ -140,11 +140,7 @@ func (s Sandbox) WorkLinks() []Link {
 		}
 		key, number, _ := strings.Cut(tag, "=")
 		n, _ := strconv.Atoi(number)
-		label := "issue #" + number
-		if key == "pr" {
-			label = "PR #" + number
-		}
-		out = append(out, Link{Label: label, URL: url, Issue: n, Pull: key == "pr"})
+		out = append(out, Link{Label: WorkLabel(n, key == "pr"), URL: url, Issue: n, Pull: key == "pr"})
 	}
 	return out
 }

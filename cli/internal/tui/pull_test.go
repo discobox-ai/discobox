@@ -306,7 +306,7 @@ func TestFilesChangedThatDoNotStartAreGivenUpOn(t *testing.T) {
 		if v.files || v.review != nil {
 			t.Errorf("a start that timed out left the tab on files %v", v.files)
 		}
-		d.wait("the time-out said", func() bool { return strings.Contains(plainFrame(m), "did not start in the discobox") })
+		d.wait("the time-out said", func() bool { return strings.Contains(plainFrame(m), "did not start in the box") })
 
 		d.key("f")
 		v.review.stream = nil
@@ -554,52 +554,6 @@ func TestAFailingCheckIsALinkToItsPage(t *testing.T) {
 	})
 }
 
-// The words a pull request's events are drawn with.
-func TestPullRequestEventsReadAsThePageWritesThem(t *testing.T) {
-	t.Parallel()
-	st := newStyles(false)
-	pull := testPull()
-	for _, tc := range []struct {
-		event console.IssueEvent
-		want  string
-	}{
-		{console.IssueEvent{Kind: "closed"}, "closed this"},
-		{console.IssueEvent{Kind: "merged", Subject: "abc1234"}, "merged commit abc1234 into main"},
-		{console.IssueEvent{Kind: "review_requested", Actor: "bob", Subject: "bob"}, "self-requested a review"},
-		{console.IssueEvent{Kind: "review_requested", Actor: "alice", Subject: "bob"}, "requested a review from bob"},
-		{console.IssueEvent{Kind: "ready_for_review"}, "marked this ready for review"},
-		{console.IssueEvent{Kind: "head_ref_deleted"}, "deleted the fix-reaper branch"},
-		{console.IssueEvent{Kind: "labeled", Label: &console.IssueLabel{Name: "bug"}}, "added the bug label"},
-		{console.IssueEvent{Kind: "copilot_work_started"}, "started a Copilot review"},
-		{console.IssueEvent{Kind: "some_new_event"}, "some new event"},
-	} {
-		if got := pullEventText(st, tc.event, pull); got != tc.want {
-			t.Errorf("pullEventText(%s) = %q, want %q", tc.event.Kind, got, tc.want)
-		}
-	}
-}
-
-// The badge is the page's: a draft, a merge and a close each say so.
-func TestThePullRequestBadge(t *testing.T) {
-	t.Parallel()
-	st := newStyles(false)
-	for _, tc := range []struct {
-		state         string
-		draft, merged bool
-		want          string
-	}{
-		{"open", false, false, "● Open"},
-		{"open", true, false, "○ Draft"},
-		{"closed", false, false, "○ Closed"},
-		{"closed", false, true, "● Merged"},
-	} {
-		issue := console.Issue{State: tc.state, Pull: &console.PullRequest{Draft: tc.draft, Merged: tc.merged}}
-		if got := pullState(st, issue); got != tc.want {
-			t.Errorf("pullState(%s, draft %v, merged %v) = %q, want %q", tc.state, tc.draft, tc.merged, got, tc.want)
-		}
-	}
-}
-
 // readyPull is the pull request with nothing left in its way.
 func readyPull() console.Issue {
 	pull := testPull()
@@ -793,9 +747,9 @@ func TestTheMergeKeyTwiceDoesNotMerge(t *testing.T) {
 		if merges != 0 || m.dialog == nil {
 			t.Fatalf("%s twice: %d merges, question up %v; want none and the question still asked", pullMergeKey, merges, m.dialog != nil)
 		}
-		for _, method := range mergeMethods {
-			if method.press == pullMergeKey {
-				t.Errorf("%q is picked with the key that asks", method.label)
+		for method, press := range mergePresses {
+			if press == pullMergeKey {
+				t.Errorf("%q is picked with the key that asks", method)
 			}
 		}
 	})
@@ -1014,13 +968,13 @@ func TestTheReadyBandsKeyIsNotPressedWhileWriting(t *testing.T) {
 func TestChecksNotAllReadSaySo(t *testing.T) {
 	t.Parallel()
 	st := newStyles(false)
-	if got := checkRows(st, []console.PullCheck{{Name: "build", State: "success"}}, true, 80); len(got) == 0 || !strings.Contains(got[0], "1 passed · not all could be read") {
+	if got := checkRows(st, console.PullRequest{Checks: []console.PullCheck{{Name: "build", State: "success"}}, ChecksPartial: true}, 80); len(got) == 0 || !strings.Contains(got[0], "1 passed · not all could be read") {
 		t.Errorf("partial checks = %q", got)
 	}
-	if got := checkRows(st, nil, true, 80); len(got) != 1 || !strings.Contains(got[0], "could not be read") {
+	if got := checkRows(st, console.PullRequest{ChecksPartial: true}, 80); len(got) != 1 || !strings.Contains(got[0], "could not be read") {
 		t.Errorf("unread checks = %q", got)
 	}
-	if got := checkRows(st, nil, false, 80); got != nil {
+	if got := checkRows(st, console.PullRequest{}, 80); got != nil {
 		t.Errorf("no checks = %q, want no row", got)
 	}
 }
@@ -1032,7 +986,7 @@ func TestAMergeRefusalSurvivesLateProgress(t *testing.T) {
 		ds.mergeErr = errors.New("GitHub answered 405: Required status check \"lint\" is failing")
 		_, m := openPullPane(t, ds)
 		p := issueTabOf(m)
-		batch := m.mergePull(p, "squash", p.issue.issue.Pull.HeadSHA)().(tea.BatchMsg)
+		batch := m.mergePull(p, *p.issue.issue, "squash", p.issue.issue.Pull.HeadSHA)().(tea.BatchMsg)
 
 		// Deliver the completed merge and its refusal before the sibling
 		// progress command, a legal ordering for Bubble Tea's batch.

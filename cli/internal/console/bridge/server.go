@@ -57,6 +57,16 @@ type Server struct {
 	heard   map[string]*heard
 	// kick is closed to read the listing again now (relist).
 	kick chan struct{}
+	// issues is closed, by the issue's page, to read an issue again now
+	// (reissue): a command here changed it.
+	issues map[string]chan struct{}
+	// files counts the files changed sessions being started (beginFiles) or
+	// still being ended in their boxes (endFiles), which the bridge waits for
+	// on its way out; closing is set once it has begun waiting, after which
+	// none is started.
+	filesMu sync.Mutex
+	closing bool
+	files   sync.WaitGroup
 	// subMu is held to write a snapshot (read) and to end a subscription
 	// (write): an unsubscribe the app sent before a command is never
 	// followed by a snapshot of that subscription, written by a follower
@@ -102,6 +112,7 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		boxes:     map[string]console.Sandbox{},
 		heard:     map[string]*heard{},
 		kick:      make(chan struct{}),
+		issues:    map[string]chan struct{}{},
 		fresh:     make(chan struct{}),
 		subs:      map[uint32]context.CancelFunc{},
 		forms:     map[uint64]*mailbox{},
@@ -125,6 +136,12 @@ func (s *Server) Serve(ctx context.Context, in io.Reader) error {
 	defer func() {
 		cancel()
 		s.streams.closeAll()
+		// A files changed session is the window's own: nothing else will
+		// ever list it to end it.
+		s.filesMu.Lock()
+		s.closing = true
+		s.filesMu.Unlock()
+		s.files.Wait()
 	}()
 	go func() {
 		<-ctx.Done()
@@ -312,7 +329,7 @@ func (s *Server) open(ctx context.Context, o Open) {
 	if primaryOf(o.Exec) {
 		watch = s.watchProgram(o.Box, o.Stream)
 	}
-	s.streams.attach(o.Stream, term, tab, watch)
+	s.streams.attach(o.Stream, term, tab, watch, nil)
 }
 
 // tab is the tab a box's session is, as the core made it when its sessions
@@ -587,6 +604,63 @@ func (s *Server) relist() {
 	close(s.kick)
 	s.kick = make(chan struct{})
 	s.mu.Unlock()
+}
+
+// endFiles ends a files changed session in its box, once its stream is let
+// go however that happens — its tab closed, discobox-review quit, the window
+// gone: it is the tab's own, and nothing else ever lists it to end it
+// (console.Exec.FilesChanged). The bridge waits for each on its way out.
+func (s *Server) endFiles(src console.DataSource, box, exec string) func() {
+	return func() {
+		// Every stream is let go before the bridge waits (Serve), so this
+		// is never refused.
+		s.filesMu.Lock()
+		s.files.Add(1)
+		s.filesMu.Unlock()
+		go func() {
+			defer s.files.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), console.IssueTimeout)
+			defer cancel()
+			_ = src.EndExec(ctx, box, exec)
+		}()
+	}
+}
+
+// beginFiles counts a files changed session about to start, and is false
+// once the bridge is on its way out and starts none.
+func (s *Server) beginFiles() bool {
+	s.filesMu.Lock()
+	defer s.filesMu.Unlock()
+	if s.closing {
+		return false
+	}
+	s.files.Add(1)
+	return true
+}
+
+// reissue reads an issue again now, for every subscription following it: a
+// command here commented on it, closed, reopened or merged it.
+func (s *Server) reissue(repository string, number int) {
+	key := console.WorkAddress(repository, number, false)
+	s.mu.Lock()
+	if c := s.issues[key]; c != nil {
+		close(c)
+		delete(s.issues, key)
+	}
+	s.mu.Unlock()
+}
+
+// reissued is closed when an issue is to be read again (reissue).
+func (s *Server) reissued(repository string, number int) <-chan struct{} {
+	key := console.WorkAddress(repository, number, false)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.issues[key]
+	if c == nil {
+		c = make(chan struct{})
+		s.issues[key] = c
+	}
+	return c
 }
 
 func (s *Server) kicked() <-chan struct{} {
@@ -873,7 +947,7 @@ func fields(in []console.Field, answers console.Answers) []Field {
 func choices(in []console.Choice) []Choice {
 	out := make([]Choice, 0, len(in))
 	for _, c := range in {
-		out = append(out, Choice{Key: c.Key, Label: c.Label, Hint: c.Hint})
+		out = append(out, Choice{Key: c.Key, Label: c.Label, Hint: c.Hint, Why: c.Why})
 	}
 	return out
 }

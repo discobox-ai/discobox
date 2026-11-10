@@ -24,6 +24,9 @@ type Choice struct {
 	// tree): a console that answers a yes or no by a key of its own answers
 	// these by it too. Empty for every other choice.
 	Means string
+	// Why is why it cannot be chosen, for an answer a question offers that is
+	// not open: shown, so it is seen not to be there, and never taken.
+	Why string
 }
 
 // Field is one line of a form: a label, and a value either typed or chosen.

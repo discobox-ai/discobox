@@ -420,28 +420,6 @@ func TestDetachingClosesTheIssue(t *testing.T) {
 	})
 }
 
-// The words an event is drawn with, for the kinds the page has words for.
-func TestEventsReadAsThePageWritesThem(t *testing.T) {
-	t.Parallel()
-	st := newStyles(false)
-	for _, tc := range []struct {
-		event console.IssueEvent
-		want  string
-	}{
-		{console.IssueEvent{Kind: "assigned", Actor: "bob", Subject: "bob"}, "self-assigned this"},
-		{console.IssueEvent{Kind: "assigned", Actor: "bob", Subject: "carol"}, "assigned carol"},
-		{console.IssueEvent{Kind: "closed", StateReason: "not_planned"}, "closed this as not planned"},
-		{console.IssueEvent{Kind: "closed", Subject: "abc1234"}, "closed this as completed in abc1234"},
-		{console.IssueEvent{Kind: "renamed", From: "a", To: "b"}, "changed the title from “a” to “b”"},
-		{console.IssueEvent{Kind: "cross-referenced", Source: &console.IssueRef{Repository: "acme/bar", Number: 3, Title: "x"}}, "mentioned this in ● acme/bar#3 x"},
-		{console.IssueEvent{Kind: "some_new_event"}, "some new event"},
-	} {
-		if got := eventText(st, tc.event, "acme/foo"); got != tc.want {
-			t.Errorf("eventText(%s) = %q, want %q", tc.event.Kind, got, tc.want)
-		}
-	}
-}
-
 // Labels wrap between chips, never inside one.
 func TestLabelsWrapBetweenChips(t *testing.T) {
 	t.Parallel()

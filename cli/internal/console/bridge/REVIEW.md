@@ -25,7 +25,8 @@
   `RunServiceVerb` for a service, `OfferedHarness`, `RunHarnessVerb` and
   `EditHarness` for a harness, `RunHarnessChange` for a box's harness changes,
   `OfferedTool`, `OpenTool`, `RunHostTool` and `EditTool` for a box's tools,
-  `OfferedSecret` and `OfferedBinding` for a secret and its bindings.
+  `OfferedSecret` and `OfferedBinding` for a secret and its bindings,
+  `PostComment`, `ChangeIssueState` and `MergeIssue` for its issue.
   The bridge's first harnesses page re-read the harness, looked the action up
   and refused it itself, and its harness-changes review sent whatever
   candidate the app named — the fourth such rule written in the bridge.
@@ -35,8 +36,10 @@
   message to it.
 - **A rule about when the window does something is the core's, even a small
   one.** Whether a filter is saved (`Session.Saves`), which requests a box is
-  affected by (`RequestsFor`): the bridge's first copy of each was written by
-  hand from the TUI's and already differed from it. Move the rule into
+  affected by (`RequestsFor`), which issue a box has and why not
+  (`Sandbox.Work`), the head of a pull request the person was shown
+  (`ShownHead`): the bridge's first copy of each was written by hand from the
+  TUI's and already differed from it. Move the rule into
   `console` and call it from both. The app is held to it too: which of a
   primary's stream report and the listing's poll the header says was first
   written into the desktop app, and differed from the TUI's on a repeated
@@ -58,6 +61,19 @@
   (`desktop/bridge/src/lib.rs`, `Masked`). A secret's form is the first with
   one, and every change to it goes out as a draft and comes back as a form,
   so its first version logged a typed token on every keystroke, both ways.
+- **A session nothing lists is counted from before its start, not from its
+  attach.** A files changed session (`Exec.FilesChanged`) is ended only by
+  whoever made it: the bridge counts it as it starts (`beginFiles`), ends one
+  that lands once the command is over, bounds its start
+  (`console.ReviewStartTimeout`), and waits for every such end on its way out.
+  The bridge's first version counted it only once its stream was let go: a
+  start under way when the app quit raced the bridge's wait and left
+  discobox-review running in the box. The TUI had counted it from its start
+  all along (`reviewEnds`); the bridge had not followed it. Its bound cancels
+  only a start still under way: the session's terminal lives on the context
+  it was started on, and a timeout context canceled once the start returned
+  ended every files changed the moment it opened (found only by running it:
+  the test fake's terminal ignored its context, and now ends with it).
 - **A wire change is regenerated, never mirrored.** Change `wire.go` (or the
   console's `Spec`), run `go tool task generate`, and build the app against
   the new `desktop/bridge/src/wire.rs`. A type the app reads written by hand in
@@ -70,6 +86,15 @@
   build beside an older CLI), passed the version check and stopped on a bare
   missing field instead of the check's "run the app built with this CLI".
   Adding `Dimensions` nearly shipped that way.
+- **Something absent is an omitted pointer, never a zero value.** A struct
+  left at its zero value puts `""` in each named-enum field it holds, and
+  `""` is no value of the enum: the app's generated type refuses the whole
+  message, so the snapshot never arrives. A merged pull request's merge box
+  went out that way (`"tone":""`) and its tab stayed on "reading" for good;
+  every test used an open one, and only the running app found it. Make the
+  field `*T` with `omitempty` and set it only when there is one, and have a
+  test send the case where there is none: the fake app holds each message
+  to the schema.
 - **A closed set on the wire is a named type, never a plain string.** A field
   whose values the bridge or the core decides (a box's state, a tab's kind, a
   request's kind, a command's target) is a named string type with its
