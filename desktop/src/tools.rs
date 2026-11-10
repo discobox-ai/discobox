@@ -131,7 +131,9 @@ pub fn show(s: &mut State, sandbox: &str, tool: &str) -> bool {
     if !held {
         return false;
     }
-    if s.live.as_deref() != Some(sandbox) {
+    // Its box's workspace takes the screen: from another box, and from a page covering this one
+    // (the harnesses or the secrets), which would otherwise stay up over the tool's tab.
+    if s.live.as_deref() != Some(sandbox) || s.page_shown() {
         s.show_workspace(sandbox);
     }
     let Some(ws) = s.workspaces.get_mut(sandbox) else { return false };

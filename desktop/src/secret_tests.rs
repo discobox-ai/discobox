@@ -255,3 +255,26 @@ fn a_panel_acts_on_its_own_secret() {
     key(&mut rt, Key::Enter);
     assert_eq!(rt.state.sheets.form().map(|f| f.title.clone()).as_deref(), Some("Bind claude-login"));
 }
+
+// A tool already running in the box the page covers, chosen from the page, takes the screen back
+// from it: its tab is shown, never left behind the page.
+#[test]
+fn a_running_tool_chosen_over_the_page_closes_it() {
+    let mut rt = runtime();
+    key(&mut rt, Key::Enter);
+    run_command(&mut rt.state, "tools", &mut Tx::default());
+    settle(&mut rt);
+    let pick = |rt: &mut Runtime<State>| {
+        let m = rt.state.menu.as_mut().expect("the tools menu");
+        m.picked = m.entries.iter().position(|e| e.command == "tool:diff").unwrap();
+        key(rt, Key::Enter);
+    };
+    pick(&mut rt);
+    run_command(&mut rt.state, "credentials", &mut Tx::default());
+    settle(&mut rt);
+    assert!(rt.state.secrets.is_some());
+    run_command(&mut rt.state, "tools", &mut Tx::default());
+    settle(&mut rt);
+    pick(&mut rt);
+    assert!(rt.state.secrets.is_none() && rt.state.workspace_shown(), "the page stayed over the tool's tab");
+}
