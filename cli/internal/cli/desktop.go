@@ -30,8 +30,8 @@ import (
 // stdin and stdout (console/bridge), so every transport, login and reconnect
 // is the CLI's own.
 //
-// The design is ADR 26-11-07-876, -983 and -289; desktop/README.md says what
-// is built so far.
+// The design is ADR 26-11-07-876, -983 and -289; desktop/DESIGN.md is the
+// app's, and docs/console/parity.md says what it lacks against the TUI.
 
 // desktopBinaryEnv names a desktop binary to run in place of the one this CLI
 // would run — for developing the desktop app against a released CLI, or

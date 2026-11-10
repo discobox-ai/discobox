@@ -132,8 +132,8 @@ transport helpers where OpenAPI does not model the stream.
   and a development CLI, with no
   manifest, runs the `discobox-desktop` beside it. PATH is never searched, as
   for the server. The staged app is held in use until it exits, so another
-  CLI's prune leaves it alone; `desktop/README.md` says what the app does not
-  draw yet. `discobox desktop --print-manifest` prints the pinned download,
+  CLI's prune leaves it alone; the parity ledger
+  (`docs/console/parity.md`) says what the app does not draw yet. `discobox desktop --print-manifest` prints the pinned download,
   as `admin server manifest` does the server's (`release:verify` reads both).
   It is a flag of `desktop` rather than an `admin` command because `admin` is
   for running a server, and the app is no part of one; it has no `--manifest`

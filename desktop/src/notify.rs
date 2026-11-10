@@ -1,12 +1,12 @@
 //! Native notifications: a request that has just arrived (the requests topic's `arrived`) is
-//! raised with the system's own notifications, and pressing one answers that request
-//! (`Event::Answer`). Which requests are new, and what a notification says, are the core's
+//! raised with the system's own notifications, and pressing one opens that request's card
+//! (`Event::Answer`), which still asks for Accept. Which requests are new, and what a notification says, are the core's
 //! (`console.RequestArrival`): the bridge sends none for what was waiting as the window opened,
 //! which the list's marks and a workspace's notice say. Raising them is this window's platform
 //! affordance (ADR 26-11-07-876 §2).
 //!
 //! On Linux it is the desktop's notification service over the session bus
-//! (`org.freedesktop.Notifications`), with a default action that answers the request. A
+//! (`org.freedesktop.Notifications`), with a default action that opens the request's card. A
 //! session with no such service raises nothing, and the notice and the list say it still.
 //! macOS and Windows raise nothing yet: neither builds the app (ADR 26-11-07-983 §4).
 

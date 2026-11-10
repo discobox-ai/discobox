@@ -187,8 +187,10 @@ flowchart TD
   (`desktop/src/spec.json`) are generated from the console core
   (`cli/internal/console`), and the bridge client's contract suite runs
   against the Go bridge, which it builds. The CLI side is in
-  [`cli/DESIGN.md`](cli/DESIGN.md); the app's own layout and what it does not
-  do yet are in [`desktop/README.md`](desktop/README.md).
+  [`cli/DESIGN.md`](cli/DESIGN.md); the app's own design is in
+  [`desktop/DESIGN.md`](desktop/DESIGN.md), and what either console lacks
+  against the other in the parity ledger
+  ([`docs/console/parity.md`](docs/console/parity.md)).
 
 Pool-agent and sandbox-agent implementations cannot depend on packages under
 Go `internal/` outside their module. Provider implementations are part of the

@@ -17,7 +17,11 @@ flowchart LR
 
 - **The desktop app reaches it through [`bridge`](bridge/DESIGN.md)**, which
   serves the core over a pipe: commands through `Dispatch`, questions and
-  forms as descriptions, and what the app draws as subscriptions.
+  forms as descriptions, and what the app draws as subscriptions. The app's
+  own design is [`desktop/DESIGN.md`](../../../desktop/DESIGN.md).
+- **What one renderer lacks against the other is the parity ledger's**
+  ([`docs/console/parity.md`](../../../docs/console/parity.md), 598 §1):
+  every command, terminal behaviour and screen either console has.
 - **It imports no frontend**: not `internal/tui`, not `internal/cli`, and
   nothing of Bubble Tea or termpane. A rule a renderer needs is moved here,
   never exported back out of a renderer.
