@@ -518,6 +518,31 @@ fn harnesses_edits_and_harness_changes_reach_the_app() {
     assert_eq!((r.status, r.note.as_str()), (Status::Done, "harness changes: saved"));
 }
 
+// A box's primary is read for what its program says of itself: the header says the poll's
+// before it reports, and what a report the program wrote (here, echoed) says after.
+#[test]
+fn a_primarys_report_reaches_the_header() {
+    let mut cli = Cli::start("default");
+    cli.subscribe(1, Topic::Listing, "");
+    cli.expect(Type::Snapshot);
+    cli.subscribe(2, Topic::Header, "b1");
+    let header = |cli: &mut Cli| loop {
+        let s = cli.expect(Type::Snapshot).snapshot.unwrap();
+        if s.sub == 2 {
+            break s.header.expect("the header");
+        }
+    };
+    let h = header(&mut cli);
+    assert_eq!((h.id.as_str(), h.agent.as_str()), ("b1", ""), "the poll says nothing for b1");
+    let open = Open { stream: 4, r#box: "b1".into(), exec: "primary".into(), cols: 80, rows: 24 };
+    cli.send(Message { r#type: Type::Open, open: Some(open), ..Default::default() });
+    cli.expect(Type::Stream);
+    // "which?" in base64.
+    cli.client.input(4, b"\x1b]7501;state=blocked:kind=question:msg=d2hpY2g/\x07").unwrap();
+    let h = header(&mut cli);
+    assert_eq!((h.agent.as_str(), h.agent_msg.as_str()), ("blocked", "which?"));
+}
+
 // A CLI that exits while a command is in flight closes the client: no result comes, the app is
 // told the bridge is gone, and what it sends after fails rather than hangs.
 // A create from the composer: the composer topic says what it would be made with as it is subscribed, a draft the

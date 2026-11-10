@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 8,
+  "x-protocol": 9,
   "x-specVersion": 5,
   "x-frameKinds": {
     "json": {
@@ -1418,6 +1418,13 @@
         },
         "unforwarded": {
           "description": "Unforwarded is why the box's ports could not be forwarded, when they could not: they are listed, unlinked.",
+          "type": "string"
+        },
+        "agent": {
+          "description": "Agent is what the box's agent is doing (a program status state: working, idle, blocked, done, error), and AgentMsg what it says of it (console.Header.Agent): the core's choice between what the program in the box's attached primary reports over OSC 7501 and the listing's poll. None when there is nothing to say.",
+          "type": "string"
+        },
+        "agentMsg": {
           "type": "string"
         }
       },

@@ -31,7 +31,11 @@
   one.** Whether a filter is saved (`Session.Saves`), which requests a box is
   affected by (`RequestsFor`): the bridge's first copy of each was written by
   hand from the TUI's and already differed from it. Move the rule into
-  `console` and call it from both.
+  `console` and call it from both. The app is held to it too: which of a
+  primary's stream report and the listing's poll the header says was first
+  written into the desktop app, and differed from the TUI's on a repeated
+  report and on a prompt; it is `Sandbox.AgentHeard`, and the bridge sends
+  its answer in the box's header (`Header.Agent`).
 - **A wire change is regenerated, never mirrored.** Change `wire.go` (or the
   console's `Spec`), run `go tool task generate`, and build the app against
   the new `desktop/bridge/src/wire.rs`. A type the app reads written by hand in

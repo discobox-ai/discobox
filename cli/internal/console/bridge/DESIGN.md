@@ -191,4 +191,15 @@ nothing in the box; the `end` command ends the session in the box first, and
 closes its stream only once it has. What is kept early is bounded per stream
 (`earlyLimit`), and a CloseInput frame is dropped (289 §1).
 
-
+What a box's agent is doing, as the workspace header says it
+(`console.Header.Agent`), is the core's choice (`console.Sandbox.AgentHeard`,
+the one the TUI makes for what it says on its terminal's tab and title)
+between what the program in its attached primary reports over OSC 7501 (ADR
+26-10-16-424) and the listing's poll (`program.go`). The bridge reads the
+primary's output through the parser termpane and the shim use
+(`charmbracelet/x/ansi`), takes each OSC 7501 and OSC 133 by the protocol's
+rules (`programstatus.Set.Observe`), and hands what it heard to
+`console.NewHeader` for the box's header (the header topic), read again whenever a report, a
+prompt, an attach or the session's end changes what the primary has said, as
+it is for a new listing. The app draws it and decides nothing; its emulator
+never sees a sequence it does not know.

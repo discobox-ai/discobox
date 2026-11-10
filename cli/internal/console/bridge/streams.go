@@ -42,6 +42,9 @@ type stream struct {
 	// that attaches it later is closed at once.
 	closed bool
 	done   chan struct{}
+	// watch reads a box's primary for what its program says (program.go);
+	// nil on every other stream.
+	watch *programWatch
 }
 
 func newStreams(w *Writer, send func(Message)) *streams {
@@ -108,9 +111,10 @@ func apply(term console.Terminal, f Frame) {
 
 // attach gives a stream its terminal, showing tab: what was kept for it is
 // applied in order, then its output and its connection's state go to the app
-// until it ends or is closed. A stream that ended or was closed while it
-// opened takes no terminal, and false says the terminal was closed.
-func (s *streams) attach(id uint32, term console.Terminal, tab console.Tab) bool {
+// until it ends or is closed, its output read by watch when it is a box's
+// primary. A stream that ended or was closed while it opened takes no
+// terminal, and false says the terminal was closed.
+func (s *streams) attach(id uint32, term console.Terminal, tab console.Tab, watch *programWatch) bool {
 	st := s.get(id)
 	if st == nil {
 		_ = term.Close()
@@ -123,7 +127,7 @@ func (s *streams) attach(id uint32, term console.Terminal, tab console.Tab) bool
 		_ = term.Close()
 		return false
 	}
-	st.term, st.tab = term, tab
+	st.term, st.tab, st.watch = term, tab, watch
 	for _, f := range st.early {
 		apply(term, f)
 	}
@@ -135,7 +139,8 @@ func (s *streams) attach(id uint32, term console.Terminal, tab console.Tab) bool
 	return true
 }
 
-// pump sends the terminal's output on its stream, and its end: what the
+// pump sends the terminal's output on its stream, to be read for what its
+// program says when it is a box's primary (program.go), and its end: what the
 // ending does to the workspace (console.Tab.End), then one Exit frame
 // carrying why, if it failed.
 func (s *streams) pump(id uint32, st *stream) {
@@ -144,6 +149,9 @@ func (s *streams) pump(id uint32, st *stream) {
 		n, err := st.term.Read(buf)
 		if n > 0 {
 			_ = s.w.Write(frame.Stdout, id, append([]byte(nil), buf[:n]...))
+			if st.watch != nil {
+				st.watch.feed(buf[:n])
+			}
 		}
 		if err != nil {
 			select {
@@ -247,6 +255,9 @@ func (s *streams) end(id uint32) {
 	st.mu.Unlock()
 	if term != nil {
 		_ = term.Close()
+	}
+	if st.watch != nil {
+		st.watch.end()
 	}
 }
 

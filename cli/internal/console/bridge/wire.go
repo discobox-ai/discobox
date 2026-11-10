@@ -24,8 +24,8 @@ import (
 // actions and card), a box's harness changes reviewed, saved and discarded,
 // and edits answered with saved; 8, creating a box: the composer's draft and
 // summary, the run options' forms with what they add up to, and a question's
-// subject.
-const Protocol = 8
+// subject; 9, what a box's header says its agent is doing (Header.Agent).
+const Protocol = 9
 
 // Type names a message.
 type Type string
@@ -543,6 +543,13 @@ type Header struct {
 	// Unforwarded is why the box's ports could not be forwarded, when they
 	// could not: they are listed, unlinked.
 	Unforwarded string `json:"unforwarded,omitempty"`
+	// Agent is what the box's agent is doing (a program status state:
+	// working, idle, blocked, done, error), and AgentMsg what it says of it
+	// (console.Header.Agent): the core's choice between what the program in
+	// the box's attached primary reports over OSC 7501 and the listing's
+	// poll. None when there is nothing to say.
+	Agent    string `json:"agent,omitempty"`
+	AgentMsg string `json:"agentMsg,omitempty"`
 }
 
 // Link is something in the header a press opens in the browser; one without

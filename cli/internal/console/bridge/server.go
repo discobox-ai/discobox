@@ -48,6 +48,10 @@ type Server struct {
 	// it: what the commands and the palette are read from and sent again on.
 	last  console.Listing
 	fresh chan struct{}
+	// heard is what each box's attached primary has said of its program,
+	// by its key (program.go).
+	heardMu sync.Mutex
+	heard   map[string]*heard
 	// kick is closed to read the listing again now (relist).
 	kick chan struct{}
 	// subMu is held to write a snapshot (read) and to end a subscription
@@ -89,6 +93,7 @@ func NewServer(ds console.DataSource, out io.Writer) *Server {
 		w:         NewWriter(out),
 		reg:       console.NewRegistry(ds),
 		boxes:     map[string]console.Sandbox{},
+		heard:     map[string]*heard{},
 		kick:      make(chan struct{}),
 		fresh:     make(chan struct{}),
 		subs:      map[uint32]context.CancelFunc{},
@@ -288,7 +293,11 @@ func (s *Server) open(ctx context.Context, o Open) {
 		s.streams.fail(o.Stream, err, tab)
 		return
 	}
-	s.streams.attach(o.Stream, term, tab)
+	var watch *programWatch
+	if primaryOf(o.Exec) {
+		watch = s.watchProgram(o.Box, o.Stream)
+	}
+	s.streams.attach(o.Stream, term, tab, watch)
 }
 
 // tab is the tab a box's session is, as the core made it when its sessions

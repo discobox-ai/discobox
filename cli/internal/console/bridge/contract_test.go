@@ -44,7 +44,9 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 // made: it reports the last draft the app sent as a step, and is taken.
 //
 // Archiving and unarchiving a box changes its state in the listing. Every
-// terminal echoes what it is sent (fakeTerm).
+// terminal echoes what it is sent (fakeTerm), so an OSC 7501 report typed into
+// a box's primary is that box's program speaking, for its header
+// (Header.Agent).
 func TestContractCore(t *testing.T) {
 	scenario := os.Getenv(contractEnv)
 	if scenario == "" {
@@ -63,6 +65,8 @@ func TestContractCore(t *testing.T) {
 		running("doomed"),
 	)
 	core.echo = true
+	// A box's header topic forwards its ports while it is followed.
+	core.forward = newFakeForward()
 	core.settings = console.BoxSettings{Name: "b1"}
 	core.execs = []console.Exec{{ID: "sh", Command: []string{"/bin/bash"}, Live: true, Tty: true, CreatedAt: time.Unix(2, 0)}}
 	core.requests = []console.CredentialRequest{{ID: "r1", SandboxID: "b1", Name: "github"}}

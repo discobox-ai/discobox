@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 8;
+pub const PROTOCOL: i64 = 9;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 5;
@@ -1157,6 +1157,16 @@ pub struct Header {
     /// listed, unlinked.
     #[serde(default, skip_serializing_if = "is_default")]
     pub unforwarded: String,
+
+    /// Agent is what the box's agent is doing (a program status state: working, idle, blocked,
+    /// done, error), and AgentMsg what it says of it (console.Header.Agent): the core's choice
+    /// between what the program in the box's attached primary reports over OSC 7501 and the
+    /// listing's poll. None when there is nothing to say.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub agent: String,
+
+    #[serde(rename = "agentMsg", default, skip_serializing_if = "is_default")]
+    pub agent_msg: String,
 }
 
 /// Link is something in the header a press opens in the browser; one without a URL is text.

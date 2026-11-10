@@ -199,7 +199,7 @@ func (f *frontend) session(box console.Sandbox, asked console.Interaction, start
 	}
 	made := console.SessionTab(ex, asked)
 	tab := wireTab(made, ex)
-	if !f.s.streams.attach(stream, term, made) {
+	if !f.s.streams.attach(stream, term, made, nil) {
 		// Closed while it was made: the session goes on in the box, and the
 		// app, which closed it, is told what it was.
 		return Result{Status: StatusDone, Box: Key(box.Server, box.ID), Session: &tab, Note: "the pane closed before the session was made"}

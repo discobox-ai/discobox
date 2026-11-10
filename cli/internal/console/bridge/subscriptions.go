@@ -353,7 +353,8 @@ func (f *follower) audit(ctx context.Context) {
 // which goes with the screen showing it (console.Workspace.Park). It is read
 // again whenever the forward binds or loses a port, and whenever the listing
 // is read (relisted), since the listing carries the git state and the ports
-// served. A forward
+// served, and whenever what the box's attached primary says of its program
+// changes what its agent is said to be doing (program.go). A forward
 // that could not be opened leaves the ports listed and unlinked, and says
 // why.
 func (f *follower) header(ctx context.Context) {
@@ -376,13 +377,15 @@ func (f *follower) header(ctx context.Context) {
 		if bindings != nil {
 			forwarded = console.Forwarded(bindings())
 		}
-		h := wireHeader(console.NewHeader(box, forwarded, nil, false))
+		header, heard := f.s.header(f.sub.Box, box, forwarded)
+		h := wireHeader(header)
 		h.Unforwarded = unforwarded
 		f.send(Snapshot{Header: &h})
 		select {
 		case <-ctx.Done():
 			return
 		case <-fresh:
+		case <-heard:
 		case _, ok := <-events:
 			if !ok {
 				// The forward has closed: what it bound is gone.

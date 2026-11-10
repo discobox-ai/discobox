@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/console"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // The core's values as the wire carries them.
@@ -143,6 +144,9 @@ func wireHeader(h console.Header) Header {
 	}
 	if h.Diff != nil {
 		out.Diff, out.Added, out.Deleted = true, h.Diff.Added, h.Diff.Deleted
+	}
+	if h.Agent.State != "" {
+		out.Agent, out.AgentMsg = string(h.Agent.State), programstatus.Displayable(h.Agent.Msg, programstatus.MaxMsg)
 	}
 	if h.Desktop != nil {
 		out.Desktop = &Link{Label: h.Desktop.Label, URL: h.Desktop.URL}
