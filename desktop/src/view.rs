@@ -10,7 +10,7 @@ use rune::{Color, Cx, Drag, El, Icon, PointerPress, Spring, Transition, Tx, col,
 use crate::wire::{Box as Sandbox, GitTone, Link, Row, TabKind};
 use crate::theme::{self, CELL_H};
 use crate::paste::{self, DropOver};
-use crate::{Focus, MenuKind, Pane, Side, State, Workspace, harnesses, icons, keys, mark, overlay, run_command, secrets, sheet};
+use crate::{Focus, MenuKind, Pane, Side, State, Workspace, audit, harnesses, icons, keys, mark, overlay, run_command, secrets, sheet};
 
 pub const SIDEBAR_W: f32 = 290.0;
 const ROW_H: f32 = 26.0;
@@ -755,7 +755,13 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
             if s.sidebar {
                 root = root.child(sidebar(s));
             }
-            root = root.child(if s.harnesses.is_some() { harnesses::page_view(s) } else { secrets::page_view(s) });
+            root = root.child(if s.harnesses.is_some() {
+                harnesses::page_view(s)
+            } else if s.audit.is_some() {
+                audit::page_view(s)
+            } else {
+                secrets::page_view(s)
+            });
         }
         Some(ws) => {
             if s.sidebar && !ws.maximized {
@@ -793,6 +799,9 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     }
     if let Some(p) = secrets::panel_view(s) {
         stack = stack.child(p);
+    }
+    if let Some(r) = audit::reading_view(s) {
+        stack = stack.child(r);
     }
     if let Some(sh) = sheet::view(s) {
         stack = stack.child(sh);

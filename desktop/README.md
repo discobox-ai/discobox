@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 14. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 15. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -195,6 +195,19 @@ the epic, and does not yet follow the ADRs everywhere:
     again after each.
   - A secret's binding history is a panel of its decisions, each read in
     full, and the delegation it was handed on under when that still stands.
+- **A box's audit view** (`audit.rs`) is the core's timeline (the audit topic) and records (the
+  audit command), the TUI's audit screen drawn natively: `audit`, from the Box menu or the
+  palette, puts it beside the list in place of the workspace, which goes on underneath.
+  - oldest at the top, newest at the bottom, each record's time as the core says it; the cursor
+    rides the newest while it follows, and moving off it holds that row however many records
+    arrive, saying how many are newer; End (or moving back down) follows again;
+  - consecutive exchanges of one kind are one row that counts them (the core's runs): Enter or
+    Right opens it to its records and Left folds it again;
+  - Enter on a record reads it in full, as `discobox admin audit get` prints it, in a panel over
+    the window, with the recordings it offers (its response body first, its request body, an
+    upgraded stream); one is read over the record, and Esc goes back a step at a time;
+  - what the last read could not reach, or why the trails could not be read, is said under the
+    records. The TUI's search through the timeline is not here yet.
 - **Creating a box** is the core's (`console.RunOptions`, held by the bridge):
   - the composer, under the list, is what the new box is given to do: Return
     creates and Shift+Return is a new line; under it, what a create would be
@@ -285,6 +298,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/overlay.rs` | The palette, the menu bar and its menus, a box's actions menu, a pane's menu, the help, and the list's filter menu |
 | `src/sheet.rs` | The core's forms, questions and edits as sheets: the queue, the answers held while they are typed, drafts, refusals, a file opened in the person's editor, and their keys |
 | `src/tools.rs` | The tools menu, a tool's tab given the window, a tool on this machine handed the box, a tool's files edited, an address copied |
+| `src/audit.rs` | A box's audit view: the timeline followed, runs opened and folded, a record and its recordings read over it |
 | `src/harnesses.rs` | The harnesses page, a harness's actions, file picker and config card, and a box's harness changes reviewed |
 | `src/paste.rs` | Images pasted or dropped on a pane carried into its box, the pane's input held meanwhile; a folder dropped on the composer as the next source |
 | `src/secrets.rs` | The secrets page, its actions, and a secret, a binding, the history and a decision read as panels |
@@ -301,6 +315,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
 | `src/tool_tests.rs` | The tools menu as the core lists it, a tool given the window and put away, one running shown not started again, a host tool, a file edited and given up, an address copied |
 | `src/secret_tests.rs` | The page's secrets and keys, a secret and a binding read, an unbind asked first, a binding, an edit, a delete and a new secret through their sheets, the history, refresh |
+| `src/audit_tests.rs` | The timeline followed, a row held while records arrive, a run opened and folded, a record and a recording read and put away, what could not be read, a box taking the screen |
 | `src/harness_tests.rs` | The page's harnesses and keys, actions as the core offers them, the card, a reset asked first, a file edited and given up, a variant's form, harness changes reviewed and saved |
 | `src/sheet_tests.rs` | Rename, settings and purge through their sheets on the mock: what applies, a refusal, Enter on a destruction, a pick of one, a sheet taking every key |
 | `src/surface_tests.rs` | Every command in a menu and found by the palette; the palette's two orders, Esc and reveal; the menu bar's keys; menus that say why not |

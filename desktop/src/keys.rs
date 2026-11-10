@@ -11,7 +11,7 @@
 use rune::{Key, KeyEvent, Shortcut, Tx};
 
 use crate::wire::Spec;
-use crate::{Focus, State, harnesses, overlay, run_command, secrets, sheet};
+use crate::{Focus, State, audit, harnesses, overlay, run_command, secrets, sheet};
 
 pub const MAC: bool = cfg!(target_os = "macos");
 
@@ -103,6 +103,10 @@ pub fn label(binding: &str) -> String {
         "left" => "←".into(),
         "right" => "→".into(),
         "backslash" => "\\".into(),
+        "home" => "Home".into(),
+        "end" => "End".into(),
+        "pageup" => "PgUp".into(),
+        "pagedown" => "PgDn".into(),
         k => k.to_uppercase(),
     };
     if MAC {
@@ -181,6 +185,14 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         return secrets::panel_key(s, ev);
     }
     if s.harnesses.is_some() && harnesses::page_key(s, ev, tx) {
+        return true;
+    }
+    // What was read of an audit record is a panel over the window too; the audit view keeps its
+    // own keys, as a screen does.
+    if s.audit.as_ref().is_some_and(|v| !v.reading.is_empty()) {
+        return audit::reading_key(s, ev);
+    }
+    if s.audit.is_some() && audit::page_key(s, ev) {
         return true;
     }
     if s.secrets.is_some() && secrets::page_key(s, ev, tx) {

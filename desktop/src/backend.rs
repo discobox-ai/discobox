@@ -29,6 +29,7 @@ use crate::wire::{
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
     HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address, Upload, Secret, SecretAction, SecretBinding, SecretStanding,
     Decision, DetailSection, DetailField, SecretWords,
+    Audit, AuditPart, AuditRecord, AuditRecording, AuditRun, AuditText,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -96,6 +97,8 @@ pub enum Event {
     Composer(u32, Result<Composer, String>),
     /// What a box that is not usable yet is being made to do.
     Provisioning(u32, Result<Provisioning, String>),
+    /// A box's audit timeline, whole, or why its trails could not be read.
+    Audit(u32, Result<Audit, String>),
     Result(CommandResult),
     Stream(Stream),
     Question(Question),
@@ -164,6 +167,10 @@ fn event(m: Message) -> Option<Event> {
                     _ => Err(s.error),
                 })),
                 Topic::Provisioning => Some(Event::Provisioning(s.sub, match s.provisioning {
+                    Some(v) if s.error.is_empty() => Ok(v),
+                    _ => Err(s.error),
+                })),
+                Topic::Audit => Some(Event::Audit(s.sub, match s.audit {
                     Some(v) if s.error.is_empty() => Ok(v),
                     _ => Err(s.error),
                 })),
@@ -538,6 +545,73 @@ fn mock_tools(running: bool) -> Vec<Tool> {
         tool("vscode", "VS Code", "open the box in VS Code on this machine", true, vec![]),
         Tool { enabled: false, why: "its command is empty".into(), ..tool("broken", "broken", "", false, vec![]) },
     ]
+}
+
+/// Every mock box's audit timeline, as the core sends it: an agent paging an API (three exchanges
+/// of one group, folded into one run), a credential lent, a command run, and a last exchange.
+pub fn mock_audit() -> Audit {
+    let record = |id: &str, clock: &str, source: &str, summary: &str, group: &str| AuditRecord {
+        id: id.into(), clock: clock.into(), source: source.into(), summary: summary.into(), group: group.into(),
+        group_summary: if group.is_empty() { String::new() } else { "GET 200 https://api.github.com/repos/discobox-ai/discobox/issues".into() },
+        ..Default::default()
+    };
+    let page = |id: &str, clock: &str, n: u32| {
+        let summary = format!("GET 200 https://api.github.com/repos/discobox-ai/discobox/issues?page={n}");
+        record(id, clock, "http", &summary, "GET 200 api.github.com")
+    };
+    let records = vec![
+        record("creds-1", "14:02:11", "creds", "github lent to gh as GH_TOKEN", ""),
+        page("http-1", "14:02:12", 1),
+        page("http-2", "14:02:12", 2),
+        page("http-3", "14:02:13", 3),
+        record("execs-1", "14:02:20", "execs", "go test ./... (exit 0, 41s)", ""),
+        record("http-4", "14:03:02", "http", "POST 201 https://api.github.com/repos/discobox-ai/discobox/pulls", ""),
+    ];
+    let runs = vec![
+        AuditRun { first: 0, last: 0, summary: String::new() },
+        AuditRun { first: 1, last: 3, summary: "GET 200 https://api.github.com/repos/discobox-ai/discobox/issues (count 3)".into() },
+        AuditRun { first: 4, last: 4, summary: String::new() },
+        AuditRun { first: 5, last: 5, summary: String::new() },
+    ];
+    Audit { records, runs, missing: vec![], note: String::new() }
+}
+
+/// The audit command, as the core answers it for the mock's timeline: the view, a record in full
+/// with the recordings it offers, or one of them.
+fn mock_audit_command(c: &Command) -> CommandResult {
+    let sandbox = c.targets.first().cloned().unwrap_or_default();
+    let a = &c.args;
+    if a.record.is_empty() {
+        return CommandResult { status: Status::Enter, r#box: sandbox, ..Default::default() };
+    }
+    let Some(r) = mock_audit().records.into_iter().find(|r| r.id == a.record) else {
+        return CommandResult { status: Status::Failed, why: format!("{}: no such record", a.record), ..Default::default() };
+    };
+    let http = r.source == "http";
+    if let Some(part) = a.part {
+        let (title, text) = match part {
+            AuditPart::Response => ("Response body", "{\n  \"number\": 816,\n  \"title\": \"desktop: audit\",\n  \"state\": \"open\"\n}\n"),
+            AuditPart::Request => ("Request body", "{\"title\": \"desktop: audit\"}\n"),
+            AuditPart::Stream => return CommandResult { status: Status::Failed, why: "stream: not recorded".into(), ..Default::default() },
+        };
+        let text = AuditText { record: r.id, part: Some(part), title: title.into(), text: text.into(), recordings: vec![] };
+        return CommandResult { status: Status::Done, r#box: sandbox, audit: Some(text), ..Default::default() };
+    }
+    let text = if http {
+        format!("ID:       {}\nTime:     {}\nSource:   http\n\n{}\n\nRequest headers:\n\tAccept: application/vnd.github+json\n\tAuthorization: [lent: github]\n", r.id, r.clock, r.summary)
+    } else {
+        format!("ID:       {}\nTime:     {}\nSource:   {}\n\n{}\n", r.id, r.clock, r.source, r.summary)
+    };
+    let recordings = if http {
+        vec![
+            AuditRecording { part: AuditPart::Response, label: "response body".into() },
+            AuditRecording { part: AuditPart::Request, label: "request body".into() },
+        ]
+    } else {
+        vec![]
+    };
+    let text = AuditText { record: r.id, part: None, title: "Audit record".into(), text, recordings };
+    CommandResult { status: Status::Done, r#box: sandbox, audit: Some(text), ..Default::default() }
 }
 
 fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
@@ -1658,11 +1732,22 @@ impl Backend for Mock {
                 self.following.remove(&sub);
                 self.headers.remove(&sub);
             }
+            // As the bridge does: what the timeline says before any read, then what the read
+            // brought.
+            Out::Subscribe(Subscribe { sub, topic: Topic::Audit, .. }) => {
+                let reading = Audit { note: "reading the audit trails…".into(), ..Default::default() };
+                self.inbox.push(Event::Audit(sub, Ok(reading)));
+                self.inbox.push(Event::Audit(sub, Ok(mock_audit())));
+            }
             Out::Subscribe(_) => {}
             Out::Command(c) if c.command == "harnesses" => {
                 if let Some(r) = self.harness(&c) {
                     self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
                 }
+            }
+            Out::Command(c) if c.command == "audit" => {
+                let r = mock_audit_command(&c);
+                self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
             }
             Out::Command(c) if c.command == "tools" => {
                 if let Some(r) = self.tools(&c) {

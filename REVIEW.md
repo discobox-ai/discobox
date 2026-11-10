@@ -63,6 +63,14 @@ Global review expectations:
   not only keys: the input method's commits asked less than the keys did and
   typed into a pane behind help, a menu or the page, so the key path and
   `State::ime` ask one question (`State::pane_has_keys`).
+- In the desktop app, a page beside the list (the harnesses page, the
+  secrets page, a box's audit view) or a box taking the screen first takes down whatever page is
+  up, through `State::close_pages`, never by clearing its own neighbour by
+  hand. The audit view's first version cleared the harnesses page as it
+  opened, but the harnesses page did not close it: the audit view kept its
+  follow and its keys under the page, and Esc on the page brought it back.
+  The TUI made the same mistake (`cli/internal/tui/REVIEW.md`, "the audit
+  screen is the trap a third way").
 - The desktop app's mock (`desktop/src/backend.rs`) sends a stream's bytes as
   the bridge sends them, never reshaped. A service runs on pipes, so its output
   and transcript end lines with a bare line feed; the mock first turned them

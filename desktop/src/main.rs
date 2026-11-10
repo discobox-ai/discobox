@@ -9,6 +9,9 @@
 //! Without `--bridge` it runs on a mock with local shells: `cargo run --release`, or headless
 //! `--snap console.png --scene workspace`.
 
+mod audit;
+#[cfg(test)]
+mod audit_tests;
 mod backend;
 #[cfg(test)]
 mod command_tests;
@@ -240,6 +243,9 @@ enum Pending {
     /// Images carried into the box of the pane on a stream, which holds its input until they
     /// are in; and what goes to its program instead when they were not images.
     Upload(u32, paste::NoImage),
+    /// A record of a box's audit timeline, or a recording of it, read for the audit view
+    /// (`audit::landed`, which knows the read in flight by its command).
+    Audit,
 }
 
 /// The focused pane's find through its scrollback, open: what is typed, on the pane's stream.
@@ -421,6 +427,9 @@ pub struct State {
     pub secrets: Option<secrets::SecretPage>,
     /// A secret, a binding, the history or a decision read over the window.
     pub secret_panel: Option<secrets::Panel>,
+    /// A box's audit view, beside the list in place of the workspace while it is up, with what
+    /// was read of a record over the window.
+    pub audit: Option<audit::AuditView>,
     /// The boxes this window has gone to, latest first, which rank the palette's empty query
     /// (ADR 26-11-06-671 §6): at most `RECENT` of them, for as long as the window lasts.
     pub recent: Vec<String>,
@@ -500,7 +509,7 @@ impl State {
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
             selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
-            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, recent: vec![], reveal: None, point: None, find: None,
+            sidebar: true, message: None, palette: None, menu: None, bar_at: HashMap::new(), help: false, sheets: sheet::Sheets::default(), harnesses: None, card: None, review: None, secrets: None, secret_panel: None, audit: None, recent: vec![], reveal: None, point: None, find: None,
             bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), headers: HashMap::new(), chips: HashMap::new(),
             dragging: None, drag_home: None, columns_w: 0.0, early: HashMap::new(),
@@ -831,16 +840,20 @@ impl State {
     /// a workspace not shown does — its program's copies included — reaches nobody.
     pub fn workspace_shown(&self) -> bool { self.live.is_some() && !self.page_shown() }
 
-    /// Whether a page — the harnesses or the secrets — is up beside the list, covering the
-    /// workspace. One page is up at a time.
-    pub fn page_shown(&self) -> bool { self.harnesses.is_some() || self.secrets.is_some() }
+    /// Whether a page is up beside the list, covering the workspace: the harnesses page, the
+    /// secrets page, or a box's audit view. One page is up at a time; a page has the keys, and a
+    /// workspace it covers is held, not on screen.
+    pub fn page_shown(&self) -> bool { self.harnesses.is_some() || self.secrets.is_some() || self.audit.is_some() }
 
-    /// Lets the page beside the list go, and whatever it had open over the window.
+    /// Lets the page beside the list go, and whatever it had open over the window: every way a
+    /// page or a box takes the screen starts here, so no page is left up behind another, keeping
+    /// its keys and, for the audit view, its follow.
     pub fn close_pages(&mut self) {
         self.harnesses = None;
         self.card = None;
         self.secrets = None;
         self.secret_panel = None;
+        audit::close(self);
     }
 
     /// Whether the focused pane has the keys and the input method: its workspace is shown, the
@@ -1859,6 +1872,12 @@ impl State {
         match why {
             // A form or question dismissed: nothing came of it, and nothing to say. A session's
             // cancel still lets its stream go below.
+            // A read for the audit view is the view's, failures included: a recording's is said
+            // on the panel it was asked from.
+            Pending::Audit => {
+                audit::landed(self, &r);
+                return;
+            }
             Pending::Enter(_) | Pending::Verb(..) | Pending::Harness(_) | Pending::Change | Pending::Secret(_) if r.status == Status::Canceled => self.message = None,
             Pending::Enter(id) if r.status == Status::Enter => enter(self, &id, &r, tx),
             // What came of it (`renamed to …`, `settings saved`), or nothing to say.
@@ -2012,6 +2031,7 @@ pub const ANSWERED: &[&str] = &[
     "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions", "mouse", "repaint",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
     "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options", "tools", "credentials",
+    "audit",
 ];
 
 /// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
@@ -2151,6 +2171,8 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         "review config" => harnesses::open_review(s, r),
         // The box's tools and addresses, over whatever is on screen.
         "tools" => tools::open_menu(s, r),
+        // The box's audit timeline, beside the list in place of the workspace.
+        "audit" => audit::open(s, &r.r#box),
         // The box's services, on its workspace: a box that declares none says so instead.
         "services" => {
             s.show_workspace(&r.r#box);
@@ -2243,6 +2265,7 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
     s.now = t;
     s.save_draft(DRAFT_STILL);
     s.sheets.reveal(tx);
+    audit::reveal(s, tx);
     let events = s.inbox.drain();
     if events.is_empty() {
         return false;
@@ -2261,6 +2284,7 @@ fn poll(s: &mut State, t: f64, tx: &mut Tx) -> bool {
             Event::Edit(e) => sheet::take_edit(s, e),
             Event::Composer(sub, r) => s.take_composer(sub, r),
             Event::Provisioning(sub, r) => s.take_provisioning(sub, r),
+            Event::Audit(sub, r) => audit::take(s, sub, r),
             Event::Progress(p) => s.take_progress(p),
             e @ (Event::Data(..) | Event::Exited(..) | Event::Stream(..)) => s.take_stream_event(e),
         }
@@ -2528,6 +2552,24 @@ fn main() {
                 run_command(s, "credentials", &mut Tx::default());
                 poll(s, 0.0, &mut Tx::default());
                 secrets::act(s, wire::SecretAction::History, String::new());
+                poll(s, 0.0, &mut Tx::default());
+            }),
+            // A box's audit view, a run opened under the cursor, and a record read over it.
+            ("audit", |s| {
+                s.open_row(0);
+                run_command(s, "audit", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                for key in [rune::Key::Up, rune::Key::Up, rune::Key::Right, rune::Key::Down] {
+                    audit::page_key(s, &KeyEvent { key, mods: Mods::default() });
+                }
+            }),
+            ("audit-record", |s| {
+                s.open_row(0);
+                run_command(s, "audit", &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                poll(s, 0.0, &mut Tx::default());
+                audit::page_key(s, &KeyEvent { key: rune::Key::Enter, mods: Mods::default() });
                 poll(s, 0.0, &mut Tx::default());
             }),
         ],

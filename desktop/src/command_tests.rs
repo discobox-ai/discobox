@@ -615,3 +615,16 @@ fn a_late_answer_to_a_link_is_dropped() {
     assert_eq!(rt.state.live.as_ref(), Some(&first), "a late answer moved the screen");
     assert!(rt.take_url_requests().is_empty(), "a late answer opened a URL");
 }
+
+// A key is labelled by its name, never its binding's spelling upper-cased: the audit view's End
+// and a pane's Shift+PageUp read as keys do.
+#[test]
+fn named_keys_are_labelled_by_their_names() {
+    let (end, up) = (crate::keys::label("end"), crate::keys::label("shift+pageup"));
+    assert_eq!(end, "End");
+    if crate::keys::MAC {
+        assert_eq!(up, "⇧PgUp");
+    } else {
+        assert_eq!(up, "Shift+PgUp");
+    }
+}
