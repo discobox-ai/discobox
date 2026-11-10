@@ -323,7 +323,7 @@ func humanBytesPair(used, total int64) string {
 	return fmt.Sprintf(format+"/%.0f %s", u, t, suffix)
 }
 
-// shortBytesPair is humanBytesPair cut the way shortBytes cuts humanBytes:
+// shortBytesPair is humanBytesPair cut the way shortBytes cuts console.Bytes:
 // "9.0/32G" for "9.0/32 GiB".
 func shortBytesPair(used, total int64) string {
 	u, t, exp := scaleBytesPair(used, total)
