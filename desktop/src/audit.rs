@@ -249,19 +249,15 @@ fn read(s: &mut State, args: Args) {
     }
 }
 
-/// Whether something has come in front of the view since a read was asked: a panel, a menu, the
-/// palette, the help or a sheet, which keep the keys. What lands then is for nobody.
-fn covered(s: &State) -> bool {
-    s.card.is_some() || s.review.is_some() || s.secret_panel.is_some() || s.menu.is_some() || s.filter_menu.is_some() || s.palette.is_some() || s.help || s.sheets.is_open()
-}
-
 /// The answer to a read: a record goes over the timeline, a recording over the record it was read
 /// from, and a failure is said where it was asked — on the status line for a record, on the
 /// record's panel for a recording. Only the read in flight lands, and only while the view, and
 /// the record a recording was read from, are what is up: anything else is for nobody, and what
 /// it said it was doing is taken back.
 pub fn landed(s: &mut State, r: &CommandResult) {
-    let covered = covered(s);
+    // Something come in front of the view since the read was asked keeps the keys: what lands
+    // then is for nobody.
+    let covered = s.overlaid();
     let Some(v) = s.audit.as_mut().filter(|v| v.asked == Some(r.id)) else { return };
     v.asked = None;
     // What this read said on the status line is taken back, and nothing anybody said since.

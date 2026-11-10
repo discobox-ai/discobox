@@ -62,7 +62,11 @@ Global review expectations:
   the keys" (`cli/internal/tui/REVIEW.md`). Every input path is held to it,
   not only keys: the input method's commits asked less than the keys did and
   typed into a pane behind help, a menu or the page, so the key path and
-  `State::ime` ask one question (`State::pane_has_keys`).
+  `State::ime` ask one question (`State::pane_has_keys`). What is drawn in
+  front of the window is one list, `State::overlaid`, which anything asking
+  "is something in front" calls: the audit view's reads first kept a copy of
+  it, which missed the secrets page's panel added beside the original — the
+  third time such a check was copied and missed a surface.
 - In the desktop app, a page beside the list (the harnesses page, the
   secrets page, a box's audit view) or a box taking the screen first takes down whatever page is
   up, through `State::close_pages`, never by clearing its own neighbour by

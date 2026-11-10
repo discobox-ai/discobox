@@ -857,21 +857,28 @@ impl State {
     }
 
     /// Whether the focused pane has the keys and the input method: its workspace is shown, the
-    /// panes have the focus, and nothing in front of it — a sheet, a menu, the palette, help, a
-    /// harness's card or review — takes them first. The key path and the input method both ask
-    /// this, so a surface added in front of the panes cannot be missed by one of them.
+    /// panes have the focus, and nothing is in front of it (`overlaid`). The key path and the
+    /// input method both ask this, so a surface added in front of the panes cannot be missed by
+    /// one of them.
     pub fn pane_has_keys(&self) -> bool {
-        self.workspace_shown()
-            && self.focus == Focus::Panes
-            && self.live_ws().is_some_and(|w| !w.panes.is_empty())
-            && !self.sheets.is_open()
-            && self.menu.is_none()
-            && self.filter_menu.is_none()
-            && self.palette.is_none()
-            && !self.help
-            && self.card.is_none()
-            && self.review.is_none()
-            && self.secret_panel.is_none()
+        self.workspace_shown() && self.focus == Focus::Panes && self.live_ws().is_some_and(|w| !w.panes.is_empty()) && !self.overlaid()
+    }
+
+    /// Whether something is drawn in front of the window and keeps the keys: a sheet, a menu, the
+    /// filter menu, the palette, the help, a harness's card or review, or the secrets page's
+    /// panel. The one list of them: the panes (`pane_has_keys`) and an answer landing late (the
+    /// audit view's reads) both ask it, so a surface added in front is added here once. A page
+    /// beside the list is not in front of the window; the audit view's own reading panel is that
+    /// view's, which its reads land on.
+    pub fn overlaid(&self) -> bool {
+        self.sheets.is_open()
+            || self.menu.is_some()
+            || self.filter_menu.is_some()
+            || self.palette.is_some()
+            || self.help
+            || self.card.is_some()
+            || self.review.is_some()
+            || self.secret_panel.is_some()
     }
 
     fn context(&self) -> Context {
