@@ -175,9 +175,13 @@ the epic, and does not yet follow the ADRs everywhere:
   - a tool that runs in the box is a session whose tab is after the shells,
     given the window as it opens (the workspace maximized onto it):
     `maximize` gives the workspace back with the tool running on its tab, and
-    `end` ends it. Choosing a tool that is running shows its tab, never a
-    second session; one a window left running is picked up with the box's
-    sessions;
+    `end` ends it. A tab given the window gives it back when it goes, ended
+    or quit: the workspace returns to the layout the tab took (maximized or
+    not, each column's tab and the focus), unless the person changed it
+    since (`maximize` pressed, or any tab put in front, even the given one
+    again), which stays as they left it. Choosing a tool that is running
+    shows its tab, never a second session; one a window left running is
+    picked up with the box's sessions;
   - a tool that runs on this machine (an IDE) is handed the box, and the
     status line says so;
   - a tool's file is edited in the person's editor as a harness's is, and
@@ -341,8 +345,8 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/paste_tests.rs` | An image pasted, under the image key, or dropped, carried in with what was typed held behind it; a failure, a drop that is not images, one at a time, one too large; a folder dropped on the composer |
 | `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
-| `src/issue_tests.rs` | An issue and a pull request as tabs on the mock: drawn from the core's issue, a box with no tag refused, a merge of the allowed ways, a comment posted, a close asked, the files changed given the window, following only on screen, the header's link |
-| `src/tool_tests.rs` | The tools menu as the core lists it, a tool given the window and put away, one running shown not started again, a host tool, a file edited and given up, an address copied |
+| `src/issue_tests.rs` | An issue and a pull request as tabs on the mock: drawn from the core's issue, a box with no tag refused, a merge of the allowed ways, a comment posted, a close asked, the files changed given the window and giving it back, following only on screen, the header's link |
+| `src/tool_tests.rs` | The tools menu as the core lists it, a tool given the window, put away, and giving it back when it goes unless the layout was changed since, one running shown not started again, a host tool, a file edited and given up, an address copied |
 | `src/secret_tests.rs` | The page's secrets and keys, a secret and a binding read, an unbind asked first, a binding, an edit, a delete and a new secret through their sheets, the history, refresh |
 | `src/audit_tests.rs` | The timeline followed, a row held while records arrive, a run opened and folded, a record and a recording read and put away, what could not be read, a box taking the screen |
 | `src/harness_tests.rs` | The page's harnesses and keys, actions as the core offers them, the card, a reset asked first, a file edited and given up, a variant's form, harness changes reviewed and saved |

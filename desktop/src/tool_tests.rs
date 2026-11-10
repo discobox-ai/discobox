@@ -5,7 +5,8 @@
 use rune::{Env, Key, KeyEvent, Mods, Runtime, Tx};
 
 use crate::sheet::{OPENED, Sheet};
-use crate::wire::TabKind;
+use crate::backend::Event;
+use crate::wire::{Stream, StreamState, TabEnd, TabKind};
 use crate::{Focus, MenuKind, Side, State, on_key, poll, run_command, theme, view};
 
 fn runtime(state: State) -> Runtime<State> {
@@ -91,6 +92,81 @@ fn a_tool_is_given_the_window_and_put_away() {
     pick(&mut rt, "tool:diff");
     assert_eq!(tools(&rt.state).len(), 1, "a running tool was started again");
     assert!(rt.state.live_ws().unwrap().maximized);
+}
+
+// A tool's tab given the window gives it back when it goes, ended from the workspace or from
+// inside it: the layout it took, not the workspace maximized onto whatever is left.
+#[test]
+fn a_tool_that_goes_gives_the_window_back() {
+    for inside in [false, true] {
+        let mut rt = menu();
+        let ws = rt.state.live_ws().unwrap();
+        let before = (ws.maximized, ws.focus, ws.active.map(|a| a.map(|i| ws.panes[i].stream)));
+        assert!(!before.0, "the workspace opened maximized");
+        pick(&mut rt, "tool:diff");
+        let ws = rt.state.live_ws().unwrap();
+        let stream = ws.panes[tools(&rt.state)[0]].stream;
+        assert!(ws.maximized, "the tool was not given the window");
+        if inside {
+            rt.state.take_stream_event(Event::Stream(Stream { stream, state: StreamState::Ended, end: Some(TabEnd::Tab), ..Default::default() }));
+        } else {
+            run_command(&mut rt.state, "end", &mut Tx::default());
+        }
+        settle(&mut rt);
+        let ws = rt.state.live_ws().unwrap();
+        assert!(tools(&rt.state).is_empty(), "the tool's tab is still there");
+        assert_eq!((ws.maximized, ws.focus, ws.active.map(|a| a.map(|i| ws.panes[i].stream))), before, "the layout the tool took was not given back (ended from inside: {inside})");
+    }
+}
+
+// Maximizing or restoring by hand while a tool has the window is the person's layout: the tool
+// going leaves it as they left it.
+#[test]
+fn a_tool_going_keeps_a_layout_set_by_hand() {
+    let mut rt = menu();
+    pick(&mut rt, "tool:diff");
+    run_command(&mut rt.state, "maximize", &mut Tx::default());
+    run_command(&mut rt.state, "maximize", &mut Tx::default());
+    settle(&mut rt);
+    assert!(rt.state.live_ws().unwrap().maximized);
+    run_command(&mut rt.state, "end", &mut Tx::default());
+    settle(&mut rt);
+    assert!(tools(&rt.state).is_empty(), "the tool's tab is still there");
+    assert!(rt.state.live_ws().unwrap().maximized, "the workspace maximized by hand was restored");
+}
+
+// Another tab put in front while a tool has the window is the person's choice too, even once
+// they switch back to the tool: the tool going later, from inside, leaves their layout as it is.
+#[test]
+fn a_tool_going_keeps_a_tab_switched_to() {
+    for back in [false, true] {
+        let mut rt = menu();
+        pick(&mut rt, "tool:diff");
+        let ws = rt.state.live_ws().unwrap();
+        let stream = ws.panes[tools(&rt.state)[0]].stream;
+        run_command(&mut rt.state, "previous pane", &mut Tx::default());
+        settle(&mut rt);
+        let ws = rt.state.live_ws().unwrap();
+        let switched = ws.focused().map(|i| ws.panes[i].stream);
+        assert!(ws.maximized && switched.is_some() && switched != Some(stream), "no other tab put in front");
+        if back {
+            run_command(&mut rt.state, "next pane", &mut Tx::default());
+            settle(&mut rt);
+            let ws = rt.state.live_ws().unwrap();
+            assert_eq!(ws.focused().map(|i| ws.panes[i].stream), Some(stream), "not back on the tool");
+        }
+        let layout = |rt: &Runtime<State>| {
+            let ws = rt.state.live_ws().unwrap();
+            (ws.maximized, ws.focus, ws.active.map(|a| a.map(|i| ws.panes[i].stream)).map(|s| s.filter(|&s| s != stream)))
+        };
+        let before = layout(&rt);
+        rt.state.take_stream_event(Event::Stream(Stream { stream, state: StreamState::Ended, end: Some(TabEnd::Tab), ..Default::default() }));
+        settle(&mut rt);
+        assert!(tools(&rt.state).is_empty(), "the tool's tab is still there");
+        let (maximized, _, shown) = layout(&rt);
+        assert!(maximized, "the workspace was restored under the person's layout (switched back: {back})");
+        assert_eq!(shown[Side::Terminals as usize], before.2[Side::Terminals as usize], "the terminals column moved (switched back: {back})");
+    }
 }
 
 // A tool on this machine is handed the box, and says so: nothing opens in the workspace.

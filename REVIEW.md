@@ -46,6 +46,14 @@ Global review expectations:
   A session the sessions topic never lists (a pull request's files changed)
   has no later to open with: letting its stream go ends it, so the status line
   says so. The first desktop files changed vanished silently that way.
+- In the desktop app, a tab given the window (`Workspace::give`) gives back
+  the layout it took only while the layout is still the one it was given:
+  every tab put in front (`Workspace::show`, whoever calls it) and every
+  `maximize` lets go of it, and a layout change of the person's that does
+  not go through either must let go of it too. The first version restored
+  on `maximize` alone, so a tool ending after the person had switched tabs
+  undid their switch, and the second checked only that the tool was in
+  front, so a switch away and back still lost the other column's tab.
 - A file the desktop app opens for the person goes to a text editor, never to a
   shell or to the system's file association by its extension alone
   (`sheet::open_in_editor`): a harness file's path is its bundle's choice, and

@@ -177,6 +177,25 @@ fn the_files_changed_are_a_session_given_the_window() {
     assert!(rt.state.live_ws().unwrap().panes.iter().all(|p| p.stream != stream), "its close did not end it");
 }
 
+// The files changed, given the window, give it back when they go: the pull request's tab shown
+// beside the box's terminals again, not maximized.
+#[test]
+fn the_files_changed_going_give_the_window_back() {
+    let (mut rt, pull) = opened("pr");
+    let ws = rt.state.live_ws().unwrap();
+    assert!(!ws.maximized && ws.focus == Side::Shells);
+    let terminals = ws.active[Side::Terminals as usize].map(|i| ws.panes[i].stream);
+    key(&mut rt, Key::Text("f".into()));
+    assert!(rt.state.live_ws().unwrap().maximized, "not given the window");
+    run_command(&mut rt.state, "end", &mut Tx::default());
+    settle(&mut rt);
+    let ws = rt.state.live_ws().unwrap();
+    assert!(ws.panes.iter().all(|p| p.exec.kind != TabKind::Files), "the files changed are still there");
+    assert!(!ws.maximized, "the workspace was left maximized");
+    assert_eq!(ws.focused().map(|i| ws.panes[i].stream), Some(pull), "the pull request's tab is not the one in front");
+    assert_eq!(ws.active[Side::Terminals as usize].map(|i| ws.panes[i].stream), terminals, "the terminals column moved");
+}
+
 // Parked, a tab reads nothing; back on screen it follows its issue again; closed, it lets go.
 #[test]
 fn a_tab_follows_its_issue_only_on_screen() {

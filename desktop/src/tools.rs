@@ -138,8 +138,7 @@ pub fn show(s: &mut State, sandbox: &str, tool: &str) -> bool {
     }
     let Some(ws) = s.workspaces.get_mut(sandbox) else { return false };
     let Some(i) = ws.panes.iter().position(|p| p.exec.tool == tool && !p.exited) else { return false };
-    ws.show(i);
-    ws.maximized = true;
+    ws.give(i);
     s.focus = Focus::Panes;
     true
 }

@@ -272,8 +272,7 @@ pub fn files(s: &mut State, targets: Vec<String>) {
             s.show_workspace(&sandbox);
         }
         let ws = s.workspaces.get_mut(&sandbox).unwrap();
-        ws.show(i);
-        ws.maximized = true;
+        ws.give(i);
         s.focus = Focus::Panes;
         return;
     }

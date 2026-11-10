@@ -123,6 +123,9 @@ pub struct Workspace {
     pub active: [Option<usize>; 2],
     pub focus: Side,
     pub maximized: bool,
+    /// What a tab given the window (a tool's, or a pull request's files changed) took it from,
+    /// until that tab goes and gives it back; any tab shown since, or `maximize`, lets go of it.
+    given: Option<Given>,
     pub opening: bool,
     /// Why its sessions could not be read; the subscription keeps trying, and the next snapshot
     /// read clears it.
@@ -138,6 +141,16 @@ pub struct Workspace {
     provisioning_sub: u32,
     /// The terminals column's share of the width the two columns have.
     pub split: f32,
+}
+
+/// The layout a workspace had before a tab was given the window: the tab given it, and what it
+/// gives back when it goes.
+struct Given {
+    stream: u32,
+    maximized: bool,
+    focus: Side,
+    /// The stream each column showed.
+    shown: [Option<u32>; 2],
 }
 
 impl Workspace {
@@ -194,10 +207,49 @@ impl Workspace {
         self.active = shown.map(|s| s.and_then(|s| self.panes.iter().position(|p| p.stream == s)));
     }
 
+    /// Puts a tab in front of its column and focuses that column: the person's own layout, which
+    /// takes the window back from a tab given it, as `maximize` does.
     fn show(&mut self, i: usize) {
         let side = self.panes[i].side();
         self.active[side as usize] = Some(i);
         self.focus = side;
+        self.given = None;
+    }
+
+    /// Gives a tab the window: shows it with the workspace maximized onto it, keeping the layout
+    /// it took for when it goes. Given on from another tab that still holds it, the layout before
+    /// the first is the one kept.
+    fn give(&mut self, i: usize) {
+        let stream = self.panes[i].stream;
+        let given = match self.given.take() {
+            Some(g) => Given { stream, ..g },
+            None => Given { stream, maximized: self.maximized, focus: self.focus, shown: self.active.map(|a| a.map(|a| self.panes[a].stream)) },
+        };
+        self.show(i);
+        self.maximized = true;
+        self.given = Some(given);
+    }
+
+    /// Maximizes or restores the workspace by hand, which takes the window back from a tab given
+    /// it: that tab going later leaves the layout as the person left it.
+    fn toggle_maximized(&mut self) {
+        self.maximized = !self.maximized;
+        self.given = None;
+    }
+
+    /// A pane gone: if it still held the window it was given (nothing shown and no `maximize`
+    /// since), the workspace goes back to the layout it took.
+    fn take_back(&mut self, stream: u32) {
+        let Some(g) = self.given.take_if(|g| g.stream == stream) else { return };
+        self.maximized = g.maximized;
+        for side in [Side::Terminals, Side::Shells] {
+            if let Some(i) = g.shown[side as usize].and_then(|s| self.panes.iter().position(|p| p.stream == s)) {
+                self.active[side as usize] = Some(i);
+            }
+        }
+        if self.active[g.focus as usize].is_some() {
+            self.focus = g.focus;
+        }
     }
 
     fn fix_active(&mut self) {
@@ -1044,7 +1096,7 @@ impl State {
                 let up = self.box_by_id(sandbox).is_some_and(|b| b.running() && b.provisioning.is_empty());
                 let provisioning_sub = if up { 0 } else { self.subscribe(Subscribe { topic: Topic::Provisioning, r#box: sandbox.to_string(), ..Default::default() }) };
                 self.workspaces.insert(sandbox.to_string(), Workspace {
-                    sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, opening: true,
+                    sandbox: sandbox.to_string(), panes: vec![], active: [None, None], focus: Side::Terminals, maximized: false, given: None, opening: true,
                     error: None, sessions_sub: 0, header_sub: 0, header: None, split: 0.5, step: String::new(), provisioning_sub,
                 });
             }
@@ -1168,6 +1220,7 @@ impl State {
                     *a = a.and_then(|a| if a == i { None } else if a > i { Some(a - 1) } else { Some(a) });
                 }
                 ws.fix_active();
+                ws.take_back(stream);
             }
         }
     }
@@ -1953,13 +2006,15 @@ impl State {
                 let pane = Pane::new(stream, exec);
                 let ws = self.workspaces.get_mut(&r.r#box).unwrap();
                 ws.panes.push(pane);
-                ws.show(ws.panes.len() - 1);
                 // A tool — or a pull request's files changed — is given the window, as the TUI's
-                // opens over the workspace; maximize gives the workspace back with it on its tab.
+                // opens over the workspace; maximize gives the workspace back with it on its tab,
+                // and its going gives back the layout it took.
                 if tool {
-                    ws.maximized = true;
+                    ws.give(ws.panes.len() - 1);
                     self.focus = Focus::Panes;
                     self.message = None;
+                } else {
+                    ws.show(ws.panes.len() - 1);
                 }
                 for e in self.early.remove(&stream).unwrap_or_default() {
                     self.take_stream_event(e);
@@ -2201,7 +2256,7 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         "mouse" => s.toggle_mouse(),
         "maximize" => {
             if let Some(ws) = s.live_ws_mut() {
-                ws.maximized = !ws.maximized;
+                ws.toggle_maximized();
             }
         }
         // Detaching closes the workspace, as the TUI's does: every session goes on in the box,
