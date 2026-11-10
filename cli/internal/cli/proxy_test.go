@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/go-faster/jx"
@@ -79,6 +82,39 @@ func TestSandboxListeningPortsEscapesTheServiceName(t *testing.T) {
 	ports := sandboxListeningPorts(sandbox)
 	if len(ports) != 1 || ports[0].ServiceName != `Desk\x1b]0;pwned\atop` || ports[0].ServiceID != "ai.discobox.desktop" {
 		t.Fatalf("sandboxListeningPorts = %#v", ports)
+	}
+}
+
+// `discobox proxy` prints each forward event, and nearly everything in one is
+// the box's: the port's service name and ID, the address it reported, and a
+// refused tunnel's message carried in a dial error. Every line reaches the
+// terminal escaped, whichever of them carries the sequence.
+func TestProxyEventsArePrintedTerminalSafe(t *testing.T) {
+	sandbox := sandboxWithPorts(t, []apimodel.SandboxAgentListeningPort{{
+		Port: 8080, Addresses: []string{hostile}, Protocol: "http",
+		ServiceId:   apiclientgen.NewOptString(hostile),
+		ServiceName: apiclientgen.NewOptString(hostile),
+	}})
+	targets := sandboxPortTargets(sandbox)
+	if len(targets) != 1 {
+		t.Fatalf("sandboxPortTargets = %#v", targets)
+	}
+	var out bytes.Buffer
+	say := proxyStatusLines(&out)
+	for _, event := range []portforward.Event{
+		{Kind: portforward.Bound, Target: targets[0], Local: 8080},
+		{Kind: portforward.Renamed, Target: targets[0], Local: 8080},
+		{Kind: portforward.DialFailed, Target: targets[0], Local: 8080, Err: errors.New("tunnel refused: " + hostile)},
+	} {
+		out.Reset()
+		say(event.String())
+		line := out.String()
+		if strings.ContainsAny(line, "\x1b\x07\u202e") || !strings.Contains(line, hostileShown) {
+			t.Errorf("%s event = %q, want it escaped", event.Kind, line)
+		}
+		if !strings.HasSuffix(line, "\n") || strings.Count(line, "\n") != 1 {
+			t.Errorf("%s event = %q, want one line", event.Kind, line)
+		}
 	}
 }
 
