@@ -285,8 +285,10 @@ func TestFakePoolWithoutAMachineHasNoConsoleOrLog(t *testing.T) {
 	if _, err := r.OpenLogs(context.Background(), nil, pool, sandbox.PoolLogOptions{}); !errors.Is(err, errNoPoolMachine) {
 		t.Fatalf("OpenLogs() error = %v, want not found", err)
 	}
-	if _, err := r.AcquirePoolAgentClient(context.Background(), pool); !errors.Is(err, errNoPoolMachine) {
-		t.Fatalf("AcquirePoolAgentClient() error = %v, want not found", err)
+	// The agent of a pool whose machine is gone is waited for, not refused:
+	// the pool's reconcile creates the machine again (#893).
+	if _, err := r.AcquirePoolAgentClient(context.Background(), pool); !errors.Is(err, errNoPoolMachine) || !errors.Is(err, sandbox.ErrPoolNotReachable) {
+		t.Fatalf("AcquirePoolAgentClient() error = %v, want no machine and not reachable", err)
 	}
 }
 

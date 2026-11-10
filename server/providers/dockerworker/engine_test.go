@@ -785,3 +785,48 @@ func TestVMSpecCarriesThePoolSize(t *testing.T) {
 func (nopDriver) PoolOutbound(_ context.Context, _ string, r pooloutbound.Resolved) (pooloutbound.Delivery, error) {
 	return pooloutbound.Delivery{Runtime: r, AppliedRevision: r.Revision()}, nil
 }
+
+// agentDriver answers AcquirePoolAgentClient with err.
+type agentDriver struct {
+	nopDriver
+	err error
+}
+
+func (d agentDriver) AcquirePoolAgentClient(context.Context, string) (*transport.HTTPClientLease, error) {
+	return nil, d.err
+}
+
+// A pool whose host the driver cannot find (its container removed for a
+// replacement, its VM not started yet by a new server) is a pool the reconciler
+// brings back, not a sandbox with no runtime: the first start after an upgrade
+// waits for it rather than being told to repair the sandbox (#893). Any other
+// driver error is passed on as it is.
+func TestAcquirePoolAgentClientReportsAMissingHostAsNotReachable(t *testing.T) {
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
+	for _, tt := range []struct {
+		name      string
+		driverErr error
+		wantWait  bool
+	}{
+		{name: "no host", driverErr: fmt.Errorf("pool container: %w", sandbox.ErrNotFound), wantWait: true},
+		{name: "host coming up", driverErr: fmt.Errorf("%w: container abc is created", sandbox.ErrPoolNotReachable), wantWait: true},
+		{name: "other", driverErr: errors.New("pool does not expose a harness URL")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			engine, err := New(Config{SandboxBaseImage: "worker-image"}, agentDriver{err: tt.driverErr})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = engine.AcquirePoolAgentClient(t.Context(), pool)
+			if err == nil {
+				t.Fatal("AcquirePoolAgentClient succeeded")
+			}
+			if got := errors.Is(err, sandbox.ErrPoolNotReachable); got != tt.wantWait {
+				t.Fatalf("errors.Is(%v, ErrPoolNotReachable) = %t, want %t", err, got, tt.wantWait)
+			}
+			if errors.Is(err, sandbox.ErrNotFound) {
+				t.Fatalf("error %v still reads as the sandbox not found", err)
+			}
+		})
+	}
+}

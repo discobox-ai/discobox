@@ -441,8 +441,16 @@ func (h *poolMachine) agentListenURL(ctx context.Context, inst engine.Instance) 
 // 26-10-09-106 §3): boxd's public HTTPS URL, the same across stop and start.
 // The URL needs no credential of the driver's; the agent authenticates every
 // caller but its health and metadata.
+//
+// A pool whose machine is gone is one its reconcile creates again, so on this
+// path that is the pool not reachable yet, which an explicit start waits out
+// (#893), and not an answer; it still matches errNoPoolMachine for what reads
+// that.
 func (h *poolMachine) acquireAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
 	inst, err := h.instance(ctx, pool)
+	if errors.Is(err, errNoPoolMachine) {
+		return nil, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
+	}
 	if err != nil {
 		return nil, err
 	}

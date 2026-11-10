@@ -1149,11 +1149,17 @@ Only a driver whose acquire can see the pool container can refuse it. The
 local driver inspects the container for its port anyway, and refuses one that
 is not running or whose healthcheck is still starting
 (`dockerworker.PoolAgentUnreachable`); that reason is the error when the wait
-runs out. The refusal wraps `sandbox.ErrPoolNotReachable`, so the operations
+runs out. A host the acquire cannot find at all is refused the same way:
+`dockerworker.Engine.AcquirePoolAgentClient` turns a driver's
+`sandbox.ErrNotFound` (no VM, the pool container removed for a replacement)
+into `sandbox.ErrPoolNotReachable`, as discovm does for a pool with no machine,
+and libkrun refuses a running VM that has not bound its agent's socket yet. A
+missing host is the pool reconciler's to bring back, never the sandbox having
+no runtime (#893). The refusal wraps `sandbox.ErrPoolNotReachable`, so the operations
 that do not wait here still let their caller wait: the attach wait
 ([sandboxes](../internal/resources/sandboxes/DESIGN.md#attach-waits-acquire-does-not))
-treats it as "not yet". The VM and cloud drivers return a lease without
-touching the container, so on those backends a create landing on a container
+treats it as "not yet". Once their host is up, the VM and cloud drivers
+return a lease without touching the container, so on those backends a create landing on a container
 being replaced still fails on its first call to the agent.
 
 The engine reports the same condition from the other direction. A drift

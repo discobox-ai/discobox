@@ -481,8 +481,17 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*docke
 	return dockerworker.NewDockerClientLease(cli, dockerworker.DaemonOnThisMachine, func() { _ = cli.Close() }), nil
 }
 
+// AcquirePoolAgentClient reaches the agent over its VSOCK socket. A VM that
+// is running but has not bound that socket yet is still booting, which every
+// pool's VM is for a while after a server start (#893): that is the pool not
+// reachable yet, for a caller that can wait to wait out, and not a failure.
+// The Docker socket keeps its plain error: the engine's readiness wait owns
+// what a daemon that never comes up means.
 func (d *Driver) AcquirePoolAgentClient(_ context.Context, poolID string) (*transport.HTTPClientLease, error) {
 	socket, err := d.runningSocket(poolID, agentSocketName)
+	if errors.Is(err, errSocketNotBound) {
+		return nil, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -762,6 +771,10 @@ func (d *Driver) ensureDisks(stateDir string) (string, string, error) {
 	return dataDisk, cacheDisk, nil
 }
 
+// errSocketNotBound is a running VM whose launcher has not bound one of its
+// sockets yet: libkrun binds them as the guest activates its devices.
+var errSocketNotBound = errors.New("socket is not bound yet")
+
 func (d *Driver) runningSocket(poolID, name string) (string, error) {
 	if err := validatePoolID(poolID); err != nil {
 		return "", err
@@ -772,7 +785,7 @@ func (d *Driver) runningSocket(poolID, name string) (string, error) {
 	}
 	path := filepath.Join(guest.runtimeDir, name)
 	if !isUnixSocket(path) {
-		return "", fmt.Errorf("libkrun VM %s socket %s is unavailable", poolID, name)
+		return "", fmt.Errorf("libkrun VM %s %s: %w", poolID, name, errSocketNotBound)
 	}
 	return path, nil
 }

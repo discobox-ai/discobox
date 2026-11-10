@@ -303,6 +303,7 @@ from attach to every action).
   reachable but not usable yet. The pool refusal comes from either side of the
   acquire: the gate reads the pool row, and the provider's driver refuses a
   host whose container is being replaced or whose healthcheck has not passed,
+  a host it cannot find, and a VM still booting,
   which the row cannot see because it reads ready until the agent is noticed
   gone. The service answers both with 409. The host refusal carries its own
   recovery ceiling (`sandboxPoolHostWaitCeiling`), except for an eligible initial

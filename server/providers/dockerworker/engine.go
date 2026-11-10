@@ -465,11 +465,26 @@ func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.Sand
 	return nil
 }
 
+// AcquirePoolAgentClient reaches the agent of a pool the control plane holds a
+// row for. A driver that finds no host for that pool (no VM, no pool
+// container) answers sandbox.ErrNotFound, and that is not this call's answer:
+// the pool reconciler brings the host back, as a server upgrade's replacement
+// of every pool does, so the agent is not reachable yet. Passed on as
+// ErrNotFound it read as the sandbox having no runtime on its pool, which sent
+// the first start after an upgrade back as "repair it" (#893), and let a
+// delete, archive or policy push take a missing host for a sandbox with
+// nothing to undo.
 func (e *Engine) AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
 	if pool == nil || strings.TrimSpace(pool.ID) == "" {
 		return nil, errors.New("pool is required")
 	}
-	return e.driver.AcquirePoolAgentClient(ctx, pool.ID)
+	lease, err := e.driver.AcquirePoolAgentClient(ctx, pool.ID)
+	if errors.Is(err, sandbox.ErrNotFound) {
+		// The driver's error is kept as text, not wrapped: still matching
+		// ErrNotFound, it would read as the sandbox having no runtime again.
+		return nil, fmt.Errorf("%w: pool %s has no host running: %s", sandbox.ErrPoolNotReachable, pool.ID, err.Error())
+	}
+	return lease, err
 }
 
 func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *container.InspectResponse, box poolruntime.BoxRecord, recreated bool) error {
