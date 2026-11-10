@@ -473,9 +473,9 @@ func (m *Model) landOn(box console.Sandbox) tea.Cmd {
 		m.focusTree()
 		m.listCursorTo(box)
 		if box.Startable() {
-			return status("%s is %s — enter starts it", sandboxLabel(box), box.State)
+			return status("%s is %s — enter starts it", box.Label(), box.State)
 		}
-		return status("%s is %s — enter attaches", sandboxLabel(box), box.State)
+		return status("%s is %s — enter attaches", box.Label(), box.State)
 	}
 	return m.switchTo(box)
 }
@@ -497,7 +497,7 @@ func (m *Model) switchTo(box console.Sandbox) tea.Cmd {
 	open := m.boxRef(box) == m.boxRef(m.Box) && m.hasWorkspace()
 	if m.parked[m.boxRef(box)] == nil && !open {
 		if !box.Attachable() {
-			return status("%s: %s", sandboxLabel(box), console.AttachWhy([]console.Sandbox{box}))
+			return status("%s: %s", box.Label(), console.AttachWhy([]console.Sandbox{box}))
 		}
 	}
 	return m.openFromList(console.InteractAttach, box)
@@ -565,7 +565,7 @@ func (m *Model) parkedPane(id int) (*workspace, *pane) {
 func (m *Model) updateParkedPane(ws *workspace, p *pane, msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case termpane.ClosedMsg:
-		box := sandboxLabel(ws.Box)
+		box := ws.Box.Label()
 		switch p.End(msg.Err) {
 		case console.EndsWorkspace:
 			delete(m.parked, m.boxRef(ws.Box))
@@ -875,7 +875,7 @@ func (m *Model) viewOpening(width, height int) string {
 	if what == "" {
 		what = "attach…"
 	}
-	out := []string{titledEdge(m.st, m.st.rule, sandboxLabel(m.Box), "", inner)}
+	out := []string{titledEdge(m.st, m.st.rule, m.Box.Label(), "", inner)}
 	side := m.st.rule.Render("│")
 	for i := 0; i < max(height-2, 0); i++ {
 		row := ""

@@ -181,7 +181,7 @@ func TestAnAnsweredRefusalReleasesTheHold(t *testing.T) {
 		ds.mu.Unlock()
 
 		d.dispatch(autoPushTickMsg{box: m.boxRef(m.Box), gen: m.wsGen})
-		d.wait("the hold to go", func() bool { _, held := m.PushHeld["primary"]; return !held })
+		d.wait("the hold to go", func() bool { _, held := m.Push.Held["primary"]; return !held })
 		if m.status != "" {
 			t.Fatalf("status = %q, want nothing said about a refusal somebody else answered", m.status)
 		}

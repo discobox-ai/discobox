@@ -45,7 +45,7 @@ type autoPushedMsg struct {
 // 26-09-05-008 §1), and whether it is a parked one. It is nil once the
 // workspace is gone, which ends the loop.
 func (m *Model) pushLoop(box console.BoxRef, gen int) (ws *workspace, parked bool) {
-	if m.PushHeld != nil && box == m.boxRef(m.Box) && gen == m.PushGen {
+	if m.Push.Held != nil && box == m.boxRef(m.Box) && gen == m.PushGen {
 		return &m.workspace, false
 	}
 	if ws := m.parked[box]; ws != nil && gen == ws.PushGen {
@@ -54,7 +54,7 @@ func (m *Model) pushLoop(box console.BoxRef, gen int) (ws *workspace, parked boo
 	return nil, false
 }
 
-// autoPush runs one look of the automatic push (console.Workspace.PushLook),
+// autoPush runs one look of the automatic push (console.AutoPush.Look),
 // or schedules the next when the box is not this window's to push.
 //
 // The loop is push → answer → schedule, rather than a free-running tick, so
@@ -67,7 +67,7 @@ func (m *Model) autoPush(id console.BoxRef, gen int) tea.Cmd {
 	if ws == nil {
 		return nil
 	}
-	look := ws.PushLook(m.boxByRef(id), m.ds.ForServer(ws.Box.Server))
+	look := ws.Push.Look(m.boxByRef(id), m.ds.ForServer(ws.Box.Server))
 	if look == nil {
 		return m.autoPushTick(id, gen)
 	}
@@ -85,7 +85,7 @@ func (m *Model) autoPushTick(id console.BoxRef, gen int) tea.Cmd {
 
 // autoPushed reports what the core says a look did and schedules the next.
 // What the answer holds against the next look, and what it says, are the
-// core's (console.Workspace.Pushed): a refused source is held at the commit it
+// core's (console.AutoPush.Pushed): a refused source is held at the commit it
 // was refused on until a new one, and a refusal outranks a push. A look that
 // failed as a whole arrives empty and says nothing.
 func (m *Model) autoPushed(msg autoPushedMsg) tea.Cmd {
@@ -93,20 +93,18 @@ func (m *Model) autoPushed(msg autoPushedMsg) tea.Cmd {
 	if ws == nil {
 		return nil
 	}
-	said := ws.Pushed(msg.pushes)
+	said := ws.Push.Pushed(msg.pushes)
 	cmds := []tea.Cmd{m.autoPushTick(msg.box, msg.gen)}
 	if said.Text == "" {
 		return tea.Batch(cmds...)
 	}
-	// A parked box's report names it, since the box on screen is another.
-	who := ""
 	if parked {
-		who = sandboxLabel(m.boxByRef(msg.box)) + ": "
+		said = console.PushedElsewhere(m.boxByRef(msg.box), said)
 	}
 	if said.Warning {
-		cmds = append(cmds, m.report(true, "%s%s", who, said.Text))
+		cmds = append(cmds, m.report(true, "%s", said.Text))
 	} else {
-		cmds = append(cmds, status("%s%s", who, said.Text))
+		cmds = append(cmds, status("%s", said.Text))
 	}
 	return tea.Batch(cmds...)
 }

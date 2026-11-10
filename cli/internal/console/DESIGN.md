@@ -232,7 +232,7 @@ flowchart LR
     V["service listing"] -->|ReconcileServices| SO["open / close service tabs"]
     O --> C["Column: Insert by Exec.Before, Number"]
     SO --> C
-    C --> W["Workspace: Terminals, Shells, Ending, Forward, PushHeld"]
+    C --> W["Workspace: Terminals, Shells, Ending, Forward, Push"]
     W -->|Park / Release| R["renderer keeps or drops it"]
     PS["PushSources answer"] -->|Pushed| W
 ```
@@ -322,13 +322,15 @@ flowchart LR
 - **The loops are the core's; only their clock is the renderer's.** The poll
   reads the exec and service listings every `WorkspacePollEvery` while the
   workspace is on screen, and each answer means what `Reconcile` and
-  `ReconcileServices` say. The push loop makes one look (`PushLook`: skipped
-  for a box this window does not push, holds copied, a whole-call failure
-  answering nothing), applies it (`Pushed`: a refused source is held at the
-  refused commit until a new one) and looks again `PushEvery` later, parked
-  or not, and says what it did as `Progress`: a refusal, as a warning,
-  outranks what moved, and a look that moved nothing says nothing. Naming a
-  box that is not on screen is the renderer's. A renderer runs these on its
+  `ReconcileServices` say. The push loop (`push.go`, `AutoPush`, held per
+  attached workspace) makes one look (`Look`: skipped for a box this window
+  does not push, holds copied, a whole-call failure answering nothing),
+  applies it (`Pushed`: a refused source is held at the refused commit until
+  a new one) and looks again `PushEvery` later, parked or not, and says what
+  it did as `Progress`: a refusal, as a warning, outranks what moved, and a
+  look that moved nothing says nothing; a box not on screen is named
+  (`PushedElsewhere`). The TUI runs it on its workspaces, the desktop bridge
+  on each workspace the app holds attached (its push topic). A renderer runs these on its
   own event loop — the TUI's ticks are Bubble Tea commands its tests drive
   one at a time — and drops an answer for a workspace it has left; it decides
   nothing about what a look does or means.

@@ -1,7 +1,6 @@
 package console
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -282,32 +281,6 @@ func TestReconcileServices(t *testing.T) {
 	}
 }
 
-func TestPushedHolds(t *testing.T) {
-	w := newWorkspace()
-	refused := errors.New("lease moved")
-	// A refusal outranks what moved, and is a warning.
-	said := w.Pushed([]SourcePush{
-		{Slug: "a", Commit: "c1", Err: refused},
-		{Slug: "b", Commit: "c2", Pushed: true, Branch: "main"},
-	})
-	if said != (Progress{Text: "lease moved", Warning: true}) || w.PushHeld["a"] != "c1" {
-		t.Fatalf("said %+v held %v", said, w.PushHeld)
-	}
-	if said := w.Pushed([]SourcePush{{Slug: "b", Commit: "c3", Pushed: true, Branch: "main"}}); said != (Progress{Text: "pushed c3 to origin/main in the discobox"}) {
-		t.Errorf("pushed %+v", said)
-	}
-	if said := w.Pushed([]SourcePush{{Slug: "a", UpToDate: true}}); said != (Progress{}) {
-		t.Errorf("a look that moved nothing says %+v", said)
-	}
-	if _, held := w.PushHeld["a"]; held {
-		t.Error("a source already in the origin lets its hold go")
-	}
-	two := w.Pushed([]SourcePush{{Slug: "a", Err: refused}, {Slug: "b", Err: refused}})
-	if two.Text != "could not push a, b to the discobox's origin; `discobox push` says why" || !two.Warning {
-		t.Errorf("two refused %+v", two)
-	}
-}
-
 type testForward struct{ closed bool }
 
 func (f *testForward) Bindings() []Binding     { return nil }
@@ -360,34 +333,5 @@ func TestSessionTabHarnessIsATerminal(t *testing.T) {
 	tab := SessionTab(Exec{ID: "s", Harness: "claude"}, InteractShell)
 	if tab.Action != InteractShell || tab.Side() != SideTerminals {
 		t.Fatalf("%+v on side %v, want a shell-asked harness session on the terminals", tab, tab.Side())
-	}
-}
-
-type pushSource struct {
-	DataSource
-	held map[string]string
-	err  error
-}
-
-func (p *pushSource) PushSources(_ context.Context, _ string, held map[string]string) ([]SourcePush, error) {
-	p.held = held
-	return []SourcePush{{Slug: "a", Pushed: true}}, p.err
-}
-
-func TestPushLook(t *testing.T) {
-	w := newWorkspace()
-	ds := &pushSource{}
-	if w.PushLook(Sandbox{ID: "sbx"}, ds) != nil {
-		t.Fatal("a box this window does not push gets no look")
-	}
-	w.PushHeld["a"] = "c1"
-	look := w.PushLook(Sandbox{ID: "sbx", Pushable: true}, ds)
-	w.PushHeld["a"] = "c2"
-	if got := look(context.Background()); len(got) != 1 || ds.held["a"] != "c1" {
-		t.Fatalf("got %v with holds %v, want the holds as they stood when the look was made", got, ds.held)
-	}
-	ds.err = errors.New("unreachable")
-	if got := w.PushLook(Sandbox{ID: "sbx", Pushable: true}, ds)(context.Background()); got != nil {
-		t.Fatalf("a whole-call failure answers nothing, got %v", got)
 	}
 }

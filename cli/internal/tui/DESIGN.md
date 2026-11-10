@@ -1104,7 +1104,7 @@ this window: a client with a terminal attached pushes, which is why `discobox
 attach --raw` does it too (`internal/cli/push_auto.go`). Here that means opening
 the workspace — which attaches — and its own 5s beat (`console.PushEvery`) for
 as long as it stays open. Each look and what its answer holds are the core's
-(`console.Workspace.PushLook`, `Pushed`); the loop here is the window's clock
+(`console.AutoPush.Look`, `Pushed`); the loop here is the window's clock
 for them. The cursor moving down the list pushes
 nothing: nothing is attached to that row. The loop is push → answer → schedule
 rather than a free-running tick, so a transfer that outlasts the beat is never
@@ -1134,7 +1134,7 @@ are fixed at create.
 **Nothing is forced, and a refusal is reported once.** The push is
 `discobox push` with no flags, so the lease and the related-history check are
 ADR 0058 §6's and the window never overrides them. A source that was refused is
-held at the commit it failed on (`console.Workspace.PushHeld`, settled by `Workspace.Pushed`, passed back as `held`) and resolved
+held at the commit it failed on (`console.AutoPush.Held`, settled by `AutoPush.Pushed`, passed back as `held`) and resolved
 but not re-sent until the branch moves — or until the origin turns out to hold
 that commit anyway, which is what answering the refusal by hand looks like from
 here, since `discobox push --force` moves the lease rather than the branch.

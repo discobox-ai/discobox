@@ -144,7 +144,7 @@ func (m *Model) focusAddressed(server, ref, uri string) tea.Cmd {
 		if server != "" {
 			on = server
 		}
-		return say("%q is %s on %s — this window is one command's; `discobox attach %q` opens it", uri, sandboxLabel(box), on, box.ID)
+		return say("%q is %s on %s — this window is one command's; `discobox attach %q` opens it", uri, box.Label(), on, box.ID)
 	}
 	return m.landOn(box)
 }

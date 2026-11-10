@@ -634,7 +634,7 @@ func (m *Model) Init() tea.Cmd {
 	// list to sit on while it waits, and the list of everything else is not
 	// what somebody who named one discobox is looking at.
 	if m.attach != nil {
-		m.dialog = m.waitDialog("Opening "+sandboxLabel(*m.attach), "attaching")
+		m.dialog = m.waitDialog("Opening "+m.attach.Label(), "attaching")
 		cmds = append(cmds, m.openWorkspace(*m.attach, false))
 	}
 	// A run is not started here — it waits for the harnesses, see pendingRun —
@@ -2573,7 +2573,7 @@ func (m *Model) archiveWorkspace(box console.Sandbox) tea.Cmd {
 	}
 	leave := m.attach != nil
 	if leave {
-		d := statusDialog("Archiving "+sandboxLabel(box), "archiving the discobox")
+		d := statusDialog("Archiving "+box.Label(), "archiving the discobox")
 		d.windowWait = true
 		// Nothing here is pressed: the line says what happens, and names no
 		// key, rather than the status card's "Esc stops watching".
@@ -2674,7 +2674,7 @@ func (m *Model) verbNotes(msg verbDoneMsg) string {
 		if len(msg.targets) == 1 {
 			return ", " + note
 		}
-		noted = append(noted, sandboxLabel(msg.targets[i])+" "+note)
+		noted = append(noted, msg.targets[i].Label()+" "+note)
 	}
 	if len(noted) == 0 {
 		return ""
@@ -3230,14 +3230,14 @@ func (m *Model) created(msg createdMsg) (cmd tea.Cmd) {
 		if m.statusW && m.status != "" {
 			return m.refresh()
 		}
-		return tea.Batch(m.refresh(), m.report(false, "created %s", sandboxLabel(msg.sandbox)))
+		return tea.Batch(m.refresh(), m.report(false, "created %s", msg.sandbox.Label()))
 	}
 	if m.oneShot() {
 		// The window is this run, so its wait screen carries on until the
 		// attach can take over: a pool coming up, an image arriving, a
 		// container starting report here, and it takes itself down when the
 		// attach does.
-		m.dialog = m.waitDialog("Starting "+sandboxLabel(msg.sandbox), "creating the discobox")
+		m.dialog = m.waitDialog("Starting "+msg.sandbox.Label(), "creating the discobox")
 	}
 	// Anywhere else the window is on the discobox's workspace already, or
 	// goes to it now, and the same wait is narrated in its frame
@@ -4755,16 +4755,6 @@ func (m *Model) helpText() string {
 			"",
 			"  Press Esc to close.",
 		}), "\n")
-}
-
-// sandboxLabel is what to call a discobox on screen: its name when it has one,
-// its id when it does not — a freshly created one may be reported before the
-// name it was given comes back.
-func sandboxLabel(sandbox console.Sandbox) string {
-	if name := strings.TrimSpace(sandbox.Name); name != "" {
-		return name
-	}
-	return sandbox.ID
 }
 
 type gitCredentialPolicyMsg struct {

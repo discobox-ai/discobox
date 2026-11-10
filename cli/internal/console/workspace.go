@@ -1,8 +1,6 @@
 package console
 
 import (
-	"context"
-	"maps"
 	"path"
 	"sort"
 	"strconv"
@@ -43,13 +41,6 @@ const ListStaleAfter = 3 * ListPollEvery
 // attach streams deliver every exit — so it is paced like a refresh rather
 // than a keystroke. A parked workspace does not poll.
 const WorkspacePollEvery = 2 * time.Second
-
-// PushEvery is how often an attached workspace, parked or not, looks for new
-// local commits to push (ADR 26-09-05-008). It is slower than the exec poll on
-// purpose: noticing a commit is not urgent the way noticing a new session is,
-// and a look spawns local git rather than making a request. It is its own
-// beat, tied to no other.
-const PushEvery = 5 * time.Second
 
 // Side is one of a workspace's two columns.
 type Side int
@@ -532,13 +523,12 @@ type Workspace[P Tabbed] struct {
 	// parked workspace has none, and gets one again when it is shown.
 	Forward Forward
 
-	// PushHeld is the commit each source's automatic push was refused on, by
-	// slug: that source is not pushed again while its branch still names the
-	// commit (Pushed). PushGen is the generation the push loop runs under,
-	// the one the workspace was opened in: it outlives the screen's, because a
-	// parked workspace is still attached and still pushes.
-	PushHeld map[string]string
-	PushGen  int
+	// Push is the workspace's automatic push: what it holds against the
+	// next look. PushGen is the generation the push loop runs under, the one
+	// the workspace was opened in: it outlives the screen's, because a parked
+	// workspace is still attached and still pushes.
+	Push    AutoPush
+	PushGen int
 }
 
 // Open starts a workspace on a box, holding nothing against it: a refusal or
@@ -547,7 +537,7 @@ type Workspace[P Tabbed] struct {
 func (w *Workspace[P]) Open(box Sandbox, pushGen int) {
 	w.Box = box
 	w.Ending = map[string]bool{}
-	w.PushHeld = map[string]string{}
+	w.Push = AutoPush{Held: map[string]string{}}
 	w.PushGen = pushGen
 }
 
@@ -759,105 +749,6 @@ func (w *Workspace[P]) ReconcileServices(services []Service, opening func(tabID 
 		}
 	}
 	return open, closing
-}
-
-// PushLook is one look of the automatic push, for the box as the listing has
-// it now, to run off the renderer's loop; the renderer applies its answer with
-// Pushed and asks again PushEvery later. It is nil when the box is not one
-// this window pushes — another machine's, a clone-delivered source, an
-// archived box — and the loop carries on regardless, since the listing that
-// answers Pushable is re-read on its own beat and a starting box becomes
-// pushable a few seconds in.
-//
-// The holds are copied as they stand, since the workspace goes on changing
-// them while the look runs. A look that fails as a whole — the box could not
-// be read, the git route could not be opened — answers nothing: it is ambient
-// work nobody asked for, and saying so every beat about a server that cannot
-// be reached is a status line people stop reading.
-func (w *Workspace[P]) PushLook(box Sandbox, ds DataSource) func(context.Context) []SourcePush {
-	if !box.Pushable || ds == nil {
-		return nil
-	}
-	held := maps.Clone(w.PushHeld)
-	return func(ctx context.Context) []SourcePush {
-		pushes, err := ds.PushSources(ctx, box.ID, held)
-		if err != nil {
-			return nil
-		}
-		return pushes
-	}
-}
-
-// Pushed takes one look's answer from the automatic push, and returns what
-// it says: what moved, or — outranking it — what was refused, as a warning,
-// since with several sources the one that did not go is the half of the
-// answer somebody has to act on. A look that moved nothing says nothing.
-//
-// A refused source is held at the commit it was refused on: a push's
-// failures are decisions rather than transients — a lease another machine
-// moved, a history nothing could rebase onto — so it is tried again only once
-// a new commit is made. A source already in the origin lets its hold go,
-// since after a refusal that means somebody answered it themselves.
-func (w *Workspace[P]) Pushed(pushes []SourcePush) Progress {
-	var moved, failed []SourcePush
-	if w.PushHeld == nil {
-		w.PushHeld = map[string]string{}
-	}
-	for _, push := range pushes {
-		switch {
-		case push.Err != nil:
-			w.PushHeld[push.Slug] = push.Commit
-			failed = append(failed, push)
-		case push.Pushed:
-			delete(w.PushHeld, push.Slug)
-			moved = append(moved, push)
-		case push.UpToDate:
-			delete(w.PushHeld, push.Slug)
-		}
-	}
-	switch {
-	case len(failed) > 0:
-		return Progress{Text: pushFailure(failed), Warning: true}
-	case len(moved) > 0:
-		return Progress{Text: pushedText(moved)}
-	}
-	return Progress{}
-}
-
-// pushedText says what the automatic push moved, in the room a status line
-// has. One source names where it landed, which is the branch to rebase onto in
-// the box; several name themselves.
-func pushedText(moved []SourcePush) string {
-	if len(moved) == 1 {
-		push := moved[0]
-		text := "pushed " + ShortCommit(push.Commit)
-		if push.Branch != "" {
-			remote := push.Remote
-			if remote == "" {
-				remote = "origin"
-			}
-			text += " to " + remote + "/" + push.Branch
-		}
-		return text + " in the discobox"
-	}
-	slugs := make([]string, 0, len(moved))
-	for _, push := range moved {
-		slugs = append(slugs, push.Slug)
-	}
-	return "pushed " + strings.Join(slugs, ", ") + " to the discobox's origin"
-}
-
-// pushFailure says why the automatic push refused a source: git's own reason,
-// or the push's, both written to be read by whoever has to answer them.
-func pushFailure(failed []SourcePush) string {
-	if len(failed) == 1 && failed[0].Err != nil {
-		return failed[0].Err.Error()
-	}
-	slugs := make([]string, 0, len(failed))
-	for _, push := range failed {
-		slugs = append(slugs, push.Slug)
-	}
-	return "could not push " + strings.Join(slugs, ", ") + " to the discobox's origin; `discobox push` says why"
 }
 
 // ShortCommit is a commit as the console prints it.

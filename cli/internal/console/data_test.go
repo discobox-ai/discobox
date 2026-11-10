@@ -265,3 +265,15 @@ func TestADirectoryCountIsSaidAsItClimbs(t *testing.T) {
 		}
 	}
 }
+
+// A name is better than an id, and an id is better than nothing: a freshly
+// created discobox may be reported before its name comes back.
+func TestSandboxLabelPrefersTheName(t *testing.T) {
+	t.Parallel()
+	if got := (Sandbox{ID: "sbx_1", Name: "nimble_swan"}).Label(); got != "nimble_swan" {
+		t.Fatalf("Label() = %q", got)
+	}
+	if got := (Sandbox{ID: "sbx_1"}).Label(); got != "sbx_1" {
+		t.Fatalf("Label() = %q", got)
+	}
+}

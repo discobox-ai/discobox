@@ -873,6 +873,16 @@ func (s Sandbox) Attachable() bool {
 	return s.HasRuntime || s.State == StateStarting || s.State == StateRepairing
 }
 
+// Label is what to call a box on screen: its name when it has one, its ID
+// when it does not — a freshly created one may be reported before the name it
+// was given comes back.
+func (s Sandbox) Label() string {
+	if name := strings.TrimSpace(s.Name); name != "" {
+		return name
+	}
+	return s.ID
+}
+
 // Unnamed is what a box is called when nothing has named it: its configured
 // name, else its ID. It is the fallback of the box's resolved title
 // (sandboxmeta.Title), as the server's display name falls back.

@@ -74,18 +74,6 @@ func TestWaitingDialogIsNotDismissedByEnter(t *testing.T) {
 	}
 }
 
-// A name is better than an id, and an id is better than nothing: a freshly
-// created discobox may be reported before its name comes back.
-func TestSandboxLabelPrefersTheName(t *testing.T) {
-	t.Parallel()
-	if got := sandboxLabel(console.Sandbox{ID: "sbx_1", Name: "nimble_swan"}); got != "nimble_swan" {
-		t.Fatalf("sandboxLabel() = %q", got)
-	}
-	if got := sandboxLabel(console.Sandbox{ID: "sbx_1"}); got != "sbx_1" {
-		t.Fatalf("sandboxLabel() = %q", got)
-	}
-}
-
 // The launcher's create is watched in the discobox's workspace, opening, not
 // under a wait: and walking off that workspace is "I am not watching this
 // one", so the attach that was opening goes with it — its answer, arriving
