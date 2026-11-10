@@ -249,9 +249,24 @@ func TestTheExplainerOpensTheReview(t *testing.T) {
 	if len(ds.harnessChangesWrites) != 0 || m.dialog == nil {
 		t.Fatalf("writes = %v, want no one-letter save on a review the explainer opened", ds.harnessChangesWrites)
 	}
+	send(t, m, keyPress("d"))
+	if len(ds.harnessChangesWrites) != 0 || m.dialog == nil {
+		t.Fatalf("writes = %v, want no one-letter discard on a review the explainer opened", ds.harnessChangesWrites)
+	}
 	if it := m.dialog.items[m.dialog.cursor]; it.key != "r" {
 		t.Fatalf("cursor on %q, want Enter to land on Refresh, not Save", it.label)
 	}
+	// Enter refreshes, and the refreshed card is the same kind: held, on
+	// Refresh, no letter that commits — so Enter after Enter never saves.
+	send(t, m, keyPress("enter"))
+	pastKeyQuiet(m)
+	send(t, m, keyPress("enter"), keyPress("s"), keyPress("d"))
+	pastKeyQuiet(m)
+	send(t, m, keyPress("enter"))
+	if len(ds.harnessChangesWrites) != 0 || m.dialog == nil || m.dialog.items[m.dialog.cursor].key != "r" {
+		t.Fatalf("writes = %v dialog = %s, want refreshes to keep the review unasked", ds.harnessChangesWrites, describe(m.dialog))
+	}
+	pastKeyQuiet(m)
 	send(t, m, keyPress("up"), keyPress("up"), keyPress("enter"))
 	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one cand_1" {
 		t.Fatalf("writes = %v, want Save chosen with the arrows to save", ds.harnessChangesWrites)

@@ -681,8 +681,9 @@ been quiet for `keyQuiet` (`dialog.holdUntilQuiet`), each key pressed before
 then starting the quiet over: what was being typed as it came up was meant for
 the terminal, and goes on to it (`passHeldKey`; the composer takes only edits
 of its text, and the leader stays held). The review card it opens holds its keys the same way
-(`harnessChangesLoadedMsg.unasked`), and there Save answers to no letter and
-is not where Enter lands: it is chosen with the arrows.
+(`harnessChangesLoadedMsg.unasked`), and there Save and Discard answer to no
+letter and Enter lands on Refresh, which reopens it the same way: a commit is
+chosen with the arrows.
 
 **The request's chip throbs** (`armBannerPulse`): the field under `click to
 answer` steps up through `colAlertChip`/`colAlertMid`/`colAlertLit` and back,
