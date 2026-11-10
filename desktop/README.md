@@ -23,7 +23,7 @@ The work is tracked in epic #786.
 This is the prototype the ADRs were tested with. It is the starting point for
 the epic, and does not yet follow the ADRs everywhere:
 
-- **The bridge** is ADR 26-11-07-289's, protocol 9. Every registry command the
+- **The bridge** is ADR 26-11-07-289's, protocol 10. Every registry command the
   app answers goes to the core as a `command` (with the app's navigation as
   its context), and the app enters its own flows when the result says `enter`;
   the listing, a workspace's sessions and its header are subscriptions; terminals are
@@ -131,17 +131,34 @@ the epic, and does not yet follow the ADRs everywhere:
   harnesses command naming the harness: the default, a reset the core asks
   about first, a variant through the core's form, a file picked from the
   harness's files and edited. A box taking the screen closes the page.
-  - **A file is edited in the person's editor**: the core sends `edit`, the
-    app opens the file in a text editor (`open -t` on macOS, Notepad on
-    Windows, `xdg-open` on Linux, which the CLI's text-format extension keeps
-    to a text handler; never a shell) and puts up a sheet that waits: Done answers `saved` and the
-    core reads back what was saved; Esc gives it up, saving nothing.
+  - **A file is edited in the person's editor**: the core sends `edit` with
+    a copy of the file under a text format's extension (the bridge's), the
+    app opens it in a text editor (`open -t` on macOS, Notepad on Windows,
+    `xdg-open` on Linux, by the type the extension names; never a shell or
+    a name a box chose) and puts up a sheet that waits: Done answers `saved`
+    and what was saved is written back; Esc gives it up, and the file is as
+    it was.
   - **A box's harness changes** (`review config`, from its menu, the palette
     or the Box menu) are a panel: where the candidate stands, what saving
     does, each file's diff, the credentials and the diagnostics, and the
     core's offers, each saying why when it cannot act. It opens on reading
     it again, never on saving. Saving or discarding names the candidate the
     panel showed.
+- **A box's tools** (`tools.rs`) are the core's (the tools command):
+  - the tools menu (`tools`, `primary+alt+o`, the Box menu or the palette)
+    lists the box's tools, each with what it is or why it cannot run, then its
+    ssh command and git URL to copy, then the files of each tool that carries
+    any;
+  - a tool that runs in the box is a session whose tab is after the shells,
+    given the window as it opens (the workspace maximized onto it):
+    `maximize` gives the workspace back with the tool running on its tab, and
+    `end` ends it. Choosing a tool that is running shows its tab, never a
+    second session; one a window left running is picked up with the box's
+    sessions;
+  - a tool that runs on this machine (an IDE) is handed the box, and the
+    status line says so;
+  - a tool's file is edited in the person's editor as a harness's is, and
+    saving says it is what the next box to open the tool gets.
 - **Creating a box** is the core's (`console.RunOptions`, held by the bridge):
   - the composer, under the list, is what the new box is given to do: Return
     creates and Shift+Return is a new line; under it, what a create would be
@@ -227,6 +244,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/view.rs` | The list, the sidebar, the workspace (its header, columns, split and tab chips), frames |
 | `src/overlay.rs` | The palette, the menu bar and its menus, a box's actions menu, a pane's menu, the help, and the list's filter menu |
 | `src/sheet.rs` | The core's forms, questions and edits as sheets: the queue, the answers held while they are typed, drafts, refusals, a file opened in the person's editor, and their keys |
+| `src/tools.rs` | The tools menu, a tool's tab given the window, a tool on this machine handed the box, a tool's files edited, an address copied |
 | `src/harnesses.rs` | The harnesses page, a harness's actions, file picker and config card, and a box's harness changes reviewed |
 | `src/keys.rs` | Desktop shortcuts from the spec (`primary` is ⌘ on macOS, Ctrl+Shift elsewhere), the app's navigation shortcuts; keys as xterm bytes |
 | `src/term.rs` | A pane's terminal (`alacritty_terminal`): its screen as rows, selection, the program's copies and links, mouse reporting, the wheel, paste, find, wide characters and the input method's composition |
@@ -238,6 +256,7 @@ the epic, and does not yet follow the ADRs everywhere:
 | `src/create_tests.rs` | The composer, the create card and the run options through their sheets on the mock: a source refused, rows that grow, a detached create, `new` from a workspace, the draft |
 | `src/workspace_tests.rs` | Parking and unparking, what an ending does, chips dragged along their strip, the split, the header's links |
 | `src/command_tests.rs` | Commands that must not reach past what they name; every registry command answered or in the ledger |
+| `src/tool_tests.rs` | The tools menu as the core lists it, a tool given the window and put away, one running shown not started again, a host tool, a file edited and given up, an address copied |
 | `src/harness_tests.rs` | The page's harnesses and keys, actions as the core offers them, the card, a reset asked first, a file edited and given up, a variant's form, harness changes reviewed and saved |
 | `src/sheet_tests.rs` | Rename, settings and purge through their sheets on the mock: what applies, a refusal, Enter on a destruction, a pick of one, a sheet taking every key |
 | `src/surface_tests.rs` | Every command in a menu and found by the palette; the palette's two orders, Esc and reveal; the menu bar's keys; menus that say why not |

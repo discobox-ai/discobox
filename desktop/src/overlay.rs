@@ -12,7 +12,7 @@
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Tx, col, el, icon, row, spacer, text, text_input};
 
 use crate::wire::{ChoiceGroup, Entry, HarnessAction, Menu as DesktopMenu, PaletteRow, SpecTarget};
-use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, harnesses, icons, keys, lacking, row_id, run_command, run_on, theme, view};
+use crate::{Focus, Menu, MenuKind, PALETTE_ROWS, State, harnesses, icons, keys, lacking, row_id, run_command, run_on, theme, tools, view};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
     if actions.is_empty() {
@@ -78,6 +78,8 @@ fn choose_entry(s: &mut State, i: usize, tx: &mut Tx) {
             }
         }
         MenuKind::HarnessFiles(_) => harnesses::act(s, HarnessAction::Files, id, (0.0, 0.0)),
+        MenuKind::Tools(sandbox, tools, addresses) => tools::choose(s, sandbox, tools, addresses, &id, tx),
+        MenuKind::ToolFiles(sandbox, tool) => tools::edit(s, sandbox, &tool, id),
     }
 }
 
@@ -130,7 +132,8 @@ pub fn menu_view(s: &State) -> Option<El> {
         let mut head = row().w_full().center_y().child(text(a.label.clone()).font(theme::UI).color(ink)).child(spacer());
         // A service's entries are services and verbs, and a harness's are actions and files, not
         // commands: they have no shortcut.
-        let commands = !matches!(m.kind, MenuKind::Services(..) | MenuKind::Service(..) | MenuKind::Harness(_) | MenuKind::HarnessFiles(_));
+        let commands = !matches!(m.kind, MenuKind::Services(..) | MenuKind::Service(..) | MenuKind::Harness(_) | MenuKind::HarnessFiles(_)
+            | MenuKind::Tools(..) | MenuKind::ToolFiles(..));
         if let Some(k) = keys::shortcut_of(s, &a.command).filter(|_| commands) {
             head = head.child(view::keycap(k));
         }

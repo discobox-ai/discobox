@@ -27,7 +27,7 @@ use crate::wire::{
     Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
-    HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone,
+    HarnessChanges, ChangedFile, ChangeOffer, HarnessChange, CardRow, CardSpan, CardTone, Tool, ToolFile, Address,
 };
 
 /// What the app sends, by message: the type and its body.
@@ -406,9 +406,27 @@ enum Ask {
     Variant(String),
     /// A harness's file, by its ID and path, written out to a file of this machine to edit.
     Edit(String, String, std::path::PathBuf),
+    /// A tool's file, by the tool's ID and the file's name, written out to edit.
+    ToolEdit(String, String, std::path::PathBuf),
     /// The create card, for the prompt the composer held.
     Create(String),
     Options,
+}
+
+/// The tools every mock box declares, as the core lists them for one up or not: a diff viewer, an
+/// editor carrying its config, an IDE on this machine, and a declaration that cannot run.
+fn mock_tools(running: bool) -> Vec<Tool> {
+    let down = "the box has no container; repair rebuilds it";
+    let tool = |id: &str, label: &str, detail: &str, host: bool, files: Vec<ToolFile>| Tool {
+        id: id.into(), label: label.into(), detail: detail.into(), host, enabled: running, why: if running { String::new() } else { down.into() }, files,
+    };
+    let file = |name: &str, home: &str| ToolFile { name: name.into(), detail: format!("→ ~/{home}  ·  ~/.config/discobox/tools/fresh/{name}") };
+    vec![
+        tool("diff", "diff", "review the working tree's changes", false, vec![]),
+        tool("fresh", "fresh", "a terminal editor", false, vec![file("config.json", ".config/fresh/config.json"), file("keys.json", ".config/fresh/keys.json")]),
+        tool("vscode", "VS Code", "open the box in VS Code on this machine", true, vec![]),
+        Tool { enabled: false, why: "its command is empty".into(), ..tool("broken", "broken", "", false, vec![]) },
+    ]
 }
 
 fn mock_exec(exec: &str, kind: TabKind, title: &str) -> Tab {
@@ -655,6 +673,66 @@ impl Mock {
         CommandResult { status: Status::Done, r#box: sandbox, note, ..Default::default() }
     }
 
+    /// The tools command, as the core does it: a box's tools and addresses for the menu, a tool
+    /// run — one on this machine handed the box, any other's session made on the stream as its tab
+    /// (a local shell here) — or a tool's file edited. None for an edit, which waits on the app.
+    fn tools(&mut self, c: &Command) -> Option<CommandResult> {
+        let sandbox = c.targets.first().cloned().unwrap_or_default();
+        let fail = |why: String| Some(CommandResult { status: Status::Failed, why, ..Default::default() });
+        let running = self.sandbox(&sandbox).is_some_and(Sandbox::running);
+        let catalog = mock_tools(running);
+        if c.args.tool.is_empty() {
+            let addresses = ["ssh", "git url"].iter().map(|label| Address {
+                label: label.to_string(),
+                value: if !running { String::new() } else if *label == "ssh" { format!("ssh {sandbox}") } else { format!("ssh://{sandbox}/workspace") },
+                why: if running { String::new() } else { "the box has no container; repair rebuilds it".into() },
+            }).collect();
+            return Some(CommandResult { status: Status::Enter, r#box: sandbox, tools: catalog, addresses, ..Default::default() });
+        }
+        let Some(t) = catalog.into_iter().find(|t| t.id == c.args.tool) else {
+            return fail(format!("no such tool: {}", c.args.tool));
+        };
+        if !c.args.file.is_empty() {
+            if !t.files.iter().any(|f| f.name == c.args.file) {
+                return fail(format!("{} carries no file {:?}", t.label, c.args.file));
+            }
+            let id = self.next_ask;
+            let key = (format!("tool:{}", t.id), c.args.file.clone());
+            let content = self.files.get(&key).cloned().unwrap_or_else(|| "{}\n".into());
+            let file = std::env::temp_dir().join(format!("discobox-mock-tool-{}-{id}.json", std::process::id()));
+            if let Err(e) = std::fs::write(&file, &content) {
+                return fail(format!("edit {}: {e}", c.args.file));
+            }
+            self.next_ask += 1;
+            self.asks.insert(id, (c.clone(), Ask::ToolEdit(t.id.clone(), c.args.file.clone(), file.clone())));
+            let title = format!("Editing {} — {}", c.args.file, t.id);
+            self.inbox.push(Event::Edit(Edit { id, command: c.id, path: file.to_string_lossy().into_owned(), title }));
+            return None;
+        }
+        if !t.enabled {
+            return fail(format!("{}: {}", t.label, t.why));
+        }
+        if t.host {
+            let name = self.sandbox(&sandbox).map(|b| b.name.clone()).unwrap_or_default();
+            return Some(CommandResult { status: Status::Done, r#box: sandbox, note: format!("opened {name} in {}", t.label), ..Default::default() });
+        }
+        // One the box is running is its session opened again, never a second (the core's
+        // `OpenTool`); the mock's is a local shell, so it opens a new one under the same exec.
+        let running = self.extra.get(&sandbox).into_iter().flatten().find(|e| e.tool == t.id).cloned();
+        let exec = running.clone().unwrap_or_else(|| {
+            self.made += 1;
+            Tab { tool: t.id.clone(), ..mock_exec(&format!("exec_{}", self.made), TabKind::Tool, &t.label) }
+        });
+        let size = |n: i64| u16::try_from(n.max(1)).unwrap_or(u16::MAX);
+        if let Err(e) = self.spawn(&sandbox, &exec, c.args.stream, size(c.args.cols), size(c.args.rows)) {
+            return fail(e);
+        }
+        if running.is_none() {
+            self.extra.entry(sandbox.clone()).or_default().push(exec.clone());
+        }
+        Some(CommandResult { status: Status::Done, r#box: sandbox, session: Some(exec), ..Default::default() })
+    }
+
     /// A harnesses result carrying the harnesses as they stand, about one of them.
     fn harnessed(&self, status: Status, about: &str, note: String) -> CommandResult {
         CommandResult { status, harnesses: self.harnesses.clone(), harness: about.into(), note, ..Default::default() }
@@ -761,6 +839,22 @@ impl Mock {
 
     /// An edit finished with, or given up: what was saved is read back, as the core does.
     fn saved(&mut self, v: Saved) {
+        if let Some((c, Ask::ToolEdit(tool, name, file))) = self.asks.get(&v.edit).cloned() {
+            self.asks.remove(&v.edit);
+            let result = if v.canceled {
+                CommandResult { status: Status::Canceled, ..Default::default() }
+            } else {
+                let after = std::fs::read_to_string(&file).unwrap_or_default();
+                let key = (format!("tool:{tool}"), name.clone());
+                let changed = self.files.get(&key) != Some(&after);
+                self.files.insert(key, after);
+                let note = if changed { format!("{name} saved — the next discobox to open {tool} gets it") } else { format!("{name} unchanged") };
+                CommandResult { status: Status::Done, note, ..Default::default() }
+            };
+            let _ = std::fs::remove_file(&file);
+            self.inbox.push(Event::Result(CommandResult { id: c.id, ..result }));
+            return;
+        }
         let Some((c, Ask::Edit(harness, path, file))) = self.asks.remove(&v.edit) else { return };
         let result = if v.canceled {
             CommandResult { status: Status::Canceled, ..Default::default() }
@@ -1160,7 +1254,7 @@ impl Mock {
                 self.harnesses.push(h.clone());
                 CommandResult { id: command, ..self.harnessed(Status::Done, &h.id, format!("created variant {name:?}")) }
             }
-            Ask::Edit(..) => return,
+            Ask::Edit(..) | Ask::ToolEdit(..) => return,
         };
         self.asks.remove(&id);
         self.inbox.push(Event::Result(result));
@@ -1291,6 +1385,11 @@ impl Backend for Mock {
                     self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
                 }
             }
+            Out::Command(c) if c.command == "tools" => {
+                if let Some(r) = self.tools(&c) {
+                    self.inbox.push(Event::Result(CommandResult { id: c.id, ..r }));
+                }
+            }
             Out::Saved(v) => self.saved(v),
             Out::Command(c) if self.ask(&c) => {}
             // A stream let go is a session left running in the box: the mock's is a local shell,
@@ -1388,15 +1487,18 @@ impl Pty {
             inbox.push(Event::Data(stream, banner.into_bytes()));
         }
         let primary = exec.kind == TabKind::Primary;
+        let tool = exec.kind == TabKind::Tool;
         std::thread::spawn(move || {
             let mut buf = [0u8; 16 * 1024];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => {
                         // What the ending does, as the core's Tab.End says it: the primary takes the
-                        // workspace with it, anything else that finished is held.
+                        // workspace with it, a tool its tab, and anything else that finished is held.
                         let ended = if primary {
                             Stream { stream, state: StreamState::Ended, end: Some(TabEnd::Workspace), ..Default::default() }
+                        } else if tool {
+                            Stream { stream, state: StreamState::Ended, end: Some(TabEnd::Tab), ..Default::default() }
                         } else {
                             Stream { stream, state: StreamState::Ended, end: Some(TabEnd::Held), status: "finished".into(), ..Default::default() }
                         };

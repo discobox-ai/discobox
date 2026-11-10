@@ -34,6 +34,9 @@ mod sheet_tests;
 mod surface_tests;
 mod term;
 mod theme;
+#[cfg(test)]
+mod tool_tests;
+mod tools;
 mod view;
 #[cfg(test)]
 mod workspace_tests;
@@ -44,9 +47,9 @@ use std::sync::Mutex;
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
 use wire::{
-    Args, Box as Sandbox, Chip, Command, Composer, Menu as DesktopMenu, Commands, Context, Entry, Filter, Header, Listing, Note,
+    Address, Args, Box as Sandbox, Chip, Command, Composer, Menu as DesktopMenu, Commands, Context, Entry, Filter, Header, Listing, Note,
     Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, Service, ServiceVerb, Sessions, Spec, SpecTarget,
-    Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Topic,
+    Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Tool, Topic,
 };
 use rune::{App, AppSpec, Drag, Ime, KeyEvent, MenuItem, Mods, Phase, TextEdit, Tx, Waker};
 use term::Screen;
@@ -319,6 +322,12 @@ pub enum MenuKind {
     Harness(String),
     /// A harness's files, by its ID, to pick the one to edit: each entry a file by its path.
     HarnessFiles(String),
+    /// A box's tools, by its key, and its addresses, as the tools command read them: each entry a
+    /// tool to run, an address to copy, or a tool's files to edit (`tools::choose`).
+    Tools(String, Vec<Tool>, Vec<Address>),
+    /// One tool's files, in a box by its key, to pick the one to edit: each entry a file by its
+    /// name.
+    ToolFiles(String, Tool),
 }
 
 /// The service menu's entry that shows the service's output: its tab.
@@ -649,7 +658,8 @@ impl State {
         let ids: Vec<String> = match &kind {
             MenuKind::Bar(menu) => self.in_menu(*menu),
             MenuKind::Pane => self.in_menu(DesktopMenu::Session),
-            MenuKind::Actions(_) | MenuKind::Services(..) | MenuKind::Service(..) | MenuKind::Harness(_) | MenuKind::HarnessFiles(_) => return,
+            MenuKind::Actions(_) | MenuKind::Services(..) | MenuKind::Service(..) | MenuKind::Harness(_) | MenuKind::HarnessFiles(_)
+            | MenuKind::Tools(..) | MenuKind::ToolFiles(..) => return,
         };
         let entries = ids.iter().filter_map(|id| self.spec.command(id)).map(|c| {
             let why = lacking(&self.spec, &c.id).unwrap_or_default();
@@ -1783,7 +1793,14 @@ impl State {
             Pending::Enter(_) if r.status == Status::Done => self.message = (!r.note.is_empty()).then(|| r.note.clone()),
             Pending::End(stream) if r.status == Status::Done => self.drop_pane(stream),
             Pending::Session(stream, sandbox, shown) if r.status == Status::Done => {
-                let Some(exec) = r.session.clone() else { return };
+                // Nothing was made on the stream: a tool that turned out to run on this machine,
+                // handed the box. The note says what came of it.
+                let Some(exec) = r.session.clone() else {
+                    self.early.remove(&stream);
+                    self.message = (!r.note.is_empty()).then(|| r.note.clone());
+                    self.retake_sessions(&sandbox);
+                    return;
+                };
                 // A session lands in its own box's workspace, wherever that is. It takes the screen
                 // only if nobody moved since asking for it: a box switched to meanwhile stays on
                 // screen, and the session waits in its own box's parked workspace — or, with none
@@ -1796,10 +1813,18 @@ impl State {
                     self.retake_sessions(&sandbox);
                     return;
                 }
+                let tool = exec.kind == TabKind::Tool;
                 let pane = Pane::new(stream, exec);
                 let ws = self.workspaces.get_mut(&r.r#box).unwrap();
                 ws.panes.push(pane);
                 ws.show(ws.panes.len() - 1);
+                // A tool is given the window, as the TUI's opens over the workspace; maximize
+                // gives the workspace back with the tool on its tab.
+                if tool {
+                    ws.maximized = true;
+                    self.focus = Focus::Panes;
+                    self.message = None;
+                }
                 for e in self.early.remove(&stream).unwrap_or_default() {
                     self.take_stream_event(e);
                 }
@@ -1900,7 +1925,7 @@ pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive", "purge", "rename", "settings",
     "quit", "help", "palette", "terminal", "end", "maximize", "detach", "actions", "mouse", "repaint",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
-    "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options",
+    "refresh", "servers", "archived", "services", "harnesses", "review config", "new", "options", "tools",
 ];
 
 /// Why a command cannot run in this app yet, for one it does not answer: what it says when run,
@@ -2034,6 +2059,8 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
         }
         "palette" => s.open_palette(),
         "review config" => harnesses::open_review(s, r),
+        // The box's tools and addresses, over whatever is on screen.
+        "tools" => tools::open_menu(s, r),
         // The box's services, on its workspace: a box that declares none says so instead.
         "services" => {
             s.show_workspace(&r.r#box);
