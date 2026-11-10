@@ -148,10 +148,26 @@ func TestANoticeIsDismissedUntilItChanges(t *testing.T) {
 		t.Fatalf("what was waiting as the window opened arrived: %+v", r.Arrived)
 	}
 	ctx := Context{Workspace: "b1", HasWorkspace: true, WorkspaceShown: true, PaneFocused: true}
-	if got := a.result(a.command(Command{Command: "dismiss", Context: ctx})); got.Status != StatusDone {
+	id := a.command(Command{Command: "dismiss", Context: ctx})
+	// The requests snapshot can arrive before the dismissal's result.
+	var got *Result
+	r = nil
+	for got == nil || r == nil {
+		switch m := a.message(); m.Type {
+		case TypeResult:
+			if m.Result.ID == id {
+				got = m.Result
+			}
+		case TypeSnapshot:
+			if m.Snapshot.Sub == 2 {
+				r = m.Snapshot.Requests
+			}
+		}
+	}
+	if got.Status != StatusDone {
 		t.Fatalf("dismissed: %+v", got)
 	}
-	if r := a.expect(TypeSnapshot).Snapshot.Requests; len(r.Notices) != 0 {
+	if len(r.Notices) != 0 {
 		t.Fatalf("notices after a dismissal %+v", r.Notices)
 	}
 	if got := a.result(a.command(Command{Command: "dismiss", Context: ctx})); got.Status != StatusFailed || got.Why != console.NothingToDismiss {

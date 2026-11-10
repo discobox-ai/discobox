@@ -1,5 +1,10 @@
 # console/bridge review notes
 
+- **A test waiting for a command result and its follower's snapshot collects
+  both in either order**, matching the command and subscription IDs. The
+  fake app's `result` and `expect` skip other messages: waiting for the result
+  first discarded the snapshot in both the issue-refresh and notice-dismissal
+  tests, which then timed out waiting for another one.
 - **A box is known by its key, server and ID together, and everything about
   it goes through that server.** Two servers can list the same ID: resolve a
   key with `Server.box`/`source` and call `ForServer(box.Server)`, never the
