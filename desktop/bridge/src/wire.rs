@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// The bridge protocol this side speaks: hello and welcome carry it.
-pub const PROTOCOL: i64 = 19;
+pub const PROTOCOL: i64 = 20;
 
 /// The console spec's shape (Spec.version) this side reads.
 pub const SPEC_VERSION: i64 = 7;
@@ -568,6 +568,13 @@ pub enum Topic {
     /// here comments on it, closes, reopens or merges it.
     #[serde(rename = "issue")]
     Issue,
+
+    /// TopicPush is the automatic push of a box's workspace (Box): this machine's new commits sent
+    /// into the origin the box fetches from, every console.PushEvery for as long as the
+    /// subscription lasts, so the app holds it for every workspace attached, parked or on screen.
+    /// Its first snapshot says nothing; another is sent whenever a look says something.
+    #[serde(rename = "push")]
+    Push,
 }
 
 impl Topic {
@@ -585,6 +592,7 @@ impl Topic {
             Topic::Palette => "palette",
             Topic::Composer => "composer",
             Topic::Issue => "issue",
+            Topic::Push => "push",
         }
     }
 }
@@ -750,6 +758,9 @@ pub struct Snapshot {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issue: Option<Issue>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push: Option<Push>,
 }
 
 /// Listing is the box listing as the console shows it (console.List): every box listed, and the
@@ -2038,6 +2049,25 @@ pub struct ThreadComment {
 
     #[serde(default, skip_serializing_if = "is_default")]
     pub reactions: String,
+}
+
+/// Push is what a workspace's automatic push last said, as the core says it
+/// (console.AutoPush.Pushed): what moved, or what was refused, as a warning. A refused source is
+/// held until a new commit is made, so a refusal is said once. Said counts what it has said, so the
+/// same words said again are a new snapshot, and none (0) is nothing said yet. Elsewhere is Text as
+/// said while the box is not the one on screen (console.PushedElsewhere).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Push {
+    pub said: u64,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub text: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub warning: bool,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub elsewhere: String,
 }
 
 /// Command runs a registry command. ID is the app's, unique for the bridge's life, and is what its

@@ -66,6 +66,8 @@ func (s *Server) subscribe(ctx context.Context, sub Subscribe) {
 		go f.composer(ctx)
 	case TopicIssue:
 		go f.about(ctx, func() { f.issue(ctx) })
+	case TopicPush:
+		go f.push(ctx)
 	default:
 		f.send(Snapshot{Error: fmt.Sprintf("there is no topic %q", sub.Topic)})
 	}
@@ -835,6 +837,48 @@ func (f *follower) issue(ctx context.Context) {
 		case <-time.After(every):
 		case <-changed:
 			full = true
+		}
+	}
+}
+
+// push runs the automatic push of the box's workspace (console.AutoPush) for
+// as long as the subscription lasts: one look at the box as the last listing
+// has it, its answer applied, and the next look console.PushEvery later —
+// never a second in flight over the first, since a transfer can outlast the
+// beat and two pushes racing to move one ref is how a lease starts refusing
+// pushes nobody made twice. A box the listing does not have, or one this
+// window does not push, is looked at again on the next beat, as the core
+// says; what a look does and means are the core's, and this is only the
+// window's clock for it, as the TUI's tick is.
+func (f *follower) push(ctx context.Context) {
+	var auto console.AutoPush
+	var said uint64
+	f.send(Snapshot{Push: &Push{}})
+	for {
+		box, ok := f.s.listedBox(f.sub.Box)
+		var look func(context.Context) []console.SourcePush
+		if ok {
+			look = auto.Look(box, f.s.ds.ForServer(box.Server))
+		}
+		if look != nil {
+			answer := auto.Pushed(look(ctx))
+			if ctx.Err() != nil {
+				return
+			}
+			if answer.Text != "" {
+				said++
+				f.send(Snapshot{Push: &Push{
+					Said:      said,
+					Text:      answer.Text,
+					Warning:   answer.Warning,
+					Elsewhere: console.PushedElsewhere(box, answer).Text,
+				}})
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(console.PushEvery):
 		}
 	}
 }

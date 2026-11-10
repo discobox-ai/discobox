@@ -52,8 +52,9 @@ import (
 // SummaryLit), its tally (Audit.Tally), and what the timeline says of the
 // records below a row held (Audit.Below); 19, the harness changes explainer:
 // the box it is owed about (Requests.Explain), asked by the review config
-// command (Args.Explain).
-const Protocol = 19
+// command (Args.Explain); 20, a workspace's automatic push (the push
+// topic).
+const Protocol = 20
 
 // Type names a message.
 type Type string
@@ -231,6 +232,12 @@ const (
 	// whether a pull request can merge, and at once after a command here
 	// comments on it, closes, reopens or merges it.
 	TopicIssue Topic = "issue"
+	// TopicPush is the automatic push of a box's workspace (Box): this
+	// machine's new commits sent into the origin the box fetches from, every
+	// console.PushEvery for as long as the subscription lasts, so the app
+	// holds it for every workspace attached, parked or on screen. Its first
+	// snapshot says nothing; another is sent whenever a look says something.
+	TopicPush Topic = "push"
 )
 
 // Subscribe starts following a topic. Sub is the app's, unique for the
@@ -327,6 +334,20 @@ type Snapshot struct {
 	Palette      *Palette      `json:"palette,omitempty"`
 	Composer     *Composer     `json:"composer,omitempty"`
 	Issue        *Issue        `json:"issue,omitempty"`
+	Push         *Push         `json:"push,omitempty"`
+}
+
+// Push is what a workspace's automatic push last said, as the core says it
+// (console.AutoPush.Pushed): what moved, or what was refused, as a warning.
+// A refused source is held until a new commit is made, so a refusal is said
+// once. Said counts what it has said, so the same words said again are a new
+// snapshot, and none (0) is nothing said yet. Elsewhere is Text as said while
+// the box is not the one on screen (console.PushedElsewhere).
+type Push struct {
+	Said      uint64 `json:"said"`
+	Text      string `json:"text,omitempty"`
+	Warning   bool   `json:"warning,omitempty"`
+	Elsewhere string `json:"elsewhere,omitempty"`
 }
 
 // Issue is a GitHub issue or pull request as its tab draws it

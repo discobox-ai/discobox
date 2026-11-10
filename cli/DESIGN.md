@@ -2586,12 +2586,16 @@ client pushes that discobox's local sources: at the start, and every
 nobody remembered, and that origin — a namespace of the pool's cache, or a
 repository of its own — belongs to one discobox, which nothing else reads.
 
-Both front ends run the same rule, over one resolver (`App.pushSandboxSources`,
+Every front end runs the same rule, over one resolver (`App.pushSandboxSources`,
 `pushable`, and a per-discobox cache of what its sources resolve to here):
 
 - the **console's workspace**, which attaches to the discobox's terminals when
-  it opens, through `DataSource.PushSources` (`internal/cli/tui_push.go`) on a
-  loop guarded by the workspace generation (`internal/tui/push.go`);
+  it opens, through `DataSource.PushSources` (`internal/cli/tui_push.go`), on
+  the core's loop (`console.AutoPush`) run on the TUI's clock, guarded by the
+  workspace generation (`internal/tui/push.go`);
+- the **desktop app's workspace**, through the same `DataSource.PushSources`,
+  on the same loop run by the bridge for as long as the app holds the
+  workspace's push topic, parked included (`internal/console/bridge`);
 - a **raw attach** — `attach --raw`, `new --raw`, `admin terminal attach`,
   `admin terminal create --attach` — from the one choke point they share
   (`attachSandboxTerminal` → `App.autoPushWhileAttached`).
@@ -2611,7 +2615,7 @@ has to land on.
 
 `sandboxpush.Resolve` is what makes the ordinary beat free — the branch tip
 against the lease, no transport, and no loopback proxy stood up to reach one —
-and neither front end passes `--force`, so every refusal ADR 0058 §6 produces is
+and no front end passes `--force`, so every refusal ADR 0058 §6 produces is
 still a person's to answer. A transfer that has started finishes even if the
 attach ends under it, and whoever is leaving waits for it — killing `git push`
 mid-pack can leave the origin ahead of the lease that guards it, which would

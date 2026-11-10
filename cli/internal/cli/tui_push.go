@@ -12,7 +12,9 @@ import (
 //
 // The window is a client with a terminal attached, so it pushes for the same
 // reason and by the same rule; what it adds is somewhere to say so. See
-// push_auto.go for the rule, and internal/tui/push.go for the beat it runs on.
+// push_auto.go for the rule, and console.AutoPush for the loop: the TUI runs
+// it on its own beat (internal/tui/push.go), the desktop bridge on the
+// workspace's push topic.
 func (d *apiDataSource) PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]console.SourcePush, error) {
 	pushes, err := d.app.pushSandboxSources(ctx, d.client, d.projectID, sandboxID, held)
 	if err != nil {

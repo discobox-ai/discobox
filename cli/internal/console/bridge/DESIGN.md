@@ -47,7 +47,7 @@ flowchart LR
   kind, frames before a stream attaches, a question while another
   command runs, a CLI exiting mid-command — is reached with a command. It
   runs in CI on Linux only, in `ci:desktop`.
-- **Versions** (protocol 19; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
+- **Versions** (protocol 20; what each added is `wire.go`'s `Protocol`): `hello` carries `Protocol`; `welcome` answers with this side's,
   and with the spec and session only when they match. The app says which side
   is older and exits; nothing else is served to an app of another protocol.
   Protocol 1 had no envelope: its app's hello is answered with an error in its
@@ -272,6 +272,17 @@ it, the requests that arrived since its last snapshot (none in its first: what
 waited as the window opened is the marks' and notices' to say), which the app
 raises as notifications, and what renewals said; it is read again at once after
 an answer or a dismissal (`rekicked`).
+
+The push topic is a workspace's automatic push (`follower.push`, ADR 26-09-05-008), run for as long as the app holds it:
+from when its workspace is made until it is let go, parked included, as the
+TUI's runs for an attached workspace. It is the core's `console.AutoPush` on
+the bridge's clock: one look at the box as the last listing has it, its
+answer applied, the next `console.PushEvery` later, never two in flight. Its
+first snapshot, as it is subscribed, says nothing (`Said` 0); after that one
+is sent only when a look says something (`AutoPush.Pushed`), with `Said`
+counted so the same words said again still reach the app, and the words the
+app says instead while the box is not on screen (`console.PushedElsewhere`);
+a look that failed as a whole says nothing.
 
 The listing is the core's list (`console.List`, `wireListing`): every box
 listed, and the rows the filter shows as drawn — section, nesting, remark,

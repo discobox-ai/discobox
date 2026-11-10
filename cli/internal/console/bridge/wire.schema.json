@@ -3,7 +3,7 @@
   "title": "Discobox desktop bridge",
   "description": "What crosses the pipe between `discobox desktop` and its app: the JSON messages, the payloads of the terminal frames, and the frame kinds. Generated from the Go types in cli/internal/console/bridge by its genwire command; no field is ever null.",
   "$ref": "#/$defs/Message",
-  "x-protocol": 19,
+  "x-protocol": 20,
   "x-specVersion": 7,
   "x-maxFrame": 16777216,
   "x-frameKinds": {
@@ -646,6 +646,10 @@
         {
           "description": "TopicIssue is the GitHub issue or pull request a box is tagged with, as its tab draws it (Box, Issue): read as it is subscribed, again every console.IssueRefreshEvery, soon after while GitHub has yet to say whether a pull request can merge, and at once after a command here comments on it, closes, reopens or merges it.",
           "const": "issue"
+        },
+        {
+          "description": "TopicPush is the automatic push of a box's workspace (Box): this machine's new commits sent into the origin the box fetches from, every console.PushEvery for as long as the subscription lasts, so the app holds it for every workspace attached, parked or on screen. Its first snapshot says nothing; another is sent whenever a look says something.",
+          "const": "push"
         }
       ]
     },
@@ -826,6 +830,9 @@
         },
         "issue": {
           "$ref": "#/$defs/Issue"
+        },
+        "push": {
+          "$ref": "#/$defs/Push"
         }
       },
       "required": [
@@ -2522,6 +2529,28 @@
         "author",
         "ago",
         "body"
+      ]
+    },
+    "Push": {
+      "description": "Push is what a workspace's automatic push last said, as the core says it (console.AutoPush.Pushed): what moved, or what was refused, as a warning. A refused source is held until a new commit is made, so a refusal is said once. Said counts what it has said, so the same words said again are a new snapshot, and none (0) is nothing said yet. Elsewhere is Text as said while the box is not the one on screen (console.PushedElsewhere).",
+      "type": "object",
+      "properties": {
+        "said": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "text": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "boolean"
+        },
+        "elsewhere": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "said"
       ]
     },
     "Command": {

@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -26,7 +27,8 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 // with a command:
 //
 //   - b1 is running, with a shell; a credential request waits on it, and
-//     its settings are its name. It declares three services: web, running;
+//     its settings are its name. It is pushed from this machine, whose one
+//     source has a commit its origin lacks: its push says it moved. It declares three services: web, running;
 //     migrate, which ran and exited with what it wrote; and broken, which
 //     cannot run.
 //   - b2 is archived: purging it asks first, and a purge lets slow's stop
@@ -56,6 +58,8 @@ const contractEnv = "DISCOBOX_BRIDGE_CONTRACT"
 //     ready to merge by squashing only, its review threaded, and its files
 //     changed a session of their own.
 //
+// In the "refused" scenario, b1's push is refused: its origin's lease moved.
+//
 // A create (new) is made on claude, the project's default, and makes the box
 // made: it reports the last draft the app sent as a step, and is taken. In the
 // "copy" scenario it is cut from /work/notes, a directory in no repository, so
@@ -76,14 +80,17 @@ func TestContractCore(t *testing.T) {
 	out := os.Stdout
 	os.Stdout = os.Stderr
 
+	b1 := workBox("b1")
+	b1.Pushable = true
 	core := newFakeCore("home",
-		workBox("b1"),
+		b1,
 		console.Sandbox{ID: "b2", Name: "b2", State: console.StateArchived},
 		console.Sandbox{ID: "b3", Name: "b3", State: console.StateStopped},
 		running("slow"),
 		running("doomed"),
 	)
 	core.echo = true
+	core.commit("c1aaaaaaaaaaaaaa", nil)
 	// A box's header topic forwards its ports while it is followed, and a
 	// link its panes print is pointed through it.
 	core.forward = newFakeForward(console.Binding{Port: 8080, Local: 18080})
@@ -146,6 +153,8 @@ func TestContractCore(t *testing.T) {
 		// one to save.
 		core.explain = true
 		core.listing.Sandboxes[0].HarnessConfigPending = true
+	case "refused":
+		core.commit("c1aaaaaaaaaaaaaa", errors.New("the lease moved"))
 	case "copy":
 		core.workspace = console.SourceWorkspace{Directory: "/work/notes", Carries: true}
 		core.counts = []console.DirectoryTotal{{}, {Bytes: 5 << 20, Files: 3}, {Bytes: 7 << 20, Files: 4, Done: true}}

@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use discobox_bridge::wire::{
-    Answer, Args, AuditPart, AuditQuery, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, CardAction, Message, NoticeKind, Open, PROTOCOL, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
+    Answer, Args, AuditPart, AuditQuery, Close, Command, Context, Draft, Follow, HarnessAction, HarnessChange, CardAction, Message, NoticeKind, Open, PROTOCOL, Push, RequestKind, SPEC_VERSION, Saved, SecretAction, SecretStanding, ServiceVerb, State, Status,
     StreamState, Submit, Subscribe, TabEnd, TabKind, Topic, Type, Unsubscribe, Upload, Welcome, IssueAct, IssueItemKind, IssueQuery, IssueTone,
 };
 use discobox_bridge::{Client, Incoming};
@@ -199,6 +199,38 @@ fn the_welcome_carries_the_spec_and_the_session() {
     assert_eq!(
         (session.primary_server.as_str(), session.project.as_str(), session.directory.as_str(), session.branch.as_str()),
         ("home", "proj", "/src", "main")
+    );
+}
+
+/// What b1's push says first, then next, as the app's client reads them.
+fn b1_push(scenario: &str) -> (Push, Push) {
+    let mut cli = Cli::start(scenario);
+    cli.subscribe(1, Topic::Listing, "");
+    cli.expect(Type::Snapshot);
+    cli.subscribe(2, Topic::Push, "b1");
+    let mut said = |what: &str| cli.take(what, |i| match i {
+        Incoming::Message(Message { snapshot: Some(s), .. }) if s.sub == 2 => s.push.clone(),
+        _ => None,
+    });
+    (said("the push's first snapshot"), said("what the push's look said"))
+}
+
+// A workspace's push is the core's loop, run by the CLI for as long as it is subscribed: its first
+// snapshot says nothing, then a look says what moved, or what was refused as a warning, each with
+// the words for when the box is not the one on screen.
+#[test]
+fn a_workspaces_push_says_what_moved_or_was_refused() {
+    let (first, moved) = b1_push("default");
+    assert_eq!(first, Push::default());
+    assert_eq!(
+        (moved.said, moved.text.as_str(), moved.warning, moved.elsewhere.as_str()),
+        (1, "pushed c1aaaaaaaaaa to origin/main in the discobox", false, "b1: pushed c1aaaaaaaaaa to origin/main in the discobox"),
+    );
+    let (first, refused) = b1_push("refused");
+    assert_eq!(first, Push::default());
+    assert_eq!(
+        (refused.said, refused.text.as_str(), refused.warning, refused.elsewhere.as_str()),
+        (1, "the lease moved", true, "b1: the lease moved"),
     );
 }
 

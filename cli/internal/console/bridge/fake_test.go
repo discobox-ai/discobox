@@ -122,6 +122,14 @@ type fakeCore struct {
 	// server that made the session before the command was let go.
 	issues map[string]console.Issue
 	review func()
+	// tip is the commit this machine's source "primary" is at, as
+	// PushSources resolves it, origin the commit the box's origin holds, and
+	// refuse why a push of it is refused (nil: it goes); pushed is the holds
+	// each PushSources was handed, in order.
+	tip    string
+	origin string
+	refuse error
+	pushed []map[string]string
 }
 
 func newFakeCore(name string, boxes ...console.Sandbox) *fakeCore {
@@ -1101,4 +1109,37 @@ func (f *fakeCore) PullReview(ctx context.Context, box string, pull console.Pull
 		}
 	}()
 	return ex, t, nil
+}
+
+// PushSources answers as the data source does: a source held at the commit
+// it is at is resolved and not sent; one the origin has is up to date; any
+// other is sent, or refused.
+func (f *fakeCore) PushSources(_ context.Context, _ string, held map[string]string) ([]console.SourcePush, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pushed = append(f.pushed, held)
+	push := console.SourcePush{Slug: "primary", Branch: "main", Commit: f.tip}
+	switch {
+	case f.origin == f.tip:
+		push.UpToDate = true
+	case held["primary"] == f.tip:
+	case f.refuse != nil:
+		push.Err = f.refuse
+	default:
+		push.Pushed = true
+		f.origin = f.tip
+	}
+	return []console.SourcePush{push}, nil
+}
+
+func (f *fakeCore) looks() []map[string]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.pushed)
+}
+
+func (f *fakeCore) commit(tip string, refuse error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tip, f.refuse = tip, refuse
 }
