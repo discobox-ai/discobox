@@ -75,6 +75,14 @@
   help does not name. A key's printed name goes through `keyLabel`, never a
   spelling of its own (`strings.ToUpper` on `f3`): one moved to a chord would
   print wrong.
+- **How a terminal spells a key is folded in the key path, never bound
+  twice** (`foldChord`, `unshiftBackspace`): the registry holds one key per
+  binding, and the window folds what a terminal reports onto it before
+  anything reads the key. A chord on a punctuation key is the trap: under the
+  Kitty protocol's first level a terminal reports the key pressed on the
+  layout in use, so Ctrl-: is Ctrl-Shift-; on a US layout and Ctrl-Shift-. on
+  a German one. A new such chord gets each layout's spelling folded and
+  tested, or the key line offers a key that does nothing there.
 - **One command, one implementation, whichever way it is reached.** The
   window's leader handling outside a pane dispatches a command it shares
   with the panes — the walks between panes and boxes — by ID rather than

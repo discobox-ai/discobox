@@ -357,8 +357,9 @@ func TestTheHintsLineOnAServiceOffersItsVerbs(t *testing.T) {
 		d, m, _ := openWorkspace(t, ds, "enter")
 		d.wait("the service tab", func() bool { return m.Terminals.Len() == 2 })
 
-		// On the primary it is the discobox's line, opening on its actions.
-		if got := hintLine(m.hints()); !strings.HasPrefix(got, m.leader()+" "+boxMenuKey+" actions") {
+		// On the primary it is the discobox's line, opening on the palette
+		// and its actions.
+		if got := hintLine(m.hints()); !strings.HasPrefix(got, m.leader()+" "+paletteKey+" palette · "+m.leader()+" "+boxMenuKey+" actions") {
 			t.Fatalf("terminal hints = %q, want the box's line", got)
 		}
 

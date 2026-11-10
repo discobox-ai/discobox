@@ -1593,8 +1593,8 @@ func TestTheActionsAreNotOfferedOverAScreen(t *testing.T) {
 		d.leader(paneDetachAlt)
 		d.wait("the workspace back", func() bool { return m.showingTool() == nil })
 		m.focusPane(m.Primary())
-		if got := hintLine(m.hints()); !strings.HasPrefix(got, m.leader()+" "+boxMenuKey+" actions") {
-			t.Fatalf("hints on the primary = %q, want the actions first", got)
+		if got := hintLine(m.hints()); !strings.HasPrefix(got, m.leader()+" "+paletteKey+" palette · "+m.leader()+" "+boxMenuKey+" actions") {
+			t.Fatalf("hints on the primary = %q, want the palette, then the actions", got)
 		}
 	})
 }

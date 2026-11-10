@@ -360,6 +360,12 @@ type Model struct {
 	// that opened it.
 	leaderArmed bool
 
+	// chordsDelivered is the terminal saying it tells the leaderless chords
+	// apart (tea.KeyboardEnhancementsMsg): a classic terminal cannot encode
+	// Ctrl-Shift, and sends the Ctrl key instead. The key line offers a
+	// chord only where one is, and the leader everywhere else.
+	chordsDelivered bool
+
 	// shimmer is the frame the opening glint is on, or zero when there is none.
 	// See shimmer.go.
 	shimmer int
@@ -962,6 +968,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
+
+	case tea.KeyboardEnhancementsMsg:
+		m.chordsDelivered = msg.SupportsKeyDisambiguation()
+		return nil
 
 	case tea.WindowSizeMsg:
 		// A size that changes the window's is read again, because the one
@@ -1699,16 +1709,51 @@ func unshiftBackspace(msg tea.KeyPressMsg) tea.KeyPressMsg {
 	return msg
 }
 
-// windowWalks reports whether a leaderless walk chord is the window's to
-// answer rather than a pane's (paneOptions binds it there) or nobody's.
-func (m *Model) windowWalks() bool {
-	if m.modalUp() || m.focus == focusPrompt {
+// windowChord reports whether a command's leaderless chord is the window's
+// to answer rather than a pane's (paneOptions binds it there) or nobody's:
+// never under something modal, and in the prompt only the palette's, which
+// takes no key the readline edits with. The walk is not answered there, where
+// the leader is not armed either.
+func (m *Model) windowChord(id string) bool {
+	if m.modalUp() {
 		return false
+	}
+	if m.focus == focusPrompt {
+		return id == "palette"
 	}
 	return m.focus != focusPane || m.focusedPane() == nil
 }
 
+// chordSpellings are the keys a terminal speaking the Kitty keyboard protocol
+// reports for a registry chord on a punctuation key, folded onto the chord as
+// the registry spells it. At the protocol's first level it reports the key
+// pressed on the layout in use, with Shift, not the character it makes:
+// Ctrl-: is Ctrl-Shift-; on a US or UK layout and Ctrl-Shift-. on a German,
+// Nordic, Swiss, Spanish or Italian one, and Ctrl-: itself where `:` takes no
+// Shift (French). Some terminals report the shifted character with Shift
+// still held. None of them is a key a classic terminal can send, so a
+// program in a pane loses nothing a terminal without the protocol would have
+// given it — on a US layout that includes Ctrl-Shift-., which opens the
+// palette too.
+var chordSpellings = map[string]string{
+	"ctrl+shift+;": chordKey("palette"),
+	"ctrl+shift+:": chordKey("palette"),
+	"ctrl+shift+.": chordKey("palette"),
+}
+
+// foldChord is a key as the registry spells the chord it is (chordSpellings),
+// or the key unchanged.
+func foldChord(msg tea.KeyPressMsg) tea.KeyPressMsg {
+	if chord, ok := chordSpellings[msg.Keystroke()]; ok {
+		return keyPress(chord)
+	}
+	return msg
+}
+
 func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
+	// Folded before anything reads the key — the palette, the window, a
+	// pane's termpane, whose bindings match the keystroke exactly.
+	msg = foldChord(msg)
 	if m.palette != nil {
 		return m.paletteKey(msg)
 	}
@@ -1762,11 +1807,11 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return cmd
 	}
-	// The leaderless walk along the tree, from the list or a page beside it,
-	// or while a workspace opens and no pane is there to take it — under
-	// nothing modal, and never from the composer, where the leader is not
-	// armed either. A pane binds the same chords itself (paneOptions).
-	if c, ok := console.ForTUIChord(msg.Keystroke()); ok && m.windowWalks() {
+	// A leaderless chord — the palette's, the walk along the tree — from the
+	// list or a page beside it, or while a workspace opens and no pane is
+	// there to take it, under nothing modal; and the palette's from the
+	// prompt too. A pane binds the same chords itself (paneOptions).
+	if c, ok := console.ForTUIChord(msg.Keystroke()); ok && m.windowChord(c.ID) {
 		m.leaderArmed = false
 		return m.dispatch(c.ID)
 	}
@@ -4153,9 +4198,10 @@ func (m *Model) paneHints() []hint {
 	if !m.detaches() {
 		leave = nil
 	}
-	// What can be done to the box itself — stop, rename, archive — is a
-	// menu away, offered where the reader is looking.
-	hints := append([]hint{pressing(leader+" "+boxMenuKey+" actions", leader, boxMenuKey), pressing(leader+" "+paletteKey+" palette", leader, paletteKey)}, leave...)
+	// The palette leads: it is the way to everything (ADR 26-11-07-598 §3).
+	// What can be done to the box itself — stop, rename, archive — is a menu
+	// away, offered where the reader is looking.
+	hints := append([]hint{m.paletteHint(), pressing(leader+" "+boxMenuKey+" actions", leader, boxMenuKey)}, leave...)
 	// A screen over the workspace — a tool — has the leader's
 	// menu key for itself (underScreen), so the menu is not offered there.
 	if m.hasScreen(p) {
@@ -4294,9 +4340,25 @@ func (m *Model) helpText() string {
 		"  closes.",
 		"",
 		"───────────────────────────────────────────────────────────────",
-		"Anywhere",
+		"The palette",
 		"",
-	}, helpRow(keyLabel(bareKey("help")), "this help ("+keyLabel(command("help").Bindings.TUI.Keys[1])+" does the same on the lists)"),
+		"  The way in to everything: find a discobox or a command by typing",
+		"  any part of its name, and Enter goes there or runs it. The keys",
+		"  further down are shortcuts to what the palette finds.",
+		"",
+	}, helpRow(keyLabel(chordKey("palette")), "from anywhere, a pane and the prompt included, in",
+		"a terminal that speaks the Kitty keyboard protocol"),
+		helpRow(m.leaderKeys("palette"), "from anywhere but the prompt, in any terminal"),
+		helpRow(keyLabel(bareKey("palette")), "on the discobox list"),
+		[]string{
+			"",
+			"  Tab composes a box or command, Enter chooses. Esc drops the chip,",
+			"  clears the text, then closes.",
+			"",
+			"───────────────────────────────────────────────────────────────",
+			"Anywhere",
+			"",
+		}, helpRow(keyLabel(bareKey("help")), "this help ("+keyLabel(command("help").Bindings.TUI.Keys[1])+" does the same on the lists)"),
 		helpRow(keyLabel(repaintKey), "repaint and re-read the list; inside a pane, the", "program in it is repainted too"),
 		helpRow(keyLabel(command("quit").Bindings.TUI.Keys[1]), "quit, from every screen but a pane, where it goes",
 			"to the program running there. "+m.leaderKeys("quit")+" is the quit", "inside one"),
@@ -4355,10 +4417,7 @@ func (m *Model) helpText() string {
 			"───────────────────────────────────────────────────────────────",
 			"The discobox list",
 			"",
-		}, helpRow(keyLabel(bareKey("palette"))+" or "+m.leaderKeys("palette"), "find a box or command"), []string{
-			"    In the palette: Tab composes a box or command, Enter chooses.",
-			"    Esc drops the chip, clears the text, then closes.",
-			"",
+		}, helpRow(keyLabel(bareKey("palette")), "the palette"), []string{
 			"    ↑ ↓ / k j      move",
 			"    g / G          first / last (pgup and pgdn move a screen)",
 			"    ← →            read the rest of a name too long for its column",

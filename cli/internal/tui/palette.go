@@ -38,7 +38,10 @@ type paletteRow struct {
 }
 
 func (m *Model) openPalette() tea.Cmd {
-	if m.dialog != nil || m.optionsOpen || m.newOpen || m.focus == focusPrompt {
+	// Nothing opens it over a question, the run options or the new card, the
+	// composer whose `:` is text. The prompt is reached only by the chord
+	// (windowChord): its `:` is typed, and its Ctrl-A is start of line.
+	if m.dialog != nil || m.optionsOpen || m.newOpen {
 		return nil
 	}
 	m.commands.Use("palette")

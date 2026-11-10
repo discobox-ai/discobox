@@ -145,6 +145,16 @@ func (m *Model) leaderHint(id, label string) hint {
 	return pressing(m.leaderKeys(id)+" "+label, append([]string{m.leader()}, leaderSeq(id)...)...)
 }
 
+// paletteHint is the key line's offer of the palette from a pane: its
+// leaderless chord where the terminal delivers one, the leader's key
+// everywhere else.
+func (m *Model) paletteHint() hint {
+	if m.chordsDelivered {
+		return pressing(keyLabel(chordKey("palette"))+" palette", chordKey("palette"))
+	}
+	return m.leaderHint("palette", "palette")
+}
+
 // leaderCommand is the command one key after the leader runs, by ID, if any.
 func leaderCommand(key string) string {
 	c, _ := console.ForTUILeader(key)

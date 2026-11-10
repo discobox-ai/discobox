@@ -150,11 +150,11 @@ flowchart LR
 - **The walk has a leaderless chord** (`boxUpKey`, `boxDownKey`):
   Ctrl-Shift-K/J, bound bare in the workspace's panes (`termpane.WithBinding`)
   and answered by the window from the list, a page, or a workspace still
-  opening (`windowWalks`) — never from the composer, where the leader is not
+  opening (`windowChord`) — never from the composer, where the leader is not
   armed either. A pane that reads its own keys still hands them to termpane
   (`paneReserved`), and where the registry says the walk cannot act — a
   window with no tree — the pane hands the chord back to the program
-  (`consoleCommandMsg.chord`). Ctrl-Shift is the one modifier set nothing
+  (`chordActs`, `consoleCommandMsg.chord`). Ctrl-Shift is the one modifier set nothing
   in a box reaches for, because a classic terminal cannot encode it: there it
   arrives as Ctrl-K/J, which stay the program's, and the walk is the
   leader's alone.
@@ -212,7 +212,7 @@ flowchart LR
   services, tools and the audit after the shell. It is not offered over a screen
   that
   has the leader's keys for itself (a tool). A pane's key line
-  opens with this key, so
+  offers this key right after the palette's, so
   stop, rename and archive are found where the reader is already looking.
   Every row is a registry command (`console.Entry` as `commandAction`),
   dispatched as its leader key is: tools, audit and services from the menu
@@ -3567,10 +3567,29 @@ limits were not recorded (ADR 26-11-04-389).
 ## Command palette
 
 The window's command palette (`palette.go`, ADR 26-11-06-671) is a modal over
-the list, tree or panes, reached by leader-k, or `:` when the list has keys.
-It owns keys, paste, mouse and the complete dimmed frame while open, replacing
-the trusted bare status row with a modal provenance label even without color; opening
-and closing disarm the leader. It does not intercept the composer's keys.
+the list, tree, panes or prompt, reached by leader-k, `:` when the list has
+keys, or Ctrl-: with no leader from anywhere but a dialog, the run options or
+the new card. It owns keys, paste, mouse and the complete dimmed frame while
+open, replacing the trusted bare status row with a modal provenance label even
+without color; opening and closing disarm the leader. It does not intercept
+the composer's keys: its `:` is text, and Ctrl-A is start of line.
+
+- **The palette is the main way in** (ADR 26-11-07-598 §3). The help opens
+  on it, a pane's key line leads with it, and it has the one leaderless
+  chord bound everywhere: Ctrl-:, the list's colon, which a classic terminal
+  cannot encode. What a terminal reports for it on the layout in use —
+  Ctrl-Shift-; (US, UK), Ctrl-Shift-. (German, Nordic, Swiss, Spanish,
+  Italian), Ctrl-Shift-: — is folded onto Ctrl-: before anything reads the
+  key (`foldChord`), as Shift-Backspace is onto Backspace; the registry holds
+  the one chord. The window answers it from the list,
+  a page and the prompt (`windowChord`), and a pane binds it like the walk.
+  The key line offers the chord only once the terminal says it tells such
+  chords apart (`tea.KeyboardEnhancementsMsg`, `chordsDelivered`), and the
+  leader's `k` until then: a classic terminal cannot send the chord at all,
+  so no program in a pane loses a key to it. Every other
+  command stays on the leader, the list's bare keys and the palette; the
+  parity scenarios `palette.json` and `palette-list.json` hold the palette
+  to the desktop's.
 
 The commands are the core's registry (`cli/internal/console`, `commands.go`),
 and the window is one of its frontends (`commands.go` here): `Model`

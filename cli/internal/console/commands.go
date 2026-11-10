@@ -53,7 +53,9 @@ type TUIBinding struct {
 	// Chords are pressed with no leader at all, from a pane as well: a
 	// command's are chords a classic terminal cannot encode, so no program in
 	// a pane is sent them (598 §3). One the window cannot act on where it is
-	// pressed goes on to the program, as it would have unbound. A gesture's
+	// pressed goes on to the program, as it would have unbound. How a terminal
+	// spells a chord (Ctrl-: as Ctrl-Shift-;) is the frontend's to fold onto
+	// it, never another binding here. A gesture's
 	// may be keys a program does take (paste image's Ctrl-V and Alt-V): its
 	// console takes one only where the gesture applies, and otherwise the key
 	// goes to the program as typed, so they are never bound for a pane the
@@ -761,9 +763,14 @@ var registry = []Command{
 		Bindings: Bindings{TUI: tui(".").leader("."), Desktop: desktop("shift+f10").in(MenuBox)}},
 	{ID: "dismiss", Label: "dismiss banner", Detail: "dismiss the current notice", Aliases: []string{"dismiss banner"},
 		Bindings: Bindings{TUI: tui().leader("b"), Desktop: desktop().in(MenuSession)}},
+	// The palette is the TUI's main way in (598 §3), so it has a leaderless
+	// chord from everywhere, panes and the prompt included: Ctrl-:, the colon
+	// that opens it from the list. A classic terminal cannot encode it, and the
+	// terminals people run the console in keep no command of their own on it.
 	{ID: "palette", Label: "command palette", Detail: "find a box or command", Aliases: []string{"command palette", "palette"},
 		countedByFlow: true,
-		Bindings:      Bindings{TUI: tui(":").leader("k"), Desktop: desktop("primary+k", "primary+p").in(MenuView)}},
+		Bindings: Bindings{TUI: tui(":").leader("k").chords("ctrl+:"),
+			Desktop: desktop("primary+k", "primary+p").in(MenuView)}},
 
 	// Moving between panes and boxes. Where focus goes is each frontend's
 	// (876 §2); the commands and their keys are the registry's like any other.

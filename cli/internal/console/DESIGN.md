@@ -115,6 +115,11 @@ by the palette; macOS's native menu bar is not built from it yet, #908).
 Moving between panes and
 boxes is commands like any other (`next pane`, `previous box`, `sidebar`):
 where focus goes is each frontend's, the key that moves it the registry's.
+A TUI command's leaderless chords are ones a classic terminal cannot encode
+(598 §3): the palette's Ctrl-: — its main way in, so the one command bound
+that way from everywhere — and the box walk's Ctrl-Shift-K/J. Each is one
+key as the registry spells it; how a terminal reports that key on a layout
+(Ctrl-: as Ctrl-Shift-;) the frontend folds onto it.
 
 - **Every key a frontend binds to reach a command or move between boxes
   and panes is here** (598 §3): the TUI's list, tree, leader and panes, the
@@ -203,7 +208,11 @@ wire, so the app's are generated from them with the bridge's
   a box's lifecycle through its row's menu; or, in a workspace, a service step
   (`service` and `verb`): the services command's menu, the service, then one of
   its verbs (`Service.Actions`) or its `output`, on the services the scenario
-  declares for its first box (`services`, each with its status and logs). A
+  declares for its first box (`services`, each with its status and logs); or
+  a command through the palette (`palette`), from either: the palette opened
+  with no leader (the TUI's chord from a pane, its bare key on the list), the
+  command's label typed, Enter, and for a box's command Enter again on the
+  box the palette lists first. A
   step expects only what it names (the workspace's terminals, shells, service
   tabs, focus and maximize, text the focused pane shows, and the row of the
   box on screen; the list's targets, marks and archived). The TUI and the

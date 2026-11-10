@@ -404,3 +404,90 @@ func TestPaletteReservesWorkspaceShortcutsAtEightyColumns(t *testing.T) {
 		}
 	})
 }
+
+// Ctrl-: opens the palette with no leader, from a pane, the list and the
+// prompt, in each spelling a terminal reports it by on the layouts it is
+// shifted on (chordSpellings), and never reaches the
+// program; it opens nothing over a dialog (ADR 26-11-07-598 §3).
+func TestCtrlColonOpensThePaletteFromEverywhere(t *testing.T) {
+	t.Parallel()
+	chords := []tea.KeyPressMsg{
+		{Code: ':', Mod: tea.ModCtrl},
+		{Code: ';', Mod: tea.ModCtrl | tea.ModShift},
+		{Code: ':', Mod: tea.ModCtrl | tea.ModShift},
+		{Code: '.', Mod: tea.ModCtrl | tea.ModShift},
+	}
+	for _, chord := range chords {
+		t.Run(chord.Keystroke(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ds := newFakeSource(testSandboxes()...)
+				d, m, term := openWorkspace(t, ds, "enter")
+				d.dispatch(chord)
+				d.wait("the palette over the pane", func() bool { return m.palette != nil })
+				d.key("esc")
+				if m.palette != nil || m.focus != focusPane {
+					t.Fatalf("Esc left palette %v, focus %v; want the pane back", m.palette != nil, m.focus)
+				}
+				if got := term.inputSoFar(); strings.ContainsAny(got, ":;.") {
+					t.Fatalf("the program received %q; the chord is the window's", got)
+				}
+
+				d, m = openList(t, newFakeSource(testSandboxes()...))
+				m.focus = focusList
+				d.dispatch(chord)
+				if m.palette == nil {
+					t.Fatal("the chord opened no palette from the list")
+				}
+				d.key("esc")
+
+				m.focus = focusPrompt
+				m.prompt.SetValue("fix the build")
+				d.dispatch(chord)
+				if m.palette == nil {
+					t.Fatal("the chord opened no palette from the prompt")
+				}
+				d.key("esc")
+				if m.palette != nil || m.focus != focusPrompt || m.prompt.Value() != "fix the build" {
+					t.Fatalf("palette %v, focus %v, prompt %q; want the prompt back as it was", m.palette != nil, m.focus, m.prompt.Value())
+				}
+
+				m.focus = focusList
+				d.key(bareKey("rename"))
+				if m.dialog == nil {
+					t.Fatal("rename asked nothing")
+				}
+				d.dispatch(chord)
+				if m.palette != nil {
+					t.Fatal("the chord opened the palette over a dialog")
+				}
+			})
+		})
+	}
+}
+
+// From a pane the key line leads with the palette: its chord where the
+// terminal tells it apart, and the leader's key where it cannot.
+func TestThePaneKeyLineLeadsWithThePalette(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		if got, want := hintLine(m.hints()), m.leader()+" "+paletteKey+" palette"; !strings.HasPrefix(got, want) {
+			t.Fatalf("hints = %q, want them to open on %q", got, want)
+		}
+		d.dispatch(tea.KeyboardEnhancementsMsg{Flags: 1})
+		d.settle()
+		got := hintLine(m.hints())
+		if !strings.HasPrefix(got, "Ctrl-: palette") {
+			t.Fatalf("hints with the chords delivered = %q, want them to open on Ctrl-: palette", got)
+		}
+		for _, h := range m.hints() {
+			if strings.HasPrefix(h.text, "Ctrl-:") {
+				for _, k := range h.keys {
+					d.dispatch(keyPress(k))
+				}
+			}
+		}
+		d.wait("the palette from the hint's keys", func() bool { return m.palette != nil })
+	})
+}

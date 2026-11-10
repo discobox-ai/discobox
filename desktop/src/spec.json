@@ -1311,7 +1311,9 @@
             ]
           ],
           "repeats": false,
-          "chords": [],
+          "chords": [
+            "ctrl+:"
+          ],
           "menu": []
         },
         "desktop": {

@@ -769,11 +769,9 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		// A leaderless chord the command cannot act on here — a walk in a
 		// window with no tree — was never the window's: it goes on to the
 		// program, as it would have unbound.
-		if msg.chord != nil {
-			if e, _ := m.commands.Entry(m.commandContext(), msg.id, []console.Sandbox{m.currentBox()}); !e.Enabled {
-				p.term.SendKey(*msg.chord)
-				return nil
-			}
+		if msg.chord != nil && !m.chordActs(*msg.chord) {
+			p.term.SendKey(*msg.chord)
+			return nil
 		}
 		return m.dispatch(msg.id, m.currentBox())
 
@@ -934,14 +932,26 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 }
 
 // paneReserved reports whether a key is one of the window's own a pane
-// declares to termpane — the leader, what follows it, the leaderless walk —
+// declares to termpane — the leader, what follows it, a leaderless chord —
 // which a pane that reads its own keys still hands to termpane to resolve.
-// The walk is the window's only where there is a tree to walk; elsewhere the
-// chord is a key like any other, and goes where that pane sends its keys —
-// held behind a slow image paste in order with the rest, not ahead of them.
+// A chord is the window's only where its command can act (the walk where
+// there is a tree to walk); elsewhere it is a key like any other, and goes
+// where that pane sends its keys — held behind a slow image paste in order
+// with the rest, not ahead of them.
 func (m *Model) paneReserved(p *pane, key tea.KeyPressMsg) bool {
-	_, walk := console.ForTUIChord(key.Keystroke())
-	return (walk && m.treeAvailable()) || p.term.PrefixPending() || keyName(key) == m.leader()
+	return m.chordActs(key) || p.term.PrefixPending() || keyName(key) == m.leader()
+}
+
+// chordActs reports whether a key is a command's leaderless chord that the
+// command can act on from the focused pane. One that cannot goes on to the
+// program, as it would have unbound.
+func (m *Model) chordActs(key tea.KeyPressMsg) bool {
+	c, ok := console.ForTUIChord(key.Keystroke())
+	if !ok {
+		return false
+	}
+	e, _ := m.commands.Entry(m.commandContext(), c.ID, []console.Sandbox{m.currentBox()})
+	return e.Enabled
 }
 
 // finishedKey routes a key on a held screen.
