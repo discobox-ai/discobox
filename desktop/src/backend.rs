@@ -23,7 +23,7 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rune::Waker;
 
 use crate::wire::{
-    Answer, Box as Sandbox, ChoiceGroup, Chip, Close, Command, Commands, Choice, Composer, Draft, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice,
+    Answer, Box as Sandbox, ChoiceGroup, Chip, Close, Command, Commands, Choice, Composer, Draft, Entry, Field, FieldError, FieldErrors, Filter, FilterChoice, Follow,
     Form, GitTone, Header, Link, Listing, Message, Open, Palette, Provisioning, PaletteCommit, PaletteQuery, PaletteRow, PortGroup, Progress, Question,
     Remark, Result as CommandResult, Row, Service, ServiceAction, ServiceVerb, Sessions, Spec, SpecTarget, State, Status, Stream, StreamState,
     Submit, Subscribe, Tab, TabEnd, TabKind, Topic, Type, Unsubscribe, Edit, Saved, Harness, HarnessAction, HarnessOffer, HarnessFile,
@@ -48,6 +48,8 @@ pub enum Out {
     Saved(Saved),
     /// The prompt in the composer, kept for the next window.
     Draft(String),
+    /// A link pressed in a pane, for the core to say where it goes.
+    Follow(Follow),
 }
 
 impl Out {
@@ -66,6 +68,7 @@ impl Out {
             Out::Submit(f) => Message { r#type: Type::Submit, submit: Some(f), ..Default::default() },
             Out::Saved(v) => Message { r#type: Type::Saved, saved: Some(v), ..Default::default() },
             Out::Draft(prompt) => Message { r#type: Type::Draft, draft: Some(Draft { prompt }), ..Default::default() },
+            Out::Follow(f) => Message { r#type: Type::Follow, follow: Some(f), ..Default::default() },
         }
     }
 }
@@ -232,6 +235,9 @@ pub struct Mock {
     /// a service verb sends them its sessions again.
     services: HashMap<String, Vec<MockService>>,
     following: HashMap<u32, String>,
+    /// The header subscriptions, by the box each follows: a box's forward, which a link in its
+    /// panes is pointed through, is held only while one follows it, as the bridge's is.
+    headers: HashMap<u32, String>,
     /// The project's harnesses, and each one's files' contents by its ID and path.
     harnesses: Vec<Harness>,
     files: HashMap<(String, String), String>,
@@ -494,7 +500,7 @@ impl Mock {
         let changes = HashMap::from([(boxes[0].key.clone(), mock_changes())]);
         Mock {
             inbox, boxes, parents, list_sub: 0, filter, extra: HashMap::new(), ptys: HashMap::new(), made: 0, asks: HashMap::new(), next_ask: 1,
-            services, following: HashMap::new(), harnesses, files, changes, run: MockRun::default(), composer_sub: 0, record: Arc::default(),
+            services, following: HashMap::new(), headers: HashMap::new(), harnesses, files, changes, run: MockRun::default(), composer_sub: 0, record: Arc::default(),
         }
     }
 
@@ -987,7 +993,10 @@ impl Mock {
         let base = if b.branch.is_empty() { String::new() } else { format!("{}@{}{}", b.branch, b.commit, if b.dirty { "*" } else { "" }) };
         let ports = if self.boxes.first().is_some_and(|f| f.key == key) {
             vec![
-                PortGroup { protocol: "http".into(), ports: vec![Link { label: "5173".into(), url: "http://localhost:5173".into() }] },
+                PortGroup { protocol: "http".into(), ports: vec![
+                    Link { label: "5173".into(), url: "http://localhost:5173".into() },
+                    Link { label: "18080->8080".into(), url: "http://localhost:18080".into() },
+                ] },
                 PortGroup { protocol: "tcp".into(), ports: vec![Link { label: "5432".into(), url: String::new() }] },
             ]
         } else {
@@ -1003,6 +1012,29 @@ impl Mock {
     }
 
     fn sandbox(&self, key: &str) -> Option<&Sandbox> { self.boxes.iter().find(|b| b.key == key) }
+
+    /// Where a link pressed in a pane goes, by the core's rules roughly: a discobox link to the
+    /// box whose ID it names or is the only prefix of, and a URL printed in the first box to the
+    /// port its header forwards (8080, at 18080) while its header is followed; anything else as
+    /// written.
+    fn follow(&self, f: &crate::wire::Follow) -> CommandResult {
+        if let Some(rest) = f.uri.strip_prefix("discobox:///") {
+            let found: Vec<&Sandbox> = self.boxes.iter().filter(|b| b.id == rest || b.id.starts_with(rest)).collect();
+            return match found.as_slice() {
+                [b] => CommandResult { status: Status::Enter, r#box: b.key.clone(), ..Default::default() },
+                _ => CommandResult { status: Status::Failed, why: format!("{:?}: no discobox {rest:?} on this server", f.uri), ..Default::default() },
+            };
+        }
+        let mut url = f.uri.clone();
+        if self.boxes.first().is_some_and(|b| b.key == f.r#box) && self.headers.values().any(|k| *k == f.r#box) {
+            for host in ["localhost", "127.0.0.1", "0.0.0.0"] {
+                if let Some(rest) = f.uri.strip_prefix(&format!("http://{host}:8080")).filter(|r| r.is_empty() || r.starts_with(['/', '?', '#'])) {
+                    url = format!("http://localhost:18080{rest}");
+                }
+            }
+        }
+        CommandResult { status: Status::Done, url, ..Default::default() }
+    }
 
     fn spawn(&mut self, sandbox: &str, exec: &Tab, stream: u32, cols: u16, rows: u16) -> Result<(), String> {
         let sbx = self.sandbox(sandbox).cloned().unwrap_or_default();
@@ -1366,6 +1398,7 @@ impl Backend for Mock {
             Out::Subscribe(Subscribe { sub, topic: Topic::Header, r#box, .. }) => {
                 let h = self.header(&r#box);
                 self.inbox.push(Event::Header(sub, Ok(h)));
+                self.headers.insert(sub, r#box);
             }
             Out::Subscribe(Subscribe { sub, topic: Topic::Composer, .. }) => {
                 self.composer_sub = sub;
@@ -1376,8 +1409,13 @@ impl Backend for Mock {
                 self.inbox.push(Event::Provisioning(sub, Ok(Provisioning { step })));
             }
             Out::Draft(prompt) => self.record.lock().unwrap().drafts.push(prompt),
+            Out::Follow(f) => {
+                let r = self.follow(&f);
+                self.inbox.push(Event::Result(CommandResult { id: f.id, ..r }));
+            }
             Out::Unsubscribe(sub) => {
                 self.following.remove(&sub);
+                self.headers.remove(&sub);
             }
             Out::Subscribe(_) => {}
             Out::Command(c) if c.command == "harnesses" => {

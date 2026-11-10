@@ -47,7 +47,7 @@ use std::sync::Mutex;
 use backend::{Backend, Bridge, Event, Inbox, Mock, Out};
 use discobox_bridge::wire;
 use wire::{
-    Address, Args, Box as Sandbox, Chip, Command, Composer, Menu as DesktopMenu, Commands, Context, Entry, Filter, Header, Listing, Note,
+    Address, Args, Box as Sandbox, Chip, Command, Composer, Menu as DesktopMenu, Commands, Context, Entry, Filter, Follow, Header, Listing, Note,
     Palette as Found, PaletteQuery, PaletteRow, Provisioning, Result as CommandResult, Row, Service, ServiceVerb, Sessions, Spec, SpecTarget,
     Status, Stream, StreamState, Subscribe, Tab, TabEnd, TabKind, Tool, Topic,
 };
@@ -220,6 +220,10 @@ enum Pending {
     /// A create from the composer, and the prompt it was sent with: the composer lets go of it
     /// once the server has taken the create.
     Create(String),
+    /// A link pressed in a pane: the URL it goes to opened, or the box it names gone to — only
+    /// from the box that was on screen when it was pressed (`live` then), as the TUI drops an
+    /// answer that took its time: a person who moved on is not sent back.
+    Follow(Option<String>),
 }
 
 /// The focused pane's find through its scrollback, open: what is typed, on the pane's stream.
@@ -1364,25 +1368,32 @@ impl State {
     // -----------------------------------------------------------------------------------------
     // The mouse on a pane: points are the screen's own, from its top-left.
 
-    /// A press, drag and release on a pane (`index` in its workspace). ⌘-click (Ctrl-click
-    /// elsewhere) opens a link a program made; a program that asked for the mouse hears it
-    /// unless it was taken back or Shift is held, as in every terminal; otherwise the primary
-    /// button selects, copied on release.
+    /// A press, drag and release on a pane (`index` in its workspace). A left ⌘-click (Ctrl-click
+    /// elsewhere) follows a link, one a program made or a URL in its text, and a plain left click
+    /// follows a box's address even while the program has the mouse (`follow`); a program that
+    /// asked for the mouse hears it unless it was taken back or Shift is held, as in every
+    /// terminal; otherwise the primary button selects, copied on release.
     pub fn pane_drag(&mut self, stream: u32, index: usize, d: &rune::Drag, tx: &mut Tx) {
         let mods = tx.mods();
         let button = if tx.button() == rune::PointerButton::Middle { term::Button::Middle } else { term::Button::Left };
         if d.phase == rune::Phase::Down {
             self.select_pane(index);
         }
+        let claimed = self.spec.link_schemes.clone();
         let Some(p) = self.pane_mut(stream) else { return };
         let (col, row, right) = cell_at(d.x, d.y);
         let (x, y) = (col.min(p.screen.cols.saturating_sub(1)), row.clamp(0, p.screen.rows as i32 - 1) as usize);
         let report = |p: &mut Pane, act| p.screen.mouse(button, act, x, y, mods.shift, mods.alt, mods.ctrl);
         let bytes = match d.phase {
             rune::Phase::Down => {
-                if mods.cmd && let Some(url) = p.screen.link_at(x, y as i32) {
-                    if let Err(e) = tx.open_url(&url) {
-                        self.message = Some(format!("could not open {url}: {e:?}"));
+                // A link the console claims (a box's address) is the window's to follow on a left
+                // press, before the program is told of it, unless the mouse was taken back to
+                // select with; any link is followed with the link modifier. The second press of a
+                // double click on a box's address is the first's, which already went to its box.
+                let link = (button == term::Button::Left).then(|| p.screen.link_at(x, y as i32, &claimed)).flatten();
+                if let Some(link) = link.filter(|l| mods.cmd || (l.claimed && !p.screen.seized)) {
+                    if !(link.claimed && d.clicks > 1) {
+                        self.follow(stream, link.uri);
                     }
                     return;
                 }
@@ -1415,10 +1426,22 @@ impl State {
         }
     }
 
+    /// Asks the core where a link pressed in a pane goes (the bridge's `follow`): the URL to
+    /// open, through the forward of the box the pane is one of, or the box a discobox link names.
+    fn follow(&mut self, stream: u32, uri: String) {
+        let sandbox = self.workspaces.iter().find(|(_, w)| w.panes.iter().any(|p| p.stream == stream)).map(|(k, _)| k.clone()).unwrap_or_default();
+        let id = self.next_id;
+        self.next_id += 1;
+        self.pending.insert(id, Pending::Follow(self.live.clone()));
+        self.backend.send(Out::Follow(Follow { id, uri, r#box: sandbox }));
+    }
+
     /// The pointer moving over a pane with no button held: news only to a program that asked
     /// for every motion.
     pub fn pane_hover(&mut self, stream: u32, x: f32, y: f32) {
         let Some(p) = self.pane_mut(stream) else { return };
+        let (col, row, _) = cell_at(x, y);
+        p.screen.hover = (row >= 0 && (row as usize) < p.screen.rows && col < p.screen.cols).then_some((col, row as usize));
         if p.screen.pressed() || p.screen.selecting || !p.screen.reports_mouse() {
             return;
         }
@@ -1842,6 +1865,17 @@ impl State {
             Pending::Change if r.status == Status::Done => {
                 self.review = None;
                 self.message = (!r.note.is_empty()).then(|| r.note.clone());
+            }
+            Pending::Follow(from) if from != self.live => return,
+            Pending::Follow(_) if r.status == Status::Done => {
+                if let Err(e) = tx.open_url(&r.url) {
+                    self.message = Some(format!("could not open {}: {e:?}", r.url));
+                }
+            }
+            // A refusal an earlier link left is said of a box gone from the screen.
+            Pending::Follow(_) if r.status == Status::Enter => {
+                self.message = None;
+                self.navigate(&r.r#box);
             }
             Pending::Actions(at) if r.status == Status::Enter => overlay::show_menu(self, r.r#box.clone(), at, r.entries.clone(), tx),
             // The new box's workspace, on its way up; or, left detached, what came of it.

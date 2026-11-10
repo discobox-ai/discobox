@@ -79,8 +79,12 @@ the epic, and does not yet follow the ADRs everywhere:
   a double click, a line on a triple, a block with Alt), copied on release;
   `primary+c` copies a selection and `primary+v` pastes, bracketed when the
   program asks; a program's OSC 52 copy reaches the clipboard and its reads
-  get nothing; a link it made (OSC 8) opens on ⌘-click (Ctrl-click
-  elsewhere); a program that asked for the mouse hears it in its encoding
+  get nothing; a link it made (OSC 8), or a URL in its text, opens on
+  ⌘-click (Ctrl-click elsewhere) where the core says it goes (the bridge's
+  `follow`): a URL the box printed at the port its header's forward bound, and
+  a box's address (the spec's `linkSchemes`, drawn as a link and lit under
+  the pointer) on a plain left click too, to that box, unless the mouse was
+  taken back to select with; a program that asked for the mouse hears it in its encoding
   until `mouse` takes it back or Shift is held; the wheel scrolls the
   program, a pager's arrows or the scrollback; `primary+f` finds through the
   scrollback and `shift+pageup`/`pagedown` page it; wide characters and emoji

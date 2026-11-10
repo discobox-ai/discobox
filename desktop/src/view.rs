@@ -465,7 +465,7 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
     // on their springs) alike.
     let mut screen = el().key(format!("screen-{id}")).w_full().grow(1.0).min_h(0.0).clip_rounded(theme::r_key())
         .fill(theme::term_bg()).instant_changes().motion(Spring::NONE)
-        .child(pane.screen.view(&format!("p{id}"), focused))
+        .child(pane.screen.view(&format!("p{id}"), focused, &s.spec.link_schemes))
         .on_layout(move |s: &mut State, r: [f32; 4]| {
             s.resize_pane(id, (r[2] / theme::cell_w()).floor() as usize, (r[3] / CELL_H).floor() as usize)
         })
@@ -476,6 +476,11 @@ fn column(s: &State, ws: &Workspace, sbx: &Sandbox, side: Side, two: bool) -> El
         .pointer_buttons([rune::PointerButton::Middle])
         .on_drag(move |s: &mut State, d: &mut rune::Drag, tx: &mut Tx| s.pane_drag(id, active, d, tx))
         .on_pointer_move_local(move |s: &mut State, p, _| s.pane_hover(id, p.x, p.y))
+        .on_hover_change(move |s: &mut State, inside, _| {
+            if !inside && let Some(p) = s.pane_mut(id) {
+                p.screen.hover = None;
+            }
+        })
         .on_secondary_press_local(move |s: &mut State, p, tx| s.pane_secondary(id, active, p, tx))
         // A program with the mouse is pointed at, not selected in.
         .cursor(if pane.screen.reports_mouse() { rune::Cursor::Default } else { rune::Cursor::Text });

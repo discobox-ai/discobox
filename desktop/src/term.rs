@@ -139,6 +139,9 @@ pub struct Screen {
     wheel_left: f32,
     /// An input method's composition, drawn at the cursor until it commits.
     pub preedit: Option<String>,
+    /// The cell under the pointer, in the view, while it is over the screen: a box's address
+    /// there is drawn lit.
+    pub hover: Option<(usize, usize)>,
 }
 
 impl Screen {
@@ -149,7 +152,7 @@ impl Screen {
         Screen {
             term, parser: Processor::new(), replies, cols, rows, version: 0, title: None, copied: None, seized: false,
             reporting: None, moved: None, selecting: false, find: None, last_query: String::new(), wheel_left: 0.0,
-            preedit: None, newlines: false,
+            preedit: None, newlines: false, hover: None,
         }
     }
 
@@ -181,6 +184,9 @@ impl Screen {
         }
         self.term.resize(Size { cols, rows });
         (self.cols, self.rows) = (cols, rows);
+        // The cell the pointer was over may be past the new edge, and is somewhere else in the
+        // reflowed grid either way: the next motion says where it is.
+        self.hover = None;
         // A resize reflows the grid: a match's points no longer name its text, and searching on
         // from one could start outside the grid. The next step finds again from the live screen.
         if let Some(f) = self.find.as_mut() {
@@ -314,10 +320,18 @@ impl Screen {
     // -----------------------------------------------------------------------------------------
     // Links
 
-    /// Where the link a program made at a cell (OSC 8) points.
-    pub fn link_at(&self, col: usize, row: i32) -> Option<String> {
+    /// The link at a cell: one a program made (OSC 8), else a URL written there as text — a web
+    /// one, or one of a scheme the console claims (`claimed`, the spec's `linkSchemes`). Where
+    /// it goes is the core's to say (the bridge's `follow`); this only finds it.
+    pub fn link_at(&self, col: usize, row: i32, claimed: &[String]) -> Option<Link> {
         let p = self.point(col, row);
-        self.term.grid()[p.line][p.column].hyperlink().map(|h| h.uri().to_string())
+        let line = &self.term.grid()[p.line];
+        if let Some(h) = line[p.column].hyperlink() {
+            let uri = h.uri().to_string();
+            return Some(Link { claimed: claims(claimed, &uri), uri });
+        }
+        let found = text_links(&row_chars(line, self.cols), claimed).into_iter().find(|l| (l.from..l.to).contains(&p.column.0))?;
+        Some(Link { claimed: claims(claimed, &found.uri), uri: found.uri })
     }
 
     // -----------------------------------------------------------------------------------------
@@ -536,9 +550,48 @@ impl Screen {
     // -----------------------------------------------------------------------------------------
     // Drawing
 
+    /// A row of the view as its cells are drawn: their colours, marks and links.
+    fn drawn_row(&self, y: usize, row: &alacritty_terminal::grid::Row<Cell>, line: Line, selection: Option<&SelectionRange>, hit: Option<&Match>, claimed: &[String]) -> Vec<Drawn> {
+        let mut cells: Vec<Drawn> = (0..self.cols).map(|x| Drawn::of(&row[Column(x)], mark(Point::new(line, Column(x)), selection, hit))).collect();
+        // A link the console answers is one a plain click follows, so it is drawn as a link
+        // wherever it was found, and lit under the pointer; a web URL in text is a link only to
+        // the link modifier, as in any terminal, and drawn as the text it is. With the mouse taken
+        // back to select with, it is text to copy, and drawn as text.
+        if self.seized {
+            return cells;
+        }
+        // One a program made is lit whole: every cell of the row it links.
+        let hovered = self.hover.filter(|&(hx, hy)| hy == y && hx < self.cols).and_then(|(hx, _)| row[Column(hx)].hyperlink()).filter(|h| claims(claimed, h.uri()));
+        if let Some(h) = hovered {
+            for (x, d) in cells.iter_mut().enumerate() {
+                if d.marked == Marked::No && row[Column(x)].hyperlink().as_ref() == Some(&h) {
+                    d.marked = Marked::Lit;
+                }
+            }
+        }
+        for l in text_links(&row_chars(row, self.cols), claimed).into_iter().filter(|l| claims(claimed, &l.uri)) {
+            let lit = self.hover.is_some_and(|(hx, hy)| hy == y && (l.from..l.to).contains(&hx));
+            for d in &mut cells[l.from..l.to.min(self.cols)] {
+                d.link = true;
+                if lit && d.marked == Marked::No {
+                    d.marked = Marked::Lit;
+                }
+            }
+        }
+        cells
+    }
+
+    /// Which columns of a view row are drawn lit: a box's address under the pointer.
+    #[cfg(test)]
+    fn lit(&self, y: usize, claimed: &[String]) -> Vec<usize> {
+        let line = Line(y as i32 - self.offset() as i32);
+        let cells = self.drawn_row(y, &self.term.grid()[line], line, None, None, claimed);
+        cells.iter().enumerate().filter(|(_, d)| d.marked == Marked::Lit).map(|(x, _)| x).collect()
+    }
+
     /// The screen as elements: one keyed, memoised row per line, the cursor, and the input
     /// method's composition at it.
-    pub fn view(&self, key: &str, focused: bool) -> El {
+    pub fn view(&self, key: &str, focused: bool, claimed: &[String]) -> El {
         let grid = self.term.grid();
         let offset = grid.display_offset() as i32;
         let content = self.term.renderable_content();
@@ -548,10 +601,7 @@ impl Screen {
         for y in 0..self.rows {
             let line = Line(y as i32 - offset);
             let row = &grid[line];
-            let cells: Vec<Drawn> = (0..self.cols).map(|x| {
-                let point = Point::new(line, Column(x));
-                Drawn::of(&row[Column(x)], mark(point, selection.as_ref(), hit.as_ref()))
-            }).collect();
+            let cells = self.drawn_row(y, row, line, selection.as_ref(), hit.as_ref(), claimed);
             // The palette a row is drawn in is part of every memo's key already: Rune hashes the
             // window's appearance into it.
             let version = hash_row(&cells);
@@ -617,6 +667,8 @@ enum Marked {
     No,
     Selected,
     Found,
+    /// A box's address under the pointer.
+    Lit,
 }
 
 fn mark(point: Point, selection: Option<&SelectionRange>, hit: Option<&Match>) -> Marked {
@@ -627,6 +679,98 @@ fn mark(point: Point, selection: Option<&SelectionRange>, hit: Option<&Match>) -
     } else {
         Marked::No
     }
+}
+
+/// A link found at a cell (`Screen::link_at`).
+#[derive(Debug, PartialEq)]
+pub struct Link {
+    pub uri: String,
+    /// Its scheme is one the console answers itself: a plain click follows it, and it is never
+    /// handed to the OS.
+    pub claimed: bool,
+}
+
+/// Whether a link's scheme is one of `claimed`, in any case.
+fn claims(claimed: &[String], uri: &str) -> bool {
+    uri.split_once(':').is_some_and(|(scheme, _)| claimed.iter().any(|c| c.eq_ignore_ascii_case(scheme)))
+}
+
+/// A row's characters, each with the column it starts at, its width, and whether a program
+/// linked it (OSC 8); a wide character's spacer is no character of its own.
+fn row_chars(row: &alacritty_terminal::grid::Row<Cell>, cols: usize) -> Vec<(char, usize, usize, bool)> {
+    (0..cols).map(|x| (x, &row[Column(x)]))
+        .filter(|(_, c)| !c.flags.contains(Flags::WIDE_CHAR_SPACER))
+        .map(|(x, c)| (c.c, x, if c.flags.contains(Flags::WIDE_CHAR) { 2 } else { 1 }, c.hyperlink().is_some()))
+        .collect()
+}
+
+/// A URL found in a row's text: the columns it covers, `from` to `to` exclusive.
+#[derive(Debug, PartialEq)]
+struct TextLink {
+    from: usize,
+    to: usize,
+    uri: String,
+}
+
+/// The URLs written in a row's text, by termpane's detection (`termpane/links.go`, `claim.go`):
+/// scheme-led, `http`, `https` or one of `claimed`; a scheme starts where no scheme character
+/// precedes it, so the `http://` in `discobox+http://…` is not one of its own; the URL runs to the
+/// first character no URL holds, less the punctuation of the sentence around it; and it stops at
+/// the row. Text a program already linked is left under its own link.
+fn text_links(chars: &[(char, usize, usize, bool)], claimed: &[String]) -> Vec<TextLink> {
+    let scheme_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.');
+    let url_char = |c: char| !c.is_ascii_whitespace() && !matches!(c, '"' | '\'' | '`' | '<' | '>' | '\\' | '^' | '{' | '}' | '|') && c > ' ';
+    let mut out = vec![];
+    let mut i = 0;
+    while i + 3 <= chars.len() {
+        if !(chars[i].0 == ':' && chars[i + 1].0 == '/' && chars[i + 2].0 == '/') {
+            i += 1;
+            continue;
+        }
+        let mut start = i;
+        while start > 0 && scheme_char(chars[start - 1].0) {
+            start -= 1;
+        }
+        let scheme: String = chars[start..i].iter().map(|c| c.0).collect();
+        let known = scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") || claimed.iter().any(|c| c.eq_ignore_ascii_case(&scheme));
+        let mut end = i + 3;
+        while end < chars.len() && url_char(chars[end].0) {
+            end += 1;
+        }
+        if !known || end == i + 3 {
+            i += 3;
+            continue;
+        }
+        let whole: String = chars[start..end].iter().map(|c| c.0).collect();
+        let uri = trim_url(&whole).to_string();
+        let end = start + uri.chars().count();
+        if end > i + 3 && !chars[start..end].iter().any(|c| c.3) {
+            let last = chars[end - 1];
+            out.push(TextLink { from: chars[start].1, to: last.1 + last.2, uri });
+        }
+        i = end.max(i + 3);
+    }
+    out
+}
+
+/// A URL less the punctuation it collected from the sentence around it: a full stop that ends
+/// the line, a bracket never opened inside it. A closer whose opener is in it stays —
+/// `http://[::1]:8080` is the address, brackets and all. termpane's `trimURL`.
+fn trim_url(mut url: &str) -> &str {
+    while let Some(last) = url.chars().last() {
+        match last {
+            '.' | ',' | ';' | ':' | '!' | '?' | '"' | '\'' => {}
+            ')' | ']' | '}' => {
+                let open = match last { ')' => '(', ']' => '[', _ => '{' };
+                if url.contains(open) {
+                    return url;
+                }
+            }
+            _ => return url,
+        }
+        url = &url[..url.len() - last.len_utf8()];
+    }
+    url
 }
 
 /// One cell as it is drawn.
@@ -728,6 +872,7 @@ fn runs(cells: &[Drawn]) -> (Vec<Run>, Vec<(usize, usize, Color)>) {
                 back = Some(theme::gold());
                 ink = theme::on_gold();
             }
+            Marked::Lit => ink = theme::mark(),
             Marked::No => {}
         }
         let width = if wide { 2 } else { 1 };
@@ -876,13 +1021,81 @@ mod tests {
         assert!(s.feed(b"\x1b]52;c;?\x07").is_empty(), "the clipboard was read");
     }
 
+    fn claimed() -> Vec<String> { vec!["discobox".into(), "discobox+http".into(), "discobox+https".into()] }
+
+    fn uri_at(s: &Screen, col: usize, row: i32) -> Option<String> { s.link_at(col, row, &claimed()).map(|l| l.uri) }
+
     #[test]
     fn a_link_a_program_made_is_found_at_its_cells() {
         let s = screen(30, 2, "see \x1b]8;;https://example.com/a\x1b\\here\x1b]8;;\x1b\\ now");
-        assert_eq!(s.link_at(4, 0).as_deref(), Some("https://example.com/a"));
-        assert_eq!(s.link_at(7, 0).as_deref(), Some("https://example.com/a"));
-        assert_eq!(s.link_at(9, 0), None);
-        assert_eq!(s.link_at(0, 0), None);
+        assert_eq!(uri_at(&s, 4, 0).as_deref(), Some("https://example.com/a"));
+        assert_eq!(uri_at(&s, 7, 0).as_deref(), Some("https://example.com/a"));
+        assert_eq!(uri_at(&s, 9, 0), None);
+        assert_eq!(uri_at(&s, 0, 0), None);
+        assert!(!s.link_at(4, 0, &claimed()).unwrap().claimed);
+    }
+
+    // A URL written as text is found at its cells as termpane finds one: scheme-led, to the
+    // first character no URL holds, less the sentence's punctuation, and within its row; a scheme
+    // that is the tail of a longer one is not one of its own.
+    #[test]
+    fn a_url_written_as_text_is_found_at_its_cells() {
+        let s = screen(60, 3, "open http://localhost:8080/x?y=1. or (http://[::1]:80)\r\nhttps://a.example/\u{4e2d}b and ftp://x.y z");
+        assert_eq!(uri_at(&s, 5, 0).as_deref(), Some("http://localhost:8080/x?y=1"));
+        assert_eq!(uri_at(&s, 31, 0).as_deref(), Some("http://localhost:8080/x?y=1"), "the full stop is the sentence's");
+        assert_eq!(uri_at(&s, 32, 0), None);
+        assert_eq!(uri_at(&s, 38, 0).as_deref(), Some("http://[::1]:80"), "the bracket closing the sentence's");
+        assert_eq!(uri_at(&s, 52, 0).as_deref(), Some("http://[::1]:80"));
+        assert_eq!(uri_at(&s, 53, 0), None);
+        // A wide character is in the URL, at its two cells.
+        assert_eq!(uri_at(&s, 20, 1).as_deref(), Some("https://a.example/\u{4e2d}b"));
+        assert_eq!(uri_at(&s, 21, 1), None);
+        assert_eq!(uri_at(&s, 29, 1), None, "an ftp URL is no web link");
+    }
+
+    // A box's address is a link the console claims, written as text or made by the program, in
+    // any of its schemes and any case; the `http://` in `discobox+http://` is not a web URL.
+    #[test]
+    fn a_box_link_is_claimed_wherever_it_is() {
+        let s = screen(70, 3, "worker discobox:///sbx_two, and DISCOBOX+HTTP://h:1/sbx_x\r\n\x1b]8;;discobox:///sbx_three\x1b\\three\x1b]8;;\x1b\\");
+        let at = |col, row| s.link_at(col, row, &claimed());
+        assert_eq!(at(7, 0), Some(Link { uri: "discobox:///sbx_two".into(), claimed: true }));
+        assert_eq!(at(26, 0), None, "the comma is the sentence's");
+        assert_eq!(at(55, 0), Some(Link { uri: "DISCOBOX+HTTP://h:1/sbx_x".into(), claimed: true }));
+        assert_eq!(at(1, 1), Some(Link { uri: "discobox:///sbx_three".into(), claimed: true }));
+        // With no scheme claimed, an address is text, and its transport's tail no web link.
+        assert_eq!(s.link_at(7, 0, &[]), None);
+        assert_eq!(s.link_at(55, 0, &[]), None);
+    }
+
+    // A box's address lights under the pointer, whole, whether it is text or a program's link;
+    // nothing else does, and with the mouse taken back nothing lights.
+    #[test]
+    fn a_box_link_lights_under_the_pointer() {
+        let mut s = screen(60, 3, "see discobox:///sbx_two now http://x.y/\r\n\x1b]8;;discobox:///sbx_three\x1b\\three\x1b]8;;\x1b\\ after");
+        assert!(s.lit(0, &claimed()).is_empty());
+        s.hover = Some((8, 0));
+        assert_eq!(s.lit(0, &claimed()), (4..23).collect::<Vec<_>>());
+        s.hover = Some((30, 0));
+        assert!(s.lit(0, &claimed()).is_empty(), "a web URL lit");
+        s.hover = Some((2, 1));
+        assert_eq!(s.lit(1, &claimed()), (0..5).collect::<Vec<_>>());
+        assert!(s.lit(0, &claimed()).is_empty());
+        s.seized = true;
+        assert!(s.lit(1, &claimed()).is_empty(), "a taken-back mouse lit a link");
+    }
+
+    // A pane that narrows under a resting pointer forgets where it was: the cell may be past the
+    // new edge, where reading the row would panic.
+    #[test]
+    fn a_resize_forgets_the_pointer() {
+        let mut s = screen(60, 3, "\x1b[1;50H\x1b]8;;discobox:///sbx_far\x1b\\far\x1b]8;;\x1b\\");
+        s.hover = Some((50, 0));
+        assert_eq!(s.lit(0, &claimed()), vec![49, 50, 51]);
+        s.resize(20, 3);
+        assert_eq!(s.hover, None);
+        s.hover = Some((50, 0));
+        assert!(s.lit(0, &claimed()).is_empty(), "a hover past the edge lit something");
     }
 
     #[test]

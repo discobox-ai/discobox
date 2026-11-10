@@ -502,3 +502,116 @@ fn a_box_under_a_page_copies_nothing() {
     settle(&mut rt);
     assert_eq!(clip.text().as_deref().map(String::as_str), Some("the user's"));
 }
+
+/// Holds the link modifier (⌘, Ctrl elsewhere: the app reads it as `cmd`) for the presses after.
+fn hold_link_modifier(rt: &mut Runtime<State>, held: bool) {
+    rt.physical_input(rune::PhysicalInput::Modifiers(Mods { cmd: held, ctrl: held && !cfg!(target_os = "macos"), ..Mods::default() }));
+    rt.frame(1.0 / 60.0);
+}
+
+// A ⌘-click on a URL the box printed opens where it reaches from here — the port its header's
+// forward bound — whether the program linked it or it is text, and the core says so (`follow`,
+// named with the pane's box); a plain click on one is a selection, as in any terminal.
+#[test]
+fn a_boxs_localhost_url_opens_at_its_forwarded_port() {
+    let (mut rt, sent, _, stream) = attached();
+    let first = rt.state.boxes[0].key.clone();
+    assert_eq!(rt.state.live.as_ref(), Some(&first), "the attached box is the mock's first, which forwards 8080");
+    let r = write(&mut rt, b"\x1b[2J\x1b[Hserving http://localhost:8080/app?x=1.\r\n\x1b]8;;http://0.0.0.0:8080/\x1b\\the app\x1b]8;;\x1b\\ and https://example.com/");
+    let _ = rt.take_url_requests();
+
+    let (x, y) = cell(r, 12, 0);
+    rt.pointer_down(x, y);
+    rt.pointer_up(x, y);
+    settle(&mut rt);
+    assert!(rt.take_url_requests().is_empty(), "a plain click on a web URL opened it");
+
+    hold_link_modifier(&mut rt, true);
+    for (col, row, want) in [(12, 0, "http://localhost:18080/app?x=1"), (2, 1, "http://localhost:18080/"), (14, 1, "https://example.com/")] {
+        let (x, y) = cell(r, col, row);
+        rt.pointer_down(x, y);
+        rt.pointer_up(x, y);
+        settle(&mut rt);
+        assert_eq!(rt.take_url_requests(), vec![want.to_string()], "a ⌘-click at {col},{row}");
+    }
+    hold_link_modifier(&mut rt, false);
+    assert!(sent.input_to(stream).is_empty(), "the program heard a link's press");
+}
+
+// A box's address in a pane is the window's link: a plain click on it goes to that box, even
+// while the program has the mouse, which never hears of the press; one naming no box says so;
+// with the mouse taken back to select with, it is text to select.
+#[test]
+fn a_box_link_in_a_pane_opens_its_box() {
+    let (mut rt, sent, _, stream) = attached();
+    let first = rt.state.live.clone().unwrap();
+    let other = rt.state.boxes.iter().find(|b| b.key != first && b.running()).expect("another running box").clone();
+    let line = format!("\x1b[2J\x1b[Hsee discobox:///{} or discobox:///sbx_nobody\x1b[?1000h\x1b[?1006h", other.id);
+    let r = write(&mut rt, line.as_bytes());
+
+    let nobody = format!("see discobox:///{} or ", other.id).len() + 2;
+    let (x, y) = cell(r, nobody, 0);
+    rt.pointer_down(x, y);
+    rt.pointer_up(x, y);
+    settle(&mut rt);
+    assert!(rt.state.message.as_deref().is_some_and(|m| m.contains("no discobox")), "{:?}", rt.state.message);
+    assert_eq!(rt.state.live.as_ref(), Some(&first));
+
+    let (x, y) = cell(r, 6, 0);
+    rt.pointer_down(x, y);
+    rt.pointer_up(x, y);
+    settle(&mut rt);
+    assert_eq!(rt.state.live.as_ref(), Some(&other.key), "the link did not open its box");
+    assert_eq!(rt.state.message, None, "the last link's refusal outlived the box it was said on");
+    assert!(sent.input_to(stream).is_empty(), "the program heard the press on a box link");
+    assert!(rt.take_url_requests().is_empty(), "a box link was handed to the OS");
+}
+
+// With the mouse taken back, a box link is text: a press on it selects.
+#[test]
+fn a_box_link_is_text_to_a_taken_back_mouse() {
+    let (mut rt, _, _, _) = attached();
+    let first = rt.state.live.clone().unwrap();
+    let r = write(&mut rt, b"\x1b[2J\x1b[Hsee discobox:///sbx_nobody\x1b[?1000h\x1b[?1006h");
+    run_command(&mut rt.state, "mouse", &mut Tx::default());
+    settle(&mut rt);
+    let (x, y) = cell(r, 6, 0);
+    let (x2, _) = cell(r, 12, 0);
+    rt.pointer_down(x, y);
+    rt.pointer_move(x2, y);
+    rt.pointer_up(x2, y);
+    settle(&mut rt);
+    assert_eq!(rt.state.live.as_ref(), Some(&first));
+    assert!(rt.state.focused_pane().unwrap().screen.has_selection(), "the press did not select");
+}
+
+// A middle press on a box's address is the pane's as anywhere else (the program's, or a paste),
+// never a press on the link.
+#[test]
+fn a_middle_press_on_a_box_link_is_not_the_links() {
+    let (mut rt, _, _, _) = attached();
+    let first = rt.state.live.clone().unwrap();
+    let other = rt.state.boxes.iter().find(|b| b.key != first && b.running()).expect("another running box").clone();
+    let r = write(&mut rt, format!("\x1b[2J\x1b[Hsee discobox:///{}", other.id).as_bytes());
+    let (x, y) = cell(r, 6, 0);
+    rt.button_down(x, y, rune::PointerButton::Middle);
+    rt.button_up(x, y, rune::PointerButton::Middle);
+    settle(&mut rt);
+    assert_eq!(rt.state.live.as_ref(), Some(&first), "a middle press followed the link");
+}
+
+// Where a link goes is answered for the box on screen when it was pressed: a person who moved to
+// another box since is not sent anywhere by it.
+#[test]
+fn a_late_answer_to_a_link_is_dropped() {
+    let (mut rt, _, _, _) = attached();
+    let first = rt.state.live.clone().unwrap();
+    let other = rt.state.boxes.iter().find(|b| b.key != first && b.running()).expect("another running box").key.clone();
+    rt.update(|s, _| { s.pending.insert(993, crate::Pending::Follow(Some("elsewhere".into()))); });
+    rt.update(|s, tx| s.take_result(crate::wire::Result { id: 993, status: crate::wire::Status::Enter, r#box: other.clone(), ..Default::default() }, tx));
+    rt.update(|s, _| { s.pending.insert(994, crate::Pending::Follow(Some("elsewhere".into()))); });
+    rt.update(|s, tx| s.take_result(crate::wire::Result { id: 994, status: crate::wire::Status::Done, url: "http://localhost:1/".into(), ..Default::default() }, tx));
+    settle(&mut rt);
+    assert_eq!(rt.state.live.as_ref(), Some(&first), "a late answer moved the screen");
+    assert!(rt.take_url_requests().is_empty(), "a late answer opened a URL");
+}
