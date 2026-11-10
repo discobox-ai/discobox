@@ -10,7 +10,7 @@
 
 use rune::{Color, El, Key, KeyEvent, PopupItem, PopupMenu, Tx, col, el, icon, row, spacer, text, text_input};
 
-use crate::wire::{ChoiceGroup, Entry, SpecTarget, State as BoxState};
+use crate::wire::{ChoiceGroup, Entry, SpecTarget};
 use crate::{Focus, Menu, State, icons, keys, run_command, theme, view};
 
 pub fn show_menu(s: &mut State, sandbox: String, at: (f32, f32), actions: Vec<Entry>, tx: &mut Tx) {
@@ -114,10 +114,7 @@ fn items(s: &State) -> Vec<Item> {
         let mut it = t.chars();
         query.chars().all(|q| it.any(|c| c == q))
     };
-    // Every box listed, whatever the list's filter (the core's search ignores it, ADR
-    // 26-11-06-671 §5); the archived only while they are shown.
-    let archived = s.listing.filter.archived;
-    let mut out: Vec<Item> = s.boxes.iter().filter(|b| fits(&b.name) && (archived || b.state != BoxState::Archived)).map(|b| Item {
+    let mut out: Vec<Item> = s.boxes.iter().filter(|b| fits(&b.name)).map(|b| Item {
         title: b.name.clone(), group: "discobox".into(), shortcut: None, command: None, sandbox: Some(b.key.clone()),
     }).collect();
     for c in &s.spec.commands {
@@ -205,10 +202,19 @@ pub fn palette_view(s: &State) -> Option<El> {
 // The list's filter
 
 /// Marks a choice, as the core says marking it does: in place of its group's choice, or a tag
-/// alongside the others — and a tag marked already is let go.
-fn choose(s: &mut State, i: usize) {
+/// alongside the others. `toggle` (Space, a press) lets a tag marked already go; Enter only ever
+/// marks, as the TUI's card does, so a tag it is on is kept.
+///
+/// The choices are the last listing's, counted against its filter: while another filter is out
+/// and not yet listed, a choice would be made against the one it replaces — dropping a tag
+/// marked a moment before — so none is taken until it lands.
+fn choose(s: &mut State, i: usize, toggle: bool) {
+    if s.asked.is_some() {
+        s.message = Some("the list is being read with the last filter".into());
+        return;
+    }
     let Some(c) = s.listing.choices.get(i) else { return };
-    let f = if c.marked && c.several { c.unmark.clone() } else { c.mark.clone() };
+    let f = if toggle && c.marked && c.several { c.unmark.clone() } else { c.mark.clone() };
     // A choice marked already, and not one to let go, changes nothing.
     if f == s.listing.filter {
         return;
@@ -226,12 +232,12 @@ pub fn filter_key(s: &mut State, ev: &KeyEvent, _tx: &mut Tx) -> bool {
         // Space marks and stays, for several tags in one trip; Enter marks and closes.
         Key::Text(ref t) if t == " " => {
             let i = m.picked;
-            choose(s, i);
+            choose(s, i, true);
         }
         Key::Enter => {
             let i = m.picked;
             s.filter_menu = None;
-            choose(s, i);
+            choose(s, i, false);
         }
         _ => {}
     }
@@ -270,7 +276,7 @@ pub fn filter_view(s: &State) -> Option<El> {
                 if !s.listing.choices.get(i).is_some_and(|c| c.several) {
                     s.filter_menu = None;
                 }
-                choose(s, i);
+                choose(s, i, true);
             }));
     }
     let archived = s.listing.filter.archived;

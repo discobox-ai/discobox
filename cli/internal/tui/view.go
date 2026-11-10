@@ -61,13 +61,13 @@ func (m *Model) saveViewNow() {
 // reported once rather than on every tick.
 func (m *Model) viewToSave() (view console.ListView, ok bool) {
 	// A `discobox run` or `discobox attach` window never shows the list, so
-	// nothing it holds is a choice somebody made; and before the session lands
-	// the window does not have the view it opened on.
-	if m.paletteReveal != nil || m.oneShot() || m.session.Directory == "" {
+	// nothing it holds is a choice somebody made; the rest is the core's
+	// (Session.Saves).
+	if m.paletteReveal != nil || m.oneShot() {
 		return console.ListView{}, false
 	}
 	view = m.currentView()
-	if view.Equal(m.savedView) {
+	if !m.session.Saves(view, m.savedView) {
 		return console.ListView{}, false
 	}
 	m.savedView = view

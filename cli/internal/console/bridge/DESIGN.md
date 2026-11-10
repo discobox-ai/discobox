@@ -96,11 +96,13 @@ request or a refused credential is about is the core's rule
 The listing is the core's list (`console.List`, `wireListing`): every box
 listed, and the rows the filter shows as drawn — section, nesting, remark,
 origin — with the server notes, the filter, how it reads, its choices and
-what the archived would add. The filter is the app's (876 §2): it subscribes
-with one, and again under a new ID to change it. With none the listing opens
-on the view this machine's windows last left (`Session.Restore`); one the app
-chooses is saved as the TUI saves it (`SaveView`), unless the window was
-opened nowhere.
+what the archived would add, and whether the filter narrows anything. The
+filter is held by the app as the TUI holds its `List`'s (the rules of it are
+the core's, which value it is is the renderer's): it subscribes with one, and
+again under a new ID to change it, ending the old. With none the listing
+opens on the view this machine's windows last left (`Session.Restore`); one
+the app chooses is saved when the core says a window saves it
+(`Session.Saves`), as the TUI's is.
 
 ## Streams
 

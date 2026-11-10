@@ -290,11 +290,7 @@ fn list_block(s: &State, wide: bool) -> El {
         c = c.child(t(format!("could not list again: {e}"), theme::warn()).font(theme::UI_SMALL).px(10.0).truncate());
     }
     if rows.is_empty() {
-        let none = if s.listing.filter == Default::default() || s.listing.label == "all discoboxes" && !s.listing.filter.archived {
-            "no discoboxes here yet"
-        } else {
-            "no discoboxes match the filter"
-        };
+        let none = if s.listing.narrowed { "no discoboxes match the filter" } else { "no discoboxes here yet" };
         c = c.child(t(none, theme::dim()).padding(10.0));
     }
     let mut section: Option<&str> = None;

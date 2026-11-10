@@ -202,6 +202,15 @@ func (s Session) Restore(view ListView) (ListView, Filter) {
 	return view, f
 }
 
+// Saves reports whether a window on this session saves view over the one
+// saved: it has moved off it, and the window was opened somewhere — before
+// the session lands, or in a window opened nowhere, there is no view it
+// opened on to keep. A window that never shows the list (a run's or an
+// attach's own) saves nothing either; that is its frontend's to know.
+func (s Session) Saves(view, saved ListView) bool {
+	return s.Directory != "" && !view.Equal(saved)
+}
+
 // archiveMark is one discobox's archive that is out or not yet settled
 // (List.archiving).
 type archiveMark struct {

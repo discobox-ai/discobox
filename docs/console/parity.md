@@ -46,6 +46,7 @@ are declared in the registry with each console's keys, and are not commands.
 | `requests` | Needs the credential requests page. | #814 |
 | `rejections` | Needs the rejected credentials page. | #814 |
 | `dismiss` | The app has no notices to dismiss until it raises requests as notifications. | #814 |
+| `all` | The command is for a window opened on one box, which the desktop has none of: its list is always beside the workspace, and "all discoboxes" in the sidebar is `detach`. | None: by design |
 | `actions` | A box's action menu opens from its row's context menu; the command and its shortcut come with the command surfaces. | #807 |
 | `help` | The help comes with the command surfaces, generated from the registry. | #807 |
 | `mouse` | Mouse reporting to the program is terminal fidelity. | #806 |

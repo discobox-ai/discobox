@@ -14,6 +14,11 @@
   `make(..., 0, n)`; the prototype's app stopped at its handshake on a nil
   slice encoded as `null`. The schema has no null, and the tests hold every
   message to it.
+- **A rule about when the window does something is the core's, even a small
+  one.** Whether a filter is saved (`Session.Saves`), which requests a box is
+  affected by (`RequestsFor`): the bridge's first copy of each was written by
+  hand from the TUI's and already differed from it. Move the rule into
+  `console` and call it from both.
 - **A wire change is regenerated, never mirrored.** Change `wire.go` (or the
   console's `Spec`), run `go tool task generate`, and build the app against
   the new `desktop/bridge/src/wire.rs`. A type the app reads written by hand in

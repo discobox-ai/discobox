@@ -324,6 +324,7 @@ impl Mock {
         let archived = if f.archived { 0 } else { self.rows(&Filter { archived: true, ..f.clone() }).len() - rows.len() };
         Listing {
             boxes: self.boxes.clone(), grouped: f.folder_key.is_empty(), rows, notes: vec![], filter: f.clone(),
+            narrowed: !f.folder_key.is_empty() || !f.tags.is_empty(),
             label: if parts.is_empty() { "all discoboxes".into() } else { parts.join(" · ") },
             choices, archived: archived as i64, unreachable: vec![], waiting: vec![],
         }
@@ -407,7 +408,6 @@ impl Mock {
                 self.relist();
                 CommandResult { status: Status::Done, ..Default::default() }
             }
-            "all" => fail("available in a wide attach window"),
             "actions" => CommandResult { status: Status::Enter, r#box: target.clone(), entries: self.actions(&target), ..Default::default() },
             _ => enter(""),
         }

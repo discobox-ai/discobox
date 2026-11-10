@@ -159,6 +159,14 @@ func (l *List) countWith(f Filter) int {
 	return c.Count()
 }
 
+// Narrowed reports whether the filter leaves any discobox out by what it is
+// — a server, a folder or a tag — rather than showing every one there is.
+// Whether the archived are listed is not narrowing: they are history, out of
+// the way until asked for.
+func (l *List) Narrowed() bool {
+	return l.Filter.Server != "" && len(l.Session.Servers) > 1 || l.Filter.Folder.Key != "" || len(l.Filter.Tags) > 0
+}
+
 // FilterLabel is what the list is narrowed to, as a filter says it: the
 // server when the window lists more than one, the folder and the tags — and
 // nothing about what it leaves open, which the list's own sections name.
@@ -173,7 +181,7 @@ func (l *List) FilterLabel() string {
 	if len(l.Filter.Tags) > 0 {
 		parts = append(parts, TagsLabel(l.Filter.Tags))
 	}
-	if len(parts) == 0 {
+	if !l.Narrowed() {
 		return "all discoboxes"
 	}
 	return strings.Join(parts, " · ")

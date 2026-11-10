@@ -1223,7 +1223,7 @@ their server is slow to answer again — a server that answered once and then
 hung, or a window with one server whose last read failed. Those rows look
 current and are not, which is a window that looks stuck. `Listing.Listed` says
 when each server's rows were answered (`""` for a window with one server), and
-once they are older than `listingStaleAfter` (three refreshes, so an ordinary
+once they are older than `console.ListStaleAfter` (three refreshes, so an ordinary
 poll never trips it) `console.List.ListedAgo` says so — `listed 40s ago`:
 
 - on the band, in place of the count, when the rows on screen are one
@@ -1280,12 +1280,13 @@ are in [`console/DESIGN.md`](../console/DESIGN.md#the-list)). `console.List.Rows
 applies the server, the folder and the tags together, and everything that
 counts discoboxes counts what it draws (`console.List.Count`) — the band, the
 archived offer — so a filter added to one count cannot be forgotten in
-another. The card counts the same way: it holds a copy of the list carrying
-the marks so far, and each choice's count is what the list would show with
-that choice marked beside the others. The folders offered are the ones on the
-server marked and the tags the ones inside both, re-read as marks change,
-because the filter a choice leaves in place is part of what the choice will
-list.
+another. The card holds a copy of the list carrying the marks so far, and its
+choices are the core's (`console.List.FilterChoices`, and `FilterLabel` for
+the header): each counted as what the list would show with that choice marked
+beside the others, the folders the ones on the server marked and the tags the
+ones inside both, read again as marks change, because the filter a choice
+leaves in place is part of what the choice will list. The desktop's filter
+menu is drawn from the same choices.
 
 **The server on screen is the server the prompt creates on.** The header filter
 and the run options' Server row are one control in both directions: `applyFilter` (and `cycleServer` on the

@@ -117,3 +117,60 @@ fn no_shortcut_is_written_outside_the_spec() {
         assert!(answered, "the gesture {} is bound but not answered", g.id);
     }
 }
+
+fn filter_menu_on(rt: &mut Runtime<State>, label: &str) {
+    run_command(&mut rt.state, "servers", &mut Tx::default());
+    settle(rt);
+    let at = rt.state.listing.choices.iter().position(|c| c.label == label).unwrap_or_else(|| panic!("no choice {label}"));
+    rt.state.filter_menu.as_mut().expect("the filter menu").picked = at;
+}
+
+// Enter on a tag marked already keeps it, as the TUI's card does; Space lets it go.
+#[test]
+fn enter_only_marks_a_tag_and_space_lets_it_go() {
+    let mut rt = runtime();
+    filter_menu_on(&mut rt, "#wip");
+    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+    settle(&mut rt);
+    assert_eq!(rt.state.listing.filter.tags, vec!["wip".to_string()]);
+    filter_menu_on(&mut rt, "#wip");
+    rt.key(KeyEvent { key: Key::Enter, mods: Mods::default() });
+    settle(&mut rt);
+    assert_eq!(rt.state.listing.filter.tags, vec!["wip".to_string()], "Enter let a marked tag go");
+    filter_menu_on(&mut rt, "#wip");
+    rt.key(KeyEvent { key: Key::Text(" ".into()), mods: Mods::default() });
+    settle(&mut rt);
+    assert!(rt.state.listing.filter.tags.is_empty(), "Space kept a marked tag: {:?}", rt.state.listing.filter.tags);
+}
+
+// While a filter asked for is not listed yet, no choice is made against the one it replaces.
+#[test]
+fn no_choice_is_taken_while_a_filter_is_out() {
+    let mut rt = runtime();
+    filter_menu_on(&mut rt, "#wip");
+    let asked = rt.state.listing.choices.iter().find(|c| c.label == "#tui").unwrap().mark.clone();
+    rt.state.set_filter(asked.clone());
+    // Not polled: the listing for it has not landed.
+    let menu = rt.state.listing.choices.iter().position(|c| c.label == "#wip").unwrap();
+    rt.state.filter_menu = Some(crate::FilterMenu { picked: menu });
+    crate::overlay::filter_key(&mut rt.state, &KeyEvent { key: Key::Text(" ".into()), mods: Mods::default() }, &mut Tx::default());
+    assert_eq!(rt.state.asked.as_ref(), Some(&asked), "a choice was made against the filter being replaced");
+    settle(&mut rt);
+    assert_eq!(rt.state.listing.filter, asked);
+}
+
+// Showing the archived before any listing has landed changes nothing — there is no filter to
+// change, and one changed from nothing would be saved over the machine's.
+#[test]
+fn the_archived_are_not_toggled_before_a_listing() {
+    let mut rt = runtime();
+    rt.state.loaded = false;
+    rt.state.listing = Default::default();
+    let sub = rt.state.asked.clone();
+    run_command(&mut rt.state, "archived", &mut Tx::default());
+    for _ in 0..3 {
+        rt.frame(1.0 / 60.0);
+    }
+    assert_eq!(rt.state.asked, sub);
+    assert!(rt.state.message.as_deref().is_some_and(|m| m.contains("not been read")), "{:?}", rt.state.message);
+}

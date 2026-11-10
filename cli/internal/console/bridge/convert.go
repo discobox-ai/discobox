@@ -37,7 +37,7 @@ func wireListing(l *console.List) Listing {
 	all := l.All()
 	out := Listing{
 		Boxes: make([]Box, 0, len(all)), Grouped: l.Grouped(), Notes: []Note{},
-		Filter: wireFilter(l.Filter), Label: l.FilterLabel(), Archived: l.ArchivedCount(),
+		Filter: wireFilter(l.Filter), Label: l.FilterLabel(), Narrowed: l.Narrowed(), Archived: l.ArchivedCount(),
 		Unreachable: nonNil(l.Unreachable()), Waiting: nonNil(l.Waiting()),
 	}
 	for _, b := range all {

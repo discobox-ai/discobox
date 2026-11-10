@@ -301,8 +301,11 @@ func (s *Server) filter(ctx context.Context, asked *Filter) console.Filter {
 		return f
 	}
 	f := consoleFilter(*asked)
-	// A window opened nowhere has no view to keep (the TUI's viewToSave).
-	if view := f.View(); session.Directory != "" && !view.Equal(saved) {
+	// Whether to is the core's rule (Session.Saves). A write that fails
+	// leaves the next window opening on the view saved before, and there is
+	// no reply to a subscribe to say it in: it is marked saved anyway, as the
+	// TUI marks it, so it is not tried on every change.
+	if view := f.View(); session.Saves(view, saved) {
 		s.mu.Lock()
 		s.saved = view
 		s.mu.Unlock()

@@ -162,6 +162,8 @@ pub struct State {
     /// acts on until it is folded into the selection or let go.
     pub range: Option<usize>,
     pub filter_menu: Option<FilterMenu>,
+    /// The filter the app asked the listing for, until the first snapshot of it lands.
+    pub asked: Option<Filter>,
     /// Where the filter control is drawn, which is where its menu opens.
     pub filter_at: (f32, f32),
     pub workspaces: HashMap<String, Workspace>,
@@ -196,7 +198,7 @@ impl State {
         theme::set_tokens(&spec);
         let mut s = State {
             backend, inbox, spec, boxes: vec![], listing: Listing::default(), loaded: false, list_error: None, cursor: 0,
-            selected: HashSet::new(), range: None, filter_menu: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
+            selected: HashSet::new(), range: None, filter_menu: None, asked: None, filter_at: (24.0, 96.0), workspaces: HashMap::new(), live: None, focus: Focus::List,
             sidebar: true, message: None, palette: None, menu: None, bridged, pending: HashMap::new(), list_sub: 0, next_id: 1,
             next_sub: 1, next_stream: 1, subs: HashMap::new(), seen: HashMap::new(), early: HashMap::new(),
         };
@@ -237,7 +239,15 @@ impl State {
         self.cursor = 0;
         self.selected.clear();
         self.range = None;
+        self.asked = Some(filter.clone());
         self.follow_listing(Some(filter));
+    }
+
+    /// The filter the list is on: the one asked for while it is being read, else the last
+    /// listing's. None before any listing has landed — there is no filter to change yet, and
+    /// one changed from nothing would be saved over the one this machine's windows open on.
+    pub fn filter(&self) -> Option<Filter> {
+        self.asked.clone().or_else(|| self.loaded.then(|| self.listing.filter.clone()))
     }
 
     /// The rows the filter shows, as drawn.
@@ -404,6 +414,7 @@ impl State {
         let at = self.listing.rows.get(self.cursor).map(|r| r.r#box.clone());
         let anchor = self.range.and_then(|i| self.listing.rows.get(i)).map(|r| r.r#box.clone());
         self.loaded = true;
+        self.asked = None;
         self.list_error = None;
         self.boxes = l.boxes.clone();
         self.listing = l;
@@ -720,7 +731,7 @@ pub const ANSWERED: &[&str] = &[
     "attach", "shell", "upgrade", "repair", "stop", "start", "archive", "unarchive",
     "quit", "palette", "terminal", "end", "maximize", "detach",
     "next pane", "previous pane", "next box", "previous box", "sidebar",
-    "refresh", "servers", "archived", "all",
+    "refresh", "servers", "archived",
 ];
 
 /// Every command, by its registry ID. The keys, the palette, the menus and a row's actions all
@@ -821,15 +832,13 @@ fn enter(s: &mut State, id: &str, r: &CommandResult, tx: &mut Tx) {
             s.filter_menu = Some(FilterMenu { picked });
         }
         "archived" => {
-            let mut f = s.listing.filter.clone();
+            let Some(mut f) = s.filter() else {
+                s.message = Some("the list has not been read yet".into());
+                return;
+            };
             f.archived = !f.archived;
             s.message = Some(if f.archived { "showing archived boxes" } else { "archived boxes hidden" }.into());
             s.set_filter(f);
-        }
-        // Every box beside the one on screen: the list is that already.
-        "all" => {
-            s.live = None;
-            s.focus = Focus::List;
         }
         _ => {}
     }
@@ -906,7 +915,7 @@ const MENU: &[(&str, &str, fn(&mut State, &mut Tx))] = menu_commands![
     ("Box", "new"), ("Shell", "shell"), ("Shell", "terminal"), ("Shell", "end"),
     ("Box", "attach"), ("Box", "stop"), ("Box", "start"), ("Box", "upgrade"), ("Box", "repair"), ("Box", "archive"), ("Box", "unarchive"),
     ("View", "detach"), ("View", "sidebar"), ("View", "palette"), ("View", "maximize"),
-    ("View", "servers"), ("View", "archived"), ("View", "refresh"), ("View", "all"),
+    ("View", "servers"), ("View", "archived"), ("View", "refresh"),
     ("View", "next pane"), ("View", "previous pane"), ("View", "next box"), ("View", "previous box"),
 ];
 

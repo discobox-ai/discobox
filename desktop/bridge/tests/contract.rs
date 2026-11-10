@@ -89,7 +89,7 @@ impl Cli {
     fn subscribe(&self, sub: u32, topic: Topic, sandbox: &str) {
         self.send(Message {
             r#type: Type::Subscribe,
-            subscribe: Some(Subscribe { sub, topic, r#box: sandbox.into() }),
+            subscribe: Some(Subscribe { sub, topic, r#box: sandbox.into(), filter: None }),
             ..Default::default()
         });
     }
@@ -210,7 +210,10 @@ fn subscriptions_send_snapshots_until_unsubscribed() {
     cli.subscribe(1, Topic::Listing, "");
     let listing = cli.expect(Type::Snapshot).snapshot.unwrap();
     assert_eq!((listing.sub, listing.topic), (1, Topic::Listing));
-    let boxes = listing.listing.unwrap().boxes;
+    let listing = listing.listing.unwrap();
+    // The core's list: its rows are the boxes the filter shows, b1 among them.
+    assert!(listing.rows.iter().any(|r| r.r#box == "b1"), "b1 is not a row: {:?}", listing.rows);
+    let boxes = listing.boxes;
     let b1 = boxes.iter().find(|b| b.key == "b1").expect("b1 listed");
     assert!(b1.running() && b1.attachable);
 
@@ -236,6 +239,8 @@ fn subscriptions_send_snapshots_until_unsubscribed() {
         _ => None,
     });
     assert_eq!(after.boxes.iter().find(|b| b.key == "b1").unwrap().state, State::Archived);
+    // Archived, it leaves the rows (the archived are hidden until asked for) and is counted there.
+    assert!(!after.rows.iter().any(|r| r.r#box == "b1") && after.archived >= 1, "rows {:?}, archived {}", after.rows, after.archived);
 
     for sub in [1, 2, 3, 4] {
         cli.send(Message { r#type: Type::Unsubscribe, unsubscribe: Some(Unsubscribe { sub }), ..Default::default() });

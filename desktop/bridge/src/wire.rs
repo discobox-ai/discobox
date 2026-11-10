@@ -380,9 +380,10 @@ pub struct Session {
 }
 
 /// Subscribe starts following a topic. Sub is the app's, unique for the bridge's life; Box is the
-/// box key, for a topic about one box. Filter is what the listing is narrowed to: the app's to hold
-/// (ADR 26-11-07-876 §2), subscribed again under the same Sub to change it. Without one the
-/// listing opens on the filter this machine's last window left (console.ListView).
+/// box key, for a topic about one box. Filter is what the listing is narrowed to, which a renderer
+/// holds as the TUI holds its List's (console/DESIGN.md, "The list"): the app subscribes again
+/// under a new Sub to change it, and ends the old. Without one the listing opens on the filter this
+/// machine's last window left (console.ListView).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Subscribe {
     pub sub: u32,
@@ -532,8 +533,13 @@ pub struct Listing {
     /// Filter is what the rows are narrowed to.
     pub filter: Filter,
 
-    /// Label is how the filter reads: "all discoboxes", or what it narrows the rows to.
+    /// Label is how the filter reads: "all discoboxes", or what it narrows the rows to. Narrowed is
+    /// whether it leaves any box out by what it is (console.List.Narrowed): an empty list then says
+    /// nothing matches, not that there is nothing.
     pub label: String,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub narrowed: bool,
 
     /// Choices are every way to narrow the rows, counted against the filter as it stands
     /// (console.List.FilterChoices).
