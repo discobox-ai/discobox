@@ -58,6 +58,7 @@ func TestClaimLocalNameNumbersBesideWhatIsThere(t *testing.T) {
 func TestDownloadsAreNeverTheHomeDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir's on Windows
 	t.Setenv("XDG_DOWNLOAD_DIR", home)
 	got, err := downloadsDir()
 	if err != nil {
